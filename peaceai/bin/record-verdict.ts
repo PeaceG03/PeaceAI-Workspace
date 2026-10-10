@@ -1,7 +1,7 @@
 // Verdict job: append one verdict to the latest attempt of an issue in a Results checkout.
 import { appendFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { stableJson, VERDICT_SCHEMA, type VerdictRecord } from "../lib/records.ts";
+import { effectiveVerdict, stableJson, VERDICT_SCHEMA, withdraws, type VerdictRecord } from "../lib/records.ts";
 import { appendIndex, latestAttempt, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 import { parseVerdict } from "../lib/verdict.ts";
 
@@ -41,6 +41,8 @@ const record: VerdictRecord = {
   candidateId: shown?.id ?? null,
   verdict,
 };
+// Did this verdict withdraw the standing pick? (Same rule as effectiveVerdict.)
+const withdrew = withdraws(record, effectiveVerdict(attempt.verdicts).pick);
 const dir = taskDir(root, issue, attempt.task.runId);
 writeNew(join(dir, "verdicts", `${commentId}.json`), stableJson(record));
 appendIndex(root, { type: "verdict", issue, runId: attempt.task.runId, commentId, at: recordedAt, label, verdict });
@@ -53,4 +55,7 @@ if (verdict === "right" && shown && process.env.CHOSEN_OUT_DIR) {
   chosen = join(target, "chosen.diff");
   copyFileSync(join(dir, "candidates", `${shown.id}.diff`), chosen);
 }
-out({ status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", base_sha: attempt.task.baseSha, chosen_diff: chosen });
+out({
+  status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", withdrew: String(withdrew),
+  test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen,
+});

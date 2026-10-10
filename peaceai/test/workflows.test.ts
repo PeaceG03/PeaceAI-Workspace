@@ -175,3 +175,16 @@ test("M3 peace-task: source from pick time, ranker variable to Job C only, zero-
   assert.match(wf, /no candidates generated for this task/);
   assert.match(wf, /NO_CANDIDATES: \$\{\{ needs\.generate\.result == 'success' && needs\.generate\.outputs\.candidates == '0'/);
 });
+
+test("M3.1 peace-verdict: no retrain after [test] verdicts; withdrawn PRs labelled and unlabelled", () => {
+  const wf = read("peace-verdict.yml");
+  const train = wf.slice(wf.indexOf("\n  train:"));
+  assert.match(train, /if: needs\.record\.outputs\.status == 'recorded' && needs\.record\.outputs\.test != 'true'/);
+  assert.match(wf, /test: \$\{\{ steps\.record\.outputs\.test \}\}/);
+  const respond = wf.slice(wf.indexOf("\n  respond:"), wf.indexOf("\n  train:"));
+  assert.match(respond, /--json number,headRefName,labels/);
+  assert.match(respond, /WITHDREW: \$\{\{ needs\.record\.outputs\.withdrew \}\}/);
+  assert.match(respond, /if: steps\.guard\.outputs\.mark != ''[\s\S]*gh label create verdict-withdrawn[\s\S]*--add-label verdict-withdrawn[\s\S]*Do not merge it\./);
+  assert.match(respond, /if: steps\.guard\.outputs\.unmark != ''[\s\S]*--remove-label verdict-withdrawn/);
+  assert.ok(respond.indexOf("Mark PRs whose verdict") < respond.indexOf("- name: Reply"));
+});

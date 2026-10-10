@@ -191,7 +191,7 @@ export interface EffectiveVerdict {
   latest: VerdictRecord | null;
   /** Latest decisive verdict still standing, for agreement: `<letter> right` picks it, `none wrong` picks none. */
   pick: { decided: boolean; candidateId: string | null };
-  /** True when the latest row is `unsure`: the issue is excluded from training and agreement. */
+  /** True after a withdrawal with no decisive verdict since: excluded from training and agreement. */
   withdrawn: boolean;
   /** Raw counts, for reporting only. */
   total: number;
@@ -201,27 +201,40 @@ export interface EffectiveVerdict {
 /**
  * Latest verdict wins. The single rule every reader (summary, agreement, M3 training) must use.
  * Rows are applied in the order they were given:
- * - `unsure` withdraws everything before it (latest and pick are cleared);
- * - any other row becomes `latest` (training);
- * - `<letter> right` / `none wrong` also become the `pick` (agreement).
- * So `A right` then `A unsure` excludes the issue, and `A right`, `A unsure`, `B right` counts B.
+ * - `<letter> right` / `none wrong` become the standing pick (agreement) and `latest` (training);
+ * - `<letter> wrong` becomes `latest` and leaves the pick as it is;
+ * - `none unsure`, or `<letter> unsure` naming the standing `right` pick, withdraws: pick and latest
+ *   are cleared and the issue is excluded until the next decisive verdict;
+ * - any other `<letter> unsure` is only a label for that candidate: nothing changes.
  */
 export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveVerdict {
   const ordered = orderVerdicts(verdicts);
   let latest: VerdictRecord | null = null;
   let pick = { decided: false, candidateId: null as string | null };
+  let withdrawn = false;
   for (const v of ordered) {
     if (v.verdict === "unsure") {
-      latest = null;
-      pick = { decided: false, candidateId: null };
+      if (withdraws(v, pick)) {
+        latest = null;
+        pick = { decided: false, candidateId: null };
+        withdrawn = true;
+      }
       continue;
     }
     latest = v;
     if (v.verdict === "right" && v.candidateId) pick = { decided: true, candidateId: v.candidateId };
     else if (v.verdict === "wrong" && v.candidateId === null) pick = { decided: true, candidateId: null };
+    if (pick.decided) withdrawn = false;
   }
   const unsure = ordered.filter((v) => v.verdict === "unsure").length;
-  return { latest, pick, withdrawn: ordered.at(-1)?.verdict === "unsure", total: ordered.length, unsure };
+  return { latest, pick, withdrawn, total: ordered.length, unsure };
+}
+
+/** Does this `unsure` row withdraw the standing verdict? (`none unsure`, or unsure on the picked letter.) */
+export function withdraws(v: Pick<VerdictRecord, "verdict" | "candidateId">, pick: { decided: boolean; candidateId: string | null }): boolean {
+  if (v.verdict !== "unsure") return false;
+  if (v.candidateId === null) return true;
+  return pick.decided && pick.candidateId === v.candidateId;
 }
 
 /** Kept for callers of the M2 API; same rule as effectiveVerdict().pick. */
