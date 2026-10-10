@@ -3,6 +3,7 @@ import { appendFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { effectiveVerdict, stableJson, VERDICT_SCHEMA, withdraws, type VerdictRecord } from "../lib/records.ts";
 import { appendIndex, latestAttempt, taskDir, writeNew, writeSummary } from "../lib/store.ts";
+import { loadTargets } from "../lib/target.ts";
 import { parseVerdict } from "../lib/verdict.ts";
 
 const out = (pairs: Record<string, string>) => {
@@ -58,4 +59,14 @@ if (verdict === "right" && shown && process.env.CHOSEN_OUT_DIR) {
 out({
   status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", withdrew: String(withdrew),
   test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen,
+  ...targetOutputs(attempt.task.target),
 });
+
+/** M5: where a chosen PR goes. Workspace (default or older records) or a configured external target. */
+function targetOutputs(target: string | undefined): Record<string, string> {
+  const targets = loadTargets();
+  if (!target || target === targets.default) return { target: targets.default, external: "false", write_env: "" };
+  const config = targets.targets[target];
+  // A recorded target without a config (or write environment) gets no PR; the respond job says so.
+  return { target, external: "true", write_env: config?.writeEnvironment ?? "" };
+}

@@ -12,12 +12,16 @@ const candidate = process.env.CANDIDATE ?? "";
 if (candidate && !/^candidate-\d{1,3}$/.test(candidate)) throw new Error("invalid candidate");
 const withdrew = process.env.WITHDREW === "true";
 const plan = planPr({ label, verdict, candidateId: candidate || null, withdrew }, openPeacePrs(Array.isArray(prs) ? prs : [], issue));
+// M5: PRs on another target repository are referenced as owner/repo#N in the Workspace reply.
+const refRepo = process.env.PR_REF_REPO ?? "";
+if (refRepo && !/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(refRepo)) throw new Error("invalid PR repo");
+const reply = refRepo ? plan.reply.replace(/#(\d+)/g, `${refRepo}#$1`) : plan.reply;
 const out = [
   `close=${plan.close.join(" ")}`,
   `open_pr=${plan.open}`,
   `mark=${plan.markWithdrawn.join(" ")}`,
   `unmark=${plan.unmarkWithdrawn.join(" ")}`,
-  `reply=${plan.reply}`,
+  `reply=${reply}`,
 ];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, out.join("\n") + "\n");
 console.log(out.slice(0, 4).join(" "));

@@ -65,6 +65,9 @@ jobs:
       test: ${{ steps.record.outputs.test }}
       base_sha: ${{ steps.record.outputs.base_sha }}
       chosen: ${{ steps.record.outputs.chosen_diff != '' }}
+      target: ${{ steps.record.outputs.target }}
+      external: ${{ steps.record.outputs.external }}
+      write_env: ${{ steps.record.outputs.write_env }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,6 +121,9 @@ jobs:
       VERDICT: ${{ needs.record.outputs.verdict }}
       CANDIDATE: ${{ needs.record.outputs.candidate }}
       WITHDREW: ${{ needs.record.outputs.withdrew }}
+      EXTERNAL: ${{ needs.record.outputs.external }}
+    outputs:
+      target_pr: ${{ steps.external.outputs.target_pr }}
     steps:
       - name: Not recorded
         if: needs.record.outputs.status != 'recorded'
@@ -143,7 +149,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - name: Plan PRs (same candidate keeps its PR; a different counted candidate replaces it)
         id: guard
-        if: needs.record.outputs.status == 'recorded'
+        if: needs.record.outputs.status == 'recorded' && needs.record.outputs.external != 'true'
         run: |
           PR_LIST_JSON="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName,labels)"
           export PR_LIST_JSON
@@ -182,10 +188,26 @@ jobs:
             gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "A verdict on #${ISSUE_NUMBER} backs this PR again."
           done
       - name: Reply
-        if: needs.record.outputs.status == 'recorded'
+        if: needs.record.outputs.status == 'recorded' && needs.record.outputs.external != 'true'
         env:
           REPLY: ${{ steps.guard.outputs.reply }}
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY"
+      # M5: the task's diffs apply to another target repository. PRs there need that target's write
+      # environment (main-only, holding TARGET_PR_TOKEN). Fail closed: no environment, no PR work at all.
+      - name: Hand off to the target's write environment (or say why not)
+        id: external
+        if: needs.record.outputs.status == 'recorded' && needs.record.outputs.external == 'true'
+        env:
+          TARGET: ${{ needs.record.outputs.target }}
+          WRITE_ENV: ${{ needs.record.outputs.write_env }}
+        run: |
+          if [ -n "$WRITE_ENV" ] && gh api "repos/$GITHUB_REPOSITORY/environments/$WRITE_ENV" >/dev/null 2>&1; then
+            echo "target_pr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_pr=false" >> "$GITHUB_OUTPUT"
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+              "Verdict recorded: $LABEL $VERDICT. No PR action on \`$TARGET\`: its write environment is not set up, so PeaceAI has no write access there."
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.guard.outputs.open_pr == 'true'
         with:
@@ -215,6 +237,119 @@ jobs:
           # PRs opened with the Actions token do not trigger pull_request workflows; run the checks here.
           gh workflow run leak-check.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+
+  target-pr:
+    name: PRs on the target repository
+    needs: [parse, record, respond]
+    if: always() && needs.respond.outputs.target_pr == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Main-only environment holding TARGET_PR_TOKEN for this one target (see docs in README "Targets").
+    environment: ${{ needs.record.outputs.write_env }}
+    concurrency:
+      group: peace-verdict-respond-${{ github.event.issue.number }}-target
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      TARGET: ${{ needs.record.outputs.target }}
+      LABEL: ${{ needs.record.outputs.label }}
+      VERDICT: ${{ needs.record.outputs.verdict }}
+      CANDIDATE: ${{ needs.record.outputs.candidate }}
+      WITHDREW: ${{ needs.record.outputs.withdrew }}
+      HAS_TOKEN: ${{ secrets.TARGET_PR_TOKEN != '' }}
+    steps:
+      - name: Fail closed without a write token
+        if: env.HAS_TOKEN != 'true'
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Verdict recorded: $LABEL $VERDICT. No PR action on \`$TARGET\`: its write environment has no TARGET_PR_TOKEN."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAS_TOKEN == 'true'
+        with:
+          persist-credentials: false
+          path: tools
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: env.HAS_TOKEN == 'true'
+        with:
+          node-version: 22
+      - name: Install tooling
+        if: env.HAS_TOKEN == 'true'
+        working-directory: tools
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Re-check the target is public
+        if: env.HAS_TOKEN == 'true'
+        run: tools/node_modules/.bin/tsx tools/peaceai/bin/target-check.ts
+      - name: Plan PRs on the target
+        id: guard
+        if: env.HAS_TOKEN == 'true'
+        env:
+          PR_REF_REPO: ${{ needs.record.outputs.target }}
+        run: |
+          PR_LIST_JSON="$(gh pr list --repo "$TARGET" --state open --limit 200 --json number,headRefName,labels)"
+          export PR_LIST_JSON
+          tools/node_modules/.bin/tsx tools/peaceai/bin/pr-guard.ts
+      - name: Close stale, mark or unmark PeaceAI PRs on the target
+        if: env.HAS_TOKEN == 'true' && (steps.guard.outputs.close != '' || steps.guard.outputs.mark != '' || steps.guard.outputs.unmark != '')
+        env:
+          GH_TOKEN: ${{ secrets.TARGET_PR_TOKEN }}
+          CLOSE: ${{ steps.guard.outputs.close }}
+          MARK: ${{ steps.guard.outputs.mark }}
+          UNMARK: ${{ steps.guard.outputs.unmark }}
+        run: |
+          for pr in $CLOSE $MARK $UNMARK; do case "$pr" in *[!0-9]*) echo "bad PR number"; exit 1 ;; esac; done
+          for pr in $CLOSE; do
+            gh pr close "$pr" --repo "$TARGET" --delete-branch --comment "Superseded: a later PeaceAI verdict no longer counts this candidate."
+          done
+          if [ -n "$MARK" ]; then
+            gh label create verdict-withdrawn --repo "$TARGET" --color d93f0b --force \
+              --description "No verdict backs this PeaceAI PR anymore; do not merge" >/dev/null
+          fi
+          for pr in $MARK; do
+            gh pr edit "$pr" --repo "$TARGET" --add-label verdict-withdrawn >/dev/null
+            gh pr comment "$pr" --repo "$TARGET" --body "No verdict backs this PR anymore. Do not merge it."
+          done
+          for pr in $UNMARK; do
+            gh pr edit "$pr" --repo "$TARGET" --remove-label verdict-withdrawn >/dev/null
+            gh pr comment "$pr" --repo "$TARGET" --body "A PeaceAI verdict backs this PR again."
+          done
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.HAS_TOKEN == 'true' && steps.guard.outputs.open_pr == 'true'
+        with:
+          name: peaceai-chosen
+          path: ${{ runner.temp }}/chosen
+      - name: Open a PR on the target for the chosen candidate
+        if: env.HAS_TOKEN == 'true' && steps.guard.outputs.open_pr == 'true'
+        env:
+          TARGET_PR_TOKEN: ${{ secrets.TARGET_PR_TOKEN }}
+          BASE_SHA: ${{ needs.record.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
+          tools/peaceai/bin/clone-target.sh "$TARGET" "$RUNNER_TEMP/target" "$BASE_SHA"
+          cd "$RUNNER_TEMP/target"
+          base_branch="$(GH_TOKEN="$TARGET_PR_TOKEN" gh repo view "$TARGET" --json defaultBranchRef -q .defaultBranchRef.name)"
+          branch="peace-task/issue-${ISSUE_NUMBER}-${CANDIDATE}-$(openssl rand -hex 4)"
+          git checkout -q -b "$branch"
+          git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
+          git add -A -- src
+          git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
+            commit -q -m "PeaceAI candidate chosen in review of PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}"
+          auth="$(printf 'x-access-token:%s' "$TARGET_PR_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git -c "http.extraHeader=Authorization: basic $auth" push -q "https://github.com/$TARGET.git" "HEAD:refs/heads/$branch"
+          url="$(GH_TOKEN="$TARGET_PR_TOKEN" gh pr create --repo "$TARGET" --base "$base_branch" --head "$branch" \
+            --title "PeaceAI task PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER} (owner-chosen candidate)" \
+            --body "Candidate chosen by owner review on PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}.")"
+          echo "pr_url=$url" >> "$GITHUB_ENV"
+      - name: Reply
+        if: env.HAS_TOKEN == 'true'
+        env:
+          REPLY: ${{ steps.guard.outputs.reply }}
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY${pr_url:+ $pr_url}"
 
   train:
     name: retrain the shadow ranker

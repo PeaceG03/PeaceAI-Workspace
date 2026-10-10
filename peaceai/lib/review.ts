@@ -19,7 +19,7 @@ export function validatePresentation(value: unknown, candidateIds: readonly stri
 
 const MAX_DIFF_CHARS = 10_000;
 
-export function reviewBody(presentation: readonly Presented[], diffs: ReadonlyMap<string, string>): string {
+export function reviewBody(presentation: readonly Presented[], diffs: ReadonlyMap<string, string>, target: string | null = null): string {
   const sections = presentation.map((p) => {
     let diff = diffs.get(p.id) ?? "";
     if (diff.length > MAX_DIFF_CHARS) diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n... (truncated)`;
@@ -29,6 +29,7 @@ export function reviewBody(presentation: readonly Presented[], diffs: ReadonlyMa
   return [
     "PeaceAI review. Each candidate below passed the original suite (run alone) and its new tests (run separately).",
     "Order is random. No candidate is preferred.",
+    ...(target ? [`Target repository: \`${target}\` (public). A \`right\` verdict opens the PR there.`] : []),
     "",
     ...sections,
     "",

@@ -33,6 +33,8 @@ export interface TaskRecord {
   requiresTests: boolean;
   /** Who opened the task: Peace, or the Builder agent (`source:builder` label at pick time). Absent = peace. */
   source?: TaskSource;
+  /** M5: target repository (`owner/repo`) the diffs apply to. Absent on older records = this Workspace. */
+  target?: string;
 }
 
 export type TaskSource = "peace" | "builder";
@@ -115,6 +117,7 @@ export interface TaskInputs {
   title: string;
   body: string;
   source?: TaskSource;
+  target?: string;
 }
 
 /**
@@ -204,6 +207,7 @@ export function buildRecords(
       heldOut: isHeldOut(task.issue),
       requiresTests,
       source: task.source === "builder" ? "builder" : "peace",
+      ...(task.target ? { target: task.target } : {}),
     },
     ranking: {
       schema: RANKING_SCHEMA,
@@ -301,6 +305,8 @@ export interface TaskEntry {
   issue: number;
   runId: string;
   source: TaskSource;
+  /** M5: null = this Workspace. */
+  target: string | null;
   test: boolean;
   heldOut: boolean;
   requiresTests: boolean;
@@ -330,6 +336,7 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
     issue: task.issue,
     runId: task.runId,
     source: taskSourceOf(task),
+    target: task.target ?? null,
     test: task.test,
     heldOut: task.heldOut,
     requiresTests: task.requiresTests,

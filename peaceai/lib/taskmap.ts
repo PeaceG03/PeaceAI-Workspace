@@ -16,6 +16,8 @@ export interface RequestVariant {
 export function cleanIssueText(input: TaskInput): string {
   const text = `${input.title}\n\n${input.body}`
     .replace(/<!--[\s\S]*?-->/g, " ")
+    // M5: target routing lines are not part of the task.
+    .replace(/^[ \t]*target:[ \t]*\S+[ \t]*$/gim, " ")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/[`*>#]/g, " ")
     // Markdown emphasis underscores only; identifiers such as MAX_ITEMS keep theirs.
@@ -32,10 +34,14 @@ export function mentionedTargets(objective: string, sourcePaths: readonly string
   return sourcePaths.filter((path) => mentioned.has(path));
 }
 
-export function buildVariants(input: TaskInput, sourcePaths: readonly string[]): RequestVariant[] {
+export function buildVariants(
+  input: TaskInput,
+  sourcePaths: readonly string[],
+  isTest: (path: string) => boolean = (path) => path.endsWith(".test.ts"),
+): RequestVariant[] {
   const objective = cleanIssueText(input);
   if (!objective) return [];
-  const owners = sourcePaths.filter((path) => !path.endsWith(".test.ts"));
+  const owners = sourcePaths.filter((path) => !isTest(path));
   const named = mentionedTargets(objective, owners);
   // Named owners first, then the remaining owners as alternative placements.
   const targets = [...named, ...owners.filter((path) => !named.includes(path))];

@@ -1,6 +1,7 @@
 import { corePathCollision, findCoreText, type TextIndex } from "./coretext.ts";
 import { parseDiff } from "./diff.ts";
-import { checkCandidateScope } from "./scope.ts";
+import { scanText } from "./leak.ts";
+import { checkCandidateScope, WORKSPACE_SCOPE, type CandidateScope } from "./scope.ts";
 
 export interface GateCore {
   text: TextIndex;
@@ -13,7 +14,13 @@ export interface GateResult {
   reasons: string[]; // safe to print: workspace paths and counts only
 }
 
-export function gateCandidate(diff: string, baseFiles: ReadonlySet<string>, baseline: TextIndex, core: GateCore): GateResult {
+export function gateCandidate(
+  diff: string,
+  baseFiles: ReadonlySet<string>,
+  baseline: TextIndex,
+  core: GateCore,
+  scope: CandidateScope = WORKSPACE_SCOPE,
+): GateResult {
   const reasons: string[] = [];
   let files;
   try {
@@ -21,13 +28,16 @@ export function gateCandidate(diff: string, baseFiles: ReadonlySet<string>, base
   } catch {
     return { ok: false, reasons: ["unparseable diff"] };
   }
-  for (const violation of checkCandidateScope(files, baseFiles)) reasons.push(`scope: ${violation.path}: ${violation.reason}`);
+  for (const violation of checkCandidateScope(files, baseFiles, scope)) reasons.push(`scope: ${violation.path}: ${violation.reason}`);
   for (const file of files) {
     const path = file.newPath ?? file.oldPath;
     // Existing workspace files are already public; only new paths can import a core file name.
     if (path && !baseFiles.has(path) && corePathCollision(path, core.paths, core.basenames)) reasons.push(`core-path: ${path}`);
   }
   const added = files.flatMap((file) => file.addedLines);
+  // Personal info and secrets in anything the candidate adds (any target).
+  const pii = scanText(added.join("\n"));
+  if (pii.length > 0) reasons.push(`personal-info: ${[...new Set(pii.map((f) => f.kind))].sort().join(",")}`);
   const hits = findCoreText(added, core.text, baseline);
   if (hits.lineHits > 0 || hits.shingleHits > 0)
     reasons.push(`core-text: ${hits.lineHits} line match(es), ${hits.shingleHits} shingle match(es)`);

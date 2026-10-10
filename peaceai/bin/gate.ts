@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { gateCandidate, validateSummary } from "../lib/gate.ts";
+import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const outDir = process.env.PEACEAI_OUT_DIR;
 const coreDir = process.env.PEACEAI_CORE_DIR;
@@ -36,6 +37,12 @@ const baseFiles = new Set(
 );
 const baseline = indexGitTree(repo).text;
 const core = indexGitTree(coreDir);
+// M5: per-target scope. The baseline is the target's own (public) tree.
+const targets = loadTargets();
+const targetName = process.env.PEACEAI_TARGET || targets.default;
+const config = targets.targets[targetName];
+if (!config) fail("target has no scope config");
+const scope = config ? scopeOf(config) : undefined;
 
 for (const candidate of summary.candidates ?? []) {
   let diff: string;
@@ -45,7 +52,7 @@ for (const candidate of summary.candidates ?? []) {
     fail(`${candidate.id}: missing diff`);
     continue;
   }
-  const result = gateCandidate(diff, baseFiles, baseline, core);
+  const result = gateCandidate(diff, baseFiles, baseline, core, scope);
   if (!result.ok) for (const reason of result.reasons) fail(`${candidate.id}: ${reason}`);
 }
 if (failed) process.exit(1);

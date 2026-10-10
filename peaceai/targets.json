@@ -1,0 +1,32 @@
+{
+  "schema": "peaceai-targets:v1",
+  "default": "PeaceG03/PeaceAI-Workspace",
+  "targets": {
+    "PeaceG03/PeaceAI-Workspace": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "\\.test\\.ts$",
+      "denyPatterns": [],
+      "install": "npm",
+      "originalSuite": "full",
+      "writeEnvironment": null
+    },
+    "PeaceG03/PeaceSTOCKS": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "\\.test\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "test-helper",
+        "secret",
+        "credential",
+        "token",
+        "wrangler",
+        "production",
+        "(^|/)(host|scheduler|backfill)\\.ts$"
+      ],
+      "install": "pnpm",
+      "originalSuite": "related",
+      "writeEnvironment": "peacestocks-write"
+    }
+  }
+}
