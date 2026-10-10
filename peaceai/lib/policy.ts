@@ -23,3 +23,7 @@ export function isHeldOut(issue: number): boolean {
 export function isTestTask(title: string): boolean {
   return /^\s*\[test\]/i.test(title);
 }
+
+export const BUILDER_LABEL = "source:builder";
+/** Task source from the issue labels at pick time. */
+export const taskSource = (labels: readonly string[]): "peace" | "builder" => (labels.includes(BUILDER_LABEL) ? "builder" : "peace");

@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { isCandidateIssue, labeledByOwner, pickNext, STATE, staleRunning, type LabelEvent, type QueueIssue } from "../lib/queue.ts";
+import { BUILDER_LABEL, taskSource } from "../lib/policy.ts";
 import { TASK_LABEL } from "../lib/trigger.ts";
 
 const repo = process.env.GITHUB_REPOSITORY ?? "";
@@ -26,6 +27,7 @@ if (mode === "count") {
 }
 
 for (const label of Object.values(STATE)) gh("label", "create", label, "--repo", repo, "--color", "ededed", "--force");
+gh("label", "create", BUILDER_LABEL, "--repo", repo, "--color", "c5def5", "--force", "--description", "peace-task opened by the Builder agent");
 
 for (const n of staleRunning(issues)) {
   gh("issue", "edit", String(n), "--repo", repo, "--remove-label", STATE.running, "--add-label", STATE.failed);
@@ -48,4 +50,5 @@ for (const issue of issues.filter(isCandidateIssue).sort((a, b) => a.number - b.
 const picked = pickNext(issues, verified);
 if (picked !== null)
   gh("issue", "edit", String(picked), "--repo", repo, "--add-label", STATE.running, "--remove-label", STATE.queued);
-output({ issue: picked ?? "", waiting: issues.filter(isCandidateIssue).length });
+const source = picked === null ? "" : taskSource(issues.find((i) => i.number === picked)!.labels);
+output({ issue: picked ?? "", source, waiting: issues.filter(isCandidateIssue).length });

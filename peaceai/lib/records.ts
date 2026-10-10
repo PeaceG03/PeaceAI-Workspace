@@ -30,7 +30,12 @@ export interface TaskRecord {
   test: boolean;
   heldOut: boolean;
   requiresTests: boolean;
+  /** Who opened the task: Peace, or the Builder agent (`source:builder` label at pick time). Absent = peace. */
+  source?: TaskSource;
 }
+
+export type TaskSource = "peace" | "builder";
+export const taskSourceOf = (task: Pick<TaskRecord, "source">): TaskSource => (task.source === "builder" ? "builder" : "peace");
 
 export type RejectReason = "not-applied" | "typecheck" | "original-suite" | "new-tests" | "missing-required-test" | null;
 
@@ -62,6 +67,20 @@ export interface RankingRecord {
   rankerOrder: string[];
   rankerTop: string | null;
   presentation: { label: string; id: string }[];
+  /** M3: model ranking recorded alongside, never shown. Absent when no model existed at ranking time. */
+  shadow?: ShadowRanking;
+  /** M3: which ranker is authoritative for this record. Absent = deterministic. */
+  active?: "deterministic" | "model";
+  /** M3: top pick of the active ranker (equals rankerTop unless the model is active). */
+  activeTop?: string | null;
+}
+
+export interface ShadowRanking {
+  model: string; // model version
+  features: string; // feature version
+  order: string[];
+  top: string | null;
+  scores: { id: string; score: number }[];
 }
 
 export function rejectReason(c: CandidateResult, requiresTests: boolean): RejectReason {
@@ -80,6 +99,7 @@ export interface TaskInputs {
   baseSha: string;
   title: string;
   body: string;
+  source?: TaskSource;
 }
 
 export function buildRecords(
@@ -131,6 +151,7 @@ export function buildRecords(
       test: isTestTask(task.title),
       heldOut: isHeldOut(task.issue),
       requiresTests,
+      source: task.source === "builder" ? "builder" : "peace",
     },
     ranking: {
       schema: RANKING_SCHEMA,
@@ -166,30 +187,41 @@ export function orderVerdicts(verdicts: readonly VerdictRecord[]): VerdictRecord
 }
 
 export interface EffectiveVerdict {
-  /** Latest non-unsure verdict: the one training uses. `unsure` never overrides an earlier verdict. */
+  /** Latest verdict still standing: the one training uses. null when none, or when withdrawn by `unsure`. */
   latest: VerdictRecord | null;
-  /** Latest decisive verdict for agreement: `<letter> right` picks that candidate, `none wrong` picks none. */
+  /** Latest decisive verdict still standing, for agreement: `<letter> right` picks it, `none wrong` picks none. */
   pick: { decided: boolean; candidateId: string | null };
+  /** True when the latest row is `unsure`: the issue is excluded from training and agreement. */
+  withdrawn: boolean;
   /** Raw counts, for reporting only. */
   total: number;
   unsure: number;
 }
 
 /**
- * Latest verdict wins. The single rule every reader (summary, agreement, M3 training) must use:
- * - unsure rows are recorded but ignored;
- * - training uses the latest remaining row;
- * - agreement uses the latest decisive row (`X right` or `none wrong`).
+ * Latest verdict wins. The single rule every reader (summary, agreement, M3 training) must use.
+ * Rows are applied in the order they were given:
+ * - `unsure` withdraws everything before it (latest and pick are cleared);
+ * - any other row becomes `latest` (training);
+ * - `<letter> right` / `none wrong` also become the `pick` (agreement).
+ * So `A right` then `A unsure` excludes the issue, and `A right`, `A unsure`, `B right` counts B.
  */
 export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveVerdict {
   const ordered = orderVerdicts(verdicts);
-  const counted = ordered.filter((v) => v.verdict !== "unsure");
+  let latest: VerdictRecord | null = null;
   let pick = { decided: false, candidateId: null as string | null };
-  for (const v of counted) {
+  for (const v of ordered) {
+    if (v.verdict === "unsure") {
+      latest = null;
+      pick = { decided: false, candidateId: null };
+      continue;
+    }
+    latest = v;
     if (v.verdict === "right" && v.candidateId) pick = { decided: true, candidateId: v.candidateId };
     else if (v.verdict === "wrong" && v.candidateId === null) pick = { decided: true, candidateId: null };
   }
-  return { latest: counted[counted.length - 1] ?? null, pick, total: ordered.length, unsure: ordered.length - counted.length };
+  const unsure = ordered.filter((v) => v.verdict === "unsure").length;
+  return { latest, pick, withdrawn: ordered.at(-1)?.verdict === "unsure", total: ordered.length, unsure };
 }
 
 /** Kept for callers of the M2 API; same rule as effectiveVerdict().pick. */
@@ -200,6 +232,7 @@ export function peacePick(verdicts: readonly VerdictRecord[]): { decided: boolea
 export interface TaskEntry {
   issue: number;
   runId: string;
+  source: TaskSource;
   test: boolean;
   heldOut: boolean;
   requiresTests: boolean;
@@ -210,6 +243,7 @@ export interface TaskEntry {
   decided: boolean;
   verdicts: number;
   unsure: number;
+  withdrawn: boolean;
   latestVerdict: { label: string | null; candidateId: string | null; verdict: VerdictValue } | null;
   agree: boolean | null; // null when not comparable
   countsTowardAgreement: boolean;
@@ -224,6 +258,7 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
   return {
     issue: task.issue,
     runId: task.runId,
+    source: taskSourceOf(task),
     test: task.test,
     heldOut: task.heldOut,
     requiresTests: task.requiresTests,
@@ -234,10 +269,12 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
     decided: pick.decided,
     verdicts: effective.total,
     unsure: effective.unsure,
+    withdrawn: effective.withdrawn,
     latestVerdict: effective.latest ? { label: effective.latest.label, candidateId: effective.latest.candidateId, verdict: effective.latest.verdict } : null,
     agree: comparable ? pick.candidateId === ranking.rankerTop : null,
     countsTowardAgreement: comparable && !task.test,
-    trainable: !task.test && !task.heldOut && effective.latest !== null,
+    // Latest decisive verdict still standing (not withdrawn). The M3 ranker additionally needs a pairable pick.
+    trainable: !task.test && !task.heldOut && pick.decided,
   };
 }
 
@@ -269,6 +306,8 @@ export function buildSummary(input: readonly TaskEntry[]) {
     trainableTasks: real.filter((e) => e.trainable).length,
     agreement: score(sorted),
     agreementHeldOut: score(sorted.filter((e) => e.heldOut)),
+    agreementBySource: { peace: score(sorted.filter((e) => e.source === "peace")), builder: score(sorted.filter((e) => e.source === "builder")) },
+    withdrawnTasks: real.filter((e) => e.withdrawn).length,
     entries: sorted,
   };
 }

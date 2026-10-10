@@ -1,12 +1,16 @@
-// Verdict job: find an open PeaceAI PR for the issue so a second `right` never opens a duplicate.
+// Verdict job: decide which PeaceAI PRs to close and whether to open one (see lib/prguard.ts).
 import { appendFileSync } from "node:fs";
-import { findOpenPeacePr, verdictReply, type OpenPr } from "../lib/prguard.ts";
+import { openPeacePrs, planPr, type OpenPr } from "../lib/prguard.ts";
 
 const prs = JSON.parse(process.env.PR_LIST_JSON ?? "[]") as OpenPr[];
 const issue = Number(process.env.ISSUE_NUMBER);
-const existing = findOpenPeacePr(Array.isArray(prs) ? prs : [], issue);
-const wantsPr = process.env.CHOSEN === "true";
-const reply = verdictReply(process.env.LABEL ?? "", process.env.VERDICT ?? "", existing, wantsPr);
-const out = [`existing=${existing ?? ""}`, `open_pr=${wantsPr && existing === null}`, `reply=${reply}`];
+const verdict = process.env.VERDICT;
+if (verdict !== "right" && verdict !== "wrong" && verdict !== "unsure") throw new Error("invalid verdict");
+const label = process.env.LABEL ?? "";
+if (!/^([A-Z]|none)$/.test(label)) throw new Error("invalid label");
+const candidate = process.env.CANDIDATE ?? "";
+if (candidate && !/^candidate-\d{1,3}$/.test(candidate)) throw new Error("invalid candidate");
+const plan = planPr({ label, verdict, candidateId: candidate || null }, openPeacePrs(Array.isArray(prs) ? prs : [], issue));
+const out = [`close=${plan.close.join(" ")}`, `open_pr=${plan.open}`, `reply=${plan.reply}`];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, out.join("\n") + "\n");
 console.log(out.slice(0, 2).join(" "));

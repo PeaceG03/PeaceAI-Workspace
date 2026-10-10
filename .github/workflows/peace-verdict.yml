@@ -60,6 +60,7 @@ jobs:
       status: ${{ steps.record.outputs.status }}
       label: ${{ steps.record.outputs.label }}
       verdict: ${{ steps.record.outputs.verdict }}
+      candidate: ${{ steps.record.outputs.candidate }}
       base_sha: ${{ steps.record.outputs.base_sha }}
       chosen: ${{ steps.record.outputs.chosen_diff != '' }}
     steps:
@@ -93,7 +94,7 @@ jobs:
           if-no-files-found: error
 
   respond:
-    name: reply and open the chosen PR
+    name: reply, close stale PRs, open the chosen PR
     needs: [parse, record]
     if: always() && needs.parse.outputs.ok == 'true'
     runs-on: ubuntu-24.04
@@ -113,6 +114,7 @@ jobs:
       STATUS: ${{ needs.record.outputs.status }}
       LABEL: ${{ needs.record.outputs.label }}
       VERDICT: ${{ needs.record.outputs.verdict }}
+      CANDIDATE: ${{ needs.record.outputs.candidate }}
     steps:
       - name: Not recorded
         if: needs.record.outputs.status != 'recorded'
@@ -136,15 +138,23 @@ jobs:
         if: needs.record.outputs.status == 'recorded'
         working-directory: tools
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
-      - name: Check for an open PeaceAI PR on this issue (no duplicates)
+      - name: Plan PRs (same candidate keeps its PR; a different counted candidate replaces it)
         id: guard
         if: needs.record.outputs.status == 'recorded'
-        env:
-          CHOSEN: ${{ needs.record.outputs.chosen }}
         run: |
           PR_LIST_JSON="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName)"
           export PR_LIST_JSON
           tools/node_modules/.bin/tsx tools/peaceai/bin/pr-guard.ts
+      - name: Close stale PeaceAI PRs for this issue
+        if: steps.guard.outputs.close != ''
+        env:
+          CLOSE: ${{ steps.guard.outputs.close }}
+        run: |
+          for pr in $CLOSE; do
+            case "$pr" in *[!0-9]*) echo "bad PR number"; exit 1 ;; esac
+            gh pr close "$pr" --repo "$GITHUB_REPOSITORY" --delete-branch \
+              --comment "Superseded: a later verdict on #${ISSUE_NUMBER} no longer counts this candidate."
+          done
       - name: Reply
         if: needs.record.outputs.status == 'recorded'
         env:
@@ -165,7 +175,8 @@ jobs:
         working-directory: work
         run: |
           set -euo pipefail
-          branch="peace-task/issue-${ISSUE_NUMBER}-$(openssl rand -hex 4)"
+          case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
+          branch="peace-task/issue-${ISSUE_NUMBER}-${CANDIDATE}-$(openssl rand -hex 4)"
           git checkout -q -b "$branch"
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
           git add -A -- src
@@ -178,3 +189,17 @@ jobs:
           # PRs opened with the Actions token do not trigger pull_request workflows; run the checks here.
           gh workflow run leak-check.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+
+  train:
+    name: retrain the shadow ranker
+    needs: [record]
+    if: needs.record.outputs.status == 'recorded'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch peace-train
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run peace-train.yml --repo "$GITHUB_REPOSITORY" --ref main

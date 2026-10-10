@@ -1,0 +1,39 @@
+name: peace-train
+
+# Trains the shadow ranker from Results and writes models/<version>/ back to Results.
+# Only the Results key is used here; nothing about the model reaches this public repository.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: train shadow ranker
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Train, evaluate on held-out, write models/<version>/ to Results
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          PEACEAI_TRAIN_SOURCES: ${{ vars.PEACEAI_TRAIN_SOURCES }}
+          PEACEAI_SOURCE_WEIGHTS: ${{ vars.PEACEAI_SOURCE_WEIGHTS }}
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "train shadow ranker (run $GITHUB_RUN_ID)" \
+            ./node_modules/.bin/tsx peaceai/bin/train.ts
