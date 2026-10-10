@@ -8,7 +8,8 @@
       "denyPatterns": [],
       "install": "npm",
       "originalSuite": "full",
-      "writeEnvironment": null
+      "writeEnvironment": null,
+      "verdictRoute": "pr"
     },
     "PeaceG03/PeaceSTOCKS": {
       "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
@@ -26,7 +27,8 @@
       ],
       "install": "pnpm",
       "originalSuite": "related",
-      "writeEnvironment": "peacestocks-write"
+      "writeEnvironment": "peacestocks-write",
+      "verdictRoute": "patch"
     }
   }
 }

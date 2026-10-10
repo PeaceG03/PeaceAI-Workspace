@@ -114,7 +114,7 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
         run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
-      - name: Build native synthesis only
+      - name: Build the Actions kernel (synthesis, edit families, planner) and guard it
         run: ./peaceai/bin/build-kernel.sh "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
       - name: Generate candidates
         id: generate

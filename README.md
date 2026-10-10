@@ -13,8 +13,10 @@ Public workspace where PeaceAI attempts small coding tasks on GitHub Actions, wi
    task is lost because tasks wait as labels, not as runs.
 3. **Job A (generate)** confirms the issue is still open, owner-authored and running (remove the
    label or close the issue to cancel a task), clones the private kernel with a read-only key into the
-   runner temp directory, builds only native synthesis, and generates up to five candidate diffs. The
-   leak/scope gate must pass before upload; the kernel checkout is always deleted.
+   runner temp directory, builds only the Actions kernel (native synthesis, the edit families and the
+   multi-step planner; the kernel guard fails the build if the bundle can reach any teacher or outside
+   model), indexes the target's in-scope files (symbols and keywords, in memory), and generates up to five
+   candidate diffs. The leak/scope gate must pass before upload; the kernel checkout is always deleted.
 4. **Job B (test)** runs one matrix job per candidate on a fresh runner with read-only tools and no
    secrets: the original suite alone (new test files removed), then the new tests alone. Candidate
    code runs only as the unprivileged `peaceai-cand` user (see *Tamper-proof results*).
@@ -140,9 +142,22 @@ live in `peaceai/targets.json`: today this Workspace and `PeaceG03/PeaceSTOCKS`.
   (same stem, or importing the module, at most 4): each runs on the untouched base first, and a candidate
   fails if any test that passed on the base fails with the candidate. Type checking is always the whole
   project; new tests run alone in their own pass.
-- **PRs on a target** open only after `/verdict X right`, from the target's main-only write environment
-  (`peacestocks-write` for PeaceSTOCKS) holding `TARGET_PR_TOKEN`. Without that environment or token the
-  verdict is still recorded and the reply says no PR was opened.
+- **Verdict route per target (M6).** `verdictRoute` in `peaceai/targets.json` says what `/verdict X right`
+  does. `pr` opens a PR (this Workspace; a target with a main-only write environment holding
+  `TARGET_PR_TOKEN`). `patch` (PeaceSTOCKS) needs no token at all: the `target-patch` job re-checks the
+  target is public, applies the chosen candidate to an anonymous clone at the task's base, commits it as
+  `PeaceG03 <301894882+PeaceG03@users.noreply.github.com>` (dated at the verdict), exports it with
+  `git format-patch --full-index --no-stat --no-signature`, checks the patch's diff is byte-identical to the
+  chosen diff in Results and carries no personal info, and posts it in a code block with its `patch-sha256`
+  and `diff-sha256`. Anything off posts a reason instead of a patch. `wrong`/`unsure` post no patch.
+- **Applying a patch (owner, from the Builder box):**
+  `peaceai/bin/apply-verdict-patch.sh <issue> --worktree <clean PeaceSTOCKS clone>` takes the latest patch
+  comment from `github-actions[bot]`, reads Results read-only through `gh` (latest attempt, verdicts, the
+  effective pick's candidate diff), and refuses unless the patch hash matches the posted one, the posted
+  diff hash matches Results, the patch's own diff hashes to the Results diff, the candidate is the
+  effective pick of the latest attempt, the `From:` line is the noreply identity, and the worktree is a
+  clean clone of the target. Then it runs `git am`. It never pushes; pushing is a separate manual step.
+  `--check` verifies without applying.
 
 Setup for PeaceSTOCKS PRs (owner): create a fine-grained personal access token with resource owner
 `PeaceG03`, repository access *Only select repositories → PeaceSTOCKS*, permissions *Contents: Read and
@@ -219,6 +234,35 @@ parameter's declared type must fit the condition, and the function's return type
 value. Every edit refuses to run when its target is ambiguous, already has the change, or the types
 don't line up. Add `, with focused tests.` to ask for a test; without it PeaceAI tries both.
 Identifier underscores (`MAX_PAGES`) are kept in task text; only Markdown emphasis is stripped.
+
+### Multi-step tasks (M6)
+
+Write the task as numbered steps, one per line, each in an edit phrase above. The steps run in order as
+one plan (`DevelopmentPlanGraph` + `CrossLayerPlanExecutor` in the Actions kernel): each step is
+synthesized against the files as the earlier steps left them, so a later step can use what an earlier
+one added, in another file. A step that only says `add a test` asks for focused tests on the step before
+it. If any step cannot run, the plan yields no candidate (a partial chain is never offered). The plan's
+combined diff is one candidate and goes through the same scope, leak and test gates as any other.
+
+```
+Step 1: add an optional field locale of type string to type Profile
+Step 2: add property locale with value "en" to object GUEST
+Step 3: add a test
+```
+
+`1.` / `2)` numbering also works. Steps must be numbered 1..n in order; 2 to 6 edit steps. A typed object
+(`const GUEST: Profile = {...}`) only takes a new property when its type already declares the field with a
+type that accepts the value, which is exactly what step 1 provides.
+
+### How targets are found (M6)
+
+Every Job A builds a symbol and keyword index of the target's in-scope files: exported and local symbols
+with definitions and references, file-to-symbol and import maps, and a BM25 keyword index. It resolves
+`function X`, `type Y`, `object Z`, `interface W`, a bare identifier with one definition, a named file,
+and "the config" (the shallowest `config`/`settings`/`defaults` file); ambiguous names resolve to nothing.
+Resolved files, the files related to them, and keyword hits get priority in the bounded source set and as
+edit owners. The index lives only in Job A's memory (logs show counts), and is built only after the
+visibility re-check, so a private target fails closed before any indexing.
 
 ## Layout
 

@@ -38,13 +38,15 @@ export function buildVariants(
   input: TaskInput,
   sourcePaths: readonly string[],
   isTest: (path: string) => boolean = (path) => path.endsWith(".test.ts"),
+  preferred: readonly string[] = [],
 ): RequestVariant[] {
   const objective = cleanIssueText(input);
   if (!objective) return [];
   const owners = sourcePaths.filter((path) => !isTest(path));
   const named = mentionedTargets(objective, owners);
-  // Named owners first, then the remaining owners as alternative placements.
-  const targets = [...named, ...owners.filter((path) => !named.includes(path))];
+  // Named owners first, then owners the symbol index resolved (M6), then the rest as alternatives.
+  const first = [...named, ...preferred.filter((path) => owners.includes(path) && !named.includes(path))];
+  const targets = [...first, ...owners.filter((path) => !first.includes(path))];
   const phrasings = new Set<string>([objective]);
   // When the task asks for tests, never spend budget on a phrasing that drops them.
   if (!taskRequiresTests(objective)) phrasings.add(`${objective.replace(/\.?\s*$/, "")}, with focused tests.`);

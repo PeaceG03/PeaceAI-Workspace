@@ -68,6 +68,8 @@ jobs:
       target: ${{ steps.record.outputs.target }}
       external: ${{ steps.record.outputs.external }}
       write_env: ${{ steps.record.outputs.write_env }}
+      route: ${{ steps.record.outputs.route }}
+      run_id: ${{ steps.record.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -124,6 +126,7 @@ jobs:
       EXTERNAL: ${{ needs.record.outputs.external }}
     outputs:
       target_pr: ${{ steps.external.outputs.target_pr }}
+      target_patch: ${{ steps.external.outputs.target_patch }}
     steps:
       - name: Not recorded
         if: needs.record.outputs.status != 'recorded'
@@ -194,14 +197,28 @@ jobs:
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY"
       # M5: the task's diffs apply to another target repository. PRs there need that target's write
       # environment (main-only, holding TARGET_PR_TOKEN). Fail closed: no environment, no PR work at all.
-      - name: Hand off to the target's write environment (or say why not)
+      # M6: a "patch" route target never gets a PR: a `right` verdict posts a format-patch comment instead.
+      - name: Hand off to the target's write environment or patch route (or say why not)
         id: external
         if: needs.record.outputs.status == 'recorded' && needs.record.outputs.external == 'true'
         env:
           TARGET: ${{ needs.record.outputs.target }}
           WRITE_ENV: ${{ needs.record.outputs.write_env }}
+          ROUTE: ${{ needs.record.outputs.route }}
+          CHOSEN: ${{ needs.record.outputs.chosen }}
         run: |
-          if [ -n "$WRITE_ENV" ] && gh api "repos/$GITHUB_REPOSITORY/environments/$WRITE_ENV" >/dev/null 2>&1; then
+          if [ "$ROUTE" = "patch" ]; then
+            echo "target_pr=false" >> "$GITHUB_OUTPUT"
+            if [ "$CHOSEN" = "true" ]; then
+              echo "target_patch=true" >> "$GITHUB_OUTPUT"
+            else
+              msg="Verdict recorded: $LABEL $VERDICT. \`$TARGET\` uses the patch route; no patch is posted for this verdict."
+              if [ "$WITHDREW" = "true" ]; then
+                msg="$msg The earlier patch on this issue is no longer the effective pick, so the apply script will refuse it."
+              fi
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$msg"
+            fi
+          elif [ -n "$WRITE_ENV" ] && gh api "repos/$GITHUB_REPOSITORY/environments/$WRITE_ENV" >/dev/null 2>&1; then
             echo "target_pr=true" >> "$GITHUB_OUTPUT"
           else
             echo "target_pr=false" >> "$GITHUB_OUTPUT"
@@ -350,6 +367,84 @@ jobs:
         env:
           REPLY: ${{ steps.guard.outputs.reply }}
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY${pr_url:+ $pr_url}"
+
+  # M6: patch-file route (no write token anywhere). The chosen candidate becomes one noreply commit on the
+  # target's base, exported with `git format-patch`, and posted on this issue with its SHA-256 values.
+  # The owner applies it from the Builder box with peaceai/bin/apply-verdict-patch.sh, which re-verifies
+  # everything against Results and never pushes.
+  target-patch:
+    name: post the chosen candidate as a patch file
+    needs: [parse, record, respond]
+    if: always() && needs.respond.outputs.target_patch == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: peace-verdict-respond-${{ github.event.issue.number }}-patch
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      TARGET: ${{ needs.record.outputs.target }}
+      LABEL: ${{ needs.record.outputs.label }}
+      CANDIDATE: ${{ needs.record.outputs.candidate }}
+      RUN_ID: ${{ needs.record.outputs.run_id }}
+      BASE_SHA: ${{ needs.record.outputs.base_sha }}
+      COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: tools
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install tooling
+        working-directory: tools
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Re-check the target is public
+        run: tools/node_modules/.bin/tsx tools/peaceai/bin/target-check.ts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: peaceai-chosen
+          path: ${{ runner.temp }}/chosen
+      - name: Build the format-patch (one noreply commit on the task's base)
+        run: |
+          set -euo pipefail
+          case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
+          case "$BASE_SHA" in *[!0-9a-f]*|"") echo "bad base sha"; exit 1 ;; esac
+          tools/peaceai/bin/clone-target.sh "$TARGET" "$RUNNER_TEMP/target" "$BASE_SHA"
+          cd "$RUNNER_TEMP/target"
+          git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
+          git add -A -- src
+          GIT_AUTHOR_DATE="$COMMENT_CREATED_AT" GIT_COMMITTER_DATE="$COMMENT_CREATED_AT" \
+            git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
+            commit -q -m "PeaceAI candidate chosen in review of PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}"
+          git format-patch -1 --stdout --no-signature --no-stat --full-index --no-renames --no-color > "$RUNNER_TEMP/verdict.patch"
+          cd - >/dev/null
+          rm -rf "$RUNNER_TEMP/target"
+      - name: Check the patch and write the comment
+        id: body
+        env:
+          PATCH_FILE: ${{ runner.temp }}/verdict.patch
+          CHOSEN_DIFF: ${{ runner.temp }}/chosen/chosen.diff
+          BODY_FILE: ${{ runner.temp }}/patch-comment.md
+        run: tools/node_modules/.bin/tsx tools/peaceai/bin/verdict-patch.ts
+      - name: Post the patch
+        if: steps.body.outputs.ok == 'true'
+        env:
+          BODY_FILE: ${{ runner.temp }}/patch-comment.md
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+      - name: Fail closed
+        if: always() && steps.body.outputs.ok != 'true'
+        env:
+          REASON: ${{ steps.body.outputs.reason }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Verdict recorded: $LABEL right. No patch posted for \`$TARGET\`: ${REASON:-patch-build-failed}."
+          exit 1
 
   train:
     name: retrain the shadow ranker
