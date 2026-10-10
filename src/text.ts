@@ -14,3 +14,7 @@ export function truncate(text: string, maxLength: number): string {
   if (maxLength <= 1) return text.slice(0, maxLength);
   return `${text.slice(0, maxLength - 1)}…`;
 }
+
+export function normalizeTitle(title: string): string {
+  return title.trim();
+}
