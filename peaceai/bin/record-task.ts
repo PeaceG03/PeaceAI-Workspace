@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { validateSummary } from "../lib/gate.ts";
 import { validateResults } from "../lib/results.ts";
 import type { CandidateResult } from "../lib/rank.ts";
+import { activeRanker, loadLatestModel, shadowRanking } from "../lib/ranker/pipeline.ts";
 import { buildRecords, stableJson } from "../lib/records.ts";
 import { appendIndex, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 
@@ -43,11 +44,24 @@ const records = buildRecords(
     baseSha: summary.baseSha,
     title: String(issue.title ?? "").slice(0, 300),
     body: String(issue.body ?? "").slice(0, 4000),
+    source: process.env.TASK_SOURCE === "builder" ? "builder" : "peace",
   },
   summary.candidates,
   results,
   randomBytes(16).toString("hex"),
 );
+
+// M3 shadow ranking: recorded next to the deterministic ranking, before any review output. Never shown.
+const loaded = loadLatestModel(resultsRoot);
+const shadow = loaded ? shadowRanking(loaded.model, records.task, records.ranking, (id) => {
+  const c = summary.candidates.find((x) => x.id === id);
+  return c ? readFileSync(join(inDir, c.file), "utf8") : "";
+}) : null;
+if (shadow) {
+  records.ranking.shadow = shadow;
+  records.ranking.active = activeRanker(process.env.PEACEAI_RANKER, loaded!.promotionEligible);
+  records.ranking.activeTop = records.ranking.active === "model" ? shadow.top : records.ranking.rankerTop;
+}
 
 const dir = taskDir(resultsRoot, issueNumber, runId);
 writeNew(join(dir, "task.json"), stableJson(records.task));
@@ -59,4 +73,4 @@ writeSummary(resultsRoot);
 const eligible = records.ranking.presentation.length;
 const outputs = [`eligible=${eligible}`, `presentation=${JSON.stringify(records.ranking.presentation)}`];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, outputs.join("\n") + "\n");
-console.log(`recorded candidates=${summary.candidates.length} eligible=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests}`);
+console.log(`recorded candidates=${summary.candidates.length} eligible=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"}`);

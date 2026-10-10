@@ -73,7 +73,8 @@ test("peace-task: serialized sweep, core env only on Job A, Results env only on 
     if (name !== "generate") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
     if (name !== "record") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
   }
-  assert.match(j.get("review")!, /needs: \[select, record\]\n\s+if: needs\.record\.result == 'success'/);
+  assert.match(j.get("review")!, /needs: \[select, generate, record\]/);
+  assert.match(j.get("review")!, /if: always\(\) && needs\.record\.result == 'success' && needs\.generate\.outputs\.candidates != '0'/);
   const b = j.get("test")!;
   assert.match(b, /matrix:/);
   assert.match(b, /chmod -R a-w node_modules peaceai/);
@@ -138,4 +139,39 @@ test("M2.5 tamper-proof: Job B runs candidates as an unprivileged user and fails
   assert.match(proof, /PROOF_SANDBOX_USER: peaceai-cand/);
   assert.match(proof, /peaceai\/proof\/tamper-proof\.ts/);
   assert.doesNotMatch(proof, /secrets\./);
+});
+
+test("M3 peace-train: dispatch only, Results key only, no core, main only, serialized", () => {
+  const wf = read("peace-train.yml");
+  assert.match(wf, /on:\n  workflow_dispatch:\n\n/);
+  assert.match(wf, /environment: peaceai-results/);
+  assert.match(wf, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(wf, /group: peace-train/);
+  assert.doesNotMatch(wf, /CORE|peaceai-core|clone-core/);
+  assert.equal((wf.match(/secrets\./g) ?? []).length, 1);
+  assert.match(wf, /secrets\.PEACEAI_RESULTS_DEPLOY_KEY/);
+  assert.match(wf, /contents: read/);
+  assert.doesNotMatch(wf, /contents: write|issues: write|pull-requests/);
+});
+
+test("M3 peace-verdict: recorded verdicts dispatch training; stale PRs closed before the reply and new PR", () => {
+  const wf = read("peace-verdict.yml");
+  const train = wf.slice(wf.indexOf("\n  train:"));
+  assert.match(train, /needs: \[record\]/);
+  assert.match(train, /gh workflow run peace-train\.yml/);
+  assert.doesNotMatch(train, /secrets\.|environment:/);
+  const respond = wf.slice(wf.indexOf("\n  respond:"), wf.indexOf("\n  train:"));
+  assert.ok(respond.indexOf("Close stale PeaceAI PRs") < respond.indexOf("gh pr create"));
+  assert.match(respond, /CLOSE: \$\{\{ steps\.guard\.outputs\.close \}\}/);
+  assert.match(respond, /branch="peace-task\/issue-\$\{ISSUE_NUMBER\}-\$\{CANDIDATE\}-/);
+});
+
+test("M3 peace-task: source from pick time, ranker variable to Job C only, zero-candidate message", () => {
+  const wf = read("peace-task.yml");
+  const jobC = wf.slice(wf.indexOf("\n  record:"), wf.indexOf("\n  review:"));
+  assert.match(jobC, /TASK_SOURCE: \$\{\{ needs\.select\.outputs\.source \}\}/);
+  assert.match(jobC, /PEACEAI_RANKER: \$\{\{ vars\.PEACEAI_RANKER \}\}/);
+  assert.equal((wf.match(/vars\.PEACEAI_RANKER/g) ?? []).length, 1);
+  assert.match(wf, /no candidates generated for this task/);
+  assert.match(wf, /NO_CANDIDATES: \$\{\{ needs\.generate\.result == 'success' && needs\.generate\.outputs\.candidates == '0'/);
 });

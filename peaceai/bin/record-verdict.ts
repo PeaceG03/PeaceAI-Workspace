@@ -53,4 +53,4 @@ if (verdict === "right" && shown && process.env.CHOSEN_OUT_DIR) {
   chosen = join(target, "chosen.diff");
   copyFileSync(join(dir, "candidates", `${shown.id}.diff`), chosen);
 }
-out({ status: "recorded", label: label ?? "none", verdict, base_sha: attempt.task.baseSha, chosen_diff: chosen });
+out({ status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", base_sha: attempt.task.baseSha, chosen_diff: chosen });

@@ -28,21 +28,26 @@ Public workspace where PeaceAI attempts small coding tasks on GitHub Actions, wi
 
 Reply on the issue (owner only):
 
-- `/verdict <letter> right`: that candidate is correct; it becomes your pick and a PR is opened for it,
-  unless a PeaceAI PR for the issue is already open. Then no second PR is opened and the reply points
-  to the open one: close it and send the verdict again to switch.
+- `/verdict <letter> right`: that candidate is correct; it becomes your pick and a PR is opened for it.
+  If an open PeaceAI PR already holds that candidate, no second PR is opened. If an open PeaceAI PR
+  holds a different candidate, it is closed with a short comment and the new candidate's PR is opened.
 - `/verdict <letter> wrong` or `/verdict <letter> unsure`: a label for that candidate (not a pick).
-- `/verdict none wrong`: no candidate is acceptable (a pick of "none"). `/verdict none unsure` is recorded only.
+- `/verdict none wrong`: no candidate is acceptable (a pick of "none"); any open PeaceAI PR for the issue is closed.
+- `/verdict <letter> unsure` / `/verdict none unsure`: withdraws your earlier verdict (open PRs are left for you).
 
 Malformed commands get a short usage reply. Verdicts are appended to Results.
 
 **Latest verdict wins.** Raw verdict rows are append-only; every reader goes through
-`effectiveVerdict` (`peaceai/lib/records.ts` for rows, `peaceai/lib/store.ts` for an issue), ordered
-by time then comment id, using only the issue's latest attempt:
+`effectiveVerdict` (`peaceai/lib/records.ts` for rows, `peaceai/lib/store.ts` for an issue), applying
+rows in time order (then comment id), using only the issue's latest attempt:
 
-- `unsure` is recorded but never overrides an earlier verdict and never counts;
-- training uses the latest non-`unsure` verdict (`latest`);
-- agreement uses the latest decisive verdict, `<letter> right` or `none wrong` (`pick`).
+- `unsure` withdraws everything before it. If the latest verdict is `unsure`, the issue is excluded
+  from training and agreement (`A right` then `A unsure` = excluded) until a new verdict;
+- training uses the latest standing verdict (`latest`);
+- agreement uses the latest standing decisive verdict, `<letter> right` or `none wrong` (`pick`).
+
+Branches are `peace-task/issue-<n>-<candidate>-<hex>`, so an open PR never holds a candidate other
+than the counted `right` pick.
 
 **Agreement** compares the ranker's blind top pick with that pick. It counts only the latest attempt
 per issue, only tasks with two or more eligible candidates, and excludes test tasks.
@@ -50,6 +55,9 @@ per issue, only tasks with two or more eligible candidates, and excludes test ta
 **Held-out set**: a task is held out when the first 4 bytes of `sha256("peaceai-heldout:v1:<issue>")`,
 read as a fraction, are below 0.2 (about 20%). Held-out tasks are recorded and reviewed like any
 other but are never used for training; agreement is also reported for them separately.
+
+**Task source**: `source:builder` marks a `peace-task` opened by the Builder agent. The label is read
+when the task is picked and stored as `source` (`peace` | `builder`) in `task.json` and the summary.
 
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.
@@ -66,6 +74,31 @@ summary.json                            derived: per-task entries, agreement, he
 ```
 
 Records are never rewritten; `summary.json` is recomputed from the records on each write.
+
+## Shadow ranker (M3)
+
+The deterministic ranking (original suite, then smallest diff, plus the tests-required rule) stays
+authoritative. A CPU ranker is trained and recorded in **shadow** mode:
+
+- **Features** (`features:v1`, `peaceai/lib/ranker/features.ts`): from Results records only (ranking,
+  task text, candidate diffs): diff size and lines added/removed, files touched, new files, new tests,
+  test cases and assertions added, test/typecheck results, edit kinds and task keywords (hashed into
+  buckets so no vocabulary is in this repo), smallest-diff flags.
+- **Model** (`peaceai/lib/ranker/model.ts`): pairwise logistic regression (linear RankNet), seeded SGD,
+  standardized features, L2. Reproducible: same data and seed give the same bytes and version.
+- **Training data**: latest attempt per issue, latest standing decisive verdict picking an eligible
+  candidate, 2+ eligible, not test, not held out, not withdrawn. Pairs: Peace's pick over each other
+  eligible candidate. Both sources by default; `PEACEAI_TRAIN_SOURCES` (`peace,builder`) filters and
+  `PEACEAI_SOURCE_WEIGHTS` (e.g. `builder=0.5`) weights; metrics are split by source.
+- **`peace-train`** (dispatch, and after every recorded verdict; Results key only) writes
+  `models/<version>/metrics.json`, `model.json` (only when trained) and `models/latest.json` to Results.
+  Fewer than 10 trainable tasks: "insufficient data", no model. Held-out top-pick agreement (model vs
+  baseline, 2+ eligible only) below 5 tasks is also reported as "insufficient data".
+- **Shadow scoring**: Job C loads the latest model, if any, and records `shadow` (order, top, scores)
+  in `ranking.json` before the review. The review comment is unchanged. No model, nothing extra.
+- **Promotion** (off): needs 30+ trainable tasks, 10+ held-out tasks and the model beating the baseline
+  on held-out, and only then takes effect if Peace sets the repository variable `PEACEAI_RANKER=model`.
+  The record then has `active: "model"` and `activeTop` from the model.
 
 ## Tamper-proof results
 

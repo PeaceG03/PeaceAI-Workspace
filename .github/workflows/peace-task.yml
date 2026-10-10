@@ -28,6 +28,7 @@ jobs:
       issues: write
     outputs:
       issue: ${{ steps.pick.outputs.issue }}
+      source: ${{ steps.pick.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,6 +197,8 @@ jobs:
         id: record
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          TASK_SOURCE: ${{ needs.select.outputs.source }}
+          PEACEAI_RANKER: ${{ vars.PEACEAI_RANKER }}
         run: |
           mkdir -p "$RUNNER_TEMP/peaceai-testresults"
           export PEACEAI_IN_DIR="$RUNNER_TEMP/peaceai-in" PEACEAI_TESTRESULTS_DIR="$RUNNER_TEMP/peaceai-testresults"
@@ -207,8 +210,9 @@ jobs:
 
   review:
     name: blind review comment
-    needs: [select, record]
-    if: needs.record.result == 'success'
+    needs: [select, generate, record]
+    # always(): Job B is skipped when there are no candidates, and a skipped ancestor would skip this job.
+    if: always() && needs.record.result == 'success' && needs.generate.outputs.candidates != '0'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -260,6 +264,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
       REVIEW_RESULT: ${{ needs.review.result }}
+      NO_CANDIDATES: ${{ needs.generate.result == 'success' && needs.generate.outputs.candidates == '0' && needs.record.result == 'success' }}
       FAILED_STAGE: >-
         ${{ needs.generate.result != 'success' && 'generation or the leak/scope gate' ||
             (needs.test.result == 'failure' || needs.test.result == 'cancelled') && 'testing' ||
@@ -267,7 +272,10 @@ jobs:
     steps:
       - name: Mark done or failed
         run: |
-          if [ "$REVIEW_RESULT" = "success" ]; then
+          if [ "$NO_CANDIDATES" = "true" ]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:failed --remove-label peaceai:running >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry."
+          elif [ "$REVIEW_RESULT" = "success" ]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:done --remove-label peaceai:running >/dev/null
           else
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:failed --remove-label peaceai:running >/dev/null
