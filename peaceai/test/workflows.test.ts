@@ -83,7 +83,8 @@ test("peace-task: serialized sweep, core env only on Job A and Job B2, Results e
   assert.match(c, /PEACEAI_RESULTS_DEPLOY_KEY/);
   for (const [name, block] of j) {
     if (name !== "generate" && name !== "regate") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
-    if (name !== "record") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
+    // M9: the flag-gated lm-fill job reads the verified model from Results (no core, no write).
+    if (name !== "record" && name !== "lm-fill") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
   }
   assert.match(j.get("review")!, /needs: \[select, generate, record\]/);
   assert.match(j.get("review")!, /if: always\(\) && needs\.record\.result == 'success' && needs\.generate\.outputs\.candidates != '0'/);
