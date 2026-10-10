@@ -32,11 +32,13 @@ const sources = sourcePaths.map((path) => {
   return { path, content, fingerprint: kernel.sourceFingerprint(path, content) };
 });
 
+const fromFile = process.env.ISSUE_JSON ? JSON.parse(readFileSync(process.env.ISSUE_JSON, "utf8")) : null;
 const task = {
-  title: process.env.ISSUE_TITLE ?? "",
-  body: process.env.ISSUE_BODY ?? "",
+  title: String(fromFile?.title ?? process.env.ISSUE_TITLE ?? ""),
+  body: String(fromFile?.body ?? process.env.ISSUE_BODY ?? ""),
 };
-const taskId = `workspace-issue-${process.env.ISSUE_NUMBER ?? "local"}`;
+const issueNumber = String(fromFile?.number ?? process.env.ISSUE_NUMBER ?? "local").replace(/[^0-9a-z-]/gi, "");
+const taskId = `workspace-issue-${issueNumber}`;
 const variants = buildVariants(task, sourcePaths);
 
 const worktree = mkdtempSync(join(tmpdir(), "peaceai-gen-"));

@@ -32,30 +32,64 @@ test("every job has timeout-minutes", () => {
   for (const f of files) for (const [name, block] of jobs(read(f))) assert.match(block, /timeout-minutes: \d+/, `${f}:${name}`);
 });
 
-test("issue text reaches steps only through env", () => {
+test("untrusted text reaches steps only through env, never inside run scripts", () => {
   for (const f of files) {
-    for (const line of read(f).split("\n")) {
+    const text = read(f);
+    for (const line of text.split("\n")) {
       if (/github\.event\.(issue|pull_request|comment)\.(title|body)|head_ref|pull_request\.head\.ref/.test(line))
-        assert.match(line, /^\s+[A-Z_]+: \$\{\{/, `${f}: ${line.trim()}`);
+        assert.match(line, /^\s+[A-Z_]+: \$\{\{|^\s+startsWith\(github\.event\.comment\.body, '\/verdict'\)$/, `${f}: ${line.trim()}`);
+    }
+    for (const block of text.split(/\n\s+run: \|?/).slice(1)) {
+      const script = block.split(/\n\s{6}- |\n {2}[a-z]/)[0]!;
+      assert.ok(!/\$\{\{\s*(github\.event|needs\.[a-z]+\.outputs\.presentation)/.test(script), `${f}: run block interpolates untrusted data`);
     }
   }
 });
 
-test("peace-task: owner/label/kill-switch gate, concurrency, core env only on Job A, no Results key", () => {
+test("peace-intake: owner, label and kill switch gate; it only queues and dispatches", () => {
+  const text = read("peace-intake.yml");
+  for (const cond of ["github.event.label.name == 'peace-task'", "github.event.issue.user.login == 'PeaceG03'", "github.event.sender.login == 'PeaceG03'", "vars.PEACEAI_ENABLED == 'true'"])
+    assert.ok(text.includes(cond), cond);
+  assert.ok(!/environment:|secrets\.|concurrency:/.test(text));
+  assert.match(text, /gh workflow run peace-task\.yml/);
+});
+
+test("peace-task: serialized sweep, core env only on Job A, Results env only on Job C, review needs Job C", () => {
   const text = read("peace-task.yml");
   const j = jobs(text);
-  assert.match(text, /concurrency:\n {2}group: peace-task/);
+  assert.match(text, /concurrency:\n {2}group: peace-task\n {2}cancel-in-progress: false/);
+  assert.match(text, /workflow_dispatch:/);
+  assert.match(text, /schedule:/);
+  assert.ok(!/^ {2}issues:/m.test(text), "no direct issue trigger");
+  assert.ok(j.get("select")!.includes("vars.PEACEAI_ENABLED == 'true'"));
   const a = j.get("generate")!;
-  for (const cond of ["github.event.label.name == 'peace-task'", "github.event.issue.user.login == 'PeaceG03'", "github.event.sender.login == 'PeaceG03'", "vars.PEACEAI_ENABLED == 'true'"])
-    assert.ok(a.includes(cond), cond);
   assert.match(a, /environment: peaceai-core/);
-  assert.ok(a.indexOf("Kill switch") >= 0 && a.indexOf("Kill switch") < a.indexOf("clone-core.sh"), `kill switch before core clone ${a.indexOf("Kill switch")} ${a.indexOf("clone-core.sh")}`);
-  assert.ok(a.indexOf("Delete core") < a.indexOf("Upload candidates"));
-  assert.ok(a.indexOf("gate.ts") < a.indexOf("Upload candidates"));
-  for (const [name, block] of j) if (name !== "generate") assert.ok(!/environment:|secrets\./.test(block), name);
-  assert.ok(!text.includes("PEACEAI_RESULTS_DEPLOY_KEY") && !text.includes("environment: peaceai-results"));
-  assert.match(j.get("test")!, /permissions:\n {6}contents: read\n/);
+  assert.ok(a.indexOf("issue-fetch.ts") < a.indexOf("clone-core.sh"), "live task check before the core clone");
+  assert.ok(a.indexOf("gate.ts") < a.indexOf("Upload candidates") && a.indexOf("Delete core") < a.indexOf("Upload candidates"));
+  const c = j.get("record")!;
+  assert.match(c, /environment: peaceai-results/);
+  assert.match(c, /PEACEAI_RESULTS_DEPLOY_KEY/);
+  for (const [name, block] of j) {
+    if (name !== "generate") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
+    if (name !== "record") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
+  }
+  assert.match(j.get("review")!, /needs: \[select, record\]\n\s+if: needs\.record\.result == 'success'/);
+  const b = j.get("test")!;
+  assert.match(b, /matrix:/);
+  assert.match(b, /chmod -R a-w node_modules peaceai/);
+  assert.ok(!/secrets\.|environment:/.test(b));
+  assert.match(j.get("finish")!, /gh workflow run peace-task\.yml/);
   assert.match(text, /retention-days: 1/);
+});
+
+test("peace-verdict: owner-only issue comments; Results env only on the record job", () => {
+  const text = read("peace-verdict.yml");
+  const j = jobs(text);
+  const parse = j.get("parse")!;
+  for (const cond of ["github.event.comment.user.login == 'PeaceG03'", "github.event.sender.login == 'PeaceG03'", "github.event.issue.pull_request == null", "contains(github.event.issue.labels.*.name, 'peace-task')"])
+    assert.ok(parse.includes(cond), cond);
+  assert.match(j.get("record")!, /environment: peaceai-results/);
+  for (const name of ["parse", "respond"]) assert.ok(!/environment:|secrets\./.test(j.get(name)!), name);
 });
 
 test("key-proof: dispatch only, owner and main only, results key in its own job", () => {
