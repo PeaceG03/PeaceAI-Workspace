@@ -8,7 +8,7 @@ import { validateResults } from "../lib/results.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { activeRanker, loadLatestModel, shadowRanking } from "../lib/ranker/pipeline.ts";
 import { buildRecords, stableJson } from "../lib/records.ts";
-import { validateRepairRecord } from "../lib/repairrecord.ts";
+import { isRepaired, validateRepairRecord, type StoredRepairRecord } from "../lib/repairrecord.ts";
 import { appendIndex, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 
 const env = (name: string) => {
@@ -39,6 +39,17 @@ const diffOf = (id: string): string => {
   const c = summary.candidates.find((x) => x.id === id);
   return c ? readFileSync(join(inDir, c.file), "utf8") : "";
 };
+// M7.1: which candidates carry a repaired diff (re-gated and used in Job B2).
+const repairIn = join(testDir, "repair");
+const repairRecords = new Map<string, StoredRepairRecord>();
+for (const c of summary.candidates) {
+  const p = join(repairIn, `${c.id}.json`);
+  if (!existsSync(p)) continue;
+  const r = JSON.parse(readFileSync(p, "utf8"));
+  if (!validateRepairRecord(r) || r.id !== c.id) throw new Error(`${c.id}: repair record failed validation`);
+  repairRecords.set(c.id, r);
+}
+const repairedIds = new Set([...repairRecords.values()].filter(isRepaired).map((r) => r.id));
 const issue = JSON.parse(readFileSync(issueFile, "utf8"));
 const issueNumber = Number(issue.number);
 // M5: the target is recorded with the task; the verdict job opens the PR there.
@@ -58,6 +69,7 @@ const records = buildRecords(
   results,
   randomBytes(16).toString("hex"),
   diffOf,
+  repairedIds,
 );
 
 // M3 shadow ranking: recorded next to the deterministic ranking, before any review output. Never shown.
@@ -74,17 +86,10 @@ writeNew(join(dir, "task.json"), stableJson(records.task));
 for (const c of summary.candidates) writeNew(join(dir, c.file), readFileSync(join(inDir, c.file), "utf8"));
 writeNew(join(dir, "ranking.json"), stableJson(records.ranking));
 // M7: repair iterations (and the diff as generated, when a repaired diff replaced it), recorded with the task.
-let repairRecords = 0;
-const repairIn = join(testDir, "repair");
-for (const c of summary.candidates) {
-  const p = join(repairIn, `${c.id}.json`);
-  if (!existsSync(p)) continue;
-  const r = JSON.parse(readFileSync(p, "utf8"));
-  if (!validateRepairRecord(r) || r.id !== c.id) throw new Error(`${c.id}: repair record failed validation`);
-  writeNew(join(dir, "repair", `${c.id}.json`), stableJson(r));
-  const orig = join(repairIn, `${c.id}.original.diff`);
-  if (existsSync(orig)) writeNew(join(dir, "repair", `${c.id}.original.diff`), readFileSync(orig, "utf8"));
-  repairRecords++;
+for (const [id, r] of repairRecords) {
+  writeNew(join(dir, "repair", `${id}.json`), stableJson(r));
+  const orig = join(repairIn, `${id}.original.diff`);
+  if (existsSync(orig)) writeNew(join(dir, "repair", `${id}.original.diff`), readFileSync(orig, "utf8"));
 }
 appendIndex(resultsRoot, { type: "task", issue: issueNumber, runId, at: recordedAt, test: records.task.test, heldOut: records.task.heldOut });
 writeSummary(resultsRoot);
@@ -93,4 +98,4 @@ const eligible = records.ranking.presentation.length;
 const outputs = [`eligible=${eligible}`, `presentation=${JSON.stringify(records.ranking.presentation)}`];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, outputs.join("\n") + "\n");
 const eligibleAll = records.ranking.candidates.filter((c) => c.eligible).length;
-console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"} repair_records=${repairRecords}`);
+console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"} repair_records=${repairRecords.size} repaired=${repairedIds.size}`);

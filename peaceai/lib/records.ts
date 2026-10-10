@@ -62,6 +62,8 @@ export interface RankedCandidate {
   editKey?: string | null;
   /** M4.1: id of the presented candidate making the same edit; null when this one stands for its edit. */
   duplicateOf?: string | null;
+  /** M7.1: the recorded diff is the test-and-fix loop's repaired diff. Absent on older records (= false). */
+  repaired?: boolean;
 }
 
 export interface EditGroup {
@@ -153,6 +155,8 @@ export function buildRecords(
   seed: string,
   /** Candidate diff by id. When given (Job C always does), eligible candidates are deduplicated by edit. */
   diffOf?: (id: string) => string,
+  /** M7.1: candidates whose final diff is a repaired one. When given, every candidate records `repaired`. */
+  repairedIds?: ReadonlySet<string>,
 ): { task: TaskRecord; ranking: RankingRecord } {
   const requiresTests = taskRequiresTests(`${task.title}\n${task.body}`);
   const byId = new Map(results.map((r) => [r.id, r]));
@@ -193,6 +197,7 @@ export function buildRecords(
           duplicateOf: keyOf.has(s.id) && keyOf.get(s.id)!.representative !== s.id ? keyOf.get(s.id)!.representative : null,
         }
       : {}),
+    ...(repairedIds ? { repaired: repairedIds.has(s.id) } : {}),
   }));
   return {
     task: {

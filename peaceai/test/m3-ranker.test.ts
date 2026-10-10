@@ -89,7 +89,7 @@ test("features: deterministic, versioned width, values from records and diffs on
   const b = extractFeatures(rec.task, rec.ranking.candidates, diffs);
   assert.deepEqual(a, b);
   assert.equal(FEATURE_COUNT, FEATURE_NAMES.length);
-  assert.equal(FEATURE_COUNT, 19 + EDIT_BUCKETS + KEYWORD_BUCKETS);
+  assert.equal(FEATURE_COUNT, 20 + EDIT_BUCKETS + KEYWORD_BUCKETS); // M7.1: + repaired
   for (const f of a) assert.equal(f.x.length, FEATURE_COUNT);
   const get = (id: string, name: string) => a.find((f) => f.id === id)!.x[FEATURE_NAMES.indexOf(name)];
   assert.equal(get("candidate-1", "files_touched"), 1);

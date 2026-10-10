@@ -6,7 +6,8 @@ import { parseDiff } from "../diff.ts";
 import type { RankedCandidate, TaskRecord } from "../records.ts";
 import { TEST_FILE } from "../scope.ts";
 
-export const FEATURE_VERSION = "features:v1";
+// v2 (M7.1): adds `repaired` (the recorded diff came from the test-and-fix loop).
+export const FEATURE_VERSION = "features:v2";
 export const EDIT_BUCKETS = 32;
 export const KEYWORD_BUCKETS = 16;
 
@@ -30,6 +31,7 @@ const NUMERIC = [
   "is_smallest",
   "diff_ratio_to_smallest",
   "requires_tests_x_has_tests",
+  "repaired",
 ] as const;
 
 export const FEATURE_NAMES: readonly string[] = [
@@ -86,6 +88,7 @@ export function extractFeatures(
       is_smallest: c.diffLines === minLines ? 1 : 0,
       diff_ratio_to_smallest: c.diffLines / minLines,
       requires_tests_x_has_tests: task.requiresTests && c.newTestFiles > 0 ? 1 : 0,
+      repaired: c.repaired === true ? 1 : 0,
     };
     const x = NUMERIC.map((name) => v[name]!);
     const edits = new Array<number>(EDIT_BUCKETS).fill(0);

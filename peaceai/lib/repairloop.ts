@@ -26,7 +26,7 @@ export interface IterationRecord {
   newTests: boolean;
   errorCount: number;
   errors: RepairError[];
-  applied: { rule: RuleId; path: string; line: number }[];
+  applied: { rule: RuleId; path: string; line: number; placeholder?: true }[];
 }
 
 export interface LoopResult {
@@ -44,6 +44,8 @@ export interface LoopIO {
   now: () => number;
 }
 
+// M7.1: "green" is decided only by the exit-code booleans the harness captured (Evaluation.typecheck,
+// .originalSuite, .newTests); parsed tsc/TAP text (Evaluation.errors) only chooses repairs, never green.
 const green = (e: Evaluation) => e.typecheck && e.originalSuite && e.newTests;
 
 function record(round: number, e: Evaluation, applied: IterationRecord["applied"]): IterationRecord {
@@ -75,7 +77,7 @@ export function runRepairLoop(io: LoopIO, budget: Budget = DEFAULT_BUDGET): Loop
     const applied: IterationRecord["applied"] = [];
     for (const edit of edits) {
       if (!io.apply(edit)) return { stop: "EDIT_REFUSED", rounds: round - 1, changed, iterations };
-      applied.push({ rule: edit.rule, path: edit.path, line: edit.line });
+      applied.push({ rule: edit.rule, path: edit.path, line: edit.line, ...(edit.placeholder ? { placeholder: true as const } : {}) });
       changed = true;
     }
     if (io.now() - start >= budget.deadlineMs) {

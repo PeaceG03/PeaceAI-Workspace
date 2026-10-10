@@ -110,6 +110,19 @@ Repair rules (PeaceAI's own, deterministic; no model of any kind):
 | `ALIGN_ADDED_CONSTANT` | failing equality assertion | set an exported constant the candidate added to the literal the test expects |
 
 Rules refuse when a name is ambiguous, the position does not hold that name, or types don't line up.
+
+M7.1 guarantees:
+
+- **Green is the exit code.** The loop stops green only on the harness-captured exit codes of `tsc` and
+  the two test runs (`runCandidateCapture` → `Evaluation.typecheck/originalSuite/newTests`); the parsed
+  text only chooses repairs. The recorded pass/fail always comes from the final passes, again by exit
+  code, written by the harness. Tests that print `ok`/`# pass` and exit non-zero stay red.
+- **Dedupe is on the final set.** Job C and the review read Job B2's output, so two candidates that
+  become the same edit after repair are one distinct edit for the review, training and agreement.
+- **Flags.** A re-gated repair that inserted a placeholder value (`ADD_MISSING_REQUIRED_PROPERTY`) gets
+  one neutral line in the blind review: "Note: placeholder value added by repair." Each candidate in
+  `ranking.json` carries `repaired: true|false`, and the ranker has a `repaired` feature
+  (`features:v2`; a `features:v1` model is ignored until the next retrain).
 **Existing tests are never edited** (a fix that would need one ends the loop). Only a loop that ends green
 yields a repaired candidate; otherwise the candidate is tested exactly as generated. A repaired diff goes
 through the scope and personal-info gates in Job B, then the core-text gate in Job B2, and is shown only if

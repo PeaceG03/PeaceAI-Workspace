@@ -67,7 +67,10 @@ function runCandidate(cwd: string, command: string, args: string[], timeout = ST
   return result.status === 0;
 }
 
-/** Candidate-controlled command whose output the harness parses (M7 repair). Same sandbox; output capped. */
+/**
+ * Candidate-controlled command whose output the harness parses (M7 repair). Same sandbox; output capped.
+ * `ok` is the exit code the harness captured, never anything the output says; the text only picks repairs.
+ */
 const MAX_CAPTURE = 2 * 1024 * 1024;
 function runCandidateCapture(cwd: string, command: string, args: string[], timeout = STEP_TIMEOUT_MS): { ok: boolean; out: string } {
   const envArgs = Object.entries(cleanEnv).map(([k, v]) => `${k}=${v}`);
