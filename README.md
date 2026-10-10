@@ -31,9 +31,12 @@ Reply on the issue (owner only):
 - `/verdict <letter> right`: that candidate is correct; it becomes your pick and a PR is opened for it.
   If an open PeaceAI PR already holds that candidate, no second PR is opened. If an open PeaceAI PR
   holds a different candidate, it is closed with a short comment and the new candidate's PR is opened.
-- `/verdict <letter> wrong` or `/verdict <letter> unsure`: a label for that candidate (not a pick).
+- `/verdict <letter> wrong`: a label for that candidate (not a pick).
 - `/verdict none wrong`: no candidate is acceptable (a pick of "none"); any open PeaceAI PR for the issue is closed.
-- `/verdict <letter> unsure` / `/verdict none unsure`: withdraws your earlier verdict (open PRs are left for you).
+- `/verdict none unsure`, or `/verdict <letter> unsure` naming your current pick (the standing
+  `<letter> right`): withdraws your verdict. Any open PeaceAI PR for the issue gets the
+  `verdict-withdrawn` label and a "do not merge" comment; picking that candidate again removes it.
+- Any other `/verdict <letter> unsure`: a label for that candidate only; your pick still counts.
 
 Malformed commands get a short usage reply. Verdicts are appended to Results.
 
@@ -41,8 +44,10 @@ Malformed commands get a short usage reply. Verdicts are appended to Results.
 `effectiveVerdict` (`peaceai/lib/records.ts` for rows, `peaceai/lib/store.ts` for an issue), applying
 rows in time order (then comment id), using only the issue's latest attempt:
 
-- `unsure` withdraws everything before it. If the latest verdict is `unsure`, the issue is excluded
-  from training and agreement (`A right` then `A unsure` = excluded) until a new verdict;
+- `none unsure`, or `<letter> unsure` on the standing `right` pick, withdraws: the issue is excluded
+  from training and agreement until the next decisive verdict (`A right`, `A unsure` = excluded;
+  `A right`, `none unsure` = excluded; then `B right` counts B);
+- any other `<letter> unsure` is a label only (`A right`, `C unsure` = A still counted);
 - training uses the latest standing verdict (`latest`);
 - agreement uses the latest standing decisive verdict, `<letter> right` or `none wrong` (`pick`).
 
@@ -90,7 +95,7 @@ authoritative. A CPU ranker is trained and recorded in **shadow** mode:
   candidate, 2+ eligible, not test, not held out, not withdrawn. Pairs: Peace's pick over each other
   eligible candidate. Both sources by default; `PEACEAI_TRAIN_SOURCES` (`peace,builder`) filters and
   `PEACEAI_SOURCE_WEIGHTS` (e.g. `builder=0.5`) weights; metrics are split by source.
-- **`peace-train`** (dispatch, and after every recorded verdict; Results key only) writes
+- **`peace-train`** (dispatch, and after every recorded verdict except on `[test]` issues; Results key only) writes
   `models/<version>/metrics.json`, `model.json` (only when trained) and `models/latest.json` to Results.
   Fewer than 10 trainable tasks: "insufficient data", no model. Held-out top-pick agreement (model vs
   baseline, 2+ eligible only) below 5 tasks is also reported as "insufficient data".

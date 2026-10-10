@@ -61,6 +61,8 @@ jobs:
       label: ${{ steps.record.outputs.label }}
       verdict: ${{ steps.record.outputs.verdict }}
       candidate: ${{ steps.record.outputs.candidate }}
+      withdrew: ${{ steps.record.outputs.withdrew }}
+      test: ${{ steps.record.outputs.test }}
       base_sha: ${{ steps.record.outputs.base_sha }}
       chosen: ${{ steps.record.outputs.chosen_diff != '' }}
     steps:
@@ -115,6 +117,7 @@ jobs:
       LABEL: ${{ needs.record.outputs.label }}
       VERDICT: ${{ needs.record.outputs.verdict }}
       CANDIDATE: ${{ needs.record.outputs.candidate }}
+      WITHDREW: ${{ needs.record.outputs.withdrew }}
     steps:
       - name: Not recorded
         if: needs.record.outputs.status != 'recorded'
@@ -142,7 +145,7 @@ jobs:
         id: guard
         if: needs.record.outputs.status == 'recorded'
         run: |
-          PR_LIST_JSON="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName)"
+          PR_LIST_JSON="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,headRefName,labels)"
           export PR_LIST_JSON
           tools/node_modules/.bin/tsx tools/peaceai/bin/pr-guard.ts
       - name: Close stale PeaceAI PRs for this issue
@@ -154,6 +157,29 @@ jobs:
             case "$pr" in *[!0-9]*) echo "bad PR number"; exit 1 ;; esac
             gh pr close "$pr" --repo "$GITHUB_REPOSITORY" --delete-branch \
               --comment "Superseded: a later verdict on #${ISSUE_NUMBER} no longer counts this candidate."
+          done
+      - name: Mark PRs whose verdict was withdrawn
+        if: steps.guard.outputs.mark != ''
+        env:
+          MARK: ${{ steps.guard.outputs.mark }}
+        run: |
+          gh label create verdict-withdrawn --repo "$GITHUB_REPOSITORY" --color d93f0b --force \
+            --description "No verdict backs this PeaceAI PR anymore; do not merge" >/dev/null
+          for pr in $MARK; do
+            case "$pr" in *[!0-9]*) echo "bad PR number"; exit 1 ;; esac
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --add-label verdict-withdrawn >/dev/null
+            gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" \
+              --body "No verdict backs this PR anymore (withdrawn on #${ISSUE_NUMBER}). Do not merge it."
+          done
+      - name: Unmark PRs a verdict backs again
+        if: steps.guard.outputs.unmark != ''
+        env:
+          UNMARK: ${{ steps.guard.outputs.unmark }}
+        run: |
+          for pr in $UNMARK; do
+            case "$pr" in *[!0-9]*) echo "bad PR number"; exit 1 ;; esac
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --remove-label verdict-withdrawn >/dev/null
+            gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "A verdict on #${ISSUE_NUMBER} backs this PR again."
           done
       - name: Reply
         if: needs.record.outputs.status == 'recorded'
@@ -193,7 +219,8 @@ jobs:
   train:
     name: retrain the shadow ranker
     needs: [record]
-    if: needs.record.outputs.status == 'recorded'
+    # Verdicts on [test] issues never reach training, so they do not retrain.
+    if: needs.record.outputs.status == 'recorded' && needs.record.outputs.test != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
