@@ -1,0 +1,11 @@
+# Everything is owned by the repository owner.
+* @PeaceG03
+
+# Workflows, automation and build configuration.
+/.github/ @PeaceG03
+/.github/workflows/ @PeaceG03
+/.github/CODEOWNERS @PeaceG03
+/peaceai/ @PeaceG03
+/package.json @PeaceG03
+/package-lock.json @PeaceG03
+/tsconfig.json @PeaceG03
