@@ -20,10 +20,11 @@ const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
 const BASE = "b".repeat(40);
 
-// Synthetic diffs: candidate-1 is a tiny source-only change; candidate-2 adds the helper and a test file.
+// Synthetic diffs: candidate-1 is a tiny source-only change; candidate-2 is a different (distinct, M4.1)
+// source edit plus a test file.
 const smallDiff = "diff --git a/src/text.ts b/src/text.ts\n--- a/src/text.ts\n+++ b/src/text.ts\n@@ -1,1 +1,2 @@\n x\n+export const a = 1;\n";
 const testedDiff =
-  smallDiff +
+  smallDiff.replace("+export const a = 1;\n", "+export const a = 1;\n+export const b = 2;\n") +
   "diff --git a/src/text.a.test.ts b/src/text.a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/text.a.test.ts\n@@ -0,0 +1,4 @@\n" +
   '+import test from "node:test";\n+test("a", () => {\n+  assert.equal(a, 1);\n+});\n';
 const sc = (id: string, lines: number, t: string[]): SummaryCandidate => ({ id, file: `candidates/${id}.diff`, transformations: t, operationId: null, diffBytes: lines * 20, diffLines: lines });
@@ -101,7 +102,7 @@ test("features: deterministic, versioned width, values from records and diffs on
   assert.equal(get("candidate-2", "is_smallest"), 0);
   assert.equal(get("candidate-2", "diff_ratio_to_smallest"), 4);
   assert.equal(get("candidate-2", "requires_tests_x_has_tests"), 1);
-  assert.equal(get("candidate-2", "log_added"), Math.log1p(5));
+  assert.equal(get("candidate-2", "log_added"), Math.log1p(6));
   assert.equal(get("candidate-1", "edit_count"), 1);
   assert.ok(FEATURE_NAMES.every((n) => /^[a-z_0-9]+$/.test(n) && !/alpha|beta/i.test(n)));
   // Missing diff (e.g. absent file) degrades to zero diff-derived counts, never throws.
