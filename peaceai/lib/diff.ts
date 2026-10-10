@@ -68,3 +68,8 @@ export function parseDiff(text: string): DiffFile[] {
   }
   return files;
 }
+
+/** Changed-line count used for candidate summaries (same rule as generation). */
+export function countDiffLines(diff: string): number {
+  return diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length;
+}

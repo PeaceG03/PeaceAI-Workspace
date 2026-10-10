@@ -243,8 +243,8 @@ test("workflow: later jobs only ever see a confirmed-public target, re-checked b
   const task = readFileSync(".github/workflows/peace-task.yml", "utf8");
   assert.match(task, /issue: \$\{\{ steps\.target\.outputs\.run == 'true' && steps\.pick\.outputs\.issue \|\| '' \}\}/);
   assert.match(task, /if: needs\.select\.outputs\.issue != '' && vars\.PEACEAI_ENABLED == 'true'/);
-  // Re-checks: Job A, Job B, review.
-  assert.equal(task.match(/peaceai\/bin\/target-check\.ts/g)?.length, 4);
+  // Re-checks: select's decision is re-confirmed in Job A, Job B, Job B2 (M7, before target content moves) and review.
+  assert.equal(task.match(/peaceai\/bin\/target-check\.ts/g)?.length, 5);
   assert.match(task, /Re-check the target is public before posting its diffs/);
   // The force switch can only make a run fail closed.
   assert.match(task, /PEACEAI_FORCE_VISIBILITY_FAIL: \$\{\{ inputs\.force_visibility_fail == true \}\}/);

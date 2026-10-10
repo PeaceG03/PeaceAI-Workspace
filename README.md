@@ -18,8 +18,12 @@ Public workspace where PeaceAI attempts small coding tasks on GitHub Actions, wi
    model), indexes the target's in-scope files (symbols and keywords, in memory), and generates up to five
    candidate diffs. The leak/scope gate must pass before upload; the kernel checkout is always deleted.
 4. **Job B (test)** runs one matrix job per candidate on a fresh runner with read-only tools and no
-   secrets: the original suite alone (new test files removed), then the new tests alone. Candidate
-   code runs only as the unprivileged `peaceai-cand` user (see *Tamper-proof results*).
+   secrets. A candidate that fails type checking or tests first goes through the **test-and-fix loop**
+   (M7, below). Then the final passes: the original suite alone (new test files removed), then the new
+   tests alone. Candidate code runs only as the unprivileged `peaceai-cand` user (see *Tamper-proof
+   results*).
+   **Job B2 (re-gate)** clones the core read-only only when a candidate was repaired, runs the same
+   leak/scope gate as Job A on each repaired diff, deletes the core, and publishes the final candidate set.
 5. **Job C (record)** writes the task, every candidate diff, both test passes, the scores, eligibility
    and the blind ranking to the private Results repository, and commits it **before** anything is
    shown. If the task asks for tests, candidates without a new test are rejected before ranking.
@@ -78,12 +82,49 @@ when the task is picked and stored as `source` (`peace` | `builder`) in `task.js
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.
 
+## Test-and-fix loop (M7)
+
+Inside Job B, for each candidate, within a budget (4 repair rounds, 5 minutes):
+
+1. run `tsc --pretty false` and, when it type-checks, the original suite and the new tests with the TAP
+   reporter, all as the sandbox user, output captured by the harness (`peaceai/bin/test-candidates.ts`);
+2. parse the output into errors (`peaceai/lib/repair.ts`): TS code, file, position, the name, suggestion,
+   type or literal it is about; failing assertions with expected vs actual; and sort them
+   deterministically (tsc before tests, then kind, file, line);
+3. map each error to the first applicable rule, at most one edit per file per round, and the harness
+   writes it (the sandbox user cannot write the tree);
+4. repeat until green, no rule applies, the same errors come back (no progress), an edit is refused, or
+   the budget runs out (`peaceai/lib/repairloop.ts`).
+
+Repair rules (PeaceAI's own, deterministic; no model of any kind):
+
+| Rule | Error | Edit |
+|---|---|---|
+| `ADD_MISSING_IMPORT` | TS2304/TS2552 unknown name | import it from its single exported definition in the symbol index (`import type` for types) |
+| `FIX_NAME_TYPO` | TS2552 with a suggestion | rename the token to the suggestion |
+| `FIX_PROPERTY_TYPO` | TS2551, or TS2339 on a named type | rename to the suggestion, or to the single closest member of that type in the index |
+| `FIX_IMPORT_NAME_TYPO` | TS2724 | rename the imported name to the suggestion |
+| `ADD_FIELD_TO_TYPE` | TS2353 unknown literal property | add `name?: string/number/boolean` to the named type (style kept) |
+| `ADD_MISSING_REQUIRED_PROPERTY` | TS2741 in a source literal | add the field with its type's default (`""`, `0`, `false`, `[]`, `null`, first literal) |
+| `ADD_UNION_LITERAL` | TS2322/TS2345 literal not in a literal union | add the literal to the union |
+| `ALIGN_ADDED_CONSTANT` | failing equality assertion | set an exported constant the candidate added to the literal the test expects |
+
+Rules refuse when a name is ambiguous, the position does not hold that name, or types don't line up.
+**Existing tests are never edited** (a fix that would need one ends the loop). Only a loop that ends green
+yields a repaired candidate; otherwise the candidate is tested exactly as generated. A repaired diff goes
+through the scope and personal-info gates in Job B, then the core-text gate in Job B2, and is shown only if
+both pass (its transformations gain `TEST_FIX_LOOP`); otherwise the candidate falls back to the diff as
+generated and its round-0 results. Every round (errors, rules applied, status) is recorded in Results
+under `repair/`. `PEACEAI_REPAIR=off` disables the loop.
+
 ## Results layout (private repository)
 
 ```
 tasks/<issue>/<run id>/task.json        task text, test/held-out flags, tests-required flag
 tasks/<issue>/<run id>/ranking.json     per-candidate tests, scores, eligibility, blind ranking, presentation
-tasks/<issue>/<run id>/candidates/*.diff
+tasks/<issue>/<run id>/candidates/*.diff      the diff as shown (repaired when the loop repaired it)
+tasks/<issue>/<run id>/repair/<id>.json       M7 repair rounds: errors, rules applied, stop reason, re-gate
+tasks/<issue>/<run id>/repair/<id>.original.diff  the diff as generated, when a repair replaced it
 tasks/<issue>/<run id>/verdicts/<comment id>.json
 index.jsonl                             append-only log of task records and verdicts
 summary.json                            derived: per-task entries, agreement, held-out agreement
