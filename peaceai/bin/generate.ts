@@ -1,11 +1,13 @@
 // Job A: generate candidate diffs with the native kernel bundle. Prints counts only.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
+import { applyRule } from "../lib/learned.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { indexBoost, selectSources } from "../lib/sources.ts";
 import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "../lib/symbols.ts";
@@ -167,6 +169,41 @@ outer: for (const variant of planSteps ? [] : variants) {
     });
   }
 }
+// M8: learned edit rules. Public rules live in this repository, core-mined rules in core. Each one runs
+// only when the hash-pinned approved list names its id with the exact content hash; anything else, or a
+// missing/corrupt list, refuses it (no candidate). The list path is fixed except for local tests.
+const tooling = resolve(import.meta.dirname, "../..");
+const readSpecs = (dir: string): unknown[] =>
+  existsSync(dir)
+    ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => {
+        try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return { id: f }; }
+      })
+    : [];
+const specs = [
+  ...readSpecs(process.env.PEACEAI_RULES_DIR ?? join(tooling, "peaceai/rules/learned")),
+  ...(process.env.PEACEAI_CORE_DIR ? readSpecs(join(process.env.PEACEAI_CORE_DIR, "packages/coding-kernel/learned-rules")) : []),
+];
+const admissions = admitRules(specs, loadApprovedList(process.env.PEACEAI_APPROVED_LIST ?? join(tooling, "peaceai/rules/approved.json")));
+let learnedCandidates = 0;
+for (const a of planSteps ? [] : admissions) {
+  if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
+  const edit = applyRule(a.spec, objectiveText, candidatesForContext);
+  if (!edit) continue;
+  const current = candidatesForContext.find((f) => f.path === edit.path)!;
+  const diff = toDiff([{ operation: "EDIT_FILE", path: edit.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content: edit.content, transformation: `LEARNED_${a.spec.kind}` }]);
+  if (!diff) continue;
+  const key = createHash("sha256").update(diff).digest("hex");
+  if (seen.has(key)) continue;
+  seen.add(key);
+  if (checkCandidateScope(parseDiff(diff), baseFiles, scope).length > 0) {
+    scopeRejected += 1;
+    continue;
+  }
+  learnedCandidates += 1;
+  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}` });
+}
+const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
+console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
 git(repo, "worktree", "remove", "--force", worktree);
 
 mkdirSync(join(outDir, "candidates"), { recursive: true });

@@ -1,0 +1,84 @@
+name: rule-approval
+
+# M8 (installed in PeaceAI-Results from PeaceAI-Workspace peaceai/results-repo/). Peace approves a core-mined
+# rule with `/approve-rule <hash>` on its private proposal issue here. This validates the comment (author
+# PeaceG03/OWNER, exact command, hash equals the proposal marker and the spec in the issue) and commits an
+# attestation citing the comment. PeaceAI-Workspace's peace-approve-rule sync then checks the core spec hash
+# and lands the list entry. Nothing here posts /approve-rule or edits the Workspace list.
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: rule-approval
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    if: >-
+      github.repository == 'PeaceG03/PeaceAI-Results' &&
+      github.event.issue.pull_request == null &&
+      contains(github.event.issue.labels.*.name, 'rule-proposal') &&
+      github.event.comment.user.login == 'PeaceG03' &&
+      startsWith(github.event.comment.body, '/approve-rule')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Validate the approval and write the attestation
+        id: attest
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
+          RESULTS_ROOT: ${{ github.workspace }}
+        run: node .github/rule-approval/rule-approval.mjs
+      - name: Commit the attestation (cites the comment)
+        if: steps.attest.outputs.ok == 'true'
+        env:
+          SHA: ${{ steps.attest.outputs.sha }}
+          RULE: ${{ steps.attest.outputs.rule }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+        run: |
+          set -euo pipefail
+          git add "rules/approvals/${SHA}.json"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "approve learned rule ${RULE} (${SHA})" -m "Approval: ${COMMENT_URL}" -m "Written by the rule-approval workflow from the comment above."
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          for i in 1 2 3 4 5; do
+            if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push -q origin HEAD:main; then exit 0; fi
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" pull -q --rebase origin main
+          done
+          exit 1
+      - name: Report on the proposal issue
+        if: always()
+        env:
+          OK: ${{ steps.attest.outputs.ok }}
+          REASON: ${{ steps.attest.outputs.reason }}
+        run: |
+          case "$REASON" in ''|[A-Z_]*) ;; *) REASON=UNKNOWN ;; esac
+          if [ "$OK" = "true" ] && [ "${{ job.status }}" = "success" ]; then
+            body="Approval attested in Results. PeaceAI-Workspace's hourly peace-approve-rule sync verifies the core spec hash and lands the list entry citing this comment."
+          else
+            body="Approval not recorded (${REASON:-NOT_LANDED}). Usage: \`/approve-rule <sha256 from this proposal>\`, by PeaceG03."
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body"

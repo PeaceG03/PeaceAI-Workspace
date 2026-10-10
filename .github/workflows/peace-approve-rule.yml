@@ -1,0 +1,169 @@
+name: peace-approve-rule
+
+# M8: the ONLY writer of peaceai/rules/approved.json (also under CODEOWNERS).
+#  - workspace: Peace's `/approve-rule <hash>` comment on a Workspace rule-proposal issue (public rules).
+#  - results-read + results-write: approvals of core-mined rules happen on private PeaceAI-Results issues;
+#    the Results workflow (peaceai/results-repo/) validates the comment there and writes an attestation.
+#    This sync reads the attestations, checks the core spec hash against a core checkout, and lands entries
+#    that cite the Results comment. No core text leaves core or Results.
+# Every list change lands as a PR whose commit message cites the approval comment(s), after required checks.
+on:
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-approve-rule
+  cancel-in-progress: false
+
+jobs:
+  workspace:
+    name: approve a public rule (Workspace comment)
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.event.issue.pull_request == null &&
+      contains(github.event.issue.labels.*.name, 'rule-proposal') &&
+      github.event.comment.user.login == 'PeaceG03' &&
+      startsWith(github.event.comment.body, '/approve-rule')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Validate the approval comment against the proposal and the spec
+        id: approve
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
+          PEACEAI_MESSAGE_FILE: ${{ runner.temp }}/approval-message.txt
+        run: ./node_modules/.bin/tsx peaceai/bin/approve-rule.ts workspace
+      - name: Land the list change (PR, required checks, squash merge)
+        id: land
+        if: steps.approve.outputs.changed == 'true'
+        run: ./peaceai/bin/approve-rule-pr.sh "$RUNNER_TEMP/approval-message.txt"
+      - name: Report on the proposal issue
+        if: always()
+        env:
+          OK: ${{ steps.approve.outputs.ok }}
+          REASON: ${{ steps.approve.outputs.reason }}
+          LANDED: ${{ steps.land.outcome }}
+          MERGE_SHA: ${{ steps.land.outputs.merge_sha }}
+        run: |
+          case "$REASON" in ''|[A-Z_]*) ;; *) REASON=UNKNOWN ;; esac
+          if [ "$OK" = "true" ] && [ "$LANDED" = "success" ]; then
+            body="Approval recorded: the rule is on the approved list (merge ${MERGE_SHA})."
+          elif [ "$OK" = "true" ] && [ "$REASON" = "NOTHING_NEW" ]; then
+            body="Nothing to record."
+          else
+            body="Approval not recorded (${REASON:-NOT_LANDED}). Usage: \`/approve-rule <sha256 from this proposal>\`, by PeaceG03."
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body"
+
+  results-read:
+    name: read Results approval attestations
+    if: github.event_name != 'issue_comment' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Clone Results (read only use) and collect attestations with their commits
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --no-tags git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/results" >/dev/null 2>&1
+          mkdir -p "$RUNNER_TEMP/attestations"
+          for f in "$RUNNER_TEMP"/results/rules/approvals/*.json; do
+            [ -e "$f" ] || continue
+            name="$(basename "$f")"
+            case "$name" in [0-9a-f]*.json) ;; *) continue ;; esac
+            cp "$f" "$RUNNER_TEMP/attestations/$name"
+            commit="$(git -C "$RUNNER_TEMP/results" log -1 --format=%H -- "rules/approvals/$name")"
+            message="$(git -C "$RUNNER_TEMP/results" log -1 --format=%B "$commit")"
+            COMMIT="$commit" MESSAGE="$message" node -e 'process.stdout.write(JSON.stringify({commit:process.env.COMMIT,message:process.env.MESSAGE}))' > "$RUNNER_TEMP/attestations/${name%.json}.commit.json"
+          done
+          rm -rf "$RUNNER_TEMP/results"
+          echo "attestations=$(find "$RUNNER_TEMP/attestations" -name '*.commit.json' | wc -l)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: peaceai-attestations
+          path: ${{ runner.temp }}/attestations
+          retention-days: 1
+          if-no-files-found: ignore
+
+  results-write:
+    name: sync Results approvals into the list
+    needs: results-read
+    if: github.event_name != 'issue_comment' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: peaceai-core
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: peaceai-attestations
+          path: ${{ runner.temp }}/attestations
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Verify attestations against the core spec hashes
+        id: approve
+        env:
+          PEACEAI_ATTESTATIONS_DIR: ${{ runner.temp }}/attestations
+          PEACEAI_CORE_DIR: ${{ runner.temp }}/peaceai-core
+          PEACEAI_MESSAGE_FILE: ${{ runner.temp }}/approval-message.txt
+        run: ./node_modules/.bin/tsx peaceai/bin/approve-rule.ts sync
+      - name: Delete core
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.*
+      - name: Land the list change (PR, required checks, squash merge)
+        if: steps.approve.outputs.changed == 'true'
+        run: ./peaceai/bin/approve-rule-pr.sh "$RUNNER_TEMP/approval-message.txt"

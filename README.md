@@ -130,6 +130,64 @@ both pass (its transformations gain `TEST_FIX_LOOP`); otherwise the candidate fa
 generated and its round-0 results. Every round (errors, rules applied, status) is recorded in Results
 under `repair/`. `PEACEAI_REPAIR=off` disables the loop.
 
+## Learned edit types (M8)
+
+PeaceAI mines repeating edit shapes from Builder's commits and proposes them as new edit rules. Peace
+approves each rule; until then Job A refuses it.
+
+**Mining** (`peaceai/lib/mine.ts`, `peaceai/lib/minegit.ts`, `peaceai/bin/mine-rules.ts`): for every
+non-merge commit (at most 25 changed source files), each small `-U0` hunk (<= 12 added, <= 6 removed lines,
+non-test `.ts/.tsx`) is matched against the post-image TypeScript AST. Additive shapes are the maximal nodes
+wholly inside the added lines (enum member, switch case, object property, array item, union member, type
+field, import, exported constant, guard clause, try/catch, log line, env option). Modification shapes compare
+the before-lines: `E` becoming `E ?? literal` (NULLISH_DEFAULT), a parameter gaining a default, and a line
+whose tokens are identical except one literal (LITERAL_CHANGE). Each shape gets hunks, distinct commits,
+distinct files, three example commits and style counts. Shapes an edit family already covers are skipped.
+A proposal needs >= 3 distinct commits in >= 2 files and a kind the rule engine can execute. Deterministic;
+no model of any kind.
+
+**Rules** (`peaceai/lib/learned.ts`): a JSON spec (`peaceai-learned-rule:v1`) with the kind, the learned
+parameters (majority styles, allowed contexts and literal kinds), the trigger phrase and the frequency
+counts, and no code. Its content hash is SHA-256 over canonical JSON (sorted keys). Kinds:
+
+| Kind | Task phrasing |
+|---|---|
+| `SET_LITERAL` | ``set `NAME` to VALUE`` or ``set `NAME` in `src/file.ts` to VALUE`` (unique const or object property) |
+| `ADD_SWITCH_CASE` | ``add case "label" returning VALUE to the switch in `fn` `` |
+| `ADD_NULLISH_DEFAULT` | ``default `obj.field` to VALUE in `fn` `` |
+
+A rule produces one candidate only when the edit site is unique. Its candidate goes through the same scope
+check, Job B tests, the M7 repair loop, Job B2 and the leak/core-text gates as every other candidate.
+
+**Where they live.** Public rules (mined from PeaceSTOCKS and this repository) are in
+`peaceai/rules/learned/`; their proposals are Workspace issues labelled `rule-proposal`, with links only,
+after `peaceai/bin/proposal-gate.ts` (core text, core paths, personal info). Core-mined rules stay in core
+(`packages/coding-kernel/learned-rules/`), and their proposals, which quote core hunks, are private
+PeaceAI-Results issues.
+
+**Approval.** `peaceai/rules/approved.json` (hash-pinned, CODEOWNERS) lists `id`, `sha256` and the approval
+source (comment URL, id, issue, author PeaceG03, time; Results approvals also the attestation commit). Only
+`.github/workflows/peace-approve-rule.yml` writes it:
+
+- Workspace: Peace comments exactly `/approve-rule <sha256>` on the proposal issue. The workflow checks
+  the author (PeaceG03, OWNER), the exact command, the issue label and marker, and that the spec file on
+  `main` hashes to that value. It then commits only the list on a branch with a message citing the comment,
+  opens a PR, runs the required checks and squash-merges.
+- Results: the same comment on the private issue triggers the Results workflow (canonical copy in
+  `peaceai/results-repo/`). It validates the comment against the spec in the issue and commits
+  `rules/approvals/<sha256>.json` citing the comment. The hourly sync here reads those attestations,
+  checks the core spec file hashes to them, and lands the entries the same way. No core text leaves core
+  or Results.
+
+Agents never post `/approve-rule` and never edit the list. Agents push as PeaceG03, so identity cannot
+tell us apart; traceability to Peace's comment is the control. The required `tamper-proof` check runs
+`peaceai/bin/check-approved-list.ts`: every Workspace entry must resolve to that exact comment and spec hash.
+
+**Enforcement** (`peaceai/lib/approved.ts`, Job A in `peaceai/bin/generate.ts`): every spec is admitted
+only if the list is present and valid, names its id, and pins its exact hash. Otherwise it is refused
+(`NOT_APPROVED`, `HASH_CHANGED`, `SPEC_INVALID`, `LIST_MISSING`, `LIST_CORRUPT`) and produces no candidate.
+Job A logs `learned rules=N approved=K candidates=C refused=...`.
+
 ## Results layout (private repository)
 
 ```

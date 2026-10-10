@@ -1,0 +1,49 @@
+// M8 CI guard (runs in the required tamper-proof job): every entry of the approved-rules list must trace to
+// a real approval. Workspace entries: the cited comment exists, is by PeaceG03 (OWNER), says exactly
+// `/approve-rule <hash>`, sits on a rule-proposal issue whose marker pins that id and hash, and the public
+// spec file hashes to it. Results entries cannot be read from here (private); their format is checked and
+// the sync job verified them against core when it wrote them. Prints fixed strings and ids only.
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { loadApprovedList } from "../lib/approved.ts";
+import { APPROVE_COMMAND, PROPOSAL_LABEL } from "../lib/approval.ts";
+import { specHash } from "../lib/learned.ts";
+import { parseMarker } from "../lib/propose.ts";
+
+const listPath = resolve(process.env.PEACEAI_APPROVED_LIST ?? "peaceai/rules/approved.json");
+const rulesDir = resolve(process.env.PEACEAI_RULES_DIR ?? "peaceai/rules/learned");
+const gh = process.env.PEACEAI_GH ?? "gh";
+const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+
+const load = loadApprovedList(listPath);
+if (!load.ok) {
+  console.log(`APPROVED LIST FAIL ${load.reason}`);
+  process.exit(1);
+}
+let failures = 0;
+const fail = (id: string, why: string) => { failures += 1; console.log(`APPROVED LIST FAIL ${id}: ${why}`); };
+for (const e of load.list.rules) {
+  if (e.source === "results") { console.log(`APPROVED LIST NOTE ${e.id}: Results approval (private), attestation ${e.attestation!.commit.slice(0, 12)}`); continue; }
+  let comment: Record<string, unknown>;
+  let issue: Record<string, unknown>;
+  try {
+    comment = api(`repos/${e.approval.repo}/issues/comments/${e.approval.commentId}`);
+    issue = api(`repos/${e.approval.repo}/issues/${e.approval.issue}`);
+  } catch { fail(e.id, "approval comment or issue not readable"); continue; }
+  const user = (comment.user as { login?: string } | undefined)?.login;
+  const cmd = APPROVE_COMMAND.exec(String(comment.body ?? "").replace(/\r\n/g, "\n"));
+  if (user !== "PeaceG03" || comment.author_association !== "OWNER") fail(e.id, "comment author is not PeaceG03 (OWNER)");
+  else if (!cmd || cmd[1] !== e.sha256) fail(e.id, "comment is not exactly /approve-rule <pinned hash>");
+  else if (comment.html_url !== e.approval.url || !String(comment.issue_url ?? "").endsWith(`/issues/${e.approval.issue}`)) fail(e.id, "comment URL or issue does not match");
+  else if (!((issue.labels as { name: string }[] | undefined) ?? []).some((l) => l.name === PROPOSAL_LABEL)) fail(e.id, "issue is not a rule proposal");
+  else {
+    const m = parseMarker(String(issue.body ?? ""));
+    const specPath = join(rulesDir, `${e.id}.json`);
+    if (!m || m.id !== e.id || m.sha256 !== e.sha256) fail(e.id, "proposal marker does not pin this id and hash");
+    else if (!existsSync(specPath) || specHash(JSON.parse(readFileSync(specPath, "utf8"))) !== e.sha256) fail(e.id, "spec file does not hash to the pinned hash");
+    else console.log(`APPROVED LIST OK ${e.id}`);
+  }
+}
+if (failures > 0) process.exit(1);
+console.log(`APPROVED LIST PASS rules=${load.list.rules.length}`);
