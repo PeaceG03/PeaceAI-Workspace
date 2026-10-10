@@ -16,7 +16,8 @@ Public workspace where PeaceAI attempts small coding tasks on GitHub Actions, wi
    runner temp directory, builds only native synthesis, and generates up to five candidate diffs. The
    leak/scope gate must pass before upload; the kernel checkout is always deleted.
 4. **Job B (test)** runs one matrix job per candidate on a fresh runner with read-only tools and no
-   secrets: the original suite alone (new test files removed), then the new tests alone.
+   secrets: the original suite alone (new test files removed), then the new tests alone. Candidate
+   code runs only as the unprivileged `peaceai-cand` user (see *Tamper-proof results*).
 5. **Job C (record)** writes the task, every candidate diff, both test passes, the scores, eligibility
    and the blind ranking to the private Results repository, and commits it **before** anything is
    shown. If the task asks for tests, candidates without a new test are rejected before ranking.
@@ -27,15 +28,24 @@ Public workspace where PeaceAI attempts small coding tasks on GitHub Actions, wi
 
 Reply on the issue (owner only):
 
-- `/verdict <letter> right`: that candidate is correct; it becomes your pick and a PR is opened for it.
+- `/verdict <letter> right`: that candidate is correct; it becomes your pick and a PR is opened for it,
+  unless a PeaceAI PR for the issue is already open. Then no second PR is opened and the reply points
+  to the open one: close it and send the verdict again to switch.
 - `/verdict <letter> wrong` or `/verdict <letter> unsure`: a label for that candidate (not a pick).
 - `/verdict none wrong`: no candidate is acceptable (a pick of "none"). `/verdict none unsure` is recorded only.
 
 Malformed commands get a short usage reply. Verdicts are appended to Results.
 
-**Agreement** compares the ranker's blind top pick with your latest decisive verdict (`<letter> right`
-or `none wrong`). It counts only tasks with two or more eligible candidates; `unsure` is recorded but
-never counted; test tasks are excluded.
+**Latest verdict wins.** Raw verdict rows are append-only; every reader goes through
+`effectiveVerdict` (`peaceai/lib/records.ts` for rows, `peaceai/lib/store.ts` for an issue), ordered
+by time then comment id, using only the issue's latest attempt:
+
+- `unsure` is recorded but never overrides an earlier verdict and never counts;
+- training uses the latest non-`unsure` verdict (`latest`);
+- agreement uses the latest decisive verdict, `<letter> right` or `none wrong` (`pick`).
+
+**Agreement** compares the ranker's blind top pick with that pick. It counts only the latest attempt
+per issue, only tasks with two or more eligible candidates, and excludes test tasks.
 
 **Held-out set**: a task is held out when the first 4 bytes of `sha256("peaceai-heldout:v1:<issue>")`,
 read as a fraction, are below 0.2 (about 20%). Held-out tasks are recorded and reviewed like any
@@ -57,6 +67,26 @@ summary.json                            derived: per-task entries, agreement, he
 
 Records are never rewritten; `summary.json` is recomputed from the records on each write.
 
+## Tamper-proof results
+
+A candidate's tests must not be able to write or forge their own result. On GitHub-hosted runners the
+strongest practical boundary is a separate Unix user (containers would add the same uid split with
+more moving parts and Docker-socket risk; a separate job would still need to run the code somewhere).
+Job B creates `peaceai-cand` (system user, no home, no shell, no sudo) and the harness:
+
+1. builds the candidate tree in `/tmp` owned by the runner user: readable, not writable, by `peaceai-cand`;
+2. runs the type check and both test passes with `sudo -u peaceai-cand env -i ...` (no tokens, private
+   `HOME`/`TMPDIR`), and takes pass/fail only from the exit code it captures;
+3. kills every `peaceai-cand` process after each command, so nothing can linger and write later;
+4. only then writes the result (temp file + rename) under the runner temp directory, which
+   `peaceai-cand` cannot write, and a later step uploads it.
+
+A different uid also cannot signal or trace the harness or read its `/proc` environment. The harness
+refuses to run without the sandbox in CI (`PEACEAI_REQUIRE_SANDBOX`). `ci` runs
+`peaceai/proof/tamper-proof.ts` on every PR: a malicious candidate breaks the code and forges its
+result directly and through delayed background writers. Without the sandbox (control) the forgery
+lands; with it the recorded result stays correct.
+
 ## Kill switch
 
 Set the repository variable `PEACEAI_ENABLED` to anything other than `true`, then cancel any
@@ -68,7 +98,7 @@ all check the variable; a cancelled run leaves its issue `peaceai:running`, whic
 
 - `leak-check` runs on every PR into `main`: personal info and secret patterns, commit identities,
   and scope rules for protected files. A core-text backstop runs on every push to `main` and weekly.
-- `ci` runs the type check, the `src` tests and the tooling tests.
+- `ci` runs the type check, the `src` tests, the tooling tests and the tamper-proof check.
 - `peace-verdict` records `/verdict` comments (see above).
 - `key-proof` (manual, owner only) proves each deploy key has exactly the access it should.
 

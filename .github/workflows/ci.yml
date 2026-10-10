@@ -27,3 +27,26 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:tools
+
+  tamper-proof:
+    name: tamper-proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Create the unprivileged candidate user (same as Job B)
+        run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
+      - name: Same read-only tools as Job B
+        run: chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
+      - name: A malicious candidate cannot forge its recorded result
+        env:
+          PROOF_SANDBOX_USER: peaceai-cand
+        run: ./node_modules/.bin/tsx peaceai/proof/tamper-proof.ts

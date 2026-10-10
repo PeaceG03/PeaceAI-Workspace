@@ -2,6 +2,8 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, write
 import { dirname, join } from "node:path";
 import {
   buildSummary,
+  effectiveVerdict as effectiveFromRows,
+  type EffectiveVerdict,
   stableJson,
   taskEntry,
   type RankingRecord,
@@ -65,6 +67,16 @@ export function latestAttempt(root: string, issue: number): StoredTask | null {
   const attempts = loadAll(root).filter((t) => t.task.issue === issue);
   attempts.sort((a, b) => (BigInt(a.task.runId) < BigInt(b.task.runId) ? -1 : 1));
   return attempts[attempts.length - 1] ?? null;
+}
+
+/**
+ * The one reader M3 must use: the effective verdict for an issue, from its latest attempt only.
+ * Returns null when the issue has no recorded attempt.
+ */
+export function effectiveVerdict(root: string, issue: number): (EffectiveVerdict & { task: TaskRecord; ranking: RankingRecord }) | null {
+  const attempt = latestAttempt(root, issue);
+  if (!attempt) return null;
+  return { ...effectiveFromRows(attempt.verdicts), task: attempt.task, ranking: attempt.ranking };
 }
 
 export function writeSummary(root: string): ReturnType<typeof buildSummary> {

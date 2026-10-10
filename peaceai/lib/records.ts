@@ -157,15 +157,44 @@ export interface VerdictRecord {
   verdict: VerdictValue;
 }
 
-/** The latest decisive verdict picks a candidate (`X right`) or none (`none wrong`); others never pick. */
-export function peacePick(verdicts: readonly VerdictRecord[]): { decided: boolean; candidateId: string | null } {
-  const sorted = [...verdicts].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt) || a.commentId.localeCompare(b.commentId));
-  let result = { decided: false, candidateId: null as string | null };
-  for (const v of sorted) {
-    if (v.verdict === "right" && v.candidateId) result = { decided: true, candidateId: v.candidateId };
-    else if (v.verdict === "wrong" && v.candidateId === null) result = { decided: true, candidateId: null };
+/** Verdict rows in the order they were given (raw rows stay append-only; this only orders them). */
+export function orderVerdicts(verdicts: readonly VerdictRecord[]): VerdictRecord[] {
+  const id = (v: VerdictRecord) => (/^\d+$/.test(v.commentId) ? BigInt(v.commentId) : 0n);
+  return [...verdicts].sort(
+    (a, b) => a.recordedAt.localeCompare(b.recordedAt) || (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : a.commentId.localeCompare(b.commentId)),
+  );
+}
+
+export interface EffectiveVerdict {
+  /** Latest non-unsure verdict: the one training uses. `unsure` never overrides an earlier verdict. */
+  latest: VerdictRecord | null;
+  /** Latest decisive verdict for agreement: `<letter> right` picks that candidate, `none wrong` picks none. */
+  pick: { decided: boolean; candidateId: string | null };
+  /** Raw counts, for reporting only. */
+  total: number;
+  unsure: number;
+}
+
+/**
+ * Latest verdict wins. The single rule every reader (summary, agreement, M3 training) must use:
+ * - unsure rows are recorded but ignored;
+ * - training uses the latest remaining row;
+ * - agreement uses the latest decisive row (`X right` or `none wrong`).
+ */
+export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveVerdict {
+  const ordered = orderVerdicts(verdicts);
+  const counted = ordered.filter((v) => v.verdict !== "unsure");
+  let pick = { decided: false, candidateId: null as string | null };
+  for (const v of counted) {
+    if (v.verdict === "right" && v.candidateId) pick = { decided: true, candidateId: v.candidateId };
+    else if (v.verdict === "wrong" && v.candidateId === null) pick = { decided: true, candidateId: null };
   }
-  return result;
+  return { latest: counted[counted.length - 1] ?? null, pick, total: ordered.length, unsure: ordered.length - counted.length };
+}
+
+/** Kept for callers of the M2 API; same rule as effectiveVerdict().pick. */
+export function peacePick(verdicts: readonly VerdictRecord[]): { decided: boolean; candidateId: string | null } {
+  return effectiveVerdict(verdicts).pick;
 }
 
 export interface TaskEntry {
@@ -181,13 +210,15 @@ export interface TaskEntry {
   decided: boolean;
   verdicts: number;
   unsure: number;
+  latestVerdict: { label: string | null; candidateId: string | null; verdict: VerdictValue } | null;
   agree: boolean | null; // null when not comparable
   countsTowardAgreement: boolean;
   trainable: boolean;
 }
 
 export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: readonly VerdictRecord[]): TaskEntry {
-  const pick = peacePick(verdicts);
+  const effective = effectiveVerdict(verdicts);
+  const pick = effective.pick;
   const eligible = ranking.candidates.filter((c) => c.eligible).length;
   const comparable = pick.decided && eligible >= 2;
   return {
@@ -201,22 +232,34 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
     rankerTop: ranking.rankerTop,
     peacePick: pick.candidateId,
     decided: pick.decided,
-    verdicts: verdicts.length,
-    unsure: verdicts.filter((v) => v.verdict === "unsure").length,
+    verdicts: effective.total,
+    unsure: effective.unsure,
+    latestVerdict: effective.latest ? { label: effective.latest.label, candidateId: effective.latest.candidateId, verdict: effective.latest.verdict } : null,
     agree: comparable ? pick.candidateId === ranking.rankerTop : null,
     countsTowardAgreement: comparable && !task.test,
-    trainable: !task.test && !task.heldOut && verdicts.some((v) => v.verdict !== "unsure"),
+    trainable: !task.test && !task.heldOut && effective.latest !== null,
   };
 }
 
-export function buildSummary(entries: readonly TaskEntry[]) {
-  const sorted = [...entries].sort((a, b) => a.issue - b.issue || a.runId.localeCompare(b.runId));
-  const score = (list: readonly TaskEntry[]) => {
+export function buildSummary(input: readonly TaskEntry[]) {
+  // Only the latest attempt per issue counts toward agreement and training; older attempts are listed.
+  const latestRun = new Map<number, bigint>();
+  for (const e of input) {
+    const run = BigInt(e.runId);
+    if (!latestRun.has(e.issue) || run > latestRun.get(e.issue)!) latestRun.set(e.issue, run);
+  }
+  const entries = input.map((e) =>
+    BigInt(e.runId) === latestRun.get(e.issue)
+      ? { ...e, superseded: false }
+      : { ...e, superseded: true, countsTowardAgreement: false, trainable: false },
+  );
+  const sorted = [...entries].sort((a, b) => a.issue - b.issue || (BigInt(a.runId) < BigInt(b.runId) ? -1 : BigInt(a.runId) > BigInt(b.runId) ? 1 : 0));
+  const score = (list: readonly (TaskEntry & { superseded: boolean })[]) => {
     const counted = list.filter((e) => e.countsTowardAgreement);
     const agree = counted.filter((e) => e.agree === true).length;
     return { counted: counted.length, agree, rate: counted.length ? Math.round((agree / counted.length) * 1000) / 1000 : null };
   };
-  const real = sorted.filter((e) => !e.test);
+  const real = sorted.filter((e) => !e.test && !e.superseded);
   return {
     schema: SUMMARY_SCHEMA,
     tasks: sorted.length,

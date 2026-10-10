@@ -111,3 +111,31 @@ test("leak-check: PR job uses no core key; backstop is main-only", () => {
   assert.ok(j.get("core-backstop")!.includes("github.ref == 'refs/heads/main'"));
   assert.ok(!j.get("core-backstop")!.includes("pull_request'"));
 });
+
+test("M2.5 peace-verdict: a PR opens only after the duplicate guard says so; respond is serialized per issue", () => {
+  const wf = read("peace-verdict.yml");
+  const respond = wf.slice(wf.indexOf("\n  respond:"));
+  assert.match(respond, /group: peace-verdict-respond-\$\{\{ github\.event\.issue\.number \}\}/);
+  assert.match(respond, /cancel-in-progress: false/);
+  assert.match(respond, /pr-guard\.ts/);
+  const prStep = respond.slice(respond.indexOf("- name: Open a PR for the chosen candidate"));
+  assert.match(prStep, /if: steps\.guard\.outputs\.open_pr == 'true'/);
+  assert.ok(respond.indexOf("pr-guard.ts") < respond.indexOf("gh pr create"));
+  assert.doesNotMatch(respond, /if: needs\.record\.outputs\.chosen == 'true'/);
+});
+
+test("M2.5 tamper-proof: Job B runs candidates as an unprivileged user and fails closed; CI runs the proof", () => {
+  const task = read("peace-task.yml");
+  const jobB = task.slice(task.indexOf("\n  test:"), task.indexOf("\n  record:"));
+  assert.match(jobB, /sudo useradd --system --no-create-home --shell \/usr\/sbin\/nologin peaceai-cand/);
+  assert.match(jobB, /PEACEAI_SANDBOX_USER: peaceai-cand/);
+  assert.match(jobB, /PEACEAI_REQUIRE_SANDBOX: "true"/);
+  assert.ok(jobB.indexOf("useradd") < jobB.indexOf("test-candidates.ts"));
+  assert.ok(jobB.indexOf("test-candidates.ts") < jobB.indexOf("upload-artifact"));
+  const ci = read("ci.yml");
+  const proof = ci.slice(ci.indexOf("\n  tamper-proof:"));
+  assert.match(proof, /useradd .* peaceai-cand/);
+  assert.match(proof, /PROOF_SANDBOX_USER: peaceai-cand/);
+  assert.match(proof, /peaceai\/proof\/tamper-proof\.ts/);
+  assert.doesNotMatch(proof, /secrets\./);
+});
