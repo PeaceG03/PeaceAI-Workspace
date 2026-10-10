@@ -96,6 +96,8 @@ test("presentation must be sequential letters over distinct known candidates", (
 
 test("task mapping cleans issue text and puts named owners first", () => {
   assert.equal(cleanIssueText({ title: "T", body: "a <!-- hidden --> `b`\n```\ncode\n```" }), "T\n\na b");
+  // Identifier underscores survive (M4 families name constants like MAX_ITEMS); emphasis does not.
+  assert.equal(cleanIssueText({ title: "Add an exported constant MAX_ITEMS with value 5", body: "_really_ __now__" }), "Add an exported constant MAX_ITEMS with value 5\n\n really now");
   const variants = buildVariants({ title: "Trim", body: "Edit src/text.ts please" }, ["src/numbers.ts", "src/text.ts", "src/text.test.ts"]);
   assert.equal(variants[0]!.targetPath, "src/text.ts");
   assert.ok(variants.every((v) => !v.targetPath.endsWith(".test.ts")));

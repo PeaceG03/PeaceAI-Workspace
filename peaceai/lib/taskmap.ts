@@ -17,7 +17,9 @@ export function cleanIssueText(input: TaskInput): string {
   const text = `${input.title}\n\n${input.body}`
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[`*_>#]/g, " ")
+    .replace(/[`*>#]/g, " ")
+    // Markdown emphasis underscores only; identifiers such as MAX_ITEMS keep theirs.
+    .replace(/(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
