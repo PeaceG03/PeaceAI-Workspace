@@ -94,3 +94,88 @@ export function entryFromAttestation(att: unknown, commit: string, commitMessage
   };
   return validateEntry(entry) ? { ok: true, entry } : { ok: false, reason: "BAD_EVENT" };
 }
+
+// ---- M8 hardening: the Results sync may only add entries that match a Results attestation.
+
+export const APPROVAL_BRANCH_PREFIX = "peaceai-approve-rule/";
+export const LIST_PATH = "peaceai/rules/approved.json";
+
+/** One attestation as read from a fresh Results clone: file content at the recorded commit. */
+export interface AttestationRecord {
+  content: string; // `git show <commit>:<path>`
+  message: string; // that commit's message
+  onMain: boolean; // the commit is reachable from Results main
+}
+
+export type SyncRefusal =
+  | "BASE_ENTRY_CHANGED" | "NOT_A_RESULTS_ENTRY" | "ATTESTATION_MISSING" | "ATTESTATION_NOT_ON_RESULTS_MAIN"
+  | "ATTESTATION_MISMATCH" | "ATTESTATION_NOT_CITED" | "LIST_INVALID";
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Compares the list the sync wants to land with the list on main. Workspace entries must be untouched,
+ * and every new or re-pinned entry must be a Results entry whose attestation, read from Results at the
+ * recorded commit (on Results main, commit message citing the comment), matches it field by field.
+ */
+export function verifySyncChange(
+  base: { rules: readonly ApprovalEntry[] },
+  proposed: { rules: readonly ApprovalEntry[] },
+  read: (commit: string, path: string) => AttestationRecord | null,
+): { ok: true; added: ApprovalEntry[] } | { ok: false; reason: SyncRefusal; id: string } {
+  for (const b of base.rules) {
+    const p = proposed.rules.find((r) => r.id === b.id);
+    if (same(p, b)) continue;
+    if (!p || b.source !== "results" || p.source !== "results") return { ok: false, reason: "BASE_ENTRY_CHANGED", id: b.id };
+  }
+  const added: ApprovalEntry[] = [];
+  for (const p of proposed.rules) {
+    if (base.rules.some((b) => same(b, p))) continue;
+    if (p.source !== "results" || !p.id.startsWith("core-") || !p.attestation) return { ok: false, reason: "NOT_A_RESULTS_ENTRY", id: p.id };
+    const rec = read(p.attestation.commit, p.attestation.path);
+    if (!rec) return { ok: false, reason: "ATTESTATION_MISSING", id: p.id };
+    if (!rec.onMain) return { ok: false, reason: "ATTESTATION_NOT_ON_RESULTS_MAIN", id: p.id };
+    let a: Partial<Attestation>;
+    try { a = JSON.parse(rec.content); } catch { return { ok: false, reason: "ATTESTATION_MISMATCH", id: p.id }; }
+    const matches = a.schema === "peaceai-rule-approval:v1" && a.id === p.id && a.sha256 === p.sha256 && a.author === APPROVER &&
+      a.commentUrl === p.approval.url && Number(a.commentId) === p.approval.commentId && Number(a.issue) === p.approval.issue &&
+      a.approvedAt === p.approval.approvedAt && p.attestation.path === `rules/approvals/${p.sha256}.json`;
+    if (!matches) return { ok: false, reason: "ATTESTATION_MISMATCH", id: p.id };
+    if (!rec.message.includes(p.approval.url)) return { ok: false, reason: "ATTESTATION_NOT_CITED", id: p.id };
+    added.push(p);
+  }
+  return { ok: true, added };
+}
+
+/** Why a raw list entry for a core-mined rule lacks a valid attestation reference (null = fine). */
+export function attestationProblem(raw: unknown): string | null {
+  const e = (raw ?? {}) as Record<string, unknown>;
+  const id = typeof e.id === "string" ? e.id : "";
+  const coreSourced = id.startsWith("core-") || e.source === "results";
+  if (!coreSourced) return null;
+  if (!id.startsWith("core-")) return "Results entry for a non-core rule";
+  if (e.source !== "results") return "core rule not approved through Results";
+  const a = (e.approval ?? {}) as Record<string, unknown>;
+  const t = e.attestation as Record<string, unknown> | undefined;
+  if (!t) return "no attestation reference";
+  if (typeof t.commit !== "string" || !/^[0-9a-f]{40}$/.test(t.commit)) return "attestation commit is not a full Results sha";
+  if (typeof e.sha256 !== "string" || t.path !== `rules/approvals/${e.sha256}.json`) return "attestation path does not match the pinned hash";
+  const m = /^https:\/\/github\.com\/PeaceG03\/PeaceAI-Results\/issues\/([1-9][0-9]*)#issuecomment-([1-9][0-9]*)$/.exec(String(a.url ?? ""));
+  if (!m) return "approval URL is not a PeaceAI-Results issue comment";
+  if (!Number.isInteger(a.issue) || a.issue !== Number(m[1])) return "issue number missing or does not match the URL";
+  if (!Number.isInteger(a.commentId) || a.commentId !== Number(m[2])) return "comment id missing or does not match the URL";
+  if (a.repo !== "PeaceG03/PeaceAI-Results" || a.author !== APPROVER) return "approval repo or author is wrong";
+  return null;
+}
+
+/** An approval PR (or any PR) diff check: files changed against main on this branch. */
+export function branchProblem(branch: string, files: readonly string[], aheadBy: number): string | null {
+  const touchesList = files.includes(LIST_PATH);
+  if (branch.startsWith(APPROVAL_BRANCH_PREFIX)) {
+    if (files.length !== 1 || !touchesList) return "approval branch changes files other than the approved list";
+    if (aheadBy !== 1) return "approval branch must be exactly one commit ahead of main";
+    return null;
+  }
+  if (touchesList) return "approved list changed outside the approval workflow";
+  return null;
+}

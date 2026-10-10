@@ -29,6 +29,7 @@ export function validateEntry(e: unknown): e is ApprovalEntry {
   if (!m || a.commentId !== Number(m[3]) || a.issue !== Number(m[2]) || a.repo !== `PeaceG03/${m[1]}`) return false;
   if ((x.source === "workspace") !== (m[1] === "PeaceAI-Workspace")) return false;
   if (x.source === "workspace" && !x.id.startsWith("public-")) return false; // core rules are approved in Results only
+  if (x.source === "results" && !x.id.startsWith("core-")) return false; // Results approves core-mined rules only
   if (x.source === "results") {
     const t = x.attestation as Record<string, unknown> | undefined;
     if (!t || typeof t.commit !== "string" || !/^[0-9a-f]{40}$/.test(t.commit) || t.path !== `rules/approvals/${x.sha256}.json`) return false;
