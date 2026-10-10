@@ -175,13 +175,20 @@ source (comment URL, id, issue, author PeaceG03, time; Results approvals also th
   opens a PR, runs the required checks and squash-merges.
 - Results: the same comment on the private issue triggers the Results workflow (canonical copy in
   `peaceai/results-repo/`). It validates the comment against the spec in the issue and commits
-  `rules/approvals/<sha256>.json` citing the comment. The hourly sync here reads those attestations,
-  checks the core spec file hashes to them, and lands the entries the same way. No core text leaves core
-  or Results.
+  `rules/approvals/<sha256>.json` citing the comment. The hourly sync here reads those attestations
+  (`results-read`), checks the core spec file hashes to them and proposes a list without landing it
+  (`results-verify`, core key, read-only), then `results-land` re-reads every new entry's attestation
+  from a fresh Results clone at its recorded commit (on Results main, field-for-field equal, commit
+  message citing the comment; Workspace entries untouched) and fails closed before opening the PR. No core
+  text leaves core or Results. Nothing ever pushes to `main`: the only push is a `peaceai-approve-rule/*`
+  branch that changes only the list.
 
 Agents never post `/approve-rule` and never edit the list. Agents push as PeaceG03, so identity cannot
 tell us apart; traceability to Peace's comment is the control. The required `tamper-proof` check runs
-`peaceai/bin/check-approved-list.ts`: every Workspace entry must resolve to that exact comment and spec hash.
+`peaceai/bin/check-approved-list.ts`: every Workspace entry must resolve to that exact comment and spec hash;
+every core-sourced entry must carry a well-formed attestation reference (full Results commit sha, attestation
+path for the pinned hash, Results issue and comment id matching the URL); an approval branch may change only
+the list (one commit ahead of main), and any other branch may not change the list at all.
 
 **Enforcement** (`peaceai/lib/approved.ts`, Job A in `peaceai/bin/generate.ts`): every spec is admitted
 only if the list is present and valid, names its id, and pins its exact hash. Otherwise it is refused
