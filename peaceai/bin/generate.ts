@@ -8,6 +8,8 @@ import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
 import { applyRule } from "../lib/learned.ts";
+import { acceptFill, applyFill, fillOptions, parseFillTask } from "../lib/fill.ts";
+import { lmFlags } from "../lib/lm.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { indexBoost, selectSources } from "../lib/sources.ts";
 import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "../lib/symbols.ts";
@@ -204,6 +206,25 @@ for (const a of planSteps ? [] : admissions) {
 }
 const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
+// M9: template gap fill (flag PEACEAI_LM_FILL, off by default). The lm-fill job chose a value among the
+// template's options; it is accepted only if it is one of the options derived here from the same target.
+// The candidate is then gated, scoped, tested and repaired like any other. Never uses learned rules.
+let fillStatus = "off";
+const fillTask = lmFlags(process.env).fill && !planSteps ? parseFillTask(objectiveText) : null;
+if (fillTask && process.env.PEACEAI_LM_FILLS && existsSync(process.env.PEACEAI_LM_FILLS) && candidates.length < MAX_CANDIDATES) {
+  let raw: unknown = null;
+  try { raw = JSON.parse(readFileSync(process.env.PEACEAI_LM_FILLS, "utf8")); } catch { raw = null; }
+  const value = acceptFill(raw, fillTask, fillOptions(fillTask, candidatesForContext));
+  const current = candidatesForContext.find((f) => f.path === fillTask.path);
+  const content = value && current ? applyFill(fillTask, current.content, value) : null;
+  const diff = content && current ? toDiff([{ operation: "EDIT_FILE", path: current.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content, transformation: "LM_FILL_CONSTANT" }]) : null;
+  fillStatus = "refused";
+  if (diff && !seen.has(createHash("sha256").update(diff).digest("hex")) && checkCandidateScope(parseDiff(diff), baseFiles, scope).length === 0) {
+    fillStatus = "candidate";
+    candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: ["LM_FILL_CONSTANT"], operationId: `lm-fill:${(raw as { model: string }).model}` });
+  }
+} else if (fillTask) fillStatus = "no-fill";
+console.log(`lm fill=${fillStatus}`);
 git(repo, "worktree", "remove", "--force", worktree);
 
 mkdirSync(join(outDir, "candidates"), { recursive: true });

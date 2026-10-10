@@ -1,0 +1,4 @@
+# M9 runtime: numpy only (array math, no model code, no downloads of weights). Hash-pinned.
+numpy==2.3.3 \
+    --hash=sha256:d9192da52b9745f7f0766531dcfa978b7763916f158bb63bdb8a1eca0068ab20 \
+    --hash=sha256:5b83648633d46f77039c29078751f80da65aa64d5622a3cd62aaef9d835b6c93

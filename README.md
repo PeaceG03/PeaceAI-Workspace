@@ -183,8 +183,9 @@ source (comment URL, id, issue, author PeaceG03, time; Results approvals also th
   text leaves core or Results. Nothing ever pushes to `main`: the only push is a `peaceai-approve-rule/*`
   branch that changes only the list.
 
-Agents never post `/approve-rule` and never edit the list. Agents push as PeaceG03, so identity cannot
-tell us apart; traceability to Peace's comment is the control. The required `tamper-proof` check runs
+Architect posts `/approve-rule` under Peace's delegation, with a note on what was checked. Builder agents
+never post it and no agent edits the list by hand. Agents push as PeaceG03, so identity cannot tell us apart;
+traceability to the approval comment is the control. The required `tamper-proof` check runs
 `peaceai/bin/check-approved-list.ts`: every Workspace entry must resolve to that exact comment and spec hash;
 every core-sourced entry must carry a well-formed attestation reference (full Results commit sha, attestation
 path for the pinned hash, Results issue and comment id matching the URL); an approval branch may change only

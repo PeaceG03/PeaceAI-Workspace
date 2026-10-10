@@ -24,6 +24,11 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Python runtime for the M9 model tests (numpy only, hash-pinned)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lm-venv"
+          "$RUNNER_TEMP/lm-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r peaceai/model/requirements.txt
+          echo "PEACEAI_PYTHON=$RUNNER_TEMP/lm-venv/bin/python" >> "$GITHUB_ENV"
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:tools
