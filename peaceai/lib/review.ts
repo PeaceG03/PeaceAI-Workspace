@@ -18,12 +18,15 @@ export function validatePresentation(value: unknown, candidateIds: readonly stri
 }
 
 const MAX_DIFF_CHARS = 10_000;
+export const PLACEHOLDER_NOTE = "placeholder value added by repair";
 
 export function reviewBody(
   presentation: readonly Presented[],
   diffs: ReadonlyMap<string, string>,
   target: string | null = null,
   route: "pr" | "patch" = "pr",
+  /** M7.1: neutral per-candidate notes (only "placeholder value added by repair" today). */
+  notes: ReadonlyMap<string, string> = new Map(),
 ): string {
   // M6: a patch-route target (no write token) gets a format-patch comment instead of a PR.
   const outcome = route === "patch" ? "posts that candidate here as a `git format-patch` file" : "opens a PR for that candidate";
@@ -31,7 +34,8 @@ export function reviewBody(
     let diff = diffs.get(p.id) ?? "";
     if (diff.length > MAX_DIFF_CHARS) diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n... (truncated)`;
     const fence = diff.includes("```") ? "~~~~" : "```";
-    return `### Candidate ${p.label}\n\n<details><summary>diff</summary>\n\n${fence}diff\n${diff}\n${fence}\n\n</details>`;
+    const note = notes.get(p.id);
+    return `### Candidate ${p.label}\n\n${note ? `Note: ${note}.\n\n` : ""}<details><summary>diff</summary>\n\n${fence}diff\n${diff}\n${fence}\n\n</details>`;
   });
   return [
     "PeaceAI review. Each candidate below passed the original suite (run alone) and its new tests (run separately).",

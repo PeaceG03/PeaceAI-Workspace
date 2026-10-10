@@ -239,6 +239,8 @@ export interface RepairEdit {
   path: string;
   line: number;
   content: string; // whole new file content
+  /** M7.1: the edit inserts a placeholder value ("", 0, false, null, [], first literal), not a real one. */
+  placeholder?: boolean;
 }
 
 const isBaseTest = (ctx: RepairContext, path: string) => ctx.isTest(path) && ctx.base(path) !== null;
@@ -456,7 +458,7 @@ function ruleAddMissingRequiredProperty(e: RepairError, ctx: RepairContext): Rep
   }
   if (!literal) return null;
   if (literal.properties.some((p) => p.name && ts.isIdentifier(p.name) && p.name.text === e.name)) return null;
-  return { rule: "ADD_MISSING_REQUIRED_PROPERTY", path: e.file, line: e.line, content: insertProperty(content, sf, literal, `${e.name}: ${value}`) };
+  return { rule: "ADD_MISSING_REQUIRED_PROPERTY", path: e.file, line: e.line, content: insertProperty(content, sf, literal, `${e.name}: ${value}`), placeholder: true };
 }
 
 function ruleAddFieldToType(e: RepairError, ctx: RepairContext): RepairEdit | null {

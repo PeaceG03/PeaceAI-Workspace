@@ -42,7 +42,15 @@ export function validateRepairRecord(value: unknown): value is StoredRepairRecor
       Number.isInteger(it.errorCount) &&
       Array.isArray(it.errors) && it.errors.length <= 20 &&
       Array.isArray(it.applied) &&
-      (it.applied as Record<string, unknown>[]).every((a) => RULES.includes(a.rule as never) && typeof a.path === "string" && Number.isInteger(a.line))
+      (it.applied as Record<string, unknown>[]).every(
+        (a) => RULES.includes(a.rule as never) && typeof a.path === "string" && Number.isInteger(a.line) && (a.placeholder === undefined || a.placeholder === true),
+      )
     );
   });
 }
+
+/** M7.1: the shown diff is the repaired one (re-gated and used by Job B2). */
+export const isRepaired = (r: Pick<StoredRepairRecord, "regate">): boolean => r.regate === "pass";
+/** M7.1: the shown diff contains a placeholder value inserted by a repair rule. */
+export const hasPlaceholder = (r: Pick<StoredRepairRecord, "regate" | "iterations">): boolean =>
+  isRepaired(r) && r.iterations.some((it) => it.applied.some((a) => a.placeholder === true));
