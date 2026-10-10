@@ -66,7 +66,8 @@ jobs:
           PEACEAI_FORCE_VISIBILITY_FAIL: ${{ inputs.force_visibility_fail == true }}
         run: ./node_modules/.bin/tsx peaceai/bin/target-check.ts
       - name: Chain the next sweep after a fail-closed task
-        if: steps.target.outputs.run == 'false' && steps.pick.outputs.waiting != '0'
+        # `waiting` was counted before the pick, so it includes the task that just failed closed.
+        if: steps.target.outputs.run == 'false' && fromJSON(steps.pick.outputs.waiting) > 1
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
