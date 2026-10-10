@@ -32,6 +32,8 @@ if (/^[0-9a-f]{40}$/.test(base)) {
     else if (!value.includes("@")) for (const finding of scanText(value, terms)) fail(`commit identity: ${finding.kind}`);
   }
   // 3. Scope: protected files may only change in an owner PR from this repository.
+  // Pushes to main were already reviewed as PRs, so only identities are checked there.
+  if (process.env.LEAK_SKIP_SCOPE !== "true") {
   const changes: ChangedPath[] = git("diff", "--name-status", "--no-renames", "-z", `${base}...HEAD`)
     .split("\0")
     .filter(Boolean)
@@ -48,6 +50,7 @@ if (/^[0-9a-f]{40}$/.test(base)) {
       }
     : null;
   for (const violation of checkPullRequestScope(changes, pr, OWNER)) fail(`scope ${violation.path}: ${violation.reason}`);
+  }
 } else if (process.env.LEAK_REQUIRE_BASE === "true") {
   fail("missing base commit for PR range");
 }

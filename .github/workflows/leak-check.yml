@@ -61,11 +61,17 @@ jobs:
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PR_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
           PEACEAI_PRIVATE_TERMS: ${{ secrets.PEACEAI_PRIVATE_TERMS }}
         run: |
           set -euo pipefail
           case "$EVENT_NAME" in
             pull_request) export LEAK_BASE_SHA="$PR_BASE_SHA" LEAK_REQUIRE_BASE=true ;;
+            push)
+              # Check the identities of every pushed commit (merge commits included).
+              if [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+                export LEAK_BASE_SHA="$PUSH_BEFORE" LEAK_SKIP_SCOPE=true
+              fi ;;
             workflow_dispatch)
               if [ "$GITHUB_REF" != "refs/heads/main" ]; then
                 # Dispatched on a bot branch: strict rules against main, no owner privilege.
