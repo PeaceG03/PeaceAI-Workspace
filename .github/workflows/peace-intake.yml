@@ -1,0 +1,34 @@
+name: peace-intake
+
+# Labeling only queues a task. The serialized sweep in peace-task.yml does the work, so a burst of
+# labels can never be dropped by concurrency (queued issues stay labeled until a sweep takes them).
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  intake:
+    name: queue task
+    if: >-
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.event.label.name == 'peace-task' &&
+      github.event.issue.user.login == 'PeaceG03' &&
+      github.event.sender.login == 'PeaceG03' &&
+      vars.PEACEAI_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Mark queued
+        run: |
+          gh label create peaceai:queued --repo "$GITHUB_REPOSITORY" --color ededed --force >/dev/null
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:queued >/dev/null
+      - name: Start a sweep
+        run: gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main

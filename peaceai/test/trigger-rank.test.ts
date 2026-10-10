@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { isPassing, rankCandidates, shuffle, type CandidateResult } from "../lib/rank.ts";
-import { planPullRequest } from "../lib/prbody.ts";
+import { reviewBody, validatePresentation } from "../lib/review.ts";
 import { killSwitchAllows, shouldRunTask, type TriggerInput } from "../lib/trigger.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 
@@ -73,22 +73,25 @@ test("shuffle is a permutation, seed-dependent, and does not mutate input", () =
   assert.deepEqual(shuffle(items, "same"), shuffle(items, "same"));
 });
 
-test("PR plan lists every passing candidate, no scores, and picks the ranked top", () => {
-  const results = {
-    schema: "peaceai-workspace-results:v1" as const,
-    taskId: "workspace-issue-3",
-    baseSha: "b".repeat(40),
-    results: [c("candidate-1", { diffLines: 20 }), c("candidate-2", { diffLines: 4 }), c("candidate-3", { newTestsPassed: false })],
-  };
-  const diffs = new Map([["candidate-1", "diff one"], ["candidate-2", "diff two"], ["candidate-3", "diff three"]]);
-  const plan = planPullRequest(results, diffs, "3", "seed");
-  assert.equal(plan.passing, 2);
-  assert.equal(plan.chosenId, "candidate-2");
-  assert.ok(plan.body.includes("diff one") && plan.body.includes("diff two") && !plan.body.includes("diff three"));
-  assert.ok(!/score|rank|diffLines|candidate-\d/i.test(plan.body.replace(/without scores/, "")));
-  const none = planPullRequest({ ...results, results: [c("candidate-1", { applied: false })] }, diffs, "3", "seed");
-  assert.equal(none.passing, 0);
-  assert.equal(none.chosenId, null);
+test("review body shows every presented candidate the same way, in order, with no scores", () => {
+  const presentation = [{ label: "A", id: "candidate-3" }, { label: "B", id: "candidate-1" }];
+  const diffs = new Map([["candidate-1", "diff one"], ["candidate-3", "diff three"], ["candidate-2", "diff two"]]);
+  const body = reviewBody(presentation, diffs);
+  assert.ok(body.indexOf("diff three") < body.indexOf("diff one"));
+  assert.ok(!body.includes("diff two"));
+  assert.ok(!/score|rank|chosen|recommended|top|best|candidate-\d/i.test(body));
+  const sections = body.split("### Candidate ").slice(1).map((s) => s.replace(/^[A-Z]/, "").replace(/diff (one|three)/, "X"));
+  assert.equal(sections[0]!.trim().split("\n").slice(0, 6).join("\n"), sections[1]!.trim().split("\n").slice(0, 6).join("\n"));
+});
+
+test("presentation must be sequential letters over distinct known candidates", () => {
+  const ids = ["candidate-1", "candidate-2"];
+  assert.equal(validatePresentation([{ label: "A", id: "candidate-2" }, { label: "B", id: "candidate-1" }], ids), true);
+  assert.equal(validatePresentation([{ label: "B", id: "candidate-2" }], ids), false);
+  assert.equal(validatePresentation([{ label: "A", id: "candidate-2" }, { label: "B", id: "candidate-2" }], ids), false);
+  assert.equal(validatePresentation([{ label: "A", id: "candidate-9" }], ids), false);
+  assert.equal(validatePresentation([{ label: "A", id: "candidate-1", rank: 1 }], ids), false);
+  assert.equal(validatePresentation([], ids), false);
 });
 
 test("task mapping cleans issue text and puts named owners first", () => {
@@ -97,5 +100,7 @@ test("task mapping cleans issue text and puts named owners first", () => {
   assert.equal(variants[0]!.targetPath, "src/text.ts");
   assert.ok(variants.every((v) => !v.targetPath.endsWith(".test.ts")));
   assert.ok(variants.some((v) => /focused tests/.test(v.objective)));
+  const withTests = buildVariants({ title: "Trim", body: "Add a helper in src/text.ts, with focused tests." }, ["src/text.ts"]);
+  assert.ok(withTests.every((v) => /focused tests/.test(v.objective)), "never drop the test request");
   assert.deepEqual(buildVariants({ title: "", body: "" }, ["src/a.ts"]), []);
 });

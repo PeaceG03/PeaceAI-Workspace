@@ -29,8 +29,13 @@ const baseFiles = new Set(git(repo, "ls-tree", "-r", "--name-only", "-z", summar
 const tsx = join(repo, "node_modules", ".bin", "tsx");
 const tsc = join(repo, "node_modules", ".bin", "tsc");
 
+// In CI each candidate runs in its own matrix job (fresh runner, own read-only tools copy).
+const only = process.env.PEACEAI_ONLY_CANDIDATE ?? "";
+if (only && !summary.candidates.some((c) => c.id === only)) throw new Error("unknown candidate");
+const selected = only ? summary.candidates.filter((c) => c.id === only) : summary.candidates;
+
 const results: CandidateResult[] = [];
-for (const candidate of summary.candidates) {
+for (const candidate of selected) {
   const diffPath = join(inDir, candidate.file);
   const diff = readFileSync(diffPath, "utf8");
   const files = parseDiff(diff);

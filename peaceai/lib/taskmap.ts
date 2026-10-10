@@ -1,4 +1,6 @@
 // Maps issue text to a small set of synthesis request variants for the native kernel.
+import { taskRequiresTests } from "./policy.ts";
+
 export const MAX_OBJECTIVE_CHARS = 2000;
 
 export interface TaskInput {
@@ -36,8 +38,8 @@ export function buildVariants(input: TaskInput, sourcePaths: readonly string[]):
   // Named owners first, then the remaining owners as alternative placements.
   const targets = [...named, ...owners.filter((path) => !named.includes(path))];
   const phrasings = new Set<string>([objective]);
-  if (/\bfocused tests?\b/i.test(objective)) phrasings.add(objective.replace(/,?\s*(?:with|and|include)?\s*focused tests?\.?/gi, ".").trim());
-  else phrasings.add(`${objective.replace(/\.?\s*$/, "")}, with focused tests.`);
+  // When the task asks for tests, never spend budget on a phrasing that drops them.
+  if (!taskRequiresTests(objective)) phrasings.add(`${objective.replace(/\.?\s*$/, "")}, with focused tests.`);
   const variants: RequestVariant[] = [];
   for (const targetPath of targets) for (const phrasing of phrasings) variants.push({ objective: phrasing, targetPath });
   return variants;
