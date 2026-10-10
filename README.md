@@ -150,6 +150,26 @@ The native edits are narrow. Phrasings that work today, for example:
 - `Add a helper that will normalize a title by trimming surrounding whitespace in src/text.ts, with focused tests.`
 - `Rename symbol slugify to toSlug in src/text.ts`
 
+Small structural edits (M4). Use the phrase shape exactly; names must already exist (except a new
+constant), and values are literals: a quoted string, a number, `true`, `false` or `null`.
+`src/config.ts` has a target for each.
+
+| Edit | Phrase shape | Example |
+|---|---|---|
+| Object property | add property `<key>` with value `<literal>` to object `<NAME>` | `Add property timeoutMs with value 3000 to object LIMITS` |
+| Guard clause | add a guard to `<fn>` that returns `<literal>` when `<param>` is `<condition>` | `Add a guard to parseQuantity that returns 0 when raw is empty` |
+| Array item | add `<literal>` to the array `<NAME>` | `Add "pdf" to the array EXPORT_KINDS` |
+| Exported constant | add an exported constant `<NAME>` with value `<literal>` to `<file>` | `Add an exported constant MAX_PAGES with value 50 to src/config.ts` |
+| Try/catch | wrap the body of `<fn>` in try/catch that returns `<literal>` on error | `Wrap the body of readProfile in try/catch that returns null on error` |
+| Union member | add `<"literal">` to the union type `<Type>` | `Add "critical" to the union type Severity` |
+| Type field | add [an optional] field `<name>` of type `<T>` to type `<Type>` | `Add an optional field email of type string to type Profile` |
+
+Guard conditions: empty, blank, null, undefined, missing, negative, zero, not finite, NaN. The
+parameter's declared type must fit the condition, and the function's return type must accept the
+value. Every edit refuses to run when its target is ambiguous, already has the change, or the types
+don't line up. Add `, with focused tests.` to ask for a test; without it PeaceAI tries both.
+Identifier underscores (`MAX_PAGES`) are kept in task text; only Markdown emphasis is stripped.
+
 ## Layout
 
 - `src/`: the code tasks change, with its tests.

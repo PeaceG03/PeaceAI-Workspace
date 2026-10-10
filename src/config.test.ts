@@ -1,20 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULTS, parseCount, parseSettings, SUPPORTED_FORMATS, type LogLevel } from "./config";
+import { EXPORT_KINDS, LIMITS, parseQuantity, readProfile, type Severity } from "./config";
 
-test("defaults and formats", () => {
-  assert.equal(DEFAULTS.retries, 3);
-  assert.ok(SUPPORTED_FORMATS.includes("json"));
-  const level: LogLevel = "info";
-  assert.equal(level, "info");
+test("limits and export kinds", () => {
+  assert.equal(LIMITS.pageSize, 20);
+  assert.ok(EXPORT_KINDS.includes("csv"));
+  const level: Severity = "medium";
+  assert.equal(level, "medium");
 });
 
-test("parseCount reads integers and falls back to zero", () => {
-  assert.equal(parseCount("12"), 12);
-  assert.equal(parseCount("x"), 0);
+test("parseQuantity keeps positive integers and falls back to one", () => {
+  assert.equal(parseQuantity("7"), 7);
+  assert.equal(parseQuantity("-2"), 1);
+  assert.equal(parseQuantity("abc"), 1);
 });
 
-test("parseSettings fills missing fields", () => {
-  assert.deepEqual(parseSettings('{"name":"a"}'), { name: "a", retries: 3 });
+test("readProfile needs an id and defaults the display name", () => {
+  assert.deepEqual(readProfile('{"id":"u1"}'), { id: "u1", displayName: "u1" });
+  assert.equal(readProfile("{}"), null);
 });

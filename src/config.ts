@@ -1,24 +1,25 @@
-// Small configuration module: realistic targets for config-style edits.
-export const DEFAULTS = {
-  retries: 3,
-  timeoutMs: 5000,
+// Small settings module: realistic targets for config-style edits.
+export const LIMITS = {
+  pageSize: 20,
+  maxDepth: 4,
 };
 
-export const SUPPORTED_FORMATS = ["json", "text"];
+export const EXPORT_KINDS = ["csv", "html"];
 
-export type LogLevel = "debug" | "info" | "warn";
+export type Severity = "low" | "medium" | "high";
 
-export type Settings = {
-  readonly name: string;
-  readonly retries: number;
+export type Profile = {
+  readonly id: string;
+  readonly displayName: string;
 };
 
-export function parseCount(input: string): number {
-  const value = Number.parseInt(input, 10);
-  return Number.isNaN(value) ? 0 : value;
+export function parseQuantity(raw: string): number {
+  const amount = Number(raw);
+  return Number.isInteger(amount) && amount > 0 ? amount : 1;
 }
 
-export function parseSettings(raw: string): Settings | null {
-  const data = JSON.parse(raw) as Partial<Settings>;
-  return { name: String(data.name ?? ""), retries: Number(data.retries ?? DEFAULTS.retries) };
+export function readProfile(json: string): Profile | null {
+  const fields = JSON.parse(json) as Record<string, unknown>;
+  if (typeof fields.id !== "string") return null;
+  return { id: fields.id, displayName: typeof fields.displayName === "string" ? fields.displayName : fields.id };
 }
