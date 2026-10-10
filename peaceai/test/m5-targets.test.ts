@@ -166,6 +166,11 @@ test("records carry the target; the review names a non-default target", () => {
   const body = reviewBody([{ label: "A", id: "candidate-1" }], new Map([["candidate-1", "diff"]]), PS);
   assert.match(body, /Target repository: `PeaceG03\/PeaceSTOCKS` \(public\)/);
   assert.ok(!reviewBody([{ label: "A", id: "candidate-1" }], new Map([["candidate-1", "diff"]])).includes("Target repository"));
+  // M6: patch-route targets say a patch file is posted, never that a PR opens.
+  const patchBody = reviewBody([{ label: "A", id: "candidate-1" }], new Map([["candidate-1", "diff"]]), PS, "patch");
+  assert.match(patchBody, /posts a patch file here \(no PR\)/);
+  assert.match(patchBody, /right` posts that candidate here as a `git format-patch` file\./);
+  assert.ok(!/opens (a|the) PR/.test(patchBody));
 });
 
 // ---------- private-target isolation (the CLI with a fake gh) ----------
