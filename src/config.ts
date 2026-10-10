@@ -2,6 +2,7 @@
 export const LIMITS = {
   pageSize: 20,
   maxDepth: 4,
+  timeoutMs: 3000,
 };
 
 export const EXPORT_KINDS = ["csv", "html"];
