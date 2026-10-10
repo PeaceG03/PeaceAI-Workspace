@@ -202,9 +202,9 @@ export interface EffectiveVerdict {
  * Latest verdict wins. The single rule every reader (summary, agreement, M3 training) must use.
  * Rows are applied in the order they were given:
  * - `<letter> right` / `none wrong` become the standing pick (agreement) and `latest` (training);
- * - `<letter> wrong` becomes `latest` and leaves the pick as it is;
- * - `none unsure`, or `<letter> unsure` naming the standing `right` pick, withdraws: pick and latest
- *   are cleared and the issue is excluded until the next decisive verdict;
+ * - `none unsure`, or `<letter> unsure` / `<letter> wrong` naming the standing `right` pick, withdraws:
+ *   pick and latest are cleared and the issue is excluded until the next decisive verdict;
+ * - `<letter> wrong` on any other letter becomes `latest` and leaves the pick as it is;
  * - any other `<letter> unsure` is only a label for that candidate: nothing changes.
  */
 export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveVerdict {
@@ -213,14 +213,13 @@ export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveV
   let pick = { decided: false, candidateId: null as string | null };
   let withdrawn = false;
   for (const v of ordered) {
-    if (v.verdict === "unsure") {
-      if (withdraws(v, pick)) {
-        latest = null;
-        pick = { decided: false, candidateId: null };
-        withdrawn = true;
-      }
+    if (withdraws(v, pick)) {
+      latest = null;
+      pick = { decided: false, candidateId: null };
+      withdrawn = true;
       continue;
     }
+    if (v.verdict === "unsure") continue;
     latest = v;
     if (v.verdict === "right" && v.candidateId) pick = { decided: true, candidateId: v.candidateId };
     else if (v.verdict === "wrong" && v.candidateId === null) pick = { decided: true, candidateId: null };
@@ -230,10 +229,13 @@ export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveV
   return { latest, pick, withdrawn, total: ordered.length, unsure };
 }
 
-/** Does this `unsure` row withdraw the standing verdict? (`none unsure`, or unsure on the picked letter.) */
+/**
+ * Does this row withdraw the standing verdict? `none unsure`, or `<letter> unsure` / `<letter> wrong`
+ * on the letter currently picked with `right`. `none wrong` is a decisive pick, never a withdrawal.
+ */
 export function withdraws(v: Pick<VerdictRecord, "verdict" | "candidateId">, pick: { decided: boolean; candidateId: string | null }): boolean {
-  if (v.verdict !== "unsure") return false;
-  if (v.candidateId === null) return true;
+  if (v.verdict === "right") return false;
+  if (v.candidateId === null) return v.verdict === "unsure";
   return pick.decided && pick.candidateId === v.candidateId;
 }
 

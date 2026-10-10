@@ -31,7 +31,9 @@ Reply on the issue (owner only):
 - `/verdict <letter> right`: that candidate is correct; it becomes your pick and a PR is opened for it.
   If an open PeaceAI PR already holds that candidate, no second PR is opened. If an open PeaceAI PR
   holds a different candidate, it is closed with a short comment and the new candidate's PR is opened.
-- `/verdict <letter> wrong`: a label for that candidate (not a pick).
+- `/verdict <letter> wrong` naming your current pick (the standing `<letter> right`): withdraws your
+  verdict, with the same `verdict-withdrawn` PR marking as below.
+- Any other `/verdict <letter> wrong`: a label for that candidate (not a pick); your pick still counts.
 - `/verdict none wrong`: no candidate is acceptable (a pick of "none"); any open PeaceAI PR for the issue is closed.
 - `/verdict none unsure`, or `/verdict <letter> unsure` naming your current pick (the standing
   `<letter> right`): withdraws your verdict. Any open PeaceAI PR for the issue gets the
@@ -44,10 +46,11 @@ Malformed commands get a short usage reply. Verdicts are appended to Results.
 `effectiveVerdict` (`peaceai/lib/records.ts` for rows, `peaceai/lib/store.ts` for an issue), applying
 rows in time order (then comment id), using only the issue's latest attempt:
 
-- `none unsure`, or `<letter> unsure` on the standing `right` pick, withdraws: the issue is excluded
-  from training and agreement until the next decisive verdict (`A right`, `A unsure` = excluded;
-  `A right`, `none unsure` = excluded; then `B right` counts B);
-- any other `<letter> unsure` is a label only (`A right`, `C unsure` = A still counted);
+- `none unsure`, or `<letter> unsure` / `<letter> wrong` on the standing `right` pick, withdraws: the
+  issue is excluded from training and agreement until the next decisive verdict (`A right`, `A unsure`
+  = excluded; `A right`, `A wrong` = excluded; `A right`, `none unsure` = excluded; then `B right` counts B);
+- any other `<letter> unsure` or `<letter> wrong` is a label only (`A right`, `C unsure` or `C wrong`
+  = A still counted); `none wrong` is a decisive pick of "none";
 - training uses the latest standing verdict (`latest`);
 - agreement uses the latest standing decisive verdict, `<letter> right` or `none wrong` (`pick`).
 

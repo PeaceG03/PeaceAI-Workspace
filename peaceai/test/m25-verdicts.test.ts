@@ -6,7 +6,7 @@ import test from "node:test";
 import type { SummaryCandidate } from "../lib/gate.ts";
 import { findOpenPeacePr, openPeacePrs, planPr, prBranch } from "../lib/prguard.ts";
 import type { CandidateResult } from "../lib/rank.ts";
-import { buildRecords, buildSummary, effectiveVerdict, stableJson, taskEntry, type VerdictRecord } from "../lib/records.ts";
+import { buildRecords, buildSummary, effectiveVerdict, stableJson, taskEntry, withdraws, type VerdictRecord } from "../lib/records.ts";
 import { effectiveVerdict as effectiveForIssue, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 
 const sc = (id: string, lines: number): SummaryCandidate => ({ id, file: `candidates/${id}.diff`, transformations: ["X"], operationId: null, diffBytes: lines * 10, diffLines: lines });
@@ -186,11 +186,11 @@ test("invariant: after any verdict sequence no open PR holds a candidate other t
   const seq: [string, "right" | "wrong" | "unsure", string | null][] = [
     ["A", "right", "candidate-1"], ["A", "right", "candidate-1"], ["B", "right", "candidate-2"], ["B", "unsure", "candidate-2"],
     ["A", "right", "candidate-1"], ["none", "wrong", null], ["C", "right", "candidate-3"], ["A", "wrong", "candidate-1"],
+    ["C", "wrong", "candidate-3"], ["C", "right", "candidate-3"], ["B", "wrong", "candidate-2"],
   ];
   const rows: VerdictRecord[] = [];
   seq.forEach(([label, verdict, candidateId], i) => {
-    const before = effectiveVerdict(rows).pick;
-    const withdrew = verdict === "unsure" && (candidateId === null || (before.decided && before.candidateId === candidateId));
+    const withdrew = withdraws({ verdict, candidateId }, effectiveVerdict(rows).pick);
     const plan = planPr({ label, verdict, candidateId, withdrew }, open);
     open = open.filter((pr) => !plan.close.includes(pr.number));
     if (plan.open) open.push({ number: next++, candidateId });
@@ -228,7 +228,63 @@ test("record-verdict outputs: withdrew only for unsure on the picked letter or n
   assert.equal(say(904, `/verdict ${a} right`).withdrew, "false");
   assert.equal(say(905, "/verdict none unsure").withdrew, "true");
   assert.equal(say(906, "/verdict none unsure").withdrew, "true"); // nothing standing; harmless re-mark is skipped by planPr
+  assert.equal(say(907, `/verdict ${a} right`).withdrew, "false");
+  assert.equal(say(908, `/verdict ${c} wrong`).withdrew, "false");
+  assert.equal(effectiveForIssue(root, 38)!.withdrawn, false);
+  assert.equal(say(909, `/verdict ${a} wrong`).withdrew, "true");
   const e = effectiveForIssue(root, 38)!;
   assert.equal(e.withdrawn, true);
-  assert.equal(e.total, 6);
+  assert.equal(e.total, 9);
+});
+
+test("M3.2: `<letter> wrong` on the standing pick withdraws; on another letter it is a label", () => {
+  const r = records(32);
+  const aRight = v("100", 1, "A", "candidate-1", "right");
+  const aWrong = v("101", 2, "A", "candidate-1", "wrong");
+  // A right then A wrong: withdrawn, excluded from training and agreement; withdraws() is true.
+  assert.equal(withdraws(aWrong, effectiveVerdict([aRight]).pick), true);
+  const e = effectiveVerdict([aRight, aWrong]);
+  assert.deepEqual(e.pick, { decided: false, candidateId: null });
+  assert.equal(e.latest, null);
+  assert.equal(e.withdrawn, true);
+  const entry = taskEntry(r.task, r.ranking, [aRight, aWrong]);
+  assert.equal(entry.trainable, false);
+  assert.equal(entry.countsTowardAgreement, false);
+  assert.equal(entry.withdrawn, true);
+  assert.equal(buildSummary([entry]).withdrawnTasks, 1);
+  // A right then C wrong: a label; A stays counted.
+  const cWrong = v("101", 2, "C", "candidate-3", "wrong");
+  assert.equal(withdraws(cWrong, effectiveVerdict([aRight]).pick), false);
+  const kept = taskEntry(r.task, r.ranking, [aRight, cWrong]);
+  assert.equal(kept.peacePick, "candidate-1");
+  assert.equal(kept.trainable, true);
+  assert.equal(kept.countsTowardAgreement, true);
+  assert.equal(kept.withdrawn, false);
+  // Withdrawn by wrong, then A right again: counts A.
+  const back = effectiveVerdict([aRight, aWrong, v("102", 3, "A", "candidate-1", "right")]);
+  assert.deepEqual(back.pick, { decided: true, candidateId: "candidate-1" });
+  assert.equal(back.withdrawn, false);
+  // none wrong is unchanged: a decisive pick of none, never a withdrawal.
+  assert.equal(withdraws(v("103", 4, null, null, "wrong"), effectiveVerdict([aRight]).pick), false);
+  assert.deepEqual(effectiveVerdict([aRight, v("103", 4, null, null, "wrong")]).pick, { decided: true, candidateId: null });
+  // A wrong with nothing picked is a label.
+  assert.equal(withdraws(aWrong, effectiveVerdict([]).pick), false);
+});
+
+test("M3.2: wrong-withdrawal marks the open PR and replies withdrawn; A right again removes the label", () => {
+  const unmarked = openPeacePrs([{ number: 60, headRefName: prBranch(6, "candidate-1", "cccc0000") }], 6);
+  const w = planPr({ label: "A", verdict: "wrong", candidateId: "candidate-1", withdrew: true }, unmarked);
+  assert.deepEqual(w.markWithdrawn, [60]);
+  assert.deepEqual(w.close, []);
+  assert.equal(w.open, false);
+  assert.match(w.reply, /^Verdict recorded: A wrong\. This withdraws your pick/);
+  assert.match(w.reply, /#60 marked `verdict-withdrawn`: do not merge\./);
+  // C wrong (not the pick): a label, no PR changes.
+  assert.deepEqual(planPr({ label: "C", verdict: "wrong", candidateId: "candidate-3", withdrew: false }, unmarked),
+    { close: [], open: false, markWithdrawn: [], unmarkWithdrawn: [], reply: "Verdict recorded: C wrong." });
+  const marked = openPeacePrs([{ number: 60, headRefName: prBranch(6, "candidate-1", "cccc0000"), labels: [{ name: "verdict-withdrawn" }] }], 6);
+  const again = planPr({ label: "A", verdict: "right", candidateId: "candidate-1" }, marked);
+  assert.deepEqual(again.unmarkWithdrawn, [60]);
+  assert.equal(again.open, false);
+  assert.match(again.reply, /Removed `verdict-withdrawn` from #60\./);
 });
