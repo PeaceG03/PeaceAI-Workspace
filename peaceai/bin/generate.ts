@@ -7,7 +7,9 @@ import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { parseDiff } from "../lib/diff.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { buildVariants } from "../lib/taskmap.ts";
+import { selectSources } from "../lib/sources.ts";
+import { loadTargets, scopeOf } from "../lib/target.ts";
+import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 
 const MAX_CANDIDATES = 5;
 const MAX_CALLS = 40;
@@ -26,11 +28,12 @@ const synthesizer = new kernel.PeaceAINativeCodeSynthesizer();
 const baseSha = git(repo, "rev-parse", "HEAD").trim();
 const tracked = git(repo, "ls-files", "-z").split("\0").filter(Boolean);
 const baseFiles = new Set(tracked);
-const sourcePaths = tracked.filter((path) => /^src\/.+\.ts$/.test(path));
-const sources = sourcePaths.map((path) => {
-  const content = readFileSync(join(repo, path), "utf8");
-  return { path, content, fingerprint: kernel.sourceFingerprint(path, content) };
-});
+// M5: the target's scope decides which files are sources; larger targets get a bounded, task-relevant set.
+const targets = loadTargets();
+const target = process.env.PEACEAI_TARGET || targets.default;
+const targetConfig = targets.targets[target];
+if (!targetConfig) throw new Error("target has no scope config");
+const scope = scopeOf(targetConfig);
 
 const fromFile = process.env.ISSUE_JSON ? JSON.parse(readFileSync(process.env.ISSUE_JSON, "utf8")) : null;
 const task = {
@@ -39,7 +42,14 @@ const task = {
 };
 const issueNumber = String(fromFile?.number ?? process.env.ISSUE_NUMBER ?? "local").replace(/[^0-9a-z-]/gi, "");
 const taskId = `workspace-issue-${issueNumber}`;
-const variants = buildVariants(task, sourcePaths);
+
+const candidatesForContext = tracked
+  .filter((path) => scope.isSource(path) && !scope.isDenied(path))
+  .map((path) => ({ path, content: readFileSync(join(repo, path), "utf8") }));
+const selected = selectSources(cleanIssueText(task), candidatesForContext);
+const sourcePaths = selected.map((f) => f.path);
+const sources = selected.map(({ path, content }) => ({ path, content, fingerprint: kernel.sourceFingerprint(path, content) }));
+const variants = buildVariants(task, sourcePaths, scope.isTest);
 
 const worktree = mkdtempSync(join(tmpdir(), "peaceai-gen-"));
 rmSync(worktree, { recursive: true, force: true });
@@ -108,7 +118,7 @@ outer: for (const variant of variants) {
     const key = createHash("sha256").update(diff).digest("hex");
     if (seen.has(key)) continue;
     seen.add(key);
-    if (checkCandidateScope(parseDiff(diff), baseFiles).length > 0) {
+    if (checkCandidateScope(parseDiff(diff), baseFiles, scope).length > 0) {
       scopeRejected += 1;
       continue;
     }
@@ -138,4 +148,4 @@ const summary = {
   })),
 };
 writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
-console.log(`variants=${variants.length} calls=${calls} candidates=${candidates.length} scope_rejected=${scopeRejected}`);
+console.log(`sources=${sources.length} variants=${variants.length} calls=${calls} candidates=${candidates.length} scope_rejected=${scopeRejected}`);

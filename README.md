@@ -114,6 +114,43 @@ authoritative. A CPU ranker is trained and recorded in **shadow** mode:
   on held-out, and only then takes effect if Peace sets the repository variable `PEACEAI_RANKER=model`.
   The record then has `active: "model"` and `activeTop` from the model.
 
+## Targets (M5)
+
+A task's diffs apply to this Workspace by default. To work on another repository, add a
+`target:<owner>/<repo>` label or a line `Target: <owner>/<repo>` in the issue body. Configured targets
+live in `peaceai/targets.json`: today this Workspace and `PeaceG03/PeaceSTOCKS`.
+
+- **Visibility is checked on every run** through the GitHub API (select, Job A, Job B, and again right
+  before the review comment and before any target PR). Only a repository the API reports as public, under
+  the same name, runs. A private repository, a failed or rate-limited check, or a forced failure (the
+  test-only `force_visibility_fail` dispatch input) all count as private.
+- **Private targets fail closed.** The task is marked `peaceai:failed` with a fixed message that names no
+  file and quotes nothing; no job after `select` receives the issue, nothing of the target is cloned, and
+  there are no diffs, logs, artifacts or branches for it. A private flow (Results or the target repo
+  itself) can plug in at that point later; it is not built.
+- **Public targets** are cloned anonymously over HTTPS (no token, no credential helper), outside the
+  Workspace. Their diffs and the blind review live here like Workspace tasks; the review names the target.
+- **Per-target scope.** Each target has its own source and test patterns and a deny list. For PeaceSTOCKS
+  a candidate may only touch `src/**/*.ts`; workflows, `.env*`, `wrangler.toml`, fixtures, test helpers,
+  entry points (`host.ts`, `scheduler.ts`, `backfill.ts`) and anything named secret, token, credential
+  or production are refused. Existing tests, configs and lockfiles are never changed. The leak gate checks
+  core text (with the target's own tree as the already-public baseline) and personal info for every target.
+- **Tests per target.** Workspace runs its whole suite. PeaceSTOCKS is too large and partly
+  environment-dependent for that, so its original suite is the existing tests related to the touched files
+  (same stem, or importing the module, at most 4): each runs on the untouched base first, and a candidate
+  fails if any test that passed on the base fails with the candidate. Type checking is always the whole
+  project; new tests run alone in their own pass.
+- **PRs on a target** open only after `/verdict X right`, from the target's main-only write environment
+  (`peacestocks-write` for PeaceSTOCKS) holding `TARGET_PR_TOKEN`. Without that environment or token the
+  verdict is still recorded and the reply says no PR was opened.
+
+Setup for PeaceSTOCKS PRs (owner): create a fine-grained personal access token with resource owner
+`PeaceG03`, repository access *Only select repositories → PeaceSTOCKS*, permissions *Contents: Read and
+write* and *Pull requests: Read and write* (Metadata read is implied), 90-day expiry. In this repository,
+Settings → Environments → New environment `peacestocks-write`; Deployment branches and tags → *Selected
+branches* → `main` only; add the secret `TARGET_PR_TOKEN`. Nothing is needed on PeaceSTOCKS itself, and its
+workflows, variables and secrets are never touched.
+
 ## Tamper-proof results
 
 A candidate's tests must not be able to write or forge their own result. On GitHub-hosted runners the
@@ -153,6 +190,8 @@ all check the variable; a cancelled run leaves its issue `peaceai:running`, whic
   pushed** (`peaceai/bin/prepush-scan.ts`): each added or modified file for core text against the local
   core checkout and for personal info and secrets, plus noreply commit identities and clean messages. Any
   hit, or a missing core checkout, blocks the push. Output is short shas, paths and kinds only.
+  `install-pre-push.sh --template <core-dir>` also puts the hook in the git template, so every new clone
+  on the box gets it; the template copy acts only on pushes to `PeaceG03/PeaceAI-Workspace`.
 
 ## Writing tasks
 

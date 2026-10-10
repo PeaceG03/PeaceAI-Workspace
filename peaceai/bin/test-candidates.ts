@@ -6,12 +6,22 @@ import { dirname, join, resolve } from "node:path";
 import { parseDiff } from "../lib/diff.ts";
 import { validateSummary } from "../lib/gate.ts";
 import type { CandidateResult } from "../lib/rank.ts";
-import { checkCandidateScope, TEST_FILE } from "../lib/scope.ts";
+import { checkCandidateScope } from "../lib/scope.ts";
+import { relatedTests } from "../lib/sources.ts";
+import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const inDir = resolve(process.env.PEACEAI_IN_DIR ?? "");
 const resultsFile = resolve(process.env.PEACEAI_RESULTS_FILE ?? "");
 const repo = resolve(process.env.PEACEAI_WORKSPACE_DIR ?? process.cwd());
 const STEP_TIMEOUT_MS = 120_000;
+const RELATED_TIMEOUT_MS = 60_000;
+const RELATED_LIMIT = 4;
+
+// M5: per-target scope and original-suite mode.
+const targets = loadTargets();
+const targetConfig = targets.targets[process.env.PEACEAI_TARGET || targets.default];
+if (!targetConfig) throw new Error("target has no scope config");
+const scope = scopeOf(targetConfig);
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -41,13 +51,13 @@ function runTrusted(cwd: string, command: string, args: string[]): boolean {
 }
 
 /** Candidate-controlled command: sandbox user, clean env, exit code only, leftovers killed. */
-function runCandidate(cwd: string, command: string, args: string[]): boolean {
+function runCandidate(cwd: string, command: string, args: string[], timeout = STEP_TIMEOUT_MS): boolean {
   const envArgs = Object.entries(cleanEnv).map(([k, v]) => `${k}=${v}`);
   const result = sandboxUser
     ? spawnSync("sudo", ["-n", "-u", sandboxUser, "--", "/usr/bin/env", "-i", ...envArgs, command, ...args], {
-        cwd, stdio: "ignore", timeout: STEP_TIMEOUT_MS, killSignal: "SIGKILL",
+        cwd, stdio: "ignore", timeout, killSignal: "SIGKILL",
       })
-    : spawnSync(command, args, { cwd, env: cleanEnv, stdio: "ignore", timeout: STEP_TIMEOUT_MS, killSignal: "SIGKILL" });
+    : spawnSync(command, args, { cwd, env: cleanEnv, stdio: "ignore", timeout, killSignal: "SIGKILL" });
   killSandbox();
   return result.status === 0;
 }
@@ -78,7 +88,7 @@ for (const candidate of selected) {
   };
   results.push(result);
   // Defense in depth: re-check scope without the core.
-  if (checkCandidateScope(files, baseFiles).length > 0) continue;
+  if (checkCandidateScope(files, baseFiles, scope).length > 0) continue;
   // The tree is owned by this harness and only readable by the sandbox user; it gets its own tools copy.
   const tree = mkdtempSync(join(sandboxRoot, "peaceai-test-"));
   rmSync(tree, { recursive: true, force: true });
@@ -88,12 +98,21 @@ for (const candidate of selected) {
     cpSync(join(repo, "node_modules"), join(tree, "node_modules"), { recursive: true, verbatimSymlinks: true });
     const tsx = join(tree, "node_modules", ".bin", "tsx");
     const tsc = join(tree, "node_modules", ".bin", "tsc");
-    const originalTests = [...baseFiles].filter((path) => /^src\/.+\.test\.ts$/.test(path)).sort();
+    const baseTests = [...baseFiles].filter((path) => scope.isSource(path) && scope.isTest(path)).sort();
+    const touched = files.map((f) => f.newPath ?? "").filter((p) => p && !scope.isTest(p));
+    const related =
+      targetConfig.originalSuite === "related"
+        ? relatedTests(touched, baseTests.map((path) => ({ path, content: git(repo, "show", `${summary.baseSha}:${path}`) })), RELATED_LIMIT)
+        : [];
+    // "related" mode: each related existing test runs on the untouched base first; only those that pass
+    // there are judged on the candidate (a regression fails it). Base failures are environment noise.
+    const judged = related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
+    if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${related.length} judged=${judged.length}`);
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", diffPath])) continue;
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", diffPath])) continue;
     result.applied = true;
     const newTests = files
-      .filter((file) => file.isNew && file.newPath && TEST_FILE.test(file.newPath))
+      .filter((file) => file.isNew && file.newPath && scope.isTest(file.newPath))
       .map((file) => file.newPath!)
       .sort();
     result.newTestFiles = newTests.length;
@@ -101,7 +120,10 @@ for (const candidate of selected) {
     // Pass 1: the original suite, with every new test file moved out of the tree.
     const parked = mkdtempSync(join(tmpdir(), "peaceai-parked-"));
     newTests.forEach((path, i) => renameSync(join(tree, path), join(parked, String(i))));
-    result.originalSuitePassed = originalTests.length > 0 && runCandidate(tree, tsx, ["--test", ...originalTests]);
+    result.originalSuitePassed =
+      targetConfig.originalSuite === "full"
+        ? baseTests.length > 0 && runCandidate(tree, tsx, ["--test", ...baseTests])
+        : judged.every((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
     newTests.forEach((path, i) => {
       mkdirSync(dirname(join(tree, path)), { recursive: true });
       renameSync(join(parked, String(i)), join(tree, path));

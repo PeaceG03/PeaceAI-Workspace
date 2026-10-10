@@ -5,6 +5,11 @@ name: peace-task
 # starts another sweep while tasks are waiting. A schedule backs this up.
 on:
   workflow_dispatch:
+    inputs:
+      force_visibility_fail:
+        description: "Test only: treat the target's visibility check as failed (the task fails closed)"
+        type: boolean
+        default: false
   schedule:
     - cron: "*/30 * * * *"
 
@@ -26,9 +31,14 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: write
     outputs:
-      issue: ${{ steps.pick.outputs.issue }}
+      # Empty unless the target is confirmed public and configured: later jobs never see a private target.
+      issue: ${{ steps.target.outputs.run == 'true' && steps.pick.outputs.issue || '' }}
       source: ${{ steps.pick.outputs.source }}
+      target: ${{ steps.target.outputs.target }}
+      is_default: ${{ steps.target.outputs.is_default }}
+      install: ${{ steps.target.outputs.install }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,6 +54,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MODE: select
         run: ./node_modules/.bin/tsx peaceai/bin/select.ts
+      # M5: visibility through the GitHub API on every run. Not confirmed public (or not configured) means the
+      # task fails closed here with a content-free comment, before anything of the target is fetched.
+      - name: Resolve the target and check its visibility
+        id: target
+        if: steps.pick.outputs.issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: select
+          ISSUE_NUMBER: ${{ steps.pick.outputs.issue }}
+          PEACEAI_FORCE_VISIBILITY_FAIL: ${{ inputs.force_visibility_fail == true }}
+        run: ./node_modules/.bin/tsx peaceai/bin/target-check.ts
+      - name: Chain the next sweep after a fail-closed task
+        if: steps.target.outputs.run == 'false' && steps.pick.outputs.waiting != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
 
   generate:
     name: "Job A: generate"
@@ -60,6 +86,7 @@ jobs:
       matrix: ${{ steps.generate.outputs.matrix }}
     env:
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
+      PEACEAI_TARGET: ${{ needs.select.outputs.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,6 +96,15 @@ jobs:
           node-version: 22
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Re-check the target is public
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ needs.select.outputs.target }}
+          PEACEAI_FORCE_VISIBILITY_FAIL: ${{ inputs.force_visibility_fail == true }}
+        run: ./node_modules/.bin/tsx peaceai/bin/target-check.ts
+      - name: Clone the target anonymously (outside the workspace)
+        if: needs.select.outputs.is_default != 'true'
+        run: ./peaceai/bin/clone-target.sh "$PEACEAI_TARGET" "$RUNNER_TEMP/peaceai-target"
       - name: Confirm the task is still live (remove the label to cancel)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,15 +121,17 @@ jobs:
           export PEACEAI_KERNEL_BUNDLE="$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
           export PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out"
           export ISSUE_JSON="$RUNNER_TEMP/issue.json"
+          if [ "${{ needs.select.outputs.is_default }}" != "true" ]; then export PEACEAI_WORKSPACE_DIR="$RUNNER_TEMP/peaceai-target"; fi
           ./node_modules/.bin/tsx peaceai/bin/generate.ts
           node -e 'const s=require(process.env.PEACEAI_OUT_DIR+"/summary.json");console.log("candidates="+s.candidates.length);console.log("matrix="+JSON.stringify(s.candidates.map(c=>c.id)))' >> "$GITHUB_OUTPUT"
       - name: Leak and scope gate
         run: |
+          if [ "${{ needs.select.outputs.is_default }}" != "true" ]; then export PEACEAI_WORKSPACE_DIR="$RUNNER_TEMP/peaceai-target"; fi
           PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out" PEACEAI_CORE_DIR="$RUNNER_TEMP/peaceai-core" \
             ./node_modules/.bin/tsx peaceai/bin/gate.ts
       - name: Delete core
         if: always()
-        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/issue.json"
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/issue.json" "$RUNNER_TEMP/peaceai-target"
       - name: Upload candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -104,12 +142,14 @@ jobs:
 
   test:
     name: "Job B: test ${{ matrix.candidate }}"
-    needs: generate
+    needs: [select, generate]
     if: needs.generate.outputs.candidates != '0'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
+    env:
+      PEACEAI_TARGET: ${{ needs.select.outputs.target }}
     strategy:
       fail-fast: false
       max-parallel: 5
@@ -128,6 +168,21 @@ jobs:
         with:
           name: peaceai-candidates
           path: ${{ runner.temp }}/peaceai-in
+      - name: Re-check the target is public
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ needs.select.outputs.target }}
+          PEACEAI_FORCE_VISIBILITY_FAIL: ${{ inputs.force_visibility_fail == true }}
+        run: ./node_modules/.bin/tsx peaceai/bin/target-check.ts
+      - name: Clone the target anonymously at the base commit and install its locked dependencies
+        if: needs.select.outputs.is_default != 'true'
+        env:
+          INSTALL: ${{ needs.select.outputs.install }}
+        run: |
+          base="$(node -p 'require(process.env.RUNNER_TEMP+"/peaceai-in/summary.json").baseSha')"
+          ./peaceai/bin/clone-target.sh "$PEACEAI_TARGET" "$RUNNER_TEMP/peaceai-target" "$base"
+          ./peaceai/bin/install-target.sh "$RUNNER_TEMP/peaceai-target" "$INSTALL"
+          chmod -R a-w "$RUNNER_TEMP/peaceai-target/node_modules"
       - name: Make this runner's tools read-only
         run: chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
       # Tamper-proof results: candidate code runs only as this unprivileged user, which cannot write
@@ -142,6 +197,7 @@ jobs:
           PEACEAI_REQUIRE_SANDBOX: "true"
         run: |
           mkdir -p "$RUNNER_TEMP/peaceai-testresults"
+          if [ "${{ needs.select.outputs.is_default }}" != "true" ]; then export PEACEAI_WORKSPACE_DIR="$RUNNER_TEMP/peaceai-target"; fi
           PEACEAI_IN_DIR="$RUNNER_TEMP/peaceai-in" \
           PEACEAI_RESULTS_FILE="$RUNNER_TEMP/peaceai-testresults/$PEACEAI_ONLY_CANDIDATE.json" \
             ./node_modules/.bin/tsx peaceai/bin/test-candidates.ts
@@ -198,6 +254,7 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
           TASK_SOURCE: ${{ needs.select.outputs.source }}
+          TASK_TARGET: ${{ needs.select.outputs.target }}
           PEACEAI_RANKER: ${{ vars.PEACEAI_RANKER }}
         run: |
           mkdir -p "$RUNNER_TEMP/peaceai-testresults"
@@ -241,10 +298,17 @@ jobs:
         with:
           name: peaceai-candidates
           path: ${{ runner.temp }}/peaceai-in
+      - name: Re-check the target is public before posting its diffs
+        if: needs.record.outputs.eligible != '0'
+        env:
+          TARGET: ${{ needs.select.outputs.target }}
+          PEACEAI_FORCE_VISIBILITY_FAIL: ${{ inputs.force_visibility_fail == true }}
+        run: ./node_modules/.bin/tsx peaceai/bin/target-check.ts
       - name: Post every eligible candidate, shuffled, unranked
         if: needs.record.outputs.eligible != '0'
         env:
           PRESENTATION: ${{ needs.record.outputs.presentation }}
+          PEACEAI_TARGET: ${{ needs.select.outputs.target }}
         run: |
           PEACEAI_IN_DIR="$RUNNER_TEMP/peaceai-in" PEACEAI_BODY_FILE="$RUNNER_TEMP/review.md" \
             ./node_modules/.bin/tsx peaceai/bin/review-comment.ts

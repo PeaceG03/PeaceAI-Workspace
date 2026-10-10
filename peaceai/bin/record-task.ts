@@ -40,6 +40,8 @@ const diffOf = (id: string): string => {
 };
 const issue = JSON.parse(readFileSync(issueFile, "utf8"));
 const issueNumber = Number(issue.number);
+// M5: the target is recorded with the task; the verdict job opens the PR there.
+const targetName = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(process.env.TASK_TARGET ?? "") ? process.env.TASK_TARGET! : "";
 const records = buildRecords(
   {
     issue: issueNumber,
@@ -49,6 +51,7 @@ const records = buildRecords(
     title: String(issue.title ?? "").slice(0, 300),
     body: String(issue.body ?? "").slice(0, 4000),
     source: process.env.TASK_SOURCE === "builder" ? "builder" : "peace",
+    ...(targetName ? { target: targetName } : {}),
   },
   summary.candidates,
   results,
