@@ -129,9 +129,16 @@ jobs:
           path: ${{ runner.temp }}/peaceai-in
       - name: Make this runner's tools read-only
         run: chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
+      # Tamper-proof results: candidate code runs only as this unprivileged user, which cannot write
+      # the harness, the candidate tree or the results path. The harness (runner user) captures the
+      # exit codes, kills every process of this user, and only then writes the result file.
+      - name: Create the unprivileged candidate user
+        run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
       - name: Test the candidate (original suite alone, then new tests alone)
         env:
           PEACEAI_ONLY_CANDIDATE: ${{ matrix.candidate }}
+          PEACEAI_SANDBOX_USER: peaceai-cand
+          PEACEAI_REQUIRE_SANDBOX: "true"
         run: |
           mkdir -p "$RUNNER_TEMP/peaceai-testresults"
           PEACEAI_IN_DIR="$RUNNER_TEMP/peaceai-in" \
