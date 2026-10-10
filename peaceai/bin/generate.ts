@@ -7,7 +7,8 @@ import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { parseDiff } from "../lib/diff.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { selectSources } from "../lib/sources.ts";
+import { indexBoost, selectSources } from "../lib/sources.ts";
+import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 
@@ -46,10 +47,18 @@ const taskId = `workspace-issue-${issueNumber}`;
 const candidatesForContext = tracked
   .filter((path) => scope.isSource(path) && !scope.isDenied(path))
   .map((path) => ({ path, content: readFileSync(join(repo, path), "utf8") }));
-const selected = selectSources(cleanIssueText(task), candidatesForContext);
+// M6: symbol and keyword index over the target's in-scope files. Built here, in memory, after the
+// visibility gate (select job + re-check) has passed; only counts are logged and nothing is saved.
+const objectiveText = cleanIssueText(task);
+const index = buildIndex(candidatesForContext);
+const resolved = resolveTargets(index, objectiveText, scope.isTest).map((t) => t.path);
+const related = relatedFiles(index, resolved);
+const keywordHits = search(index, objectiveText, 10).map((hit) => hit.path);
+const selected = selectSources(objectiveText, candidatesForContext, indexBoost(resolved, related, keywordHits));
 const sourcePaths = selected.map((f) => f.path);
 const sources = selected.map(({ path, content }) => ({ path, content, fingerprint: kernel.sourceFingerprint(path, content) }));
-const variants = buildVariants(task, sourcePaths, scope.isTest);
+const variants = buildVariants(task, sourcePaths, scope.isTest, resolved);
+console.log(`${indexStats(index)} resolved=${resolved.length} related=${related.length}`);
 
 const worktree = mkdtempSync(join(tmpdir(), "peaceai-gen-"));
 rmSync(worktree, { recursive: true, force: true });
@@ -90,7 +99,35 @@ const candidates: { id: string; diff: string; transformations: string[]; operati
 const seen = new Set<string>();
 let calls = 0;
 let scopeRejected = 0;
-outer: for (const variant of variants) {
+
+// M6: a task written as numbered steps is a multi-step plan. It runs once through the bundled planner
+// (DevelopmentPlanGraph + CrossLayerPlanExecutor over the edit families) and yields at most one combined
+// candidate; single-step variants are not tried, so a partial chain is never offered.
+const planSteps = typeof kernel.parsePlanSteps === "function" ? kernel.parsePlanSteps(objectiveText) : null;
+let planStatus = "none";
+if (planSteps) {
+  calls += 1;
+  let plan;
+  try {
+    plan = await kernel.synthesizePlan({ taskId, objective: objectiveText, targetPath: resolved[0] ?? null, sources });
+  } catch {
+    plan = { status: "BLOCKED" };
+  }
+  planStatus = `${String(plan.status).toLowerCase()}:${planSteps.length}`;
+  if (plan.status === "MATERIALIZED") {
+    const diff = toDiff(plan.operations);
+    if (diff && checkCandidateScope(parseDiff(diff), baseFiles, scope).length === 0) {
+      candidates.push({
+        id: "candidate-1",
+        diff,
+        transformations: [...new Set<string>(plan.steps.flatMap((step: { transformations: string[] }) => step.transformations))],
+        operationId: plan.operationId,
+      });
+    } else if (diff) scopeRejected += 1;
+  }
+}
+
+outer: for (const variant of planSteps ? [] : variants) {
   const rejected: string[] = [];
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (calls >= MAX_CALLS || candidates.length >= MAX_CANDIDATES) break outer;
@@ -148,4 +185,4 @@ const summary = {
   })),
 };
 writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
-console.log(`sources=${sources.length} variants=${variants.length} calls=${calls} candidates=${candidates.length} scope_rejected=${scopeRejected}`);
+console.log(`sources=${sources.length} variants=${variants.length} plan=${planStatus} calls=${calls} candidates=${candidates.length} scope_rejected=${scopeRejected}`);

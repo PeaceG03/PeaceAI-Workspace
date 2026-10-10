@@ -20,12 +20,17 @@ export function taskIdentifiers(objective: string): string[] {
  * mention the task's identifiers (most mentions first), then the smallest remaining. Deterministic; the
  * result keeps the input order so small repos (everything fits) behave exactly as before.
  */
-export function selectSources(objective: string, files: readonly SourceFile[]): SourceFile[] {
+export function selectSources(
+  objective: string,
+  files: readonly SourceFile[],
+  boost: ReadonlyMap<string, number> = new Map(),
+): SourceFile[] {
   const named = new Set(objective.match(/\b[\w./-]+\.ts\b/g) ?? []);
   const ids = taskIdentifiers(objective);
+  // M6: `boost` carries the symbol/keyword index's view (resolved targets, related files, BM25 hits).
   const score = (f: SourceFile) => {
     if (named.has(f.path)) return 1_000_000;
-    return ids.reduce((sum, id) => sum + (f.content.includes(id) ? 1 : 0), 0);
+    return (boost.get(f.path) ?? 0) + ids.reduce((sum, id) => sum + (f.content.includes(id) ? 1 : 0), 0);
   };
   const ranked = [...files].sort((a, b) => score(b) - score(a) || a.content.length - b.content.length || (a.path < b.path ? -1 : 1));
   const chosen = new Set<string>();
@@ -55,4 +60,21 @@ export function relatedTests(touched: readonly string[], tests: readonly SourceF
     }),
   );
   return hits.map((t) => t.path).sort().slice(0, limit);
+}
+
+/**
+ * M6: index-derived source priorities. Resolved task targets first (in resolution order), then files
+ * related to them (imports, importers, references), then the BM25 keyword hits for the task text.
+ */
+export function indexBoost(
+  targets: readonly string[],
+  related: readonly string[],
+  keywordHits: readonly string[],
+): Map<string, number> {
+  const boost = new Map<string, number>();
+  const add = (path: string, value: number) => boost.set(path, Math.max(boost.get(path) ?? 0, value));
+  targets.forEach((p, i) => add(p, 100_000 - i));
+  related.forEach((p, i) => add(p, 10_000 - i));
+  keywordHits.forEach((p, i) => add(p, 1_000 - i));
+  return boost;
 }

@@ -19,6 +19,9 @@ export interface TargetConfig {
   originalSuite: "full" | "related";
   /** GitHub environment holding TARGET_PR_TOKEN for PRs on this target; null = this repository. */
   writeEnvironment: string | null;
+  /** M6: what a `right` verdict does. "pr": open a PR (needs write access). "patch": post the chosen
+   * candidate as a `git format-patch` file on the Workspace issue; the owner applies it (no token). */
+  verdictRoute?: "pr" | "patch";
 }
 
 export interface TargetsFile {
@@ -39,6 +42,7 @@ export function loadTargets(path = join(import.meta.dirname, "..", "targets.json
     for (const p of [c.sourcePattern, c.testPattern, ...c.denyPatterns]) new RegExp(p); // must compile
     if (!["npm", "pnpm"].includes(c.install) || !["full", "related"].includes(c.originalSuite)) throw new Error("invalid target config");
     if (c.writeEnvironment !== null && !/^[a-z0-9-]{1,60}$/.test(c.writeEnvironment)) throw new Error("invalid write environment");
+    if (c.verdictRoute !== undefined && !["pr", "patch"].includes(c.verdictRoute)) throw new Error("invalid verdict route");
   }
   return file;
 }

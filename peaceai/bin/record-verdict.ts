@@ -58,15 +58,16 @@ if (verdict === "right" && shown && process.env.CHOSEN_OUT_DIR) {
 }
 out({
   status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", withdrew: String(withdrew),
-  test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen,
+  test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen, run_id: attempt.task.runId,
   ...targetOutputs(attempt.task.target),
 });
 
 /** M5: where a chosen PR goes. Workspace (default or older records) or a configured external target. */
 function targetOutputs(target: string | undefined): Record<string, string> {
   const targets = loadTargets();
-  if (!target || target === targets.default) return { target: targets.default, external: "false", write_env: "" };
+  if (!target || target === targets.default) return { target: targets.default, external: "false", write_env: "", route: "pr" };
   const config = targets.targets[target];
   // A recorded target without a config (or write environment) gets no PR; the respond job says so.
-  return { target, external: "true", write_env: config?.writeEnvironment ?? "" };
+  // M6: a "patch" route target gets a format-patch comment instead and never needs a write token.
+  return { target, external: "true", write_env: config?.writeEnvironment ?? "", route: config?.verdictRoute ?? "pr" };
 }
