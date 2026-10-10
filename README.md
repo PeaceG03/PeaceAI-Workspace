@@ -21,7 +21,12 @@ Public workspace where PeaceAI attempts small coding tasks on GitHub Actions, wi
 5. **Job C (record)** writes the task, every candidate diff, both test passes, the scores, eligibility
    and the blind ranking to the private Results repository, and commits it **before** anything is
    shown. If the task asks for tests, candidates without a new test are rejected before ranking.
-6. **Review** (requires Job C) posts one comment listing every eligible candidate as A, B, C... in a
+   **Distinct edits (M4.1):** eligible candidates are grouped by their normalized non-test `src/` diff
+   (`peaceai/lib/dedupe.ts`), so the same edit with and without a new test file is one edit. Each group
+   presents one member: one with tests when the task asks for tests, otherwise the deterministic ranking's
+   first. Group membership (`editGroups`, `editKey`, `duplicateOf`, `distinctEdits`) is recorded in
+   `ranking.json`.
+6. **Review** (requires Job C) posts one comment listing one candidate per distinct edit as A, B, C... in a
    random order, all formatted identically, with no scores, ranks or preferred candidate.
 
 ## Verdicts
@@ -58,7 +63,8 @@ Branches are `peace-task/issue-<n>-<candidate>-<hex>`, so an open PR never holds
 than the counted `right` pick.
 
 **Agreement** compares the ranker's blind top pick with that pick. It counts only the latest attempt
-per issue, only tasks with two or more eligible candidates, and excludes test tasks.
+per issue, only tasks with two or more **distinct** eligible edits, and excludes test tasks. A task
+whose candidates all make the same edit counts as a single-candidate task (`singleEditTasks` in the summary).
 
 **Held-out set**: a task is held out when the first 4 bytes of `sha256("peaceai-heldout:v1:<issue>")`,
 read as a fraction, are below 0.2 (about 20%). Held-out tasks are recorded and reviewed like any
@@ -95,8 +101,8 @@ authoritative. A CPU ranker is trained and recorded in **shadow** mode:
 - **Model** (`peaceai/lib/ranker/model.ts`): pairwise logistic regression (linear RankNet), seeded SGD,
   standardized features, L2. Reproducible: same data and seed give the same bytes and version.
 - **Training data**: latest attempt per issue, latest standing decisive verdict picking an eligible
-  candidate, 2+ eligible, not test, not held out, not withdrawn. Pairs: Peace's pick over each other
-  eligible candidate. Both sources by default; `PEACEAI_TRAIN_SOURCES` (`peace,builder`) filters and
+  candidate, 2+ distinct eligible edits, not test, not held out, not withdrawn. Pairs: Peace's pick over
+  each other distinct edit (duplicates of one edit never form a pair; shadow scoring ranks the same set). Both sources by default; `PEACEAI_TRAIN_SOURCES` (`peace,builder`) filters and
   `PEACEAI_SOURCE_WEIGHTS` (e.g. `builder=0.5`) weights; metrics are split by source.
 - **`peace-train`** (dispatch, and after every recorded verdict except on `[test]` issues; Results key only) writes
   `models/<version>/metrics.json`, `model.json` (only when trained) and `models/latest.json` to Results.
@@ -142,6 +148,11 @@ all check the variable; a cancelled run leaves its issue `peaceai:running`, whic
 - `ci` runs the type check, the `src` tests, the tooling tests and the tamper-proof check.
 - `peace-verdict` records `/verdict` comments (see above).
 - `key-proof` (manual, owner only) proves each deploy key has exactly the access it should.
+- **Local pre-push hook** (box clones): `peaceai/bin/install-pre-push.sh <core-dir>` (or
+  `PEACEAI_CORE_DIR`) installs a git `pre-push` hook. Before any push it scans **every commit being
+  pushed** (`peaceai/bin/prepush-scan.ts`): each added or modified file for core text against the local
+  core checkout and for personal info and secrets, plus noreply commit identities and clean messages. Any
+  hit, or a missing core checkout, blocks the push. Output is short shas, paths and kinds only.
 
 ## Writing tasks
 

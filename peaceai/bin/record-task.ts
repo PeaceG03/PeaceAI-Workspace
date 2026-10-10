@@ -34,6 +34,10 @@ const ids = new Set(summary.candidates.map((c) => c.id));
 if (results.some((r) => !ids.has(r.id)) || new Set(results.map((r) => r.id)).size !== results.length)
   throw new Error("test results do not match the candidates");
 
+const diffOf = (id: string): string => {
+  const c = summary.candidates.find((x) => x.id === id);
+  return c ? readFileSync(join(inDir, c.file), "utf8") : "";
+};
 const issue = JSON.parse(readFileSync(issueFile, "utf8"));
 const issueNumber = Number(issue.number);
 const records = buildRecords(
@@ -49,14 +53,12 @@ const records = buildRecords(
   summary.candidates,
   results,
   randomBytes(16).toString("hex"),
+  diffOf,
 );
 
 // M3 shadow ranking: recorded next to the deterministic ranking, before any review output. Never shown.
 const loaded = loadLatestModel(resultsRoot);
-const shadow = loaded ? shadowRanking(loaded.model, records.task, records.ranking, (id) => {
-  const c = summary.candidates.find((x) => x.id === id);
-  return c ? readFileSync(join(inDir, c.file), "utf8") : "";
-}) : null;
+const shadow = loaded ? shadowRanking(loaded.model, records.task, records.ranking, diffOf) : null;
 if (shadow) {
   records.ranking.shadow = shadow;
   records.ranking.active = activeRanker(process.env.PEACEAI_RANKER, loaded!.promotionEligible);
@@ -73,4 +75,5 @@ writeSummary(resultsRoot);
 const eligible = records.ranking.presentation.length;
 const outputs = [`eligible=${eligible}`, `presentation=${JSON.stringify(records.ranking.presentation)}`];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, outputs.join("\n") + "\n");
-console.log(`recorded candidates=${summary.candidates.length} eligible=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"}`);
+const eligibleAll = records.ranking.candidates.filter((c) => c.eligible).length;
+console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"}`);

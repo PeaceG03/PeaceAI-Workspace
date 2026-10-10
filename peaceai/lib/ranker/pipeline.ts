@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { effectiveVerdict, stableJson, taskSourceOf, type RankingRecord, type ShadowRanking, type TaskRecord, type TaskSource } from "../records.ts";
+import { distinctEligible, effectiveVerdict, stableJson, taskSourceOf, type RankingRecord, type ShadowRanking, type TaskRecord, type TaskSource } from "../records.ts";
 import type { StoredTask } from "../store.ts";
 import { extractFeatures, FEATURE_VERSION, type CandidateFeatures } from "./features.ts";
 import { rankWithModel, train, validateModel, type Model, type Pair } from "./model.ts";
@@ -25,7 +25,7 @@ export interface Example {
   pick: string | null;
   eligible: string[];
   baselineOrder: string[];
-  features: CandidateFeatures[]; // eligible candidates only
+  features: CandidateFeatures[]; // distinct eligible edits only (M4.1)
 }
 
 export type Exclusion = "test" | "held-out" | "withdrawn" | "undecided" | "picked-none" | "pick-not-eligible" | "under-2-eligible" | "superseded";
@@ -49,7 +49,8 @@ function readDiff(root: string, task: TaskRecord, id: string): string {
 }
 
 export function toExample(task: TaskRecord, ranking: RankingRecord, e: ReturnType<typeof effectiveVerdict>, diff: (id: string) => string): Example {
-  const eligible = ranking.candidates.filter((c) => c.eligible);
+  // M4.1: one candidate per distinct edit; duplicates of the same edit never form a pair.
+  const eligible = distinctEligible(ranking);
   const diffs = new Map(eligible.map((c) => [c.id, diff(c.id)]));
   return {
     issue: task.issue,
@@ -184,10 +185,10 @@ export function runTraining(examples: readonly Example[], superseded: number, op
   return { model, metrics };
 }
 
-/** Shadow ranking for Job C: model order over eligible candidates, or null when there is no model. */
+/** Shadow ranking for Job C: model order over distinct eligible edits, or null when there is no model. */
 export function shadowRanking(model: Model | null, task: TaskRecord, ranking: RankingRecord, diff: (id: string) => string): ShadowRanking | null {
   if (!model) return null;
-  const eligible = ranking.candidates.filter((c) => c.eligible);
+  const eligible = distinctEligible(ranking);
   if (eligible.length === 0) return null;
   const features = extractFeatures(task, eligible, new Map(eligible.map((c) => [c.id, diff(c.id)])));
   const ranked = rankWithModel(model, features, ranking.rankerOrder);

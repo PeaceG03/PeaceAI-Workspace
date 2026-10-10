@@ -1,3 +1,4 @@
+import { editKey } from "./dedupe.ts";
 import type { SummaryCandidate } from "./gate.ts";
 import { isHeldOut, isTestTask, taskRequiresTests } from "./policy.ts";
 import { isPassing, rankCandidates, shuffle, type CandidateResult } from "./rank.ts";
@@ -54,7 +55,17 @@ export interface RankedCandidate {
   newTestsPassed: boolean;
   eligible: boolean;
   rejectReason: RejectReason;
-  rankPosition: number | null; // 1 = ranker's top pick among eligible candidates
+  rankPosition: number | null; // 1 = ranker's top pick among distinct eligible edits
+  /** M4.1: key of the normalized non-test src edit (eligible candidates only; absent on older records). */
+  editKey?: string | null;
+  /** M4.1: id of the presented candidate making the same edit; null when this one stands for its edit. */
+  duplicateOf?: string | null;
+}
+
+export interface EditGroup {
+  key: string;
+  representative: string;
+  members: string[];
 }
 
 export interface RankingRecord {
@@ -67,6 +78,10 @@ export interface RankingRecord {
   rankerOrder: string[];
   rankerTop: string | null;
   presentation: { label: string; id: string }[];
+  /** M4.1: eligible candidates grouped by distinct edit. Absent on older records (every eligible is distinct). */
+  editGroups?: EditGroup[];
+  /** M4.1: number of distinct eligible edits (= presentation length). */
+  distinctEdits?: number;
   /** M3: model ranking recorded alongside, never shown. Absent when no model existed at ranking time. */
   shadow?: ShadowRanking;
   /** M3: which ranker is authoritative for this record. Absent = deterministic. */
@@ -102,11 +117,39 @@ export interface TaskInputs {
   source?: TaskSource;
 }
 
+/**
+ * Eligible candidates that stand for a distinct edit: the presented representative of each edit group.
+ * Older records without groups count every eligible candidate. Agreement, training, pairs and shadow
+ * scoring all use this one helper.
+ */
+export function distinctEligible(ranking: Pick<RankingRecord, "candidates">): RankedCandidate[] {
+  return ranking.candidates.filter((c) => c.eligible && (c.duplicateOf ?? null) === null);
+}
+
+/**
+ * Groups eligible candidates by distinct edit. Representative: when the task asks for tests, a member with
+ * new test files first; then the deterministic ranking order (original suite, smallest diff, id).
+ */
+export function groupEdits(eligible: readonly CandidateResult[], requiresTests: boolean, diffOf: (id: string) => string): EditGroup[] {
+  const order = rankCandidates(eligible);
+  const byKey = new Map<string, CandidateResult[]>();
+  for (const c of order) {
+    const key = editKey(diffOf(c.id));
+    byKey.set(key, [...(byKey.get(key) ?? []), c]);
+  }
+  return [...byKey.entries()].map(([key, members]) => {
+    const preferred = requiresTests ? members.filter((m) => m.newTestFiles > 0) : [];
+    return { key, representative: (preferred[0] ?? members[0]!).id, members: members.map((m) => m.id).sort() };
+  });
+}
+
 export function buildRecords(
   task: TaskInputs,
   summary: readonly SummaryCandidate[],
   results: readonly CandidateResult[],
   seed: string,
+  /** Candidate diff by id. When given (Job C always does), eligible candidates are deduplicated by edit. */
+  diffOf?: (id: string) => string,
 ): { task: TaskRecord; ranking: RankingRecord } {
   const requiresTests = taskRequiresTests(`${task.title}\n${task.body}`);
   const byId = new Map(results.map((r) => [r.id, r]));
@@ -118,8 +161,11 @@ export function buildRecords(
     return { s, r, reason: rejectReason(r, requiresTests) };
   });
   const eligible = evaluated.filter((e) => e.reason === null && isPassing(e.r)).map((e) => e.r);
-  const order = rankCandidates(eligible).map((c) => c.id);
-  const shown = shuffle(eligible.map((c) => c.id).sort(), seed);
+  const groups = diffOf ? groupEdits(eligible, requiresTests, diffOf) : null;
+  const representatives = new Set(groups ? groups.map((g) => g.representative) : eligible.map((c) => c.id));
+  const keyOf = new Map(groups?.flatMap((g) => g.members.map((m) => [m, g] as const)) ?? []);
+  const order = rankCandidates(eligible).map((c) => c.id).filter((id) => representatives.has(id));
+  const shown = shuffle([...representatives].sort(), seed);
   const presentation = shown.map((id, i) => ({ label: String.fromCharCode(65 + i), id }));
   const labelOf = new Map(presentation.map((p) => [p.id, p.label]));
   const candidates: RankedCandidate[] = evaluated.map(({ s, r, reason }) => ({
@@ -138,6 +184,12 @@ export function buildRecords(
     eligible: reason === null,
     rejectReason: reason,
     rankPosition: order.includes(s.id) ? order.indexOf(s.id) + 1 : null,
+    ...(groups
+      ? {
+          editKey: keyOf.get(s.id)?.key ?? null,
+          duplicateOf: keyOf.has(s.id) && keyOf.get(s.id)!.representative !== s.id ? keyOf.get(s.id)!.representative : null,
+        }
+      : {}),
   }));
   return {
     task: {
@@ -163,6 +215,7 @@ export function buildRecords(
       rankerOrder: order,
       rankerTop: order[0] ?? null,
       presentation,
+      ...(groups ? { editGroups: groups, distinctEdits: groups.length } : {}),
     },
   };
 }
@@ -253,6 +306,8 @@ export interface TaskEntry {
   requiresTests: boolean;
   candidates: number;
   eligible: number;
+  /** M4.1: distinct eligible edits; a task needs 2+ to count toward agreement and training. */
+  distinctEdits: number;
   rankerTop: string | null;
   peacePick: string | null;
   decided: boolean;
@@ -269,7 +324,8 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
   const effective = effectiveVerdict(verdicts);
   const pick = effective.pick;
   const eligible = ranking.candidates.filter((c) => c.eligible).length;
-  const comparable = pick.decided && eligible >= 2;
+  const distinctEdits = distinctEligible(ranking).length;
+  const comparable = pick.decided && distinctEdits >= 2;
   return {
     issue: task.issue,
     runId: task.runId,
@@ -279,6 +335,7 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
     requiresTests: task.requiresTests,
     candidates: ranking.candidates.length,
     eligible,
+    distinctEdits,
     rankerTop: ranking.rankerTop,
     peacePick: pick.candidateId,
     decided: pick.decided,
@@ -323,6 +380,7 @@ export function buildSummary(input: readonly TaskEntry[]) {
     agreementHeldOut: score(sorted.filter((e) => e.heldOut)),
     agreementBySource: { peace: score(sorted.filter((e) => e.source === "peace")), builder: score(sorted.filter((e) => e.source === "builder")) },
     withdrawnTasks: real.filter((e) => e.withdrawn).length,
+    singleEditTasks: real.filter((e) => e.distinctEdits === 1).length,
     entries: sorted,
   };
 }
