@@ -6,6 +6,9 @@
 /.github/workflows/ @PeaceG03
 /.github/CODEOWNERS @PeaceG03
 /peaceai/ @PeaceG03
+# M8: the approved learned-rules list is written only by the peace-approve-rule workflow.
+/peaceai/rules/ @PeaceG03
+/peaceai/rules/approved.json @PeaceG03
 /package.json @PeaceG03
 /package-lock.json @PeaceG03
 /tsconfig.json @PeaceG03

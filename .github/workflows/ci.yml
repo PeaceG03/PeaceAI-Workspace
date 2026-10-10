@@ -34,6 +34,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +47,10 @@ jobs:
         run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
       - name: Same read-only tools as Job B
         run: chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
+      - name: Every approved learned rule traces to Peace's /approve-rule comment (M8)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/tsx peaceai/bin/check-approved-list.ts
       - name: A malicious candidate cannot forge its recorded result
         env:
           PROOF_SANDBOX_USER: peaceai-cand

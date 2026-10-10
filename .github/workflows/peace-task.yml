@@ -122,6 +122,8 @@ jobs:
           export PEACEAI_KERNEL_BUNDLE="$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
           export PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out"
           export ISSUE_JSON="$RUNNER_TEMP/issue.json"
+          # M8: core-mined learned rules are read from the core checkout; the approved list from this repo.
+          export PEACEAI_CORE_DIR="$RUNNER_TEMP/peaceai-core"
           if [ "${{ needs.select.outputs.is_default }}" != "true" ]; then export PEACEAI_WORKSPACE_DIR="$RUNNER_TEMP/peaceai-target"; fi
           ./node_modules/.bin/tsx peaceai/bin/generate.ts
           node -e 'const s=require(process.env.PEACEAI_OUT_DIR+"/summary.json");console.log("candidates="+s.candidates.length);console.log("matrix="+JSON.stringify(s.candidates.map(c=>c.id)))' >> "$GITHUB_OUTPUT"
