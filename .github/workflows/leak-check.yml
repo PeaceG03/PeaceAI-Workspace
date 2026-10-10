@@ -1,0 +1,109 @@
+name: leak-check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  leak-check:
+    name: leak-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the code under review
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: target
+      - name: Check out the scanner from main (so a PR cannot weaken it outside .github)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+          path: scanner
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Bootstrap (main has no scanner yet; owner PRs only)
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ ! -f scanner/peaceai/bin/leak-scan.ts ]; then
+            if [ "$PR_AUTHOR" = "PeaceG03" ] && [ "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+              echo "main has no scanner yet; using this owner PR's scanner once"
+              rm -rf scanner && cp -R target scanner
+            else
+              echo "main has no scanner; failing closed"
+              exit 1
+            fi
+          fi
+      - name: Install scanner tooling
+        working-directory: scanner
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Personal info, secrets and scope
+        working-directory: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PEACEAI_PRIVATE_TERMS: ${{ secrets.PEACEAI_PRIVATE_TERMS }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) export LEAK_BASE_SHA="$PR_BASE_SHA" LEAK_REQUIRE_BASE=true ;;
+            workflow_dispatch)
+              if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+                # Dispatched on a bot branch: strict rules against main, no owner privilege.
+                git fetch -q origin main
+                LEAK_BASE_SHA="$(git merge-base origin/main HEAD)"
+                export LEAK_BASE_SHA LEAK_REQUIRE_BASE=true
+                unset PR_AUTHOR
+              fi ;;
+          esac
+          ../scanner/node_modules/.bin/tsx ../scanner/peaceai/bin/leak-scan.ts
+
+  core-backstop:
+    name: core-text backstop
+    if: >-
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'PeaceG03'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: peaceai-core
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Scan the public tree for core text
+        run: PEACEAI_CORE_DIR="$RUNNER_TEMP/peaceai-core" ./node_modules/.bin/tsx peaceai/bin/core-scan.ts
+      - name: Delete core
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.*

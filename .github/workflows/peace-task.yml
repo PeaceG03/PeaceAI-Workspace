@@ -1,0 +1,192 @@
+name: peace-task
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: peace-task
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: "Job A: generate"
+    if: >-
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.event.label.name == 'peace-task' &&
+      github.event.issue.user.login == 'PeaceG03' &&
+      github.event.sender.login == 'PeaceG03' &&
+      vars.PEACEAI_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: peaceai-core
+    permissions:
+      contents: read
+    outputs:
+      candidates: ${{ steps.generate.outputs.candidates }}
+    steps:
+      - name: Kill switch (re-checked before any core access)
+        env:
+          PEACEAI_ENABLED: ${{ vars.PEACEAI_ENABLED }}
+        run: |
+          if [ "$PEACEAI_ENABLED" != "true" ]; then
+            echo "PEACEAI_ENABLED is not 'true'; stopping before core checkout."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Build native synthesis only
+        run: ./peaceai/bin/build-kernel.sh "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
+      - name: Generate candidates
+        id: generate
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          export PEACEAI_KERNEL_BUNDLE="$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
+          export PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out"
+          ./node_modules/.bin/tsx peaceai/bin/generate.ts
+          echo "candidates=$(node -p 'require(process.env.PEACEAI_OUT_DIR + "/summary.json").candidates.length')" >> "$GITHUB_OUTPUT"
+      - name: Leak and scope gate
+        run: |
+          PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out" PEACEAI_CORE_DIR="$RUNNER_TEMP/peaceai-core" \
+            ./node_modules/.bin/tsx peaceai/bin/gate.ts
+      - name: Delete core
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel" "$RUNNER_TEMP"/peaceai-ssh.*
+      - name: Upload candidates
+        if: success() && steps.generate.outputs.candidates != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: peaceai-candidates
+          path: ${{ runner.temp }}/peaceai-out
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    name: "Job B: test"
+    needs: generate
+    if: needs.generate.outputs.candidates != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: peaceai-candidates
+          path: ${{ runner.temp }}/peaceai-in
+      - name: Test each candidate (original suite alone, then new tests alone)
+        run: |
+          mkdir -p "$RUNNER_TEMP/peaceai-testresults"
+          PEACEAI_IN_DIR="$RUNNER_TEMP/peaceai-in" PEACEAI_RESULTS_FILE="$RUNNER_TEMP/peaceai-testresults/results.json" \
+            ./node_modules/.bin/tsx peaceai/bin/test-candidates.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: peaceai-test-results
+          path: ${{ runner.temp }}/peaceai-testresults/results.json
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Open PR or comment
+    needs: [generate, test]
+    if: always() && (needs.generate.result == 'success' || needs.generate.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      CANDIDATES: ${{ needs.generate.outputs.candidates }}
+      TEST_RESULT: ${{ needs.test.result }}
+    steps:
+      - name: Generation or gate failed
+        if: needs.generate.result == 'failure'
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI Job A failed (generation or the leak/scope gate). Nothing was uploaded."
+      - name: No candidates or testing failed
+        if: needs.generate.result == 'success' && (needs.generate.outputs.candidates == '0' || needs.test.result != 'success')
+        run: |
+          if [ "$CANDIDATES" = "0" ]; then
+            msg="PeaceAI could not generate a candidate the native edits support for this task."
+          else
+            msg="PeaceAI generated candidates, but the test job did not complete ($TEST_RESULT)."
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$msg"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.generate.result == 'success' && needs.generate.outputs.candidates != '0' && needs.test.result == 'success'
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: needs.generate.result == 'success' && needs.generate.outputs.candidates != '0' && needs.test.result == 'success'
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        if: needs.generate.result == 'success' && needs.generate.outputs.candidates != '0' && needs.test.result == 'success'
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.generate.result == 'success' && needs.generate.outputs.candidates != '0' && needs.test.result == 'success'
+        with:
+          name: peaceai-candidates
+          path: ${{ runner.temp }}/peaceai-in
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.generate.result == 'success' && needs.generate.outputs.candidates != '0' && needs.test.result == 'success'
+        with:
+          name: peaceai-test-results
+          path: ${{ runner.temp }}/peaceai-testresults
+      - name: Rank and plan
+        id: plan
+        if: needs.generate.result == 'success' && needs.generate.outputs.candidates != '0' && needs.test.result == 'success'
+        run: |
+          PEACEAI_IN_DIR="$RUNNER_TEMP/peaceai-in" PEACEAI_RESULTS_FILE="$RUNNER_TEMP/peaceai-testresults/results.json" \
+          PEACEAI_BODY_FILE="$RUNNER_TEMP/pr-body.md" ./node_modules/.bin/tsx peaceai/bin/plan-pr.ts
+      - name: Comment when nothing passed
+        if: steps.plan.outputs.passing == '0'
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI generated candidates, but none passed the original suite and their new tests."
+      - name: Open one PR
+        if: steps.plan.outputs.passing != '' && steps.plan.outputs.passing != '0'
+        env:
+          CHOSEN_DIFF: ${{ steps.plan.outputs.chosen_diff }}
+        run: |
+          set -euo pipefail
+          branch="peace-task/issue-${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
+          git checkout -q -b "$branch"
+          git apply --whitespace=nowarn "$CHOSEN_DIFF"
+          git add -A -- src
+          git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
+            commit -q -m "PeaceAI candidate for #${ISSUE_NUMBER}"
+          git push -q origin "HEAD:refs/heads/$branch"
+          if gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "PeaceAI task #${ISSUE_NUMBER}" --body-file "$RUNNER_TEMP/pr-body.md"; then
+            gh workflow run leak-check.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          else
+            # Repo setting blocks Actions from creating PRs: leave the branch and a compare link.
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "PeaceAI pushed branch \`$branch\` but could not open the PR (Actions may not create PRs in this repo). Open it here: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1"
+            gh workflow run leak-check.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          fi

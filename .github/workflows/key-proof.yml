@@ -1,0 +1,51 @@
+name: key-proof
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: key-proof
+  cancel-in-progress: false
+
+jobs:
+  core-key:
+    name: core key (a, b)
+    if: >-
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'PeaceG03' && github.triggering_actor == 'PeaceG03'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: peaceai-core
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prove core key scope
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: DEPLOY_KEY="$DEPLOY_KEY" ./peaceai/bin/key-proof-core.sh
+
+  results-key:
+    name: results key (c, d)
+    if: >-
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'PeaceG03' && github.triggering_actor == 'PeaceG03'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prove results key scope
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: DEPLOY_KEY="$DEPLOY_KEY" ./peaceai/bin/key-proof-results.sh
