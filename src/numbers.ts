@@ -12,3 +12,7 @@ export function sum(values: readonly number[]): number {
 export function average(values: readonly number[]): number {
   return values.length === 0 ? 0 : sum(values) / values.length;
 }
+
+export function normalizeLabel(label: string): string {
+  return label.trim();
+}
