@@ -1,13 +1,18 @@
 // Job B: apply each candidate to a clean checkout and test it. No secrets, no core.
 import { spawnSync, execFileSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { parseDiff } from "../lib/diff.ts";
+import { dirname, join, relative, resolve } from "node:path";
+import { countDiffLines, parseDiff } from "../lib/diff.ts";
 import { validateSummary } from "../lib/gate.ts";
+import { scanText } from "../lib/leak.ts";
 import type { CandidateResult } from "../lib/rank.ts";
+import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit } from "../lib/repair.ts";
+import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { relatedTests } from "../lib/sources.ts";
+import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const inDir = resolve(process.env.PEACEAI_IN_DIR ?? "");
@@ -62,6 +67,27 @@ function runCandidate(cwd: string, command: string, args: string[], timeout = ST
   return result.status === 0;
 }
 
+/** Candidate-controlled command whose output the harness parses (M7 repair). Same sandbox; output capped. */
+const MAX_CAPTURE = 2 * 1024 * 1024;
+function runCandidateCapture(cwd: string, command: string, args: string[], timeout = STEP_TIMEOUT_MS): { ok: boolean; out: string } {
+  const envArgs = Object.entries(cleanEnv).map(([k, v]) => `${k}=${v}`);
+  const options = { cwd, encoding: "utf8" as const, timeout, killSignal: "SIGKILL" as const, maxBuffer: MAX_CAPTURE, stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"] };
+  const result = sandboxUser
+    ? spawnSync("sudo", ["-n", "-u", sandboxUser, "--", "/usr/bin/env", "-i", ...envArgs, command, ...args], options)
+    : spawnSync(command, args, { ...options, env: cleanEnv });
+  killSandbox();
+  return { ok: result.status === 0, out: `${result.stdout ?? ""}\n${result.stderr ?? ""}` };
+}
+
+// M7 repair budget (Job B timeout is 25 minutes; up to five candidates run in parallel jobs).
+const REPAIR_ENABLED = process.env.PEACEAI_REPAIR !== "off";
+const REPAIR_BUDGET = {
+  maxRounds: Number(process.env.PEACEAI_REPAIR_ROUNDS ?? DEFAULT_BUDGET.maxRounds),
+  deadlineMs: Number(process.env.PEACEAI_REPAIR_DEADLINE_MS ?? DEFAULT_BUDGET.deadlineMs),
+};
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+const repairDir = join(dirname(resultsFile), "repair");
+
 const summary = JSON.parse(readFileSync(join(inDir, "summary.json"), "utf8"));
 if (!validateSummary(summary)) throw new Error("summary.json failed schema validation");
 const baseFiles = new Set(git(repo, "ls-tree", "-r", "--name-only", "-z", summary.baseSha).split("\0").filter(Boolean));
@@ -71,6 +97,139 @@ const only = process.env.PEACEAI_ONLY_CANDIDATE ?? "";
 if (only && !summary.candidates.some((c) => c.id === only)) throw new Error("unknown candidate");
 const selected = only ? summary.candidates.filter((c) => c.id === only) : summary.candidates;
 
+// ---- M7 repair stage
+
+interface RepairRecord {
+  schema: "peaceai-repair:v1";
+  stop: LoopResult["stop"] | "GATE_REJECTED";
+  rounds: number;
+  originalDiffSha256: string;
+  repairedDiffSha256: string | null;
+  jobBGate: string;
+  iterations: LoopResult["iterations"];
+}
+
+function gitIn(tree: string, ...args: string[]): string {
+  return execFileSync("git", args, { cwd: tree, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 });
+}
+
+function treeFiles(tree: string): string[] {
+  return gitIn(tree, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    .split("\0")
+    .filter((p) => p && scope.isSource(p) && !scope.isDenied(p));
+}
+
+function repairCandidate(
+  tree: string,
+  diffPath: string,
+  originalDiff: string,
+  files: ReturnType<typeof parseDiff>,
+  baseTests: string[],
+  judged: string[],
+  newTestsIn: string[],
+  tsx: string,
+  tsc: string,
+) {
+  const baseCache = new Map<string, string | null>();
+  const base = (path: string) => {
+    if (!baseCache.has(path)) baseCache.set(path, baseFiles.has(path) ? git(repo, "show", `${summary.baseSha}:${path}`) : null);
+    return baseCache.get(path)!;
+  };
+  const inTree = (path: string): string | null => {
+    if (!scope.isSource(path)) return null;
+    const full = resolve(tree, path);
+    if (relative(tree, full).startsWith("..")) return null;
+    try {
+      if (!lstatSync(full).isFile()) return null;
+    } catch {
+      return null;
+    }
+    return full;
+  };
+  const read = (path: string) => {
+    const full = inTree(path);
+    return full ? readFileSync(full, "utf8") : null;
+  };
+  const evaluate = (): Evaluation => {
+    const t = runCandidateCapture(tree, tsc, ["-p", "tsconfig.json", "--noEmit", "--pretty", "false"]);
+    if (!t.ok) return { typecheck: false, originalSuite: false, newTests: false, errors: parseTscOutput(t.out, tree) };
+    const errors = [];
+    const suite = targetConfig.originalSuite === "full" ? baseTests : judged;
+    let originalSuite = true;
+    if (suite.length > 0) {
+      const o = runCandidateCapture(tree, tsx, ["--test", "--test-reporter=tap", ...suite], targetConfig.originalSuite === "full" ? STEP_TIMEOUT_MS : RELATED_TIMEOUT_MS * suite.length);
+      originalSuite = o.ok;
+      if (!o.ok) errors.push(...parseTapFailures(o.out, tree));
+    } else if (targetConfig.originalSuite === "full") originalSuite = false;
+    let newOk = true;
+    if (newTestsIn.length > 0) {
+      const n = runCandidateCapture(tree, tsx, ["--test", "--test-reporter=tap", ...newTestsIn]);
+      newOk = n.ok;
+      if (!n.ok) errors.push(...parseTapFailures(n.out, tree));
+    }
+    return { typecheck: true, originalSuite, newTests: newOk, errors };
+  };
+  const context = (): RepairContext => {
+    const indexed = treeFiles(tree)
+      .map((path) => ({ path, content: read(path) }))
+      .filter((f): f is { path: string; content: string } => f.content !== null);
+    return { index: buildIndex(indexed), read, base, isSource: scope.isSource, isTest: scope.isTest };
+  };
+  const apply = (edit: RepairEdit): boolean => {
+    // Harness-side checks: in scope, not denied, an existing regular file inside the tree, never a base test.
+    if (!scope.isSource(edit.path) || scope.isDenied(edit.path)) return false;
+    if (scope.isTest(edit.path) && baseFiles.has(edit.path)) return false;
+    const full = inTree(edit.path);
+    if (!full) return false;
+    writeFileSync(full, edit.content);
+    return true;
+  };
+  const loop = runRepairLoop({ evaluate, context, apply, now: Date.now }, REPAIR_BUDGET);
+  const first = loop.iterations[0]!;
+  const original = { typecheckPassed: first.typecheck, originalSuitePassed: first.originalSuite, newTestsPassed: first.newTests };
+  const record: RepairRecord = {
+    schema: "peaceai-repair:v1",
+    stop: loop.stop,
+    rounds: loop.rounds,
+    originalDiffSha256: sha256(originalDiff),
+    repairedDiffSha256: null,
+    jobBGate: "not-run",
+    iterations: loop.iterations,
+  };
+  const keep = () => ({ record, original, finalDiff: originalDiff, newTests: newTestsIn });
+  // Only a loop that ended green yields a repaired candidate; anything else is tested exactly as generated.
+  const revert = () => {
+    gitIn(tree, "checkout", "-q", summary.baseSha, "--", ".");
+    gitIn(tree, "clean", "-fdq", "-e", "node_modules");
+    gitIn(tree, "apply", "--whitespace=nowarn", diffPath);
+  };
+  if (!loop.changed) return keep();
+  if (loop.stop !== "GREEN") {
+    revert();
+    return keep();
+  }
+  const paths = [...new Set([...files.map((f) => f.newPath ?? f.oldPath ?? "").filter(Boolean), ...loop.iterations.flatMap((i) => i.applied.map((a) => a.path))])].sort();
+  gitIn(tree, "add", "-A", "--", ...paths);
+  const repaired = gitIn(tree, "diff", "--cached", "--no-color", "--full-index", "--no-renames", summary.baseSha, "--", ...paths);
+  gitIn(tree, "reset", "-q");
+  // Same gates available here (scope, personal info); the core-text gate runs again in Job B2 with the core.
+  const repairedFiles = parseDiff(repaired);
+  const violations = checkCandidateScope(repairedFiles, baseFiles, scope);
+  const pii = scanText(repairedFiles.flatMap((f) => f.addedLines).join("\n"));
+  if (violations.length > 0 || pii.length > 0) {
+    record.stop = "GATE_REJECTED";
+    record.jobBGate = violations.length > 0 ? "scope" : "personal-info";
+    revert();
+    return keep();
+  }
+  record.jobBGate = "pass";
+  record.repairedDiffSha256 = sha256(repaired);
+  const repairedNewTests = repairedFiles.filter((f) => f.isNew && f.newPath && scope.isTest(f.newPath)).map((f) => f.newPath!).sort();
+  return { record, original, finalDiff: repaired, newTests: repairedNewTests };
+}
+
+const repairs: (RepairRecord & { id: string; original: Record<string, boolean>; originalNewTestFiles: number })[] = [];
+const repairedDiffs = new Map<string, string>();
 const results: CandidateResult[] = [];
 for (const candidate of selected) {
   const diffPath = join(inDir, candidate.file);
@@ -116,6 +275,19 @@ for (const candidate of selected) {
       .map((file) => file.newPath!)
       .sort();
     result.newTestFiles = newTests.length;
+    // M7: bounded test-and-fix loop before the final passes. Edits come only from the deterministic rules in
+    // lib/repair.ts; the harness writes every file (the sandbox user cannot), and the final passes below run
+    // on whatever tree the loop leaves, exactly as for an unrepaired candidate.
+    if (REPAIR_ENABLED) {
+      const repair = repairCandidate(tree, diffPath, diff, files, baseTests, judged, newTests, tsx, tsc);
+      result.diffBytes = Buffer.byteLength(repair.finalDiff);
+      result.diffLines = countDiffLines(repair.finalDiff);
+      const originalNewTestFiles = result.newTestFiles;
+      result.newTestFiles = repair.newTests.length;
+      newTests.splice(0, newTests.length, ...repair.newTests);
+      repairs.push({ id: candidate.id, ...repair.record, original: repair.original, originalNewTestFiles });
+      if (repair.record.repairedDiffSha256) repairedDiffs.set(candidate.id, repair.finalDiff);
+    }
     result.typecheckPassed = runCandidate(tree, tsc, ["-p", "tsconfig.json", "--noEmit"]);
     // Pass 1: the original suite, with every new test file moved out of the tree.
     const parked = mkdtempSync(join(tmpdir(), "peaceai-parked-"));
@@ -150,5 +322,16 @@ writeFileSync(
   { mode: 0o644 },
 );
 renameSync(tmpResult, resultsFile);
+// M7: repair records (and repaired diffs) next to the results, written by the harness after the sandbox is dead.
+if (repairs.length > 0) {
+  mkdirSync(repairDir, { recursive: true });
+  for (const r of repairs) {
+    writeFileSync(join(repairDir, `${r.id}.json`), JSON.stringify(r, null, 2) + "\n", { mode: 0o644 });
+    const d = repairedDiffs.get(r.id);
+    if (d !== undefined) writeFileSync(join(repairDir, `${r.id}.diff`), d, { mode: 0o644 });
+  }
+}
+for (const r of repairs)
+  console.log(`${r.id} repair stop=${r.stop} rounds=${r.rounds} rules=${r.iterations.flatMap((i) => i.applied.map((a) => a.rule)).join(",") || "none"} gate=${r.jobBGate}`);
 for (const r of results)
   console.log(`${r.id} applied=${r.applied} typecheck=${r.typecheckPassed} original=${r.originalSuitePassed} new=${r.newTestsPassed} new_files=${r.newTestFiles}`);

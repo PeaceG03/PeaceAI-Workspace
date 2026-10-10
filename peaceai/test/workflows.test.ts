@@ -54,7 +54,7 @@ test("peace-intake: owner, label and kill switch gate; it only queues and dispat
   assert.match(text, /gh workflow run peace-task\.yml/);
 });
 
-test("peace-task: serialized sweep, core env only on Job A, Results env only on Job C, review needs Job C", () => {
+test("peace-task: serialized sweep, core env only on Job A and Job B2, Results env only on Job C, review needs Job C", () => {
   const text = read("peace-task.yml");
   const j = jobs(text);
   assert.match(text, /concurrency:\n {2}group: peace-task\n {2}cancel-in-progress: false/);
@@ -66,11 +66,23 @@ test("peace-task: serialized sweep, core env only on Job A, Results env only on 
   assert.match(a, /environment: peaceai-core/);
   assert.ok(a.indexOf("issue-fetch.ts") < a.indexOf("clone-core.sh"), "live task check before the core clone");
   assert.ok(a.indexOf("gate.ts") < a.indexOf("Upload candidates") && a.indexOf("Delete core") < a.indexOf("Upload candidates"));
+  // M7 Job B2: core only when a repaired diff exists; target re-check first; core deleted before upload.
+  const b2 = j.get("regate")!;
+  assert.match(b2, /environment: peaceai-core/);
+  assert.match(b2, /needs: \[select, generate, test\]/);
+  assert.ok(b2.indexOf("target-check.ts") < b2.indexOf("clone-core.sh"));
+  assert.ok(b2.indexOf("regate.ts") < b2.indexOf("Delete core") && b2.indexOf("Delete core") < b2.indexOf("Upload the final candidate set"));
+  assert.match(b2, /Clone core[^\n]*\n {8}if: steps\.repaired\.outputs\.any == 'true'/);
+  assert.ok(!/issues: write|secrets\.PEACEAI_RESULTS/.test(b2));
   const c = j.get("record")!;
+  assert.match(c, /needs: \[select, generate, test, regate\]/);
+  assert.match(c, /name: peaceai-final/);
+  assert.ok(!c.includes("peaceai-test-"), "Job C reads only the re-gated final set");
+  assert.match(j.get("review")!, /name: peaceai-final/);
   assert.match(c, /environment: peaceai-results/);
   assert.match(c, /PEACEAI_RESULTS_DEPLOY_KEY/);
   for (const [name, block] of j) {
-    if (name !== "generate") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
+    if (name !== "generate" && name !== "regate") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
     if (name !== "record") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
   }
   assert.match(j.get("review")!, /needs: \[select, generate, record\]/);

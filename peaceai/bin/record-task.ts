@@ -1,13 +1,14 @@
 // Job C: write the task record, candidates, test results and the blind ranking to a Results checkout.
 // Runs no candidate code. Prints counts only; outputs the presentation (labels -> candidate ids, shuffled).
 import { randomBytes } from "node:crypto";
-import { appendFileSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { validateSummary } from "../lib/gate.ts";
 import { validateResults } from "../lib/results.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { activeRanker, loadLatestModel, shadowRanking } from "../lib/ranker/pipeline.ts";
 import { buildRecords, stableJson } from "../lib/records.ts";
+import { validateRepairRecord } from "../lib/repairrecord.ts";
 import { appendIndex, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 
 const env = (name: string) => {
@@ -72,6 +73,19 @@ const dir = taskDir(resultsRoot, issueNumber, runId);
 writeNew(join(dir, "task.json"), stableJson(records.task));
 for (const c of summary.candidates) writeNew(join(dir, c.file), readFileSync(join(inDir, c.file), "utf8"));
 writeNew(join(dir, "ranking.json"), stableJson(records.ranking));
+// M7: repair iterations (and the diff as generated, when a repaired diff replaced it), recorded with the task.
+let repairRecords = 0;
+const repairIn = join(testDir, "repair");
+for (const c of summary.candidates) {
+  const p = join(repairIn, `${c.id}.json`);
+  if (!existsSync(p)) continue;
+  const r = JSON.parse(readFileSync(p, "utf8"));
+  if (!validateRepairRecord(r) || r.id !== c.id) throw new Error(`${c.id}: repair record failed validation`);
+  writeNew(join(dir, "repair", `${c.id}.json`), stableJson(r));
+  const orig = join(repairIn, `${c.id}.original.diff`);
+  if (existsSync(orig)) writeNew(join(dir, "repair", `${c.id}.original.diff`), readFileSync(orig, "utf8"));
+  repairRecords++;
+}
 appendIndex(resultsRoot, { type: "task", issue: issueNumber, runId, at: recordedAt, test: records.task.test, heldOut: records.task.heldOut });
 writeSummary(resultsRoot);
 
@@ -79,4 +93,4 @@ const eligible = records.ranking.presentation.length;
 const outputs = [`eligible=${eligible}`, `presentation=${JSON.stringify(records.ranking.presentation)}`];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, outputs.join("\n") + "\n");
 const eligibleAll = records.ranking.candidates.filter((c) => c.eligible).length;
-console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"}`);
+console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"} repair_records=${repairRecords}`);
