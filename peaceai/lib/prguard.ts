@@ -38,7 +38,7 @@ export interface VerdictInput {
   label: string; // letter or "none"
   verdict: "right" | "wrong" | "unsure";
   candidateId: string | null; // candidate of this verdict (null for none)
-  withdrew?: boolean; // this verdict withdrew the standing pick (record job decides with effectiveVerdict)
+  withdrew?: boolean; // this verdict (unsure or wrong) withdrew the standing pick (record job decides with withdraws())
 }
 
 export interface PrPlan {
@@ -68,7 +68,7 @@ export function planPr(v: VerdictInput, open: readonly IssuePr[]): PrPlan {
     const close = open.map((pr) => pr.number);
     return { ...none, close, reply: close.length ? `${recorded} Closed ${list(close)}: no candidate is acceptable.` : recorded };
   }
-  if (v.verdict === "unsure" && v.withdrew) {
+  if (v.withdrew) {
     const mark = open.filter((pr) => !pr.withdrawn).map((pr) => pr.number);
     const note = open.length ? ` ${list(open.map((p) => p.number))} marked \`${WITHDRAWN_LABEL}\`: do not merge.` : "";
     return { ...none, markWithdrawn: mark, reply: `${recorded} This withdraws your pick: the issue is excluded from training and agreement until a new verdict.${note}` };
