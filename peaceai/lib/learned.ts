@@ -64,6 +64,13 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_NULLISH_DEFAULT: String.raw`^default \x60?(?<expr>${NAME}(?:\.${NAME})+)\x60? to (?<value>\[\]|null|${LIT}) in \x60?(?<fn>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)?\.?$`,
 };
 
+/** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
+export function nullishTrigger(kinds: readonly string[]): string {
+  const alt: Record<string, string> = { array: String.raw`\[\]`, null: "null", string: String.raw`"[^"\n]*"|'[^'\n]*'`, number: String.raw`-?\d+(?:\.\d+)?`, boolean: "true|false" };
+  const values = ["array", "null", "string", "number", "boolean"].filter((k) => kinds.includes(k)).map((k) => alt[k]).join("|");
+  return String.raw`^default \x60?(?<expr>${NAME}(?:\.${NAME})+)\x60? to (?<value>${values}) in \x60?(?<fn>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)?\.?$`;
+}
+
 const parse = (f: SourceFile) => ts.createSourceFile(f.path, f.content, ts.ScriptTarget.Latest, true, f.path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
 const litKind = (text: string) => (/^["']/.test(text) ? "string" : /^(true|false)$/.test(text) ? "boolean" : text === "[]" ? "array" : text === "null" ? "null" : "number");
 const splice = (s: string, start: number, end: number, text: string) => s.slice(0, start) + text + s.slice(end);
@@ -160,7 +167,10 @@ function addSwitchCase(spec: RuleSpec, g: Record<string, string>, files: readonl
   return { path: file.path, content: splice(file.content, at, at, insert) };
 }
 
-/** ADD_NULLISH_DEFAULT: the first read of `expr` inside function `fn` becomes `expr ?? value`. */
+/**
+ * ADD_NULLISH_DEFAULT: the read of `expr` inside function `fn` becomes `expr ?? value`. Refused when `expr` is
+ * read more than once in that function: a default on the first read would not cover the others.
+ */
 function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: readonly SourceFile[]): LearnedEdit | null {
   if (!list(spec.params.kinds).includes(litKind(g.value!))) return null;
   const found: { file: SourceFile; node: ts.Expression }[] = [];
@@ -169,19 +179,21 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
     const sf = parse(f);
     for (const body of functionsNamed(sf, g.fn!)) {
       let first: ts.Expression | null = null;
+      let reads = 0;
       const visit = (n: ts.Node) => {
-        if (first) return;
         if (ts.isPropertyAccessExpression(n) && n.getText(sf) === g.expr) {
           const p = n.parent;
           const assigned = ts.isBinaryExpression(p) && p.left === n && p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+          if (!assigned) reads += 1;
           const defaulted = ts.isBinaryExpression(p) && p.left === n && (p.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || p.operatorToken.kind === ts.SyntaxKind.BarBarToken);
           const callee = ts.isCallExpression(p) && p.expression === n;
-          if (!assigned && !defaulted && !callee && !ts.isPropertyAccessExpression(p)) first = n;
+          if (!first && !assigned && !defaulted && !callee && !ts.isPropertyAccessExpression(p)) first = n;
           return;
         }
         ts.forEachChild(n, visit);
       };
       visit(body);
+      if (reads > 1) return null;
       if (first) found.push({ file: f, node: first });
     }
   }

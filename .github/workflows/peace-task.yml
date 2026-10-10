@@ -72,10 +72,78 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
 
+  # M9: template gap fill by the from-scratch model. Off unless vars.PEACEAI_LM_FILL is exactly 'true'.
+  # Reads only the public target and the memcheck-verified model from Results; writes fills.json, a value
+  # chosen among literals already in the target. Weights are deleted before the upload.
+  lm-fill:
+    name: "LM gap fill (PEACEAI_LM_FILL)"
+    needs: select
+    if: needs.select.outputs.issue != '' && vars.PEACEAI_ENABLED == 'true' && vars.PEACEAI_LM_FILL == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: peaceai-results
+    permissions:
+      contents: read
+      issues: read
+    env:
+      ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
+      PEACEAI_TARGET: ${{ needs.select.outputs.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Re-check the target is public
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ needs.select.outputs.target }}
+        run: ./node_modules/.bin/tsx peaceai/bin/target-check.ts
+      - name: Clone the target anonymously (outside the workspace)
+        if: needs.select.outputs.is_default != 'true'
+        run: ./peaceai/bin/clone-target.sh "$PEACEAI_TARGET" "$RUNNER_TEMP/peaceai-target"
+      - name: Fetch the task text
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ISSUE_JSON="$RUNNER_TEMP/issue.json" ./node_modules/.bin/tsx peaceai/bin/issue-fetch.ts
+      - name: Python runtime for the LM (numpy only, hash-pinned)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lm-venv"
+          "$RUNNER_TEMP/lm-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r peaceai/model/requirements.txt
+          echo "PEACEAI_PYTHON=$RUNNER_TEMP/lm-venv/bin/python" >> "$GITHUB_ENV"
+      - name: Fetch the verified model from Results (outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/results" >/dev/null 2>&1
+      - name: Choose the gap value
+        env:
+          PEACEAI_LM_FILL: ${{ vars.PEACEAI_LM_FILL }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lm-fills"
+          export ISSUE_JSON="$RUNNER_TEMP/issue.json" PEACEAI_FILLS_OUT="$RUNNER_TEMP/lm-fills/fills.json"
+          PEACEAI_LM_MODEL_DIR="$RUNNER_TEMP/results/models/lm/$(node -p 'require(process.env.RUNNER_TEMP+"/results/models/lm/latest.json").version' 2>/dev/null || echo none)"
+          export PEACEAI_LM_MODEL_DIR
+          if [ "${{ needs.select.outputs.is_default }}" != "true" ]; then export PEACEAI_WORKSPACE_DIR="$RUNNER_TEMP/peaceai-target"; fi
+          ./node_modules/.bin/tsx peaceai/bin/lm-fill.ts
+      - name: Delete Results, the model and the target
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/results" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/peaceai-target" "$RUNNER_TEMP/issue.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: peaceai-lm-fills
+          path: ${{ runner.temp }}/lm-fills
+          retention-days: 1
+          if-no-files-found: ignore
+
   generate:
     name: "Job A: generate"
-    needs: select
-    if: needs.select.outputs.issue != '' && vars.PEACEAI_ENABLED == 'true'
+    needs: [select, lm-fill]
+    if: >-
+      always() && needs.select.result == 'success' &&
+      needs.select.outputs.issue != '' && vars.PEACEAI_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: peaceai-core
@@ -116,8 +184,17 @@ jobs:
         run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
       - name: Build the Actions kernel (synthesis, edit families, planner) and guard it
         run: ./peaceai/bin/build-kernel.sh "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: vars.PEACEAI_LM_FILL == 'true' && needs.lm-fill.result == 'success'
+        continue-on-error: true
+        with:
+          name: peaceai-lm-fills
+          path: ${{ runner.temp }}/lm-fills
       - name: Generate candidates
         id: generate
+        env:
+          PEACEAI_LM_FILL: ${{ vars.PEACEAI_LM_FILL }}
+          PEACEAI_LM_FILLS: ${{ runner.temp }}/lm-fills/fills.json
         run: |
           export PEACEAI_KERNEL_BUNDLE="$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
           export PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out"
@@ -320,9 +397,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ISSUE_JSON="$RUNNER_TEMP/issue.json" ./node_modules/.bin/tsx peaceai/bin/issue-fetch.ts
+      - name: Python runtime for the LM shadow score (numpy only, hash-pinned)
+        if: vars.PEACEAI_LM_SHADOW == 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lm-venv"
+          "$RUNNER_TEMP/lm-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r peaceai/model/requirements.txt
+          echo "PEACEAI_PYTHON=$RUNNER_TEMP/lm-venv/bin/python" >> "$GITHUB_ENV"
       - name: Commit records and the blind ranking to Results (before any review output)
         id: record
         env:
+          PEACEAI_LM_SHADOW: ${{ vars.PEACEAI_LM_SHADOW }}
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
           TASK_SOURCE: ${{ needs.select.outputs.source }}
           TASK_TARGET: ${{ needs.select.outputs.target }}

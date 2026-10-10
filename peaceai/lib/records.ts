@@ -88,10 +88,19 @@ export interface RankingRecord {
   distinctEdits?: number;
   /** M3: model ranking recorded alongside, never shown. Absent when no model existed at ranking time. */
   shadow?: ShadowRanking;
-  /** M3: which ranker is authoritative for this record. Absent = deterministic. */
-  active?: "deterministic" | "model";
+  /** M9: from-scratch language-model score per distinct eligible edit, recorded only when PEACEAI_LM_SHADOW is on. Never shown. */
+  lmShadow?: LmShadow;
+  /** M3: which ranker is authoritative for this record. Absent = deterministic. M9 adds "lm" (flag + promotion). */
+  active?: "deterministic" | "model" | "lm";
   /** M3: top pick of the active ranker (equals rankerTop unless the model is active). */
   activeTop?: string | null;
+}
+
+export interface LmShadow {
+  model: string; // lm-v1-<weights sha prefix>
+  order: string[];
+  top: string | null;
+  scores: { id: string; mean: number | null; tokens: number }[];
 }
 
 export interface ShadowRanking {

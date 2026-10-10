@@ -7,9 +7,10 @@ import { validateSummary } from "../lib/gate.ts";
 import { validateResults } from "../lib/results.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { activeRanker, loadLatestModel, shadowRanking } from "../lib/ranker/pipeline.ts";
+import { activeWithLm, latestLmDir, lmEvaluate, lmFlags, lmShadowRanking } from "../lib/lm.ts";
 import { buildRecords, stableJson } from "../lib/records.ts";
 import { isRepaired, validateRepairRecord, type StoredRepairRecord } from "../lib/repairrecord.ts";
-import { appendIndex, taskDir, writeNew, writeSummary } from "../lib/store.ts";
+import { appendIndex, loadAll, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 
 const env = (name: string) => {
   const value = process.env[name];
@@ -81,6 +82,23 @@ if (shadow) {
   records.ranking.activeTop = records.ranking.active === "model" ? shadow.top : records.ranking.rankerTop;
 }
 
+// M9: LM shadow score (flag PEACEAI_LM_SHADOW, off by default). Only a memcheck-verified model is used;
+// any failure records nothing. Never shown; "lm" becomes active only with PEACEAI_RANKER=lm AND the rule met.
+let lmStatus = "off";
+if (lmFlags(process.env).shadow) {
+  const lmDir = latestLmDir(resultsRoot);
+  const lmShadow = lmDir ? lmShadowRanking(lmDir, records.ranking, diffOf) : null;
+  lmStatus = lmShadow ? "recorded" : "none";
+  if (lmShadow) {
+    records.ranking.lmShadow = lmShadow;
+    const active = activeWithLm(process.env.PEACEAI_RANKER, lmEvaluate(loadAll(resultsRoot)).eligible, records.ranking.active ?? "deterministic");
+    if (active === "lm") {
+      records.ranking.active = "lm";
+      records.ranking.activeTop = lmShadow.top;
+    }
+  }
+}
+
 const dir = taskDir(resultsRoot, issueNumber, runId);
 writeNew(join(dir, "task.json"), stableJson(records.task));
 for (const c of summary.candidates) writeNew(join(dir, c.file), readFileSync(join(inDir, c.file), "utf8"));
@@ -98,4 +116,4 @@ const eligible = records.ranking.presentation.length;
 const outputs = [`eligible=${eligible}`, `presentation=${JSON.stringify(records.ranking.presentation)}`];
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, outputs.join("\n") + "\n");
 const eligibleAll = records.ranking.candidates.filter((c) => c.eligible).length;
-console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"} repair_records=${repairRecords.size} repaired=${repairedIds.size}`);
+console.log(`recorded candidates=${summary.candidates.length} eligible=${eligibleAll} distinct=${eligible} test=${records.task.test} held_out=${records.task.heldOut} requires_tests=${records.task.requiresTests} source=${records.task.source} shadow=${shadow ? "recorded" : "none"} lm_shadow=${lmStatus} repair_records=${repairRecords.size} repaired=${repairedIds.size}`);

@@ -183,8 +183,9 @@ source (comment URL, id, issue, author PeaceG03, time; Results approvals also th
   text leaves core or Results. Nothing ever pushes to `main`: the only push is a `peaceai-approve-rule/*`
   branch that changes only the list.
 
-Agents never post `/approve-rule` and never edit the list. Agents push as PeaceG03, so identity cannot
-tell us apart; traceability to Peace's comment is the control. The required `tamper-proof` check runs
+Architect posts `/approve-rule` under Peace's delegation, with a note on what was checked. Builder agents
+never post it and no agent edits the list by hand. Agents push as PeaceG03, so identity cannot tell us apart;
+traceability to the approval comment is the control. The required `tamper-proof` check runs
 `peaceai/bin/check-approved-list.ts`: every Workspace entry must resolve to that exact comment and spec hash;
 every core-sourced entry must carry a well-formed attestation reference (full Results commit sha, attestation
 path for the pinned hash, Results issue and comment id matching the URL); an approval branch may change only
@@ -194,6 +195,40 @@ the list (one commit ahead of main), and any other branch may not change the lis
 only if the list is present and valid, names its id, and pins its exact hash. Otherwise it is refused
 (`NOT_APPROVED`, `HASH_CHANGED`, `SPEC_INVALID`, `LIST_MISSING`, `LIST_CORRUPT`) and produces no candidate.
 Job A logs `learned rules=N approved=K candidates=C refused=...`.
+
+## From-scratch language model (M9)
+
+A small decoder-only transformer trained from scratch by PeaceAI's own numpy code (`peaceai/model/`):
+forward, backward and AdamW are hand-written; the byte-level BPE tokenizer (4,096 tokens) is trained on
+our own corpus. No pretrained model, tokenizer, weights or embeddings of any kind (CONSTITUTION section 12).
+The only runtime dependency is numpy (array math), hash-pinned in `peaceai/model/requirements.txt`.
+
+- **Size:** 6 layers, d_model 384, 6 heads, context 256, tied embeddings: 12,297,984 parameters.
+- **Corpus** (`peaceai/bin/lm-corpus.ts`, `peaceai/model/sources.json`): Peace's repositories (PeaceAI core,
+  PeaceSTOCKS, this repo) plus pinned permissive repositories whose LICENSE classifies as MIT, Apache-2.0,
+  BSD-2/3-Clause or ISC (mixed or carve-out licenses refuse the whole source). Files under a nested LICENSE,
+  with a non-permissive header, generated, minified, vendored or containing personal info are excluded. Every
+  used file is recorded (source, commit, path, sha256, license, split) in `manifest.jsonl`, kept in Results.
+- **Training** (`peaceai/model/train.py`): CPU only, seeded (PCG64), resumable from a checkpoint holding the
+  weights, AdamW state and RNG state; held-out files (5%, by path hash) never train the model or tokenizer.
+  Because the corpus contains core, training runs only on the Builder box, never on Actions; no public
+  workflow trains, builds the corpus or runs the memorization check (a test enforces this).
+- **Memorization check** (`peaceai/bin/lm-memcheck.ts`): greedy and sampled continuations of core, public
+  and empty prompts, scanned with the core-text scanner (public corpus as baseline) and the personal-info
+  scanner. Any hit, fewer than 100 samples, an inference error or files changed during the check means FAIL.
+  `memcheck.json` binds the PASS to the sha256 of `config.json`, `tokenizer.json` and `weights.npz`; the
+  loaders (`peaceai/lib/lm.ts`, `peaceai/model/infer.py`) refuse any model without a matching PASS.
+- **Weights** live only in private PeaceAI-Results (`models/lm/<version>/`, fp16; `models/lm/latest.json`).
+- **Shadow score** (`PEACEAI_LM_SHADOW`, off unless exactly `true`): Job C records the mean log-probability
+  of each distinct edit's added lines as `ranking.lmShadow`. Never shown. `PEACEAI_RANKER=lm` makes it
+  active only when the M3-style rule holds: at least 10 held-out decided tasks with an LM score and more
+  top-pick agreement than the deterministic ranker (`peace-train` reports it as `metrics.lm`).
+- **Gap fill** (`PEACEAI_LM_FILL`, off unless exactly `true`): a task that names a constant but not its
+  value, e.g. "add an exported constant MAX_RETRIES of type number to src/config.ts", is a template with one
+  hole. The `lm-fill` job lets the model choose among literals of that type already in the target (plus a
+  neutral default); Job A accepts the choice only if it is one of its own options, and the candidate then
+  goes through the same gate, scope, leak, sandboxed tests and repair loop. The model never writes free text
+  into a diff and never uses or approves M8 learned rules.
 
 ## Results layout (private repository)
 
