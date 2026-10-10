@@ -13,3 +13,7 @@ export function isFinished(task: Task): boolean {
 export function countByStatus(tasks: readonly Task[], status: TaskStatus): number {
   return tasks.filter((task) => task.status === status).length;
 }
+
+export function normalizeLabel(label: string): string {
+  return label.trim();
+}
