@@ -1,12 +1,16 @@
 // M8: the only writer of peaceai/rules/approved.json, run by .github/workflows/peace-approve-rule.yml.
 //   workspace: from Peace's `/approve-rule <hash>` comment on a Workspace proposal issue (event data in env)
-//   sync:      from Results attestations (written by the Results approval workflow) plus a core checkout
+//   sync:      from Results attestations (written by the Results approval workflow) plus a core checkout;
+//              writes the proposed list only (no PR). The landing job runs `reverify` first.
+//   reverify:  the landing job (Results key) compares the proposed list with main's list and re-reads every
+//              new entry's attestation from a FRESH Results clone at its recorded commit; fail closed.
 // Writes the new list in place and `ok`, `changed`, `reason`, `rules`, `approvals` to GITHUB_OUTPUT, plus the
 // commit message (citing every approval comment) to PEACEAI_MESSAGE_FILE. Prints fixed strings only.
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA, loadApprovedList, withEntry, type ApprovalEntry, type ApprovedList } from "../lib/approved.ts";
-import { entryFromAttestation, validateWorkspaceApproval } from "../lib/approval.ts";
+import { entryFromAttestation, validateWorkspaceApproval, verifySyncChange, type AttestationRecord } from "../lib/approval.ts";
 
 const mode = process.argv[2];
 const listPath = resolve(process.env.PEACEAI_APPROVED_LIST_OUT ?? "peaceai/rules/approved.json");
@@ -53,7 +57,25 @@ if (mode === "workspace") {
     list = withEntry(list, r.entry);
     added.push(r.entry);
   }
-} else throw new Error("usage: approve-rule.ts workspace|sync");
+} else if (mode === "reverify") {
+  const proposed = loadApprovedList(resolve(process.env.PEACEAI_PROPOSED_LIST ?? ""));
+  if (!proposed.ok) finish(false, "LIST_INVALID");
+  const results = resolve(process.env.PEACEAI_RESULTS_DIR ?? "");
+  const rgit = (...a: string[]) => execFileSync("git", ["-C", results, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const read = (commit: string, path: string): AttestationRecord | null => {
+    if (!/^[0-9a-f]{40}$/.test(commit) || !/^rules\/approvals\/[0-9a-f]{64}\.json$/.test(path)) return null;
+    try {
+      const content = rgit("show", `${commit}:${path}`);
+      const message = rgit("log", "-1", "--format=%B", commit);
+      let onMain = true;
+      try { rgit("merge-base", "--is-ancestor", commit, "origin/main"); } catch { onMain = false; }
+      return { content, message, onMain };
+    } catch { return null; }
+  };
+  const r = proposed.ok ? verifySyncChange(list, proposed.list, read) : null;
+  if (r && !r.ok) finish(false, r.reason);
+  if (r?.ok && proposed.ok) { list = proposed.list; added.push(...r.added); }
+} else throw new Error("usage: approve-rule.ts workspace|sync|reverify");
 
 if (added.length === 0) finish(true, "NOTHING_NEW");
 writeFileSync(listPath, JSON.stringify(list, null, 2) + "\n");

@@ -47,7 +47,7 @@ jobs:
         run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
       - name: Same read-only tools as Job B
         run: chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
-      - name: Every approved learned rule traces to Peace's /approve-rule comment (M8)
+      - name: Every approved learned rule traces to Peace's /approve-rule comment; list changes only via approval branches (M8)
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./node_modules/.bin/tsx peaceai/bin/check-approved-list.ts

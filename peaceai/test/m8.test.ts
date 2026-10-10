@@ -431,7 +431,7 @@ test("CI guard: each Workspace list entry must trace to PeaceG03's exact comment
     writeFileSync(list, JSON.stringify(withEntry({ schema: APPROVED_SCHEMA, rules: [] }, entry(PUBLIC_SHA))));
     const comment = { user: { login: "PeaceG03" }, author_association: "OWNER", body: `/approve-rule ${PUBLIC_SHA}`, html_url: ENTRY_URL, issue_url: "https://api.github.com/repos/PeaceG03/PeaceAI-Workspace/issues/50" };
     const issue = { labels: [{ name: "rule-proposal" }], body: ev().issueBody };
-    const run = (c: Record<string, unknown>, i: Record<string, unknown> = issue) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: rules, PEACEAI_GH: fakeGh(dir, c, i) } });
+    const run = (c: Record<string, unknown>, i: Record<string, unknown> = issue) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: "main", PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: rules, PEACEAI_GH: fakeGh(dir, c, i) } });
     const good = run(comment);
     assert.equal(good.status, 0, good.stdout + good.stderr);
     assert.match(good.stdout, /APPROVED LIST PASS rules=1/);

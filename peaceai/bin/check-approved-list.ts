@@ -2,12 +2,17 @@
 // a real approval. Workspace entries: the cited comment exists, is by PeaceG03 (OWNER), says exactly
 // `/approve-rule <hash>`, sits on a rule-proposal issue whose marker pins that id and hash, and the public
 // spec file hashes to it. Results entries cannot be read from here (private); their format is checked and
-// the sync job verified them against core when it wrote them. Prints fixed strings and ids only.
+// the sync job verified them against core and re-verified them against a fresh Results clone before opening
+// its PR; here every core-sourced entry must carry a well-formed attestation reference (full Results commit
+// sha, attestation path for the pinned hash, Results issue and comment id matching the comment URL).
+// On a branch, the diff against main is checked too: an approval branch (peaceai-approve-rule/*) may change
+// only the approved list, one commit ahead; any other branch may not change the list at all.
+// Prints fixed strings and ids only.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadApprovedList } from "../lib/approved.ts";
-import { APPROVE_COMMAND, PROPOSAL_LABEL } from "../lib/approval.ts";
+import { APPROVE_COMMAND, attestationProblem, branchProblem, PROPOSAL_LABEL } from "../lib/approval.ts";
 import { specHash } from "../lib/learned.ts";
 import { parseMarker } from "../lib/propose.ts";
 
@@ -16,13 +21,30 @@ const rulesDir = resolve(process.env.PEACEAI_RULES_DIR ?? "peaceai/rules/learned
 const gh = process.env.PEACEAI_GH ?? "gh";
 const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
 
+let failures = 0;
+const fail = (id: string, why: string) => { failures += 1; console.log(`APPROVED LIST FAIL ${id}: ${why}`); };
+try {
+  const raw = JSON.parse(readFileSync(listPath, "utf8")) as { rules?: unknown[] };
+  for (const e of Array.isArray(raw.rules) ? raw.rules : []) {
+    const why = attestationProblem(e);
+    if (why) fail(String((e as { id?: unknown })?.id ?? "(no id)"), why);
+  }
+} catch { /* reported as LIST_MISSING / LIST_CORRUPT below */ }
+const repoName = process.env.GITHUB_REPOSITORY ?? "PeaceG03/PeaceAI-Workspace";
+const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || "";
+if (branch && branch !== "main" && !/^\d+\/merge$/.test(branch)) {
+  try {
+    const cmp = api(`repos/${repoName}/compare/main...${encodeURIComponent(branch)}`);
+    const files = ((cmp.files as { filename: string }[] | undefined) ?? []).map((f) => f.filename);
+    const why = branchProblem(branch, files, Number(cmp.ahead_by));
+    if (why) fail(`branch ${branch}`, why);
+  } catch { fail(`branch ${branch}`, "cannot compare the branch with main"); }
+}
 const load = loadApprovedList(listPath);
 if (!load.ok) {
   console.log(`APPROVED LIST FAIL ${load.reason}`);
   process.exit(1);
 }
-let failures = 0;
-const fail = (id: string, why: string) => { failures += 1; console.log(`APPROVED LIST FAIL ${id}: ${why}`); };
 for (const e of load.list.rules) {
   if (e.source === "results") { console.log(`APPROVED LIST NOTE ${e.id}: Results approval (private), attestation ${e.attestation!.commit.slice(0, 12)}`); continue; }
   let comment: Record<string, unknown>;
