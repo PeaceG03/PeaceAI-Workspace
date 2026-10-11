@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { validateSummary } from "../lib/gate.ts";
+import { validateSummary, loadSummaryContext } from "../lib/gate.ts";
 import { validateResults } from "../lib/results.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { activeRanker, loadLatestModel, shadowRanking } from "../lib/ranker/pipeline.ts";
@@ -25,7 +25,7 @@ const runId = env("RUN_ID");
 const recordedAt = env("RECORDED_AT");
 
 const summary = JSON.parse(readFileSync(join(inDir, "summary.json"), "utf8"));
-if (!validateSummary(summary)) throw new Error("candidate summary failed validation");
+if (!validateSummary(summary, loadSummaryContext())) throw new Error("candidate summary failed validation");
 const results: CandidateResult[] = [];
 for (const file of readdirSync(testDir).filter((f) => f.endsWith(".json")).sort()) {
   const parsed = JSON.parse(readFileSync(join(testDir, file), "utf8"));

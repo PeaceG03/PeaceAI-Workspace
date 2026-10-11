@@ -5,12 +5,12 @@ import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, ren
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { countDiffLines, parseDiff } from "../lib/diff.ts";
-import { validateSummary } from "../lib/gate.ts";
+import { validateSummary, loadSummaryContext } from "../lib/gate.ts";
 import { scanText } from "../lib/leak.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit } from "../lib/repair.ts";
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
-import { gradingVerdict, type TestGrading } from "../lib/results.ts";
+import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -93,7 +93,7 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const repairDir = join(dirname(resultsFile), "repair");
 
 const summary = JSON.parse(readFileSync(join(inDir, "summary.json"), "utf8"));
-if (!validateSummary(summary)) throw new Error("summary.json failed schema validation");
+if (!validateSummary(summary, loadSummaryContext())) throw new Error("summary.json failed schema validation");
 const baseFiles = new Set(git(repo, "ls-tree", "-r", "--name-only", "-z", summary.baseSha).split("\0").filter(Boolean));
 
 // In CI each candidate runs in its own matrix job (fresh runner, own read-only tools copy).
@@ -112,14 +112,10 @@ const selected = only ? summary.candidates.filter((c) => c.id === only) : summar
 function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], fixSha: string, afterFix: boolean, tsx: string): TestGrading {
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   if (newTests.length === 0 || !files.every((f) => f.isNew && f.newPath && scope.isTest(f.newPath))) return ungradable("not-test-only");
-  if (!runTrusted(repo, "git", ["merge-base", "--is-ancestor", fixSha, summary.baseSha])) return ungradable("fix-not-ancestor");
-  let paths: string[];
-  try {
-    paths = git(repo, "diff", "--name-only", "--no-renames", `${fixSha}^`, fixSha).split("\n").filter((p) => p && scope.isSource(p) && !scope.isTest(p));
-  } catch {
-    return ungradable("fix-not-ancestor");
-  }
-  if (paths.length === 0) return ungradable("no-source-change");
+  // The fix commit is validated before anything is reverted (lib/results.ts validateFix).
+  const fix = validateFix(fixSha, summary.baseSha, (...args) => { try { return git(repo, ...args); } catch { return null; } }, scope);
+  if (!fix.ok) return ungradable(fix.reason);
+  const paths = fix.paths;
   const dir = mkdtempSync(join(tmpdir(), "peaceai-prefix-"));
   try {
     const patch = join(dir, "prefix.diff");

@@ -7,7 +7,34 @@ import type { CandidateResult } from "./rank.ts";
  */
 export const GRADING_VERDICTS = ["COUNTS", "REJECTED_PASSES_BOTH", "REJECTED_FAILS_BOTH", "REJECTED_FAILS_AFTER_FIX", "UNGRADABLE"] as const;
 export type GradingVerdict = (typeof GRADING_VERDICTS)[number];
-export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-not-ancestor", "no-source-change", "revert-failed"] as const;
+export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-invalid", "fix-not-on-main", "fix-not-ancestor", "fix-touches-non-source", "no-source-change", "revert-failed"] as const;
+export type UngradableReason = (typeof UNGRADABLE_REASONS)[number];
+
+/** Paths a fix may never touch for grading: workflows, hooks, scripts, configs, lockfiles, env and infra files. */
+export const FIX_FORBIDDEN = /(^|\/)(\.github|\.githooks|\.husky|scripts?|bin)\/|(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-(lock|workspace)\.yaml|yarn\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.npmrc|\.nvmrc|\.env[^/]*|wrangler\.toml|Dockerfile|Makefile|\.gitignore|\.gitattributes)$|\.(ya?ml|sh|bash|zsh|ps1|toml|ini|cfg|cjs|mjs)$|(^|\/)[^/]*\.config\.[cm]?[jt]s$/i;
+
+export interface FixScope { isSource: (p: string) => boolean; isTest: (p: string) => boolean; isDenied: (p: string) => boolean }
+/**
+ * M12: checks a learned test's `Fix: <sha>` BEFORE any revert. `git` runs git in the target checkout and
+ * returns stdout, or null when the command fails. The sha must be a full 40-hex commit present in the target,
+ * reachable from the target's main (origin/main, else main) and from the task base, with a parent. A fix that
+ * changes anything FIX_FORBIDDEN (workflows, configs, scripts...) or a denied path is refused. Only its non-test
+ * source files are returned for the revert; its test files and docs are never touched.
+ */
+export function validateFix(fixSha: string, baseSha: string, git: (...args: string[]) => string | null, scope: FixScope): { ok: true; paths: string[] } | { ok: false; reason: UngradableReason } {
+  if (!/^[0-9a-f]{40}$/.test(fixSha)) return { ok: false, reason: "fix-invalid" };
+  if (git("cat-file", "-t", fixSha)?.trim() !== "commit") return { ok: false, reason: "fix-invalid" };
+  const main = ["refs/remotes/origin/main", "refs/heads/main"].find((r) => git("rev-parse", "--verify", "--quiet", `${r}^{commit}`) !== null);
+  if (!main || git("merge-base", "--is-ancestor", fixSha, main) === null) return { ok: false, reason: "fix-not-on-main" };
+  if (git("merge-base", "--is-ancestor", fixSha, baseSha) === null) return { ok: false, reason: "fix-not-ancestor" };
+  const changed = git("diff", "--name-only", "--no-renames", `${fixSha}^`, fixSha);
+  if (changed === null) return { ok: false, reason: "fix-invalid" };
+  const paths = changed.split("\n").filter(Boolean);
+  // Test files the fix changed are never reverted (existing tests are never edited); everything else must be source or docs.
+  if (paths.some((p) => FIX_FORBIDDEN.test(p) || (!scope.isTest(p) && scope.isDenied(p)))) return { ok: false, reason: "fix-touches-non-source" };
+  const source = paths.filter((p) => scope.isSource(p) && !scope.isTest(p));
+  return source.length ? { ok: true, paths: source } : { ok: false, reason: "no-source-change" };
+}
 export interface TestGrading {
   fixSha: string;
   afterFix: boolean;

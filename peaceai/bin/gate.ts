@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
-import { gateCandidate, validateSummary } from "../lib/gate.ts";
+import { gateCandidate, validateSummary, loadSummaryContext } from "../lib/gate.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const outDir = process.env.PEACEAI_OUT_DIR;
@@ -18,7 +18,7 @@ const fail = (message: string) => {
 };
 
 const summary = JSON.parse(readFileSync(join(outDir, "summary.json"), "utf8"));
-if (!validateSummary(summary)) fail("summary.json schema");
+if (!validateSummary(summary, loadSummaryContext())) fail("summary.json schema");
 const expected = new Set(["summary.json", "candidates"]);
 for (const entry of readdirSync(outDir)) if (!expected.has(entry)) fail(`unexpected output entry ${entry}`);
 const listed = new Set<string>((summary.candidates ?? []).map((c: { id: string }) => `${c.id}.diff`));

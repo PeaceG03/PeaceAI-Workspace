@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { countDiffLines } from "../lib/diff.ts";
-import { gateCandidate, validateSummary, type Summary } from "../lib/gate.ts";
+import { gateCandidate, validateSummary, loadSummaryContext, type Summary } from "../lib/gate.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { validateRepairRecord, type StoredRepairRecord } from "../lib/repairrecord.ts";
 import { validateResults } from "../lib/results.ts";
@@ -27,7 +27,7 @@ const coreDir = process.env.PEACEAI_CORE_DIR ? resolve(process.env.PEACEAI_CORE_
 const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
 
 const summary = JSON.parse(readFileSync(join(inDir, "summary.json"), "utf8"));
-if (!validateSummary(summary)) throw new Error("candidate summary failed validation");
+if (!validateSummary(summary, loadSummaryContext())) throw new Error("candidate summary failed validation");
 const results: CandidateResult[] = [];
 for (const f of existsSync(testDir) ? readdirSync(testDir).filter((x) => x.endsWith(".json")).sort() : []) {
   const parsed = JSON.parse(readFileSync(join(testDir, f), "utf8"));
@@ -94,7 +94,7 @@ for (const c of summary.candidates) {
   writeFileSync(join(finalDir, c.file), diff);
   finalSummary.candidates.push(entry);
 }
-if (!validateSummary(finalSummary)) throw new Error("final summary failed validation");
+if (!validateSummary(finalSummary, loadSummaryContext())) throw new Error("final summary failed validation");
 writeFileSync(join(finalDir, "summary.json"), JSON.stringify(finalSummary, null, 2) + "\n");
 if (results.length > 0)
   writeFileSync(

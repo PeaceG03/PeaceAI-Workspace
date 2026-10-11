@@ -211,14 +211,22 @@ expressions, error codes, fix commit) and the target code: the named file must e
 name a check starts from; arguments and values must be literals (no other identifiers, operators, functions
 or templates). The file is `<dir>/<stem>.<title-slug>-<fix7>.test.ts`, with the import style of the
 target's own tests. Anything else: no candidate. **Grading** (Job B, `peaceai/bin/test-candidates.ts`): the
-candidate carries `fixSha` (it must be an ancestor of the base). The new tests run on the fixed code (pass
-2), then the harness reverses the fix commit's non-test source change in the same tree and runs them again
-as the sandbox user. Only pass-after and fail-before is `COUNTS`; `REJECTED_PASSES_BOTH`,
-`REJECTED_FAILS_BOTH`, `REJECTED_FAILS_AFTER_FIX` and `UNGRADABLE` (not test-only, fix not an ancestor, no
-source change, revert failed) are rejected (`rejectReason: test-grading` or `new-tests`) and the grading is
+candidate carries `fixSha`. Before anything is reverted, `validateFix` (`peaceai/lib/results.ts`) requires a
+full 40-hex sha of a commit in the target checkout, reachable from the target's `main` (not branch-only, not
+from another repo) and from the task base, with a parent; a fix that touches `.github/`, workflows, hooks,
+scripts, configs, lockfiles, env files or a denied path is refused. The new tests run on the fixed code (pass
+2), then the harness reverses only the fix commit's non-test source files (its tests and docs are never
+touched) in the same tree and runs them again as the sandbox user. Only pass-after and fail-before is
+`COUNTS`; `REJECTED_PASSES_BOTH`, `REJECTED_FAILS_BOTH`, `REJECTED_FAILS_AFTER_FIX` and `UNGRADABLE` (not
+test-only, fix invalid / not on main / not an ancestor / touches non-source, no source change, revert
+failed) are rejected (`rejectReason: test-grading` or `new-tests`) and the grading is
 recorded per candidate in `ranking.json` (`testGrading`). Learned tests get no M7 repair. Job B checks out
 full history so a Workspace fix commit's parent exists. Unapproved, the trigger is refused by the task parser
-(`RULE_NOT_APPROVED`) and by Job A (`NOT_APPROVED`).
+(`RULE_NOT_APPROVED`) and by Job A (`NOT_APPROVED`). A learned candidate's `operationId` is
+`learned:<id>@<spec sha256>`, and every job's summary check (`validateSummary`) accepts it only when that exact
+id and hash are pinned in `peaceai/rules/approved.json`; `lm-fill:<model>` is accepted only for a verified
+model id bound by the caller (none of the jobs binds one, so it is refused). `learned-test.ts` and
+`minetest.ts` are in the protected self-change set.
 
 ## From-scratch language model (M9)
 

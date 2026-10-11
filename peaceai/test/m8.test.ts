@@ -260,7 +260,7 @@ test("Job A: an APPROVED rule (exact hash) produces its candidate, tagged as lea
   assert.match(r.stdout, /learned rules=1 approved=1 candidates=1/);
   assert.equal(summary.candidates.length, 1);
   assert.deepEqual(summary.candidates[0].transformations, ["LEARNED_SET_LITERAL"]);
-  assert.equal(summary.candidates[0].operationId, "learned:public-set-literal-v1");
+  assert.match(summary.candidates[0].operationId, /^learned:public-set-literal-v1@[0-9a-f]{64}$/); // bound to the pinned hash
   assert.match(diff, /^-  name: "plain",$/m);
   assert.match(diff, /^\+  name: "classic",$/m);
   // The same approved rule with a non-matching objective: no candidate.
@@ -270,7 +270,7 @@ test("Job A: an APPROVED rule (exact hash) produces its candidate, tagged as lea
 test("Job A: a core-mined rule is read from the core checkout and needs its Results approval entry", () => {
   const { r, summary } = runJobA("core-approved");
   assert.match(r.stdout, /learned rules=1 approved=1 candidates=1/);
-  assert.equal(summary.candidates[0].operationId, "learned:core-set-literal-v1");
+  assert.match(summary.candidates[0].operationId, /^learned:core-set-literal-v1@[0-9a-f]{64}$/);
 });
 
 test("Job A with the repository's real list and specs: nothing is approved yet, so learned rules yield nothing", () => {
