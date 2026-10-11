@@ -1,5 +1,5 @@
 // M11: self-improvement sandbox. PeaceAI may PROPOSE a change to its own code (this repo's peaceai/), but the change
-// is built and tested in a separate copy (a throwaway git worktree on this box or in a private repo's job), never
+// is built and tested in a fresh clone inside an ephemeral GitHub-hosted job of a private repo (no box mode), never
 // in the live checkout. Nothing here pushes, merges or edits the live tree; promotion is a normal PR that a human
 // lands after the gates below, and every self-change is recorded in private Results with a one-step rollback.
 import { createHash } from "node:crypto";
@@ -115,36 +115,20 @@ export function checkSelfChangeDiff(diff: string): SelfDiffCheck {
 
 // ---- where it may run
 
-/** The only box user that may run a proposal: the unprivileged candidate user, as in Job B. */
-export const SANDBOX_USER = "peaceai-cand";
 /** Variables that carry credentials or a route to them; a proposal's environment must have none. */
 const CREDENTIAL_ENV = /^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|SSH_AUTH_SOCK|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|NPM_TOKEN|NODE_AUTH_TOKEN|ACTIONS_RUNTIME_TOKEN|ACTIONS_ID_TOKEN_REQUEST_TOKEN|AWS_[A-Z_]+|.*_(TOKEN|SECRET|KEY|PASSWORD))$/;
 
-export interface RunIdentity { user: string; uid: number; home: string; invokingUser?: string; homeEntries: readonly string[] }
-
 /**
- * A proposal runs new or changed code, so it never runs as Builder's user. Allowed:
- *  - an ephemeral (GitHub-hosted) Actions job in a private repo on the allowlist, started manually or by a
- *    proposal, or
- *  - on the box, only as the unprivileged sandbox user: not the invoking user, not root, a HOME with no gh, git
- *    or SSH credentials, and an environment with no credential variables.
+ * A proposal runs new or changed code, so it runs in exactly one place: an ephemeral GitHub-hosted Actions job
+ * in a private repo on the allowlist (Results or core), started manually (workflow_dispatch) or by a proposal
+ * (issues), with no credential variables in its environment. There is no box or local mode.
  */
-export function selfChangeAllowedHere(env: Record<string, string | undefined>, who: RunIdentity): { ok: boolean; reason?: string } {
-  const creds = Object.keys(env).filter((k) => CREDENTIAL_ENV.test(k) && env[k]);
-  if (env.GITHUB_ACTIONS === "true") {
-    if (!(PRIVATE_RUNNERS as readonly string[]).includes(env.GITHUB_REPOSITORY ?? "")) return { ok: false, reason: "PUBLIC_RUNNER_REFUSED" };
-    if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" && env.GITHUB_EVENT_NAME !== "issues") return { ok: false, reason: "START_MANUALLY_OR_ON_PROPOSAL" };
-    if (env.RUNNER_ENVIRONMENT !== "github-hosted") return { ok: false, reason: "RUNNER_NOT_EPHEMERAL" };
-    if (creds.length) return { ok: false, reason: "CREDENTIALS_IN_ENV" };
-    return { ok: true };
-  }
-  if (who.uid === 0 || who.user === "root") return { ok: false, reason: "RUN_AS_SANDBOX_USER" };
-  if (who.user !== SANDBOX_USER) return { ok: false, reason: "RUN_AS_SANDBOX_USER" };
-  const invoking = who.invokingUser ?? env.SUDO_USER ?? env.PEACEAI_INVOKING_USER;
-  if (invoking && invoking === who.user) return { ok: false, reason: "RUN_AS_SANDBOX_USER" };
-  if (env.HOME && env.HOME !== who.home) return { ok: false, reason: "HOME_NOT_SANDBOX" };
-  if (who.homeEntries.some((e) => /^(\.ssh|\.gitconfig|\.git-credentials|\.config|\.netrc|\.npmrc|\.gnupg)$/.test(e))) return { ok: false, reason: "HOME_HAS_CREDENTIALS" };
-  if (creds.length) return { ok: false, reason: "CREDENTIALS_IN_ENV" };
+export function selfChangeAllowedHere(env: Record<string, string | undefined>): { ok: boolean; reason?: string } {
+  if (env.GITHUB_ACTIONS !== "true") return { ok: false, reason: "PRIVATE_ACTIONS_ONLY" };
+  if (!(PRIVATE_RUNNERS as readonly string[]).includes(env.GITHUB_REPOSITORY ?? "")) return { ok: false, reason: "PUBLIC_RUNNER_REFUSED" };
+  if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" && env.GITHUB_EVENT_NAME !== "issues") return { ok: false, reason: "START_MANUALLY_OR_ON_PROPOSAL" };
+  if (env.RUNNER_ENVIRONMENT !== "github-hosted") return { ok: false, reason: "RUNNER_NOT_EPHEMERAL" };
+  if (Object.keys(env).some((k) => CREDENTIAL_ENV.test(k) && env[k])) return { ok: false, reason: "CREDENTIALS_IN_ENV" };
   return { ok: true };
 }
 

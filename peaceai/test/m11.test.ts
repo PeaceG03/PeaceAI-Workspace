@@ -7,9 +7,8 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   AUDITOR_COMMAND, budgetMinutes, checkSelfChangeDiff, listSha, MAX_BUDGET_MINUTES, promotionDecision, PROMOTE_COMMAND,
-  SANDBOX_USER, SELF_SCHEMA, selfChangeAllowedHere, type RunIdentity, type SelfChangeRecord,
+  SELF_SCHEMA, selfChangeAllowedHere, type SelfChangeRecord,
 } from "../lib/selfchange.ts";
-import { proposeInSandbox } from "../lib/selfpropose.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -68,39 +67,45 @@ test("the tool never sets the Auditor marker or posts the Architect command", ()
   assert.doesNotMatch(src, /"api", "-X"|"api", "--method"/);
 });
 
-/** Fixture HOME paths, built at runtime (no literal user paths in the repo). */
-const homeOf = (u: string) => ["", u === "root" ? "" : "home", u].filter((x, i) => i === 0 || x).join("/");
+/** The only accepted place: an ephemeral GitHub-hosted job in a private repo, manual or proposal-started, no credentials. */
+const PRIVATE_JOB = { GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Results", GITHUB_EVENT_NAME: "workflow_dispatch", RUNNER_ENVIRONMENT: "github-hosted", PATH: process.env.PATH ?? "" };
 
-test("propose runs only as the sandbox user on the box or in an ephemeral private Actions job, within a minute budget", () => {
-  const cand: RunIdentity = { user: SANDBOX_USER, uid: 1501, home: homeOf("peaceai-cand"), homeEntries: [] };
-  const clean = { HOME: homeOf("peaceai-cand"), PATH: "/usr/bin" };
-  assert.deepEqual(selfChangeAllowedHere(clean, cand), { ok: true });
-  // The invoking (Builder's) user, root, or the sandbox name reached via sudo from itself: refused.
-  assert.equal(selfChangeAllowedHere({ HOME: homeOf("box") }, { user: "box", uid: 1000, home: homeOf("box"), homeEntries: [] }).reason, "RUN_AS_SANDBOX_USER");
-  assert.equal(selfChangeAllowedHere({}, { user: "root", uid: 0, home: homeOf("root"), homeEntries: [] }).reason, "RUN_AS_SANDBOX_USER");
-  assert.equal(selfChangeAllowedHere({ ...clean, SUDO_USER: SANDBOX_USER }, cand).reason, "RUN_AS_SANDBOX_USER");
-  // Builder's HOME or credentials reachable: refused.
-  assert.equal(selfChangeAllowedHere({ ...clean, HOME: homeOf("box") }, cand).reason, "HOME_NOT_SANDBOX");
-  for (const e of [".ssh", ".gitconfig", ".git-credentials", ".config", ".netrc"]) assert.equal(selfChangeAllowedHere(clean, { ...cand, homeEntries: [e] }).reason, "HOME_HAS_CREDENTIALS", e);
-  for (const k of ["GH_TOKEN", "GITHUB_TOKEN", "SSH_AUTH_SOCK", "GIT_ASKPASS", "PEACEAI_CORE_DEPLOY_KEY", "GIT_CONFIG_GLOBAL"]) assert.equal(selfChangeAllowedHere({ ...clean, [k]: "x" }, cand).reason, "CREDENTIALS_IN_ENV", k);
-  // Actions: only private allowlisted repos, manual or proposal-triggered, on an ephemeral GitHub-hosted runner, no credentials in env.
-  const act = { GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Results", GITHUB_EVENT_NAME: "workflow_dispatch", RUNNER_ENVIRONMENT: "github-hosted" };
-  const runner: RunIdentity = { user: "runner", uid: 1001, home: homeOf("runner"), homeEntries: [] };
-  assert.ok(selfChangeAllowedHere(act, runner).ok);
-  assert.equal(selfChangeAllowedHere({ ...act, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace" }, runner).reason, "PUBLIC_RUNNER_REFUSED");
-  assert.equal(selfChangeAllowedHere({ ...act, GITHUB_EVENT_NAME: "schedule" }, runner).reason, "START_MANUALLY_OR_ON_PROPOSAL");
-  assert.equal(selfChangeAllowedHere({ ...act, RUNNER_ENVIRONMENT: "self-hosted" }, runner).reason, "RUNNER_NOT_EPHEMERAL");
-  assert.equal(selfChangeAllowedHere({ ...act, GITHUB_TOKEN: "x" }, runner).reason, "CREDENTIALS_IN_ENV");
+test("propose runs only in an ephemeral private Actions job (manual or proposal), within a minute budget", () => {
+  assert.deepEqual(selfChangeAllowedHere(PRIVATE_JOB), { ok: true });
+  assert.ok(selfChangeAllowedHere({ ...PRIVATE_JOB, GITHUB_REPOSITORY: "PeaceG03/PeaceAI", GITHUB_EVENT_NAME: "issues" }).ok);
+  assert.equal(selfChangeAllowedHere({ ...PRIVATE_JOB, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace" }).reason, "PUBLIC_RUNNER_REFUSED");
+  assert.equal(selfChangeAllowedHere({ ...PRIVATE_JOB, GITHUB_REPOSITORY: "someone/fork" }).reason, "PUBLIC_RUNNER_REFUSED");
+  for (const ev of ["schedule", "push", "pull_request", "pull_request_target", "issue_comment"]) assert.equal(selfChangeAllowedHere({ ...PRIVATE_JOB, GITHUB_EVENT_NAME: ev }).reason, "START_MANUALLY_OR_ON_PROPOSAL", ev);
+  assert.equal(selfChangeAllowedHere({ ...PRIVATE_JOB, RUNNER_ENVIRONMENT: "self-hosted" }).reason, "RUNNER_NOT_EPHEMERAL");
+  assert.equal(selfChangeAllowedHere({ ...PRIVATE_JOB, RUNNER_ENVIRONMENT: undefined }).reason, "RUNNER_NOT_EPHEMERAL");
+  for (const k of ["GH_TOKEN", "GITHUB_TOKEN", "SSH_AUTH_SOCK", "GIT_ASKPASS", "PEACEAI_CORE_DEPLOY_KEY", "GIT_CONFIG_GLOBAL"]) assert.equal(selfChangeAllowedHere({ ...PRIVATE_JOB, [k]: "x" }).reason, "CREDENTIALS_IN_ENV", k);
   assert.equal(budgetMinutes("999"), MAX_BUDGET_MINUTES);
   assert.equal(budgetMinutes("-1"), 15);
   assert.equal(budgetMinutes("5"), 5);
 });
 
-test("the CLI refuses to propose as the invoking user (and on the public Workspace runners)", () => {
-  const me = spawnSync(tsx, [cli, "propose", "--id", "sc-x", "--patch", "/dev/null"], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "" } });
+test("there is no box or local mode at all: off Actions, propose refuses for every user and setting", async () => {
+  // Off Actions nothing is accepted, whoever runs it and whatever else the environment says.
+  for (const env of [{}, { HOME: "/tmp/x", USER: "peaceai-cand" }, { ...PRIVATE_JOB, GITHUB_ACTIONS: undefined }, { ...PRIVATE_JOB, GITHUB_ACTIONS: "false" }, { ...PRIVATE_JOB, GITHUB_ACTIONS: "1" }])
+    assert.equal(selfChangeAllowedHere(env as Record<string, string | undefined>).reason, "PRIVATE_ACTIONS_ONLY", JSON.stringify(env));
+  // The CLI and the library both refuse on this machine (the run-place check lives in both).
+  const me = spawnSync(tsx, [cli, "propose", "--id", "sc-x", "--patch", "/dev/null"], { cwd: repo, encoding: "utf8", env: { PATH: process.env.PATH ?? "" } });
   assert.equal(me.status, 3, me.stdout + me.stderr);
-  assert.match(me.stdout, /self-change refused reason=(RUN_AS_SANDBOX_USER|HOME_|CREDENTIALS_IN_ENV)/);
-  const pub = spawnSync(tsx, [cli, "propose", "--id", "sc-x", "--patch", "/dev/null"], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace" } });
+  assert.match(me.stdout, /self-change refused reason=PRIVATE_ACTIONS_ONLY/);
+  const { proposeInSandbox } = await import("../lib/selfpropose.ts");
+  const saved = process.env.GITHUB_ACTIONS;
+  process.env.GITHUB_ACTIONS = "";
+  try { assert.deepEqual(proposeInSandbox({ id: "sc-x", diff: "", source: repo, base: "HEAD", out: "/nonexistent" }), { code: 3, message: "self-change refused reason=PRIVATE_ACTIONS_ONLY", record: null }); }
+  finally { if (saved === undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS = saved; }
+  // No box-mode code, flag or doc remains: no sandbox-user identity checks, user/home lookups or local flags.
+  const src = ["peaceai/lib/selfchange.ts", "peaceai/lib/selfpropose.ts", "peaceai/bin/self-change.ts"].map((f) => readFileSync(join(repo, f), "utf8")).join("\n");
+  assert.doesNotMatch(src, /peaceai-cand|SANDBOX_USER|RunIdentity|userInfo|homedir|homeEntries|SUDO_USER|--node-modules|--live\b/);
+  const readme = readFileSync(join(repo, "README.md"), "utf8");
+  const m11 = readme.slice(readme.indexOf("## Self-change sandbox (M11)"), readme.indexOf("## Layout"));
+  assert.doesNotMatch(m11, /peaceai-cand|sandbox user/);
+  assert.match(m11, /no box or local mode/);
+  // Public runners: refused too.
+  const pub = spawnSync(tsx, [cli, "propose", "--id", "sc-x", "--patch", "/dev/null"], { cwd: repo, encoding: "utf8", env: { ...PRIVATE_JOB, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace" } });
   assert.equal(pub.status, 3);
   assert.match(pub.stdout, /PUBLIC_RUNNER_REFUSED/);
   // No public Workspace workflow runs it (and so none on a timer).
@@ -121,10 +126,15 @@ function liveFixture() {
   symlinkSync(join(repo, "node_modules"), join(dir, "node_modules"), "dir");
   return dir;
 }
-// The proposal run itself (the CLI calls it only after the run-identity check). Source = a fresh clone of the fixture.
+// The proposal run, in a child process whose environment is the private job's (as the private workflow gives it).
+const harness = join(repo, "peaceai/lib/selfpropose.ts");
 const propose = (live: string, id: string, diff: string, out: string) => {
-  const r = proposeInSandbox({ id, diff, source: live, base: "HEAD", out, budget: "3", nodeModules: join(repo, "node_modules") });
-  return { status: r.code, stdout: r.message + "\n", stderr: "" };
+  writeFileSync(join(out, `${id}.patch`), diff);
+  const code = `import { readFileSync } from "node:fs"; import { proposeInSandbox } from ${JSON.stringify(harness)};
+const r = proposeInSandbox({ id: ${JSON.stringify(id)}, diff: readFileSync(${JSON.stringify(join(out, `${id}.patch`))}, "utf8"), source: ${JSON.stringify(live)}, base: "HEAD", out: ${JSON.stringify(out)}, budget: "3", nodeModules: ${JSON.stringify(join(repo, "node_modules"))} });
+console.log(r.message); process.exit(r.code);`;
+  writeFileSync(join(out, `${id}.run.ts`), code);
+  return spawnSync(tsx, [join(out, `${id}.run.ts`)], { cwd: repo, encoding: "utf8", env: PRIVATE_JOB });
 };
 
 test("promotion evidence: the LIVE suite (base commit's test files) runs against the candidate in a separate copy", () => {

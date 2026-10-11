@@ -1,7 +1,7 @@
 // M11: self-change sandbox CLI. Never on the public Workspace runners; it never edits, pushes or merges anything:
-//   propose  --id ID --patch FILE [--source URL] [--base REF] [--out DIR] [--budget MIN] [--node-modules DIR]
-//            ONLY as the unprivileged sandbox user (peaceai-cand: not the invoking user, no credentials in HOME
-//            or env) or in an ephemeral private Actions job. Protected-set check -> FRESH clone at REF -> apply
+//   propose  --id ID --patch FILE [--source URL] [--base REF] [--out DIR] [--budget MIN]
+//            ONLY in an ephemeral GitHub-hosted job of a private repo (Results or core), started manually or by
+//            a proposal, no credentials in env. No box or local mode. Protected-set check -> FRESH clone at REF -> apply
 //            -> run the LIVE suite (test files from REF, unchanged) and any new peaceai/self-tests -> write the
 //            record and a bundle of the exact candidate commit (<out>/self-changes/<id>.{json,bundle})
 //   decide   --record FILE (--pr N | --approvals FILE)  promotion decision: `/auditor-pass <id> <sha>` then
@@ -10,8 +10,7 @@
 //   rollback --record FILE --repo DIR            one step: on a NEW branch in DIR, revert the promotion merge
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { userInfo } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord } from "../lib/selfchange.ts";
 import { proposeInSandbox } from "../lib/selfpropose.ts";
@@ -27,18 +26,15 @@ const die = (code: number, msg: string): never => { console.log(msg); process.ex
 if (process.env.GITHUB_ACTIONS === "true" && !(PRIVATE_RUNNERS as readonly string[]).includes(process.env.GITHUB_REPOSITORY ?? "")) die(3, "self-change refused reason=PUBLIC_RUNNER_REFUSED");
 
 if (mode === "propose") {
-  // Runs new or changed code: only as the sandbox user on the box, or in an ephemeral private Actions job.
-  const who = userInfo();
-  const home = who.homedir;
-  let homeEntries: string[] = [];
-  try { homeEntries = readdirSync(home); } catch { homeEntries = []; }
-  const here = selfChangeAllowedHere(process.env, { user: who.username, uid: who.uid, home, homeEntries });
+  // Runs new or changed code: only in an ephemeral private Actions job (checked here and again in proposeInSandbox).
+  const here = selfChangeAllowedHere(process.env);
   if (!here.ok) die(3, `self-change refused reason=${here.reason}`);
   const id = opt("id") ?? "";
   if (!/^sc-[a-z0-9-]{3,48}$/.test(id)) die(1, "usage: --id sc-<name>");
   const r = proposeInSandbox({
     id, diff: readFileSync(resolve(opt("patch") ?? ""), "utf8"), source: opt("source") ?? `https://github.com/${WORKSPACE_REPO}.git`,
-    base: opt("base") ?? "origin/main", out: resolve(opt("out") ?? join(home, "self-change-records")), budget: opt("budget"), nodeModules: opt("node-modules"),
+    base: opt("base") ?? "origin/main", out: resolve(opt("out") ?? join(process.env.RUNNER_TEMP ?? "", "self-change-records")), budget: opt("budget"),
+    nodeModules: existsSync(join(process.cwd(), "node_modules")) ? join(process.cwd(), "node_modules") : undefined,
   });
   die(r.code, r.message);
 } else if (mode === "decide") {

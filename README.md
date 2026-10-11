@@ -432,12 +432,9 @@ Job A parses the task wording before anything else (`peaceai/lib/nlparse.ts`, ca
 
 ## Self-change sandbox (M11)
 
-PeaceAI may propose a change to its own code, but it never edits the live PeaceAI in place, and new or changed code never runs as Builder's user.
+PeaceAI may propose a change to its own code, but it never edits the live PeaceAI in place, and new or changed code never runs on the Builder box or any local machine.
 
-- **propose** (`peaceai/bin/self-change.ts`, logic in `peaceai/lib/selfpropose.ts`) runs only in one of two places:
-  - an ephemeral GitHub-hosted job in a private repo (Results or core), started manually or by a proposal, with no credential variables;
-  - this box, as the unprivileged sandbox user `peaceai-cand`. That user is never the invoking user and never root, its HOME holds no `.ssh`, `.gitconfig`, `.config` (gh) or other credentials, and its environment is clean.
-  It refuses the public Workspace runners and timers, and the minute budget is 15 by default, 30 at most. It makes a **fresh clone** at the base commit, checks the diff against the protected set, applies the change, and runs the **live version's existing test suite**: the base commit's `peaceai/test/*.test.ts`, restored from the base. Any new tests under `peaceai/self-tests/` run too. It writes a record for private Results and a bundle of the exact tested commit.
+- **propose** (`peaceai/bin/self-change.ts`, logic in `peaceai/lib/selfpropose.ts`) runs only in an ephemeral GitHub-hosted Actions job of a private repo (Results or core). The job is started manually or by a proposal, and its environment holds no credential variables. There is no box or local mode: anywhere else it refuses (`PRIVATE_ACTIONS_ONLY`). It refuses the public Workspace runners and timers, and the minute budget is 15 by default, 30 at most. It makes a **fresh clone** at the base commit, checks the diff against the protected set, applies the change, and runs the **live version's existing test suite**: the base commit's `peaceai/test/*.test.ts`, restored from the base. Any new tests under `peaceai/self-tests/` run too. It writes a record for private Results and a bundle of the exact tested commit.
 - **Protected set** (`peaceai/lib/selfchange.ts`): workflows and approval workflows, hooks, dependency and build config, the rule list, the live tests, the gate, leak, scope, approval and scan tools, the model and its memcheck, and the self-change code and records. It is enforced by path (both sides of a rename or copy; symlinks, mode changes, deletes, copies and binaries are refused) and by content (added lines that name those paths, credentials, approval commands, gate functions or dynamic code loading).
 - **decide:** promotion needs, on the promotion PR:
   - a clean check, the live suite passing against the candidate, and new tests passing;
