@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
-import { applyRule } from "../lib/learned.ts";
+import { applyRule, specHash } from "../lib/learned.ts";
 import { acceptFill, applyFill, fillOptions, parseFillTask } from "../lib/fill.ts";
 import { lmFlags } from "../lib/lm.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
@@ -228,7 +228,7 @@ for (const a of planSteps ? [] : admissions) {
     continue;
   }
   learnedCandidates += 1;
-  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}`, ...(edit.create ? { fixSha: edit.fixSha } : {}) });
+  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}@${specHash(a.spec)}`, ...(edit.create ? { fixSha: edit.fixSha } : {}) });
 }
 const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
