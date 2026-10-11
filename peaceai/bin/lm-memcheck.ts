@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
-import { manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
+import { COREFREE_MIN_RUN, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
 
 const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
@@ -39,6 +39,8 @@ const prompts = [
 const trainCorpus = process.env.PEACEAI_LM_TRAIN_CORPUS ? resolve(process.env.PEACEAI_LM_TRAIN_CORPUS) : "";
 let trainManifestSha = "";
 let noCoreProof = trainCorpus ? "PROVEN" : "NOT_GIVEN";
+let proofState = trainCorpus ? "INVALID:MISSING" : "NOT_GIVEN";
+let proofSha = "";
 let scan: SampleScan | null = null;
 let reason = "";
 const r = before ? runInfer("sample", modelDir, { prompts, seed: 9, prompt_tokens: 64, new_tokens: 128, temperature: 0.8 }, ["--unverified", "--threads", process.env.PEACEAI_LM_THREADS ?? "8"]) : { ok: false as const, reason: "MODEL_MISSING" };
@@ -49,19 +51,28 @@ else {
   const coreRaw = buildSubstringIndex(tree.raw ?? []);
   const baseline = emptyIndex();
   for (const m of manifest) if (m.source !== CORE_SOURCE) addText(baseline, texts.get(m.doc) ?? "");
-  // M9 (Auditor-accepted): a model whose TRAINING manifest proves zero core files gets the public-only rule for
-  // 32-character hits (explained when in that sample's prompt or in its public training corpus). Anything else:
-  // the strict rule. The manifest is checked here against the core tree; nothing about it is taken on trust.
+  // M9 (Auditor/Architect): the core-free-64 rule needs BOTH a valid core-free proof attached to the model's record
+  // (<model>/corefree-proof.json, written at training time) for this exact training manifest AND the manifest still
+  // proving zero core files against the current core tree. Anything else (no training corpus given, no proof, an
+  // invalid proof, a manifest that no longer proves it): the strict 32-character rule.
   let exempt: PublicOnlyExemption | null = null;
   if (trainCorpus) {
-    const tm: ManifestEntry[] = readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const tmText = readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8");
+    const tm: ManifestEntry[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
     const coreShas = new Set((tree.raw ?? []).map((t) => h(t)));
-    trainManifestSha = h(readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8"));
-    if (manifestProvesNoCore(tm, coreShas, CORE_SOURCE) && (tree.raw ?? []).length > 0) {
+    trainManifestSha = h(tmText);
+    let proof: unknown = null;
+    try { proof = JSON.parse(readFileSync(join(modelDir, "corefree-proof.json"), "utf8")); } catch { proof = null; }
+    const modelId = String(JSON.parse(readFileSync(join(modelDir, "config.json"), "utf8")).version ?? "");
+    const v = validCoreFreeProof(proof, { modelId, manifest: tm, manifestSha256: trainManifestSha });
+    proofState = v.ok ? "VALID" : `INVALID:${v.reason}`;
+    if (proof !== null && v.ok) proofSha = h(readFileSync(join(modelDir, "corefree-proof.json"), "utf8"));
+    if (!manifestProvesNoCore(tm, coreShas, CORE_SOURCE) || (tree.raw ?? []).length === 0) noCoreProof = "NOT_PROVEN";
+    if (v.ok && noCoreProof === "PROVEN") {
       const tt: string[] = [];
       for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) tt.push(JSON.parse(l).text);
-      exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex(tt) };
-    } else noCoreProof = "NOT_PROVEN";
+      exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex(tt), minRun: COREFREE_MIN_RUN };
+    }
   }
   scan = scanSamples(r.response.samples as Sample[], core, baseline, (tree.raw ?? []).length ? coreRaw : null, exempt);
 }
@@ -77,10 +88,11 @@ const report = {
   prompts: counts,
   substringRule: scan?.substringRule ?? "strict",
   trainingManifest: trainCorpus ? { sha256: trainManifestSha, noCoreFiles: noCoreProof } : null,
+  coreFreeProof: { state: proofState, ...(proofSha ? { sha256: proofSha } : {}) },
   settings: { promptTokens: 64, newTokens: 128, decoding: ["greedy", "sampled t=0.8 top-k 40 seed 9"], minSamples: 100 },
   scanners: ["core-text (hashed long lines and 4-line shingles; public corpus as baseline)", "core-substring (any 32+ character run of generated text found in core; no baseline)", "personal-info (leak.ts)"],
   scan,
 };
 writeFileSync(join(modelDir, "memcheck.json"), JSON.stringify(report, null, 2) + "\n");
-console.log(`memcheck status=${status} samples=${scan?.samples ?? 0} core_line_hits=${scan?.coreLineHits ?? "-"} core_shingle_hits=${scan?.coreShingleHits ?? "-"} core_substring_hits=${scan?.coreSubstringHits ?? "-"} personal_info=${scan?.personalInfo ?? "-"} rule=${scan?.substringRule ?? "strict"}${scan?.substringRule === "public-only" ? ` unexplained_hits=${scan.unexplainedHits}` : ""}${reason ? ` reason=${reason}` : ""}`);
+console.log(`memcheck status=${status} samples=${scan?.samples ?? 0} core_line_hits=${scan?.coreLineHits ?? "-"} core_shingle_hits=${scan?.coreShingleHits ?? "-"} core_substring_hits=${scan?.coreSubstringHits ?? "-"} personal_info=${scan?.personalInfo ?? "-"} rule=${scan?.substringRule ?? "strict"}${scan?.substringRule === "core-free-64" ? ` unexplained_hits=${scan.unexplainedHits} longest_unexplained=${scan.longestUnexplained} counted_hits_64=${scan.countedHits}` : ""} proof=${proofState}${reason ? ` reason=${reason}` : ""}`);
 process.exit(status === "PASS" ? 0 : 1);

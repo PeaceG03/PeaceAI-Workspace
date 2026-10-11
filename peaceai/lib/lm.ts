@@ -52,19 +52,24 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
 export interface Sample { id: string; kind: string; prompt_tail: string; text: string }
 export interface SampleScan {
   samples: number; coreLineHits: number; coreShingleHits: number; coreSubstringHits: number; personalInfo: number; flagged: number;
-  /** "strict": any 32-character core hit fails. "public-only": only for a model whose training manifest proves zero
-   *  core files; a hit is explained when its window is in that sample's prompt or in the public training corpus,
-   *  and only unexplainedHits (in neither place) count. Absent means strict. */
-  substringRule?: "strict" | "public-only";
+  /** "strict": any 32-character core hit fails (absent means strict). "core-free-64": only for a model whose
+   *  Results record carries a valid core-free proof (see validCoreFreeProof); a hit is explained when its window
+   *  is in that sample's prompt or in the public training corpus, and an unexplained run counts only when it is
+   *  COREFREE_MIN_RUN (64) characters or longer. unexplainedHits = every unexplained run (reported);
+   *  countedHits = the unexplained runs of 64+ characters (must be 0). */
+  substringRule?: "strict" | "core-free-64";
   unexplainedHits?: number;
+  countedHits?: number;
+  longestUnexplained?: number;
 }
-/** Granted only by lm-memcheck when the model's training manifest proves zero core files. */
-export interface PublicOnlyExemption { prompts: ReadonlyMap<string, string>; trainingCorpus: SubstringIndex }
+export const COREFREE_MIN_RUN = 64;
+/** Granted only by lm-memcheck when the model's record carries a valid core-free proof. */
+export interface PublicOnlyExemption { prompts: ReadonlyMap<string, string>; trainingCorpus: SubstringIndex; minRun: number }
 
 /** Scans model output for core text (the core-text scanner, public corpus as the baseline) and personal info. */
 export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex, coreRaw: SubstringIndex | null, exempt: PublicOnlyExemption | null = null): SampleScan {
   const scan: SampleScan = { samples: samples.length, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
-  if (exempt) { scan.substringRule = "public-only"; scan.unexplainedHits = 0; }
+  if (exempt) { scan.substringRule = "core-free-64"; scan.unexplainedHits = 0; scan.countedHits = 0; scan.longestUnexplained = 0; }
   for (const s of samples) {
     // The prompt's last partial line is joined to the output, so a core line the model completes is caught too.
     // When the model added fewer than SHINGLE_LINE non-space characters to that line, the line is the prompt's
@@ -86,8 +91,18 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
             return !(prompt !== undefined && prompt.includes(w)) && !indexHas(exempt.trainingCorpus, w);
           })
         : null;
-      counted = unexplained ? runsOf(unexplained) : 1;
-      scan.unexplainedHits! += counted;
+      // Maximal runs of consecutive unexplained windows; a run of k windows covers k + n - 1 characters.
+      const lengths: number[] = [];
+      let prev = -2;
+      for (const st of unexplained ?? []) {
+        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else lengths.push(coreRaw!.n);
+        prev = st;
+      }
+      const long = unexplained ? lengths.filter((l) => l >= exempt.minRun).length : 1;
+      scan.unexplainedHits! += unexplained ? lengths.length : 1;
+      scan.countedHits! += long;
+      scan.longestUnexplained = Math.max(scan.longestUnexplained!, ...lengths, 0);
+      counted = long;
     }
     const pii = scanText(s.text).length;
     scan.coreSubstringHits += sub;
@@ -101,7 +116,7 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
 
 export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
   if (!scan || scan.samples < MIN_MEMCHECK_SAMPLES) return "FAIL";
-  const substring = scan.substringRule === "public-only" ? scan.unexplainedHits ?? 1 : scan.coreSubstringHits;
+  const substring = scan.substringRule === "core-free-64" ? scan.countedHits ?? 1 : scan.coreSubstringHits;
   return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && substring === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
 }
 
@@ -113,6 +128,37 @@ export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
 export function manifestProvesNoCore(manifest: readonly { source?: string; visibility?: string; sha256?: string }[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI"): boolean {
   if (manifest.length === 0) return false;
   return manifest.every((m) => m.visibility === "public" && typeof m.source === "string" && m.source !== coreSource && typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256));
+}
+
+/**
+ * The core-free proof attached to a model's Results record (written at training time by
+ * peaceai/model/corefree_proof.py): the training manifest's hash, and for EVERY manifest file its content sha256,
+ * whether it matches a core file exactly (must be false) and its highest MinHash similarity to any core file (must
+ * be below the near-duplicate threshold, which may not be looser than 0.8). Anything missing, extra, mismatched or
+ * malformed is invalid, and the model stays on the strict rule.
+ */
+export const COREFREE_PROOF_SCHEMA = "peaceai-lm-corefree-proof:v1";
+export interface CoreFreeProofFile { doc: number; path: string; source: string; sha256: string; coreExact: boolean; coreNearMax: number }
+export interface CoreFreeProof { schema: string; model: string; noCoreFiles: string; manifestSha256: string; coreCommit: string; near: { method: string; threshold: number }; files: CoreFreeProofFile[] }
+export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string }): { ok: boolean; reason?: string } {
+  const p = proof as CoreFreeProof | null;
+  if (!p || typeof p !== "object") return { ok: false, reason: "MISSING" };
+  if (p.schema !== COREFREE_PROOF_SCHEMA) return { ok: false, reason: "BAD_SCHEMA" };
+  if (p.model !== ctx.modelId) return { ok: false, reason: "OTHER_MODEL" };
+  if (p.noCoreFiles !== "PROVEN") return { ok: false, reason: "NOT_PROVEN" };
+  if (p.manifestSha256 !== ctx.manifestSha256) return { ok: false, reason: "MANIFEST_MISMATCH" };
+  if (!/^[0-9a-f]{40}$/.test(p.coreCommit ?? "")) return { ok: false, reason: "NO_CORE_COMMIT" };
+  const t = p.near?.threshold;
+  if (typeof t !== "number" || !(t > 0 && t <= 0.8)) return { ok: false, reason: "BAD_NEAR_THRESHOLD" };
+  if (!Array.isArray(p.files) || p.files.length !== ctx.manifest.length || ctx.manifest.length === 0) return { ok: false, reason: "FILE_COUNT" };
+  const byDoc = new Map(p.files.map((f) => [f?.doc, f]));
+  for (const m of ctx.manifest) {
+    const f = byDoc.get(m.doc);
+    if (!f || f.path !== m.path || f.sha256 !== m.sha256) return { ok: false, reason: "FILE_MISMATCH" };
+    if (f.coreExact !== false) return { ok: false, reason: "CORE_EXACT" };
+    if (typeof f.coreNearMax !== "number" || !(f.coreNearMax >= 0 && f.coreNearMax < t)) return { ok: false, reason: "CORE_NEAR" };
+  }
+  return { ok: true };
 }
 
 // ---- where the model may run
