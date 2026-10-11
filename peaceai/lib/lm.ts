@@ -82,8 +82,9 @@ export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
 
 // ---- where the model may run
 
-/** Jobs that may load the weights: the fill job, Job A and Job C. Never Job B/B2, where candidate code runs. */
-export const LM_JOBS = ["lm-fill", "generate", "record"] as const;
+/** Jobs that may load a model: the fill job, Job A, Job C, and ci.yml's unit tests (tiny fixture model only).
+ *  Never Job B/B2 (ids `test`, `regate`), where candidate code runs. */
+export const LM_JOBS = ["lm-fill", "generate", "record", "tests"] as const;
 /** On Actions the job id decides; a job marked as running candidate code is always refused. Off Actions (the box) is allowed. */
 export function lmJobAllowed(env: Record<string, string | undefined>): boolean {
   if (env.PEACEAI_CANDIDATE_JOB === "true") return false;

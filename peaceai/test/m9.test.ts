@@ -444,7 +444,7 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
 test("LM runs only in the fill job, Job A or Job C: never in Job B/B2 (workflow and code)", () => {
   // Code: the job id decides on Actions; a candidate-code job is always refused, whatever its id.
   assert.equal(lmJobAllowed({}), true);
-  for (const job of ["lm-fill", "generate", "record"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), true, job);
+  for (const job of ["lm-fill", "generate", "record", "tests"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), true, job);
   for (const job of ["test", "regate", "review", "finish", "select", ""]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), false, job);
   assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: "generate", PEACEAI_CANDIDATE_JOB: "true" }), false);
   const saved = { ...process.env };
@@ -458,6 +458,9 @@ test("LM runs only in the fill job, Job A or Job C: never in Job B/B2 (workflow 
   }
   // Workflow: Job B and B2 never fetch, name or run the model, and are marked as candidate-code jobs.
   const task = readFileSync(join(repo, ".github/workflows/peace-task.yml"), "utf8");
+  // The allowed ids are not reused by a candidate-code job: peace-task has no `tests` job; ci.yml's is the unit suite.
+  assert.ok(!/\n {2}tests:\n/.test(task));
+  assert.match(readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8"), /\n {2}tests:\n/);
   const block = (name: string) => { const a = task.indexOf(`\n  ${name}:\n`); const rest = task.slice(a + 1); const b = rest.slice(1).search(/\n {2}[a-z0-9-]+:\n/); return b < 0 ? rest : rest.slice(0, b + 1); };
   for (const job of ["test", "regate"]) {
     const b = block(job);
