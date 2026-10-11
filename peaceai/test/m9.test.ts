@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { acceptFill, applyFill, fillHole, fillKey, fillOptions, FILLS_SCHEMA, parseFillTask } from "../lib/fill.ts";
-import { activeWithLm, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
+import { activeWithLm, lmJobAllowed, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { ALLOWED_SPDX, classifyLicense, fileExclusion, splitOf } from "../lib/lmcorpus.ts";
 
@@ -439,4 +439,36 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
   const req = readFileSync(join(repo, "peaceai/model/requirements.txt"), "utf8");
   assert.match(req, /^numpy==2\.3\.3 \\$/m);
   assert.equal((req.match(/--hash=sha256:[0-9a-f]{64}/g) ?? []).length, 2);
+});
+
+test("LM runs only in the fill job, Job A or Job C: never in Job B/B2 (workflow and code)", () => {
+  // Code: the job id decides on Actions; a candidate-code job is always refused, whatever its id.
+  assert.equal(lmJobAllowed({}), true);
+  for (const job of ["lm-fill", "generate", "record", "tests"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), true, job);
+  for (const job of ["test", "regate", "review", "finish", "select", ""]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), false, job);
+  assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: "generate", PEACEAI_CANDIDATE_JOB: "true" }), false);
+  const saved = { ...process.env };
+  try {
+    Object.assign(process.env, { GITHUB_ACTIONS: "true", GITHUB_JOB: "test" });
+    assert.deepEqual(runInfer("fill", "/nonexistent", {}), { ok: false, reason: "LM_JOB_REFUSED" });
+    process.env.GITHUB_JOB = "regate";
+    assert.deepEqual(runInfer("score", "/nonexistent", {}), { ok: false, reason: "LM_JOB_REFUSED" });
+  } finally {
+    for (const k of ["GITHUB_ACTIONS", "GITHUB_JOB"]) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  }
+  // Workflow: Job B and B2 never fetch, name or run the model, and are marked as candidate-code jobs.
+  const task = readFileSync(join(repo, ".github/workflows/peace-task.yml"), "utf8");
+  // The allowed ids are not reused by a candidate-code job: peace-task has no `tests` job; ci.yml's is the unit suite.
+  assert.ok(!/\n {2}tests:\n/.test(task));
+  assert.match(readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8"), /\n {2}tests:\n/);
+  const block = (name: string) => { const a = task.indexOf(`\n  ${name}:\n`); const rest = task.slice(a + 1); const b = rest.slice(1).search(/\n {2}[a-z0-9-]+:\n/); return b < 0 ? rest : rest.slice(0, b + 1); };
+  for (const job of ["test", "regate"]) {
+    const b = block(job);
+    assert.ok(b.length > 200, job);
+    assert.match(b, /PEACEAI_CANDIDATE_JOB: "true"/, job);
+    for (const banned of [/models\/lm/, /PeaceAI-Results/, /PEACEAI_RESULTS_DEPLOY_KEY/, /peaceai-results/, /lm-fill/, /infer\.py/, /PEACEAI_LM_/, /lm-venv/, /model\/requirements\.txt/, /weights/, /latest\.json/])
+      assert.ok(!banned.test(b), `${job} must not reference ${banned}`);
+  }
+  // Only the fill job (and Job C's shadow score) may touch Results; Job A gets fills as a small JSON choice.
+  for (const job of ["select", "generate", "review", "finish"]) assert.ok(!/PEACEAI_RESULTS_DEPLOY_KEY|models\/lm/.test(block(job)), job);
 });
