@@ -18,6 +18,7 @@ export const PRIVATE_RUNNERS = ["PeaceG03/PeaceAI-Results", "PeaceG03/PeaceAI"] 
  * tests and the self-change machinery itself, so PeaceAI can never weaken what judges it.
  */
 export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
+  { pattern: /(^|\/)[^/]*public-origin[^/]*$/i, why: "the public-origin allowlist (leak gate): core's docs/peaceai-public-origin.json and any copy, test or reader of it" },
   { pattern: /^\.github\//, why: "workflows, required checks and approval workflows" },
   { pattern: /^\.githooks\/|(^|\/)\.git\//, why: "git hooks" },
   { pattern: /^(package(-lock)?\.json|npm-shrinkwrap\.json|\.npmrc|tsconfig[^/]*\.json|\.gitignore|\.gitattributes)$/, why: "dependencies and build config" },
@@ -33,6 +34,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */
 const CONTENT_BANNED: readonly { pattern: RegExp; why: string }[] = [
+  { pattern: /public-origin|PUBLIC_ORIGIN|parsePublicOrigin|publicOrigin/i, why: "names the public-origin allowlist (leak gate)" },
   { pattern: /\.github\//, why: "names the workflow directory" },
   { pattern: /approved\.json|peaceai\/rules\//, why: "names the approved-rule list" },
   { pattern: /peaceai\/test\/|self-tests\/.*\.\.\//, why: "reaches into the live tests" },
@@ -79,6 +81,7 @@ export function protectedReason(path: string | null): string | null {
   if (path === null) return null;
   const norm = path.replace(/\\/g, "/");
   if (norm.startsWith("/") || norm.split("/").some((s) => s === ".." || s === "." || s === "")) return "path is not a plain relative path";
+  if (PROTECTED_SELF[0]!.pattern.test(norm)) return PROTECTED_SELF[0]!.why; // the public-origin allowlist, wherever it sits
   if (!norm.startsWith("peaceai/")) return "outside peaceai/ (self-changes edit PeaceAI's own code only)";
   return PROTECTED_SELF.find((p) => p.pattern.test(norm))?.why ?? null;
 }

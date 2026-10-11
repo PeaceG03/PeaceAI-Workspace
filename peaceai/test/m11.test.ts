@@ -50,6 +50,17 @@ test("protected set: any self-change touching it is refused, by path (every rena
     [add("peaceai/lib/helper.ts", ["export const x = (isProtectedPath as any) = () => false;"]), /gate function/],
     [add("peaceai/lib/helper.ts", ['eval("1")']), /dynamic code/],
     [add("peaceai/lib/helper.ts", ["const c = process.env.PEACEAI_RANKER;"]), /runner variable/],
+    // The public-origin allowlist (leak gate, Auditor condition): the core file, any Workspace copy, its test and its reader.
+    [add("docs/peaceai-public-origin.json", ["{}"]), /public-origin allowlist/],
+    [modify("docs/peaceai-public-origin.json", "a", "b"), /public-origin allowlist/],
+    [add("peaceai/lib/peaceai-public-origin.json", ["{}"]), /public-origin allowlist/],
+    [add("peaceai/self/public-origin.json", ["{}"]), /public-origin allowlist/],
+    [modify("peaceai/test/public-origin.test.ts", "a", "b"), /public-origin allowlist/],
+    [modify("peaceai/lib/coreindex.ts", "a", "b"), /gates, approvals/],
+    ["diff --git a/peaceai/lib/rank.ts b/peaceai/lib/public-origin.ts\nsimilarity index 100%\nrename from peaceai/lib/rank.ts\nrename to peaceai/lib/public-origin.ts\n", /public-origin allowlist/],
+    [add("peaceai/lib/helper.ts", ['const f = "docs/peaceai-public-origin.json";']), /names the public-origin allowlist/],
+    [add("peaceai/lib/helper.ts", ["import { PUBLIC_ORIGIN_FILE } from './coreindex.ts';"]), /names the public-origin allowlist/],
+    [add("peaceai/lib/helper.ts", ["const pins = parsePublicOrigin(text);"]), /names the public-origin allowlist/],
     ["", /not a git diff/],
   ];
   for (const [diff, why] of cases) {
