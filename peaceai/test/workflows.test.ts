@@ -212,7 +212,11 @@ test("approve-push key: only results-land (environment peaceai-approve-push) rea
   assert.ok(!/upload-artifact/.test(land), "no artifact upload in results-land");
   assert.ok(!/actions: write/.test(land), "results-land dispatches nothing");
   assert.equal((land.match(/secrets\.PEACEAI_APPROVE_PUSH_KEY/g) ?? []).length, 1, "the key is read in one step only");
-  assert.match(land, /APPROVE_PUSH_KEY: \$\{\{ secrets\.PEACEAI_APPROVE_PUSH_KEY \}\}\n {8}run: \.\/peaceai\/bin\/approve-rule-pr\.sh /);
+  // One step reads the key: it either lands (approve-rule-pr.sh) or, on a key_proof dispatch, runs the key proof.
+  assert.match(land, /APPROVE_PUSH_KEY: \$\{\{ secrets\.PEACEAI_APPROVE_PUSH_KEY \}\}\n {10}KEY_PROOF: \$\{\{ inputs\.key_proof == true \}\}\n {8}run: \|\n {10}if \[ "\$KEY_PROOF" = "true" \]; then \.\/peaceai\/bin\/key-proof-approve-push\.sh; else \.\/peaceai\/bin\/approve-rule-pr\.sh /);
+  // A key proof lands nothing: the landing artifact and list steps are skipped, and the Results/core jobs never start.
+  assert.equal((land.match(/if: inputs\.key_proof != true/g) ?? []).length, 2);
+  assert.match(jobs(read("peace-approve-rule.yml")).get("results-read")!, /inputs\.key_proof != true/);
   // Outside .github: only the landing script and the manual key proof name the key.
   const script = readFileSync("peaceai/bin/approve-rule-pr.sh", "utf8");
   assert.match(script, /DEPLOY_KEY="\$APPROVE_PUSH_KEY" "\$here\/with-deploy-key\.sh"/);
