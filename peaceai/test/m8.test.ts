@@ -484,7 +484,8 @@ test("workflows: only peace-approve-rule writes the list; Job A reads core rules
   const pr = readFileSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), "utf8");
   assert.match(pr, /only the approved list may change/);
   assert.match(pr, /git add peaceai\/rules\/approved\.json/);
-  assert.match(pr, /--required --watch/);
+  assert.match(pr, /await-checks\.sh" "\$sha" \$REQUIRED_CHECKS/);
+  assert.ok(!/gh pr checks/.test(pr), "check-runs are polled on the commit, not via gh pr checks");
   assert.match(readFileSync(join(repo, ".github/CODEOWNERS"), "utf8"), /^\/peaceai\/rules\/approved\.json @PeaceG03$/m);
   assert.ok(validateList(JSON.parse(readFileSync(join(repo, "peaceai/rules/approved.json"), "utf8"))));
   // Spec files are stored as their canonical JSON, so the file bytes (minus the newline) are what is hashed.
