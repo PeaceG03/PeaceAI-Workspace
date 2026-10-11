@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { acceptFill, applyFill, fillHole, fillKey, fillOptions, FILLS_SCHEMA, parseFillTask } from "../lib/fill.ts";
-import { activeWithLm, lmJobAllowed, manifestProvesNoCore, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
+import { activeWithLm, COREFREE_MIN_RUN, lmJobAllowed, manifestProvesNoCore, validCoreFreeProof, type PublicOnlyExemption, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { ALLOWED_SPDX, classifyLicense, fileExclusion, splitOf } from "../lib/lmcorpus.ts";
 
@@ -521,83 +521,156 @@ test("M9 retrain: train.py stops early on held-out loss and keeps the best check
   assert.match(readFileSync(join(repo, "peaceai/model/export.py"), "utf8"), /--checkpoint", default="checkpoint\.npz"/);
 });
 
-// ---- public-only exemption for 32-character hits (Auditor-accepted, with conditions)
+// ---- core-free-64 rule (Auditor/Architect): only with a valid core-free proof on the model's record
 
-test("public-only rule: a hit in the sample's prompt or the public training corpus is explained; any other hit fails", () => {
+test("core-free-64 rule: explained hits never count; unexplained runs count only at 64+ characters", () => {
   const core = emptyIndex(); const baseline = emptyIndex();
-  const raw = buildSubstringIndex([CORE_LINE + "\n"]);
-  const window = CORE_LINE.slice(10, 50);
-  const sample = (id: string) => ({ id, kind: "greedy", prompt_tail: "", text: `zz(${window})` });
-  const many = (n: number, mk: (i: number) => { id: string; kind: string; prompt_tail: string; text: string }) => Array.from({ length: n }, (_, i) => mk(i));
+  const long = "export function veryDistinctiveCoreOnlyHelperWithALongName(alphaValue: number, betaValue: number) { return alphaValue * betaValue + 17; }";
+  const raw = buildSubstringIndex([CORE_LINE + "\n", long + "\n"]);
   const fill = (i: number) => ({ id: `f${i}`, kind: "greedy", prompt_tail: "", text: "x" });
-  // Strict rule (no exemption): the hit fails.
-  const strict = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw);
-  assert.equal(strict.coreSubstringHits, 1); assert.equal(memcheckStatus(strict), "FAIL");
-  // In the sample's own prompt: explained.
-  const viaPrompt = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map([["p0", `prompt ${CORE_LINE}`]]), trainingCorpus: buildSubstringIndex([]) });
-  assert.deepEqual([viaPrompt.coreSubstringHits, viaPrompt.unexplainedHits, viaPrompt.substringRule], [1, 0, "public-only"]);
-  assert.equal(memcheckStatus(viaPrompt), "PASS");
-  // Another sample's prompt does not explain it.
-  const otherPrompt = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map([["p1", CORE_LINE]]), trainingCorpus: buildSubstringIndex([]) });
-  assert.equal(otherPrompt.unexplainedHits, 1); assert.equal(memcheckStatus(otherPrompt), "FAIL");
-  // In the public training corpus: explained.
-  const viaCorpus = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map(), trainingCorpus: buildSubstringIndex([`lib(${CORE_LINE.slice(5, 60)})`]) });
-  assert.equal(viaCorpus.unexplainedHits, 0); assert.equal(memcheckStatus(viaCorpus), "PASS");
-  // Partly explained: a run that extends past the explained part is still unexplained.
-  const partly = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map(), trainingCorpus: buildSubstringIndex([CORE_LINE.slice(10, 45)]) });
-  assert.equal(partly.unexplainedHits, 1); assert.equal(memcheckStatus(partly), "FAIL");
-  // No core index: fail closed under either rule.
-  assert.equal(memcheckStatus(scanSamples(many(110, fill), core, baseline, null, { prompts: new Map(), trainingCorpus: buildSubstringIndex([]) })), "FAIL");
-  // A public-only scan without its unexplained count fails.
-  assert.equal(memcheckStatus({ ...viaCorpus, unexplainedHits: undefined }), "FAIL");
+  const fills = Array.from({ length: 110 }, (_, i) => fill(i));
+  const sample = (text: string) => ({ id: "p0", kind: "greedy", prompt_tail: "", text });
+  const ex = (over: Partial<PublicOnlyExemption> = {}): PublicOnlyExemption => ({ prompts: new Map(), trainingCorpus: buildSubstringIndex([]), minRun: COREFREE_MIN_RUN, ...over });
+  const short = `zz(${CORE_LINE.slice(10, 50)})`; // a 40-character unexplained run
+  const s40 = scanSamples([sample(short), ...fills], core, baseline, raw, ex());
+  assert.deepEqual([s40.substringRule, s40.coreSubstringHits, s40.unexplainedHits, s40.countedHits, s40.longestUnexplained], ["core-free-64", 1, 1, 0, 40]);
+  assert.equal(memcheckStatus(s40), "PASS");
+  // The same 40-character run under the strict rule (no proof): FAIL.
+  assert.equal(memcheckStatus(scanSamples([sample(short), ...fills], core, baseline, raw)), "FAIL");
+  // 64+ characters unexplained: counts, FAIL.
+  const s70 = scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex());
+  assert.deepEqual([s70.unexplainedHits, s70.countedHits, s70.longestUnexplained], [1, 1, 70]);
+  assert.equal(memcheckStatus(s70), "FAIL");
+  // Exactly 64: counts. 63: does not.
+  assert.equal(scanSamples([sample(`zz(${long.slice(0, 64)})`), ...fills], core, baseline, raw, ex()).countedHits, 1);
+  assert.equal(scanSamples([sample(`zz(${long.slice(0, 63)})`), ...fills], core, baseline, raw, ex()).countedHits, 0);
+  // A long run explained by the sample's prompt or by the training corpus does not count.
+  assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex({ prompts: new Map([["p0", long]]) })).countedHits, 0);
+  assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex({ trainingCorpus: buildSubstringIndex([`// ${long}`]) })).countedHits, 0);
+  // No core index: fail closed. A core-free-64 scan without its counted value fails.
+  assert.equal(memcheckStatus(scanSamples(fills, core, baseline, null, ex())), "FAIL");
+  assert.equal(memcheckStatus({ ...s40, countedHits: undefined }), "FAIL");
 });
 
-test("public-only rule needs a manifest that proves zero core files", () => {
+function proofFor(model: string, manifest: { doc: number; path: string; source: string; sha256: string }[], manifestText: string, over: Record<string, unknown> = {}) {
+  return { schema: "peaceai-lm-corefree-proof:v1", model, noCoreFiles: "PROVEN", manifestSha256: createHash("sha256").update(manifestText).digest("hex"), coreCommit: "c".repeat(40), near: { method: "minhash", threshold: 0.8 }, files: manifest.map((m) => ({ doc: m.doc, path: m.path, source: m.source, sha256: m.sha256, coreExact: false, coreNearMax: 0.1 })), ...over };
+}
+
+test("validCoreFreeProof: every field and every file must check out; anything else is invalid", () => {
+  const manifest = [{ doc: 0, path: "src/a.ts", source: "honojs/hono", sha256: "a".repeat(64) }, { doc: 1, path: "src/b.ts", source: "honojs/hono", sha256: "b".repeat(64) }];
+  const text = manifest.map((m) => JSON.stringify(m)).join("\n") + "\n";
+  const ctx = { modelId: "lm-v1-000000000001", manifest, manifestSha256: createHash("sha256").update(text).digest("hex") };
+  const good = proofFor(ctx.modelId, manifest, text);
+  assert.deepEqual(validCoreFreeProof(good, ctx), { ok: true });
+  const bad: [unknown, string][] = [
+    [null, "MISSING"],
+    [{ ...good, schema: "x" }, "BAD_SCHEMA"],
+    [{ ...good, model: "lm-v1-other" }, "OTHER_MODEL"],
+    [{ ...good, noCoreFiles: "NOT_PROVEN" }, "NOT_PROVEN"],
+    [{ ...good, manifestSha256: "d".repeat(64) }, "MANIFEST_MISMATCH"],
+    [{ ...good, coreCommit: "" }, "NO_CORE_COMMIT"],
+    [{ ...good, near: { method: "m", threshold: 0.95 } }, "BAD_NEAR_THRESHOLD"],
+    [{ ...good, files: good.files.slice(0, 1) }, "FILE_COUNT"],
+    [{ ...good, files: [good.files[0], { ...good.files[1], sha256: "e".repeat(64) }] }, "FILE_MISMATCH"],
+    [{ ...good, files: [good.files[0], { ...good.files[1], path: "src/c.ts" }] }, "FILE_MISMATCH"],
+    [{ ...good, files: [good.files[0], { ...good.files[1], coreExact: true }] }, "CORE_EXACT"],
+    [{ ...good, files: [good.files[0], { ...good.files[1], coreNearMax: 0.85 }] }, "CORE_NEAR"],
+    [{ ...good, files: [good.files[0], { ...good.files[1], coreNearMax: "0.1" }] }, "CORE_NEAR"],
+  ];
+  for (const [p, reason] of bad) assert.deepEqual(validCoreFreeProof(p, ctx), { ok: false, reason }, reason);
+  assert.equal(validCoreFreeProof(good, { ...ctx, manifest: [] }).ok, false, "empty manifest proves nothing");
+});
+
+test("public-only manifest check (still required alongside the proof)", () => {
   const coreText = CORE_LINE + "\n";
   const coreShas = new Set([createHash("sha256").update(coreText).digest("hex")]);
   const ok = { source: "honojs/hono", visibility: "public", sha256: "a".repeat(64) };
   assert.equal(manifestProvesNoCore([ok], coreShas), true);
-  assert.equal(manifestProvesNoCore([], coreShas), false, "empty proves nothing");
+  assert.equal(manifestProvesNoCore([], coreShas), false);
   assert.equal(manifestProvesNoCore([ok, { ...ok, visibility: "private" }], coreShas), false);
   assert.equal(manifestProvesNoCore([ok, { ...ok, source: "PeaceG03/PeaceAI" }], coreShas), false);
-  assert.equal(manifestProvesNoCore([ok, { ...ok, sha256: [...coreShas][0] }], coreShas), false, "a core file under a public name");
-  assert.equal(manifestProvesNoCore([ok, { source: "x/y", visibility: "public" }], coreShas), false, "no hash");
+  assert.equal(manifestProvesNoCore([ok, { ...ok, sha256: [...coreShas][0] }], coreShas), false);
 });
 
-test("lm-memcheck end to end: the exemption applies only with a no-core training manifest; reports unexplained_hits", () => {
+test("lm-memcheck end to end: core-free-64 with a valid proof; strict with no proof, an invalid proof or a core-containing manifest", () => {
   const { dir, corpus, model, core } = tinyModel();
-  const copy = join(dir, "mc-exempt");
+  const copy = join(dir, "mc-64");
   mkdirSync(copy, { recursive: true });
   for (const f of ["config.json", "tokenizer.json", "weights.npz"]) writeFileSync(join(copy, f), readFileSync(join(model, f)));
-  const samples = JSON.stringify({ model: "lm-v1-000000000000", samples: Array.from({ length: 120 }, (_, i) => ({ id: `s${i}`, kind: "greedy", prompt_tail: "", text: i === 7 ? `zz(${CORE_LINE.slice(10, 50)})\n` : "x" })) });
-  const trainCorpus = (name: string, docs: { text: string; source: string; visibility: string; sha?: string }[]) => {
+  const modelId = JSON.parse(readFileSync(join(copy, "config.json"), "utf8")).version;
+  // One 40-character unexplained run (in core, in no prompt, not in the training corpus).
+  const samples = JSON.stringify({ model: modelId, samples: Array.from({ length: 120 }, (_, i) => ({ id: `s${i}`, kind: "greedy", prompt_tail: "", text: i === 7 ? `zz(${CORE_LINE.slice(10, 50)})\n` : "x" })) });
+  const trainCorpus = (name: string, docs: { text: string; source: string; visibility: string }[]) => {
     const d = join(dir, name);
     mkdirSync(d, { recursive: true });
     writeFileSync(join(d, "docs.jsonl"), docs.map((x, i) => JSON.stringify({ doc: i, text: x.text })).join("\n") + "\n");
-    writeFileSync(join(d, "manifest.jsonl"), docs.map((x, i) => JSON.stringify({ doc: i, source: x.source, visibility: x.visibility, path: `src/f${i}.ts`, sha256: x.sha ?? createHash("sha256").update(x.text).digest("hex"), bytes: x.text.length, license: "MIT", split: "train" })).join("\n") + "\n");
-    return d;
+    const man = docs.map((x, i) => ({ doc: i, source: x.source, visibility: x.visibility, path: `src/f${i}.ts`, sha256: createHash("sha256").update(x.text).digest("hex"), bytes: x.text.length, license: "MIT", split: "train" }));
+    const text = man.map((m) => JSON.stringify(m)).join("\n") + "\n";
+    writeFileSync(join(d, "manifest.jsonl"), text);
+    return { d, man, text };
   };
-  const shared = `export const shared = 1; // ${CORE_LINE.slice(5, 60)}\n`;
   const run = (train: string) => memcheck(copy, corpus, core, { PEACEAI_PYTHON: fakePython(dir, samples), PEACEAI_LM_TRAIN_CORPUS: train });
-  const pass = run(trainCorpus("t-public", [{ text: shared, source: "honojs/hono", visibility: "public" }]));
-  assert.equal(pass.status, 0, pass.stdout + pass.stderr);
-  assert.match(pass.stdout, /status=PASS .*core_substring_hits=1 .*rule=public-only unexplained_hits=0/);
+  const pub = trainCorpus("t64-public", [{ text: "export const other = 2;\n", source: "honojs/hono", visibility: "public" }]);
+  const proofPath = join(copy, "corefree-proof.json");
+  // No proof attached: strict, FAIL on the 40-character hit.
+  rmSync(proofPath, { force: true });
+  const none = run(pub.d);
+  assert.equal(none.status, 1, none.stdout);
+  assert.match(none.stdout, /status=FAIL .*core_substring_hits=1 personal_info=0 rule=strict proof=INVALID:MISSING/);
+  // Valid proof: core-free-64, the 40-character run is reported but does not count; PASS.
+  writeFileSync(proofPath, JSON.stringify(proofFor(modelId, pub.man, pub.text)));
+  const ok = run(pub.d);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /status=PASS .*rule=core-free-64 unexplained_hits=1 longest_unexplained=40 counted_hits_64=0 proof=VALID/);
   const report = JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8"));
-  assert.equal(report.substringRule, "public-only");
-  assert.equal(report.trainingManifest.noCoreFiles, "PROVEN");
-  assert.match(report.trainingManifest.sha256, /^[0-9a-f]{64}$/);
-  // Same hit, but the window is not in the training corpus: unexplained, FAIL.
-  const miss = run(trainCorpus("t-miss", [{ text: "export const other = 2;\n", source: "honojs/hono", visibility: "public" }]));
-  assert.equal(miss.status, 1);
-  assert.match(miss.stdout, /status=FAIL .*rule=public-only unexplained_hits=1/);
-  // Manifest with a core file (by source, by visibility, or by content hash): the strict rule applies.
-  for (const bad of [
-    [{ text: shared, source: "honojs/hono", visibility: "public" }, { text: "y\n", source: "PeaceG03/PeaceAI", visibility: "private" }],
-    [{ text: shared, source: "honojs/hono", visibility: "public" }, { text: CORE_LINE + "\n", source: "x/y", visibility: "public" }],
-  ]) {
-    const r = run(trainCorpus(`t-bad-${Math.random().toString(16).slice(2)}`, bad));
+  assert.equal(report.coreFreeProof.state, "VALID");
+  assert.match(report.coreFreeProof.sha256, /^[0-9a-f]{64}$/);
+  // Invalid proof (another model / a file flagged near core): strict, FAIL.
+  for (const [over, why] of [[{ model: "lm-v1-other" }, "OTHER_MODEL"], [{ files: [{ ...proofFor(modelId, pub.man, pub.text).files[0], coreNearMax: 0.9 }] }, "CORE_NEAR"]] as const) {
+    writeFileSync(proofPath, JSON.stringify(proofFor(modelId, pub.man, pub.text, over as Record<string, unknown>)));
+    const r = run(pub.d);
     assert.equal(r.status, 1, r.stdout);
-    assert.match(r.stdout, /status=FAIL .*core_substring_hits=1 personal_info=0 rule=strict/);
-    assert.equal(JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8")).trainingManifest.noCoreFiles, "NOT_PROVEN");
+    assert.match(r.stdout, new RegExp(`status=FAIL .*rule=strict proof=INVALID:${why}`));
   }
+  // A valid-looking proof for a manifest that holds a core file (content hash = a core file): strict, FAIL.
+  const bad = trainCorpus("t64-core", [{ text: CORE_LINE + "\n", source: "x/y", visibility: "public" }]);
+  writeFileSync(proofPath, JSON.stringify(proofFor(modelId, bad.man, bad.text)));
+  const b = run(bad.d);
+  assert.equal(b.status, 1, b.stdout);
+  assert.match(b.stdout, /rule=strict/);
+  assert.equal(JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8")).trainingManifest.noCoreFiles, "NOT_PROVEN");
+});
+
+test("corefree_proof.py: PROVEN only when no file copies or near-copies a core file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m9-proof-"));
+  try {
+    const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i} + ${n}; }`).join("\n");
+    const coreDir = join(dir, "core"); mkdirSync(coreDir);
+    writeFileSync(join(coreDir, "x.ts"), code(1));
+    execFileSync("git", ["init", "-q"], { cwd: coreDir }); execFileSync("git", ["add", "-A"], { cwd: coreDir });
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"], { cwd: coreDir });
+    const mk = (name: string, texts: string[]) => {
+      const d = join(dir, name); mkdirSync(d);
+      writeFileSync(join(d, "docs.jsonl"), texts.map((t, i) => JSON.stringify({ doc: i, text: t })).join("\n") + "\n");
+      writeFileSync(join(d, "manifest.jsonl"), texts.map((t, i) => JSON.stringify({ doc: i, source: "honojs/hono", visibility: "public", path: `s${i}.ts`, sha256: createHash("sha256").update(t).digest("hex") })).join("\n") + "\n");
+      return d;
+    };
+    const model = join(dir, "model"); mkdirSync(model);
+    writeFileSync(join(model, "config.json"), JSON.stringify({ version: "lm-v1-000000000002" }));
+    const run = (corpusDir: string) => {
+      execFileSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", corpusDir, "--core-dir", coreDir, "--model", model], { encoding: "utf8" });
+      return JSON.parse(readFileSync(join(model, "corefree-proof.json"), "utf8"));
+    };
+    const clean = run(mk("clean", [code(2)]));
+    assert.equal(clean.noCoreFiles, "PROVEN");
+    assert.equal(clean.files[0].coreExact, false);
+    const ctx = (d: string) => { const t = readFileSync(join(d, "manifest.jsonl"), "utf8"); return { modelId: "lm-v1-000000000002", manifest: t.split("\n").filter(Boolean).map((l) => JSON.parse(l)), manifestSha256: createHash("sha256").update(t).digest("hex") }; };
+    assert.deepEqual(validCoreFreeProof(clean, ctx(join(dir, "clean"))), { ok: true });
+    const exact = run(mk("exact", [code(2), code(1)]));
+    assert.equal(exact.noCoreFiles, "NOT_PROVEN");
+    assert.equal(exact.files[1].coreExact, true);
+    const near = run(mk("near", [code(1).replace("helper1_3(", "helperY_3(")]));
+    assert.equal(near.noCoreFiles, "NOT_PROVEN");
+    assert.ok(near.files[0].coreNearMax >= 0.8);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
