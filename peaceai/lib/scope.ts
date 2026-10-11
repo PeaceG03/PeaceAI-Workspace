@@ -97,15 +97,45 @@ export interface ChangedPath {
   path: string;
 }
 
+/** M8 approval landing: facts the leak check gathers about an approval branch (never trusted from the PR). */
+export interface ApprovalFacts {
+  /** Commits on the branch ahead of the base. */
+  ahead: number;
+  /** Files changed by those commits (the whole range). */
+  files: readonly string[];
+  /** check-approved-list.ts (from main) passed on the branch's list. */
+  listCheckPassed: boolean;
+  /** The repository the check runs in (github.repository). */
+  repository: string;
+}
+export const APPROVED_LIST_PATH = "peaceai/rules/approved.json";
+export const APPROVE_BRANCH_PREFIX = "peaceai-approve-rule/";
+
+/** Why the approved-list exemption does not apply, or null when every condition holds. */
+export function approvalExemptionProblem(changes: readonly ChangedPath[], pr: PullRequestContext | null, facts: ApprovalFacts | null): string | null {
+  if (!pr || !facts) return "no pull request context";
+  if (!facts.repository || pr.headRepo !== facts.repository || pr.baseRepo !== facts.repository) return "head repository is not this repository (fork)";
+  if (!pr.headRef.startsWith(APPROVE_BRANCH_PREFIX)) return "head branch is not an approval branch";
+  if (facts.ahead !== 1) return "approval branch must be exactly one commit ahead of the base";
+  if (facts.files.length !== 1 || facts.files[0] !== APPROVED_LIST_PATH) return "approval branch changes files other than the approved list";
+  if (changes.length !== 1 || changes[0]!.path !== APPROVED_LIST_PATH || changes[0]!.status !== "M") return "approval branch must only modify the approved list";
+  if (!facts.listCheckPassed) return "check-approved-list did not pass";
+  return null;
+}
+
 export function checkPullRequestScope(
   changes: readonly ChangedPath[],
   pr: PullRequestContext | null,
   owner: string,
+  approval: ApprovalFacts | null = null,
 ): ScopeViolation[] {
   const privileged = mayChangeProtected(pr, owner);
+  // The approved list may change outside an owner PR only on a verified approval branch (Auditor's conditions).
+  const listExempt = !privileged && approvalExemptionProblem(changes, pr, approval) === null;
   const violations: ScopeViolation[] = [];
   for (const change of changes) {
     if (privileged) continue;
+    if (listExempt && change.path === APPROVED_LIST_PATH) continue;
     const added = change.status === "A";
     if (TEST_FILE.test(change.path) && added && isSafeCandidatePath(change.path)) continue;
     if (isProtectedPath(change.path))

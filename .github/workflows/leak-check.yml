@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # check-approved-list (approval branches only) reads the cited approval comments and compares the branch.
+      issues: read
     steps:
       - name: Check out the code under review
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,6 +65,7 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PUSH_BEFORE: ${{ github.event.before }}
           PEACEAI_PRIVATE_TERMS: ${{ secrets.PEACEAI_PRIVATE_TERMS }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           case "$EVENT_NAME" in
@@ -79,6 +82,8 @@ jobs:
                 LEAK_BASE_SHA="$(git merge-base origin/main HEAD)"
                 export LEAK_BASE_SHA LEAK_REQUIRE_BASE=true
                 unset PR_AUTHOR
+                # A dispatched run is always on a branch of this repository (never a fork).
+                export PR_HEAD_REPO="$GITHUB_REPOSITORY" PR_BASE_REPO="$GITHUB_REPOSITORY" PR_HEAD_REF="$GITHUB_REF_NAME"
               fi ;;
           esac
           ../scanner/node_modules/.bin/tsx ../scanner/peaceai/bin/leak-scan.ts

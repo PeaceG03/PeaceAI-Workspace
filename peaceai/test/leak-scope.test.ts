@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseTerms, scanText } from "../lib/leak.ts";
-import { checkPullRequestScope, mayChangeProtected } from "../lib/scope.ts";
+import { checkPullRequestScope, mayChangeProtected, approvalExemptionProblem } from "../lib/scope.ts";
+import { branchProblem } from "../lib/approval.ts";
 
 // Fixtures are assembled at runtime so this file itself passes the tree scan.
 const at = "@";
@@ -62,4 +63,53 @@ test("PR scope: owner PRs may change protected files; bot, fork and other PRs ma
   const bot = { ...ownerPr, author: "github-actions[bot]", headRef: "peace-task/issue-1" };
   assert.equal(checkPullRequestScope(changes, bot, owner).length, 4);
   assert.deepEqual(checkPullRequestScope([{ status: "A", path: "src/text.new.test.ts" }, { status: "M", path: "src/text.ts" }], bot, owner), []);
+});
+
+// ---- M8 approval landing: the approved-list exemption (Auditor's conditions)
+
+test("approved-list exemption: only a same-repo peaceai-approve-rule/ branch, one commit, only the list, list check passing", () => {
+  const repoName = "PeaceG03/PeaceAI-Workspace";
+  const list = "peaceai/rules/approved.json";
+  const changes = [{ status: "M", path: list }];
+  const pr = { author: "github-actions[bot]", headRepo: repoName, baseRepo: repoName, headRef: "peaceai-approve-rule/abc123abc123-a1b2c3" };
+  const facts = { ahead: 1, files: [list], listCheckPassed: true, repository: repoName };
+  assert.equal(approvalExemptionProblem(changes, pr, facts), null);
+  assert.deepEqual(checkPullRequestScope(changes, pr, "PeaceG03", facts), []);
+  const refused = (c: typeof changes, p: typeof pr | null, f: typeof facts | null, why: RegExp) => {
+    assert.match(approvalExemptionProblem(c, p, f) ?? "", why);
+    assert.deepEqual(checkPullRequestScope(c, p, "PeaceG03", f).map((v) => v.path), c.filter((x) => x.path === list || x.path.startsWith(".github/") || x.path.startsWith("peaceai/")).map((x) => x.path));
+  };
+  // A fork using the very same branch name.
+  refused(changes, { ...pr, headRepo: "attacker/PeaceAI-Workspace" }, facts, /fork/);
+  refused(changes, { ...pr, baseRepo: "attacker/PeaceAI-Workspace" }, facts, /fork/);
+  refused(changes, pr, { ...facts, repository: "" }, /fork/);
+  // Wrong branch prefix (including look-alikes).
+  for (const headRef of ["main", "peace-task/issue-1", "peaceai-approve-rules/x", "x/peaceai-approve-rule/y", "Peaceai-approve-rule/x"])
+    refused(changes, { ...pr, headRef }, facts, /not an approval branch/);
+  // Not exactly one commit ahead.
+  refused(changes, pr, { ...facts, ahead: 2 }, /exactly one commit/);
+  refused(changes, pr, { ...facts, ahead: 0 }, /exactly one commit/);
+  // Touches anything else, .github above all.
+  refused([...changes, { status: "M", path: ".github/workflows/leak-check.yml" }], pr, { ...facts, files: [list, ".github/workflows/leak-check.yml"] }, /other than the approved list/);
+  refused(changes, pr, { ...facts, files: [list, "src/config.ts"] }, /other than the approved list/);
+  refused([{ status: "D", path: list }], pr, facts, /only modify/);
+  refused([{ status: "A", path: list }], pr, facts, /only modify/);
+  // check-approved-list failed.
+  refused(changes, pr, { ...facts, listCheckPassed: false }, /check-approved-list/);
+  // No PR context or no facts: no exemption.
+  refused(changes, null, facts, /no pull request context/);
+  refused(changes, pr, null, /no pull request context/);
+  // The exemption covers the list only: another protected path on an approval branch is still a violation.
+  assert.deepEqual(checkPullRequestScope([...changes, { status: "M", path: ".github/CODEOWNERS" }], pr, "PeaceG03", facts).map((v) => v.path), [list, ".github/CODEOWNERS"]);
+});
+
+test("tamper-proof's branch rule: an approval branch touching anything besides the list (above all .github/) fails", () => {
+  const list = "peaceai/rules/approved.json";
+  const b = "peaceai-approve-rule/abc123abc123-a1b2c3";
+  assert.equal(branchProblem(b, [list], 1), null);
+  for (const extra of [".github/workflows/peace-approve-rule.yml", ".github/CODEOWNERS", "peaceai/bin/approve-rule-pr.sh", "peaceai/lib/scope.ts", "src/config.ts"])
+    assert.match(branchProblem(b, [list, extra], 1) ?? "", /other than the approved list/, extra);
+  assert.match(branchProblem(b, [".github/workflows/ci.yml"], 1) ?? "", /other than the approved list/);
+  assert.match(branchProblem(b, [list], 2) ?? "", /exactly one commit/);
+  assert.match(branchProblem("feature/x", [list], 1) ?? "", /outside the approval workflow/);
 });

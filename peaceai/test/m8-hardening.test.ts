@@ -4,7 +4,7 @@
 // any branch diff that touches other files (or touches the list outside an approval branch).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -49,9 +49,16 @@ echo "$*" >> ${JSON.stringify(join(dir, "gh.log"))}
 case "$1 $2" in
   "pr create") echo "https://github.com/PeaceG03/PeaceAI-Workspace/pull/77" ;;
   "pr view") echo "0123456789abcdef0123456789abcdef01234567" ;;
+  api*) cat ${JSON.stringify(join(dir, "checks.json"))} ;;
 esac
 exit 0
 `);
+  if (!existsSync(join(dir, "checks.json"))) writeFileSync(join(dir, "checks.json"), JSON.stringify({ check_runs: [
+    { id: 1, name: "leak-check", status: "completed", conclusion: "failure" },
+    { id: 5, name: "leak-check", status: "completed", conclusion: "success" },
+    { id: 3, name: "tamper-proof", status: "completed", conclusion: "success" },
+    { id: 4, name: "core-text backstop", status: "completed", conclusion: "skipped" },
+  ] }));
   chmodSync(join(bin, "gh"), 0o755);
   return bin;
 }
@@ -69,9 +76,10 @@ function prFixture() {
   git(work, "push", "-q", "origin", "HEAD:main");
   const mainBefore = git(origin, "rev-parse", "main").trim();
   writeFileSync(join(dir, "msg.txt"), `approve learned rule: ${CORE.id}\n\nRule: ${CORE.id}\nApproval: ${URL}\n`);
-  const run = () => spawnSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), [join(dir, "msg.txt")], {
+  const run = (extra: Record<string, string> = {}) => spawnSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), [join(dir, "msg.txt")], {
     cwd: work, encoding: "utf8",
-    env: { ...process.env, PATH: `${fakeGhForPr(dir)}:${process.env.PATH}`, GH_TOKEN: "dummy", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", PEACEAI_CHECKS_SETTLE: "0", GITHUB_OUTPUT: join(dir, "out") },
+    env: { ...process.env, PATH: `${fakeGhForPr(dir)}:${process.env.PATH}`, GH_TOKEN: "dummy", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", GITHUB_OUTPUT: join(dir, "out"),
+      APPROVE_PUSH_KEY: "not-a-real-key", PEACEAI_PUSH_REMOTE_FOR_TESTS: origin, PEACEAI_CHECKS_INTERVAL: "0", PEACEAI_CHECKS_TIMEOUT: "2", ...extra },
   });
   return { dir, origin, work, mainBefore, run };
 }
@@ -90,11 +98,54 @@ test("approve-rule-pr.sh: pushes only a peaceai-approve-rule/ branch changing on
     assert.equal(git(f.origin, "diff", "--name-only", "main", branch).trim(), "peaceai/rules/approved.json");
     assert.equal(git(f.origin, "rev-list", "--count", `main..${branch}`).trim(), "1");
     assert.match(git(f.origin, "log", "-1", "--format=%an <%ae>%n%B", branch), /^github-actions\[bot\] <41898282\+github-actions\[bot\]@users\.noreply\.github\.com>\napprove learned rule: core-set-literal-v1[\s\S]*Approval: https:\/\/github\.com\/PeaceG03\/PeaceAI-Results\/issues\/1#issuecomment-555/);
-    const calls = readFileSync(join(f.dir, "gh.log"), "utf8").trim().split("\n").filter((l) => /^(pr|workflow) /.test(l)).map((l) => l.split(" ").slice(0, 3).join(" "));
-    assert.deepEqual(calls, ["pr create --repo", "workflow run leak-check.yml", "workflow run ci.yml", "pr checks 77", "pr merge 77", "pr view 77"]);
-    assert.match(readFileSync(join(f.dir, "gh.log"), "utf8"), /pr checks 77 .*--required --watch/);
-    assert.match(readFileSync(join(f.dir, "gh.log"), "utf8"), /pr merge 77 .*--squash/);
+    const log = readFileSync(join(f.dir, "gh.log"), "utf8");
+    const calls = log.trim().split("\n").filter((l) => /^(pr|workflow|api) /.test(l)).map((l) => l.split(" ").slice(0, 2).join(" "));
+    assert.deepEqual(calls, ["pr create", "api repos/PeaceG03/PeaceAI-Workspace/commits/" + git(f.origin, "rev-parse", branch).trim() + "/check-runs?per_page=100", "pr merge", "pr view"]);
+    assert.match(log, /pr merge 77 .*--squash .*--match-head-commit [0-9a-f]{40}/);
+    assert.ok(!/workflow run|pr checks/.test(log), "no dispatch, no gh pr checks");
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("approve-rule-pr.sh: the head is re-pushed with the same tree (starts pull_request checks); one commit ahead", () => {
+  const f = prFixture();
+  try {
+    writeFileSync(join(f.work, "peaceai/rules/approved.json"), JSON.stringify({ schema: APPROVED_SCHEMA, rules: [coreEntry("c".repeat(40))] }));
+    assert.equal(f.run().status, 0);
+    const branch = git(f.origin, "for-each-ref", "--format=%(refname:short)", "refs/heads").trim().split("\n").find((b) => b !== "main")!;
+    assert.equal(git(f.work, "rev-parse", "HEAD").trim(), git(f.origin, "rev-parse", branch).trim(), "the remote head is the re-pushed commit");
+    assert.equal(git(f.origin, "rev-list", "--count", `main..${branch}`).trim(), "1");
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("approve-rule-pr.sh: fails closed with a clear message, before any commit or push, when the key secret is missing", () => {
+  const f = prFixture();
+  try {
+    writeFileSync(join(f.work, "peaceai/rules/approved.json"), JSON.stringify({ schema: APPROVED_SCHEMA, rules: [coreEntry("c".repeat(40))] }));
+    const r = f.run({ APPROVE_PUSH_KEY: "" });
+    assert.equal(r.status, 3);
+    assert.match(r.stderr, /APPROVE PUSH KEY MISSING: secret PEACEAI_APPROVE_PUSH_KEY \(environment peaceai-approve-push\) is not set/);
+    assert.deepEqual(git(f.origin, "for-each-ref", "--format=%(refname:short)", "refs/heads").trim().split("\n"), ["main"]);
+    assert.equal(git(f.work, "rev-parse", "--abbrev-ref", "HEAD").trim(), "main");
+    assert.ok(!existsSync(join(f.dir, "gh.log")), "no PR, no API call");
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("approve-rule-pr.sh: a failed or missing required check means no merge", () => {
+  for (const runs of [
+    [{ id: 9, name: "leak-check", status: "completed", conclusion: "failure" }, { id: 3, name: "tamper-proof", status: "completed", conclusion: "success" }],
+    [{ id: 3, name: "tamper-proof", status: "completed", conclusion: "success" }],
+    [{ id: 5, name: "leak-check", status: "in_progress", conclusion: null }, { id: 3, name: "tamper-proof", status: "completed", conclusion: "success" }],
+  ]) {
+    const f = prFixture();
+    try {
+      writeFileSync(join(f.dir, "checks.json"), JSON.stringify({ check_runs: runs }));
+      writeFileSync(join(f.work, "peaceai/rules/approved.json"), JSON.stringify({ schema: APPROVED_SCHEMA, rules: [coreEntry("c".repeat(40))] }));
+      const r = f.run();
+      assert.equal(r.status, 1, JSON.stringify(runs));
+      assert.match(r.stderr, /required checks did not pass on #77/);
+      assert.ok(!/pr merge/.test(readFileSync(join(f.dir, "gh.log"), "utf8")));
+    } finally { rmSync(f.dir, { recursive: true, force: true }); }
+  }
 });
 
 test("approve-rule-pr.sh: refuses (pushes nothing) when any other file changed", () => {
@@ -113,8 +164,8 @@ test("workflow: nothing pushes to main; the sync verifies core, then re-verifies
   const wf = readFileSync(join(repo, ".github/workflows/peace-approve-rule.yml"), "utf8");
   const pr = readFileSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), "utf8");
   for (const text of [wf, pr]) assert.ok(!/HEAD:main|push[^\n]*(\borigin main\b|refs\/heads\/main)/.test(text), "no direct push to main");
-  assert.equal(pr.split("\n").filter((l) => !l.startsWith("#") && /\bpush\b/.test(l)).length, 1, "one push, to the approval branch");
-  assert.match(pr, /push -q origin "HEAD:refs\/heads\/\$branch"/);
+  assert.equal(pr.split("\n").filter((l) => !l.startsWith("#") && /git push/.test(l)).length, 1, "one push function, to the approval branch");
+  assert.match(pr, /git push -q "\$@" "\$remote" "HEAD:refs\/heads\/\$branch"/);
   assert.match(pr, /case "\$branch" in peaceai-approve-rule\/\*\)/);
   const job = (name: string) => {
     const rest = wf.slice(wf.indexOf(`\n  ${name}:\n`) + 1);
@@ -126,12 +177,18 @@ test("workflow: nothing pushes to main; the sync verifies core, then re-verifies
   assert.match(verify, /environment: peaceai-core/);
   assert.match(verify, /permissions:\n {6}contents: read\n/);
   assert.ok(!/approve-rule-pr\.sh|contents: write/.test(verify), "the core-verifying job cannot land anything");
-  assert.match(land, /environment: peaceai-results/);
-  assert.match(land, /needs: results-verify/);
-  const order = ["git clone --quiet --no-tags git@github.com:PeaceG03/PeaceAI-Results.git", "approve-rule.ts reverify", "rm -rf \"$RUNNER_TEMP/results\"", "steps.reverify.outputs.ok != 'true'", "approve-rule-pr.sh"];
+  const reverify = job("results-reverify")!;
+  assert.match(reverify, /environment: peaceai-results/);
+  assert.match(reverify, /needs: results-verify/);
+  const order = ["git clone --quiet --no-tags git@github.com:PeaceG03/PeaceAI-Results.git", "approve-rule.ts reverify", "rm -rf \"$RUNNER_TEMP/results\"", "steps.reverify.outputs.ok != 'true'", "name: peaceai-landing"];
   let at = -1;
-  for (const s of order) { const i = land.indexOf(s); assert.ok(i > at, `${s} in order`); at = i; }
-  assert.equal((wf.match(/approve-rule-pr\.sh/g) ?? []).length, 2, "only the Workspace-comment job and results-land land changes");
+  for (const s of order) { const i = reverify.indexOf(s); assert.ok(i > at, `${s} in order`); at = i; }
+  assert.ok(!/approve-rule-pr\.sh|contents: write|PEACEAI_APPROVE_PUSH_KEY/.test(reverify));
+  assert.match(land, /environment: peaceai-approve-push/);
+  assert.match(land, /needs: \[workspace, results-reverify\]/);
+  assert.match(land, /needs\.results-reverify\.outputs\.changed == 'true'/);
+  assert.ok(land.indexOf("check-approved-list.ts") < land.indexOf("approve-rule-pr.sh"));
+  assert.equal((wf.match(/approve-rule-pr\.sh/g) ?? []).length, 1, "only results-land lands changes");
 });
 
 // ---- 2. only entries matching a Results attestation
