@@ -3,8 +3,8 @@
 # results-land (the only job with the key) on a manual dispatch with key_proof=true, which lands nothing; or
 # locally with the private key file as $1. The key never enters any other job.
 #   (e) the key can push a peaceai-approve-rule/ probe branch (deleted again right after);
-#   (f) a push of a new commit to main with the key is REJECTED by main's protection;
-#   (g) deleting main with the key is REJECTED.
+#   (f) a push of a new commit to main with the key is REJECTED by main's protection.
+# (No delete-main attempt: Auditor's condition on #52.)
 # Prints PASS/FAIL lines plus a UTC timestamp; paste the output into the PR. Never prints the key.
 # Usage: APPROVE_PUSH_KEY=... key-proof-approve-push.sh   |   key-proof-approve-push.sh /path/to/private-key
 set -uo pipefail
@@ -29,7 +29,4 @@ if key git push -q "$repo" "HEAD:refs/heads/main" 2>"$work/f.err"; then
 elif grep -qiE "protected branch|declined|required status|not allowed|denied|rule" "$work/f.err"; then
   echo "PASS (f) push to main rejected: $(grep -iE 'protected branch|declined|required status|not allowed|denied|rule' "$work/f.err" | head -1 | sed 's/^remote: *//')"
 else echo "FAIL (f) push to main failed for an unclear reason"; fail=1; fi
-if key git push -q "$repo" ":refs/heads/main" 2>"$work/g.err"; then
-  echo "FAIL (g) !!! main WAS DELETED with the key !!!"; fail=1
-else echo "PASS (g) deleting main rejected"; fi
 exit $fail

@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       key_proof:
-        description: "Key proof only: results-land shows the approve-push key cannot push or delete main (lands nothing)"
+        description: "Key proof only: results-land shows the approve-push key cannot push to main (lands nothing)"
         type: boolean
         default: false
 

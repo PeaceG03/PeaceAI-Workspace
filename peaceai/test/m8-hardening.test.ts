@@ -341,14 +341,15 @@ test("check-approved-list.ts: rejects a core entry without a valid attestation r
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("key-proof-approve-push.sh: fails closed without a key; checks push-branch, push-main and delete-main", () => {
+test("key-proof-approve-push.sh: fails closed without a key; checks push-branch and push-main; never tries to delete main", () => {
   const script = join(repo, "peaceai/bin/key-proof-approve-push.sh");
   const r = spawnSync(script, [], { encoding: "utf8", env: { ...process.env, APPROVE_PUSH_KEY: "" } });
   assert.equal(r.status, 3);
   assert.match(r.stderr, /APPROVE PUSH KEY MISSING/);
   const text = readFileSync(script, "utf8");
   assert.match(text, /"HEAD:refs\/heads\/main"/);
-  assert.match(text, /":refs\/heads\/main"/);
+  assert.doesNotMatch(text, /":refs\/heads\/main"/);
+  assert.doesNotMatch(text, /\(g\)/);
   assert.match(text, /peaceai-approve-rule\/key-proof-/);
   assert.match(text, /FAIL \(f\) !!! PUSH TO main SUCCEEDED/);
 });
