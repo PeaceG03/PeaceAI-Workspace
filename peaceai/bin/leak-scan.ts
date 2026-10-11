@@ -1,8 +1,9 @@
 // Per-PR / scheduled leak check (no core access). Prints paths, line numbers and kinds only.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { parseTerms, scanText } from "../lib/leak.ts";
-import { checkPullRequestScope, type ChangedPath, type PullRequestContext } from "../lib/scope.ts";
+import { APPROVE_BRANCH_PREFIX, approvalExemptionProblem, checkPullRequestScope, type ApprovalFacts, type ChangedPath, type PullRequestContext } from "../lib/scope.ts";
 import { OWNER } from "../lib/trigger.ts";
 
 const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -41,15 +42,28 @@ if (/^[0-9a-f]{40}$/.test(base)) {
       if (index % 2 === 0) acc.push({ status: token.charAt(0), path: all[index + 1] ?? "" });
       return acc;
     }, []);
-  const pr: PullRequestContext | null = process.env.PR_AUTHOR
+  const pr: PullRequestContext | null = process.env.PR_AUTHOR || process.env.PR_HEAD_REF
     ? {
-        author: process.env.PR_AUTHOR,
+        author: process.env.PR_AUTHOR ?? "",
         headRepo: process.env.PR_HEAD_REPO ?? "",
         baseRepo: process.env.PR_BASE_REPO ?? "",
         headRef: process.env.PR_HEAD_REF ?? "",
       }
     : null;
-  for (const violation of checkPullRequestScope(changes, pr, OWNER)) fail(`scope ${violation.path}: ${violation.reason}`);
+  // M8: facts for the approved-list exemption, gathered here (never taken from the PR): commits ahead, files in
+  // the range, and check-approved-list.ts from main (this scanner checkout) run on the branch's list.
+  let approval: ApprovalFacts | null = null;
+  if (pr?.headRef.startsWith(APPROVE_BRANCH_PREFIX)) {
+    const files = git("diff", "--name-only", "--no-renames", "-z", `${base}...HEAD`).split("\0").filter(Boolean);
+    const ahead = Number(git("rev-list", "--count", `${base}..HEAD`).trim());
+    const checker = join(dirname(import.meta.dirname), "bin", "check-approved-list.ts");
+    const tsx = join(dirname(dirname(import.meta.dirname)), "node_modules", ".bin", "tsx");
+    const listCheckPassed = spawnSync(tsx, [checker], { encoding: "utf8", env: { ...process.env, GITHUB_HEAD_REF: pr.headRef }, stdio: ["ignore", "inherit", "inherit"] }).status === 0;
+    approval = { ahead, files, listCheckPassed, repository: process.env.GITHUB_REPOSITORY ?? "" };
+    const why = approvalExemptionProblem(changes, pr, approval);
+    console.log(why ? `approval-branch exemption refused: ${why}` : "approval-branch exemption: all conditions hold");
+  }
+  for (const violation of checkPullRequestScope(changes, pr, OWNER, approval)) fail(`scope ${violation.path}: ${violation.reason}`);
   }
 } else if (process.env.LEAK_REQUIRE_BASE === "true") {
   fail("missing base commit for PR range");

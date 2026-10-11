@@ -236,6 +236,8 @@ jobs:
       contents: read
     env:
       PEACEAI_TARGET: ${{ needs.select.outputs.target }}
+      # M9: candidate code runs here; the model is never fetched or run in this job.
+      PEACEAI_CANDIDATE_JOB: "true"
     strategy:
       fail-fast: false
       max-parallel: 5
@@ -309,6 +311,8 @@ jobs:
       contents: read
     env:
       PEACEAI_TARGET: ${{ needs.select.outputs.target }}
+      # M9: Job B2 handles repaired candidate code; the model is never fetched or run in this job.
+      PEACEAI_CANDIDATE_JOB: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

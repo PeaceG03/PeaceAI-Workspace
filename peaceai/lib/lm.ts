@@ -80,9 +80,22 @@ export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
   return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && scan.coreSubstringHits === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
 }
 
+// ---- where the model may run
+
+/** Jobs that may load a model: the fill job, Job A, Job C, and ci.yml's unit tests (tiny fixture model only).
+ *  Never Job B/B2 (ids `test`, `regate`), where candidate code runs. */
+export const LM_JOBS = ["lm-fill", "generate", "record", "tests"] as const;
+/** On Actions the job id decides; a job marked as running candidate code is always refused. Off Actions (the box) is allowed. */
+export function lmJobAllowed(env: Record<string, string | undefined>): boolean {
+  if (env.PEACEAI_CANDIDATE_JOB === "true") return false;
+  if (env.GITHUB_ACTIONS === "true") return (LM_JOBS as readonly string[]).includes(env.GITHUB_JOB ?? "");
+  return true;
+}
+
 // ---- python bridge
 
 export function runInfer(mode: "score" | "fill" | "sample", modelDir: string, request: unknown, extra: string[] = []): { ok: true; response: any } | { ok: false; reason: string } {
+  if (!lmJobAllowed(process.env)) return { ok: false, reason: "LM_JOB_REFUSED" };
   const tmp = mkdtempSync(join(tmpdir(), "peaceai-lm-"));
   try {
     writeFileSync(join(tmp, "req.json"), JSON.stringify(request));

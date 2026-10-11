@@ -201,3 +201,29 @@ test("M3.1 peace-verdict: no retrain after [test] verdicts; withdrawn PRs labell
   assert.match(respond, /if: steps\.guard\.outputs\.unmark != ''[\s\S]*--remove-label verdict-withdrawn/);
   assert.ok(respond.indexOf("Mark PRs whose verdict") < respond.indexOf("- name: Reply"));
 });
+
+test("approve-push key: only results-land (environment peaceai-approve-push) reads it; no artifact upload there; key file 0600 + trap", () => {
+  const refs: string[] = [];
+  for (const f of files) for (const [name, block] of jobs(read(f)))
+    if (/PEACEAI_APPROVE_PUSH_KEY|peaceai-approve-push/.test(block)) refs.push(`${f}:${name}`);
+  assert.deepEqual(refs, ["peace-approve-rule.yml:results-land"]);
+  const land = jobs(read("peace-approve-rule.yml")).get("results-land")!;
+  assert.match(land, /^ {4}environment: peaceai-approve-push$/m);
+  assert.ok(!/upload-artifact/.test(land), "no artifact upload in results-land");
+  assert.ok(!/actions: write/.test(land), "results-land dispatches nothing");
+  assert.equal((land.match(/secrets\.PEACEAI_APPROVE_PUSH_KEY/g) ?? []).length, 1, "the key is read in one step only");
+  // One step reads the key: it either lands (approve-rule-pr.sh) or, on a key_proof dispatch, runs the key proof.
+  assert.match(land, /APPROVE_PUSH_KEY: \$\{\{ secrets\.PEACEAI_APPROVE_PUSH_KEY \}\}\n {10}KEY_PROOF: \$\{\{ inputs\.key_proof == true \}\}\n {8}run: \|\n {10}if \[ "\$KEY_PROOF" = "true" \]; then \.\/peaceai\/bin\/key-proof-approve-push\.sh; else \.\/peaceai\/bin\/approve-rule-pr\.sh /);
+  // A key proof lands nothing: the landing artifact and list steps are skipped, and the Results/core jobs never start.
+  assert.equal((land.match(/if: inputs\.key_proof != true/g) ?? []).length, 2);
+  assert.match(jobs(read("peace-approve-rule.yml")).get("results-read")!, /inputs\.key_proof != true/);
+  // Outside .github: only the landing script and the manual key proof name the key.
+  const script = readFileSync("peaceai/bin/approve-rule-pr.sh", "utf8");
+  assert.match(script, /DEPLOY_KEY="\$APPROVE_PUSH_KEY" "\$here\/with-deploy-key\.sh"/);
+  const helper = readFileSync("peaceai/bin/with-deploy-key.sh", "utf8");
+  assert.match(helper, /umask 077/);
+  assert.match(helper, /trap 'rm -rf "\$dir"' EXIT/);
+  // Every secret is environment-scoped: no job reads a secret without an environment.
+  for (const f of files) for (const [name, block] of jobs(read(f)))
+    if (/secrets\.(?!GITHUB_TOKEN)[A-Z_]+_KEY\b/.test(block)) assert.match(block, /^ {4}environment: peaceai-[a-z-]+$/m, `${f}:${name}`);
+});
