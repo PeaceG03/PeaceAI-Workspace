@@ -103,7 +103,7 @@ if (mode === "propose") {
   const ap: { labels: LabelEvent[]; comments: CommandComment[] } = pr
     ? (() => {
         if (!/^\d+$/.test(pr)) die(1, "usage: --pr <number>");
-        const gh = (path: string) => JSON.parse(execFileSync("gh", ["api", "--paginate", "--slurp", path], { encoding: "utf8", maxBuffer: 1 << 26 })).flat();
+        const gh = (path: string) => execFileSync("gh", ["api", "--paginate", "--jq", ".[] | tojson", path], { encoding: "utf8", maxBuffer: 1 << 26 }).split("\n").filter(Boolean).map((l) => JSON.parse(l));
         const events = gh(`repos/${WORKSPACE_REPO}/issues/${pr}/events`) as any[];
         const comments = gh(`repos/${WORKSPACE_REPO}/issues/${pr}/comments`) as any[];
         return {
