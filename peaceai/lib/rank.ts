@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { TestGrading } from "./results.ts";
 
 export interface CandidateResult {
   id: string;
@@ -9,6 +10,8 @@ export interface CandidateResult {
   originalSuitePassed: boolean;
   newTestsPassed: boolean;
   newTestFiles: number;
+  /** M12: a learned test's grading against its fix commit (written by the Job B harness). */
+  testGrading?: TestGrading;
 }
 
 export function isPassing(candidate: CandidateResult): boolean {

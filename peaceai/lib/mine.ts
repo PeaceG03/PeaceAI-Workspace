@@ -26,6 +26,8 @@ export const SHAPES = {
   ENV_OPTION: { covered: null },
   LOG_LINE: { covered: null },
   LITERAL_CHANGE: { covered: null },
+  // M12: a new test()/it() case in a test file (peaceai/lib/minetest.ts; public repositories only).
+  TEST_CASE: { covered: null },
 } as const;
 export type Shape = keyof typeof SHAPES;
 

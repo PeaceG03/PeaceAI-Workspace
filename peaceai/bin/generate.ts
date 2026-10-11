@@ -67,6 +67,8 @@ const specs = [
   ...(process.env.PEACEAI_CORE_DIR ? readSpecs(join(process.env.PEACEAI_CORE_DIR, "packages/coding-kernel/learned-rules")) : []),
 ];
 const admissions = admitRules(specs, loadApprovedList(process.env.PEACEAI_APPROVED_LIST ?? join(tooling, "peaceai/rules/approved.json")));
+const refusedEarly = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
+console.log(`learned admission rules=${admissions.length} approved=${admissions.length - refusedEarly.length}${refusedEarly.length ? ` refused=${refusedEarly.join(",")}` : ""}`);
 
 // M10: plain-language tasks. Canonical wording passes unchanged; plain wording becomes the canonical plan;
 // anything unclear is refused here (no candidates, enum-only outputs) and the issue gets the phrasing list.
@@ -131,7 +133,7 @@ function toDiff(operations: readonly Operation[]): string | null {
   }
 }
 
-const candidates: { id: string; diff: string; transformations: string[]; operationId: string | null }[] = [];
+const candidates: { id: string; diff: string; transformations: string[]; operationId: string | null; fixSha?: string }[] = [];
 const seen = new Set<string>();
 let calls = 0;
 let scopeRejected = 0;
@@ -209,10 +211,14 @@ outer: for (const variant of planSteps ? [] : variants) {
 let learnedCandidates = 0;
 for (const a of planSteps ? [] : admissions) {
   if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
-  const edit = applyRule(a.spec, objectiveText, candidatesForContext);
+  const edit = applyRule(a.spec, objectiveText, candidatesForContext, scope.isTest);
   if (!edit) continue;
-  const current = candidatesForContext.find((f) => f.path === edit.path)!;
-  const diff = toDiff([{ operation: "EDIT_FILE", path: edit.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content: edit.content, transformation: `LEARNED_${a.spec.kind}` }]);
+  // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
+  if (edit.create && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
+  const current = edit.create ? null : candidatesForContext.find((f) => f.path === edit.path)!;
+  const diff = toDiff([current
+    ? { operation: "EDIT_FILE", path: edit.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content: edit.content, transformation: `LEARNED_${a.spec.kind}` }
+    : { operation: "CREATE_FILE", path: edit.path, expectedCurrentFingerprint: null, content: edit.content, transformation: `LEARNED_${a.spec.kind}` }]);
   if (!diff) continue;
   const key = createHash("sha256").update(diff).digest("hex");
   if (seen.has(key)) continue;
@@ -222,7 +228,7 @@ for (const a of planSteps ? [] : admissions) {
     continue;
   }
   learnedCandidates += 1;
-  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}` });
+  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}`, ...(edit.create ? { fixSha: edit.fixSha } : {}) });
 }
 const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
@@ -260,6 +266,7 @@ const summary = {
     operationId: candidate.operationId,
     diffBytes: Buffer.byteLength(candidate.diff),
     diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
+    ...(candidate.fixSha ? { fixSha: candidate.fixSha } : {}),
   })),
 };
 writeSummary(summary);

@@ -9,6 +9,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tally, type Observation } from "../lib/mine.ts";
 import { exampleHunk, mineRepo } from "../lib/minegit.ts";
+import { mineTests, TEST_MINING_REPOS } from "../lib/minetest.ts";
 import { specFileText } from "../lib/learned.ts";
 import { proposalBody, proposeRules } from "../lib/propose.ts";
 
@@ -30,7 +31,15 @@ const repoRoot = resolve(import.meta.dirname, "../..");
 
 if (pub.length) {
   const obs: Observation[] = [];
-  for (const p of pub) obs.push(...mineRepo(p.dir, p.rev, p.name).observations);
+  for (const p of pub) {
+    obs.push(...mineRepo(p.dir, p.rev, p.name).observations);
+    // M12: test cases are mined only from the allowed public repositories (checked by label and origin).
+    if (TEST_MINING_REPOS[p.name]) {
+      const t = mineTests(p.dir, p.rev, p.name);
+      console.log(`tests ${p.name} commits=${t.commits} cases=${t.observations.length}`);
+      obs.push(...t.observations);
+    } else console.log(`tests ${p.name} skipped (not an allowed public repository for test mining)`);
+  }
   const stats = tally(obs);
   const { proposals, skipped } = proposeRules(stats, "public", pub.map((p) => `PeaceG03/${p.name}`));
   console.log(`public observations=${obs.length} proposals=${proposals.length} skipped=${skipped.map((s) => `${s.shape}:${s.why}`).join(",")}`);

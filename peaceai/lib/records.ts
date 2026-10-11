@@ -2,6 +2,7 @@ import { editKey } from "./dedupe.ts";
 import type { SummaryCandidate } from "./gate.ts";
 import { isHeldOut, isTestTask, taskRequiresTests } from "./policy.ts";
 import { isPassing, rankCandidates, shuffle, type CandidateResult } from "./rank.ts";
+import type { TestGrading } from "./results.ts";
 import type { VerdictValue } from "./verdict.ts";
 
 export const TASK_SCHEMA = "peaceai-results-task:v1";
@@ -40,7 +41,7 @@ export interface TaskRecord {
 export type TaskSource = "peace" | "builder";
 export const taskSourceOf = (task: Pick<TaskRecord, "source">): TaskSource => (task.source === "builder" ? "builder" : "peace");
 
-export type RejectReason = "not-applied" | "typecheck" | "original-suite" | "new-tests" | "missing-required-test" | null;
+export type RejectReason = "not-applied" | "typecheck" | "original-suite" | "new-tests" | "missing-required-test" | "test-grading" | null;
 
 export interface RankedCandidate {
   id: string;
@@ -64,6 +65,8 @@ export interface RankedCandidate {
   duplicateOf?: string | null;
   /** M7.1: the recorded diff is the test-and-fix loop's repaired diff. Absent on older records (= false). */
   repaired?: boolean;
+  /** M12: a learned test's grading (pass after the fix, fail before it). Present only for learned tests. */
+  testGrading?: TestGrading | null;
 }
 
 export interface EditGroup {
@@ -120,6 +123,16 @@ export function rejectReason(c: CandidateResult, requiresTests: boolean): Reject
   return null;
 }
 
+/**
+ * M12: a learned test counts only when the harness graded it COUNTS (passes on the fixed code, fails before
+ * the fix) against the same fix commit Job A named. Missing or mismatched grading is a rejection (fail closed).
+ */
+export function gradingReject(s: Pick<SummaryCandidate, "fixSha">, r: CandidateResult): RejectReason {
+  if (!s.fixSha) return null;
+  const g = r.testGrading;
+  return g && g.fixSha === s.fixSha && g.verdict === "COUNTS" ? null : "test-grading";
+}
+
 export interface TaskInputs {
   issue: number;
   runId: string;
@@ -174,7 +187,7 @@ export function buildRecords(
       id: s.id, diffBytes: s.diffBytes, diffLines: s.diffLines, applied: false, typecheckPassed: false,
       originalSuitePassed: false, newTestsPassed: false, newTestFiles: 0,
     };
-    return { s, r, reason: rejectReason(r, requiresTests) };
+    return { s, r, reason: rejectReason(r, requiresTests) ?? gradingReject(s, r) };
   });
   const eligible = evaluated.filter((e) => e.reason === null && isPassing(e.r)).map((e) => e.r);
   const groups = diffOf ? groupEdits(eligible, requiresTests, diffOf) : null;
@@ -207,6 +220,7 @@ export function buildRecords(
         }
       : {}),
     ...(repairedIds ? { repaired: repairedIds.has(s.id) } : {}),
+    ...(s.fixSha ? { testGrading: r.testGrading ?? null } : {}),
   }));
   return {
     task: {

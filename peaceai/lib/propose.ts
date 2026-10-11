@@ -1,16 +1,19 @@
 // M8: turn mined shape statistics into learned-rule specs and proposal issue bodies. Deterministic.
 import { MINER_VERSION, majority, type ShapeStats } from "./mine.ts";
 import { nullishTrigger, RULE_SCHEMA, specHash, TRIGGERS, type RuleKind, type RuleSpec } from "./learned.ts";
+import { TEST_CHECKS } from "./learned-test.ts";
 
 export const MIN_COMMITS = 3;
 export const MIN_FILES = 2;
 /** A default kind is learned only with at least this many observed examples. */
 export const MIN_KIND_SUPPORT = 2;
 /** Rule versions. ADD_NULLISH_DEFAULT v2: single-read only, kinds with support, trigger limited to those kinds. */
-const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2 };
+const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2, ADD_TEST_CASE: 1 };
 const NAMED_CONTEXTS = ["object-property", "top-level-const", "local-const"];
-const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT" };
-const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default" };
+const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT", TEST_CASE: "ADD_TEST_CASE" };
+const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default", ADD_TEST_CASE: "test-case" };
+/** M12: upper line bound of the majority size bucket of mined test cases (">40" is capped at 40). */
+const MAX_LINES: Record<string, string> = { "<=12": "12", "13-40": "40", ">40": "40" };
 
 export type Skip = "covered" | "below-threshold" | "no-executable-kind" | "no-learnable-params";
 export interface Proposal { spec: RuleSpec; sha256: string; stats: ShapeStats }
@@ -34,6 +37,14 @@ export function proposeRules(stats: readonly ShapeStats[], minedFrom: "public" |
       const body = majority(s, "body");
       if (!body?.startsWith("return-") || body === "return-expression" || majority(s, "label") !== "string") { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
       params = { body: "return-literal", label: "string" };
+    } else if (kind === "ADD_TEST_CASE") {
+      // Learned only from public tests; the template needs the majority runner/assert imports it renders.
+      if (minedFrom !== "public") { skipped.push({ shape: s.shape, why: "no-executable-kind" }); continue; }
+      const regex = majority({ ...s, styles: { m: Object.fromEntries(Object.entries(s.styles.matcher ?? {}).filter(([k]) => k !== "n/a")) } }, "m") === "regex";
+      const checks = TEST_CHECKS.filter((c) => (s.styles[`check:${c}`]?.yes ?? 0) >= MIN_KIND_SUPPORT && (regex || (c !== "throws" && c !== "rejects")));
+      const lines = MAX_LINES[majority(s, "lines") ?? ""];
+      if (majority(s, "framework") !== "node:test-default" || majority(s, "assert") !== "node:assert/strict-default" || checks.length === 0 || !lines) { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
+      params = { assert: "node:assert/strict-default", checks: [...checks], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: lines, placement: "new-file" };
     } else {
       const kinds = Object.entries(s.styles.default ?? {}).filter(([k, n]) => k !== "expression" && n >= MIN_KIND_SUPPORT).map(([k]) => k).sort();
       if (kinds.length === 0 || majority(s, "target") !== "member") { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
@@ -52,6 +63,7 @@ export const PHRASING: Record<RuleKind, string> = {
   SET_LITERAL: "set `NAME` to VALUE  (optionally: set `NAME` in `path/file.ts` to VALUE)",
   ADD_SWITCH_CASE: 'add case "label" returning VALUE to the switch in `functionName`',
   ADD_NULLISH_DEFAULT: "default `obj.field` to VALUE in `functionName`",
+  ADD_TEST_CASE: "add a test for `NAME` in `src/file.ts`: TITLE, then one bullet per check (`- EXPR is VALUE`, `- EXPR equals [..]`, `- EXPR throws CODE`, `- EXPR rejects with CODE`, as the spec's checks allow) and a line `Fix: <40-hex commit>` naming the fix the test must pin",
 };
 const KIND_VALUE: Record<string, string> = { array: "`[]`", null: "`null`", string: 'a string literal (`"..."`)', number: "a number", boolean: "`true`/`false`" };
 /** Task phrasing for one spec; for ADD_NULLISH_DEFAULT it names the only VALUE kinds the trigger accepts. */
@@ -103,7 +115,9 @@ export function proposalBody(p: Proposal, links: readonly ExampleLink[], example
     "",
     `Task phrasing: ${phrasingFor(p.spec)}`,
     "",
-    "It produces one candidate when the edit site is unique; otherwise none. The candidate goes through the same scope, leak and core-text gates, the sandboxed tests and the M7 repair loop as every other candidate.",
+    p.spec.kind === "ADD_TEST_CASE"
+      ? "It writes one NEW test file (never an existing test) from the learned template; every placeholder comes only from names in the task text and the target code (the named file must export every name a check starts from; values must be literals). Job B grades the test in the tamper-proof harness: it must PASS on the fixed code and FAIL on the code before the fix (the fix commit's non-test source change reversed); a test that passes on both or fails on both is rejected and the grading is recorded in Results. No M7 repair is applied to it. It also goes through the same scope, leak and core-text gates as every other candidate."
+      : "It produces one candidate when the edit site is unique; otherwise none. The candidate goes through the same scope, leak and core-text gates, the sandboxed tests and the M7 repair loop as every other candidate.",
     "",
     "### Spec (the hash covers exactly this JSON, canonicalized with sorted keys)",
     "",

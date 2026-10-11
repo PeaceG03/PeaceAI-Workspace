@@ -155,6 +155,7 @@ counts, and no code. Its content hash is SHA-256 over canonical JSON (sorted key
 | `SET_LITERAL` | ``set `NAME` to VALUE`` or ``set `NAME` in `src/file.ts` to VALUE`` (unique const or object property) |
 | `ADD_SWITCH_CASE` | ``add case "label" returning VALUE to the switch in `fn` `` |
 | `ADD_NULLISH_DEFAULT` | ``default `obj.field` to VALUE in `fn` `` |
+| `ADD_TEST_CASE` (M12) | ``add a test for `NAME` in `src/file.ts`: TITLE``, then bullets ``- EXPR is VALUE`` / ``- EXPR equals [..]`` / ``- EXPR throws CODE`` / ``- EXPR rejects with CODE`` and a line ``Fix: <40-hex commit>`` |
 
 A rule produces one candidate only when the edit site is unique. Its candidate goes through the same scope
 check, Job B tests, the M7 repair loop, Job B2 and the leak/core-text gates as every other candidate.
@@ -195,6 +196,29 @@ the list (one commit ahead of main), and any other branch may not change the lis
 only if the list is present and valid, names its id, and pins its exact hash. Otherwise it is refused
 (`NOT_APPROVED`, `HASH_CHANGED`, `SPEC_INVALID`, `LIST_MISSING`, `LIST_CORRUPT`) and produces no candidate.
 Job A logs `learned rules=N approved=K candidates=C refused=...`.
+
+### Test-writing edit type (M12)
+
+`ADD_TEST_CASE` writes a new test, never an existing one. **Evidence** (`peaceai/lib/minetest.ts`): only
+test files, only from the public PeaceSTOCKS scanner and this Workspace (the label must be on the allowlist
+and the origin remote must be that public repository; Net, Net-Runner, Results and core are refused), only
+Peace's noreply commits on main. Each new top-level `test()`/`it()` case is one `TEST_CASE` observation with
+style facts only (runner/assert imports, check forms, error matcher, size, async, fail-closed, calendar).
+**Template** (`peaceai/lib/learned-test.ts`): the spec pins the learned parameters (imports, allowed check
+forms, `regex` error matcher, max lines from the majority size bucket, `placement: new-file`, `grading:
+fail-before-pass-after`); the skeleton is fixed. Placeholders come only from the task text (title, check
+expressions, error codes, fix commit) and the target code: the named file must export the symbol and every
+name a check starts from; arguments and values must be literals (no other identifiers, operators, functions
+or templates). The file is `<dir>/<stem>.<title-slug>-<fix7>.test.ts`, with the import style of the
+target's own tests. Anything else: no candidate. **Grading** (Job B, `peaceai/bin/test-candidates.ts`): the
+candidate carries `fixSha` (it must be an ancestor of the base). The new tests run on the fixed code (pass
+2), then the harness reverses the fix commit's non-test source change in the same tree and runs them again
+as the sandbox user. Only pass-after and fail-before is `COUNTS`; `REJECTED_PASSES_BOTH`,
+`REJECTED_FAILS_BOTH`, `REJECTED_FAILS_AFTER_FIX` and `UNGRADABLE` (not test-only, fix not an ancestor, no
+source change, revert failed) are rejected (`rejectReason: test-grading` or `new-tests`) and the grading is
+recorded per candidate in `ranking.json` (`testGrading`). Learned tests get no M7 repair. Job B checks out
+full history so a Workspace fix commit's parent exists. Unapproved, the trigger is refused by the task parser
+(`RULE_NOT_APPROVED`) and by Job A (`NOT_APPROVED`).
 
 ## From-scratch language model (M9)
 
