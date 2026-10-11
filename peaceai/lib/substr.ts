@@ -67,3 +67,29 @@ export function countCoreSubstrings(generated: string, index: SubstringIndex): n
   });
   return runs;
 }
+
+/** Like countCoreSubstrings, but returns the start of every verified hit window. */
+export function coreSubstringWindows(generated: string, index: SubstringIndex): number[] {
+  const starts: number[] = [];
+  windows(generated, index.n, (key, start) => {
+    if (!hasKey(index.keys, key)) return;
+    const w = generated.slice(start, start + index.n);
+    if (index.texts.some((t) => t.includes(w))) starts.push(start);
+  });
+  return starts;
+}
+
+/** True when the window really occurs in the index's texts (hash first, then an exact check). */
+export function indexHas(index: SubstringIndex, w: string): boolean {
+  if (w.length !== index.n) return index.texts.some((t) => t.includes(w));
+  let found = false;
+  windows(w, index.n, (key) => { found = hasKey(index.keys, key); });
+  return found && index.texts.some((t) => t.includes(w));
+}
+
+/** Maximal runs over a sorted list of window starts (consecutive starts form one run). */
+export function runsOf(starts: readonly number[]): number {
+  let runs = 0, last = -2;
+  for (const s of starts) { if (s !== last + 1) runs += 1; last = s; }
+  return runs;
+}

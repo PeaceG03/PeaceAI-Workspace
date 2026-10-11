@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { findCoreText, SHINGLE_LINE, type TextIndex } from "./coretext.ts";
 import { scanText } from "./leak.ts";
-import { countCoreSubstrings, type SubstringIndex } from "./substr.ts";
+import { coreSubstringWindows, countCoreSubstrings, indexHas, runsOf, type SubstringIndex } from "./substr.ts";
 import { effectiveVerdict, type LmShadow, type RankingRecord } from "./records.ts";
 import type { StoredTask } from "./store.ts";
 
@@ -50,11 +50,21 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
 // ---- memorization check
 
 export interface Sample { id: string; kind: string; prompt_tail: string; text: string }
-export interface SampleScan { samples: number; coreLineHits: number; coreShingleHits: number; coreSubstringHits: number; personalInfo: number; flagged: number }
+export interface SampleScan {
+  samples: number; coreLineHits: number; coreShingleHits: number; coreSubstringHits: number; personalInfo: number; flagged: number;
+  /** "strict": any 32-character core hit fails. "public-only": only for a model whose training manifest proves zero
+   *  core files; a hit is explained when its window is in that sample's prompt or in the public training corpus,
+   *  and only unexplainedHits (in neither place) count. Absent means strict. */
+  substringRule?: "strict" | "public-only";
+  unexplainedHits?: number;
+}
+/** Granted only by lm-memcheck when the model's training manifest proves zero core files. */
+export interface PublicOnlyExemption { prompts: ReadonlyMap<string, string>; trainingCorpus: SubstringIndex }
 
 /** Scans model output for core text (the core-text scanner, public corpus as the baseline) and personal info. */
-export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex, coreRaw: SubstringIndex | null): SampleScan {
+export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex, coreRaw: SubstringIndex | null, exempt: PublicOnlyExemption | null = null): SampleScan {
   const scan: SampleScan = { samples: samples.length, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
+  if (exempt) { scan.substringRule = "public-only"; scan.unexplainedHits = 0; }
   for (const s of samples) {
     // The prompt's last partial line is joined to the output, so a core line the model completes is caught too.
     // When the model added fewer than SHINGLE_LINE non-space characters to that line, the line is the prompt's
@@ -65,19 +75,44 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
     // Exact copy: any run of >= 32 characters of the raw generated text (everything after the prompt, the first
     // line's new part included) that occurs in core. No baseline exemption. Without the core index: fail closed.
     const sub = coreRaw ? countCoreSubstrings(s.text, coreRaw) : 1;
+    let counted = sub;
+    if (exempt) {
+      // Public-only model: a window found in this sample's prompt or in the public training corpus is explained.
+      // A sample with no recorded prompt explains nothing. Without the core index: fail closed (1 unexplained).
+      const prompt = exempt.prompts.get(s.id);
+      const unexplained = coreRaw
+        ? coreSubstringWindows(s.text, coreRaw).filter((st) => {
+            const w = s.text.slice(st, st + coreRaw.n);
+            return !(prompt !== undefined && prompt.includes(w)) && !indexHas(exempt.trainingCorpus, w);
+          })
+        : null;
+      counted = unexplained ? runsOf(unexplained) : 1;
+      scan.unexplainedHits! += counted;
+    }
     const pii = scanText(s.text).length;
     scan.coreSubstringHits += sub;
     scan.coreLineHits += hits.lineHits;
     scan.coreShingleHits += hits.shingleHits;
     scan.personalInfo += pii;
-    if (hits.lineHits + hits.shingleHits + sub + pii > 0) scan.flagged += 1;
+    if (hits.lineHits + hits.shingleHits + counted + pii > 0) scan.flagged += 1;
   }
   return scan;
 }
 
 export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
   if (!scan || scan.samples < MIN_MEMCHECK_SAMPLES) return "FAIL";
-  return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && scan.coreSubstringHits === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
+  const substring = scan.substringRule === "public-only" ? scan.unexplainedHits ?? 1 : scan.coreSubstringHits;
+  return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && substring === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
+}
+
+/**
+ * The exemption's precondition: the model's training manifest proves zero core files. Every entry must be public,
+ * from a source other than core, and its content hash must match no core file. An empty or unreadable manifest
+ * proves nothing.
+ */
+export function manifestProvesNoCore(manifest: readonly { source?: string; visibility?: string; sha256?: string }[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI"): boolean {
+  if (manifest.length === 0) return false;
+  return manifest.every((m) => m.visibility === "public" && typeof m.source === "string" && m.source !== coreSource && typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256));
 }
 
 // ---- where the model may run
