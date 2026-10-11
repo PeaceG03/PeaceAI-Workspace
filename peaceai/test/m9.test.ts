@@ -472,3 +472,40 @@ test("LM runs only in the fill job, Job A or Job C: never in Job B/B2 (workflow 
   // Only the fill job (and Job C's shadow score) may touch Results; Job A gets fills as a small JSON choice.
   for (const job of ["select", "generate", "review", "finish"]) assert.ok(!/PEACEAI_RESULTS_DEPLOY_KEY|models\/lm/.test(block(job)), job);
 });
+
+test("M9 retrain corpus filter: no private file survives; generated/vendored/fixture paths, data-like files and duplicates are dropped", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m9-filter-"));
+  try {
+    const src = join(dir, "in");
+    mkdirSync(src);
+    const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i} + ${n}; }`).join("\n");
+    const docs = [
+      { doc: 0, source: "PeaceG03/PeaceAI", visibility: "private", path: "src/a.ts", text: code(1) },
+      { doc: 1, source: "honojs/hono", visibility: "public", path: "src/b.ts", text: code(2) },
+      { doc: 2, source: "honojs/hono", visibility: "public", path: "src/b-copy.ts", text: code(2).replace(/\n/g, "\n  ") },
+      { doc: 3, source: "honojs/hono", visibility: "public", path: "src/near.ts", text: code(2).replace("helper2_0(", "helperX_0(") },
+      { doc: 4, source: "honojs/hono", visibility: "public", path: "dist/c.ts", text: code(3) },
+      { doc: 5, source: "honojs/hono", visibility: "public", path: "test/fixtures/d.ts", text: code(4) },
+      { doc: 6, source: "honojs/hono", visibility: "public", path: "src/table.ts", text: Array.from({ length: 50 }, (_, i) => `  [${i}, ${i * 2}, ${i * 3}, 0x${i.toString(16)}],`).join("\n") },
+      { doc: 7, source: "sindresorhus/ky", visibility: "public", path: "source/e.ts", text: code(5) },
+    ];
+    writeFileSync(join(src, "docs.jsonl"), docs.map((d) => JSON.stringify({ doc: d.doc, text: d.text })).join("\n") + "\n");
+    writeFileSync(join(src, "manifest.jsonl"), docs.map((d) => JSON.stringify({ doc: d.doc, source: d.source, visibility: d.visibility, path: d.path, bytes: d.text.length, license: d.visibility === "private" ? "owner:PeaceG03" : "MIT", split: "train" })).join("\n") + "\n");
+    const r = spawnSync(py, [join(repo, "peaceai/model/corpus_filter.py"), "--in", src, "--out", join(dir, "out")], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const kept = readFileSync(join(dir, "out/manifest.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(kept.map((m) => m.doc), [1, 7]);
+    const s = JSON.parse(readFileSync(join(dir, "out/filter.json"), "utf8"));
+    assert.equal(s.private_kept, 0);
+    assert.deepEqual(s.dropped, { "data-like": 1, "exact-dup": 1, "near-dup": 1, path: 2, private: 1 });
+    assert.doesNotMatch(r.stdout, /helper/, "prints counts only");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("M9 retrain: train.py stops early on held-out loss and keeps the best checkpoint; export can use it", () => {
+  const train = readFileSync(join(repo, "peaceai/model/train.py"), "utf8");
+  assert.match(train, /--patience/);
+  assert.match(train, /shutil\.copyfile\(W\("checkpoint\.npz"\), W\("best\.npz"\)\)/);
+  assert.match(train, /while best\["stale"\] < \(args\.patience or 10\*\*9\)/);
+  assert.match(readFileSync(join(repo, "peaceai/model/export.py"), "utf8"), /--checkpoint", default="checkpoint\.npz"/);
+});
