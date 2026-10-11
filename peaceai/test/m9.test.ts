@@ -489,16 +489,26 @@ test("M9 retrain corpus filter: no private file survives; generated/vendored/fix
       { doc: 5, source: "honojs/hono", visibility: "public", path: "test/fixtures/d.ts", text: code(4) },
       { doc: 6, source: "honojs/hono", visibility: "public", path: "src/table.ts", text: Array.from({ length: 50 }, (_, i) => `  [${i}, ${i * 2}, ${i * 3}, 0x${i.toString(16)}],`).join("\n") },
       { doc: 7, source: "sindresorhus/ky", visibility: "public", path: "source/e.ts", text: code(5) },
+      // A public repo carrying core's own file (byte-identical), a near-copy of it, and a copy of a core file that
+      // is not in the corpus but is in the core checkout: all three are core files under a public name.
+      { doc: 8, source: "PeaceG03/PeaceSTOCKS", visibility: "public", path: "src/a.ts", text: code(1) },
+      { doc: 9, source: "PeaceG03/PeaceSTOCKS", visibility: "public", path: "src/a2.ts", text: code(1).replace("helper1_3(", "helperY_3(") },
+      { doc: 10, source: "PeaceG03/PeaceSTOCKS", visibility: "public", path: "src/only-in-core.ts", text: code(6) },
     ];
+    const coreDir = join(dir, "core");
+    mkdirSync(coreDir);
+    writeFileSync(join(coreDir, "x.ts"), code(6));
+    execFileSync("git", ["init", "-q"], { cwd: coreDir });
+    execFileSync("git", ["add", "-A"], { cwd: coreDir });
     writeFileSync(join(src, "docs.jsonl"), docs.map((d) => JSON.stringify({ doc: d.doc, text: d.text })).join("\n") + "\n");
     writeFileSync(join(src, "manifest.jsonl"), docs.map((d) => JSON.stringify({ doc: d.doc, source: d.source, visibility: d.visibility, path: d.path, bytes: d.text.length, license: d.visibility === "private" ? "owner:PeaceG03" : "MIT", split: "train" })).join("\n") + "\n");
-    const r = spawnSync(py, [join(repo, "peaceai/model/corpus_filter.py"), "--in", src, "--out", join(dir, "out")], { encoding: "utf8" });
+    const r = spawnSync(py, [join(repo, "peaceai/model/corpus_filter.py"), "--in", src, "--out", join(dir, "out"), "--core-dir", coreDir], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const kept = readFileSync(join(dir, "out/manifest.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.deepEqual(kept.map((m) => m.doc), [1, 7]);
     const s = JSON.parse(readFileSync(join(dir, "out/filter.json"), "utf8"));
     assert.equal(s.private_kept, 0);
-    assert.deepEqual(s.dropped, { "data-like": 1, "exact-dup": 1, "near-dup": 1, path: 2, private: 1 });
+    assert.deepEqual(s.dropped, { "core-copy": 3, "data-like": 1, "exact-dup": 1, "near-dup": 1, path: 2, private: 1 });
     assert.doesNotMatch(r.stdout, /helper/, "prints counts only");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
