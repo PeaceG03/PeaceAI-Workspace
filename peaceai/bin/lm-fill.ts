@@ -6,12 +6,13 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { FILLS_SCHEMA, fillHole, fillKey, fillOptions, parseFillTask } from "../lib/fill.ts";
-import { lmFlags, runInfer, verifyModelDir } from "../lib/lm.ts";
+import { lmFlags, lmJobAllowed, runInfer, verifyModelDir } from "../lib/lm.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
 
 const done = (why: string) => { console.log(`lm-fill ${why}`); process.exit(0); };
 if (!lmFlags(process.env).fill) done("off");
+if (!lmJobAllowed(process.env)) done("refused=LM_JOB_REFUSED");
 const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
 const v = verifyModelDir(modelDir);
 if (!v.ok) done(`refused=${v.reason}`);
