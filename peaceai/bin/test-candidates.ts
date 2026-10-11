@@ -10,6 +10,7 @@ import { scanText } from "../lib/leak.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit } from "../lib/repair.ts";
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
+import { gradingVerdict, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -99,6 +100,37 @@ const baseFiles = new Set(git(repo, "ls-tree", "-r", "--name-only", "-z", summar
 const only = process.env.PEACEAI_ONLY_CANDIDATE ?? "";
 if (only && !summary.candidates.some((c) => c.id === only)) throw new Error("unknown candidate");
 const selected = only ? summary.candidates.filter((c) => c.id === only) : summary.candidates;
+
+// ---- M12: grading a learned test against its fix commit
+
+/**
+ * The candidate's new tests already ran on the fixed code (pass 2, `afterFix`). Here the harness reverses
+ * the fix commit's non-test source change in the same tree (a patch it builds from git and applies itself)
+ * and runs the new tests again as the sandbox user: `beforeFix` is that exit code. Anything that prevents a
+ * faithful pre-fix tree is UNGRADABLE, which never counts.
+ */
+function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], fixSha: string, afterFix: boolean, tsx: string): TestGrading {
+  const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
+  if (newTests.length === 0 || !files.every((f) => f.isNew && f.newPath && scope.isTest(f.newPath))) return ungradable("not-test-only");
+  if (!runTrusted(repo, "git", ["merge-base", "--is-ancestor", fixSha, summary.baseSha])) return ungradable("fix-not-ancestor");
+  let paths: string[];
+  try {
+    paths = git(repo, "diff", "--name-only", "--no-renames", `${fixSha}^`, fixSha).split("\n").filter((p) => p && scope.isSource(p) && !scope.isTest(p));
+  } catch {
+    return ungradable("fix-not-ancestor");
+  }
+  if (paths.length === 0) return ungradable("no-source-change");
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-prefix-"));
+  try {
+    const patch = join(dir, "prefix.diff");
+    writeFileSync(patch, git(repo, "diff", "--no-color", "--full-index", "--binary", "--no-renames", fixSha, `${fixSha}^`, "--", ...paths));
+    if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch]) || !runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
+  return { fixSha, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
+}
 
 // ---- M7 repair stage
 
@@ -248,6 +280,8 @@ for (const candidate of selected) {
     newTestsPassed: false,
     newTestFiles: 0,
   };
+  // M12: a learned test is UNGRADABLE (never counts) until the harness has graded it below.
+  if (candidate.fixSha) result.testGrading = { fixSha: candidate.fixSha, afterFix: false, beforeFix: null, verdict: "UNGRADABLE", reason: "not-applied" };
   results.push(result);
   // Defense in depth: re-check scope without the core.
   if (checkCandidateScope(files, baseFiles, scope).length > 0) continue;
@@ -281,7 +315,8 @@ for (const candidate of selected) {
     // M7: bounded test-and-fix loop before the final passes. Edits come only from the deterministic rules in
     // lib/repair.ts; the harness writes every file (the sandbox user cannot), and the final passes below run
     // on whatever tree the loop leaves, exactly as for an unrepaired candidate.
-    if (REPAIR_ENABLED) {
+    // A learned test is graded exactly as generated: no repair.
+    if (REPAIR_ENABLED && !candidate.fixSha) {
       const repair = repairCandidate(tree, diffPath, diff, files, baseTests, judged, newTests, tsx, tsc);
       result.diffBytes = Buffer.byteLength(repair.finalDiff);
       result.diffLines = countDiffLines(repair.finalDiff);
@@ -306,6 +341,8 @@ for (const candidate of selected) {
     rmSync(parked, { recursive: true, force: true });
     // Pass 2: only the new tests, in a separate process.
     result.newTestsPassed = newTests.length === 0 ? true : runCandidate(tree, tsx, ["--test", ...newTests]);
+    // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
+    if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
   } finally {
     killSandbox();
     // The tools copy may be read-only (Job B makes them so); restore write access before removing.
@@ -337,4 +374,4 @@ if (repairs.length > 0) {
 for (const r of repairs)
   console.log(`${r.id} repair stop=${r.stop} rounds=${r.rounds} rules=${r.iterations.flatMap((i) => i.applied.map((a) => a.rule)).join(",") || "none"} gate=${r.jobBGate}`);
 for (const r of results)
-  console.log(`${r.id} applied=${r.applied} typecheck=${r.typecheckPassed} original=${r.originalSuitePassed} new=${r.newTestsPassed} new_files=${r.newTestFiles}`);
+  console.log(`${r.id} applied=${r.applied} typecheck=${r.typecheckPassed} original=${r.originalSuitePassed} new=${r.newTestsPassed} new_files=${r.newTestFiles}${r.testGrading ? ` grading=${r.testGrading.verdict} after_fix=${r.testGrading.afterFix} before_fix=${r.testGrading.beforeFix}${r.testGrading.reason ? ` reason=${r.testGrading.reason}` : ""}` : ""}`);

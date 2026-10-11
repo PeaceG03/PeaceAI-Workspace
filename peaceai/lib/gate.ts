@@ -51,6 +51,8 @@ export interface SummaryCandidate {
   operationId: string | null;
   diffBytes: number;
   diffLines: number;
+  /** M12: fix commit a learned test must fail before and pass after (Job B grades it). */
+  fixSha?: string;
 }
 
 export interface Summary {
@@ -72,13 +74,16 @@ export function validateSummary(value: unknown): value is Summary {
   return summary.candidates.every((item, index) => {
     if (!item || typeof item !== "object") return false;
     const c = item as Record<string, unknown>;
+    const keys = Object.keys(c).sort().join(",");
     return (
-      Object.keys(c).sort().join(",") === "diffBytes,diffLines,file,id,operationId,transformations" &&
+      (keys === "diffBytes,diffLines,file,id,operationId,transformations" ||
+        (keys === "diffBytes,diffLines,file,fixSha,id,operationId,transformations" && typeof c.fixSha === "string" && /^[0-9a-f]{40}$/.test(c.fixSha))) &&
       c.id === `candidate-${index + 1}` &&
       c.file === `candidates/candidate-${index + 1}.diff` &&
       Array.isArray(c.transformations) &&
       c.transformations.every((t) => typeof t === "string" && /^[A-Z_]{1,40}$/.test(t)) &&
-      (c.operationId === null || (typeof c.operationId === "string" && /^[A-Z_]{1,40}$/.test(c.operationId))) &&
+      // Kernel ids, plus the ids Job A gives M8 learned rules and the M9 gap fill.
+      (c.operationId === null || (typeof c.operationId === "string" && /^(?:[A-Z_]{1,40}|learned:(?:public|core)-[a-z0-9-]{1,60}|lm-fill:lm-v1-[0-9a-f]{12})$/.test(c.operationId))) &&
       Number.isInteger(c.diffBytes) &&
       Number.isInteger(c.diffLines)
     );

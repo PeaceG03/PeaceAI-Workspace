@@ -4,9 +4,10 @@
 // a rule only runs in Job A when the approved-rules list pins its exact content hash (peaceai/lib/approved.ts).
 import { createHash } from "node:crypto";
 import ts from "typescript";
+import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -48,11 +49,25 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (!s.params || typeof s.params !== "object") return false;
   for (const v of Object.values(s.params)) if (!(typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string")))) return false;
   if (!ev || ![ev.hunks, ev.commits, ev.files].every((n) => Number.isInteger(n) && (n as number) >= 0) || !Array.isArray(ev.repos)) return false;
+  if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   return Object.keys(s).every((k) => ["schema", "id", "kind", "minedFrom", "minerVersion", "shape", "trigger", "params", "evidence"].includes(k));
 }
 
+/** M12: ADD_TEST_CASE specs carry exactly the template parameters, from fixed vocabularies; public-mined only. */
+function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...TEST_PARAM_KEYS].join(",")) return false;
+  const checks = p.checks;
+  return (
+    Array.isArray(checks) && checks.length > 0 && checks.every((c) => (TEST_CHECKS as readonly unknown[]).includes(c)) && new Set(checks).size === checks.length &&
+    (TEST_FRAMEWORKS as readonly unknown[]).includes(p.framework) && (TEST_ASSERTS as readonly unknown[]).includes(p.assert) &&
+    (TEST_MATCHERS as readonly unknown[]).includes(p.matcher) && p.placement === "new-file" && p.grading === "fail-before-pass-after" &&
+    typeof p.maxLines === "string" && /^[1-9][0-9]?$/.test(p.maxLines)
+  );
+}
+
 export interface SourceFile { path: string; content: string }
-export interface LearnedEdit { path: string; content: string }
+/** `create` (M12): a new file (never an existing one); `fixSha`: the fix commit Job B grades the new test against. */
+export interface LearnedEdit { path: string; content: string; create?: true; fixSha?: string }
 
 const LIT = String.raw`(?:"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false)`;
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
@@ -62,6 +77,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   SET_LITERAL: String.raw`^(?:set|change|update) (?:the )?(?:value of )?\x60?(?<name>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)? to (?<value>${LIT})\.?$`,
   ADD_SWITCH_CASE: String.raw`^add (?:a )?case (?<label>"[^"\n]+"|'[^'\n]+') (?:returning|that returns) (?<value>${LIT}) to (?:the )?switch in \x60?(?<fn>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)?\.?$`,
   ADD_NULLISH_DEFAULT: String.raw`^default \x60?(?<expr>${NAME}(?:\.${NAME})+)\x60? to (?<value>\[\]|null|${LIT}) in \x60?(?<fn>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)?\.?$`,
+  ADD_TEST_CASE: TEST_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -207,7 +223,15 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
 }
 
 /** Runs one rule against the objective. Null when the trigger does not match or the edit is not unique. */
-export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[]): LearnedEdit | null {
+export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean): LearnedEdit | null {
+  if (spec.kind === "ADD_TEST_CASE") {
+    try {
+      const task = parseTestTask(spec.trigger, objective);
+      return task ? buildTestEdit(spec.params, task, files, isTest) : null;
+    } catch {
+      return null;
+    }
+  }
   const line = objective.split("\n").map((l) => l.trim()).find((l) => new RegExp(spec.trigger, "i").test(l));
   if (!line) return null;
   const g = { ...(new RegExp(spec.trigger, "i").exec(line)!.groups ?? {}) } as Record<string, string>;

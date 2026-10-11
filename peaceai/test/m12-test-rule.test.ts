@@ -1,0 +1,427 @@
+// M12: the test-writing learned edit type (ADD_TEST_CASE). Mining test files from the allowed public
+// repositories only, the proposal and its spec checks, the template engine and its refusals, Job A's
+// approval gate (an unapproved rule gives 0 candidates), the Job B harness grading (pass after the fix AND
+// fail before it, written by the harness), the Results rejection, and that the gates and protected set hold.
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import test from "node:test";
+import { APPROVED_SCHEMA } from "../lib/approved.ts";
+import { parseDiff } from "../lib/diff.ts";
+import { gateCandidate, validateSummary } from "../lib/gate.ts";
+import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
+import { buildTestEdit, checkRoot, exportedValues, parseTestTask, TEST_TRIGGER } from "../lib/learned-test.ts";
+import { tally, type ShapeStats } from "../lib/mine.ts";
+import { assertTestMiningAllowed, mineTests, observeTestFile, PEACE_AUTHOR, TestMiningRefused } from "../lib/minetest.ts";
+import { parseTask } from "../lib/nlparse.ts";
+import { cleanIssueText } from "../lib/taskmap.ts";
+import { proposalBody, proposeRules } from "../lib/propose.ts";
+import { buildRecords, gradingReject } from "../lib/records.ts";
+import { gradingVerdict, validateResults, validTestGrading } from "../lib/results.ts";
+import { checkCandidateScope, WORKSPACE_SCOPE } from "../lib/scope.ts";
+import { PROTECTED_SELF, protectedReason } from "../lib/selfchange.ts";
+import { addText, emptyIndex } from "../lib/coretext.ts";
+import ts from "typescript";
+
+const repo = resolve(import.meta.dirname, "..", "..");
+const tsx = join(repo, "node_modules/.bin/tsx");
+const FIX = "a".repeat(40);
+const scratch = () => mkdtempSync(join(tmpdir(), "m12-"));
+const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=PeaceG03", "-c", `user.email=${PEACE_AUTHOR}`, ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+const PARAMS = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws", "rejects"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "40", placement: "new-file" };
+const spec = (over: Partial<RuleSpec> = {}): RuleSpec => ({
+  schema: "peaceai-learned-rule:v1", id: "public-test-case-v1", kind: "ADD_TEST_CASE", minedFrom: "public", minerVersion: "peaceai-miner:v1", shape: "TEST_CASE",
+  trigger: TEST_TRIGGER, params: { ...PARAMS }, evidence: { hunks: 612, commits: 96, files: 59, repos: ["PeaceG03/PeaceAI-Workspace", "PeaceG03/PeaceSTOCKS"] }, ...over,
+});
+const CAL = [
+  "export type Kind = \"NORMAL\" | \"CLOSED\";",
+  "export function sessionKind(date: string): Kind {",
+  "  return date.endsWith(\"-12-25\") ? \"CLOSED\" : \"NORMAL\";",
+  "}",
+  "export function requireDate(date: string): string {",
+  "  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) throw new Error(\"BAD_DATE: \" + date);",
+  "  return date;",
+  "}",
+  "const internal = 1;",
+  "export { internal as exportedInternal };",
+  "",
+].join("\n");
+const TASK = [
+  "add a test for sessionKind in src/cal.ts: Christmas is closed",
+  "- sessionKind(\"2026-12-25\") is \"CLOSED\"",
+  "- sessionKind(\"2026-12-24\") is \"NORMAL\"",
+  "- requireDate(\"x\") throws BAD_DATE",
+  `Fix: ${FIX}`,
+].join("\n");
+
+// ---- mining (test files, public repositories only)
+
+test("test miner: a new top-level test() case in a test file is one TEST_CASE with style facts only", () => {
+  const post = 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { f } from "./f";\n\ntest("old", () => {\n  assert.equal(f(1), 1);\n});\n\ntest("holiday calendar fails closed", () => {\n  assert.equal(f(2), 2);\n  assert.deepEqual([f(3)], [3]);\n  assert.throws(() => f(-1), /NEGATIVE/);\n});\n';
+  const diff = "@@ -7,0 +8,6 @@\n+\n+test(\"holiday calendar fails closed\", () => {\n+  assert.equal(f(2), 2);\n+  assert.deepEqual([f(3)], [3]);\n+  assert.throws(() => f(-1), /NEGATIVE/);\n+});\n";
+  const obs = observeTestFile("PeaceSTOCKS@1", "src/f.test.ts", post, diff);
+  assert.equal(obs.length, 1, "the unchanged case is not counted");
+  assert.deepEqual(obs[0]!.style, {
+    framework: "node:test-default", assert: "node:assert/strict-default", importExt: "none", lines: "<=12",
+    "check:equal": "yes", "check:deepEqual": "yes", "check:throws": "yes", "check:rejects": "no", matcher: "regex", async: "no", failClosed: "yes", calendar: "yes",
+  });
+  assert.ok(!JSON.stringify(obs).includes("NEGATIVE"), "no code text in observations");
+  assert.deepEqual(observeTestFile("PeaceSTOCKS@1", "src/f.ts", post, diff), [], "non-test files are not test evidence");
+});
+
+test("test miner: refuses every repository that is not the public scanner or this Workspace (label AND origin)", () => {
+  const dir = scratch();
+  try {
+    git(dir, "init", "-q");
+    for (const label of ["PeaceSTOCKS-Net", "PeaceSTOCKS-Net-Runner", "PeaceAI", "PeaceAI-Results", "anything"])
+      assert.throws(() => assertTestMiningAllowed(dir, label), TestMiningRefused, label);
+    assert.throws(() => mineTests(dir, "HEAD", "PeaceSTOCKS-Net"), TestMiningRefused);
+    // Allowed label but the origin is another repository (e.g. a private clone renamed): refused.
+    git(dir, "remote", "add", "origin", "https://github.com/PeaceG03/PeaceSTOCKS-Net.git");
+    assert.throws(() => assertTestMiningAllowed(dir, "PeaceSTOCKS"), /origin of PeaceSTOCKS is not PeaceG03\/PeaceSTOCKS/);
+    git(dir, "remote", "set-url", "origin", "git@github.com:PeaceG03/PeaceSTOCKS.git");
+    assert.doesNotThrow(() => assertTestMiningAllowed(dir, "PeaceSTOCKS"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("test miner: only Peace's noreply commits count", () => {
+  const dir = scratch();
+  try {
+    git(dir, "init", "-q");
+    git(dir, "remote", "add", "origin", "https://github.com/PeaceG03/PeaceAI-Workspace.git");
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src/a.ts"), "export const a = 1;\n");
+    git(dir, "add", "-A"); git(dir, "commit", "-qm", "base");
+    writeFileSync(join(dir, "src/a.test.ts"), 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { a } from "./a.ts";\n\ntest("a", () => {\n  assert.equal(a, 1);\n});\n');
+    git(dir, "add", "-A"); git(dir, "commit", "-qm", "peace test");
+    writeFileSync(join(dir, "src/b.test.ts"), 'import test from "node:test";\ntest("b", () => {});\n');
+    git(dir, "add", "-A");
+    execFileSync("git", ["-c", "user.name=x", "-c", "user.email=x@example.com", "commit", "-qm", "someone else"], { cwd: dir });
+    const r = mineTests(dir, "HEAD", "PeaceAI-Workspace");
+    assert.equal(r.commits, 2);
+    assert.deepEqual(r.observations.map((o) => [o.path, o.style.importExt]), [["src/a.test.ts", "ts"]]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- proposal and spec
+
+const testStats = (over: Partial<ShapeStats["styles"]> = {}): ShapeStats => ({
+  shape: "TEST_CASE", covered: null, hunks: 20, commits: 9, files: 6, examples: [{ commit: "PeaceSTOCKS@abcdef0123", path: "src/x.test.ts", line: 3 }],
+  styles: {
+    framework: { "node:test-default": 19, "node:test-named": 1 }, assert: { "node:assert/strict-default": 20 }, lines: { "<=12": 4, "13-40": 12, ">40": 4 },
+    "check:equal": { yes: 15, no: 5 }, "check:deepEqual": { yes: 8, no: 12 }, "check:throws": { yes: 3, no: 17 }, "check:rejects": { yes: 1, no: 19 },
+    matcher: { "n/a": 16, regex: 3, other: 1 }, ...over,
+  },
+});
+
+test("proposal: TEST_CASE becomes a valid ADD_TEST_CASE spec with learned template parameters (public only)", () => {
+  const { proposals } = proposeRules([testStats()], "public", ["PeaceG03/PeaceSTOCKS", "PeaceG03/PeaceAI-Workspace"]);
+  assert.equal(proposals.length, 1);
+  const s = proposals[0]!.spec;
+  assert.equal(s.id, "public-test-case-v1");
+  assert.equal(s.kind, "ADD_TEST_CASE");
+  assert.ok(validateSpec(s));
+  // rejects: support 1 < 2, so it is not learned; maxLines from the 13-40 majority.
+  assert.deepEqual(s.params, { ...PARAMS, checks: ["equal", "deepEqual", "throws"] });
+  assert.equal(proposals[0]!.sha256, specHash(s));
+  const body = proposalBody(proposals[0]!, [{ label: "PeaceSTOCKS@abcdef0123 src/x.test.ts:3", url: "https://github.com/PeaceG03/PeaceSTOCKS/commit/abcdef0123" }]);
+  assert.match(body, /FAIL on the code before the fix/);
+  assert.doesNotMatch(body, /M7 repair loop as every other/);
+  // Never from core; no regex matcher majority means no throws/rejects; wrong imports mean no rule.
+  assert.deepEqual(proposeRules([testStats()], "core", ["PeaceG03/PeaceAI"]).skipped, [{ shape: "TEST_CASE", why: "no-executable-kind" }]);
+  assert.deepEqual(proposeRules([testStats({ matcher: { other: 3 } })], "public", ["r"]).proposals[0]!.spec.params.checks, ["equal", "deepEqual"]);
+  assert.deepEqual(proposeRules([testStats({ framework: { "node:test-named": 20 } })], "public", ["r"]).skipped, [{ shape: "TEST_CASE", why: "no-learnable-params" }]);
+  assert.deepEqual(proposeRules([{ ...testStats(), commits: 2 }], "public", ["r"]).skipped, [{ shape: "TEST_CASE", why: "below-threshold" }]);
+});
+
+test("spec: ADD_TEST_CASE params are a fixed vocabulary; core-mined or extra keys are invalid", () => {
+  assert.ok(validateSpec(spec()));
+  assert.equal(validateSpec(spec({ id: "core-test-case-v1", minedFrom: "core" })), false);
+  assert.equal(validateSpec(spec({ params: { ...PARAMS, extra: "x" } })), false);
+  assert.equal(validateSpec(spec({ params: { ...PARAMS, checks: ["equal", "match"] } })), false);
+  assert.equal(validateSpec(spec({ params: { ...PARAMS, placement: "append" } })), false);
+  assert.equal(validateSpec(spec({ params: { ...PARAMS, grading: "none" } })), false);
+  assert.equal(validateSpec(spec({ params: { ...PARAMS, maxLines: "400" } })), false);
+});
+
+// ---- engine
+
+const files = [{ path: "src/cal.ts", content: CAL }, { path: "src/other.test.ts", content: 'import { x } from "./other";\n' }];
+
+test("engine: fills the learned template from task names and target exports into one NEW test file", () => {
+  const edit = applyRule(spec(), TASK, files);
+  assert.ok(edit);
+  assert.equal(edit.path, `src/cal.christmas-is-closed-${FIX.slice(0, 7)}.test.ts`);
+  assert.equal(edit.create, true);
+  assert.equal(edit.fixSha, FIX);
+  assert.equal(edit.content, [
+    'import assert from "node:assert/strict";',
+    'import test from "node:test";',
+    'import { requireDate, sessionKind } from "./cal";',
+    "",
+    'test("Christmas is closed", () => {',
+    '  assert.equal(sessionKind("2026-12-25"), "CLOSED");',
+    '  assert.equal(sessionKind("2026-12-24"), "NORMAL");',
+    '  assert.throws(() => requireDate("x"), /BAD_DATE/);',
+    "});",
+    "",
+  ].join("\n"));
+  // Import style follows the target's own tests (".ts" when they use it).
+  const tsStyle = applyRule(spec(), TASK, [files[0]!, { path: "src/o.test.ts", content: 'import { x } from "./o.ts";\n' }]);
+  assert.match(tsStyle!.content, /from "\.\/cal\.ts";/);
+  // Async checks render as an async test with assert.rejects.
+  const rej = applyRule(spec(), TASK.replace('- requireDate("x") throws BAD_DATE', '- requireDate("x") rejects with BAD_DATE'), files);
+  assert.match(rej!.content, /test\("Christmas is closed", async \(\) => \{/);
+  assert.match(rej!.content, /await assert\.rejects\(async \(\) => requireDate\("x"\), \/BAD_DATE\/\);/);
+  assert.ok(exportedValues("src/cal.ts", CAL).has("exportedInternal"));
+});
+
+test("engine: a task written with backticks reads the same after Job A's issue-text cleaning", () => {
+  const ticked = TASK.replace("sessionKind in src/cal.ts:", "`sessionKind` in `src/cal.ts`:").replace('- sessionKind("2026-12-25") is "CLOSED"', '- `sessionKind("2026-12-25")` is "CLOSED"').replace("throws BAD_DATE", "throws `BAD_DATE`");
+  const cleaned = cleanIssueText({ title: "[test] t", body: ticked });
+  assert.match(cleaned, /src\/cal\.ts :/, "cleaning leaves a space before the colon");
+  assert.equal(applyRule(spec(), cleaned, files)?.content, applyRule(spec(), TASK, files)?.content);
+});
+
+test("engine: refuses anything not made only of task names, target exports and literals", () => {
+  const no = (task: string, f = files, s = spec()) => assert.equal(applyRule(s, task, f), null, task);
+  no(TASK.replace(`Fix: ${FIX}`, ""));                                              // no fix commit
+  no(`${TASK}\nFix: ${"b".repeat(40)}`);                                          // two fix commits
+  no(TASK.replace('sessionKind("2026-12-24")', 'internal("2026-12-24")'));         // not exported
+  no(TASK.replace('sessionKind("2026-12-24")', "sessionKind(process.env.X)"));     // identifier argument
+  no(TASK.replace('sessionKind("2026-12-24")', 'sessionKind("a" + "b")'));         // operator
+  no(TASK.replace('sessionKind("2026-12-24")', "sessionKind(`${1}`)"));            // template
+  no(TASK.replace('is "NORMAL"', "is NORMAL"));                                    // value not a literal (unreadable bullet)
+  no(`${TASK}\n- sessionKind("x") matches /y/`);                                  // unknown check form
+  no(TASK.replace("src/cal.ts", "src/missing.ts"));                               // target not in scope
+  no(TASK.replace("add a test for sessionKind", "add a test for Kind"));           // type-only name
+  no(TASK, [...files, { path: `src/cal.christmas-is-closed-${FIX.slice(0, 7)}.test.ts`, content: "" }]); // path exists
+  no(TASK, files, spec({ params: { ...PARAMS, checks: ["equal"] } }));             // throws not learned
+  no(TASK, files, spec({ params: { ...PARAMS, maxLines: "4" } }));                 // over the learned size
+  const many = [TASK.split("\n")[0]!, ...Array.from({ length: 9 }, (_, i) => `- sessionKind("2026-01-0${i}") is "NORMAL"`), `Fix: ${FIX}`].join("\n");
+  no(many);                                                                        // too many checks
+  const parse = (t: string) => { const sf = ts.createSourceFile("e.ts", `(${t});`, ts.ScriptTarget.Latest, true); return ((sf.statements[0] as ts.ExpressionStatement).expression as ts.ParenthesizedExpression).expression; };
+  assert.equal(checkRoot(parse("a.b(1).c[0]")), "a");
+  assert.equal(checkRoot(parse("a?.b")), null);
+  assert.equal(checkRoot(parse("(() => 1)()")), null);
+  assert.equal(checkRoot(parse("a.b(c)")), null);
+  assert.equal(parseTestTask(TEST_TRIGGER, "set x to 1"), null);
+  assert.equal(buildTestEdit(PARAMS, parseTestTask(TEST_TRIGGER, TASK)!, files)?.path.endsWith(".test.ts"), true);
+});
+
+test("nl parse: the test trigger is canonical but refused as RULE_NOT_APPROVED until its kind is approved", () => {
+  const off = parseTask({ title: "", body: TASK }, { model: null, approvedKinds: new Set() });
+  assert.deepEqual(off, { status: "unsure", reason: "RULE_NOT_APPROVED", hint: null });
+  const on = parseTask({ title: "", body: TASK }, { model: null, approvedKinds: new Set(["ADD_TEST_CASE"]) });
+  assert.equal(on.status, "canonical");
+});
+
+// ---- Job A: the approval gate
+
+function fakeKernel(dir: string): string {
+  const file = join(dir, "fake-kernel.cjs");
+  writeFileSync(file, `const crypto = require("node:crypto");
+exports.NATIVE_CODE_SYNTHESIS_PROTOCOL_VERSION = "x";
+exports.sourceFingerprint = (p, c) => crypto.createHash("sha256").update(p + "\\0" + c).digest("hex");
+exports.PeaceAINativeCodeSynthesizer = class { synthesize() { return { status: "INSUFFICIENT" }; } };
+exports.parsePlanSteps = () => null;
+`);
+  return file;
+}
+const entry = (sha: string) => ({
+  id: "public-test-case-v1", sha256: sha, source: "workspace",
+  approval: { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/40#issuecomment-123", commentId: 123, issue: 40, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-11T00:00:00Z" },
+});
+function runJobA(mode: "empty" | "approved" | "hash-changed", body = TASK, nl = "off") {
+  const dir = scratch();
+  const ws = join(dir, "ws");
+  mkdirSync(join(ws, "src"), { recursive: true });
+  writeFileSync(join(ws, "src/cal.ts"), CAL);
+  git(ws, "init", "-q"); git(ws, "add", "-A"); git(ws, "commit", "-qm", "base");
+  const rules = join(dir, "rules");
+  mkdirSync(rules);
+  writeFileSync(join(rules, "public-test-case-v1.json"), JSON.stringify(spec()));
+  const list = join(dir, "approved.json");
+  const sha = mode === "hash-changed" ? specHash(spec({ params: { ...PARAMS, maxLines: "12" } })) : specHash(spec());
+  writeFileSync(list, JSON.stringify({ schema: APPROVED_SCHEMA, rules: mode === "empty" ? [] : [entry(sha)] }));
+  const out = join(dir, "out");
+  const r = spawnSync(tsx, [join(repo, "peaceai/bin/generate.ts")], {
+    cwd: repo, encoding: "utf8",
+    env: { ...process.env, PEACEAI_NL_PARSE: nl, PEACEAI_KERNEL_BUNDLE: fakeKernel(dir), PEACEAI_OUT_DIR: out, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", ISSUE_NUMBER: "9", ISSUE_TITLE: "[test] learned test", ISSUE_BODY: body, PEACEAI_RULES_DIR: rules, PEACEAI_APPROVED_LIST: list },
+  });
+  const summary = existsSync(join(out, "summary.json")) ? JSON.parse(readFileSync(join(out, "summary.json"), "utf8")) : null;
+  const diff = summary?.candidates[0] ? readFileSync(join(out, summary.candidates[0].file), "utf8") : "";
+  rmSync(dir, { recursive: true, force: true });
+  return { r, summary, diff };
+}
+
+test("Job A: an UNAPPROVED (or hash-changed) test rule gives 0 candidates", () => {
+  for (const [mode, why] of [["empty", "NOT_APPROVED"], ["hash-changed", "HASH_CHANGED"]] as const) {
+    const { r, summary } = runJobA(mode);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, new RegExp(`learned admission rules=1 approved=0 refused=public-test-case-v1:${why}`));
+    assert.match(r.stdout, new RegExp(`learned rules=1 approved=0 candidates=0 refused=public-test-case-v1:${why}`));
+    assert.equal(summary.candidates.length, 0);
+  }
+  // With the parser on (production default), the unapproved trigger is refused before generation.
+  const nl = runJobA("empty", TASK, "on");
+  assert.match(nl.r.stdout, /learned admission rules=1 approved=0 refused=public-test-case-v1:NOT_APPROVED/);
+  assert.match(nl.r.stdout, /nl=unsure reason=RULE_NOT_APPROVED/);
+  assert.equal(nl.summary.candidates.length, 0);
+});
+
+test("Job A: an approved test rule creates one new test file, carries the fix commit, and the summary validates", () => {
+  const { r, summary, diff } = runJobA("approved");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /learned rules=1 approved=1 candidates=1/);
+  assert.equal(summary.candidates.length, 1);
+  assert.deepEqual(summary.candidates[0].transformations, ["LEARNED_ADD_TEST_CASE"]);
+  assert.equal(summary.candidates[0].operationId, "learned:public-test-case-v1");
+  assert.equal(summary.candidates[0].fixSha, FIX);
+  assert.ok(validateSummary(summary), "Job A's gate, Job B, B2, C and the review accept the learned candidate's summary");
+  const parsed = parseDiff(diff);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]!.isNew, true);
+  assert.deepEqual(checkCandidateScope(parsed, new Set(["src/cal.ts"]), WORKSPACE_SCOPE), []);
+  assert.equal(validateSummary({ ...summary, candidates: [{ ...summary.candidates[0], fixSha: "nothex" }] }), false);
+  assert.equal(validateSummary({ ...summary, candidates: [{ ...summary.candidates[0], operationId: "learned:../x" }] }), false);
+});
+
+// ---- Job B: grading in the tamper-proof harness
+
+const BUGGY = 'export function sessionKind(date: string): "NORMAL" | "CLOSED" {\n  return date === "2026-12-24" ? "CLOSED" : "NORMAL";\n}\n';
+const FIXED = 'export function sessionKind(date: string): "NORMAL" | "CLOSED" {\n  return date === "2026-12-25" ? "CLOSED" : "NORMAL";\n}\n';
+const TSCONFIG = JSON.stringify({ compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, skipLibCheck: true, allowImportingTsExtensions: true, types: ["node"] }, include: ["src/**/*.ts"] });
+const caseFile = (checks: string[]) => ['import assert from "node:assert/strict";', 'import test from "node:test";', 'import { sessionKind } from "./cal";', "", 'test("t", () => {', ...checks, "});", ""].join("\n");
+
+function gradeFixture() {
+  const dir = scratch();
+  const ws = join(dir, "ws");
+  mkdirSync(join(ws, "src"), { recursive: true });
+  writeFileSync(join(ws, "src/cal.ts"), BUGGY);
+  writeFileSync(join(ws, "src/base.test.ts"), 'import test from "node:test";\ntest("base", () => {});\n');
+  writeFileSync(join(ws, "tsconfig.json"), TSCONFIG);
+  writeFileSync(join(ws, ".gitignore"), "node_modules\n");
+  symlinkSync(join(repo, "node_modules"), join(ws, "node_modules"));
+  git(ws, "init", "-q"); git(ws, "add", "-A"); git(ws, "commit", "-qm", "buggy");
+  writeFileSync(join(ws, "src/cal.ts"), FIXED);
+  git(ws, "add", "-A"); git(ws, "commit", "-qm", "fix");
+  const fixSha = git(ws, "rev-parse", "HEAD").trim();
+  writeFileSync(join(ws, "README.md"), "later\n");
+  git(ws, "add", "-A"); git(ws, "commit", "-qm", "later");
+  const baseSha = git(ws, "rev-parse", "HEAD").trim();
+  const newTest = (name: string, content: string) => {
+    writeFileSync(join(ws, name), content);
+    git(ws, "add", "-N", "--", name);
+    const d = git(ws, "diff", "--no-color", "--full-index", "--no-renames");
+    git(ws, "reset", "-q", "--hard"); git(ws, "clean", "-fdq");
+    return d;
+  };
+  return { dir, ws, fixSha, baseSha, newTest };
+}
+function runGrading(fx: ReturnType<typeof gradeFixture>, cands: { diff: string; fixSha?: string }[]) {
+  const inDir = join(fx.dir, "in");
+  mkdirSync(join(inDir, "candidates"), { recursive: true });
+  const candidates = cands.map((c, i) => {
+    writeFileSync(join(inDir, "candidates", `candidate-${i + 1}.diff`), c.diff);
+    return { id: `candidate-${i + 1}`, file: `candidates/candidate-${i + 1}.diff`, transformations: ["LEARNED_ADD_TEST_CASE"], operationId: "learned:public-test-case-v1", diffBytes: c.diff.length, diffLines: 5, ...(c.fixSha ? { fixSha: c.fixSha } : {}) };
+  });
+  const summary = { schema: "peaceai-workspace-candidates:v1", taskId: "workspace-issue-9", baseSha: fx.baseSha, candidates };
+  writeFileSync(join(inDir, "summary.json"), JSON.stringify(summary));
+  const resultsFile = join(fx.dir, "out", "results.json");
+  mkdirSync(join(fx.dir, "out"), { recursive: true });
+  const r = spawnSync(tsx, [join(repo, "peaceai/bin/test-candidates.ts")], {
+    cwd: repo, encoding: "utf8",
+    env: { ...process.env, PEACEAI_IN_DIR: inDir, PEACEAI_RESULTS_FILE: resultsFile, PEACEAI_WORKSPACE_DIR: fx.ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", PEACEAI_SANDBOX_USER: "", PEACEAI_REQUIRE_SANDBOX: "" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const results = JSON.parse(readFileSync(resultsFile, "utf8"));
+  assert.ok(validateResults(results));
+  return { results: results.results, summary, stdout: r.stdout };
+}
+
+test("Job B: a learned test counts only if it passes on the fixed code AND fails on the code before the fix", () => {
+  const fx = gradeFixture();
+  try {
+    const good = fx.newTest("src/cal.good.test.ts", caseFile(['  assert.equal(sessionKind("2026-12-25"), "CLOSED");']));
+    const both = fx.newTest("src/cal.both.test.ts", caseFile(['  assert.equal(sessionKind("2026-07-01"), "NORMAL");']));
+    const never = fx.newTest("src/cal.never.test.ts", caseFile(['  assert.equal(sessionKind("2026-07-01"), "CLOSED");']));
+    const before = fx.newTest("src/cal.before.test.ts", caseFile(['  assert.equal(sessionKind("2026-12-24"), "CLOSED");']));
+    const { results, summary, stdout } = runGrading(fx, [
+      { diff: good, fixSha: fx.fixSha }, { diff: both, fixSha: fx.fixSha }, { diff: never, fixSha: fx.fixSha }, { diff: before, fixSha: fx.fixSha }, { diff: good, fixSha: fx.baseSha === fx.fixSha ? FIX : "f".repeat(40) },
+    ]);
+    const g = (i: number) => results[i].testGrading;
+    assert.deepEqual(g(0), { fixSha: fx.fixSha, afterFix: true, beforeFix: false, verdict: "COUNTS", reason: null });
+    assert.deepEqual(g(1), { fixSha: fx.fixSha, afterFix: true, beforeFix: true, verdict: "REJECTED_PASSES_BOTH", reason: null });
+    assert.deepEqual(g(2), { fixSha: fx.fixSha, afterFix: false, beforeFix: false, verdict: "REJECTED_FAILS_BOTH", reason: null });
+    assert.deepEqual(g(3), { fixSha: fx.fixSha, afterFix: false, beforeFix: true, verdict: "REJECTED_FAILS_AFTER_FIX", reason: null });
+    assert.equal(g(4)!.verdict, "UNGRADABLE");
+    assert.equal(g(4)!.reason, "fix-not-ancestor");
+    assert.match(stdout, /candidate-1 .* grading=COUNTS after_fix=true before_fix=false/);
+    // Results: only the COUNTS candidate is eligible; the grading is recorded on each learned candidate.
+    const rec = buildRecords({ issue: 9, runId: "1", recordedAt: "2026-10-11T00:00:00Z", baseSha: fx.baseSha, title: "[test] t", body: "add a test for sessionKind in src/cal.ts" }, summary.candidates, results, "seed");
+    assert.deepEqual(rec.ranking.candidates.map((c) => [c.id, c.eligible, c.rejectReason, c.testGrading?.verdict]), [
+      ["candidate-1", true, null, "COUNTS"],
+      ["candidate-2", false, "test-grading", "REJECTED_PASSES_BOTH"],
+      ["candidate-3", false, "new-tests", "REJECTED_FAILS_BOTH"],
+      ["candidate-4", false, "new-tests", "REJECTED_FAILS_AFTER_FIX"],
+      ["candidate-5", false, "test-grading", "UNGRADABLE"],
+    ]);
+  } finally { rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test("Job B: a learned candidate that edits source (not test-only) or a fix with no source change is UNGRADABLE", () => {
+  const fx = gradeFixture();
+  try {
+    writeFileSync(join(fx.ws, "src/cal.x.test.ts"), caseFile(['  assert.equal(sessionKind("2026-12-25"), "CLOSED");']));
+    writeFileSync(join(fx.ws, "src/cal.ts"), FIXED + "export const extra = 1;\n");
+    git(fx.ws, "add", "-N", "--", "src/cal.x.test.ts");
+    const mixed = git(fx.ws, "diff", "--no-color", "--full-index", "--no-renames");
+    git(fx.ws, "reset", "-q", "--hard"); git(fx.ws, "clean", "-fdq");
+    const docsOnly = git(fx.ws, "rev-parse", "HEAD").trim(); // the "later" commit changes README only
+    const good = fx.newTest("src/cal.good.test.ts", caseFile(['  assert.equal(sessionKind("2026-12-25"), "CLOSED");']));
+    const { results } = runGrading(fx, [{ diff: mixed, fixSha: fx.fixSha }, { diff: good, fixSha: docsOnly }]);
+    assert.deepEqual([results[0]!.testGrading!.reason, results[1]!.testGrading!.reason], ["not-test-only", "no-source-change"]);
+  } finally { rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test("Results: grading records validate strictly; missing or mismatched grading is a rejection", () => {
+  const ok = { fixSha: FIX, afterFix: true, beforeFix: false, verdict: "COUNTS", reason: null };
+  assert.ok(validTestGrading(ok));
+  assert.equal(validTestGrading({ ...ok, verdict: "REJECTED_PASSES_BOTH" }), false, "verdict must follow from the two runs");
+  assert.equal(validTestGrading({ ...ok, extra: 1 }), false);
+  assert.equal(validTestGrading({ ...ok, beforeFix: null, verdict: "UNGRADABLE", reason: "made-up" }), false);
+  assert.deepEqual([gradingVerdict(true, false), gradingVerdict(true, true), gradingVerdict(false, false), gradingVerdict(false, true)], ["COUNTS", "REJECTED_PASSES_BOTH", "REJECTED_FAILS_BOTH", "REJECTED_FAILS_AFTER_FIX"]);
+  const r = { id: "candidate-1", diffBytes: 1, diffLines: 1, applied: true, typecheckPassed: true, originalSuitePassed: true, newTestsPassed: true, newTestFiles: 1 };
+  assert.equal(gradingReject({ fixSha: FIX }, r), "test-grading", "no grading recorded");
+  assert.equal(gradingReject({ fixSha: FIX }, { ...r, testGrading: { ...ok, fixSha: "b".repeat(40) } as never }), "test-grading", "graded against another commit");
+  assert.equal(gradingReject({ fixSha: FIX }, { ...r, testGrading: ok as never }), null);
+  assert.equal(gradingReject({}, r), null, "non-learned candidates are unaffected");
+});
+
+// ---- gates and protected set
+
+test("gates unchanged: a learned test cannot edit an existing test, and core text / personal info in it are refused", () => {
+  const edit = applyRule(spec(), TASK, files)!;
+  const asExisting = `diff --git a/src/cal.test.ts b/src/cal.test.ts\nindex 1111111..2222222 100644\n--- a/src/cal.test.ts\n+++ b/src/cal.test.ts\n@@ -1 +1,2 @@\n x\n+${edit.content.split("\n")[0]}\n`;
+  assert.ok(checkCandidateScope(parseDiff(asExisting), new Set(["src/cal.ts", "src/cal.test.ts"]), WORKSPACE_SCOPE).length > 0);
+  const coreLine = "  assert.equal(computeTheVerySpecificInternalThing(alpha, beta), 42);";
+  const core = { text: emptyIndex(), paths: new Set<string>(), basenames: new Set<string>() };
+  addText(core.text, `${coreLine}\n`);
+  const created = `diff --git a/src/cal.n.test.ts b/src/cal.n.test.ts\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/src/cal.n.test.ts\n@@ -0,0 +1,2 @@\n+${coreLine}\n+// mail ${["someone", "gmail.com"].join("@")}\n`;
+  const res = gateCandidate(created, new Set(["src/cal.ts"]), emptyIndex(), core, WORKSPACE_SCOPE);
+  assert.equal(res.ok, false);
+  assert.ok(res.reasons.some((x) => x.startsWith("core-text")) && res.reasons.some((x) => x.startsWith("personal-info")), res.reasons.join("; "));
+});
+
+test("protected set untouched: same entries, and it still covers the rule engine, gates, results, rules and workflows", () => {
+  const digest = createHash("sha256").update(PROTECTED_SELF.map((p) => p.pattern.source).join("\n")).digest("hex");
+  assert.equal(digest, PROTECTED_DIGEST, "PROTECTED_SELF changed");
+  for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
+    assert.ok(protectedReason(p), p);
+});
+const PROTECTED_DIGEST = "ab93b17198607c33e634edcf328bb7097f400f7682f790a9f2be33d3cee2bbc5";

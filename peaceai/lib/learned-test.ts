@@ -1,0 +1,188 @@
+// M12: the ADD_TEST_CASE learned rule (test-writing edit type). A spec of this kind carries the template
+// parameters mined from finished tests in public repositories (peaceai/lib/minetest.ts): the test and assert
+// imports, the check forms seen often enough, the error matcher style and the size limit. The skeleton is
+// fixed here; every placeholder is filled only from the task text (title, check expressions, error codes,
+// fix commit) and the target code (exported names, import style). It writes one NEW test file and never
+// touches an existing one. Job B then grades the test: it must pass on the fixed code and fail on the code
+// before the fix (bin/test-candidates.ts), otherwise the candidate is rejected. Deterministic; no model.
+import ts from "typescript";
+
+export const TEST_PARAM_KEYS = ["assert", "checks", "framework", "grading", "matcher", "maxLines", "placement"] as const;
+export const TEST_CHECKS = ["equal", "deepEqual", "throws", "rejects"] as const;
+export type TestCheckKind = (typeof TEST_CHECKS)[number];
+export const TEST_FRAMEWORKS = ["node:test-default"] as const;
+export const TEST_ASSERTS = ["node:assert/strict-default"] as const;
+export const TEST_MATCHERS = ["regex"] as const;
+export const MAX_CHECKS = 8;
+export const MAX_EXPR_CHARS = 200;
+
+const NAME = String.raw`[A-Za-z_$][\w$]*`;
+const FILE = String.raw`[\w./-]+\.ts`;
+/** Header line of the task (the rule's trigger). Backticks are optional: the issue text is cleaned, which turns them into spaces. */
+export const TEST_TRIGGER = String.raw`^add (?:a )?(?:regression )?test for \x60?(?<symbol>${NAME})\x60? in \x60?(?<file>${FILE})\x60?(?: ?: (?<title>[^\n]{1,120}?))?\.?$`;
+/** Fix commit line: the commit whose source change the new test must pin. Required (no fix, no candidate). */
+export const FIX_LINE = /^fix(?:ed)?(?: (?:in|by))?:? ?(?<sha>[0-9a-f]{40})\.?$/i;
+const LIT = String.raw`"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false|null|undefined`;
+const CHECK_LINE: { kind: TestCheckKind; re: RegExp }[] = [
+  { kind: "rejects", re: /^[-*] (?<expr>.+) rejects with \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60?\.?$/ },
+  { kind: "throws", re: /^[-*] (?<expr>.+) throws \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60?\.?$/ },
+  { kind: "deepEqual", re: /^[-*] (?<expr>.+) equals \x60?(?<value>[[{].*[\]}])\x60?\.?$/ },
+  { kind: "equal", re: new RegExp(String.raw`^[-*] (?<expr>.+) is \x60?(?<value>${LIT})\x60?\.?$`) },
+];
+
+export interface TestCheck { kind: TestCheckKind; expr: string; value?: string; code?: string }
+export interface TestTask { symbol: string; file: string; title: string | null; checks: TestCheck[]; fixSha: string }
+export interface TestEdit { path: string; content: string; create: true; fixSha: string }
+
+const strip = (s: string) => s.replace(/^\x60|\x60$/g, "").trim();
+
+/** Reads the header (trigger), the bulleted checks under it and the fix line. Null when anything is off. */
+export function parseTestTask(trigger: string, objective: string): TestTask | null {
+  const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
+  const head = lines.findIndex((l) => new RegExp(trigger, "i").test(l));
+  if (head < 0) return null;
+  const g = new RegExp(trigger, "i").exec(lines[head]!)!.groups ?? {};
+  if (!g.symbol || !g.file) return null;
+  const fixes = lines.map((l) => FIX_LINE.exec(l)?.groups?.sha).filter((s): s is string => !!s);
+  if (new Set(fixes).size !== 1) return null; // exactly one fix commit
+  const checks: TestCheck[] = [];
+  for (const l of lines.slice(head + 1)) {
+    if (!/^[-*] /.test(l)) continue;
+    const hit = CHECK_LINE.map((c) => ({ c, m: c.re.exec(l) })).find((x) => x.m);
+    if (!hit) return null; // a bullet we cannot read: refuse rather than drop it
+    const m = hit.m!.groups!;
+    checks.push({ kind: hit.c.kind, expr: strip(m.expr!), ...(m.value !== undefined ? { value: strip(m.value) } : {}), ...(m.code ? { code: m.code } : {}) });
+  }
+  if (checks.length === 0 || checks.length > MAX_CHECKS) return null;
+  return { symbol: g.symbol, file: g.file, title: g.title?.trim() || null, checks, fixSha: fixes[0]!.toLowerCase() };
+}
+
+const parseExpr = (text: string): ts.Expression | null => {
+  const sf = ts.createSourceFile("e.ts", `(${text});`, ts.ScriptTarget.Latest, true);
+  const st = sf.statements;
+  if (st.length !== 1 || !ts.isExpressionStatement(st[0]!) || (sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return null;
+  const e = (st[0] as ts.ExpressionStatement).expression;
+  return ts.isParenthesizedExpression(e) ? e.expression : null;
+};
+
+/** A literal value: string, number, -number, true/false/null/undefined, arrays and plain objects of those. */
+function isLiteralValue(n: ts.Node): boolean {
+  if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isNumericLiteral(n)) return true;
+  if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.NullKeyword) return true;
+  if (ts.isIdentifier(n) && n.text === "undefined") return true;
+  if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)) return true;
+  if (ts.isArrayLiteralExpression(n)) return n.elements.every(isLiteralValue);
+  if (ts.isObjectLiteralExpression(n))
+    return n.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && isLiteralValue(p.initializer));
+  return false;
+}
+
+/**
+ * The root identifier of an allowed check expression, or null. Allowed: an exported name, then property
+ * reads, literal index reads, and calls (or `new`) whose arguments are literal values. Nothing else: no
+ * other identifiers, operators, functions or templates, so no code beyond names the task and target give.
+ */
+export function checkRoot(e: ts.Expression): string | null {
+  if (ts.isIdentifier(e)) return e.text === "undefined" ? null : e.text;
+  if (ts.isPropertyAccessExpression(e)) return e.questionDotToken ? null : checkRoot(e.expression);
+  if (ts.isElementAccessExpression(e)) return isLiteralValue(e.argumentExpression) && !ts.isObjectLiteralExpression(e.argumentExpression) ? checkRoot(e.expression) : null;
+  if (ts.isCallExpression(e)) return !e.typeArguments && e.arguments.every(isLiteralValue) ? checkRoot(e.expression) : null;
+  if (ts.isNewExpression(e)) return !e.typeArguments && ts.isIdentifier(e.expression) && (e.arguments ?? []).every(isLiteralValue) ? e.expression.text : null;
+  return null;
+}
+
+/** Names a module exports (declarations and `export { a, b as c }`), without type-only exports. */
+export function exportedValues(path: string, content: string): Set<string> {
+  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
+  const out = new Set<string>();
+  const exported = (n: ts.Node) => ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  for (const s of sf.statements) {
+    if (ts.isVariableStatement(s) && exported(s)) for (const d of s.declarationList.declarations) { if (ts.isIdentifier(d.name)) out.add(d.name.text); }
+    else if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)) && exported(s) && s.name) out.add(s.name.text);
+    else if (ts.isExportDeclaration(s) && !s.isTypeOnly && !s.moduleSpecifier && s.exportClause && ts.isNamedExports(s.exportClause))
+      for (const el of s.exportClause.elements) if (!el.isTypeOnly) out.add(el.name.text);
+  }
+  return out;
+}
+
+/** Import style of the target's own tests: "ts" when most relative imports end in .ts, else extensionless. */
+export function importStyle(files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): "ts" | "none" {
+  let ts_ = 0;
+  let none = 0;
+  for (const f of files) {
+    if (!isTest(f.path)) continue;
+    for (const m of f.content.matchAll(/^import [^;]*? from "(\.{1,2}\/[^"]+)";$/gm)) {
+      if (m[1]!.endsWith(".ts")) ts_ += 1;
+      else if (!/\.[a-z]+$/.test(m[1]!)) none += 1;
+    }
+  }
+  return ts_ > none ? "ts" : "none";
+}
+
+const renderValue = (text: string) => {
+  const e = parseExpr(text);
+  return e && isLiteralValue(e) ? e.getText() : null;
+};
+const slug = (s: string) => {
+  const full = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const cut = full.length <= 32 ? full : full.slice(0, 33).replace(/-[^-]*$/, "") || full.slice(0, 32);
+  return cut || "case";
+};
+
+/**
+ * Builds the new test file. Refuses (null) unless: the spec allows every check form used; the target file
+ * exists among the in-scope sources and exports the symbol and every expression root; every value parses
+ * as a literal; the new path does not exist; and the test case fits the learned size limit.
+ */
+export function buildTestEdit(
+  params: Record<string, string | string[]>,
+  task: TestTask,
+  files: readonly { path: string; content: string }[],
+  isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p),
+): TestEdit | null {
+  const allowed = Array.isArray(params.checks) ? params.checks : [];
+  if (params.framework !== "node:test-default" || params.assert !== "node:assert/strict-default" || params.matcher !== "regex") return null;
+  if (params.placement !== "new-file" || params.grading !== "fail-before-pass-after") return null;
+  const maxLines = Number(params.maxLines);
+  if (!Number.isInteger(maxLines) || maxLines < 3) return null;
+  if (task.checks.some((c) => !allowed.includes(c.kind))) return null;
+  const target = files.find((f) => f.path === task.file);
+  if (!target || isTest(target.path) || !/^(?:.*\/)?[\w.-]+\.ts$/.test(target.path)) return null;
+  const exports = exportedValues(target.path, target.content);
+  if (!exports.has(task.symbol)) return null;
+  const roots = new Set<string>([task.symbol]);
+  const body: string[] = [];
+  for (const c of task.checks) {
+    if (c.expr.length > MAX_EXPR_CHARS) return null;
+    const e = parseExpr(c.expr);
+    const root = e ? checkRoot(e) : null;
+    if (!e || !root || !exports.has(root)) return null;
+    roots.add(root);
+    const expr = e.getText();
+    if (c.kind === "equal" || c.kind === "deepEqual") {
+      const v = renderValue(c.value ?? "");
+      if (v === null) return null;
+      if (c.kind === "deepEqual" && !/^[[{]/.test(v)) return null;
+      body.push(`  assert.${c.kind}(${expr}, ${v});`);
+    } else if (c.kind === "throws") body.push(`  assert.throws(() => ${expr}, /${c.code}/);`);
+    else body.push(`  await assert.rejects(async () => ${expr}, /${c.code}/);`);
+  }
+  const dir = target.path.includes("/") ? target.path.slice(0, target.path.lastIndexOf("/") + 1) : "";
+  const stem = target.path.slice(dir.length).replace(/\.ts$/, "");
+  const path = `${dir}${stem}.${slug(task.title ?? task.symbol)}-${task.fixSha.slice(0, 7)}.test.ts`;
+  if (files.some((f) => f.path === path)) return null;
+  const spec = `./${stem}${importStyle(files, isTest) === "ts" ? ".ts" : ""}`;
+  const name = task.title ?? `${task.symbol}: behavior fixed in ${task.fixSha.slice(0, 7)}`;
+  const isAsync = task.checks.some((c) => c.kind === "rejects");
+  const testCase = [`test(${JSON.stringify(name)}, ${isAsync ? "async " : ""}() => {`, ...body, "});"];
+  if (testCase.length > maxLines) return null;
+  const content = [
+    'import assert from "node:assert/strict";',
+    'import test from "node:test";',
+    `import { ${[...roots].sort().join(", ")} } from ${JSON.stringify(spec)};`,
+    "",
+    ...testCase,
+    "",
+  ].join("\n");
+  return { path, content, create: true, fixSha: task.fixSha };
+}
