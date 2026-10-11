@@ -15,6 +15,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--work", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--threads", type=int, default=8)
+ap.add_argument("--checkpoint", default="checkpoint.npz")  # best.npz after early stopping
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -23,7 +24,7 @@ import numpy as np  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lm  # noqa: E402
 
-with np.load(os.path.join(args.work, "checkpoint.npz"), allow_pickle=False) as z:
+with np.load(os.path.join(args.work, args.checkpoint), allow_pickle=False) as z:
     meta = json.loads(str(z["meta"]))
     params = {k[2:]: z[k].astype(np.float32) for k in z.files if k.startswith("p.")}
 cfg = meta["cfg"]

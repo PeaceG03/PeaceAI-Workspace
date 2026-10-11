@@ -25,6 +25,7 @@ ap.add_argument("--n-layer", type=int, default=6)
 ap.add_argument("--n-head", type=int, default=6)
 ap.add_argument("--ctx", type=int, default=256)
 ap.add_argument("--vocab", type=int, default=4096)
+ap.add_argument("--patience", type=int, default=0)  # early stop after N evals without a held-out improvement; 0 = off
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -130,11 +131,14 @@ def save():
     os.replace(W("checkpoint.tmp.npz"), W("checkpoint.npz"))
 
 
+best = {"val": float("inf"), "step": 0, "stale": 0}
+if os.path.exists(W("best.json")):
+    best = json.load(open(W("best.json")))
 if step == 0:
     log({"step": 0, "val_loss": round(eval_loss(), 4)})
 start = time.time()
 run_start_step = step
-while step < cfg["total_steps"] and time.time() - start < args.max_seconds and not (args.max_steps_this_run and step - run_start_step >= args.max_steps_this_run):
+while best["stale"] < (args.patience or 10**9) and step < cfg["total_steps"] and time.time() - start < args.max_seconds and not (args.max_steps_this_run and step - run_start_step >= args.max_steps_this_run):
     offs = rng.integers(0, len(train_tok) - T - 1, B)
     x = np.stack([train_tok[o:o + T] for o in offs]).astype(np.int64)
     y = np.stack([train_tok[o + 1:o + T + 1] for o in offs]).astype(np.int64)
@@ -149,6 +153,14 @@ while step < cfg["total_steps"] and time.time() - start < args.max_seconds and n
     if step % args.eval_every == 0 or step == cfg["total_steps"]:
         rec["val_loss"] = round(eval_loss(), 4)
         save()
+        if rec["val_loss"] < best["val"]:
+            best = {"val": rec["val_loss"], "step": step, "stale": 0}
+            import shutil
+            shutil.copyfile(W("checkpoint.npz"), W("best.npz"))
+        else:
+            best["stale"] += 1
+        json.dump(best, open(W("best.json"), "w"))
     log(rec)
 save()
+print(f"best val_loss={best['val']} at step={best['step']}" + (" (early stop)" if args.patience and best["stale"] >= args.patience else ""), flush=True)
 print(f"stopped step={step} of {cfg['total_steps']} elapsed={time.time() - t0:.0f}s", flush=True)
