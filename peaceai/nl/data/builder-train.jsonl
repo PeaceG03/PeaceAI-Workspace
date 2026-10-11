@@ -1,0 +1,67 @@
+{"label":"array-item","text":"Append \"csv\" to the EXPORT_KINDS list"}
+{"label":"array-item","text":"Please add 'tsv' to SUPPORTED_FORMATS"}
+{"label":"array-item","text":"EXPORT_KINDS should also include \"xlsx\""}
+{"label":"array-item","text":"Make ALLOWED_HOSTS include \"localhost\""}
+{"label":"array-item","text":"Push 42 onto the RETRY_CODES array"}
+{"label":"array-item","text":"Insert \"md\" into the list FILE_TYPES"}
+{"label":"array-item","text":"The list STOP_WORDS needs to contain \"the\""}
+{"label":"union-member","text":"Allow \"warning\" in the union type Level"}
+{"label":"union-member","text":"Add \"archived\" as a new option of the type Status"}
+{"label":"union-member","text":"Let the type Mode also accept \"dark\""}
+{"label":"union-member","text":"Severity should also allow \"info\""}
+{"label":"union-member","text":"Include 'beta' in the union Channel"}
+{"label":"union-member","text":"Add \"pending\" as another variant for the union type JobState"}
+{"label":"object-property","text":"Give the object DEFAULTS a property retries with value 3"}
+{"label":"object-property","text":"Put key maxItems = 100 into the config SETTINGS"}
+{"label":"object-property","text":"Set the new setting verbose to true on the object OPTIONS"}
+{"label":"object-property","text":"LIMITS should have a key burst with value 20"}
+{"label":"object-property","text":"Add the entry region of \"us-east\" to object CONFIG"}
+{"label":"object-property","text":"add key theme set to \"light\" in the PREFS object"}
+{"label":"type-field","text":"Give the type User an optional field nickname of type string"}
+{"label":"type-field","text":"Declare a field createdAt typed as number on the interface Post"}
+{"label":"type-field","text":"The type Order should have a field total of type number"}
+{"label":"type-field","text":"Add a prop tags of type string[] to type Item"}
+{"label":"type-field","text":"Add field avatarUrl of type string to the Account type, make it optional"}
+{"label":"type-field","text":"give interface Settings a new member locale typed string"}
+{"label":"exported-constant","text":"Create a constant MAX_RETRIES set to 5 in src/config.ts"}
+{"label":"exported-constant","text":"In src/limits.ts, define a new constant PAGE_SIZE equal to 20"}
+{"label":"exported-constant","text":"Export a const DEFAULT_TIMEOUT of 3000 from src/net.ts"}
+{"label":"exported-constant","text":"Introduce a setting called BATCH_LIMIT with the value 10 in src/config.ts"}
+{"label":"exported-constant","text":"export API_VERSION = \"v2\" from src/api.ts"}
+{"label":"exported-constant","text":"Declare an exported constant APP_NAME as \"peace\" into src/app.ts"}
+{"label":"guard","text":"Make parseCount return 0 when input is empty"}
+{"label":"guard","text":"If name is blank, formatName should just return \"\""}
+{"label":"guard","text":"Add an early return to the function scale so it returns 1 if factor is zero"}
+{"label":"guard","text":"toPercent should return 0 when value is not a number"}
+{"label":"guard","text":"Put a check at the top of clamp that returns 0 when n is negative"}
+{"label":"guard","text":"have the function safeDivide return null if divisor is zero"}
+{"label":"try-catch","text":"Surround loadConfig with a try/catch that returns null on any error"}
+{"label":"try-catch","text":"Make readSettings return null if it throws"}
+{"label":"try-catch","text":"Catch any errors in parseJson and return null"}
+{"label":"try-catch","text":"fetchUser should return null instead of throwing"}
+{"label":"try-catch","text":"Wrap the function loadCache in a try-catch block which returns false when an exception occurs"}
+{"label":"try-catch","text":"handle exceptions in decodeToken and return null instead"}
+{"label":"set-literal","text":"Change MAX_PAGES in src/config.ts to 75"}
+{"label":"set-literal","text":"Update the value of DEFAULT_THEME to \"dark\""}
+{"label":"set-literal","text":"RETRY_LIMIT should be 4 instead"}
+{"label":"set-literal","text":"make TIMEOUT_MS equal to 5000"}
+{"label":"switch-case","text":"Handle the case \"pdf\" in the switch in mimeFor and return \"application/pdf\""}
+{"label":"switch-case","text":"labelFor should return \"Draft\" for \"draft\""}
+{"label":"switch-case","text":"support case 'beta' in the switch of channelName returning \"Beta\""}
+{"label":"nullish-default","text":"Default opts.tags to [] in buildQuery"}
+{"label":"nullish-default","text":"Use \"en\" as the default for user.locale in greet"}
+{"label":"nullish-default","text":"In render, fall back props.items to []"}
+{"label":"none","text":"Refactor the ranker to use a priority queue"}
+{"label":"none","text":"Fix the flaky test in the scheduler"}
+{"label":"none","text":"Make the app faster"}
+{"label":"none","text":"Improve error messages across the CLI"}
+{"label":"none","text":"Write documentation for the API"}
+{"label":"none","text":"Upgrade TypeScript to the latest version"}
+{"label":"none","text":"Delete the unused helpers in utils"}
+{"label":"none","text":"Can you review my pull request"}
+{"label":"none","text":"Implement OAuth login with Google"}
+{"label":"none","text":"Move the database code into its own package"}
+{"label":"none","text":"Remove \"pdf\" from the array EXPORT_KINDS"}
+{"label":"none","text":"Rename the repository and update all links"}
+{"label":"none","text":"Make the dashboard look nicer on mobile"}
+{"label":"none","text":"Investigate why the build is slow"}
