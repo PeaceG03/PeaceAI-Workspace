@@ -353,6 +353,10 @@ all check the variable; a cancelled run leaves its issue `peaceai:running`, whic
 
 - `leak-check` runs on every PR into `main`: personal info and secret patterns, commit identities,
   and scope rules for protected files. A core-text backstop runs on every push to `main` and weekly.
+- Public-origin files: core's `docs/peaceai-public-origin.json` pins core files that are byte-identical to
+  public PeaceSTOCKS files, each by exact path and sha256 (no wildcards). Every core-text index (the gates, the
+  pre-push hook and the M9 memcheck's core index) skips a file only when its path is listed AND its bytes match
+  the pin; changed content, another path, or a malformed allowlist means it is indexed as private again.
 - `ci` runs the type check, the `src` tests, the tooling tests and the tamper-proof check.
 - `peace-verdict` records `/verdict` comments (see above).
 - `key-proof` (manual, owner only) proves each deploy key has exactly the access it should.
