@@ -222,7 +222,7 @@ function runJobA(mode: ListMode, objective = "set `name` in `src/theme.ts` to \"
   };
   if (mode !== "default" && lists[mode]) writeFileSync(list, lists[mode]!);
   const out = join(dir, "out");
-  const env: Record<string, string> = { ...process.env as Record<string, string>, PEACEAI_KERNEL_BUNDLE: fakeKernel(dir), PEACEAI_OUT_DIR: out, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", ISSUE_NUMBER: "9", ISSUE_TITLE: "[test] learned", ISSUE_BODY: objective };
+  const env: Record<string, string> = { ...process.env as Record<string, string>, PEACEAI_NL_PARSE: "off", PEACEAI_KERNEL_BUNDLE: fakeKernel(dir), PEACEAI_OUT_DIR: out, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", ISSUE_NUMBER: "9", ISSUE_TITLE: "[test] learned", ISSUE_BODY: objective };
   if (mode !== "default") { env.PEACEAI_RULES_DIR = rules; env.PEACEAI_APPROVED_LIST = list; }
   if (mode === "core-approved") env.PEACEAI_CORE_DIR = core;
   const r = spawnSync(tsx, [join(repo, "peaceai/bin/generate.ts")], { cwd: repo, encoding: "utf8", env });

@@ -25,6 +25,9 @@ const outDir = process.env.PEACEAI_OUT_DIR;
 const repo = process.env.PEACEAI_WORKSPACE_DIR ?? process.cwd();
 if (!bundle || !outDir) throw new Error("PEACEAI_KERNEL_BUNDLE and PEACEAI_OUT_DIR are required");
 
+function writeSummary(summary: object): void {
+  writeFileSync(join(outDir!, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+}
 const writeOutput = (o: Record<string, string>) => {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(o).map(([k, v]) => `${k}=${v}\n`).join(""));
 };
@@ -72,7 +75,7 @@ writeOutput({ nl: nl.status, nl_reason: nl.status === "unsure" ? nl.reason : "",
 console.log(`nl=${nl.status}${nl.status === "unsure" ? ` reason=${nl.reason}` : nl.status === "parsed" ? ` steps=${nl.steps.length} families=${nl.steps.map((s) => s.family).join(",")}` : ""}`);
 if (nl.status === "unsure") {
   mkdirSync(join(outDir, "candidates"), { recursive: true });
-  writeFileSync(join(outDir, "summary.json"), JSON.stringify({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] }, null, 2) + "\n");
+  writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
   process.exit(0);
 }
 const task = nl.status === "parsed" ? { title: "", body: nl.objective } : issueTask;
@@ -259,5 +262,5 @@ const summary = {
     diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
   })),
 };
-writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+writeSummary(summary);
 console.log(`sources=${sources.length} variants=${variants.length} plan=${planStatus} calls=${calls} candidates=${candidates.length} scope_rejected=${scopeRejected}`);

@@ -162,7 +162,7 @@ function runGenerate(plan: "materialized" | "blocked", body: string) {
   const r = spawnSync(tsx, [join(repo, "peaceai/bin/generate.ts")], {
     cwd: repo,
     encoding: "utf8",
-    env: { ...process.env, PEACEAI_KERNEL_BUNDLE: fakeKernel(dir, plan), PEACEAI_OUT_DIR: out, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: WS, ISSUE_NUMBER: "7", ISSUE_TITLE: "[test] plan", ISSUE_BODY: body },
+    env: { ...process.env, PEACEAI_NL_PARSE: "off", PEACEAI_KERNEL_BUNDLE: fakeKernel(dir, plan), PEACEAI_OUT_DIR: out, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: WS, ISSUE_NUMBER: "7", ISSUE_TITLE: "[test] plan", ISSUE_BODY: body },
   });
   return { dir, out, r, singleCalls: existsSync(join(dir, "single-calls")) ? Number(readFileSync(join(dir, "single-calls"), "utf8")) : 0 };
 }

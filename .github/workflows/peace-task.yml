@@ -153,6 +153,10 @@ jobs:
     outputs:
       candidates: ${{ steps.generate.outputs.candidates }}
       matrix: ${{ steps.generate.outputs.matrix }}
+      # M10: the parse decision (enums only: canonical|parsed|unsure|off, a refusal code, a family name).
+      nl: ${{ steps.generate.outputs.nl }}
+      nl_reason: ${{ steps.generate.outputs.nl_reason }}
+      nl_hint: ${{ steps.generate.outputs.nl_hint }}
     env:
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
       PEACEAI_TARGET: ${{ needs.select.outputs.target }}
@@ -195,6 +199,8 @@ jobs:
         env:
           PEACEAI_LM_FILL: ${{ vars.PEACEAI_LM_FILL }}
           PEACEAI_LM_FILLS: ${{ runner.temp }}/lm-fills/fills.json
+          # M10 kill switch: "off" uses the task text unchanged (pre-M10 behaviour); anything else parses.
+          PEACEAI_NL_PARSE: ${{ vars.PEACEAI_NL_PARSE }}
         run: |
           export PEACEAI_KERNEL_BUNDLE="$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
           export PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out"
@@ -484,6 +490,8 @@ jobs:
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
       REVIEW_RESULT: ${{ needs.review.result }}
       NO_CANDIDATES: ${{ needs.generate.result == 'success' && needs.generate.outputs.candidates == '0' && needs.record.result == 'success' }}
+      NL_REASON: ${{ needs.generate.outputs.nl == 'unsure' && needs.generate.outputs.nl_reason || '' }}
+      NL_HINT: ${{ needs.generate.outputs.nl_hint }}
       FAILED_STAGE: >-
         ${{ needs.generate.result != 'success' && 'generation or the leak/scope gate' ||
             (needs.test.result == 'failure' || needs.test.result == 'cancelled') && 'testing' ||
@@ -494,7 +502,8 @@ jobs:
         run: |
           if [ "$NO_CANDIDATES" = "true" ]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:failed --remove-label peaceai:running >/dev/null
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry."
+            # M10: an unsure parse gets the phrasing list instead (posted below, after the leak check).
+            [ -n "$NL_REASON" ] || gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry."
           elif [ "$REVIEW_RESULT" = "success" ]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:done --remove-label peaceai:running >/dev/null
           else
@@ -509,6 +518,11 @@ jobs:
           node-version: 22
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Say the parser was unsure, with the supported phrasings (fixed text; leak-checked)
+        if: env.NL_REASON != '' && env.NO_CANDIDATES == 'true'
+        run: |
+          PEACEAI_BODY_FILE="$RUNNER_TEMP/nl-refusal.md" ./node_modules/.bin/tsx peaceai/bin/nl-refusal.ts
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/nl-refusal.md"
       - name: Chain the next sweep while tasks are waiting
         id: count
         env:
