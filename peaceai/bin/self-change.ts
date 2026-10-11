@@ -3,7 +3,8 @@
 //   propose  --id ID --patch FILE [--base REF] [--out DIR] [--budget MIN]
 //            protected-set check -> separate clone at REF -> apply -> run the LIVE suite (test files from REF,
 //            unchanged) and any new peaceai/self-tests -> write the record (<out>/self-changes/<id>.json)
-//   decide   --record FILE --approvals FILE      promotion decision (Auditor label + Architect command); prints only
+//   decide   --record FILE (--pr N | --approvals FILE)  promotion decision (Auditor label + Architect command
+//            comment traced by id/URL); prints only. This tool never sets the Auditor label or posts a command.
 //   rollback --record FILE --repo DIR            one step: on a NEW branch in DIR, revert the promotion merge
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -12,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   budgetMinutes, checkSelfChangeDiff, listSha, promotionDecision, SELF_SCHEMA, selfChangeAllowedHere, sha256,
-  type CommandComment, type LabelEvent, type SelfChangeRecord, type TestRun,
+  WORKSPACE_REPO, type CommandComment, type LabelEvent, type SelfChangeRecord, type TestRun,
 } from "../lib/selfchange.ts";
 
 const argv = process.argv.slice(2);
@@ -96,12 +97,26 @@ if (mode === "propose") {
   die(rec.status === "awaiting-review" ? 0 : 3, `self-change propose id=${id} status=${rec.status} base=${baseSha.slice(0, 12)} candidate=${rec.candidateSha.slice(0, 12)} ${t}`);
 } else if (mode === "decide") {
   const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as SelfChangeRecord;
-  const ap = JSON.parse(readFileSync(resolve(opt("approvals") ?? ""), "utf8")) as { labels: LabelEvent[]; comments: CommandComment[] };
+  // Approvals come straight from GitHub (--pr N: the PR's label events and comments, each comment with its id
+  // and URL), or from a saved copy of that same shape (--approvals FILE, used by tests and the dry run).
+  const pr = opt("pr");
+  const ap: { labels: LabelEvent[]; comments: CommandComment[] } = pr
+    ? (() => {
+        if (!/^\d+$/.test(pr)) die(1, "usage: --pr <number>");
+        const gh = (path: string) => JSON.parse(execFileSync("gh", ["api", "--paginate", "--slurp", path], { encoding: "utf8", maxBuffer: 1 << 26 })).flat();
+        const events = gh(`repos/${WORKSPACE_REPO}/issues/${pr}/events`) as any[];
+        const comments = gh(`repos/${WORKSPACE_REPO}/issues/${pr}/comments`) as any[];
+        return {
+          labels: events.filter((e) => e.event === "labeled").map((e) => ({ label: e.label?.name, actor: e.actor?.login, createdAt: e.created_at })),
+          comments: comments.map((c) => ({ id: c.id, url: c.html_url, body: c.body ?? "", author: c.user?.login, association: c.author_association, createdAt: c.created_at })),
+        };
+      })()
+    : JSON.parse(readFileSync(resolve(opt("approvals") ?? ""), "utf8"));
   const approvers = JSON.parse(readFileSync(resolve(import.meta.dirname, "../self/approvers.json"), "utf8"));
   const live = resolve(opt("live") ?? process.cwd());
   const liveFiles = git(live, "ls-tree", "-r", "--name-only", rec.baseSha, "peaceai/test/").split("\n").filter((f) => /\.test\.ts$/.test(f));
   const d = promotionDecision(rec, liveFiles, ap.labels ?? [], ap.comments ?? [], approvers);
-  die(d.ok ? 0 : 2, `self-change decide id=${rec.id} promote=${d.ok}${d.ok ? "" : ` reasons=${d.reasons.join(",")}`}`);
+  die(d.ok ? 0 : 2, `self-change decide id=${rec.id} promote=${d.ok}${d.ok ? ` architect=${d.architectComment}` : ` reasons=${d.reasons.join(",")}`}`);
 } else if (mode === "rollback") {
   const recPath = resolve(opt("record") ?? "");
   const rec = JSON.parse(readFileSync(recPath, "utf8")) as SelfChangeRecord;

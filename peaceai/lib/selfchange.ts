@@ -132,7 +132,12 @@ export function budgetMinutes(asked: string | undefined): number {
 
 export interface TestRun { suite: "live" | "new"; files: string[]; filesSha256: string; exitCode: number; pass: number; fail: number }
 export interface LabelEvent { label: string; actor: string; createdAt: string }
-export interface CommandComment { body: string; author: string; association: string; createdAt: string }
+/** A command comment, traced: its GitHub comment id and URL (issuecomment-<id>) on the promotion PR/issue. */
+export interface CommandComment { id?: number; url?: string; body: string; author: string; association: string; createdAt: string }
+export const WORKSPACE_REPO = "PeaceG03/PeaceAI-Workspace";
+export function tracedComment(c: CommandComment): boolean {
+  return Number.isSafeInteger(c.id) && (c.id ?? 0) > 0 && typeof c.url === "string" && new RegExp(`^https://github\\.com/${WORKSPACE_REPO}/(pull|issues)/\\d+#issuecomment-${c.id}$`).test(c.url);
+}
 
 export interface SelfChangeRecord {
   schema: typeof SELF_SCHEMA;
@@ -153,7 +158,7 @@ export interface SelfChangeRecord {
 export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export const listSha = (files: readonly string[]) => sha256([...files].sort().join("\n"));
 
-export interface PromotionDecision { ok: boolean; reasons: string[] }
+export interface PromotionDecision { ok: boolean; reasons: string[]; architectComment?: string }
 
 /**
  * Promotion needs ALL of: a clean protected-set check; the LIVE version's existing test suite (the file list
@@ -174,9 +179,9 @@ export function promotionDecision(rec: SelfChangeRecord, liveFilesAtBase: readon
   const label = labels.filter((l) => l.label === AUDITOR_LABEL && approvers.auditor.includes(l.actor)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
   if (!label) reasons.push("AUDITOR_REVIEW_MISSING");
   const want = `${PROMOTE_COMMAND} ${rec.id} ${rec.candidateSha}`;
-  const cmd = comments.find((c) => c.body.trim() === want && approvers.architect.includes(c.author) && ["OWNER", "MEMBER", "COLLABORATOR"].includes(c.association) && (!label || c.createdAt > label.createdAt));
+  const cmd = comments.find((c) => c.body.trim() === want && approvers.architect.includes(c.author) && tracedComment(c) && ["OWNER", "MEMBER", "COLLABORATOR"].includes(c.association) && (!label || c.createdAt > label.createdAt));
   if (!cmd) reasons.push("ARCHITECT_APPROVAL_MISSING");
-  return { ok: reasons.length === 0, reasons };
+  return { ok: reasons.length === 0, reasons, ...(cmd ? { architectComment: cmd.url } : {}) };
 }
 
 /** The record's own check must still hold; a record cannot carry a passing check for refused paths. */

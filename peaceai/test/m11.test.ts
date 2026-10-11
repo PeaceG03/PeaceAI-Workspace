@@ -61,6 +61,12 @@ test("protected set: any self-change touching it is refused, by path (every rena
   assert.deepEqual(ok, { ok: true, refusals: [], paths: ["peaceai/lib/textnorm.ts", "peaceai/self-tests/textnorm.test.ts"] });
 });
 
+test("the tool never sets the Auditor marker or posts the Architect command", () => {
+  const src = readFileSync(cli, "utf8") + readFileSync(join(repo, "peaceai/lib/selfchange.ts"), "utf8");
+  assert.doesNotMatch(src, /--add-label|issues\/[^"`]*\/labels"|gh", \["(pr|issue)", "(comment|edit)"|-X", "POST"|--method/);
+  assert.doesNotMatch(src, /"api", "-X"|"api", "--method"/);
+});
+
 test("self-change runs only on this box or a private repo's manual/proposal job, within a minute budget", () => {
   assert.deepEqual(selfChangeAllowedHere({}), { ok: true });
   assert.equal(selfChangeAllowedHere({ GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", GITHUB_EVENT_NAME: "workflow_dispatch" }).reason, "PUBLIC_RUNNER_REFUSED");
@@ -136,9 +142,12 @@ test("promotion is refused without Auditor's label and Architect's command (afte
   const liveFiles = ["peaceai/test/double.test.ts"];
   const approvers = { auditor: ["PeaceG03"], architect: ["PeaceG03"] };
   const label = { label: AUDITOR_LABEL, actor: "PeaceG03", createdAt: "2026-10-10T01:00:00Z" };
-  const cmd = { body: `${PROMOTE_COMMAND} sc-good ${"b".repeat(40)}`, author: "PeaceG03", association: "OWNER", createdAt: "2026-10-10T02:00:00Z" };
+  const cmd = { id: 777, url: "https://github.com/PeaceG03/PeaceAI-Workspace/pull/99#issuecomment-777", body: `${PROMOTE_COMMAND} sc-good ${"b".repeat(40)}`, author: "PeaceG03", association: "OWNER", createdAt: "2026-10-10T02:00:00Z" };
   const d = (r: SelfChangeRecord, labels: any[], comments: any[], files = liveFiles) => promotionDecision(r, files, labels, comments, approvers);
-  assert.deepEqual(d(record(), [label], [cmd]), { ok: true, reasons: [] });
+  assert.deepEqual(d(record(), [label], [cmd]), { ok: true, reasons: [], architectComment: cmd.url });
+  // The command must trace to a real comment: id and a URL ending in that id, on the Workspace repo.
+  for (const bad of [{ id: undefined }, { url: undefined }, { url: "https://github.com/PeaceG03/PeaceAI-Workspace/pull/99#issuecomment-778" }, { url: "https://github.com/someone/fork/pull/99#issuecomment-777" }])
+    assert.deepEqual(d(record(), [label], [{ ...cmd, ...bad }]).reasons, ["ARCHITECT_APPROVAL_MISSING"], JSON.stringify(bad));
   assert.deepEqual(d(record(), [], []).reasons, ["AUDITOR_REVIEW_MISSING", "ARCHITECT_APPROVAL_MISSING"]);
   assert.deepEqual(d(record(), [label], []).reasons, ["ARCHITECT_APPROVAL_MISSING"]);
   assert.deepEqual(d(record(), [], [cmd]).reasons, ["AUDITOR_REVIEW_MISSING"]);
