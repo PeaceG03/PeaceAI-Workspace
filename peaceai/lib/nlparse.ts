@@ -12,6 +12,7 @@
 // repair loop and the blind review exactly like a task written in the canonical phrasing.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanIssueText } from "./taskmap.ts";
 
 export const NL_SCHEMA = "peaceai-nl-model:v1";
 export const FAMILIES = ["object-property", "guard", "array-item", "exported-constant", "try-catch", "union-member", "type-field", "set-literal", "switch-case", "nullish-default"] as const;
@@ -128,7 +129,7 @@ const GRAMMARS: Grammar[] = [
   {
     family: "exported-constant",
     patterns: [
-      r(String.raw`(?:add|create|define|introduce|export|declare) (?:a |an |the )?(?:new )?(?:exported )?(?:constant|const|config value|setting) (?:called |named )?(?<name>${ID}) (?:with (?:the )?value|set to|equal to|=|of|as) (?<value>${LIT}) (?:to|in|into) (?:the file )?(?<file>${FILE})${TESTS}`),
+      r(String.raw`(?:add|create|define|introduce|export|declare) (?:a |an |the )?(?:new )?(?:exported )?(?:constant|const|config value|setting) (?:called |named )?(?<name>${ID}) (?:with (?:the )?value|set to|equal to|=|of|as) (?<value>${LIT}) (?:to|in|into|from) (?:the file )?(?<file>${FILE})${TESTS}`),
       r(String.raw`in (?<file>${FILE}),? (?:add|create|define|introduce|export|declare) (?:a |an |the )?(?:new )?(?:exported )?(?:constant|const|config value|setting) (?:called |named )?(?<name>${ID}) (?:with (?:the )?value|set to|equal to|=|of|as) (?<value>${LIT})${TESTS}`),
       r(String.raw`(?:export|add) (?<name>${ID}) ?= ?(?<value>${LIT}) (?:from|to|in) (?<file>${FILE})${TESTS}`),
     ],
@@ -201,13 +202,16 @@ export function features(text: string): string[] {
   return out;
 }
 
-export function trainNb(examples: readonly { text: string; label: Label }[]): NbModel {
+export function trainNb(examples: readonly { text: string; label: Label }[], keep: (feature: string) => boolean = () => true): NbModel {
   const m: NbModel = { schema: NL_SCHEMA, labels: [...LABELS], docs: {}, tokens: {}, counts: {}, vocab: 0 };
   const vocab = new Set<string>();
   for (const l of LABELS) { m.docs[l] = 0; m.tokens[l] = 0; m.counts[l] = {}; }
   for (const e of examples) {
     m.docs[e.label]! += 1;
-    for (const f of features(e.text)) { m.counts[e.label]![f] = (m.counts[e.label]![f] ?? 0) + 1; m.tokens[e.label]! += 1; vocab.add(f); }
+    for (const f of features(e.text)) {
+      if (!keep(f)) continue;
+      m.counts[e.label]![f] = (m.counts[e.label]![f] ?? 0) + 1; m.tokens[e.label]! += 1; vocab.add(f);
+    }
   }
   m.vocab = vocab.size;
   // Deterministic file: sorted keys.
@@ -239,6 +243,15 @@ export function loadModel(path = join(import.meta.dirname, "../nl/model.json")):
   } catch { return null; }
 }
 
+/** Labeled examples, one JSON object per line: {label, text, expect?}. */
+export type EvalLabel = Label | "plan" | "ambiguous";
+export function readJsonl(path: string, evalLabels = false): { text: string; label: EvalLabel; expect?: string }[] {
+  return readFileSync(path, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l)).map((e) => {
+    if (typeof e.text !== "string" || !(LABELS.includes(e.label) || (evalLabels && (e.label === "plan" || e.label === "ambiguous")))) throw new Error(`bad example in ${path}`);
+    return { text: e.text, label: e.label, ...(typeof e.expect === "string" ? { expect: e.expect } : {}) };
+  });
+}
+
 // ---- parsing
 
 export type Refusal = "EMPTY" | "NO_MODEL" | "NO_FAMILY" | "AMBIGUOUS" | "NOT_SUPPORTED" | "RULE_NOT_APPROVED" | "WIDENS" | "PARTIAL_PLAN" | "TOO_MANY_STEPS" | "BAD_VALUE";
@@ -249,6 +262,13 @@ export type ParseResult =
 
 export interface ParseOptions { model: NbModel | null; approvedKinds: ReadonlySet<string> }
 
+// The last three CANONICAL entries are the M8 learned-rule triggers, in this order.
+const LEARNED_TRIGGERS: { re: RegExp; kind: string; family: Family }[] = [
+  { re: CANONICAL[CANONICAL.length - 3]!, kind: "SET_LITERAL", family: "set-literal" },
+  { re: CANONICAL[CANONICAL.length - 2]!, kind: "ADD_SWITCH_CASE", family: "switch-case" },
+  { re: CANONICAL[CANONICAL.length - 1]!, kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
+];
+
 const TEST_ONLY = /^(?:then |and |also |finally )?(?:add|write|include) (?:a |an |some |focused |unit )*tests?\b[^.]*\.?$/iu;
 
 /** Splits plain wording into clauses: numbered/bulleted lines, sentences, "then", ";". */
@@ -258,8 +278,10 @@ export function clauses(text: string): string[] {
   const units = listed.length >= 2 ? listed.map((l) => l.replace(/^(?:[-*•]|\d{1,2}[.)]|step \d{1,2}[:.)-]?)\s+/i, "")) : [lines.join(" ")];
   const out: string[] = [];
   for (const u of units)
-    for (const piece of u.split(/(?<=[.!?])\s+(?=[A-Z])|;\s*|,?\s+(?:and then|then|after that|afterwards|next|finally,?|also,?)\s+(?=\S)/))
-      if (piece.trim()) out.push(piece.trim().replace(/[.!]+$/, ""));
+    for (const piece of u.split(/(?<=[.!?])\s+(?=[A-Z])|;\s*|,?\s+(?:and then|then|after that|afterwards|next,|finally,?|also,)\s+(?=\S)/)) {
+      const t = piece.trim().replace(/^(?:and then|then|after that|afterwards|next|finally|also),?\s+/i, "").replace(/[.!]+$/, "");
+      if (t) out.push(t);
+    }
   return out;
 }
 
@@ -284,7 +306,7 @@ export function widens(input: string, output: string): boolean {
   const template = new Set("add a an the to with value property object guard that returns when is array exported constant wrap body of in try catch on error union type optional field set case returning switch default step test focused tests empty blank null undefined missing negative zero not finite nan true false".split(" "));
   const inAtoms = atoms(input);
   const lowerIn = new Set([...inAtoms].map((a) => a.toLowerCase()));
-  for (const a of atoms(output)) {
+  for (const a of atoms(output.replace(/^Step \d{1,2}: /gm, ""))) {
     if (template.has(a.toLowerCase())) continue;
     if (!inAtoms.has(a) && !lowerIn.has(a.toLowerCase())) return true;
   }
@@ -315,7 +337,13 @@ function decide(clause: string, opts: ParseOptions): { family: Family; text: str
 export function parseTask(task: { title: string; body: string }, opts: ParseOptions): ParseResult {
   const full = `${task.title}\n\n${task.body}`.trim();
   if (!full) return { status: "unsure", reason: "EMPTY", hint: null };
-  if (isCanonical(full)) return { status: "canonical", objective: full };
+  if (isCanonical(full)) {
+    // A learned-rule trigger is only canonical once that rule is approved; otherwise say so instead.
+    const learned = LEARNED_TRIGGERS.find((t) => t.re.test(full.split("\n").map((l) => l.trim()).filter(Boolean).join("\n")) || full.split("\n").some((l) => t.re.test(l.trim())));
+    const other = CANONICAL.slice(0, CANONICAL.length - LEARNED_TRIGGERS.length).some((re) => re.test(full));
+    if (learned && !other && !opts.approvedKinds.has(learned.kind)) return { status: "unsure", reason: "RULE_NOT_APPROVED", hint: learned.family };
+    return { status: "canonical", objective: full };
+  }
   // The body is the task; a title alone counts when there is no body. "[test] ..." markers are not wording.
   const source = (task.body.trim() || task.title).replace(/^\s*\[test\][^\n]*?(?::|\n|$)/i, (m) => (task.body.trim() ? m : "")).replace(/^\s*\[test\]\s*/i, "").trim();
   const parts = clauses(source);
@@ -386,3 +414,17 @@ export function refusalComment(reason: Refusal, hint: Family | null): string {
   ].join("\n");
 }
 export const isRefusal = (s: string): s is Refusal => Object.prototype.hasOwnProperty.call(REASON_TEXT, s);
+
+// ---- Job A entry point
+
+export type NlDecision = ParseResult | { status: "off" };
+/**
+ * Job A's call. `flag` is vars.PEACEAI_NL_PARSE: "off" is the kill switch (the task text is used unchanged,
+ * as before M10); anything else parses. The issue text is cleaned the same way the engines clean it.
+ */
+export function nlDecision(issue: { title: string; body: string }, flag: string | undefined, approvedKinds: ReadonlySet<string>, model: NbModel | null = loadModel()): NlDecision {
+  if (flag === "off") return { status: "off" };
+  const title = cleanIssueText({ title: issue.title, body: "" });
+  const body = cleanIssueText({ title: "", body: issue.body });
+  return parseTask({ title, body }, { model, approvedKinds });
+}
