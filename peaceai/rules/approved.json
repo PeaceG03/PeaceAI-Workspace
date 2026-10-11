@@ -1,4 +1,39 @@
 {
   "schema": "peaceai-approved-rules:v1",
-  "rules": []
+  "rules": [
+    {
+      "id": "core-add-nullish-default-v2",
+      "sha256": "b072ab94cdfa698ef3479d0445aaee51274a1ae79d3b9bec64e73a9e5e76aa69",
+      "source": "results",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Results/issues/3#issuecomment-6103616307",
+        "commentId": 6103616307,
+        "issue": 3,
+        "repo": "PeaceG03/PeaceAI-Results",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-11T00:09:55Z"
+      },
+      "attestation": {
+        "commit": "2e8f5a7b6ce159a938aaaa4c6de11b933339865f",
+        "path": "rules/approvals/b072ab94cdfa698ef3479d0445aaee51274a1ae79d3b9bec64e73a9e5e76aa69.json"
+      }
+    },
+    {
+      "id": "core-set-literal-v1",
+      "sha256": "1f70027c4a12dbe18b57170b60eb82ee537a238933e6f384cf4e4774a5aa9d87",
+      "source": "results",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Results/issues/1#issuecomment-6102857108",
+        "commentId": 6102857108,
+        "issue": 1,
+        "repo": "PeaceG03/PeaceAI-Results",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-10T22:28:36Z"
+      },
+      "attestation": {
+        "commit": "151b5d72fef4e5633e3f9d6a8c2c670c0aba2c18",
+        "path": "rules/approvals/1f70027c4a12dbe18b57170b60eb82ee537a238933e6f384cf4e4774a5aa9d87.json"
+      }
+    }
+  ]
 }
