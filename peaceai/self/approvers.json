@@ -1,0 +1,6 @@
+{
+  "schema": "peaceai-self-approvers:v1",
+  "note": "Logins whose /auditor-pass (Auditor) and /promote-self-change (Architect) comments count for self-change promotion. Agents act under Peace's account under delegation; the pass must come first, and both must name the change id and the PR's current head SHA (the tested candidate).",
+  "auditor": ["PeaceG03"],
+  "architect": ["PeaceG03"]
+}
