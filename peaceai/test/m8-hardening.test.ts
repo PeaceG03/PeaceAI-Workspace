@@ -57,6 +57,7 @@ exit 0
     { id: 1, name: "leak-check", status: "completed", conclusion: "failure" },
     { id: 5, name: "leak-check", status: "completed", conclusion: "success" },
     { id: 3, name: "tamper-proof", status: "completed", conclusion: "success" },
+    { id: 6, name: "tests", status: "completed", conclusion: "success" },
     { id: 4, name: "core-text backstop", status: "completed", conclusion: "skipped" },
   ] }));
   chmodSync(join(bin, "gh"), 0o755);
@@ -79,7 +80,7 @@ function prFixture() {
   const run = (extra: Record<string, string> = {}) => spawnSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), [join(dir, "msg.txt")], {
     cwd: work, encoding: "utf8",
     env: { ...process.env, PATH: `${fakeGhForPr(dir)}:${process.env.PATH}`, GH_TOKEN: "dummy", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", GITHUB_OUTPUT: join(dir, "out"),
-      APPROVE_PUSH_KEY: "not-a-real-key", PEACEAI_PUSH_REMOTE_FOR_TESTS: origin, PEACEAI_CHECKS_INTERVAL: "0", PEACEAI_CHECKS_TIMEOUT: "2", ...extra },
+      PEACEAI_PUSH_REMOTE_FOR_TESTS: origin, PEACEAI_CHECKS_INTERVAL: "0", PEACEAI_CHECKS_TIMEOUT: "2", ...extra },
   });
   return { dir, origin, work, mainBefore, run };
 }
@@ -100,33 +101,28 @@ test("approve-rule-pr.sh: pushes only a peaceai-approve-rule/ branch changing on
     assert.match(git(f.origin, "log", "-1", "--format=%an <%ae>%n%B", branch), /^github-actions\[bot\] <41898282\+github-actions\[bot\]@users\.noreply\.github\.com>\napprove learned rule: core-set-literal-v1[\s\S]*Approval: https:\/\/github\.com\/PeaceG03\/PeaceAI-Results\/issues\/1#issuecomment-555/);
     const log = readFileSync(join(f.dir, "gh.log"), "utf8");
     const calls = log.trim().split("\n").filter((l) => /^(pr|workflow|api) /.test(l)).map((l) => l.split(" ").slice(0, 2).join(" "));
-    assert.deepEqual(calls, ["pr create", "api repos/PeaceG03/PeaceAI-Workspace/commits/" + git(f.origin, "rev-parse", branch).trim() + "/check-runs?per_page=100", "pr merge", "pr view"]);
-    assert.match(log, /pr merge 77 .*--squash .*--match-head-commit [0-9a-f]{40}/);
-    assert.ok(!/workflow run|pr checks/.test(log), "no dispatch, no gh pr checks");
+    const head = git(f.origin, "rev-parse", branch).trim();
+    assert.deepEqual(calls, ["pr create", "workflow run", "workflow run", "api repos/PeaceG03/PeaceAI-Workspace/commits/" + head + "/check-runs?per_page=100", "pr merge", "pr view"]);
+    // The required checks are started by workflow_dispatch on the approval branch (the token's one allowed trigger).
+    assert.match(log, new RegExp(`workflow run leak-check\\.yml --repo PeaceG03/PeaceAI-Workspace --ref ${branch.replace("/", "\\/")}`));
+    assert.match(log, new RegExp(`workflow run ci\\.yml --repo PeaceG03/PeaceAI-Workspace --ref ${branch.replace("/", "\\/")}`));
+    assert.match(log, new RegExp(`pr merge 77 .*--squash .*--match-head-commit ${head}`));
+    assert.ok(!/pr checks/.test(log), "no gh pr checks");
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test("approve-rule-pr.sh: the head is re-pushed with the same tree (starts pull_request checks); one commit ahead", () => {
+test("approve-rule-pr.sh: one token push of one commit; no deploy key, no SSH, no environment", () => {
   const f = prFixture();
   try {
     writeFileSync(join(f.work, "peaceai/rules/approved.json"), JSON.stringify({ schema: APPROVED_SCHEMA, rules: [coreEntry("c".repeat(40))] }));
     assert.equal(f.run().status, 0);
     const branch = git(f.origin, "for-each-ref", "--format=%(refname:short)", "refs/heads").trim().split("\n").find((b) => b !== "main")!;
-    assert.equal(git(f.work, "rev-parse", "HEAD").trim(), git(f.origin, "rev-parse", branch).trim(), "the remote head is the re-pushed commit");
+    assert.equal(git(f.work, "rev-parse", "HEAD").trim(), git(f.origin, "rev-parse", branch).trim());
     assert.equal(git(f.origin, "rev-list", "--count", `main..${branch}`).trim(), "1");
-  } finally { rmSync(f.dir, { recursive: true, force: true }); }
-});
-
-test("approve-rule-pr.sh: fails closed with a clear message, before any commit or push, when the key secret is missing", () => {
-  const f = prFixture();
-  try {
-    writeFileSync(join(f.work, "peaceai/rules/approved.json"), JSON.stringify({ schema: APPROVED_SCHEMA, rules: [coreEntry("c".repeat(40))] }));
-    const r = f.run({ APPROVE_PUSH_KEY: "" });
-    assert.equal(r.status, 3);
-    assert.match(r.stderr, /APPROVE PUSH KEY MISSING: secret PEACEAI_APPROVE_PUSH_KEY \(environment peaceai-approve-push\) is not set/);
-    assert.deepEqual(git(f.origin, "for-each-ref", "--format=%(refname:short)", "refs/heads").trim().split("\n"), ["main"]);
-    assert.equal(git(f.work, "rev-parse", "--abbrev-ref", "HEAD").trim(), "main");
-    assert.ok(!existsSync(join(f.dir, "gh.log")), "no PR, no API call");
+    const script = readFileSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), "utf8");
+    assert.doesNotMatch(script, /APPROVE_PUSH_KEY|DEPLOY_KEY|with-deploy-key|git@github\.com|ssh/i);
+    assert.match(script, /x-access-token:%s' "\$GH_TOKEN"/);
+    assert.match(script, /REQUIRED_CHECKS="\$\{PEACEAI_REQUIRED_CHECKS:-leak-check tamper-proof tests\}"/);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
@@ -164,8 +160,8 @@ test("workflow: nothing pushes to main; the sync verifies core, then re-verifies
   const wf = readFileSync(join(repo, ".github/workflows/peace-approve-rule.yml"), "utf8");
   const pr = readFileSync(join(repo, "peaceai/bin/approve-rule-pr.sh"), "utf8");
   for (const text of [wf, pr]) assert.ok(!/HEAD:main|push[^\n]*(\borigin main\b|refs\/heads\/main)/.test(text), "no direct push to main");
-  assert.equal(pr.split("\n").filter((l) => !l.startsWith("#") && /git push/.test(l)).length, 1, "one push function, to the approval branch");
-  assert.match(pr, /git push -q "\$@" "\$remote" "HEAD:refs\/heads\/\$branch"/);
+  assert.equal(pr.split("\n").filter((l) => !l.startsWith("#") && /\bgit\b.*\bpush\b/.test(l)).length, 1, "one push, to the approval branch");
+  assert.match(pr, /\bpush -q "\$remote" "HEAD:refs\/heads\/\$branch"/);
   assert.match(pr, /case "\$branch" in peaceai-approve-rule\/\*\)/);
   const job = (name: string) => {
     const rest = wf.slice(wf.indexOf(`\n  ${name}:\n`) + 1);
@@ -184,7 +180,7 @@ test("workflow: nothing pushes to main; the sync verifies core, then re-verifies
   let at = -1;
   for (const s of order) { const i = reverify.indexOf(s); assert.ok(i > at, `${s} in order`); at = i; }
   assert.ok(!/approve-rule-pr\.sh|contents: write|PEACEAI_APPROVE_PUSH_KEY/.test(reverify));
-  assert.match(land, /environment: peaceai-approve-push/);
+  assert.doesNotMatch(land, /environment:|secrets\./);
   assert.match(land, /needs: \[workspace, results-reverify\]/);
   assert.match(land, /needs\.results-reverify\.outputs\.changed == 'true'/);
   assert.ok(land.indexOf("check-approved-list.ts") < land.indexOf("approve-rule-pr.sh"));
@@ -341,15 +337,36 @@ test("check-approved-list.ts: rejects a core entry without a valid attestation r
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("key-proof-approve-push.sh: fails closed without a key; checks push-branch and push-main; never tries to delete main", () => {
-  const script = join(repo, "peaceai/bin/key-proof-approve-push.sh");
-  const r = spawnSync(script, [], { encoding: "utf8", env: { ...process.env, APPROVE_PUSH_KEY: "" } });
-  assert.equal(r.status, 3);
-  assert.match(r.stderr, /APPROVE PUSH KEY MISSING/);
+test("push-proof-main.sh: PASS only when main rejects the token's empty-commit push; FAIL if main accepts; never deletes", () => {
+  const script = join(repo, "peaceai/bin/push-proof-main.sh");
   const text = readFileSync(script, "utf8");
   assert.match(text, /"HEAD:refs\/heads\/main"/);
-  assert.doesNotMatch(text, /":refs\/heads\/main"/);
-  assert.doesNotMatch(text, /\(g\)/);
-  assert.match(text, /peaceai-approve-rule\/key-proof-/);
-  assert.match(text, /FAIL \(f\) !!! PUSH TO main SUCCEEDED/);
+  assert.doesNotMatch(text, /":refs\/heads\/main"|--delete|push -d/);
+  assert.doesNotMatch(text, /APPROVE_PUSH_KEY|DEPLOY_KEY|with-deploy-key|git@github\.com/);
+  for (const protectedMain of [true, false]) {
+    const dir = scratch();
+    try {
+      const origin = join(dir, "origin.git");
+      git(dir, "init", "-q", "--bare", "-b", "main", origin);
+      const work = join(dir, "w");
+      git(dir, "clone", "-q", origin, work);
+      writeFileSync(join(work, "README.md"), "x\n");
+      commit(work, "base");
+      git(work, "push", "-q", "origin", "HEAD:main");
+      const before = git(origin, "rev-parse", "main").trim();
+      if (protectedMain) {
+        writeFileSync(join(origin, "hooks/pre-receive"), "#!/bin/sh\nwhile read o n r; do [ \"$r\" = refs/heads/main ] && { echo \"error: GH006: Protected branch update failed for refs/heads/main.\" >&2; exit 1; }; done; exit 0\n");
+        chmodSync(join(origin, "hooks/pre-receive"), 0o755);
+      }
+      const r = spawnSync(script, [], { encoding: "utf8", env: { ...process.env, GH_TOKEN: "dummy", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", PEACEAI_PUSH_REMOTE_FOR_TESTS: origin } });
+      if (protectedMain) {
+        assert.equal(r.status, 0, r.stdout + r.stderr);
+        assert.match(r.stdout, /PASS push to main rejected: .*Protected branch update failed/);
+        assert.equal(git(origin, "rev-parse", "main").trim(), before);
+      } else {
+        assert.equal(r.status, 1);
+        assert.match(r.stdout, /FAIL !!! PUSH TO main SUCCEEDED/);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });
