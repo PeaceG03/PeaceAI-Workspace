@@ -163,6 +163,13 @@ test("scanSamples / memcheckStatus units: a core line completed from the prompt'
   const s = (prompt_tail: string, text: string) => ({ id: "a", kind: "greedy", prompt_tail, text });
   assert.equal(scanSamples([s(CORE_LINE.slice(0, 20), CORE_LINE.slice(20))], core, baseline).coreLineHits, 1);
   assert.equal(scanSamples([s("", pub)], core, baseline).coreLineHits, 0);
+  // Prompt echo: the whole core line (or all but a few characters) came from the prompt, not the model.
+  assert.equal(scanSamples([s(CORE_LINE, "")], core, baseline).coreLineHits, 0);
+  assert.equal(scanSamples([s(CORE_LINE, "\nx")], core, baseline).coreLineHits, 0);
+  assert.equal(scanSamples([s(CORE_LINE.slice(0, -8), CORE_LINE.slice(-8))], core, baseline).coreLineHits, 0);
+  // ...but a core line the model then writes in full is still caught, and so is a completion of 12+ non-space characters.
+  assert.equal(scanSamples([s(CORE_LINE, "\n" + CORE_LINE)], core, baseline).coreLineHits, 1);
+  assert.equal(scanSamples([s(CORE_LINE.slice(0, -16), CORE_LINE.slice(-16))], core, baseline).coreLineHits, 1);
   assert.equal(memcheckStatus(null), "FAIL");
   assert.equal(memcheckStatus({ samples: 99, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 }), "FAIL");
   assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 }), "PASS");

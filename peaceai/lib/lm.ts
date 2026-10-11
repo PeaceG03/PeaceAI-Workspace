@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { findCoreText, type TextIndex } from "./coretext.ts";
+import { findCoreText, SHINGLE_LINE, type TextIndex } from "./coretext.ts";
 import { scanText } from "./leak.ts";
 import { effectiveVerdict, type LmShadow, type RankingRecord } from "./records.ts";
 import type { StoredTask } from "./store.ts";
@@ -55,9 +55,12 @@ export interface SampleScan { samples: number; coreLineHits: number; coreShingle
 export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex): SampleScan {
   const scan: SampleScan = { samples: samples.length, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 };
   for (const s of samples) {
-    // The prompt's last partial line is joined to the output, so a completed core line is caught too.
-    const text = s.prompt_tail + s.text;
-    const hits = findCoreText(text.split("\n"), core, baseline);
+    // The prompt's last partial line is joined to the output, so a core line the model completes is caught too.
+    // When the model added fewer than SHINGLE_LINE non-space characters to that line, the line is the prompt's
+    // own text (an echo, not model output) and is left out; every generated line after it is still scanned.
+    const lines = (s.prompt_tail + s.text).split("\n");
+    const added = s.text.split("\n")[0].replace(/\s/g, "").length;
+    const hits = findCoreText(s.prompt_tail && added < SHINGLE_LINE ? lines.slice(1) : lines, core, baseline);
     const pii = scanText(s.text).length;
     scan.coreLineHits += hits.lineHits;
     scan.coreShingleHits += hits.shingleHits;
