@@ -1,0 +1,41 @@
+{"label":"array-item","text":"Add \"pdf\" to EXPORT_KINDS","expect":"Add \"pdf\" to the array EXPORT_KINDS"}
+{"label":"array-item","text":"Please append 'html' to the list EXPORT_KINDS.","expect":"Add 'html' to the array EXPORT_KINDS"}
+{"label":"array-item","text":"EXPORT_KINDS needs to contain \"json\", with a test","expect":"Add \"json\" to the array EXPORT_KINDS, with focused tests."}
+{"label":"array-item","text":"Let EXPORT_KINDS also include \"zip\"","expect":"Add \"zip\" to the array EXPORT_KINDS"}
+{"label":"union-member","text":"Severity should also accept \"critical\"","expect":"Add \"critical\" to the union type Severity"}
+{"label":"union-member","text":"Allow \"fatal\" as a new value of the union type Severity","expect":"Add \"fatal\" to the union type Severity"}
+{"label":"union-member","text":"Let the type Severity accept 'debug'","expect":"Add 'debug' to the union type Severity"}
+{"label":"union-member","text":"Include \"notice\" in the type Severity and add tests","expect":"Add \"notice\" to the union type Severity, with focused tests."}
+{"label":"object-property","text":"Give LIMITS a key timeoutMs with value 3000","expect":"Add property timeoutMs with value 3000 to object LIMITS"}
+{"label":"object-property","text":"The object LIMITS should get a property maxRetries set to 5","expect":"Add property maxRetries with value 5 to object LIMITS"}
+{"label":"object-property","text":"Put a new key label = \"main\" into the LIMITS object","expect":"Add property label with value \"main\" to object LIMITS"}
+{"label":"object-property","text":"Please add setting strict as true to the config LIMITS","expect":"Add property strict with value true to object LIMITS"}
+{"label":"type-field","text":"Give the type Profile an optional field email of type string","expect":"Add an optional field email of type string to type Profile"}
+{"label":"type-field","text":"Profile should have a field age of type number","expect":"Add a field age of type number to type Profile"}
+{"label":"type-field","text":"Declare an optional property bio typed as string on the type Profile","expect":"Add an optional field bio of type string to type Profile"}
+{"label":"type-field","text":"Add a member accent of type string to the Theme type, with focused tests","expect":"Add a field accent of type string to type Theme, with focused tests."}
+{"label":"exported-constant","text":"Create a constant MAX_PAGES set to 50 in src/config.ts","expect":"Add an exported constant MAX_PAGES with value 50 to src/config.ts"}
+{"label":"exported-constant","text":"In src/config.ts, define a constant MAX_BATCH_SIZE equal to 25","expect":"Add an exported constant MAX_BATCH_SIZE with value 25 to src/config.ts"}
+{"label":"exported-constant","text":"Export a new const READ_API_PAGE_LIMIT of 50 from src/read-api.ts","expect":"Add an exported constant READ_API_PAGE_LIMIT with value 50 to src/read-api.ts"}
+{"label":"exported-constant","text":"Introduce a constant named ET_MINUTES_PER_HOUR with the value 60 in src/et-time.ts and write tests","expect":"Add an exported constant ET_MINUTES_PER_HOUR with value 60 to src/et-time.ts, with focused tests."}
+{"label":"guard","text":"Make parseQuantity return 0 when raw is empty","expect":"Add a guard to parseQuantity that returns 0 when raw is empty"}
+{"label":"guard","text":"If raw is blank, parseQuantity should return 0","expect":"Add a guard to parseQuantity that returns 0 when raw is blank"}
+{"label":"guard","text":"parseQuantity should immediately return 0 if raw is less than zero","expect":"Add a guard to parseQuantity that returns 0 when raw is negative"}
+{"label":"guard","text":"Add a check to parseQuantity that returns 0 when the input raw is not a number","expect":"Add a guard to parseQuantity that returns 0 when raw is nan"}
+{"label":"try-catch","text":"Make readProfile return null on any error","expect":"Wrap the body of readProfile in try/catch that returns null on error"}
+{"label":"try-catch","text":"readProfile should return null instead of throwing","expect":"Wrap the body of readProfile in try/catch that returns null on error"}
+{"label":"try-catch","text":"Catch all exceptions in readProfile and return null","expect":"Wrap the body of readProfile in try/catch that returns null on error"}
+{"label":"try-catch","text":"Surround the function readProfile with a try/catch which returns null if it fails","expect":"Wrap the body of readProfile in try/catch that returns null on error"}
+{"label":"set-literal","text":"Change name in src/theme.ts to \"classic\"","expect":"REFUSE:RULE_NOT_APPROVED"}
+{"label":"nullish-default","text":"Default opts.kinds to [] in listKinds","expect":"REFUSE:RULE_NOT_APPROVED"}
+{"label":"plan","text":"First give the type Profile an optional field locale of type string, then give GUEST a property locale with value \"en\", and add a test.","expect":"REFUSE:PARTIAL_PLAN"}
+{"label":"plan","text":"- Give the type Profile an optional field locale of type string\n- Give GUEST a key locale with value \"en\"\n- add a test","expect":"Step 1: Add an optional field locale of type string to type Profile\nStep 2: Add property locale with value \"en\" to object GUEST\nStep 3: add a test"}
+{"label":"plan","text":"Add \"pdf\" to EXPORT_KINDS. Then make readProfile return null on any error.","expect":"Step 1: Add \"pdf\" to the array EXPORT_KINDS\nStep 2: Wrap the body of readProfile in try/catch that returns null on error"}
+{"label":"none","text":"Speed up the review comment job","expect":"REFUSE"}
+{"label":"none","text":"Remove the try/catch from readProfile","expect":"REFUSE"}
+{"label":"none","text":"Add a dark mode to the dashboard","expect":"REFUSE"}
+{"label":"none","text":"Clean up the config file","expect":"REFUSE"}
+{"label":"none","text":"Delete \"pdf\" from EXPORT_KINDS","expect":"REFUSE"}
+{"label":"none","text":"Make the tests pass","expect":"REFUSE"}
+{"label":"none","text":"Add logging everywhere","expect":"REFUSE"}
+{"label":"ambiguous","text":"Add \"critical\" to Severity","expect":"REFUSE:AMBIGUOUS"}

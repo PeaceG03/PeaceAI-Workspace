@@ -1,7 +1,7 @@
 // Job A: generate candidate diffs with the native kernel bundle. Prints counts only.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -15,6 +15,7 @@ import { indexBoost, selectSources } from "../lib/sources.ts";
 import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
+import { nlDecision } from "../lib/nlparse.ts";
 
 const MAX_CANDIDATES = 5;
 const MAX_CALLS = 40;
@@ -24,6 +25,12 @@ const outDir = process.env.PEACEAI_OUT_DIR;
 const repo = process.env.PEACEAI_WORKSPACE_DIR ?? process.cwd();
 if (!bundle || !outDir) throw new Error("PEACEAI_KERNEL_BUNDLE and PEACEAI_OUT_DIR are required");
 
+function writeSummary(summary: object): void {
+  writeFileSync(join(outDir!, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+}
+const writeOutput = (o: Record<string, string>) => {
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(o).map(([k, v]) => `${k}=${v}\n`).join(""));
+};
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
@@ -41,12 +48,37 @@ if (!targetConfig) throw new Error("target has no scope config");
 const scope = scopeOf(targetConfig);
 
 const fromFile = process.env.ISSUE_JSON ? JSON.parse(readFileSync(process.env.ISSUE_JSON, "utf8")) : null;
-const task = {
+const issueTask = {
   title: String(fromFile?.title ?? process.env.ISSUE_TITLE ?? ""),
   body: String(fromFile?.body ?? process.env.ISSUE_BODY ?? ""),
 };
 const issueNumber = String(fromFile?.number ?? process.env.ISSUE_NUMBER ?? "local").replace(/[^0-9a-z-]/gi, "");
 const taskId = `workspace-issue-${issueNumber}`;
+
+const tooling = resolve(import.meta.dirname, "../..");
+const readSpecs = (dir: string): unknown[] =>
+  existsSync(dir)
+    ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => {
+        try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return { id: f }; }
+      })
+    : [];
+const specs = [
+  ...readSpecs(process.env.PEACEAI_RULES_DIR ?? join(tooling, "peaceai/rules/learned")),
+  ...(process.env.PEACEAI_CORE_DIR ? readSpecs(join(process.env.PEACEAI_CORE_DIR, "packages/coding-kernel/learned-rules")) : []),
+];
+const admissions = admitRules(specs, loadApprovedList(process.env.PEACEAI_APPROVED_LIST ?? join(tooling, "peaceai/rules/approved.json")));
+
+// M10: plain-language tasks. Canonical wording passes unchanged; plain wording becomes the canonical plan;
+// anything unclear is refused here (no candidates, enum-only outputs) and the issue gets the phrasing list.
+const nl = nlDecision(issueTask, process.env.PEACEAI_NL_PARSE, new Set(admissions.filter((a) => a.decision === "APPROVED" && a.spec).map((a) => a.spec!.kind)));
+writeOutput({ nl: nl.status, nl_reason: nl.status === "unsure" ? nl.reason : "", nl_hint: nl.status === "unsure" ? nl.hint ?? "" : "", nl_steps: nl.status === "parsed" ? String(nl.steps.length) : "" });
+console.log(`nl=${nl.status}${nl.status === "unsure" ? ` reason=${nl.reason}` : nl.status === "parsed" ? ` steps=${nl.steps.length} families=${nl.steps.map((s) => s.family).join(",")}` : ""}`);
+if (nl.status === "unsure") {
+  mkdirSync(join(outDir, "candidates"), { recursive: true });
+  writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
+  process.exit(0);
+}
+const task = nl.status === "parsed" ? { title: "", body: nl.objective } : issueTask;
 
 const candidatesForContext = tracked
   .filter((path) => scope.isSource(path) && !scope.isDenied(path))
@@ -174,18 +206,6 @@ outer: for (const variant of planSteps ? [] : variants) {
 // M8: learned edit rules. Public rules live in this repository, core-mined rules in core. Each one runs
 // only when the hash-pinned approved list names its id with the exact content hash; anything else, or a
 // missing/corrupt list, refuses it (no candidate). The list path is fixed except for local tests.
-const tooling = resolve(import.meta.dirname, "../..");
-const readSpecs = (dir: string): unknown[] =>
-  existsSync(dir)
-    ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => {
-        try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return { id: f }; }
-      })
-    : [];
-const specs = [
-  ...readSpecs(process.env.PEACEAI_RULES_DIR ?? join(tooling, "peaceai/rules/learned")),
-  ...(process.env.PEACEAI_CORE_DIR ? readSpecs(join(process.env.PEACEAI_CORE_DIR, "packages/coding-kernel/learned-rules")) : []),
-];
-const admissions = admitRules(specs, loadApprovedList(process.env.PEACEAI_APPROVED_LIST ?? join(tooling, "peaceai/rules/approved.json")));
 let learnedCandidates = 0;
 for (const a of planSteps ? [] : admissions) {
   if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
@@ -242,5 +262,5 @@ const summary = {
     diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
   })),
 };
-writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+writeSummary(summary);
 console.log(`sources=${sources.length} variants=${variants.length} plan=${planStatus} calls=${calls} candidates=${candidates.length} scope_rejected=${scopeRejected}`);

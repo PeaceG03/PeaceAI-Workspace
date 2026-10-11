@@ -420,6 +420,16 @@ Resolved files, the files related to them, and keyword hits get priority in the 
 edit owners. The index lives only in Job A's memory (logs show counts), and is built only after the
 visibility re-check, so a private target fails closed before any indexing.
 
+## Plain-language tasks (M10)
+
+Job A parses the task wording before anything else (`peaceai/lib/nlparse.ts`, called from `generate.ts`):
+
+- **Canonical wording** (any phrasing in "Writing tasks" above) passes through unchanged.
+- **Plain wording** goes through a deterministic slot grammar per edit family, which pulls out names, literals and paths. A small from-scratch naive Bayes classifier then picks between families (`peaceai/nl/model.json`, masked word uni/bigrams, no pretrained anything). The result is rendered into the canonical phrase, or into a `Step N:` plan for listed steps or sentences joined by "then". That plan then goes through the scope check, gate, sandboxed tests, repair loop and blind review like any other task.
+- **Fail closed.** The parser returns `unsure` instead of guessing in any of these cases: no grammar matches; the classifier can't separate two families; the classifier says the request isn't a supported edit; a learned rule isn't approved; one step of a plan doesn't parse; the plan has more than 6 steps; or the plan would name anything (an identifier, value or path) that isn't in the task text. Job A then produces no candidates. The issue gets a fixed comment from `nl-refusal.ts` with the reason code and the supported phrasings. The only inputs to that comment are two enums, it never contains task text, and it is leak-scanned.
+- **Training:** `peaceai/bin/nl-train.ts [extra.jsonl ...]` reads the committed public set (`peaceai/nl/data/builder-train.jsonl`) plus the phrasing list. Extra labeled files are task texts and commit subjects kept on the box, and they add counts only for features the public set already has. So `model.json` holds no word that isn't already public. `peaceai/bin/nl-eval.ts` reports held-out accuracy (`peaceai/nl/data/builder-heldout.jsonl`; set `NL_ISSUES=` to also run on real task issues), printing counts only.
+- **Kill switch:** set the variable `PEACEAI_NL_PARSE=off` to use the task text unchanged, as before M10.
+
 ## Layout
 
 - `src/`: the code tasks change, with its tests.
