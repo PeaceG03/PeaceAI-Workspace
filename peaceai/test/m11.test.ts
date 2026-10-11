@@ -168,7 +168,9 @@ test("rollback is one step: a new branch that reverts the promotion and restores
     const merge = git(dir, "rev-parse", "HEAD");
     const promoted = record({ status: "promoted", paths: ["peaceai/lib/double.ts", "peaceai/lib/extra.ts"], promotion: { decision: { ok: true, reasons: [] }, mergeSha: merge } });
     writeFileSync(join(out, "r.json"), JSON.stringify(promoted));
-    const r = spawnSync(tsx, [cli, "rollback", "--record", join(out, "r.json"), "--repo", dir], { cwd: repo, encoding: "utf8" });
+    // (A fixture repo only; the env marks this as off Actions, as on the box.)
+    const boxEnv = { ...process.env, GITHUB_ACTIONS: "" };
+    const r = spawnSync(tsx, [cli, "rollback", "--record", join(out, "r.json"), "--repo", dir], { cwd: repo, encoding: "utf8", env: boxEnv });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, new RegExp(`branch=peaceai-self-rollback/sc-good reverts=${merge.slice(0, 12)}`));
     assert.equal(readFileSync(join(dir, "peaceai/lib/double.ts"), "utf8"), before);
@@ -176,7 +178,7 @@ test("rollback is one step: a new branch that reverts the promotion and restores
     assert.equal(git(dir, "rev-parse", "--abbrev-ref", "HEAD"), "peaceai-self-rollback/sc-good");
     // Not promoted: nothing to roll back.
     writeFileSync(join(out, "n.json"), JSON.stringify(record()));
-    const n = spawnSync(tsx, [cli, "rollback", "--record", join(out, "n.json"), "--repo", dir], { cwd: repo, encoding: "utf8" });
+    const n = spawnSync(tsx, [cli, "rollback", "--record", join(out, "n.json"), "--repo", dir], { cwd: repo, encoding: "utf8", env: boxEnv });
     assert.equal(n.status, 2);
     assert.match(n.stdout, /NOT_PROMOTED/);
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(out, { recursive: true, force: true }); }
