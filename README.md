@@ -430,6 +430,16 @@ Job A parses the task wording before anything else (`peaceai/lib/nlparse.ts`, ca
 - **Training:** `peaceai/bin/nl-train.ts [extra.jsonl ...]` reads the committed public set (`peaceai/nl/data/builder-train.jsonl`) plus the phrasing list. Extra labeled files are task texts and commit subjects kept on the box, and they add counts only for features the public set already has. So `model.json` holds no word that isn't already public. `peaceai/bin/nl-eval.ts` reports held-out accuracy (`peaceai/nl/data/builder-heldout.jsonl`; set `NL_ISSUES=` to also run on real task issues), printing counts only.
 - **Kill switch:** set the variable `PEACEAI_NL_PARSE=off` to use the task text unchanged, as before M10.
 
+## Self-change sandbox (M11)
+
+PeaceAI may propose a change to its own code, but it never edits the live PeaceAI in place.
+`peaceai/bin/self-change.ts` (this box, or a manually started job in a private repo; it refuses the public Workspace runners and timers, and each run has a minute budget of at most 30):
+
+- **propose:** checks the diff against the protected set, makes a separate clone at the base commit, applies the change there, and runs the **live version's existing test suite**. That's the base commit's `peaceai/test/*.test.ts`, restored from the base so the candidate can't alter it. Any new tests under `peaceai/self-tests/` run too. It writes a record for private Results.
+- **Protected set** (`peaceai/lib/selfchange.ts`): workflows and approval workflows, hooks, dependency and build config, the rule list, the live tests, the gate, leak, scope, approval and scan tools, the model and its memcheck, and the self-change code and records. These are enforced by path (both sides of a rename or copy; symlinks, mode changes, deletes, copies and binaries are refused) and by content (added lines that name those paths, credentials, approval commands, gate functions or dynamic code loading).
+- **decide:** promotion needs a clean check, the live suite passing against the candidate, new tests passing, Auditor's `self-change:auditor-passed` label, and after it Architect's `/promote-self-change <id> <candidate sha>` comment. Promotion is then a normal PR through the required checks; Builder stays the coder.
+- **rollback:** one step. It creates a new branch that reverts the promotion merge and checks that every touched path is back to its pre-promotion content.
+
 ## Layout
 
 - `src/`: the code tasks change, with its tests.

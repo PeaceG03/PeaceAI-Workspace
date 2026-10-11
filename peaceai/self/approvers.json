@@ -1,0 +1,6 @@
+{
+  "schema": "peaceai-self-approvers:v1",
+  "note": "Logins whose label (Auditor) and command comment (Architect) count for self-change promotion. Agents act under Peace's account under delegation; the label must come first and the command must name the change id and exact candidate sha.",
+  "auditor": ["PeaceG03"],
+  "architect": ["PeaceG03"]
+}
