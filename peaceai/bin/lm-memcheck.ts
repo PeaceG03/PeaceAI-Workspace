@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
+import { buildSubstringIndex } from "../lib/substr.ts";
 import { MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
 
@@ -40,10 +41,12 @@ let reason = "";
 const r = before ? runInfer("sample", modelDir, { prompts, seed: 9, prompt_tokens: 64, new_tokens: 128, temperature: 0.8 }, ["--unverified", "--threads", process.env.PEACEAI_LM_THREADS ?? "8"]) : { ok: false as const, reason: "MODEL_MISSING" };
 if (!r.ok) reason = r.reason;
 else {
-  const core = indexGitTree(coreDir).text;
+  const tree = indexGitTree(coreDir, () => true, true);
+  const core = tree.text;
+  const coreRaw = buildSubstringIndex(tree.raw ?? []);
   const baseline = emptyIndex();
   for (const m of manifest) if (m.source !== CORE_SOURCE) addText(baseline, texts.get(m.doc) ?? "");
-  scan = scanSamples(r.response.samples as Sample[], core, baseline);
+  scan = scanSamples(r.response.samples as Sample[], core, baseline, (tree.raw ?? []).length ? coreRaw : null);
 }
 const after = modelFileShas(modelDir);
 if (JSON.stringify(before) !== JSON.stringify(after)) { scan = null; reason = "FILES_CHANGED"; }
@@ -56,9 +59,9 @@ const report = {
   model: r.ok ? r.response.model : null,
   prompts: counts,
   settings: { promptTokens: 64, newTokens: 128, decoding: ["greedy", "sampled t=0.8 top-k 40 seed 9"], minSamples: 100 },
-  scanners: ["core-text (hashed long lines and 4-line shingles; public corpus as baseline)", "personal-info (leak.ts)"],
+  scanners: ["core-text (hashed long lines and 4-line shingles; public corpus as baseline)", "core-substring (any 32+ character run of generated text found in core; no baseline)", "personal-info (leak.ts)"],
   scan,
 };
 writeFileSync(join(modelDir, "memcheck.json"), JSON.stringify(report, null, 2) + "\n");
-console.log(`memcheck status=${status} samples=${scan?.samples ?? 0} core_line_hits=${scan?.coreLineHits ?? "-"} core_shingle_hits=${scan?.coreShingleHits ?? "-"} personal_info=${scan?.personalInfo ?? "-"}${reason ? ` reason=${reason}` : ""}`);
+console.log(`memcheck status=${status} samples=${scan?.samples ?? 0} core_line_hits=${scan?.coreLineHits ?? "-"} core_shingle_hits=${scan?.coreShingleHits ?? "-"} core_substring_hits=${scan?.coreSubstringHits ?? "-"} personal_info=${scan?.personalInfo ?? "-"}${reason ? ` reason=${reason}` : ""}`);
 process.exit(status === "PASS" ? 0 : 1);
