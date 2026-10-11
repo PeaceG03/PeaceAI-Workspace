@@ -2,6 +2,7 @@
 // fail-closed memorization check, fail-closed model loading, flags off by default, template gap fill
 // accepted only among Job A's own options, LM promotion rule, isolation (no outside model, no M8 rules).
 import assert from "node:assert/strict";
+import { buildSubstringIndex, countCoreSubstrings } from "../lib/substr.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -100,7 +101,7 @@ test("memcheck PASS binds the exact file hashes; scoring works only then; a chan
   assert.match(refused.stderr, /MEMCHECK_REQUIRED/);
   const m = memcheck(model, corpus, core);
   assert.equal(m.status, 0, m.stdout + m.stderr);
-  assert.match(m.stdout, /memcheck status=PASS samples=116 core_line_hits=0 core_shingle_hits=0 personal_info=0/);
+  assert.match(m.stdout, /memcheck status=PASS samples=116 core_line_hits=0 core_shingle_hits=0 core_substring_hits=0 personal_info=0/);
   const v = verifyModelDir(model);
   assert.ok(v.ok);
   const ok = spawnSync(py, [join(repo, "peaceai/model/infer.py"), "score", "--model", model, "--request", req, "--response", join(dir, "res.json")], { encoding: "utf8" });
@@ -141,7 +142,8 @@ test("memcheck FAILS closed: core text in output, personal info in output, too f
   const email = ["someone", "gmail.com"].join("@");
   for (const [samples, pattern] of [
     [many(`${CORE_LINE}\n`), /status=FAIL samples=120 core_line_hits=1/],
-    [many(`contact ${email}\n`), /status=FAIL samples=120 core_line_hits=0 core_shingle_hits=0 personal_info=1/],
+    [many(`zz(${CORE_LINE.slice(10, 50)})\n`), /status=FAIL samples=120 core_line_hits=0 core_shingle_hits=0 core_substring_hits=1 personal_info=0/],
+    [many(`contact ${email}\n`), /status=FAIL samples=120 core_line_hits=0 core_shingle_hits=0 core_substring_hits=0 personal_info=1/],
     [JSON.stringify({ model: "m", samples: [{ id: "a", kind: "greedy", prompt_tail: "", text: "x" }] }), /status=FAIL samples=1 /],
     [null, /status=FAIL samples=0 .*reason=INFER_FAILED/],
   ] as const) {
@@ -161,18 +163,43 @@ test("scanSamples / memcheckStatus units: a core line completed from the prompt'
   const pub = "export const publicallyKnownLongLineThatAlsoExistsInPublicCode = createThing(1, 2, 3);";
   addText(core, pub); addText(baseline, pub);
   const s = (prompt_tail: string, text: string) => ({ id: "a", kind: "greedy", prompt_tail, text });
-  assert.equal(scanSamples([s(CORE_LINE.slice(0, 20), CORE_LINE.slice(20))], core, baseline).coreLineHits, 1);
-  assert.equal(scanSamples([s("", pub)], core, baseline).coreLineHits, 0);
+  const raw = buildSubstringIndex([CORE_LINE + "\n", pub]);
+  assert.equal(scanSamples([s(CORE_LINE.slice(0, 20), CORE_LINE.slice(20))], core, baseline, raw).coreLineHits, 1);
+  assert.equal(scanSamples([s("", pub)], core, baseline, raw).coreLineHits, 0);
   // Prompt echo: the whole core line (or all but a few characters) came from the prompt, not the model.
-  assert.equal(scanSamples([s(CORE_LINE, "")], core, baseline).coreLineHits, 0);
-  assert.equal(scanSamples([s(CORE_LINE, "\nx")], core, baseline).coreLineHits, 0);
-  assert.equal(scanSamples([s(CORE_LINE.slice(0, -8), CORE_LINE.slice(-8))], core, baseline).coreLineHits, 0);
+  assert.equal(scanSamples([s(CORE_LINE, "")], core, baseline, raw).coreLineHits, 0);
+  assert.equal(scanSamples([s(CORE_LINE, "\nx")], core, baseline, raw).coreLineHits, 0);
+  assert.equal(scanSamples([s(CORE_LINE.slice(0, -8), CORE_LINE.slice(-8))], core, baseline, raw).coreLineHits, 0);
   // ...but a core line the model then writes in full is still caught, and so is a completion of 12+ non-space characters.
-  assert.equal(scanSamples([s(CORE_LINE, "\n" + CORE_LINE)], core, baseline).coreLineHits, 1);
-  assert.equal(scanSamples([s(CORE_LINE.slice(0, -16), CORE_LINE.slice(-16))], core, baseline).coreLineHits, 1);
+  assert.equal(scanSamples([s(CORE_LINE, "\n" + CORE_LINE)], core, baseline, raw).coreLineHits, 1);
+  assert.equal(scanSamples([s(CORE_LINE.slice(0, -16), CORE_LINE.slice(-16))], core, baseline, raw).coreLineHits, 1);
   assert.equal(memcheckStatus(null), "FAIL");
-  assert.equal(memcheckStatus({ samples: 99, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 }), "FAIL");
-  assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 }), "PASS");
+  assert.equal(memcheckStatus({ samples: 99, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "FAIL");
+  assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "PASS");
+  assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 1, personalInfo: 0, flagged: 0 }), "FAIL");
+  assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 } as never), "FAIL");
+});
+
+test("32-character core substring scan: a short memorized completion is caught where the line scan is not", () => {
+  const core = emptyIndex(); addText(core, CORE_LINE + "\n");
+  const baseline = emptyIndex();
+  const raw = buildSubstringIndex([CORE_LINE + "\n"]);
+  const s = (prompt_tail: string, text: string) => ({ id: "a", kind: "sampled", prompt_tail, text });
+  // 40 copied characters inside an otherwise new line, under the 12-char echo rule's radar for line hashes.
+  const copied = CORE_LINE.slice(10, 50);
+  const shortCopy = scanSamples([s("const x = 1;", "\n" + "zz(" + copied + ")")], core, baseline, raw);
+  assert.equal(shortCopy.coreLineHits, 0);
+  assert.equal(shortCopy.coreSubstringHits, 1);
+  assert.equal(memcheckStatus({ ...shortCopy, samples: 100 }), "FAIL");
+  // The first line's new part counts too: the prompt ends mid-line and the model writes 32+ copied characters.
+  const firstLine = scanSamples([s(CORE_LINE.slice(0, 20), CORE_LINE.slice(20, 56))], core, baseline, raw);
+  assert.equal(firstLine.coreSubstringHits, 1);
+  // 31 copied characters are not a hit; the prompt's own text never is.
+  assert.equal(scanSamples([s(CORE_LINE, "\n" + CORE_LINE.slice(10, 41) + "!")], core, baseline, raw).coreSubstringHits, 0);
+  assert.equal(scanSamples([s(CORE_LINE, "")], core, baseline, raw).coreSubstringHits, 0);
+  // A hash collision cannot pass for a hit, and a missing core index fails closed.
+  assert.equal(countCoreSubstrings("q".repeat(200), raw), 0);
+  assert.equal(scanSamples([s("", "harmless")], core, baseline, null).coreSubstringHits, 1);
 });
 
 // ---- corpus rules

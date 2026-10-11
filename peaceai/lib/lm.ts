@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { findCoreText, SHINGLE_LINE, type TextIndex } from "./coretext.ts";
 import { scanText } from "./leak.ts";
+import { countCoreSubstrings, type SubstringIndex } from "./substr.ts";
 import { effectiveVerdict, type LmShadow, type RankingRecord } from "./records.ts";
 import type { StoredTask } from "./store.ts";
 
@@ -49,11 +50,11 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
 // ---- memorization check
 
 export interface Sample { id: string; kind: string; prompt_tail: string; text: string }
-export interface SampleScan { samples: number; coreLineHits: number; coreShingleHits: number; personalInfo: number; flagged: number }
+export interface SampleScan { samples: number; coreLineHits: number; coreShingleHits: number; coreSubstringHits: number; personalInfo: number; flagged: number }
 
 /** Scans model output for core text (the core-text scanner, public corpus as the baseline) and personal info. */
-export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex): SampleScan {
-  const scan: SampleScan = { samples: samples.length, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 };
+export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex, coreRaw: SubstringIndex | null): SampleScan {
+  const scan: SampleScan = { samples: samples.length, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
   for (const s of samples) {
     // The prompt's last partial line is joined to the output, so a core line the model completes is caught too.
     // When the model added fewer than SHINGLE_LINE non-space characters to that line, the line is the prompt's
@@ -61,18 +62,22 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
     const lines = (s.prompt_tail + s.text).split("\n");
     const added = s.text.split("\n")[0].replace(/\s/g, "").length;
     const hits = findCoreText(s.prompt_tail && added < SHINGLE_LINE ? lines.slice(1) : lines, core, baseline);
+    // Exact copy: any run of >= 32 characters of the raw generated text (everything after the prompt, the first
+    // line's new part included) that occurs in core. No baseline exemption. Without the core index: fail closed.
+    const sub = coreRaw ? countCoreSubstrings(s.text, coreRaw) : 1;
     const pii = scanText(s.text).length;
+    scan.coreSubstringHits += sub;
     scan.coreLineHits += hits.lineHits;
     scan.coreShingleHits += hits.shingleHits;
     scan.personalInfo += pii;
-    if (hits.lineHits + hits.shingleHits + pii > 0) scan.flagged += 1;
+    if (hits.lineHits + hits.shingleHits + sub + pii > 0) scan.flagged += 1;
   }
   return scan;
 }
 
 export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
   if (!scan || scan.samples < MIN_MEMCHECK_SAMPLES) return "FAIL";
-  return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
+  return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && scan.coreSubstringHits === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
 }
 
 // ---- python bridge

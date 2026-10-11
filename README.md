@@ -214,8 +214,10 @@ The only runtime dependency is numpy (array math), hash-pinned in `peaceai/model
   Because the corpus contains core, training runs only on the Builder box, never on Actions; no public
   workflow trains, builds the corpus or runs the memorization check (a test enforces this).
 - **Memorization check** (`peaceai/bin/lm-memcheck.ts`): greedy and sampled continuations of core, public
-  and empty prompts, scanned with the core-text scanner (public corpus as baseline) and the personal-info
-  scanner. Any hit, fewer than 100 samples, an inference error or files changed during the check means FAIL.
+  and empty prompts, scanned with the core-text scanner (public corpus as baseline), an exact-substring scan
+  (any run of 32+ characters of the generated text that occurs in core, no baseline exemption) and the
+  personal-info scanner. A prompt line the model added fewer than 12 non-space characters to is the prompt's
+  own text and is left out of the line scan. Any hit, fewer than 100 samples, an inference error or files changed during the check means FAIL.
   `memcheck.json` binds the PASS to the sha256 of `config.json`, `tokenizer.json` and `weights.npz`; the
   loaders (`peaceai/lib/lm.ts`, `peaceai/model/infer.py`) refuse any model without a matching PASS.
 - **Weights** live only in private PeaceAI-Results (`models/lm/<version>/`, fp16; `models/lm/latest.json`).
