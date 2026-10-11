@@ -432,12 +432,18 @@ Job A parses the task wording before anything else (`peaceai/lib/nlparse.ts`, ca
 
 ## Self-change sandbox (M11)
 
-PeaceAI may propose a change to its own code, but it never edits the live PeaceAI in place.
-`peaceai/bin/self-change.ts` (this box, or a manually started job in a private repo; it refuses the public Workspace runners and timers, and each run has a minute budget of at most 30):
+PeaceAI may propose a change to its own code, but it never edits the live PeaceAI in place, and new or changed code never runs as Builder's user.
 
-- **propose:** checks the diff against the protected set, makes a separate clone at the base commit, applies the change there, and runs the **live version's existing test suite**. That's the base commit's `peaceai/test/*.test.ts`, restored from the base so the candidate can't alter it. Any new tests under `peaceai/self-tests/` run too. It writes a record for private Results.
-- **Protected set** (`peaceai/lib/selfchange.ts`): workflows and approval workflows, hooks, dependency and build config, the rule list, the live tests, the gate, leak, scope, approval and scan tools, the model and its memcheck, and the self-change code and records. These are enforced by path (both sides of a rename or copy; symlinks, mode changes, deletes, copies and binaries are refused) and by content (added lines that name those paths, credentials, approval commands, gate functions or dynamic code loading).
-- **decide:** promotion needs a clean check, the live suite passing against the candidate, new tests passing, Auditor's `self-change:auditor-passed` label, and after it Architect's `/promote-self-change <id> <candidate sha>` comment, traced by its comment id and URL (`decide --pr N` reads both from GitHub). The tool never sets the label or posts the command. Promotion is then a normal PR through the required checks; Builder stays the coder.
+- **propose** (`peaceai/bin/self-change.ts`, logic in `peaceai/lib/selfpropose.ts`) runs only in one of two places:
+  - an ephemeral GitHub-hosted job in a private repo (Results or core), started manually or by a proposal, with no credential variables;
+  - this box, as the unprivileged sandbox user `peaceai-cand`. That user is never the invoking user and never root, its HOME holds no `.ssh`, `.gitconfig`, `.config` (gh) or other credentials, and its environment is clean.
+  It refuses the public Workspace runners and timers, and the minute budget is 15 by default, 30 at most. It makes a **fresh clone** at the base commit, checks the diff against the protected set, applies the change, and runs the **live version's existing test suite**: the base commit's `peaceai/test/*.test.ts`, restored from the base. Any new tests under `peaceai/self-tests/` run too. It writes a record for private Results and a bundle of the exact tested commit.
+- **Protected set** (`peaceai/lib/selfchange.ts`): workflows and approval workflows, hooks, dependency and build config, the rule list, the live tests, the gate, leak, scope, approval and scan tools, the model and its memcheck, and the self-change code and records. It is enforced by path (both sides of a rename or copy; symlinks, mode changes, deletes, copies and binaries are refused) and by content (added lines that name those paths, credentials, approval commands, gate functions or dynamic code loading).
+- **decide:** promotion needs, on the promotion PR:
+  - a clean check, the live suite passing against the candidate, and new tests passing;
+  - Auditor's `/auditor-pass <id> <sha>` comment, then Architect's `/promote-self-change <id> <sha>` comment, both traced by comment id and URL;
+  - both SHAs equal to the PR's current head, which must be the tested candidate commit.
+  Any new push therefore needs a fresh proposal run, a fresh pass and a fresh promote. Labels count for nothing, and the tool never posts either comment. Promotion is then a normal PR through the required checks; Builder stays the coder.
 - **rollback:** one step. It creates a new branch that reverts the promotion merge and checks that every touched path is back to its pre-promotion content.
 
 ## Layout

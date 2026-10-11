@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 
 export const SELF_SCHEMA = "peaceai-self-change:v1";
-export const AUDITOR_LABEL = "self-change:auditor-passed";
+export const AUDITOR_COMMAND = "/auditor-pass";
 export const PROMOTE_COMMAND = "/promote-self-change";
 export const MAX_BUDGET_MINUTES = 30;
 export const DEFAULT_BUDGET_MINUTES = 15;
@@ -26,7 +26,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/test\//, why: "the live test suite (new tests go under peaceai/self-tests/)" },
   { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.test\.ts$/, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
   { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/, why: "approval, leak, scan, hook, gate and self-change tools" },
-  { pattern: /^peaceai\/lib\/(leak|approval|approved|scope|prguard|kernelguard|coretext|coreindex|substr|policy|gate|selfchange|learned|results|verdict|trigger)\.ts$/, why: "gates, approvals, leak/scope scanners and the self-change rules" },
+  { pattern: /^peaceai\/lib\/(leak|approval|approved|scope|prguard|kernelguard|coretext|coreindex|substr|policy|gate|selfchange|selfpropose|learned|results|verdict|trigger)\.ts$/, why: "gates, approvals, leak/scope scanners and the self-change rules" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
 ];
@@ -38,7 +38,7 @@ const CONTENT_BANNED: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /peaceai\/test\/|self-tests\/.*\.\.\//, why: "reaches into the live tests" },
   { pattern: /hooksPath|pre-push|--no-verify/, why: "touches git hooks" },
   { pattern: /GITHUB_TOKEN|GH_TOKEN|DEPLOY_KEY|PEACEAI_[A-Z_]*KEY|secrets\./, why: "names a credential" },
-  { pattern: /\/approve-rule|\/promote-self-change|self-change:auditor-passed/, why: "names an approval command or label" },
+  { pattern: /\/approve-rule|\/promote-self-change|\/auditor-pass/, why: "names an approval command" },
   { pattern: /\b(isProtectedPath|PROTECTED_SELF|checkSelfChangeDiff|promotionDecision|mayChangeProtected|lmJobAllowed|scanText)\b/, why: "names a gate function" },
   { pattern: /\beval\s*\(|new Function\s*\(|require\(\s*[^"'`]/, why: "dynamic code loading" },
   { pattern: /process\.env\.(PEACEAI_|GITHUB_)/, why: "reads a gate/runner variable" },
@@ -115,11 +115,36 @@ export function checkSelfChangeDiff(diff: string): SelfDiffCheck {
 
 // ---- where it may run
 
-/** The box (not Actions) or an Actions job in a private repo on the allowlist; never the public Workspace. */
-export function selfChangeAllowedHere(env: Record<string, string | undefined>): { ok: boolean; reason?: string } {
-  if (env.GITHUB_ACTIONS !== "true") return { ok: true };
-  if (!(PRIVATE_RUNNERS as readonly string[]).includes(env.GITHUB_REPOSITORY ?? "")) return { ok: false, reason: "PUBLIC_RUNNER_REFUSED" };
-  if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" && env.GITHUB_EVENT_NAME !== "issues") return { ok: false, reason: "START_MANUALLY_OR_ON_PROPOSAL" };
+/** The only box user that may run a proposal: the unprivileged candidate user, as in Job B. */
+export const SANDBOX_USER = "peaceai-cand";
+/** Variables that carry credentials or a route to them; a proposal's environment must have none. */
+const CREDENTIAL_ENV = /^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|SSH_AUTH_SOCK|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|NPM_TOKEN|NODE_AUTH_TOKEN|ACTIONS_RUNTIME_TOKEN|ACTIONS_ID_TOKEN_REQUEST_TOKEN|AWS_[A-Z_]+|.*_(TOKEN|SECRET|KEY|PASSWORD))$/;
+
+export interface RunIdentity { user: string; uid: number; home: string; invokingUser?: string; homeEntries: readonly string[] }
+
+/**
+ * A proposal runs new or changed code, so it never runs as Builder's user. Allowed:
+ *  - an ephemeral (GitHub-hosted) Actions job in a private repo on the allowlist, started manually or by a
+ *    proposal, or
+ *  - on the box, only as the unprivileged sandbox user: not the invoking user, not root, a HOME with no gh, git
+ *    or SSH credentials, and an environment with no credential variables.
+ */
+export function selfChangeAllowedHere(env: Record<string, string | undefined>, who: RunIdentity): { ok: boolean; reason?: string } {
+  const creds = Object.keys(env).filter((k) => CREDENTIAL_ENV.test(k) && env[k]);
+  if (env.GITHUB_ACTIONS === "true") {
+    if (!(PRIVATE_RUNNERS as readonly string[]).includes(env.GITHUB_REPOSITORY ?? "")) return { ok: false, reason: "PUBLIC_RUNNER_REFUSED" };
+    if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" && env.GITHUB_EVENT_NAME !== "issues") return { ok: false, reason: "START_MANUALLY_OR_ON_PROPOSAL" };
+    if (env.RUNNER_ENVIRONMENT !== "github-hosted") return { ok: false, reason: "RUNNER_NOT_EPHEMERAL" };
+    if (creds.length) return { ok: false, reason: "CREDENTIALS_IN_ENV" };
+    return { ok: true };
+  }
+  if (who.uid === 0 || who.user === "root") return { ok: false, reason: "RUN_AS_SANDBOX_USER" };
+  if (who.user !== SANDBOX_USER) return { ok: false, reason: "RUN_AS_SANDBOX_USER" };
+  const invoking = who.invokingUser ?? env.SUDO_USER ?? env.PEACEAI_INVOKING_USER;
+  if (invoking && invoking === who.user) return { ok: false, reason: "RUN_AS_SANDBOX_USER" };
+  if (env.HOME && env.HOME !== who.home) return { ok: false, reason: "HOME_NOT_SANDBOX" };
+  if (who.homeEntries.some((e) => /^(\.ssh|\.gitconfig|\.git-credentials|\.config|\.netrc|\.npmrc|\.gnupg)$/.test(e))) return { ok: false, reason: "HOME_HAS_CREDENTIALS" };
+  if (creds.length) return { ok: false, reason: "CREDENTIALS_IN_ENV" };
   return { ok: true };
 }
 
@@ -131,7 +156,6 @@ export function budgetMinutes(asked: string | undefined): number {
 // ---- promotion
 
 export interface TestRun { suite: "live" | "new"; files: string[]; filesSha256: string; exitCode: number; pass: number; fail: number }
-export interface LabelEvent { label: string; actor: string; createdAt: string }
 /** A command comment, traced: its GitHub comment id and URL (issuecomment-<id>) on the promotion PR/issue. */
 export interface CommandComment { id?: number; url?: string; body: string; author: string; association: string; createdAt: string }
 export const WORKSPACE_REPO = "PeaceG03/PeaceAI-Workspace";
@@ -158,14 +182,18 @@ export interface SelfChangeRecord {
 export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export const listSha = (files: readonly string[]) => sha256([...files].sort().join("\n"));
 
-export interface PromotionDecision { ok: boolean; reasons: string[]; architectComment?: string }
+export interface PromotionDecision { ok: boolean; reasons: string[]; auditorComment?: string; architectComment?: string }
 
 /**
  * Promotion needs ALL of: a clean protected-set check; the LIVE version's existing test suite (the file list
- * taken from the base commit, unchanged) run against the candidate and passing; any new tests passing; Auditor's
- * label; and, after that label, Architect's command comment naming this change and its exact candidate sha.
+ * taken from the base commit, unchanged) run against the candidate and passing; any new tests passing; and two
+ * traced comments on the promotion PR (comment id + URL), each naming this change and ONE commit:
+ *   Auditor   `/auditor-pass <id> <sha>`
+ *   Architect `/promote-self-change <id> <sha>`, posted after that pass.
+ * Both SHAs must equal the PR's current head, which must be the tested candidate commit. Any new push moves the
+ * head, so it needs a fresh proposal run, a fresh pass and a fresh promote. Labels count for nothing.
  */
-export function promotionDecision(rec: SelfChangeRecord, liveFilesAtBase: readonly string[], labels: readonly LabelEvent[], comments: readonly CommandComment[], approvers: { auditor: readonly string[]; architect: readonly string[] }): PromotionDecision {
+export function promotionDecision(rec: SelfChangeRecord, liveFilesAtBase: readonly string[], prHeadSha: string, comments: readonly CommandComment[], approvers: { auditor: readonly string[]; architect: readonly string[] }): PromotionDecision {
   const reasons: string[] = [];
   if (rec.schema !== SELF_SCHEMA) reasons.push("BAD_RECORD");
   if (!rec.check.ok || !checkOkAgain(rec)) reasons.push("PROTECTED_SET");
@@ -176,12 +204,14 @@ export function promotionDecision(rec: SelfChangeRecord, liveFilesAtBase: readon
     if (live.exitCode !== 0 || live.fail !== 0 || live.pass === 0) reasons.push("LIVE_TESTS_FAILED");
   }
   for (const t of rec.tests.filter((x) => x.suite === "new")) if (t.exitCode !== 0 || t.fail !== 0) reasons.push("NEW_TESTS_FAILED");
-  const label = labels.filter((l) => l.label === AUDITOR_LABEL && approvers.auditor.includes(l.actor)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
-  if (!label) reasons.push("AUDITOR_REVIEW_MISSING");
-  const want = `${PROMOTE_COMMAND} ${rec.id} ${rec.candidateSha}`;
-  const cmd = comments.find((c) => c.body.trim() === want && approvers.architect.includes(c.author) && tracedComment(c) && ["OWNER", "MEMBER", "COLLABORATOR"].includes(c.association) && (!label || c.createdAt > label.createdAt));
-  if (!cmd) reasons.push("ARCHITECT_APPROVAL_MISSING");
-  return { ok: reasons.length === 0, reasons, ...(cmd ? { architectComment: cmd.url } : {}) };
+  const head = /^[0-9a-f]{40}$/.test(prHeadSha) ? prHeadSha : "";
+  if (!head || head !== rec.candidateSha) reasons.push("HEAD_NOT_TESTED_CANDIDATE");
+  const valid = (c: CommandComment, who: readonly string[]) => tracedComment(c) && who.includes(c.author) && ["OWNER", "MEMBER", "COLLABORATOR"].includes(c.association);
+  const pass = comments.filter((c) => valid(c, approvers.auditor) && c.body.trim() === `${AUDITOR_COMMAND} ${rec.id} ${head}`).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
+  if (!head || !pass) reasons.push(comments.some((c) => valid(c, approvers.auditor) && c.body.trim().startsWith(`${AUDITOR_COMMAND} ${rec.id} `)) ? "AUDITOR_PASS_STALE_OR_SHA_MISMATCH" : "AUDITOR_PASS_MISSING");
+  const promote = pass && comments.find((c) => valid(c, approvers.architect) && c.body.trim() === `${PROMOTE_COMMAND} ${rec.id} ${head}` && c.createdAt > pass.createdAt);
+  if (!promote) reasons.push(comments.some((c) => valid(c, approvers.architect) && c.body.trim().startsWith(`${PROMOTE_COMMAND} ${rec.id} `)) ? "ARCHITECT_PROMOTE_STALE_OR_SHA_MISMATCH" : "ARCHITECT_APPROVAL_MISSING");
+  return { ok: reasons.length === 0, reasons, ...(pass && promote ? { auditorComment: pass.url, architectComment: promote.url } : {}) };
 }
 
 /** The record's own check must still hold; a record cannot carry a passing check for refused paths. */
