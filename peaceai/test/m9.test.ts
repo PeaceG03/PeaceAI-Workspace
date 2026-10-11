@@ -4,12 +4,13 @@
 import assert from "node:assert/strict";
 import { buildSubstringIndex, countCoreSubstrings } from "../lib/substr.ts";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { acceptFill, applyFill, fillHole, fillKey, fillOptions, FILLS_SCHEMA, parseFillTask } from "../lib/fill.ts";
-import { activeWithLm, lmJobAllowed, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
+import { activeWithLm, lmJobAllowed, manifestProvesNoCore, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { ALLOWED_SPDX, classifyLicense, fileExclusion, splitOf } from "../lib/lmcorpus.ts";
 
@@ -508,4 +509,85 @@ test("M9 retrain: train.py stops early on held-out loss and keeps the best check
   assert.match(train, /shutil\.copyfile\(W\("checkpoint\.npz"\), W\("best\.npz"\)\)/);
   assert.match(train, /while best\["stale"\] < \(args\.patience or 10\*\*9\)/);
   assert.match(readFileSync(join(repo, "peaceai/model/export.py"), "utf8"), /--checkpoint", default="checkpoint\.npz"/);
+});
+
+// ---- public-only exemption for 32-character hits (Auditor-accepted, with conditions)
+
+test("public-only rule: a hit in the sample's prompt or the public training corpus is explained; any other hit fails", () => {
+  const core = emptyIndex(); const baseline = emptyIndex();
+  const raw = buildSubstringIndex([CORE_LINE + "\n"]);
+  const window = CORE_LINE.slice(10, 50);
+  const sample = (id: string) => ({ id, kind: "greedy", prompt_tail: "", text: `zz(${window})` });
+  const many = (n: number, mk: (i: number) => { id: string; kind: string; prompt_tail: string; text: string }) => Array.from({ length: n }, (_, i) => mk(i));
+  const fill = (i: number) => ({ id: `f${i}`, kind: "greedy", prompt_tail: "", text: "x" });
+  // Strict rule (no exemption): the hit fails.
+  const strict = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw);
+  assert.equal(strict.coreSubstringHits, 1); assert.equal(memcheckStatus(strict), "FAIL");
+  // In the sample's own prompt: explained.
+  const viaPrompt = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map([["p0", `prompt ${CORE_LINE}`]]), trainingCorpus: buildSubstringIndex([]) });
+  assert.deepEqual([viaPrompt.coreSubstringHits, viaPrompt.unexplainedHits, viaPrompt.substringRule], [1, 0, "public-only"]);
+  assert.equal(memcheckStatus(viaPrompt), "PASS");
+  // Another sample's prompt does not explain it.
+  const otherPrompt = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map([["p1", CORE_LINE]]), trainingCorpus: buildSubstringIndex([]) });
+  assert.equal(otherPrompt.unexplainedHits, 1); assert.equal(memcheckStatus(otherPrompt), "FAIL");
+  // In the public training corpus: explained.
+  const viaCorpus = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map(), trainingCorpus: buildSubstringIndex([`lib(${CORE_LINE.slice(5, 60)})`]) });
+  assert.equal(viaCorpus.unexplainedHits, 0); assert.equal(memcheckStatus(viaCorpus), "PASS");
+  // Partly explained: a run that extends past the explained part is still unexplained.
+  const partly = scanSamples([sample("p0"), ...many(110, fill)], core, baseline, raw, { prompts: new Map(), trainingCorpus: buildSubstringIndex([CORE_LINE.slice(10, 45)]) });
+  assert.equal(partly.unexplainedHits, 1); assert.equal(memcheckStatus(partly), "FAIL");
+  // No core index: fail closed under either rule.
+  assert.equal(memcheckStatus(scanSamples(many(110, fill), core, baseline, null, { prompts: new Map(), trainingCorpus: buildSubstringIndex([]) })), "FAIL");
+  // A public-only scan without its unexplained count fails.
+  assert.equal(memcheckStatus({ ...viaCorpus, unexplainedHits: undefined }), "FAIL");
+});
+
+test("public-only rule needs a manifest that proves zero core files", () => {
+  const coreText = CORE_LINE + "\n";
+  const coreShas = new Set([createHash("sha256").update(coreText).digest("hex")]);
+  const ok = { source: "honojs/hono", visibility: "public", sha256: "a".repeat(64) };
+  assert.equal(manifestProvesNoCore([ok], coreShas), true);
+  assert.equal(manifestProvesNoCore([], coreShas), false, "empty proves nothing");
+  assert.equal(manifestProvesNoCore([ok, { ...ok, visibility: "private" }], coreShas), false);
+  assert.equal(manifestProvesNoCore([ok, { ...ok, source: "PeaceG03/PeaceAI" }], coreShas), false);
+  assert.equal(manifestProvesNoCore([ok, { ...ok, sha256: [...coreShas][0] }], coreShas), false, "a core file under a public name");
+  assert.equal(manifestProvesNoCore([ok, { source: "x/y", visibility: "public" }], coreShas), false, "no hash");
+});
+
+test("lm-memcheck end to end: the exemption applies only with a no-core training manifest; reports unexplained_hits", () => {
+  const { dir, corpus, model, core } = tinyModel();
+  const copy = join(dir, "mc-exempt");
+  mkdirSync(copy, { recursive: true });
+  for (const f of ["config.json", "tokenizer.json", "weights.npz"]) writeFileSync(join(copy, f), readFileSync(join(model, f)));
+  const samples = JSON.stringify({ model: "lm-v1-000000000000", samples: Array.from({ length: 120 }, (_, i) => ({ id: `s${i}`, kind: "greedy", prompt_tail: "", text: i === 7 ? `zz(${CORE_LINE.slice(10, 50)})\n` : "x" })) });
+  const trainCorpus = (name: string, docs: { text: string; source: string; visibility: string; sha?: string }[]) => {
+    const d = join(dir, name);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "docs.jsonl"), docs.map((x, i) => JSON.stringify({ doc: i, text: x.text })).join("\n") + "\n");
+    writeFileSync(join(d, "manifest.jsonl"), docs.map((x, i) => JSON.stringify({ doc: i, source: x.source, visibility: x.visibility, path: `src/f${i}.ts`, sha256: x.sha ?? createHash("sha256").update(x.text).digest("hex"), bytes: x.text.length, license: "MIT", split: "train" })).join("\n") + "\n");
+    return d;
+  };
+  const shared = `export const shared = 1; // ${CORE_LINE.slice(5, 60)}\n`;
+  const run = (train: string) => memcheck(copy, corpus, core, { PEACEAI_PYTHON: fakePython(dir, samples), PEACEAI_LM_TRAIN_CORPUS: train });
+  const pass = run(trainCorpus("t-public", [{ text: shared, source: "honojs/hono", visibility: "public" }]));
+  assert.equal(pass.status, 0, pass.stdout + pass.stderr);
+  assert.match(pass.stdout, /status=PASS .*core_substring_hits=1 .*rule=public-only unexplained_hits=0/);
+  const report = JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8"));
+  assert.equal(report.substringRule, "public-only");
+  assert.equal(report.trainingManifest.noCoreFiles, "PROVEN");
+  assert.match(report.trainingManifest.sha256, /^[0-9a-f]{64}$/);
+  // Same hit, but the window is not in the training corpus: unexplained, FAIL.
+  const miss = run(trainCorpus("t-miss", [{ text: "export const other = 2;\n", source: "honojs/hono", visibility: "public" }]));
+  assert.equal(miss.status, 1);
+  assert.match(miss.stdout, /status=FAIL .*rule=public-only unexplained_hits=1/);
+  // Manifest with a core file (by source, by visibility, or by content hash): the strict rule applies.
+  for (const bad of [
+    [{ text: shared, source: "honojs/hono", visibility: "public" }, { text: "y\n", source: "PeaceG03/PeaceAI", visibility: "private" }],
+    [{ text: shared, source: "honojs/hono", visibility: "public" }, { text: CORE_LINE + "\n", source: "x/y", visibility: "public" }],
+  ]) {
+    const r = run(trainCorpus(`t-bad-${Math.random().toString(16).slice(2)}`, bad));
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /status=FAIL .*core_substring_hits=1 personal_info=0 rule=strict/);
+    assert.equal(JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8")).trainingManifest.noCoreFiles, "NOT_PROVEN");
+  }
 });

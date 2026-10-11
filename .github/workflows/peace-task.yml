@@ -229,7 +229,9 @@ jobs:
   test:
     name: "Job B: test ${{ matrix.candidate }}"
     needs: [select, generate]
-    if: needs.generate.outputs.candidates != '0'
+    # always(): the LM fill job (an ancestor via generate) is skipped while its flag is off, and a skipped
+    # ancestor would otherwise skip Job B even when Job A produced candidates.
+    if: always() && needs.generate.result == 'success' && needs.generate.outputs.candidates != '0'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
