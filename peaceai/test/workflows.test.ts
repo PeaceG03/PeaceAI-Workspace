@@ -227,3 +227,11 @@ test("approve-push key: only results-land (environment peaceai-approve-push) rea
   for (const f of files) for (const [name, block] of jobs(read(f)))
     if (/secrets\.(?!GITHUB_TOKEN)[A-Z_]+_KEY\b/.test(block)) assert.match(block, /^ {4}environment: peaceai-[a-z-]+$/m, `${f}:${name}`);
 });
+
+test("Job B runs whenever Job A succeeded with candidates, even with the LM fill job skipped", () => {
+  const b = jobs(read("peace-task.yml")).get("test")!;
+  assert.match(b, /^ {4}if: always\(\) && needs\.generate\.result == 'success' && needs\.generate\.outputs\.candidates != '0'$/m);
+  // Every job downstream of generate guards with always() (lm-fill is skipped by default).
+  for (const [name, block] of jobs(read("peace-task.yml")))
+    if (/needs: \[[^\]]*\bgenerate\b/.test(block)) assert.match(block, /^ {4}if: (?:>-\n {6})?always\(\)/m, name);
+});
