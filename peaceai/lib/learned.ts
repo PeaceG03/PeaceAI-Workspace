@@ -6,9 +6,10 @@ import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
+import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -52,6 +53,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (!ev || ![ev.hunks, ev.commits, ev.files].every((n) => Number.isInteger(n) && (n as number) >= 0) || !Array.isArray(ev.repos)) return false;
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   return Object.keys(s).every((k) => ["schema", "id", "kind", "minedFrom", "minerVersion", "shape", "trigger", "params", "evidence"].includes(k));
 }
 
@@ -73,6 +75,12 @@ function validGuardParams(p: Record<string, unknown>, minedFrom: unknown): boole
   return GUARD_PARAM_KEYS.every((k) => typeof p[k] === "string" && GUARD_VOCAB[k].includes(p[k] as string));
 }
 
+/** M15: ADD_FUNCTION specs carry exactly the function parameters, from fixed vocabularies; public-mined only. */
+function validFunctionParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...FUNCTION_PARAM_KEYS].join(",")) return false;
+  return FUNCTION_PARAM_KEYS.every((k) => typeof p[k] === "string" && FUNCTION_VOCAB[k].includes(p[k] as string));
+}
+
 export interface SourceFile { path: string; content: string }
 /** `create` (M12): a new file (never an existing one); `fixSha`: the fix commit Job B grades the new test against. */
 /** `extra` + `selfGrade` (M13): the guard rule's new test file(s); Job B grades the candidate against itself. */
@@ -88,6 +96,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_NULLISH_DEFAULT: String.raw`^default \x60?(?<expr>${NAME}(?:\.${NAME})+)\x60? to (?<value>\[\]|null|${LIT}) in \x60?(?<fn>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)?\.?$`,
   ADD_TEST_CASE: TEST_TRIGGER,
   ADD_THROW_GUARD: GUARD_TRIGGER,
+  ADD_FUNCTION: FUNCTION_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -245,6 +254,13 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   if (spec.kind === "ADD_THROW_GUARD") {
     try {
       return applyGuardRule(spec.trigger, spec.params, objective, files, isTest);
+    } catch {
+      return null;
+    }
+  }
+  if (spec.kind === "ADD_FUNCTION") {
+    try {
+      return applyFunctionRule(spec.trigger, spec.params, objective, files, isTest);
     } catch {
       return null;
     }

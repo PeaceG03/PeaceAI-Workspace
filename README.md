@@ -266,6 +266,15 @@ is refused. Grading (Job B `gradeSelf`): `selfGrade: true` (only on a pinned `le
 must pass with the guard and fail with the candidate's source files reset to the task base. Only that is
 `COUNTS`; anything else is rejected (`test-grading`). There is no M7 repair, and the file is protected.
 
+### New-function edit type (M15)
+
+`ADD_FUNCTION` (spec `peaceai/rules/learned/public-add-function-v1.json`, mined from public commits only: 8 added exported single-return functions in PeaceSTOCKS and this repo; core-mined specs of this kind are refused). Task form:
+
+    add function `name(a: number, b: string): string` to `src/file.ts` returning EXPR
+    - `name(1, "x")` is "1x"
+
+It appends one `export function` at the end of an existing module (the name must not appear anywhere in it) and writes one new test file from the bullets. EXPR may use only the parameters, literals and a fixed set of pure operators, built-ins and string/array methods (see `peaceai/lib/learned-function.ts`); anything else, or an unused parameter set, is refused. Job B self-grades: the new test must pass with the function and fail on the task base. Off until Architect approves the spec; `learned-function.ts` is in the protected set. v1 does not create new modules.
+
 ## From-scratch language model (M9)
 
 A small decoder-only transformer trained from scratch by PeaceAI's own numpy code (`peaceai/model/`):

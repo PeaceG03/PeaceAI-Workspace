@@ -19,6 +19,8 @@ export const SHAPES = {
   GUARD_CLAUSE: { covered: "ADD_GUARD_CLAUSE" },
   // M13: `if (cond) throw new Error(...)`; the kernel's ADD_GUARD_CLAUSE only returns a literal.
   THROW_GUARD: { covered: null },
+  // M15: a new top-level exported function whose body is one return statement (kernel has no ADD_FUNCTION family).
+  PURE_FUNCTION: { covered: null },
   TRY_CATCH: { covered: "WRAP_TRY_CATCH" },
   IMPORT: { covered: "native:import" },
   ENUM_MEMBER: { covered: null },
@@ -133,6 +135,19 @@ function additiveShape(node: ts.Node, sf: ts.SourceFile): { shape: Shape; style:
     return { shape: "SWITCH_CASE", style: { body: style, label: ts.isStringLiteral(node.expression) ? "string" : ts.isPropertyAccessExpression(node.expression) ? "member" : "other" } };
   }
   if (ts.isImportDeclaration(node)) return { shape: "IMPORT", style: {} };
+  if (ts.isFunctionDeclaration(node) && p && ts.isSourceFile(p) && node.name && node.body && !node.asteriskToken && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+    const st = node.body.statements;
+    if (st.length !== 1 || !ts.isReturnStatement(st[0]!) || !st[0]!.expression) return null;
+    const last = p.statements[p.statements.length - 1] === node;
+    return { shape: "PURE_FUNCTION", style: {
+      body: "single-return",
+      params: node.parameters.length > 0 && node.parameters.every((x) => !!x.type && ts.isIdentifier(x.name) && !x.dotDotDotToken) ? "typed" : "other",
+      returns: node.type ? "annotated" : "none",
+      async: node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ? "yes" : "no",
+      generic: node.typeParameters?.length ? "yes" : "no",
+      placement: last ? "end-of-module" : "inside-module",
+    } };
+  }
   if (ts.isPropertyAssignment(node) && p && ts.isObjectLiteralExpression(p)) return { shape: "OBJECT_PROPERTY", style: {} };
   if (p && ts.isArrayLiteralExpression(p) && ts.isExpression(node)) return { shape: "ARRAY_ITEM", style: {} };
   if (ts.isLiteralTypeNode(node) && p && ts.isUnionTypeNode(p)) return { shape: "UNION_MEMBER", style: {} };
