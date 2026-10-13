@@ -155,6 +155,7 @@ counts, and no code. Its content hash is SHA-256 over canonical JSON (sorted key
 | `SET_LITERAL` | ``set `NAME` to VALUE`` or ``set `NAME` in `src/file.ts` to VALUE`` (unique const or object property) |
 | `ADD_SWITCH_CASE` | ``add case "label" returning VALUE to the switch in `fn` `` |
 | `ADD_NULLISH_DEFAULT` | ``default `obj.field` to VALUE in `fn` `` |
+| `ADD_THROW_GUARD` (M13) | ``guard `fn` in `src/file.ts`: throw CODE when CONDITION``, then bullets ``- CALL throws CODE`` (at least one) and optional ``- EXPR is VALUE`` / ``- EXPR equals [..]`` |
 | `ADD_TEST_CASE` (M12) | ``add a test for `NAME` in `src/file.ts`: TITLE``, then bullets ``- EXPR is VALUE`` / ``- EXPR equals [..]`` / ``- EXPR throws CODE`` / ``- EXPR rejects with CODE`` and a line ``Fix: <40-hex commit>`` |
 
 A rule produces one candidate only when the edit site is unique. Its candidate goes through the same scope
@@ -227,6 +228,23 @@ full history so a Workspace fix commit's parent exists. Unapproved, the trigger 
 id and hash are pinned in `peaceai/rules/approved.json`; `lm-fill:<model>` is accepted only for a verified
 model id bound by the caller (none of the jobs binds one, so it is refused). `learned-test.ts` and
 `minetest.ts` are in the protected self-change set.
+
+### Throw-guard edit type (M13)
+
+`ADD_THROW_GUARD` adds `if (CONDITION) throw new Error("CODE");` at the entry of a uniquely named exported
+function (after any guards already there) and writes ONE new test file from the task's bullets. The kernel's
+`ADD_GUARD_CLAUSE` only returns a literal. Evidence: shape `THROW_GUARD` (split out of `GUARD_CLAUSE` in
+`peaceai/lib/mine.ts`), public PeaceSTOCKS and this Workspace only, style facts only. Params come from fixed
+vocabularies (`peaceai/lib/learned-guard.ts`): braces none, Error, message code-only, one line,
+function-entry, new-file test, grading self-fail-before-pass-after. The condition may use only the
+function's parameters, literals, property reads, comparisons, `!`, `&&`/`||`, `typeof` and a few pure
+built-ins, and must read at least one parameter (constant conditions such as `true` or `1 < 2` are
+refused). Property reads and comparisons on a parameter can still run a getter or `valueOf` of the
+caller's object. The code must be new to the file, the function a single exported implementation, and test calls
+literal-only and tripping the same code. Issue cleaning strips `>`, so write `<`/`<=`. A damaged condition
+is refused. Grading (Job B `gradeSelf`): `selfGrade: true` (only on a pinned `learned:` id). The new tests
+must pass with the guard and fail with the candidate's source files reset to the task base. Only that is
+`COUNTS`; anything else is rejected (`test-grading`). There is no M7 repair, and the file is protected.
 
 ## From-scratch language model (M9)
 

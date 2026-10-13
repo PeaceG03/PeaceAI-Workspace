@@ -133,7 +133,7 @@ function toDiff(operations: readonly Operation[]): string | null {
   }
 }
 
-const candidates: { id: string; diff: string; transformations: string[]; operationId: string | null; fixSha?: string }[] = [];
+const candidates: { id: string; diff: string; transformations: string[]; operationId: string | null; fixSha?: string; selfGrade?: true }[] = [];
 const seen = new Set<string>();
 let calls = 0;
 let scopeRejected = 0;
@@ -215,10 +215,14 @@ for (const a of planSteps ? [] : admissions) {
   if (!edit) continue;
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   if (edit.create && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
+  // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
+  if (edit.extra && (edit.create || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
+  if (edit.selfGrade && !edit.extra) continue;
   const current = edit.create ? null : candidatesForContext.find((f) => f.path === edit.path)!;
   const diff = toDiff([current
     ? { operation: "EDIT_FILE", path: edit.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content: edit.content, transformation: `LEARNED_${a.spec.kind}` }
-    : { operation: "CREATE_FILE", path: edit.path, expectedCurrentFingerprint: null, content: edit.content, transformation: `LEARNED_${a.spec.kind}` }]);
+    : { operation: "CREATE_FILE", path: edit.path, expectedCurrentFingerprint: null, content: edit.content, transformation: `LEARNED_${a.spec.kind}` },
+    ...(edit.extra ?? []).map((x): Operation => ({ operation: "CREATE_FILE", path: x.path, expectedCurrentFingerprint: null, content: x.content, transformation: `LEARNED_${a.spec!.kind}` }))]);
   if (!diff) continue;
   const key = createHash("sha256").update(diff).digest("hex");
   if (seen.has(key)) continue;
@@ -228,7 +232,7 @@ for (const a of planSteps ? [] : admissions) {
     continue;
   }
   learnedCandidates += 1;
-  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}@${specHash(a.spec)}`, ...(edit.create ? { fixSha: edit.fixSha } : {}) });
+  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}@${specHash(a.spec)}`, ...(edit.create ? { fixSha: edit.fixSha } : {}), ...(edit.selfGrade ? { selfGrade: true as const } : {}) });
 }
 const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
@@ -267,6 +271,7 @@ const summary = {
     diffBytes: Buffer.byteLength(candidate.diff),
     diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
     ...(candidate.fixSha ? { fixSha: candidate.fixSha } : {}),
+    ...(candidate.selfGrade ? { selfGrade: true } : {}),
   })),
 };
 writeSummary(summary);

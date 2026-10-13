@@ -17,6 +17,8 @@ export const SHAPES = {
   TYPE_FIELD: { covered: "ADD_TYPE_FIELD" },
   EXPORTED_CONSTANT: { covered: "ADD_EXPORTED_CONSTANT" },
   GUARD_CLAUSE: { covered: "ADD_GUARD_CLAUSE" },
+  // M13: `if (cond) throw new Error(...)`; the kernel's ADD_GUARD_CLAUSE only returns a literal.
+  THROW_GUARD: { covered: null },
   TRY_CATCH: { covered: "WRAP_TRY_CATCH" },
   IMPORT: { covered: "native:import" },
   ENUM_MEMBER: { covered: null },
@@ -90,6 +92,27 @@ const isLogCall = (n: ts.Node): boolean =>
   /^(log|info|warn|error|debug)$/.test(n.expression.expression.name.text);
 const caseName = (s: string) => (/^[A-Z0-9_]+$/.test(s) ? "upper" : /^[a-z][a-z0-9]*$/.test(s) ? "lower" : /^[A-Z][A-Za-z0-9]*$/.test(s) ? "pascal" : /^[a-z][A-Za-z0-9]*$/.test(s) ? "camel" : "other");
 
+/** M13: style facts of a throw guard (no code text): braces, error form, message form, placement in its function. */
+function throwGuardStyle(node: ts.IfStatement, t: ts.ThrowStatement, sf: ts.SourceFile): Record<string, string> {
+  const e = t.expression;
+  const isError = !!e && ts.isNewExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Error";
+  const arg = isError ? (e as ts.NewExpression).arguments?.[0] : undefined;
+  const text = arg ? (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg) ? arg.text : ts.isTemplateExpression(arg) ? arg.head.text : "") : "";
+  const coded = /^[A-Z][A-Z0-9_]{2,63}/.exec(text);
+  const message = !arg ? "none" : !coded ? "other" : text === coded[0] && ts.isStringLiteral(arg) ? "code-only" : "code-detail";
+  const body = node.parent && ts.isBlock(node.parent) && node.parent.parent && ts.isFunctionLike(node.parent.parent) ? node.parent : null;
+  const idx = body ? body.statements.indexOf(node) : -1;
+  const leading = body ? body.statements.slice(0, idx).every((s) => ts.isIfStatement(s) && !s.elseStatement && isExit(s.thenStatement)) : false;
+  const oneLine = lineOf(sf, node.getStart(sf)) === lineOf(sf, node.getEnd());
+  return {
+    braces: ts.isBlock(node.thenStatement) ? "block" : "none",
+    error: isError ? "Error" : "other",
+    message,
+    lines: oneLine ? "one" : "multi",
+    placement: !body ? "nested" : idx === 0 || leading ? "function-entry" : "function-body",
+  };
+}
+
 /** Classifies a node fully inside the added lines, given its parent. Null when it is not a known shape. */
 function additiveShape(node: ts.Node, sf: ts.SourceFile): { shape: Shape; style: Record<string, string> } | null {
   const p = node.parent;
@@ -113,7 +136,11 @@ function additiveShape(node: ts.Node, sf: ts.SourceFile): { shape: Shape; style:
   if (ts.isLiteralTypeNode(node) && p && ts.isUnionTypeNode(p)) return { shape: "UNION_MEMBER", style: {} };
   if (ts.isPropertySignature(node)) return { shape: "TYPE_FIELD", style: {} };
   if (ts.isTryStatement(node)) return { shape: "TRY_CATCH", style: {} };
-  if (ts.isIfStatement(node) && !node.elseStatement && isExit(node.thenStatement)) return { shape: "GUARD_CLAUSE", style: {} };
+  if (ts.isIfStatement(node) && !node.elseStatement && isExit(node.thenStatement)) {
+    const t = ts.isBlock(node.thenStatement) && node.thenStatement.statements.length === 1 ? node.thenStatement.statements[0]! : node.thenStatement;
+    if (ts.isThrowStatement(t)) return { shape: "THROW_GUARD", style: throwGuardStyle(node, t, sf) };
+    return { shape: "GUARD_CLAUSE", style: {} };
+  }
   if (isLogCall(node)) return { shape: "LOG_LINE", style: { sink: ((node as ts.ExpressionStatement).expression as ts.CallExpression).expression.getText(sf).split(".")[0] === "console" ? "console" : "logger" } };
   if (ts.isVariableStatement(node)) {
     const decl = node.declarationList.declarations[0];

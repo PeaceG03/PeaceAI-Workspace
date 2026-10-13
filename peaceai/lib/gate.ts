@@ -55,6 +55,8 @@ export interface SummaryCandidate {
   diffLines: number;
   /** M12: fix commit a learned test must fail before and pass after (Job B grades it). */
   fixSha?: string;
+  /** M13: a learned guard: Job B grades its new tests with and without the candidate's own source edit. */
+  selfGrade?: true;
 }
 
 export interface Summary {
@@ -103,7 +105,8 @@ export function validateSummary(value: unknown, ctx: SummaryContext = NO_CLAIMS)
     const keys = Object.keys(c).sort().join(",");
     return (
       (keys === "diffBytes,diffLines,file,id,operationId,transformations" ||
-        (keys === "diffBytes,diffLines,file,fixSha,id,operationId,transformations" && typeof c.fixSha === "string" && /^[0-9a-f]{40}$/.test(c.fixSha))) &&
+        (keys === "diffBytes,diffLines,file,fixSha,id,operationId,transformations" && typeof c.fixSha === "string" && /^[0-9a-f]{40}$/.test(c.fixSha)) ||
+        (keys === "diffBytes,diffLines,file,id,operationId,selfGrade,transformations" && c.selfGrade === true && typeof c.operationId === "string" && c.operationId.startsWith("learned:"))) &&
       c.id === `candidate-${index + 1}` &&
       c.file === `candidates/candidate-${index + 1}.diff` &&
       Array.isArray(c.transformations) &&

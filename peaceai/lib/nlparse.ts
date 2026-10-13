@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanIssueText } from "./taskmap.ts";
 import { TEST_TRIGGER } from "./learned-test.ts";
+import { GUARD_TRIGGER } from "./learned-guard.ts";
 
 export const NL_SCHEMA = "peaceai-nl-model:v1";
 export const FAMILIES = ["object-property", "guard", "array-item", "exported-constant", "try-catch", "union-member", "type-field", "set-literal", "switch-case", "nullish-default"] as const;
@@ -54,6 +55,8 @@ const CANONICAL: RegExp[] = [
   new RegExp(String.raw`^default ${ID}(?:\.${ID})+ to (?:\[\]|null|"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false) in ${ID}(?: in ${FILE})?\.?$`, "imu"),
   // M12: the ADD_TEST_CASE rule's header line (its own trigger; the checks and the fix line follow it).
   new RegExp(TEST_TRIGGER, "imu"),
+  // M13: the ADD_THROW_GUARD rule's header line (its test bullets follow it).
+  new RegExp(GUARD_TRIGGER, "imu"),
 ];
 // Numbered plan lines ("Step 2: ...", "2. ...", "2) ..."), read the same way the planner reads them.
 const STEP_WORD = /^step\s*\d{1,2}\s*[-:.)]\s*/iu;
@@ -265,13 +268,15 @@ export type ParseResult =
 
 export interface ParseOptions { model: NbModel | null; approvedKinds: ReadonlySet<string> }
 
-// The last three CANONICAL entries are the M8 learned-rule triggers, in this order.
+// The last CANONICAL entries are the M8 learned-rule triggers, in this order.
 // M12: ADD_TEST_CASE has no plain-language family (family null): it is only accepted in its canonical form.
 const LEARNED_TRIGGERS: { re: RegExp; kind: string; family: Family | null }[] = [
-  { re: CANONICAL[CANONICAL.length - 4]!, kind: "SET_LITERAL", family: "set-literal" },
-  { re: CANONICAL[CANONICAL.length - 3]!, kind: "ADD_SWITCH_CASE", family: "switch-case" },
-  { re: CANONICAL[CANONICAL.length - 2]!, kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
-  { re: CANONICAL[CANONICAL.length - 1]!, kind: "ADD_TEST_CASE", family: null },
+  { re: CANONICAL[CANONICAL.length - 5]!, kind: "SET_LITERAL", family: "set-literal" },
+  { re: CANONICAL[CANONICAL.length - 4]!, kind: "ADD_SWITCH_CASE", family: "switch-case" },
+  { re: CANONICAL[CANONICAL.length - 3]!, kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
+  { re: CANONICAL[CANONICAL.length - 2]!, kind: "ADD_TEST_CASE", family: null },
+  // M13: canonical form only, like ADD_TEST_CASE.
+  { re: CANONICAL[CANONICAL.length - 1]!, kind: "ADD_THROW_GUARD", family: null },
 ];
 
 const TEST_ONLY = /^(?:then |and |also |finally )?(?:add|write|include) (?:a |an |some |focused |unit )*tests?\b[^.]*\.?$/iu;
