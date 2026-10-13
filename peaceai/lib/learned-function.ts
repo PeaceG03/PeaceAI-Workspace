@@ -21,6 +21,9 @@ export const FUNCTION_VOCAB: Record<(typeof FUNCTION_PARAM_KEYS)[number], readon
 };
 export const MAX_EXPR_CHARS = 200;
 export const MAX_PARAMS = 4;
+/** M15.1: padStart/padEnd target length cap (integer literal only); `repeat` is not allowed. */
+export const MAX_PAD = 64;
+const PAD = new Set(["padStart", "padEnd"]);
 /** Parameter and return types a learned function may declare. */
 export const FUNCTION_TYPES = ["string", "number", "boolean", "string[]", "number[]", "readonly string[]", "readonly number[]"] as const;
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
@@ -73,7 +76,7 @@ const parseExpr = (text: string): ts.Expression | null => {
 /** Pure free calls (any arity, allowed arguments only). */
 const CALLS = new Set(["Math.min", "Math.max", "Math.floor", "Math.ceil", "Math.round", "Math.abs", "Math.trunc", "Math.sign", "String", "Number", "Boolean", "Number.isFinite", "Number.isInteger", "Number.isNaN", "Number.isSafeInteger", "Array.isArray"]);
 /** Pure methods on a value built from the parameters (strings and arrays; none mutates its receiver). */
-const METHODS = new Set(["slice", "padStart", "padEnd", "includes", "startsWith", "endsWith", "trim", "trimStart", "trimEnd", "toUpperCase", "toLowerCase", "indexOf", "lastIndexOf", "at", "join", "concat", "split", "repeat", "toFixed"]);
+const METHODS = new Set(["slice", "padStart", "padEnd", "includes", "startsWith", "endsWith", "trim", "trimStart", "trimEnd", "toUpperCase", "toLowerCase", "indexOf", "lastIndexOf", "at", "join", "concat", "split", "toFixed"]);
 const PROPS = new Set(["length"]);
 const BINARY = new Set([
   ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken,
@@ -104,7 +107,11 @@ export function safeBody(e: ts.Expression, params: ReadonlySet<string>): boolean
     if (ts.isCallExpression(n)) {
       if (n.questionDotToken || n.typeArguments || n.arguments.length > 4 || !n.arguments.every((a) => !ts.isSpreadElement(a) && ok(a))) return false;
       const callee = n.expression;
-      if (ts.isPropertyAccessExpression(callee) && !callee.questionDotToken && ts.isIdentifier(callee.name) && METHODS.has(callee.name.text) && !CALLS.has(callee.getText())) return ok(callee.expression);
+      if (ts.isPropertyAccessExpression(callee) && !callee.questionDotToken && ts.isIdentifier(callee.name) && METHODS.has(callee.name.text) && !CALLS.has(callee.getText())) {
+        // padStart/padEnd: the target length must be a small integer literal (bounded output).
+        if (PAD.has(callee.name.text)) { const len = n.arguments[0]; if (!len || !ts.isNumericLiteral(len) || !/^\d+$/.test(len.text) || Number(len.text) > MAX_PAD) return false; }
+        return ok(callee.expression);
+      }
       return CALLS.has(callee.getText());
     }
     return false;
