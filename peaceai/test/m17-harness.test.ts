@@ -92,13 +92,13 @@ test("Job B: good append COUNTS (stubFails=true); stub-satisfied test is REJECTE
 
     // Hand-edited verdicts the validator must reject.
     const forged = structuredClone(file);
-    forged.results[1].testGrading.verdict = "COUNTS"; // stubFails stays false
+    forged.results[1]!.testGrading!.verdict = "COUNTS"; // stubFails stays false
     assert.equal(validateResults(forged), false, "COUNTS with stubFails=false");
     const forged2 = structuredClone(file);
-    forged2.results[0].testGrading.stubFails = false; // verdict stays COUNTS
+    forged2.results[0]!.testGrading!.stubFails = false; // verdict stays COUNTS
     assert.equal(validateResults(forged2), false, "stubFails flipped to false under COUNTS");
     const forged3 = structuredClone(file);
-    forged3.results[0].testGrading.stubFails = "false";
+    forged3.results[0]!.testGrading!.stubFails = "false" as unknown as boolean;
     assert.equal(validateResults(forged3), false, "non-boolean stubFails");
     assert.equal(validTestGrading(forged.results[1].testGrading), false);
   } finally { rmSync(fx.dir, { recursive: true, force: true }); }
