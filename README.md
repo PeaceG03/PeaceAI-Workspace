@@ -238,7 +238,9 @@ function (after any guards already there) and writes ONE new test file from the 
 vocabularies (`peaceai/lib/learned-guard.ts`): braces none, Error, message code-only, one line,
 function-entry, new-file test, grading self-fail-before-pass-after. The condition may use only the
 function's parameters, literals, property reads, comparisons, `!`, `&&`/`||`, `typeof` and a few pure
-built-ins. The code must be new to the file, the function a single exported implementation, and test calls
+built-ins, and must read at least one parameter (constant conditions such as `true` or `1 < 2` are
+refused). Property reads and comparisons on a parameter can still run a getter or `valueOf` of the
+caller's object. The code must be new to the file, the function a single exported implementation, and test calls
 literal-only and tripping the same code. Issue cleaning strips `>`, so write `<`/`<=`. A damaged condition
 is refused. Grading (Job B `gradeSelf`): `selfGrade: true` (only on a pinned `learned:` id). The new tests
 must pass with the guard and fail with the candidate's source files reset to the task base. Only that is

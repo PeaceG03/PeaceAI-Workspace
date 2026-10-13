@@ -60,11 +60,16 @@ const parseExpr = (text: string): ts.Expression | null => {
   return ts.isParenthesizedExpression(e) ? e.expression : null;
 };
 
-/** True when every node of the condition is allowed and every free name is one of `params`. */
+/**
+ * True when every node of the condition is allowed, every free name is one of `params`, and at least one
+ * parameter is read (a constant condition such as `true` or `1 < 2` is refused). Note: property reads and
+ * comparisons on a parameter can still run a getter or `valueOf` defined by the caller's object.
+ */
 export function safeCondition(e: ts.Expression, params: ReadonlySet<string>): boolean {
+  let usesParam = false;
   const ok = (n: ts.Node): boolean => {
     if (ts.isParenthesizedExpression(n)) return ok(n.expression);
-    if (ts.isIdentifier(n)) return params.has(n.text);
+    if (ts.isIdentifier(n)) { if (params.has(n.text)) usesParam = true; return params.has(n.text); }
     if (ts.isStringLiteral(n) || ts.isNumericLiteral(n) || n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.NullKeyword) return true;
     if (ts.isPropertyAccessExpression(n)) return !n.questionDotToken && ts.isIdentifier(n.name) && ok(n.expression);
     if (ts.isPrefixUnaryExpression(n)) return (n.operator === ts.SyntaxKind.ExclamationToken && ok(n.operand)) || (n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand));
@@ -73,7 +78,7 @@ export function safeCondition(e: ts.Expression, params: ReadonlySet<string>): bo
     if (ts.isCallExpression(n)) return !n.questionDotToken && !n.typeArguments && CALLS.has(n.expression.getText()) && n.arguments.length === 1 && ok(n.arguments[0]!);
     return false;
   };
-  return ok(e);
+  return ok(e) && usesParam;
 }
 
 const exported = (n: ts.Node) => ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);

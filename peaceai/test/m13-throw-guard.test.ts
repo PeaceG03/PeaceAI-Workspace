@@ -121,6 +121,7 @@ test("engine refusals: unsafe condition, unknown names, non-exported/ambiguous f
   const no = (task: string, content = LIB) => assert.equal(applyRule(spec(), task, files(content)), null, task);
   const T = (cond: string, call = "- `scale(1, 2)` throws X_CODE") => `guard scale in src/lib.ts: throw X_CODE when ${cond}\n${call}`;
   no(T("process.exit(1)"));
+  for (const c of ["true", "1 < 2", "null === null"]) no(T(c)); // Auditor: a condition must read a parameter
   no(T("value > limit"), LIB); // `limit` is not a parameter
   no(T("value = 1"));
   no(T("fetch(value)"));
@@ -145,6 +146,7 @@ test("engine refusals: unsafe condition, unknown names, non-exported/ambiguous f
 test("condition vocabulary: only parameters, literals, reads, comparisons, !, &&/||, typeof and pure built-ins", () => {
   const ok = (s: string) => safeCondition((ts.createSourceFile("c.ts", `(${s});`, ts.ScriptTarget.Latest, true).statements[0] as ts.ExpressionStatement).expression, new Set(["a", "b"]));
   for (const s of ["a > 1", "!a", "a.length === 0", "typeof a !== \"string\"", "Array.isArray(b) && b.length > 3", "Number.isNaN(a) || a < -1", "a === null"]) assert.ok(ok(s), s);
+  for (const s of ["true", "1 < 2", "null === null", "!false", "typeof 1 === \"number\"", "Number.isNaN(0)"]) assert.equal(ok(s), false, `constant: ${s}`);
   for (const s of ["c > 1", "a + 1 > 2", "a.push(1)", "Math.random() > a", "new Date(a)", "a ? 1 : 2", "delete a.b", "a in b", "void a", "a instanceof b", "Number.isFinite(a, b)"]) assert.equal(ok(s), false, s);
 });
 
