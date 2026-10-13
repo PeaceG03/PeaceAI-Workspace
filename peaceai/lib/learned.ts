@@ -59,7 +59,9 @@ export function validateSpec(o: unknown): o is RuleSpec {
 
 /** M12: ADD_TEST_CASE specs carry exactly the template parameters, from fixed vocabularies; public-mined only. */
 function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...TEST_PARAM_KEYS].join(",")) return false;
+  // M20: the optional `args` key (only value "object-literal") marks the object-literal-arguments spec.
+  const keys = Object.keys(p).filter((k) => k !== "args").sort().join(",");
+  if (minedFrom !== "public" || keys !== [...TEST_PARAM_KEYS].join(",") || ("args" in p && p.args !== "object-literal")) return false;
   const checks = p.checks;
   return (
     Array.isArray(checks) && checks.length > 0 && checks.every((c) => (TEST_CHECKS as readonly unknown[]).includes(c)) && new Set(checks).size === checks.length &&

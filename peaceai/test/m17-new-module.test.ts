@@ -148,7 +148,7 @@ test("regrade (#99): stub check and the old base -> new head -> fresh grade reco
   assert.equal(r.newHead, "b".repeat(40));
 });
 
-test("miner label bumped to v2", async () => {
+test("miner label bumped to v2 (M20: v3, objectArgs test-case style)", async () => {
   const { MINER_VERSION } = await import("../lib/mine.ts");
-  assert.equal(MINER_VERSION, "peaceai-miner:v2");
+  assert.equal(MINER_VERSION, "peaceai-miner:v3");
 });

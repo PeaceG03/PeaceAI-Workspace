@@ -70,6 +70,12 @@ export function proposeRules(stats: readonly ShapeStats[], minedFrom: "public" |
       trigger: kind === "ADD_NULLISH_DEFAULT" ? nullishTrigger(params.kinds as string[]) : TRIGGERS[kind], params, evidence: { hunks: s.hunks, commits: s.commits, files: s.files, repos: [...repos].sort() },
     };
     proposals.push({ spec, sha256: specHash(spec), stats: s });
+    // M20: with enough public test cases whose calls take object-literal arguments, a second, separate spec
+    // (same template, plus `args: object-literal`) accepts longer checks built from bounded object literals.
+    if (kind === "ADD_TEST_CASE" && (s.styles.objectArgs?.yes ?? 0) >= MIN_KIND_SUPPORT) {
+      const o: RuleSpec = { ...spec, id: spec.id.replace(/-v1$/, "-objargs-v1"), params: { ...params, args: "object-literal" } };
+      proposals.push({ spec: o, sha256: specHash(o), stats: s });
+    }
   }
   return { proposals, skipped };
 }
