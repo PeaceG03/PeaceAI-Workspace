@@ -194,6 +194,12 @@ jobs:
         with:
           name: peaceai-lm-fills
           path: ${{ runner.temp }}/lm-fills
+      # M18: a pending stale-base regrade request (verdict job comment) re-submits exactly that candidate.
+      - name: Read a pending regrade request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGRADE_FILE: ${{ runner.temp }}/regrade-request.json
+        run: ./node_modules/.bin/tsx peaceai/bin/regrade-fetch.ts
       - name: Generate candidates
         id: generate
         env:
@@ -205,6 +211,7 @@ jobs:
           export PEACEAI_KERNEL_BUNDLE="$RUNNER_TEMP/peaceai-kernel/kernel.cjs"
           export PEACEAI_OUT_DIR="$RUNNER_TEMP/peaceai-out"
           export ISSUE_JSON="$RUNNER_TEMP/issue.json"
+          if [ -s "$RUNNER_TEMP/regrade-request.json" ]; then export PEACEAI_REGRADE_FILE="$RUNNER_TEMP/regrade-request.json"; fi
           # M8: core-mined learned rules are read from the core checkout; the approved list from this repo.
           export PEACEAI_CORE_DIR="$RUNNER_TEMP/peaceai-core"
           if [ "${{ needs.select.outputs.is_default }}" != "true" ]; then export PEACEAI_WORKSPACE_DIR="$RUNNER_TEMP/peaceai-target"; fi
@@ -217,7 +224,7 @@ jobs:
             ./node_modules/.bin/tsx peaceai/bin/gate.ts
       - name: Delete core
         if: always()
-        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/issue.json" "$RUNNER_TEMP/peaceai-target"
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP/peaceai-kernel" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/issue.json" "$RUNNER_TEMP/peaceai-target" "$RUNNER_TEMP/regrade-request.json"
       - name: Upload candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

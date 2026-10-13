@@ -3,6 +3,7 @@ import type { SummaryCandidate } from "./gate.ts";
 import { isHeldOut, isTestTask, taskRequiresTests } from "./policy.ts";
 import { isPassing, rankCandidates, shuffle, type CandidateResult } from "./rank.ts";
 import type { TestGrading } from "./results.ts";
+import type { RegradeOf } from "./regrade.ts";
 import type { VerdictValue } from "./verdict.ts";
 
 export const TASK_SCHEMA = "peaceai-results-task:v1";
@@ -36,6 +37,8 @@ export interface TaskRecord {
   source?: TaskSource;
   /** M5: target repository (`owner/repo`) the diffs apply to. Absent on older records = this Workspace. */
   target?: string;
+  /** M18: this attempt re-grades a chosen candidate of an earlier attempt on a newer base (fresh grade). */
+  regradeOf?: RegradeOf;
 }
 
 export type TaskSource = "peace" | "builder";
@@ -144,6 +147,7 @@ export interface TaskInputs {
   body: string;
   source?: TaskSource;
   target?: string;
+  regradeOf?: RegradeOf;
 }
 
 /**
@@ -238,6 +242,7 @@ export function buildRecords(
       requiresTests,
       source: task.source === "builder" ? "builder" : "peace",
       ...(task.target ? { target: task.target } : {}),
+      ...(task.regradeOf ? { regradeOf: { ...task.regradeOf } } : {}),
     },
     ranking: {
       schema: RANKING_SCHEMA,

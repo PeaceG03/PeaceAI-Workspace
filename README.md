@@ -270,6 +270,10 @@ must pass with the guard and fail with the candidate's source files reset to the
 
 `apply-verdict-patch.sh` (Builder, on the box): when the target head has moved past the task base, the chosen candidate is re-applied onto the current head with a plain `git am` (no 3-way, no conflict resolution; anything that does not apply cleanly is refused) and graded fresh there by `peaceai/lib/rebase.ts`: the original suite must pass, each new test the candidate adds must pass with it and fail with its non-test edit taken back out. The task-time grade is never carried forward. A refusal resets the worktree to where it started; a pass adds a `PeaceAI-Regrade:` trailer to the commit. Both files are in the protected set.
 
+### Stale-base regrade through Job B (M18)
+
+When the owner's `/verdict X right` picks a candidate whose task base is no longer the target's head, the verdict job does not build a patch on the old base. It posts a regrade request on the issue (the chosen diff, hash-pinned, plus its run, candidate and kind). Re-queuing the task (remove `peaceai:done`, re-add `peace-task`) makes Job A re-apply exactly that diff onto the current head with a plain `git apply` (refused, 0 candidates, if it does not apply cleanly, the learned rule is no longer approved, or the base is not stale). Sandboxed Job B grades it fresh there, and the Results task record of the new attempt carries `regradeOf` (old run, candidate, old base, diff hash). The old grade is never carried forward; the owner gives a new verdict on the new attempt.
+
 ### New-function edit type (M15)
 
 `ADD_FUNCTION` (spec `peaceai/rules/learned/public-add-function-v1.json`, mined from public commits only: 8 added exported single-return functions in PeaceSTOCKS and this repo; core-mined specs of this kind are refused). Task form:

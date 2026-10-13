@@ -494,5 +494,6 @@ test("workflows: patch job has no environment or secrets; index is built only af
   const order = ["Re-check the target is public", "Clone the target anonymously", "build-kernel.sh", "generate.ts"].map((s) => gen.indexOf(s));
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1]!)), `generate job order ${order.join(",")}`);
   const generate = readFileSync(join(repo, "peaceai/bin/generate.ts"), "utf8");
-  assert.equal([...generate.matchAll(/writeFileSync\(/g)].length, 3, "generate writes only worktree files, candidate diffs and the summary");
+  // M18: + the regrade mode's one candidate diff and regrade.json (both in the output dir).
+  assert.equal([...generate.matchAll(/writeFileSync\(/g)].length, 5, "generate writes only worktree files, candidate diffs, the summary and (regrade mode) regrade.json");
 });
