@@ -10,6 +10,8 @@ export interface DiffFile {
   newMode: string | null;
   addedLines: string[];
   removedLines: string[];
+  /** M14: an existing file changed only by lines added at its end (one hunk, nothing removed, no context after the additions). */
+  appendOnly: boolean;
 }
 
 function stripPrefix(value: string, prefix: "a/" | "b/"): string | null {
@@ -21,6 +23,7 @@ export function parseDiff(text: string): DiffFile[] {
   const files: DiffFile[] = [];
   let current: DiffFile | null = null;
   let inHunk = false;
+  const hunks = new Map<DiffFile, { count: number; contextAfterAdd: boolean }>();
   for (const line of text.split("\n")) {
     if (line.startsWith("diff --git ")) {
       const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
@@ -35,7 +38,9 @@ export function parseDiff(text: string): DiffFile[] {
         newMode: null,
         addedLines: [],
         removedLines: [],
+        appendOnly: false,
       };
+      hunks.set(current, { count: 0, contextAfterAdd: false });
       files.push(current);
       inHunk = false;
       continue;
@@ -46,9 +51,11 @@ export function parseDiff(text: string): DiffFile[] {
     }
     if (line.startsWith("@@")) {
       inHunk = true;
+      hunks.get(current)!.count += 1;
       continue;
     }
     if (inHunk) {
+      if (line.startsWith(" ") || line.startsWith("\\")) { if (current.addedLines.length > 0) hunks.get(current)!.contextAfterAdd = true; }
       if (line.startsWith("+")) current.addedLines.push(line.slice(1));
       else if (line.startsWith("-")) current.removedLines.push(line.slice(1));
       continue;
@@ -65,6 +72,10 @@ export function parseDiff(text: string): DiffFile[] {
     } else if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) current.isBinary = true;
     else if (line.startsWith("--- ")) current.oldPath = stripPrefix(line.slice(4).trim(), "a/");
     else if (line.startsWith("+++ ")) current.newPath = stripPrefix(line.slice(4).trim(), "b/");
+  }
+  for (const f of files) {
+    const h = hunks.get(f)!;
+    f.appendOnly = !f.isNew && !f.isDeleted && !f.isRename && !f.isBinary && !f.modeChange && h.count === 1 && f.removedLines.length === 0 && f.addedLines.length > 0 && !h.contextAfterAdd;
   }
   return files;
 }

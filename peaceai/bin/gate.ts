@@ -52,7 +52,7 @@ for (const candidate of summary.candidates ?? []) {
     fail(`${candidate.id}: missing diff`);
     continue;
   }
-  const result = gateCandidate(diff, baseFiles, baseline, core, scope);
+  const result = gateCandidate(diff, baseFiles, baseline, core, scope, { testAppend: typeof candidate.fixSha === "string" });
   if (!result.ok) for (const reason of result.reasons) fail(`${candidate.id}: ${reason}`);
 }
 if (failed) process.exit(1);

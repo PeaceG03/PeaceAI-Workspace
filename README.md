@@ -229,6 +229,23 @@ id and hash are pinned in `peaceai/rules/approved.json`; `lm-fill:<model>` is ac
 model id bound by the caller (none of the jobs binds one, so it is refused). `learned-test.ts` and
 `minetest.ts` are in the protected self-change set.
 
+### Test-append edit type (M14)
+
+`public-test-case-append-v1` is the M12 `ADD_TEST_CASE` template with `placement: append`: the same task text
+(trigger, bullets, `Fix:` line), but the new case is appended at the END of the target's own test file
+(`<stem>.test.ts`) instead of a new file. Evidence: shape `TEST_CASE_APPEND` (a new case after every existing
+statement of an existing test file; public PeaceSTOCKS + this Workspace only). The file must already import
+`assert` (default, node:assert/strict), `test` (default, node:test) and every name the checks start from,
+from the target module; a duplicate test name is refused. **Narrow exception to "existing tests are never
+edited":** the scope gate (`checkCandidateScope(..., { testAppend })`) accepts a change to an existing test
+file only when the candidate is a graded learned test (summary `fixSha`, passed by Job A, the gate and Job
+B) AND the diff is a pure end-append (`DiffFile.appendOnly`: one hunk, nothing removed, no context after
+the added lines). Every other candidate, and every other change to an existing test, is still refused.
+**Grading:** pass 1 runs the appended file exactly as on the base. For before/after grading the harness
+rewrites the file to the base file's import lines plus the appended lines only, so cases already in the
+file (even ones the fix itself added) can never make a passes-both case count. An appended import is
+refused. No M7 repair.
+
 ### Throw-guard edit type (M13)
 
 `ADD_THROW_GUARD` adds `if (CONDITION) throw new Error("CODE");` at the entry of a uniquely named exported

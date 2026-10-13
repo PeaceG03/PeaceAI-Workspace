@@ -34,6 +34,8 @@ export function checkCandidateScope(
   files: readonly DiffFile[],
   baseFiles: ReadonlySet<string>,
   scope: CandidateScope = WORKSPACE_SCOPE,
+  /** M14: `testAppend` only for a graded learned test (summary `fixSha`): new cases appended at the end of an existing test file. */
+  opts: { testAppend?: boolean } = {},
 ): ScopeViolation[] {
   const violations: ScopeViolation[] = [];
   if (files.length === 0) violations.push({ path: "(none)", reason: "empty diff" });
@@ -57,7 +59,7 @@ export function checkCandidateScope(
     const exists = baseFiles.has(path);
     if (file.isNew && exists) violations.push({ path, reason: "creates a file that already exists" });
     if (!file.isNew && !exists) violations.push({ path, reason: "edits a file missing from base" });
-    if (exists && scope.isTest(path)) violations.push({ path, reason: "modifies an existing test file" });
+    if (exists && scope.isTest(path) && !(opts.testAppend && file.appendOnly)) violations.push({ path, reason: "modifies an existing test file" });
   }
   return violations;
 }

@@ -62,7 +62,7 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
   return (
     Array.isArray(checks) && checks.length > 0 && checks.every((c) => (TEST_CHECKS as readonly unknown[]).includes(c)) && new Set(checks).size === checks.length &&
     (TEST_FRAMEWORKS as readonly unknown[]).includes(p.framework) && (TEST_ASSERTS as readonly unknown[]).includes(p.assert) &&
-    (TEST_MATCHERS as readonly unknown[]).includes(p.matcher) && p.placement === "new-file" && p.grading === "fail-before-pass-after" &&
+    (TEST_MATCHERS as readonly unknown[]).includes(p.matcher) && (p.placement === "new-file" || p.placement === "append") && p.grading === "fail-before-pass-after" &&
     typeof p.maxLines === "string" && /^[1-9][0-9]?$/.test(p.maxLines)
   );
 }

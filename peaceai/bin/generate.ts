@@ -218,6 +218,11 @@ for (const a of planSteps ? [] : admissions) {
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   if (edit.extra && (edit.create || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
   if (edit.selfGrade && !edit.extra) continue;
+  // M14: a test rule that appends edits an existing test file only by adding lines at its end.
+  if (!edit.create && edit.fixSha !== undefined) {
+    const cur = candidatesForContext.find((f) => f.path === edit.path);
+    if (!/^[0-9a-f]{40}$/.test(edit.fixSha) || !cur || !scope.isTest(edit.path) || !edit.content.startsWith(cur.content) || edit.extra) continue;
+  }
   const current = edit.create ? null : candidatesForContext.find((f) => f.path === edit.path)!;
   const diff = toDiff([current
     ? { operation: "EDIT_FILE", path: edit.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content: edit.content, transformation: `LEARNED_${a.spec.kind}` }
@@ -227,12 +232,12 @@ for (const a of planSteps ? [] : admissions) {
   const key = createHash("sha256").update(diff).digest("hex");
   if (seen.has(key)) continue;
   seen.add(key);
-  if (checkCandidateScope(parseDiff(diff), baseFiles, scope).length > 0) {
+  if (checkCandidateScope(parseDiff(diff), baseFiles, scope, { testAppend: !!edit.fixSha }).length > 0) {
     scopeRejected += 1;
     continue;
   }
   learnedCandidates += 1;
-  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}@${specHash(a.spec)}`, ...(edit.create ? { fixSha: edit.fixSha } : {}), ...(edit.selfGrade ? { selfGrade: true as const } : {}) });
+  candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: [`LEARNED_${a.spec.kind}`], operationId: `learned:${a.spec.id}@${specHash(a.spec)}`, ...(edit.fixSha ? { fixSha: edit.fixSha } : {}), ...(edit.selfGrade ? { selfGrade: true as const } : {}) });
 }
 const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
