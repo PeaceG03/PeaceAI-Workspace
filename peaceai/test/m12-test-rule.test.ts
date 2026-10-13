@@ -70,7 +70,7 @@ test("test miner: a new top-level test() case in a test file is one TEST_CASE wi
   assert.equal(obs.length, 1, "the unchanged case is not counted");
   assert.deepEqual(obs[0]!.style, {
     framework: "node:test-default", assert: "node:assert/strict-default", importExt: "none", lines: "<=12",
-    "check:equal": "yes", "check:deepEqual": "yes", "check:throws": "yes", "check:rejects": "no", matcher: "regex", async: "no", failClosed: "yes", calendar: "yes",
+    "check:equal": "yes", "check:deepEqual": "yes", "check:throws": "yes", "check:rejects": "no", matcher: "regex", objectArgs: "no", async: "no", failClosed: "yes", calendar: "yes",
   });
   assert.ok(!JSON.stringify(obs).includes("NEGATIVE"), "no code text in observations");
   assert.deepEqual(observeTestFile("PeaceSTOCKS@1", "src/f.ts", post, diff), [], "non-test files are not test evidence");
@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "6c05d2997ec8dc83159b430d65443dc7588d03b7c648ec5154ddbf2eb205a850";
+const PROTECTED_DIGEST = "ff19b34a209574cb611f4d7038da444f7fa65d1a8f98631e632ad0daac579cc0";

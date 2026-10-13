@@ -110,3 +110,13 @@ test("protected (M20, Auditor): lib/objargs.ts is protected and inside the pinne
   const m12 = readFileSync(join(repo, "peaceai/test/m12-test-rule.test.ts"), "utf8");
   assert.equal(createHash("sha256").update(P.map((x) => x.pattern.source).join("\n")).digest("hex"), /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1]);
 });
+
+test("objargs boundary positive (Auditor '-1'): a negative number literal -1 is accepted as a value (and as a nested/array value)", () => {
+  for (const c of ["{ n: -1 }", "{ a: { n: -1 }, b: [-1, 1] }"]) {
+    const e = applyRule(OBJ, task(c, '"RUN"'), files, isTest);
+    assert.ok(e, c);
+    assert.ok(e!.content.includes(`decide(${c}).mode`), c);
+  }
+  assert.equal(applyRule(OBJ, task("{ n: -x }", '"RUN"'), files, isTest), null, "negation of a non-literal stays refused");
+  assert.equal(applyRule(OBJ, task("{ n: - -1 }", '"RUN"'), files, isTest), null, "double negation stays refused");
+});
