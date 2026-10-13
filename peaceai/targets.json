@@ -28,7 +28,8 @@
       "install": "pnpm",
       "originalSuite": "related",
       "writeEnvironment": "peacestocks-write",
-      "verdictRoute": "patch"
+      "verdictRoute": "patch",
+      "workflowPattern": "^\\.github/workflows/tenmin-mode-sim\\.yml$"
     }
   }
 }

@@ -254,7 +254,11 @@ outer: for (const variant of planSteps ? [] : variants) {
 let learnedCandidates = 0;
 for (const a of planSteps ? [] : admissions) {
   if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
-  const edit = applyRule(a.spec, objectiveText, candidatesForContext, scope.isTest);
+  // M19: a workflow-step rule also sees the opted-in workflow files, package.json and the lockfile names.
+  const workflowFiles = a.spec.kind === "ADD_WORKFLOW_STEP"
+    ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json").map((p) => ({ path: p, content: "" }))]
+    : [];
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest);
   if (!edit) continue;
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
@@ -263,6 +267,8 @@ for (const a of planSteps ? [] : admissions) {
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   if (edit.extra && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
   if (edit.selfGrade && !edit.extra) continue;
+  // M19: a workflow edit only from the workflow-step rule, on an existing opted-in workflow, self-graded.
+  if (!scope.isSource(edit.path) && !(a.spec.kind === "ADD_WORKFLOW_STEP" && scope.isWorkflow?.(edit.path) && baseFiles.has(edit.path) && !edit.create && edit.selfGrade && edit.extra?.length === 1)) continue;
   // M14: a test rule that appends edits an existing test file only by adding lines at its end.
   if (!edit.create && edit.fixSha !== undefined) {
     const cur = candidatesForContext.find((f) => f.path === edit.path);

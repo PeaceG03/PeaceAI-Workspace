@@ -143,10 +143,11 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
  * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
  * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
  */
-function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false): TestGrading {
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
-  const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
+  // M19: an opted-in workflow edited by the workflow-step rule is put back to the base like a source file.
+  const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && ((scope.isSource(f.newPath) && !scope.isTest(f.newPath)) || (workflowStep && !!scope.isWorkflow?.(f.newPath)))).map((f) => f.newPath!);
   // M17: a new source module (ADD_FUNCTION new-module) is taken back out by removing it.
   const created = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isTest(f.newPath));
@@ -393,7 +394,7 @@ for (const candidate of selected) {
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
-    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"));
+    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"));
   } finally {
     killSandbox();
     // The tools copy may be read-only (Job B makes them so); restore write access before removing.
