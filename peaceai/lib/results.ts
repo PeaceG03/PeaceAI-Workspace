@@ -5,7 +5,7 @@ import type { CandidateResult } from "./rank.ts";
  * (the task's base) and on the code before the fix (the fix commit's non-test source change reversed), both
  * as the sandbox user; pass/fail is the captured exit code. Only pass-after AND fail-before counts.
  */
-export const GRADING_VERDICTS = ["COUNTS", "REJECTED_PASSES_BOTH", "REJECTED_FAILS_BOTH", "REJECTED_FAILS_AFTER_FIX", "UNGRADABLE"] as const;
+export const GRADING_VERDICTS = ["COUNTS", "REJECTED_PASSES_BOTH", "REJECTED_FAILS_BOTH", "REJECTED_FAILS_AFTER_FIX", "UNGRADABLE", "REJECTED_PASSES_WITH_STUB"] as const;
 export type GradingVerdict = (typeof GRADING_VERDICTS)[number];
 export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-invalid", "fix-not-on-main", "fix-not-ancestor", "fix-touches-non-source", "no-source-change", "revert-failed"] as const;
 export type UngradableReason = (typeof UNGRADABLE_REASONS)[number];
@@ -41,9 +41,11 @@ export interface TestGrading {
   beforeFix: boolean | null;
   verdict: GradingVerdict;
   reason: (typeof UNGRADABLE_REASONS)[number] | null;
+  /** M17 (ADD_FUNCTION only): the new tests FAILED with the function's body replaced by a type-default stub. */
+  stubFails?: boolean;
 }
-export function gradingVerdict(afterFix: boolean, beforeFix: boolean): GradingVerdict {
-  if (afterFix && !beforeFix) return "COUNTS";
+export function gradingVerdict(afterFix: boolean, beforeFix: boolean, stubFails?: boolean): GradingVerdict {
+  if (afterFix && !beforeFix) return stubFails === false ? "REJECTED_PASSES_WITH_STUB" : "COUNTS";
   if (afterFix && beforeFix) return "REJECTED_PASSES_BOTH";
   if (!afterFix && !beforeFix) return "REJECTED_FAILS_BOTH";
   return "REJECTED_FAILS_AFTER_FIX";
@@ -51,10 +53,12 @@ export function gradingVerdict(afterFix: boolean, beforeFix: boolean): GradingVe
 export function validTestGrading(g: unknown): g is TestGrading {
   if (!g || typeof g !== "object") return false;
   const t = g as Record<string, unknown>;
-  if (Object.keys(t).sort().join(",") !== "afterFix,beforeFix,fixSha,reason,verdict") return false;
+  const keys = Object.keys(t).sort().join(",");
+  if (keys !== "afterFix,beforeFix,fixSha,reason,verdict" && keys !== "afterFix,beforeFix,fixSha,reason,stubFails,verdict") return false;
+  if ("stubFails" in t && typeof t.stubFails !== "boolean") return false;
   if (typeof t.fixSha !== "string" || !/^[0-9a-f]{40}$/.test(t.fixSha) || typeof t.afterFix !== "boolean") return false;
   if (t.verdict === "UNGRADABLE") return t.beforeFix === null && (UNGRADABLE_REASONS as readonly unknown[]).includes(t.reason);
-  return typeof t.beforeFix === "boolean" && t.reason === null && t.verdict === gradingVerdict(t.afterFix, t.beforeFix);
+  return typeof t.beforeFix === "boolean" && t.reason === null && t.verdict === gradingVerdict(t.afterFix, t.beforeFix, t.stubFails as boolean | undefined);
 }
 
 export interface ResultsFile {

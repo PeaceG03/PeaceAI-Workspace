@@ -1,7 +1,7 @@
 // Job B: apply each candidate to a clean checkout and test it. No secrets, no core.
 import { spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { countDiffLines, parseDiff } from "../lib/diff.ts";
@@ -12,6 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
+import { callsFunction, stubFunction } from "../lib/learned-function.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
@@ -142,15 +143,36 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
  * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
  * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
  */
-function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string): TestGrading {
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
+  // M17: a new source module (ADD_FUNCTION new-module) is taken back out by removing it.
+  const created = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isTest(f.newPath));
-  if (newTests.length === 0 || source.length === 0 || source.length + tests.length !== files.length) return ungradable("not-test-only");
-  if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", ...source])) return ungradable("revert-failed");
+  if (newTests.length === 0 || source.length + created.length === 0 || source.length + created.length + tests.length !== files.length) return ungradable("not-test-only");
+  // M17 (Auditor), ADD_FUNCTION only: every new test must CALL the added function, and must also FAIL with the
+  // function's body replaced by a type-default stub. Both run before the revert (on the candidate's own tree).
+  let stubFails: boolean | undefined;
+  if (addFunction) {
+    const src = [...source, ...created];
+    const added = files.flatMap((f) => f.addedLines).map((l) => /^export function ([A-Za-z_$][\w$]*)\(/.exec(l)?.[1]).filter((n): n is string => !!n);
+    if (src.length !== 1 || added.length !== 1) return ungradable("not-test-only");
+    const fn = added[0]!;
+    const file = join(tree, src[0]!);
+    if (lstatSync(file).isSymbolicLink() || relative(tree, realpathSync(file)).startsWith("..")) return ungradable("not-applied");
+    if (!newTests.every((t) => callsFunction(readFileSync(join(tree, t), "utf8"), fn))) return ungradable("not-test-only");
+    const real = readFileSync(file, "utf8");
+    const stub = stubFunction(real, fn);
+    if (stub === null) return ungradable("not-test-only");
+    writeFileSync(file, stub);
+    stubFails = !runCandidate(tree, tsx, ["--test", ...newTests]);
+    writeFileSync(file, real);
+  }
+  if (source.length && !runTrusted(tree, "git", ["checkout", "-q", base, "--", ...source])) return ungradable("revert-failed");
+  if (created.length && !runTrusted(tree, "rm", ["-f", "--", ...created])) return ungradable("revert-failed");
   const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
-  return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
+  return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix, stubFails), reason: null, ...(stubFails === undefined ? {} : { stubFails }) };
 }
 
 // ---- M7 repair stage
@@ -371,7 +393,7 @@ for (const candidate of selected) {
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
-    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx);
+    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"));
   } finally {
     killSandbox();
     // The tools copy may be read-only (Job B makes them so); restore write access before removing.

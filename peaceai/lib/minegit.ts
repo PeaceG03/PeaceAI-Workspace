@@ -22,6 +22,21 @@ export function mineRepo(dir: string, rev: string, label: string): { commits: nu
       } catch { /* root commit */ }
     }
   }
+  // M17: files a commit ADDS contribute only new-module PURE_FUNCTION observations (no other shape's
+  // statistics change).
+  for (const c of commits) {
+    let added: string[];
+    try {
+      added = git("diff-tree", "--no-commit-id", "--name-only", "-r", "--diff-filter=A", c).split("\n").filter((f) => SOURCE_FILE.test(f) && !SKIP_FILE.test(f));
+    } catch { continue; }
+    if (added.length === 0 || added.length > MAX_FILES_PER_COMMIT) continue;
+    for (const f of added) {
+      try {
+        const diff = git("diff", "-U0", "--no-color", "--no-renames", `${c}^`, c, "--", f);
+        observations.push(...observeFile(`${label}@${c.slice(0, 10)}`, f, git("show", `${c}:${f}`), parseHunks(diff)).filter((o) => o.shape === "PURE_FUNCTION" && o.style.placement === "new-module"));
+      } catch { /* root commit */ }
+    }
+  }
   return { commits: commits.length, observations };
 }
 

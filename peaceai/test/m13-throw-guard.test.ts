@@ -14,7 +14,7 @@ import { parseDiff } from "../lib/diff.ts";
 import { validateSummary } from "../lib/gate.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { buildGuardEdit, GUARD_TRIGGER, parseGuardTask, safeCondition } from "../lib/learned-guard.ts";
-import { observeFile, parseHunks, tally, type ShapeStats } from "../lib/mine.ts";
+import { MINER_VERSION, observeFile, parseHunks, tally, type ShapeStats } from "../lib/mine.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
 import { parseTask } from "../lib/nlparse.ts";
 import { proposalBody, proposeRules } from "../lib/propose.ts";
@@ -88,8 +88,9 @@ const stats = (over: Partial<ShapeStats["styles"]> = {}): ShapeStats => ({
 test("proposal: learned from public evidence only; the rendered params are the majority form with enough support", () => {
   const { proposals } = proposeRules([stats()], "public", ["PeaceG03/PeaceSTOCKS", "PeaceG03/PeaceAI-Workspace"]);
   assert.equal(proposals.length, 1);
-  assert.deepEqual(proposals[0]!.spec, spec());
-  assert.equal(proposals[0]!.sha256, specHash(spec()));
+  // M17: the miner label moved to v2; a re-proposal carries the current label (committed specs keep theirs).
+  assert.deepEqual(proposals[0]!.spec, spec({ minerVersion: MINER_VERSION }));
+  assert.equal(proposals[0]!.sha256, specHash(spec({ minerVersion: MINER_VERSION })));
   assert.equal(proposeRules([stats()], "core", ["PeaceG03/PeaceAI"]).proposals.length, 0, "never core-mined");
   assert.equal(proposeRules([stats({ placement: { "function-body": 20, "function-entry": 1 } })], "public", ["x"]).proposals.length, 0, "entry placement needs support");
   assert.equal(proposeRules([stats({ message: { "code-detail": 9, "code-only": 3 } })], "public", ["x"]).proposals.length, 0, "message majority must be code-only");
