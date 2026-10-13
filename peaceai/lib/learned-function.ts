@@ -7,6 +7,8 @@
 // no closures, no assignment). Job B grades the candidate against itself (`selfGrade`): its new test must pass with
 // the function and fail with the module put back to the task base. Deterministic; no model.
 import { createHash } from "node:crypto";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, type TestTask } from "./learned-test.ts";
 
@@ -149,7 +151,7 @@ export function buildFunctionEdit(
   // A new function only: the name must not already be declared, imported or exported anywhere in the module.
   if (declaredNames(sf).has(task.fn) || new RegExp(String.raw`\b${task.fn.replace(/\$/g, "\\$")}\b`).test(target.content)) return null;
   const names = new Set(task.params.map((p) => p.name));
-  if (names.has(task.fn)) return null;
+  if (names.has(task.fn) || PROTECTED_NAMES.test(task.fn) || [...names].some((n) => PROTECTED_NAMES.test(n))) return null;
   const body = parseExpr(task.expr);
   if (!body || !safeBody(body, names)) return null;
   const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
@@ -162,7 +164,7 @@ export function buildFunctionEdit(
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
   const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
-  if (!test) return null;
+  if (!test || !callsFunction(test.content, task.fn)) return null;
   return { path: target.path, content, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
 }
 
@@ -170,14 +172,14 @@ export function buildFunctionEdit(
 export const NEW_MODULE_PATH = /^src\/(?:[a-z0-9][\w-]*\/)*[a-z0-9][\w-]*\.ts$/;
 function buildNewModule(task: FunctionTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): FunctionEdit | null {
   const path = task.file;
-  if (!NEW_MODULE_PATH.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return null;
+  if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return null;
   // Same-directory sibling required: a new module goes next to existing source, never into a new directory.
   const dir = path.slice(0, path.lastIndexOf("/") + 1);
   if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return null;
   // The name must not already be a file name in that directory (case-insensitive), e.g. foo.ts vs Foo.ts.
   if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return null;
   const names = new Set(task.params.map((p) => p.name));
-  if (names.has(task.fn)) return null;
+  if (names.has(task.fn) || PROTECTED_NAMES.test(task.fn) || [...names].some((n) => PROTECTED_NAMES.test(n))) return null;
   const body = parseExpr(task.expr);
   if (!body || !safeBody(body, names)) return null;
   const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
@@ -187,11 +189,71 @@ function buildNewModule(task: FunctionTask, files: readonly { path: string; cont
   const withFn = [...files, { path, content }];
   const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
-  if (!test || test.path === path) return null;
+  if (!test || test.path === path || !callsFunction(test.content, task.fn)) return null;
   return { path, content, create: true, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
+}
+
+/**
+ * M17 (Auditor): names a new function may never take: gate/approval/leak function names (they would reach the
+ * protected set by content), prototype/Object members, and anything starting with `__`.
+ */
+export const PROTECTED_NAMES = /^(?:isProtectedPath|protectedReason|PROTECTED_SELF|checkSelfChangeDiff|promotionDecision|mayChangeProtected|lmJobAllowed|scanText|validateSpec|specHash|applyRule|admitRules|loadApprovedList|checkCandidateScope|gradeSelf|gradingVerdict|validTestGrading|rebaseAndRegrade|stubFunction|constructor|prototype|toString|valueOf|hasOwnProperty|isPrototypeOf|propertyIsEnumerable|toLocaleString|then|default|__\w*)$/;
+/** Paths a new module may never take: anything protected, or under peaceai/, .github/ or scripts. */
+export const PROTECTED_MODULE = /(^|\/)(peaceai|\.github|\.githooks|scripts?|bin)\/|(^|[\/._-])(public-origin|approved?|approval|leak|gates?|selfchange|secrets?|tokens?|credentials?)([._-]|\.ts$)/i;
+
+/** M17 (Auditor): an import-only test is refused. The test must CALL the function (outside the import line). */
+export function callsFunction(testContent: string, fn: string): boolean {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  let calls = 0;
+  const visit = (n: ts.Node) => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === fn) calls++; ts.forEachChild(n, visit); };
+  visit(sf);
+  return calls > 0;
+}
+
+/**
+ * M17 (Auditor): the module with exported function `fn`'s body replaced by a type-default return ("" / 0 /
+ * false / []). The new test must FAIL against this stub too (a test a constant satisfies proves nothing).
+ * Null when `fn` is not exactly one exported single-return function with a vocabulary return type.
+ */
+export function stubFunction(content: string, fn: string): string | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
+  if (hits.length !== 1) return null;
+  const f = hits[0]!;
+  const st = f.body?.statements;
+  if (!f.type || !st || st.length !== 1 || !ts.isReturnStatement(st[0]!) || !st[0]!.expression) return null;
+  const t = f.type.getText(sf).replace(/^readonly /, "");
+  const dflt = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : null;
+  if (!dflt) return null;
+  const e = st[0]!.expression;
+  return content.slice(0, e.getStart(sf)) + dflt + content.slice(e.getEnd());
 }
 
 export function applyFunctionRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean): FunctionEdit | null {
   const task = parseFunctionTask(trigger, objective);
   return task ? buildFunctionEdit(params, task, files, isTest) : null;
+}
+
+/**
+ * M17 (Auditor): on disk, a new module's path must resolve inside `root` and no existing component of it may be
+ * a symlink (checked with lstat, then realpath of the deepest existing directory). The file itself must not exist.
+ */
+export function safeNewModuleOnDisk(root: string, rel: string): boolean {
+  if (!NEW_MODULE_PATH.test(rel)) return false;
+  let realRoot: string;
+  try { realRoot = realpathSync(root); } catch { return false; }
+  const parts = rel.split("/");
+  let cur = root;
+  for (let i = 0; i < parts.length; i++) {
+    cur = join(cur, parts[i]!);
+    let st;
+    try { st = lstatSync(cur); } catch { if (i === parts.length - 1) break; return false; }
+    if (st.isSymbolicLink()) return false;
+    if (i === parts.length - 1) return false; // the module already exists
+    if (!st.isDirectory()) return false;
+  }
+  const dir = join(root, ...parts.slice(0, -1));
+  if (!existsSync(dir)) return false;
+  const r = relative(realRoot, realpathSync(dir));
+  return r === "" || (!r.startsWith("..") && !r.startsWith(sep) && !r.split(sep).includes(".."));
 }

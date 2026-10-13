@@ -75,3 +75,80 @@ test("miner: an exported single-return function in a file-creating hunk is PURE_
   assert.equal(obs[0]!.shape, "PURE_FUNCTION");
   assert.equal(obs[0]!.style.placement, "new-module");
 });
+
+// ---- M17 Auditor fixes
+import { mkdirSync as mk, symlinkSync } from "node:fs";
+import { callsFunction, PROTECTED_MODULE, PROTECTED_NAMES, safeNewModuleOnDisk, stubFunction } from "../lib/learned-function.ts";
+import { gradingVerdict, validTestGrading } from "../lib/results.ts";
+import { freshVerdict, regradeRecord } from "../lib/rebase.ts";
+
+test("stub: body replaced by the type default; a test the stub satisfies is REJECTED_PASSES_WITH_STUB", () => {
+  assert.equal(stubFunction("export function f(x: number): number {\n  return x + 1;\n}\n", "f"), "export function f(x: number): number {\n  return 0;\n}\n");
+  assert.match(stubFunction("export function f(s: string): readonly string[] {\n  return s.split(\",\");\n}\n", "f")!, /return \[\];/);
+  assert.match(stubFunction("export function f(s: string): boolean {\n  return s.length === 2;\n}\n", "f")!, /return false;/);
+  assert.equal(stubFunction("export function f(x: number): number {\n  return x;\n}\nexport function f(x: number): number {\n  return x;\n}\n", "f"), null);
+  assert.equal(gradingVerdict(true, false, false), "REJECTED_PASSES_WITH_STUB");
+  assert.equal(gradingVerdict(true, false, true), "COUNTS");
+  assert.equal(gradingVerdict(true, false), "COUNTS");
+  const base = { fixSha: "a".repeat(40), afterFix: true, beforeFix: false, reason: null };
+  assert.ok(validTestGrading({ ...base, verdict: "COUNTS", stubFails: true }));
+  assert.ok(validTestGrading({ ...base, verdict: "REJECTED_PASSES_WITH_STUB", stubFails: false }));
+  assert.ok(!validTestGrading({ ...base, verdict: "COUNTS", stubFails: false }), "COUNTS with a passing stub is invalid");
+  // End to end: a boolean helper whose only bullet expects false passes with the stub.
+  const e = applyRule(spec(P2), "add function `isTwo(s: string): boolean` to `src/two.ts` returning s.length === 2\n- `isTwo(\"abc\")` is false", files, isTest)!;
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
+  const d = mkdtempSync(join(tmpdir(), "m17s-"));
+  mk(join(d, "src"), { recursive: true });
+  writeFileSync(join(d, "package.json"), '{"type":"module"}');
+  writeFileSync(join(d, e.path), stubFunction(e.content, "isTwo")!);
+  writeFileSync(join(d, e.extra![0]!.path), e.extra![0]!.content);
+  assert.equal(spawnSync(tsx, ["--test", e.extra![0]!.path], { cwd: d, env }).status, 0, "this weak test passes with the stub -> must not count");
+});
+
+test("import-only tests are refused: the test must call the function", () => {
+  assert.equal(callsFunction('import { f } from "./m";\nimport test from "node:test";\ntest("x", () => {});\n', "f"), false);
+  assert.equal(callsFunction('import { f } from "./m";\ntest("x", () => { assert.equal(f(1), 2); });\n', "f"), true);
+});
+
+test("protected names and module paths are refused", () => {
+  for (const n of ["scanText", "isProtectedPath", "constructor", "__proto__", "toString", "then"]) {
+    assert.ok(PROTECTED_NAMES.test(n), n);
+    assert.equal(applyRule(spec(P2), task("src/pct.ts").replace(/pct\(/g, `${n}(`), files, isTest), null, n);
+  }
+  for (const f of ["src/gate.ts", "src/approved-list.ts", "src/leak.ts", "src/scripts/x.ts", "src/peaceai/x.ts", "src/token.ts"]) assert.ok(PROTECTED_MODULE.test(f), f);
+  for (const f of ["src/aggregate.ts", "src/pct.ts", "src/tokenize-dates.ts"]) assert.ok(!PROTECTED_MODULE.test(f), f);
+});
+
+test("on disk: realpath inside the root, no symlinked component, file must not exist", () => {
+  const root = mkdtempSync(join(tmpdir(), "m17d-"));
+  mk(join(root, "src", "sub"), { recursive: true });
+  writeFileSync(join(root, "src", "lib.ts"), LIB);
+  const outside = mkdtempSync(join(tmpdir(), "m17o-"));
+  symlinkSync(outside, join(root, "src", "link"));
+  symlinkSync(join(root, "src", "sub"), join(root, "src", "inner"));
+  assert.equal(safeNewModuleOnDisk(root, "src/pct.ts"), true);
+  assert.equal(safeNewModuleOnDisk(root, "src/sub/pct.ts"), true);
+  assert.equal(safeNewModuleOnDisk(root, "src/lib.ts"), false, "exists");
+  assert.equal(safeNewModuleOnDisk(root, "src/link/pct.ts"), false, "symlink to outside");
+  assert.equal(safeNewModuleOnDisk(root, "src/inner/pct.ts"), false, "symlink even when inside");
+  assert.equal(safeNewModuleOnDisk(root, "src/missing/pct.ts"), false, "no new directory");
+  symlinkSync("/etc/passwd", join(root, "src", "dangle.ts"));
+  assert.equal(safeNewModuleOnDisk(root, "src/dangle.ts"), false, "symlink at the file itself");
+});
+
+test("regrade (#99): stub check and the old base -> new head -> fresh grade record", () => {
+  assert.ok("reason" in freshVerdict({ suite: true, newTests: ["t"], afterPass: true, beforeFail: true, stubFail: false }));
+  const g = freshVerdict({ suite: true, newTests: ["t"], afterPass: true, beforeFail: true, stubFail: true });
+  assert.ok(!("reason" in g));
+  const r = regradeRecord({ issue: 97, runId: "1", candidateId: "candidate-1", diffSha256: "d", patchSha256: "p", oldBase: "a".repeat(40), newHead: "b".repeat(40), appliedCommit: null, grade: g as never, now: new Date("2026-10-13T15:00:00.123Z") });
+  assert.deepEqual(Object.keys(r).sort(), ["appliedCommit", "candidateId", "diffSha256", "grade", "gradedAt", "issue", "newHead", "oldBase", "patchSha256", "runId", "schema"]);
+  assert.equal(r.schema, "peaceai-regrade:v1");
+  assert.equal(r.gradedAt, "2026-10-13T15:00:00Z");
+  assert.equal(r.oldBase, "a".repeat(40));
+  assert.equal(r.newHead, "b".repeat(40));
+});
+
+test("miner label bumped to v2", async () => {
+  const { MINER_VERSION } = await import("../lib/mine.ts");
+  assert.equal(MINER_VERSION, "peaceai-miner:v2");
+});

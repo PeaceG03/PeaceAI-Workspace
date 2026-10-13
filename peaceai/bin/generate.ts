@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
 import { applyRule, specHash } from "../lib/learned.ts";
+import { safeNewModuleOnDisk } from "../lib/learned-function.ts";
 import { acceptFill, applyFill, fillOptions, parseFillTask } from "../lib/fill.ts";
 import { lmFlags } from "../lib/lm.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
@@ -215,7 +216,7 @@ for (const a of planSteps ? [] : admissions) {
   if (!edit) continue;
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
-  const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path));
+  const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
   if (edit.create && !newModule && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   if (edit.extra && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;

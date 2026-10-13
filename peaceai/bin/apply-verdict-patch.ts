@@ -9,11 +9,11 @@
 // 5. M16: if the worktree head is past the task base, the candidate is re-applied cleanly (or refused) and
 //    graded fresh on the new tree (lib/rebase.ts); the task-time grade is never carried forward.
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { effectiveVerdict, type TaskRecord, type VerdictRecord } from "../lib/records.ts";
-import { rebaseAndRegrade } from "../lib/rebase.ts";
+import { rebaseAndRegrade, regradeRecord } from "../lib/rebase.ts";
 import { NOREPLY_EMAIL, NOREPLY_NAME, parsePatchComment, PATCH_MARKER, verifyPatch } from "../lib/patch.ts";
 
 const WORKSPACE = "PeaceG03/PeaceAI-Workspace";
@@ -117,8 +117,15 @@ try {
     const g = r.grade;
     const trailer = `PeaceAI-Regrade: fresh on ${head.slice(0, 12)} (task base ${baseSha.slice(0, 12)}): suite=${g.suite ? "pass" : "fail"} new-tests=${g.newTests.length} after=${g.afterPass === null ? "n/a" : g.afterPass ? "pass" : "fail"} before=${g.beforeFail === null ? "n/a" : g.beforeFail ? "fail" : "pass"} verdict=${g.verdict}`;
     const msg = git("log", "-1", "--format=%B");
-    execFileSync("git", ["-C", worktree, "-c", `user.name=${NOREPLY_NAME}`, "-c", `user.email=${NOREPLY_EMAIL}`, "commit", "--quiet", "--amend", "-m", `${msg}\n\n${trailer}`], { stdio: "ignore" });
+    // M17: the regrade record (old base -> new head -> fresh grade) rides in the commit as one JSON trailer, and
+    // is written next to the clone's git dir for the verdict (results-land stays disabled; nothing is pushed).
+    const record = regradeRecord({ issue: Number(issue), runId: comment.runId, candidateId: comment.candidateId, diffSha256: comment.diffSha256, patchSha256: comment.patchSha256, oldBase: baseSha, newHead: head, appliedCommit: null, grade: g });
+    execFileSync("git", ["-C", worktree, "-c", `user.name=${NOREPLY_NAME}`, "-c", `user.email=${NOREPLY_EMAIL}`, "commit", "--quiet", "--amend", "-m", `${msg}\n\n${trailer}\nPeaceAI-Regrade-Record: ${JSON.stringify(record)}`], { stdio: "ignore" });
+    const gitDir = resolve(worktree, git("rev-parse", "--git-dir"));
+    mkdirSync(join(gitDir, "peaceai"), { recursive: true });
+    writeFileSync(join(gitDir, "peaceai", `regrade-${issue}-${comment.runId}.json`), JSON.stringify({ ...record, appliedCommit: git("rev-parse", "HEAD") }, null, 2) + "\n");
     console.log(trailer);
+    console.log(`regrade record: ${join(gitDir, "peaceai", `regrade-${issue}-${comment.runId}.json`)}`);
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });
