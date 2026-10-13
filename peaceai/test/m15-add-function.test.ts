@@ -97,3 +97,10 @@ test("grading: the new test PASSES with the function and FAILS on the task base"
 test("protected set: learned-function.ts is protected", () => {
   assert.ok(PROTECTED_SELF.some((p) => p.pattern.test("peaceai/lib/learned-function.ts")));
 });
+
+test("vocabulary (M15.1): repeat refused; padStart/padEnd need an integer literal length <= 64", () => {
+  const t = (expr: string) => "add function `f(s: string, n: number): string` to `src/lib.ts` returning " + expr + "\n- `f(\"a\", 1)` is \"a\"";
+  for (const bad of ["s.repeat(n)", "s.repeat(2)", "s.padStart(n, \"0\")", "s.padEnd(65, \" \")", "s.padStart(1e9, \"0\")", "s.padStart(2.5, \"0\")", "s.padStart(-1, \"0\")", "s.padStart(n + 1, \"0\")", "s.padStart()"])
+    assert.equal(applyRule(spec(), t(bad), files()), null, bad);
+  for (const good of ["s.padStart(1, String(n))", "s.padEnd(64, \" \").slice(0, n + 1)"]) assert.ok(applyRule(spec(), t(good), files()), good);
+});
