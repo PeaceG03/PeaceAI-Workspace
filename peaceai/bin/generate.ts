@@ -17,6 +17,8 @@ import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "..
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 import { nlDecision } from "../lib/nlparse.ts";
+import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
+import { spawnSync } from "node:child_process";
 
 const MAX_CANDIDATES = 5;
 const MAX_CALLS = 40;
@@ -70,6 +72,46 @@ const specs = [
 const admissions = admitRules(specs, loadApprovedList(process.env.PEACEAI_APPROVED_LIST ?? join(tooling, "peaceai/rules/approved.json")));
 const refusedEarly = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned admission rules=${admissions.length} approved=${admissions.length - refusedEarly.length}${refusedEarly.length ? ` refused=${refusedEarly.join(",")}` : ""}`);
+
+// M18: stale-base regrade (Auditor option b). The verdict job asked for exactly one already-chosen candidate
+// to be re-applied onto the target's CURRENT head (this checkout) and graded fresh by Job B. No synthesis,
+// no rules run: the same diff (hash-pinned in the request) must apply cleanly with a plain `git apply`
+// (no 3-way), stay in scope, and a learned candidate's rule must still be approved with the same hash.
+// Anything else is refused with 0 candidates. regrade.json tells the record job which attempt this regrades.
+if (process.env.PEACEAI_REGRADE_FILE && existsSync(process.env.PEACEAI_REGRADE_FILE)) {
+  const raw = JSON.parse(readFileSync(process.env.PEACEAI_REGRADE_FILE, "utf8")) as Record<string, unknown>;
+  const req = (raw.schema === "peaceai-regrade-request:v1" ? raw : { runId: "", candidateId: "" }) as unknown as RegradeRequest;
+  mkdirSync(join(outDir, "candidates"), { recursive: true });
+  const refuse = (why: string): never => {
+    console.log(`regrade=refused reason=${why} of_run=${req.runId} candidate=${req.candidateId}`);
+    writeOutput({ regrade: "refused", regrade_reason: why });
+    writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
+    process.exit(0);
+  };
+  if (raw.schema !== "peaceai-regrade-request:v1" || typeof req.diff !== "string") refuse("invalid-request");
+  if (createHash("sha256").update(req.diff).digest("hex") !== req.diffSha256) refuse("diff-hash");
+  if (baseSha === req.baseSha) refuse("not-stale");
+  if (req.operationId?.startsWith("learned:")) {
+    const ok = admissions.some((a) => a.decision === "APPROVED" && a.spec && `learned:${a.spec.id}@${specHash(a.spec)}` === req.operationId);
+    if (!ok) refuse("rule-not-approved");
+  }
+  const check = spawnSync("git", ["-C", repo, "apply", "--check", "--whitespace=nowarn", "-"], { input: req.diff, encoding: "utf8" });
+  if (check.status !== 0) refuse("does-not-apply-cleanly");
+  if (checkCandidateScope(parseDiff(req.diff), baseFiles, scope, { testAppend: !!req.fixSha }).length > 0) refuse("scope");
+  writeFileSync(join(outDir, "candidates", "candidate-1.diff"), req.diff);
+  writeSummary({
+    schema: "peaceai-workspace-candidates:v1", taskId, baseSha,
+    candidates: [{
+      id: "candidate-1", file: "candidates/candidate-1.diff", transformations: req.transformations, operationId: req.operationId,
+      diffBytes: Buffer.byteLength(req.diff), diffLines: req.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
+      ...(req.fixSha ? { fixSha: req.fixSha } : {}), ...(req.selfGrade ? { selfGrade: true } : {}),
+    }],
+  });
+  writeFileSync(join(outDir, "regrade.json"), JSON.stringify(regradeOf(req)) + "\n");
+  writeOutput({ regrade: "applied" });
+  console.log(`regrade=applied of_run=${req.runId} candidate=${req.candidateId} old_base=${req.baseSha.slice(0, 12)} new_head=${baseSha.slice(0, 12)} candidates=1`);
+  process.exit(0);
+}
 
 // M10: plain-language tasks. Canonical wording passes unchanged; plain wording becomes the canonical plan;
 // anything unclear is refused here (no candidates, enum-only outputs) and the issue gets the phrasing list.

@@ -96,7 +96,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: peaceai-chosen
-          path: ${{ runner.temp }}/chosen/chosen.diff
+          # M18: chosen.json = what a stale-base regrade request needs (run, candidate, base, kind flags).
+          path: |
+            ${{ runner.temp }}/chosen/chosen.diff
+            ${{ runner.temp }}/chosen/chosen.json
           retention-days: 1
           if-no-files-found: error
 
@@ -410,7 +413,30 @@ jobs:
         with:
           name: peaceai-chosen
           path: ${{ runner.temp }}/chosen
+      # M18 (Auditor option b): if the target moved past the task base, no patch is built on the old base.
+      # A regrade request is posted instead; re-queuing the task re-applies this exact candidate onto the
+      # current head and grades it fresh in the sandboxed Job B (new Results attempt, new verdict).
+      - name: Stale-base check
+        id: stale
+        env:
+          CHOSEN_DIR: ${{ runner.temp }}/chosen
+          BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+        run: tools/node_modules/.bin/tsx tools/peaceai/bin/verdict-stale.ts
+      - name: Post the regrade request
+        if: steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok == 'true'
+        env:
+          BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+      - name: Stale base without a regrade request (fail closed)
+        if: steps.stale.outputs.stale != 'false' && steps.stale.outputs.ok != 'true'
+        env:
+          REASON: ${{ steps.stale.outputs.reason }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Verdict recorded: $LABEL right. No patch posted for \`$TARGET\`: stale base, ${REASON:-regrade-request-failed}."
+          exit 1
       - name: Build the format-patch (one noreply commit on the task's base)
+        if: steps.stale.outputs.stale == 'false'
         run: |
           set -euo pipefail
           case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
@@ -431,6 +457,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/target" || { sleep 2; rm -rf "$RUNNER_TEMP/target" || echo "target cleanup incomplete (ignored)"; }
       - name: Check the patch and write the comment
         id: body
+        if: steps.stale.outputs.stale == 'false'
         env:
           PATCH_FILE: ${{ runner.temp }}/verdict.patch
           CHOSEN_DIFF: ${{ runner.temp }}/chosen/chosen.diff
@@ -442,7 +469,7 @@ jobs:
           BODY_FILE: ${{ runner.temp }}/patch-comment.md
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
       - name: Fail closed
-        if: always() && steps.body.outputs.ok != 'true'
+        if: always() && steps.stale.outputs.stale == 'false' && steps.body.outputs.ok != 'true'
         env:
           REASON: ${{ steps.body.outputs.reason }}
         run: |

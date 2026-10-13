@@ -2,6 +2,7 @@
 // Runs no candidate code. Prints counts only; outputs the presentation (labels -> candidate ids, shuffled).
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { regradeMismatch } from "../lib/regrade.ts";
 import { join, resolve } from "node:path";
 import { validateSummary, loadSummaryContext } from "../lib/gate.ts";
 import { validateResults } from "../lib/results.ts";
@@ -52,6 +53,17 @@ for (const c of summary.candidates) {
 }
 const repairedIds = new Set([...repairRecords.values()].filter(isRepaired).map((r) => r.id));
 const issue = JSON.parse(readFileSync(issueFile, "utf8"));
+// M18: a regrade attempt records which attempt/candidate it regrades (old base -> this base, fresh grade below).
+const regradeFile = join(inDir, "regrade.json");
+const regradeRaw = existsSync(regradeFile) ? JSON.parse(readFileSync(regradeFile, "utf8")) : null;
+// The candidate diff at Job A time is the original one (a repaired diff is not a regrade of the chosen diff).
+const originalDiff = (f: string): string => {
+  const orig = join(testDir, "repair", `${f.replace(/^candidates\//, "").replace(/\.diff$/, "")}.original.diff`);
+  return readFileSync(existsSync(orig) ? orig : join(inDir, f), "utf8");
+};
+const regradeWhy = regradeRaw === null ? null : regradeMismatch(regradeRaw, summary, originalDiff);
+if (regradeWhy) throw new Error(`regrade.json: ${regradeWhy}`);
+const regrade = regradeRaw ? { regradeOf: regradeRaw } : {};
 const issueNumber = Number(issue.number);
 // M5: the target is recorded with the task; the verdict job opens the PR there.
 const targetName = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(process.env.TASK_TARGET ?? "") ? process.env.TASK_TARGET! : "";
@@ -65,6 +77,7 @@ const records = buildRecords(
     body: String(issue.body ?? "").slice(0, 4000),
     source: process.env.TASK_SOURCE === "builder" ? "builder" : "peace",
     ...(targetName ? { target: targetName } : {}),
+    ...regrade,
   },
   summary.candidates,
   results,

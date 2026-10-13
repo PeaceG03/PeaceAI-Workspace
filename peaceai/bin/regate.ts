@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { validRegradeOf } from "../lib/regrade.ts";
 import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { countDiffLines } from "../lib/diff.ts";
@@ -96,6 +97,12 @@ for (const c of summary.candidates) {
 }
 if (!validateSummary(finalSummary, loadSummaryContext())) throw new Error("final summary failed validation");
 writeFileSync(join(finalDir, "summary.json"), JSON.stringify(finalSummary, null, 2) + "\n");
+// M18: carry the regrade marker to the record job (validated again there).
+if (existsSync(join(inDir, "regrade.json"))) {
+  const rg = JSON.parse(readFileSync(join(inDir, "regrade.json"), "utf8"));
+  if (!validRegradeOf(rg) || finalSummary.candidates.length > 1) throw new Error("regrade.json failed validation");
+  writeFileSync(join(finalDir, "regrade.json"), JSON.stringify(rg) + "\n");
+}
 if (results.length > 0)
   writeFileSync(
     join(finalDir, "testresults", "results.json"),

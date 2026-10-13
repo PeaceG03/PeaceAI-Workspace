@@ -1,5 +1,6 @@
 // Verdict job: append one verdict to the latest attempt of an issue in a Results checkout.
-import { appendFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { chosenMetaOf } from "../lib/regrade.ts";
 import { join, resolve } from "node:path";
 import { effectiveVerdict, stableJson, VERDICT_SCHEMA, withdraws, type VerdictRecord } from "../lib/records.ts";
 import { appendIndex, latestAttempt, taskDir, writeNew, writeSummary } from "../lib/store.ts";
@@ -55,6 +56,10 @@ if (verdict === "right" && shown && process.env.CHOSEN_OUT_DIR) {
   mkdirSync(target, { recursive: true });
   chosen = join(target, "chosen.diff");
   copyFileSync(join(dir, "candidates", `${shown.id}.diff`), chosen);
+  // M18: what the stale-base regrade request needs to re-submit exactly this candidate.
+  const rc = attempt.ranking.candidates.find((c) => c.id === shown.id);
+  const meta = rc ? chosenMetaOf(attempt.task, rc) : null;
+  if (meta) writeFileSync(join(target, "chosen.json"), JSON.stringify(meta) + "\n");
 }
 out({
   status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", withdrew: String(withdrew),
