@@ -28,6 +28,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.test\.ts$/, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
   { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/, why: "approval, leak, scan, hook, gate and self-change tools" },
   { pattern: /^peaceai\/bin\/test-candidates\.ts$/, why: "the grading harness (M14)" },
+  { pattern: /^peaceai\/bin\/(generate|regate)\.ts$|^peaceai\/lib\/(records|rank|diff)\.ts$/, why: "candidate generation and the Job B check files: grading, eligibility and diff parsing (M17)" },
   { pattern: /^peaceai\/bin\/apply-verdict-patch\.ts$|^peaceai\/lib\/rebase\.ts$/, why: "the stale-base re-apply and fresh regrade (M16)" },
   { pattern: /^peaceai\/lib\/(leak|approval|approved|scope|prguard|kernelguard|coretext|coreindex|substr|policy|gate|selfchange|selfpropose|learned|learned-test|learned-guard|learned-function|minetest|results|verdict|trigger|diff)\.ts$/, why: "gates, approvals, leak/scope scanners and the self-change rules" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
