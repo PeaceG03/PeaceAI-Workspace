@@ -127,9 +127,11 @@ export function rejectReason(c: CandidateResult, requiresTests: boolean): Reject
  * M12: a learned test counts only when the harness graded it COUNTS (passes on the fixed code, fails before
  * the fix) against the same fix commit Job A named. Missing or mismatched grading is a rejection (fail closed).
  */
-export function gradingReject(s: Pick<SummaryCandidate, "fixSha">, r: CandidateResult): RejectReason {
-  if (!s.fixSha) return null;
+export function gradingReject(s: Pick<SummaryCandidate, "fixSha" | "selfGrade">, r: CandidateResult, baseSha = ""): RejectReason {
   const g = r.testGrading;
+  // M13: a learned guard is graded against the task base (its own source edit taken back out).
+  if (s.selfGrade) return g && /^[0-9a-f]{40}$/.test(baseSha) && g.fixSha === baseSha && g.verdict === "COUNTS" ? null : "test-grading";
+  if (!s.fixSha) return null;
   return g && g.fixSha === s.fixSha && g.verdict === "COUNTS" ? null : "test-grading";
 }
 
@@ -187,7 +189,7 @@ export function buildRecords(
       id: s.id, diffBytes: s.diffBytes, diffLines: s.diffLines, applied: false, typecheckPassed: false,
       originalSuitePassed: false, newTestsPassed: false, newTestFiles: 0,
     };
-    return { s, r, reason: rejectReason(r, requiresTests) ?? gradingReject(s, r) };
+    return { s, r, reason: rejectReason(r, requiresTests) ?? gradingReject(s, r, task.baseSha) };
   });
   const eligible = evaluated.filter((e) => e.reason === null && isPassing(e.r)).map((e) => e.r);
   const groups = diffOf ? groupEdits(eligible, requiresTests, diffOf) : null;
@@ -220,7 +222,7 @@ export function buildRecords(
         }
       : {}),
     ...(repairedIds ? { repaired: repairedIds.has(s.id) } : {}),
-    ...(s.fixSha ? { testGrading: r.testGrading ?? null } : {}),
+    ...(s.fixSha || s.selfGrade ? { testGrading: r.testGrading ?? null } : {}),
   }));
   return {
     task: {

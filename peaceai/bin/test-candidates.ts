@@ -128,6 +128,23 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
   return { fixSha, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
 }
 
+/**
+ * M13: grading of a learned guard against itself. Its new tests already ran with the guard (pass 2,
+ * `afterFix`). Here the harness puts the candidate's non-test source files back to the task base (the code
+ * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
+ * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
+ */
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string): TestGrading {
+  const base = summary.baseSha;
+  const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
+  const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
+  const tests = files.filter((f) => f.isNew && f.newPath && scope.isTest(f.newPath));
+  if (newTests.length === 0 || source.length === 0 || source.length + tests.length !== files.length) return ungradable("not-test-only");
+  if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", ...source])) return ungradable("revert-failed");
+  const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
+  return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
+}
+
 // ---- M7 repair stage
 
 interface RepairRecord {
@@ -278,6 +295,7 @@ for (const candidate of selected) {
   };
   // M12: a learned test is UNGRADABLE (never counts) until the harness has graded it below.
   if (candidate.fixSha) result.testGrading = { fixSha: candidate.fixSha, afterFix: false, beforeFix: null, verdict: "UNGRADABLE", reason: "not-applied" };
+  if (candidate.selfGrade) result.testGrading = { fixSha: summary.baseSha, afterFix: false, beforeFix: null, verdict: "UNGRADABLE", reason: "not-applied" };
   results.push(result);
   // Defense in depth: re-check scope without the core.
   if (checkCandidateScope(files, baseFiles, scope).length > 0) continue;
@@ -312,7 +330,7 @@ for (const candidate of selected) {
     // lib/repair.ts; the harness writes every file (the sandbox user cannot), and the final passes below run
     // on whatever tree the loop leaves, exactly as for an unrepaired candidate.
     // A learned test is graded exactly as generated: no repair.
-    if (REPAIR_ENABLED && !candidate.fixSha) {
+    if (REPAIR_ENABLED && !candidate.fixSha && !candidate.selfGrade) {
       const repair = repairCandidate(tree, diffPath, diff, files, baseTests, judged, newTests, tsx, tsc);
       result.diffBytes = Buffer.byteLength(repair.finalDiff);
       result.diffLines = countDiffLines(repair.finalDiff);
@@ -339,6 +357,8 @@ for (const candidate of selected) {
     result.newTestsPassed = newTests.length === 0 ? true : runCandidate(tree, tsx, ["--test", ...newTests]);
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
+    // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
+    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx);
   } finally {
     killSandbox();
     // The tools copy may be read-only (Job B makes them so); restore write access before removing.
