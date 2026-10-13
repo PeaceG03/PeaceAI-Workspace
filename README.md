@@ -266,6 +266,10 @@ is refused. Grading (Job B `gradeSelf`): `selfGrade: true` (only on a pinned `le
 must pass with the guard and fail with the candidate's source files reset to the task base. Only that is
 `COUNTS`; anything else is rejected (`test-grading`). There is no M7 repair, and the file is protected.
 
+### Stale-base re-apply and fresh regrade (M16)
+
+`apply-verdict-patch.sh` (Builder, on the box): when the target head has moved past the task base, the chosen candidate is re-applied onto the current head with a plain `git am` (no 3-way, no conflict resolution; anything that does not apply cleanly is refused) and graded fresh there by `peaceai/lib/rebase.ts`: the original suite must pass, each new test the candidate adds must pass with it and fail with its non-test edit taken back out. The task-time grade is never carried forward. A refusal resets the worktree to where it started; a pass adds a `PeaceAI-Regrade:` trailer to the commit. Both files are in the protected set.
+
 ### New-function edit type (M15)
 
 `ADD_FUNCTION` (spec `peaceai/rules/learned/public-add-function-v1.json`, mined from public commits only: 8 added exported single-return functions in PeaceSTOCKS and this repo; core-mined specs of this kind are refused). Task form:
