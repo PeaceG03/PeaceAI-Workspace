@@ -3,16 +3,17 @@ import { MINER_VERSION, majority, type ShapeStats } from "./mine.ts";
 import { nullishTrigger, RULE_SCHEMA, specHash, TRIGGERS, type RuleKind, type RuleSpec } from "./learned.ts";
 import { TEST_CHECKS } from "./learned-test.ts";
 import { GUARD_VOCAB } from "./learned-guard.ts";
+import { FUNCTION_VOCAB } from "./learned-function.ts";
 
 export const MIN_COMMITS = 3;
 export const MIN_FILES = 2;
 /** A default kind is learned only with at least this many observed examples. */
 export const MIN_KIND_SUPPORT = 2;
 /** Rule versions. ADD_NULLISH_DEFAULT v2: single-read only, kinds with support, trigger limited to those kinds. */
-const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2, ADD_TEST_CASE: 1, ADD_THROW_GUARD: 1 };
+const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2, ADD_TEST_CASE: 1, ADD_THROW_GUARD: 1, ADD_FUNCTION: 1 };
 const NAMED_CONTEXTS = ["object-property", "top-level-const", "local-const"];
-const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT", TEST_CASE: "ADD_TEST_CASE", TEST_CASE_APPEND: "ADD_TEST_CASE", THROW_GUARD: "ADD_THROW_GUARD" };
-const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default", ADD_TEST_CASE: "test-case", ADD_THROW_GUARD: "throw-guard" };
+const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT", TEST_CASE: "ADD_TEST_CASE", TEST_CASE_APPEND: "ADD_TEST_CASE", THROW_GUARD: "ADD_THROW_GUARD", PURE_FUNCTION: "ADD_FUNCTION" };
+const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default", ADD_TEST_CASE: "test-case", ADD_THROW_GUARD: "throw-guard", ADD_FUNCTION: "add-function" };
 /** M12: upper line bound of the majority size bucket of mined test cases (">40" is capped at 40). */
 const MAX_LINES: Record<string, string> = { "<=12": "12", "13-40": "40", ">40": "40" };
 
@@ -52,6 +53,12 @@ export function proposeRules(stats: readonly ShapeStats[], minedFrom: "public" |
       const support = (k: string, v: string) => (s.styles[k]?.[v] ?? 0) >= MIN_KIND_SUPPORT;
       if (minedFrom !== "public" || majority(s, "braces") !== "none" || majority(s, "error") !== "Error" || majority({ ...s, styles: { m: Object.fromEntries(Object.entries(s.styles.message ?? {}).filter(([k]) => k !== "other" && k !== "none")) } }, "m") !== "code-only" || !support("lines", "one") || !support("placement", "function-entry")) { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
       params = { braces: "none", error: "Error", grading: GUARD_VOCAB.grading[0]!, lines: "one", message: "code-only", placement: "function-entry", test: "new-file" };
+    } else if (kind === "ADD_FUNCTION") {
+      // M15: public-mined only. The fixed edit needs the majority form (typed parameters, annotated return type,
+      // a single return statement) and enough evidence of new functions added at the end of a module.
+      const support = (k: string, v: string) => (s.styles[k]?.[v] ?? 0) >= MIN_KIND_SUPPORT;
+      if (minedFrom !== "public" || majority(s, "body") !== "single-return" || majority(s, "params") !== "typed" || majority(s, "returns") !== "annotated" || !support("placement", "end-of-module")) { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
+      params = { body: "single-return", grading: FUNCTION_VOCAB.grading[0]!, params: "typed", placement: "end-of-module", returns: "annotated", test: "new-file" };
     } else {
       const kinds = Object.entries(s.styles.default ?? {}).filter(([k, n]) => k !== "expression" && n >= MIN_KIND_SUPPORT).map(([k]) => k).sort();
       if (kinds.length === 0 || majority(s, "target") !== "member") { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
@@ -71,6 +78,7 @@ export const PHRASING: Record<RuleKind, string> = {
   ADD_SWITCH_CASE: 'add case "label" returning VALUE to the switch in `functionName`',
   ADD_NULLISH_DEFAULT: "default `obj.field` to VALUE in `functionName`",
   ADD_THROW_GUARD: "guard `functionName` in `src/file.ts`: throw CODE when CONDITION, then one bullet per test call (`- CALL throws CODE`, at least one; optional `- EXPR is VALUE` / `- EXPR equals [..]`). CONDITION uses only the function's parameters, literals, property reads, comparisons, `!`, `&&`/`||`, `typeof` and Number.isFinite/isInteger/isNaN/isSafeInteger, Array.isArray; calls take literal arguments only. Write comparisons with `<`/`<=` (issue cleaning strips `>`; a stripped operator makes the task unreadable, so it is refused, never misread)",
+  ADD_FUNCTION: "add function `name(a: T, b: U): R` to `src/file.ts` returning EXPR, then one bullet per test check (`- CALL is VALUE` / `- CALL equals [..]` / `- CALL throws CODE`, at least one). Types: string, number, boolean, string[], number[], readonly string[], readonly number[] (1-4 parameters). EXPR uses only the parameters, literals, `.length`, arithmetic, comparisons, `!`, `&&`/`||`/`??`, `?:`, template literals, array literals, Math.min/max/floor/ceil/round/abs/trunc/sign, String/Number/Boolean, Number.isFinite/isInteger/isNaN/isSafeInteger, Array.isArray, and the string/array methods slice, padStart, padEnd, includes, startsWith, endsWith, trim, toUpperCase, toLowerCase, indexOf, lastIndexOf, at, join, concat, split, repeat, toFixed. Write comparisons with `<`/`<=` (issue cleaning strips `>`)",
   ADD_TEST_CASE: "add a test for `NAME` in `src/file.ts`: TITLE, then one bullet per check (`- EXPR is VALUE`, `- EXPR equals [..]`, `- EXPR throws CODE`, `- EXPR rejects with CODE`, as the spec's checks allow) and a line `Fix: <40-hex commit>` naming the fix the test must pin",
 };
 const KIND_VALUE: Record<string, string> = { array: "`[]`", null: "`null`", string: 'a string literal (`"..."`)', number: "a number", boolean: "`true`/`false`" };
@@ -127,6 +135,8 @@ export function proposalBody(p: Proposal, links: readonly ExampleLink[], example
       ? "It appends one test case at the END of the target's own existing test file (`<stem>.test.ts`); no existing line changes (the scope gate allows an existing test file only for a graded learned test whose diff is a pure append). The file must already import assert, test and every name the checks use. Job B grades only the appended case (the file's imports + the new lines): it must PASS on the fixed code and FAIL before the fix; otherwise it is rejected. No M7 repair. Same gates as every other candidate."
       : p.spec.kind === "ADD_TEST_CASE"
       ? "It writes one NEW test file (never an existing test) from the learned template; every placeholder comes only from names in the task text and the target code (the named file must export every name a check starts from; values must be literals). Job B grades the test in the tamper-proof harness: it must PASS on the fixed code and FAIL on the code before the fix (the fix commit's non-test source change reversed); a test that passes on both or fails on both is rejected and the grading is recorded in Results. No M7 repair is applied to it. It also goes through the same scope, leak and core-text gates as every other candidate."
+      : p.spec.kind === "ADD_FUNCTION"
+      ? "It appends ONE new `export function NAME(typed params): Type { return EXPR; }` at the end of an existing source module and writes one NEW test file from the task's bullets (never an existing test). Refused when NAME already appears anywhere in that module, a type is outside the vocabulary, or EXPR uses anything but the function's own parameters, literals and the fixed pure operators/built-ins/methods (no other names, so no calls into the module, no `new`, assignment, closures or element access). Job B grades the candidate against itself: its new test must PASS with the function and FAIL with the module put back to the task base; otherwise it is rejected and the grading is recorded in Results. No M7 repair. Same scope, leak and core-text gates as every other candidate."
       : p.spec.kind === "ADD_THROW_GUARD"
       ? "It inserts one line `if (CONDITION) throw new Error(\"CODE\");` at the entry of the uniquely named exported function (after any guards already there) and writes one NEW test file from the task's bullets (never an existing test). Refused when the code already appears in that file, the function is not unique/exported, or the condition uses anything outside the allowed vocabulary. Job B grades the candidate against itself: its new test must PASS with the guard and FAIL with the guard's source edit taken back out (the task base); otherwise it is rejected and the grading is recorded in Results. No M7 repair. Same scope, leak and core-text gates as every other candidate."
       : "It produces one candidate when the edit site is unique; otherwise none. The candidate goes through the same scope, leak and core-text gates, the sandboxed tests and the M7 repair loop as every other candidate.",
