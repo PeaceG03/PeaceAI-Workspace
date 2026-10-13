@@ -30,6 +30,8 @@ export const SHAPES = {
   LITERAL_CHANGE: { covered: null },
   // M12: a new test()/it() case in a test file (peaceai/lib/minetest.ts; public repositories only).
   TEST_CASE: { covered: null },
+  // M14: a new case appended after every existing statement of an existing test file (also counted as TEST_CASE).
+  TEST_CASE_APPEND: { covered: null },
 } as const;
 export type Shape = keyof typeof SHAPES;
 

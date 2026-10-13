@@ -91,7 +91,12 @@ export function observeTestFile(commit: string, path: string, postContent: strin
     const a = lineOf(sf, s.getStart(sf));
     const b = lineOf(sf, s.getEnd());
     if (!ranges.some(([x, y]) => a >= x && b <= y)) continue; // a new case, not an edit of an existing one
-    out.push({ shape: "TEST_CASE", commit, path, line: a, style: { ...file, ...caseStyle(call, sf) } });
+    // M14: where the case went: a new file, appended after every existing statement, or inserted between them.
+    const added = (n: ts.Node) => ranges.some(([x, y]) => lineOf(sf, n.getStart(sf)) >= x && lineOf(sf, n.getEnd()) <= y);
+    const placement = sf.statements.every((t) => added(t)) ? "new-file" : sf.statements.slice(sf.statements.indexOf(s)).every((t) => added(t)) ? "append" : "insert";
+    const style = { ...file, ...caseStyle(call, sf) };
+    out.push({ shape: "TEST_CASE", commit, path, line: a, style });
+    if (placement === "append") out.push({ shape: "TEST_CASE_APPEND", commit, path, line: a, style });
   }
   return out;
 }

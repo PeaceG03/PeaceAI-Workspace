@@ -1,3 +1,4 @@
+import ts from "typescript";
 import type { DiffFile } from "./diff.ts";
 
 // Candidate diffs may only touch source under src/. Existing tests are frozen; new test files may be added.
@@ -34,6 +35,8 @@ export function checkCandidateScope(
   files: readonly DiffFile[],
   baseFiles: ReadonlySet<string>,
   scope: CandidateScope = WORKSPACE_SCOPE,
+  /** M14: `testAppend` only for a graded learned test (summary `fixSha`): new cases appended at the end of an existing test file. */
+  opts: { testAppend?: boolean } = {},
 ): ScopeViolation[] {
   const violations: ScopeViolation[] = [];
   if (files.length === 0) violations.push({ path: "(none)", reason: "empty diff" });
@@ -57,9 +60,44 @@ export function checkCandidateScope(
     const exists = baseFiles.has(path);
     if (file.isNew && exists) violations.push({ path, reason: "creates a file that already exists" });
     if (!file.isNew && !exists) violations.push({ path, reason: "edits a file missing from base" });
-    if (exists && scope.isTest(path)) violations.push({ path, reason: "modifies an existing test file" });
+    if (exists && scope.isTest(path) && !(opts.testAppend && file.appendOnly)) violations.push({ path, reason: "modifies an existing test file" });
+    else if (exists && scope.isTest(path)) {
+      const why = appendedCaseReason(file.addedLines);
+      if (why) violations.push({ path, reason: `appended test: ${why}` });
+    }
   }
   return violations;
+}
+
+const HOOKS = new Set(["before", "beforeEach", "after", "afterEach", "mock"]);
+
+/**
+ * M14 shared-setup guard (Auditor): appended lines must be exactly one top-level `test("…", () => {…})`, with
+ * no options argument, no .skip/.only/.todo, no hooks or mock.* anywhere, and nothing else at top level.
+ * Returns the refusal reason, or null when the append is one plain case.
+ */
+export function appendedCaseReason(lines: readonly string[]): string | null {
+  const sf = ts.createSourceFile("append.ts", lines.join("\n"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  if ((sf as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics?.length) return "does not parse";
+  const stmts = sf.statements.filter((st) => !ts.isEmptyStatement(st));
+  if (stmts.length !== 1) return "must be exactly one top-level statement";
+  const st = stmts[0]!;
+  if (!ts.isExpressionStatement(st) || !ts.isCallExpression(st.expression)) return "not a test() call";
+  const call = st.expression;
+  if (!ts.isIdentifier(call.expression) || call.expression.text !== "test") return "callee must be plain test (no .skip/.only/.todo)";
+  if (call.arguments.length !== 2) return "test() takes exactly a name and a body (no options)";
+  const [name, body] = call.arguments;
+  if (!ts.isStringLiteral(name!) && !ts.isNoSubstitutionTemplateLiteral(name!)) return "test name must be a string literal";
+  if (!ts.isArrowFunction(body!) || body.parameters.length !== 0 || !ts.isBlock(body.body)) return "body must be () => { ... }";
+  let bad: string | null = null;
+  const walk = (n: ts.Node): void => {
+    if (bad) return;
+    if (ts.isIdentifier(n) && HOOKS.has(n.text)) { bad = `uses ${n.text}`; return; }
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && (n.expression.text === "test" || n.expression.text === "describe" || n.expression.text === "it")) { bad = "nested test/describe"; return; }
+    ts.forEachChild(n, walk);
+  };
+  walk(body.body);
+  return bad;
 }
 
 /** Files a pull request may not change unless it is an owner PR from this repository. */

@@ -11,7 +11,7 @@ export const MIN_KIND_SUPPORT = 2;
 /** Rule versions. ADD_NULLISH_DEFAULT v2: single-read only, kinds with support, trigger limited to those kinds. */
 const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2, ADD_TEST_CASE: 1, ADD_THROW_GUARD: 1 };
 const NAMED_CONTEXTS = ["object-property", "top-level-const", "local-const"];
-const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT", TEST_CASE: "ADD_TEST_CASE", THROW_GUARD: "ADD_THROW_GUARD" };
+const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT", TEST_CASE: "ADD_TEST_CASE", TEST_CASE_APPEND: "ADD_TEST_CASE", THROW_GUARD: "ADD_THROW_GUARD" };
 const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default", ADD_TEST_CASE: "test-case", ADD_THROW_GUARD: "throw-guard" };
 /** M12: upper line bound of the majority size bucket of mined test cases (">40" is capped at 40). */
 const MAX_LINES: Record<string, string> = { "<=12": "12", "13-40": "40", ">40": "40" };
@@ -45,7 +45,7 @@ export function proposeRules(stats: readonly ShapeStats[], minedFrom: "public" |
       const checks = TEST_CHECKS.filter((c) => (s.styles[`check:${c}`]?.yes ?? 0) >= MIN_KIND_SUPPORT && (regex || (c !== "throws" && c !== "rejects")));
       const lines = MAX_LINES[majority(s, "lines") ?? ""];
       if (majority(s, "framework") !== "node:test-default" || majority(s, "assert") !== "node:assert/strict-default" || checks.length === 0 || !lines) { skipped.push({ shape: s.shape, why: "no-learnable-params" }); continue; }
-      params = { assert: "node:assert/strict-default", checks: [...checks], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: lines, placement: "new-file" };
+      params = { assert: "node:assert/strict-default", checks: [...checks], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: lines, placement: s.shape === "TEST_CASE_APPEND" ? "append" : "new-file" };
     } else if (kind === "ADD_THROW_GUARD") {
       // M13: public-mined only. The fixed edit needs the majority form (bare `throw new Error("CODE")`) and
       // enough evidence of each value it renders (one line, at the function entry).
@@ -58,7 +58,7 @@ export function proposeRules(stats: readonly ShapeStats[], minedFrom: "public" |
       params = { kinds, reads: "single", target: "member" };
     }
     const spec: RuleSpec = {
-      schema: RULE_SCHEMA, id: `${minedFrom}-${SLUG[kind]}-v${RULE_VERSION[kind]}`, kind, minedFrom, minerVersion: MINER_VERSION, shape: s.shape,
+      schema: RULE_SCHEMA, id: s.shape === "TEST_CASE_APPEND" ? `${minedFrom}-test-case-append-v1` : `${minedFrom}-${SLUG[kind]}-v${RULE_VERSION[kind]}`, kind, minedFrom, minerVersion: MINER_VERSION, shape: s.shape,
       trigger: kind === "ADD_NULLISH_DEFAULT" ? nullishTrigger(params.kinds as string[]) : TRIGGERS[kind], params, evidence: { hunks: s.hunks, commits: s.commits, files: s.files, repos: [...repos].sort() },
     };
     proposals.push({ spec, sha256: specHash(spec), stats: s });
@@ -123,7 +123,9 @@ export function proposalBody(p: Proposal, links: readonly ExampleLink[], example
     "",
     `Task phrasing: ${phrasingFor(p.spec)}`,
     "",
-    p.spec.kind === "ADD_TEST_CASE"
+    p.spec.kind === "ADD_TEST_CASE" && p.spec.params.placement === "append"
+      ? "It appends one test case at the END of the target's own existing test file (`<stem>.test.ts`); no existing line changes (the scope gate allows an existing test file only for a graded learned test whose diff is a pure append). The file must already import assert, test and every name the checks use. Job B grades only the appended case (the file's imports + the new lines): it must PASS on the fixed code and FAIL before the fix; otherwise it is rejected. No M7 repair. Same gates as every other candidate."
+      : p.spec.kind === "ADD_TEST_CASE"
       ? "It writes one NEW test file (never an existing test) from the learned template; every placeholder comes only from names in the task text and the target code (the named file must export every name a check starts from; values must be literals). Job B grades the test in the tamper-proof harness: it must PASS on the fixed code and FAIL on the code before the fix (the fix commit's non-test source change reversed); a test that passes on both or fails on both is rejected and the grading is recorded in Results. No M7 repair is applied to it. It also goes through the same scope, leak and core-text gates as every other candidate."
       : p.spec.kind === "ADD_THROW_GUARD"
       ? "It inserts one line `if (CONDITION) throw new Error(\"CODE\");` at the entry of the uniquely named exported function (after any guards already there) and writes one NEW test file from the task's bullets (never an existing test). Refused when the code already appears in that file, the function is not unique/exported, or the condition uses anything outside the allowed vocabulary. Job B grades the candidate against itself: its new test must PASS with the guard and FAIL with the guard's source edit taken back out (the task base); otherwise it is rejected and the grading is recorded in Results. No M7 repair. Same scope, leak and core-text gates as every other candidate."

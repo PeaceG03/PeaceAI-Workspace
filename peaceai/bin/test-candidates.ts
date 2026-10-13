@@ -111,11 +111,19 @@ const selected = only ? summary.candidates.filter((c) => c.id === only) : summar
  */
 function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], fixSha: string, afterFix: boolean, tsx: string): TestGrading {
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
-  if (newTests.length === 0 || !files.every((f) => f.isNew && f.newPath && scope.isTest(f.newPath))) return ungradable("not-test-only");
+  if (newTests.length === 0 || !files.every((f) => (f.isNew || f.appendOnly) && f.newPath && scope.isTest(f.newPath))) return ungradable("not-test-only");
   // The fix commit is validated before anything is reverted (lib/results.ts validateFix).
   const fix = validateFix(fixSha, summary.baseSha, (...args) => { try { return git(repo, ...args); } catch { return null; } }, scope);
   if (!fix.ok) return ungradable(fix.reason);
   const paths = fix.paths;
+  // M14: an appended test file is graded on its NEW cases only (the base file's imports + the appended lines),
+  // so cases already in the file (possibly added by the fix itself) can never make it fail before the fix.
+  for (const f of files.filter((x) => x.appendOnly && x.newPath)) {
+    const imports = git(repo, "show", `${summary.baseSha}:${f.newPath}`).split("\n").filter((l) => /^import\s[^;]*;\s*$/.test(l));
+    if (imports.length === 0 || f.addedLines.some((l) => /^import\s/.test(l))) return ungradable("not-test-only");
+    writeFileSync(join(tree, f.newPath!), [...imports, "", ...f.addedLines, ""].join("\n"));
+  }
+  if (files.some((x) => x.appendOnly)) afterFix = afterFix && runCandidate(tree, tsx, ["--test", ...newTests]);
   const dir = mkdtempSync(join(tmpdir(), "peaceai-prefix-"));
   try {
     const patch = join(dir, "prefix.diff");
@@ -298,7 +306,7 @@ for (const candidate of selected) {
   if (candidate.selfGrade) result.testGrading = { fixSha: summary.baseSha, afterFix: false, beforeFix: null, verdict: "UNGRADABLE", reason: "not-applied" };
   results.push(result);
   // Defense in depth: re-check scope without the core.
-  if (checkCandidateScope(files, baseFiles, scope).length > 0) continue;
+  if (checkCandidateScope(files, baseFiles, scope, { testAppend: !!candidate.fixSha }).length > 0) continue;
   // The tree is owned by this harness and only readable by the sandbox user; it gets its own tools copy.
   const tree = mkdtempSync(join(sandboxRoot, "peaceai-test-"));
   rmSync(tree, { recursive: true, force: true });
@@ -321,9 +329,11 @@ for (const candidate of selected) {
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", diffPath])) continue;
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", diffPath])) continue;
     result.applied = true;
-    const newTests = files
+    // M14: a graded learned test may also append cases to an existing test file (scope allows it only with fixSha).
+    const appended = candidate.fixSha ? files.filter((file) => file.appendOnly && file.newPath && scope.isTest(file.newPath)).map((file) => file.newPath!).sort() : [];
+    const newTests = [...files
       .filter((file) => file.isNew && file.newPath && scope.isTest(file.newPath))
-      .map((file) => file.newPath!)
+      .map((file) => file.newPath!), ...appended]
       .sort();
     result.newTestFiles = newTests.length;
     // M7: bounded test-and-fix loop before the final passes. Edits come only from the deterministic rules in
@@ -344,12 +354,15 @@ for (const candidate of selected) {
     // Pass 1: the original suite, with every new test file moved out of the tree.
     const parked = mkdtempSync(join(tmpdir(), "peaceai-parked-"));
     newTests.forEach((path, i) => renameSync(join(tree, path), join(parked, String(i))));
+    // An appended test file runs in pass 1 exactly as it is on the base (its new cases parked).
+    for (const path of appended) writeFileSync(join(tree, path), git(repo, "show", `${summary.baseSha}:${path}`));
     result.originalSuitePassed =
       targetConfig.originalSuite === "full"
         ? baseTests.length > 0 && runCandidate(tree, tsx, ["--test", ...baseTests])
         : judged.every((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
     newTests.forEach((path, i) => {
       mkdirSync(dirname(join(tree, path)), { recursive: true });
+      if (appended.includes(path)) rmSync(join(tree, path), { force: true });
       renameSync(join(parked, String(i)), join(tree, path));
     });
     rmSync(parked, { recursive: true, force: true });

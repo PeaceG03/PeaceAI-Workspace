@@ -63,7 +63,10 @@ const TASK = [
 test("test miner: a new top-level test() case in a test file is one TEST_CASE with style facts only", () => {
   const post = 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { f } from "./f";\n\ntest("old", () => {\n  assert.equal(f(1), 1);\n});\n\ntest("holiday calendar fails closed", () => {\n  assert.equal(f(2), 2);\n  assert.deepEqual([f(3)], [3]);\n  assert.throws(() => f(-1), /NEGATIVE/);\n});\n';
   const diff = "@@ -7,0 +8,6 @@\n+\n+test(\"holiday calendar fails closed\", () => {\n+  assert.equal(f(2), 2);\n+  assert.deepEqual([f(3)], [3]);\n+  assert.throws(() => f(-1), /NEGATIVE/);\n+});\n";
-  const obs = observeTestFile("PeaceSTOCKS@1", "src/f.test.ts", post, diff);
+  const all = observeTestFile("PeaceSTOCKS@1", "src/f.test.ts", post, diff);
+  // M14: an appended case is also a TEST_CASE_APPEND observation (same style facts).
+  assert.deepEqual(all.map((o) => o.shape), ["TEST_CASE", "TEST_CASE_APPEND"]);
+  const obs = all.filter((o) => o.shape === "TEST_CASE");
   assert.equal(obs.length, 1, "the unchanged case is not counted");
   assert.deepEqual(obs[0]!.style, {
     framework: "node:test-default", assert: "node:assert/strict-default", importExt: "none", lines: "<=12",
@@ -143,7 +146,7 @@ test("spec: ADD_TEST_CASE params are a fixed vocabulary; core-mined or extra key
   assert.equal(validateSpec(spec({ id: "core-test-case-v1", minedFrom: "core" })), false);
   assert.equal(validateSpec(spec({ params: { ...PARAMS, extra: "x" } })), false);
   assert.equal(validateSpec(spec({ params: { ...PARAMS, checks: ["equal", "match"] } })), false);
-  assert.equal(validateSpec(spec({ params: { ...PARAMS, placement: "append" } })), false);
+  assert.equal(validateSpec(spec({ params: { ...PARAMS, placement: "insert" } })), false); // M14: "append" is now valid; anything else is not
   assert.equal(validateSpec(spec({ params: { ...PARAMS, grading: "none" } })), false);
   assert.equal(validateSpec(spec({ params: { ...PARAMS, maxLines: "400" } })), false);
 });
@@ -502,7 +505,7 @@ test("gates unchanged: a learned test cannot edit an existing test, and core tex
 test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) still cover the rule engine, gates, results, rules and workflows", () => {
   const digest = createHash("sha256").update(PROTECTED_SELF.map((p) => p.pattern.source).join("\n")).digest("hex");
   assert.equal(digest, PROTECTED_DIGEST, "PROTECTED_SELF changed");
-  for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
+  for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "f209ddc0c6137388810230bf68064ebb9b145a4815c679618ce88402e2b151b2";
+const PROTECTED_DIGEST = "efb2fc0ad08afb58bcff44dc0e47966ed0d23f68bab940c571d08631aa8af136";

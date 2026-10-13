@@ -32,7 +32,8 @@ const CHECK_LINE: { kind: TestCheckKind; re: RegExp }[] = [
 
 export interface TestCheck { kind: TestCheckKind; expr: string; value?: string; code?: string }
 export interface TestTask { symbol: string; file: string; title: string | null; checks: TestCheck[]; fixSha: string }
-export interface TestEdit { path: string; content: string; create: true; fixSha: string }
+/** `create` for a new file; M14 `placement: append`: an existing test file with the new case appended (no `create`). */
+export interface TestEdit { path: string; content: string; create?: true; fixSha: string }
 
 const strip = (s: string) => s.replace(/^\x60|\x60$/g, "").trim();
 
@@ -142,7 +143,7 @@ export function buildTestEdit(
 ): TestEdit | null {
   const allowed = Array.isArray(params.checks) ? params.checks : [];
   if (params.framework !== "node:test-default" || params.assert !== "node:assert/strict-default" || params.matcher !== "regex") return null;
-  if (params.placement !== "new-file" || params.grading !== "fail-before-pass-after") return null;
+  if ((params.placement !== "new-file" && params.placement !== "append") || params.grading !== "fail-before-pass-after") return null;
   const maxLines = Number(params.maxLines);
   if (!Number.isInteger(maxLines) || maxLines < 3) return null;
   if (task.checks.some((c) => !allowed.includes(c.kind))) return null;
@@ -167,6 +168,7 @@ export function buildTestEdit(
     } else if (c.kind === "throws") body.push(`  assert.throws(() => ${expr}, /${c.code}/);`);
     else body.push(`  await assert.rejects(async () => ${expr}, /${c.code}/);`);
   }
+  if (params.placement === "append") return appendTestEdit(task, target.path, [...roots], body, files, maxLines, isTest);
   const dir = target.path.includes("/") ? target.path.slice(0, target.path.lastIndexOf("/") + 1) : "";
   const stem = target.path.slice(dir.length).replace(/\.ts$/, "");
   const path = `${dir}${stem}.${slug(task.title ?? task.symbol)}-${task.fixSha.slice(0, 7)}.test.ts`;
@@ -185,4 +187,38 @@ export function buildTestEdit(
     "",
   ].join("\n");
   return { path, content, create: true, fixSha: task.fixSha };
+}
+
+/**
+ * M14: append the case to the target's own test file (`<dir><stem>.test.ts`). Never touches an existing line:
+ * the file must already import `assert` (node:assert/strict, default) and `test` (node:test, default) and every
+ * name the checks start from, from the target module; otherwise no candidate. The case is added at the end.
+ */
+function appendTestEdit(task: TestTask, targetPath: string, roots: string[], body: string[], files: readonly { path: string; content: string }[], maxLines: number, isTest: (p: string) => boolean): TestEdit | null {
+  const dir = targetPath.includes("/") ? targetPath.slice(0, targetPath.lastIndexOf("/") + 1) : "";
+  const stem = targetPath.slice(dir.length).replace(/\.ts$/, "");
+  const path = `${dir}${stem}.test.ts`;
+  const file = files.find((f) => f.path === path);
+  if (!file || !isTest(file.path)) return null;
+  const sf = ts.createSourceFile(path, file.content, ts.ScriptTarget.Latest, true);
+  let assertOk = false;
+  let testOk = false;
+  const named = new Set<string>();
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || s.importClause?.isTypeOnly) continue;
+    const from = s.moduleSpecifier.text;
+    const c = s.importClause;
+    if (from === "node:assert/strict" && c?.name?.text === "assert") assertOk = true;
+    else if (from === "node:test" && c?.name?.text === "test") testOk = true;
+    else if (from === `./${stem}` || from === `./${stem}.ts`)
+      if (c?.namedBindings && ts.isNamedImports(c.namedBindings)) for (const el of c.namedBindings.elements) if (!el.isTypeOnly && !el.propertyName) named.add(el.name.text);
+  }
+  if (!assertOk || !testOk || !roots.every((r) => named.has(r))) return null;
+  const name = task.title ?? `${task.symbol}: behavior fixed in ${task.fixSha.slice(0, 7)}`;
+  if (file.content.includes(JSON.stringify(name))) return null; // same test name already in the file
+  const isAsync = task.checks.some((c) => c.kind === "rejects");
+  const testCase = [`test(${JSON.stringify(name)}, ${isAsync ? "async " : ""}() => {`, ...body, "});"];
+  if (testCase.length > maxLines) return null;
+  const head = file.content.endsWith("\n") ? file.content : `${file.content}\n`;
+  return { path, content: `${head}\n${testCase.join("\n")}\n`, fixSha: task.fixSha };
 }

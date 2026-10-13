@@ -22,6 +22,7 @@ export function gateCandidate(
   baseline: TextIndex,
   core: GateCore,
   scope: CandidateScope = WORKSPACE_SCOPE,
+  opts: { testAppend?: boolean } = {},
 ): GateResult {
   const reasons: string[] = [];
   let files;
@@ -30,7 +31,7 @@ export function gateCandidate(
   } catch {
     return { ok: false, reasons: ["unparseable diff"] };
   }
-  for (const violation of checkCandidateScope(files, baseFiles, scope)) reasons.push(`scope: ${violation.path}: ${violation.reason}`);
+  for (const violation of checkCandidateScope(files, baseFiles, scope, opts)) reasons.push(`scope: ${violation.path}: ${violation.reason}`);
   for (const file of files) {
     const path = file.newPath ?? file.oldPath;
     // Existing workspace files are already public; only new paths can import a core file name.
