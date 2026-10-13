@@ -249,6 +249,15 @@ export function observeFile(commit: string, path: string, postContent: string, h
   const post = ts.createSourceFile(path, postContent, ts.ScriptTarget.Latest, true, path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const out: Observation[] = [];
   for (const h of hunks) {
+    // M17: a hunk that creates the file is checked (whatever its size) for new modules' pure functions only:
+    // each top-level exported single-return function in it is one PURE_FUNCTION observation, placement new-module.
+    if (h.oldStart === 0 && h.oldCount === 0 && h.newStart === 1 && h.removed.length === 0 && h.added.length > MAX_ADDED) {
+      for (const st of post.statements) {
+        const sh = additiveShape(st, post);
+        if (sh?.shape === "PURE_FUNCTION") out.push({ shape: "PURE_FUNCTION", commit, path, line: lineOf(post, st.getStart(post)), style: { ...sh.style, placement: "new-module" } });
+      }
+      continue;
+    }
     if (h.newCount === 0 || h.added.length > MAX_ADDED || h.removed.length > MAX_REMOVED) continue;
     if (h.added.every((l) => l.trim() === "" || /^\s*(\/\/|\*|\/\*)/.test(l))) continue;
     const from = h.newStart;
@@ -279,6 +288,8 @@ export function observeFile(commit: string, path: string, postContent: string, h
         }
       }
     }
+    // M17: a pure function in a hunk that creates the file (old side empty) was added as a new module.
+    if (h.oldStart === 0 && h.oldCount === 0) for (const o of found) if (o.shape === "PURE_FUNCTION") o.style = { ...o.style, placement: "new-module" };
     out.push(...found);
   }
   return out;

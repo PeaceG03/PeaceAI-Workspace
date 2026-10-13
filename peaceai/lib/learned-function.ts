@@ -15,7 +15,8 @@ export const FUNCTION_VOCAB: Record<(typeof FUNCTION_PARAM_KEYS)[number], readon
   body: ["single-return"],
   grading: ["self-fail-before-pass-after"],
   params: ["typed"],
-  placement: ["end-of-module"],
+  // M17: "end-of-module-or-new-module" also lets the rule create the named module when it does not exist yet.
+  placement: ["end-of-module", "end-of-module-or-new-module"],
   returns: ["annotated"],
   test: ["new-file"],
 };
@@ -37,7 +38,7 @@ const PARAM = String.raw`${NAME}: ?${TYPE}`;
 export const FUNCTION_TRIGGER = String.raw`^add (?:a )?(?:pure )?function \x60?(?<fn>${NAME}) ?\((?<sig>(?:${PARAM}(?:, ?${PARAM}){0,${MAX_PARAMS - 1}})?)\) ?: ?(?<ret>${TYPE})\x60? to \x60?(?<file>${FILE})\x60? returning (?<expr>[^\n]{1,${MAX_EXPR_CHARS}}?)\.?$`;
 
 export interface FunctionTask { fn: string; file: string; params: { name: string; type: string }[]; ret: string; expr: string; test: TestTask }
-export interface FunctionEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
+export interface FunctionEdit { path: string; content: string; create?: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 
 const strip = (s: string) => s.replace(/\x60/g, " ").trim();
 
@@ -141,7 +142,8 @@ export function buildFunctionEdit(
   for (const k of FUNCTION_PARAM_KEYS) if (typeof params[k] !== "string" || !FUNCTION_VOCAB[k].includes(params[k] as string)) return null;
   if (task.expr.length > MAX_EXPR_CHARS) return null;
   const target = files.find((f) => f.path === task.file);
-  if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return null;
+  if (!target) return params.placement === "end-of-module-or-new-module" ? buildNewModule(task, files, isTest) : null;
+  if (isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return null;
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return null;
   // A new function only: the name must not already be declared, imported or exported anywhere in the module.
@@ -162,6 +164,31 @@ export function buildFunctionEdit(
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
   if (!test) return null;
   return { path: target.path, content, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
+}
+
+/** M17: the named module does not exist yet, so the function becomes a new module holding only it. */
+export const NEW_MODULE_PATH = /^src\/(?:[a-z0-9][\w-]*\/)*[a-z0-9][\w-]*\.ts$/;
+function buildNewModule(task: FunctionTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): FunctionEdit | null {
+  const path = task.file;
+  if (!NEW_MODULE_PATH.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return null;
+  // Same-directory sibling required: a new module goes next to existing source, never into a new directory.
+  const dir = path.slice(0, path.lastIndexOf("/") + 1);
+  if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return null;
+  // The name must not already be a file name in that directory (case-insensitive), e.g. foo.ts vs Foo.ts.
+  if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return null;
+  const names = new Set(task.params.map((p) => p.name));
+  if (names.has(task.fn)) return null;
+  const body = parseExpr(task.expr);
+  if (!body || !safeBody(body, names)) return null;
+  const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+  const content = `export function ${task.fn}(${sig}): ${task.ret} {\n  return ${body.getText()};\n}\n`;
+  const post = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
+  if ((post as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return null;
+  const withFn = [...files, { path, content }];
+  const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
+  const test = buildTestEdit(testParams, task.test, withFn, isTest);
+  if (!test || test.path === path) return null;
+  return { path, content, create: true, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
 }
 
 export function applyFunctionRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean): FunctionEdit | null {

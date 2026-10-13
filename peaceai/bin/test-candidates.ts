@@ -146,9 +146,12 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
+  // M17: a new source module (ADD_FUNCTION new-module) is taken back out by removing it.
+  const created = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isTest(f.newPath));
-  if (newTests.length === 0 || source.length === 0 || source.length + tests.length !== files.length) return ungradable("not-test-only");
-  if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", ...source])) return ungradable("revert-failed");
+  if (newTests.length === 0 || source.length + created.length === 0 || source.length + created.length + tests.length !== files.length) return ungradable("not-test-only");
+  if (source.length && !runTrusted(tree, "git", ["checkout", "-q", base, "--", ...source])) return ungradable("revert-failed");
+  if (created.length && !runTrusted(tree, "rm", ["-f", "--", ...created])) return ungradable("revert-failed");
   const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
   return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
 }
