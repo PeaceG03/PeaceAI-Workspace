@@ -6,14 +6,12 @@
 //    diff hash = Results diff hash, and the patch's own diff = the Results diff, byte for byte.
 // 3. Requires the patch's From: line to be the noreply identity.
 // 4. Runs `git am` in the worktree (which must be a clean PeaceSTOCKS clone). Never pushes.
-// 5. M16: if the worktree head is past the task base, the candidate is re-applied cleanly (or refused) and
-//    graded fresh on the new tree (lib/rebase.ts); the task-time grade is never carried forward.
+// 5. M18: a worktree head past the task base is refused; stale bases are regraded only through Job B.
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { effectiveVerdict, type TaskRecord, type VerdictRecord } from "../lib/records.ts";
-import { rebaseAndRegrade, regradeRecord } from "../lib/rebase.ts";
 import { NOREPLY_EMAIL, NOREPLY_NAME, parsePatchComment, PATCH_MARKER, verifyPatch } from "../lib/patch.ts";
 
 const WORKSPACE = "PeaceG03/PeaceAI-Workspace";
@@ -101,31 +99,18 @@ const repoOf = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/i.exec(origin)?.[1]
 if (repoOf.toLowerCase() !== target.toLowerCase()) die(`worktree origin is not ${target}`);
 if (git("status", "--porcelain")) die("worktree has uncommitted changes");
 const head = git("rev-parse", "HEAD");
-if (head !== baseSha) console.log(`note: worktree HEAD ${head.slice(0, 12)} is not the task base ${baseSha.slice(0, 12)}: stale base, re-applying onto the current head and grading fresh (the task-time grade is not used)`);
+// M18: a stale base is never regraded here any more. Its patch was built on the old base, and the only
+// accepted regrade is the one through sandboxed Job B with a Results record (lib/regrade.ts). Refused.
+if (head !== baseSha)
+  die(`stale base: worktree HEAD ${head.slice(0, 12)} is not the task base ${baseSha.slice(0, 12)}. Re-post the verdict after the stale-base regrade route (M18): it posts a regrade request; re-queue the task to regrade in Job B`);
 const dir = mkdtempSync(join(tmpdir(), "peaceai-patch-"));
 try {
   const file = join(dir, "verdict.patch");
   writeFileSync(file, comment.patch);
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
-  const ok = (cmd: string, a: string[]) => spawnSync(cmd, a, { cwd: worktree, encoding: "utf8", env, stdio: "ignore" }).status === 0;
-  const r = rebaseAndRegrade({
-    worktree, patchFile: file, baseSha, identity: { name: NOREPLY_NAME, email: NOREPLY_EMAIL },
-    run: { suite: (d) => ok("npm", ["test", "--prefix", d]), tests: (d, files) => ok(join(d, "node_modules/.bin/tsx"), ["--test", ...files]) },
-  });
-  if (!r.ok) die(`${r.reason} (worktree reset to ${head.slice(0, 12)})`);
-  if (r.stale) {
-    const g = r.grade;
-    const trailer = `PeaceAI-Regrade: fresh on ${head.slice(0, 12)} (task base ${baseSha.slice(0, 12)}): suite=${g.suite ? "pass" : "fail"} new-tests=${g.newTests.length} after=${g.afterPass === null ? "n/a" : g.afterPass ? "pass" : "fail"} before=${g.beforeFail === null ? "n/a" : g.beforeFail ? "fail" : "pass"} verdict=${g.verdict}`;
-    const msg = git("log", "-1", "--format=%B");
-    // M17: the regrade record (old base -> new head -> fresh grade) rides in the commit as one JSON trailer, and
-    // is written next to the clone's git dir for the verdict (results-land stays disabled; nothing is pushed).
-    const record = regradeRecord({ issue: Number(issue), runId: comment.runId, candidateId: comment.candidateId, diffSha256: comment.diffSha256, patchSha256: comment.patchSha256, oldBase: baseSha, newHead: head, appliedCommit: null, grade: g });
-    execFileSync("git", ["-C", worktree, "-c", `user.name=${NOREPLY_NAME}`, "-c", `user.email=${NOREPLY_EMAIL}`, "commit", "--quiet", "--amend", "-m", `${msg}\n\n${trailer}\nPeaceAI-Regrade-Record: ${JSON.stringify(record)}`], { stdio: "ignore" });
-    const gitDir = resolve(worktree, git("rev-parse", "--git-dir"));
-    mkdirSync(join(gitDir, "peaceai"), { recursive: true });
-    writeFileSync(join(gitDir, "peaceai", `regrade-${issue}-${comment.runId}.json`), JSON.stringify({ ...record, appliedCommit: git("rev-parse", "HEAD") }, null, 2) + "\n");
-    console.log(trailer);
-    console.log(`regrade record: ${join(gitDir, "peaceai", `regrade-${issue}-${comment.runId}.json`)}`);
+  const am = spawnSync("git", ["-C", worktree, "-c", `user.name=${NOREPLY_NAME}`, "-c", `user.email=${NOREPLY_EMAIL}`, "am", "--quiet", file], { encoding: "utf8" });
+  if (am.status !== 0) {
+    spawnSync("git", ["-C", worktree, "am", "--abort"], { encoding: "utf8" });
+    die("git am failed (aborted; worktree unchanged)");
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });

@@ -154,3 +154,81 @@ test("protected (M18): the regrade route", () => {
   for (const f of ["peaceai/lib/regrade.ts", "peaceai/bin/verdict-stale.ts", "peaceai/bin/regrade-fetch.ts", "peaceai/bin/record-task.ts", "peaceai/bin/record-verdict.ts", "peaceai/bin/gate.ts", "peaceai/bin/regate.ts", "peaceai/bin/generate.ts", ".github/workflows/peace-verdict.yml"])
     assert.notEqual(protectedReason(f), null, f);
 });
+
+// ---- Auditor confirmations (M18)
+import { regradeMismatch } from "../lib/regrade.ts";
+import { createHash } from "node:crypto";
+
+test("record fields are exactly runId, candidateId, oldBase, diffSha256; a mismatched record is rejected", () => {
+  const diff = DIFF;
+  const ok = { runId: "77", candidateId: "candidate-1", oldBase: A, diffSha256: createHash("sha256").update(diff).digest("hex") };
+  const summary = { baseSha: B, candidates: [{ id: "candidate-1", file: "candidates/candidate-1.diff" }] };
+  const of = () => diff;
+  assert.equal(regradeMismatch(ok, summary, of), null);
+  assert.match(regradeMismatch({ ...ok, diffSha256: "0".repeat(64) }, summary, of)!, /diff hash/);
+  assert.match(regradeMismatch({ ...ok, oldBase: B }, summary, of)!, /old base equals/);
+  assert.match(regradeMismatch(ok, { ...summary, candidates: [...summary.candidates, { id: "candidate-2", file: "candidates/candidate-2.diff" }] }, of)!, /exactly one/);
+  assert.match(regradeMismatch({ ...ok, extra: 1 }, summary, of)!, /schema/);
+  assert.match(regradeMismatch({ runId: "77", candidateId: "candidate-1", oldBase: A }, summary, of)!, /schema/);
+});
+
+test("gate rejects a regrade.json that does not match its candidate", () => {
+  const { r, summary } = jobA({});
+  assert.equal(r.status, 0);
+  const dir = mkdtempSync(join(tmpdir(), "m18g-"));
+  mkdirSync(join(dir, "candidates"));
+  writeFileSync(join(dir, "candidates", "candidate-1.diff"), DIFF);
+  writeFileSync(join(dir, "summary.json"), JSON.stringify({ ...summary, candidates: [{ ...summary.candidates[0], diffBytes: DIFF.length }] }));
+  writeFileSync(join(dir, "regrade.json"), JSON.stringify({ runId: "77", candidateId: "candidate-1", oldBase: A, diffSha256: "0".repeat(64) }));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
+  const core = join(dir, "..", `${dir.split("/").pop()}-core`);
+  mkdirSync(core); git(core, "init", "-q"); writeFileSync(join(core, "x.txt"), "x\n"); git(core, "add", "-A"); git(core, "commit", "-qm", "c");
+  const g = spawnSync(tsx, [join(repo, "peaceai/bin/gate.ts")], { cwd: repo, encoding: "utf8", env: { ...env, PEACEAI_OUT_DIR: dir, PEACEAI_CORE_DIR: core } });
+  assert.notEqual(g.status, 0);
+  assert.match(g.stdout, /GATE FAIL regrade record diff hash does not match the candidate/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("pre-#106 / old-format regrades are refused: invalid request -> 0 candidates; Builder apply refuses a stale base", () => {
+  const old = { user: "github-actions[bot]", body: "<!-- peaceai-regrade-request:v0 -->\nplease regrade run 1 candidate-1" };
+  assert.equal(pendingRegrade([old]), "invalid");
+  const broken = { user: "github-actions[bot]", body: regradeComment(META, B, DIFF)!.replace("export const x = 1;", "export const x = 9;") };
+  assert.equal(pendingRegrade([broken]), "invalid", "hash mismatch is not a fresh task either");
+  // generate.ts refuses the invalid marker regrade-fetch writes for it.
+  const dir = mkdtempSync(join(tmpdir(), "m18i-"));
+  const ws = join(dir, "ws"); mkdirSync(join(ws, "src"), { recursive: true });
+  writeFileSync(join(ws, "src/lib.ts"), "export const a = 1;\n");
+  git(ws, "init", "-q", "-b", "main"); git(ws, "add", "-A"); git(ws, "commit", "-qm", "base");
+  const req = join(dir, "req.json"); writeFileSync(req, JSON.stringify({ schema: "peaceai-regrade-request:invalid" }));
+  const kernel = join(dir, "k.cjs");
+  writeFileSync(kernel, 'exports.NATIVE_CODE_SYNTHESIS_PROTOCOL_VERSION="x";exports.sourceFingerprint=()=>"x";exports.PeaceAINativeCodeSynthesizer=class{synthesize(){throw new Error("no")}};exports.parsePlanSteps=()=>null;');
+  const list = join(dir, "approved.json"); writeFileSync(list, JSON.stringify({ schema: APPROVED_SCHEMA, rules: [] }));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
+  const r = spawnSync(tsx, [join(repo, "peaceai/bin/generate.ts")], { cwd: repo, encoding: "utf8", env: { ...env, PEACEAI_NL_PARSE: "off", PEACEAI_KERNEL_BUNDLE: kernel, PEACEAI_OUT_DIR: join(dir, "out"), PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", ISSUE_NUMBER: "1", ISSUE_TITLE: "[test] x", ISSUE_BODY: "x", PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: join(dir, "none"), PEACEAI_REGRADE_FILE: req } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /regrade=refused reason=invalid-request/);
+  assert.equal(JSON.parse(readFileSync(join(dir, "out", "summary.json"), "utf8")).candidates.length, 0);
+  rmSync(dir, { recursive: true, force: true });
+  // Builder side: the box-side (M16) local regrade is gone; a stale base is refused outright.
+  const apply = readFileSync(join(repo, "peaceai/bin/apply-verdict-patch.ts"), "utf8");
+  assert.match(apply, /if \(head !== baseSha\)\n\s+die\(`stale base:/);
+  assert.doesNotMatch(apply, /rebaseAndRegrade\(/);
+});
+
+test("the two new generate.ts writes reach Results only through record-task.ts in the landing step", () => {
+  const gen = readFileSync(join(repo, "peaceai/bin/generate.ts"), "utf8");
+  assert.ok(gen.includes('writeFileSync(join(outDir, "candidates", "candidate-1.diff"), req.diff);'));
+  assert.ok(gen.includes('writeFileSync(join(outDir, "regrade.json"), JSON.stringify(regradeOf(req)) + "\\n");'));
+  // Who reads regrade.json: gate (validate), regate (validate + copy to the final dir), record-task (record).
+  const readers = ["peaceai/bin/gate.ts", "peaceai/bin/regate.ts", "peaceai/bin/record-task.ts"];
+  for (const f of readers) assert.match(readFileSync(join(repo, f), "utf8"), /regrade\.json/, f);
+  for (const f of ["peaceai/bin/test-candidates.ts", "peaceai/bin/record-verdict.ts", "peaceai/bin/results-write.sh", "peaceai/lib/store.ts"]) assert.doesNotMatch(readFileSync(join(repo, f), "utf8"), /regrade\.json/, f);
+  // record-task writes only through store.writeNew (task.json carries regradeOf), and it runs only inside
+  // the workflow's results-write.sh landing step.
+  const rt = readFileSync(join(repo, "peaceai/bin/record-task.ts"), "utf8");
+  assert.doesNotMatch(rt, /writeFileSync\(/);
+  assert.match(rt, /writeNew\(join\(dir, "task\.json"\), stableJson\(records\.task\)\)/);
+  const wf = readFileSync(join(repo, ".github/workflows/peace-task.yml"), "utf8");
+  assert.equal([...wf.matchAll(/record-task\.ts/g)].length, 1);
+  assert.match(wf, /results-write\.sh "task #\$ISSUE_NUMBER run \$GITHUB_RUN_ID" \\\n\s+\.\/node_modules\/\.bin\/tsx peaceai\/bin\/record-task\.ts/);
+});

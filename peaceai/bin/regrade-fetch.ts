@@ -11,7 +11,11 @@ const r = spawnSync("gh", ["api", "--paginate", `repos/${repo}/issues/${issue}/c
 if (r.status !== 0) throw new Error("gh api failed");
 const comments = r.stdout.split("\n").filter(Boolean).map((l) => JSON.parse(l) as { user: string; body: string });
 const req = pendingRegrade(comments);
-if (req) {
+if (req === "invalid") {
+  // Old-format or broken request: Job A refuses (0 candidates) instead of generating as a fresh task.
+  writeFileSync(process.env.REGRADE_FILE ?? "", JSON.stringify({ schema: "peaceai-regrade-request:invalid" }));
+  console.log("regrade=invalid");
+} else if (req) {
   writeFileSync(process.env.REGRADE_FILE ?? "", JSON.stringify(req));
   console.log(`regrade=pending of_run=${req.runId} candidate=${req.candidateId} old_base=${req.baseSha.slice(0, 12)} diff_sha256=${req.diffSha256}`);
 } else console.log("regrade=none");

@@ -79,14 +79,16 @@ console.log(`learned admission rules=${admissions.length} approved=${admissions.
 // (no 3-way), stay in scope, and a learned candidate's rule must still be approved with the same hash.
 // Anything else is refused with 0 candidates. regrade.json tells the record job which attempt this regrades.
 if (process.env.PEACEAI_REGRADE_FILE && existsSync(process.env.PEACEAI_REGRADE_FILE)) {
-  const req = JSON.parse(readFileSync(process.env.PEACEAI_REGRADE_FILE, "utf8")) as RegradeRequest;
+  const raw = JSON.parse(readFileSync(process.env.PEACEAI_REGRADE_FILE, "utf8")) as Record<string, unknown>;
+  const req = (raw.schema === "peaceai-regrade-request:v1" ? raw : { runId: "", candidateId: "" }) as unknown as RegradeRequest;
   mkdirSync(join(outDir, "candidates"), { recursive: true });
-  const refuse = (why: string) => {
+  const refuse = (why: string): never => {
     console.log(`regrade=refused reason=${why} of_run=${req.runId} candidate=${req.candidateId}`);
     writeOutput({ regrade: "refused", regrade_reason: why });
     writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
     process.exit(0);
   };
+  if (raw.schema !== "peaceai-regrade-request:v1" || typeof req.diff !== "string") refuse("invalid-request");
   if (createHash("sha256").update(req.diff).digest("hex") !== req.diffSha256) refuse("diff-hash");
   if (baseSha === req.baseSha) refuse("not-stale");
   if (req.operationId?.startsWith("learned:")) {

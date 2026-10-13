@@ -1,7 +1,7 @@
 // Job A leak/scope gate. Exits non-zero if any candidate or the output layout fails.
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
-import { validRegradeOf } from "../lib/regrade.ts";
+import { regradeMismatch } from "../lib/regrade.ts";
 import { join } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { gateCandidate, validateSummary, loadSummaryContext } from "../lib/gate.ts";
@@ -26,7 +26,8 @@ for (const entry of readdirSync(outDir)) if (!expected.has(entry)) fail(`unexpec
 if (readdirSync(outDir).includes("regrade.json")) {
   let rg: unknown = null;
   try { rg = JSON.parse(readFileSync(join(outDir, "regrade.json"), "utf8")); } catch { /* invalid */ }
-  if (!validRegradeOf(rg) || (summary.candidates ?? []).length !== 1) fail("regrade.json schema");
+  const why = regradeMismatch(rg, summary, (f) => readFileSync(join(outDir, f), "utf8"));
+  if (why) fail(why);
 }
 const listed = new Set<string>((summary.candidates ?? []).map((c: { id: string }) => `${c.id}.diff`));
 let present: string[] = [];

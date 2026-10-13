@@ -83,11 +83,13 @@ export function parseRegradeComment(body: string): RegradeRequest | null {
  * Which regrade request (if any) the next run must honour: the newest bot comment that is either a
  * regrade request or a review/no-candidates reply. A review posted after the request means it was used.
  */
-export function pendingRegrade(comments: readonly { user: string; body: string }[], bot = "github-actions[bot]"): RegradeRequest | null {
+export function pendingRegrade(comments: readonly { user: string; body: string }[], bot = "github-actions[bot]"): RegradeRequest | "invalid" | null {
   const mine = comments.filter((c) => c.user === bot);
   for (let i = mine.length - 1; i >= 0; i--) {
     const body = mine[i]!.body;
-    if (body.startsWith(REGRADE_MARKER)) return parseRegradeComment(body);
+    // Anything that looks like a regrade request but is not a valid v1 request (an older format, a hand
+    // edit, a broken hash) is refused, never silently treated as a fresh task.
+    if (body.replace(/\r\n/g, "\n").includes("peaceai-regrade-request")) return parseRegradeComment(body) ?? "invalid";
     if (body.startsWith("PeaceAI review.") || body.startsWith("PeaceAI: no candidates")) return null;
   }
   return null;
@@ -110,4 +112,16 @@ export function chosenMetaOf(task: { runId: string; baseSha: string }, c: { id: 
     ...(g ? (g.fixSha === task.baseSha ? { selfGrade: true as const } : { fixSha: g.fixSha }) : {}),
   };
   return validChosenMeta(meta) ? meta : null;
+}
+
+/**
+ * M18 (Auditor): the regrade record must match the attempt it rides with: exactly one candidate, the
+ * candidate's diff hashes to `diffSha256`, and the old base differs from this attempt's base. Null = ok.
+ */
+export function regradeMismatch(rg: unknown, summary: { baseSha: string; candidates: { id: string; file: string }[] }, diffOf: (file: string) => string): string | null {
+  if (!validRegradeOf(rg)) return "regrade record schema";
+  if (summary.candidates.length !== 1 || summary.candidates[0]!.id !== "candidate-1") return "regrade record needs exactly one candidate";
+  if (rg.oldBase === summary.baseSha) return "regrade record old base equals this base";
+  if (sha256(diffOf(summary.candidates[0]!.file)) !== rg.diffSha256) return "regrade record diff hash does not match the candidate";
+  return null;
 }
