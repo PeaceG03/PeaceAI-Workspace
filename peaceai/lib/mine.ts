@@ -3,7 +3,7 @@
 // distinct files). No model of any kind: TypeScript's parser plus fixed structural rules.
 import ts from "typescript";
 
-export const MINER_VERSION = "peaceai-miner:v2" as const;
+export const MINER_VERSION = "peaceai-miner:v3" as const;
 export const MAX_ADDED = 12;
 export const MAX_REMOVED = 6;
 export const SOURCE_FILE = /\.(ts|tsx|mts|cts)$/;

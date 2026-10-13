@@ -6,6 +6,7 @@
 // touches an existing one. Job B then grades the test: it must pass on the fixed code and fail on the code
 // before the fix (bin/test-candidates.ts), otherwise the candidate is rejected. Deterministic; no model.
 import ts from "typescript";
+import { MAX_OBJECT_EXPR_CHARS, objectArgsReason } from "./objargs.ts";
 
 export const TEST_PARAM_KEYS = ["assert", "checks", "framework", "grading", "matcher", "maxLines", "placement"] as const;
 export const TEST_CHECKS = ["equal", "deepEqual", "throws", "rejects"] as const;
@@ -15,6 +16,7 @@ export const TEST_ASSERTS = ["node:assert/strict-default"] as const;
 export const TEST_MATCHERS = ["regex"] as const;
 export const MAX_CHECKS = 8;
 export const MAX_EXPR_CHARS = 200;
+export { MAX_OBJECT_DEPTH, MAX_OBJECT_EXPR_CHARS, MAX_OBJECT_KEYS, objectArgsReason } from "./objargs.ts";
 
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
 const FILE = String.raw`[\w./-]+\.ts`;
@@ -151,11 +153,17 @@ export function buildTestEdit(
   if (!target || isTest(target.path) || !/^(?:.*\/)?[\w.-]+\.ts$/.test(target.path)) return null;
   const exports = exportedValues(target.path, target.content);
   if (!exports.has(task.symbol)) return null;
+  // M20: the object-literal spec only runs for tasks that pass an object literal (else the plain spec covers it).
+  if (params.args === "object-literal" && !task.checks.some((c) => { const x = parseExpr(c.expr); let has = false; const v = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some(ts.isObjectLiteralExpression)) has = true; ts.forEachChild(n, v); }; if (x) v(x); return has; })) return null;
   const roots = new Set<string>([task.symbol]);
   const body: string[] = [];
   for (const c of task.checks) {
-    if (c.expr.length > MAX_EXPR_CHARS) return null;
+    const objectArgs = params.args === "object-literal";
+    if (c.expr.length > (objectArgs ? MAX_OBJECT_EXPR_CHARS : MAX_EXPR_CHARS)) return null;
     const e = parseExpr(c.expr);
+    // M20 (Auditor): every object in a check must be plain bounded data (objectArgsReason), under every test
+    // spec: the plain specs no longer accept __proto__/constructor/prototype or repeated keys, or deep objects.
+    if (e && objectArgsReason(e) !== null) return null;
     const root = e ? checkRoot(e) : null;
     if (!e || !root || !exports.has(root)) return null;
     roots.add(root);

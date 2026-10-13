@@ -66,11 +66,19 @@ export function caseStyle(call: ts.CallExpression, sf: ts.SourceFile): Record<st
     ts.forEachChild(n, visit);
   };
   if (fn) visit(fn.body);
+  // M20: does any non-assert call in the case take an object-literal argument?
+  let objectArgs = false;
+  const objVisit = (n: ts.Node) => {
+    if (ts.isCallExpression(n) && !(ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === "assert") && n.arguments.some((a) => ts.isObjectLiteralExpression(a))) objectArgs = true;
+    ts.forEachChild(n, objVisit);
+  };
+  if (fn) objVisit(fn.body);
   const lines = lineOf(sf, call.getEnd()) - lineOf(sf, call.getStart(sf)) + 1;
   return {
     lines: bucket(lines),
     ...Object.fromEntries(CHECKS.map((c) => [`check:${c}`, used.has(c) ? "yes" : "no"])),
     matcher,
+    objectArgs: objectArgs ? "yes" : "no",
     async: fn?.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ? "yes" : "no",
     failClosed: used.has("throws") || used.has("rejects") ? "yes" : "no",
     calendar: CALENDAR.test(name) ? "yes" : "no",
