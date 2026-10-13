@@ -17,7 +17,8 @@ import { tally } from "../lib/mine.ts";
 import { proposeRules } from "../lib/propose.ts";
 import { buildRecords } from "../lib/records.ts";
 import { validateResults } from "../lib/results.ts";
-import { checkCandidateScope, WORKSPACE_SCOPE } from "../lib/scope.ts";
+import { appendedCaseReason, checkCandidateScope, WORKSPACE_SCOPE } from "../lib/scope.ts";
+import { protectedReason } from "../lib/selfchange.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -151,4 +152,39 @@ test("Job B: an appended case COUNTS only on its own; the fix's own case in the 
     const rec = buildRecords({ issue: 9, runId: "1", recordedAt: "2026-10-13T00:00:00Z", baseSha: fx.baseSha, title: "[test] a", body: task(fx.fixSha) }, summary.candidates, results, "seed");
     assert.deepEqual(rec.ranking.candidates.map((c) => [c.eligible, c.rejectReason]), [[true, null], [false, "test-grading"]]);
   } finally { rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+// ---- Auditor (PR #80): shared-setup guard on appended lines, and the harness/diff parser are protected
+test("append guard: exactly one plain top-level test() case; every shared-setup form is refused", () => {
+  const ok = ["", 'test("adds a case", () => {', "  assert.equal(f(1), 1);", "});"];
+  assert.equal(appendedCaseReason(ok), null);
+  const refused: Record<string, string[]> = {
+    options: ['test("x", { timeout: 5 }, () => {', "  assert.ok(1);", "});"],
+    skip: ['test.skip("x", () => {', "  assert.ok(1);", "});"],
+    only: ['test.only("x", () => {', "  assert.ok(1);", "});"],
+    todo: ['test.todo("x", () => {', "  assert.ok(1);", "});"],
+    before: ["before(() => {", "  globalThis.x = 1;", "});"],
+    beforeEach: ["beforeEach(() => {", "  globalThis.x = 1;", "});"],
+    after: ["after(() => {", "  globalThis.x = 1;", "});"],
+    afterEach: ["afterEach(() => {", "  globalThis.x = 1;", "});"],
+    mockInside: ['test("x", () => {', "  mock.method(Math, \"random\", () => 0);", "  assert.ok(1);", "});"],
+    mockTopLevel: ["mock.timers.enable();"],
+    hookInside: ['test("x", () => {', "  beforeEach(() => {});", "});"],
+    extraStatement: ["globalThis.x = 1;", 'test("x", () => {', "  assert.ok(1);", "});"],
+    twoCases: ['test("x", () => {', "  assert.ok(1);", "});", 'test("y", () => {', "  assert.ok(1);", "});"],
+    contextParam: ['test("x", (t) => {', "  assert.ok(1);", "});"],
+  };
+  for (const [name, lines] of Object.entries(refused)) assert.ok(appendedCaseReason(lines), name);
+});
+
+test("append guard: checkCandidateScope refuses a shared-setup append even with testAppend", () => {
+  const diff = "diff --git a/src/a.test.ts b/src/a.test.ts\n--- a/src/a.test.ts\n+++ b/src/a.test.ts\n@@ -3,0 +4,3 @@\n+beforeEach(() => {\n+  globalThis.x = 1;\n+});\n";
+  const files = parseDiff(diff);
+  assert.equal(files[0]!.appendOnly, true);
+  const v = checkCandidateScope(files, new Set(["src/a.test.ts"]), WORKSPACE_SCOPE, { testAppend: true });
+  assert.ok(v.some((x) => x.reason.startsWith("appended test:")), JSON.stringify(v));
+});
+
+test("protected set: the diff parser and the grading harness are protected", () => {
+  for (const p of ["peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts"]) assert.ok(protectedReason(p), p);
 });

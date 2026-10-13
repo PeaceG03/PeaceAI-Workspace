@@ -246,6 +246,9 @@ rewrites the file to the base file's import lines plus the appended lines only, 
 file (even ones the fix itself added) can never make a passes-both case count. An appended import is
 refused. No M7 repair.
 
+
+Shared-setup guard (Auditor, outside the engine in `lib/scope.ts`): the appended lines must be exactly one top-level `test("…", () => {…})` — no options argument, no `.skip/.only/.todo`, no `before/beforeEach/after/afterEach`, no `mock`, no nested test/describe, and no other top-level statement. `peaceai/lib/diff.ts` and `peaceai/bin/test-candidates.ts` are in the protected set.
+
 ### Throw-guard edit type (M13)
 
 `ADD_THROW_GUARD` adds `if (CONDITION) throw new Error("CODE");` at the entry of a uniquely named exported
