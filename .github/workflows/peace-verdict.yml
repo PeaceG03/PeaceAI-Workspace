@@ -419,12 +419,16 @@ jobs:
           cd "$RUNNER_TEMP/target"
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
           git add -A -- src
+          # No background auto-gc/maintenance: a detached gc writing .git/objects raced the cleanup below
+          # ("rm: cannot remove .git/objects: Directory not empty", #86) and failed a patch that was already built.
           GIT_AUTHOR_DATE="$COMMENT_CREATED_AT" GIT_COMMITTER_DATE="$COMMENT_CREATED_AT" \
-            git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
+            git -c gc.auto=0 -c maintenance.auto=false -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
             commit -q -m "PeaceAI candidate chosen in review of PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}"
           git format-patch -1 --stdout --no-signature --no-stat --full-index --no-renames --no-color > "$RUNNER_TEMP/verdict.patch"
           cd - >/dev/null
-          rm -rf "$RUNNER_TEMP/target"
+          test -s "$RUNNER_TEMP/verdict.patch"
+          # Cleanup is best effort: the patch is built and is checked by the next step either way.
+          rm -rf "$RUNNER_TEMP/target" || { sleep 2; rm -rf "$RUNNER_TEMP/target" || echo "target cleanup incomplete (ignored)"; }
       - name: Check the patch and write the comment
         id: body
         env:
