@@ -70,7 +70,7 @@ test("test miner: a new top-level test() case in a test file is one TEST_CASE wi
   assert.equal(obs.length, 1, "the unchanged case is not counted");
   assert.deepEqual(obs[0]!.style, {
     framework: "node:test-default", assert: "node:assert/strict-default", importExt: "none", lines: "<=12",
-    "check:equal": "yes", "check:deepEqual": "yes", "check:throws": "yes", "check:rejects": "no", matcher: "regex", objectArgs: "no", async: "no", failClosed: "yes", calendar: "yes",
+    "check:equal": "yes", "check:deepEqual": "yes", "check:throws": "yes", "check:rejects": "no", matcher: "regex", async: "no", failClosed: "yes", calendar: "yes",
   });
   assert.ok(!JSON.stringify(obs).includes("NEGATIVE"), "no code text in observations");
   assert.deepEqual(observeTestFile("PeaceSTOCKS@1", "src/f.ts", post, diff), [], "non-test files are not test evidence");

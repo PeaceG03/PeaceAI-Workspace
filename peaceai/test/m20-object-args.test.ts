@@ -72,3 +72,41 @@ test("propose: objargs specs only with enough public evidence of object-literal 
   assert.deepEqual(ids(1), ["public-test-case-v1"]);
   assert.deepEqual(proposeRules(tally(obs(10, 5)), "core", ["x"]).proposals.map((p) => p.spec.id), [], "core never");
 });
+
+// ---- M20 (Auditor): one test per refusal; each case is refused by the objargs spec AND by the plain spec.
+const refused = (label: string, cases: string[]) =>
+  test(`objargs refuses ${label}`, () => {
+    for (const c of cases) {
+      assert.equal(applyRule(OBJ, task(c), files, isTest), null, `objargs: ${c}`);
+      assert.equal(applyRule(APP, task(c), files, isTest), null, `append objargs: ${c}`);
+      assert.equal(applyRule(V1, task(c), files, isTest), null, `plain: ${c}`);
+    }
+  });
+refused("spread properties", ["{ ...x }", "{ a: 1, ...{ b: 2 } }"]);
+refused("shorthand properties", ["{ n }", "{ a: 1, cursor }"]);
+refused("methods (plain, async, generator)", ["{ f() { return 1 } }", "{ async f() { return 1 } }", "{ *g() { yield 1 } }"]);
+refused("getters and setters", ["{ get g() { return 1 } }", "{ set s(v) { } }"]);
+refused("computed keys", ['{ ["k"]: 1 }', "{ [k]: 1 }"]);
+refused("numeric keys", ["{ 1: 2 }"]);
+refused("__proto__ keys (identifier and string)", ["{ __proto__: { n: 1 } }", '{ "__proto__": { n: 1 } }', "{ a: { __proto__: null } }"]);
+refused("constructor and prototype keys", ["{ constructor: 1 }", '{ "constructor": 1 }', "{ prototype: 1 }", '{ "prototype": 1 }']);
+refused("repeated keys (also identifier vs string)", ["{ n: 1, n: 2 }", '{ n: 1, "n": 2 }']);
+refused("nesting deeper than 3 (also through arrays)", ["{ a: { b: { c: { d: 1 } } } }", "{ a: [{ b: [{ c: [{ d: 1 }] }] }] }"]);
+refused("more than 16 keys", [`{ ${Array.from({ length: 17 }, (_, i) => `k${i}: 1`).join(", ")} }`]);
+refused("checks over 600 characters", [`{ s: "${"x".repeat(MAX_OBJECT_EXPR_CHARS)}" }`]);
+refused("identifier and member values", ["{ n: x }", "{ n: process.env.X }", "{ n: globalThis }"]);
+refused("call, new and function values", ["{ n: (() => 1)() }", "{ n: f(1) }", "{ n: new Date(0) }", "{ n: () => 1 }", "{ n: function () { return 1; } }"]);
+refused("templates with substitutions, regex and operators", ["{ n: `t${1}` }", "{ n: /x/ }", "{ n: 1 + 1 }", "{ n: !0 }", "{ n: typeof x }"]);
+
+test("objargs accepts plain bounded data: depth 3, 16 keys, string keys, arrays, null, negatives, plain templates", () => {
+  for (const c of ['{ a: { b: { c: 1 } } }', `{ ${Array.from({ length: 16 }, (_, i) => `k${i}: 1`).join(", ")} }`, '{ "x-y": [1, { z: null }], n: -1, t: `plain`, b: true }'])
+    assert.notEqual(applyRule(OBJ, task(c, '"RUN"'), files, isTest), null, c);
+});
+
+test("protected (M20, Auditor): lib/objargs.ts is protected and inside the pinned fingerprint", async () => {
+  const { createHash } = await import("node:crypto");
+  const { PROTECTED_SELF: P, protectedReason } = await import("../lib/selfchange.ts");
+  assert.ok(protectedReason("peaceai/lib/objargs.ts"));
+  const m12 = readFileSync(join(repo, "peaceai/test/m12-test-rule.test.ts"), "utf8");
+  assert.equal(createHash("sha256").update(P.map((x) => x.pattern.source).join("\n")).digest("hex"), /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1]);
+});
