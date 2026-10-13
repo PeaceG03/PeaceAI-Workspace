@@ -112,6 +112,7 @@ test("refusals: script must exist, be one safe tool with plain args, not test/sc
   assert.equal(applyRule(SPEC, TASK, files(WF.replace("src/a.test.ts\n", "src/a.test.ts\n      - run: pnpm run typecheck\n")), isTest), null, "duplicate command");
   for (const c of ["tsc && curl x", "tsc $HOME", "tsc ../x", "node x.js", "tsx --test a", "eslint --fix; rm -rf /", "tsc -p /etc/x", "tsc deploy.ts", "prettier --write src | tee"]) assert.equal(safeScript(c), null, c);
   assert.deepEqual(safeScript("tsc -p tsconfig.json --noEmit"), ["tsc", "-p", "tsconfig.json", "--noEmit"]);
+  for (const c of ["eslint src", "prettier --check src", "biome check", "tsc -p tsconfig.json", "tsc --noEmit -b", "tsc --noEmit --build", "tsc --noEmit --watch", "tsc --noEmit --outDir dist", "tsc --noEmit --outFile x.js", "tsc --noEmit --plugins x"]) assert.equal(safeScript(c), null, `tsc only, --noEmit, no build/emit: ${c}`);
   assert.equal(applyRule(SPEC, `add workflow step \${{ secrets.X }} to job sim in ${PATH} running pnpm run typecheck`, files(), isTest), null);
 });
 

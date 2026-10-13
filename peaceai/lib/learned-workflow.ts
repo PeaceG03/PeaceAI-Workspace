@@ -8,8 +8,8 @@
 //   no `pull_request_target`/`workflow_run` trigger. The job must not set its own `permissions:`, `uses:`
 //   (reusable workflow), `env:`, `container:` or `services:`, and must already install with the same package
 //   manager. Triggers, permissions and every existing line are untouched (pure insertion; scope.ts re-checks).
-// - SCRIPT must be an existing package.json script whose command is one tool from a fixed list (tsc, eslint,
-//   prettier, biome) with plain arguments (no shell operators, variables, network, test runners, deploys).
+// - SCRIPT must be an existing package.json script whose command is `tsc ... --noEmit` (Auditor: tsc only)
+//   with plain arguments (no shell operators, variables, network, test runners, deploys).
 // - Plus ONE new test file: it asserts the step sits at the end of the job, and runs the script's command
 //   from node_modules/.bin (exit 0). Job B grades it against itself: pass with the step, fail with the workflow
 //   put back to the task base. Deterministic; no model; no YAML library (line-based, refuses anything unusual).
@@ -31,7 +31,8 @@ const SCRIPT = String.raw`[a-z][\w:-]{0,40}`;
  * add workflow step NAME to job JOB in .github/workflows/FILE.yml running pnpm run SCRIPT
  */
 export const WORKFLOW_TRIGGER = String.raw`^add (?:a )?workflow step \x60?(?<name>${STEP_NAME}?)\x60? to job \x60?(?<job>${JOB})\x60? in \x60?(?<file>\.github/workflows/[\w.-]+\.ya?ml)\x60? running \x60?(?<pm>npm|pnpm) run (?<script>${SCRIPT})\x60?\.?$`;
-export const SAFE_TOOLS = ["tsc", "eslint", "prettier", "biome"] as const;
+/** Auditor (M19): tsc only (type-checking reads sources and writes nothing with --noEmit). */
+export const SAFE_TOOLS = ["tsc"] as const;
 const SAFE_ARG = /^[A-Za-z0-9][\w./:=@-]*$|^--?[a-z][\w-]*(?:=[\w./:@-]+)?$/;
 const BAD_SCRIPT = /^(?:pre|post)|^(?:test|start|dev|serve|deploy|publish|release|prepare|install|scheduler|backfill)$/;
 /** The two step lines (after the dash indent), as scope.ts accepts them. */
@@ -113,6 +114,8 @@ export function safeScript(cmd: unknown): string[] | null {
   const words = cmd.trim().split(/ +/);
   if (!(SAFE_TOOLS as readonly string[]).includes(words[0]!)) return null;
   if (!words.slice(1).every((w) => SAFE_ARG.test(w) && !w.includes("..") && !/^\//.test(w))) return null;
+  // tsc must not emit or build: --noEmit required; no --build/-b, --watch/-w, --outDir/--outFile/--declarationDir, --plugins.
+  if (!words.includes("--noEmit") || words.some((w) => /^(?:-b|--build|-w|--watch|--outDir|--outFile|--declarationDir|--generateTrace|--plugins)(?:=|$)/.test(w))) return null;
   if (/(^|[\s/])(secret|token|credential|wrangler|production|deploy)/i.test(cmd)) return null;
   return words;
 }
