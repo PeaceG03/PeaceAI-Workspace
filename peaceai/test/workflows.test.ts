@@ -230,3 +230,13 @@ test("Job B runs whenever Job A succeeded with candidates, even with the LM fill
   for (const [name, block] of jobs(read("peace-task.yml")))
     if (/needs: \[[^\]]*\bgenerate\b/.test(block)) assert.match(block, /^ {4}if: (?:>-\n {6})?always\(\)/m, name);
 });
+
+test("peace-verdict: patch build disables background gc and cleanup cannot fail a built patch", () => {
+  const y = readFileSync(new URL("../../.github/workflows/peace-verdict.yml", import.meta.url), "utf8");
+  const i = y.indexOf("- name: Build the format-patch");
+  const step = y.slice(i, y.indexOf("- name:", i + 10));
+  assert.match(step, /git -c gc\.auto=0 -c maintenance\.auto=false /u);
+  assert.match(step, /test -s "\$RUNNER_TEMP\/verdict\.patch"/u);
+  assert.match(step, /rm -rf "\$RUNNER_TEMP\/target" \|\| \{/u);
+  assert.ok(step.indexOf("test -s") < step.indexOf('rm -rf "$RUNNER_TEMP/target"'));
+});
