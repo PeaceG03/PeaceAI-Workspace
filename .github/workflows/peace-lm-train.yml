@@ -62,13 +62,17 @@ jobs:
           cp "$RUNNER_TEMP/corpus/manifest.jsonl" "$RUNNER_TEMP/model/manifest.jsonl"
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
           jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
-      - name: Set C v2 eval (only once wired by the Architect; aggregate loss only)
+      - name: Set C v2 eval (only once wired by the Architect; aggregate loss only; NON-FATAL so a trained model is never lost)
         run: |
-          set -euo pipefail
           if [ "$(jq -r .wiredAsEval peaceai/model/heldout-c.json)" != true ]; then echo "set C v2 not wired as eval: skipped"; exit 0; fi
-          ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c
-          "$RUNNER_TEMP/venv/bin/python" peaceai/model/eval_c.py --model "$RUNNER_TEMP/model" --corpus "$RUNNER_TEMP/setc" --threads 4 | tee "$RUNNER_TEMP/model/eval-setc-v2.txt"
-          rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc"
+          if ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c \
+            && "$RUNNER_TEMP/venv/bin/python" peaceai/model/eval_c.py --model "$RUNNER_TEMP/model" --corpus "$RUNNER_TEMP/setc" --threads 4 > "$RUNNER_TEMP/eval.txt"; then
+            cat "$RUNNER_TEMP/eval.txt"; cp "$RUNNER_TEMP/eval.txt" "$RUNNER_TEMP/model/eval-setc-v2.txt"
+          else
+            echo "set C v2 eval FAILED (non-fatal): the model still lands; score it on the box"
+          fi
+          rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" "$RUNNER_TEMP/eval.txt"
+          exit 0
       - name: Land the model in Results only (no latest.json; refused until memcheck PASS)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}

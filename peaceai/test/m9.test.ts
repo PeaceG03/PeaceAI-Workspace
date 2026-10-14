@@ -422,7 +422,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
-const LM_TRAIN_WORKFLOW_SHA256 = "74f8754f3ed43e8399d2ec807ac2491505998fb4c20ebf5fc4896528bf7ed023"; // M37: external manifest corpus (ext-fetch + ext-manifest-check), stage gate, set C v2 eval hook
+const LM_TRAIN_WORKFLOW_SHA256 = "b3782f9f17df12980487148edd3507e0e41521b38ee3b0afa1b2e404a1c7d131"; // M38: set C v2 eval non-fatal (Auditor, run 38622524096)
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
   const wfDir = join(repo, ".github/workflows");

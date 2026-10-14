@@ -22,7 +22,7 @@ export const EXT_C_RULE = [
   "Pool: every repository in peaceai/model/ext-corpus.json whose root LICENSE classifies as its pinned SPDX id at its pinned commit.",
   "Order the pool by sha256('peaceai-ext-c:v1\\n' + name) ascending; the first ceil(15% of the pool) repositories are set C.",
   "A set C repository contributes no file to any training stage; every file it has that passes the corpus file filters is held out by content sha256 across all sources.",
-  "Not wired in as the evaluation set until the Architect decides; until then it is only excluded from training.",
+  "Wired (Architect, 2026-10-14): set C v2 is the evaluation set of the training workflow (mean loss on a token-capped slice, reported as partial when the cap does not cover every file), and it is always excluded from training.",
 ].join(" ");
 
 const rank = (name: string): string => createHash("sha256").update(`peaceai-ext-c:v1\n${name}`).digest("hex");
