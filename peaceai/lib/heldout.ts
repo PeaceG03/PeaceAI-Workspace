@@ -51,3 +51,31 @@ export function buildHeldOut(entries: readonly HeldOutEntry[], fixedAt: string) 
 }
 
 export const sha256Hex = (b: Buffer | string): string => createHash("sha256").update(b).digest("hex");
+
+// ---- M33: held-out set C (Architect option 3): single-file source+test edits, carved AFTER this rule is committed.
+export const HELDOUT_C_SCHEMA = "peaceai-heldout-c:v1";
+/** Heads set C is selected at (public main when the rule was committed). */
+export const HELDOUT_C_HEADS: Readonly<Record<string, string>> = {
+  "PeaceG03/PeaceAI-Workspace": "cc9b4a616782c8a0d83c4405833c5ee14ead645f",
+  "PeaceG03/PeaceSTOCKS": "a3d9484d0c5cdbed67efd62356ec2324c132ac82",
+};
+export const HELDOUT_C_RULE = [
+  "Candidates: every non-merge commit by HELDOUT_AUTHOR reachable from HELDOUT_C_HEADS[repo], in both public repos, that is NOT in heldout.json set A or B.",
+  "source+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.",
+  "Held out: every candidate of that kind is set C (one set, final rate only; never measured during development).",
+  "Exclusion: set C is excluded from every training corpus by content sha256 (any source): every blob of a touched path at the commit, at its parent and at the pinned C head.",
+].join("\n");
+
+/** source+test from `git show --name-status --no-renames` lines: exactly one source .ts and one test .ts, A/M only, nothing else. */
+export function isSourceTest(nameStatus: readonly string[]): boolean {
+  const ns = nameStatus.filter(Boolean).map((l) => { const [s, p] = l.split("\t"); return { s: s!, p: p! }; });
+  if (ns.length !== 2 || !ns.every((x) => (x.s === "A" || x.s === "M") && x.p.endsWith(".ts"))) return false;
+  return ns.filter((x) => isTestPath(x.p)).length === 1;
+}
+
+export interface HeldOutCEntry { repo: string; sha: string; kind: "source+test"; paths: string[]; contentSha256: string[] }
+/** Builds the committed set C file (order: repo, then sha). */
+export function buildHeldOutC(entries: readonly HeldOutCEntry[], fixedAt: string) {
+  const sorted = [...entries].sort((a, b) => (a.repo + a.sha < b.repo + b.sha ? -1 : 1));
+  return { schema: HELDOUT_C_SCHEMA, fixedAt, rule: HELDOUT_C_RULE, author: HELDOUT_AUTHOR, heads: HELDOUT_C_HEADS, sets: { C: sorted } };
+}
