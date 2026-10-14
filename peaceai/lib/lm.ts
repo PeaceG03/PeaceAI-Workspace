@@ -92,13 +92,17 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
           })
         : null;
       // Maximal runs of consecutive unexplained windows; a run of k windows covers k + n - 1 characters.
-      const lengths: number[] = [];
+      const lengths: number[] = [], starts: number[] = [];
       let prev = -2;
       for (const st of unexplained ?? []) {
-        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else lengths.push(coreRaw!.n);
+        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else { lengths.push(coreRaw!.n); starts.push(st); }
         prev = st;
       }
-      const long = unexplained ? lengths.filter((l) => l >= exempt.minRun).length : 1;
+      // Auditor (memcheck trace, lm-v1-78b6e96990d2): a joined run of 64+ counts ONLY when its ENTIRE text occurs
+      // contiguously in core. Overlapping short windows (e.g. a 128-char 'c' run over a core run of 40) join into a
+      // "run" that core never contains; that is not a copy. Reported lengths are unchanged.
+      const inCore = (i: number): boolean => { const t = s.text.slice(starts[i]!, starts[i]! + lengths[i]!); return coreRaw!.texts.some((c) => c.includes(t)); };
+      const long = unexplained ? lengths.filter((l, i) => l >= exempt.minRun && inCore(i)).length : 1;
       scan.unexplainedHits! += unexplained ? lengths.length : 1;
       scan.countedHits! += long;
       scan.longestUnexplained = Math.max(scan.longestUnexplained!, ...lengths, 0);
