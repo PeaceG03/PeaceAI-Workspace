@@ -426,6 +426,14 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
   const wfDir = join(repo, ".github/workflows");
   for (const f of readdirSync(wfDir)) {
     const text = readFileSync(join(wfDir, f), "utf8");
+    // M31 (Architect): the ONE exception is peace-lm-train.yml, public-only, held-out-checked, never the memcheck
+    // (that still needs core and runs on the box). m31-lm-public.test.ts pins the rest of its shape.
+    if (f === "peace-lm-train.yml") {
+      assert.match(text, /PEACEAI_LM_PUBLIC_ONLY: "1"/);
+      assert.match(text, /lm-manifest-check\.ts/);
+      assert.ok(!/lm-memcheck\.ts|upload-artifact/.test(text), f);
+      continue;
+    }
     assert.ok(!/model\/train\.py|model\/export\.py|lm-corpus\.ts|lm-memcheck\.ts/.test(text), `${f} must not train`);
   }
   const task = readFileSync(join(wfDir, "peace-task.yml"), "utf8");

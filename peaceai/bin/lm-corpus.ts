@@ -68,12 +68,17 @@ function addSource(name: string, dir: string, commit: string, visibility: "priva
   summary.sources.push({ name, visibility, commit, license, files: used, bytes, excluded });
 }
 
+// M31 (Architect): PEACEAI_LM_PUBLIC_ONLY=1 is the public-runner path: Peace's PUBLIC owner sources only, each at
+// the commit pinned in lm-public-allow.json; no private source and no permissive/external code.
+const publicOnly = process.env.PEACEAI_LM_PUBLIC_ONLY === "1";
+const pinned: Record<string, string> = publicOnly ? JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/lm-public-allow.json"), "utf8")).sources : {};
 for (const o of sources.owner) {
+  if (publicOnly && (o.visibility !== "public" || !Object.hasOwn(pinned, o.name))) continue;
   const dir = ownerDirs[o.name];
   if (!dir) throw new Error(`no checkout for ${o.name}`);
-  addSource(o.name, dir, git(dir, "rev-parse", o.ref), o.visibility, o.license, true);
+  addSource(o.name, dir, publicOnly ? git(dir, "rev-parse", `${pinned[o.name]}^{commit}`) : git(dir, "rev-parse", o.ref), o.visibility, o.license, true);
 }
-for (const p of sources.permissive) {
+for (const p of publicOnly ? [] : sources.permissive) {
   const dir = join(permissiveRoot, p.name.replace("/", "__"));
   const head = git(dir, "rev-parse", "HEAD");
   const licFile = git(dir, "ls-tree", "--name-only", p.commit).split("\n").find((n) => /^(?:LICEN[CS]E|COPYING)(?:\.[a-z]+)?$/i.test(n));
