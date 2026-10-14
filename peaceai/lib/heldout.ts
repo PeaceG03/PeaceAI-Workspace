@@ -59,9 +59,29 @@ export const HELDOUT_C_HEADS: Readonly<Record<string, string>> = {
   "PeaceG03/PeaceAI-Workspace": "cc9b4a616782c8a0d83c4405833c5ee14ead645f",
   "PeaceG03/PeaceSTOCKS": "a3d9484d0c5cdbed67efd62356ec2324c132ac82",
 };
+/** Committer time of the first PeaceAI-landed change (PeaceSTOCKS c210539af8a0d78df9bda96a2ef04fdd3de00048). */
+export const HELDOUT_C_AGENT_CUTOFF = "2026-10-13T08:36:22Z";
+/** Builder-log refs (`Repo@sha` prefixes and `PeaceAI-Workspace#N` numbers) from tasks.jsonl text. */
+export function builderLogRefs(tasksJsonl: string): { shas: Map<string, string[]>; prs: Set<number> } {
+  const shas = new Map<string, string[]>(), prs = new Set<number>();
+  for (const line of tasksJsonl.split("\n").filter(Boolean)) {
+    const changed = String((JSON.parse(line) as { changed?: unknown }).changed ?? "");
+    for (const m of changed.matchAll(/\b(PeaceSTOCKS|PeaceAI-Workspace)@([0-9a-f]{7,40})\b/g)) shas.set(`PeaceG03/${m[1]}`, [...(shas.get(`PeaceG03/${m[1]}`) ?? []), m[2]!]);
+    for (const m of changed.matchAll(/\bPeaceAI-Workspace#(\d+)\b/g)) prs.add(Number(m[1]));
+  }
+  return { shas, prs };
+}
+/** True when a commit is agent-made under the set C rule. */
+export function agentMade(repo: string, sha: string, committedAtIso: string, subject: string, refs: ReturnType<typeof builderLogRefs>): boolean {
+  if (Date.parse(committedAtIso) >= Date.parse(HELDOUT_C_AGENT_CUTOFF)) return true;
+  if ((refs.shas.get(repo) ?? []).some((p) => sha.startsWith(p))) return true;
+  const pr = /\(#(\d+)\)$/.exec(subject);
+  return repo === "PeaceG03/PeaceAI-Workspace" && pr !== null && refs.prs.has(Number(pr[1]));
+}
 export const HELDOUT_C_RULE = [
   "Candidates: every non-merge commit by HELDOUT_AUTHOR reachable from HELDOUT_C_HEADS[repo], in both public repos, that is NOT in heldout.json set A or B.",
-  "source+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.",
+  "source+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (no .d.ts) (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.",
+  "Agent-made commits are dropped (Auditor #148 F2): any commit committed at or after HELDOUT_C_AGENT_CUTOFF (the first PeaceAI-landed change, PeaceSTOCKS c210539), and any commit named in builder-log/tasks.jsonl at the Workspace C head (a `repo@sha` ref, or a `PeaceAI-Workspace#N` ref matching a Workspace commit subject ending `(#N)`).",
   "Held out: every candidate of that kind is set C (one set, final rate only; never measured during development).",
   "Exclusion: set C is excluded from every training corpus by content sha256 (any source): every blob of a touched path at the commit, at its parent and at the pinned C head.",
 ].join("\n");
@@ -69,7 +89,7 @@ export const HELDOUT_C_RULE = [
 /** source+test from `git show --name-status --no-renames` lines: exactly one source .ts and one test .ts, A/M only, nothing else. */
 export function isSourceTest(nameStatus: readonly string[]): boolean {
   const ns = nameStatus.filter(Boolean).map((l) => { const [s, p] = l.split("\t"); return { s: s!, p: p! }; });
-  if (ns.length !== 2 || !ns.every((x) => (x.s === "A" || x.s === "M") && x.p.endsWith(".ts"))) return false;
+  if (ns.length !== 2 || !ns.every((x) => (x.s === "A" || x.s === "M") && x.p.endsWith(".ts") && !x.p.endsWith(".d.ts"))) return false;
   return ns.filter((x) => isTestPath(x.p)).length === 1;
 }
 
