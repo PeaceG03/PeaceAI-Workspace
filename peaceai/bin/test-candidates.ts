@@ -13,6 +13,7 @@ import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from 
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
+import { assertionFailuresOnly } from "../lib/learned-body.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -262,7 +263,7 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
  * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
  * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
  */
-function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false): TestGrading {
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, replaceExpression = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   if (workflowStep) return gradeWorkflowStep(tree, files, ungradable);
@@ -292,6 +293,13 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
   }
   if (source.length && !runTrusted(tree, "git", ["checkout", "-q", base, "--", ...source])) return ungradable("revert-failed");
   if (created.length && !runTrusted(tree, "rm", ["-f", "--", ...created])) return ungradable("revert-failed");
+  if (replaceExpression) {
+    // Auditor (#136, 2): the before-run must fail by assertions only (a value of the edited function), never by a
+    // crash, load/import error or other throw.
+    const run = runCandidateCapture(tree, tsx, ["--test", ...newTests]);
+    if (!run.ok && !assertionFailuresOnly(run.out)) return ungradable("before-not-assertion");
+    return { fixSha: base, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok), reason: null };
+  }
   const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
   return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix, stubFails), reason: null, ...(stubFails === undefined ? {} : { stubFails }) };
 }
@@ -543,7 +551,7 @@ for (const candidate of selected) {
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
-    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"));
+    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
   } finally {
     killSandbox();
     // The tools copy may be read-only (Job B makes them so); restore write access before removing.

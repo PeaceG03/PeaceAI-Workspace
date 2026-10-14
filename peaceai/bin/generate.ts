@@ -258,7 +258,7 @@ for (const a of planSteps ? [] : admissions) {
   const workflowFiles = a.spec.kind === "ADD_WORKFLOW_STEP"
     ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json" || (/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(p) && !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile())).map((p) => ({ path: p, content: "" }))]
     : [];
-  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest);
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target);
   if (!edit) continue;
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
