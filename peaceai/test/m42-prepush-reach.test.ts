@@ -12,7 +12,9 @@ const root = resolve(import.meta.dirname, "../..");
 const mail = ["peace", "users.noreply.github.com"].join("@"); // built at runtime (no address in this file)
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t", GIT_AUTHOR_EMAIL: mail, GIT_COMMITTER_EMAIL: mail, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
 // Distinctive long lines (>= LONG_LINE) that exist only in the throwaway core checkout.
-const CORE_TEXT = [0, 1, 2, 3].map((i) => `export const m42PrivateCoreFixtureLine${i} = "only the throwaway core checkout carries this line ${i}";`).join("\n") + "\n";
+// Git trims leading/trailing punctuation from names, so the identity fixture line is letters and spaces only.
+const IDENTITY_LINE = "m42 private core fixture identity line carried only by the throwaway core checkout";
+const CORE_TEXT = [0, 1, 2, 3].map((i) => `export const m42PrivateCoreFixtureLine${i} = "only the throwaway core checkout carries this line ${i}";`).join("\n") + "\n" + IDENTITY_LINE + "\n";
 const g = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, env, encoding: "utf8" }).trim();
 const put = (dir: string, path: string, text: string) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), text); };
 const commit = (dir: string, path: string, text: string, msg: string) => { put(dir, path, text); g(dir, "add", "-A"); g(dir, "commit", "-q", "-m", msg); };
@@ -186,4 +188,19 @@ test("N2: core text stored as UTF-16LE (with and without BOM) blocks", () => {
     g(ws, "add", "-A"); g(ws, "commit", "-q", "-m", "utf16");
     blocks(push(ws, "feat"), /src\/u16\.txt: core text/);
   }
+});
+
+test("identity names (author, committer, tagger) carrying core text block", () => {
+  const line = IDENTITY_LINE;
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat"); put(ws, "src/b.ts", "b\n"); g(ws, "add", "-A");
+  execFileSync("git", ["commit", "-q", "-m", "x"], { cwd: ws, env: { ...env, GIT_AUTHOR_NAME: line } });
+  blocks(push(ws, "feat"), /commit identity: core text/);
+  const ws2 = setup();
+  g(ws2, "checkout", "-q", "-b", "feat"); put(ws2, "src/b.ts", "b\n"); g(ws2, "add", "-A");
+  execFileSync("git", ["commit", "-q", "-m", "x"], { cwd: ws2, env: { ...env, GIT_COMMITTER_NAME: line } });
+  blocks(push(ws2, "feat"), /commit identity: core text/);
+  const ws3 = setup();
+  execFileSync("git", ["tag", "-a", "v9", "-m", "x", "origin/main"], { cwd: ws3, env: { ...env, GIT_COMMITTER_NAME: line } });
+  blocks(spawnSync("git", ["push", "origin", "v9"], { cwd: ws3, env, encoding: "utf8" }), /tagger identity: core text/);
 });
