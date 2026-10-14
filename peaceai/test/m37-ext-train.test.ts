@@ -1,10 +1,12 @@
 // M37: training workflow on the M36 external corpus: stage gate, runner-side manifest check, memcheck record, set C v2 eval gate.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { EXT_MANIFEST_SCHEMA, EXT_MEMCHECK_SCHEMA, extCorpusProblems, stageAllowed } from "../lib/extcorpus.ts";
+import { EXT_MANIFEST_SCHEMA, EXT_MEMCHECK_SCHEMA, extCorpusProblems, manifestRepoProblems, stageAllowed } from "../lib/extcorpus.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -63,4 +65,23 @@ test("workflow: stage gate, fetch, check, train with ext-train.json sizing, set 
   const t = JSON.parse(readFileSync(join(root, "peaceai/model/ext-train.json"), "utf8"));
   assert.ok(t.model.steps * 13.4 <= 14400, "steps fit the hard stop even at the measured box speed");
   for (const p of ["peaceai/bin/ext-manifest-check.ts", "peaceai/bin/ext-memcheck.ts", "peaceai/model/eval_c.py", "peaceai/model/ext-memcheck.json", "peaceai/test/m37-ext-train.test.ts", ".github/workflows/peace-lm-train.yml"]) assert.ok(protectedReason(p), p);
+});
+
+test("Auditor #153: ext-fetch validates repo names and pins against the config before any work dir", () => {
+  assert.deepEqual(manifestRepoProblems([{ repo: ext.name, commit: ext.commit }], cfg), []);
+  for (const bad of ["../evil", "a/b/c", "a b/c", "evil.com:x/y", "-o/x", "./x", "a/..", ""]) {
+    const p = manifestRepoProblems([{ repo: bad, commit: ext.commit }], cfg);
+    assert.ok(p.length === 1 && /bad repo name|not in config/.test(p[0]!), `${bad}: ${p}`);
+  }
+  assert.match(manifestRepoProblems([{ repo: "someone/else", commit: ext.commit }], cfg).join(), /repo not in config/);
+  assert.match(manifestRepoProblems([{ repo: ext.name, commit: "0".repeat(40) }], cfg).join(), /commit not pinned/);
+  const owner = cfg.owner[0];
+  assert.deepEqual(manifestRepoProblems([{ repo: owner.name, commit: owner.commit }], cfg), []);
+  // The committed manifest and set C pass, and the CLI validates before creating its work dir.
+  const lines = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l));
+  const c = JSON.parse(readFileSync(join(root, "peaceai/model/heldout-c.json"), "utf8"));
+  assert.deepEqual(manifestRepoProblems([...lines.map((e: { repo: string; commit: string }) => e), ...c.sets.C.map((e: { repo: string; sha: string }) => ({ repo: e.repo, commit: e.sha }))], cfg), []);
+  const src = readFileSync(join(root, "peaceai/bin/ext-fetch.ts"), "utf8");
+  assert.ok(src.indexOf("manifestRepoProblems(pairs, cfgAll)") > 0 && src.indexOf("manifestRepoProblems(pairs, cfgAll)") < src.indexOf('execFileSync("git", ["init"'), "validation precedes any git init");
+  void existsSync; void mkdtempSync; void spawnSync; void tmpdir;
 });

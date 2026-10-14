@@ -9,9 +9,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256Hex } from "../lib/heldout.ts";
 import { splitOf } from "../lib/lmcorpus.ts";
-import { EXT_MANIFEST_SCHEMA, type ExtManifestEntry } from "../lib/extcorpus.ts";
+import { EXT_MANIFEST_SCHEMA, manifestRepoProblems, type ExtManifestEntry } from "../lib/extcorpus.ts";
 
 const [work, out] = process.argv.slice(2, 4).map((p) => resolve(p));
+const lines = readFileSync(resolve(import.meta.dirname, "../model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean);
+// Validate every manifest (and set C) repo name and commit against ^[\w.-]+/[\w.-]+$ and the committed config
+// BEFORE any work dir is created or any fetch runs (Auditor #153).
+const cfgAll = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/ext-corpus.json"), "utf8"));
+const cAll = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/heldout-c.json"), "utf8"));
+const pairs = [...lines.slice(1).map((l) => JSON.parse(l) as ExtManifestEntry).map((e) => ({ repo: e.repo, commit: e.commit })), ...(cAll.sets?.C ?? []).map((e: { repo: string; sha: string }) => ({ repo: e.repo, commit: e.sha }))];
+const repoProblems = manifestRepoProblems(pairs, cfgAll);
+if (repoProblems.length) { for (const p of repoProblems.slice(0, 5)) console.log(`ext-fetch refused: ${p}`); process.exit(1); }
 const fetchRepo = (repo: string, commit: string): string => {
   const d = join(work!, repo.replace("/", "__"));
   if (!existsSync(d)) { execFileSync("git", ["init", "-q", d]); execFileSync("git", ["-C", d, "fetch", "-q", "--depth", "1", `https://github.com/${repo}.git`, commit]); }
@@ -43,7 +51,6 @@ if (process.argv.includes("--set-c")) {
   console.log(`ext-fetch set C v2 files=${docs.length} repos=${c.sets.C.length}`);
   process.exit(0);
 }
-const lines = readFileSync(resolve(import.meta.dirname, "../model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean);
 if (JSON.parse(lines[0]!).schema !== EXT_MANIFEST_SCHEMA) throw new Error("bad manifest header");
 const entries: ExtManifestEntry[] = lines.slice(1).map((l) => JSON.parse(l));
 mkdirSync(out!, { recursive: true });
