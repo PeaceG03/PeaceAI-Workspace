@@ -35,6 +35,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/target\.ts$|^peaceai\/targets\.json$/, why: "per-target scope config, incl. opted-in workflow files (M19)" },
   { pattern: /^peaceai\/proof\/workflow-step-proof\.md$/, why: "workflow-step grading and live-proof procedure (Auditor #107 changes 4, 6)" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
+  { pattern: /^peaceai\/lib\/(lmcorpus|heldout)\.ts$|^peaceai\/bin\/(lm-corpus|heldout-select)\.ts$/, why: "the training corpus builder and the held-out selection/exclusion (M28)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
 ];

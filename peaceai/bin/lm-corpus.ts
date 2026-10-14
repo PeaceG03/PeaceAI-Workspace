@@ -8,12 +8,17 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { classifyLicense, fileExclusion, splitOf, type ManifestEntry } from "../lib/lmcorpus.ts";
+import { classifyLicense, fileExclusion, heldOutHashes, heldOutPaths, isHeldOut, splitOf, type ManifestEntry } from "../lib/lmcorpus.ts";
 
 const out = resolve(process.env.PEACEAI_LM_OUT ?? "");
 const permissiveRoot = resolve(process.env.PEACEAI_LM_PERMISSIVE_DIR ?? "/workspace/lm-corpus");
 const ownerDirs: Record<string, string> = JSON.parse(process.env.PEACEAI_LM_OWNER_DIRS ?? "{}");
 const sources = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/sources.json"), "utf8"));
+// Held-out generation sets A and B: never trained on (any retrain or tuning reads the same file).
+const heldOutFile = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/heldout.json"), "utf8"));
+const heldOut = heldOutPaths(heldOutFile);
+// Round 2 (Auditor, M28 1): also by content, across every source (owner public, owner private, permissive).
+const heldOutContent = heldOutHashes(heldOutFile);
 mkdirSync(out, { recursive: true });
 
 const git = (dir: string, ...a: string[]) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", maxBuffer: 1 << 28 }).trim();
@@ -47,10 +52,11 @@ function addSource(name: string, dir: string, commit: string, visibility: "priva
   const excluded: Record<string, number> = {};
   let used = 0, bytes = 0;
   for (const f of files) {
-    const why = fileExclusion(f.path, f.text, licenseDirs, owner);
+    const sha256 = createHash("sha256").update(f.text).digest("hex");
+    const why = isHeldOut(name, f.path, sha256, heldOut, heldOutContent) ? "held-out" : fileExclusion(f.path, f.text, licenseDirs, owner);
     if (why) { excluded[why] = (excluded[why] ?? 0) + 1; continue; }
     const split = splitOf(name, f.path);
-    const entry: ManifestEntry = { doc: manifest.length, source: name, visibility, commit, path: f.path, sha256: createHash("sha256").update(f.text).digest("hex"), bytes: Buffer.byteLength(f.text), license, split };
+    const entry: ManifestEntry = { doc: manifest.length, source: name, visibility, commit, path: f.path, sha256, bytes: Buffer.byteLength(f.text), license, split };
     manifest.push(entry);
     docs.push(JSON.stringify({ doc: entry.doc, text: f.text }));
     used += 1; bytes += entry.bytes;

@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "27dc8c775c2e3d2bbe5c3eef4743552b11737bb59a9451bb2309ed02950bdbf8";
+const PROTECTED_DIGEST = "febac235aa3737c6f857fca84b6b9853e5bea54f96ca38784f3a381137ea49de"; // M28 on main: + lmcorpus, heldout, lm-corpus, heldout-select
