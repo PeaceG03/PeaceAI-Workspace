@@ -29,13 +29,21 @@ tok = lm.Tokenizer(json.load(open(os.path.join(args.model, "tokenizer.json"))))
 p = lm.load_weights(os.path.join(args.model, "weights.npz"))
 T = cfg["ctx"]
 ids = []
-files = 0
+total_files = 0
+touched = 0  # files with at least one token inside the cap
+full = 0  # files entirely inside the cap
 with open(os.path.join(args.corpus, "docs.jsonl"), encoding="utf-8") as f:
-    for line in f:  # files in manifest order (repo, then path): deterministic
-        if line.strip():
-            ids.append(lm.EOD)
-            ids.extend(tok.encode(json.loads(line)["text"]))
-            files += 1
+    for line in f:  # set C v2 order (repo, then path): deterministic
+        if not line.strip():
+            continue
+        total_files += 1
+        if len(ids) >= args.max_tokens:  # a file starting at the cap has no token scored (only its EOD separator)
+            continue
+        doc = [lm.EOD] + tok.encode(json.loads(line)["text"])
+        touched += 1
+        if len(ids) + len(doc) <= args.max_tokens + 1:
+            full += 1
+        ids.extend(doc)
 ids = ids[: args.max_tokens + 1]
 total, n = 0.0, 0
 for lo in range(0, len(ids) - 1, T):
@@ -49,4 +57,5 @@ for lo in range(0, len(ids) - 1, T):
     lp = z - np.log(np.exp(z).sum(-1, keepdims=True))
     total += float(-lp[np.arange(len(y)), y].sum())
     n += len(y)
-print(f"setC_v2 model={cfg.get('version')} files={files} tokens={n} mean_loss={total / max(n, 1):.4f}")
+scope = "full" if full == total_files else "partial"
+print(f"setC_v2 scope={scope} model={cfg.get('version')} files_scored={touched} files_fully_scored={full} files_total={total_files} tokens={n} mean_loss={total / max(n, 1):.4f}")

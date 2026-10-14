@@ -61,6 +61,11 @@ test("workflow: stage gate, fetch, check, train with ext-train.json sizing, set 
   assert.match(wf, /--steps "\$\(m steps\)"/);
   assert.match(wf, /--max-seconds 14400/);
   assert.match(wf, /if \[ "\$\(jq -r \.wiredAsEval peaceai\/model\/heldout-c\.json\)" != true \]; then echo "set C v2 not wired as eval: skipped"; exit 0; fi/);
+  // Auditor (run 38622524096): the eval step can never fail the job, so a trained model always reaches the landing step.
+  const ev = wf.slice(wf.indexOf("      - name: Set C v2 eval"), wf.indexOf("      - name: Land the model"));
+  assert.ok(!/set -e/.test(ev), "no set -e in the eval step");
+  assert.match(ev, /echo "set C v2 eval FAILED \(non-fatal\)/);
+  assert.match(ev, /\n          exit 0\n$/);
   assert.ok(!/PEACEAI_LM_PUBLIC_ONLY|lm-corpus\.ts|lm-memcheck\.ts|upload-artifact/.test(wf));
   const t = JSON.parse(readFileSync(join(root, "peaceai/model/ext-train.json"), "utf8"));
   assert.ok(t.model.steps * 13.4 <= 14400, "steps fit the hard stop even at the measured box speed");
