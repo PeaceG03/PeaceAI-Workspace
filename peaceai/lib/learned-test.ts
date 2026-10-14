@@ -77,7 +77,9 @@ export const ISO_DATE_TEXT = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{
 /** Real calendar values only (no 2026-02-30, no 25:00, no +15:00). */
 function validCalendar(raw: string): boolean {
   const [y, mo, d] = raw.slice(0, 10).split("-").map(Number) as [number, number, number];
-  const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  // Auditor #154 nit: Date.UTC maps years 0-99 to 1900-1999; leap years are computed directly (proleptic Gregorian).
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1] ?? 0;
   if (mo < 1 || mo > 12 || d < 1 || d > days) return false;
   const t = /T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
   if (t && (Number(t[1]) > 23 || Number(t[2]) > 59 || Number(t[3] ?? 0) > 59)) return false;
