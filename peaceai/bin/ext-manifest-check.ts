@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256Hex } from "../lib/heldout.ts";
 import { allHeldOutHashes } from "../lib/lmcorpus.ts";
-import { extCorpusProblems } from "../lib/extcorpus.ts";
+import { extCorpusProblems, safetyToolShas } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const corpus = resolve(process.argv[2] ?? "");
@@ -20,7 +20,7 @@ const manifestBytes = readFileSync(join(model, "ext-manifest.jsonl"));
 const problems = extCorpusProblems({
   manifestText: manifestBytes.toString("utf8"), cfg: JSON.parse(rd("ext-corpus.json")), memcheck: JSON.parse(rd("ext-memcheck.json")),
   manifestSha256: sha256Hex(manifestBytes), heldOut: allHeldOutHashes(JSON.parse(rd("heldout.json")), c),
-  cRepos: new Set(c.sets.C.map((e: { repo: string }) => e.repo)), docs, sha256: sha256Hex, stage,
+  cRepos: new Set(c.sets.C.map((e: { repo: string }) => e.repo)), docs, sha256: sha256Hex, stage, safetyTools: safetyToolShas(JSON.parse(rd("safety-tool-sha256.json"))),
 });
 for (const p of problems) console.log(`ext-manifest-check: ${p}`);
 console.log(`ext-manifest-check ${problems.length ? "FAIL" : "PASS"} docs=${docs.size} stage=${stage}`);
