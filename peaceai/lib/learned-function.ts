@@ -269,16 +269,48 @@ export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
  * `throws` is true for the throwing stub: then a test that expects a throw/rejection proves nothing and the
  * caller must refuse it.
  */
-export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
+export function stubBody(content: string, fn: string, requireExport = true, marker?: string): { content: string; throws: boolean } | null {
   const simple = stubFunction(content, fn);
-  if (simple !== null) return { content: simple, throws: false };
+  if (simple !== null) return { content: marker === undefined ? simple : markBody(simple, fn, marker), throws: false };
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
   if (hits.length !== 1) return null;
   const f = hits[0]!;
   if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
-  const stub = `{ throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
+  const stub = `{ ${marker === undefined ? "" : reachedCall(marker)}throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
   return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: true };
+}
+
+/** M23 (Auditor #129): the statement a stubbed body runs first, so a failure can be traced to a reached stub. */
+export const STUB_MARKER_RE = /^PEACEAI_STUB_REACHED_[0-9a-f]{16}$/;
+const reachedCall = (marker: string) => `console.error(${JSON.stringify(marker)}); `;
+function markBody(content: string, fn: string, marker: string): string {
+  if (!STUB_MARKER_RE.test(marker)) throw new Error("bad stub marker");
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const f = sf.statements.find((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn)!;
+  const at = f.body!.getStart(sf) + 1;
+  return content.slice(0, at) + " " + reachedCall(marker) + content.slice(at);
+}
+
+/**
+ * M23 (Auditor #129): the bindings a test imports from `spec`: `imported` is the module's export name, `local`
+ * the name the test calls (differs for `{ a as b }`). Null (fail closed) when the test also imports `spec` as a
+ * namespace or default, since calls through those cannot be attributed.
+ */
+export function importedBindings(testContent: string, spec: string): { imported: string; local: string }[] | null {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  const out: { imported: string; local: string }[] = [];
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || s.moduleSpecifier.text !== spec) continue;
+    const c = s.importClause;
+    if (!c || c.isTypeOnly) continue;
+    if (c.name) return null;
+    const nb = c.namedBindings;
+    if (!nb) continue;
+    if (!ts.isNamedImports(nb)) return null;
+    for (const e of nb.elements) if (!e.isTypeOnly) out.push({ imported: (e.propertyName ?? e.name).text, local: e.name.text });
+  }
+  return out;
 }
 
 /** M23: names a test imports from module specifier `spec` (named imports only). */
@@ -309,12 +341,12 @@ export function declaredFunctions(content: string): string[] {
  * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
  * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
  */
-export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
+export function stubAll(content: string, fns: readonly string[], marker?: string): { content: string; throws: boolean } | null {
   if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
   let cur = content;
   let throws = false;
   for (const fn of fns) {
-    const s = stubBody(cur, fn, false);
+    const s = stubBody(cur, fn, false, marker);
     if (!s) return null;
     cur = s.content;
     throws ||= s.throws;

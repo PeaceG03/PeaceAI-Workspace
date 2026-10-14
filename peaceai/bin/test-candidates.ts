@@ -1,6 +1,6 @@
 // Job B: apply each candidate to a clean checkout and test it. No secrets, no core.
 import { spawnSync, execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, declaredFunctions, expectsThrow, importedNames, stubAll, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, declaredFunctions, expectsThrow, importedBindings, stubAll, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -133,12 +133,21 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch])) {
       // M23 (Auditor, #127): a fix that CREATED its one source module cannot be reverted once later commits
       // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
-      const stubbed = stubBefore(tree, fixSha, paths, newTests);
+      const marker = `PEACEAI_STUB_REACHED_${randomBytes(8).toString("hex")}`;
+      const stubbed = stubBefore(tree, fixSha, paths, newTests, marker);
       if (!stubbed) return ungradable("revert-failed");
-      const stubPass = runCandidate(tree, tsx, ["--test", ...newTests]);
-      writeFileSync(stubbed.file, stubbed.real);
-      console.log(`grading: stub-body before-state (all fix-created functions; tested ${stubbed.fn}) (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
-      return { fixSha, afterFix, beforeFix: stubPass, verdict: gradingVerdict(afterFix, stubPass, !stubPass), reason: null, stubFails: !stubPass };
+      let run: { ok: boolean; out: string };
+      try {
+        run = runCandidateCapture(tree, tsx, ["--test", ...newTests]);
+      } finally {
+        writeFileSync(stubbed.file, stubbed.real);
+      }
+      // Auditor (#129): a failure counts as "fails before" only when a stub was reached (its per-run random
+      // marker is in the output). Any other failure (syntax, unrelated throw, timeout) proves nothing.
+      const reached = run.out.includes(marker);
+      console.log(`grading: stub-body before-state (stubbed ${stubbed.stubbed.join(",")}; tested ${stubbed.fn}; stub reached: ${reached}) (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
+      if (!run.ok && !reached) return { ...ungradable("stub-not-reached"), stubbed: stubbed.stubbed };
+      return { fixSha, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok, !run.ok), reason: null, stubFails: !run.ok, stubbed: stubbed.stubbed };
     }
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
   } finally {
@@ -154,7 +163,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
  * and calls it, the stub applies, and (for the throwing stub) no new test expects a throw or rejection.
  * Returns the original content so the caller restores it.
  */
-function stubBefore(tree: string, fixSha: string, paths: readonly string[], newTests: readonly string[]): { file: string; real: string; fn: string } | null {
+function stubBefore(tree: string, fixSha: string, paths: readonly string[], newTests: readonly string[], marker: string): { file: string; real: string; fn: string; stubbed: string[] } | null {
   if (paths.length !== 1) return null;
   const path = paths[0]!;
   let added: string;
@@ -168,22 +177,25 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
     const rel = relative(dirname(t), path).replace(/\.ts$/, "");
     const spec = rel.startsWith(".") ? rel : `./${rel}`;
     // Of the names the test imports from the created module, exactly one is called: the tested function.
-    const names = [...importedNames(tests[i]!, spec), ...importedNames(tests[i]!, `${spec}.ts`)].filter((n) => callsFunction(tests[i]!, n));
-    if (names.length !== 1) return null;
-    fns.add(names[0]!);
+    // Auditor (#129): aliases (`{ f as g }`) are followed to the export name; namespace/default imports fail closed.
+    const a = importedBindings(tests[i]!, spec);
+    const b = importedBindings(tests[i]!, `${spec}.ts`);
+    if (!a || !b) return null;
+    const called = [...a, ...b].filter((x) => callsFunction(tests[i]!, x.local));
+    if (called.length !== 1) return null;
+    fns.add(called[0]!.imported);
   }
   if (fns.size !== 1) return null;
   const fn = [...fns][0]!;
-  if (!tests.every((t) => callsFunction(t, fn))) return null;
   const real = readFileSync(file, "utf8");
   // Auditor (#129): stub EVERY function the fix commit created in the module, not only the tested one.
   let created: string[];
   try { created = declaredFunctions(git(repo, "show", `${fixSha}:${path}`)); } catch { return null; }
   if (!created.includes(fn)) return null;
-  const stub = stubAll(real, created);
+  const stub = stubAll(real, created, marker);
   if (!stub || (stub.throws && tests.some(expectsThrow))) return null;
   writeFileSync(file, stub.content);
-  return { file, real, fn };
+  return { file, real, fn, stubbed: [...created] };
 }
 
 /**
