@@ -37,7 +37,7 @@ with open(os.path.join(args.corpus, "docs.jsonl"), encoding="utf-8") as f:
         if not line.strip():
             continue
         total_files += 1
-        if len(ids) > args.max_tokens:
+        if len(ids) >= args.max_tokens:  # a file starting at the cap has no token scored (only its EOD separator)
             continue
         doc = [lm.EOD] + tok.encode(json.loads(line)["text"])
         touched += 1
