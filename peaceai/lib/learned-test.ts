@@ -68,15 +68,28 @@ const parseExpr = (text: string): ts.Expression | null => {
   return ts.isParenthesizedExpression(e) ? e.expression : null;
 };
 
-/** A literal value: string, number, -number, true/false/null/undefined, arrays and plain objects of those. */
-function isLiteralValue(n: ts.Node): boolean {
+/** M35: a `new Date("...")` argument: identifier Date (not shadowable here: checks only name exports), exactly one plain
+ *  string literal of at most MAX_DATE_LITERAL_CHARS characters from a date-text alphabet (no escapes, no templates). */
+export const MAX_DATE_LITERAL_CHARS = 32;
+export function isDateLiteral(n: ts.Node): boolean {
+  if (!ts.isNewExpression(n) || n.typeArguments || !ts.isIdentifier(n.expression) || n.expression.text !== "Date") return false;
+  const a = n.arguments ?? [];
+  if (a.length !== 1 || !ts.isStringLiteral(a[0]!)) return false;
+  const raw = a[0]!.getText().slice(1, -1);
+  return raw.length <= MAX_DATE_LITERAL_CHARS && /^[0-9A-Za-z:.+\- ]*$/.test(raw) && raw === a[0]!.text;
+}
+
+/** A literal value: string, number, -number, true/false/null/undefined, arrays and plain objects of those.
+ *  M35: with `dates`, also a `new Date("...")` (isDateLiteral), directly or inside arrays/objects. */
+function isLiteralValue(n: ts.Node, dates = false): boolean {
+  if (dates && isDateLiteral(n)) return true;
   if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isNumericLiteral(n)) return true;
   if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.NullKeyword) return true;
   if (ts.isIdentifier(n) && n.text === "undefined") return true;
   if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)) return true;
-  if (ts.isArrayLiteralExpression(n)) return n.elements.every(isLiteralValue);
+  if (ts.isArrayLiteralExpression(n)) return n.elements.every((x) => isLiteralValue(x, dates));
   if (ts.isObjectLiteralExpression(n))
-    return n.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && isLiteralValue(p.initializer));
+    return n.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && isLiteralValue(p.initializer, dates));
   return false;
 }
 
@@ -85,12 +98,13 @@ function isLiteralValue(n: ts.Node): boolean {
  * reads, literal index reads, and calls (or `new`) whose arguments are literal values. Nothing else: no
  * other identifiers, operators, functions or templates, so no code beyond names the task and target give.
  */
-export function checkRoot(e: ts.Expression): string | null {
+export function checkRoot(e: ts.Expression, dates = false): string | null {
   if (ts.isIdentifier(e)) return e.text === "undefined" ? null : e.text;
-  if (ts.isPropertyAccessExpression(e)) return e.questionDotToken ? null : checkRoot(e.expression);
-  if (ts.isElementAccessExpression(e)) return isLiteralValue(e.argumentExpression) && !ts.isObjectLiteralExpression(e.argumentExpression) ? checkRoot(e.expression) : null;
-  if (ts.isCallExpression(e)) return !e.typeArguments && e.arguments.every(isLiteralValue) ? checkRoot(e.expression) : null;
-  if (ts.isNewExpression(e)) return !e.typeArguments && ts.isIdentifier(e.expression) && (e.arguments ?? []).every(isLiteralValue) ? e.expression.text : null;
+  if (ts.isPropertyAccessExpression(e)) return e.questionDotToken ? null : checkRoot(e.expression, dates);
+  if (ts.isElementAccessExpression(e)) return isLiteralValue(e.argumentExpression) && !ts.isObjectLiteralExpression(e.argumentExpression) ? checkRoot(e.expression, dates) : null;
+  // M35: Date arguments only as call arguments (never as an index, a `new` argument or an expected value).
+  if (ts.isCallExpression(e)) return !e.typeArguments && e.arguments.every((a) => isLiteralValue(a, dates)) ? checkRoot(e.expression, dates) : null;
+  if (ts.isNewExpression(e)) return !e.typeArguments && ts.isIdentifier(e.expression) && (e.arguments ?? []).every((a) => isLiteralValue(a)) ? e.expression.text : null;
   return null;
 }
 
@@ -155,6 +169,8 @@ export function buildTestEdit(
   if (!exports.has(task.symbol)) return null;
   // M20: the object-literal spec only runs for tasks that pass an object literal (else the plain spec covers it).
   if (params.args === "object-literal" && !task.checks.some((c) => { const x = parseExpr(c.expr); let has = false; const v = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some(ts.isObjectLiteralExpression)) has = true; ts.forEachChild(n, v); }; if (x) v(x); return has; })) return null;
+  // M35: the Date-argument spec only runs for tasks that pass a `new Date("...")` (else the plain specs cover it).
+  if (params.args === "date-literal" && !task.checks.some((c) => { const x = parseExpr(c.expr); let has = false; const v = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some((a) => isDateLiteral(a) || (ts.isArrayLiteralExpression(a) && a.elements.some(isDateLiteral)))) has = true; ts.forEachChild(n, v); }; if (x) v(x); return has; })) return null;
   const roots = new Set<string>([task.symbol]);
   const body: string[] = [];
   for (const c of task.checks) {
@@ -164,7 +180,7 @@ export function buildTestEdit(
     // M20 (Auditor): every object in a check must be plain bounded data (objectArgsReason), under every test
     // spec: the plain specs no longer accept __proto__/constructor/prototype or repeated keys, or deep objects.
     if (e && objectArgsReason(e) !== null) return null;
-    const root = e ? checkRoot(e) : null;
+    const root = e ? checkRoot(e, params.args === "date-literal") : null;
     if (!e || !root || !exports.has(root)) return null;
     roots.add(root);
     const expr = e.getText();
