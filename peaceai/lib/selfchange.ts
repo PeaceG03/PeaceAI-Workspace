@@ -37,6 +37,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
   { pattern: /^peaceai\/lib\/(lmcorpus|heldout)\.ts$|^peaceai\/bin\/(lm-corpus|heldout-select)\.ts$/, why: "the training corpus builder and the held-out selection/exclusion (M28)" },
   { pattern: /^peaceai\/lib\/lmpublic\.ts$|^peaceai\/bin\/(lm-manifest-check|lm-public-corpus)\.ts$|^peaceai\/model\/lm-public-allow\.json$/, why: "the public-runner LM corpus allowlist and held-out manifest check (M31)" },
+  { pattern: /^peaceai\/spec\/throw-guard-v2\.md$|^peaceai\/test\/m34-guard-methods\.test\.ts$/, why: "the throw-guard v2 condition grammar spec and its proofs (M34)" },
   { pattern: /^peaceai\/lib\/learned-multibody\.ts$|^peaceai\/spec\/multibody-v1\.md$|^peaceai\/test\/m32-multibody\.test\.ts$/, why: "the multi-line body edit rule, its spec and its proofs (M32)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },

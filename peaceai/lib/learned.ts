@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
-import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
+import { applyGuardRule, GUARD_CALLS_VOCAB, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
@@ -78,7 +78,10 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
 
 /** M13: ADD_THROW_GUARD specs carry exactly the guard parameters, from fixed vocabularies; public-mined only. */
 function validGuardParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...GUARD_PARAM_KEYS].join(",")) return false;
+  // M34: v2 adds exactly one optional key, `calls`, from its own vocabulary.
+  const keys = Object.keys(p).filter((k) => k !== "calls").sort().join(",");
+  if (minedFrom !== "public" || keys !== [...GUARD_PARAM_KEYS].join(",")) return false;
+  if ("calls" in p && !(GUARD_CALLS_VOCAB as readonly unknown[]).includes(p.calls)) return false;
   return GUARD_PARAM_KEYS.every((k) => typeof p[k] === "string" && GUARD_VOCAB[k].includes(p[k] as string));
 }
 

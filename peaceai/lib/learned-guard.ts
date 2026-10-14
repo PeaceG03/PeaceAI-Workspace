@@ -20,6 +20,11 @@ export const GUARD_VOCAB: Record<(typeof GUARD_PARAM_KEYS)[number], readonly str
   placement: ["function-entry"],
   test: ["new-file"],
 };
+/** M34 (public-throw-guard-v2): optional `calls` param. Absent = v1 (pure built-ins only). */
+export const GUARD_CALLS_VOCAB = ["regex-test+noarg-methods"] as const;
+/** v2: no-argument methods allowed on a parameter-rooted receiver. */
+export const GUARD_NOARG_METHODS = new Set(["getTime", "trim"]);
+export const GUARD_MAX_REGEX_CHARS = 80;
 export const MAX_COND_CHARS = 160;
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
 const FILE = String.raw`[\w./-]+\.ts`;
@@ -65,8 +70,26 @@ const parseExpr = (text: string): ts.Expression | null => {
  * parameter is read (a constant condition such as `true` or `1 < 2` is refused). Note: property reads and
  * comparisons on a parameter can still run a getter or `valueOf` defined by the caller's object.
  */
-export function safeCondition(e: ts.Expression, params: ReadonlySet<string>): boolean {
+export function safeCondition(e: ts.Expression, params: ReadonlySet<string>, methods = false): boolean {
   let usesParam = false;
+  /** A parameter, or a plain property read chain rooted at one (`p`, `p.a.b`). */
+  const paramRooted = (n: ts.Node): boolean => {
+    if (ts.isParenthesizedExpression(n)) return paramRooted(n.expression);
+    if (ts.isIdentifier(n)) { if (params.has(n.text)) usesParam = true; return params.has(n.text); }
+    return ts.isPropertyAccessExpression(n) && !n.questionDotToken && ts.isIdentifier(n.name) && paramRooted(n.expression);
+  };
+  /** v2: a short regex literal (flags i/u only, no backreferences or nested quantifiers) */
+  const safeRegex = (n: ts.Node): boolean => {
+    if (!ts.isRegularExpressionLiteral(n)) return false;
+    const t = n.text, slash = t.lastIndexOf("/"), body = t.slice(1, slash), flags = t.slice(slash + 1);
+    return t.length <= GUARD_MAX_REGEX_CHARS && /^[iu]*$/.test(flags) && !/\\[1-9k]/.test(body) && !/\)[*+?{]/.test(body) && !/\(\?[<=!]/.test(body);
+  };
+  const methodCall = (n: ts.CallExpression): boolean => {
+    if (!methods || n.questionDotToken || n.typeArguments || !ts.isPropertyAccessExpression(n.expression) || n.expression.questionDotToken) return false;
+    const recv = n.expression.expression, name = n.expression.name.text;
+    if (name === "test" && n.arguments.length === 1) return safeRegex(recv) && paramRooted(n.arguments[0]!);
+    return GUARD_NOARG_METHODS.has(name) && n.arguments.length === 0 && paramRooted(recv);
+  };
   const ok = (n: ts.Node): boolean => {
     if (ts.isParenthesizedExpression(n)) return ok(n.expression);
     if (ts.isIdentifier(n)) { if (params.has(n.text)) usesParam = true; return params.has(n.text); }
@@ -75,7 +98,7 @@ export function safeCondition(e: ts.Expression, params: ReadonlySet<string>): bo
     if (ts.isPrefixUnaryExpression(n)) return (n.operator === ts.SyntaxKind.ExclamationToken && ok(n.operand)) || (n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand));
     if (ts.isTypeOfExpression(n)) return ok(n.expression);
     if (ts.isBinaryExpression(n)) return COMPARE.has(n.operatorToken.kind) && ok(n.left) && ok(n.right);
-    if (ts.isCallExpression(n)) return !n.questionDotToken && !n.typeArguments && CALLS.has(n.expression.getText()) && n.arguments.length === 1 && ok(n.arguments[0]!);
+    if (ts.isCallExpression(n)) return methodCall(n) || (!n.questionDotToken && !n.typeArguments && CALLS.has(n.expression.getText()) && n.arguments.length === 1 && ok(n.arguments[0]!));
     return false;
   };
   return ok(e) && usesParam;
@@ -106,6 +129,8 @@ export function buildGuardEdit(
   isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p),
 ): GuardEdit | null {
   for (const k of GUARD_PARAM_KEYS) if (typeof params[k] !== "string" || !GUARD_VOCAB[k].includes(params[k] as string)) return null;
+  if (params.calls !== undefined && !(GUARD_CALLS_VOCAB as readonly unknown[]).includes(params.calls)) return null;
+  const methods = params.calls === "regex-test+noarg-methods";
   if (task.cond.length > MAX_COND_CHARS) return null;
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path)) return null;
@@ -115,7 +140,7 @@ export function buildGuardEdit(
   const names = new Set<string>();
   for (const p of fn.params) { if (!ts.isIdentifier(p.name)) return null; names.add(p.name.text); }
   const cond = parseExpr(task.cond);
-  if (!cond || !safeCondition(cond, names)) return null;
+  if (!cond || !safeCondition(cond, names, methods)) return null;
   // Quote style of the file's existing Error messages (majority), else double quotes.
   const dq = (target.content.match(/new Error\("/g) ?? []).length;
   const sq = (target.content.match(/new Error\('/g) ?? []).length;
