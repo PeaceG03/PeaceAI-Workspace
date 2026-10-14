@@ -9,9 +9,14 @@ A candidate may replace the whole body of ONE existing function. All six limits 
 3. **No new reach.** The import block is unchanged. The new body names none of: `fs`, `net`, `http`, `https`, `process`,
    `child_process`, `require`, `import(...)`, `eval`, `Function`, `globalThis`, `global`, `window`, `Deno`, `Bun`,
    `fetch`, `env`, `WebAssembly`, `Reflect`, `Proxy`, `constructor`, `prototype`, `__proto__`. No `with`, `debugger`,
-   `new.target` or `import.meta`.
+   `new.target` or `import.meta`. On top of that deny-list, the body must pass the #129 ALLOW-list grammar
+   (`bodyGrammarProblem`): allowed node kinds and globals, property names only from the file's data keys BEFORE the
+   edit plus data methods and listed global members, constant string folding, computed access only with a numeric
+   key, no `this`/`arguments`, classes, generators or nested `function`s, no use of imports, and a same-module
+   function may be called only if its own body passes the grammar too.
 4. **Behavior proof.** Its test passes with the edit and fails without it, and the "without" failures are ALL
-   assertion failures (`assertionFailuresOnly`), never a crash, load error or timeout.
+   assertion failures (`assertionFailuresOnly`), never a crash, load error or timeout. When this is wired into
+   grading, BOTH runs go through `runGradedTests` with the #129 confinement (permission model, narrowed reads).
 5. **Review.** Builder never self-approves or merges; Auditor reviews and Architect merges this rule and any
    approval of it.
 6. **Off by default.** Only `PEACEAI_MULTIBODY=true` turns it on. This spec's sha256 is pinned in the tests, and

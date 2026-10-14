@@ -4,6 +4,7 @@
 import ts from "typescript";
 import { assertionFailuresOnly, editablePath } from "./learned-body.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
+import { bodyGrammarProblem, moduleDataKeys } from "./learned-function.ts";
 
 export const MULTIBODY_MAX_LINES = 20;
 export const MULTIBODY_MAX_CHARS = 1600;
@@ -55,7 +56,10 @@ export function multiBodyEditProblem(repo: string, path: string, before: string,
   const nb = after.slice(y.open, y.close);
   if (nb.split("\n").length - 2 > MULTIBODY_MAX_LINES || nb.length > MULTIBODY_MAX_CHARS) return "body too long";
   const fn = b.statements.find((s) => ts.isFunctionDeclaration(s) && s.name?.text === y.name) as ts.FunctionDeclaration;
-  return bodyReachProblem(fn.body!);
+  if (fn.asteriskToken) return "generator";
+  // Auditor #141 (limit 3): the #129 ALLOW-list grammar (kinds, globals, property names, string folding, numeric-only
+  // computed keys, same-module callees checked recursively); the deny-list below stays as a second, independent net.
+  return bodyGrammarProblem(after, y.name, new Set(), moduleDataKeys(before)) ?? bodyReachProblem(fn.body!);
 }
 
 /** Replaces `fn`'s body (inside the braces) with `inner`; null when there is no such single top-level function. */
@@ -65,7 +69,8 @@ export function applyMultiBody(content: string, fn: string, inner: string): stri
   return content.slice(0, bs[0]!.open + 1) + inner + content.slice(bs[0]!.close - 1);
 }
 
-/** Limit 4: credited only when the edit passes and the unedited code fails with assertion failures only. */
+/** Limit 4 (Auditor #141): when wired, BOTH runs must come from runGradedTests under the #129 confinement.
+ *  Credited only when the edit passes and the unedited code fails with assertion failures only. */
 export function multiBodyCredited(withEdit: { ok: boolean }, withoutEdit: { ok: boolean; tap: string }): boolean {
   return withEdit.ok && !withoutEdit.ok && assertionFailuresOnly(withoutEdit.tap);
 }

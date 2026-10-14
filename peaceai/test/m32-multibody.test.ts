@@ -6,13 +6,14 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { bodyGrammarProblem } from "../lib/learned-function.ts";
 import { applyMultiBody, multiBodyCredited, multiBodyEditProblem, multiBodyEnabled, MULTIBODY_MAX_LINES } from "../lib/learned-multibody.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const WS = "PeaceG03/PeaceAI-Workspace", P = "src/numbers.ts";
 const real = readFileSync(join(root, P), "utf8");
-const SPEC_SHA256 = "5f3d916583c1fbe9adfcef9c0fc36f8776f76da4d9e83f9f93c7196132e9b041";
+const SPEC_SHA256 = "15687a3e493da60fa73afbd76a80f55eecd268df1805392e54f89ec2c91634a6";
 const avg = (inner: string) => applyMultiBody(real, "average", inner)!;
 const ML = "\n  if (values.length === 0) {\n    return 0;\n  }\n  let total = 0;\n  for (const v of values) total += v;\n  return total / values.length;\n";
 
@@ -90,4 +91,35 @@ test("limit 4 live proof: a crash without the edit is never credited", () => {
   assert.equal(multiBodyCredited(w, wo), false, "TypeError is not an assertion failure");
   assert.equal(multiBodyCredited({ ok: false }, { ok: false, tap: wo.tap }), false, "the edit must pass");
   assert.equal(multiBodyCredited(w, w), false, "must fail without");
+});
+
+test("Auditor #141 limit 3: the #129 allow-list grammar refuses Auditor's exploits and every other escape", () => {
+  const sig = (body: string) => real.replace("export function average(values: readonly number[]): number {\n  return values.length === 0 ? 0 : sum(values) / values.length;\n}", `export function average(values: readonly number[]): number ${body}`);
+  for (const [body, why] of [
+    ['{ const F = (() => 0)["constr" + "uctor"]; return F("return pro" + "cess")().pid + values.length; }', "Auditor: folded constructor via computed key"],
+    ["{ const k = `${''}constructor`; return (values as any)[k]; }", "Auditor: template-built key"],
+    ['{ return (/a/ as any)["constr" + "uctor"]; }', "Auditor: regex constructor"],
+    ["{ return arguments.length; }", "arguments"],
+    ["{ const C = class { }; return 0; }", "nested class"],
+    ["{ const g = async function* () { }; return 0; }", "async generator"],
+    ["{ function inner() { return 1; } return inner(); }", "nested function declaration"],
+    ["{ return (values as any)[\"length\"]; }", "computed string key"],
+    ["{ const i = 0; return values[i]!; }", "computed non-literal key"],
+    ["{ return this ? 0 : 1; }", "this"],
+    ["{ return (values as any).foo; }", "property not allow-listed"],
+    ["{ return setTimeout ? 0 : 1; }", "global not allowed"],
+    ["{ return Math.random(); }", "Math.random"],
+    ["{ return Object.getPrototypeOf(values) ? 0 : 1; }", "Object member"],
+    ["{ const s = sum; return s(values); }", "same-module function aliased"],
+  ] as const) assert.ok(multiBodyEditProblem(WS, P, real, sig(body)), why);
+  assert.equal(multiBodyEditProblem(WS, P, real, sig("{ return values.length === 0 ? 0 : sum(values) / values.length + MAX_RETRIES * 0; }")), null, "a same-module callee inside the grammar, a top-level const");
+});
+
+test("Auditor #141: same-module callees must pass the grammar; imports may not be used", () => {
+  const mod = 'import { readFileSync } from "node:fs";\nexport const K = 2;\nfunction bad(): number { return (globalThis as any).x; }\nfunction good(n: number): number { return Math.max(n, K); }\nexport function f(n: number): number {\n  return good(n);\n}\n';
+  assert.equal(bodyGrammarProblem(mod, "f"), null);
+  assert.match(bodyGrammarProblem(mod.replace("return good(n);", "return bad();"), "f") ?? "", /calls bad: uses globalThis/);
+  assert.match(bodyGrammarProblem(mod.replace("return good(n);", "return readFileSync ? 1 : 0;"), "f") ?? "", /uses import readFileSync/);
+  const rec = "function a(n: number): number { return n > 0 ? b(n - 1) : 0; }\nfunction b(n: number): number { return a(n); }\n";
+  assert.equal(bodyGrammarProblem(rec, "a"), null, "mutual recursion terminates");
 });
