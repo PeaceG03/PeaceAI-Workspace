@@ -55,7 +55,10 @@ function loadPublicOrigin(dir: string, tracked: readonly string[]): Map<string, 
 
 /** Indexes the tracked text files of a git checkout. Reads files only; keeps hashes and paths in memory. */
 export function indexGitTree(dir: string, filter: (path: string) => boolean = () => true, keepRaw = false): TreeIndex {
-  const files = execFileSync("git", ["ls-files", "-z"], { cwd: dir, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+  // M42: drop the caller's repo-locating git env (a hook in a linked worktree sets an absolute GIT_DIR), so
+  // ls-files lists `dir`'s checkout and not the repo being pushed.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|PREFIX)$/.test(k)));
+  const files = execFileSync("git", ["ls-files", "-z"], { cwd: dir, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
     .split("\0")
     .filter(Boolean)
     .filter(filter);

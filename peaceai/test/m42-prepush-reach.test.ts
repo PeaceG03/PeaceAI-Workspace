@@ -88,3 +88,17 @@ test("fails closed when origin/main cannot be resolved", () => {
   assert.notEqual(r.status, 0);
   assert.match(r.stdout, /origin\/main cannot be resolved/);
 });
+
+test("a hook run from a linked worktree indexes the core checkout, not the repo being pushed", () => {
+  const ws = setup();
+  const wt = join(dirname(ws), "wt");
+  g(ws, "worktree", "add", "-q", "-b", "feat", wt, "origin/main");
+  commit(wt, "src/new-file.ts", "export const fresh = 6;\n", "new non-core file");
+  const r = push(wt, "feat");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /PRE-PUSH PASS commits=1/);
+  commit(wt, "engine/core.ts", "export const wtCore = 7;\n", "core-path edit from a worktree");
+  const r2 = push(wt, "feat");
+  assert.notEqual(r2.status, 0);
+  assert.match(r2.stdout, /engine\/core\.ts: same path as a core file/);
+});
