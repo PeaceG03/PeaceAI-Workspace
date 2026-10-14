@@ -6,7 +6,7 @@ import { closeSync, constants as fsConstants, existsSync, mkdtempSync, openSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { countStubNotes, declaredFunctions, expectsThrow, gradedTestSourceProblem, hasNonDeclarationCallables, importedNames, newStubCode, STUB_BODY_CODE, stubAll, stubBody, stubFailureCredited } from "../lib/learned-function.ts";
+import { countStubNotes, declaredFunctions, moduleDataKeys, expectsThrow, gradedTestSourceProblem, hasNonDeclarationCallables, importedNames, newStubCode, STUB_BODY_CODE, stubAll, stubBody, stubFailureCredited } from "../lib/learned-function.ts";
 import { validTestGrading, gradingVerdict } from "../lib/results.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 
@@ -219,7 +219,7 @@ test("Round 3 #129: credit needs the parent to SEE the stub run AND an assertion
     [h + 'test("t", () => { const o: any = {}; o["constructor"]; });\n', "computed access"],
     [h + 'import { x } from "./other";\n', "other module"],
   ] as const) assert.ok(gradedTestSourceProblem(src, ["./m", "./m.ts"]), why);
-  assert.equal(gradedTestSourceProblem(h + 'test("t", () => { assert.equal(decide({ outcome: "x", failures: 0 }).mode, "DAILY"); });\n', ["./m", "./m.ts"]), null);
+  assert.equal(gradedTestSourceProblem(h + 'test("t", () => { assert.equal(decide({ outcome: "x", failures: 0 }).mode, "DAILY"); });\n', ["./m", "./m.ts"], undefined, moduleDataKeys(MOD)), null);
 });
 test("Auditor #129: fail closed on any callable that is not a top-level function declaration", () => {
   for (const src of [
@@ -233,7 +233,7 @@ test("Auditor #129: fail closed on any callable that is not a top-level function
   assert.equal(hasNonDeclarationCallables("export function f(xs: number[]): number[] { return xs.map((x) => x + 1); }\nexport const N = 3;\n"), false, "arrows inside a declaration's body are stubbed with it");
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   assert.match(tc, /if \(hasNonDeclarationCallables\(fixContent\) \|\| hasNonDeclarationCallables\(real\)\) return null;/);
-  assert.match(tc, /if \(gradedTestSourceProblem\(tests\[i\]!, \[spec, `\$\{spec\}\.ts`\], moduleFunctions\)\) return null;/);
+  assert.match(tc, /if \(gradedTestSourceProblem\(tests\[i\]!, \[spec, `\$\{spec\}\.ts`\], moduleFunctions, moduleKeys\)\) return null;/);
   assert.match(tc, /const credited = !run\.ok && stubFailureCredited\(run\.out, run\.notes\);/);
 });
 
@@ -303,7 +303,7 @@ test("Round 2 #129 item 2: an imported function may only be called, never string
     ['[decide].join("");', "array join"],
     ['const s = `${K}`.toString();', "toString on anything"],
   ] as const) assert.ok(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS), why);
-  assert.equal(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(decide({}).mode, "DAILY"); assert.equal(`${decide({}).mode}`, "DAILY"); assert.equal(K, 7); });\n', ["./m"], FNS), null, "calls, interpolated results and values are fine");
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(decide({}).mode, "DAILY"); assert.equal(`${decide({}).mode}`, "DAILY"); assert.equal(K, 7); });\n', ["./m"], FNS, moduleDataKeys(MOD)), null, "calls, interpolated results and values are fine");
   assert.ok(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(K, 7); });\n', ["./m"]), "without the module's function list every binding is call-only");
 });
 
@@ -380,8 +380,8 @@ test("Round 3 #129: allow-list grammar refuses syntax outside the list", () => {
     ['const o = { m() { return 1; } };', "method"],
     ['debugger;', "debugger"],
   ] as const) assert.ok(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS), why);
-  assert.equal(gradedTestSourceProblem(H2 + 'test("t", async () => {\n  const xs: number[] = [1, 2];\n  for (const x of xs) { if (x > 1) { assert.equal(decide({ n: x }).mode, `M${x}`); } }\n  const [a, , b] = [1, 2, 3]; const { c = 1 } = { c: 2 } as { c?: number };\n  try { assert.ok(a < b && c > 0 ? true : false); } catch (e: unknown) { throw e; }\n  assert.throws(() => decide(null as never), /x/); await Promise.resolve; });\n', ["./m"], FNS), "global Promise", "Promise is not an allowed global");
-  assert.equal(gradedTestSourceProblem(H2 + 'test("t", async () => {\n  const xs: number[] = [1, 2];\n  for (const x of xs) { if (x > 1) { assert.equal(decide({ n: x }).mode, `M${x}`); } }\n  const [a, , b] = [1, 2, 3]; const { c = 1 } = { c: 2 } as { c?: number };\n  try { assert.ok(a < b && c > 0 ? true : false); } catch (e: unknown) { throw e; }\n  assert.throws(() => decide(null as never), /x/); });\n', ["./m"], FNS), null, "ordinary test syntax passes");
+  assert.match(gradedTestSourceProblem(H2 + 'test("t", async () => {\n  const xs: number[] = [1, 2];\n  for (const x of xs) { if (x > 1) { assert.equal(decide({ n: x }).mode, `M${x}`); } }\n  const [a, , b] = [1, 2, 3]; const { c = 1 } = { c: 2 } as { c?: number };\n  try { assert.ok(a < b && c > 0 ? true : false); } catch (e: unknown) { throw e; }\n  assert.throws(() => decide(null as never), /x/); await Promise.resolve; });\n', ["./m"], FNS, moduleDataKeys(MOD)) ?? "", /global Promise|property resolve/, "Promise is not an allowed global");
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", async () => {\n  const xs: number[] = [1, 2];\n  for (const x of xs) { if (x > 1) { assert.equal(decide({ n: x }).mode, `M${x}`); } }\n  const [a, , b] = [1, 2, 3]; const { c = 1 } = { c: 2 } as { c?: number };\n  try { assert.ok(a < b && c > 0 ? true : false); } catch (e: unknown) { throw e; }\n  assert.throws(() => decide(null as never), /x/); });\n', ["./m"], FNS, moduleDataKeys(MOD)), null, "ordinary test syntax passes");
 });
 
 test("Round 3 #129 F2: on Node < 22 the stub-body route is ungradable, never graded unconfined", () => {
@@ -401,4 +401,69 @@ test("Round 3 #129: a module that imports repo files is recorded as ungradable '
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   assert.match(tc, /moduleImportsRepoFiles\(readFileSync\(join\(tree, paths\[0\]!\), "utf8"\)\)\) return ungradable\("module-imports-repo-files"\);/);
   assert.ok(validTestGrading({ fixSha: "a".repeat(40), afterFix: true, beforeFix: null, verdict: "UNGRADABLE", reason: "module-imports-repo-files" }));
+});
+
+// ---- Round 4 (Auditor #129 B1/B2)
+
+const DK = moduleDataKeys(MOD);
+const P4 = (body: string) => gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS, DK);
+
+test("Round 4 #129 B1: Auditor's exact __lookupGetter__ exploit is refused", () => {
+  const exploit = 'const pg = ({} as any).__lookupGetter__("__pro"+"to__"); const OP = pg.call({}); OP.__defineSetter__("x", () => 0);';
+  assert.ok(P4(exploit), "the exact exploit");
+  for (const h of ["__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__"]) assert.ok(P4(`const o: any = {}; o.${h}("a");`), h);
+});
+
+test("Round 4 #129 B1: property names are an allow-list (assert methods, module/test data keys, listed global members)", () => {
+  assert.deepEqual(DK.filter((k) => ["mode", "next", "outcome", "failures"].includes(k)).sort(), ["failures", "mode", "next", "outcome"], "module data keys harvested");
+  for (const [body, why] of [
+    ['const o: any = {}; o.call();', "call (not a data key)"],
+    ['const o: any = {}; o.apply(null, []);', "apply"],
+    ['const o: any = {}; o.bind(null);', "bind"],
+    ['const o: any = {}; o.whatever;', "unknown key"],
+    ['assert.prototype;', "assert member outside the method list"],
+    ['assert.AssertionError;', "assert class"],
+    ['Math.random();', "Math.random"],
+    ['JSON.rawJSON("1");', "JSON member outside the list"],
+    ['const o = decide({}); o.next.constructor;', "constructor via a data key"],
+  ] as const) assert.ok(P4(body), why);
+  assert.equal(P4('const r = decide({ outcome: "x", failures: 0 }); assert.equal(r.mode, "DAILY"); assert.deepEqual(Object.keys(r), ["mode", "next"]); const o = { qty: 1 }; assert.equal(o.qty, 1); const xs = [1, 2].map((x) => x + 1); assert.equal(xs.length, 2); assert.equal(Math.max(1, 2), 2); test.skip;'), null, "ordinary access passes");
+  assert.ok(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(decide({}).mode, "DAILY"); });\n', ["./m"], FNS), "without the module's keys, its members are not allow-listed");
+});
+
+test("Round 4 #129 B1: string constants/concatenations that spell __proto__ (or other forbidden names) are refused; computed keys too", () => {
+  for (const [body, why] of [
+    ['const k = "__pro" + "to__";', "concatenation"],
+    ['const k = ("__p" + "ro") + ("to" + "__");', "nested parens"],
+    ['const k = `__pro${"to"}__`;', "template with constant substitution"],
+    ['const k = "__proto__";', "plain literal"],
+    ['const k = "proto" + "type";', "prototype"],
+    ['const k = "constr" + "uctor";', "constructor"],
+    ['const k = "__lookup" + "Getter__";', "__lookupGetter__"],
+    ['const o: any = {}; const k = "a"; o[k];', "non-constant computed member"],
+    ['const o = { ["__pro" + "to__"]: 1 };', "computed object key"],
+    ['const o: any = {}; o["mode"];', "string computed member"],
+  ] as const) assert.ok(P4(body), why);
+  assert.equal(P4('const s = "ab" + "cd"; assert.equal(s, "abcd"); const xs = [1]; assert.equal(xs[0], 1);'), null, "harmless constants and numeric indexes pass");
+});
+
+test("Round 4 #129 B2: Error only with new; Buffer only from/alloc", () => {
+  for (const [body, why] of [
+    ['(Error as any).prepareStackTrace = () => 0;', "Error.prepareStackTrace"],
+    ['Error.captureStackTrace({});', "Error.captureStackTrace"],
+    ['const E = Error;', "Error aliased"],
+    ['const e = Error("x");', "Error called without new"],
+    ['TypeError.captureStackTrace({});', "TypeError member"],
+    ['const b = Buffer.allocUnsafe(4);', "Buffer.allocUnsafe"],
+    ['const b = Buffer.concat([]);', "Buffer.concat"],
+    ['const B = Buffer;', "Buffer aliased"],
+    ['const p = (Buffer as any).poolSize;', "Buffer member"],
+  ] as const) assert.ok(P4(body), why);
+  assert.equal(P4('assert.throws(() => { throw new Error("x"); }); const t = new TypeError("y"); const b = Buffer.from("ab"); const z = Buffer.alloc(2); assert.equal(b.length + z.length, 4);'), null, "new Error/TypeError and Buffer.from/alloc pass");
+});
+
+test("Round 4 #129: the harness passes the module's data keys to the checker", () => {
+  const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
+  assert.match(tc, /const moduleKeys = moduleDataKeys\(real\);/);
+  assert.ok(!moduleDataKeys("export const o = { __proto__: null, constructor: 1, a: 2 };\n").some((k) => ["__proto__", "constructor"].includes(k)), "forbidden names never become data keys");
 });

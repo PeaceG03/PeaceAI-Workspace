@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -224,6 +224,7 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
   const tests = newTests.map((t) => readFileSync(join(tree, t), "utf8"));
   const real = readFileSync(file, "utf8");
   const moduleFunctions = declaredFunctions(real);
+  const moduleKeys = moduleDataKeys(real); // Round 4 (Auditor #129 B1): members of values the module returns
   for (const [i, t] of newTests.entries()) {
     const rel = relative(dirname(t), path).replace(/\.ts$/, "");
     const spec = rel.startsWith(".") ? rel : `./${rel}`;
@@ -231,7 +232,7 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
     // Auditor (#129): aliases (`{ f as g }`) are followed to the export name; namespace/default imports fail closed.
     // Auditor (#129): the test may only import the runner, strict assert and the created module, and cannot read
     // files/env/processes or name the stub code, so it cannot detect or forge the stub.
-    if (gradedTestSourceProblem(tests[i]!, [spec, `${spec}.ts`], moduleFunctions)) return null;
+    if (gradedTestSourceProblem(tests[i]!, [spec, `${spec}.ts`], moduleFunctions, moduleKeys)) return null;
     const a = importedBindings(tests[i]!, spec);
     const b = importedBindings(tests[i]!, `${spec}.ts`);
     if (!a || !b) return null;

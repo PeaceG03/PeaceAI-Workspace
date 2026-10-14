@@ -392,6 +392,8 @@ const FORBIDDEN_NAMES = new Set(["process", "require", "globalThis", "global", "
 /** Round 2 (Auditor #129): property names that reach a function's source, prototype chain or caller. */
 const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "caller", "callee", "toString", "toLocaleString", "toSource", "random",
   // Round 3 (Auditor #129 F1/F2): descriptor/prototype walks, function names, high-resolution timing.
+  // Round 4 (Auditor #129 B1): legacy accessor hooks.
+  "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__",
   "name", "getPrototypeOf", "setPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getOwnPropertyNames", "getOwnPropertySymbols", "defineProperty", "defineProperties", "values", "hrtime", "now", "timeOrigin"]);
 /**
  * Round 3 (Auditor #129): ALLOW-list grammar. A free identifier (not declared in the test, not imported) must be
@@ -400,6 +402,57 @@ const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "calle
  */
 const ALLOWED_GLOBALS = new Set(["undefined", "NaN", "Infinity", "Number", "Boolean", "Array", "JSON", "Math", "Error", "TypeError", "RangeError", "Map", "Set", "BigInt", "parseInt", "parseFloat", "isNaN", "isFinite", "Object", "Buffer"]);
 const OBJECT_MEMBERS = new Set(["keys", "fromEntries", "freeze"]);
+/**
+ * Round 4 (Auditor #129 B1/B2): property names are an ALLOW-list too. `x.p` is accepted only when
+ *  - x is a global with listed members (Object, Buffer.from/alloc, Math minus random, Number, JSON, Array), or
+ *  - x is the test's `assert` import and p an assert method, or x is the test runner (`test.skip`/`todo`/`only`), or
+ *  - p is a data key: declared by the test itself (object literal / type / destructuring keys) or by the module
+ *    under test (`dataKeys`: its property keys, interface fields and property reads), or a plain data method.
+ * FORBIDDEN_PROPS always wins. `Error`/`TypeError`/`RangeError` only as `new X(...)`.
+ */
+const GLOBAL_MEMBERS: Readonly<Record<string, ReadonlySet<string>>> = {
+  Object: OBJECT_MEMBERS,
+  Buffer: new Set(["from", "alloc"]),
+  Math: new Set(["min", "max", "abs", "floor", "ceil", "round", "trunc", "sign", "sqrt", "pow", "PI", "E"]),
+  Number: new Set(["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt", "MAX_SAFE_INTEGER", "MIN_SAFE_INTEGER", "EPSILON", "POSITIVE_INFINITY", "NEGATIVE_INFINITY"]),
+  JSON: new Set(["parse", "stringify"]),
+  Array: new Set(["isArray", "from", "of"]),
+};
+const ASSERT_METHODS = new Set(["ok", "equal", "notEqual", "deepEqual", "notDeepEqual", "strictEqual", "notStrictEqual", "deepStrictEqual", "notDeepStrictEqual", "throws", "doesNotThrow", "rejects", "doesNotReject", "match", "doesNotMatch", "fail"]);
+const RUNNER_MEMBERS = new Set(["skip", "todo", "only"]);
+const DATA_METHODS = new Set(["length", "size", "map", "filter", "find", "findIndex", "some", "every", "includes", "indexOf", "slice", "at", "concat", "flat", "reduce", "sort", "reverse", "startsWith", "endsWith", "trim", "split", "padStart", "padEnd", "toUpperCase", "toLowerCase", "toFixed", "get", "has", "add", "set", "push"]);
+const ERROR_CTORS = new Set(["Error", "TypeError", "RangeError"]);
+/** Round 4 (Auditor #129): the property names a module declares or reads (its returned values' members). */
+export function moduleDataKeys(content: string): string[] {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const out = new Set<string>();
+  const v = (n: ts.Node): void => {
+    if ((ts.isPropertyAssignment(n) || ts.isPropertySignature(n) || ts.isPropertyDeclaration(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) out.add(n.name.text);
+    if (ts.isShorthandPropertyAssignment(n)) out.add(n.name.text);
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) out.add(n.name.text);
+    if (ts.isBindingElement(n) && n.propertyName && ts.isIdentifier(n.propertyName)) out.add(n.propertyName.text);
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return [...out].filter((k) => !FORBIDDEN_PROPS.has(k)).sort();
+}
+/** Round 4 (Auditor #129 B1): constant value of a string expression (literals, `+`, parens, no-substitution templates), or null. */
+function constString(e: ts.Expression): string | null {
+  if (ts.isStringLiteralLike(e)) return e.text;
+  if (ts.isNumericLiteral(e)) return e.text;
+  if (ts.isParenthesizedExpression(e)) return constString(e.expression);
+  if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const a = constString(e.left), b = constString(e.right);
+    return a !== null && b !== null ? a + b : null;
+  }
+  if (ts.isTemplateExpression(e)) {
+    let out = e.head.text;
+    for (const sp of e.templateSpans) { const x = constString(sp.expression); if (x === null) return null; out += x + sp.literal.text; }
+    return out;
+  }
+  return null;
+}
+const dangerousString = (t: string) => FORBIDDEN_PROPS.has(t) || /__proto__|__lookup|__define|prototype|constructor/.test(t);
 /** Round 3 (Auditor #129): syntax a graded test may use; any other node kind is refused. */
 const ALLOWED_KINDS = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.SourceFile, ts.SyntaxKind.EndOfFileToken, ts.SyntaxKind.ImportDeclaration, ts.SyntaxKind.ImportClause, ts.SyntaxKind.NamedImports, ts.SyntaxKind.ImportSpecifier, ts.SyntaxKind.NamespaceImport,
@@ -452,7 +505,7 @@ function isReference(n: ts.Identifier): boolean {
  * only node:test, node:assert/strict and the modules in `allowed`; no dynamic import, import.meta, file/env/process
  * access, eval/Function, no `PEACEAI_STUB_BODY` text. Otherwise the reason (fail closed).
  */
-export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[]): string | null {
+export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[], dataKeys: readonly string[] = []): string | null {
   if (src.includes(STUB_BODY_CODE) || src.includes("__peaceaiStub")) return "names the stub";
   const sf = ts.createSourceFile("t.ts", src, ts.ScriptTarget.Latest, true);
   let problem: string | null = null;
@@ -469,6 +522,24 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
     if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!functions || functions.includes((e.propertyName ?? e.name).text)) bound.add(e.name.text);
   }
   const declared = testDeclaredNames(sf);
+  // Round 4 (Auditor #129 B1): data keys the test itself declares, plus the module's.
+  const keys = new Set<string>(dataKeys.filter((k) => !FORBIDDEN_PROPS.has(k)));
+  const assertNames = new Set<string>(), runnerNames = new Set<string>();
+  const collect = (n: ts.Node): void => {
+    if ((ts.isPropertyAssignment(n) || ts.isPropertySignature(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) keys.add(n.name.text);
+    if (ts.isShorthandPropertyAssignment(n)) keys.add(n.name.text);
+    if (ts.isBindingElement(n) && !n.propertyName && ts.isIdentifier(n.name) && ts.isObjectBindingPattern(n.parent)) keys.add(n.name.text);
+    if (ts.isBindingElement(n) && n.propertyName && ts.isIdentifier(n.propertyName)) keys.add(n.propertyName.text);
+    if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && n.importClause) {
+      const m = n.moduleSpecifier.text, set = m === "node:assert/strict" ? assertNames : m === "node:test" ? runnerNames : null;
+      if (set && n.importClause.name) set.add(n.importClause.name.text);
+      const nb = n.importClause.namedBindings;
+      if (set && nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (m === "node:test" ? ["test", "it", "describe"].includes((e.propertyName ?? e.name).text) : true) set.add(e.name.text);
+    }
+    ts.forEachChild(n, collect);
+  };
+  collect(sf);
+  for (const k of [...keys]) if (FORBIDDEN_PROPS.has(k)) keys.delete(k);
   const v = (n: ts.Node): void => {
     if (problem) return;
     // Round 3 (Auditor #129): allow-list grammar first (node kinds, free identifiers, Object members).
@@ -486,7 +557,27 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
     if (ts.isMetaProperty(n)) { problem = "import.meta/new.target"; return; }
     if (ts.isIdentifier(n) && FORBIDDEN_NAMES.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text}`; return; }
     if (ts.isElementAccessExpression(n) && !ts.isNumericLiteral(n.argumentExpression)) { problem = "computed member access"; return; }
-    if ((ts.isIdentifier(n) || ts.isPrivateIdentifier(n) || ts.isStringLiteralLike(n)) && FORBIDDEN_PROPS.has(n.text)) { problem = `names ${n.text}`; return; }
+    // Round 4 (Auditor #129 B1): property-name allow-list.
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) {
+      const p = n.name.text, base = ts.isIdentifier(n.expression) && !declared.has(n.expression.text) ? n.expression.text : null;
+      const ok = !FORBIDDEN_PROPS.has(p) && (
+        (base !== null && Object.hasOwn(GLOBAL_MEMBERS, base) ? GLOBAL_MEMBERS[base]!.has(p)
+          : ts.isIdentifier(n.expression) && assertNames.has(n.expression.text) ? ASSERT_METHODS.has(p)
+          : ts.isIdentifier(n.expression) && runnerNames.has(n.expression.text) ? RUNNER_MEMBERS.has(p)
+          : base !== null && ERROR_CTORS.has(base) ? false
+          : keys.has(p) || DATA_METHODS.has(p)));
+      if (!ok) { problem = `property ${p} not allow-listed`; return; }
+    }
+    // Round 4 (Auditor #129 B1): constant-fold string expressions; any that spell a forbidden name is refused.
+    if (ts.isBinaryExpression(n) || ts.isTemplateExpression(n) || ts.isParenthesizedExpression(n)) {
+      const c = constString(n as ts.Expression);
+      if (c !== null && dangerousString(c)) { problem = `string evaluates to ${c}`; return; }
+    }
+    // Round 4 (Auditor #129 B2): Error/TypeError/RangeError only as `new X(...)`; Buffer only Buffer.from/alloc calls.
+    if (ts.isIdentifier(n) && ERROR_CTORS.has(n.text) && isReference(n) && !declared.has(n.text) && !(ts.isNewExpression(n.parent) && n.parent.expression === n)) { problem = `${n.text} other than new ${n.text}(...)`; return; }
+    if (ts.isIdentifier(n) && n.text === "Buffer" && isReference(n) && !declared.has("Buffer")
+      && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && GLOBAL_MEMBERS.Buffer!.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Buffer other than Buffer.from/alloc calls"; return; }
+    if ((ts.isIdentifier(n) || ts.isPrivateIdentifier(n) || ts.isStringLiteralLike(n)) && (FORBIDDEN_PROPS.has(n.text) || (ts.isStringLiteralLike(n) && dangerousString(n.text)))) { problem = `names ${n.text}`; return; }
     if (ts.isTemplateSpan(n) && ts.isIdentifier(n.expression) && bound.has(n.expression.text)) { problem = `interpolates ${n.expression.text}`; return; }
     if (ts.isIdentifier(n) && bound.has(n.text) && !ts.isImportSpecifier(n.parent) && !ts.isImportClause(n.parent) && !ts.isNamespaceImport(n.parent)
       && !(ts.isCallExpression(n.parent) && n.parent.expression === n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text} other than calling it`; return; }
