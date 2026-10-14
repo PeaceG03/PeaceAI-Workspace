@@ -1,10 +1,10 @@
 {
  "schema": "peaceai-rule-evidence:v1",
  "rule": "public-test-case-dateargs-v1",
- "note": "M35 evidence (Architect: the bar may count licensed external examples, tagged). One distinct assertion line per entry whose call takes a new Date(\"...\") argument (directly or in an array) and whose other arguments and expected value are literals. External entries come from the M36 provenance manifest (file sha256 at the pinned commit). Peace public test files: 25 Date-argument lines, 1 left after the agent-made authorship filter (PeaceSTOCKS 99c0cfb, src/intraday-dust.test.ts:175), and it does not fit (method on a local instance under await), so it is not counted.",
- "counted": 11,
+ "note": "M35 evidence (Architect: the bar may count licensed external examples, tagged). One distinct assertion line per entry whose call takes a new Date(\"...\") argument (directly or in an array) and whose other arguments and expected value are literals. External entries come from the M36 provenance manifest (file sha256 at the pinned commit). Peace public test files: 25 Date-argument lines, 1 left after the agent-made authorship filter (PeaceSTOCKS 99c0cfb, src/intraday-dust.test.ts:175), and it does not fit (method on a local instance under await), so it is not counted. Auditor #152 follow-up: the grammar now requires an ISO date-only string or a date-time with Z/offset; the apollo-client new Date(\"invalid\") line no longer fits and is dropped.",
+ "counted": 10,
  "byOrigin": {
-  "external": 11,
+  "external": 10,
   "peace": 0
  },
  "entries": [
@@ -16,15 +16,6 @@
    "path": "src/cache/inmemory/__tests__/scalars.ts",
    "fileSha256": "cc3813ced78f642f41ede875fb19f77511b7a4f1419e31fd670d9e6716c94362",
    "line": "expect(scalar.is(new Date(\"2026-01-01T00:00:00.000Z\"))).toBe(true);"
-  },
-  {
-   "origin": "external",
-   "repo": "apollographql/apollo-client",
-   "commit": "d8df322353a13766f296ff534fe47683185d8692",
-   "license": "MIT",
-   "path": "src/cache/inmemory/__tests__/scalars.ts",
-   "fileSha256": "cc3813ced78f642f41ede875fb19f77511b7a4f1419e31fd670d9e6716c94362",
-   "line": "expect(scalar.is(new Date(\"invalid\"))).toBe(false);"
   },
   {
    "origin": "external",
