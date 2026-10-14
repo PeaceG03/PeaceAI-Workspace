@@ -35,7 +35,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/target\.ts$|^peaceai\/targets\.json$/, why: "per-target scope config, incl. opted-in workflow files (M19)" },
   { pattern: /^peaceai\/proof\/workflow-step-proof\.md$/, why: "workflow-step grading and live-proof procedure (Auditor #107 changes 4, 6)" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
-  { pattern: /^peaceai\/lib\/(lmcorpus|heldout)\.ts$|^peaceai\/bin\/(lm-corpus|heldout-select)\.ts$/, why: "the training corpus builder and the held-out selection/exclusion (M28)" },
+  { pattern: /^peaceai\/lib\/(lmcorpus|heldout)\.ts$|^peaceai\/bin\/(lm-corpus|heldout-select|ext-corpus|ext-fetch|ext-memcheck)\.ts$|^peaceai\/lib\/extcorpus\.ts$|^peaceai\/model\/(ext-corpus\.json|ext-manifest\.jsonl|ext-train\.json|ext-summary\.json|ext-memcheck\.json|heldout-c\.json|heldout-c-excluded\.json)$|^peaceai\/test\/m36-ext-corpus\.test\.ts$/, why: "the training corpus builders and the held-out selection/exclusion (M28, external corpus and set C v2 M36)" },
   { pattern: /^peaceai\/lib\/lmpublic\.ts$|^peaceai\/bin\/(lm-manifest-check|lm-public-corpus)\.ts$|^peaceai\/model\/lm-public-allow\.json$/, why: "the public-runner LM corpus allowlist and held-out manifest check (M31)" },
   { pattern: /^peaceai\/lib\/learned-multibody\.ts$|^peaceai\/spec\/multibody-v1\.md$|^peaceai\/test\/m32-multibody\.test\.ts$/, why: "the multi-line body edit rule, its spec and its proofs (M32)" },
   { pattern: /^peaceai\/spec\/test-dateargs-v1\.md$|^peaceai\/test\/m35-date-args\.test\.ts$/, why: "the Date-argument test-line grammar spec and its proofs (M35)" },

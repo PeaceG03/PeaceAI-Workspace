@@ -53,6 +53,22 @@ export function heldOutHashes(h: HeldOutFile): Set<string> {
   }
   return out;
 }
+/** M33: set C (peaceai/model/heldout-c.json) content hashes; fails closed on a bad file or an entry without hashes. */
+export interface HeldOutCFile { schema: "peaceai-heldout-c:v2"; sets: { C: { repo: string; sha: string; contentSha256?: string[] }[] } }
+export function heldOutCHashes(c: HeldOutCFile): Set<string> {
+  // M36: v2 = whole held-out external repositories (the v1 Peace-commit carve is replaced and refused).
+  if (c?.schema !== "peaceai-heldout-c:v2" || !Array.isArray(c.sets?.C) || c.sets.C.length === 0) throw new Error("bad held-out C file");
+  const out = new Set<string>();
+  for (const e of c.sets.C) {
+    if (!Array.isArray(e.contentSha256) || e.contentSha256.length === 0 || !e.contentSha256.every((x) => /^[0-9a-f]{64}$/.test(x))) throw new Error(`held-out C entry ${e.sha} has no content hashes`);
+    for (const x of e.contentSha256) out.add(x);
+  }
+  return out;
+}
+/** Every held-out content hash: A + B (heldout.json) and C (heldout-c.json). Training excludes all of them. */
+export function allHeldOutHashes(h: HeldOutFile, c: HeldOutCFile): Set<string> {
+  return new Set([...heldOutHashes(h), ...heldOutCHashes(c)]);
+}
 /** True when a corpus file is held out: by path in its own source, or by content in any source. */
 export function isHeldOut(source: string, path: string, sha256: string, paths: ReadonlySet<string>, hashes: ReadonlySet<string>): boolean {
   return paths.has(`${source}\0${path}`) || hashes.has(sha256);

@@ -1,0 +1,17 @@
+{
+ "schema": "peaceai-ext-train:v1",
+ "stage": "pretrain",
+ "runner": "GitHub-hosted ubuntu-24.04 (public repo: 4 vCPU, 16 GB), job limit 330 min, train budget 14400 s",
+ "model": {
+  "d_model": 320,
+  "n_layer": 6,
+  "n_head": 5,
+  "ctx": 512,
+  "vocab": 8192,
+  "params": 10166400,
+  "batch": 16,
+  "steps": 1600
+ },
+ "basis": "lm-v1-78b6e96990d2 (4,329,984 params, ctx 512, batch 16) took about 3.5 s/step at 4 threads on the same runner; about 2.4x the compute gives about 8.5 s/step, so 1600 steps fit 14400 s (about 13M tokens, about half an epoch of the corpus). Estimate, not measured.",
+ "note": "Sizing only. No training until this PR merges; the training workflow change comes as its own normal PR."
+}

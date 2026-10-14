@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-lm-public-allow:v1",
- "note": "Peace's public commits only. Pinned to the commits of corpus-public-v3 (manifest proven core-free, sha256 a0d41afd\u2026), owner sources only, minus every heldout.json A+B content sha256. Hashes of public files only.",
+ "note": "Peace's public commits only. Pinned to the commits of corpus-public-v3 (manifest proven core-free, sha256 a0d41afd\u2026), owner sources only, minus every heldout.json A+B content sha256. Hashes of public files only. M36: minus every heldout-c.json (set C v2, whole external repos) content sha256.",
  "sources": {
   "PeaceG03/PeaceSTOCKS": "9e9dde67d33211463865b7637c0889cfa9eee960",
   "PeaceG03/PeaceAI-Workspace": "73477ba48660d16ca4e20655879fde5d0272c878"

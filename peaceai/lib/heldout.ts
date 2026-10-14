@@ -51,3 +51,33 @@ export function buildHeldOut(entries: readonly HeldOutEntry[], fixedAt: string) 
 }
 
 export const sha256Hex = (b: Buffer | string): string => createHash("sha256").update(b).digest("hex");
+
+// ---- Authorship filter (M33 F1/F2, kept by M36): which commits are Peace's own. Set C itself is now v2
+// (whole external repos, peaceai/lib/extcorpus.ts); the v1 Peace-commit carve is replaced.
+/** Committer time of the first PeaceAI-landed change (PeaceSTOCKS c210539af8a0d78df9bda96a2ef04fdd3de00048). */
+export const HELDOUT_C_AGENT_CUTOFF = "2026-10-13T08:36:22Z";
+/** Builder-log refs (`Repo@sha` prefixes and `PeaceAI-Workspace#N` numbers) from tasks.jsonl text. */
+export function builderLogRefs(tasksJsonl: string): { shas: Map<string, string[]>; prs: Set<number> } {
+  const shas = new Map<string, string[]>(), prs = new Set<number>();
+  for (const line of tasksJsonl.split("\n").filter(Boolean)) {
+    const changed = String((JSON.parse(line) as { changed?: unknown }).changed ?? "");
+    for (const m of changed.matchAll(/\b(PeaceSTOCKS|PeaceAI-Workspace)@([0-9a-f]{7,40})\b/g)) shas.set(`PeaceG03/${m[1]}`, [...(shas.get(`PeaceG03/${m[1]}`) ?? []), m[2]!]);
+    for (const m of changed.matchAll(/\bPeaceAI-Workspace#(\d+)\b/g)) prs.add(Number(m[1]));
+  }
+  return { shas, prs };
+}
+/** True when a commit is agent-made under the set C rule. */
+export function agentMade(repo: string, sha: string, committedAtIso: string, subject: string, refs: ReturnType<typeof builderLogRefs>): boolean {
+  if (Date.parse(committedAtIso) >= Date.parse(HELDOUT_C_AGENT_CUTOFF)) return true;
+  if ((refs.shas.get(repo) ?? []).some((p) => sha.startsWith(p))) return true;
+  const pr = /\(#(\d+)\)$/.exec(subject);
+  return repo === "PeaceG03/PeaceAI-Workspace" && pr !== null && refs.prs.has(Number(pr[1]));
+}
+/** Oct 5-6 2026 (MT, UTC-6): authorship cannot be determined, so the window is excluded. [from, to) */
+export const HELDOUT_C_UNKNOWN_WINDOW = ["2026-10-05T06:00:00Z", "2026-10-07T06:00:00Z"] as const;
+/** True when a commit is in the excluded list or the unknown-authorship window. */
+export function excludedForC(repo: string, sha: string, committedAtIso: string, excluded: readonly { repo: string; sha: string }[]): boolean {
+  const t = Date.parse(committedAtIso);
+  if (t >= Date.parse(HELDOUT_C_UNKNOWN_WINDOW[0]) && t < Date.parse(HELDOUT_C_UNKNOWN_WINDOW[1])) return true;
+  return excluded.some((e) => e.repo === repo && e.sha === sha);
+}
