@@ -62,6 +62,19 @@
       }
     },
     {
+      "id": "public-test-case-append-objargs-v1",
+      "sha256": "a729eb0e41f3a260f5b0dacaef628ef1b36c7a6c98a6fa83c6da178b47a76f12",
+      "source": "workspace",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Workspace/issues/113#issuecomment-6159506027",
+        "commentId": 6159506027,
+        "issue": 113,
+        "repo": "PeaceG03/PeaceAI-Workspace",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-14T02:25:48Z"
+      }
+    },
+    {
       "id": "public-test-case-append-v1",
       "sha256": "05cd5a6cd79c96912304cb4e6c12ad2cc6d224e7d53b76ccddd8c325e10a5c6b",
       "source": "workspace",
