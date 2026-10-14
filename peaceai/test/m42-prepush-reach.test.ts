@@ -3,7 +3,7 @@
 // throwaway clone with a throwaway core checkout; nothing touches this repo's .git.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -11,6 +11,8 @@ import test from "node:test";
 const root = resolve(import.meta.dirname, "../..");
 const mail = ["peace", "users.noreply.github.com"].join("@"); // built at runtime (no address in this file)
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t", GIT_AUTHOR_EMAIL: mail, GIT_COMMITTER_EMAIL: mail, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+// Distinctive long lines (>= LONG_LINE) that exist only in the throwaway core checkout.
+const CORE_TEXT = [0, 1, 2, 3].map((i) => `export const m42PrivateCoreFixtureLine${i} = "only the throwaway core checkout carries this line ${i}";`).join("\n") + "\n";
 const g = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, env, encoding: "utf8" }).trim();
 const put = (dir: string, path: string, text: string) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), text); };
 const commit = (dir: string, path: string, text: string, msg: string) => { put(dir, path, text); g(dir, "add", "-A"); g(dir, "commit", "-q", "-m", msg); };
@@ -18,7 +20,7 @@ const commit = (dir: string, path: string, text: string, msg: string) => { put(d
 function setup() {
   const t = mkdtempSync(join(tmpdir(), "m42-"));
   const core = join(t, "core");
-  mkdirSync(core); g(core, "init", "-q"); commit(core, "engine/core.ts", "export const coreOnlyLine = 'm42 fixture';\n", "core");
+  mkdirSync(core); g(core, "init", "-q"); commit(core, "engine/core.ts", CORE_TEXT, "core");
   const ws = join(t, "ws");
   mkdirSync(ws); g(ws, "init", "-q", "-b", "main");
   for (const f of ["peaceai/bin/install-pre-push.sh", "peaceai/bin/prepush-scan.ts", "peaceai/lib/coreindex.ts", "peaceai/lib/coretext.ts", "peaceai/lib/leak.ts"]) cpSync(join(root, f), join(ws, f), { recursive: true });
@@ -80,13 +82,78 @@ test("a merge that edits a public file during the merge is scanned (content diff
   assert.match(r.stdout, /engine\/core\.ts: same path as a core file/);
 });
 
-test("fails closed when origin/main cannot be resolved", () => {
+test("fails closed when the remote main is missing or not present locally", () => {
   const ws = setup();
-  g(ws, "update-ref", "-d", "refs/remotes/origin/main");
+  const other = join(dirname(ws), "other");
+  commit(other, "src/c.ts", "c\n", "remote moves on"); g(other, "push", "-q", "origin", "main");
   g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/b.ts", "b\n", "feature");
   const r = push(ws, "feat");
   assert.notEqual(r.status, 0);
-  assert.match(r.stdout, /origin\/main cannot be resolved/);
+  assert.match(r.stdout, /remote main [0-9a-f]{10} is not present locally/);
+  g(dirname(ws), "--git-dir=origin.git", "update-ref", "-d", "refs/heads/main");
+  const r2 = push(ws, "feat");
+  assert.notEqual(r2.status, 0);
+  assert.match(r2.stdout, /remote main cannot be resolved/);
+});
+
+// ---- Auditor #157 attacks: each must block.
+const blocks = (r: ReturnType<typeof push>, re: RegExp) => { assert.notEqual(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, re); };
+
+test("F1: a forged refs/remotes/origin/main does not make core text public", () => {
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/leak.ts", CORE_TEXT, "core text");
+  g(ws, "update-ref", "refs/remotes/origin/main", "HEAD");
+  blocks(push(ws, "feat"), /src\/leak\.ts: core text/);
+});
+
+test("F2: a local remote-tracking ref does not hide a commit (no --not --remotes)", () => {
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/leak.ts", CORE_TEXT, "core text");
+  g(ws, "update-ref", "refs/remotes/elsewhere/x", "HEAD");
+  blocks(push(ws, "feat"), /src\/leak\.ts: core text/);
+});
+
+test("F3: core text in a file containing a NUL byte is still scanned", () => {
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/blob.bin", "\0" + CORE_TEXT, "binary with core text");
+  blocks(push(ws, "feat"), /src\/blob\.bin: core text/);
+});
+
+test("F4: a file over 2 MB blocks instead of being skipped", () => {
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/big.ts", CORE_TEXT + "// pad\n".repeat(300_000), "big");
+  blocks(push(ws, "feat"), /src\/big\.ts: over 2 MB/);
+});
+
+test("F5: a symlink turned into a regular file with core text is scanned", () => {
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat");
+  symlinkSync("a.ts", join(ws, "src/link.ts")); g(ws, "add", "-A"); g(ws, "commit", "-q", "-m", "link");
+  g(ws, "push", "-q", "--no-verify", "origin", "feat"); // test setup only: publish the symlink commit on the branch
+  rmSync(join(ws, "src/link.ts")); commit(ws, "src/link.ts", CORE_TEXT, "typechange to file");
+  blocks(push(ws, "feat"), /src\/link\.ts: core text/);
+});
+
+test("F6: an annotated tag message carrying core text blocks", () => {
+  const ws = setup();
+  g(ws, "tag", "-a", "v1", "-m", CORE_TEXT, "origin/main");
+  blocks(spawnSync("git", ["push", "origin", "v1"], { cwd: ws, env, encoding: "utf8" }), /tag message: core text/);
+});
+
+test("F7: pushed objects are typed: a tag is followed and its identity checked; a blob or tree blocks", () => {
+  const ws = setup();
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: ws, env, input: CORE_TEXT, encoding: "utf8" }).trim();
+  blocks(spawnSync("git", ["push", "origin", `${blob}:refs/tags/b`], { cwd: ws, env, encoding: "utf8" }), /pushed blob/);
+  const tree = g(ws, "rev-parse", "HEAD^{tree}");
+  blocks(spawnSync("git", ["push", "origin", `${tree}:refs/tags/t`], { cwd: ws, env, encoding: "utf8" }), /pushed tree/);
+  // A tag pointing at a new core-text commit: followed to the commit and scanned.
+  g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/leak.ts", CORE_TEXT, "core text");
+  g(ws, "tag", "-a", "v2", "-m", "release", "HEAD");
+  blocks(spawnSync("git", ["push", "origin", "v2"], { cwd: ws, env, encoding: "utf8" }), /src\/leak\.ts: core text/);
+  // A tagger that is not a noreply address.
+  const bad = ["someone", "example.com"].join("@");
+  execFileSync("git", ["tag", "-a", "v3", "-m", "x", "origin/main"], { cwd: ws, env: { ...env, GIT_COMMITTER_EMAIL: bad } });
+  blocks(spawnSync("git", ["push", "origin", "v3"], { cwd: ws, env, encoding: "utf8" }), /tagger email is not a noreply/);
 });
 
 test("a hook run from a linked worktree indexes the core checkout, not the repo being pushed", () => {

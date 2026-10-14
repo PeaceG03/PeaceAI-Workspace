@@ -53,23 +53,20 @@ set -euo pipefail
 $guard
 export PEACEAI_CORE_DIR="\${PEACEAI_CORE_DIR:-$core_q}"
 zero="0000000000000000000000000000000000000000"
-# M42: commits already reachable from origin/main are public and skipped (reachability, not a sha list);
-# every other commit, merge commits included, is scanned in full. No origin/main: fail closed.
-public="\$(git rev-parse --verify -q "refs/remotes/origin/main^{commit}" || true)"
-[ -n "\$public" ] || { echo "PRE-PUSH FAIL origin/main cannot be resolved (git fetch origin); push blocked"; exit 1; }
-export PEACEAI_PUBLIC_BASE="\$public"
-commits=""
-while read -r _lref lsha _rref rsha; do
-  [ "\$lsha" = "\$zero" ] && continue   # branch deletion: nothing to scan
-  if [ "\$rsha" != "\$zero" ] && git cat-file -e "\$rsha^{commit}" 2>/dev/null; then
-    commits="\$commits \$(git rev-list "\$rsha..\$lsha" "^\$public")"
-  else
-    # New branch (or unknown remote tip): every commit not already on a remote-tracking ref.
-    commits="\$commits \$(git rev-list "\$lsha" --not --remotes "^\$public")"
-  fi
+# M42: the public base is the remote's own main (ls-remote on the push URL; refs/remotes/* is never trusted).
+# Commits reachable from it are skipped (reachability, not a sha list); every other pushed object is classified
+# and scanned by prepush-scan.ts. Empty, unreadable or not-local base: fail closed.
+pub="\$(git ls-remote "\$2" refs/heads/main </dev/null 2>/dev/null | awk 'NR==1{print \$1}' || true)"
+[[ "\$pub" =~ ^[0-9a-f]{40}\$ ]] || { echo "PRE-PUSH FAIL remote main cannot be resolved (ls-remote); push blocked"; exit 1; }
+git cat-file -e "\$pub^{commit}" 2>/dev/null || { echo "PRE-PUSH FAIL remote main \${pub:0:10} is not present locally (git fetch); push blocked"; exit 1; }
+export PEACEAI_PUBLIC_BASE="\$pub"
+pushed=""
+while read -r _lref lsha _rref _rsha; do
+  [ "\$lsha" = "\$zero" ] && continue   # deletion: nothing to scan
+  pushed="\$pushed push:\$lsha"
 done
-[ -z "\${commits// /}" ] && { echo "PRE-PUSH PASS commits=0"; exit 0; }
-printf '%s\n' "\$commits" | $tsx_q $snap_q/bin/prepush-scan.ts
+[ -z "\${pushed// /}" ] && { echo "PRE-PUSH PASS commits=0"; exit 0; }
+printf '%s\n' "\$pushed" | $tsx_q $snap_q/bin/prepush-scan.ts
 HOOK
 chmod 755 "$hooks/pre-push"
 if $template; then
