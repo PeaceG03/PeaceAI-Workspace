@@ -37,3 +37,8 @@ test("the spec trigger (and v2's hash) is unchanged; the engine builds from the 
   assert.match(cleaned, / $/, "cleaning leaves a trailing space");
   assert.ok(applyRule(SPEC, cleaned, files, (p) => /\.test\.ts$/.test(p)), "engine builds");
 });
+
+test("Auditor #133: nlparse.ts is protected", async () => {
+  const { protectedReason } = await import("../lib/selfchange.ts");
+  assert.ok(protectedReason("peaceai/lib/nlparse.ts"));
+});
