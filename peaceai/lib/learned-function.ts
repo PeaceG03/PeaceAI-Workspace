@@ -6,7 +6,7 @@
 // fixed set of pure operators, built-ins and string/array methods (no other names, no calls to the module's code,
 // no closures, no assignment). Job B grades the candidate against itself (`selfGrade`): its new test must pass with
 // the function and fail with the module put back to the task base. Deterministic; no model.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import ts from "typescript";
@@ -258,8 +258,13 @@ export function safeNewModuleOnDisk(root: string, rel: string): boolean {
   return r === "" || (!r.startsWith("..") && !r.startsWith(sep) && !r.split(sep).includes(".."));
 }
 
-/** M23: the body stub that marks a stubbed function at runtime. */
+/** M23: prefix of the body stub's error code. Round 2 (Auditor #129): the harness appends a random suffix per run
+ * (newStubCode), so a test cannot know the code it would have to throw to be credited. */
 export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
+/** Round 2 (Auditor #129): a fresh stub code per grading run, `PEACEAI_STUB_BODY_<32 hex>`. */
+export function newStubCode(): string {
+  return `${STUB_BODY_CODE}_${randomBytes(16).toString("hex")}`;
+}
 
 /**
  * M23 (Auditor, #127): the "before" state for a learned test whose fix commit CREATED the module (so the fix
@@ -269,7 +274,7 @@ export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
  * `throws` is true for the throwing stub: then a test that expects a throw/rejection proves nothing and the
  * caller must refuse it.
  */
-export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
+export function stubBody(content: string, fn: string, requireExport = true, code: string = STUB_BODY_CODE): { content: string; throws: boolean } | null {
   const simple = stubFunction(content, fn);
   if (simple !== null) return { content: simple, throws: false };
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
@@ -277,7 +282,7 @@ export function stubBody(content: string, fn: string, requireExport = true): { c
   if (hits.length !== 1) return null;
   const f = hits[0]!;
   if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
-  const stub = `{ throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
+  const stub = `{ throw new Error(${JSON.stringify(code)}); }`;
   return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: true };
 }
 
@@ -330,12 +335,12 @@ export function declaredFunctions(content: string): string[] {
  * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
  * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
  */
-export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
+export function stubAll(content: string, fns: readonly string[], code: string = STUB_BODY_CODE): { content: string; throws: boolean } | null {
   if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
   let cur = content;
   let throws = false;
   for (const fn of fns) {
-    const s = stubBody(cur, fn, false);
+    const s = stubBody(cur, fn, false, code);
     if (!s) return null;
     cur = s.content;
     throws ||= s.throws;
@@ -350,34 +355,52 @@ export function stubAll(content: string, fns: readonly string[]): { content: str
  * is printed (a printed marker would be readable from the stubbed file); the test source is checked separately
  * (gradedTestSourceProblem) so it cannot read files, env or processes, nor throw the stub's code itself.
  */
-export function stubFailureCredited(tap: string): boolean {
+export function stubFailureCredited(tap: string, code: string): boolean {
+  // Round 2 (Auditor #129): only ERR_ASSERTION or this run's random stub code; the fixed prefix alone is never credited.
+  if (!new RegExp(`^${STUB_BODY_CODE}_[0-9a-f]{32}$`).test(code)) return false;
   const lines = tap.split("\n");
   let failures = 0;
   for (let i = 0; i < lines.length; i++) {
     if (!/^\s*not ok \d+ - /.test(lines[i]!)) continue;
     failures++;
-    let error = "", code = "";
+    let error = "", errCode = "";
     for (let j = i + 1; j < lines.length && !/^\s*(?:not ok|ok) \d+ - /.test(lines[j]!); j++) {
       const e = /^\s+error: (.*)$/.exec(lines[j]!); if (e && !error) error = e[1]!.trim();
-      const c = /^\s+code: '([A-Z_]+)'$/.exec(lines[j]!); if (c && !code) code = c[1]!;
+      const c = /^\s+code: '([A-Z_]+)'$/.exec(lines[j]!); if (c && !errCode) errCode = c[1]!;
     }
-    if (!(code === "ERR_ASSERTION" || error === `'${STUB_BODY_CODE}'`)) return false;
+    if (!(errCode === "ERR_ASSERTION" || error === `'${code}'`)) return false;
   }
   return failures > 0;
 }
 
 /** Imports a graded test may have: the runner, strict assert, and modules named in `allowed` (named bindings only). */
 const TEST_IMPORTS = new Set(["node:test", "node:assert/strict"]);
-const FORBIDDEN_NAMES = new Set(["process", "require", "globalThis", "global", "eval", "Function", "Deno", "Bun", "__dirname", "__filename", "module", "exports", "Reflect", "Proxy", "setTimeout", "setInterval", "queueMicrotask", "fetch", "WebAssembly", "console"]);
+const FORBIDDEN_NAMES = new Set(["process", "require", "globalThis", "global", "eval", "Function", "Deno", "Bun", "__dirname", "__filename", "module", "exports", "Reflect", "Proxy", "setTimeout", "setInterval", "queueMicrotask", "fetch", "WebAssembly", "console",
+  // Round 2 (Auditor #129): sources of nondeterminism and of a stringified function.
+  "Date", "performance", "Symbol", "crypto", "String", "Intl", "arguments"]);
+/** Round 2 (Auditor #129): property names that reach a function's source, prototype chain or caller. */
+const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "caller", "callee", "toString", "toLocaleString", "toSource", "random"]);
 /**
  * M23 (Auditor #129): null when a graded test cannot observe the stub other than by calling the function: it imports
  * only node:test, node:assert/strict and the modules in `allowed`; no dynamic import, import.meta, file/env/process
  * access, eval/Function, no `PEACEAI_STUB_BODY` text. Otherwise the reason (fail closed).
  */
-export function gradedTestSourceProblem(src: string, allowed: readonly string[]): string | null {
+export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[]): string | null {
   if (src.includes(STUB_BODY_CODE)) return "names the stub code";
   const sf = ts.createSourceFile("t.ts", src, ts.ScriptTarget.Latest, true);
   let problem: string | null = null;
+  // Round 2 (Auditor #129): an imported FUNCTION of the module under test may only be CALLED (`f(...)`), never read,
+  // stringified (.toString, String(), `${f}`, f + ""), passed along or inspected. `functions` names the module's
+  // functions; without it every imported binding is treated as one (stricter).
+  const bound = new Set<string>();
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || !allowed.includes(s.moduleSpecifier.text)) continue;
+    const c = s.importClause;
+    if (c?.name) bound.add(c.name.text);
+    const nb = c?.namedBindings;
+    if (nb && ts.isNamespaceImport(nb)) bound.add(nb.name.text);
+    if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!functions || functions.includes((e.propertyName ?? e.name).text)) bound.add(e.name.text);
+  }
   const v = (n: ts.Node): void => {
     if (problem) return;
     if (ts.isImportDeclaration(n)) {
@@ -390,6 +413,10 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[])
     if (ts.isMetaProperty(n)) { problem = "import.meta/new.target"; return; }
     if (ts.isIdentifier(n) && FORBIDDEN_NAMES.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text}`; return; }
     if (ts.isElementAccessExpression(n) && !ts.isNumericLiteral(n.argumentExpression)) { problem = "computed member access"; return; }
+    if ((ts.isIdentifier(n) || ts.isPrivateIdentifier(n) || ts.isStringLiteralLike(n)) && FORBIDDEN_PROPS.has(n.text)) { problem = `names ${n.text}`; return; }
+    if (ts.isTemplateSpan(n) && ts.isIdentifier(n.expression) && bound.has(n.expression.text)) { problem = `interpolates ${n.expression.text}`; return; }
+    if (ts.isIdentifier(n) && bound.has(n.text) && !ts.isImportSpecifier(n.parent) && !ts.isImportClause(n.parent) && !ts.isNamespaceImport(n.parent)
+      && !(ts.isCallExpression(n.parent) && n.parent.expression === n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text} other than calling it`; return; }
     ts.forEachChild(n, v);
   };
   v(sf);
