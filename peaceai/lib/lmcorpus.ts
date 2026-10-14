@@ -27,7 +27,36 @@ const HEADER_DENY = /\b(?:A?GPL|LGPL|GNU General|Mozilla Public|MPL-[0-9]|Creati
 const SPDX_TAG = /SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)/;
 
 export type Exclusion =
-  | "not-code" | "excluded-dir" | "minified" | "too-large" | "generated" | "nested-license" | "license-header" | "personal-info" | "binary";
+  | "not-code" | "excluded-dir" | "minified" | "too-large" | "generated" | "nested-license" | "license-header" | "personal-info" | "binary" | "held-out";
+
+/**
+ * Held-out generation sets (peaceai/model/heldout.json, fixed before any run): every file a held-out commit
+ * touched is excluded from the corpus for that source, at every commit, for BOTH sets (A: measured during
+ * development; B: untouched, final pass rate only). Keys are `${source}\0${path}`.
+ */
+export interface HeldOutFile { schema: "peaceai-heldout:v1"; sets: Record<"A" | "B", { repo: string; sha: string; kind: string; paths: string[]; contentSha256?: string[] }[]> }
+export function heldOutPaths(h: HeldOutFile): Set<string> {
+  if (h.schema !== "peaceai-heldout:v1" || !Array.isArray(h.sets?.A) || !Array.isArray(h.sets?.B)) throw new Error("bad held-out file");
+  return new Set([...h.sets.A, ...h.sets.B].flatMap((e) => e.paths.map((p) => `${e.repo}\0${p}`)));
+}
+/**
+ * Round 2 (Auditor, M28 1): content sha256 of every blob of a held-out commit's touched paths (at the commit, its
+ * parent and the pinned head). Any file in ANY corpus source (incl. byte-identical copies in the private PeaceAI
+ * source, whose paths never match a public key) with one of these hashes is excluded. Fails closed if an entry has none.
+ */
+export function heldOutHashes(h: HeldOutFile): Set<string> {
+  heldOutPaths(h);
+  const out = new Set<string>();
+  for (const e of [...h.sets.A, ...h.sets.B]) {
+    if (!Array.isArray(e.contentSha256) || e.contentSha256.length === 0 || !e.contentSha256.every((x) => /^[0-9a-f]{64}$/.test(x))) throw new Error(`held-out entry ${e.sha} has no content hashes`);
+    for (const x of e.contentSha256) out.add(x);
+  }
+  return out;
+}
+/** True when a corpus file is held out: by path in its own source, or by content in any source. */
+export function isHeldOut(source: string, path: string, sha256: string, paths: ReadonlySet<string>, hashes: ReadonlySet<string>): boolean {
+  return paths.has(`${source}\0${path}`) || hashes.has(sha256);
+}
 
 /** Why a file is not used (null = used). `licenseDirs` are directories (below the root) holding their own LICENSE. */
 export function fileExclusion(path: string, text: string, licenseDirs: readonly string[], owner: boolean): Exclusion | null {
