@@ -27,6 +27,8 @@ const CONFIG = /^(?:package-lock\.json|package\.json|tsconfig[^/]*\.json)$/;
 const SHARED_NAMES = ["README.md", "package.json", "tsconfig.json", ".gitignore", "LICENSE"];
 const isAncestor = (a: string, b: string) => { try { execFileSync("git", ["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; } };
 const blobAt = (c: string, path: string) => { try { return git("rev-parse", "--verify", "-q", `${c}:${path}`).trim(); } catch { return null; } };
+// Auditor #157 low note: author, committer and tagger names are also checked for core text.
+const identityCore = (name: string) => { const h = findCoreText([name], core.text, empty); return h.lineHits + h.shingleHits > 0; };
 let failures = 0;
 let files = 0;
 const fail = (sha: string, message: string) => {
@@ -45,6 +47,7 @@ const scanTag = (tag: string, depth = 0) => {
   else {
     if (!/@users\.noreply\.github\.com$|^noreply@github\.com$/i.test(tagger[2])) fail(tag, "tagger email is not a noreply address");
     for (const f of scanText(tagger[1], terms)) fail(tag, `tagger identity: ${f.kind}`);
+    if (identityCore(tagger[1])) fail(tag, "tagger identity: core text");
   }
   const msg = raw.slice(raw.indexOf("\n\n") + 2);
   for (const f of scanText(msg, terms)) fail(tag, `tag message:${f.line}: ${f.kind}`);
@@ -74,8 +77,10 @@ for (const sha of commits) {
   // Identities and message.
   for (const value of git("log", "-1", "--format=%ae%n%ce", sha).split("\n").filter(Boolean))
     if (!/@users\.noreply\.github\.com$|^noreply@github\.com$/i.test(value)) fail(sha, "commit email is not a noreply address");
-  for (const value of git("log", "-1", "--format=%an%n%cn", sha).split("\n").filter(Boolean))
+  for (const value of git("log", "-1", "--format=%an%n%cn", sha).split("\n").filter(Boolean)) {
     for (const f of scanText(value, terms)) fail(sha, `commit identity: ${f.kind}`);
+    if (identityCore(value)) fail(sha, "commit identity: core text");
+  }
   const body = git("log", "-1", "--format=%B", sha);
   for (const f of scanText(body, terms)) fail(sha, `commit message:${f.line}: ${f.kind}`);
   { const h = findCoreText(body.split("\n"), core.text, empty); if (h.lineHits + h.shingleHits > 0) fail(sha, "commit message: core text"); }
