@@ -246,6 +246,10 @@ jobs:
           case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
           branch="peace-task/issue-${ISSUE_NUMBER}-${CANDIDATE}-$(openssl rand -hex 4)"
           git checkout -q -b "$branch"
+          # Auditor (#107, change 5): .github/workflows/** never goes through PeaceAI's push path.
+          if grep -qE '^(diff --git a/.* b/|\+\+\+ b/|--- a/|rename (from|to) |copy (from|to) )\.github/workflows/' "$RUNNER_TEMP/chosen/chosen.diff"; then
+            echo "refused: .github/workflows/** goes in only through a normal PR that Architect merges"; exit 1
+          fi
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
           git add -A -- src
           git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
@@ -354,6 +358,10 @@ jobs:
           base_branch="$(GH_TOKEN="$TARGET_PR_TOKEN" gh repo view "$TARGET" --json defaultBranchRef -q .defaultBranchRef.name)"
           branch="peace-task/issue-${ISSUE_NUMBER}-${CANDIDATE}-$(openssl rand -hex 4)"
           git checkout -q -b "$branch"
+          # Auditor (#107, change 5): .github/workflows/** never goes through PeaceAI's push path.
+          if grep -qE '^(diff --git a/.* b/|\+\+\+ b/|--- a/|rename (from|to) |copy (from|to) )\.github/workflows/' "$RUNNER_TEMP/chosen/chosen.diff"; then
+            echo "refused: .github/workflows/** goes in only through a normal PR that Architect merges"; exit 1
+          fi
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
           git add -A -- src
           git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
@@ -443,6 +451,10 @@ jobs:
           case "$BASE_SHA" in *[!0-9a-f]*|"") echo "bad base sha"; exit 1 ;; esac
           tools/peaceai/bin/clone-target.sh "$TARGET" "$RUNNER_TEMP/target" "$BASE_SHA"
           cd "$RUNNER_TEMP/target"
+          # Auditor (#107, change 5): .github/workflows/** never goes through PeaceAI's push path.
+          if grep -qE '^(diff --git a/.* b/|\+\+\+ b/|--- a/|rename (from|to) |copy (from|to) )\.github/workflows/' "$RUNNER_TEMP/chosen/chosen.diff"; then
+            echo "refused: .github/workflows/** goes in only through a normal PR that Architect merges"; exit 1
+          fi
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
           git add -A -- src
           # No background auto-gc/maintenance: a detached gc writing .git/objects raced the cleanup below

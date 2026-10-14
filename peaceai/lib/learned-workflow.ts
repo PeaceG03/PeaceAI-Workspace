@@ -10,9 +10,14 @@
 //   manager. Triggers, permissions and every existing line are untouched (pure insertion; scope.ts re-checks).
 // - SCRIPT must be an existing package.json script whose command is `tsc ... --noEmit` (Auditor: tsc only)
 //   with plain arguments (no shell operators, variables, network, test runners, deploys).
-// - Plus ONE new test file: it asserts the step sits at the end of the job, and runs the script's command
-//   from node_modules/.bin (exit 0). Job B grades it against itself: pass with the step, fail with the workflow
-//   put back to the task base. Deterministic; no model; no YAML library (line-based, refuses anything unusual).
+// - Auditor (#107, change 2): the script text is exactly `tsc --noEmit` followed by plain flags (no &&, ;, |,
+//   $(, backticks or redirects), and package.json must have no preSCRIPT/postSCRIPT hook for it.
+// - Auditor (change 3): the candidate's diff is ONLY the two added workflow lines. No test file, and never
+//   package.json, a lockfile, tsconfig* or a lint/prettier config in the same candidate (scope.ts enforces).
+// - Auditor (change 4): Job B grades by running the step's script itself: exit 0 on the candidate tree, and
+//   non-zero with a deliberately broken type input injected. That is necessary, not sufficient: the rule's
+//   live proof also records two real Actions run ids (step passes; same step fails on the broken input);
+//   see peaceai/proof/workflow-step-proof.md. Deterministic; no model; no YAML library.
 
 export const WORKFLOW_PARAM_KEYS = ["grading", "placement", "run", "step", "test"] as const;
 export const WORKFLOW_VOCAB: Record<(typeof WORKFLOW_PARAM_KEYS)[number], readonly string[]> = {
@@ -40,7 +45,7 @@ export const STEP_NAME_LINE = new RegExp(String.raw`^(\s+)- name: (${STEP_NAME})
 export const STEP_RUN_LINE = new RegExp(String.raw`^(\s+)run: (npm|pnpm) run (${SCRIPT})$`);
 
 export interface WorkflowTask { name: string; job: string; file: string; pm: "npm" | "pnpm"; script: string }
-export interface WorkflowEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
+export interface WorkflowEdit { path: string; content: string; extra: []; selfGrade: true }
 
 export function parseWorkflowTask(trigger: string, objective: string): WorkflowTask | null {
   const heads = objective.split("\n").map((l) => l.trim()).filter((l) => new RegExp(trigger, "i").test(l));
@@ -111,7 +116,10 @@ function locate(lines: readonly string[], job: string): { jobText: string; dash:
 /** The script command, if it is one safe tool with plain arguments. */
 export function safeScript(cmd: unknown): string[] | null {
   if (typeof cmd !== "string" || cmd.length > 200) return null;
-  const words = cmd.trim().split(/ +/);
+  // Auditor (change 2): no shell operators at all, and the text is exactly `tsc --noEmit` + plain flags.
+  if (/[&;|`<>$\\\n\r\t"'*?(){}\[\]!#~]/.test(cmd) || cmd !== cmd.trim() || / {2}/.test(cmd)) return null;
+  const words = cmd.split(" ");
+  if (words[0] !== "tsc" || words[1] !== "--noEmit") return null;
   if (!(SAFE_TOOLS as readonly string[]).includes(words[0]!)) return null;
   if (!words.slice(1).every((w) => SAFE_ARG.test(w) && !w.includes("..") && !/^\//.test(w))) return null;
   // tsc must not emit or build: --noEmit required; no --build/-b, --watch/-w, --outDir/--outFile/--declarationDir, --plugins.
@@ -120,7 +128,7 @@ export function safeScript(cmd: unknown): string[] | null {
   return words;
 }
 
-export function buildWorkflowEdit(params: Record<string, string | string[]>, task: WorkflowTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): WorkflowEdit | null {
+export function buildWorkflowEdit(params: Record<string, string | string[]>, task: WorkflowTask, files: readonly { path: string; content: string }[], _isTest?: (p: string) => boolean): WorkflowEdit | null {
   if (WORKFLOW_PARAM_KEYS.some((k) => params[k] !== WORKFLOW_VOCAB[k][0])) return null;
   const wf = files.find((f) => f.path === task.file);
   const pkg = files.find((f) => f.path === "package.json");
@@ -129,8 +137,7 @@ export function buildWorkflowEdit(params: Record<string, string | string[]>, tas
   if (!files.some((f) => f.path === lock)) return null;
   let scripts: Record<string, unknown>;
   try { scripts = (JSON.parse(pkg.content) as { scripts?: Record<string, unknown> }).scripts ?? {}; } catch { return null; }
-  if (BAD_SCRIPT.test(task.script) || !Object.prototype.hasOwnProperty.call(scripts, task.script)) return null;
-  const words = safeScript(scripts[task.script]);
+  const words = workflowScript(scripts, task.script);
   if (!words) return null;
   const lines = wf.content.split("\n");
   const loc = locate(lines, task.job);
@@ -145,34 +152,7 @@ export function buildWorkflowEdit(params: Record<string, string | string[]>, tas
   const pad = " ".repeat(loc.dash);
   const step = [`${pad}- name: ${task.name}`, `${pad}  run: ${run}`];
   const content = [...lines.slice(0, loc.insertAt), ...step, ...lines.slice(loc.insertAt)].join("\n");
-  const testPath = buildTestPath(task);
-  if (!isTest(testPath) || files.some((f) => f.path === testPath)) return null;
-  const test = [
-    `import { test } from "node:test";`,
-    `import assert from "node:assert/strict";`,
-    `import { spawnSync } from "node:child_process";`,
-    `import { readFileSync } from "node:fs";`,
-    `import { join } from "node:path";`,
-    `import { fileURLToPath } from "node:url";`,
-    ``,
-    `const root = fileURLToPath(new URL("..", import.meta.url));`,
-    ``,
-    `test(${JSON.stringify(`workflow ${task.file} job ${task.job} ends with step "${task.name}"`)}, () => {`,
-    `  const lines = readFileSync(join(root, ${JSON.stringify(task.file)}), "utf8").split("\\n");`,
-    `  const at = lines.indexOf(${JSON.stringify(step[0])});`,
-    `  assert.notEqual(at, -1, "step is present");`,
-    `  assert.equal(lines[at + 1], ${JSON.stringify(step[1])});`,
-    `  const next = lines.slice(at + 2).find((l) => l.trim() !== "" && !l.trim().startsWith("#"));`,
-    `  assert.ok(next === undefined || next.length - next.trimStart().length < ${loc.dash}, "step is the last one of its job");`,
-    `});`,
-    ``,
-    `test(${JSON.stringify(`the step's script ${task.script} passes`)}, () => {`,
-    `  const r = spawnSync(join(root, "node_modules", ".bin", ${JSON.stringify(words[0])}), ${JSON.stringify(words.slice(1))}, { cwd: root, encoding: "utf8", timeout: 300_000 });`,
-    `  assert.equal(r.status, 0, (r.stdout ?? "") + (r.stderr ?? ""));`,
-    `});`,
-    ``,
-  ].join("\n");
-  return { path: task.file, content, extra: [{ path: testPath, content: test, create: true }], selfGrade: true };
+  return { path: task.file, content, extra: [], selfGrade: true };
 }
 
 export function applyWorkflowRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean): WorkflowEdit | null {
@@ -184,4 +164,34 @@ export function applyWorkflowRule(trigger: string, params: Record<string, string
 export function buildTestPath(t: { file: string; job: string; script: string }): string {
   const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `src/workflow-${slug(t.file.replace(/^\.github\/workflows\//, "").replace(/\.ya?ml$/, ""))}-${slug(t.job)}-${slug(t.script)}.test.ts`;
+}
+
+/** Auditor (change 2): the script's words when it is safe to run, else null. Also refuses pre/post hooks. */
+export function workflowScript(scripts: Record<string, unknown>, name: string): string[] | null {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(scripts, k);
+  if (BAD_SCRIPT.test(name) || !has(name)) return null;
+  if (has(`pre${name}`) || has(`post${name}`)) return null;
+  return safeScript(scripts[name]);
+}
+
+/** Auditor (change 3): paths a workflow-step candidate may never touch alongside the step. */
+export const WORKFLOW_STEP_FORBIDDEN = /(?:^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|yarn\.lock|bun\.lockb?|\.npmrc|tsconfig[^/]*|jsconfig[^/]*|\.eslintrc[^/]*|eslint\.config\.[^/]+|\.eslintignore|\.prettierrc[^/]*|prettier\.config\.[^/]+|\.prettierignore|biome\.jsonc?|\.editorconfig)$/;
+
+/** Auditor (change 3): a candidate that touches a workflow is exactly one workflow file (the 2 added lines). */
+export function workflowCandidateReason(paths: readonly string[], isWorkflow: (p: string) => boolean): string | null {
+  const wf = paths.filter(isWorkflow);
+  if (wf.length === 0) return null;
+  const bad = paths.find((p) => WORKFLOW_STEP_FORBIDDEN.test(p));
+  if (bad) return `workflow-step candidate may not change ${bad}`;
+  if (paths.length !== 1) return "workflow-step candidate must be only the two added workflow lines";
+  return null;
+}
+
+/** Auditor (change 4): the broken type input Job B injects to prove the step can fail. */
+export const BROKEN_TYPE_LINE = "\nexport const __peaceaiBrokenTypeInput: number = \"not a number\";\n";
+
+/** Auditor (change 5): PeaceAI's own push path never carries .github/workflows/** (normal Architect-merged PR only). */
+export function pushPathRefusal(paths: readonly string[]): string | null {
+  const bad = paths.find((p) => /^\.github\/workflows(?:\/|$)/.test(p.replace(/^\.\//, "")));
+  return bad ? `refused: ${bad} goes in only through a normal PR that Architect merges` : null;
 }

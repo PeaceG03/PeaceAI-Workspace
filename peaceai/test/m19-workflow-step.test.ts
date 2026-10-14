@@ -4,13 +4,13 @@
 // miner shape (public repositories only) and the protected set.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { parseDiff } from "../lib/diff.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { buildTestPath, safeScript, WORKFLOW_TRIGGER, workflowRefusal } from "../lib/learned-workflow.ts";
+import { BROKEN_TYPE_LINE, pushPathRefusal, safeScript, WORKFLOW_STEP_FORBIDDEN, WORKFLOW_TRIGGER, workflowCandidateReason, workflowRefusal, workflowScript } from "../lib/learned-workflow.ts";
 import { parseHunks } from "../lib/mine.ts";
 import { observeWorkflow } from "../lib/mineworkflow.ts";
 import { TestMiningRefused } from "../lib/minetest.ts";
@@ -42,7 +42,7 @@ const WF = [
   "",
 ].join("\n");
 const PATH = ".github/workflows/sim.yml";
-const PKG = JSON.stringify({ scripts: { typecheck: "tsc -p tsconfig.json --noEmit", test: "tsx --test src/*.test.ts", scheduler: "tsx src/host.ts", lint: "eslint src && curl http://x" } });
+const PKG = JSON.stringify({ scripts: { typecheck: "tsc --noEmit -p tsconfig.json", test: "tsx --test src/*.test.ts", scheduler: "tsx src/host.ts", lint: "eslint src && curl http://x" } });
 const files = (wf = WF, pkg = PKG, lock = "pnpm-lock.yaml") => [{ path: "src/a.ts", content: "export const a = 1;\n" }, { path: PATH, content: wf }, { path: "package.json", content: pkg }, { path: lock, content: "" }];
 const TASK = `add workflow step Typecheck to job sim in ${PATH} running pnpm run typecheck`;
 const isTest = (p: string) => /\.test\.ts$/.test(p);
@@ -68,21 +68,94 @@ test("trigger: canonical only, needs approval", () => {
   assert.equal(off.status === "unsure" ? off.reason : off.status, "RULE_NOT_APPROVED");
 });
 
-test("engine: appends exactly the two-line step at the end of the job, existing lines byte-identical, one new test", () => {
+test("engine: appends exactly the two-line step at the end of the job, existing lines byte-identical, nothing else (Auditor 3)", () => {
   const e = applyRule(SPEC, TASK, files(), isTest)!;
   assert.ok(e);
   assert.equal(e.path, PATH);
   assert.equal(e.content, WF.replace("src/a.test.ts\n", "src/a.test.ts\n      - name: Typecheck\n        run: pnpm run typecheck\n"));
   assert.equal(e.selfGrade, true);
-  assert.equal(e.extra!.length, 1);
-  assert.equal(e.extra![0]!.path, buildTestPath({ file: PATH, job: "sim", script: "typecheck" }));
-  assert.equal(e.extra![0]!.path, "src/workflow-sim-sim-typecheck.test.ts");
-  assert.match(e.extra![0]!.content, /node_modules", "\.bin", "tsc"/);
-  // The scope gate accepts exactly this diff for an opted-in workflow.
+  assert.deepEqual(e.extra, [], "no test file: the proof is a real run (Auditor 4)");
   const scope = { isSource: (p: string) => /^src\//.test(p), isTest, isDenied: (p: string) => /(^|\/)\./.test(p), isWorkflow: (p: string) => p === PATH };
   const diff = gitDiff(WF, e.content);
+  assert.equal(diff.split("\n").filter((l) => /^[+-](?![+-])/.test(l)).length, 2, "diff is the 2 added lines");
   assert.deepEqual(checkCandidateScope(parseDiff(diff), new Set([PATH]), scope), []);
   assert.ok(checkCandidateScope(parseDiff(diff), new Set([PATH]), { ...scope, isWorkflow: () => false }).length > 0, "not opted in -> outside allowed paths");
+});
+
+test("Auditor 2: script text is exactly `tsc --noEmit` + plain flags; pre/post hooks refuse the step", () => {
+  assert.deepEqual(safeScript("tsc --noEmit -p tsconfig.lib.json"), ["tsc", "--noEmit", "-p", "tsconfig.lib.json"]);
+  assert.deepEqual(safeScript("tsc --noEmit"), ["tsc", "--noEmit"]);
+  for (const c of ["tsc -p tsconfig.json --noEmit", "tsc --noEmit && echo", "tsc --noEmit; echo", "tsc --noEmit | tee x", "tsc --noEmit $(echo -p) ", "tsc --noEmit $(x)", "tsc --noEmit `x`", "tsc --noEmit > out", "tsc --noEmit < in", "tsc --noEmit 2>&1", "tsc --noEmit >> log", " tsc --noEmit", "tsc  --noEmit", "tsc --noEmit\n-p x", "tsc --noEmit -p $X", "npx tsc --noEmit", "tsc --noemit"]) assert.equal(safeScript(c), null, JSON.stringify(c));
+  const scripts = { typecheck: "tsc --noEmit -p tsconfig.json" };
+  assert.deepEqual(workflowScript(scripts, "typecheck"), ["tsc", "--noEmit", "-p", "tsconfig.json"]);
+  for (const hook of ["pretypecheck", "posttypecheck"]) {
+    assert.equal(workflowScript({ ...scripts, [hook]: "curl http://x" }, "typecheck"), null, hook);
+    const pkg = JSON.stringify({ scripts: { ...scripts, [hook]: "tsc --noEmit" } });
+    assert.equal(applyRule(SPEC, TASK, files(WF, pkg), isTest), null, `engine refuses with ${hook}`);
+  }
+  assert.equal(workflowScript({ "typecheck:lib": "tsc --noEmit -p tsconfig.lib.json", "pretypecheck:lib": "x" }, "typecheck:lib"), null);
+  assert.equal(workflowScript(Object.create({ typecheck: "tsc --noEmit" }) as Record<string, unknown>, "typecheck"), null, "inherited keys do not count");
+});
+
+test("Auditor 3: a workflow-step candidate is only the workflow lines; package.json, lockfiles, tsconfig*, lint/prettier configs refused", () => {
+  const scope = { isSource: (p: string) => /^src\//.test(p) || /(^|\/)(package\.json|tsconfig[^/]*|\.prettierrc|eslint\.config\.js)$/.test(p), isTest, isDenied: () => false, isWorkflow: (p: string) => p === PATH };
+  const step = gitDiff(WF, WF.replace("src/a.test.ts\n", "src/a.test.ts\n      - name: T\n        run: pnpm run typecheck\n"));
+  const isWf = (p: string) => p === PATH;
+  assert.equal(workflowCandidateReason([PATH], isWf), null);
+  assert.equal(workflowCandidateReason(["src/a.ts"], isWf), null, "not a workflow candidate");
+  for (const p of ["package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "npm-shrinkwrap.json", "tsconfig.json", "tsconfig.lib.json", "sub/tsconfig.base.json", ".eslintrc.json", "eslint.config.js", ".prettierrc", "prettier.config.mjs", ".prettierignore", ".npmrc", "biome.json"]) {
+    assert.ok(WORKFLOW_STEP_FORBIDDEN.test(p), p);
+    assert.match(workflowCandidateReason([PATH, p], isWf) ?? "", /may not change/, p);
+  }
+  assert.match(workflowCandidateReason([PATH, "src/new.test.ts"], isWf) ?? "", /only the two added workflow lines/);
+  for (const [p, before] of [["package.json", "{}\n"], ["tsconfig.json", "{}\n"], ["src/a.ts", "export const a = 1;\n"]] as const) {
+    const extra = `diff --git a/${p} b/${p}\n--- a/${p}\n+++ b/${p}\n@@ -1 +1,2 @@\n ${before.trimEnd()}\n+// x\n`;
+    const v = checkCandidateScope(parseDiff(step + extra), new Set([PATH, p]), scope).map((x) => x.reason);
+    assert.ok(v.some((r) => /workflow-step candidate/.test(r)), `${p}: ${v.join(";")}`);
+  }
+});
+
+test("Auditor 4: grading runs the step's script: pass on the candidate, FAIL on the broken type input; proof needs 2 run ids", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m19b-"));
+  try {
+    writeFileSync(join(dir, "a.ts"), "export const a: number = 1;\n");
+    writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, module: "nodenext", target: "es2022", types: [] }, include: ["a.ts"] }));
+    const words = safeScript("tsc --noEmit -p tsconfig.json")!;
+    const tsc = join(repo, "node_modules/.bin/tsc");
+    const run = () => spawnSync(tsc, words.slice(1), { cwd: dir, encoding: "utf8" }).status;
+    assert.equal(run(), 0, "step passes");
+    writeFileSync(join(dir, "a.ts"), "export const a: number = 1;\n" + BROKEN_TYPE_LINE);
+    assert.notEqual(run(), 0, "same step fails on the broken type input");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
+  assert.match(tc, /if \(workflowStep\) return gradeWorkflowStep\(/, "workflow steps never graded by a YAML-finding test");
+  assert.match(tc, /BROKEN_TYPE_LINE/);
+  const doc = readFileSync(join(repo, "peaceai/proof/workflow-step-proof.md"), "utf8");
+  assert.match(doc, /workflow-step-proof: pass-run=<id> broken-run=<id>/, "both run ids recorded");
+  assert.match(doc, /real need, not one shaped to match the rule/, "Auditor 6 on the proof-issue template");
+  assert.match(doc, /typecheck:lib is an acceptable target/);
+});
+
+test("Auditor 5: PeaceAI's push path refuses .github/workflows/**; no auto-merge, no workflow-write token", () => {
+  for (const p of [".github/workflows/ci.yml", "./.github/workflows/x.yaml", ".github/workflows"]) assert.match(pushPathRefusal([p]) ?? "", /normal PR that Architect merges/, p);
+  assert.equal(pushPathRefusal(["src/a.ts", ".github/CODEOWNERS"]), null);
+  const verdict = readFileSync(join(repo, ".github/workflows/peace-verdict.yml"), "utf8");
+  const applies = [...verdict.matchAll(/git apply --whitespace=nowarn "\$RUNNER_TEMP\/chosen\/chosen\.diff"/g)].map((m) => m.index!);
+  assert.equal(applies.length, 3, "three push routes");
+  for (const at of applies) assert.match(verdict.slice(Math.max(0, at - 400), at), /\\\.github\/workflows\/' "\$RUNNER_TEMP\/chosen\/chosen\.diff"; then\s+echo "refused: [^"]+"; exit 1/, "guard before each apply");
+  // The guard's pattern really matches workflow diffs (and not src diffs).
+  const re = /^(diff --git a\/.* b\/|\+\+\+ b\/|--- a\/|rename (from|to) |copy (from|to) )\.github\/workflows\//m;
+  assert.ok(re.test(gitDiff(WF, WF + "# x\n")));
+  assert.ok(!re.test("diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n"));
+  const wfDir = join(repo, ".github/workflows");
+  for (const f of readdirSync(wfDir)) {
+    const t = readFileSync(join(wfDir, f), "utf8");
+    assert.doesNotMatch(t, /^\s*workflows:\s*write/m, `${f}: no workflow-write permission`);
+    assert.doesNotMatch(t, /--auto\b|auto-merge|enablePullRequestAutoMerge/i, `${f}: no auto-merge`);
+  }
+  for (const f of readdirSync(join(repo, "peaceai/bin"))) assert.doesNotMatch(readFileSync(join(repo, "peaceai/bin", f), "utf8"), /--auto\b|enablePullRequestAutoMerge/, f);
 });
 
 test("refusals: secrets, write/id-token permission, missing top permissions, privileged triggers, anchors, job-level env/permissions/uses", () => {
@@ -111,7 +184,7 @@ test("refusals: script must exist, be one safe tool with plain args, not test/sc
   assert.equal(applyRule(SPEC, `add workflow step Sim tests to job sim in ${PATH} running pnpm run typecheck`, files(), isTest), null, "duplicate step name");
   assert.equal(applyRule(SPEC, TASK, files(WF.replace("src/a.test.ts\n", "src/a.test.ts\n      - run: pnpm run typecheck\n")), isTest), null, "duplicate command");
   for (const c of ["tsc && curl x", "tsc $HOME", "tsc ../x", "node x.js", "tsx --test a", "eslint --fix; rm -rf /", "tsc -p /etc/x", "tsc deploy.ts", "prettier --write src | tee"]) assert.equal(safeScript(c), null, c);
-  assert.deepEqual(safeScript("tsc -p tsconfig.json --noEmit"), ["tsc", "-p", "tsconfig.json", "--noEmit"]);
+  assert.deepEqual(safeScript("tsc --noEmit -p tsconfig.json"), ["tsc", "--noEmit", "-p", "tsconfig.json"]);
   for (const c of ["eslint src", "prettier --check src", "biome check", "tsc -p tsconfig.json", "tsc --noEmit -b", "tsc --noEmit --build", "tsc --noEmit --watch", "tsc --noEmit --outDir dist", "tsc --noEmit --outFile x.js", "tsc --noEmit --plugins x"]) assert.equal(safeScript(c), null, `tsc only, --noEmit, no build/emit: ${c}`);
   assert.equal(applyRule(SPEC, `add workflow step \${{ secrets.X }} to job sim in ${PATH} running pnpm run typecheck`, files(), isTest), null);
 });
@@ -145,29 +218,6 @@ test("targets: workflowPattern is opt-in, anchored under .github/workflows/, nev
   try { assert.notEqual(workflowRefusal(readFileSync(scanner, "utf8")), null); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
 });
 
-test("self-grade contract: the new test passes with the step (script runs) and fails with the workflow put back", () => {
-  const dir = mkdtempSync(join(tmpdir(), "m19g-"));
-  try {
-    const pkg = JSON.stringify({ type: "module", scripts: { typecheck: "tsc -p tsconfig.json --noEmit" } });
-    const e = applyRule(SPEC, TASK, files(WF, pkg), isTest)!;
-    for (const [p, c] of [[PATH, e.content], ["package.json", pkg], ["src/a.ts", "export const a: number = 1;\n"], ["tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noEmit: true, module: "nodenext", target: "es2022", types: [] }, include: ["src/a.ts"] })], [e.extra![0]!.path, e.extra![0]!.content]] as const) {
-      mkdirSync(dirname(join(dir, p)), { recursive: true });
-      writeFileSync(join(dir, p), c);
-    }
-    symlinkSync(join(repo, "node_modules"), join(dir, "node_modules"));
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
-    const run = () => spawnSync(tsx, ["--test", e.extra![0]!.path], { cwd: dir, encoding: "utf8", env }).status;
-    assert.equal(run(), 0, "passes with the step");
-    writeFileSync(join(dir, PATH), WF);
-    assert.notEqual(run(), 0, "fails on the task base");
-    writeFileSync(join(dir, PATH), e.content);
-    writeFileSync(join(dir, "src/a.ts"), "export const a: number = 'x';\n");
-    assert.notEqual(run(), 0, "fails when the script itself fails");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("miner: one appended name/run step at a job's end is observed with its style; public repositories only", () => {
   const post = WF.replace("src/a.test.ts\n", "src/a.test.ts\n      # comment\n      - name: Typecheck\n        run: pnpm run typecheck\n");
   const obs = observeWorkflow("x@1", PATH, post, parseHunks(gitDiff(WF, post, 0)));
@@ -182,7 +232,7 @@ test("miner: one appended name/run step at a job's end is observed with its styl
 });
 
 test("protected (M19): learned-workflow and mineworkflow are protected", () => {
-  for (const p of ["peaceai/lib/learned-workflow.ts", "peaceai/lib/mineworkflow.ts", "peaceai/lib/scope.ts", "peaceai/lib/target.ts", "peaceai/targets.json"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
+  for (const p of ["peaceai/lib/learned-workflow.ts", "peaceai/lib/mineworkflow.ts", "peaceai/lib/scope.ts", "peaceai/lib/target.ts", "peaceai/targets.json", "peaceai/proof/workflow-step-proof.md"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
 });
 
 function gitDiff(before: string, after: string, ctx = 3): string {

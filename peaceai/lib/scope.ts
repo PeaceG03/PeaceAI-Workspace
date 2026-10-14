@@ -1,6 +1,6 @@
 import ts from "typescript";
 import type { DiffFile } from "./diff.ts";
-import { STEP_NAME_LINE, STEP_RUN_LINE, WORKFLOW_FILE } from "./learned-workflow.ts";
+import { STEP_NAME_LINE, STEP_RUN_LINE, WORKFLOW_FILE, workflowCandidateReason } from "./learned-workflow.ts";
 
 // Candidate diffs may only touch source under src/. Existing tests are frozen; new test files may be added.
 export const TEST_FILE = /\.test\.ts$/;
@@ -43,6 +43,12 @@ export function checkCandidateScope(
 ): ScopeViolation[] {
   const violations: ScopeViolation[] = [];
   if (files.length === 0) violations.push({ path: "(none)", reason: "empty diff" });
+  // Auditor (#107, change 3): a workflow-step candidate is only its two workflow lines, nothing else.
+  if (scope.isWorkflow) {
+    const paths = files.map((f) => f.newPath ?? f.oldPath ?? "(unknown)");
+    const why = workflowCandidateReason(paths, (p) => !scope.isSource(p) && !!scope.isWorkflow?.(p));
+    if (why) violations.push({ path: paths.join(","), reason: why });
+  }
   for (const file of files) {
     const path = file.newPath ?? file.oldPath ?? "(unknown)";
     if (file.isDeleted) violations.push({ path, reason: "deletes a file" });

@@ -265,10 +265,11 @@ for (const a of planSteps ? [] : admissions) {
   const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
   if (edit.create && !newModule && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
-  if (edit.extra && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
+  if (edit.extra && a.spec.kind !== "ADD_WORKFLOW_STEP" && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
   if (edit.selfGrade && !edit.extra) continue;
   // M19: a workflow edit only from the workflow-step rule, on an existing opted-in workflow, self-graded.
-  if (!scope.isSource(edit.path) && !(a.spec.kind === "ADD_WORKFLOW_STEP" && scope.isWorkflow?.(edit.path) && baseFiles.has(edit.path) && !edit.create && edit.selfGrade && edit.extra?.length === 1)) continue;
+  if (!scope.isSource(edit.path) && !(a.spec.kind === "ADD_WORKFLOW_STEP" && scope.isWorkflow?.(edit.path) && baseFiles.has(edit.path) && !edit.create && edit.selfGrade && edit.extra?.length === 0)) continue;
+  if (a.spec.kind === "ADD_WORKFLOW_STEP" && edit.extra?.length !== 0) continue;
   // M14: a test rule that appends edits an existing test file only by adding lines at its end.
   if (!edit.create && edit.fixSha !== undefined) {
     const cur = candidatesForContext.find((f) => f.path === edit.path);

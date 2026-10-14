@@ -13,6 +13,7 @@ import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from 
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, stubFunction } from "../lib/learned-function.ts";
+import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
@@ -146,6 +147,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
 function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
+  if (workflowStep) return gradeWorkflowStep(tree, files, ungradable);
   // M19: an opted-in workflow edited by the workflow-step rule is put back to the base like a source file.
   const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && ((scope.isSource(f.newPath) && !scope.isTest(f.newPath)) || (workflowStep && !!scope.isWorkflow?.(f.newPath)))).map((f) => f.newPath!);
   // M17: a new source module (ADD_FUNCTION new-module) is taken back out by removing it.
@@ -174,6 +176,34 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
   if (created.length && !runTrusted(tree, "rm", ["-f", "--", ...created])) return ungradable("revert-failed");
   const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
   return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix, stubFails), reason: null, ...(stubFails === undefined ? {} : { stubFails }) };
+}
+
+/**
+ * Auditor (#107, change 4): a workflow step is graded by running its own script, not by a test that finds the
+ * line. afterFix = the script exits 0 on the candidate tree; beforeFix = the same script on the same tree with a
+ * deliberately broken type input injected (must FAIL). COUNTS here is necessary only: the live proof also
+ * records two real Actions run ids (peaceai/proof/workflow-step-proof.md).
+ */
+function gradeWorkflowStep(tree: string, files: ReturnType<typeof parseDiff>, ungradable: (r: TestGrading["reason"]) => TestGrading): TestGrading {
+  const base = summary.baseSha;
+  if (files.length !== 1 || !scope.isWorkflow?.(files[0]!.newPath ?? "")) return ungradable("not-test-only");
+  const run = /run: (?:npm|pnpm) run ([a-z][\w:-]{0,40})$/.exec(files[0]!.addedLines[1] ?? "");
+  if (!run) return ungradable("not-test-only");
+  let scripts: Record<string, unknown>;
+  try { scripts = (JSON.parse(readFileSync(join(tree, "package.json"), "utf8")) as { scripts?: Record<string, unknown> }).scripts ?? {}; } catch { return ungradable("not-test-only"); }
+  const words = workflowScript(scripts, run[1]!);
+  if (!words) return ungradable("not-test-only");
+  const tsc = join(tree, "node_modules", ".bin", "tsc");
+  const afterFix = runCandidate(tree, tsc, words.slice(1));
+  const listed = runCandidateCapture(tree, tsc, [...words.slice(1), "--listFilesOnly"]);
+  const target = listed.out.split("\n").map((l) => l.trim()).find((l) => l && /\.tsx?$/.test(l) && !/\.d\.ts$/.test(l) && !relative(tree, l).startsWith("..") && !relative(tree, l).split("/").includes("node_modules"));
+  if (!target) return ungradable("not-test-only");
+  if (lstatSync(target).isSymbolicLink() || relative(tree, realpathSync(target)).startsWith("..")) return ungradable("not-applied");
+  const real = readFileSync(target, "utf8");
+  writeFileSync(target, real + BROKEN_TYPE_LINE);
+  const beforeFix = runCandidate(tree, tsc, words.slice(1));
+  writeFileSync(target, real);
+  return { fixSha: base, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
 }
 
 // ---- M7 repair stage
