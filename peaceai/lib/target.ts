@@ -3,6 +3,7 @@
 // target's visibility through the GitHub API. Anything other than a confirmed PUBLIC repository is
 // treated as PRIVATE and fails closed: its content is never fetched into a public run. Only targets
 // with a scope config in peaceai/targets.json run at all.
+import { WORKFLOW_FILE } from "./learned-workflow.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -22,6 +23,8 @@ export interface TargetConfig {
   /** M6: what a `right` verdict does. "pr": open a PR (needs write access). "patch": post the chosen
    * candidate as a `git format-patch` file on the Workspace issue; the owner applies it (no token). */
   verdictRoute?: "pr" | "patch";
+  /** M19: workflow files ADD_WORKFLOW_STEP may append a step to (must also match .github/workflows/*.yml). */
+  workflowPattern?: string;
 }
 
 export interface TargetsFile {
@@ -43,6 +46,9 @@ export function loadTargets(path = join(import.meta.dirname, "..", "targets.json
     if (!["npm", "pnpm"].includes(c.install) || !["full", "related"].includes(c.originalSuite)) throw new Error("invalid target config");
     if (c.writeEnvironment !== null && !/^[a-z0-9-]{1,60}$/.test(c.writeEnvironment)) throw new Error("invalid write environment");
     if (c.verdictRoute !== undefined && !["pr", "patch"].includes(c.verdictRoute)) throw new Error("invalid verdict route");
+    // M19: opt-in only, anchored under .github/workflows/, and never for this Workspace (its workflows are protected).
+    if (c.workflowPattern !== undefined && (typeof c.workflowPattern !== "string" || !c.workflowPattern.startsWith("^\\.github/workflows/") || !c.workflowPattern.endsWith("$") || name === "PeaceG03/PeaceAI-Workspace")) throw new Error("invalid workflow pattern");
+    if (c.workflowPattern !== undefined) new RegExp(c.workflowPattern);
   }
   return file;
 }
@@ -100,9 +106,11 @@ export function scopeOf(config: TargetConfig) {
   const source = new RegExp(config.sourcePattern);
   const test = new RegExp(config.testPattern);
   const deny = config.denyPatterns.map((p) => new RegExp(p, "i"));
+  const workflow = typeof config.workflowPattern === "string" ? new RegExp(config.workflowPattern) : null;
   return {
     isSource: (path: string) => source.test(path) && !path.split("/").some((p) => p === "" || p.startsWith(".")),
     isTest: (path: string) => test.test(path),
     isDenied: (path: string) => deny.some((d) => d.test(path)),
+    isWorkflow: (path: string) => !!workflow && workflow.test(path) && WORKFLOW_FILE.test(path),
   };
 }

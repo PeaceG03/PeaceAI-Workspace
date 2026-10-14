@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { DiffFile } from "./diff.ts";
+import { STEP_NAME_LINE, STEP_RUN_LINE, WORKFLOW_FILE, workflowCandidateReason } from "./learned-workflow.ts";
 
 // Candidate diffs may only touch source under src/. Existing tests are frozen; new test files may be added.
 export const TEST_FILE = /\.test\.ts$/;
@@ -10,6 +11,8 @@ export interface CandidateScope {
   isSource: (path: string) => boolean;
   isTest: (path: string) => boolean;
   isDenied: (path: string) => boolean;
+  /** M19: workflow files the target opts in for ADD_WORKFLOW_STEP (targets.json `workflowPattern`). */
+  isWorkflow?: (path: string) => boolean;
 }
 export const WORKSPACE_SCOPE: CandidateScope = {
   isSource: (path) => isSafeCandidatePath(path),
@@ -40,6 +43,12 @@ export function checkCandidateScope(
 ): ScopeViolation[] {
   const violations: ScopeViolation[] = [];
   if (files.length === 0) violations.push({ path: "(none)", reason: "empty diff" });
+  // Auditor (#107, change 3): a workflow-step candidate is only its two workflow lines, nothing else.
+  if (scope.isWorkflow) {
+    const paths = files.map((f) => f.newPath ?? f.oldPath ?? "(unknown)");
+    const why = workflowCandidateReason(paths, (p) => !scope.isSource(p) && !!scope.isWorkflow?.(p));
+    if (why) violations.push({ path: paths.join(","), reason: why });
+  }
   for (const file of files) {
     const path = file.newPath ?? file.oldPath ?? "(unknown)";
     if (file.isDeleted) violations.push({ path, reason: "deletes a file" });
@@ -49,6 +58,11 @@ export function checkCandidateScope(
       violations.push({ path, reason: "file mode change" });
     if (file.oldPath !== null && file.newPath !== null && file.oldPath !== file.newPath)
       violations.push({ path, reason: "path mismatch" });
+    if (!scope.isSource(path) && scope.isWorkflow?.(path)) {
+      const why = workflowStepReason(file, baseFiles.has(path));
+      if (why) violations.push({ path, reason: `workflow step: ${why}` });
+      continue;
+    }
     if (!scope.isSource(path)) {
       violations.push({ path, reason: "outside allowed paths" });
       continue;
@@ -182,4 +196,21 @@ export function checkPullRequestScope(
       violations.push({ path: change.path, reason: `delete/rename (${change.status}) by a non-owner PR` });
   }
   return violations;
+}
+
+/**
+ * M19: the only change a candidate may make to an opted-in workflow: exactly two ADDED lines forming one
+ * `- name:` / `run: <npm|pnpm> run SCRIPT` step (the run line two spaces deeper than the dash), nothing removed,
+ * an existing file. Anything else (uses, env, expressions, permissions, triggers, removals) is a violation.
+ */
+export function workflowStepReason(file: DiffFile, exists: boolean): string | null {
+  if (!WORKFLOW_FILE.test(file.newPath ?? "")) return "not a workflow file";
+  if (file.isNew || !exists) return "workflow must already exist";
+  if (file.removedLines.length) return "removes or changes lines";
+  if (file.addedLines.length !== 2) return "must add exactly one two-line step";
+  const n = STEP_NAME_LINE.exec(file.addedLines[0]!);
+  const r = STEP_RUN_LINE.exec(file.addedLines[1]!);
+  if (!n || !r || r[1]!.length !== n[1]!.length + 2) return "not a name/run package-script step";
+  if (/\$\{\{|secrets|token/i.test(file.addedLines.join("\n"))) return "expression or secret";
+  return null;
 }

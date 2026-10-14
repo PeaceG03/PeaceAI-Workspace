@@ -7,9 +7,10 @@ import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
+import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -54,6 +55,8 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "ADD_WORKFLOW_STEP" && REVOKED_WORKFLOW_SPECS.has(s.id as string)) return false;
+  if (s.kind === "ADD_WORKFLOW_STEP" && !validWorkflowParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   return Object.keys(s).every((k) => ["schema", "id", "kind", "minedFrom", "minerVersion", "shape", "trigger", "params", "evidence"].includes(k));
 }
 
@@ -75,6 +78,12 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
 function validGuardParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
   if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...GUARD_PARAM_KEYS].join(",")) return false;
   return GUARD_PARAM_KEYS.every((k) => typeof p[k] === "string" && GUARD_VOCAB[k].includes(p[k] as string));
+}
+
+/** M19: ADD_WORKFLOW_STEP specs carry exactly the step parameters, from fixed one-value vocabularies; public-mined only. */
+function validWorkflowParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...WORKFLOW_PARAM_KEYS].join(",")) return false;
+  return WORKFLOW_PARAM_KEYS.every((k) => typeof p[k] === "string" && WORKFLOW_VOCAB[k].includes(p[k] as string));
 }
 
 /** M15: ADD_FUNCTION specs carry exactly the function parameters, from fixed vocabularies; public-mined only. */
@@ -99,6 +108,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_TEST_CASE: TEST_TRIGGER,
   ADD_THROW_GUARD: GUARD_TRIGGER,
   ADD_FUNCTION: FUNCTION_TRIGGER,
+  ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -263,6 +273,13 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   if (spec.kind === "ADD_FUNCTION") {
     try {
       return applyFunctionRule(spec.trigger, spec.params, objective, files, isTest);
+    } catch {
+      return null;
+    }
+  }
+  if (spec.kind === "ADD_WORKFLOW_STEP") {
+    try {
+      return applyWorkflowRule(spec.trigger, spec.params, objective, files, isTest);
     } catch {
       return null;
     }

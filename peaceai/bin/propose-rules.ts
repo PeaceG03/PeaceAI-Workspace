@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { tally, type Observation } from "../lib/mine.ts";
 import { exampleHunk, mineRepo } from "../lib/minegit.ts";
 import { mineTests, TEST_MINING_REPOS } from "../lib/minetest.ts";
+import { mineWorkflows } from "../lib/mineworkflow.ts";
 import { specFileText } from "../lib/learned.ts";
 import { proposalBody, proposeRules } from "../lib/propose.ts";
 
@@ -38,6 +39,10 @@ if (pub.length) {
       const t = mineTests(p.dir, p.rev, p.name);
       console.log(`tests ${p.name} commits=${t.commits} cases=${t.observations.length}`);
       obs.push(...t.observations);
+      // M19: workflow steps, same allowed public repositories (checked by label and origin).
+      const w = mineWorkflows(p.dir, p.rev, p.name);
+      console.log(`workflows ${p.name} commits=${w.commits} steps=${w.observations.length}`);
+      obs.push(...w.observations);
     } else console.log(`tests ${p.name} skipped (not an allowed public repository for test mining)`);
   }
   const stats = tally(obs);
