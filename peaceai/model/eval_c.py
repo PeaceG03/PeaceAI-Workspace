@@ -19,8 +19,9 @@ import sys
 ap = argparse.ArgumentParser()
 ap.add_argument("--model", required=True)
 ap.add_argument("--corpus", required=True)
-ap.add_argument("--max-tokens", type=int, default=262144)
-ap.add_argument("--max-bytes", type=int, default=0)
+cap = ap.add_mutually_exclusive_group()  # M40 (Auditor #160): one cap or the other, never both
+cap.add_argument("--max-tokens", type=int, default=262144)
+cap.add_argument("--max-bytes", type=int, default=0)
 ap.add_argument("--threads", type=int, default=4)
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
