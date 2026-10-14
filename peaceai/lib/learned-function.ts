@@ -258,32 +258,45 @@ export function safeNewModuleOnDisk(root: string, rel: string): boolean {
   return r === "" || (!r.startsWith("..") && !r.startsWith(sep) && !r.split(sep).includes(".."));
 }
 
-/** M23: prefix of the body stub's error code. Round 2 (Auditor #129): the harness appends a random suffix per run
- * (newStubCode), so a test cannot know the code it would have to throw to be credited. */
+/** M23: prefix of the per-run nonce the HARNESS (parent) holds; never written into the stubbed module. */
 export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
-/** Round 2 (Auditor #129): a fresh stub code per grading run, `PEACEAI_STUB_BODY_<32 hex>`. */
+/** A fresh per-run nonce, `PEACEAI_STUB_BODY_<32 hex>`, held only by the parent (names its note channel). */
 export function newStubCode(): string {
   return `${STUB_BODY_CODE}_${randomBytes(16).toString("hex")}`;
 }
+/**
+ * Round 3 (Auditor #129): the fd the stub writes its "stub ran" note to: the test process's stderr, which the
+ * parent points at a file it opened O_WRONLY|O_APPEND in its own 0700 directory (fds 0-2 survive sudo; higher fds
+ * do not). A read on it fails (EBADF) and the test has no read permission for the file's path.
+ */
+export const STUB_NOTE_FD = 2;
+export const STUB_NOTE = "\u0000peaceai-stub-ran\n";
+/** Number of stub notes in the parent's copy of the channel. */
+export const countStubNotes = (channel: string): number => channel.split(STUB_NOTE).length - 1;
+/**
+ * Round 3 (Auditor #129): the stub is WRITE-ONLY and holds no code. On each call it writes STUB_NOTE to fd
+ * STUB_NOTE_FD (opened O_WRONLY by the parent, so a read on it fails with EBADF) and returns a type default
+ * (string/number/boolean/array) or `undefined`. It never throws; the only credited failure is an assertion.
+ */
+const STUB_PRELUDE = `import { writeSync as __peaceaiStubWrite } from "node:fs";\nfunction __peaceaiStubRan(): void { try { __peaceaiStubWrite(${STUB_NOTE_FD}, ${JSON.stringify(STUB_NOTE)}); } catch { /* no note channel */ } }\n`;
 
 /**
- * M23 (Auditor, #127): the "before" state for a learned test whose fix commit CREATED the module (so the fix
- * cannot be reverted on today's file). Exported function `fn`'s whole body is replaced: by M17's type-default
- * return when that applies, else by `{ throw new Error("PEACEAI_STUB_BODY"); }`. Null (fail closed) when `fn`
- * is not exactly one exported top-level function declaration with a body, or it is a generator/overloaded.
- * `throws` is true for the throwing stub: then a test that expects a throw/rejection proves nothing and the
- * caller must refuse it.
+ * M23 (Auditor, #127): the "before" state for a learned test whose fix commit CREATED the module. Exported
+ * function `fn`'s whole body is replaced by `{ __peaceaiStubRan(); return <default>; }`. Null (fail closed) when
+ * `fn` is not exactly one top-level function declaration with a body, or is a generator/overloaded. `throws` is
+ * true when no type default applies (then `return undefined`); the caller still refuses expects-throw tests there.
+ * The note helper itself is added once by stubAll.
  */
-export function stubBody(content: string, fn: string, requireExport = true, code: string = STUB_BODY_CODE): { content: string; throws: boolean } | null {
-  const simple = stubFunction(content, fn);
-  if (simple !== null) return { content: simple, throws: false };
+export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
   if (hits.length !== 1) return null;
   const f = hits[0]!;
   if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
-  const stub = `{ throw new Error(${JSON.stringify(code)}); }`;
-  return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: true };
+  const t = f.type?.getText(sf).replace(/^readonly /, "") ?? "";
+  const dflt = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : null;
+  const stub = `{ __peaceaiStubRan(); return ${dflt ?? "undefined as never"}; }`;
+  return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: dflt === null };
 }
 
 /**
@@ -335,40 +348,38 @@ export function declaredFunctions(content: string): string[] {
  * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
  * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
  */
-export function stubAll(content: string, fns: readonly string[], code: string = STUB_BODY_CODE): { content: string; throws: boolean } | null {
+export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
   if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
   let cur = content;
   let throws = false;
   for (const fn of fns) {
-    const s = stubBody(cur, fn, false, code);
+    const s = stubBody(cur, fn, false);
     if (!s) return null;
     cur = s.content;
     throws ||= s.throws;
   }
-  return { content: cur, throws };
+  if (/__peaceaiStub/.test(content)) return null; // the real module may not name the stub helper
+  return { content: STUB_PRELUDE + cur, throws };
 }
 
 /**
- * M23 (Auditor #129, forged marker): a stub failure is credited only from the test runner's own report (TAP) and
- * only when EVERY failing test failed by an assertion (ERR_ASSERTION) or by the stub's own throw
- * (error PEACEAI_STUB_BODY). A load/import error, a crash, a timeout or any other error is not credited. No marker
- * is printed (a printed marker would be readable from the stubbed file); the test source is checked separately
- * (gradedTestSourceProblem) so it cannot read files, env or processes, nor throw the stub's code itself.
+ * Round 3 (Auditor #129): credit needs BOTH (a) the parent saw the stub run (`notes` > 0 STUB_NOTE bytes read
+ * from its own end of the write-only channel) and (b) the runner reports at least one failure and EVERY failing
+ * test failed by an assertion (ERR_ASSERTION). The stub holds no code, so nothing in the test's process can reveal
+ * or forge a credited error; load errors, crashes, timeouts and any other throw are not credited.
  */
-export function stubFailureCredited(tap: string, code: string): boolean {
-  // Round 2 (Auditor #129): only ERR_ASSERTION or this run's random stub code; the fixed prefix alone is never credited.
-  if (!new RegExp(`^${STUB_BODY_CODE}_[0-9a-f]{32}$`).test(code)) return false;
+export function stubFailureCredited(tap: string, notes: number): boolean {
+  if (!(notes > 0)) return false;
   const lines = tap.split("\n");
   let failures = 0;
   for (let i = 0; i < lines.length; i++) {
     if (!/^\s*not ok \d+ - /.test(lines[i]!)) continue;
     failures++;
-    let error = "", errCode = "";
+    let errCode = "";
     for (let j = i + 1; j < lines.length && !/^\s*(?:not ok|ok) \d+ - /.test(lines[j]!); j++) {
-      const e = /^\s+error: (.*)$/.exec(lines[j]!); if (e && !error) error = e[1]!.trim();
       const c = /^\s+code: '([A-Z_]+)'$/.exec(lines[j]!); if (c && !errCode) errCode = c[1]!;
     }
-    if (!(errCode === "ERR_ASSERTION" || error === `'${code}'`)) return false;
+    if (errCode !== "ERR_ASSERTION") return false;
   }
   return failures > 0;
 }
@@ -386,7 +397,7 @@ const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "calle
  * access, eval/Function, no `PEACEAI_STUB_BODY` text. Otherwise the reason (fail closed).
  */
 export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[]): string | null {
-  if (src.includes(STUB_BODY_CODE)) return "names the stub code";
+  if (src.includes(STUB_BODY_CODE) || src.includes("__peaceaiStub")) return "names the stub";
   const sf = ts.createSourceFile("t.ts", src, ts.ScriptTarget.Latest, true);
   let problem: string | null = null;
   // Round 2 (Auditor #129): an imported FUNCTION of the module under test may only be CALLED (`f(...)`), never read,

@@ -2,11 +2,11 @@
 // when the revert cannot apply on today's file. Fail closed otherwise.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { declaredFunctions, expectsThrow, gradedTestSourceProblem, hasNonDeclarationCallables, importedNames, newStubCode, STUB_BODY_CODE, stubAll, stubBody, stubFailureCredited } from "../lib/learned-function.ts";
+import { countStubNotes, declaredFunctions, expectsThrow, gradedTestSourceProblem, hasNonDeclarationCallables, importedNames, newStubCode, STUB_BODY_CODE, stubAll, stubBody, stubFailureCredited } from "../lib/learned-function.ts";
 import { validTestGrading, gradingVerdict } from "../lib/results.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 
@@ -24,34 +24,34 @@ const MOD = [
   "",
 ].join("\n");
 
-test("stubBody: whole body of the one exported function; type-default when M17 applies, else a throw; others untouched", () => {
+test("stubBody (round 3): whole body -> note + type default (or undefined); never throws, holds no code", () => {
   const s = stubBody(MOD, "decide")!;
-  assert.equal(s.throws, true);
-  assert.match(s.content, new RegExp(`export function decide\\(s: \\{ outcome: string; failures: number \\}\\): Mode \\{ throw new Error\\("${STUB_BODY_CODE}"\\); \\}`));
+  assert.equal(s.throws, true, "no type default: flagged so expects-throw tests are still refused");
+  assert.match(s.content, /export function decide\(s: \{ outcome: string; failures: number \}\): Mode \{ __peaceaiStubRan\(\); return undefined as never; \}/);
   assert.ok(s.content.includes("export function helper(n: number): number { return n + 1; }"));
   assert.ok(s.content.includes("export function later(): string { return \"x\"; }"));
-  assert.deepEqual(stubBody(MOD, "helper"), { content: MOD.replace("return n + 1;", "return 0;"), throws: false }, "M17 machinery reused");
+  assert.deepEqual(stubBody(MOD, "helper"), { content: MOD.replace("{\n  return n + 1;\n}", "{ __peaceaiStubRan(); return 0; }").replace("{ return n + 1; }", "{ __peaceaiStubRan(); return 0; }"), throws: false });
   for (const fn of ["missing", "Mode"]) assert.equal(stubBody(MOD, fn), null, fn);
-  assert.equal(stubBody("function decide(): number { return 1; }\nfunction decide2() {}\n".replace("function decide(", "function decide("), "decide2"), null, "not exported");
+  assert.equal(stubBody("function decide(): number { return 1; }\nfunction decide2() {}\n", "decide2"), null, "not exported");
   assert.equal(stubBody("export function* gen() { yield 1; }\n", "gen"), null, "generator");
   assert.equal(stubBody("export function f(a: number): number;\nexport function f(a: any) { return a; }\n", "f"), null, "overloads");
   assert.equal(stubBody("export declare function f(): void;\n", "f"), null, "no body");
+  assert.ok(!s.content.includes("throw") && !s.content.includes(STUB_BODY_CODE), "no throw and no code in the stubbed module");
 });
-
-test("stubAll (Auditor #129): every fix-created function stubbed; fail closed if any is missing or unstubbable", () => {
+test("stubAll (Auditor #129): every fix-created function stubbed, one write-only note helper; fail closed otherwise", () => {
   assert.deepEqual(declaredFunctions(MOD), ["helper", "decide", "later"]);
   const all = stubAll(MOD, ["helper", "decide", "later"])!;
   assert.equal(all.throws, true);
-  assert.ok(all.content.includes("{ return 0; }") || all.content.includes("return 0;"), "helper -> type default");
-  assert.ok(all.content.includes(`{ throw new Error("${STUB_BODY_CODE}"); }`), "decide -> throw");
-  assert.ok(all.content.includes('export function later(): string { return ""; }'), "later -> type default");
+  assert.ok(all.content.startsWith('import { writeSync as __peaceaiStubWrite } from "node:fs";\nfunction __peaceaiStubRan(): void { try { __peaceaiStubWrite(2, "\\u0000peaceai-stub-ran\\n"); }'), "note helper: writes only, to fd 2");
+  assert.ok(!/readSync|readFileSync|openSync|PEACEAI_STUB_BODY/.test(all.content), "the stub never reads and holds no code");
+  assert.ok(all.content.includes('export function later(): string { __peaceaiStubRan(); return ""; }'), "later -> note + type default");
   assert.equal(stubAll(MOD, ["decide", "gone"]), null, "a created function no longer present");
   assert.equal(stubAll(MOD, []), null);
   assert.equal(stubAll(MOD, ["decide", "decide"]), null);
+  assert.equal(stubAll("export function __peaceaiStubRan(): number { return 1; }\n", ["__peaceaiStubRan"]), null, "a module naming the helper");
   const priv = "function inner(x: number): number { return x * 2; }\nexport function outer(x: number): number { return inner(x) + 1; }\n";
-  assert.equal(stubAll(priv, ["inner", "outer"])!.content, "function inner(x: number): number { return 0; }\nexport function outer(x: number): number { return 0; }\n", "non-exported helpers too");
+  assert.ok(stubAll(priv, ["inner", "outer"])!.content.endsWith("function inner(x: number): number { __peaceaiStubRan(); return 0; }\nexport function outer(x: number): number { __peaceaiStubRan(); return 0; }\n"), "non-exported helpers too");
 });
-
 test("contract (Auditor #129): a test that still passes with only the tested function stubbed but a helper real is caught", () => {
   // outer delegates to a fix-created helper; stubbing outer alone would already fail, so check the stronger
   // direction: a test that calls outer passes on real code and FAILS with all created functions stubbed.
@@ -109,7 +109,7 @@ test("harness wiring: stub-body only after the revert check fails, fail closed o
   assert.match(g, /writeFileSync\(stubbed\.file, stubbed\.real\);/, "real code restored");
   assert.match(g, /stubFails: !run\.ok/);
   const sb = tc.slice(tc.indexOf("function stubBefore("), tc.indexOf("function gradeSelf("));
-  for (const re of [/if \(paths\.length !== 1\) return null;/, /--diff-filter=A/, /if \(!added\.split\("\\n"\)\.includes\(path\)\) return null;/, /isSymbolicLink\(\)/, /if \(called\.length !== 1\) return null;/, /if \(!a \|\| !b\) return null;/, /if \(fns\.size !== 1\) return null;/, /stub\.throws && tests\.some\(expectsThrow\)/, /fixContent = git\(repo, "show", `\$\{fixSha\}:\$\{path\}`\); created = declaredFunctions\(fixContent\)/, /if \(!created\.includes\(fn\)\) return null;/, /const stub = stubAll\(real, created, code\);/]) assert.match(sb, re, String(re));
+  for (const re of [/if \(paths\.length !== 1\) return null;/, /--diff-filter=A/, /if \(!added\.split\("\\n"\)\.includes\(path\)\) return null;/, /isSymbolicLink\(\)/, /if \(called\.length !== 1\) return null;/, /if \(!a \|\| !b\) return null;/, /if \(fns\.size !== 1\) return null;/, /stub\.throws && tests\.some\(expectsThrow\)/, /fixContent = git\(repo, "show", `\$\{fixSha\}:\$\{path\}`\); created = declaredFunctions\(fixContent\)/, /if \(!created\.includes\(fn\)\) return null;/, /const stub = stubAll\(real, created\);/]) assert.match(sb, re, String(re));
 });
 
 test("protected (M23): learned-function.ts and test-candidates.ts stay protected", () => {
@@ -124,10 +124,26 @@ test("Auditor #129: aliases followed, namespace/default imports fail closed", as
   assert.deepEqual(importedBindings('import type { Mode } from "./m";\n', "./m"), []);
 });
 
-const runIn = (dir: string, file: string) => {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
-  const r = spawnSync(tsx, ["--test", file], { cwd: dir, encoding: "utf8", env });
-  return { ok: r.status === 0, out: `${r.stdout}\n${r.stderr}` };
+// Mirrors the harness's runGradedTests: the test file runs directly (tsx loader), under the permission model on
+// Node >= 22 with reads narrowed to the test file, the module and node_modules; stderr is a parent-only file
+// opened write-only, and the parent counts the stub's notes in it.
+const runIn = (dir: string, file: string, module = "mod.ts") => {
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST"))), TSX_DISABLE_CACHE: "1" };
+  const modules = realpathSync(join(repo, "node_modules"));
+  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
+  const confined = Number(process.versions.node.split(".")[0]) >= 22;
+  const args = confined ? ["--permission", `--allow-fs-read=${realpathSync(join(dir, file))}`, `--allow-fs-read=${realpathSync(join(dir, module))}`, `--allow-fs-read=${modules}`, "--allow-worker", "--import", loader, "--test-reporter=tap", file] : ["--import", loader, "--test-reporter=tap", file];
+  const chan = mkdtempSync(join(tmpdir(), "m23n-"));
+  const fd = openSync(join(chan, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
+  try {
+    const r = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8", env, stdio: ["ignore", "pipe", fd] });
+    closeSync(fd);
+    const channel = readFileSync(join(chan, "channel"), "utf8");
+    return { ok: r.status === 0, out: r.stdout, channel, notes: countStubNotes(channel), confined };
+  } finally {
+    try { closeSync(fd); } catch { /* closed */ }
+    rmSync(chan, { recursive: true, force: true });
+  }
 };
 
 test("Auditor #129 behavior (real module, end to end): stubbing only the target passes, stubbing every created function fails and is credited", () => {
@@ -144,45 +160,59 @@ test("Auditor #129 behavior (real module, end to end): stubbing only the target 
     assert.equal(runIn(dir, "mod.test.ts").ok, true, "real code passes");
     writeFileSync(join(dir, "mod.ts"), stubAll(mod, ["outer"])!.content);
     assert.equal(runIn(dir, "mod.test.ts").ok, true, "only the target stubbed: still passes (would be REJECTED_PASSES_WITH_STUB)");
-    const code = newStubCode();
-    writeFileSync(join(dir, "mod.ts"), stubAll(mod, declaredFunctions(mod), code)!.content);
+    writeFileSync(join(dir, "mod.ts"), stubAll(mod, declaredFunctions(mod))!.content);
     const all = runIn(dir, "mod.test.ts");
     assert.equal(all.ok, false, "every created function stubbed: fails");
-    assert.equal(stubFailureCredited(all.out, code), true, "an assertion failure: credited");
+    assert.ok(all.notes > 0, "the parent saw the stub run");
+    assert.equal(stubFailureCredited(all.out, all.notes), true, "stub ran + assertion failure: credited");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("Auditor #129 forged marker: credit comes only from the runner's report; load errors and other throws are not credited", () => {
+test("Round 3 #129: credit needs the parent to SEE the stub run AND an assertion failure; nothing else is credited", () => {
   const dir = mkdtempSync(join(tmpdir(), "m23d-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
-    const code = newStubCode();
-    writeFileSync(join(dir, "m.ts"), stubAll(MOD, ["helper", "decide", "later"], code)!.content);
-    const head = 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { decide as d } from "./m.ts";\n';
-    const run = (src: string) => { writeFileSync(join(dir, "x.test.ts"), src); return runIn(dir, "x.test.ts"); };
-    const thrown = run(head + 'test("t", () => { assert.equal(d({ outcome: "refused", failures: 0 }).mode, "ALERT"); });\n');
-    assert.equal(thrown.ok, false); assert.equal(stubFailureCredited(thrown.out, code), true, "the stub's own throw");
-    assert.equal(stubFailureCredited(thrown.out, newStubCode()), false, "Round 2: another run's code is not credited");
-    assert.equal(stubFailureCredited(thrown.out, "PEACEAI_STUB_BODY"), false, "Round 2: the fixed prefix alone is never credited");
-    const other = run(head + 'test("t", () => { throw new TypeError("boom"); });\n');
-    assert.equal(other.ok, false); assert.equal(stubFailureCredited(other.out, code), false, "another error");
+    writeFileSync(join(dir, "m.ts"), stubAll(MOD, ["helper", "decide", "later"])!.content);
+    const head = 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { decide as d, later } from "./m.ts";\n';
+    const run = (src: string) => { writeFileSync(join(dir, "x.test.ts"), src); return runIn(dir, "x.test.ts", "m.ts"); };
+    const good = run(head + 'test("t", () => { assert.equal(later(), "x"); });\n');
+    assert.equal(good.ok, false); assert.equal(good.notes, 1); assert.equal(stubFailureCredited(good.out, good.notes), true, "stub ran, assertion failed");
+    const crash = run(head + 'test("t", () => { assert.equal(d({ outcome: "refused", failures: 0 }).mode, "ALERT"); });\n');
+    assert.equal(crash.ok, false); assert.ok(crash.notes > 0); assert.equal(stubFailureCredited(crash.out, crash.notes), false, "stub ran but the failure is a TypeError");
+    const noCall = run(head + 'test("t", () => { assert.equal(1, 2); });\n');
+    assert.equal(noCall.notes, 0); assert.equal(stubFailureCredited(noCall.out, noCall.notes), false, "assertion failed but the stub never ran");
+    const other = run(head + 'test("t", () => { later(); throw new TypeError("boom"); });\n');
+    assert.equal(stubFailureCredited(other.out, other.notes), false, "another error");
     const load = run('import test from "node:test";\nimport { nope } from "./missing.ts";\ntest("t", () => { nope(); });\n');
-    assert.equal(load.ok, false); assert.equal(stubFailureCredited(load.out, code), false, "import/load error");
-    assert.equal(stubFailureCredited("", code), false);
-    assert.equal(stubFailureCredited("ok 1 - t\n", code), false, "no failure");
+    assert.equal(load.ok, false); assert.equal(stubFailureCredited(load.out, load.notes), false, "import/load error");
+    assert.equal(stubFailureCredited("not ok 1 - t\n  code: 'ERR_ASSERTION'\n", 0), false, "no notes, no credit");
+    assert.equal(stubFailureCredited("ok 1 - t\n", 3), false, "no failure");
+    // An escaped test (one that got past the source checks) tries to read the note fd and the stubbed source.
+    const escaped = run(head + 'test("t", async () => { const fs = await import("node:fs"); let r = "";\n'
+      + '  try { const b = Buffer.alloc(64); fs.readSync(2, b); r += "fd:" + b.toString(); } catch (e: any) { r += "fd:" + e.code; }\n'
+      + '  try { r += " src:" + fs.readFileSync("m.ts", "utf8").includes("PEACEAI_STUB_BODY_"); } catch (e: any) { r += " src:" + e.code; }\n'
+      + '  try { fs.readFileSync("package.json"); r += " other:read"; } catch (e: any) { r += " other:" + e.code; }\n'
+      + '  assert.equal(r, "none"); });\n');
+    assert.equal(escaped.ok, false);
+    assert.equal(escaped.notes, 0, "it learned nothing that makes the stub's note appear");
+    assert.equal(stubFailureCredited(escaped.out, escaped.notes), false, "an escaped reader gets no credit");
+    assert.match(escaped.out, /fd:EBADF/, "the note fd is write-only");
+    assert.match(escaped.out, /src:false/, "the stubbed source holds no code");
+    if (escaped.confined) assert.match(escaped.out, /other:ERR_ACCESS_DENIED/, "reads outside the test, module and node_modules are denied");
+    assert.equal(gradedTestSourceProblem(head.replace(", later", "") + 'test("t", async () => { const fs = await import("node:fs"); });\n', ["./m.ts"], FNS), "dynamic import", "and the harness refuses such a test before it runs");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  // A test cannot read the stubbed file, env or processes, or forge the stub's code.
+  // A test cannot read the stubbed file, env or processes, or name the stub.
   const h = 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { decide } from "./m";\n';
   for (const [src, why] of [
     ['import { readFileSync } from "node:fs";\n', "fs import"],
     [h + 'test("t", async () => { const fs = await import("node:fs"); });\n', "dynamic import"],
     [h + 'test("t", () => { process.stderr.write("x"); });\n', "process"],
     [h + 'test("t", () => { console.error("x"); });\n', "console"],
-    [h + 'test("t", () => { throw new Error("PEACEAI_STUB_BODY"); });\n', "stub code"],
+    [h + 'test("t", () => { __peaceaiStubRan(); });\n', "the note helper"],
     [h + 'test("t", () => { const u = import.meta.url; });\n', "import.meta"],
     [h + 'test("t", () => { globalThis.x = 1; });\n', "globalThis"],
     [h + 'test("t", () => { const g = (0, eval)("1"); });\n', "eval"],
@@ -190,9 +220,7 @@ test("Auditor #129 forged marker: credit comes only from the runner's report; lo
     [h + 'import { x } from "./other";\n', "other module"],
   ] as const) assert.ok(gradedTestSourceProblem(src, ["./m", "./m.ts"]), why);
   assert.equal(gradedTestSourceProblem(h + 'test("t", () => { assert.equal(decide({ outcome: "x", failures: 0 }).mode, "DAILY"); });\n', ["./m", "./m.ts"]), null);
-  assert.ok(!readFileSync(join(repo, "peaceai/lib/learned-function.ts"), "utf8").includes("PEACEAI_STUB_REACHED"), "no printed marker remains");
 });
-
 test("Auditor #129: fail closed on any callable that is not a top-level function declaration", () => {
   for (const src of [
     "export const f = (n: number): number => n;\n",
@@ -206,12 +234,12 @@ test("Auditor #129: fail closed on any callable that is not a top-level function
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   assert.match(tc, /if \(hasNonDeclarationCallables\(fixContent\) \|\| hasNonDeclarationCallables\(real\)\) return null;/);
   assert.match(tc, /if \(gradedTestSourceProblem\(tests\[i\]!, \[spec, `\$\{spec\}\.ts`\], moduleFunctions\)\) return null;/);
-  assert.match(tc, /const credited = !run\.ok && stubFailureCredited\(run\.out, code\);/);
+  assert.match(tc, /const credited = !run\.ok && stubFailureCredited\(run\.out, run\.notes\);/);
 });
 
 test("Auditor #129: harness restores the file in finally, records stubbed names, refuses unreached stubs", () => {
   const g = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
-  assert.match(g, /try \{\s*run = runGradedTests\(tree, tsx, newTests\);\s*\} finally \{\s*writeFileSync\(stubbed\.file, stubbed\.real\);/);
+  assert.match(g, /try \{\s*run = runGradedTests\(tree, tsx, newTests, stubbed\.file, true\);\s*\} finally \{\s*writeFileSync\(stubbed\.file, stubbed\.real\);/);
   assert.match(g, /if \(!run\.ok && !credited\) return \{ \.\.\.ungradable\("stub-not-reached"\), stubbed: stubbed\.stubbed \};/);
   assert.match(g, /stubFails: !run\.ok, stubbed: stubbed\.stubbed/);
   assert.ok(validTestGrading({ fixSha: "a".repeat(40), afterFix: true, beforeFix: false, verdict: "COUNTS", reason: null, stubFails: true, stubbed: ["decide", "helper"] }));
@@ -237,7 +265,7 @@ test("Round 2 #129 item 1: test files may not name constructor, __proto__, proto
 test("Round 2 #129 item 1: graded tests run under the permission model on Node >= 22 (no fs write, no child_process)", () => {
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   const g = tc.slice(tc.indexOf("function runGradedTests("), tc.indexOf("const REAL_RUNS_REQUIRED"));
-  assert.match(g, /"--permission", `--allow-fs-read=\$\{realpathSync\(tree\)\}`, `--allow-fs-read=\$\{modules\}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t\]/);
+  assert.match(g, /"--permission", `--allow-fs-read=\$\{realpathSync\(join\(tree, t\)\)\}`, `--allow-fs-read=\$\{realpathSync\(module\)\}`, `--allow-fs-read=\$\{modules\}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t\]/, "reads: test file, module, node_modules only");
   assert.doesNotMatch(g, /allow-fs-write|allow-child-process|allow-addons|allow-wasi/, "never granted");
   assert.match(g, /TSX_DISABLE_CACHE: "1"/);
   if (Number(process.versions.node.split(".")[0]) < 22) return; // CI runs Node 22: the live check below runs there
@@ -279,22 +307,18 @@ test("Round 2 #129 item 2: an imported function may only be called, never string
   assert.ok(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(K, 7); });\n', ["./m"]), "without the module's function list every binding is call-only");
 });
 
-test("Round 2 #129 item 3: credit only ERR_ASSERTION or this run's random stub code", () => {
+test("Round 3 #129: the random nonce stays in the parent; the harness wiring", () => {
   const a = newStubCode(), b = newStubCode();
   assert.match(a, /^PEACEAI_STUB_BODY_[0-9a-f]{32}$/); assert.notEqual(a, b);
-  const tap = (err: string, code: string) => `not ok 1 - t\n  ---\n  error: '${err}'\n  code: '${code}'\n  ...\n`;
-  assert.equal(stubFailureCredited(tap("x", "ERR_ASSERTION"), a), true);
-  assert.equal(stubFailureCredited(tap(a, "ERR_TEST_FAILURE"), a), true);
-  assert.equal(stubFailureCredited(tap(b, "ERR_TEST_FAILURE"), a), false, "another run's code");
-  assert.equal(stubFailureCredited(tap("PEACEAI_STUB_BODY", "ERR_TEST_FAILURE"), a), false, "the guessable prefix");
-  assert.equal(stubFailureCredited(tap("PEACEAI_STUB_BODY", "ERR_TEST_FAILURE"), "PEACEAI_STUB_BODY"), false, "a non-random code is never accepted");
-  assert.equal(stubFailureCredited(tap("x", "ERR_ASSERTION") + tap("boom", "ERR_TEST_FAILURE"), a), false, "every failure must qualify");
-  assert.ok(stubBody(MOD, "decide", true, a)!.content.includes(`throw new Error("${a}")`));
-  assert.ok(gradedTestSourceProblem(H2 + 'test("t", () => { throw new Error("PEACEAI_STUB_BODY_" + "0".repeat(32)); });\n', ["./m"], FNS), "the prefix may not appear in a test");
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
-  assert.match(tc, /const code = newStubCode\(\);\s*const stubbed = stubBefore\(tree, fixSha, paths, newTests, code\);/, "a fresh code per grading run");
+  const g = tc.slice(tc.indexOf("function runGradedTests("), tc.indexOf("const REAL_RUNS_REQUIRED"));
+  assert.match(g, /dir = mkdtempSync\(join\(tmpdir\(\), `\$\{newStubCode\(\)\}-`\)\);/, "nonce names the parent-only directory");
+  assert.match(g, /fd = openSync\(join\(dir, "channel"\), fsConstants\.O_WRONLY \| fsConstants\.O_CREAT \| fsConstants\.O_APPEND \| fsConstants\.O_EXCL, 0o600\);/, "write-only for the child");
+  assert.match(g, /seen \+= countStubNotes\(readFileSync\(join\(dir, "channel"\), "utf8"\)\);/, "only the parent reads it");
+  assert.match(tc, /const credited = !run\.ok && stubFailureCredited\(run\.out, run\.notes\);/);
+  assert.match(tc, /run = runGradedTests\(tree, tsx, newTests, stubbed\.file, true\);/);
+  assert.ok(!/stubAll\(real, created, /.test(tc), "nothing secret is passed into the stub");
 });
-
 test("Round 2 #129 item 4: no Math.random, Date, performance, Symbol; the real code must pass 3 runs", () => {
   for (const [body, why] of [
     ['if (Math.random() < 0.5) assert.fail("x");', "Math.random"],
@@ -306,7 +330,7 @@ test("Round 2 #129 item 4: no Math.random, Date, performance, Symbol; the real c
   ] as const) assert.ok(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS), why);
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   assert.match(tc, /const REAL_RUNS_REQUIRED = 3;/);
-  assert.match(tc, /if \(afterFix\) for \(let i = 1; i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runGradedTests\(tree, tsx, newTests\)\.ok\) return ungradable\("real-not-stable"\);/);
+  assert.match(tc, /if \(afterFix\) for \(let i = 1; i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runGradedTests\(tree, tsx, newTests, join\(tree, paths\[0\]!\)\)\.ok\) return ungradable\("real-not-stable"\);/);
   const g = tc.slice(tc.indexOf("function gradeTest("), tc.indexOf("function stubBefore("));
   assert.ok(g.indexOf('ungradable("real-not-stable")') < g.indexOf("const stubbed = stubBefore("), "stability runs come before the stub is written");
 });
