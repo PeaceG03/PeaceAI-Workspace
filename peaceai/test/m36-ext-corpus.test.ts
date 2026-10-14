@@ -27,10 +27,10 @@ test("config: valid, every repo pinned with an allowed SPDX id and license sha25
   for (const r of cfg.repos) assert.ok((ALLOWED_SPDX as readonly string[]).includes(r.spdx));
 });
 
-test("set C v2: rule text, deterministic whole-repo selection, not wired as eval", () => {
+test("set C v2: rule text, deterministic whole-repo selection, wired as eval (M37)", () => {
   assert.equal(c.schema, "peaceai-heldout-c:v2");
   assert.equal(c.rule, EXT_C_RULE);
-  assert.equal(c.wiredAsEval, false);
+  assert.equal(c.wiredAsEval, true, "M37: wired as the eval set (Architect)");
   const names = cfg.repos.map((r: { name: string }) => r.name);
   assert.deepEqual(c.sets.C.map((e) => e.repo), extCRepos(names));
   assert.deepEqual(extCRepos([...names].reverse()), extCRepos(names), "order-independent");
