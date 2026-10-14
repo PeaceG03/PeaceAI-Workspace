@@ -36,7 +36,7 @@ const expr = (line: string): { site: string; text: string } | null => {
 };
 void SITE;
 
-export function observeBodyFile(commit: string, path: string, pre: string, post: string, diff: string): Observation[] {
+export function observeBodyFile(commit: string, path: string, pre: string, post: string, diff: string, repo?: string): Observation[] {
   const out: Observation[] = [];
   const preF = functions(pre), postF = functions(post);
   for (const h of parseHunks(diff)) {
@@ -52,7 +52,7 @@ export function observeBodyFile(commit: string, path: string, pre: string, post:
       const widened = new Set([...allowed, ...localsBefore(f.body, pos)]);
       const fits = (ns: Set<string>) => [...freeNames(ne)].every((n) => ns.has(n));
       const names = fits(widened) ? "old-names-params-and-enclosing-locals" : "other";
-      out.push({ shape: "EXPR_REPLACE", commit, path, line: h.newStart, style: { site: a.site, names, vocabulary: safeExpression(ne, widened, calleesOf(oe)) && editablePath(path) ? "pure" : "other" } });
+      out.push({ shape: "EXPR_REPLACE", commit, path, line: h.newStart, style: { site: a.site, names, vocabulary: safeExpression(ne, widened, calleesOf(oe)) && editablePath(repo, path) ? "pure" : "other" } });
     } else if (h.removed.length === 0 && h.added.length === 1) {
       const m = /^if \((.+)\) (throw new Error\(["'][A-Z][A-Z0-9_]{2,63}["']\)|return [^;]*);$/.exec(h.added[0]!.trim());
       if (!m) continue;
@@ -81,7 +81,7 @@ export function mineBody(dir: string, rev: string, label: string): { commits: nu
     if (files.length === 0 || files.length > MAX_FILES_PER_COMMIT) continue;
     for (const f of files.filter((x) => SOURCE_FILE.test(x) && !SKIP_FILE.test(x))) {
       try {
-        observations.push(...observeBodyFile(`${label}@${c.slice(0, 10)}`, f, git("show", `${c}^:${f}`), git("show", `${c}:${f}`), git("diff", "-U0", "--no-color", "--no-renames", `${c}^`, c, "--", f)));
+        observations.push(...observeBodyFile(`${label}@${c.slice(0, 10)}`, f, git("show", `${c}^:${f}`), git("show", `${c}:${f}`), git("diff", "-U0", "--no-color", "--no-renames", `${c}^`, c, "--", f), `PeaceG03/${label}`));
       } catch { /* root commit */ }
     }
   }

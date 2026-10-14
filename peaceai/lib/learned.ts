@@ -268,7 +268,7 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
 }
 
 /** Runs one rule against the objective. Null when the trigger does not match or the edit is not unique. */
-export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean): LearnedEdit | null {
+export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string): LearnedEdit | null {
   if (spec.kind === "ADD_TEST_CASE") {
     try {
       const task = parseTestTask(spec.trigger, objective);
@@ -293,7 +293,7 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   }
   if (spec.kind === "REPLACE_EXPRESSION") {
     try {
-      return applyReplaceRule(spec.trigger, spec.params, objective, files, isTest);
+      return applyReplaceRule(spec.trigger, spec.params, objective, files, isTest, repo); // Round 3 (#136): per-repo allow-list
     } catch {
       return null;
     }

@@ -53,14 +53,17 @@ const sameTokens = (a: string, b: string) => { const x = tokens(a), y = tokens(b
  * by hand at the time of listing. Any other path, including every new file and all PeaceSTOCKS scanner-chain
  * code, is refused. Adding a path is a change to this protected file (own PR, Auditor review).
  */
-export const EDITABLE_PATHS: readonly string[] = [
-  // PeaceAI-Workspace
-  "src/config.ts", "src/numbers.ts", "src/presets.ts", "src/status.ts",
-  // PeaceSTOCKS (as of 58fdb6c)
-  "src/contracts.ts", "src/corporate-action-coverage.ts", "src/et-time.ts", "src/features.ts", "src/num-utils.ts",
-  "src/ranking.ts", "src/recipes.ts", "src/reply-dust-dictionary.ts",
-];
-export const editablePath = (path: string): boolean => EDITABLE_PATHS.includes(path);
+export const EDITABLE_PATHS: Readonly<Record<string, readonly string[]>> = {
+  // Round 3 (Auditor #136): keyed per repository, so a path is editable only in the repo it was checked in.
+  "PeaceG03/PeaceAI-Workspace": ["src/config.ts", "src/numbers.ts", "src/presets.ts", "src/status.ts"],
+  "PeaceG03/PeaceSTOCKS": [ // as of 58fdb6c
+    "src/contracts.ts", "src/corporate-action-coverage.ts", "src/et-time.ts", "src/features.ts", "src/num-utils.ts",
+    "src/ranking.ts", "src/recipes.ts", "src/reply-dust-dictionary.ts",
+  ],
+};
+/** True only when `repo` is listed and `path` is on that repo's list (unknown or missing repo: false). */
+export const editablePath = (repo: string | undefined, path: string): boolean =>
+  !!repo && Object.hasOwn(EDITABLE_PATHS, repo) && EDITABLE_PATHS[repo]!.includes(path);
 const CALLS = new Set(["Number.isFinite", "Number.isInteger", "Number.isNaN", "Number.isSafeInteger", "Array.isArray", "Math.min", "Math.max", "Math.abs", "Math.floor", "Math.ceil", "Math.round"]);
 const BIN = new Set([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken]);
 
@@ -162,7 +165,7 @@ function ownStatements(body: ts.Block): ts.Statement[] {
   return out;
 }
 
-export function applyReplaceRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): BodyEdit | null {
+export function applyReplaceRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), repo?: string): BodyEdit | null {
   if (!okParams(params, BODY_PARAM_KEYS, BODY_VOCAB)) return null;
   const heads = objective.split("\n").map((l) => l.trim()).filter((l) => new RegExp(trigger, "i").test(l));
   if (heads.length !== 1) return null;
@@ -173,7 +176,7 @@ export function applyReplaceRule(trigger: string, params: Record<string, string 
   const oldE = parseExpr(oldText), newE = parseExpr(newText);
   if (!oldE || !newE || sameTokens(oldText, newText)) return null;
   const target = files.find((f) => f.path === g.file);
-  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || !editablePath(target.path)) return null;
+  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || !editablePath(repo, target.path)) return null;
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
   const fn = exportedFunction(sf, g.fn!);
   if (!fn) return null;

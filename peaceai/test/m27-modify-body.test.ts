@@ -6,7 +6,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..", "..");
-import { applyReplaceRule, assertionFailuresOnly, BODY_VOCAB, REPLACE_TRIGGER, tokens } from "../lib/learned-body.ts";
+import { applyReplaceRule, assertionFailuresOnly, BODY_VOCAB, EDITABLE_PATHS as EP, REPLACE_TRIGGER, tokens } from "../lib/learned-body.ts";
+/** The repository whose allow-list holds `path` (test fixtures use real allow-listed paths). */
+const repoOf = (path: string) => Object.entries(EP).find(([, ps]) => ps.includes(path))?.[0] ?? "PeaceG03/PeaceSTOCKS";
 
 const P = { calls: BODY_VOCAB.calls[0], grading: "self-fail-before-pass-after", match: "unique-site", names: BODY_VOCAB.names[0], paths: BODY_VOCAB.paths[0], sites: [...BODY_VOCAB.sites], test: "new-file" };
 const SRC = [
@@ -20,7 +22,7 @@ const SRC = [
   "",
 ].join("\n");
 const files = [{ path: "src/status.ts", content: SRC }];
-const R = (line: string, bullets = ['- mode(3, 3) is "DAILY"']) => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), files);
+const R = (line: string, bullets = ['- mode(3, 3) is "DAILY"']) => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), files, undefined, repoOf(files[0]!.path));
 
 test("REPLACE_EXPRESSION: one if-condition or one return expression, test file added, selfGrade", () => {
   const e = R("in mode in src/status.ts: replace condition failures < limit with failures <= limit")!;
@@ -53,7 +55,7 @@ test("REPLACE_EXPRESSION: prior locals and old callees allowed; new callees refu
   assert.ok(R("in mode in src/status.ts: replace condition failures < limit with failures < limit && over < 2"), "prior const local");
   const src = "export function f(s: string[]): boolean {\n  if (s.includes(\"a\")) return true;\n  return false;\n}\n";
   const fl = [{ path: "src/numbers.ts", content: src }];
-  const T = (l: string) => applyReplaceRule(REPLACE_TRIGGER, P, `${l}\n- f(["b"]) is true`, fl);
+  const T = (l: string) => applyReplaceRule(REPLACE_TRIGGER, P, `${l}\n- f(["b"]) is true`, fl, undefined, repoOf(fl[0]!.path));
   assert.ok(T('in f in src/numbers.ts: replace condition s.includes("a") with s.includes("a") || s.includes("b")'), "same callee");
   assert.equal(T('in f in src/numbers.ts: replace condition s.includes("a") with s.some(Boolean)'), null, "new method");
   assert.equal(T('in f in src/numbers.ts: replace condition s.includes("a") with s.includes(eval("1"))'), null, "global call in args");
@@ -82,7 +84,7 @@ test("M27 (after Auditor #136 fixes): evidence is below the bar, so no spec is w
 });
 
 // Auditor (#136) fixes 1-6.
-const R2 = (src: string, line: string, bullets = ["- g(1) is 1"], path = "src/num-utils.ts") => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), [{ path, content: src }]);
+const R2 = (src: string, line: string, bullets = ["- g(1) is 1"], path = "src/num-utils.ts") => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), [{ path, content: src }], undefined, repoOf(path));
 test("Auditor #136 (1): a const in an earlier, closed block is not in scope", () => {
   const src = "export function g(x: number): number {\n  if (x) { const process = 1; }\n  if (x < 0) return 0;\n  return x;\n}\n";
   assert.equal(R2(src, "in g in src/num-utils.ts: replace condition x < 0 with process.env.SECRET === undefined"), null);
@@ -158,18 +160,35 @@ test("Round 2 (Auditor #136, 2): paths are an allow-list; any unlisted path is r
   const { EDITABLE_PATHS, editablePath, BODY_VOCAB } = await import("../lib/learned-body.ts");
   assert.deepEqual(BODY_VOCAB.paths, ["allow-listed-leaf-modules"]);
   const { PROTECTED_SELF } = await import("../lib/selfchange.ts");
-  for (const p of EDITABLE_PATHS) {
+  for (const p of Object.values(EDITABLE_PATHS).flat()) {
     assert.ok(!PROTECTED_SELF.some((x) => x.pattern.test(p)), `${p} not protected`);
     assert.ok(!/^src\/(?:tenmin|scan|scanner|markets-scanner|scheduler|daily|intraday|oct2024|restarter|backfill|redispatch|chain)/.test(p), `${p} not scanner-chain`);
   }
   const src = "export function g(x: number): number {\n  if (x < 0) return 0;\n  return x;\n}\n";
   // Paths a prefix deny-list would have let through: all refused now.
   for (const path of ["src/new-module.ts", "src/us-calendar.ts", "src/session-open.ts", "src/storage.ts", "src/host.ts", "src/index.ts", "src/Scanner.ts", "src/s-c-a-n.ts", "lib/num-utils.ts", "src/num-utils.tsx", "src/num-utils.ts/../scanner.ts", "./src/num-utils.ts"]) {
-    assert.equal(editablePath(path), false, path);
+    assert.equal(editablePath("PeaceG03/PeaceSTOCKS", path) || editablePath("PeaceG03/PeaceAI-Workspace", path), false, path);
     assert.equal(R2(src, `in g in ${path}: replace condition x < 0 with x <= 0`, ["- g(1) is 1"], path), null, path);
   }
-  for (const path of EDITABLE_PATHS) assert.ok(R2(src, `in g in ${path}: replace condition x < 0 with x <= 0`, ["- g(1) is 1"], path), path);
+  for (const path of Object.values(EDITABLE_PATHS).flat()) assert.ok(R2(src, `in g in ${path}: replace condition x < 0 with x <= 0`, ["- g(1) is 1"], path), path);
   const lb = readFileSync(join(root, "peaceai/lib/learned-body.ts"), "utf8");
   assert.ok(!lb.includes("SCANNER_PATH"), "no deny-list left");
-  assert.match(lb, /PROTECTED_SELF\.some\(\(p\) => p\.pattern\.test\(target\.path\)\) \|\| !editablePath\(target\.path\)\) return null;/);
+  assert.match(lb, /PROTECTED_SELF\.some\(\(p\) => p\.pattern\.test\(target\.path\)\) \|\| !editablePath\(repo, target\.path\)\) return null;/);
+});
+
+test("Round 3 (Auditor #136): EDITABLE_PATHS is keyed per repository; a listed path in the other repo, or no repo, is refused", async () => {
+  const { EDITABLE_PATHS, editablePath } = await import("../lib/learned-body.ts");
+  assert.deepEqual(Object.keys(EDITABLE_PATHS).sort(), ["PeaceG03/PeaceAI-Workspace", "PeaceG03/PeaceSTOCKS"]);
+  const src = "export function g(x: number): number {\n  if (x < 0) return 0;\n  return x;\n}\n";
+  const at = (repo: string | undefined, path: string) => applyReplaceRule(REPLACE_TRIGGER, P, `in g in ${path}: replace condition x < 0 with x <= 0\n- g(1) is 1`, [{ path, content: src }], undefined, repo);
+  assert.ok(at("PeaceG03/PeaceSTOCKS", "src/num-utils.ts"), "listed for STOCKS");
+  assert.equal(at("PeaceG03/PeaceAI-Workspace", "src/num-utils.ts"), null, "same path, other repo");
+  assert.ok(at("PeaceG03/PeaceAI-Workspace", "src/numbers.ts"), "listed for Workspace");
+  assert.equal(at("PeaceG03/PeaceSTOCKS", "src/numbers.ts"), null, "Workspace path in STOCKS");
+  assert.equal(at(undefined, "src/num-utils.ts"), null, "no repo: fail closed");
+  assert.equal(at("PeaceG03/PeaceAI", "src/num-utils.ts"), null, "unlisted repo");
+  assert.equal(at("constructor", "src/num-utils.ts"), null, "prototype keys are not repos");
+  assert.equal(editablePath("toString", "src/num-utils.ts"), false);
+  assert.match(readFileSync(join(root, "peaceai/bin/generate.ts"), "utf8"), /applyRule\(a\.spec, objectiveText, \[\.\.\.candidatesForContext, \.\.\.workflowFiles\], scope\.isTest, target\);/, "the generator passes the task's target repo");
+  assert.match(readFileSync(join(root, "peaceai/lib/minebody.ts"), "utf8"), /`PeaceG03\/\$\{label\}`\)\);/, "the miner checks fits against the mined repo's list");
 });
