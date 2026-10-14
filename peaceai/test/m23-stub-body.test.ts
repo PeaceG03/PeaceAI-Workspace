@@ -228,8 +228,10 @@ test("Auditor #129: fail closed on any callable that is not a top-level function
     "export class C { m(): number { return 1; } }\n",
     "export const o = { m(): number { return 1; } };\n",
     "export const o = { get v(): number { return 1; } };\n",
-    "export const xs = [1].map((x) => x);\n",
+    "export const xs = [1].map((x) => () => x);\n",
+    "export const xs = [1].map((x) => x);\nxs.map(String);\n",
   ]) assert.equal(hasNonDeclarationCallables(src), true, src);
+  assert.equal(hasNonDeclarationCallables("export const xs = [1].map((x) => x);\n"), false, "M30 (Auditor, #127): a pure load-time callback over a data literal");
   assert.equal(hasNonDeclarationCallables("export function f(xs: number[]): number[] { return xs.map((x) => x + 1); }\nexport const N = 3;\n"), false, "arrows inside a declaration's body are stubbed with it");
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   assert.match(tc, /if \(hasNonDeclarationCallables\(fixContent\) \|\| hasNonDeclarationCallables\(real\)\) return null;/);
