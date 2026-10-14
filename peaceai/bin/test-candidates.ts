@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, expectsThrow, importedNames, stubBody, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, declaredFunctions, expectsThrow, importedNames, stubAll, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -137,7 +137,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
       if (!stubbed) return ungradable("revert-failed");
       const stubPass = runCandidate(tree, tsx, ["--test", ...newTests]);
       writeFileSync(stubbed.file, stubbed.real);
-      console.log(`grading: stub-body before-state for ${stubbed.fn} (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
+      console.log(`grading: stub-body before-state (all fix-created functions; tested ${stubbed.fn}) (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
       return { fixSha, afterFix, beforeFix: stubPass, verdict: gradingVerdict(afterFix, stubPass, !stubPass), reason: null, stubFails: !stubPass };
     }
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
@@ -176,7 +176,11 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
   const fn = [...fns][0]!;
   if (!tests.every((t) => callsFunction(t, fn))) return null;
   const real = readFileSync(file, "utf8");
-  const stub = stubBody(real, fn);
+  // Auditor (#129): stub EVERY function the fix commit created in the module, not only the tested one.
+  let created: string[];
+  try { created = declaredFunctions(git(repo, "show", `${fixSha}:${path}`)); } catch { return null; }
+  if (!created.includes(fn)) return null;
+  const stub = stubAll(real, created);
   if (!stub || (stub.throws && tests.some(expectsThrow))) return null;
   writeFileSync(file, stub.content);
   return { file, real, fn };

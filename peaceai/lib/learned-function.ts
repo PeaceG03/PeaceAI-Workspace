@@ -269,14 +269,14 @@ export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
  * `throws` is true for the throwing stub: then a test that expects a throw/rejection proves nothing and the
  * caller must refuse it.
  */
-export function stubBody(content: string, fn: string): { content: string; throws: boolean } | null {
+export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
   const simple = stubFunction(content, fn);
   if (simple !== null) return { content: simple, throws: false };
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
   if (hits.length !== 1) return null;
   const f = hits[0]!;
-  if (!f.body || f.asteriskToken || !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) return null;
+  if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
   const stub = `{ throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
   return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: true };
 }
@@ -297,4 +297,27 @@ export function importedNames(testContent: string, spec: string): string[] {
 /** M23: true when a test expects a throw or rejection (assert.throws / assert.rejects / assert.doesNotThrow...). */
 export function expectsThrow(testContent: string): boolean {
   return /\bassert\s*\.\s*(?:throws|rejects|doesNotThrow|doesNotReject)\s*\(/.test(testContent);
+}
+
+/** M23: names of the top-level function declarations (with a body) in a module. */
+export function declaredFunctions(content: string): string[] {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  return sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && !!s.name && !!s.body).map((s) => s.name!.text);
+}
+
+/**
+ * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
+ * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
+ */
+export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
+  if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
+  let cur = content;
+  let throws = false;
+  for (const fn of fns) {
+    const s = stubBody(cur, fn, false);
+    if (!s) return null;
+    cur = s.content;
+    throws ||= s.throws;
+  }
+  return { content: cur, throws };
 }

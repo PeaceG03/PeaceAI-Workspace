@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { expectsThrow, importedNames, STUB_BODY_CODE, stubBody } from "../lib/learned-function.ts";
+import { declaredFunctions, expectsThrow, importedNames, STUB_BODY_CODE, stubAll, stubBody } from "../lib/learned-function.ts";
 import { validTestGrading, gradingVerdict } from "../lib/results.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 
@@ -38,6 +38,39 @@ test("stubBody: whole body of the one exported function; type-default when M17 a
   assert.equal(stubBody("export declare function f(): void;\n", "f"), null, "no body");
 });
 
+test("stubAll (Auditor #129): every fix-created function stubbed; fail closed if any is missing or unstubbable", () => {
+  assert.deepEqual(declaredFunctions(MOD), ["helper", "decide", "later"]);
+  const all = stubAll(MOD, ["helper", "decide", "later"])!;
+  assert.equal(all.throws, true);
+  assert.ok(all.content.includes("{ return 0; }") || all.content.includes("return 0;"), "helper -> type default");
+  assert.ok(all.content.includes(`{ throw new Error("${STUB_BODY_CODE}"); }`), "decide -> throw");
+  assert.ok(all.content.includes('export function later(): string { return ""; }'), "later -> type default");
+  assert.equal(stubAll(MOD, ["decide", "gone"]), null, "a created function no longer present");
+  assert.equal(stubAll(MOD, []), null);
+  assert.equal(stubAll(MOD, ["decide", "decide"]), null);
+  const priv = "function inner(x: number): number { return x * 2; }\nexport function outer(x: number): number { return inner(x) + 1; }\n";
+  assert.equal(stubAll(priv, ["inner", "outer"])!.content, "function inner(x: number): number { return 0; }\nexport function outer(x: number): number { return 0; }\n", "non-exported helpers too");
+});
+
+test("contract (Auditor #129): a test that still passes with only the tested function stubbed but a helper real is caught", () => {
+  // outer delegates to a fix-created helper; stubbing outer alone would already fail, so check the stronger
+  // direction: a test that calls outer passes on real code and FAILS with all created functions stubbed.
+  const dir = mkdtempSync(join(tmpdir(), "m23b-"));
+  try {
+    const mod = "export function inner(x: number): number { return x * 2; }\nexport function outer(x: number): number { return inner(x) + 1; }\n";
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(dir, "mod.ts"), mod);
+    writeFileSync(join(dir, "mod.test.ts"), 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { outer } from "./mod.ts";\ntest("t", () => { assert.equal(outer(2), 5); });\n');
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
+    const run = () => spawnSync(tsx, ["--test", "mod.test.ts"], { cwd: dir, encoding: "utf8", env }).status === 0;
+    assert.equal(run(), true, "passes on real code");
+    writeFileSync(join(dir, "mod.ts"), stubAll(mod, declaredFunctions(mod))!.content);
+    assert.equal(run(), false, "fails with all created functions stubbed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("importedNames / expectsThrow", () => {
   const t = 'import assert from "node:assert/strict";\nimport { decide, helper as h, type Mode } from "./mod";\nimport type { X } from "./mod";\n';
   assert.deepEqual(importedNames(t, "./mod"), ["decide", "helper"]);
@@ -56,7 +89,7 @@ test("contract: the test passes on the real module and FAILS on the stubbed body
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
     const run = () => spawnSync(tsx, ["--test", "mod.test.ts"], { cwd: dir, encoding: "utf8", env }).status === 0;
     const after = run();
-    writeFileSync(join(dir, "mod.ts"), stubBody(MOD, "decide")!.content);
+    writeFileSync(join(dir, "mod.ts"), stubAll(MOD, declaredFunctions(MOD))!.content);
     const before = run();
     assert.equal(after, true);
     assert.equal(before, false);
@@ -76,7 +109,7 @@ test("harness wiring: stub-body only after the revert check fails, fail closed o
   assert.match(g, /writeFileSync\(stubbed\.file, stubbed\.real\);/, "real code restored");
   assert.match(g, /stubFails: !stubPass/);
   const sb = tc.slice(tc.indexOf("function stubBefore("), tc.indexOf("function gradeSelf("));
-  for (const re of [/if \(paths\.length !== 1\) return null;/, /--diff-filter=A/, /if \(!added\.split\("\\n"\)\.includes\(path\)\) return null;/, /isSymbolicLink\(\)/, /if \(names\.length !== 1\) return null;/, /if \(fns\.size !== 1\) return null;/, /callsFunction\(t, fn\)/, /stub\.throws && tests\.some\(expectsThrow\)/]) assert.match(sb, re, String(re));
+  for (const re of [/if \(paths\.length !== 1\) return null;/, /--diff-filter=A/, /if \(!added\.split\("\\n"\)\.includes\(path\)\) return null;/, /isSymbolicLink\(\)/, /if \(names\.length !== 1\) return null;/, /if \(fns\.size !== 1\) return null;/, /callsFunction\(t, fn\)/, /stub\.throws && tests\.some\(expectsThrow\)/, /declaredFunctions\(git\(repo, "show", `\$\{fixSha\}:\$\{path\}`\)\)/, /if \(!created\.includes\(fn\)\) return null;/, /const stub = stubAll\(real, created\);/]) assert.match(sb, re, String(re));
 });
 
 test("protected (M23): learned-function.ts and test-candidates.ts stay protected", () => {
