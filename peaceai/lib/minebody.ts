@@ -9,7 +9,7 @@ import ts from "typescript";
 import { parseHunks, SKIP_FILE, SOURCE_FILE, type Observation } from "./mine.ts";
 import { MAX_FILES_PER_COMMIT } from "./minegit.ts";
 import { assertTestMiningAllowed, PEACE_AUTHOR } from "./minetest.ts";
-import { calleesOf, freeNames, localsBefore, parseExpr, safeExpression, SCANNER_PATH } from "./learned-body.ts";
+import { calleesOf, freeNames, localsBefore, parseExpr, safeExpression, editablePath } from "./learned-body.ts";
 
 type Fn = { name: string; a: number; b: number; params: Set<string>; body: ts.Block; sf: ts.SourceFile };
 function functions(src: string): Fn[] {
@@ -52,7 +52,7 @@ export function observeBodyFile(commit: string, path: string, pre: string, post:
       const widened = new Set([...allowed, ...localsBefore(f.body, pos)]);
       const fits = (ns: Set<string>) => [...freeNames(ne)].every((n) => ns.has(n));
       const names = fits(widened) ? "old-names-params-and-enclosing-locals" : "other";
-      out.push({ shape: "EXPR_REPLACE", commit, path, line: h.newStart, style: { site: a.site, names, vocabulary: safeExpression(ne, widened, calleesOf(oe)) && !SCANNER_PATH.test(path) ? "pure" : "other" } });
+      out.push({ shape: "EXPR_REPLACE", commit, path, line: h.newStart, style: { site: a.site, names, vocabulary: safeExpression(ne, widened, calleesOf(oe)) && editablePath(path) ? "pure" : "other" } });
     } else if (h.removed.length === 0 && h.added.length === 1) {
       const m = /^if \((.+)\) (throw new Error\(["'][A-Z][A-Z0-9_]{2,63}["']\)|return [^;]*);$/.exec(h.added[0]!.trim());
       if (!m) continue;

@@ -23,8 +23,8 @@ export const BODY_VOCAB = {
   grading: ["self-fail-before-pass-after"],
   match: ["unique-site"],
   names: ["old-names-params-and-enclosing-locals"],
-  // Auditor (#136, 3): never a PeaceAI protected path, never PeaceSTOCKS scanner-chain code.
-  paths: ["not-protected-not-scanner"],
+  // Auditor (#136, 3; round 2, 2): only the EDITABLE_PATHS allow-list (never protected, never scanner-chain code).
+  paths: ["allow-listed-leaf-modules"],
   sites: ["if-condition", "return-expression"],
   test: ["new-file"],
 } as const;
@@ -47,8 +47,20 @@ export function tokens(text: string): string[] {
   return out;
 }
 const sameTokens = (a: string, b: string) => { const x = tokens(a), y = tokens(b); return x.length === y.length && x.every((t, i) => t === y[i]); };
-/** Auditor (#136, 3): PeaceSTOCKS scanner-chain modules (the running chain): never edited by this rule. */
-export const SCANNER_PATH = /^src\/(?:tenmin|scan|scanner|markets-scanner|scheduler|daily|intraday|oct2024|restarter|backfill|redispatch|chain)[\w.-]*\.ts$/;
+/**
+ * Round 2 (Auditor #136, 2): an ALLOW-list of the only files this rule may edit, not a deny-list of prefixes.
+ * Each is a leaf, side-effect-free module (no node:/process/fetch use, no import of scanner-chain code), checked
+ * by hand at the time of listing. Any other path, including every new file and all PeaceSTOCKS scanner-chain
+ * code, is refused. Adding a path is a change to this protected file (own PR, Auditor review).
+ */
+export const EDITABLE_PATHS: readonly string[] = [
+  // PeaceAI-Workspace
+  "src/config.ts", "src/numbers.ts", "src/presets.ts", "src/status.ts",
+  // PeaceSTOCKS (as of 58fdb6c)
+  "src/contracts.ts", "src/corporate-action-coverage.ts", "src/et-time.ts", "src/features.ts", "src/num-utils.ts",
+  "src/ranking.ts", "src/recipes.ts", "src/reply-dust-dictionary.ts",
+];
+export const editablePath = (path: string): boolean => EDITABLE_PATHS.includes(path);
 const CALLS = new Set(["Number.isFinite", "Number.isInteger", "Number.isNaN", "Number.isSafeInteger", "Array.isArray", "Math.min", "Math.max", "Math.abs", "Math.floor", "Math.ceil", "Math.round"]);
 const BIN = new Set([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken]);
 
@@ -161,7 +173,7 @@ export function applyReplaceRule(trigger: string, params: Record<string, string 
   const oldE = parseExpr(oldText), newE = parseExpr(newText);
   if (!oldE || !newE || sameTokens(oldText, newText)) return null;
   const target = files.find((f) => f.path === g.file);
-  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || SCANNER_PATH.test(target.path)) return null;
+  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || !editablePath(target.path)) return null;
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
   const fn = exportedFunction(sf, g.fn!);
   if (!fn) return null;

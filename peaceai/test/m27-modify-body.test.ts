@@ -19,45 +19,45 @@ const SRC = [
   "export function other(x: number): number { if (x < 1) return 0; return x; }",
   "",
 ].join("\n");
-const files = [{ path: "src/mode.ts", content: SRC }];
+const files = [{ path: "src/status.ts", content: SRC }];
 const R = (line: string, bullets = ['- mode(3, 3) is "DAILY"']) => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), files);
 
 test("REPLACE_EXPRESSION: one if-condition or one return expression, test file added, selfGrade", () => {
-  const e = R("in mode in src/mode.ts: replace condition failures < limit with failures <= limit")!;
+  const e = R("in mode in src/status.ts: replace condition failures < limit with failures <= limit")!;
   assert.ok(e.content.includes("if (failures <= limit) return \"DAILY\";"));
   assert.equal(e.content.split("\n").length, SRC.split("\n").length);
   assert.equal(e.selfGrade, true);
   assert.equal(e.extra.length, 1);
   assert.match(e.extra[0]!.path, /\.test\.ts$/);
-  const r = R('in mode in src/mode.ts: replace return "ALERT" with failures < 0 ? "NONE" : "ALERT"', ['- mode(9, 3) is "ALERT"'])!;
+  const r = R('in mode in src/status.ts: replace return "ALERT" with failures < 0 ? "NONE" : "ALERT"', ['- mode(9, 3) is "ALERT"'])!;
   assert.ok(r.content.includes('return failures < 0 ? "NONE" : "ALERT";'));
 });
 
 test("REPLACE_EXPRESSION refusals", () => {
   for (const line of [
-    "in mode in src/mode.ts: replace condition failures < limit with failures < limit", // unchanged
-    "in mode in src/mode.ts: replace condition failures < limit with process.exit(1)", // global / call
-    "in mode in src/mode.ts: replace condition failures < limit with failures < tag", // local declared after the site
-    "in mode in src/mode.ts: replace condition failures < limit with true", // constant
-    "in mode in src/mode.ts: replace condition x < 1 with x <= 1", // site is in another function
-    "in mode in src/mode.ts: replace condition failures < 99 with failures < 1", // no such site
-    "in mode in src/mode.ts: replace condition failures < limit with (limit = 1)", // assignment
-    "in mode in src/mode.ts: replace condition failures < limit with failures.constructor", // prototype
-    "in nope in src/mode.ts: replace condition failures < limit with failures <= limit", // no function
+    "in mode in src/status.ts: replace condition failures < limit with failures < limit", // unchanged
+    "in mode in src/status.ts: replace condition failures < limit with process.exit(1)", // global / call
+    "in mode in src/status.ts: replace condition failures < limit with failures < tag", // local declared after the site
+    "in mode in src/status.ts: replace condition failures < limit with true", // constant
+    "in mode in src/status.ts: replace condition x < 1 with x <= 1", // site is in another function
+    "in mode in src/status.ts: replace condition failures < 99 with failures < 1", // no such site
+    "in mode in src/status.ts: replace condition failures < limit with (limit = 1)", // assignment
+    "in mode in src/status.ts: replace condition failures < limit with failures.constructor", // prototype
+    "in nope in src/status.ts: replace condition failures < limit with failures <= limit", // no function
     "in mode in src/missing.ts: replace condition failures < limit with failures <= limit",
   ]) assert.equal(R(line), null, line);
-  assert.equal(R("in mode in src/mode.ts: replace condition failures < limit with failures <= limit", []), null, "needs a test bullet");
+  assert.equal(R("in mode in src/status.ts: replace condition failures < limit with failures <= limit", []), null, "needs a test bullet");
 });
 
 test("REPLACE_EXPRESSION: prior locals and old callees allowed; new callees refused", () => {
-  assert.ok(R("in mode in src/mode.ts: replace condition failures < limit with failures < limit && over < 2"), "prior const local");
+  assert.ok(R("in mode in src/status.ts: replace condition failures < limit with failures < limit && over < 2"), "prior const local");
   const src = "export function f(s: string[]): boolean {\n  if (s.includes(\"a\")) return true;\n  return false;\n}\n";
-  const fl = [{ path: "src/f.ts", content: src }];
+  const fl = [{ path: "src/numbers.ts", content: src }];
   const T = (l: string) => applyReplaceRule(REPLACE_TRIGGER, P, `${l}\n- f(["b"]) is true`, fl);
-  assert.ok(T('in f in src/f.ts: replace condition s.includes("a") with s.includes("a") || s.includes("b")'), "same callee");
-  assert.equal(T('in f in src/f.ts: replace condition s.includes("a") with s.some(Boolean)'), null, "new method");
-  assert.equal(T('in f in src/f.ts: replace condition s.includes("a") with s.includes(eval("1"))'), null, "global call in args");
-  assert.equal(T('in f in src/f.ts: replace condition s.includes("a") with s[0] === "b"'), null, "element access");
+  assert.ok(T('in f in src/numbers.ts: replace condition s.includes("a") with s.includes("a") || s.includes("b")'), "same callee");
+  assert.equal(T('in f in src/numbers.ts: replace condition s.includes("a") with s.some(Boolean)'), null, "new method");
+  assert.equal(T('in f in src/numbers.ts: replace condition s.includes("a") with s.includes(eval("1"))'), null, "global call in args");
+  assert.equal(T('in f in src/numbers.ts: replace condition s.includes("a") with s[0] === "b"'), null, "element access");
 });
 
 test("M27 (after Auditor #136 fixes): evidence is below the bar, so no spec is written; validator still strict", async () => {
@@ -66,8 +66,8 @@ test("M27 (after Auditor #136 fixes): evidence is below the bar, so no spec is w
   const { protectedReason } = await import("../lib/selfchange.ts");
   const { MIN_BODY_FITS, proposeRules } = await import("../lib/propose.ts");
   assert.equal(existsSync(join(root, "peaceai/rules/learned/public-replace-expression-v1.json")), false);
-  // The mined evidence as of 8260281 + fixes: 27 replacements, 5 fit the vocabulary outside scanner-chain code.
-  const stats = [{ shape: "EXPR_REPLACE" as const, covered: null, hunks: 27, commits: 20, files: 15, examples: [], styles: { names: { "old-names-params-and-enclosing-locals": 19, other: 8 }, site: { "if-condition": 12, "return-expression": 15 }, vocabulary: { pure: 5, other: 22 } } }];
+  // The mined evidence (round 2, allow-list): 27 replacements, 0 fit the vocabulary on an allow-listed file (5 before the allow-list).
+  const stats = [{ shape: "EXPR_REPLACE" as const, covered: null, hunks: 27, commits: 20, files: 15, examples: [], styles: { names: { "old-names-params-and-enclosing-locals": 19, other: 8 }, site: { "if-condition": 12, "return-expression": 15 }, vocabulary: { pure: 0, other: 27 } } }];
   const r = proposeRules(stats, "public", ["PeaceG03/PeaceAI-Workspace", "PeaceG03/PeaceSTOCKS"]);
   assert.equal(r.proposals.length, 0);
   assert.deepEqual(r.skipped, [{ shape: "EXPR_REPLACE", why: "no-learnable-params" }]);
@@ -82,15 +82,15 @@ test("M27 (after Auditor #136 fixes): evidence is below the bar, so no spec is w
 });
 
 // Auditor (#136) fixes 1-6.
-const R2 = (src: string, line: string, bullets = ["- g(1) is 1"], path = "src/g.ts") => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), [{ path, content: src }]);
+const R2 = (src: string, line: string, bullets = ["- g(1) is 1"], path = "src/num-utils.ts") => applyReplaceRule(REPLACE_TRIGGER, P, [line, ...bullets].join("\n"), [{ path, content: src }]);
 test("Auditor #136 (1): a const in an earlier, closed block is not in scope", () => {
   const src = "export function g(x: number): number {\n  if (x) { const process = 1; }\n  if (x < 0) return 0;\n  return x;\n}\n";
-  assert.equal(R2(src, "in g in src/g.ts: replace condition x < 0 with process.env.SECRET === undefined"), null);
+  assert.equal(R2(src, "in g in src/num-utils.ts: replace condition x < 0 with process.env.SECRET === undefined"), null);
   const ok = "export function g(x: number): number {\n  const lim = 2;\n  if (x) {\n    const k = 1;\n    if (x < 0) return k;\n  }\n  return x;\n}\n";
-  assert.ok(R2(ok, "in g in src/g.ts: replace condition x < 0 with x < lim - k"), "enclosing-block locals still count");
+  assert.ok(R2(ok, "in g in src/num-utils.ts: replace condition x < 0 with x < lim - k"), "enclosing-block locals still count");
 });
 test("Auditor #136 (2): needs an is/equals bullet; the before-run must fail by assertions only", () => {
-  assert.equal(R("in mode in src/mode.ts: replace condition failures < limit with failures <= limit", ["- mode(3, 3) throws X"]), null, "throws bullet alone refused");
+  assert.equal(R("in mode in src/status.ts: replace condition failures < limit with failures <= limit", ["- mode(3, 3) throws X"]), null, "throws bullet alone refused");
   assert.equal(assertionFailuresOnly("not ok 1 - t\n  ---\n  failureType: 'testCodeFailure'\n  error: |-\n  code: 'ERR_ASSERTION'\n  ...\n"), true);
   assert.equal(assertionFailuresOnly("not ok 1 - /x/a.test.ts\n  failureType: 'testCodeFailure'\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n"), false, "load error");
   assert.equal(assertionFailuresOnly("not ok 1 - t\n  error: 'Cannot read properties of null'\n  code: 'ERR_TEST_FAILURE'\nnot ok 2 - u\n  code: 'ERR_ASSERTION'\n"), false, "a crash in any failing test");
@@ -102,15 +102,15 @@ test("Auditor #136 (2): needs an is/equals bullet; the before-run must fail by a
 test("Auditor #136 (2) behavior: the before-run fails by assertion on the real edited module", () => {
   const dir = mkdtempSync(join(tmpdir(), "m27-"));
   try {
-    const e = R("in mode in src/mode.ts: replace condition failures < limit with failures <= limit")!;
+    const e = R("in mode in src/status.ts: replace condition failures < limit with failures <= limit")!;
     mkdirSync(join(dir, "src"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
     writeFileSync(join(dir, e.extra[0]!.path), e.extra[0]!.content);
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
     const run = () => { const r = spawnSync(join(root, "node_modules/.bin/tsx"), ["--test", e.extra[0]!.path], { cwd: dir, encoding: "utf8", env }); return { ok: r.status === 0, out: `${r.stdout}\n${r.stderr}` }; };
-    writeFileSync(join(dir, "src/mode.ts"), e.content);
+    writeFileSync(join(dir, "src/status.ts"), e.content);
     assert.equal(run().ok, true, "passes with the edit");
-    writeFileSync(join(dir, "src/mode.ts"), SRC);
+    writeFileSync(join(dir, "src/status.ts"), SRC);
     const before = run();
     assert.equal(before.ok, false, "fails without");
     assert.equal(assertionFailuresOnly(before.out), true, "by assertion");
@@ -121,25 +121,55 @@ test("Auditor #136 (2) behavior: the before-run fails by assertion on the real e
 test("Auditor #136 (3): refused on a protected path and on PeaceSTOCKS scanner-chain files", () => {
   const src = "export function g(x: number): number {\n  if (x < 0) return 0;\n  return x;\n}\n";
   for (const path of ["peaceai/lib/gate.ts", "peaceai/lib/learned-body.ts", "src/scanner.ts", "src/tenmin-redispatch.ts", "src/scan-backstop.ts", "src/daily-picks.ts"]) assert.equal(R2(src, `in g in ${path}: replace condition x < 0 with x <= 0`, ["- g(1) is 1"], path), null, path);
-  assert.ok(R2(src, "in g in src/g.ts: replace condition x < 0 with x <= 0"));
+  assert.ok(R2(src, "in g in src/num-utils.ts: replace condition x < 0 with x <= 0"));
 });
 test("Auditor #136 (4): prototype, optional chaining, escapes, break-outs, in/delete/void/await, templates, ++", () => {
   const src = "export function g(x: number, o: { a: number }): number {\n  if (x < o.a) return 0;\n  return x;\n}\n";
   for (const nu of ["o.prototype", "o?.a", "\\u0078 < 1", "x) || (o", "x < 1), (o", "(x, o)", "\"a\" in o", "delete o.a", "void x", "await x", "String.raw`x`", "`${x}` === \"1\"", "x++ < 1", "--x < 1", "o.a = 1"])
-    assert.equal(R2(src, `in g in src/g.ts: replace condition x < o.a with ${nu}`), null, nu);
-  assert.ok(R2(src, "in g in src/g.ts: replace condition x < o.a with x <= o.a"));
+    assert.equal(R2(src, `in g in src/num-utils.ts: replace condition x < o.a with ${nu}`), null, nu);
+  assert.ok(R2(src, "in g in src/num-utils.ts: replace condition x < o.a with x <= o.a"));
 });
 test("Auditor #136 (5): token comparison, not whitespace/quote collapsing", () => {
   assert.deepEqual(tokens("a  <\tb"), tokens("a < b"));
   assert.notDeepEqual(tokens('x === "a b"'), tokens('x === "a  b"'), "string contents kept");
   assert.notDeepEqual(tokens("x === 'a'"), tokens('x === "a"'), "quotes kept");
   const src = 'export function g(s: string): number {\n  if (s === "a  b") return 1;\n  return 0;\n}\n';
-  assert.equal(R2(src, 'in g in src/g.ts: replace condition s === "a b" with s === "c"', ['- g("c") is 1']), null, "collapsed whitespace no longer matches");
-  assert.ok(R2(src, 'in g in src/g.ts: replace condition s === "a  b" with s === "c"', ['- g("c") is 1']), "exact tokens match");
+  assert.equal(R2(src, 'in g in src/num-utils.ts: replace condition s === "a b" with s === "c"', ['- g("c") is 1']), null, "collapsed whitespace no longer matches");
+  assert.ok(R2(src, 'in g in src/num-utils.ts: replace condition s === "a  b" with s === "c"', ['- g("c") is 1']), "exact tokens match");
 });
 test("Auditor #136 (6): an old callee may be called with new arguments (documented in spec params and proposal)", () => {
   const src = 'export function g(s: string[]): boolean {\n  if (s.includes("a")) return true;\n  return false;\n}\n';
-  assert.ok(R2(src, 'in g in src/g.ts: replace condition s.includes("a") with s.includes("b")', ['- g(["b"]) is true']));
+  assert.ok(R2(src, 'in g in src/num-utils.ts: replace condition s.includes("a") with s.includes("b")', ['- g(["b"]) is true']));
   assert.equal(BODY_VOCAB.calls[0], "pure-builtins-and-old-callees-any-args");
   assert.match(readFileSync(join(root, "peaceai/lib/propose.ts"), "utf8"), /may call with NEW arguments/);
+});
+
+test("Round 2 (Auditor #136, 1): MIN_BODY_FITS - 1 = 9 fits is refused, 10 is proposed", async () => {
+  const { MIN_BODY_FITS, proposeRules } = await import("../lib/propose.ts");
+  assert.equal(MIN_BODY_FITS, 10);
+  const at = (pure: number) => proposeRules([{ shape: "EXPR_REPLACE" as const, covered: null, hunks: 27, commits: 20, files: 15, examples: [], styles: { names: { "old-names-params-and-enclosing-locals": 19, other: 8 }, site: { "if-condition": 12, "return-expression": 15 }, vocabulary: { pure, other: 27 - pure } } }], "public", ["PeaceG03/PeaceAI-Workspace"]);
+  const nine = at(9);
+  assert.equal(nine.proposals.length, 0, "9 fits: no proposal");
+  assert.deepEqual(nine.skipped, [{ shape: "EXPR_REPLACE", why: "no-learnable-params" }]);
+  assert.equal(at(10).proposals.length, 1, "10 fits: proposed");
+});
+
+test("Round 2 (Auditor #136, 2): paths are an allow-list; any unlisted path is refused, listed ones pass", async () => {
+  const { EDITABLE_PATHS, editablePath, BODY_VOCAB } = await import("../lib/learned-body.ts");
+  assert.deepEqual(BODY_VOCAB.paths, ["allow-listed-leaf-modules"]);
+  const { PROTECTED_SELF } = await import("../lib/selfchange.ts");
+  for (const p of EDITABLE_PATHS) {
+    assert.ok(!PROTECTED_SELF.some((x) => x.pattern.test(p)), `${p} not protected`);
+    assert.ok(!/^src\/(?:tenmin|scan|scanner|markets-scanner|scheduler|daily|intraday|oct2024|restarter|backfill|redispatch|chain)/.test(p), `${p} not scanner-chain`);
+  }
+  const src = "export function g(x: number): number {\n  if (x < 0) return 0;\n  return x;\n}\n";
+  // Paths a prefix deny-list would have let through: all refused now.
+  for (const path of ["src/new-module.ts", "src/us-calendar.ts", "src/session-open.ts", "src/storage.ts", "src/host.ts", "src/index.ts", "src/Scanner.ts", "src/s-c-a-n.ts", "lib/num-utils.ts", "src/num-utils.tsx", "src/num-utils.ts/../scanner.ts", "./src/num-utils.ts"]) {
+    assert.equal(editablePath(path), false, path);
+    assert.equal(R2(src, `in g in ${path}: replace condition x < 0 with x <= 0`, ["- g(1) is 1"], path), null, path);
+  }
+  for (const path of EDITABLE_PATHS) assert.ok(R2(src, `in g in ${path}: replace condition x < 0 with x <= 0`, ["- g(1) is 1"], path), path);
+  const lb = readFileSync(join(root, "peaceai/lib/learned-body.ts"), "utf8");
+  assert.ok(!lb.includes("SCANNER_PATH"), "no deny-list left");
+  assert.match(lb, /PROTECTED_SELF\.some\(\(p\) => p\.pattern\.test\(target\.path\)\) \|\| !editablePath\(target\.path\)\) return null;/);
 });
