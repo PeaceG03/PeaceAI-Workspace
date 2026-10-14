@@ -728,3 +728,89 @@ export function moduleImportsRepoFiles(content: string): boolean {
   v(sf);
   return found;
 }
+
+/**
+ * M32 round 2 (Auditor #141, limit 3): the #129 ALLOW-list grammar applied to ONE function body of a module, for
+ * MULTI_LINE_BODY. Same node kinds, globals, property-name allow-list (module data keys + data methods + listed
+ * global members), constant string folding and forbidden names as graded tests; plus, for a body:
+ *  - computed access only with a numeric literal key;
+ *  - no `this`/`arguments`, classes, generators, nested `function` declarations/expressions (arrows only);
+ *  - a free name must be a local/parameter, an allowed global, or a top-level name of the same module that is not
+ *    an import; a same-module function may be called only if ITS body passes this grammar too (recursively);
+ *    anything imported may not be referenced at all (its reach cannot be checked here).
+ * null = the body is inside the grammar; otherwise the reason (fail closed).
+ */
+export function bodyGrammarProblem(content: string, fnName: string, seen: Set<string> = new Set(), dataKeys: readonly string[] = moduleDataKeys(content)): string | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const fns = new Map<string, ts.FunctionDeclaration>();
+  const topValues = new Map<string, ts.Expression | undefined>(), imported = new Set<string>();
+  for (const s of sf.statements) {
+    if (ts.isFunctionDeclaration(s) && s.name && s.body) fns.set(s.name.text, s);
+    if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topValues.set(d.name.text, d.initializer);
+    if (ts.isImportDeclaration(s) && s.importClause && !s.importClause.isTypeOnly) {
+      const c = s.importClause;
+      if (c.name) imported.add(c.name.text);
+      const nb = c.namedBindings;
+      if (nb && ts.isNamespaceImport(nb)) imported.add(nb.name.text);
+      if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!e.isTypeOnly) imported.add(e.name.text);
+    }
+  }
+  const fn = fns.get(fnName);
+  if (!fn || !fn.body) return `no function ${fnName}`;
+  if (fn.asteriskToken) return "generator";
+  seen.add(fnName);
+  // Keys come from the caller (MULTI_LINE_BODY: the file BEFORE the edit), never from the edited body itself.
+  const keys = new Set(dataKeys.filter((k) => !FORBIDDEN_PROPS.has(k)));
+  const declared = new Set<string>();
+  const addName = (n: ts.BindingName): void => { if (ts.isIdentifier(n)) declared.add(n.text); else for (const e of n.elements) if (!ts.isOmittedExpression(e)) addName(e.name); };
+  for (const p of fn.parameters) addName(p.name);
+  const decl = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)) addName(n.name);
+    if (ts.isCatchClause(n) && n.variableDeclaration) addName(n.variableDeclaration.name);
+    ts.forEachChild(n, decl);
+  };
+  decl(fn.body);
+  let problem: string | null = null;
+  const v = (n: ts.Node): void => {
+    if (problem) return;
+    if (!ALLOWED_KINDS.has(n.kind) && !isPunctuation(n.kind)) { problem = `syntax ${ts.SyntaxKind[n.kind]}`; return; }
+    if (ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) { problem = "nested function"; return; }
+    if (ts.isArrowFunction(n)) for (const p of n.parameters) addName(p.name);
+    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { problem = "dynamic import"; return; }
+    if (ts.isElementAccessExpression(n) && !ts.isNumericLiteral(n.argumentExpression)) { problem = "computed member access"; return; }
+    if (ts.isIdentifier(n) && isReference(n)) {
+      const t = n.text;
+      if (FORBIDDEN_NAMES.has(t) || t === "arguments") { problem = `uses ${t}`; return; }
+      if (!declared.has(t)) {
+        if (imported.has(t)) { problem = `uses import ${t}`; return; }
+        if (fns.has(t)) {
+          if (!(ts.isCallExpression(n.parent) && n.parent.expression === n)) { problem = `uses ${t} other than calling it`; return; }
+          if (!seen.has(t)) { const inner = bodyGrammarProblem(content, t, seen, dataKeys); if (inner) { problem = `calls ${t}: ${inner}`; return; } }
+        } else if (topValues.has(t)) {
+          // Auditor #141 F1: a top-level value is usable only when its initializer is plain data (no callable, no
+          // import alias, no object holding a function); anything else is refused (fail closed).
+          const init = topValues.get(t);
+          if (!init || !dataOnly(init)) { problem = `uses top-level ${t} whose initializer is not data`; return; }
+        } else if (!ALLOWED_GLOBALS.has(t)) { problem = `global ${t}`; return; }
+        if (t === "Object" && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && OBJECT_MEMBERS.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Object other than Object.keys/fromEntries/freeze calls"; return; }
+        if (ERROR_CTORS.has(t) && !(ts.isNewExpression(n.parent) && n.parent.expression === n)) { problem = `${t} other than new ${t}(...)`; return; }
+        if (t === "Buffer" && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && GLOBAL_MEMBERS.Buffer!.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Buffer other than Buffer.from/alloc calls"; return; }
+      }
+    }
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) {
+      const p = n.name.text, base = ts.isIdentifier(n.expression) && !declared.has(n.expression.text) ? n.expression.text : null;
+      const ok = !FORBIDDEN_PROPS.has(p) && (base !== null && Object.hasOwn(GLOBAL_MEMBERS, base) ? GLOBAL_MEMBERS[base]!.has(p)
+        : base !== null && ERROR_CTORS.has(base) ? false : keys.has(p) || DATA_METHODS.has(p));
+      if (!ok) { problem = `property ${p} not allow-listed`; return; }
+    }
+    if (ts.isBinaryExpression(n) || ts.isTemplateExpression(n) || ts.isParenthesizedExpression(n)) {
+      const c = constString(n as ts.Expression);
+      if (c !== null && dangerousString(c)) { problem = `string evaluates to ${c}`; return; }
+    }
+    // A local or parameter may be called `values`/`name`; a forbidden name is refused as a member, key or string.
+    if (((ts.isIdentifier(n) && !(isReference(n) && declared.has(n.text)) && !(ts.isVariableDeclaration(n.parent) || ts.isParameter(n.parent) || ts.isBindingElement(n.parent))) || ts.isPrivateIdentifier(n) || ts.isStringLiteralLike(n)) && (FORBIDDEN_PROPS.has(n.text) || (ts.isStringLiteralLike(n) && dangerousString(n.text)))) { problem = `names ${n.text}`; return; }
+    ts.forEachChild(n, v);
+  };
+  v(fn.body);
+  return problem;
+}
