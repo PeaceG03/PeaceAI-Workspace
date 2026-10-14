@@ -257,3 +257,44 @@ export function safeNewModuleOnDisk(root: string, rel: string): boolean {
   const r = relative(realRoot, realpathSync(dir));
   return r === "" || (!r.startsWith("..") && !r.startsWith(sep) && !r.split(sep).includes(".."));
 }
+
+/** M23: the body stub that marks a stubbed function at runtime. */
+export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
+
+/**
+ * M23 (Auditor, #127): the "before" state for a learned test whose fix commit CREATED the module (so the fix
+ * cannot be reverted on today's file). Exported function `fn`'s whole body is replaced: by M17's type-default
+ * return when that applies, else by `{ throw new Error("PEACEAI_STUB_BODY"); }`. Null (fail closed) when `fn`
+ * is not exactly one exported top-level function declaration with a body, or it is a generator/overloaded.
+ * `throws` is true for the throwing stub: then a test that expects a throw/rejection proves nothing and the
+ * caller must refuse it.
+ */
+export function stubBody(content: string, fn: string): { content: string; throws: boolean } | null {
+  const simple = stubFunction(content, fn);
+  if (simple !== null) return { content: simple, throws: false };
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
+  if (hits.length !== 1) return null;
+  const f = hits[0]!;
+  if (!f.body || f.asteriskToken || !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) return null;
+  const stub = `{ throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
+  return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: true };
+}
+
+/** M23: names a test imports from module specifier `spec` (named imports only). */
+export function importedNames(testContent: string, spec: string): string[] {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  const out: string[] = [];
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || s.moduleSpecifier.text !== spec) continue;
+    const nb = s.importClause?.namedBindings;
+    if (s.importClause?.isTypeOnly || !nb || !ts.isNamedImports(nb)) continue;
+    for (const e of nb.elements) if (!e.isTypeOnly) out.push((e.propertyName ?? e.name).text);
+  }
+  return out;
+}
+
+/** M23: true when a test expects a throw or rejection (assert.throws / assert.rejects / assert.doesNotThrow...). */
+export function expectsThrow(testContent: string): boolean {
+  return /\bassert\s*\.\s*(?:throws|rejects|doesNotThrow|doesNotReject)\s*\(/.test(testContent);
+}

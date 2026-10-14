@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, expectsThrow, importedNames, stubBody, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -130,12 +130,56 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
   try {
     const patch = join(dir, "prefix.diff");
     writeFileSync(patch, git(repo, "diff", "--no-color", "--full-index", "--binary", "--no-renames", fixSha, `${fixSha}^`, "--", ...paths));
-    if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch]) || !runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
+    if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch])) {
+      // M23 (Auditor, #127): a fix that CREATED its one source module cannot be reverted once later commits
+      // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
+      const stubbed = stubBefore(tree, fixSha, paths, newTests);
+      if (!stubbed) return ungradable("revert-failed");
+      const stubPass = runCandidate(tree, tsx, ["--test", ...newTests]);
+      writeFileSync(stubbed.file, stubbed.real);
+      console.log(`grading: stub-body before-state for ${stubbed.fn} (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
+      return { fixSha, afterFix, beforeFix: stubPass, verdict: gradingVerdict(afterFix, stubPass, !stubPass), reason: null, stubFails: !stubPass };
+    }
+    if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
   const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
   return { fixSha, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
+}
+
+/**
+ * M23: writes the stub-body "before" state into the tree, or returns null (fail closed). Only when the fix
+ * commit created exactly one source module, every new test imports exactly one function from it (the same one)
+ * and calls it, the stub applies, and (for the throwing stub) no new test expects a throw or rejection.
+ * Returns the original content so the caller restores it.
+ */
+function stubBefore(tree: string, fixSha: string, paths: readonly string[], newTests: readonly string[]): { file: string; real: string; fn: string } | null {
+  if (paths.length !== 1) return null;
+  const path = paths[0]!;
+  let added: string;
+  try { added = git(repo, "diff", "--name-only", "--no-renames", "--diff-filter=A", `${fixSha}^`, fixSha); } catch { return null; }
+  if (!added.split("\n").includes(path)) return null;
+  const file = join(tree, path);
+  try { if (lstatSync(file).isSymbolicLink() || relative(tree, realpathSync(file)).startsWith("..")) return null; } catch { return null; }
+  const fns = new Set<string>();
+  const tests = newTests.map((t) => readFileSync(join(tree, t), "utf8"));
+  for (const [i, t] of newTests.entries()) {
+    const rel = relative(dirname(t), path).replace(/\.ts$/, "");
+    const spec = rel.startsWith(".") ? rel : `./${rel}`;
+    // Of the names the test imports from the created module, exactly one is called: the tested function.
+    const names = [...importedNames(tests[i]!, spec), ...importedNames(tests[i]!, `${spec}.ts`)].filter((n) => callsFunction(tests[i]!, n));
+    if (names.length !== 1) return null;
+    fns.add(names[0]!);
+  }
+  if (fns.size !== 1) return null;
+  const fn = [...fns][0]!;
+  if (!tests.every((t) => callsFunction(t, fn))) return null;
+  const real = readFileSync(file, "utf8");
+  const stub = stubBody(real, fn);
+  if (!stub || (stub.throws && tests.some(expectsThrow))) return null;
+  writeFileSync(file, stub.content);
+  return { file, real, fn };
 }
 
 /**
