@@ -15,7 +15,7 @@ import { buildSubstringIndex, countCoreSubstrings } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN } from "../lib/lm.ts";
 import { classifyLicense, CODE_FILE, heldOutHashes } from "../lib/lmcorpus.ts";
 import { agentMade, builderLogRefs, excludedForC, sha256Hex } from "../lib/heldout.ts";
-import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
+import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const cfg = JSON.parse(readFileSync(join(model, "ext-corpus.json"), "utf8"));
@@ -119,7 +119,7 @@ for (const o of cfg.owner) {
   }
   const files = readTree(d, o.commit);
   const ld = licenseDirsOf(files);
-  admit(o.name, o.commit, o.license, "owner-public", files, (p, t) => (touched.get(p) === false ? "authorship" : extFileExclusion(p, t, ld)));
+  admit(o.name, o.commit, o.license, "owner-public", files, (p, t) => (isSafetyToolFile(o.name, p) ? "safety-tool" : touched.get(p) === false ? "authorship" : extFileExclusion(p, t, ld)));
 }
 for (const r of pool.filter((p) => !cNames.has(p.name))) {
   const files = readTree(join(extDir, r.name.replace("/", "__")), r.commit);
@@ -133,6 +133,8 @@ writeFileSync(join(out, "manifest.jsonl"), manifestText);
 writeFileSync(join(out, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
 if (write) {
   writeFileSync(join(model, "ext-manifest.jsonl"), JSON.stringify({ schema: EXT_MANIFEST_SCHEMA, config: sha256Hex(readFileSync(join(model, "ext-corpus.json"))), entries: manifest.length }) + "\n" + manifestText);
+  // Auditor #148 follow-up: the counts-only summary (no paths, no text) is committed next to the manifest.
+  writeFileSync(join(model, "ext-summary.json"), JSON.stringify({ ...summary, manifestSha256: sha256Hex(readFileSync(join(model, "ext-manifest.jsonl"))) }, null, 1) + "\n");
   writeFileSync(join(model, "heldout-c.json"), JSON.stringify({ schema: "peaceai-heldout-c:v2", rule: EXT_C_RULE, wiredAsEval: false, sets: { C: cEntries } }, null, 1) + "\n");
 }
 console.log(`ext corpus stage=${cfg.stage} repos=${pool.length} refused=${summary.refused.length} train_files=${summary.train.files} train_bytes=${summary.train.bytes} setC_repos=${summary.setC.repos} setC_files=${summary.setC.files} memcheck_scanned=${summary.memcheck.scannedDocs} memcheck_dropped=${summary.memcheck.droppedCoreText} excluded=${JSON.stringify(summary.excluded)}`);

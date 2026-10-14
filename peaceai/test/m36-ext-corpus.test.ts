@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { BUILT_STAGES, EXT_C_PERCENT, EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_MAX_BYTES, EXT_MIN_BYTES, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, STAGES, validExtConfig, type ExtManifestEntry } from "../lib/extcorpus.ts";
+import { EXT_MEMCHECK_SCHEMA, isSafetyToolFile, SAFETY_TOOL_FILES, BUILT_STAGES, EXT_C_PERCENT, EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_MAX_BYTES, EXT_MIN_BYTES, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, STAGES, validExtConfig, type ExtManifestEntry } from "../lib/extcorpus.ts";
 import { ALLOWED_SPDX, allHeldOutHashes, heldOutCHashes, heldOutHashes, type HeldOutCFile } from "../lib/lmcorpus.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
@@ -75,6 +75,13 @@ test("file filters: generated, snapshot, lock, minified, vendored, secrets", () 
   assert.equal(extFileExclusion("a.ts", "// @generated\nx\n", []), "generated");
   assert.equal(extFileExclusion("a.ts", `const k = "AKIA${"A".repeat(16)}";\n`, []), "secret");
   assert.equal(extFileExclusion("a.ts", `-----BEGIN RSA ${"PRIVATE"} KEY-----\n`, []), "secret");
+  // Auditor #148 follow-up: generic hex API keys.
+  const hex = "0123456789abcdef".repeat(2);
+  assert.equal(extFileExclusion("a.ts", `const apiKey = "${hex}";\n`, []), "secret");
+  assert.equal(extFileExclusion("a.ts", `config = { api_key: '${hex}' };\n`, []), "secret");
+  assert.equal(extFileExclusion("a.ts", `headers["X-Auth-Token"] = "x"; const SECRET_TOKEN = \`${hex}ff\`;\n`, []), "secret");
+  assert.equal(extFileExclusion("a.ts", `const hash = "${hex}";\n`, []), null, "a hex value under a non-key name is kept");
+  assert.equal(extFileExclusion("a.ts", `const apiKey = "short";\n`, []), null);
   assert.equal(extFileExclusion("pkg/x/a.ts", "x\n", ["pkg/x"]), "nested-license");
   assert.equal(extFileExclusion("src/a.ts", "export const a = 1;\n", []), null);
 });
@@ -85,6 +92,35 @@ test("allowlist disjoint from A+B+C; protected paths", () => {
   assert.ok(allow.sha256.every((h: string) => !held.has(h)));
   assert.ok(heldOutHashes(JSON.parse(rd("heldout.json"))).size > 0);
   for (const p of ["peaceai/lib/extcorpus.ts", "peaceai/bin/ext-corpus.ts", "peaceai/bin/ext-fetch.ts", "peaceai/model/ext-corpus.json", "peaceai/model/ext-manifest.jsonl", "peaceai/model/ext-train.json", "peaceai/model/heldout-c.json", "peaceai/model/heldout-c-excluded.json", "peaceai/test/m36-ext-corpus.test.ts"]) assert.ok(protectedReason(p), p);
+});
+
+test("Architect #148: safety-scanner tool files are never in the corpus", () => {
+  for (const p of ["peaceai/bin/core-scan.ts", "peaceai/bin/leak-scan.ts", "peaceai/lib/leak.ts", "peaceai/lib/trigger.ts"]) assert.ok(isSafetyToolFile("PeaceG03/PeaceAI-Workspace", p), p);
+  assert.ok(!isSafetyToolFile("PeaceG03/PeaceAI-Workspace", "src/text.ts"));
+  assert.ok(!isSafetyToolFile("honojs/hono", "peaceai/lib/leak.ts"), "by repo");
+  assert.ok(SAFETY_TOOL_FILES.length > 0);
+  for (const m of man) assert.ok(!isSafetyToolFile(m.repo, m.path), `${m.repo} ${m.path}`);
+  assert.ok(!man.some((m) => m.repo === "PeaceG03/PeaceAI-Workspace" && /^peaceai\/(bin|lib)\//.test(m.path) && /leak|scan|trigger/.test(m.path)));
+});
+
+test("memcheck record (box, against core): PASS for the committed manifest, every doc scanned, zero hits", () => {
+  const m = JSON.parse(rd("ext-memcheck.json"));
+  const bytes = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"));
+  assert.equal(m.schema, EXT_MEMCHECK_SCHEMA);
+  assert.equal(m.status, "PASS");
+  assert.equal(m.manifestSha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.equal(m.scannedDocs, man.length);
+  assert.equal(m.entries, man.length);
+  assert.equal(m.coreFileHits + m.coreLineHits + m.coreShingleHits + m.coreRunHits, 0);
+  for (const p of ["peaceai/bin/ext-memcheck.ts", "peaceai/model/ext-memcheck.json", "peaceai/model/ext-summary.json"]) assert.ok(protectedReason(p), p);
+});
+
+test("summary: counts only, bound to the committed manifest", () => {
+  const s = JSON.parse(rd("ext-summary.json"));
+  assert.equal(s.manifestSha256, createHash("sha256").update(readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"))).digest("hex"));
+  assert.equal(s.train.files, man.length);
+  assert.equal(s.memcheck.scannedDocs - s.memcheck.droppedCoreText, man.length);
+  assert.ok(!/"path"|"text"/.test(rd("ext-summary.json")), "no paths or text");
 });
 
 test("sizing: fits the free public runner budget (recorded estimate)", () => {
