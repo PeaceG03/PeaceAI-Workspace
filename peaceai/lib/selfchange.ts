@@ -37,6 +37,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
+  { pattern: /^peaceai\/lib\/skilllearn\.ts$|^peaceai\/bin\/skill-learner\.ts$/, why: "the skill learner (reads the Builder task log, proposes skills; M22)" },
 ];
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */
