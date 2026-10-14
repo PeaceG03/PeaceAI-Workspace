@@ -61,10 +61,12 @@ test("M31: lm-manifest-check exits 1 on a held-out sha and 0 on a clean manifest
   assert.equal(good.status, 0, good.stdout); assert.match(good.stdout, /PASS files=1 .*heldout_present=0/);
 });
 
-test("M31: the workflow trains public-only, runs the manifest check before training, and lands only in Results", () => {
+test("M31/M37: the workflow fetches the manifest corpus, runs the ext manifest check before training, and lands only in Results", () => {
   const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
-  assert.match(wf, /PEACEAI_LM_PUBLIC_ONLY: "1"/);
-  assert.ok(wf.indexOf("lm-manifest-check.ts") > 0 && wf.indexOf("lm-manifest-check.ts") < wf.indexOf("peaceai/model/train.py"), "check before train");
+  const at = (s: string) => wf.indexOf(s);
+  assert.ok(at("stage refused") > 0 && at("stage refused") < at("peaceai/bin/ext-fetch.ts"), "stage gate first");
+  assert.ok(at("peaceai/bin/ext-fetch.ts") > 0 && at("peaceai/bin/ext-fetch.ts") < at("peaceai/bin/ext-manifest-check.ts") && at("peaceai/bin/ext-manifest-check.ts") < at("peaceai/model/train.py"), "fetch, check, then train");
+  assert.ok(at("wiredAsEval") > at("peaceai/model/export.py") && at("wiredAsEval") < at("Land the model"), "set C v2 eval after export, gated on wiredAsEval");
   assert.ok(!/PeaceG03\/PeaceAI\.git|PeaceAI\.git"/.test(wf.replace("PeaceAI-Results.git", "")), "no private core clone");
   assert.ok(!/upload-artifact/.test(wf), "weights never become a public artifact");
   assert.match(wf, /results-write\.sh/);

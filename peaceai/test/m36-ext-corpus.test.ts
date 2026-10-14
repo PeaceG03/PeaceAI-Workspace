@@ -90,5 +90,5 @@ test("allowlist disjoint from A+B+C; protected paths", () => {
 test("sizing: fits the free public runner budget (recorded estimate)", () => {
   const t = JSON.parse(rd("ext-train.json"));
   assert.equal(t.stage, "pretrain");
-  assert.deepEqual(t.model, { d_model: 320, n_layer: 6, n_head: 5, ctx: 512, vocab: 8192, params: 10166400, batch: 16, steps: 1600 });
+  assert.deepEqual(t.model, { d_model: 320, n_layer: 6, n_head: 5, ctx: 512, vocab: 8192, params: 10166400, batch: 16, steps: 1000 });
 });

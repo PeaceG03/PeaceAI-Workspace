@@ -53,3 +53,38 @@ export function validExtConfig(c: any): string | null {
   if (new Set(c.repos.map((r: ExtRepo) => r.name)).size !== c.repos.length) return "duplicate repo";
   return null;
 }
+
+// ---- M37: training-workflow checks (runner side; no core access there).
+export const EXT_MEMCHECK_SCHEMA = "peaceai-ext-memcheck:v1";
+/** The stage a training run may use. Only built stages; "finetune" is a reserved hook and refused. */
+export function stageAllowed(stage: string): boolean {
+  return (BUILT_STAGES as readonly string[]).includes(stage);
+}
+/** Problems with a fetched corpus against the committed manifest, config, held-out sets and memcheck record (empty = ok). */
+export function extCorpusProblems(ctx: {
+  manifestText: string; cfg: any; memcheck: any; manifestSha256: string; heldOut: ReadonlySet<string>; cRepos: ReadonlySet<string>;
+  docs: ReadonlyMap<number, string>; sha256: (s: string) => string; stage: string;
+}): string[] {
+  const out: string[] = [];
+  const lines = ctx.manifestText.split("\n").filter(Boolean);
+  const header = JSON.parse(lines[0] ?? "{}");
+  const entries: ExtManifestEntry[] = lines.slice(1).map((l) => JSON.parse(l));
+  if (!stageAllowed(ctx.stage)) out.push(`stage ${ctx.stage} refused`);
+  if (validExtConfig(ctx.cfg)) out.push("bad config");
+  if (header.schema !== EXT_MANIFEST_SCHEMA || header.entries !== entries.length) out.push("bad manifest header");
+  if (ctx.memcheck?.schema !== EXT_MEMCHECK_SCHEMA || ctx.memcheck.status !== "PASS" || ctx.memcheck.manifestSha256 !== ctx.manifestSha256 || ctx.memcheck.scannedDocs !== entries.length) out.push("no PASS memcheck for this manifest");
+  if (ctx.docs.size !== entries.length) out.push(`docs ${ctx.docs.size} != manifest ${entries.length}`);
+  const repos = new Map<string, { commit: string; license: string }>();
+  for (const r of ctx.cfg?.repos ?? []) repos.set(r.name, { commit: r.commit, license: r.spdx });
+  for (const o of ctx.cfg?.owner ?? []) repos.set(o.name, { commit: o.commit, license: o.license });
+  let bad = 0;
+  for (const e of entries) {
+    const src = repos.get(e.repo);
+    const text = ctx.docs.get(e.doc);
+    const why = e.stage !== ctx.stage ? "stage" : !src || src.commit !== e.commit || src.license !== e.license ? "provenance"
+      : ctx.cRepos.has(e.repo) ? "set-c-repo" : ctx.heldOut.has(e.sha256) ? "held-out" : text === undefined || ctx.sha256(text) !== e.sha256 ? "sha256" : null;
+    if (why && bad++ < 5) out.push(`doc ${e.doc}: ${why}`);
+  }
+  if (bad > 5) out.push(`... ${bad - 5} more`);
+  return out;
+}

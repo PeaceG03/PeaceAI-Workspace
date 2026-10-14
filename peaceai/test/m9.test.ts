@@ -422,7 +422,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
-const LM_TRAIN_WORKFLOW_SHA256 = "4fd9f5dc3b5eb7ba1d592dee7bf63fecb3fce9410b8c4e85678b444b0397b307"; // M31, Auditor #140
+const LM_TRAIN_WORKFLOW_SHA256 = "74f8754f3ed43e8399d2ec807ac2491505998fb4c20ebf5fc4896528bf7ed023"; // M37: external manifest corpus (ext-fetch + ext-manifest-check), stage gate, set C v2 eval hook
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
   const wfDir = join(repo, ".github/workflows");
@@ -442,8 +442,9 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
       const landing = text.slice(text.indexOf("      - name: Land the model in Results only"));
       assert.match(landing, /DEPLOY_KEY: \$\{\{ secrets\.PEACEAI_RESULTS_DEPLOY_KEY \}\}/);
       assert.ok(!/      - name: /.test(landing.slice(10)), "the landing step is the last step");
-      assert.match(text, /PEACEAI_LM_PUBLIC_ONLY: "1"/);
-      assert.match(text, /lm-manifest-check\.ts/);
+      // M37: the corpus is the M36 manifest corpus (ext-fetch, sha256 per file) checked by ext-manifest-check.
+      assert.match(text, /peaceai\/bin\/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus"\n/);
+      assert.match(text, /peaceai\/bin\/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain\n/);
       assert.ok(!/lm-memcheck\.ts|upload-artifact|pull_request|schedule:|push:/.test(text), f);
       continue;
     }
