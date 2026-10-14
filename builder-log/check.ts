@@ -14,9 +14,7 @@ export const APPROVED_SKILLS = [
   "ADD_FUNCTION_NEW_MODULE", // public-add-function-v2
 ] as const;
 export const MISSING_SKILLS = [
-  "WORKFLOW_STEP", // PR #107, not approved
   "WORKFLOW_JOB",
-  "CHECK_OBJECT_LITERAL_ARGS", // PR #108, not approved
   "COMPLEX_FUNCTION", // new function/module beyond ADD_FUNCTION's safe vocabulary (dates, loops, I/O)
   "IMPORT_EDIT", // change an existing import specifier
   "MODIFY_LOGIC", // multi-line logic change in an existing function
@@ -25,7 +23,15 @@ export const MISSING_SKILLS = [
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
   "ENV_FIX", // box/runner environment, no repo edit
 ] as const;
-export type Skill = (typeof APPROVED_SKILLS)[number] | (typeof MISSING_SKILLS)[number];
+/**
+ * Skills approved later: approved for entries at or after the landing time (MT, "YYYY-MM-DD HH:MM"), and still a
+ * missing skill for earlier entries (the log is append-only, so history keeps the mark it had then).
+ */
+export const APPROVED_SINCE = {
+  CHECK_OBJECT_LITERAL_ARGS: "2026-10-13 21:30", // public-test-case(-append)-objargs-v1, #118/#119 merged 03:30Z
+  WORKFLOW_STEP: "2026-10-13 22:41", // public-workflow-step-v2, #125 merged 04:41Z
+} as const;
+export type Skill = (typeof APPROVED_SKILLS)[number] | (typeof MISSING_SKILLS)[number] | keyof typeof APPROVED_SINCE;
 
 export interface Entry {
   seq: number;
@@ -63,8 +69,10 @@ export function validateEntry(raw: unknown, expectSeq: number): string[] {
   if (typeof e.changed !== "string") errs.push("changed must be a string");
   else if (!/^none \(.{4,120}\)$/.test(e.changed) && !e.changed.split(", ").every((r) => REF.test(r)))
     errs.push("changed must be repo@sha / PeaceAI-Workspace#PR refs or 'none (reason)'");
-  const approved = (APPROVED_SKILLS as readonly string[]).includes(e.skill as string);
-  const missing = (MISSING_SKILLS as readonly string[]).includes(e.skill as string);
+  const since = Object.prototype.hasOwnProperty.call(APPROVED_SINCE, e.skill as string) ? APPROVED_SINCE[e.skill as keyof typeof APPROVED_SINCE] : null;
+  const at = `${String(e.date)} ${String(e.time)}`;
+  const approved = (APPROVED_SKILLS as readonly string[]).includes(e.skill as string) || (since !== null && at >= since);
+  const missing = (MISSING_SKILLS as readonly string[]).includes(e.skill as string) || (since !== null && at < since);
   if (!approved && !missing) errs.push(`unknown skill ${String(e.skill)}`);
   const want = approved ? "PeaceAI-able today" : `missing skill ${String(e.skill)}`;
   if (e.mark !== want) errs.push(`mark must be "${want}"`);
