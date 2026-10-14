@@ -422,7 +422,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
-const LM_TRAIN_WORKFLOW_SHA256 = "c6691f053abcdaac8d7a0da4666d29be1ac6844c232bec9f876be45d297fe5f6"; // M31, Auditor #140
+const LM_TRAIN_WORKFLOW_SHA256 = "4fd9f5dc3b5eb7ba1d592dee7bf63fecb3fce9410b8c4e85678b444b0397b307"; // M31, Auditor #140
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
   const wfDir = join(repo, ".github/workflows");

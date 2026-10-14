@@ -1,7 +1,7 @@
 // M31: the public-runner LM corpus check fails on any held-out sha256 and on anything off the public allowlist.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -96,7 +96,7 @@ test("Auditor #140: the CLI fails on a doc whose text differs from the manifest,
 });
 
 /** The landing step's own script, run against a scratch Results checkout. */
-function land(version: string, extra?: (results: string) => void): { status: number | null; out: string; staged: string } {
+function land(version: string, extra?: (results: string, model: string) => void): { status: number | null; out: string; staged: string } {
   const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
   const m = wf.match(/bash -c '(set -euo pipefail\n[\s\S]*?)'\n/);
   assert.ok(m, "landing script found");
@@ -104,7 +104,7 @@ function land(version: string, extra?: (results: string) => void): { status: num
   mkdirSync(join(results, "models/lm"), { recursive: true }); mkdirSync(model);
   execFileSync("git", ["init", "-q", results]);
   writeFileSync(join(model, "config.json"), JSON.stringify({ version })); writeFileSync(join(model, "weights.npz"), "w");
-  extra?.(results);
+  extra?.(results, model);
   const r = spawnSync("bash", ["-c", m![1]!], { encoding: "utf8", env: { ...process.env, RESULTS_DIR: results, MODEL_DIR: model } });
   const staged = spawnSync("git", ["-C", results, "diff", "--cached", "--name-only"], { encoding: "utf8" }).stdout;
   return { status: r.status, out: r.stdout + r.stderr, staged };
@@ -126,4 +126,28 @@ test("Auditor #140: a training failure prints only an exit marker, never the tra
   const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
   assert.match(wf, /\|\| \{ echo "train failed exit=\$\?"; exit 1; \}/);
   assert.ok(!/tail[^\n]*train\.log|cat[^\n]*train\.log/.test(wf));
+});
+
+test("Auditor #140 F1-F3: no fail-open on a long list, renames counted as both paths, symlinks refused", () => {
+  const V = "lm-v1-0123456789ab";
+  const long = land(V, (res, model) => {
+    for (let i = 0; i < 3000; i++) writeFileSync(join(model, `f${String(i).padStart(4, "0")}.txt`), `x${i}`);
+    writeFileSync(join(res, "models/lm/zz-stray.json"), "{}");
+  });
+  assert.notEqual(long.status, 0); assert.match(long.out, /landing refused: path outside/);
+  // a rename INTO the folder: latest.json is deleted outside and the same bytes arrive inside. With rename detection
+  // only the new path would be listed; --no-renames lists the deletion too.
+  const ren = land(V, (res, model) => {
+    writeFileSync(join(res, "models/lm/latest.json"), '{"version":"old-model"}\n');
+    execFileSync("git", ["-C", res, "add", "-A"]); execFileSync("git", ["-C", res, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]);
+    execFileSync("rm", [join(res, "models/lm/latest.json")]);
+    writeFileSync(join(model, "latest.json"), '{"version":"old-model"}\n');
+  });
+  assert.notEqual(ren.status, 0, ren.out); assert.match(ren.out, /landing refused: path outside/);
+  const link = land(V, (_res, model) => symlinkSync("/etc/passwd", join(model, "tokenizer.json")));
+  assert.notEqual(link.status, 0); assert.match(link.out, /landing refused: symlink in model dir/);
+  const dot = land("lm-v1-a.b"); // '.' is literal in the prefix check, not a regex wildcard
+  assert.equal(dot.status, 0, dot.out);
+  const near = land("lm-v1-a.b", (res) => { mkdirSync(join(res, "models/lm/lm-v1-aXb"), { recursive: true }); writeFileSync(join(res, "models/lm/lm-v1-aXb/w"), "x"); });
+  assert.notEqual(near.status, 0, "a sibling the regex '.' would have matched is refused");
 });

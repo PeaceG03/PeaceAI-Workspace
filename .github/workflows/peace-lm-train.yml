@@ -79,7 +79,13 @@ jobs:
             bash -c 'set -euo pipefail
               v=$(jq -r .version "$MODEL_DIR/config.json")
               [[ "$v" =~ ^[A-Za-z0-9._-]+$ && "$v" != "." && "$v" != ".." ]] || { echo "landing refused: bad version"; exit 1; }
-              d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp "$MODEL_DIR"/* "$d"/
+              if [ -n "$(find "$MODEL_DIR" -type l)" ]; then echo "landing refused: symlink in model dir"; exit 1; fi
+              d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp -P "$MODEL_DIR"/* "$d"/
               git -C "$RESULTS_DIR" add -A
-              if git -C "$RESULTS_DIR" diff --cached --name-only | grep -qv "^models/lm/$v/"; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi'
+              staged=$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames) || exit 1
+              prefix="models/lm/$v/"
+              while IFS= read -r name; do
+                [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi
+              done <<< "$staged"'
           rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/work" "$RUNNER_TEMP/corpus"
