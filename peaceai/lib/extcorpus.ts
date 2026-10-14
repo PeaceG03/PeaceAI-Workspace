@@ -67,3 +67,53 @@ export const SAFETY_TOOL_FILES: readonly { repo: string; path: RegExp }[] = [
   { repo: "PeaceG03/PeaceAI-Workspace", path: /^peaceai\/lib\/(?:leak|trigger|coretext|coreindex|substr|kernelguard|prguard)\.ts$/ },
 ];
 export const isSafetyToolFile = (repo: string, path: string): boolean => SAFETY_TOOL_FILES.some((s) => s.repo === repo && s.path.test(path));
+
+// ---- M37: training-workflow checks (runner side; no core access there).
+/** The stage a training run may use. Only built stages; "finetune" is a reserved hook and refused. */
+export function stageAllowed(stage: string): boolean {
+  return (BUILT_STAGES as readonly string[]).includes(stage);
+}
+/** Problems with a fetched corpus against the committed manifest, config, held-out sets and memcheck record (empty = ok). */
+export function extCorpusProblems(ctx: {
+  manifestText: string; cfg: any; memcheck: any; manifestSha256: string; heldOut: ReadonlySet<string>; cRepos: ReadonlySet<string>;
+  docs: ReadonlyMap<number, string>; sha256: (s: string) => string; stage: string;
+}): string[] {
+  const out: string[] = [];
+  const lines = ctx.manifestText.split("\n").filter(Boolean);
+  const header = JSON.parse(lines[0] ?? "{}");
+  const entries: ExtManifestEntry[] = lines.slice(1).map((l) => JSON.parse(l));
+  if (!stageAllowed(ctx.stage)) out.push(`stage ${ctx.stage} refused`);
+  if (validExtConfig(ctx.cfg)) out.push("bad config");
+  if (header.schema !== EXT_MANIFEST_SCHEMA || header.entries !== entries.length) out.push("bad manifest header");
+  if (ctx.memcheck?.schema !== EXT_MEMCHECK_SCHEMA || ctx.memcheck.status !== "PASS" || ctx.memcheck.manifestSha256 !== ctx.manifestSha256 || ctx.memcheck.scannedDocs !== entries.length) out.push("no PASS memcheck for this manifest");
+  if (ctx.docs.size !== entries.length) out.push(`docs ${ctx.docs.size} != manifest ${entries.length}`);
+  const repos = new Map<string, { commit: string; license: string }>();
+  for (const r of ctx.cfg?.repos ?? []) repos.set(r.name, { commit: r.commit, license: r.spdx });
+  for (const o of ctx.cfg?.owner ?? []) repos.set(o.name, { commit: o.commit, license: o.license });
+  let bad = 0;
+  for (const e of entries) {
+    const src = repos.get(e.repo);
+    const text = ctx.docs.get(e.doc);
+    const why = e.stage !== ctx.stage ? "stage" : !src || src.commit !== e.commit || src.license !== e.license ? "provenance"
+      : ctx.cRepos.has(e.repo) ? "set-c-repo" : ctx.heldOut.has(e.sha256) ? "held-out" : text === undefined || ctx.sha256(text) !== e.sha256 ? "sha256" : null;
+    if (why && bad++ < 5) out.push(`doc ${e.doc}: ${why}`);
+  }
+  if (bad > 5) out.push(`... ${bad - 5} more`);
+  return out;
+}
+
+/** Auditor #153: every repo a fetch would touch must be a plain owner/name and pinned in the config at that exact
+ *  commit (external repos, Peace's owner repos). Checked before any work dir is created (empty = ok). */
+export const REPO_NAME = /^[\w.-]+\/[\w.-]+$/;
+export function manifestRepoProblems(pairs: readonly { repo: string; commit: string }[], cfg: any): string[] {
+  const pinned = new Map<string, string>();
+  for (const r of cfg?.repos ?? []) pinned.set(r.name, r.commit);
+  for (const o of cfg?.owner ?? []) pinned.set(o.name, o.commit);
+  const out: string[] = [];
+  for (const { repo, commit } of pairs) {
+    if (typeof repo !== "string" || !REPO_NAME.test(repo) || repo.split("/").some((x) => x === "." || x === "..")) out.push(`bad repo name ${JSON.stringify(repo)}`);
+    else if (!pinned.has(repo)) out.push(`repo not in config ${repo}`);
+    else if (pinned.get(repo) !== commit || !/^[0-9a-f]{40}$/.test(String(commit))) out.push(`commit not pinned for ${repo}`);
+  }
+  return [...new Set(out)];
+}

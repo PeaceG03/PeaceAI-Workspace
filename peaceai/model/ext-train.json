@@ -10,8 +10,14 @@
   "vocab": 8192,
   "params": 10166400,
   "batch": 16,
-  "steps": 1600
+  "steps": 1000
  },
- "basis": "lm-v1-78b6e96990d2 (4,329,984 params, ctx 512, batch 16) took about 3.5 s/step at 4 threads on the same runner; about 2.4x the compute gives about 8.5 s/step, so 1600 steps fit 14400 s (about 13M tokens, about half an epoch of the corpus). Estimate, not measured.",
- "note": "Sizing only. No training until this PR merges; the training workflow change comes as its own normal PR."
+ "basis": "Replaced by the measured smoke (M37); the earlier 8.5 s/step estimate was too optimistic.",
+ "note": "Sizing only. No training until this PR merges; the training workflow change comes as its own normal PR.",
+ "measured": {
+  "box_smoke": "8 steps, 4 threads: 13.4 s/step mean of steps 3-8 (10,166,400 params, ctx 512, batch 16); tokenizer 73 s, setup ~2.3 min",
+  "calibration": "lm-v1 config on the same box: 4.9 s/step vs 3.5 s/step measured on the runner (ratio 0.72)",
+  "runner_projection_s_per_step": 9.7,
+  "budget": "--max-seconds 14400 hard stop (best checkpoint kept). 1000 steps = 13,400 s even at box speed; about 9,700 s at the projected runner speed. About 8.2M tokens, about 0.37 epoch of 22.3M training tokens"
+ }
 }

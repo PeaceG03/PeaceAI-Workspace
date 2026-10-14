@@ -27,10 +27,10 @@ test("config: valid, every repo pinned with an allowed SPDX id and license sha25
   for (const r of cfg.repos) assert.ok((ALLOWED_SPDX as readonly string[]).includes(r.spdx));
 });
 
-test("set C v2: rule text, deterministic whole-repo selection, not wired as eval", () => {
+test("set C v2: rule text, deterministic whole-repo selection, wired as eval (M37)", () => {
   assert.equal(c.schema, "peaceai-heldout-c:v2");
   assert.equal(c.rule, EXT_C_RULE);
-  assert.equal(c.wiredAsEval, false);
+  assert.equal(c.wiredAsEval, true, "M37: wired as the eval set (Architect)");
   const names = cfg.repos.map((r: { name: string }) => r.name);
   assert.deepEqual(c.sets.C.map((e) => e.repo), extCRepos(names));
   assert.deepEqual(extCRepos([...names].reverse()), extCRepos(names), "order-independent");
@@ -126,5 +126,5 @@ test("summary: counts only, bound to the committed manifest", () => {
 test("sizing: fits the free public runner budget (recorded estimate)", () => {
   const t = JSON.parse(rd("ext-train.json"));
   assert.equal(t.stage, "pretrain");
-  assert.deepEqual(t.model, { d_model: 320, n_layer: 6, n_head: 5, ctx: 512, vocab: 8192, params: 10166400, batch: 16, steps: 1600 });
+  assert.deepEqual(t.model, { d_model: 320, n_layer: 6, n_head: 5, ctx: 512, vocab: 8192, params: 10166400, batch: 16, steps: 1000 });
 });
