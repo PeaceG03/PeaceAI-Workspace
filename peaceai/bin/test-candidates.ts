@@ -1,7 +1,7 @@
 // Job B: apply each candidate to a clean checkout and test it. No secrets, no core.
 import { spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { countDiffLines, parseDiff } from "../lib/diff.ts";
@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -75,15 +75,55 @@ function runCandidate(cwd: string, command: string, args: string[], timeout = ST
  * `ok` is the exit code the harness captured, never anything the output says; the text only picks repairs.
  */
 const MAX_CAPTURE = 2 * 1024 * 1024;
-function runCandidateCapture(cwd: string, command: string, args: string[], timeout = STEP_TIMEOUT_MS): { ok: boolean; out: string } {
-  const envArgs = Object.entries(cleanEnv).map(([k, v]) => `${k}=${v}`);
-  const options = { cwd, encoding: "utf8" as const, timeout, killSignal: "SIGKILL" as const, maxBuffer: MAX_CAPTURE, stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"] };
+function runCandidateCapture(cwd: string, command: string, args: string[], timeout = STEP_TIMEOUT_MS, extraEnv: Record<string, string> = {}, stderrFd?: number): { ok: boolean; out: string } {
+  const env = { ...cleanEnv, ...extraEnv };
+  const envArgs = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+  const options = { cwd, encoding: "utf8" as const, timeout, killSignal: "SIGKILL" as const, maxBuffer: MAX_CAPTURE, stdio: ["ignore", "pipe", stderrFd ?? "pipe"] as ["ignore", "pipe", "pipe" | number] };
   const result = sandboxUser
     ? spawnSync("sudo", ["-n", "-u", sandboxUser, "--", "/usr/bin/env", "-i", ...envArgs, command, ...args], options)
-    : spawnSync(command, args, { ...options, env: cleanEnv });
+    : spawnSync(command, args, { ...options, env });
   killSandbox();
   return { ok: result.status === 0, out: `${result.stdout ?? ""}\n${result.stderr ?? ""}` };
 }
+
+/**
+ * Round 2/3 (Auditor #129): graded stub-body tests run under Node's permission model when the runtime has it
+ * (Node >= 22, as in CI). Reads are narrowed to the test file, the module under test and node_modules; no fs
+ * write, no child_process; worker threads only for tsx's loader; tsx cache off. Each test file runs directly
+ * in its own process (not under `--test`, whose child would not inherit the note fd). With `notes`, the test's
+ * stderr is a parent-only file opened write-only: the stub's "ran" notes land there and only the parent reads it.
+ * Older runtimes run the same direct command without the permission flags (`confined: false` is logged).
+ */
+const PERMISSION_NODE_MAJOR = 22;
+function runGradedTests(tree: string, tsx: string, tests: readonly string[], module: string, notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
+  const confined = Number(process.versions.node.split(".")[0]) >= PERMISSION_NODE_MAJOR;
+  const modules = realpathSync(join(tree, "node_modules"));
+  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
+  const outs: string[] = [];
+  let ok = true, seen = 0;
+  for (const t of tests) {
+    const args = confined
+      ? ["--permission", `--allow-fs-read=${realpathSync(join(tree, t))}`, `--allow-fs-read=${realpathSync(module)}`, `--allow-fs-read=${modules}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t]
+      : ["--import", loader, "--test-reporter=tap", t];
+    let dir: string | null = null, fd: number | undefined;
+    if (notes) {
+      dir = mkdtempSync(join(tmpdir(), `${newStubCode()}-`)); // 0700, harness user only; the nonce never leaves the parent
+      fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
+    }
+    try {
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1" }, fd);
+      ok &&= r.ok;
+      outs.push(r.out);
+      if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  return { ok, out: outs.join("\n"), confined, notes: seen };
+}
+/** Round 2 (Auditor #129): the real code must pass this many runs (pass 2 plus these) before a stub is graded. */
+const REAL_RUNS_REQUIRED = 3;
 
 // M7 repair budget (Job B timeout is 25 minutes; up to five candidates run in parallel jobs).
 const REPAIR_ENABLED = process.env.PEACEAI_REPAIR !== "off";
@@ -130,12 +170,90 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
   try {
     const patch = join(dir, "prefix.diff");
     writeFileSync(patch, git(repo, "diff", "--no-color", "--full-index", "--binary", "--no-renames", fixSha, `${fixSha}^`, "--", ...paths));
-    if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch]) || !runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
+    if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch])) {
+      // M23 (Auditor, #127): a fix that CREATED its one source module cannot be reverted once later commits
+      // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
+      // Round 3 (Auditor #129 F2): never graded unconfined. Without the permission model (Node < 22) the
+      // stub-body route is ungradable.
+      if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      // Round 3 (Auditor #129): a module that imports other repo files cannot load under the narrowed reads.
+      if (paths.length === 1 && existsSync(join(tree, paths[0]!)) && moduleImportsRepoFiles(readFileSync(join(tree, paths[0]!), "utf8"))) return ungradable("module-imports-repo-files");
+      // Round 2 (Auditor #129): the real code must pass REAL_RUNS_REQUIRED times in all (pass 2 was the first),
+      // so a test whose outcome varies between runs cannot be credited for a "failure" under the stub.
+      if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runGradedTests(tree, tsx, newTests, join(tree, paths[0]!)).ok) return ungradable("real-not-stable");
+      // Round 3 (Auditor #129): the stub is write-only and holds no code; only the parent reads its notes.
+      const stubbed = stubBefore(tree, fixSha, paths, newTests);
+      if (!stubbed) return ungradable("revert-failed");
+      let run: { ok: boolean; out: string; confined: boolean; notes: number };
+      try {
+        run = runGradedTests(tree, tsx, newTests, stubbed.file, true);
+      } finally {
+        writeFileSync(stubbed.file, stubbed.real);
+      }
+      // Auditor (#129): a failure counts as "fails before" only when the runner reports every failing test as an
+      // assertion failure or the stub's own throw (stubFailureCredited). Load/import errors, crashes, timeouts
+      // and other errors prove nothing. No marker is printed: test code could read one from the stubbed file.
+      const credited = !run.ok && stubFailureCredited(run.out, run.notes);
+      console.log(`grading: stub-body before-state (stubbed ${stubbed.stubbed.join(",")}; tested ${stubbed.fn}; failure credited: ${credited}; stub notes: ${run.notes}; permission model: ${run.confined}) (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
+      if (!run.ok && !credited) return { ...ungradable("stub-not-reached"), stubbed: stubbed.stubbed };
+      return { fixSha, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok, !run.ok), reason: null, stubFails: !run.ok, stubbed: stubbed.stubbed };
+    }
+    if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
   const beforeFix = runCandidate(tree, tsx, ["--test", ...newTests]);
   return { fixSha, afterFix, beforeFix, verdict: gradingVerdict(afterFix, beforeFix), reason: null };
+}
+
+/**
+ * M23: writes the stub-body "before" state into the tree, or returns null (fail closed). Only when the fix
+ * commit created exactly one source module, every new test imports exactly one function from it (the same one)
+ * and calls it, the stub applies, and (for the throwing stub) no new test expects a throw or rejection.
+ * Returns the original content so the caller restores it.
+ */
+function stubBefore(tree: string, fixSha: string, paths: readonly string[], newTests: readonly string[]): { file: string; real: string; fn: string; stubbed: string[] } | null {
+  if (paths.length !== 1) return null;
+  const path = paths[0]!;
+  let added: string;
+  try { added = git(repo, "diff", "--name-only", "--no-renames", "--diff-filter=A", `${fixSha}^`, fixSha); } catch { return null; }
+  if (!added.split("\n").includes(path)) return null;
+  const file = join(tree, path);
+  try { if (lstatSync(file).isSymbolicLink() || relative(tree, realpathSync(file)).startsWith("..")) return null; } catch { return null; }
+  const fns = new Set<string>();
+  const tests = newTests.map((t) => readFileSync(join(tree, t), "utf8"));
+  const real = readFileSync(file, "utf8");
+  const moduleFunctions = declaredFunctions(real);
+  const moduleKeys = moduleDataKeys(real); // Round 4 (Auditor #129 B1): members of values the module returns
+  for (const [i, t] of newTests.entries()) {
+    const rel = relative(dirname(t), path).replace(/\.ts$/, "");
+    const spec = rel.startsWith(".") ? rel : `./${rel}`;
+    // Of the names the test imports from the created module, exactly one is called: the tested function.
+    // Auditor (#129): aliases (`{ f as g }`) are followed to the export name; namespace/default imports fail closed.
+    // Auditor (#129): the test may only import the runner, strict assert and the created module, and cannot read
+    // files/env/processes or name the stub code, so it cannot detect or forge the stub.
+    if (gradedTestSourceProblem(tests[i]!, [spec, `${spec}.ts`], moduleFunctions, moduleKeys)) return null;
+    const a = importedBindings(tests[i]!, spec);
+    const b = importedBindings(tests[i]!, `${spec}.ts`);
+    if (!a || !b) return null;
+    const called = [...a, ...b].filter((x) => callsFunction(tests[i]!, x.local));
+    if (called.length !== 1) return null;
+    fns.add(called[0]!.imported);
+  }
+  if (fns.size !== 1) return null;
+  const fn = [...fns][0]!;
+  // Auditor (#129): stub EVERY function the fix commit created in the module, not only the tested one.
+  let created: string[];
+  let fixContent: string;
+  try { fixContent = git(repo, "show", `${fixSha}:${path}`); created = declaredFunctions(fixContent); } catch { return null; }
+  // Auditor (#129): any callable that is not a top-level `function` declaration (arrow, function expression,
+  // class, method, accessor), in the fix's version or today's file, could escape the stubs: fail closed.
+  if (hasNonDeclarationCallables(fixContent) || hasNonDeclarationCallables(real)) return null;
+  if (!created.includes(fn)) return null;
+  const stub = stubAll(real, created);
+  if (!stub || (stub.throws && tests.some(expectsThrow))) return null;
+  writeFileSync(file, stub.content);
+  return { file, real, fn, stubbed: [...created] };
 }
 
 /**

@@ -6,7 +6,7 @@
 // fixed set of pure operators, built-ins and string/array methods (no other names, no calls to the module's code,
 // no closures, no assignment). Job B grades the candidate against itself (`selfGrade`): its new test must pass with
 // the function and fail with the module put back to the task base. Deterministic; no model.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import ts from "typescript";
@@ -256,4 +256,372 @@ export function safeNewModuleOnDisk(root: string, rel: string): boolean {
   if (!existsSync(dir)) return false;
   const r = relative(realRoot, realpathSync(dir));
   return r === "" || (!r.startsWith("..") && !r.startsWith(sep) && !r.split(sep).includes(".."));
+}
+
+/** M23: prefix of the per-run nonce the HARNESS (parent) holds; never written into the stubbed module. */
+export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
+/** A fresh per-run nonce, `PEACEAI_STUB_BODY_<32 hex>`, held only by the parent (names its note channel). */
+export function newStubCode(): string {
+  return `${STUB_BODY_CODE}_${randomBytes(16).toString("hex")}`;
+}
+/**
+ * Round 3 (Auditor #129): the fd the stub writes its "stub ran" note to: the test process's stderr, which the
+ * parent points at a file it opened O_WRONLY|O_APPEND in its own 0700 directory (fds 0-2 survive sudo; higher fds
+ * do not). A read on it fails (EBADF) and the test has no read permission for the file's path.
+ */
+export const STUB_NOTE_FD = 2;
+export const STUB_NOTE = "\u0000peaceai-stub-ran\n";
+/** Number of stub notes in the parent's copy of the channel. */
+export const countStubNotes = (channel: string): number => channel.split(STUB_NOTE).length - 1;
+/**
+ * Round 3 (Auditor #129): the stub is WRITE-ONLY and holds no code. On each call it writes STUB_NOTE to fd
+ * STUB_NOTE_FD (opened O_WRONLY by the parent, so a read on it fails with EBADF) and returns a type default
+ * (string/number/boolean/array) or `undefined`. It never throws; the only credited failure is an assertion.
+ */
+const STUB_PRELUDE = `import { writeSync as __peaceaiStubWrite } from "node:fs";\nfunction __peaceaiStubRan(): void { try { __peaceaiStubWrite(${STUB_NOTE_FD}, ${JSON.stringify(STUB_NOTE)}); } catch { /* no note channel */ } }\n`;
+
+/**
+ * M23 (Auditor, #127): the "before" state for a learned test whose fix commit CREATED the module. Exported
+ * function `fn`'s whole body is replaced by `{ __peaceaiStubRan(); return <default>; }`. Null (fail closed) when
+ * `fn` is not exactly one top-level function declaration with a body, or is a generator/overloaded. `throws` is
+ * true when no type default applies (then `return undefined`); the caller still refuses expects-throw tests there.
+ * The note helper itself is added once by stubAll.
+ */
+export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
+  if (hits.length !== 1) return null;
+  const f = hits[0]!;
+  if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
+  const t = f.type?.getText(sf).replace(/^readonly /, "") ?? "";
+  const dflt = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : null;
+  const stub = `{ __peaceaiStubRan(); return ${dflt ?? "undefined as never"}; }`;
+  return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: dflt === null };
+}
+
+/**
+ * M23 (Auditor #129): the bindings a test imports from `spec`: `imported` is the module's export name, `local`
+ * the name the test calls (differs for `{ a as b }`). Null (fail closed) when the test also imports `spec` as a
+ * namespace or default, since calls through those cannot be attributed.
+ */
+export function importedBindings(testContent: string, spec: string): { imported: string; local: string }[] | null {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  const out: { imported: string; local: string }[] = [];
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || s.moduleSpecifier.text !== spec) continue;
+    const c = s.importClause;
+    if (!c || c.isTypeOnly) continue;
+    if (c.name) return null;
+    const nb = c.namedBindings;
+    if (!nb) continue;
+    if (!ts.isNamedImports(nb)) return null;
+    for (const e of nb.elements) if (!e.isTypeOnly) out.push({ imported: (e.propertyName ?? e.name).text, local: e.name.text });
+  }
+  return out;
+}
+
+/** M23: names a test imports from module specifier `spec` (named imports only). */
+export function importedNames(testContent: string, spec: string): string[] {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  const out: string[] = [];
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || s.moduleSpecifier.text !== spec) continue;
+    const nb = s.importClause?.namedBindings;
+    if (s.importClause?.isTypeOnly || !nb || !ts.isNamedImports(nb)) continue;
+    for (const e of nb.elements) if (!e.isTypeOnly) out.push((e.propertyName ?? e.name).text);
+  }
+  return out;
+}
+
+/** M23: true when a test expects a throw or rejection (assert.throws / assert.rejects / assert.doesNotThrow...). */
+export function expectsThrow(testContent: string): boolean {
+  return /\bassert\s*\.\s*(?:throws|rejects|doesNotThrow|doesNotReject)\s*\(/.test(testContent);
+}
+
+/** M23: names of the top-level function declarations (with a body) in a module. */
+export function declaredFunctions(content: string): string[] {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  return sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && !!s.name && !!s.body).map((s) => s.name!.text);
+}
+
+/**
+ * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
+ * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
+ */
+export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
+  if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
+  let cur = content;
+  let throws = false;
+  for (const fn of fns) {
+    const s = stubBody(cur, fn, false);
+    if (!s) return null;
+    cur = s.content;
+    throws ||= s.throws;
+  }
+  if (/__peaceaiStub/.test(content)) return null; // the real module may not name the stub helper
+  return { content: STUB_PRELUDE + cur, throws };
+}
+
+/**
+ * Round 3 (Auditor #129): credit needs BOTH (a) the parent saw the stub run (`notes` > 0 STUB_NOTE bytes read
+ * from its own end of the write-only channel) and (b) the runner reports at least one failure and EVERY failing
+ * test failed by an assertion (ERR_ASSERTION). The stub holds no code, so nothing in the test's process can reveal
+ * or forge a credited error; load errors, crashes, timeouts and any other throw are not credited.
+ */
+export function stubFailureCredited(tap: string, notes: number): boolean {
+  if (!(notes > 0)) return false;
+  const lines = tap.split("\n");
+  let failures = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*not ok \d+ - /.test(lines[i]!)) continue;
+    failures++;
+    let errCode = "";
+    for (let j = i + 1; j < lines.length && !/^\s*(?:not ok|ok) \d+ - /.test(lines[j]!); j++) {
+      const c = /^\s+code: '([A-Z_]+)'$/.exec(lines[j]!); if (c && !errCode) errCode = c[1]!;
+    }
+    if (errCode !== "ERR_ASSERTION") return false;
+  }
+  return failures > 0;
+}
+
+/** Imports a graded test may have: the runner, strict assert, and modules named in `allowed` (named bindings only). */
+const TEST_IMPORTS = new Set(["node:test", "node:assert/strict"]);
+const FORBIDDEN_NAMES = new Set(["process", "require", "globalThis", "global", "eval", "Function", "Deno", "Bun", "__dirname", "__filename", "module", "exports", "Reflect", "Proxy", "setTimeout", "setInterval", "queueMicrotask", "fetch", "WebAssembly", "console",
+  // Round 2 (Auditor #129): sources of nondeterminism and of a stringified function.
+  "Date", "performance", "Symbol", "crypto", "String", "Intl", "arguments"]);
+/** Round 2 (Auditor #129): property names that reach a function's source, prototype chain or caller. */
+const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "caller", "callee", "toString", "toLocaleString", "toSource", "random",
+  // Round 3 (Auditor #129 F1/F2): descriptor/prototype walks, function names, high-resolution timing.
+  // Round 4 (Auditor #129 B1): legacy accessor hooks.
+  "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__",
+  "name", "getPrototypeOf", "setPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getOwnPropertyNames", "getOwnPropertySymbols", "defineProperty", "defineProperties", "values", "hrtime", "now", "timeOrigin"]);
+/**
+ * Round 3 (Auditor #129): ALLOW-list grammar. A free identifier (not declared in the test, not imported) must be
+ * one of these globals; everything else (setImmediate, AbortSignal, MessageChannel, WeakRef, FinalizationRegistry,
+ * Atomics, SharedArrayBuffer, structuredClone, ...) is refused. `Object` is allowed only for the listed members.
+ */
+const ALLOWED_GLOBALS = new Set(["undefined", "NaN", "Infinity", "Number", "Boolean", "Array", "JSON", "Math", "Error", "TypeError", "RangeError", "Map", "Set", "BigInt", "parseInt", "parseFloat", "isNaN", "isFinite", "Object", "Buffer"]);
+const OBJECT_MEMBERS = new Set(["keys", "fromEntries", "freeze"]);
+/**
+ * Round 4 (Auditor #129 B1/B2): property names are an ALLOW-list too. `x.p` is accepted only when
+ *  - x is a global with listed members (Object, Buffer.from/alloc, Math minus random, Number, JSON, Array), or
+ *  - x is the test's `assert` import and p an assert method, or x is the test runner (`test.skip`/`todo`/`only`), or
+ *  - p is a data key: declared by the test itself (object literal / type / destructuring keys) or by the module
+ *    under test (`dataKeys`: its property keys, interface fields and property reads), or a plain data method.
+ * FORBIDDEN_PROPS always wins. `Error`/`TypeError`/`RangeError` only as `new X(...)`.
+ */
+const GLOBAL_MEMBERS: Readonly<Record<string, ReadonlySet<string>>> = {
+  Object: OBJECT_MEMBERS,
+  Buffer: new Set(["from", "alloc"]),
+  Math: new Set(["min", "max", "abs", "floor", "ceil", "round", "trunc", "sign", "sqrt", "pow", "PI", "E"]),
+  Number: new Set(["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt", "MAX_SAFE_INTEGER", "MIN_SAFE_INTEGER", "EPSILON", "POSITIVE_INFINITY", "NEGATIVE_INFINITY"]),
+  JSON: new Set(["parse", "stringify"]),
+  Array: new Set(["isArray", "from", "of"]),
+};
+const ASSERT_METHODS = new Set(["ok", "equal", "notEqual", "deepEqual", "notDeepEqual", "strictEqual", "notStrictEqual", "deepStrictEqual", "notDeepStrictEqual", "throws", "doesNotThrow", "rejects", "doesNotReject", "match", "doesNotMatch", "fail"]);
+const RUNNER_MEMBERS = new Set(["skip", "todo", "only"]);
+const DATA_METHODS = new Set(["length", "size", "map", "filter", "find", "findIndex", "some", "every", "includes", "indexOf", "slice", "at", "concat", "flat", "reduce", "sort", "reverse", "startsWith", "endsWith", "trim", "split", "padStart", "padEnd", "toUpperCase", "toLowerCase", "toFixed", "get", "has", "add", "set", "push"]);
+const ERROR_CTORS = new Set(["Error", "TypeError", "RangeError"]);
+/** Round 4 (Auditor #129): the property names a module declares or reads (its returned values' members). */
+export function moduleDataKeys(content: string): string[] {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const out = new Set<string>();
+  const v = (n: ts.Node): void => {
+    if ((ts.isPropertyAssignment(n) || ts.isPropertySignature(n) || ts.isPropertyDeclaration(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) out.add(n.name.text);
+    if (ts.isShorthandPropertyAssignment(n)) out.add(n.name.text);
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) out.add(n.name.text);
+    if (ts.isBindingElement(n) && n.propertyName && ts.isIdentifier(n.propertyName)) out.add(n.propertyName.text);
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return [...out].filter((k) => !FORBIDDEN_PROPS.has(k)).sort();
+}
+/** Round 4 (Auditor #129 B1): constant value of a string expression (literals, `+`, parens, no-substitution templates), or null. */
+function constString(e: ts.Expression): string | null {
+  if (ts.isStringLiteralLike(e)) return e.text;
+  if (ts.isNumericLiteral(e)) return e.text;
+  if (ts.isParenthesizedExpression(e)) return constString(e.expression);
+  if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const a = constString(e.left), b = constString(e.right);
+    return a !== null && b !== null ? a + b : null;
+  }
+  if (ts.isTemplateExpression(e)) {
+    let out = e.head.text;
+    for (const sp of e.templateSpans) { const x = constString(sp.expression); if (x === null) return null; out += x + sp.literal.text; }
+    return out;
+  }
+  return null;
+}
+const dangerousString = (t: string) => FORBIDDEN_PROPS.has(t) || /__proto__|__lookup|__define|prototype|constructor/.test(t);
+/** Round 3 (Auditor #129): syntax a graded test may use; any other node kind is refused. */
+const ALLOWED_KINDS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.SourceFile, ts.SyntaxKind.EndOfFileToken, ts.SyntaxKind.ImportDeclaration, ts.SyntaxKind.ImportClause, ts.SyntaxKind.NamedImports, ts.SyntaxKind.ImportSpecifier, ts.SyntaxKind.NamespaceImport,
+  ts.SyntaxKind.Identifier, ts.SyntaxKind.StringLiteral, ts.SyntaxKind.NumericLiteral, ts.SyntaxKind.BigIntLiteral, ts.SyntaxKind.RegularExpressionLiteral,
+  ts.SyntaxKind.NoSubstitutionTemplateLiteral, ts.SyntaxKind.TemplateExpression, ts.SyntaxKind.TemplateHead, ts.SyntaxKind.TemplateMiddle, ts.SyntaxKind.TemplateTail, ts.SyntaxKind.TemplateSpan,
+  ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword, ts.SyntaxKind.AsyncKeyword, ts.SyntaxKind.ConstKeyword, ts.SyntaxKind.ReadonlyKeyword,
+  ts.SyntaxKind.ExpressionStatement, ts.SyntaxKind.VariableStatement, ts.SyntaxKind.VariableDeclarationList, ts.SyntaxKind.VariableDeclaration, ts.SyntaxKind.Block, ts.SyntaxKind.ReturnStatement,
+  ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForOfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ThrowStatement, ts.SyntaxKind.TryStatement, ts.SyntaxKind.CatchClause, ts.SyntaxKind.EmptyStatement,
+  ts.SyntaxKind.CallExpression, ts.SyntaxKind.NewExpression, ts.SyntaxKind.PropertyAccessExpression, ts.SyntaxKind.ElementAccessExpression, ts.SyntaxKind.ArrowFunction, ts.SyntaxKind.FunctionExpression, ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.ObjectLiteralExpression, ts.SyntaxKind.PropertyAssignment, ts.SyntaxKind.ShorthandPropertyAssignment, ts.SyntaxKind.ArrayLiteralExpression, ts.SyntaxKind.SpreadElement,
+  ts.SyntaxKind.BinaryExpression, ts.SyntaxKind.PrefixUnaryExpression, ts.SyntaxKind.PostfixUnaryExpression, ts.SyntaxKind.ParenthesizedExpression, ts.SyntaxKind.ConditionalExpression,
+  ts.SyntaxKind.AwaitExpression, ts.SyntaxKind.TypeOfExpression, ts.SyntaxKind.AsExpression, ts.SyntaxKind.NonNullExpression,
+  ts.SyntaxKind.ArrayBindingPattern, ts.SyntaxKind.ObjectBindingPattern, ts.SyntaxKind.BindingElement, ts.SyntaxKind.Parameter, ts.SyntaxKind.OmittedExpression,
+  ts.SyntaxKind.TypeReference, ts.SyntaxKind.ArrayType, ts.SyntaxKind.UnionType, ts.SyntaxKind.LiteralType, ts.SyntaxKind.TypeLiteral, ts.SyntaxKind.PropertySignature, ts.SyntaxKind.TupleType, ts.SyntaxKind.QualifiedName,
+  ts.SyntaxKind.AnyKeyword, ts.SyntaxKind.UnknownKeyword, ts.SyntaxKind.NumberKeyword, ts.SyntaxKind.StringKeyword, ts.SyntaxKind.BooleanKeyword, ts.SyntaxKind.VoidKeyword, ts.SyntaxKind.UndefinedKeyword, ts.SyntaxKind.NeverKeyword,
+]);
+const isPunctuation = (k: ts.SyntaxKind) => k >= ts.SyntaxKind.FirstPunctuation && k <= ts.SyntaxKind.LastPunctuation;
+/** Names the test itself declares (variables, parameters, functions, imports, catch bindings, destructuring). */
+function testDeclaredNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>();
+  const addName = (n: ts.BindingName | ts.Identifier | undefined): void => {
+    if (!n) return;
+    if (ts.isIdentifier(n)) { out.add(n.text); return; }
+    for (const e of n.elements) if (!ts.isOmittedExpression(e)) addName(e.name);
+  };
+  const v = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)) addName(n.name);
+    if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) out.add(n.name.text);
+    if (ts.isImportClause(n) && n.name) out.add(n.name.text);
+    if (ts.isNamespaceImport(n) || ts.isImportSpecifier(n)) out.add(n.name.text);
+    if (ts.isCatchClause(n) && n.variableDeclaration) addName(n.variableDeclaration.name);
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return out;
+}
+/** Identifier positions that are not references (property names, keys, declarations, type names). */
+function isReference(n: ts.Identifier): boolean {
+  const p = n.parent;
+  if (ts.isPropertyAccessExpression(p) && p.name === n) return false;
+  if ((ts.isPropertyAssignment(p) || ts.isPropertySignature(p)) && p.name === n) return false;
+  if (ts.isBindingElement(p) && p.propertyName === n) return false;
+  if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)) return false;
+  if ((ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isBindingElement(p) || ts.isFunctionDeclaration(p) || ts.isFunctionExpression(p)) && p.name === n) return false;
+  if (ts.isTypeReferenceNode(p) || ts.isQualifiedName(p)) return false;
+  return true;
+}
+/**
+ * M23 (Auditor #129): null when a graded test cannot observe the stub other than by calling the function: it imports
+ * only node:test, node:assert/strict and the modules in `allowed`; no dynamic import, import.meta, file/env/process
+ * access, eval/Function, no `PEACEAI_STUB_BODY` text. Otherwise the reason (fail closed).
+ */
+export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[], dataKeys: readonly string[] = []): string | null {
+  if (src.includes(STUB_BODY_CODE) || src.includes("__peaceaiStub")) return "names the stub";
+  const sf = ts.createSourceFile("t.ts", src, ts.ScriptTarget.Latest, true);
+  let problem: string | null = null;
+  // Round 2 (Auditor #129): an imported FUNCTION of the module under test may only be CALLED (`f(...)`), never read,
+  // stringified (.toString, String(), `${f}`, f + ""), passed along or inspected. `functions` names the module's
+  // functions; without it every imported binding is treated as one (stricter).
+  const bound = new Set<string>();
+  for (const s of sf.statements) {
+    if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier) || !allowed.includes(s.moduleSpecifier.text)) continue;
+    const c = s.importClause;
+    if (c?.name) bound.add(c.name.text);
+    const nb = c?.namedBindings;
+    if (nb && ts.isNamespaceImport(nb)) bound.add(nb.name.text);
+    if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!functions || functions.includes((e.propertyName ?? e.name).text)) bound.add(e.name.text);
+  }
+  const declared = testDeclaredNames(sf);
+  // Round 4 (Auditor #129 B1): data keys the test itself declares, plus the module's.
+  const keys = new Set<string>(dataKeys.filter((k) => !FORBIDDEN_PROPS.has(k)));
+  const assertNames = new Set<string>(), runnerNames = new Set<string>();
+  const collect = (n: ts.Node): void => {
+    if ((ts.isPropertyAssignment(n) || ts.isPropertySignature(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) keys.add(n.name.text);
+    if (ts.isShorthandPropertyAssignment(n)) keys.add(n.name.text);
+    if (ts.isBindingElement(n) && !n.propertyName && ts.isIdentifier(n.name) && ts.isObjectBindingPattern(n.parent)) keys.add(n.name.text);
+    if (ts.isBindingElement(n) && n.propertyName && ts.isIdentifier(n.propertyName)) keys.add(n.propertyName.text);
+    if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && n.importClause) {
+      const m = n.moduleSpecifier.text, set = m === "node:assert/strict" ? assertNames : m === "node:test" ? runnerNames : null;
+      if (set && n.importClause.name) set.add(n.importClause.name.text);
+      const nb = n.importClause.namedBindings;
+      if (set && nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (m === "node:test" ? ["test", "it", "describe"].includes((e.propertyName ?? e.name).text) : true) set.add(e.name.text);
+    }
+    ts.forEachChild(n, collect);
+  };
+  collect(sf);
+  for (const k of [...keys]) if (FORBIDDEN_PROPS.has(k)) keys.delete(k);
+  const v = (n: ts.Node): void => {
+    if (problem) return;
+    // Round 3 (Auditor #129): allow-list grammar first (node kinds, free identifiers, Object members).
+    if (!ALLOWED_KINDS.has(n.kind) && !isPunctuation(n.kind)) { problem = `syntax ${ts.SyntaxKind[n.kind]}`; return; }
+    if (ts.isIdentifier(n) && isReference(n) && !declared.has(n.text) && !ALLOWED_GLOBALS.has(n.text)) { problem = `global ${n.text}`; return; }
+    if (ts.isIdentifier(n) && n.text === "Object" && isReference(n) && !declared.has("Object")
+      && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && OBJECT_MEMBERS.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Object other than Object.keys/fromEntries/freeze calls"; return; }
+    if (ts.isImportDeclaration(n)) {
+      const m = ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : "";
+      if (!TEST_IMPORTS.has(m) && !allowed.includes(m)) problem = `imports ${m}`;
+      return;
+    }
+    if (ts.isImportEqualsDeclaration(n) || ts.isExportDeclaration(n)) { problem = "import=/export"; return; }
+    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { problem = "dynamic import"; return; }
+    if (ts.isMetaProperty(n)) { problem = "import.meta/new.target"; return; }
+    if (ts.isIdentifier(n) && FORBIDDEN_NAMES.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text}`; return; }
+    if (ts.isElementAccessExpression(n) && !ts.isNumericLiteral(n.argumentExpression)) { problem = "computed member access"; return; }
+    // Round 4 (Auditor #129 B1): property-name allow-list.
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) {
+      const p = n.name.text, base = ts.isIdentifier(n.expression) && !declared.has(n.expression.text) ? n.expression.text : null;
+      const ok = !FORBIDDEN_PROPS.has(p) && (
+        (base !== null && Object.hasOwn(GLOBAL_MEMBERS, base) ? GLOBAL_MEMBERS[base]!.has(p)
+          : ts.isIdentifier(n.expression) && assertNames.has(n.expression.text) ? ASSERT_METHODS.has(p)
+          : ts.isIdentifier(n.expression) && runnerNames.has(n.expression.text) ? RUNNER_MEMBERS.has(p)
+          : base !== null && ERROR_CTORS.has(base) ? false
+          : keys.has(p) || DATA_METHODS.has(p)));
+      if (!ok) { problem = `property ${p} not allow-listed`; return; }
+    }
+    // Round 4 (Auditor #129 B1): constant-fold string expressions; any that spell a forbidden name is refused.
+    if (ts.isBinaryExpression(n) || ts.isTemplateExpression(n) || ts.isParenthesizedExpression(n)) {
+      const c = constString(n as ts.Expression);
+      if (c !== null && dangerousString(c)) { problem = `string evaluates to ${c}`; return; }
+    }
+    // Round 4 (Auditor #129 B2): Error/TypeError/RangeError only as `new X(...)`; Buffer only Buffer.from/alloc calls.
+    if (ts.isIdentifier(n) && ERROR_CTORS.has(n.text) && isReference(n) && !declared.has(n.text) && !(ts.isNewExpression(n.parent) && n.parent.expression === n)) { problem = `${n.text} other than new ${n.text}(...)`; return; }
+    if (ts.isIdentifier(n) && n.text === "Buffer" && isReference(n) && !declared.has("Buffer")
+      && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && GLOBAL_MEMBERS.Buffer!.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Buffer other than Buffer.from/alloc calls"; return; }
+    if ((ts.isIdentifier(n) || ts.isPrivateIdentifier(n) || ts.isStringLiteralLike(n)) && (FORBIDDEN_PROPS.has(n.text) || (ts.isStringLiteralLike(n) && dangerousString(n.text)))) { problem = `names ${n.text}`; return; }
+    if (ts.isTemplateSpan(n) && ts.isIdentifier(n.expression) && bound.has(n.expression.text)) { problem = `interpolates ${n.expression.text}`; return; }
+    if (ts.isIdentifier(n) && bound.has(n.text) && !ts.isImportSpecifier(n.parent) && !ts.isImportClause(n.parent) && !ts.isNamespaceImport(n.parent)
+      && !(ts.isCallExpression(n.parent) && n.parent.expression === n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text} other than calling it`; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return problem;
+}
+
+/**
+ * M23 (Auditor #129): true when a module defines any callable other than top-level `function` declarations
+ * (arrow functions, function expressions, classes, object/class methods, accessors) outside those declarations'
+ * own bodies. Such a callable could carry the fix's behavior past the stubs, so the caller fails closed.
+ */
+export function hasNonDeclarationCallables(content: string): boolean {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  let found = false;
+  const v = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isFunctionDeclaration(n) && n.parent === sf) return; // its body is stubbed whole
+    if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isClassLike(n) || ts.isMethodDeclaration(n) || ts.isGetAccessor(n) || ts.isSetAccessor(n) || ts.isFunctionDeclaration(n)) { found = true; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return found;
+}
+
+/**
+ * Round 3 (Auditor #129): true when a module imports (or re-exports from) another file by a relative or absolute
+ * path. Under the narrowed reads (test file, module, node_modules) such a module cannot load, so the harness
+ * records it as ungradable "module-imports-repo-files" instead of running it. Type-only imports are erased.
+ */
+export function moduleImportsRepoFiles(content: string): boolean {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  let found = false;
+  const v = (n: ts.Node): void => {
+    if (found) return;
+    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier) && /^[./]/.test(n.moduleSpecifier.text)) {
+      const typeOnly = ts.isImportDeclaration(n) ? !!n.importClause?.isTypeOnly : n.isTypeOnly;
+      if (!typeOnly) { found = true; return; }
+    }
+    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { found = true; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return found;
 }
