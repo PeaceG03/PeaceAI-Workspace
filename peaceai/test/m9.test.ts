@@ -422,10 +422,31 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
+const LM_TRAIN_WORKFLOW_SHA256 = "4fd9f5dc3b5eb7ba1d592dee7bf63fecb3fce9410b8c4e85678b444b0397b307"; // M31, Auditor #140
+
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
   const wfDir = join(repo, ".github/workflows");
   for (const f of readdirSync(wfDir)) {
     const text = readFileSync(join(wfDir, f), "utf8");
+    // M31 (Architect): the ONE exception is peace-lm-train.yml, public-only, held-out-checked, never the memcheck
+    // (that still needs core and runs on the box). m31-lm-public.test.ts pins the rest of its shape.
+    if (f === "peace-lm-train.yml") {
+      // Auditor #140 2: the exemption is pinned to the exact reviewed file; any edit must re-pin here.
+      assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), LM_TRAIN_WORKFLOW_SHA256, "peace-lm-train.yml changed: re-review and re-pin");
+      assert.match(text, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m, "workflow_dispatch only, permissions {}");
+      assert.equal((text.match(/^on:/gm) ?? []).length, 1);
+      assert.match(text, /\n    if: github\.ref == 'refs\/heads\/main'\n/);
+      assert.match(text, /- uses: actions\/checkout@[0-9a-f]{40} # v[\d.]+\n        with:\n          persist-credentials: false\n/);
+      assert.equal((text.match(/actions\/checkout@/g) ?? []).length, 1);
+      assert.equal((text.match(/secrets\./g) ?? []).length, 1, "one secret reference");
+      const landing = text.slice(text.indexOf("      - name: Land the model in Results only"));
+      assert.match(landing, /DEPLOY_KEY: \$\{\{ secrets\.PEACEAI_RESULTS_DEPLOY_KEY \}\}/);
+      assert.ok(!/      - name: /.test(landing.slice(10)), "the landing step is the last step");
+      assert.match(text, /PEACEAI_LM_PUBLIC_ONLY: "1"/);
+      assert.match(text, /lm-manifest-check\.ts/);
+      assert.ok(!/lm-memcheck\.ts|upload-artifact|pull_request|schedule:|push:/.test(text), f);
+      continue;
+    }
     assert.ok(!/model\/train\.py|model\/export\.py|lm-corpus\.ts|lm-memcheck\.ts/.test(text), `${f} must not train`);
   }
   const task = readFileSync(join(wfDir, "peace-task.yml"), "utf8");

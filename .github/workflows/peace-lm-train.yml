@@ -1,0 +1,91 @@
+name: peace-lm-train
+
+# M31 (Architect): trains the from-scratch PeaceAI LM on a free runner from Peace's PUBLIC commits only
+# (PeaceSTOCKS and PeaceAI-Workspace at the commits pinned in peaceai/model/lm-public-allow.json), with every
+# heldout.json A+B file excluded by content sha256. No private code is cloned, no external model or weights are
+# downloaded, and nothing about the model reaches this public repository: no artifacts, quiet logs (counts and
+# step metrics only). Weights land only in Results through results-write.sh. No latest.json is written, so
+# every loader refuses the model until the memcheck (on the box, against core) passes.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-lm-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: train public-only LM
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Fetch Peace's public sources at the pinned commits (anonymous, read-only)
+        run: |
+          set -euo pipefail
+          for pair in $(jq -r '.sources | to_entries[] | "\(.key)=\(.value)"' peaceai/model/lm-public-allow.json); do
+            name="${pair%%=*}"; sha="${pair#*=}"; dir="$RUNNER_TEMP/src/${name//\//__}"
+            git init --quiet "$dir"
+            git -C "$dir" fetch --quiet --depth 1 "https://github.com/$name.git" "$sha"
+            test "$(git -C "$dir" rev-parse FETCH_HEAD)" = "$sha"
+          done
+      - name: Build the public corpus, drop held-out by content, leak-scan
+        env:
+          PEACEAI_LM_PUBLIC_ONLY: "1"
+        run: |
+          set -euo pipefail
+          dirs=$(jq -c --arg r "$RUNNER_TEMP/src" '.sources | keys | map({(.): ($r + "/" + sub("/"; "__"))}) | add' peaceai/model/lm-public-allow.json)
+          PEACEAI_LM_OWNER_DIRS="$dirs" PEACEAI_LM_OUT="$RUNNER_TEMP/raw" ./node_modules/.bin/tsx peaceai/bin/lm-corpus.ts
+          PEACEAI_LM_IN="$RUNNER_TEMP/raw" PEACEAI_LM_OUT="$RUNNER_TEMP/corpus" ./node_modules/.bin/tsx peaceai/bin/lm-public-corpus.ts
+          rm -rf "$RUNNER_TEMP/raw"
+      - name: Manifest check (fails on any held-out sha256 or anything off the public allowlist)
+        run: ./node_modules/.bin/tsx peaceai/bin/lm-manifest-check.ts "$RUNNER_TEMP/corpus/manifest.jsonl" "$RUNNER_TEMP/corpus/docs.jsonl"
+      - name: Train (ctx 512, CPU, early stopping) and export
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
+            --ctx 512 --d-model 256 --n-layer 4 --n-head 4 --vocab 4096 --batch 16 \
+            --steps 400 --eval-every 25 --patience 4 --threads 4 --max-seconds 14400 > "$RUNNER_TEMP/train.log" 2>&1 \
+            || { echo "train failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          ck=best.npz; test -f "$RUNNER_TEMP/work/best.npz" || ck=checkpoint.npz
+          "$py" peaceai/model/export.py --work "$RUNNER_TEMP/work" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint "$ck" > /dev/null
+          cp "$RUNNER_TEMP/work/metrics.jsonl" "$RUNNER_TEMP/model/train-metrics.jsonl"
+          cp "$RUNNER_TEMP/corpus/manifest.jsonl" "$RUNNER_TEMP/model/manifest.jsonl"
+          jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
+      - name: Land the model in Results only (no latest.json; refused until memcheck PASS)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          MODEL_DIR: ${{ runner.temp }}/model
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M31 public-only LM (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              v=$(jq -r .version "$MODEL_DIR/config.json")
+              [[ "$v" =~ ^[A-Za-z0-9._-]+$ && "$v" != "." && "$v" != ".." ]] || { echo "landing refused: bad version"; exit 1; }
+              if [ -n "$(find "$MODEL_DIR" -type l)" ]; then echo "landing refused: symlink in model dir"; exit 1; fi
+              d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp -P "$MODEL_DIR"/* "$d"/
+              git -C "$RESULTS_DIR" add -A
+              staged=$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames) || exit 1
+              prefix="models/lm/$v/"
+              while IFS= read -r name; do
+                [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi
+              done <<< "$staged"'
+          rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/work" "$RUNNER_TEMP/corpus"
