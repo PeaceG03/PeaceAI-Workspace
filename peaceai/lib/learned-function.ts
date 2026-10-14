@@ -627,7 +627,11 @@ function pureExpr(e: ts.Node, params: ReadonlySet<string>): boolean {
  */
 export function loadTimeCallback(fn: ts.ArrowFunction | ts.FunctionExpression, sf: ts.SourceFile): boolean {
   const call = fn.parent;
-  if (!ts.isCallExpression(call) || !call.arguments.includes(fn as ts.Expression) || !ts.isPropertyAccessExpression(call.expression) || !LOAD_TIME_METHODS.has(call.expression.name.text)) return false;
+  if (!ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression) || !LOAD_TIME_METHODS.has(call.expression.name.text)) return false;
+  // Auditor #139 X1: the callback is the FIRST and only argument; reduce may add one data-only initial value.
+  // A second argument (reduce's initial value, a thisArg) could otherwise carry a callable out of the const.
+  if (call.arguments[0] !== fn) return false;
+  if (call.arguments.length > 1 && !(call.expression.name.text === "reduce" && call.arguments.length === 2 && dataOnly(call.arguments[1]!))) return false;
   // (1) inside a top-level const initializer, with no function boundary between.
   let decl: ts.Node = call;
   while (decl.parent && !ts.isVariableDeclaration(decl)) { decl = decl.parent; if (ts.isFunctionLike(decl) || ts.isClassLike(decl)) return false; }
@@ -651,18 +655,28 @@ export function loadTimeCallback(fn: ts.ArrowFunction | ts.FunctionExpression, s
   if (ts.isBlock(fn.body)) { for (const st of fn.body.statements) { if (!ts.isReturnStatement(st) || !st.expression) return false; exprs.push(st.expression); } }
   else exprs.push(fn.body);
   if (!exprs.length || !exprs.every((e) => pureExpr(e, params))) return false;
-  // (4) the const is never called (directly, through a member, or as a tag/constructor).
+  // (4) Auditor #139 X1: the const is only ever READ through a property or index access (B[i], B.length) whose
+  // result is not called, assigned or updated. Any other use (aliasing `const g = B`, passing it, placing it in
+  // a literal `[B][0](x)`, calling it or a member of it) fails closed.
   const name = decl.name.text;
-  let called = false;
-  const root = (e: ts.Expression): ts.Expression => (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e) || ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e) || ts.isTypeAssertionExpression(e) || ts.isSatisfiesExpression(e) ? root(e.expression) : e);
+  let bad = false;
+  const unwrapUp = (n: ts.Node): ts.Node => { let u = n; while (u.parent && (ts.isParenthesizedExpression(u.parent) || ts.isNonNullExpression(u.parent) || ts.isAsExpression(u.parent) || ts.isTypeAssertionExpression(u.parent) || ts.isSatisfiesExpression(u.parent))) u = u.parent; return u; };
   const v = (n: ts.Node): void => {
-    if (called) return;
-    if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && ts.isIdentifier(root(n.expression)) && (root(n.expression) as ts.Identifier).text === name) called = true;
-    if (ts.isTaggedTemplateExpression(n) && ts.isIdentifier(root(n.tag)) && (root(n.tag) as ts.Identifier).text === name) called = true;
+    if (bad) return;
+    if (ts.isIdentifier(n) && n.text === name && n !== decl.name && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n) && !(ts.isPropertyAssignment(n.parent) && n.parent.name === n)) {
+      const u = unwrapUp(n), acc = u.parent;
+      const isRead = acc && (ts.isPropertyAccessExpression(acc) || ts.isElementAccessExpression(acc)) && acc.expression === u;
+      if (!isRead) { bad = true; return; }
+      const r = unwrapUp(acc!), use = r.parent;
+      if (use && ((ts.isCallExpression(use) || ts.isNewExpression(use)) && use.expression === r || ts.isTaggedTemplateExpression(use) && use.tag === r
+        || ts.isBinaryExpression(use) && use.left === r && use.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && use.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+        || (ts.isPrefixUnaryExpression(use) || ts.isPostfixUnaryExpression(use)) && (use.operator === ts.SyntaxKind.PlusPlusToken || use.operator === ts.SyntaxKind.MinusMinusToken)
+        || ts.isDeleteExpression(use))) { bad = true; return; }
+    }
     ts.forEachChild(n, v);
   };
   v(sf);
-  return !called;
+  return !bad;
 }
 
 export function hasNonDeclarationCallables(content: string): boolean {

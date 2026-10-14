@@ -45,3 +45,29 @@ test("M30 refusals: every other condition fails closed", () => {
     ["const BACKOFF_MS = () => 1;", "plain arrow const"],
   ] as const) assert.equal(has(line), true, why);
 });
+
+test("Auditor #139 X1: the callback is the first and only argument; reduce's initial value must be data", () => {
+  for (const [src, why] of [
+    ["const B = [0].reduce((a) => a, (y: number) => (y > 3 ? 'HIGH' : 'LOW'));\nconst g = B;\nexport function old(x: number) { return g(x); }\n", "Auditor's exploit: callable as reduce's initial value, aliased and called"],
+    ["const B = [0].some((x) => x > 0, (y: number) => y * 2);\n", "Auditor's exploit: callable thisArg"],
+    ["const B = [0].reduce((a, x) => a + x, decideTenMinMode);\n", "initial value is a binding"],
+    ["const B = [0].map(String, (m: number) => m);\n", "callback not first"],
+    ["const B = [0].map((m) => m, 1);\n", "map takes exactly one argument"],
+  ] as const) assert.equal(hasNonDeclarationCallables(src + FN), true, why);
+  assert.equal(hasNonDeclarationCallables("const B = [1, 2].reduce((a, x) => a + x, 0);\n" + FN), false, "reduce with a data initial value");
+});
+
+test("Auditor #139 X1: the const is only read through property/index access, never aliased, passed or called", () => {
+  const L = "const BACKOFF_MS = [5, 15, 45, 120].map((m) => m * 60_000);\n";
+  for (const [rest, why] of [
+    ["const g = BACKOFF_MS;\n", "aliased"],
+    ["export function f(x: number) { return [BACKOFF_MS][0]![x]; }\n", "placed in a literal"],
+    ["export function f(x: number) { return ([BACKOFF_MS][0] as any)(x); }\n", "[B][0](x)"],
+    ["export function f(x: number) { return (BACKOFF_MS[0] as any)(x); }\n", "an element is called"],
+    ["export function f() { return String(BACKOFF_MS); }\n", "passed"],
+    ["export function f() { BACKOFF_MS[0] = 1; }\n", "element assigned"],
+    ["export function f() { BACKOFF_MS[0]++; }\n", "element updated"],
+    ["export { BACKOFF_MS };\n", "re-exported"],
+  ] as const) assert.equal(hasNonDeclarationCallables(L + FN + rest), true, why);
+  assert.equal(hasNonDeclarationCallables(L + "export function w(i: number): number { return BACKOFF_MS[Math.min(i, BACKOFF_MS.length - 1)]!; }\n"), false, "the b6dbd91 read pattern");
+});
