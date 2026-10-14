@@ -46,3 +46,15 @@ export function filterPublic(manifest: readonly PublicManifestEntry[], docs: rea
   });
   return { manifest: outM, docs: outD, dropped: manifest.length - outM.length };
 }
+
+/** Auditor #140: every docs.jsonl line re-hashed against its manifest entry (same count, same doc order, same sha256). */
+export function docsProblems(manifest: readonly PublicManifestEntry[], docs: readonly string[], sha256: (t: string) => string): string[] {
+  if (docs.length !== manifest.length) return [`docs/manifest count differ: ${docs.length} vs ${manifest.length}`];
+  let bad = 0;
+  docs.forEach((d, i) => {
+    let o: { doc?: unknown; text?: unknown };
+    try { o = JSON.parse(d); } catch { bad++; return; }
+    if (o.doc !== manifest[i]!.doc || manifest[i]!.doc !== i || typeof o.text !== "string" || sha256(o.text) !== manifest[i]!.sha256) bad++;
+  });
+  return bad ? [`docs whose content does not match the manifest sha256: ${bad}`] : [];
+}

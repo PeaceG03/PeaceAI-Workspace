@@ -1,12 +1,13 @@
 // M31: the public-runner LM corpus check fails on any held-out sha256 and on anything off the public allowlist.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { heldOutHashes } from "../lib/lmcorpus.ts";
-import { filterPublic, manifestProblems, validAllow, type PublicManifestEntry } from "../lib/lmpublic.ts";
+import { docsProblems, filterPublic, manifestProblems, validAllow, type PublicManifestEntry } from "../lib/lmpublic.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -46,12 +47,18 @@ test("M31: filterPublic drops held-out, private and off-list entries; its output
 
 test("M31: lm-manifest-check exits 1 on a held-out sha and 0 on a clean manifest", () => {
   const d = mkdtempSync(join(tmpdir(), "m31-"));
-  const run = (rows: PublicManifestEntry[]) => { const f = join(d, "m.jsonl"); writeFileSync(f, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
-    return spawnSync(join(root, "node_modules/.bin/tsx"), [join(root, "peaceai/bin/lm-manifest-check.ts"), f], { encoding: "utf8" }); };
+  const run = (rows: PublicManifestEntry[], texts = rows.map(() => "x")) => { const f = join(d, "m.jsonl"), g = join(d, "d.jsonl");
+    writeFileSync(f, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    writeFileSync(g, texts.map((t, i) => JSON.stringify({ doc: i, text: t })).join("\n") + "\n");
+    return spawnSync(join(root, "node_modules/.bin/tsx"), [join(root, "peaceai/bin/lm-manifest-check.ts"), f, g], { encoding: "utf8" }); };
   const bad = run([entry(ok), entry(held)]);
   assert.equal(bad.status, 1); assert.match(bad.stdout, /FAIL held-out sha256 present: 1/);
-  const good = run([entry(ok)]);
-  assert.equal(good.status, 0); assert.match(good.stdout, /PASS files=1 .*heldout_present=0/);
+  // a clean manifest needs a real allowlisted text: any tracked file still byte-identical to its pinned version.
+  const real = execFileSync("git", ["ls-files", "src", "peaceai/lib"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)
+    .map((p) => readFileSync(join(root, p), "utf8")).find((t) => allow.sha256.includes(createHash("sha256").update(t).digest("hex")));
+  assert.ok(real !== undefined, "some tracked file is still allowlisted");
+  const good = run([entry(createHash("sha256").update(real!).digest("hex"))], [real!]);
+  assert.equal(good.status, 0, good.stdout); assert.match(good.stdout, /PASS files=1 .*heldout_present=0/);
 });
 
 test("M31: the workflow trains public-only, runs the manifest check before training, and lands only in Results", () => {
@@ -64,4 +71,59 @@ test("M31: the workflow trains public-only, runs the manifest check before train
   assert.equal((wf.match(/secrets\.PEACEAI_RESULTS_DEPLOY_KEY/g) ?? []).length, 1, "the key is given to the landing step only");
   for (const p of ["peaceai/lib/lmpublic.ts", "peaceai/bin/lm-manifest-check.ts", "peaceai/bin/lm-public-corpus.ts", "peaceai/model/lm-public-allow.json"]) assert.ok(protectedReason(p), p);
   void execFileSync;
+});
+
+const H = (t: string) => createHash("sha256").update(t).digest("hex");
+
+test("Auditor #140: the manifest check re-hashes every doc against its manifest entry", () => {
+  const m = [entry(H("a"), { doc: 0 }), entry(H("b"), { doc: 1 })];
+  assert.deepEqual(docsProblems(m, [JSON.stringify({ doc: 0, text: "a" }), JSON.stringify({ doc: 1, text: "b" })], H), []);
+  assert.match(docsProblems(m, [JSON.stringify({ doc: 0, text: "a" }), JSON.stringify({ doc: 1, text: "SWAPPED" })], H).join(), /does not match the manifest sha256: 1/);
+  assert.match(docsProblems(m, [JSON.stringify({ doc: 0, text: "a" })], H).join(), /count differ/);
+  assert.match(docsProblems(m, [JSON.stringify({ doc: 1, text: "b" }), JSON.stringify({ doc: 0, text: "a" })], H).join(), /does not match/, "reordered");
+  assert.match(docsProblems(m, ["not json", JSON.stringify({ doc: 1, text: "b" })], H).join(), /does not match/);
+});
+
+test("Auditor #140: the CLI fails on a doc whose text differs from the manifest, and without docs.jsonl", () => {
+  const d = mkdtempSync(join(tmpdir(), "m31d-"));
+  const f = join(d, "m.jsonl"), g = join(d, "d.jsonl");
+  writeFileSync(f, JSON.stringify(entry(ok)) + "\n"); writeFileSync(g, JSON.stringify({ doc: 0, text: "smuggled" }) + "\n");
+  const tsx = join(root, "node_modules/.bin/tsx"), cli = join(root, "peaceai/bin/lm-manifest-check.ts");
+  const r = spawnSync(tsx, [cli, f, g], { encoding: "utf8" });
+  assert.equal(r.status, 1); assert.match(r.stdout, /does not match the manifest sha256: 1/);
+  const n = spawnSync(tsx, [cli, f], { encoding: "utf8" });
+  assert.equal(n.status, 1); assert.match(n.stdout, /docs\.jsonl required/);
+});
+
+/** The landing step's own script, run against a scratch Results checkout. */
+function land(version: string, extra?: (results: string) => void): { status: number | null; out: string; staged: string } {
+  const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
+  const m = wf.match(/bash -c '(set -euo pipefail\n[\s\S]*?)'\n/);
+  assert.ok(m, "landing script found");
+  const d = mkdtempSync(join(tmpdir(), "m31l-")), results = join(d, "results"), model = join(d, "model");
+  mkdirSync(join(results, "models/lm"), { recursive: true }); mkdirSync(model);
+  execFileSync("git", ["init", "-q", results]);
+  writeFileSync(join(model, "config.json"), JSON.stringify({ version })); writeFileSync(join(model, "weights.npz"), "w");
+  extra?.(results);
+  const r = spawnSync("bash", ["-c", m![1]!], { encoding: "utf8", env: { ...process.env, RESULTS_DIR: results, MODEL_DIR: model } });
+  const staged = spawnSync("git", ["-C", results, "diff", "--cached", "--name-only"], { encoding: "utf8" }).stdout;
+  return { status: r.status, out: r.stdout + r.stderr, staged };
+}
+
+test("Auditor #140 1: the landing path is validated and only models/lm/<version>/ may be staged", () => {
+  const good = land("lm-v1-0123456789ab");
+  assert.equal(good.status, 0, good.out);
+  assert.deepEqual(good.staged.trim().split("\n").sort(), ["models/lm/lm-v1-0123456789ab/config.json", "models/lm/lm-v1-0123456789ab/weights.npz"]);
+  for (const v of ["../../latest.json", "..", ".", "a/b", "", "lm v1", "x;rm"]) {
+    const r = land(v);
+    assert.notEqual(r.status, 0, v); assert.match(r.out, /landing refused: bad version/, v);
+  }
+  const stray = land("lm-v1-0123456789ab", (res) => writeFileSync(join(res, "models/lm/latest.json"), "{}"));
+  assert.notEqual(stray.status, 0); assert.match(stray.out, /landing refused: path outside models\/lm\/lm-v1-0123456789ab\//);
+});
+
+test("Auditor #140: a training failure prints only an exit marker, never the training log", () => {
+  const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
+  assert.match(wf, /\|\| \{ echo "train failed exit=\$\?"; exit 1; \}/);
+  assert.ok(!/tail[^\n]*train\.log|cat[^\n]*train\.log/.test(wf));
 });
