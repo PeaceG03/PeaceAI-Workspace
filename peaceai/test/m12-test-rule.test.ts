@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "b824e22480c5fc5da3056e9674b18d8f1553da22a82006054fd7cd4d4ba977f1"; // M39 on main after #157/#158/#159: lm-memcheck.ts and m39-corefree-ext.test.ts join the model entry
+const PROTECTED_DIGEST = "23646f3859ece65a56d173c1503e59a2508351ab703e02881dbb53870d877d59"; // M40: m40-corefree-followups.test.ts joins the model entry

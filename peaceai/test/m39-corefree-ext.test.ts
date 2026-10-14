@@ -107,7 +107,7 @@ test("M39 (2): public-origin files count as non-core only at the pinned sha; emp
   } finally { rmSync(dir, { recursive: true, force: true }); }
   // lm-memcheck: whitespace-only core files never enter coreShas.
   const src = readFileSync(join(repo, "peaceai/bin/lm-memcheck.ts"), "utf8");
-  assert.match(src, /\(tree\.raw \?\? \[\]\)\.filter\(\(t\) => t\.replace\(\/\\s\+\/g, ""\) !== ""\)\.map\(\(t\) => h\(t\)\)/);
+  assert.match(src, /\(tree\.raw \?\? \[\]\)\.filter\(\(t\) => !isAsciiBlank\(t\)\)\.map\(\(t\) => h\(t\)\)/); // M40: ASCII-only whitespace
 });
 
 test("M39 (2): a short core file is still core (no byte threshold)", () => {

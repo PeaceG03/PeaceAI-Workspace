@@ -16,6 +16,14 @@ ap.add_argument("--core-dir", required=True)
 ap.add_argument("--model", required=True)
 ap.add_argument("--near", type=float, default=0.8)
 args = ap.parse_args()
+# M40 (Auditor #160): a stale proof from an earlier run never survives a refused or crashed run.
+try:
+    os.remove(os.path.join(args.model, "corefree-proof.json"))
+except FileNotFoundError:
+    pass
+# M40: ASCII whitespace only (Python's \s also matches NBSP, U+2000-200A, U+3000, \x1c-\x1f, U+FEFF); same set as JS.
+ASCII_WS = re.compile(r"[ \t\r\n\f\v]+")
+blank = lambda t: not ASCII_WS.sub("", t)  # noqa: E731
 
 TOKEN = re.compile(r"[A-Za-z_$][\w$]*|\d+|\S")
 NPERM, BANDS = 64, 16
@@ -53,7 +61,7 @@ for p in subprocess.run(["git", "ls-files", "-z"], cwd=args.core_dir, capture_ou
             t = raw.decode("utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if not re.sub(r"\s+", "", t):
+        if blank(t):
             continue  # M39: empty / whitespace-only core files carry no text to copy
         if p in pins and hashlib.sha256(raw).hexdigest() == pins[p]:
             pinned_texts.append((pins[p], t))
@@ -74,7 +82,7 @@ man = [json.loads(l) for l in man_text.split("\n") if l.strip()]
 # M39 (Architect): two manifest schemas. Internal (lm-corpus.ts: source + visibility, unchanged: every entry must be
 # visibility "public"). External (ext-fetch.ts: repo + license + sha256): every field must be known, external repos
 # must carry a permissive license and never be Peace's, and Peace's own repos only the public owner repos with the
-# owner license. Unknown fields, mixed schemas or anything malformed: fail closed (exit 2, no proof written).
+# owner license. Unknown fields, mixed schemas or anything malformed: fail closed (exit 1, no proof written).
 EXT_KEYS = {"doc", "stage", "repo", "commit", "license", "path", "sha256", "bytes", "origin", "split"}
 EXT_REQUIRED = {"doc", "repo", "commit", "license", "path", "sha256", "origin"}
 PERMISSIVE = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"}
@@ -89,12 +97,16 @@ def ext_problem(m):
         return f"unknown field {sorted(unknown)[0]}"
     if EXT_REQUIRED - set(m):
         return f"missing field {sorted(EXT_REQUIRED - set(m))[0]}"
-    if not isinstance(m["doc"], int) or not isinstance(m["path"], str) or not m["path"]:
-        return "bad doc/path"
+    if type(m["doc"]) is not int or m["doc"] < 0 or not isinstance(m["path"], str) or not m["path"]:
+        return "bad doc/path"  # M40: bools are not ints
+    if "bytes" in m and (type(m["bytes"]) is not int or m["bytes"] < 0):
+        return "bad bytes"
+    if not isinstance(m["license"], str):
+        return "bad license"
     if not re.fullmatch(r"[0-9a-f]{64}", str(m["sha256"])) or not re.fullmatch(r"[0-9a-f]{40}", str(m["commit"])):
         return "bad sha256/commit"
     repo = m["repo"]
-    if not isinstance(repo, str) or not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or any(x[:1] in ".-" for x in repo.split("/")):
+    if not isinstance(repo, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo, re.ASCII) or any(x[:1] in ".-" for x in repo.split("/")):
         return "bad repo"
     if m["origin"] == "external":
         if repo.lower().startswith("peaceg03/") or m["license"] not in PERMISSIVE:
@@ -125,7 +137,13 @@ docs = {}
 for line in open(os.path.join(args.corpus, "docs.jsonl"), encoding="utf-8"):
     if line.strip():
         d = json.loads(line)
+        if type(d.get("doc")) is not int or d["doc"] in docs or not isinstance(d.get("text"), str):
+            sys.exit("corefree_proof: docs.jsonl refused (bad or duplicate doc id)")
         docs[d["doc"]] = d["text"]
+# M40 (Auditor #160): the docs and manifest id sets must be equal (no extra, missing or duplicate ids).
+man_ids = [m.get("doc") if isinstance(m, dict) else None for m in man]
+if len(set(man_ids)) != len(man_ids) or set(man_ids) != set(docs):
+    sys.exit("corefree_proof: docs.jsonl and manifest.jsonl doc ids differ")
 files = []
 ignored_empty = 0
 allowlisted = 0
@@ -135,7 +153,7 @@ for m in man:
     tsha = hashlib.sha256(t.encode()).hexdigest()
     if tsha != m["sha256"]:
         sys.exit(f"corefree_proof: doc {m['doc']} text does not hash to its manifest sha256")
-    if not re.sub(r"\s+", "", t):
+    if blank(t):
         # M39: empty / whitespace-only after normalisation: ignored (no wider byte threshold).
         ignored_empty += 1
         files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": False, "coreNearMax": 0.0})

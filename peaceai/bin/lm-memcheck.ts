@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
-import { COREFREE_MIN_RUN, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
+import { COREFREE_MIN_RUN, docIdsMatch, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
 
 const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
@@ -61,7 +61,7 @@ else {
     const tm: (ManifestEntry & Record<string, unknown>)[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
     // M39: empty / whitespace-only core files carry no text; they never make a training file "core" (allowlisted
     // public-origin files are already out of tree.raw, matched by path and exact-bytes pin in coreindex.ts).
-    const coreShas = new Set((tree.raw ?? []).filter((t) => t.replace(/\s+/g, "") !== "").map((t) => h(t)));
+    const coreShas = new Set((tree.raw ?? []).filter((t) => !isAsciiBlank(t)).map((t) => h(t)));
     trainManifestSha = h(tmText);
     let proof: unknown = null;
     try { proof = JSON.parse(readFileSync(join(modelDir, "corefree-proof.json"), "utf8")); } catch { proof = null; }
@@ -69,6 +69,10 @@ else {
     const v = validCoreFreeProof(proof, { modelId, manifest: tm, manifestSha256: trainManifestSha });
     proofState = v.ok ? "VALID" : `INVALID:${v.reason}`;
     if (proof !== null && v.ok) proofSha = h(readFileSync(join(modelDir, "corefree-proof.json"), "utf8"));
+    // M40: docs.jsonl ids must equal the manifest ids, else the manifest proves nothing (strict rule).
+    const docIds: unknown[] = [];
+    for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) docIds.push(JSON.parse(l).doc);
+    if (!docIdsMatch(tm.map((m) => m.doc), docIds)) noCoreProof = "NOT_PROVEN";
     if (!manifestProvesNoCore(tm, coreShas, CORE_SOURCE) || (tree.raw ?? []).length === 0) noCoreProof = "NOT_PROVEN";
     if (v.ok && noCoreProof === "PROVEN") {
       const tt: string[] = [];
