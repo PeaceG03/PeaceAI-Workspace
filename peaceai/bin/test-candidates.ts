@@ -191,7 +191,8 @@ function gradeWorkflowStep(tree: string, files: ReturnType<typeof parseDiff>, un
   if (!run) return ungradable("not-test-only");
   let scripts: Record<string, unknown>;
   try { scripts = (JSON.parse(readFileSync(join(tree, "package.json"), "utf8")) as { scripts?: Record<string, unknown> }).scripts ?? {}; } catch { return ungradable("not-test-only"); }
-  const words = workflowScript(scripts, run[1]!);
+  const regularInTree = (p: string) => { try { const f = join(tree, p); return lstatSync(f).isFile() && !relative(tree, realpathSync(f)).startsWith(".."); } catch { return false; } };
+  const words = workflowScript(scripts, run[1]!, regularInTree);
   if (!words) return ungradable("not-test-only");
   const tsc = join(tree, "node_modules", ".bin", "tsc");
   const afterFix = runCandidate(tree, tsc, words.slice(1));

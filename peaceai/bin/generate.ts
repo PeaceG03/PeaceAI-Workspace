@@ -1,7 +1,7 @@
 // Job A: generate candidate diffs with the native kernel bundle. Prints counts only.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -256,7 +256,7 @@ for (const a of planSteps ? [] : admissions) {
   if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
   // M19: a workflow-step rule also sees the opted-in workflow files, package.json and the lockfile names.
   const workflowFiles = a.spec.kind === "ADD_WORKFLOW_STEP"
-    ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json").map((p) => ({ path: p, content: "" }))]
+    ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json" || (/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(p) && !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile())).map((p) => ({ path: p, content: "" }))]
     : [];
   const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest);
   if (!edit) continue;

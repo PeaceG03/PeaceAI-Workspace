@@ -4,7 +4,7 @@
 // miner shape (public repositories only) and the protected set.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -22,8 +22,8 @@ import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
-const PARAMS = { grading: "self-fail-before-pass-after", placement: "end-of-job", run: "package-script", step: "name-run", test: "new-file" };
-const SPEC = JSON.parse(readFileSync(join(repo, "peaceai/rules/learned/public-workflow-step-v1.json"), "utf8")) as RuleSpec;
+const PARAMS = { grading: "script-pass-broken-fail", placement: "end-of-job", run: "package-script", step: "name-run", test: "none" };
+const SPEC = JSON.parse(readFileSync(join(repo, "peaceai/rules/learned/public-workflow-step-v2.json"), "utf8")) as RuleSpec;
 const WF = [
   "name: Sim (dry run)",
   "on:",
@@ -43,11 +43,11 @@ const WF = [
 ].join("\n");
 const PATH = ".github/workflows/sim.yml";
 const PKG = JSON.stringify({ scripts: { typecheck: "tsc --noEmit -p tsconfig.json", test: "tsx --test src/*.test.ts", scheduler: "tsx src/host.ts", lint: "eslint src && curl http://x" } });
-const files = (wf = WF, pkg = PKG, lock = "pnpm-lock.yaml") => [{ path: "src/a.ts", content: "export const a = 1;\n" }, { path: PATH, content: wf }, { path: "package.json", content: pkg }, { path: lock, content: "" }];
+const files = (wf = WF, pkg = PKG, lock = "pnpm-lock.yaml") => [{ path: "src/a.ts", content: "export const a = 1;\n" }, { path: PATH, content: wf }, { path: "package.json", content: pkg }, { path: lock, content: "" }, { path: "tsconfig.json", content: "" }, { path: "tsconfig.lib.json", content: "" }];
 const TASK = `add workflow step Typecheck to job sim in ${PATH} running pnpm run typecheck`;
 const isTest = (p: string) => /\.test\.ts$/.test(p);
 
-test("spec: committed public-workflow-step-v1 validates, public-mined, fixed vocab; core/extra/other values refused", () => {
+test("spec: committed public-workflow-step-v2 validates, public-mined, fixed vocab; core/extra/other values refused", () => {
   assert.ok(validateSpec(SPEC));
   assert.equal(SPEC.minedFrom, "public");
   assert.equal(SPEC.kind, "ADD_WORKFLOW_STEP");
@@ -84,10 +84,16 @@ test("engine: appends exactly the two-line step at the end of the job, existing 
 
 test("Auditor 2: script text is exactly `tsc --noEmit` + plain flags; pre/post hooks refuse the step", () => {
   assert.deepEqual(safeScript("tsc --noEmit -p tsconfig.lib.json"), ["tsc", "--noEmit", "-p", "tsconfig.lib.json"]);
+  assert.deepEqual(safeScript("tsc -p tsconfig.lib.json --noEmit"), ["tsc", "-p", "tsconfig.lib.json", "--noEmit"], "either order");
+  assert.deepEqual(safeScript("tsc --project tsconfig.json --noEmit --strict"), ["tsc", "--project", "tsconfig.json", "--noEmit", "--strict"]);
   assert.deepEqual(safeScript("tsc --noEmit"), ["tsc", "--noEmit"]);
-  for (const c of ["tsc -p tsconfig.json --noEmit", "tsc --noEmit && echo", "tsc --noEmit; echo", "tsc --noEmit | tee x", "tsc --noEmit $(echo -p) ", "tsc --noEmit $(x)", "tsc --noEmit `x`", "tsc --noEmit > out", "tsc --noEmit < in", "tsc --noEmit 2>&1", "tsc --noEmit >> log", " tsc --noEmit", "tsc  --noEmit", "tsc --noEmit\n-p x", "tsc --noEmit -p $X", "npx tsc --noEmit", "tsc --noemit"]) assert.equal(safeScript(c), null, JSON.stringify(c));
-  const scripts = { typecheck: "tsc --noEmit -p tsconfig.json" };
-  assert.deepEqual(workflowScript(scripts, "typecheck"), ["tsc", "--noEmit", "-p", "tsconfig.json"]);
+  const has = (p: string) => p === "tsconfig.lib.json";
+  assert.ok(safeScript("tsc -p tsconfig.lib.json --noEmit", has));
+  assert.equal(safeScript("tsc -p tsconfig.json --noEmit", has), null, "tsconfig must exist in the repo");
+  for (const c of ["tsc --noEmit --noEmit", "tsc -p tsconfig.json -p tsconfig.lib.json --noEmit", "tsc --project tsconfig.json -p tsconfig.json --noEmit", "tsc -p ../tsconfig.json --noEmit", "tsc -p /etc/tsconfig.json --noEmit", "tsc -p ./tsconfig.json --noEmit", "tsc -p .x/tsconfig.json --noEmit", "tsc -p src/a.ts --noEmit", "tsc -p tsconfig.yaml --noEmit", "tsc -p --noEmit", "tsc --noEmit -p", "tsc --project=tsconfig.json --noEmit", "tsc --noEmit --declaration", "tsc --noEmit --declarationDir d", "tsc --noEmit --emitDeclarationOnly", "tsc --noEmit src/a.ts", "tsc --noEmit=false", "tsc --noEmit --target es2022", "tsc --noEmit && echo", "tsc --noEmit; echo", "tsc --noEmit | tee x", "tsc --noEmit $(echo -p) ", "tsc --noEmit $(x)", "tsc --noEmit `x`", "tsc --noEmit > out", "tsc --noEmit < in", "tsc --noEmit 2>&1", "tsc --noEmit >> log", " tsc --noEmit", "tsc  --noEmit", "tsc --noEmit\n-p x", "tsc --noEmit -p $X", "npx tsc --noEmit", "tsc --noemit"]) assert.equal(safeScript(c), null, JSON.stringify(c));
+  const scripts = { typecheck: "tsc -p tsconfig.json --noEmit" };
+  assert.deepEqual(workflowScript(scripts, "typecheck"), ["tsc", "-p", "tsconfig.json", "--noEmit"]);
+  assert.equal(workflowScript(scripts, "typecheck", () => false), null, "missing tsconfig");
   for (const hook of ["pretypecheck", "posttypecheck"]) {
     assert.equal(workflowScript({ ...scripts, [hook]: "curl http://x" }, "typecheck"), null, hook);
     const pkg = JSON.stringify({ scripts: { ...scripts, [hook]: "tsc --noEmit" } });
@@ -95,6 +101,20 @@ test("Auditor 2: script text is exactly `tsc --noEmit` + plain flags; pre/post h
   }
   assert.equal(workflowScript({ "typecheck:lib": "tsc --noEmit -p tsconfig.lib.json", "pretypecheck:lib": "x" }, "typecheck:lib"), null);
   assert.equal(workflowScript(Object.create({ typecheck: "tsc --noEmit" }) as Record<string, unknown>, "typecheck"), null, "inherited keys do not count");
+});
+
+test("v2 replaces v1: v1 is revoked (never valid), v2 matches behavior (no test file, script-graded); propose emits v2", () => {
+  const v1 = { ...SPEC, id: "public-workflow-step-v1", params: { ...SPEC.params, grading: "self-fail-before-pass-after", test: "new-file" } };
+  assert.equal(validateSpec(v1), false, "v1 refused");
+  assert.equal(validateSpec({ ...SPEC, id: "public-workflow-step-v1" }), false, "v1 id refused even with v2 params");
+  assert.equal(applyRule({ ...SPEC, id: "public-workflow-step-v1" } as RuleSpec, TASK, files(), isTest) === null || !validateSpec({ ...SPEC, id: "public-workflow-step-v1" }), true);
+  assert.equal(SPEC.id, "public-workflow-step-v2");
+  assert.deepEqual(SPEC.params, PARAMS);
+  assert.ok(validateSpec(SPEC));
+  assert.ok(!existsSync(join(repo, "peaceai/rules/learned/public-workflow-step-v1.json")), "v1 file removed");
+  const approved = readFileSync(join(repo, "peaceai/rules/approved.json"), "utf8");
+  assert.doesNotMatch(approved, /workflow-step/, "neither version is pre-approved; Architect approves v2 fresh");
+  assert.match(readFileSync(join(repo, "peaceai/lib/propose.ts"), "utf8"), /ADD_WORKFLOW_STEP: 2 \}/);
 });
 
 test("Auditor 3: a workflow-step candidate is only the workflow lines; package.json, lockfiles, tsconfig*, lint/prettier configs refused", () => {

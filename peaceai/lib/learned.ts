@@ -7,7 +7,7 @@ import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
-import { applyWorkflowRule, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
+import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
 export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP"] as const;
@@ -55,6 +55,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "ADD_WORKFLOW_STEP" && REVOKED_WORKFLOW_SPECS.has(s.id as string)) return false;
   if (s.kind === "ADD_WORKFLOW_STEP" && !validWorkflowParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   return Object.keys(s).every((k) => ["schema", "id", "kind", "minedFrom", "minerVersion", "shape", "trigger", "params", "evidence"].includes(k));
 }

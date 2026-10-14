@@ -19,13 +19,15 @@
 //   live proof also records two real Actions run ids (step passes; same step fails on the broken input);
 //   see peaceai/proof/workflow-step-proof.md. Deterministic; no model; no YAML library.
 
+/** v1 (test:new-file, self-fail-before-pass-after) is retired: it never matched the Auditor-hardened behavior. */
+export const REVOKED_WORKFLOW_SPECS: ReadonlySet<string> = new Set(["public-workflow-step-v1"]);
 export const WORKFLOW_PARAM_KEYS = ["grading", "placement", "run", "step", "test"] as const;
 export const WORKFLOW_VOCAB: Record<(typeof WORKFLOW_PARAM_KEYS)[number], readonly string[]> = {
-  grading: ["self-fail-before-pass-after"],
+  grading: ["script-pass-broken-fail"],
   placement: ["end-of-job"],
   run: ["package-script"],
   step: ["name-run"],
-  test: ["new-file"],
+  test: ["none"],
 };
 export const WORKFLOW_FILE = /^\.github\/workflows\/[A-Za-z0-9][\w.-]*\.ya?ml$/;
 export const STEP_NAME = String.raw`[A-Za-z0-9][A-Za-z0-9 ()_.,/-]{0,59}`;
@@ -113,17 +115,30 @@ function locate(lines: readonly string[], job: string): { jobText: string; dash:
   return { jobText: lines.slice(s, e).join("\n"), dash, insertAt: last + 1, steps };
 }
 
-/** The script command, if it is one safe tool with plain arguments. */
-export function safeScript(cmd: unknown): string[] | null {
+/**
+ * The script command, if it is one safe tool with plain arguments (Auditor #107 change 2, as refined):
+ * `tsc` first; `--noEmit` exactly once (any position); `-p`/`--project` at most once, followed by a plain
+ * relative path to a tsconfig*.json (and, when `exists` is given, one that exists in the repo as a regular
+ * file, not a symlink); every other token a plain flag. No shell operators, no build/watch/emit flags.
+ */
+export function safeScript(cmd: unknown, exists?: (path: string) => boolean): string[] | null {
   if (typeof cmd !== "string" || cmd.length > 200) return null;
-  // Auditor (change 2): no shell operators at all, and the text is exactly `tsc --noEmit` + plain flags.
   if (/[&;|`<>$\\\n\r\t"'*?(){}\[\]!#~]/.test(cmd) || cmd !== cmd.trim() || / {2}/.test(cmd)) return null;
   const words = cmd.split(" ");
-  if (words[0] !== "tsc" || words[1] !== "--noEmit") return null;
-  if (!(SAFE_TOOLS as readonly string[]).includes(words[0]!)) return null;
-  if (!words.slice(1).every((w) => SAFE_ARG.test(w) && !w.includes("..") && !/^\//.test(w))) return null;
-  // tsc must not emit or build: --noEmit required; no --build/-b, --watch/-w, --outDir/--outFile/--declarationDir, --plugins.
-  if (!words.includes("--noEmit") || words.some((w) => /^(?:-b|--build|-w|--watch|--outDir|--outFile|--declarationDir|--generateTrace|--plugins)(?:=|$)/.test(w))) return null;
+  if (words[0] !== "tsc" || words.filter((w) => w === "--noEmit").length !== 1) return null;
+  let project = 0;
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i]!;
+    if (/^(?:-b|--build|-w|--watch|--outDir|--outFile|--declaration|--declarationDir|--declarationMap|--emitDeclarationOnly|--generateTrace|--plugins|--listEmittedFiles|--sourceMap|--incremental|--tsBuildInfoFile)(?:=|$)/.test(w) || /^--?noEmit=/i.test(w)) return null;
+    if (w === "-p" || w === "--project") {
+      const path = words[++i];
+      if (++project > 1 || !path || !/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(path) || path.split("/").some((x) => x === ".." || x === "." || x.startsWith("."))) return null;
+      if (exists && !exists(path)) return null;
+      continue;
+    }
+    if (/^(?:-p|--project)=/.test(w)) return null;
+    if (!/^--?[a-zA-Z][\w-]*$/.test(w)) return null; // plain flag only (no values, no paths)
+  }
   if (/(^|[\s/])(secret|token|credential|wrangler|production|deploy)/i.test(cmd)) return null;
   return words;
 }
@@ -137,7 +152,8 @@ export function buildWorkflowEdit(params: Record<string, string | string[]>, tas
   if (!files.some((f) => f.path === lock)) return null;
   let scripts: Record<string, unknown>;
   try { scripts = (JSON.parse(pkg.content) as { scripts?: Record<string, unknown> }).scripts ?? {}; } catch { return null; }
-  const words = workflowScript(scripts, task.script);
+  const regular = new Set(files.map((f) => f.path));
+  const words = workflowScript(scripts, task.script, (p) => regular.has(p));
   if (!words) return null;
   const lines = wf.content.split("\n");
   const loc = locate(lines, task.job);
@@ -167,11 +183,11 @@ export function buildTestPath(t: { file: string; job: string; script: string }):
 }
 
 /** Auditor (change 2): the script's words when it is safe to run, else null. Also refuses pre/post hooks. */
-export function workflowScript(scripts: Record<string, unknown>, name: string): string[] | null {
+export function workflowScript(scripts: Record<string, unknown>, name: string, exists?: (path: string) => boolean): string[] | null {
   const has = (k: string) => Object.prototype.hasOwnProperty.call(scripts, k);
   if (BAD_SCRIPT.test(name) || !has(name)) return null;
   if (has(`pre${name}`) || has(`post${name}`)) return null;
-  return safeScript(scripts[name]);
+  return safeScript(scripts[name], exists);
 }
 
 /** Auditor (change 3): paths a workflow-step candidate may never touch alongside the step. */
