@@ -53,14 +53,19 @@ set -euo pipefail
 $guard
 export PEACEAI_CORE_DIR="\${PEACEAI_CORE_DIR:-$core_q}"
 zero="0000000000000000000000000000000000000000"
+# M42: commits already reachable from origin/main are public and skipped (reachability, not a sha list);
+# every other commit, merge commits included, is scanned in full. No origin/main: fail closed.
+public="\$(git rev-parse --verify -q "refs/remotes/origin/main^{commit}" || true)"
+[ -n "\$public" ] || { echo "PRE-PUSH FAIL origin/main cannot be resolved (git fetch origin); push blocked"; exit 1; }
+export PEACEAI_PUBLIC_BASE="\$public"
 commits=""
 while read -r _lref lsha _rref rsha; do
   [ "\$lsha" = "\$zero" ] && continue   # branch deletion: nothing to scan
   if [ "\$rsha" != "\$zero" ] && git cat-file -e "\$rsha^{commit}" 2>/dev/null; then
-    commits="\$commits \$(git rev-list "\$rsha..\$lsha")"
+    commits="\$commits \$(git rev-list "\$rsha..\$lsha" "^\$public")"
   else
     # New branch (or unknown remote tip): every commit not already on a remote-tracking ref.
-    commits="\$commits \$(git rev-list "\$lsha" --not --remotes)"
+    commits="\$commits \$(git rev-list "\$lsha" --not --remotes "^\$public")"
   fi
 done
 [ -z "\${commits// /}" ] && { echo "PRE-PUSH PASS commits=0"; exit 0; }

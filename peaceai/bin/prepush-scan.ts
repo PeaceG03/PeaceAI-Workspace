@@ -24,6 +24,9 @@ const terms = parseTerms(process.env.PEACEAI_PRIVATE_TERMS);
 const empty = emptyIndex();
 const CONFIG = /^(?:package-lock\.json|package\.json|tsconfig[^/]*\.json)$/;
 const SHARED_NAMES = ["README.md", "package.json", "tsconfig.json", ".gitignore", "LICENSE"];
+const publicBase = process.env.PEACEAI_PUBLIC_BASE ?? "";
+const isAncestor = (a: string, b: string) => { try { execFileSync("git", ["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; } };
+const blobAt = (c: string, path: string) => { try { return git("rev-parse", "--verify", "-q", `${c}:${path}`).trim(); } catch { return null; } };
 let failures = 0;
 let files = 0;
 const fail = (sha: string, message: string) => {
@@ -38,11 +41,16 @@ for (const sha of commits) {
   for (const value of git("log", "-1", "--format=%an%n%cn", sha).split("\n").filter(Boolean))
     for (const f of scanText(value, terms)) fail(sha, `commit identity: ${f.kind}`);
   for (const f of scanText(git("log", "-1", "--format=%B", sha), terms)) fail(sha, `commit message:${f.line}: ${f.kind}`);
-  // Files this commit adds or modifies (root commits: all files).
-  const changed = git("diff-tree", "--root", "--no-commit-id", "-r", "-z", "--no-renames", "--diff-filter=AM", "--name-only", sha)
+  // Files this commit adds or modifies (root commits: all files; merge commits: the diff against the first parent).
+  const changed = git("diff-tree", "--root", "--diff-merges=first-parent", "--no-commit-id", "-r", "-z", "--no-renames", "--diff-filter=AM", "--name-only", sha)
     .split("\0")
     .filter(Boolean);
+  // M42: in a merge, a file whose content is byte-identical to a parent already reachable from origin/main
+  // (PEACEAI_PUBLIC_BASE, set by the hook) came in verbatim from public history; anything else is scanned.
+  const parents = git("rev-list", "--parents", "-n", "1", sha).trim().split(" ").slice(1);
+  const publicParents = parents.length > 1 && /^[0-9a-f]{40}$/.test(publicBase) ? parents.filter((p) => isAncestor(p, publicBase)) : [];
   for (const path of changed) {
+    if (publicParents.length && publicParents.some((p) => blobAt(p, path) === blobAt(sha, path))) continue;
     files += 1;
     for (const f of scanText(path, terms)) fail(sha, `path name ${path}: ${f.kind}`);
     if (core.paths.has(path) && !SHARED_NAMES.includes(path)) fail(sha, `${path}: same path as a core file`);
