@@ -15,7 +15,7 @@ import { buildSubstringIndex, countCoreSubstrings } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN } from "../lib/lm.ts";
 import { classifyLicense, CODE_FILE, heldOutHashes } from "../lib/lmcorpus.ts";
 import { agentMade, builderLogRefs, excludedForC, sha256Hex } from "../lib/heldout.ts";
-import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
+import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const cfg = JSON.parse(readFileSync(join(model, "ext-corpus.json"), "utf8"));
@@ -75,6 +75,7 @@ for (const r of pool.filter((p) => cNames.has(p.name))) {
   summary.setC.repos += 1; summary.setC.files += hs.size;
 }
 
+const safetyShas = safetyToolShas(JSON.parse(readFileSync(join(model, "safety-tool-sha256.json"), "utf8")));
 const seen = new Set<string>();
 const docs: string[] = [];
 const manifest: ExtManifestEntry[] = [];
@@ -84,6 +85,7 @@ function admit(repo: string, commit: string, license: string, origin: ExtManifes
   for (const f of files) {
     const sha256 = sha256Hex(f.text);
     let why: ExtExclusion | null = keep(f.path, f.text);
+    if (!why && safetyShas.has(sha256)) why = "safety-tool";
     if (!why && coreShas.has(sha256)) why = "core";
     if (!why && (ab.has(sha256) || cHashes.has(sha256))) why = "held-out";
     if (!why && seen.has(sha256)) why = "duplicate";

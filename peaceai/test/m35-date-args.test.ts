@@ -37,6 +37,11 @@ test("Auditor #152 follow-up: ISO date-only or Z/offset date-times only", () => 
   for (const bad of ['new Date("invalid")', 'new Date("2026-10-11T13:00:00")', 'new Date("2026-10-11 13:00:00Z")', 'new Date("Oct 11 2026")', 'new Date("2026-1-1")', 'new Date("2026-02-30")', 'new Date("2023-02-29")', 'new Date("2026-13-01")', 'new Date("2026-10-11T24:00Z")', 'new Date("2026-10-11T13:60Z")', 'new Date("2026-10-11T13:00+15:00")', 'new Date("2026-10-11T13:00+0200")', 'new Date("+002026-10-11")', 'new Date("2026")', 'new Date("2026-10")', 'new Date("2026-10-11Z")']) assert.ok(!isDateLiteral(expr(bad)), bad);
 });
 
+test("Auditor #154 nit: years 0000-0099 validated as themselves, not as 1900-1999", () => {
+  for (const ok of ["0000-02-29", "0004-02-29", "0096-02-29", "0054-02-18", "0400-02-29", "2000-02-29"]) assert.ok(isDateLiteral(expr(`new Date("${ok}")`)), ok);
+  for (const bad of ["0001-02-29", "0100-02-29", "0099-02-29", "1900-02-29", "0003-02-29"]) assert.ok(!isDateLiteral(expr(`new Date("${bad}")`)), bad);
+});
+
 test("checkRoot: Date only as a call argument, and only with dates on", () => {
   assert.equal(checkRoot(expr('expectedLatest(new Date("2026-10-11"))'), true), "expectedLatest");
   assert.equal(checkRoot(expr('overlap([new Date("2021-01-01")], [])'), true), "overlap");
