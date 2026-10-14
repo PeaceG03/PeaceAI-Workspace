@@ -743,10 +743,10 @@ export function moduleImportsRepoFiles(content: string): boolean {
 export function bodyGrammarProblem(content: string, fnName: string, seen: Set<string> = new Set(), dataKeys: readonly string[] = moduleDataKeys(content)): string | null {
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   const fns = new Map<string, ts.FunctionDeclaration>();
-  const topValues = new Set<string>(), imported = new Set<string>();
+  const topValues = new Map<string, ts.Expression | undefined>(), imported = new Set<string>();
   for (const s of sf.statements) {
     if (ts.isFunctionDeclaration(s) && s.name && s.body) fns.set(s.name.text, s);
-    if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topValues.add(d.name.text);
+    if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topValues.set(d.name.text, d.initializer);
     if (ts.isImportDeclaration(s) && s.importClause && !s.importClause.isTypeOnly) {
       const c = s.importClause;
       if (c.name) imported.add(c.name.text);
@@ -786,7 +786,12 @@ export function bodyGrammarProblem(content: string, fnName: string, seen: Set<st
         if (fns.has(t)) {
           if (!(ts.isCallExpression(n.parent) && n.parent.expression === n)) { problem = `uses ${t} other than calling it`; return; }
           if (!seen.has(t)) { const inner = bodyGrammarProblem(content, t, seen, dataKeys); if (inner) { problem = `calls ${t}: ${inner}`; return; } }
-        } else if (!topValues.has(t) && !ALLOWED_GLOBALS.has(t)) { problem = `global ${t}`; return; }
+        } else if (topValues.has(t)) {
+          // Auditor #141 F1: a top-level value is usable only when its initializer is plain data (no callable, no
+          // import alias, no object holding a function); anything else is refused (fail closed).
+          const init = topValues.get(t);
+          if (!init || !dataOnly(init)) { problem = `uses top-level ${t} whose initializer is not data`; return; }
+        } else if (!ALLOWED_GLOBALS.has(t)) { problem = `global ${t}`; return; }
         if (t === "Object" && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && OBJECT_MEMBERS.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Object other than Object.keys/fromEntries/freeze calls"; return; }
         if (ERROR_CTORS.has(t) && !(ts.isNewExpression(n.parent) && n.parent.expression === n)) { problem = `${t} other than new ${t}(...)`; return; }
         if (t === "Buffer" && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && GLOBAL_MEMBERS.Buffer!.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Buffer other than Buffer.from/alloc calls"; return; }

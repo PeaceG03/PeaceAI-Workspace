@@ -13,7 +13,7 @@ import { protectedReason } from "../lib/selfchange.ts";
 const root = resolve(import.meta.dirname, "../..");
 const WS = "PeaceG03/PeaceAI-Workspace", P = "src/numbers.ts";
 const real = readFileSync(join(root, P), "utf8");
-const SPEC_SHA256 = "15687a3e493da60fa73afbd76a80f55eecd268df1805392e54f89ec2c91634a6";
+const SPEC_SHA256 = "a36567161bd0c3cfcfe366d81048cd22013ba44b142a079549d2ce409f76a9ca";
 const avg = (inner: string) => applyMultiBody(real, "average", inner)!;
 const ML = "\n  if (values.length === 0) {\n    return 0;\n  }\n  let total = 0;\n  for (const v of values) total += v;\n  return total / values.length;\n";
 
@@ -113,6 +113,17 @@ test("Auditor #141 limit 3: the #129 allow-list grammar refuses Auditor's exploi
     ["{ const s = sum; return s(values); }", "same-module function aliased"],
   ] as const) assert.ok(multiBodyEditProblem(WS, P, real, sig(body)), why);
   assert.equal(multiBodyEditProblem(WS, P, real, sig("{ return values.length === 0 ? 0 : sum(values) / values.length + MAX_RETRIES * 0; }")), null, "a same-module callee inside the grammar, a top-level const");
+});
+
+test("Auditor #141 F1: a top-level value is usable only when its initializer is data", () => {
+  const mod = (top: string, body: string) => `import { readFileSync } from "node:fs";\n${top}\nexport function f(x: number): number ${body}\n`;
+  for (const [top, body] of [
+    ['const rd = (p: string) => readFileSync(p, "utf8");', '{ return rd("/etc/passwd").length + x; }'],
+    ["const R = readFileSync;", '{ return R("/etc/hostname", "utf8").length + x; }'],
+    ["const fe = function (p: string) { return readFileSync(p); };", '{ return fe("/x").length + x; }'],
+    ["const O = { r: (p: string) => readFileSync(p) };", '{ return O.r("/x").length + x; }'],
+  ] as const) assert.match(bodyGrammarProblem(mod(top, body), "f") ?? "", /initializer is not data/, top);
+  assert.equal(bodyGrammarProblem(mod("const K = { a: 2, b: [1, 2] };", "{ return K.a + K.b[0]! + x; }"), "f"), null, "data initializer is fine");
 });
 
 test("Auditor #141: same-module callees must pass the grammar; imports may not be used", () => {

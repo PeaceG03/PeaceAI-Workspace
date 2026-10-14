@@ -13,7 +13,7 @@ A candidate may replace the whole body of ONE existing function. All six limits 
    (`bodyGrammarProblem`): allowed node kinds and globals, property names only from the file's data keys BEFORE the
    edit plus data methods and listed global members, constant string folding, computed access only with a numeric
    key, no `this`/`arguments`, classes, generators or nested `function`s, no use of imports, and a same-module
-   function may be called only if its own body passes the grammar too.
+   function may be called only if its own body passes the grammar too, and a top-level value may be used only if its initializer is plain data.
 4. **Behavior proof.** Its test passes with the edit and fails without it, and the "without" failures are ALL
    assertion failures (`assertionFailuresOnly`), never a crash, load error or timeout. When this is wired into
    grading, BOTH runs go through `runGradedTests` with the #129 confinement (permission model, narrowed reads).
