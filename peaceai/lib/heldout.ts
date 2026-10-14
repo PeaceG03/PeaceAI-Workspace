@@ -78,10 +78,19 @@ export function agentMade(repo: string, sha: string, committedAtIso: string, sub
   const pr = /\(#(\d+)\)$/.exec(subject);
   return repo === "PeaceG03/PeaceAI-Workspace" && pr !== null && refs.prs.has(Number(pr[1]));
 }
+/** Oct 5-6 2026 (MT, UTC-6): authorship cannot be determined, so the window is excluded. [from, to) */
+export const HELDOUT_C_UNKNOWN_WINDOW = ["2026-10-05T06:00:00Z", "2026-10-07T06:00:00Z"] as const;
+/** True when a commit is in the excluded list or the unknown-authorship window. */
+export function excludedForC(repo: string, sha: string, committedAtIso: string, excluded: readonly { repo: string; sha: string }[]): boolean {
+  const t = Date.parse(committedAtIso);
+  if (t >= Date.parse(HELDOUT_C_UNKNOWN_WINDOW[0]) && t < Date.parse(HELDOUT_C_UNKNOWN_WINDOW[1])) return true;
+  return excluded.some((e) => e.repo === repo && e.sha === sha);
+}
 export const HELDOUT_C_RULE = [
   "Candidates: every non-merge commit by HELDOUT_AUTHOR reachable from HELDOUT_C_HEADS[repo], in both public repos, that is NOT in heldout.json set A or B.",
   "source+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (no .d.ts) (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.",
   "Agent-made commits are dropped (Auditor #148 F2): any commit committed at or after HELDOUT_C_AGENT_CUTOFF (the first PeaceAI-landed change, PeaceSTOCKS c210539), and any commit named in builder-log/tasks.jsonl at the Workspace C head (a `repo@sha` ref, or a `PeaceAI-Workspace#N` ref matching a Workspace commit subject ending `(#N)`).",
+  "Also dropped (Auditor #148 F1, round 3): every commit listed in peaceai/model/heldout-c-excluded.json (named in a Builder box progress log or used as a PeaceAI task base), and every commit committed in HELDOUT_C_UNKNOWN_WINDOW (Oct 5-6 MT: authorship cannot be determined).",
   "Held out: every candidate of that kind is set C (one set, final rate only; never measured during development).",
   "Exclusion: set C is excluded from every training corpus by content sha256 (any source): every blob of a touched path at the commit, at its parent and at the pinned C head.",
 ].join("\n");
