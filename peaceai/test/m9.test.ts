@@ -568,6 +568,19 @@ test("core-free-64 rule: explained hits never count; unexplained runs count only
   // A long run explained by the sample's prompt or by the training corpus does not count.
   assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex({ prompts: new Map([["p0", long]]) })).countedHits, 0);
   assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex({ trainingCorpus: buildSubstringIndex([`// ${long}`]) })).countedHits, 0);
+  // Auditor (memcheck trace): a joined run counts only when its whole text is contiguous in core.
+  const c40 = buildSubstringIndex([`x${"c".repeat(40)}y\n`, long + "\n"]);
+  const s128 = scanSamples([sample("c".repeat(128)), ...fills], core, baseline, c40, ex());
+  assert.deepEqual([s128.unexplainedHits, s128.countedHits, s128.longestUnexplained], [1, 0, 128]);
+  assert.equal(memcheckStatus(s128), "PASS");
+  // A real 64+ core string the sample reproduces is still counted, against the same index.
+  assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, c40, ex()).countedHits, 1);
+  assert.equal(scanSamples([sample(`${"c".repeat(128)} ${long.slice(0, 70)}`), ...fills], core, baseline, c40, ex()).countedHits, 1);
+  // #142 F2: a copy bridging two core places (core [A, A.slice(-31) + B], sample A + B) still counts.
+  const A = Array.from({ length: 100 }, (_, i) => String.fromCharCode(65 + ((i * 7) % 26))).join("") .slice(0, 100);
+  const B = Array.from({ length: 100 }, (_, i) => String.fromCharCode(97 + ((i * 11) % 26))).join("").slice(0, 100);
+  const bridge = buildSubstringIndex([A, A.slice(-31) + B]);
+  assert.equal(scanSamples([sample(A + B), ...fills], core, baseline, bridge, ex()).countedHits, 1);
   // No core index: fail closed. A core-free-64 scan without its counted value fails.
   assert.equal(memcheckStatus(scanSamples(fills, core, baseline, null, ex())), "FAIL");
   assert.equal(memcheckStatus({ ...s40, countedHits: undefined }), "FAIL");

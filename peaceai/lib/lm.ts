@@ -92,13 +92,28 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
           })
         : null;
       // Maximal runs of consecutive unexplained windows; a run of k windows covers k + n - 1 characters.
-      const lengths: number[] = [];
+      const lengths: number[] = [], starts: number[] = [];
       let prev = -2;
       for (const st of unexplained ?? []) {
-        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else lengths.push(coreRaw!.n);
+        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else { lengths.push(coreRaw!.n); starts.push(st); }
         prev = st;
       }
-      const long = unexplained ? lengths.filter((l) => l >= exempt.minRun).length : 1;
+      // Auditor (memcheck trace, lm-v1-78b6e96990d2; #142 F2): a joined 64+ run counts only when SOME contiguous
+      // substring of it of 64+ characters occurs in core (the longest in-core segment). Overlapping short windows
+      // (a 128-char 'c' run over a core run of 40) do not count; a copy bridging two core places still does.
+      // Two pointers: if [i, j) is in core so is [i + 1, j), so j never moves back. Reported lengths are unchanged.
+      const has = (t: string): boolean => coreRaw!.texts.some((c) => c.includes(t));
+      const longestInCore = (t: string): number => {
+        let best = 0, j = 0;
+        for (let i = 0; i < t.length && t.length - i > best; i += 1) {
+          if (j < i) j = i;
+          while (j < t.length && has(t.slice(i, j + 1))) j += 1;
+          best = Math.max(best, j - i);
+        }
+        return best;
+      };
+      const inCore = (i: number): boolean => longestInCore(s.text.slice(starts[i]!, starts[i]! + lengths[i]!)) >= exempt.minRun;
+      const long = unexplained ? lengths.filter((l, i) => l >= exempt.minRun && inCore(i)).length : 1;
       scan.unexplainedHits! += unexplained ? lengths.length : 1;
       scan.countedHits! += long;
       scan.longestUnexplained = Math.max(scan.longestUnexplained!, ...lengths, 0);
