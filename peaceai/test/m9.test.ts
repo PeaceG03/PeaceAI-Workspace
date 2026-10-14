@@ -576,6 +576,11 @@ test("core-free-64 rule: explained hits never count; unexplained runs count only
   // A real 64+ core string the sample reproduces is still counted, against the same index.
   assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, c40, ex()).countedHits, 1);
   assert.equal(scanSamples([sample(`${"c".repeat(128)} ${long.slice(0, 70)}`), ...fills], core, baseline, c40, ex()).countedHits, 1);
+  // #142 F2: a copy bridging two core places (core [A, A.slice(-31) + B], sample A + B) still counts.
+  const A = Array.from({ length: 100 }, (_, i) => String.fromCharCode(65 + ((i * 7) % 26))).join("") .slice(0, 100);
+  const B = Array.from({ length: 100 }, (_, i) => String.fromCharCode(97 + ((i * 11) % 26))).join("").slice(0, 100);
+  const bridge = buildSubstringIndex([A, A.slice(-31) + B]);
+  assert.equal(scanSamples([sample(A + B), ...fills], core, baseline, bridge, ex()).countedHits, 1);
   // No core index: fail closed. A core-free-64 scan without its counted value fails.
   assert.equal(memcheckStatus(scanSamples(fills, core, baseline, null, ex())), "FAIL");
   assert.equal(memcheckStatus({ ...s40, countedHits: undefined }), "FAIL");
