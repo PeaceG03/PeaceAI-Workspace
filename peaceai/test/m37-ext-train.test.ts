@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { EXT_MANIFEST_SCHEMA, EXT_MEMCHECK_SCHEMA, extCorpusProblems, manifestRepoProblems, stageAllowed } from "../lib/extcorpus.ts";
+import { EXT_MANIFEST_SCHEMA, EXT_MEMCHECK_SCHEMA, extCorpusProblems, manifestRepoProblems, safetyToolShas, SAFETY_TOOL_SCHEMA, stageAllowed } from "../lib/extcorpus.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -14,13 +14,13 @@ const H = (s: string) => createHash("sha256").update(s).digest("hex");
 const cfg = JSON.parse(readFileSync(join(root, "peaceai/model/ext-corpus.json"), "utf8"));
 const ext = cfg.repos.find((r: { name: string }) => r.name === "d3/d3-array");
 const entry = (doc: number, text: string, o: Record<string, unknown> = {}) => ({ doc, stage: "pretrain", repo: ext.name, commit: ext.commit, license: ext.spdx, path: `src/f${doc}.js`, sha256: H(text), bytes: text.length, origin: "external", ...o });
-function ctx(o: { entries?: object[]; texts?: string[]; held?: string[]; cRepos?: string[]; stage?: string; memcheck?: object | null } = {}) {
+function ctx(o: { entries?: object[]; texts?: string[]; held?: string[]; cRepos?: string[]; stage?: string; memcheck?: object | null; tools?: string[] } = {}) {
   const texts = o.texts ?? ["a", "b"];
   const entries = o.entries ?? texts.map((t, i) => entry(i, t));
   const manifestText = [JSON.stringify({ schema: EXT_MANIFEST_SCHEMA, config: "x", entries: entries.length }), ...entries.map((e) => JSON.stringify(e))].join("\n") + "\n";
   const sha = H(manifestText);
   return { manifestText, cfg, manifestSha256: sha, memcheck: o.memcheck === undefined ? { schema: EXT_MEMCHECK_SCHEMA, status: "PASS", manifestSha256: sha, scannedDocs: entries.length } : o.memcheck,
-    heldOut: new Set(o.held ?? []), cRepos: new Set(o.cRepos ?? []), docs: new Map(texts.map((t, i) => [i, t])), sha256: H, stage: o.stage ?? "pretrain" };
+    heldOut: new Set(o.held ?? []), cRepos: new Set(o.cRepos ?? []), docs: new Map(texts.map((t, i) => [i, t])), sha256: H, stage: o.stage ?? "pretrain", safetyTools: new Set(o.tools ?? [H("safety-tool-fixture")]) };
 }
 
 test("stage: pretrain only; finetune is a reserved hook and refused", () => {
@@ -84,4 +84,26 @@ test("Auditor #153: ext-fetch validates repo names and pins against the config b
   const src = readFileSync(join(root, "peaceai/bin/ext-fetch.ts"), "utf8");
   assert.ok(src.indexOf("manifestRepoProblems(pairs, cfgAll)") > 0 && src.indexOf("manifestRepoProblems(pairs, cfgAll)") < src.indexOf('execFileSync("git", ["init"'), "validation precedes any git init");
   void existsSync; void mkdtempSync; void spawnSync; void tmpdir;
+});
+
+test("safety-tool files refused by content sha256: renamed or copied files are still caught; list fails closed", () => {
+  const tool = "export function scan() {}\n";
+  // A copy of a safety-tool file under another path in an external repo (renamed + copied).
+  assert.match(extCorpusProblems(ctx({ texts: ["a", tool], tools: [H(tool)] })).join(), /doc 1: safety-tool/);
+  // By path too (the original rule), even if the content changed.
+  const ws = cfg.owner.find((o: { name: string }) => o.name === "PeaceG03/PeaceAI-Workspace");
+  assert.match(extCorpusProblems(ctx({ entries: [entry(0, "a"), entry(1, "b", { repo: ws.name, commit: ws.commit, license: ws.license, origin: "owner-public", path: "peaceai/lib/leak.ts" })] })).join(), /doc 1: safety-tool/);
+  assert.match(extCorpusProblems(ctx({ tools: [] })).join(), /safety-tool/, "an empty list fails closed");
+  assert.deepEqual(extCorpusProblems(ctx()), []);
+  assert.throws(() => safetyToolShas({ schema: SAFETY_TOOL_SCHEMA, sha256: [] }), /fail closed/);
+  assert.throws(() => safetyToolShas({ schema: "x", sha256: ["0".repeat(64)] }), /fail closed/);
+  const f = JSON.parse(readFileSync(join(root, "peaceai/model/safety-tool-sha256.json"), "utf8"));
+  const shas = safetyToolShas(f);
+  for (const p of ["peaceai/bin/core-scan.ts", "peaceai/bin/leak-scan.ts", "peaceai/lib/leak.ts", "peaceai/lib/trigger.ts"]) {
+    assert.ok(f.paths.includes(p), p);
+    assert.ok(shas.has(H(readFileSync(join(root, p), "utf8"))), `current ${p} is listed`);
+  }
+  const man = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l));
+  assert.ok(man.every((m: { sha256: string }) => !shas.has(m.sha256)), "no safety-tool content in the committed manifest");
+  assert.ok(protectedReason("peaceai/model/safety-tool-sha256.json"));
 });

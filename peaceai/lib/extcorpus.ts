@@ -67,6 +67,13 @@ export const SAFETY_TOOL_FILES: readonly { repo: string; path: RegExp }[] = [
   { repo: "PeaceG03/PeaceAI-Workspace", path: /^peaceai\/lib\/(?:leak|trigger|coretext|coreindex|substr|kernelguard|prguard)\.ts$/ },
 ];
 export const isSafetyToolFile = (repo: string, path: string): boolean => SAFETY_TOOL_FILES.some((s) => s.repo === repo && s.path.test(path));
+/** Content form of the same rule (peaceai/model/safety-tool-sha256.json): every historical version of those paths,
+ *  refused in every source and re-checked by extCorpusProblems, so a renamed or copied file is still caught. */
+export const SAFETY_TOOL_SCHEMA = "peaceai-safety-tool-sha256:v1";
+export function safetyToolShas(f: any): Set<string> {
+  if (f?.schema !== SAFETY_TOOL_SCHEMA || !Array.isArray(f.sha256) || f.sha256.length === 0 || !f.sha256.every((x: unknown) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x))) throw new Error("bad safety-tool sha256 file (fail closed)");
+  return new Set(f.sha256);
+}
 
 // ---- M37: training-workflow checks (runner side; no core access there).
 /** The stage a training run may use. Only built stages; "finetune" is a reserved hook and refused. */
@@ -76,7 +83,7 @@ export function stageAllowed(stage: string): boolean {
 /** Problems with a fetched corpus against the committed manifest, config, held-out sets and memcheck record (empty = ok). */
 export function extCorpusProblems(ctx: {
   manifestText: string; cfg: any; memcheck: any; manifestSha256: string; heldOut: ReadonlySet<string>; cRepos: ReadonlySet<string>;
-  docs: ReadonlyMap<number, string>; sha256: (s: string) => string; stage: string;
+  docs: ReadonlyMap<number, string>; sha256: (s: string) => string; stage: string; safetyTools: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
   const lines = ctx.manifestText.split("\n").filter(Boolean);
@@ -95,7 +102,7 @@ export function extCorpusProblems(ctx: {
     const src = repos.get(e.repo);
     const text = ctx.docs.get(e.doc);
     const why = e.stage !== ctx.stage ? "stage" : !src || src.commit !== e.commit || src.license !== e.license ? "provenance"
-      : ctx.cRepos.has(e.repo) ? "set-c-repo" : ctx.heldOut.has(e.sha256) ? "held-out" : text === undefined || ctx.sha256(text) !== e.sha256 ? "sha256" : null;
+      : ctx.cRepos.has(e.repo) ? "set-c-repo" : ctx.safetyTools.size === 0 || ctx.safetyTools.has(e.sha256) || isSafetyToolFile(e.repo, e.path) ? "safety-tool" : ctx.heldOut.has(e.sha256) ? "held-out" : text === undefined || ctx.sha256(text) !== e.sha256 ? "sha256" : null;
     if (why && bad++ < 5) out.push(`doc ${e.doc}: ${why}`);
   }
   if (bad > 5) out.push(`... ${bad - 5} more`);
