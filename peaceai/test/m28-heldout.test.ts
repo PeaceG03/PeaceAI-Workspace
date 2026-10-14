@@ -64,7 +64,7 @@ test("held-out files are excluded from every corpus source by path and by conten
   assert.throws(() => heldOutHashes({ ...h, sets: { A: [{ ...all[0]!, contentSha256: [] }], B: [] } }), /no content hashes/, "fail closed");
   assert.throws(() => heldOutPaths({ schema: "x" } as unknown as HeldOutFile));
   const corpus = readFileSync(join(root, "peaceai/bin/lm-corpus.ts"), "utf8");
-  assert.match(corpus, /const heldOutContent = heldOutHashes\(heldOutFile\);/);
+  assert.match(corpus, /const heldOutContent = allHeldOutHashes\(heldOutFile, JSON\.parse\(readFileSync\(resolve\(import\.meta\.dirname, "\.\.\/model\/heldout-c\.json"\), "utf8"\)\)\);/);
   assert.match(corpus, /const why = isHeldOut\(name, f\.path, sha256, heldOut, heldOutContent\) \? "held-out" : fileExclusion/);
   assert.equal((corpus.match(/addSource\(/g) ?? []).length, 3, "one addSource (definition + owner + permissive): every source goes through the check");
 });

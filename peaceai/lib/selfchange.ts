@@ -35,7 +35,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/target\.ts$|^peaceai\/targets\.json$/, why: "per-target scope config, incl. opted-in workflow files (M19)" },
   { pattern: /^peaceai\/proof\/workflow-step-proof\.md$/, why: "workflow-step grading and live-proof procedure (Auditor #107 changes 4, 6)" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
-  { pattern: /^peaceai\/lib\/(lmcorpus|heldout)\.ts$|^peaceai\/bin\/(lm-corpus|heldout-select)\.ts$/, why: "the training corpus builder and the held-out selection/exclusion (M28)" },
+  { pattern: /^peaceai\/lib\/(lmcorpus|heldout)\.ts$|^peaceai\/bin\/(lm-corpus|heldout-select|heldout-select-c)\.ts$|^peaceai\/test\/m33-heldout-c\.test\.ts$/, why: "the training corpus builder and the held-out selection/exclusion (M28, set C M33)" },
   { pattern: /^peaceai\/lib\/lmpublic\.ts$|^peaceai\/bin\/(lm-manifest-check|lm-public-corpus)\.ts$|^peaceai\/model\/lm-public-allow\.json$/, why: "the public-runner LM corpus allowlist and held-out manifest check (M31)" },
   { pattern: /^peaceai\/lib\/learned-multibody\.ts$|^peaceai\/spec\/multibody-v1\.md$|^peaceai\/test\/m32-multibody\.test\.ts$/, why: "the multi-line body edit rule, its spec and its proofs (M32)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },

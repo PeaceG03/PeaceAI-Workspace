@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { classifyLicense, fileExclusion, heldOutHashes, heldOutPaths, isHeldOut, splitOf, type ManifestEntry } from "../lib/lmcorpus.ts";
+import { allHeldOutHashes, classifyLicense, fileExclusion, heldOutPaths, isHeldOut, splitOf, type ManifestEntry } from "../lib/lmcorpus.ts";
 
 const out = resolve(process.env.PEACEAI_LM_OUT ?? "");
 const permissiveRoot = resolve(process.env.PEACEAI_LM_PERMISSIVE_DIR ?? "/workspace/lm-corpus");
@@ -18,7 +18,7 @@ const sources = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/s
 const heldOutFile = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/heldout.json"), "utf8"));
 const heldOut = heldOutPaths(heldOutFile);
 // Round 2 (Auditor, M28 1): also by content, across every source (owner public, owner private, permissive).
-const heldOutContent = heldOutHashes(heldOutFile);
+const heldOutContent = allHeldOutHashes(heldOutFile, JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/heldout-c.json"), "utf8")));
 mkdirSync(out, { recursive: true });
 
 const git = (dir: string, ...a: string[]) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", maxBuffer: 1 << 28 }).trim();
