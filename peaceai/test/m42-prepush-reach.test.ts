@@ -169,3 +169,21 @@ test("a hook run from a linked worktree indexes the core checkout, not the repo 
   assert.notEqual(r2.status, 0);
   assert.match(r2.stdout, /engine\/core\.ts: same path as a core file/);
 });
+
+test("N1: core text in a commit message blocks", () => {
+  const ws = setup();
+  g(ws, "checkout", "-q", "-b", "feat"); commit(ws, "src/b.ts", "b\n", CORE_TEXT);
+  blocks(push(ws, "feat"), /commit message: core text/);
+});
+
+test("N2: core text stored as UTF-16LE (with and without BOM) blocks", () => {
+  for (const bom of [true, false]) {
+    const ws = setup();
+    g(ws, "checkout", "-q", "-b", "feat");
+    const body = Buffer.from(CORE_TEXT, "utf16le");
+    mkdirSync(join(ws, "src"), { recursive: true });
+    writeFileSync(join(ws, "src/u16.txt"), bom ? Buffer.concat([Buffer.from([0xff, 0xfe]), body]) : body);
+    g(ws, "add", "-A"); g(ws, "commit", "-q", "-m", "utf16");
+    blocks(push(ws, "feat"), /src\/u16\.txt: core text/);
+  }
+});

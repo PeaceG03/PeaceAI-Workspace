@@ -76,7 +76,9 @@ for (const sha of commits) {
     if (!/@users\.noreply\.github\.com$|^noreply@github\.com$/i.test(value)) fail(sha, "commit email is not a noreply address");
   for (const value of git("log", "-1", "--format=%an%n%cn", sha).split("\n").filter(Boolean))
     for (const f of scanText(value, terms)) fail(sha, `commit identity: ${f.kind}`);
-  for (const f of scanText(git("log", "-1", "--format=%B", sha), terms)) fail(sha, `commit message:${f.line}: ${f.kind}`);
+  const body = git("log", "-1", "--format=%B", sha);
+  for (const f of scanText(body, terms)) fail(sha, `commit message:${f.line}: ${f.kind}`);
+  { const h = findCoreText(body.split("\n"), core.text, empty); if (h.lineHits + h.shingleHits > 0) fail(sha, "commit message: core text"); }
   // Files this commit adds or modifies (root commits: all files; merge commits: the diff against the first parent).
   const changed = git("diff-tree", "--root", "--diff-merges=first-parent", "--no-commit-id", "-r", "-z", "--no-renames", "--diff-filter=d", "--name-only", sha)
     .split("\0")
@@ -98,7 +100,17 @@ for (const sha of commits) {
     const size = Number(git("cat-file", "-s", `${sha}:${path}`).trim());
     if (size > 2_000_000) { fail(sha, `${path}: over 2 MB (${size} bytes); push blocked`); continue; }
     const blob = execFileSync("git", ["cat-file", "blob", `${sha}:${path}`], { maxBuffer: 64 * 1024 * 1024 });
-    const text = blob.includes(0) ? blob.toString("latin1").replace(/\0/g, "\n") : blob.toString("utf8");
+    // Auditor #157 N2: a NUL-containing file is scanned as NUL->newline, as NUL-stripped text, and as UTF-16
+    // (BOM, or every other byte NUL), so core text stored as UTF-16LE/BE is still caught.
+    let text = blob.toString("utf8");
+    if (blob.includes(0)) {
+      const views = [blob.toString("latin1").replace(/\0/g, "\n"), blob.toString("latin1").replace(/\0/g, "")];
+      const le = blob[0] === 0xff && blob[1] === 0xfe, be = blob[0] === 0xfe && blob[1] === 0xff;
+      const odd = (k: number) => { let n = 0, z = 0; for (let i = k; i < blob.length; i += 2) { n++; if (blob[i] === 0) z++; } return n > 0 && z === n; };
+      if (le || odd(1)) views.push(blob.subarray(le ? 2 : 0).toString("utf16le"));
+      if (be || odd(0)) { const b = Buffer.from(blob.subarray(be ? 2 : 0)); if (b.length % 2 === 0) b.swap16(); views.push(b.toString("utf16le")); }
+      text = views.join("\n");
+    }
     for (const f of scanText(text, terms)) fail(sha, `${path}:${f.line}: ${f.kind}`);
     if (CONFIG.test(path)) continue; // protected, owner-reviewed config: generic key/value lines are not core-scanned
     const hits = findCoreText(text.split("\n"), core.text, empty);

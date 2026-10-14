@@ -6,6 +6,7 @@
 # --template (M5): also install the hook into this user's git template (init.templateDir), so every NEW
 # clone gets it. The template hook only acts when pushing to PeaceAI-Workspace and uses a scanner snapshot
 # under ~/.peaceai-prepush.
+# Note: `git lfs install` (and other hook managers) replace .git/hooks/pre-push; re-run this script afterwards.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/../.." && pwd)"
 template=false
@@ -56,7 +57,7 @@ zero="0000000000000000000000000000000000000000"
 # M42: the public base is the remote's own main (ls-remote on the push URL; refs/remotes/* is never trusted).
 # Commits reachable from it are skipped (reachability, not a sha list); every other pushed object is classified
 # and scanned by prepush-scan.ts. Empty, unreadable or not-local base: fail closed.
-pub="\$(git ls-remote "\$2" refs/heads/main </dev/null 2>/dev/null | awk 'NR==1{print \$1}' || true)"
+pub="\$(git ls-remote -- "\$2" refs/heads/main </dev/null 2>/dev/null | awk 'NR==1{print \$1}' || true)"
 [[ "\$pub" =~ ^[0-9a-f]{40}\$ ]] || { echo "PRE-PUSH FAIL remote main cannot be resolved (ls-remote); push blocked"; exit 1; }
 git cat-file -e "\$pub^{commit}" 2>/dev/null || { echo "PRE-PUSH FAIL remote main \${pub:0:10} is not present locally (git fetch); push blocked"; exit 1; }
 export PEACEAI_PUBLIC_BASE="\$pub"
