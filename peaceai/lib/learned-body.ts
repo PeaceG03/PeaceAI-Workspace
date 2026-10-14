@@ -14,12 +14,17 @@ import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, type TestTask } from "./learned-test.ts";
 import { exportedFunction } from "./learned-guard.ts";
+import { PROTECTED_SELF } from "./selfchange.ts";
 
-export const BODY_PARAM_KEYS = ["grading", "match", "names", "sites", "test"] as const;
+export const BODY_PARAM_KEYS = ["calls", "grading", "match", "names", "paths", "sites", "test"] as const;
 export const BODY_VOCAB = {
+  // Auditor (#136, 6): a callee the OLD expression calls may be called again WITH NEW ARGUMENTS (checked as reads).
+  calls: ["pure-builtins-and-old-callees-any-args"],
   grading: ["self-fail-before-pass-after"],
   match: ["unique-site"],
-  names: ["old-names-params-and-prior-locals"],
+  names: ["old-names-params-and-enclosing-locals"],
+  // Auditor (#136, 3): never a PeaceAI protected path, never PeaceSTOCKS scanner-chain code.
+  paths: ["not-protected-not-scanner"],
   sites: ["if-condition", "return-expression"],
   test: ["new-file"],
 } as const;
@@ -31,7 +36,19 @@ export const REPLACE_TRIGGER = String.raw`^in \x60?(?<fn>${NAME})\x60? in \x60?(
 
 export interface BodyEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 const strip = (s: string) => s.replace(/\x60/g, " ").trim();
-const flat = (s: string) => s.replace(/\s+/g, " ").replace(/'/g, '"').trim();
+/**
+ * Auditor (#136, 5): token-by-token comparison (kind + exact text; comments and whitespace ignored, quotes and
+ * escapes kept), for the site match and the "unchanged" check. No whitespace/quote collapsing.
+ */
+export function tokens(text: string): string[] {
+  const sc = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text);
+  const out: string[] = [];
+  for (let k = sc.scan(); k !== ts.SyntaxKind.EndOfFileToken; k = sc.scan()) out.push(`${k}:${sc.getTokenText()}`);
+  return out;
+}
+const sameTokens = (a: string, b: string) => { const x = tokens(a), y = tokens(b); return x.length === y.length && x.every((t, i) => t === y[i]); };
+/** Auditor (#136, 3): PeaceSTOCKS scanner-chain modules (the running chain): never edited by this rule. */
+export const SCANNER_PATH = /^src\/(?:tenmin|scan|scanner|markets-scanner|scheduler|daily|intraday|oct2024|restarter|backfill|redispatch|chain)[\w.-]*\.ts$/;
 const CALLS = new Set(["Number.isFinite", "Number.isInteger", "Number.isNaN", "Number.isSafeInteger", "Array.isArray", "Math.min", "Math.max", "Math.abs", "Math.floor", "Math.ceil", "Math.round"]);
 const BIN = new Set([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken]);
 
@@ -67,9 +84,11 @@ export function calleesOf(e: ts.Node): Set<string> {
 export function safeExpression(e: ts.Expression, names: ReadonlySet<string>, callees: ReadonlySet<string> = new Set()): boolean {
   const ok = (n: ts.Node): boolean => {
     if (ts.isParenthesizedExpression(n)) return ok(n.expression);
-    if (ts.isIdentifier(n)) return names.has(n.text);
+    // Auditor (#136, 4): an identifier must be written plainly (no unicode escapes).
+    if (ts.isIdentifier(n)) return names.has(n.text) && n.getText() === n.text;
     if (ts.isStringLiteral(n) || ts.isNumericLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(n.kind)) return true;
-    if (ts.isPropertyAccessExpression(n)) return ts.isIdentifier(n.name) && n.name.text !== "constructor" && n.name.text !== "__proto__" && ok(n.expression);
+    // Auditor (#136, 4): no optional chaining, no constructor/__proto__/prototype, plain names only.
+    if (ts.isPropertyAccessExpression(n)) return !n.questionDotToken && ts.isIdentifier(n.name) && n.name.getText() === n.name.text && !["constructor", "__proto__", "prototype"].includes(n.name.text) && ok(n.expression);
     if (ts.isPrefixUnaryExpression(n)) return (n.operator === ts.SyntaxKind.ExclamationToken || n.operator === ts.SyntaxKind.MinusToken) && ok(n.operand);
     if (ts.isTypeOfExpression(n)) return ok(n.expression);
     if (ts.isBinaryExpression(n)) return BIN.has(n.operatorToken.kind) && ok(n.left) && ok(n.right);
@@ -91,22 +110,31 @@ function testFor(fn: string, file: string, key: string, objective: string): Test
   const pseudo = createHash("sha256").update(key).digest("hex").slice(0, 40);
   const text = [`add a test for ${fn} in ${file}: ${fn} behaves as asked`, ...lines.filter((l) => /^[-*] /.test(l)), `Fix: ${pseudo}`].join("\n");
   const t = parseTestTask(String.raw`^add (?:a )?test for (?<symbol>${NAME}) in (?<file>${FILE})(?: ?: (?<title>[^\n]{1,120}?))?$`, text);
-  return t && t.symbol === fn && t.file === file && t.checks.length > 0 && !t.checks.some((c) => c.kind === "rejects") ? t : null;
+  // Auditor (#136, 2): at least one equal/deepEqual check, so the before-run must fail on a VALUE of the edited
+  // function (a throws check alone could pass on a crash such as a null read).
+  return t && t.symbol === fn && t.file === file && t.checks.some((c) => c.kind === "equal" || c.kind === "deepEqual") && !t.checks.some((c) => c.kind === "rejects") ? t : null;
 }
 const TEST_PARAMS = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
 const parses = (path: string, content: string) => !(ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true) as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length;
 const okParams = (p: Record<string, string | string[]>, keys: readonly string[], vocab: Record<string, readonly string[]>) =>
   keys.every((k) => { const v = p[k]; return Array.isArray(v) ? v.length > 0 && new Set(v).size === v.length && v.every((x) => vocab[k]!.includes(x)) : typeof v === "string" && vocab[k]!.includes(v) && vocab[k]!.length === 1; });
 
-/** Names of the function's own const/let locals declared (wholly) before `pos` (never inside nested functions). */
+/**
+ * Auditor (#136, 1): names of the function's own const/let locals in scope at `pos`: declared (wholly) before it
+ * in a block that ENCLOSES `pos` (the body or an enclosing block), or a loop variable of an enclosing loop. A local
+ * declared in an earlier, already-closed block (`if (x) { const process = 1; }`) is not in scope and never counts.
+ */
 export function localsBefore(body: ts.Block, pos: number): Set<string> {
   const out = new Set<string>();
-  const v = (n: ts.Node): void => {
-    if (ts.isFunctionLike(n) || ts.isClassLike(n)) return;
-    if (ts.isVariableDeclarationList(n) && n.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let) && n.getEnd() <= pos) for (const d of n.declarations) if (ts.isIdentifier(d.name)) out.add(d.name.text);
-    ts.forEachChild(n, v);
-  };
-  body.statements.forEach(v);
+  const add = (l: ts.VariableDeclarationList) => { if (l.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) for (const d of l.declarations) if (ts.isIdentifier(d.name)) out.add(d.name.text); };
+  let node: ts.Node = body;
+  for (;;) {
+    if (ts.isBlock(node)) for (const st of node.statements) if (ts.isVariableStatement(st) && st.getEnd() <= pos) add(st.declarationList);
+    if ((ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) && node.initializer && ts.isVariableDeclarationList(node.initializer) && node.initializer.getEnd() <= pos) add(node.initializer);
+    const next: ts.Node | undefined = node.getChildren().flatMap((c) => (c.kind === ts.SyntaxKind.SyntaxList ? c.getChildren() : [c])).find((c) => c.getStart() <= pos && pos < c.getEnd());
+    if (!next || ts.isFunctionLike(next) || ts.isClassLike(next)) break;
+    node = next;
+  }
   return out;
 }
 
@@ -131,9 +159,9 @@ export function applyReplaceRule(trigger: string, params: Record<string, string 
   if (!(params.sites as string[]).includes(site)) return null;
   const oldText = strip(g.old ?? ""), newText = strip(g.new ?? "");
   const oldE = parseExpr(oldText), newE = parseExpr(newText);
-  if (!oldE || !newE || flat(oldText) === flat(newText)) return null;
+  if (!oldE || !newE || sameTokens(oldText, newText)) return null;
   const target = files.find((f) => f.path === g.file);
-  if (!target || isTest(target.path)) return null;
+  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || SCANNER_PATH.test(target.path)) return null;
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
   const fn = exportedFunction(sf, g.fn!);
   if (!fn) return null;
@@ -142,7 +170,7 @@ export function applyReplaceRule(trigger: string, params: Record<string, string 
   if (site === "if-condition" && freeNames(newE).size === 0) return null; // a constant condition is refused
   const hits = ownStatements(fn.body).flatMap((s) => {
     const e = site === "if-condition" ? (ts.isIfStatement(s) ? s.expression : null) : ts.isReturnStatement(s) ? s.expression ?? null : null;
-    return e && flat(e.getText(sf)) === flat(oldText) ? [e] : [];
+    return e && sameTokens(e.getText(sf), oldText) ? [e] : [];
   });
   if (hits.length !== 1) return null;
   const e = hits[0]!;
@@ -156,4 +184,21 @@ export function applyReplaceRule(trigger: string, params: Record<string, string 
   const test = buildTestEdit(TEST_PARAMS, tt, files, isTest);
   if (!test) return null;
   return { path: target.path, content, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
+}
+
+/**
+ * Auditor (#136, 2): Job B credits the before-run failure only when the test runner reports EVERY failing test as
+ * an assertion failure (ERR_ASSERTION), never a crash, load/import error, timeout or other throw.
+ */
+export function assertionFailuresOnly(tap: string): boolean {
+  const lines = tap.split("\n");
+  let failures = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*not ok \d+ - /.test(lines[i]!)) continue;
+    failures++;
+    let code = "";
+    for (let j = i + 1; j < lines.length && !/^\s*(?:not ok|ok) \d+ - /.test(lines[j]!); j++) { const c = /^\s+code: '([A-Z_]+)'$/.exec(lines[j]!); if (c && !code) code = c[1]!; }
+    if (code !== "ERR_ASSERTION") return false;
+  }
+  return failures > 0;
 }
