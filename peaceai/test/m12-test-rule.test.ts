@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "92699ae9b3b3a4bcfd85f867cb79bf8261f323f7722f0c36c18e8448a2b7aadb"; // M37: + ext-manifest-check, ext-memcheck, eval_c, m37 test
+const PROTECTED_DIGEST = "b678f747ff0e723709fb61f0539de7a9a66282a2627a885110caf69d79dbfc01"; // M37 + M35 merged: ext-manifest-check, ext-memcheck, eval_c, m37 test; Date-argument spec and test
