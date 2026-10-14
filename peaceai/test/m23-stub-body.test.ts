@@ -104,7 +104,7 @@ test("contract: the test passes on the real module and FAILS on the stubbed body
 test("harness wiring: stub-body only after the revert check fails, fail closed on every other shape", () => {
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   const g = tc.slice(tc.indexOf("function gradeTest("), tc.indexOf("function stubBefore("));
-  assert.match(g, /if \(!runTrusted\(tree, "git", \["apply", "--check"[^\n]*\)\) \{\n(?:[^\n]*\n){2,8}?\s+const stubbed = stubBefore\(/, "only when the revert cannot apply");
+  assert.match(g, /if \(!runTrusted\(tree, "git", \["apply", "--check"[^\n]*\)\) \{\n(?:[^\n]*\n){2,16}?\s+const stubbed = stubBefore\(/, "only when the revert cannot apply");
   assert.match(g, /if \(!stubbed\) return ungradable\("revert-failed"\);/, "fail closed");
   assert.match(g, /writeFileSync\(stubbed\.file, stubbed\.real\);/, "real code restored");
   assert.match(g, /stubFails: !run\.ok/);
@@ -333,4 +333,72 @@ test("Round 2 #129 item 4: no Math.random, Date, performance, Symbol; the real c
   assert.match(tc, /if \(afterFix\) for \(let i = 1; i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runGradedTests\(tree, tsx, newTests, join\(tree, paths\[0\]!\)\)\.ok\) return ungradable\("real-not-stable"\);/);
   const g = tc.slice(tc.indexOf("function gradeTest("), tc.indexOf("function stubBefore("));
   assert.ok(g.indexOf('ungradable("real-not-stable")') < g.indexOf("const stubbed = stubBefore("), "stability runs come before the stub is written");
+});
+
+// ---- Round 3 (Auditor #129: F1 descriptor escape, timing globals, F2 Node < 22, multi-file modules)
+
+test("Round 3 #129 F1: descriptor/prototype escape refused; Object only via allow-listed members", () => {
+  for (const [body, why] of [
+    ['const d = Object.getOwnPropertyDescriptors(decide);', "getOwnPropertyDescriptors"],
+    ['const p = Object.getPrototypeOf(decide);', "getPrototypeOf"],
+    ['const v = Object.values({ a: 1 });', "Object.values"],
+    ['const n = Object.values(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(K))).map((d: any) => d.value.name);', "the full F1 chain"],
+    ['const x: any = K; const n = x.name;', ".name lookup"],
+    ['const d = Object.getOwnPropertyDescriptor(K, "x");', "getOwnPropertyDescriptor"],
+    ['const e = Object.entries({ a: 1 });', "Object.entries (not allow-listed)"],
+    ['const O = Object; O.keys({});', "Object aliased"],
+    ['const k = Object["keys"];', "Object computed member"],
+  ] as const) assert.ok(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS), why);
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", () => { assert.deepEqual(Object.keys(decide({})), ["mode"]); const f = Object.freeze({ a: 1 }); const o = Object.fromEntries([["a", 1]]); });\n', ["./m"], FNS), null, "Object.keys/freeze/fromEntries calls are allowed");
+});
+
+test("Round 3 #129 F2-timing: setImmediate, AbortSignal, MessageChannel, WeakRef, FinalizationRegistry and hrtime-style timing are refused", () => {
+  for (const [body, why] of [
+    ['setImmediate(() => 0);', "setImmediate"],
+    ['const s = AbortSignal.timeout(1);', "AbortSignal"],
+    ['const c = new MessageChannel();', "MessageChannel"],
+    ['const r = new WeakRef({});', "WeakRef"],
+    ['const f = new FinalizationRegistry(() => 0);', "FinalizationRegistry"],
+    ['const t = process.hrtime.bigint();', "process.hrtime"],
+    ['const o: any = {}; o.hrtime();', "hrtime member"],
+    ['const o: any = {}; o.now();', "now member"],
+    ['const t = performance.timeOrigin;', "performance"],
+    ['const a = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(a), 0, 0, 1);', "Atomics/SharedArrayBuffer"],
+    ['const c = structuredClone({});', "structuredClone"],
+    ['clearTimeout(0);', "any non-allow-listed global"],
+  ] as const) assert.ok(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS), why);
+});
+
+test("Round 3 #129: allow-list grammar refuses syntax outside the list", () => {
+  for (const [body, why] of [
+    ['class X {}', "class"],
+    ['label: for (;;) { break label; }', "labels"],
+    ['const o: any = {}; delete o.a;', "delete"],
+    ['const v = void 0;', "void"],
+    ['const g = function* () { yield 1; };', "generator/yield"],
+    ['const o = { get a() { return 1; } };', "accessor"],
+    ['const o = { m() { return 1; } };', "method"],
+    ['debugger;', "debugger"],
+  ] as const) assert.ok(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS), why);
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", async () => {\n  const xs: number[] = [1, 2];\n  for (const x of xs) { if (x > 1) { assert.equal(decide({ n: x }).mode, `M${x}`); } }\n  const [a, , b] = [1, 2, 3]; const { c = 1 } = { c: 2 } as { c?: number };\n  try { assert.ok(a < b && c > 0 ? true : false); } catch (e: unknown) { throw e; }\n  assert.throws(() => decide(null as never), /x/); await Promise.resolve; });\n', ["./m"], FNS), "global Promise", "Promise is not an allowed global");
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", async () => {\n  const xs: number[] = [1, 2];\n  for (const x of xs) { if (x > 1) { assert.equal(decide({ n: x }).mode, `M${x}`); } }\n  const [a, , b] = [1, 2, 3]; const { c = 1 } = { c: 2 } as { c?: number };\n  try { assert.ok(a < b && c > 0 ? true : false); } catch (e: unknown) { throw e; }\n  assert.throws(() => decide(null as never), /x/); });\n', ["./m"], FNS), null, "ordinary test syntax passes");
+});
+
+test("Round 3 #129 F2: on Node < 22 the stub-body route is ungradable, never graded unconfined", () => {
+  const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
+  const g = tc.slice(tc.indexOf("function gradeTest("), tc.indexOf("function stubBefore("));
+  assert.match(g, /if \(Number\(process\.versions\.node\.split\("\."\)\[0\]\) < PERMISSION_NODE_MAJOR\) return ungradable\("not-confined"\);/);
+  assert.ok(g.indexOf('ungradable("not-confined")') < g.indexOf("runGradedTests("), "checked before any graded run");
+  assert.ok(validTestGrading({ fixSha: "a".repeat(40), afterFix: true, beforeFix: null, verdict: "UNGRADABLE", reason: "not-confined" }));
+});
+
+test("Round 3 #129: a module that imports repo files is recorded as ungradable 'module-imports-repo-files'", async () => {
+  const { moduleImportsRepoFiles } = await import("../lib/learned-function.ts");
+  assert.equal(moduleImportsRepoFiles('import { a } from "./contracts";\nexport function f(): number { return a; }\n'), true);
+  assert.equal(moduleImportsRepoFiles('export { a } from "../lib/x.ts";\n'), true, "re-export");
+  assert.equal(moduleImportsRepoFiles('export async function f() { return import("./x"); }\n'), true, "dynamic import");
+  assert.equal(moduleImportsRepoFiles('import type { T } from "./contracts";\nimport { x } from "zod";\nexport function f(): number { return 1; }\n'), false, "type-only and packages");
+  const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
+  assert.match(tc, /moduleImportsRepoFiles\(readFileSync\(join\(tree, paths\[0\]!\), "utf8"\)\)\) return ungradable\("module-imports-repo-files"\);/);
+  assert.ok(validTestGrading({ fixSha: "a".repeat(40), afterFix: true, beforeFix: null, verdict: "UNGRADABLE", reason: "module-imports-repo-files" }));
 });

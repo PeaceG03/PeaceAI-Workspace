@@ -1,7 +1,7 @@
 // Job B: apply each candidate to a clean checkout and test it. No secrets, no core.
 import { spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, closeSync, constants as fsConstants, cpSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { countDiffLines, parseDiff } from "../lib/diff.ts";
@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -173,6 +173,11 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch])) {
       // M23 (Auditor, #127): a fix that CREATED its one source module cannot be reverted once later commits
       // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
+      // Round 3 (Auditor #129 F2): never graded unconfined. Without the permission model (Node < 22) the
+      // stub-body route is ungradable.
+      if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      // Round 3 (Auditor #129): a module that imports other repo files cannot load under the narrowed reads.
+      if (paths.length === 1 && existsSync(join(tree, paths[0]!)) && moduleImportsRepoFiles(readFileSync(join(tree, paths[0]!), "utf8"))) return ungradable("module-imports-repo-files");
       // Round 2 (Auditor #129): the real code must pass REAL_RUNS_REQUIRED times in all (pass 2 was the first),
       // so a test whose outcome varies between runs cannot be credited for a "failure" under the stub.
       if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runGradedTests(tree, tsx, newTests, join(tree, paths[0]!)).ok) return ungradable("real-not-stable");

@@ -390,7 +390,63 @@ const FORBIDDEN_NAMES = new Set(["process", "require", "globalThis", "global", "
   // Round 2 (Auditor #129): sources of nondeterminism and of a stringified function.
   "Date", "performance", "Symbol", "crypto", "String", "Intl", "arguments"]);
 /** Round 2 (Auditor #129): property names that reach a function's source, prototype chain or caller. */
-const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "caller", "callee", "toString", "toLocaleString", "toSource", "random"]);
+const FORBIDDEN_PROPS = new Set(["constructor", "__proto__", "prototype", "caller", "callee", "toString", "toLocaleString", "toSource", "random",
+  // Round 3 (Auditor #129 F1/F2): descriptor/prototype walks, function names, high-resolution timing.
+  "name", "getPrototypeOf", "setPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getOwnPropertyNames", "getOwnPropertySymbols", "defineProperty", "defineProperties", "values", "hrtime", "now", "timeOrigin"]);
+/**
+ * Round 3 (Auditor #129): ALLOW-list grammar. A free identifier (not declared in the test, not imported) must be
+ * one of these globals; everything else (setImmediate, AbortSignal, MessageChannel, WeakRef, FinalizationRegistry,
+ * Atomics, SharedArrayBuffer, structuredClone, ...) is refused. `Object` is allowed only for the listed members.
+ */
+const ALLOWED_GLOBALS = new Set(["undefined", "NaN", "Infinity", "Number", "Boolean", "Array", "JSON", "Math", "Error", "TypeError", "RangeError", "Map", "Set", "BigInt", "parseInt", "parseFloat", "isNaN", "isFinite", "Object", "Buffer"]);
+const OBJECT_MEMBERS = new Set(["keys", "fromEntries", "freeze"]);
+/** Round 3 (Auditor #129): syntax a graded test may use; any other node kind is refused. */
+const ALLOWED_KINDS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.SourceFile, ts.SyntaxKind.EndOfFileToken, ts.SyntaxKind.ImportDeclaration, ts.SyntaxKind.ImportClause, ts.SyntaxKind.NamedImports, ts.SyntaxKind.ImportSpecifier, ts.SyntaxKind.NamespaceImport,
+  ts.SyntaxKind.Identifier, ts.SyntaxKind.StringLiteral, ts.SyntaxKind.NumericLiteral, ts.SyntaxKind.BigIntLiteral, ts.SyntaxKind.RegularExpressionLiteral,
+  ts.SyntaxKind.NoSubstitutionTemplateLiteral, ts.SyntaxKind.TemplateExpression, ts.SyntaxKind.TemplateHead, ts.SyntaxKind.TemplateMiddle, ts.SyntaxKind.TemplateTail, ts.SyntaxKind.TemplateSpan,
+  ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword, ts.SyntaxKind.AsyncKeyword, ts.SyntaxKind.ConstKeyword, ts.SyntaxKind.ReadonlyKeyword,
+  ts.SyntaxKind.ExpressionStatement, ts.SyntaxKind.VariableStatement, ts.SyntaxKind.VariableDeclarationList, ts.SyntaxKind.VariableDeclaration, ts.SyntaxKind.Block, ts.SyntaxKind.ReturnStatement,
+  ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForOfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ThrowStatement, ts.SyntaxKind.TryStatement, ts.SyntaxKind.CatchClause, ts.SyntaxKind.EmptyStatement,
+  ts.SyntaxKind.CallExpression, ts.SyntaxKind.NewExpression, ts.SyntaxKind.PropertyAccessExpression, ts.SyntaxKind.ElementAccessExpression, ts.SyntaxKind.ArrowFunction, ts.SyntaxKind.FunctionExpression, ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.ObjectLiteralExpression, ts.SyntaxKind.PropertyAssignment, ts.SyntaxKind.ShorthandPropertyAssignment, ts.SyntaxKind.ArrayLiteralExpression, ts.SyntaxKind.SpreadElement,
+  ts.SyntaxKind.BinaryExpression, ts.SyntaxKind.PrefixUnaryExpression, ts.SyntaxKind.PostfixUnaryExpression, ts.SyntaxKind.ParenthesizedExpression, ts.SyntaxKind.ConditionalExpression,
+  ts.SyntaxKind.AwaitExpression, ts.SyntaxKind.TypeOfExpression, ts.SyntaxKind.AsExpression, ts.SyntaxKind.NonNullExpression,
+  ts.SyntaxKind.ArrayBindingPattern, ts.SyntaxKind.ObjectBindingPattern, ts.SyntaxKind.BindingElement, ts.SyntaxKind.Parameter, ts.SyntaxKind.OmittedExpression,
+  ts.SyntaxKind.TypeReference, ts.SyntaxKind.ArrayType, ts.SyntaxKind.UnionType, ts.SyntaxKind.LiteralType, ts.SyntaxKind.TypeLiteral, ts.SyntaxKind.PropertySignature, ts.SyntaxKind.TupleType, ts.SyntaxKind.QualifiedName,
+  ts.SyntaxKind.AnyKeyword, ts.SyntaxKind.UnknownKeyword, ts.SyntaxKind.NumberKeyword, ts.SyntaxKind.StringKeyword, ts.SyntaxKind.BooleanKeyword, ts.SyntaxKind.VoidKeyword, ts.SyntaxKind.UndefinedKeyword, ts.SyntaxKind.NeverKeyword,
+]);
+const isPunctuation = (k: ts.SyntaxKind) => k >= ts.SyntaxKind.FirstPunctuation && k <= ts.SyntaxKind.LastPunctuation;
+/** Names the test itself declares (variables, parameters, functions, imports, catch bindings, destructuring). */
+function testDeclaredNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>();
+  const addName = (n: ts.BindingName | ts.Identifier | undefined): void => {
+    if (!n) return;
+    if (ts.isIdentifier(n)) { out.add(n.text); return; }
+    for (const e of n.elements) if (!ts.isOmittedExpression(e)) addName(e.name);
+  };
+  const v = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)) addName(n.name);
+    if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) out.add(n.name.text);
+    if (ts.isImportClause(n) && n.name) out.add(n.name.text);
+    if (ts.isNamespaceImport(n) || ts.isImportSpecifier(n)) out.add(n.name.text);
+    if (ts.isCatchClause(n) && n.variableDeclaration) addName(n.variableDeclaration.name);
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return out;
+}
+/** Identifier positions that are not references (property names, keys, declarations, type names). */
+function isReference(n: ts.Identifier): boolean {
+  const p = n.parent;
+  if (ts.isPropertyAccessExpression(p) && p.name === n) return false;
+  if ((ts.isPropertyAssignment(p) || ts.isPropertySignature(p)) && p.name === n) return false;
+  if (ts.isBindingElement(p) && p.propertyName === n) return false;
+  if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)) return false;
+  if ((ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isBindingElement(p) || ts.isFunctionDeclaration(p) || ts.isFunctionExpression(p)) && p.name === n) return false;
+  if (ts.isTypeReferenceNode(p) || ts.isQualifiedName(p)) return false;
+  return true;
+}
 /**
  * M23 (Auditor #129): null when a graded test cannot observe the stub other than by calling the function: it imports
  * only node:test, node:assert/strict and the modules in `allowed`; no dynamic import, import.meta, file/env/process
@@ -412,8 +468,14 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
     if (nb && ts.isNamespaceImport(nb)) bound.add(nb.name.text);
     if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!functions || functions.includes((e.propertyName ?? e.name).text)) bound.add(e.name.text);
   }
+  const declared = testDeclaredNames(sf);
   const v = (n: ts.Node): void => {
     if (problem) return;
+    // Round 3 (Auditor #129): allow-list grammar first (node kinds, free identifiers, Object members).
+    if (!ALLOWED_KINDS.has(n.kind) && !isPunctuation(n.kind)) { problem = `syntax ${ts.SyntaxKind[n.kind]}`; return; }
+    if (ts.isIdentifier(n) && isReference(n) && !declared.has(n.text) && !ALLOWED_GLOBALS.has(n.text)) { problem = `global ${n.text}`; return; }
+    if (ts.isIdentifier(n) && n.text === "Object" && isReference(n) && !declared.has("Object")
+      && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && OBJECT_MEMBERS.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Object other than Object.keys/fromEntries/freeze calls"; return; }
     if (ts.isImportDeclaration(n)) {
       const m = ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : "";
       if (!TEST_IMPORTS.has(m) && !allowed.includes(m)) problem = `imports ${m}`;
@@ -446,6 +508,27 @@ export function hasNonDeclarationCallables(content: string): boolean {
     if (found) return;
     if (ts.isFunctionDeclaration(n) && n.parent === sf) return; // its body is stubbed whole
     if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isClassLike(n) || ts.isMethodDeclaration(n) || ts.isGetAccessor(n) || ts.isSetAccessor(n) || ts.isFunctionDeclaration(n)) { found = true; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return found;
+}
+
+/**
+ * Round 3 (Auditor #129): true when a module imports (or re-exports from) another file by a relative or absolute
+ * path. Under the narrowed reads (test file, module, node_modules) such a module cannot load, so the harness
+ * records it as ungradable "module-imports-repo-files" instead of running it. Type-only imports are erased.
+ */
+export function moduleImportsRepoFiles(content: string): boolean {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  let found = false;
+  const v = (n: ts.Node): void => {
+    if (found) return;
+    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier) && /^[./]/.test(n.moduleSpecifier.text)) {
+      const typeOnly = ts.isImportDeclaration(n) ? !!n.importClause?.isTypeOnly : n.isTypeOnly;
+      if (!typeOnly) { found = true; return; }
+    }
+    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { found = true; return; }
     ts.forEachChild(n, v);
   };
   v(sf);

@@ -7,7 +7,7 @@ import type { CandidateResult } from "./rank.ts";
  */
 export const GRADING_VERDICTS = ["COUNTS", "REJECTED_PASSES_BOTH", "REJECTED_FAILS_BOTH", "REJECTED_FAILS_AFTER_FIX", "UNGRADABLE", "REJECTED_PASSES_WITH_STUB"] as const;
 export type GradingVerdict = (typeof GRADING_VERDICTS)[number];
-export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-invalid", "fix-not-on-main", "fix-not-ancestor", "fix-touches-non-source", "no-source-change", "revert-failed", "stub-not-reached", "real-not-stable"] as const;
+export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-invalid", "fix-not-on-main", "fix-not-ancestor", "fix-touches-non-source", "no-source-change", "revert-failed", "stub-not-reached", "real-not-stable", "not-confined", "module-imports-repo-files"] as const;
 export type UngradableReason = (typeof UNGRADABLE_REASONS)[number];
 
 /** Paths a fix may never touch for grading: workflows, hooks, scripts, configs, lockfiles, env and infra files. */
