@@ -140,9 +140,32 @@ export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
  * from a source other than core, and its content hash must match no core file. An empty or unreadable manifest
  * proves nothing.
  */
-export function manifestProvesNoCore(manifest: readonly { source?: string; visibility?: string; sha256?: string }[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI"): boolean {
+export function manifestProvesNoCore(manifest: readonly Record<string, unknown>[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI"): boolean {
   if (manifest.length === 0) return false;
-  return manifest.every((m) => m.visibility === "public" && typeof m.source === "string" && m.source !== coreSource && typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256));
+  const shaOk = (m: Record<string, unknown>) => typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256);
+  // M39 (Architect): the external manifest schema (ext-fetch.ts: repo + license + sha256). All entries one schema;
+  // any unknown field or malformed entry fails closed. The internal schema keeps its visibility check unchanged.
+  if (manifest.every((m) => m !== null && typeof m === "object" && "repo" in m)) return manifest.every((m) => extManifestEntryProblem(m, coreSource) === null && shaOk(m));
+  return manifest.every((m) => m !== null && typeof m === "object" && !("repo" in m) && m.visibility === "public" && typeof m.source === "string" && m.source !== coreSource && shaOk(m));
+}
+
+/** M39: keys an external training manifest entry may carry (ext-fetch.ts output); anything else is refused. */
+export const EXT_PROOF_KEYS = new Set(["doc", "stage", "repo", "commit", "license", "path", "sha256", "bytes", "origin", "split"]);
+const EXT_PROOF_REQUIRED = ["doc", "repo", "commit", "license", "path", "sha256", "origin"];
+const EXT_PROOF_PERMISSIVE = new Set(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"]);
+/** Peace's own repos allowed in an external manifest: only the public owner repos, only with the owner license. */
+export const EXT_PROOF_OWNER_PUBLIC = new Set(["PeaceG03/PeaceSTOCKS", "PeaceG03/PeaceAI-Workspace"]);
+/** Same rules as corefree_proof.py's ext_problem(): null when the entry is acceptable. */
+export function extManifestEntryProblem(m: Record<string, unknown>, coreSource = "PeaceG03/PeaceAI"): string | null {
+  for (const k of Object.keys(m)) if (!EXT_PROOF_KEYS.has(k)) return `unknown field ${k}`;
+  for (const k of EXT_PROOF_REQUIRED) if (!(k in m)) return `missing field ${k}`;
+  if (!Number.isInteger(m.doc) || typeof m.path !== "string" || !m.path) return "bad doc/path";
+  if (typeof m.commit !== "string" || !/^[0-9a-f]{40}$/.test(m.commit)) return "bad commit";
+  const repo = m.repo;
+  if (typeof repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(repo) || repo.split("/").some((x) => /^[.-]/.test(x)) || repo === coreSource) return "bad repo";
+  if (m.origin === "external") return repo.toLowerCase().startsWith("peaceg03/") || !EXT_PROOF_PERMISSIVE.has(String(m.license)) ? "external entry: Peace repo or non-permissive license" : null;
+  if (m.origin === "owner-public") return EXT_PROOF_OWNER_PUBLIC.has(repo) && m.license === "owner:PeaceG03" ? null : "owner entry: not a public owner repo";
+  return "bad origin";
 }
 
 /**

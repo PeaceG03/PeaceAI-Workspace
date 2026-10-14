@@ -58,8 +58,10 @@ else {
   let exempt: PublicOnlyExemption | null = null;
   if (trainCorpus) {
     const tmText = readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8");
-    const tm: ManifestEntry[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-    const coreShas = new Set((tree.raw ?? []).map((t) => h(t)));
+    const tm: (ManifestEntry & Record<string, unknown>)[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    // M39: empty / whitespace-only core files carry no text; they never make a training file "core" (allowlisted
+    // public-origin files are already out of tree.raw, matched by path and exact-bytes pin in coreindex.ts).
+    const coreShas = new Set((tree.raw ?? []).filter((t) => t.replace(/\s+/g, "") !== "").map((t) => h(t)));
     trainManifestSha = h(tmText);
     let proof: unknown = null;
     try { proof = JSON.parse(readFileSync(join(modelDir, "corefree-proof.json"), "utf8")); } catch { proof = null; }
