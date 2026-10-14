@@ -82,7 +82,35 @@ export function parseComplexTask(trigger: string, objective: string): ComplexTas
  * True when every statement of the block is in the bounded grammar (see the header). `params` are read-only.
  * Returns the reason for a refusal (string) or null when the block is safe.
  */
-export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile): string | null {
+export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string> }
+/** Option A (Auditor): the callable module functions: exported, top-level, one declaration with a body, not async/generator. */
+export function moduleFunctions(sf: ts.SourceFile): Map<string, ts.FunctionDeclaration | null> {
+  const out = new Map<string, ts.FunctionDeclaration | null>();
+  for (const s of sf.statements) {
+    if (!ts.isFunctionDeclaration(s) || !s.name) continue;
+    const n = s.name.text;
+    const ok = !!s.body && !s.asteriskToken && !s.typeParameters?.length && (ts.getModifiers(s) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword) && !(ts.getModifiers(s) ?? []).some((m) => m.kind === ts.SyntaxKind.AsyncKeyword || m.kind === ts.SyntaxKind.DefaultKeyword);
+    out.set(n, out.has(n) || !ok ? null : s); // overloads / duplicates / non-exported: present but never callable
+  }
+  return out;
+}
+/** Option A: call chain depth cap (the candidate body -> f -> g; g may call nothing). */
+export const MAX_CALL_DEPTH = 2;
+
+export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile, ctx: CallCtx = { module: moduleFunctions(sf), stack: [], called: new Set() }): string | null {
+  let callRefusal: string | null = null;
+  const callee = (name: string): boolean => {
+    if (ctx.stack.includes(name)) { callRefusal = `recursive call to ${name}`; return false; }
+    if (ctx.stack.length >= MAX_CALL_DEPTH) { callRefusal = `call depth over ${MAX_CALL_DEPTH}`; return false; }
+    const f = ctx.module.get(name);
+    if (!f || !f.body) { callRefusal = `${name} is not an exported same-file function`; return false; }
+    const ps = new Set<string>();
+    for (const x of f.parameters) { if (!ts.isIdentifier(x.name) || !x.type || x.dotDotDotToken || x.initializer || x.questionToken) { callRefusal = `${name} has untyped/destructured/optional parameters`; return false; } ps.add(x.name.text); }
+    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called });
+    if (r) { callRefusal = `${name}: ${r}`; return false; }
+    ctx.called.add(name);
+    return true;
+  };
   const locals = new Map<string, { kind: "const" | "let"; pushable: boolean }>();
   const iterated = new Set<string>();
   const counters = new Set<string>();
@@ -100,7 +128,17 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     };
     visit(e);
     if (!okAccess) return false;
-    const rewritten = rewriteIndex(e, sf);
+    const own = names();
+    let callsOk = true;
+    const calls = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && !own.has(n.expression.text) && ctx.module.has(n.expression.text)) {
+        if (n.questionDotToken || n.typeArguments || n.arguments.some(ts.isSpreadElement) || !callee(n.expression.text)) callsOk = false;
+      }
+      ts.forEachChild(n, calls);
+    };
+    calls(e);
+    if (!callsOk) return false;
+    const rewritten = rewriteIndex(e, sf, (n) => !own.has(n) && ctx.module.has(n));
     if (rewritten === null) return false;
     const re = ts.createSourceFile("e.ts", `(${rewritten});`, ts.ScriptTarget.Latest, true);
     const st = re.statements[0];
@@ -128,7 +166,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
       if (d.type && !LOCAL_TYPES.has(d.type.getText(sf))) return "local type outside the vocabulary";
       const emptyArray = ts.isArrayLiteralExpression(d.initializer) && d.initializer.elements.length === 0;
       if (emptyArray && (!d.type || !/\[\]$/.test(d.type.getText(sf)))) return "an empty array needs an array type";
-      if (!emptyArray && !expr(d.initializer)) return "initializer outside the vocabulary";
+      if (!emptyArray && !expr(d.initializer)) return callRefusal ?? "initializer outside the vocabulary";
       locals.set(d.name.text, { kind, pushable: kind === "const" && emptyArray });
       return null;
     }
@@ -146,10 +184,18 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
       return "expression statement not allowed";
     }
     if (ts.isIfStatement(s)) {
+      // Option A: the only throw is a one-line guard `if (COND) throw new Error("literal");` (no else).
+      const th = ts.isBlock(s.thenStatement) && s.thenStatement.statements.length === 1 ? s.thenStatement.statements[0]! : s.thenStatement;
+      if (ts.isThrowStatement(th)) {
+        const x = th.expression;
+        const oneLine = sf.getLineAndCharacterOfPosition(s.getStart(sf)).line === sf.getLineAndCharacterOfPosition(s.getEnd()).line;
+        if (s.elseStatement || !oneLine || !ts.isNewExpression(x) || !ts.isIdentifier(x.expression) || x.expression.text !== "Error" || x.arguments?.length !== 1 || !(ts.isStringLiteral(x.arguments[0]!) || ts.isNoSubstitutionTemplateLiteral(x.arguments[0]!))) return "throw only as a one-line guard if (COND) throw new Error(\"literal\")";
+        return expr(s.expression) ? null : "condition outside the vocabulary";
+      }
       if (!expr(s.expression)) return "condition outside the vocabulary";
       return stmt(s.thenStatement, depth + 1, inLoop) ?? (s.elseStatement ? stmt(s.elseStatement, depth + 1, inLoop) : null);
     }
-    if (ts.isReturnStatement(s)) return s.expression && expr(s.expression) ? null : "return value outside the vocabulary";
+    if (ts.isReturnStatement(s)) return s.expression && expr(s.expression) ? null : callRefusal ?? "return value outside the vocabulary";
     if (ts.isBreakStatement(s) || ts.isContinueStatement(s)) return !s.label && inLoop ? null : "break/continue only unlabeled, inside a loop";
     if (ts.isForOfStatement(s)) {
       if (++loops > MAX_LOOPS) return "too many loops";
@@ -196,7 +242,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
 }
 
 /** Rewrites read-only `X[INDEX]` to `X.at(INDEX)` so ADD_FUNCTION's expression checker can vet it (at is pure). */
-function rewriteIndex(e: ts.Expression, sf: ts.SourceFile): string | null {
+function rewriteIndex(e: ts.Expression, sf: ts.SourceFile, isModuleCall: (name: string) => boolean = () => false): string | null {
   const text = e.getText(sf);
   const start = e.getStart(sf);
   const edits: { at: number; end: number; repl: string }[] = [];
@@ -206,12 +252,20 @@ function rewriteIndex(e: ts.Expression, sf: ts.SourceFile): string | null {
       const close = n.getEnd() - 1;
       edits.push({ at: open - start, end: open - start + 1, repl: ".at(" }, { at: close - start, end: close - start + 1, repl: ")" });
     }
+    // Option A: a vetted same-file call `f(a, b)` is checked as `[a, b].length` (its arguments stay checked).
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && isModuleCall(n.expression.text)) {
+      const c0 = n.expression.getStart(sf);
+      const open = n.arguments.pos - 1;
+      const close = n.getEnd() - 1;
+      edits.push({ at: c0 - start, end: open - start + 1, repl: "[" }, { at: close - start, end: close - start + 1, repl: "].length" });
+    }
     ts.forEachChild(n, visit);
   };
   visit(e);
   let out = text;
   for (const ed of edits.sort((a, b) => b.at - a.at)) {
-    if (out.slice(ed.at, ed.end) !== (ed.repl === ")" ? "]" : "[")) return null;
+    const want = ed.repl === ")" ? "]" : ed.repl === ".at(" ? "[" : ed.repl === "].length" ? ")" : null;
+    if (want !== null ? out.slice(ed.at, ed.end) !== want : !/^[A-Za-z_$][\w$]*\s*\($/.test(out.slice(ed.at, ed.end))) return null;
     out = out.slice(0, ed.at) + ed.repl + out.slice(ed.end);
   }
   return out;
@@ -270,4 +324,26 @@ export function stubComplexBody(content: string, fn: string): string | null {
   const d = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : null;
   if (!d) return null;
   return content.slice(0, hits[0]!.body.getStart(sf)) + `{ return ${d}; }` + content.slice(hits[0]!.body.getEnd());
+}
+
+/** Option A: the same-file functions a body calls (transitively, vetted). Null when the body is refused. */
+export function calledFunctions(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile): string[] | null {
+  const ctx: CallCtx = { module: moduleFunctions(sf), stack: [], called: new Set() };
+  return blockRefusal(block, params, sf, ctx) === null ? [...ctx.called].sort() : null;
+}
+
+/**
+ * Option A grading: stub `fn` AND every function it calls that the candidate added (`added`), so a test cannot pass
+ * through a helper the candidate also wrote. Null (fail closed) when any of them cannot be stubbed.
+ */
+export function stubForGrading(content: string, fn: string, added: readonly string[]): string | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const f = moduleFunctions(sf).get(fn);
+  if (!f?.body) return null;
+  const ps = new Set(f.parameters.map((x) => (ts.isIdentifier(x.name) ? x.name.text : "")));
+  const called = calledFunctions(f.body, ps, sf);
+  if (called === null) return null;
+  let cur: string | null = content;
+  for (const n of [fn, ...called.filter((c) => added.includes(c))]) { cur = stubComplexBody(cur, n); if (cur === null) return null; }
+  return cur;
 }
