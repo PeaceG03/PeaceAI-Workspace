@@ -153,7 +153,6 @@ export function manifestProvesNoCore(manifest: readonly Record<string, unknown>[
 export const EXT_PROOF_KEYS = new Set(["doc", "stage", "repo", "commit", "license", "path", "sha256", "bytes", "origin", "split"]);
 const EXT_PROOF_REQUIRED = ["doc", "repo", "commit", "license", "path", "sha256", "origin"];
 const EXT_PROOF_PERMISSIVE = new Set(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"]);
-/** Peace's own repos allowed in an external manifest: only the public owner repos, only with the owner license. */
 /** M40 (Auditor #160): the training docs.jsonl and manifest doc ids are the same set, with no duplicates on either side. */
 export function docIdsMatch(manifestIds: readonly unknown[], docIds: readonly unknown[]): boolean {
   const a = new Set(manifestIds), b = new Set(docIds);
@@ -161,6 +160,7 @@ export function docIdsMatch(manifestIds: readonly unknown[], docIds: readonly un
 }
 /** M40: ASCII whitespace only, the same set as corefree_proof.py (never NBSP, U+2000-200A, U+3000, \x1c-\x1f, U+FEFF). */
 export const isAsciiBlank = (t: string) => t.replace(/[ \t\r\n\f\v]+/g, "") === "";
+/** Peace's own repos allowed in an external manifest: only the public owner repos, only with the owner license. */
 export const EXT_PROOF_OWNER_PUBLIC = new Set(["PeaceG03/PeaceSTOCKS", "PeaceG03/PeaceAI-Workspace"]);
 /** Same rules as corefree_proof.py's ext_problem(): null when the entry is acceptable. */
 export function extManifestEntryProblem(m: Record<string, unknown>, coreSource = "PeaceG03/PeaceAI"): string | null {
