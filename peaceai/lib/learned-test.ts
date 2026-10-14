@@ -71,12 +71,26 @@ const parseExpr = (text: string): ts.Expression | null => {
 /** M35: a `new Date("...")` argument: identifier Date (not shadowable here: checks only name exports), exactly one plain
  *  string literal of at most MAX_DATE_LITERAL_CHARS characters from a date-text alphabet (no escapes, no templates). */
 export const MAX_DATE_LITERAL_CHARS = 32;
+/** Auditor #152 follow-up: an ISO 8601 date only (YYYY-MM-DD, parsed as UTC), or a date-time with Z or a +-HH:MM
+ *  offset (never a local time, so the result never depends on the runner's time zone). */
+export const ISO_DATE_TEXT = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+/** Real calendar values only (no 2026-02-30, no 25:00, no +15:00). */
+function validCalendar(raw: string): boolean {
+  const [y, mo, d] = raw.slice(0, 10).split("-").map(Number) as [number, number, number];
+  const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  if (mo < 1 || mo > 12 || d < 1 || d > days) return false;
+  const t = /T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
+  if (t && (Number(t[1]) > 23 || Number(t[2]) > 59 || Number(t[3] ?? 0) > 59)) return false;
+  const off = /([+-])(\d{2}):(\d{2})$/.exec(raw.slice(10));
+  if (off && (Number(off[2]) > 14 || Number(off[3]) > 59)) return false;
+  return !Number.isNaN(Date.parse(raw));
+}
 export function isDateLiteral(n: ts.Node): boolean {
   if (!ts.isNewExpression(n) || n.typeArguments || !ts.isIdentifier(n.expression) || n.expression.text !== "Date") return false;
   const a = n.arguments ?? [];
   if (a.length !== 1 || !ts.isStringLiteral(a[0]!)) return false;
   const raw = a[0]!.getText().slice(1, -1);
-  return raw.length <= MAX_DATE_LITERAL_CHARS && /^[0-9A-Za-z:.+\- ]*$/.test(raw) && raw === a[0]!.text;
+  return raw.length <= MAX_DATE_LITERAL_CHARS && raw === a[0]!.text && ISO_DATE_TEXT.test(raw) && validCalendar(raw);
 }
 
 /** A literal value: string, number, -number, true/false/null/undefined, arrays and plain objects of those.
