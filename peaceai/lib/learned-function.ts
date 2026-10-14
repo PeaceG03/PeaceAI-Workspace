@@ -420,6 +420,8 @@ const GLOBAL_MEMBERS: Readonly<Record<string, ReadonlySet<string>>> = {
 };
 const ASSERT_METHODS = new Set(["ok", "equal", "notEqual", "deepEqual", "notDeepEqual", "strictEqual", "notStrictEqual", "deepStrictEqual", "notDeepStrictEqual", "throws", "doesNotThrow", "rejects", "doesNotReject", "match", "doesNotMatch", "fail"]);
 const RUNNER_MEMBERS = new Set(["skip", "todo", "only"]);
+/** M29 (Auditor follow-up): members of the test-context parameter (`test("x", (t) => ...)`). */
+const CONTEXT_MEMBERS = new Set(["skip", "todo", "diagnostic"]);
 const DATA_METHODS = new Set(["length", "size", "map", "filter", "find", "findIndex", "some", "every", "includes", "indexOf", "slice", "at", "concat", "flat", "reduce", "sort", "reverse", "startsWith", "endsWith", "trim", "split", "padStart", "padEnd", "toUpperCase", "toLowerCase", "toFixed", "get", "has", "add", "set", "push"]);
 const ERROR_CTORS = new Set(["Error", "TypeError", "RangeError"]);
 /** Round 4 (Auditor #129): the property names a module declares or reads (its returned values' members). */
@@ -525,11 +527,10 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
   // Round 4 (Auditor #129 B1): data keys the test itself declares, plus the module's.
   const keys = new Set<string>(dataKeys.filter((k) => !FORBIDDEN_PROPS.has(k)));
   const assertNames = new Set<string>(), runnerNames = new Set<string>();
+  // M29 (Auditor follow-up): allowed keys come ONLY from the module under test (`dataKeys`); keys the test
+  // declares itself (`const _k = { mock: 0 }`) unlock nothing.
+  const contextNames = new Set<string>();
   const collect = (n: ts.Node): void => {
-    if ((ts.isPropertyAssignment(n) || ts.isPropertySignature(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) keys.add(n.name.text);
-    if (ts.isShorthandPropertyAssignment(n)) keys.add(n.name.text);
-    if (ts.isBindingElement(n) && !n.propertyName && ts.isIdentifier(n.name) && ts.isObjectBindingPattern(n.parent)) keys.add(n.name.text);
-    if (ts.isBindingElement(n) && n.propertyName && ts.isIdentifier(n.propertyName)) keys.add(n.propertyName.text);
     if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && n.importClause) {
       const m = n.moduleSpecifier.text, set = m === "node:assert/strict" ? assertNames : m === "node:test" ? runnerNames : null;
       if (set && n.importClause.name) set.add(n.importClause.name.text);
@@ -539,6 +540,16 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
     ts.forEachChild(n, collect);
   };
   collect(sf);
+  // M29: the first parameter of a callback passed to the runner (`test("x", (t) => ...)`) is the test context.
+  const ctx = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && runnerNames.has(n.expression.text))
+      for (const a of n.arguments) if ((ts.isArrowFunction(a) || ts.isFunctionExpression(a)) && a.parameters[0]) {
+        const pn = a.parameters[0].name;
+        if (ts.isIdentifier(pn)) contextNames.add(pn.text); else problem ??= "destructured test context";
+      }
+    ts.forEachChild(n, ctx);
+  };
+  ctx(sf);
   for (const k of [...keys]) if (FORBIDDEN_PROPS.has(k)) keys.delete(k);
   const v = (n: ts.Node): void => {
     if (problem) return;
@@ -564,10 +575,14 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
         (base !== null && Object.hasOwn(GLOBAL_MEMBERS, base) ? GLOBAL_MEMBERS[base]!.has(p)
           : ts.isIdentifier(n.expression) && assertNames.has(n.expression.text) ? ASSERT_METHODS.has(p)
           : ts.isIdentifier(n.expression) && runnerNames.has(n.expression.text) ? RUNNER_MEMBERS.has(p)
+          : ts.isIdentifier(n.expression) && contextNames.has(n.expression.text) ? CONTEXT_MEMBERS.has(p)
           : base !== null && ERROR_CTORS.has(base) ? false
           : keys.has(p) || DATA_METHODS.has(p)));
       if (!ok) { problem = `property ${p} not allow-listed`; return; }
     }
+    // M29: assert, the runner and the test context are only called or member-accessed, never aliased or passed.
+    if (ts.isIdentifier(n) && isReference(n) && (assertNames.has(n.text) || runnerNames.has(n.text) || contextNames.has(n.text))
+      && !(ts.isCallExpression(n.parent) && n.parent.expression === n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n)) { problem = `aliases ${n.text}`; return; }
     // Round 4 (Auditor #129 B1): constant-fold string expressions; any that spell a forbidden name is refused.
     if (ts.isBinaryExpression(n) || ts.isTemplateExpression(n) || ts.isParenthesizedExpression(n)) {
       const c = constString(n as ts.Expression);

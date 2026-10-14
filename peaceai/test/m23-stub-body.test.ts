@@ -414,7 +414,7 @@ test("Round 4 #129 B1: Auditor's exact __lookupGetter__ exploit is refused", () 
   for (const h of ["__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__"]) assert.ok(P4(`const o: any = {}; o.${h}("a");`), h);
 });
 
-test("Round 4 #129 B1: property names are an allow-list (assert methods, module/test data keys, listed global members)", () => {
+test("Round 4 #129 B1: property names are an allow-list (assert methods, module data keys, listed global members)", () => {
   assert.deepEqual(DK.filter((k) => ["mode", "next", "outcome", "failures"].includes(k)).sort(), ["failures", "mode", "next", "outcome"], "module data keys harvested");
   for (const [body, why] of [
     ['const o: any = {}; o.call();', "call (not a data key)"],
@@ -426,8 +426,9 @@ test("Round 4 #129 B1: property names are an allow-list (assert methods, module/
     ['Math.random();', "Math.random"],
     ['JSON.rawJSON("1");', "JSON member outside the list"],
     ['const o = decide({}); o.next.constructor;', "constructor via a data key"],
+    ['const o = { qty: 1 }; assert.equal(o.qty, 1);', "M29: a test-declared key is not allow-listed"],
   ] as const) assert.ok(P4(body), why);
-  assert.equal(P4('const r = decide({ outcome: "x", failures: 0 }); assert.equal(r.mode, "DAILY"); assert.deepEqual(Object.keys(r), ["mode", "next"]); const o = { qty: 1 }; assert.equal(o.qty, 1); const xs = [1, 2].map((x) => x + 1); assert.equal(xs.length, 2); assert.equal(Math.max(1, 2), 2); test.skip;'), null, "ordinary access passes");
+  assert.equal(P4('const r = decide({ outcome: "x", failures: 0 }); assert.equal(r.mode, "DAILY"); assert.deepEqual(Object.keys(r), ["mode", "next"]); const xs = [1, 2].map((x) => x + 1); assert.equal(xs.length, 2); assert.equal(Math.max(1, 2), 2); test.skip;'), null, "ordinary access passes");
   assert.ok(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(decide({}).mode, "DAILY"); });\n', ["./m"], FNS), "without the module's keys, its members are not allow-listed");
 });
 
@@ -466,4 +467,29 @@ test("Round 4 #129: the harness passes the module's data keys to the checker", (
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   assert.match(tc, /const moduleKeys = moduleDataKeys\(real\);/);
   assert.ok(!moduleDataKeys("export const o = { __proto__: null, constructor: 1, a: 2 };\n").some((k) => ["__proto__", "constructor"].includes(k)), "forbidden names never become data keys");
+});
+
+test("M29: allowed keys come only from the module; a test-declared key unlocks nothing", () => {
+  const DK = moduleDataKeys(MOD);
+  for (const body of [
+    'const _k = { mock: 0, fn: 0, timers: 0 }; (test as any).mock;',
+    'const _k = { mock: 0 }; const o: any = {}; o.mock;',
+    'const { mock } = {} as any; const o: any = {}; o.mock;',
+  ]) assert.match(gradedTestSourceProblem(H2 + `test("t", () => { ${body} });\n`, ["./m"], FNS, DK) ?? "", /property mock not allow-listed|aliases/, body);
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", () => { assert.equal(decide({}).mode, "DAILY"); });\n', ["./m"], FNS, DK), null, "module keys still work");
+});
+
+test("M29: test-context members limited to skip/todo/diagnostic; destructured context refused", () => {
+  const DK = moduleDataKeys(MOD);
+  for (const m of ["skip", "todo", "diagnostic"])
+    assert.equal(gradedTestSourceProblem(H2 + `test("t", (t) => { t.${m}("x"); assert.equal(decide({}).mode, "DAILY"); });\n`, ["./m"], FNS, DK), null, m);
+  for (const m of ["mock", "test", "before", "after", "plan", "signal", "runOnly"])
+    assert.ok(gradedTestSourceProblem(H2 + `test("t", (t) => { t.${m}; });\n`, ["./m"], FNS, DK), m);
+  assert.equal(gradedTestSourceProblem(H2 + 'test("t", ({ mock }) => { });\n', ["./m"], FNS, DK), "destructured test context");
+});
+
+test("M29: assert, the runner and the context are never aliased or passed", () => {
+  const DK = moduleDataKeys(MOD);
+  for (const body of ['const a = assert;', 'const r = test;', 'const c = t;', '[t][0];', 'decide(t as never);', 'const { mock } = test as any;'])
+    assert.ok(gradedTestSourceProblem(H2 + `test("t", (t) => { ${body} });\n`, ["./m"], FNS, DK), body);
 });
