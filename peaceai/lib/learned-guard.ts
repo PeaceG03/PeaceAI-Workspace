@@ -84,7 +84,7 @@ export function safeCondition(e: ts.Expression, params: ReadonlySet<string>): bo
 const exported = (n: ts.Node) => ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
 type Fn = { body: ts.Block; params: ts.NodeArray<ts.ParameterDeclaration> };
 /** The single exported, non-generator function (declaration or `export const f = (..) => { .. }`) named `name`. */
-function exportedFunction(sf: ts.SourceFile, name: string): Fn | null {
+export function exportedFunction(sf: ts.SourceFile, name: string): Fn | null {
   const hits: Fn[] = [];
   for (const s of sf.statements) {
     if (ts.isFunctionDeclaration(s) && s.name?.text === name && s.body && !s.asteriskToken && exported(s)) hits.push({ body: s.body, params: s.parameters });

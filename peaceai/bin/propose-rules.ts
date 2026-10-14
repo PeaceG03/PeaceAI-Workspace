@@ -11,6 +11,7 @@ import { tally, type Observation } from "../lib/mine.ts";
 import { exampleHunk, mineRepo } from "../lib/minegit.ts";
 import { mineTests, TEST_MINING_REPOS } from "../lib/minetest.ts";
 import { mineWorkflows } from "../lib/mineworkflow.ts";
+import { mineBody } from "../lib/minebody.ts";
 import { specFileText } from "../lib/learned.ts";
 import { proposalBody, proposeRules } from "../lib/propose.ts";
 
@@ -43,6 +44,10 @@ if (pub.length) {
       const w = mineWorkflows(p.dir, p.rev, p.name);
       console.log(`workflows ${p.name} commits=${w.commits} steps=${w.observations.length}`);
       obs.push(...w.observations);
+      // M27: in-body expression replacements, same allowed public repositories and author filter.
+      const b = mineBody(p.dir, p.rev, p.name);
+      console.log(`body ${p.name} commits=${b.commits} edits=${b.observations.length}`);
+      obs.push(...b.observations);
     } else console.log(`tests ${p.name} skipped (not an allowed public repository for test mining)`);
   }
   const stats = tally(obs);
