@@ -307,6 +307,16 @@ The only runtime dependency is numpy (array math), hash-pinned in `peaceai/model
   own text and is left out of the line scan. Any hit, fewer than 100 samples, an inference error or files changed during the check means FAIL.
   `memcheck.json` binds the PASS to the sha256 of `config.json`, `tokenizer.json` and `weights.npz`; the
   loaders (`peaceai/lib/lm.ts`, `peaceai/model/infer.py`) refuse any model without a matching PASS.
+- **M39, core-free proof for external-corpus models:** `corefree_proof.py` and `manifestProvesNoCore` read the
+  external manifest schema (ext-fetch: repo, commit, license, sha256, origin). Every field must be known (anything
+  else fails closed), external repos need a permissive license and are never Peace's, and Peace's own repos are only
+  the public owner repos with the owner license. The internal schema keeps its `visibility: public` check unchanged.
+  A core file on the public-origin allowlist (exact path and bytes pin) is non-core only for a training file whose
+  content sha256 is that pin; copies, whitespace variants or near-copies of it still flag. Empty or whitespace-only
+  files (after normalisation) are ignored on both sides, with no wider byte threshold. The strict 32-character rule
+  is unchanged for every model without a valid proof.
+- **Set C v2 per byte (M39):** `eval_c.py` also reports `bytes_scored`, `loss_per_byte` and `bits_per_byte`;
+  `--max-bytes N` scores the same UTF-8 byte slice for any tokenizer (`slice_sha256` proves it), so models compare.
 - **Weights** live only in private PeaceAI-Results (`models/lm/<version>/`, fp16; `models/lm/latest.json`).
 - **Shadow score** (`PEACEAI_LM_SHADOW`, off unless exactly `true`): Job C records the mean log-probability
   of each distinct edit's added lines as `ranking.lmShadow`. Never shown. `PEACEAI_RANKER=lm` makes it
