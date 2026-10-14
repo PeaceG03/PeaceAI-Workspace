@@ -61,8 +61,10 @@ const CANONICAL: RegExp[] = [
   new RegExp(GUARD_TRIGGER, "imu"),
   // M15: the ADD_FUNCTION rule's header line (its test bullets follow it).
   new RegExp(FUNCTION_TRIGGER, "imu"),
-  // M19: the ADD_WORKFLOW_STEP rule's header line.
-  new RegExp(WORKFLOW_TRIGGER, "imu"),
+  // M19: the ADD_WORKFLOW_STEP rule's header line. M24: issue cleaning turns a closing backtick into a
+  // trailing space, so trailing spaces/tabs are allowed here (the engine trims each line; the spec trigger,
+  // and so its hash, is unchanged).
+  new RegExp(WORKFLOW_TRIGGER.replace(/\$$/, "[ \\t]*$"), "imu"),
 ];
 // Numbered plan lines ("Step 2: ...", "2. ...", "2) ..."), read the same way the planner reads them.
 const STEP_WORD = /^step\s*\d{1,2}\s*[-:.)]\s*/iu;
