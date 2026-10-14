@@ -22,4 +22,4 @@ if (prop) {
   writeFileSync(join(out, "title.txt"), prop.title);
   writeFileSync(join(out, "body.md"), prop.body);
 }
-console.log(`skill-learner pick=${pass.pick?.skill ?? "none"} gaps=${pass.gaps.length}`);
+console.log(`skill-learner picks=${pass.picks.map((r) => r.skill).join(",") || "none"} families=${pass.families.map((f) => f.family).join(",") || "none"} gaps=${pass.gaps.length}`);

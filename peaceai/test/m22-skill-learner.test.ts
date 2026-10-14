@@ -1,4 +1,5 @@
-// M22: the skill learner. One pass = ONE missing skill proposed (with log examples) + a ranked gap note.
+// M22: the skill learner. Bulk teaching (Oct 14): one pass = up to MAX_PICKS_PER_PASS missing skills, grouped
+// into families (each its own section/examples) + a ranked gap note.
 // Counting over the public Builder log only; never approves, edits rules or pushes; off until enabled.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -6,7 +7,7 @@ import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { learnPass, NOT_RULEABLE, SKILL_MARKER, skillProposalBody } from "../lib/skilllearn.ts";
+import { FAMILY_OF, learnPass, MAX_PICKS_PER_PASS, NOT_RULEABLE, SKILL_MARKER, skillProposalBody } from "../lib/skilllearn.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
@@ -18,33 +19,45 @@ const LOG = [
   e(9, "MODIFY_LOGIC", "none (not done)"), e(10, "THROW_GUARD", "PeaceSTOCKS@abc1237", true),
 ].join("\n") + "\n";
 
-test("pass: picks the one missing skill with the most public code evidence; never a not-ruleable or already-proposed skill", () => {
+test("pass: picks the top missing skills with public code evidence (max 3), grouped into families; never not-ruleable or already-proposed", () => {
   const p = learnPass(LOG, new Set());
+  assert.deepEqual(p.picks.map((r) => r.skill), ["IMPORT_EDIT", "WORKFLOW_JOB"]);
   assert.equal(p.pick!.skill, "IMPORT_EDIT");
   assert.equal(p.pick!.withCode, 2);
+  assert.deepEqual(p.families.map((f) => [f.family, f.skills.map((r) => r.skill)]), [["code-shape", ["IMPORT_EDIT"]], ["workflow", ["WORKFLOW_JOB"]]]);
   assert.ok(!p.ranked.some((r) => r.skill === "THROW_GUARD"), "approved skills are not gaps");
-  assert.equal(learnPass(LOG, new Set(["IMPORT_EDIT"])).pick!.skill, "WORKFLOW_JOB", "already proposed -> next one");
+  assert.deepEqual(learnPass(LOG, new Set(), 1).picks.map((r) => r.skill), ["IMPORT_EDIT"], "maxPicks honored");
+  assert.match(learnPass(LOG, new Set(), 1).gaps.find((g) => g.skill === "WORKFLOW_JOB")!.reason, /at most 1 skills per pass/);
+  assert.deepEqual(learnPass(LOG, new Set(["IMPORT_EDIT"])).picks.map((r) => r.skill), ["WORKFLOW_JOB"], "already proposed -> skipped");
   assert.equal(learnPass(LOG, new Set(["IMPORT_EDIT", "WORKFLOW_JOB"])).pick, null, "self-change and ops are never picked even with refs");
+  for (const n of [0, 4, 1.5]) assert.throws(() => learnPass(LOG, new Set(), n), /maxPicks/);
+  assert.equal(MAX_PICKS_PER_PASS, 3);
   assert.match(p.gaps.find((g) => g.skill === "PEACEAI_SELF_CHANGE")!.reason, /protected/);
   assert.match(p.gaps.find((g) => g.skill === "MODIFY_LOGIC")!.reason, /no public code change/);
-  assert.match(p.gaps.find((g) => g.skill === "WORKFLOW_JOB")!.reason, /one skill per pass/);
   assert.deepEqual(Object.keys(NOT_RULEABLE).sort(), ["ENV_FIX", "OPS_ACTION", "PEACEAI_SELF_CHANGE"]);
+  for (const k of Object.keys(NOT_RULEABLE)) assert.ok(!(k in FAMILY_OF), "not-ruleable skills have no family");
+  const old = LOG + e(11, "WORKFLOW_STEP", "PeaceSTOCKS@abc1238") + "\n" + e(12, "WORKFLOW_STEP", "PeaceSTOCKS@abc1239") + "\n" + e(13, "WORKFLOW_STEP", "PeaceSTOCKS@abc123a") + "\n";
+  assert.ok(!learnPass(old, new Set()).ranked.some((r) => r.skill === "WORKFLOW_STEP"), "a skill approved since (old 'missing' marks) is never re-proposed");
 });
 
-test("gap note is ranked: code evidence, then entries, then name; every missing skill except the pick is listed once", () => {
+test("gap note is ranked: code evidence, then entries, then name; every missing skill except the picks is listed once", () => {
   const p = learnPass(LOG, new Set());
   assert.deepEqual(p.ranked.map((r) => r.skill), ["IMPORT_EDIT", "PEACEAI_SELF_CHANGE", "WORKFLOW_JOB", "OPS_ACTION", "MODIFY_LOGIC"]);
-  assert.deepEqual(p.gaps.map((g) => g.skill), ["PEACEAI_SELF_CHANGE", "WORKFLOW_JOB", "OPS_ACTION", "MODIFY_LOGIC"]);
+  assert.deepEqual(p.gaps.map((g) => g.skill), ["PEACEAI_SELF_CHANGE", "OPS_ACTION", "MODIFY_LOGIC"]);
 });
 
-test("proposal body: marker with skill and log hash, examples are log lines with public refs only, no approval command", () => {
+test("proposal body: marker lists every skill + log hash, one section per family and skill, public refs only, no approval command", () => {
   const p = learnPass(LOG, new Set());
   const b = skillProposalBody(p, LOG)!;
-  assert.ok(b.body.startsWith(`<!-- ${SKILL_MARKER} skill=IMPORT_EDIT log=${p.logSha256} -->`));
+  assert.ok(b.body.startsWith(`<!-- ${SKILL_MARKER} skills=IMPORT_EDIT,WORKFLOW_JOB log=${p.logSha256} -->`));
+  assert.match(b.body, /### Family `code-shape`[\s\S]*#### `IMPORT_EDIT`[\s\S]*### Family `workflow`[\s\S]*#### `WORKFLOW_JOB`/);
   assert.match(b.body, /\| 4 \| log task number 4 \| PeaceSTOCKS@abc1234 \|/);
+  assert.match(b.body, /\| 6 \| log task number 6 \| PeaceSTOCKS@abc1236 \|/);
   assert.doesNotMatch(b.body, /\| 1 \| log task number 1 /);
   assert.doesNotMatch(b.body, /\/approve-rule|\/verdict/);
   assert.match(b.body, /cannot approve itself/);
+  assert.match(b.body, /tested, reviewed and proven on its own/);
+  assert.match(b.title, /code-shape \+ workflow/);
   assert.equal(skillProposalBody(learnPass(LOG, new Set(["IMPORT_EDIT", "WORKFLOW_JOB"])), LOG), null);
 });
 
@@ -58,7 +71,7 @@ test("bin on the real log: writes gaps.tsv and at most one proposal; leak-scanne
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
   const r = spawnSync(join(repo, "node_modules/.bin/tsx"), [join(repo, "peaceai/bin/skill-learner.ts")], { cwd: repo, encoding: "utf8", env: { ...env, PEACEAI_OUT_DIR: out, SKILL_PROPOSED: "" } });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /skill-learner pick=\w+ gaps=\d+/);
+  assert.match(r.stdout, /skill-learner picks=[\w,]+ families=[\w,-]+ gaps=\d+/);
   assert.ok(readFileSync(join(out, "gaps.tsv"), "utf8").startsWith("skill\tentries\twhy\n"));
   if (existsSync(join(out, "body.md"))) assert.equal((readFileSync(join(out, "body.md"), "utf8").match(/peaceai-skill-proposal:v1/g) ?? []).length, 1);
   rmSync(out, { recursive: true, force: true });

@@ -36,7 +36,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&labels=skill-proposal&per_page=100" --jq '.[].body' \
-            | grep -oE 'peaceai-skill-proposal:v1 skill=[A-Z_]+' | sed 's/.*skill=//' | sort -u > "$RUNNER_TEMP/proposed.txt" || true
+            | grep -oE 'peaceai-skill-proposal:v1 skills?=[A-Z_,]+' | sed 's/.*=//' | tr ',' '\n' | sort -u > "$RUNNER_TEMP/proposed.txt" || true
       - name: One learner pass
         run: |
           SKILL_PROPOSED="$(cat "$RUNNER_TEMP/proposed.txt")" PEACEAI_OUT_DIR="$RUNNER_TEMP/skill" ./node_modules/.bin/tsx peaceai/bin/skill-learner.ts
