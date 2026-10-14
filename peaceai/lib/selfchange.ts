@@ -34,6 +34,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/(leak|approval|approved|scope|prguard|kernelguard|coretext|coreindex|substr|policy|gate|selfchange|selfpropose|learned|learned-test|learned-guard|learned-function|objargs|minetest|results|verdict|trigger|diff)\.ts$/, why: "gates, approvals, leak/scope scanners and the self-change rules" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model, its memcheck and job guard" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
+  { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
 ];
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */
@@ -86,6 +87,9 @@ export function protectedReason(path: string | null): string | null {
   const norm = path.replace(/\\/g, "/");
   if (norm.startsWith("/") || norm.split("/").some((s) => s === ".." || s === "." || s === "")) return "path is not a plain relative path";
   if (PROTECTED_SELF[0]!.pattern.test(norm)) return PROTECTED_SELF[0]!.why; // the public-origin allowlist, wherever it sits
+  // M21: the Builder task log is named explicitly (not just "outside peaceai/"), wherever the self-change root moves.
+  const log = PROTECTED_SELF.find((p) => p.pattern.source === "^builder-log\\/");
+  if (log && log.pattern.test(norm)) return log.why;
   if (!norm.startsWith("peaceai/")) return "outside peaceai/ (self-changes edit PeaceAI's own code only)";
   return PROTECTED_SELF.find((p) => p.pattern.test(norm))?.why ?? null;
 }
