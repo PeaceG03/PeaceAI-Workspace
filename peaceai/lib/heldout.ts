@@ -52,13 +52,8 @@ export function buildHeldOut(entries: readonly HeldOutEntry[], fixedAt: string) 
 
 export const sha256Hex = (b: Buffer | string): string => createHash("sha256").update(b).digest("hex");
 
-// ---- M33: held-out set C (Architect option 3): single-file source+test edits, carved AFTER this rule is committed.
-export const HELDOUT_C_SCHEMA = "peaceai-heldout-c:v1";
-/** Heads set C is selected at (public main when the rule was committed). */
-export const HELDOUT_C_HEADS: Readonly<Record<string, string>> = {
-  "PeaceG03/PeaceAI-Workspace": "cc9b4a616782c8a0d83c4405833c5ee14ead645f",
-  "PeaceG03/PeaceSTOCKS": "a3d9484d0c5cdbed67efd62356ec2324c132ac82",
-};
+// ---- Authorship filter (M33 F1/F2, kept by M36): which commits are Peace's own. Set C itself is now v2
+// (whole external repos, peaceai/lib/extcorpus.ts); the v1 Peace-commit carve is replaced.
 /** Committer time of the first PeaceAI-landed change (PeaceSTOCKS c210539af8a0d78df9bda96a2ef04fdd3de00048). */
 export const HELDOUT_C_AGENT_CUTOFF = "2026-10-13T08:36:22Z";
 /** Builder-log refs (`Repo@sha` prefixes and `PeaceAI-Workspace#N` numbers) from tasks.jsonl text. */
@@ -85,26 +80,4 @@ export function excludedForC(repo: string, sha: string, committedAtIso: string, 
   const t = Date.parse(committedAtIso);
   if (t >= Date.parse(HELDOUT_C_UNKNOWN_WINDOW[0]) && t < Date.parse(HELDOUT_C_UNKNOWN_WINDOW[1])) return true;
   return excluded.some((e) => e.repo === repo && e.sha === sha);
-}
-export const HELDOUT_C_RULE = [
-  "Candidates: every non-merge commit by HELDOUT_AUTHOR reachable from HELDOUT_C_HEADS[repo], in both public repos, that is NOT in heldout.json set A or B.",
-  "source+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (no .d.ts) (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.",
-  "Agent-made commits are dropped (Auditor #148 F2): any commit committed at or after HELDOUT_C_AGENT_CUTOFF (the first PeaceAI-landed change, PeaceSTOCKS c210539), and any commit named in builder-log/tasks.jsonl at the Workspace C head (a `repo@sha` ref, or a `PeaceAI-Workspace#N` ref matching a Workspace commit subject ending `(#N)`).",
-  "Also dropped (Auditor #148 F1, round 3): every commit listed in peaceai/model/heldout-c-excluded.json (named in a Builder box progress log or used as a PeaceAI task base), and every commit committed in HELDOUT_C_UNKNOWN_WINDOW (Oct 5-6 MT: authorship cannot be determined).",
-  "Held out: every candidate of that kind is set C (one set, final rate only; never measured during development).",
-  "Exclusion: set C is excluded from every training corpus by content sha256 (any source): every blob of a touched path at the commit, at its parent and at the pinned C head.",
-].join("\n");
-
-/** source+test from `git show --name-status --no-renames` lines: exactly one source .ts and one test .ts, A/M only, nothing else. */
-export function isSourceTest(nameStatus: readonly string[]): boolean {
-  const ns = nameStatus.filter(Boolean).map((l) => { const [s, p] = l.split("\t"); return { s: s!, p: p! }; });
-  if (ns.length !== 2 || !ns.every((x) => (x.s === "A" || x.s === "M") && x.p.endsWith(".ts") && !x.p.endsWith(".d.ts"))) return false;
-  return ns.filter((x) => isTestPath(x.p)).length === 1;
-}
-
-export interface HeldOutCEntry { repo: string; sha: string; kind: "source+test"; paths: string[]; contentSha256: string[] }
-/** Builds the committed set C file (order: repo, then sha). */
-export function buildHeldOutC(entries: readonly HeldOutCEntry[], fixedAt: string) {
-  const sorted = [...entries].sort((a, b) => (a.repo + a.sha < b.repo + b.sha ? -1 : 1));
-  return { schema: HELDOUT_C_SCHEMA, fixedAt, rule: HELDOUT_C_RULE, author: HELDOUT_AUTHOR, heads: HELDOUT_C_HEADS, sets: { C: sorted } };
 }
