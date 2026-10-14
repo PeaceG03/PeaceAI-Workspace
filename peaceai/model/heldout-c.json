@@ -1,7 +1,7 @@
 {
   "schema": "peaceai-heldout-c:v1",
-  "fixedAt": "2026-10-14T16:03Z",
-  "rule": "Candidates: every non-merge commit by HELDOUT_AUTHOR reachable from HELDOUT_C_HEADS[repo], in both public repos, that is NOT in heldout.json set A or B.\nsource+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.\nHeld out: every candidate of that kind is set C (one set, final rate only; never measured during development).\nExclusion: set C is excluded from every training corpus by content sha256 (any source): every blob of a touched path at the commit, at its parent and at the pinned C head.",
+  "fixedAt": "2026-10-14T16:50Z",
+  "rule": "Candidates: every non-merge commit by HELDOUT_AUTHOR reachable from HELDOUT_C_HEADS[repo], in both public repos, that is NOT in heldout.json set A or B.\nsource+test: the commit touches exactly 1 non-test .ts file and exactly 1 test .ts file (no .d.ts) (a test is *.test.ts or under a test/ directory), both added or modified (no delete), and nothing else.\nAgent-made commits are dropped (Auditor #148 F2): any commit committed at or after HELDOUT_C_AGENT_CUTOFF (the first PeaceAI-landed change, PeaceSTOCKS c210539), and any commit named in builder-log/tasks.jsonl at the Workspace C head (a `repo@sha` ref, or a `PeaceAI-Workspace#N` ref matching a Workspace commit subject ending `(#N)`).\nHeld out: every candidate of that kind is set C (one set, final rate only; never measured during development).\nExclusion: set C is excluded from every training corpus by content sha256 (any source): every blob of a touched path at the commit, at its parent and at the pinned C head.",
   "author": "301894882+PeaceG03@users.noreply.github.com",
   "heads": {
     "PeaceG03/PeaceAI-Workspace": "cc9b4a616782c8a0d83c4405833c5ee14ead645f",
@@ -9,53 +9,6 @@
   },
   "sets": {
     "C": [
-      {
-        "repo": "PeaceG03/PeaceAI-Workspace",
-        "sha": "b293f2f11998a327378c8f8613cac6b0dd826042",
-        "kind": "source+test",
-        "paths": [
-          "peaceai/lib/lm.ts",
-          "peaceai/test/m9.test.ts"
-        ],
-        "contentSha256": [
-          "20bf088cff79fff372598ce158d0b6d3677b45869d6aeb3bbe9bb6a659cd0649",
-          "b6494e2f4772470eb96fae8491212fa7e1474969ac1d7400f2185bb9be482f7c",
-          "c7d52f94167637f58854e3be2d76ba78c6b4a0709ffbbecae8542132ccbe1708",
-          "f7a9fffce168a8b1486feeff619a33fb717fd9a13c6c145821c30388d32624a7"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceAI-Workspace",
-        "sha": "e1941117d9bb3a04766f09fea5de05528826ab83",
-        "kind": "source+test",
-        "paths": [
-          "builder-log/check.test.ts",
-          "builder-log/check.ts"
-        ],
-        "contentSha256": [
-          "53461154e2d4bafcc7298f2ef8c67cf4ecee8ba55f0f879ef80eb0cf3abd181f",
-          "af20c90d22a023f52215e394cc2814c29ce5bb44ef65fda896d8d3501477e652",
-          "b9fa0aee0f9492798f8cb99dbad6f44f2b4efed1f86a24a44c56ea9bd6a9d040",
-          "f023d6028903ac4d885bc24500437a509574ec2a832c4059afeb2a31de6e4208"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceAI-Workspace",
-        "sha": "ee7e01ff167f5e442a827d59f415d5dead70645d",
-        "kind": "source+test",
-        "paths": [
-          "peaceai/lib/learned-function.ts",
-          "peaceai/test/m23-stub-body.test.ts"
-        ],
-        "contentSha256": [
-          "07eabd4427b35c78a741b87fbde8dee57b9df51098c3edf3a703e90c44ad9f7d",
-          "43cf05e584ef7f5e21599da4354258a46a7d9266468a75acbdcf4943979e701e",
-          "611823087f5349f1c9382ac0fde8ddb126c96f3625fd339f6819ffb42e817ac1",
-          "8f45f8d99a4a6ed0e9f7641ba81db81bc60efb95cc91492fadb29c3a6cfb66ba",
-          "9acb0c2442ceb938bced80721ffabe42e0a5324b32127bbf0a8ffb34f2554052",
-          "f1125652a8f1f0d5271e409aa6757204a090b91c64b77744f996c249f16ad67d"
-        ]
-      },
       {
         "repo": "PeaceG03/PeaceSTOCKS",
         "sha": "1fcd67ca4cfe76ea702106ac665e557e474aff69",
@@ -97,21 +50,6 @@
         "contentSha256": [
           "e5b9a7b7bc257b454d84859d0e2dbf6a8b0f0000c92edc844719712484862d8d",
           "f6772f7d9806475dd6a64cb7fa6e9e50f3fc6f1fe9511d479636027513c4f7cf"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "2e4ef82a63c7168d80ea0c102ec6ed2655e1c904",
-        "kind": "source+test",
-        "paths": [
-          "src/tenmin-history.addcalendardays-throws-invalid-05df98e.test.ts",
-          "src/tenmin-history.ts"
-        ],
-        "contentSha256": [
-          "5faf805acf6b2476075de0a50d07e532d11aabd3cd6a4a0b60220068eac33e08",
-          "96f45c06554ed834ac75f5bd49360c9503fe0b384087e5441f30fd140868121d",
-          "a7c7c827739d3212308102f44ee4275c56fd4da66aa50adeb44f04ee1669284d",
-          "bf6b0f191b5d822d73a6113307f4e48c80ef4da3daf40e6dc2b4665a74a4f8fb"
         ]
       },
       {
@@ -165,21 +103,6 @@
       },
       {
         "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "58db153566689cd3a8ae0f14a62b0a50ca8f9f9e",
-        "kind": "source+test",
-        "paths": [
-          "src/tenmin-backfill.planbackfillranges-throws-tenmin-aa9b390.test.ts",
-          "src/tenmin-backfill.ts"
-        ],
-        "contentSha256": [
-          "0245c4a0424b1470536fc1d9436c33c636cee577d0ffd420bcc2ae5e88bc58ad",
-          "8264610449f1d12cca85845e1ba22b499eabf22c2a80313f7d60f5c54ade1bb4",
-          "ab7b62d9759c47a09ef6e989170190d88b4a6503fc169cf388d4e79b3291473c",
-          "f97ccee156f0decdbf5725a3dc05ed6a2a19b5cc4349e5cc1844558c964a6969"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
         "sha": "6188b81376e779f2045583be932a12ff9d1f50b3",
         "kind": "source+test",
         "paths": [
@@ -192,20 +115,6 @@
           "6dc00bc542d643f4c4309d6e90760a3ea1faa76165ae65c741d7f4d39e2814bb",
           "97c2b79c615420191f507d800d8f9e6a4aff464266f232873a3373e7dae05b5e",
           "d1c70c1c9d6fa6a3520d220c7ba9b2c6fd453f6416b134652b7b03fa5061cf43"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "649ec93685e7d8f081945c7ac759661fba34a405",
-        "kind": "source+test",
-        "paths": [
-          "src/daily-bar-sessions.monthsbetween-throws-invalid-a45fa89.test.ts",
-          "src/daily-bar-sessions.ts"
-        ],
-        "contentSha256": [
-          "557afb4910c1f65bada21c15b7b6d95e65f3d06871dcf755ead35e0cf9b20eed",
-          "7b4f0beba8d830d25b4d4f4df07555520c8f5ddfb58112da548730f27512fcf2",
-          "ad125a8f011ea517dcd7fc26368af51e39b5ed1926ab8e5532d09d950beeac74"
         ]
       },
       {
@@ -243,35 +152,6 @@
       },
       {
         "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "8a4310d0b628397dd3ffffbd4e6b25d180b14915",
-        "kind": "source+test",
-        "paths": [
-          "src/tenmin-backfill.pad2-returns-the-expected-values-d8233e0.test.ts",
-          "src/tenmin-backfill.ts"
-        ],
-        "contentSha256": [
-          "0f96649ba853e59a256dc65a5695d53fee1817802b1f20a0c5fed8b1706fbb84",
-          "2a159608c455f078605596ab813557861cb8027acf95beabeeac97e517135b04",
-          "ab7b62d9759c47a09ef6e989170190d88b4a6503fc169cf388d4e79b3291473c",
-          "f97ccee156f0decdbf5725a3dc05ed6a2a19b5cc4349e5cc1844558c964a6969"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "913d661f47b7be85e1e900847f087cb7a04ebe63",
-        "kind": "source+test",
-        "paths": [
-          "src/tenmin-backfill.isweekendindex-returns-the-1ae0515.test.ts",
-          "src/tenmin-backfill.ts"
-        ],
-        "contentSha256": [
-          "a2cbbdacc592bb58605717d048fc5bc93b17e260627e507e0a033a8fc299e7a9",
-          "b5b84c0a5dc97cebdbc5f19b8d04b3ba6c7e6a2cda26f3d6e2c15cd955232b44",
-          "f97ccee156f0decdbf5725a3dc05ed6a2a19b5cc4349e5cc1844558c964a6969"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
         "sha": "95cd315e43f77fdefc08992a0555e8663179e030",
         "kind": "source+test",
         "paths": [
@@ -305,33 +185,6 @@
       },
       {
         "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "a3d9484d0c5cdbed67efd62356ec2324c132ac82",
-        "kind": "source+test",
-        "paths": [
-          "src/tenmin-history.addcalendaryears-throws-invalid-b3fe40d.test.ts",
-          "src/tenmin-history.ts"
-        ],
-        "contentSha256": [
-          "11e88810aef68ed41f82905fbd00e12e6d6ae87971ba905d5bbd92475b5a19ee",
-          "a7c7c827739d3212308102f44ee4275c56fd4da66aa50adeb44f04ee1669284d",
-          "bf6b0f191b5d822d73a6113307f4e48c80ef4da3daf40e6dc2b4665a74a4f8fb"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "afec2f3f85e17f79217ac5c2599c9a570c77b6fc",
-        "kind": "source+test",
-        "paths": [
-          "src/num-utils.clamppercent-returns-the-e1d4d7d.test.ts",
-          "src/num-utils.ts"
-        ],
-        "contentSha256": [
-          "b0633ff4d74ab8c24a6eb07bf22fdfcf802b2f1ed3d674b4a640b1f47d8b36a3",
-          "e03b1b6acab008a09ce984c5a586a65e23a3dbd60eccdff0c32a3bf58dc4262e"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
         "sha": "b6dbd91df44acebfdd438a36dcf6d589aa7b33d4",
         "kind": "source+test",
         "paths": [
@@ -347,20 +200,6 @@
       },
       {
         "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "c90ddc022e46eb62bd5f804b828c6702edbe7c09",
-        "kind": "source+test",
-        "paths": [
-          "src/et-time.etwallclocktoutc-throws-invalid-30f0efd.test.ts",
-          "src/et-time.ts"
-        ],
-        "contentSha256": [
-          "091880db2c4d19e43861191c3161fb3015b2396093ab9a1a24657fe63c4b9296",
-          "a4dae95fc775fa7474a4f2f3d8a08670495b359bbb11fc39b3540504b23b1f3c",
-          "d71cbb8ff9a5dc89eb438867f358dc9b87cf476ce09f0668450ac119e4806234"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
         "sha": "cfd08322f25c23819a02339ddf8dc4cb14d34795",
         "kind": "source+test",
         "paths": [
@@ -372,21 +211,6 @@
           "42aaeed0c85bad572edf37d84fa7a4e62d3cb620fb453b839d9a673099b866b1",
           "a854329e5ca030d629329e2f7965fddb1bbff30732d719b933ad4820850ec6bc",
           "dedce3c617c3f506cacdd34ec1ced0f3cdcc5482ef99da4d4eb9906974cb9ba2"
-        ]
-      },
-      {
-        "repo": "PeaceG03/PeaceSTOCKS",
-        "sha": "d7ef8b479c5ef9f440361cf3e7a2c72d0ad9c5ae",
-        "kind": "source+test",
-        "paths": [
-          "src/tenmin-backfill.isisodatetext-returns-the-fa6a0db.test.ts",
-          "src/tenmin-backfill.ts"
-        ],
-        "contentSha256": [
-          "064f9b087b235ccc33805bef596a059681ed33fcb141c70acf55dc097ec61b87",
-          "2a159608c455f078605596ab813557861cb8027acf95beabeeac97e517135b04",
-          "b5b84c0a5dc97cebdbc5f19b8d04b3ba6c7e6a2cda26f3d6e2c15cd955232b44",
-          "f97ccee156f0decdbf5725a3dc05ed6a2a19b5cc4349e5cc1844558c964a6969"
         ]
       },
       {
