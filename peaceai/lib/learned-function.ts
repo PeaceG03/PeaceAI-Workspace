@@ -269,27 +269,16 @@ export const STUB_BODY_CODE = "PEACEAI_STUB_BODY";
  * `throws` is true for the throwing stub: then a test that expects a throw/rejection proves nothing and the
  * caller must refuse it.
  */
-export function stubBody(content: string, fn: string, requireExport = true, marker?: string): { content: string; throws: boolean } | null {
+export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
   const simple = stubFunction(content, fn);
-  if (simple !== null) return { content: marker === undefined ? simple : markBody(simple, fn, marker), throws: false };
+  if (simple !== null) return { content: simple, throws: false };
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
   if (hits.length !== 1) return null;
   const f = hits[0]!;
   if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
-  const stub = `{ ${marker === undefined ? "" : reachedCall(marker)}throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
+  const stub = `{ throw new Error(${JSON.stringify(STUB_BODY_CODE)}); }`;
   return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: true };
-}
-
-/** M23 (Auditor #129): the statement a stubbed body runs first, so a failure can be traced to a reached stub. */
-export const STUB_MARKER_RE = /^PEACEAI_STUB_REACHED_[0-9a-f]{16}$/;
-const reachedCall = (marker: string) => `console.error(${JSON.stringify(marker)}); `;
-function markBody(content: string, fn: string, marker: string): string {
-  if (!STUB_MARKER_RE.test(marker)) throw new Error("bad stub marker");
-  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
-  const f = sf.statements.find((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn)!;
-  const at = f.body!.getStart(sf) + 1;
-  return content.slice(0, at) + " " + reachedCall(marker) + content.slice(at);
 }
 
 /**
@@ -341,15 +330,86 @@ export function declaredFunctions(content: string): string[] {
  * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
  * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
  */
-export function stubAll(content: string, fns: readonly string[], marker?: string): { content: string; throws: boolean } | null {
+export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
   if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
   let cur = content;
   let throws = false;
   for (const fn of fns) {
-    const s = stubBody(cur, fn, false, marker);
+    const s = stubBody(cur, fn, false);
     if (!s) return null;
     cur = s.content;
     throws ||= s.throws;
   }
   return { content: cur, throws };
+}
+
+/**
+ * M23 (Auditor #129, forged marker): a stub failure is credited only from the test runner's own report (TAP) and
+ * only when EVERY failing test failed by an assertion (ERR_ASSERTION) or by the stub's own throw
+ * (error PEACEAI_STUB_BODY). A load/import error, a crash, a timeout or any other error is not credited. No marker
+ * is printed (a printed marker would be readable from the stubbed file); the test source is checked separately
+ * (gradedTestSourceProblem) so it cannot read files, env or processes, nor throw the stub's code itself.
+ */
+export function stubFailureCredited(tap: string): boolean {
+  const lines = tap.split("\n");
+  let failures = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*not ok \d+ - /.test(lines[i]!)) continue;
+    failures++;
+    let error = "", code = "";
+    for (let j = i + 1; j < lines.length && !/^\s*(?:not ok|ok) \d+ - /.test(lines[j]!); j++) {
+      const e = /^\s+error: (.*)$/.exec(lines[j]!); if (e && !error) error = e[1]!.trim();
+      const c = /^\s+code: '([A-Z_]+)'$/.exec(lines[j]!); if (c && !code) code = c[1]!;
+    }
+    if (!(code === "ERR_ASSERTION" || error === `'${STUB_BODY_CODE}'`)) return false;
+  }
+  return failures > 0;
+}
+
+/** Imports a graded test may have: the runner, strict assert, and modules named in `allowed` (named bindings only). */
+const TEST_IMPORTS = new Set(["node:test", "node:assert/strict"]);
+const FORBIDDEN_NAMES = new Set(["process", "require", "globalThis", "global", "eval", "Function", "Deno", "Bun", "__dirname", "__filename", "module", "exports", "Reflect", "Proxy", "setTimeout", "setInterval", "queueMicrotask", "fetch", "WebAssembly", "console"]);
+/**
+ * M23 (Auditor #129): null when a graded test cannot observe the stub other than by calling the function: it imports
+ * only node:test, node:assert/strict and the modules in `allowed`; no dynamic import, import.meta, file/env/process
+ * access, eval/Function, no `PEACEAI_STUB_BODY` text. Otherwise the reason (fail closed).
+ */
+export function gradedTestSourceProblem(src: string, allowed: readonly string[]): string | null {
+  if (src.includes(STUB_BODY_CODE)) return "names the stub code";
+  const sf = ts.createSourceFile("t.ts", src, ts.ScriptTarget.Latest, true);
+  let problem: string | null = null;
+  const v = (n: ts.Node): void => {
+    if (problem) return;
+    if (ts.isImportDeclaration(n)) {
+      const m = ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : "";
+      if (!TEST_IMPORTS.has(m) && !allowed.includes(m)) problem = `imports ${m}`;
+      return;
+    }
+    if (ts.isImportEqualsDeclaration(n) || ts.isExportDeclaration(n)) { problem = "import=/export"; return; }
+    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { problem = "dynamic import"; return; }
+    if (ts.isMetaProperty(n)) { problem = "import.meta/new.target"; return; }
+    if (ts.isIdentifier(n) && FORBIDDEN_NAMES.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text}`; return; }
+    if (ts.isElementAccessExpression(n) && !ts.isNumericLiteral(n.argumentExpression)) { problem = "computed member access"; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return problem;
+}
+
+/**
+ * M23 (Auditor #129): true when a module defines any callable other than top-level `function` declarations
+ * (arrow functions, function expressions, classes, object/class methods, accessors) outside those declarations'
+ * own bodies. Such a callable could carry the fix's behavior past the stubs, so the caller fails closed.
+ */
+export function hasNonDeclarationCallables(content: string): boolean {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  let found = false;
+  const v = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isFunctionDeclaration(n) && n.parent === sf) return; // its body is stubbed whole
+    if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isClassLike(n) || ts.isMethodDeclaration(n) || ts.isGetAccessor(n) || ts.isSetAccessor(n) || ts.isFunctionDeclaration(n)) { found = true; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return found;
 }

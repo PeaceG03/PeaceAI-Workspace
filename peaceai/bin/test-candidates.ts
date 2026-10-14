@@ -1,6 +1,6 @@
 // Job B: apply each candidate to a clean checkout and test it. No secrets, no core.
 import { spawnSync, execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -12,7 +12,7 @@ import { parseTapFailures, parseTscOutput, type RepairContext, type RepairEdit }
 import { DEFAULT_BUDGET, runRepairLoop, type Evaluation, type LoopResult } from "../lib/repairloop.ts";
 import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
-import { callsFunction, declaredFunctions, expectsThrow, importedBindings, stubAll, stubFunction } from "../lib/learned-function.ts";
+import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, hasNonDeclarationCallables, importedBindings, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -133,8 +133,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", patch])) {
       // M23 (Auditor, #127): a fix that CREATED its one source module cannot be reverted once later commits
       // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
-      const marker = `PEACEAI_STUB_REACHED_${randomBytes(8).toString("hex")}`;
-      const stubbed = stubBefore(tree, fixSha, paths, newTests, marker);
+      const stubbed = stubBefore(tree, fixSha, paths, newTests);
       if (!stubbed) return ungradable("revert-failed");
       let run: { ok: boolean; out: string };
       try {
@@ -142,11 +141,12 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
       } finally {
         writeFileSync(stubbed.file, stubbed.real);
       }
-      // Auditor (#129): a failure counts as "fails before" only when a stub was reached (its per-run random
-      // marker is in the output). Any other failure (syntax, unrelated throw, timeout) proves nothing.
-      const reached = run.out.includes(marker);
-      console.log(`grading: stub-body before-state (stubbed ${stubbed.stubbed.join(",")}; tested ${stubbed.fn}; stub reached: ${reached}) (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
-      if (!run.ok && !reached) return { ...ungradable("stub-not-reached"), stubbed: stubbed.stubbed };
+      // Auditor (#129): a failure counts as "fails before" only when the runner reports every failing test as an
+      // assertion failure or the stub's own throw (stubFailureCredited). Load/import errors, crashes, timeouts
+      // and other errors prove nothing. No marker is printed: test code could read one from the stubbed file.
+      const credited = !run.ok && stubFailureCredited(run.out);
+      console.log(`grading: stub-body before-state (stubbed ${stubbed.stubbed.join(",")}; tested ${stubbed.fn}; failure credited: ${credited}) (fix ${fixSha.slice(0, 12)} created ${paths[0]})`);
+      if (!run.ok && !credited) return { ...ungradable("stub-not-reached"), stubbed: stubbed.stubbed };
       return { fixSha, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok, !run.ok), reason: null, stubFails: !run.ok, stubbed: stubbed.stubbed };
     }
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", patch])) return ungradable("revert-failed");
@@ -163,7 +163,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
  * and calls it, the stub applies, and (for the throwing stub) no new test expects a throw or rejection.
  * Returns the original content so the caller restores it.
  */
-function stubBefore(tree: string, fixSha: string, paths: readonly string[], newTests: readonly string[], marker: string): { file: string; real: string; fn: string; stubbed: string[] } | null {
+function stubBefore(tree: string, fixSha: string, paths: readonly string[], newTests: readonly string[]): { file: string; real: string; fn: string; stubbed: string[] } | null {
   if (paths.length !== 1) return null;
   const path = paths[0]!;
   let added: string;
@@ -178,6 +178,9 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
     const spec = rel.startsWith(".") ? rel : `./${rel}`;
     // Of the names the test imports from the created module, exactly one is called: the tested function.
     // Auditor (#129): aliases (`{ f as g }`) are followed to the export name; namespace/default imports fail closed.
+    // Auditor (#129): the test may only import the runner, strict assert and the created module, and cannot read
+    // files/env/processes or name the stub code, so it cannot detect or forge the stub.
+    if (gradedTestSourceProblem(tests[i]!, [spec, `${spec}.ts`])) return null;
     const a = importedBindings(tests[i]!, spec);
     const b = importedBindings(tests[i]!, `${spec}.ts`);
     if (!a || !b) return null;
@@ -190,9 +193,13 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
   const real = readFileSync(file, "utf8");
   // Auditor (#129): stub EVERY function the fix commit created in the module, not only the tested one.
   let created: string[];
-  try { created = declaredFunctions(git(repo, "show", `${fixSha}:${path}`)); } catch { return null; }
+  let fixContent: string;
+  try { fixContent = git(repo, "show", `${fixSha}:${path}`); created = declaredFunctions(fixContent); } catch { return null; }
+  // Auditor (#129): any callable that is not a top-level `function` declaration (arrow, function expression,
+  // class, method, accessor), in the fix's version or today's file, could escape the stubs: fail closed.
+  if (hasNonDeclarationCallables(fixContent) || hasNonDeclarationCallables(real)) return null;
   if (!created.includes(fn)) return null;
-  const stub = stubAll(real, created, marker);
+  const stub = stubAll(real, created);
   if (!stub || (stub.throws && tests.some(expectsThrow))) return null;
   writeFileSync(file, stub.content);
   return { file, real, fn, stubbed: [...created] };
