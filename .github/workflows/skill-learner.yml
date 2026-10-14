@@ -31,12 +31,16 @@ jobs:
         with:
           node-version: 20
       - run: npm ci --ignore-scripts
-      - name: Skills already proposed (marker in this repo's issues, any state)
+      # Auditor (#115): only proposals this workflow posted (author github-actions[bot]) count, and only their
+      # first line, exactly the marker form (peaceai/lib/skilllearn.ts MARKER_LINE). Log text in bodies is escaped.
+      - name: Skills already proposed (marker line of this workflow's own issues, any state)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&labels=skill-proposal&per_page=100" --jq '.[].body' \
-            | grep -oE 'peaceai-skill-proposal:v1 skills?=[A-Z_,]+' | sed 's/.*=//' | tr ',' '\n' | sort -u > "$RUNNER_TEMP/proposed.txt" || true
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&labels=skill-proposal&per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and .pull_request == null) | .body | split("\n")[0]' \
+            | grep -E '^<!-- peaceai-skill-proposal:v1 skills=[A-Z][A-Z_]*(,[A-Z][A-Z_]*){0,9} log=[0-9a-f]{64} -->$' \
+            | sed -E 's/^.*skills=([A-Z_,]+) log=.*$/\1/' | tr ',' '\n' | sort -u > "$RUNNER_TEMP/proposed.txt" || true
       - name: One learner pass
         run: |
           SKILL_PROPOSED="$(cat "$RUNNER_TEMP/proposed.txt")" PEACEAI_OUT_DIR="$RUNNER_TEMP/skill" ./node_modules/.bin/tsx peaceai/bin/skill-learner.ts

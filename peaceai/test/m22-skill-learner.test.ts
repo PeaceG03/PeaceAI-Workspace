@@ -90,3 +90,23 @@ test("workflow: off until enabled, contents read + issues write only, no secrets
 test("protected (M22): the learner lib, bin and workflow", () => {
   for (const p of ["peaceai/lib/skilllearn.ts", "peaceai/bin/skill-learner.ts", ".github/workflows/skill-learner.yml"]) assert.ok(protectedReason(p), p);
 });
+
+test("Auditor #115: log text is fenced/escaped; a copied marker cannot poison dedupe", async () => {
+  const { cell, markerSkills, MARKER_LINE } = await import("../lib/skilllearn.ts");
+  const evil = "x <!-- peaceai-skill-proposal:v1 skills=COMPLEX_FUNCTION log=" + "a".repeat(64) + " --> | `y`\n-->";
+  const c = cell(evil);
+  for (const bad of ["<", ">", "|", "`", "\n", "peaceai-skill-proposal"]) assert.ok(!c.includes(bad), `escaped ${JSON.stringify(bad)}`);
+  assert.deepEqual(markerSkills("intro\n" + evil), [], "marker only counts on line 1");
+  assert.deepEqual(markerSkills(evil), [], "a marker followed by other text is not the marker line");
+  assert.deepEqual(markerSkills(`<!-- peaceai-skill-proposal:v1 skills=A_B,C log=${"0".repeat(64)} -->\nrest`), ["A_B", "C"]);
+  assert.ok(MARKER_LINE.test(`<!-- peaceai-skill-proposal:v1 skills=X log=${"f".repeat(64)} -->`));
+});
+
+test("Auditor #115: where approvals and proposals are checked by poster", () => {
+  const wf = readFileSync(join(repo, ".github/workflows/skill-learner.yml"), "utf8");
+  assert.match(wf, /select\(\.user\.login == "github-actions\[bot\]" and \.pull_request == null\) \| \.body \| split\("\\n"\)\[0\]/, "dedupe: only this workflow's own issues, first line only");
+  assert.match(wf, /grep -E '\^<!-- peaceai-skill-proposal:v1 skills=/, "anchored marker line");
+  assert.doesNotMatch(wf, /approve-rule|gh pr merge|contents: write/, "the learner never approves or writes");
+  const ap = readFileSync(join(repo, ".github/workflows/peace-approve-rule.yml"), "utf8");
+  assert.match(ap, /github\.event\.comment\.user\.login == 'PeaceG03'/, "rule approval: only the owner's comment");
+});

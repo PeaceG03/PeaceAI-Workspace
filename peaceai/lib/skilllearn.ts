@@ -69,6 +69,26 @@ function entriesWithCode(list: readonly Entry[]): number {
   return list.filter((e) => /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}|PeaceAI-Workspace#\d+/.test(e.changed)).length;
 }
 
+/**
+ * Auditor (#115): log text is untrusted in a proposal. Every cell is escaped (HTML-significant characters,
+ * table pipes, backticks, line breaks) and the marker word is broken, so a copied marker in a log line can
+ * never form an HTML comment or match the dedupe pattern. Cells are capped.
+ */
+export function cell(text: string, max = 160): string {
+  const t = text.length > max ? text.slice(0, max) + "…" : text;
+  return t
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\|/g, "&#124;").replace(/`/g, "&#96;")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/peaceai-skill-proposal/gi, "peaceai&#45;skill&#45;proposal");
+}
+
+/** The dedupe marker: ONLY the body's first line, exactly this form. Anything else in the body is ignored. */
+export const MARKER_LINE = /^<!-- peaceai-skill-proposal:v1 skills=([A-Z][A-Z_]*(?:,[A-Z][A-Z_]*){0,9}) log=[0-9a-f]{64} -->$/;
+export function markerSkills(body: string): string[] {
+  const m = MARKER_LINE.exec(body.split("\n")[0]!.replace(/\r$/, ""));
+  return m ? m[1]!.split(",") : [];
+}
+
 /** Proposal issue body: examples (log lines, public refs only), the gap note, and the normal path. */
 export function skillProposalBody(p: LearnPass, logText: string): { title: string; body: string } | null {
   if (!p.pick) return null;
@@ -82,7 +102,7 @@ export function skillProposalBody(p: LearnPass, logText: string): { title: strin
       "",
       "| seq | asked | changed |",
       "|---:|---|---|",
-      ...ex.map((e) => `| ${e.seq} | ${e.asked.replace(/\|/g, "/")} | ${e.changed} |`),
+      ...ex.map((e) => `| ${Number(e.seq)} | ${cell(e.asked)} | ${cell(e.changed)} |`),
       "",
     ];
   };
