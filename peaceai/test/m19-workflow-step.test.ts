@@ -112,8 +112,12 @@ test("v2 replaces v1: v1 is revoked (never valid), v2 matches behavior (no test 
   assert.deepEqual(SPEC.params, PARAMS);
   assert.ok(validateSpec(SPEC));
   assert.ok(!existsSync(join(repo, "peaceai/rules/learned/public-workflow-step-v1.json")), "v1 file removed");
-  const approved = readFileSync(join(repo, "peaceai/rules/approved.json"), "utf8");
-  assert.doesNotMatch(approved, /workflow-step/, "neither version is pre-approved; Architect approves v2 fresh");
+  // v1 is never approved; v2 may be approved (by Architect, via the normal landing PR) only with exactly its hash.
+  const list = JSON.parse(readFileSync(join(repo, "peaceai/rules/approved.json"), "utf8")) as { rules?: { id: string; sha256: string }[] } | { id: string; sha256: string }[];
+  const entries = (Array.isArray(list) ? list : list.rules ?? []).filter((r) => /workflow-step/.test(r.id));
+  assert.ok(entries.every((r) => r.id === "public-workflow-step-v2"), "no workflow-step version but v2 is ever approved");
+  for (const r of entries) assert.equal(r.sha256, "7c09a06ded2b478ff7af407682aae3d4d5eb19a25d07e1235ee00a86ff87d48b", "v2 approved only with its exact hash");
+  assert.equal(specHash(SPEC), "7c09a06ded2b478ff7af407682aae3d4d5eb19a25d07e1235ee00a86ff87d48b", "committed v2 spec is the proposed one");
   assert.match(readFileSync(join(repo, "peaceai/lib/propose.ts"), "utf8"), /ADD_WORKFLOW_STEP: 2 \}/);
 });
 
