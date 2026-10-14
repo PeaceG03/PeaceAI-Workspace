@@ -592,12 +592,86 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
  * (arrow functions, function expressions, classes, object/class methods, accessors) outside those declarations'
  * own bodies. Such a callable could carry the fix's behavior past the stubs, so the caller fails closed.
  */
+/** M30 (Auditor, #127): array methods a load-time callback may be the direct argument of. */
+const LOAD_TIME_METHODS = new Set(["map", "filter", "reduce", "some", "every", "find", "sort"]);
+const PURE_MEMBERS: Readonly<Record<string, ReadonlySet<string>>> = { Math: GLOBAL_MEMBERS.Math!, Number: GLOBAL_MEMBERS.Number! };
+const dataOnly = (e: ts.Expression): boolean =>
+  ts.isNumericLiteral(e) || ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || e.kind === ts.SyntaxKind.TrueKeyword || e.kind === ts.SyntaxKind.FalseKeyword || e.kind === ts.SyntaxKind.NullKeyword
+  || (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(e.operand))
+  || (ts.isArrayLiteralExpression(e) && e.elements.every((x) => dataOnly(x)))
+  || (ts.isObjectLiteralExpression(e) && e.properties.every((x) => ts.isPropertyAssignment(x) && (ts.isIdentifier(x.name) || ts.isStringLiteral(x.name)) && !FORBIDDEN_PROPS.has(x.name.text) && dataOnly(x.initializer)));
+/** M30: a pure expression over the callback's own params, literals and Math/Number members (Auditor condition 2). */
+function pureExpr(e: ts.Node, params: ReadonlySet<string>): boolean {
+  if (ts.isIdentifier(e)) return params.has(e.text);
+  if (ts.isNumericLiteral(e) || ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || e.kind === ts.SyntaxKind.TrueKeyword || e.kind === ts.SyntaxKind.FalseKeyword || e.kind === ts.SyntaxKind.NullKeyword) return true;
+  if (ts.isParenthesizedExpression(e)) return pureExpr(e.expression, params);
+  if (ts.isBinaryExpression(e)) return !(e.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && e.operatorToken.kind <= ts.SyntaxKind.LastAssignment) && e.operatorToken.kind !== ts.SyntaxKind.CommaToken && pureExpr(e.left, params) && pureExpr(e.right, params);
+  if (ts.isPrefixUnaryExpression(e)) return [ts.SyntaxKind.MinusToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.ExclamationToken, ts.SyntaxKind.TildeToken].includes(e.operator) && pureExpr(e.operand, params);
+  if (ts.isConditionalExpression(e)) return pureExpr(e.condition, params) && pureExpr(e.whenTrue, params) && pureExpr(e.whenFalse, params);
+  if (ts.isPropertyAccessExpression(e)) {
+    const p = e.name.text;
+    if (ts.isIdentifier(e.expression) && Object.hasOwn(PURE_MEMBERS, e.expression.text) && !params.has(e.expression.text)) return PURE_MEMBERS[e.expression.text]!.has(p);
+    return !FORBIDDEN_PROPS.has(p) && pureExpr(e.expression, params);
+  }
+  if (ts.isCallExpression(e)) return ts.isPropertyAccessExpression(e.expression) && ts.isIdentifier(e.expression.expression)
+    && Object.hasOwn(PURE_MEMBERS, e.expression.expression.text) && !params.has(e.expression.expression.text) && pureExpr(e.expression, params) && e.arguments.every((a) => pureExpr(a, params));
+  return false;
+}
+/**
+ * M30 (Auditor, #127): a function/arrow expression that only runs while the module loads is not a callable the
+ * stubs could miss, when ALL hold: (1) it is the direct argument of .map/.filter/.reduce/.some/.every/.find/.sort
+ * on an array literal (or a top-level const holding one) inside a top-level const initializer; (2) its body is one
+ * expression or simple returns over its own params, literals and Math/Number members only (no module bindings,
+ * this/arguments, nested functions, assignment or update); (3) the receiver holds only data; (4) that const is
+ * never called anywhere in the module.
+ */
+export function loadTimeCallback(fn: ts.ArrowFunction | ts.FunctionExpression, sf: ts.SourceFile): boolean {
+  const call = fn.parent;
+  if (!ts.isCallExpression(call) || !call.arguments.includes(fn as ts.Expression) || !ts.isPropertyAccessExpression(call.expression) || !LOAD_TIME_METHODS.has(call.expression.name.text)) return false;
+  // (1) inside a top-level const initializer, with no function boundary between.
+  let decl: ts.Node = call;
+  while (decl.parent && !ts.isVariableDeclaration(decl)) { decl = decl.parent; if (ts.isFunctionLike(decl) || ts.isClassLike(decl)) return false; }
+  if (!ts.isVariableDeclaration(decl) || !ts.isIdentifier(decl.name) || !decl.initializer) return false;
+  const list = decl.parent;
+  if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) || !ts.isVariableStatement(list.parent) || list.parent.parent !== sf) return false;
+  // (3) the receiver is a data-only array literal, or a top-level const holding one.
+  const recv = call.expression.expression;
+  let lit: ts.Expression | undefined = recv;
+  if (ts.isIdentifier(recv)) {
+    lit = undefined;
+    for (const st of sf.statements) if (ts.isVariableStatement(st) && st.declarationList.flags & ts.NodeFlags.Const)
+      for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.name.text === recv.text) lit = d.initializer;
+  }
+  if (!lit || !ts.isArrayLiteralExpression(lit) || !dataOnly(lit)) return false;
+  // (2) simple identifier params; one expression body or a block of return statements only.
+  const params = new Set<string>();
+  for (const p of fn.parameters) { if (!ts.isIdentifier(p.name) || p.initializer || p.dotDotDotToken) return false; params.add(p.name.text); }
+  if (ts.isFunctionExpression(fn) && fn.name) return false;
+  const exprs: ts.Node[] = [];
+  if (ts.isBlock(fn.body)) { for (const st of fn.body.statements) { if (!ts.isReturnStatement(st) || !st.expression) return false; exprs.push(st.expression); } }
+  else exprs.push(fn.body);
+  if (!exprs.length || !exprs.every((e) => pureExpr(e, params))) return false;
+  // (4) the const is never called (directly, through a member, or as a tag/constructor).
+  const name = decl.name.text;
+  let called = false;
+  const root = (e: ts.Expression): ts.Expression => (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e) || ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e) || ts.isTypeAssertionExpression(e) || ts.isSatisfiesExpression(e) ? root(e.expression) : e);
+  const v = (n: ts.Node): void => {
+    if (called) return;
+    if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && ts.isIdentifier(root(n.expression)) && (root(n.expression) as ts.Identifier).text === name) called = true;
+    if (ts.isTaggedTemplateExpression(n) && ts.isIdentifier(root(n.tag)) && (root(n.tag) as ts.Identifier).text === name) called = true;
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return !called;
+}
+
 export function hasNonDeclarationCallables(content: string): boolean {
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   let found = false;
   const v = (n: ts.Node): void => {
     if (found) return;
     if (ts.isFunctionDeclaration(n) && n.parent === sf) return; // its body is stubbed whole
+    if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && loadTimeCallback(n, sf)) return; // M30 (Auditor, #127)
     if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isClassLike(n) || ts.isMethodDeclaration(n) || ts.isGetAccessor(n) || ts.isSetAccessor(n) || ts.isFunctionDeclaration(n)) { found = true; return; }
     ts.forEachChild(n, v);
   };
