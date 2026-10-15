@@ -1,0 +1,16 @@
+{
+ "id": "public-package-script-v1",
+ "kind": "PACKAGE_SCRIPT",
+ "status": "proposal-off-below-bar",
+ "flag": "PEACEAI_PACKAGE_SCRIPT",
+ "spec": "peaceai/spec/package-script-v1.md",
+ "engine": "peaceai/lib/learned-config.ts",
+ "evidence": {
+  "examples": 0,
+  "commits": 0,
+  "repos": [],
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": false
+ }
+}
