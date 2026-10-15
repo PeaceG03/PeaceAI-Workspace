@@ -1,21 +1,19 @@
 {
- "id": "public-import-edit-v1",
- "kind": "IMPORT_EDIT",
- "status": "proposal-off-below-bar",
- "flag": "PEACEAI_IMPORT_EDIT",
- "spec": "peaceai/spec/import-edit-v1.md",
- "engine": "peaceai/lib/learned-config.ts",
- "evidence": {
-  "examples": 6,
-  "commits": 6,
-  "repos": [
-   "denoland/std",
-   "reduxjs/redux-toolkit",
-   "storybookjs/storybook",
-   "vitejs/vite"
-  ],
-  "origin": "external-licensed",
-  "bar": 10,
-  "qualifies": false
- }
+  "id": "public-import-edit-v1",
+  "kind": "IMPORT_EDIT",
+  "status": "proposal-off-below-bar",
+  "flag": "PEACEAI_IMPORT_EDIT",
+  "spec": "peaceai/spec/import-edit-v1.md",
+  "engine": "peaceai/lib/learned-config.ts",
+  "evidence": {
+    "examples": 2,
+    "commits": 2,
+    "repos": [
+      "storybookjs/storybook"
+    ],
+    "origin": "external-licensed",
+    "bar": 10,
+    "qualifies": false,
+    "corpusOverlap": "none: examples come only from the example-only repo list; 4 corpus-repo examples dropped (M58, Architect)"
+  }
 }

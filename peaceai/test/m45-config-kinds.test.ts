@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { importEditEnabled, importEditProblem, packageScriptEnabled, packageScriptProblem } from "../lib/learned-config.ts";
@@ -81,6 +81,18 @@ test("evidence: licensed external, none from set C; counts recorded against the 
   assert.ok(!(EV.families.IMPORT_EDIT as { path: string }[]).some((x) => x.path.endsWith(".js")), "L5: no .js example");
 });
 
+test("M58 (Architect): no example overlaps the training corpus (repo in ext-corpus.json, or repo/file in the corpus manifest)", () => {
+  const corpus = JSON.parse(read("peaceai/model/ext-corpus.json"));
+  const repos = new Set<string>([...corpus.repos.map((r: { name: string }) => r.name), ...corpus.owner.map((r: { name: string }) => r.name)]);
+  const rows = readManifestBytes(join(repo, "peaceai/model"), "ext-manifest").toString("utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l) as { repo: string; path: string });
+  const mRepos = new Set(rows.map((r) => r.repo)), mFiles = new Set(rows.map((r) => `${r.repo}:${r.path}`));
+  const overlap = (x: { repo: string; path: string }) => repos.has(x.repo) || mRepos.has(x.repo) || mFiles.has(`${x.repo}:${x.path}`);
+  for (const fam of ["IMPORT_EDIT", "PACKAGE_SCRIPT"]) for (const x of EV.families[fam] as { repo: string; path: string }[]) assert.ok(!overlap(x), `${fam} example ${x.repo} ${x.path} overlaps the training corpus`);
+  // The check bites: every dropped corpus-overlap example would fail it.
+  assert.equal(EV.droppedCorpusOverlap.IMPORT_EDIT.length, 4);
+  for (const x of EV.droppedCorpusOverlap.IMPORT_EDIT as { repo: string; path: string }[]) assert.ok(overlap(x), x.repo);
+});
+
 const FIX = "peaceai/test/fixtures/m45/";
 const gitBlob = (b: Buffer) => createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${b.length}\0`), b])).digest("hex");
 const fixture = (name: string, blob: string): string => {
@@ -93,11 +105,12 @@ const FIXTURE_MAX_BYTES = 65536;
 
 test("M57 L5: every recorded example replays through the engine on the REAL before/after files (fixtures pinned by git blob id)", () => {
   const lic = new Map([...JSON.parse(read("peaceai/model/ext-corpus.json")).repos, ...XR.repos].map((r: { name: string; licenseSha256: string }) => [r.name, r.licenseSha256]));
-  type Ex = { repo: string; path: string; beforeBlob: string; afterBlob: string; beforeFixture: string; afterFixture: string };
+  type Ex = { licenseSha256: string; repo: string; path: string; beforeBlob: string; afterBlob: string; beforeFixture: string; afterFixture: string };
   const all = [...EV.families.IMPORT_EDIT, ...EV.families.PACKAGE_SCRIPT] as Ex[];
   for (const x of all) {
-    const l = readFileSync(join(repo, FIX + x.repo.replace("/", "__") + ".LICENSE.txt"), "utf8").trim();
-    assert.equal(createHash("sha256").update(l).digest("hex"), lic.get(x.repo), `${x.repo}: license fixture`);
+    // LICENSE texts are not committed (they carry contact emails); each example pins its repo's license by sha256 only.
+    assert.equal(x.licenseSha256, lic.get(x.repo), `${x.repo}: license sha256 pin`);
+    assert.ok(!existsSync(join(repo, FIX + x.repo.replace("/", "__") + ".LICENSE.txt")), `${x.repo}: no committed LICENSE text`);
     for (const f of [x.beforeFixture, x.afterFixture]) assert.match(f, /^[\w.-]+-[0-9a-f]{12}\.(before|after)\.txt$/);
   }
   for (const x of EV.families.IMPORT_EDIT as (Ex & { after: string; repoFiles: string[] })[])
@@ -196,11 +209,11 @@ test("refusal count is what the PR states", () => {
 const REFUSALS_STATED = 90; // 18 IMPORT_EDIT + 72 PACKAGE_SCRIPT
 
 test("engine, specs and this test are protected; specs pinned", () => {
-  for (const p of ["peaceai/lib/learned-config.ts", "peaceai/spec/import-edit-v1.md", "peaceai/spec/package-script-v1.md", "peaceai/test/m45-config-kinds.test.ts", "peaceai/rules/proposals/m45-evidence.json", "peaceai/test/fixtures/m45/vitejs__vite.LICENSE.txt"])
+  for (const p of ["peaceai/lib/learned-config.ts", "peaceai/spec/import-edit-v1.md", "peaceai/spec/package-script-v1.md", "peaceai/test/m45-config-kinds.test.ts", "peaceai/rules/proposals/m45-evidence.json"])
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   const h = (p: string) => createHash("sha256").update(read(p)).digest("hex");
   assert.equal(h("peaceai/spec/import-edit-v1.md"), IMPORT_SPEC_SHA);
   assert.equal(h("peaceai/spec/package-script-v1.md"), SCRIPT_SPEC_SHA);
 });
-const IMPORT_SPEC_SHA = "88eb38b42fe035047031a49e680f61967bb5e10a5cd6e1e3c6aac9e51e3d1239";
+const IMPORT_SPEC_SHA = "4fff370966b5ea80fd5ce777f055bcf1e2e6d4fe2a89ba4c15d08de2e22cd136";
 const SCRIPT_SPEC_SHA = "223497941b1ccf43d06b2f1965bee5fd35c22b21680e29d012f73b061bc262e0";
