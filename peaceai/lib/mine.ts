@@ -26,6 +26,9 @@ export const SHAPES = {
   PURE_FUNCTION: { covered: null },
   // M26: a new exported function with a multi-statement body (planner-style; peaceai/lib/learned-complex.ts grammar).
   COMPLEX_FUNCTION: { covered: null },
+  // M27: one if-condition / return expression replaced, and one guard line added mid-body (peaceai/lib/minebody.ts).
+  EXPR_REPLACE: { covered: null },
+  GUARD_MID: { covered: null },
   // M19: a whole step item appended to a workflow job (peaceai/lib/mineworkflow.ts; public repositories only).
   WORKFLOW_STEP: { covered: null },
   TRY_CATCH: { covered: "WRAP_TRY_CATCH" },

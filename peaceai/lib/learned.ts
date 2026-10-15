@@ -5,12 +5,14 @@
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
-import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
+import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refusal } from "./learned-guard.ts";
+import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
+import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -54,7 +56,9 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (!ev || ![ev.hunks, ev.commits, ev.files].every((n) => Number.isInteger(n) && (n as number) >= 0) || !Array.isArray(ev.repos)) return false;
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "REPLACE_EXPRESSION" && !validBodyParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_WORKFLOW_STEP" && REVOKED_WORKFLOW_SPECS.has(s.id as string)) return false;
   if (s.kind === "ADD_WORKFLOW_STEP" && !validWorkflowParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   return Object.keys(s).every((k) => ["schema", "id", "kind", "minedFrom", "minerVersion", "shape", "trigger", "params", "evidence"].includes(k));
@@ -62,9 +66,9 @@ export function validateSpec(o: unknown): o is RuleSpec {
 
 /** M12: ADD_TEST_CASE specs carry exactly the template parameters, from fixed vocabularies; public-mined only. */
 function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  // M20: the optional `args` key (only value "object-literal") marks the object-literal-arguments spec.
+  // M20: the optional `args` key marks an arguments spec: "object-literal" (M20) or "date-literal" (M35).
   const keys = Object.keys(p).filter((k) => k !== "args").sort().join(",");
-  if (minedFrom !== "public" || keys !== [...TEST_PARAM_KEYS].join(",") || ("args" in p && p.args !== "object-literal")) return false;
+  if (minedFrom !== "public" || keys !== [...TEST_PARAM_KEYS].join(",") || ("args" in p && p.args !== "object-literal" && p.args !== "date-literal")) return false;
   const checks = p.checks;
   return (
     Array.isArray(checks) && checks.length > 0 && checks.every((c) => (TEST_CHECKS as readonly unknown[]).includes(c)) && new Set(checks).size === checks.length &&
@@ -72,6 +76,12 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
     (TEST_MATCHERS as readonly unknown[]).includes(p.matcher) && (p.placement === "new-file" || p.placement === "append") && p.grading === "fail-before-pass-after" &&
     typeof p.maxLines === "string" && /^[1-9][0-9]?$/.test(p.maxLines)
   );
+}
+
+/** M62: METHOD_GUARD specs; public-mined only. */
+function validMethodGuardParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...METHOD_GUARD_PARAM_KEYS].join(",")) return false;
+  return METHOD_GUARD_PARAM_KEYS.every((k) => typeof p[k] === "string" && METHOD_GUARD_VOCAB[k].includes(p[k] as string));
 }
 
 /** M13: ADD_THROW_GUARD specs carry exactly the guard parameters, from fixed vocabularies; public-mined only. */
@@ -84,6 +94,17 @@ function validGuardParams(p: Record<string, unknown>, minedFrom: unknown): boole
 function validWorkflowParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
   if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...WORKFLOW_PARAM_KEYS].join(",")) return false;
   return WORKFLOW_PARAM_KEYS.every((k) => typeof p[k] === "string" && WORKFLOW_VOCAB[k].includes(p[k] as string));
+}
+
+/** M27: REPLACE_EXPRESSION specs carry exactly the body parameters, from fixed vocabularies; public-mined only. */
+function validBodyParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...BODY_PARAM_KEYS].join(",")) return false;
+  return BODY_PARAM_KEYS.every((k) => {
+    const v = p[k];
+    const vocab = BODY_VOCAB[k] as readonly string[];
+    if (k === "sites") return Array.isArray(v) && v.length > 0 && new Set(v).size === v.length && v.every((x) => vocab.includes(x as string));
+    return typeof v === "string" && vocab.includes(v);
+  });
 }
 
 /** M15: ADD_FUNCTION specs carry exactly the function parameters, from fixed vocabularies; public-mined only. */
@@ -107,8 +128,10 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_NULLISH_DEFAULT: String.raw`^default \x60?(?<expr>${NAME}(?:\.${NAME})+)\x60? to (?<value>\[\]|null|${LIT}) in \x60?(?<fn>${NAME})\x60?(?: in \x60?(?<file>${FILE})\x60?)?\.?$`,
   ADD_TEST_CASE: TEST_TRIGGER,
   ADD_THROW_GUARD: GUARD_TRIGGER,
+  METHOD_GUARD: METHOD_GUARD_TRIGGER,
   ADD_FUNCTION: FUNCTION_TRIGGER,
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
+  REPLACE_EXPRESSION: REPLACE_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -254,7 +277,7 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
 }
 
 /** Runs one rule against the objective. Null when the trigger does not match or the edit is not unique. */
-export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean): LearnedEdit | null {
+export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {
   if (spec.kind === "ADD_TEST_CASE") {
     try {
       const task = parseTestTask(spec.trigger, objective);
@@ -265,14 +288,30 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   }
   if (spec.kind === "ADD_THROW_GUARD") {
     try {
-      return applyGuardRule(spec.trigger, spec.params, objective, files, isTest);
+      return applyGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
     } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  if (spec.kind === "METHOD_GUARD") {
+    try {
+      return applyMethodGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
+    } catch {
+      if (why) why.reason = "internal_error";
       return null;
     }
   }
   if (spec.kind === "ADD_FUNCTION") {
     try {
       return applyFunctionRule(spec.trigger, spec.params, objective, files, isTest);
+    } catch {
+      return null;
+    }
+  }
+  if (spec.kind === "REPLACE_EXPRESSION") {
+    try {
+      return applyReplaceRule(spec.trigger, spec.params, objective, files, isTest, repo); // Round 3 (#136): per-repo allow-list
     } catch {
       return null;
     }

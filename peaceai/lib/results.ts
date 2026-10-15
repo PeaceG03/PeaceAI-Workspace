@@ -7,7 +7,7 @@ import type { CandidateResult } from "./rank.ts";
  */
 export const GRADING_VERDICTS = ["COUNTS", "REJECTED_PASSES_BOTH", "REJECTED_FAILS_BOTH", "REJECTED_FAILS_AFTER_FIX", "UNGRADABLE", "REJECTED_PASSES_WITH_STUB"] as const;
 export type GradingVerdict = (typeof GRADING_VERDICTS)[number];
-export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-invalid", "fix-not-on-main", "fix-not-ancestor", "fix-touches-non-source", "no-source-change", "revert-failed"] as const;
+export const UNGRADABLE_REASONS = ["not-applied", "not-test-only", "fix-invalid", "fix-not-on-main", "fix-not-ancestor", "fix-touches-non-source", "no-source-change", "revert-failed", "stub-not-reached", "real-not-stable", "not-confined", "module-imports-repo-files", "before-not-assertion"] as const;
 export type UngradableReason = (typeof UNGRADABLE_REASONS)[number];
 
 /** Paths a fix may never touch for grading: workflows, hooks, scripts, configs, lockfiles, env and infra files. */
@@ -43,6 +43,8 @@ export interface TestGrading {
   reason: (typeof UNGRADABLE_REASONS)[number] | null;
   /** M17 (ADD_FUNCTION only): the new tests FAILED with the function's body replaced by a type-default stub. */
   stubFails?: boolean;
+  /** M23 (Auditor #129): the functions stubbed for the stub-body before-state (sorted as declared). */
+  stubbed?: string[];
 }
 export function gradingVerdict(afterFix: boolean, beforeFix: boolean, stubFails?: boolean): GradingVerdict {
   if (afterFix && !beforeFix) return stubFails === false ? "REJECTED_PASSES_WITH_STUB" : "COUNTS";
@@ -53,8 +55,9 @@ export function gradingVerdict(afterFix: boolean, beforeFix: boolean, stubFails?
 export function validTestGrading(g: unknown): g is TestGrading {
   if (!g || typeof g !== "object") return false;
   const t = g as Record<string, unknown>;
-  const keys = Object.keys(t).sort().join(",");
+  const keys = Object.keys(t).filter((k) => k !== "stubbed").sort().join(",");
   if (keys !== "afterFix,beforeFix,fixSha,reason,verdict" && keys !== "afterFix,beforeFix,fixSha,reason,stubFails,verdict") return false;
+  if ("stubbed" in t && !(Array.isArray(t.stubbed) && t.stubbed.length > 0 && t.stubbed.length <= 50 && t.stubbed.every((n) => typeof n === "string" && /^[A-Za-z_$][\w$]{0,99}$/.test(n)))) return false;
   if ("stubFails" in t && typeof t.stubFails !== "boolean") return false;
   if (typeof t.fixSha !== "string" || !/^[0-9a-f]{40}$/.test(t.fixSha) || typeof t.afterFix !== "boolean") return false;
   if (t.verdict === "UNGRADABLE") return t.beforeFix === null && (UNGRADABLE_REASONS as readonly unknown[]).includes(t.reason);

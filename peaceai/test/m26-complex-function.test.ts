@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+process.env.PEACEAI_COMPLEX_FUNCTION = "true"; // the flag defaults off; the engine tests below run with it on
 import { applyComplexRule, COMPLEX_TRIGGER } from "../lib/learned-complex.ts";
 const P = { body: "bounded-block", grading: "self-fail-before-pass-after-and-stub", loops: ["for-of-param", "counted-literal-or-length"], params: "typed", placement: "end-of-module", returns: "annotated", test: "new-file" };
 const files = [{ path: "src/a.ts", content: "export const x = 1;\n" }];
@@ -47,4 +48,91 @@ test("option A grading: stubs the function and every called helper the candidate
   assert.match(s, /function inc\(n: number\): number \{ return 0; \}/);
   assert.match(s, /function main\(a: number\): number \{ return 0; \}/);
   assert.match(stubForGrading(src, "main", ["main"])!, /return n \+ 1/, "pre-existing helper untouched");
+});
+
+// ---- M26 refresh: default-off flag, protected-path refusal, mined evidence (METHOD_GUARD #197 sourcing rules) ----
+import { createHash as m26Hash } from "node:crypto";
+import { readdirSync as m26Dir, readFileSync as m26Read } from "node:fs";
+import { resolve as m26Resolve } from "node:path";
+import { readManifestBytes as m26Manifest } from "../lib/manifestparts.ts";
+import { COMPLEX_FUNCTION_FLAG, complexFunctionEnabled } from "../lib/learned-complex.ts";
+import { PROTECTED_SELF as M26_PROTECTED } from "../lib/selfchange.ts";
+const m26Root = m26Resolve(import.meta.dirname, "../..");
+const ON = { [COMPLEX_FUNCTION_FLAG]: "true" };
+
+test("flag: COMPLEX_FUNCTION is off unless PEACEAI_COMPLEX_FUNCTION is exactly \"true\"", () => {
+  assert.equal(complexFunctionEnabled({}), false);
+  assert.equal(complexFunctionEnabled({ PEACEAI_COMPLEX_FUNCTION: "1" }), false);
+  assert.equal(complexFunctionEnabled({ PEACEAI_COMPLEX_FUNCTION: "TRUE" }), false);
+  assert.equal(complexFunctionEnabled(ON), true);
+  assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(ok), files, undefined, {}), null, "off by default: no edit");
+  assert.ok(applyComplexRule(COMPLEX_TRIGGER, P, t(ok), files, undefined, ON), "on: the same task passes");
+});
+
+test("refusal: a body outside the grammar is refused even with the flag on", () => {
+  assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t("while (true) {}\nreturn [];"), files, undefined, ON), null);
+});
+
+for (const path of ["peaceai/lib/selfchange.ts", "peaceai/lib/learned-complex.ts", "peaceai/rules/x.ts", "peaceai/bin/leak-scan.ts", "peaceai/lib/target.ts"]) {
+  test(`protected path refused: ${path}`, () => {
+    assert.ok(M26_PROTECTED.some((x) => x.pattern.test(path)));
+    const task = t(ok).replace("src/a.ts", path);
+    assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, task, [{ path, content: "export const x = 1;\n" }], undefined, ON), null);
+  });
+}
+
+test("protected set covers the M26 proofs, evidence and fixtures", () => {
+  for (const p of ["peaceai/test/m26-complex-function.test.ts", "peaceai/rules/proposals/m26-complex-function-evidence.json", "peaceai/test/fixtures/m26/a.txt"]) assert.ok(M26_PROTECTED.some((x) => x.pattern.test(p)), p);
+});
+
+type M26Ex = { repo: string; commit: string; path: string; sha256: string; fn: string; line: number; statements: number; license: string; licenseSha256: string; fixture: string; fileBlob: string };
+const m26Ev = JSON.parse(m26Read(m26Resolve(m26Root, "peaceai/rules/proposals/m26-complex-function-evidence.json"), "utf8")) as { bar: number; manifestSha256: string; examples: M26Ex[] };
+const m26Pins = JSON.parse(m26Read(m26Resolve(m26Root, "peaceai/rules/proposals/m45-example-repos.json"), "utf8")) as { repos: { name: string; commit: string; licenseSha256: string }[] };
+const gitBlob = (b: Buffer) => m26Hash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
+
+test("evidence: bar is 10 and at least 10 distinct examples from pinned example-only repos (no nuxt/turborepo)", () => {
+  assert.equal(m26Ev.bar, 10);
+  assert.ok(m26Ev.examples.length >= m26Ev.bar);
+  assert.equal(new Set(m26Ev.examples.map((e) => `${e.repo}:${e.path}`)).size, m26Ev.examples.length);
+  for (const e of m26Ev.examples) {
+    assert.ok(!["nuxt/nuxt", "vercel/turborepo"].includes(e.repo));
+    const pin = m26Pins.repos.find((r) => r.name === e.repo);
+    assert.ok(pin, `${e.repo} is pinned`);
+    assert.equal(e.commit, pin!.commit); assert.equal(e.licenseSha256, pin!.licenseSha256);
+  }
+});
+
+test("evidence: every fixture is blob-pinned, <= 64 KB, and its function replays through the COMPLEX grammar", () => {
+  for (const e of m26Ev.examples) {
+    const b = m26Read(m26Resolve(m26Root, e.fixture));
+    assert.ok(b.length <= 65536, e.fixture);
+    assert.equal(gitBlob(b), e.fileBlob, e.fixture);
+    assert.equal(m26Hash("sha256").update(b).digest("hex"), e.sha256);
+    assert.ok(e.fixture.endsWith(`${e.repo.replace("/", "__")}-${e.fileBlob.slice(0, 12)}.txt`));
+    const sf = ts.createSourceFile("f.ts", b.toString("utf8"), ts.ScriptTarget.Latest, true);
+    const fn = sf.statements.find((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === e.fn);
+    assert.ok(fn?.body, `${e.fn} in ${e.fixture}`);
+    assert.equal(sf.getLineAndCharacterOfPosition(fn!.getStart(sf)).line + 1, e.line);
+    assert.equal(fn!.body!.statements.length, e.statements);
+    assert.ok(e.statements >= 2 && e.statements <= 20);
+    assert.equal(blockRefusal(fn!.body!, new Set(fn!.parameters.map((p) => p.name.getText(sf))), sf), null, `${e.repo} ${e.fn}`);
+  }
+});
+
+test("evidence: no LICENSE text committed; fixtures dir holds exactly the evidence fixtures", () => {
+  const dir = m26Resolve(m26Root, "peaceai/test/fixtures/m26");
+  const listed = new Set(m26Ev.examples.map((e) => e.fixture.split("/").pop()));
+  for (const f of m26Dir(dir)) { assert.ok(listed.has(f), f); assert.ok(!/licen[cs]e/i.test(f)); }
+});
+
+test("evidence: no overlap with the training corpus or ext-manifest d4399d79", () => {
+  const buf = m26Manifest(m26Resolve(m26Root, "peaceai/model"), "ext-manifest");
+  assert.equal(m26Hash("sha256").update(buf).digest("hex"), m26Ev.manifestSha256);
+  assert.ok(m26Ev.manifestSha256.startsWith("d4399d79"));
+  const repos = new Set<string>(); const shas = new Set<string>();
+  for (const l of buf.toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l) as { repo?: string; sha256?: string }; if (r.repo) repos.add(r.repo); if (r.sha256) shas.add(r.sha256); }
+  const corpus = JSON.parse(m26Read(m26Resolve(m26Root, "peaceai/model/ext-corpus.json"), "utf8")) as { repos: { name: string }[] };
+  for (const r of corpus.repos) repos.add(r.name);
+  assert.ok(repos.size > 10);
+  for (const e of m26Ev.examples) { assert.ok(!repos.has(e.repo), e.repo); assert.ok(!shas.has(e.sha256), e.path); }
 });

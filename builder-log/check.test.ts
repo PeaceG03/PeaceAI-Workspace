@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { appendOnly, LOG_PATH, validateLog } from "./check.ts";
+import { appendOnly, LOG_PATH, peaceAiShaLandings, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
 
 const ok = {
   seq: 1, date: "2026-10-13", time: "01:05", asked: "Fix the typecheck failure", changed: "PeaceSTOCKS@369f6ea",
@@ -47,4 +47,46 @@ test("append-only: appending passes; editing, removing or reordering fails", () 
   assert.match(appendOnly(a + b, a)[0] ?? "", /line 2 was modified or removed/);
   assert.match(appendOnly(a, line({ ...ok, why: "rewritten reason" }))[0] ?? "", /line 1/);
   assert.match(appendOnly(a + b, b + a)[0] ?? "", /line 1/);
+});
+
+test("skills approved later: missing before the landing time, approved (and PeaceAI-able) from it on", () => {
+  for (const [skill, date, before, after] of [["WORKFLOW_STEP", "2026-10-13", "22:40", "22:41"], ["CHECK_OBJECT_LITERAL_ARGS", "2026-10-13", "21:29", "21:30"]] as const) {
+    assert.deepEqual(validateLog(line({ ...ok, date, time: before, skill, mark: `missing skill ${skill}` })), [], `${skill} before`);
+    assert.ok(validateLog(line({ ...ok, date, time: before, skill, mark: "PeaceAI-able today" })).some((e) => /mark must be/.test(e)));
+    assert.ok(validateLog(line({ ...ok, date, time: before, skill, mark: `missing skill ${skill}`, by: "PeaceAI" })).some((e) => /approved skill/.test(e)), "PeaceAI cannot use it before landing");
+    assert.deepEqual(validateLog(line({ ...ok, date, time: after, skill, mark: "PeaceAI-able today", by: "PeaceAI" })), [], `${skill} after`);
+    assert.deepEqual(validateLog(line({ ...ok, date: "2026-10-14", time: "00:01", skill, mark: "PeaceAI-able today" })), [], "next day");
+    assert.ok(validateLog(line({ ...ok, date, time: after, skill, mark: `missing skill ${skill}` })).some((e) => /mark must be/.test(e)));
+  }
+  assert.ok(validateLog(line({ ...ok, skill: "toString", mark: "missing skill toString" })).some((e) => /unknown skill/.test(e)), "no prototype keys");
+});
+
+
+test("verifyPeaceAiShas: injectable resolver; made-up sha fails closed", async () => {
+  const entries = [
+    {
+      seq: 1, date: "2026-10-13", time: "01:00", asked: "fixture asked text here",
+      changed: "PeaceSTOCKS@0e1b354", why: "fixture why text here",
+      skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI",
+    },
+    {
+      seq: 2, date: "2026-10-13", time: "01:01", asked: "fixture asked text here",
+      changed: "PeaceSTOCKS@deadbee", why: "fixture why text here",
+      skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI",
+    },
+    {
+      seq: 3, date: "2026-10-13", time: "01:02", asked: "fixture asked text here",
+      changed: "PeaceSTOCKS@0e1b354", why: "builder also logged the same sha",
+      skill: "TEST_CASE", mark: "PeaceAI-able today", by: "Builder",
+    },
+  ] as Entry[];
+  assert.deepEqual(
+    peaceAiShaLandings(entries).map((h) => [h.seq, h.label, h.sha]),
+    [[1, "PeaceSTOCKS", "0e1b354"], [2, "PeaceSTOCKS", "deadbee"]],
+    "Builder landings ignored; PeaceAI shas deduped by first seq",
+  );
+  const ok = await verifyPeaceAiShas(entries, async (_repo, sha) => sha === "0e1b354");
+  assert.deepEqual(ok, ["seq 2: PeaceSTOCKS@deadbee does not exist"]);
+  const boom = await verifyPeaceAiShas(entries, async () => { throw new Error("network"); });
+  assert.ok(boom.some((e) => /lookup failed \(fail closed\)/.test(e)));
 });

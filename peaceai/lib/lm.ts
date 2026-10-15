@@ -43,6 +43,13 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
   try {
     const cfg = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
     if (cfg.schema !== "peaceai-lm:v1" || !/^lm-v1-[0-9a-f]{12}$/.test(cfg.version)) return { ok: false, reason: "CONFIG_INVALID" };
+    // M52 (Architect (a)): a two-corpus model loads only when its memcheck recorded both core-free proofs valid for
+    // exactly the manifests the model says it trained on.
+    if ("trainedOn" in cfg) {
+      const t = trainedOnShas(cfg);
+      const d = (mc as { coreFreeProofs?: { ok?: boolean; trainedOn?: unknown } }).coreFreeProofs;
+      if (!t || d?.ok !== true || JSON.stringify(d.trainedOn) !== JSON.stringify(t)) return { ok: false, reason: "MEMCHECK_FAILED" };
+    }
     return { ok: true, version: cfg.version };
   } catch { return { ok: false, reason: "CONFIG_INVALID" }; }
 }
@@ -92,13 +99,28 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
           })
         : null;
       // Maximal runs of consecutive unexplained windows; a run of k windows covers k + n - 1 characters.
-      const lengths: number[] = [];
+      const lengths: number[] = [], starts: number[] = [];
       let prev = -2;
       for (const st of unexplained ?? []) {
-        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else lengths.push(coreRaw!.n);
+        if (st === prev + 1) lengths[lengths.length - 1]! += 1; else { lengths.push(coreRaw!.n); starts.push(st); }
         prev = st;
       }
-      const long = unexplained ? lengths.filter((l) => l >= exempt.minRun).length : 1;
+      // Auditor (memcheck trace, lm-v1-78b6e96990d2; #142 F2): a joined 64+ run counts only when SOME contiguous
+      // substring of it of 64+ characters occurs in core (the longest in-core segment). Overlapping short windows
+      // (a 128-char 'c' run over a core run of 40) do not count; a copy bridging two core places still does.
+      // Two pointers: if [i, j) is in core so is [i + 1, j), so j never moves back. Reported lengths are unchanged.
+      const has = (t: string): boolean => coreRaw!.texts.some((c) => c.includes(t));
+      const longestInCore = (t: string): number => {
+        let best = 0, j = 0;
+        for (let i = 0; i < t.length && t.length - i > best; i += 1) {
+          if (j < i) j = i;
+          while (j < t.length && has(t.slice(i, j + 1))) j += 1;
+          best = Math.max(best, j - i);
+        }
+        return best;
+      };
+      const inCore = (i: number): boolean => longestInCore(s.text.slice(starts[i]!, starts[i]! + lengths[i]!)) >= exempt.minRun;
+      const long = unexplained ? lengths.filter((l, i) => l >= exempt.minRun && inCore(i)).length : 1;
       scan.unexplainedHits! += unexplained ? lengths.length : 1;
       scan.countedHits! += long;
       scan.longestUnexplained = Math.max(scan.longestUnexplained!, ...lengths, 0);
@@ -125,9 +147,63 @@ export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
  * from a source other than core, and its content hash must match no core file. An empty or unreadable manifest
  * proves nothing.
  */
-export function manifestProvesNoCore(manifest: readonly { source?: string; visibility?: string; sha256?: string }[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI"): boolean {
+export function manifestProvesNoCore(manifest: readonly Record<string, unknown>[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI", docSha256?: ReadonlyMap<unknown, string>): boolean {
   if (manifest.length === 0) return false;
-  return manifest.every((m) => m.visibility === "public" && typeof m.source === "string" && m.source !== coreSource && typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256));
+  const shaOk = (m: Record<string, unknown>) => typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256);
+  // M52 (Architect, M49 M5): the fine-tune schema (ft-pairs.ts). All entries one schema, exact keys; its content
+  // sha256 comes only from the doc text (docSha256), never from the manifest. No doc hashes given: fails closed.
+  const ft = manifest.map((m) => m !== null && typeof m === "object" && ("function" in m || "sha" in m)); // keys only the fine-tune schema has
+  if (ft.some(Boolean)) return ft.every(Boolean) && !!docSha256 && manifest.every((m) => ftManifestEntryProblem(m) === null && shaOk({ sha256: docSha256.get(m.doc) }));
+  // M39 (Architect): the external manifest schema (ext-fetch.ts: repo + license + sha256). All entries one schema;
+  // any unknown field or malformed entry fails closed. The internal schema keeps its visibility check unchanged.
+  if (manifest.every((m) => m !== null && typeof m === "object" && "repo" in m)) return manifest.every((m) => extManifestEntryProblem(m, coreSource) === null && shaOk(m));
+  return manifest.every((m) => m !== null && typeof m === "object" && !("repo" in m) && m.visibility === "public" && typeof m.source === "string" && m.source !== coreSource && shaOk(m));
+}
+
+/** M39: keys an external training manifest entry may carry (ext-fetch.ts output); anything else is refused. */
+export const EXT_PROOF_KEYS = new Set(["doc", "stage", "repo", "commit", "license", "path", "sha256", "bytes", "origin", "split"]);
+const EXT_PROOF_REQUIRED = ["doc", "repo", "commit", "license", "path", "sha256", "origin"];
+const EXT_PROOF_PERMISSIVE = new Set(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"]);
+/** M40 (Auditor #160): the training docs.jsonl and manifest doc ids are the same set, with no duplicates on either side. */
+export function docIdsMatch(manifestIds: readonly unknown[], docIds: readonly unknown[]): boolean {
+  const a = new Set(manifestIds), b = new Set(docIds);
+  return a.size === manifestIds.length && b.size === docIds.length && a.size === b.size && [...a].every((x) => b.has(x)) && manifestIds.every((x) => typeof x === "number" && Number.isInteger(x));
+}
+/** M40: ASCII whitespace only, the same set as corefree_proof.py (never NBSP, U+2000-200A, U+3000, \x1c-\x1f, U+FEFF). */
+export const isAsciiBlank = (t: string) => t.replace(/[ \t\r\n\f\v]+/g, "") === "";
+/** Peace's own repos allowed in an external manifest: only the public owner repos, only with the owner license. */
+export const EXT_PROOF_OWNER_PUBLIC = new Set(["PeaceG03/PeaceSTOCKS", "PeaceG03/PeaceAI-Workspace"]);
+/** Same rules as corefree_proof.py's ext_problem(): null when the entry is acceptable. */
+export function extManifestEntryProblem(m: Record<string, unknown>, coreSource = "PeaceG03/PeaceAI"): string | null {
+  for (const k of Object.keys(m)) if (!EXT_PROOF_KEYS.has(k)) return `unknown field ${k}`;
+  for (const k of EXT_PROOF_REQUIRED) if (!(k in m)) return `missing field ${k}`;
+  if (typeof m.doc !== "number" || !Number.isInteger(m.doc) || m.doc < 0 || typeof m.path !== "string" || !m.path) return "bad doc/path";
+  if ("bytes" in m && (typeof m.bytes !== "number" || !Number.isInteger(m.bytes) || m.bytes < 0)) return "bad bytes";
+  if (typeof m.license !== "string") return "bad license";
+  if (typeof m.commit !== "string" || !/^[0-9a-f]{40}$/.test(m.commit)) return "bad commit";
+  const repo = m.repo;
+  if (typeof repo !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.split("/").some((x) => /^[.-]/.test(x)) || repo === coreSource) return "bad repo";
+  if (m.origin === "external") return repo.toLowerCase().startsWith("peaceg03/") || !EXT_PROOF_PERMISSIVE.has(m.license) ? "external entry: Peace repo or non-permissive license" : null;
+  if (m.origin === "owner-public") return EXT_PROOF_OWNER_PUBLIC.has(repo) && m.license === "owner:PeaceG03" ? null : "owner entry: not a public owner repo";
+  return "bad origin";
+}
+
+/** M52: keys of an M49 fine-tune manifest entry (ft-pairs.ts); all required, anything else refused. */
+export const FT_PROOF_KEYS = ["doc", "split", "repo", "sha", "path", "function"] as const;
+/** Same rules as corefree_proof.py's ft_problem(): null when the entry is acceptable. */
+export function ftManifestEntryProblem(m: Record<string, unknown>): string | null {
+  if (m === null || typeof m !== "object" || Array.isArray(m)) return "not an object";
+  const keys = new Set<string>(FT_PROOF_KEYS);
+  const unknown = Object.keys(m).filter((k) => !keys.has(k)).sort();
+  if (unknown.length) return `unknown field ${unknown[0]}`;
+  const missing = FT_PROOF_KEYS.filter((k) => !Object.hasOwn(m, k)).sort();
+  if (missing.length) return `missing field ${missing[0]}`;
+  if (typeof m.doc !== "number" || !Number.isInteger(m.doc) || m.doc < 0 || typeof m.path !== "string" || !m.path) return "bad doc/path";
+  if (typeof m.function !== "string" || !m.function) return "bad function";
+  if (m.split !== "train" && m.split !== "heldout") return "bad split";
+  if (typeof m.sha !== "string" || !/^[0-9a-f]{40}$/.test(m.sha)) return "bad sha";
+  if (typeof m.repo !== "string" || !EXT_PROOF_OWNER_PUBLIC.has(m.repo)) return "fine-tune entry: not a public owner repo";
+  return null;
 }
 
 /**
@@ -140,7 +216,7 @@ export function manifestProvesNoCore(manifest: readonly { source?: string; visib
 export const COREFREE_PROOF_SCHEMA = "peaceai-lm-corefree-proof:v1";
 export interface CoreFreeProofFile { doc: number; path: string; source: string; sha256: string; coreExact: boolean; coreNearMax: number }
 export interface CoreFreeProof { schema: string; model: string; noCoreFiles: string; manifestSha256: string; coreCommit: string; near: { method: string; threshold: number }; files: CoreFreeProofFile[] }
-export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string }): { ok: boolean; reason?: string } {
+export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string; docSha256?: ReadonlyMap<unknown, string> }): { ok: boolean; reason?: string } {
   const p = proof as CoreFreeProof | null;
   if (!p || typeof p !== "object") return { ok: false, reason: "MISSING" };
   if (p.schema !== COREFREE_PROOF_SCHEMA) return { ok: false, reason: "BAD_SCHEMA" };
@@ -154,11 +230,45 @@ export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manif
   const byDoc = new Map(p.files.map((f) => [f?.doc, f]));
   for (const m of ctx.manifest) {
     const f = byDoc.get(m.doc);
-    if (!f || f.path !== m.path || f.sha256 !== m.sha256) return { ok: false, reason: "FILE_MISMATCH" };
+    // M52: a fine-tune entry carries no sha256; its expected hash is the doc text's (docSha256), never the proof's own.
+    const want = "function" in m || "sha" in m ? ctx.docSha256?.get(m.doc) : m.sha256;
+    if (!f || f.path !== m.path || typeof want !== "string" || f.sha256 !== want) return { ok: false, reason: "FILE_MISMATCH" };
     if (f.coreExact !== false) return { ok: false, reason: "CORE_EXACT" };
     if (typeof f.coreNearMax !== "number" || !(f.coreNearMax >= 0 && f.coreNearMax < t)) return { ok: false, reason: "CORE_NEAR" };
   }
   return { ok: true };
+}
+
+/** M52 (Architect (a)): a model trained on two corpora (pretrain + fine-tune) records both manifest sha256 values in
+ *  config.json as trainedOn: { pretrainManifestSha256, finetuneManifestSha256 }. null when absent or malformed. */
+export const COREFREE_STAGES = ["pretrain", "finetune"] as const;
+export type CoreFreeStage = (typeof COREFREE_STAGES)[number];
+export function trainedOnShas(cfg: unknown): Record<CoreFreeStage, string> | null {
+  const t = (cfg as { trainedOn?: Record<string, unknown> } | null)?.trainedOn;
+  if (!t || typeof t !== "object" || Array.isArray(t)) return null;
+  if (Object.keys(t).sort().join(",") !== "finetuneManifestSha256,pretrainManifestSha256") return null;
+  const p = t.pretrainManifestSha256, f = t.finetuneManifestSha256;
+  if (typeof p !== "string" || typeof f !== "string" || !/^[0-9a-f]{64}$/.test(p) || !/^[0-9a-f]{64}$/.test(f) || p === f) return null;
+  return { pretrain: p, finetune: f };
+}
+export interface CorpusForProof { manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string; docSha256: ReadonlyMap<unknown, string> }
+/** M52: both per-corpus proofs (corefree-proof-<stage>.json) are required. Each must name its own corpus, be for
+ *  the manifest sha the model trained on (config.json trainedOn), match the corpus given here, and be valid. Any
+ *  missing proof, sha mismatch or swapped proof blocks promotion (fail closed). */
+export function dualCoreFreeDecision(cfg: unknown, proofs: Record<CoreFreeStage, unknown>, corpora: Record<CoreFreeStage, CorpusForProof>): { ok: boolean; reasons: string[]; trainedOn: Record<CoreFreeStage, string> | null } {
+  const t = trainedOnShas(cfg);
+  if (!t) return { ok: false, reasons: ["NO_TRAINED_ON"], trainedOn: null };
+  const modelId = String((cfg as { version?: unknown }).version ?? "");
+  const reasons: string[] = [];
+  for (const st of COREFREE_STAGES) {
+    const p = proofs[st] as { corpus?: unknown } | null | undefined, c = corpora[st];
+    if (p === null || p === undefined || typeof p !== "object") { reasons.push(`${st}:MISSING_PROOF`); continue; }
+    if (p.corpus !== st) { reasons.push(`${st}:SWAPPED_PROOF`); continue; }
+    if (!c || c.manifestSha256 !== t[st]) { reasons.push(`${st}:CORPUS_NOT_TRAINED_ON`); continue; }
+    const v = validCoreFreeProof(p, { modelId, manifest: c.manifest, manifestSha256: t[st], docSha256: c.docSha256 });
+    if (!v.ok) reasons.push(`${st}:${v.reason}`);
+  }
+  return { ok: reasons.length === 0, reasons, trainedOn: t };
 }
 
 // ---- where the model may run

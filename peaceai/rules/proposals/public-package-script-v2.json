@@ -1,0 +1,15 @@
+{
+ "id": "public-package-script-v2",
+ "kind": "PACKAGE_SCRIPT_V2",
+ "status": "proposal-off-below-bar",
+ "flag": "PEACEAI_PACKAGE_SCRIPT_V2",
+ "spec": "peaceai/spec/package-script-v2.md",
+ "engine": "peaceai/lib/package-script-v2.ts",
+ "evidence": {
+  "examples": 1,
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": false
+ },
+ "note": "Architect (2026-10-15): v2 stays at 3 of 10 real examples with no further widening; the remaining rejections (cargo/make, node/tsx, cross-env/env, npx/dlx, chaining, quoting, -- pass-through) are not safe to allow. Stays off and below the bar. M59: apollo-client f0bb56c8 and hono fb0b9d42 dropped (fixtures blocked by the pre-push email scan); now 1 of 10."
+}

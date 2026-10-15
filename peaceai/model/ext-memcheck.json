@@ -1,0 +1,12 @@
+{
+ "schema": "peaceai-ext-memcheck:v1",
+ "status": "PASS",
+ "manifestSha256": "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e",
+ "entries": 55547,
+ "scannedDocs": 55547,
+ "coreFileHits": 0,
+ "coreLineHits": 0,
+ "coreShingleHits": 0,
+ "coreRunHits": 0,
+ "minRun": 64
+}

@@ -505,7 +505,7 @@ test("gates unchanged: a learned test cannot edit an existing test, and core tex
 test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) still cover the rule engine, gates, results, rules and workflows", () => {
   const digest = createHash("sha256").update(PROTECTED_SELF.map((p) => p.pattern.source).join("\n")).digest("hex");
   assert.equal(digest, PROTECTED_DIGEST, "PROTECTED_SELF changed");
-  for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "src/cal.test.ts"])
+  for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", ".github/workflows/corpus-checks.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "0bc8f1f3dc89c1ec2bd9be864ea5120c01589a62c39f3b2ed4a1dc962c745467";
+const PROTECTED_DIGEST = "df129d07802bff273036170a146e2dc5d79179c2d71498bc8008d73b74110bbd"; // main (63177bc1) unioned with M26: learned-complex in the lib line + the M26 proofs/evidence/fixtures entry

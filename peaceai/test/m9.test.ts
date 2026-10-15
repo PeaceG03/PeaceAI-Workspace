@@ -413,7 +413,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".py"))) {
     const text = readFileSync(join(dir, f), "utf8");
     const imports = [...text.matchAll(/^\s*(?:import|from)\s+([A-Za-z_.]+)/gm)].map((m) => m[1]!.split(".")[0]);
-    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm"].includes(i!), `${f} imports ${i}`);
+    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm", "manifest_parts"].includes(i!), `${f} imports ${i}`);
     assert.ok(!/huggingface|from_pretrained|torch|tensorflow|transformers|tiktoken|sentencepiece|openai|anthropic|urllib|requests|socket|http/i.test(text), f);
   }
   for (const f of ["lib/lm.ts", "lib/fill.ts", "lib/lmcorpus.ts", "bin/lm-fill.ts", "bin/lm-memcheck.ts", "bin/lm-corpus.ts"]) {
@@ -422,10 +422,43 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
+const LM_TRAIN_M49_WORKFLOW_SHA256 = "b01b2e7a2adbe9a7025c711c4055be6ac6fadee7198c9caab5192fa1628d9b4d"; // M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
+const LM_TRAIN_WORKFLOW_SHA256 = "9355431302d31ed8ca132ee60e8f2ab2728c462bfbe7a7bacdeb013820ae6211"; // M51: pinned to the #148 manifest by sha (--manifest-sha), so M37 never trains on the M49 corpus
+
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
   const wfDir = join(repo, ".github/workflows");
   for (const f of readdirSync(wfDir)) {
     const text = readFileSync(join(wfDir, f), "utf8");
+    // M31 (Architect): the ONE exception is peace-lm-train.yml, public-only, held-out-checked, never the memcheck
+    // (that still needs core and runs on the box). m31-lm-public.test.ts pins the rest of its shape.
+    if (f === "peace-lm-train.yml") {
+      // Auditor #140 2: the exemption is pinned to the exact reviewed file; any edit must re-pin here.
+      assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), LM_TRAIN_WORKFLOW_SHA256, "peace-lm-train.yml changed: re-review and re-pin");
+      assert.match(text, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m, "workflow_dispatch only, permissions {}");
+      assert.equal((text.match(/^on:/gm) ?? []).length, 1);
+      assert.match(text, /\n    if: github\.ref == 'refs\/heads\/main'\n/);
+      assert.match(text, /- uses: actions\/checkout@[0-9a-f]{40} # v[\d.]+\n        with:\n          persist-credentials: false\n/);
+      assert.equal((text.match(/actions\/checkout@/g) ?? []).length, 1);
+      assert.equal((text.match(/secrets\./g) ?? []).length, 1, "one secret reference");
+      const landing = text.slice(text.indexOf("      - name: Land the model in Results only"));
+      assert.match(landing, /DEPLOY_KEY: \$\{\{ secrets\.PEACEAI_RESULTS_DEPLOY_KEY \}\}/);
+      assert.ok(!/      - name: /.test(landing.slice(10)), "the landing step is the last step");
+      // M37: the corpus is the M36 manifest corpus (ext-fetch, sha256 per file) checked by ext-manifest-check.
+      // M51: pinned to the #148 manifest by its sha256, so it can never train on the M49 corpus.
+      assert.match(text, /peaceai\/bin\/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus" --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/);
+      assert.match(text, /peaceai\/bin\/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/);
+      assert.ok(!/lm-memcheck\.ts|upload-artifact|pull_request|schedule:|push:/.test(text), f);
+      continue;
+    }
+    if (f === "peace-lm-train-m49.yml") {
+      // M49: the second training exemption, pinned to the exact reviewed file; m49-lm-workflow.test.ts pins its shape.
+      assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), LM_TRAIN_M49_WORKFLOW_SHA256, "peace-lm-train-m49.yml changed: re-review and re-pin");
+      assert.match(text, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m);
+      assert.equal((text.match(/^on:/gm) ?? []).length, 1);
+      assert.equal((text.match(/persist-credentials: false/g) ?? []).length, (text.match(/actions\/checkout@/g) ?? []).length);
+      assert.ok(!/lm-memcheck\.ts|lm-corpus\.ts|upload-artifact|actions\/cache|pull_request|schedule:|push:/.test(text), f);
+      continue;
+    }
     assert.ok(!/model\/train\.py|model\/export\.py|lm-corpus\.ts|lm-memcheck\.ts/.test(text), `${f} must not train`);
   }
   const task = readFileSync(join(wfDir, "peace-task.yml"), "utf8");
@@ -547,6 +580,19 @@ test("core-free-64 rule: explained hits never count; unexplained runs count only
   // A long run explained by the sample's prompt or by the training corpus does not count.
   assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex({ prompts: new Map([["p0", long]]) })).countedHits, 0);
   assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, raw, ex({ trainingCorpus: buildSubstringIndex([`// ${long}`]) })).countedHits, 0);
+  // Auditor (memcheck trace): a joined run counts only when its whole text is contiguous in core.
+  const c40 = buildSubstringIndex([`x${"c".repeat(40)}y\n`, long + "\n"]);
+  const s128 = scanSamples([sample("c".repeat(128)), ...fills], core, baseline, c40, ex());
+  assert.deepEqual([s128.unexplainedHits, s128.countedHits, s128.longestUnexplained], [1, 0, 128]);
+  assert.equal(memcheckStatus(s128), "PASS");
+  // A real 64+ core string the sample reproduces is still counted, against the same index.
+  assert.equal(scanSamples([sample(`zz(${long.slice(0, 70)})`), ...fills], core, baseline, c40, ex()).countedHits, 1);
+  assert.equal(scanSamples([sample(`${"c".repeat(128)} ${long.slice(0, 70)}`), ...fills], core, baseline, c40, ex()).countedHits, 1);
+  // #142 F2: a copy bridging two core places (core [A, A.slice(-31) + B], sample A + B) still counts.
+  const A = Array.from({ length: 100 }, (_, i) => String.fromCharCode(65 + ((i * 7) % 26))).join("") .slice(0, 100);
+  const B = Array.from({ length: 100 }, (_, i) => String.fromCharCode(97 + ((i * 11) % 26))).join("").slice(0, 100);
+  const bridge = buildSubstringIndex([A, A.slice(-31) + B]);
+  assert.equal(scanSamples([sample(A + B), ...fills], core, baseline, bridge, ex()).countedHits, 1);
   // No core index: fail closed. A core-free-64 scan without its counted value fails.
   assert.equal(memcheckStatus(scanSamples(fills, core, baseline, null, ex())), "FAIL");
   assert.equal(memcheckStatus({ ...s40, countedHits: undefined }), "FAIL");

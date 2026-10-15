@@ -22,6 +22,12 @@ import ts from "typescript";
 import { FUNCTION_TYPES, safeBody } from "./learned-function.ts";
 import { buildTestEdit, parseTestTask, type TestTask } from "./learned-test.ts";
 import { createHash } from "node:crypto";
+import { PROTECTED_SELF } from "./selfchange.ts";
+
+/** Off unless PEACEAI_COMPLEX_FUNCTION is exactly "true" (M26 refresh). */
+export const COMPLEX_FUNCTION_FLAG = "PEACEAI_COMPLEX_FUNCTION";
+export const complexFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[COMPLEX_FUNCTION_FLAG] === "true";
+const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(path));
 
 export const COMPLEX_PARAM_KEYS = ["body", "grading", "loops", "params", "placement", "returns", "test"] as const;
 export const COMPLEX_VOCAB: Record<(typeof COMPLEX_PARAM_KEYS)[number], readonly string[]> = {
@@ -284,6 +290,7 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
     if (k === "loops") { if (!Array.isArray(v) || v.length === 0 || !v.every((x) => COMPLEX_VOCAB.loops.includes(x))) return null; continue; }
     if (typeof v !== "string" || !COMPLEX_VOCAB[k].includes(v)) return null;
   }
+  if (isProtected(task.file)) return null;
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return null;
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
@@ -310,7 +317,8 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   return { path: target.path, content, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
 }
 
-export function applyComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean): ComplexEdit | null {
+export function applyComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, env: Record<string, string | undefined> = process.env): ComplexEdit | null {
+  if (!complexFunctionEnabled(env)) return null;
   const task = parseComplexTask(trigger, objective);
   return task ? buildComplexEdit(params, task, files, isTest) : null;
 }

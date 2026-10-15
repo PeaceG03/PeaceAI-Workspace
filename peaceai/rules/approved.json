@@ -62,6 +62,19 @@
       }
     },
     {
+      "id": "public-method-guard-v1",
+      "sha256": "d8287e62f4114f1673d1e835efdc33174c02f480263edddffb5e4efbca728160",
+      "source": "workspace",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Workspace/issues/200#issuecomment-6198698751",
+        "commentId": 6198698751,
+        "issue": 200,
+        "repo": "PeaceG03/PeaceAI-Workspace",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-15T17:55:18Z"
+      }
+    },
+    {
       "id": "public-test-case-append-objargs-v1",
       "sha256": "a729eb0e41f3a260f5b0dacaef628ef1b36c7a6c98a6fa83c6da178b47a76f12",
       "source": "workspace",
@@ -111,6 +124,19 @@
         "repo": "PeaceG03/PeaceAI-Workspace",
         "author": "PeaceG03",
         "approvedAt": "2026-10-11T19:12:28Z"
+      }
+    },
+    {
+      "id": "public-throw-guard-top-v1",
+      "sha256": "ecf1c4e0a148b84969916419dc257f13dbc737697f57a1de1fec1eabb60accbf",
+      "source": "workspace",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Workspace/issues/180#issuecomment-6187875674",
+        "commentId": 6187875674,
+        "issue": 180,
+        "repo": "PeaceG03/PeaceAI-Workspace",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-15T08:29:39Z"
       }
     },
     {

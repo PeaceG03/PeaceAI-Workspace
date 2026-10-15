@@ -1,0 +1,94 @@
+name: peace-lm-train
+
+# M31 (Architect): trains the from-scratch PeaceAI LM on a free runner. M37: the corpus is the M36 external
+# pretraining corpus, rebuilt from the committed provenance manifest (peaceai/model/ext-manifest.jsonl) by
+# ext-fetch.ts: each licensed repo (and Peace's public repos) at its pinned commit, with every file's sha256 checked
+# against the manifest. No private code is cloned, no external model or weights are downloaded, and nothing about the
+# model reaches this public repository: no artifacts, quiet logs (counts and step metrics only). Weights land only in
+# Results through results-write.sh. No latest.json is written, so every loader refuses the model until the model
+# memcheck (on the box, against core) passes. Stage: pretrain only; finetune is a reserved hook and is refused.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-lm-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: train LM (external pretrain corpus)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Stage gate (the stage comes from ext-train.json; finetune is a reserved hook, refused until built)
+        run: |
+          set -euo pipefail
+          stage=$(jq -r .stage peaceai/model/ext-train.json)
+          if [ "$stage" != pretrain ]; then echo "stage $stage refused: only pretrain is built"; exit 1; fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af
+      - name: Manifest check (stage, provenance, sha256, A/B/C and set C v2 hashes, set C v2 repos, whole-corpus memcheck record)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af
+      - name: Train (ctx 512, CPU, early stopping) and export
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"
+          m() { jq -r ".model.$1" peaceai/model/ext-train.json; }
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
+            --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
+            --steps "$(m steps)" --eval-every 50 --patience 4 --threads 4 --max-seconds 14400 > "$RUNNER_TEMP/train.log" 2>&1 \
+            || { echo "train failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          ck=best.npz; test -f "$RUNNER_TEMP/work/best.npz" || ck=checkpoint.npz
+          "$py" peaceai/model/export.py --work "$RUNNER_TEMP/work" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint "$ck" > /dev/null
+          cp "$RUNNER_TEMP/work/metrics.jsonl" "$RUNNER_TEMP/model/train-metrics.jsonl"
+          cp "$RUNNER_TEMP/corpus/manifest.jsonl" "$RUNNER_TEMP/model/manifest.jsonl"
+          rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+          jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
+      - name: Set C v2 eval (only once wired by the Architect; aggregate loss only; NON-FATAL so a trained model is never lost)
+        run: |
+          if [ "$(jq -r .wiredAsEval peaceai/model/heldout-c.json)" != true ]; then echo "set C v2 not wired as eval: skipped"; exit 0; fi
+          if ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c \
+            && "$RUNNER_TEMP/venv/bin/python" peaceai/model/eval_c.py --model "$RUNNER_TEMP/model" --corpus "$RUNNER_TEMP/setc" --threads 4 > "$RUNNER_TEMP/eval.txt"; then
+            cat "$RUNNER_TEMP/eval.txt"; cp "$RUNNER_TEMP/eval.txt" "$RUNNER_TEMP/model/eval-setc-v2.txt"
+          else
+            echo "set C v2 eval FAILED (non-fatal): the model still lands; score it on the box"
+          fi
+          rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" "$RUNNER_TEMP/eval.txt"
+          exit 0
+      - name: Land the model in Results only (no latest.json; refused until memcheck PASS)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          MODEL_DIR: ${{ runner.temp }}/model
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M37 external-pretrain LM (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              v=$(jq -r .version "$MODEL_DIR/config.json")
+              [[ "$v" =~ ^[A-Za-z0-9._-]+$ && "$v" != "." && "$v" != ".." ]] || { echo "landing refused: bad version"; exit 1; }
+              if [ -n "$(find "$MODEL_DIR" -type l)" ]; then echo "landing refused: symlink in model dir"; exit 1; fi
+              d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp -P "$MODEL_DIR"/* "$d"/
+              git -C "$RESULTS_DIR" add -A
+              staged=$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames) || exit 1
+              prefix="models/lm/$v/"
+              while IFS= read -r name; do
+                [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi
+              done <<< "$staged"'
+          rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/work"
