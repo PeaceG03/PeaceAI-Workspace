@@ -1,0 +1,109 @@
+name: corpus-checks
+
+# Checks only. workflow_dispatch, no push or pull_request trigger, so nothing here trains.
+# Checks out the ref that was dispatched (the Actions default is main) and rebuilds that ref's
+# external corpus with ext-fetch. The manifest is pinned to the combined sha of
+# peaceai/model/ext-manifest/index.json on main (fe8c4da / current main). Fetch is anonymous
+# HTTPS, the same way peace-lm-train fetches, with no token. Whole-corpus ext-memcheck and
+# corefree_proof.py then run against that corpus. PeaceAI core is cloned the same way as
+# leak-check: read-only PEACEAI_CORE_DEPLOY_KEY, peaceai-core environment, outside the
+# workspace, deleted before any upload. No Results write, no promotion, no training step.
+# Logs are counts only. The memcheck JSON and the core-free proof are artifacts, never commits.
+# Every step that uses DEPLOY_KEY is preceded by a check that the checkout is GITHUB_SHA, unmodified,
+# and the scripts that touch the key match the pins below (the same guard as peace-lm-train-m49.yml).
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: corpus-checks
+  cancel-in-progress: false
+
+env:
+  # Pinned hashes of the only scripts that ever touch DEPLOY_KEY. with-deploy-key.sh is the same pin as peace-lm-train-m49.yml.
+  LANDING_SHA256: |-
+    bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    7e2650ddd67247f4a45a0968409e448fa00d3a66ee1acc9409c8c29aab018754  peaceai/bin/clone-core.sh
+
+jobs:
+  checks:
+    name: corpus memcheck and core-free proof
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: peaceai-core
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the dispatched ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Whole-corpus memcheck (counts only)
+        env:
+          PEACEAI_CORE_DIR: ${{ runner.temp }}/peaceai-core
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/checks"
+          # Drop the committed record first so a crash cannot upload a stale PASS.
+          rm -f peaceai/model/ext-memcheck.json
+          set +e
+          ./node_modules/.bin/tsx peaceai/bin/ext-memcheck.ts "$RUNNER_TEMP/corpus"
+          rc=$?
+          set -e
+          if [ -f peaceai/model/ext-memcheck.json ]; then
+            cp peaceai/model/ext-memcheck.json "$RUNNER_TEMP/checks/ext-memcheck.json"
+          fi
+          git checkout -q -- peaceai/model/ext-memcheck.json
+          test "$rc" -eq 0
+          test -f "$RUNNER_TEMP/checks/ext-memcheck.json"
+          test "$(jq -r .status "$RUNNER_TEMP/checks/ext-memcheck.json")" = PASS
+          test "$(jq -r .manifestSha256 "$RUNNER_TEMP/checks/ext-memcheck.json")" = d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+      - name: Core-free proof (counts only; fail unless PROVEN)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/proof-model" "$RUNNER_TEMP/checks"
+          printf '%s\n' '{"version":"corpus-check"}' > "$RUNNER_TEMP/proof-model/config.json"
+          python3 peaceai/model/corefree_proof.py --corpus "$RUNNER_TEMP/corpus" --core-dir "$RUNNER_TEMP/peaceai-core" --model "$RUNNER_TEMP/proof-model"
+          cp "$RUNNER_TEMP/proof-model/corefree-proof.json" "$RUNNER_TEMP/checks/corefree-proof.json"
+          rm -rf "$RUNNER_TEMP/proof-model"
+          test "$(jq -r .noCoreFiles "$RUNNER_TEMP/checks/corefree-proof.json")" = PROVEN
+      - name: Delete core and the fetched corpus
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/proof-model"
+      - name: Upload memcheck JSON
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ext-memcheck
+          path: ${{ runner.temp }}/checks/ext-memcheck.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload core-free proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: corefree-proof
+          path: ${{ runner.temp }}/checks/corefree-proof.json
+          if-no-files-found: error
+          retention-days: 14
