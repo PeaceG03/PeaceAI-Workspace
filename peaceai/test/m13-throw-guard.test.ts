@@ -129,8 +129,8 @@ test("engine refusals: unsafe condition, unknown names, non-exported/ambiguous f
   no(T("value > (() => 1)()"));
   no(T("`${value}` === \"1\""));
   no(T("value?.toString === undefined"));
-  // Issue cleaning strips ">": the damaged condition is refused, never misread.
-  for (const c of ["value > 1", "value >= 1"]) assert.equal(applyRule(spec(), cleanIssueText({ title: "t", body: T(c) }), files()), null, c);
+  // M46: issue cleaning keeps ">" and ">=", so the condition survives intact (it used to be refused as damaged).
+  for (const c of ["value > 1", "value >= 1"]) assert.ok(applyRule(spec(), cleanIssueText({ title: "t", body: T(c) }), files())?.content.includes(`if (${c}) throw new Error("X_CODE");`), c);
   no(T("value > 1", "- `scale(1, 2)` throws OTHER"), LIB); // test must trip the same code
   no(T("value > 1", "- `scale(1, 2)` is 2"), LIB); // no trip call
   no(T("value > 1", "- `hidden(1)` throws X_CODE"), LIB); // test root must be the guarded function
