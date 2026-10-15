@@ -185,7 +185,9 @@ test("M3 peace-task: source from pick time, ranker variable to Job C only, zero-
   assert.match(jobC, /TASK_SOURCE: \$\{\{ needs\.select\.outputs\.source \}\}/);
   assert.match(jobC, /PEACEAI_RANKER: \$\{\{ vars\.PEACEAI_RANKER \}\}/);
   assert.equal((wf.match(/vars\.PEACEAI_RANKER/g) ?? []).length, 1);
-  assert.match(wf, /no candidates generated for this task/);
+  // M59: the zero-candidate text moved to lib/refusal-reason.ts (posted via bin/no-candidate-comment.ts).
+  assert.match(wf, /peaceai\/bin\/no-candidate-comment\.ts/);
+  assert.match(readFileSync(new URL("../lib/refusal-reason.ts", import.meta.url), "utf8"), /no candidates generated for this task/);
   assert.match(wf, /NO_CANDIDATES: \$\{\{ needs\.generate\.result == 'success' && needs\.generate\.outputs\.candidates == '0'/);
 });
 

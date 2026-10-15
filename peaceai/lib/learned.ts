@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
-import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB } from "./learned-guard.ts";
+import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refusal } from "./learned-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
@@ -268,7 +268,7 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
 }
 
 /** Runs one rule against the objective. Null when the trigger does not match or the edit is not unique. */
-export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string): LearnedEdit | null {
+export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {
   if (spec.kind === "ADD_TEST_CASE") {
     try {
       const task = parseTestTask(spec.trigger, objective);
@@ -279,8 +279,9 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   }
   if (spec.kind === "ADD_THROW_GUARD") {
     try {
-      return applyGuardRule(spec.trigger, spec.params, objective, files, isTest);
+      return applyGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
     } catch {
+      if (why) why.reason = "internal_error";
       return null;
     }
   }

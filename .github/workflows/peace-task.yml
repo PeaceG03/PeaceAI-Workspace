@@ -157,6 +157,8 @@ jobs:
       nl: ${{ steps.generate.outputs.nl }}
       nl_reason: ${{ steps.generate.outputs.nl_reason }}
       nl_hint: ${{ steps.generate.outputs.nl_hint }}
+      # M59: why each matching approved rule refused (rule ids and reason codes only; lib/refusal-reason.ts).
+      rule_refusals: ${{ steps.generate.outputs.rule_refusals }}
     env:
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
       PEACEAI_TARGET: ${{ needs.select.outputs.target }}
@@ -507,6 +509,7 @@ jobs:
       NO_CANDIDATES: ${{ needs.generate.result == 'success' && needs.generate.outputs.candidates == '0' && needs.record.result == 'success' }}
       NL_REASON: ${{ needs.generate.outputs.nl == 'unsure' && needs.generate.outputs.nl_reason || '' }}
       NL_HINT: ${{ needs.generate.outputs.nl_hint }}
+      RULE_REFUSALS: ${{ needs.generate.outputs.rule_refusals }}
       FAILED_STAGE: >-
         ${{ needs.generate.result != 'success' && 'generation or the leak/scope gate' ||
             (needs.test.result == 'failure' || needs.test.result == 'cancelled') && 'testing' ||
@@ -518,7 +521,7 @@ jobs:
           if [ "$NO_CANDIDATES" = "true" ]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:failed --remove-label peaceai:running >/dev/null
             # M10: an unsure parse gets the phrasing list instead (posted below, after the leak check).
-            [ -n "$NL_REASON" ] || gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry."
+            # M59: otherwise the no-candidate comment (with the rules' refusal reasons) is posted below.
           elif [ "$REVIEW_RESULT" = "success" ]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label peaceai:done --remove-label peaceai:running >/dev/null
           else
@@ -533,6 +536,11 @@ jobs:
           node-version: 22
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Say why no candidate was made (rule ids and reason codes only)
+        if: env.NL_REASON == '' && env.NO_CANDIDATES == 'true'
+        run: |
+          PEACEAI_BODY_FILE="$RUNNER_TEMP/no-candidate.md" ./node_modules/.bin/tsx peaceai/bin/no-candidate-comment.ts
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/no-candidate.md"
       - name: Say the parser was unsure, with the supported phrasings (fixed text; leak-checked)
         if: env.NL_REASON != '' && env.NO_CANDIDATES == 'true'
         run: |

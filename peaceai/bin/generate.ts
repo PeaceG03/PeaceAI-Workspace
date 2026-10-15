@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
 import { applyRule, specHash } from "../lib/learned.ts";
+import { formatRefusals, type RuleRefusal } from "../lib/refusal-reason.ts";
 import { safeNewModuleOnDisk } from "../lib/learned-function.ts";
 import { acceptFill, applyFill, fillOptions, parseFillTask } from "../lib/fill.ts";
 import { lmFlags } from "../lib/lm.ts";
@@ -252,14 +253,16 @@ outer: for (const variant of planSteps ? [] : variants) {
 // only when the hash-pinned approved list names its id with the exact content hash; anything else, or a
 // missing/corrupt list, refuses it (no candidate). The list path is fixed except for local tests.
 let learnedCandidates = 0;
+const ruleRefusals: RuleRefusal[] = []; // M59: why each matching approved rule made no candidate
 for (const a of planSteps ? [] : admissions) {
   if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
   // M19: a workflow-step rule also sees the opted-in workflow files, package.json and the lockfile names.
   const workflowFiles = a.spec.kind === "ADD_WORKFLOW_STEP"
     ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json" || (/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(p) && !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile())).map((p) => ({ path: p, content: "" }))]
     : [];
-  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target);
-  if (!edit) continue;
+  const why: { reason?: string } = {};
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why);
+  if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
   const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
@@ -293,6 +296,9 @@ for (const a of planSteps ? [] : admissions) {
 }
 const refused = admissions.filter((a) => a.decision !== "APPROVED").map((a) => `${a.id}:${a.decision}`);
 console.log(`learned rules=${admissions.length} approved=${admissions.length - refused.length} candidates=${learnedCandidates}${refused.length ? ` refused=${refused.join(",")}` : ""}`);
+const refusalLine = learnedCandidates === 0 ? formatRefusals(ruleRefusals) : "";
+if (refusalLine) console.log(`learned refusals: ${refusalLine}`);
+writeOutput({ rule_refusals: refusalLine });
 // M9: template gap fill (flag PEACEAI_LM_FILL, off by default). The lm-fill job chose a value among the
 // template's options; it is accepted only if it is one of the options derived here from the same target.
 // The candidate is then gated, scoped, tested and repaired like any other. Never uses learned rules.
