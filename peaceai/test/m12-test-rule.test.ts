@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", ".github/workflows/corpus-checks.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "63177bc120e2080bc0fa6b0186165bc76679eb43bbf1c90669b21bd9150bd81f"; // merge of main after #197 (M58) + M62 METHOD_GUARD learned wiring
+const PROTECTED_DIGEST = "63177bc120e2080bc0fa6b0186165bc76679eb43bbf1c90669b21bd9150bd81f"; // matches main after M62 (skill-learner entry removed from this PR)
