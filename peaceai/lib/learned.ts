@@ -296,7 +296,7 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
 export function pathExistsIn(repo: string, tracked: readonly string[]): (path: string) => boolean {
   const all = new Set(tracked);
   // lstat, not exists: a dangling symlink at the path still occupies it (existsSync follows links and says no).
-  const onDisk = (path: string) => { try { lstatSync(join(repo, path)); return true; } catch { return false; } };
+  const onDisk = (path: string) => { try { lstatSync(join(repo, path)); return true; } catch (e) { return (e as NodeJS.ErrnoException).code !== "ENOENT"; } }; // only a clean ENOENT means free (fail closed)
   return (path) => all.has(path) || onDisk(path);
 }
 

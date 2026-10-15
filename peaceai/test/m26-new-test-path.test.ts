@@ -63,3 +63,14 @@ test("a broken symlink at the new test path counts as existing (lstat, not exist
   assert.equal(applyRule(s, c.objective, files, isTest, undefined, why, pathExistsIn(dir, [])), null);
   assert.equal(why.reason, "new_test_path_exists");
 });
+
+test("a non-ENOENT lstat error counts as existing (fail closed): a path under a regular file is ENOTDIR", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m26-ntp-enotdir-"));
+  writeFileSync(join(dir, "src"), "a regular file, not a directory\n");
+  assert.equal(pathExistsIn(dir, [])("src/a.foo-0000000.test.ts"), true);
+  assert.equal(pathExistsIn(dir, [])("other/a.test.ts"), false, "plain ENOENT stays free");
+  const s = spec("public-complex-function-v1");
+  const why: { reason?: string } = {};
+  assert.equal(applyRule(s, CASES[0]!.objective, files, isTest, undefined, why, pathExistsIn(dir, [])), null);
+  assert.equal(why.reason, "new_test_path_exists");
+});
