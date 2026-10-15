@@ -1,0 +1,164 @@
+{
+ "schema": "peaceai-m45-evidence:v2",
+ "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 6000 per repo; shallow clones deepened to about 6000), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts. M56 (Architect a2): plus full histories of the example-only repos in peaceai/rules/proposals/m45-example-repos.json (licenses checked the same way; turborepo and nuxt not mined). M56 real-file check: every IMPORT_EDIT example was also replayed on the real before/after file at its commit; storybook b2773f72 was dropped (the import moved as well as changed, so more than one import changed). M57: every example is replayed on its real before/after file, committed as a fixture under peaceai/test/fixtures/m45 and pinned by git blob id (with each repo's LICENSE); all 5 PACKAGE_SCRIPT examples failed there and were dropped.",
+ "families": {
+  "IMPORT_EDIT": [
+   {
+    "repo": "denoland/std",
+    "commit": "37de78e337e2640220a022fb4760dcf9a6387b92",
+    "path": "path/extname.ts",
+    "before": "import { extname as windowsExtname } from \"./posix/extname.ts\";",
+    "after": "import { extname as windowsExtname } from \"./windows/extname.ts\";",
+    "repoFiles": [
+     "path/windows/extname.ts",
+     "path/windows/extname.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
+    "origin": "external",
+    "beforeBlob": "697795dd00e2376fefb630a9dba10c397e552243",
+    "beforeFixture": "denoland__std-37de78e337e2.before.txt",
+    "afterBlob": "77917f63261dfdefd8cc23534b03f676948645bd",
+    "afterFixture": "denoland__std-37de78e337e2.after.txt"
+   },
+   {
+    "repo": "denoland/std",
+    "commit": "7286baa1a5973d9dd0d18182aeb731d246a8cd5a",
+    "path": "path/glob.ts",
+    "before": "import { isGlob as _isGlob } from \"./_common/is_glob.ts\";",
+    "after": "import { isGlob as _isGlob } from \"./is_glob.ts\";",
+    "repoFiles": [
+     "path/is_glob.ts",
+     "path/is_glob.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
+    "origin": "external",
+    "beforeBlob": "a785423505e6b82feb667e808e9337be170c1be6",
+    "beforeFixture": "denoland__std-7286baa1a597.before.txt",
+    "afterBlob": "a5ce43e10889359a68cd2f210e223f5296d2e9ef",
+    "afterFixture": "denoland__std-7286baa1a597.after.txt"
+   },
+   {
+    "repo": "reduxjs/redux-toolkit",
+    "commit": "653803ee1dc8f0a9a7c46f3568871c6f959680d6",
+    "path": "packages/toolkit/src/entities/models.ts",
+    "before": "import type { UncheckedIndexedAccess } from '../uncheckedindexed'",
+    "after": "import type { UncheckedIndexedAccess } from '../uncheckedindexed.js'",
+    "repoFiles": [
+     "packages/toolkit/src/uncheckedindexed.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "d7a7667d33abd427a7c05cf15c4698db60e7c29286b9c1660165ac6f58f7c8c6",
+    "origin": "external",
+    "beforeBlob": "7837d85202e52872accf452ef142f8fe41b1d56b",
+    "beforeFixture": "reduxjs__redux-toolkit-653803ee1dc8.before.txt",
+    "afterBlob": "92d00fafc6487635b1cdb992a846ce3ce2b0e9a6",
+    "afterFixture": "reduxjs__redux-toolkit-653803ee1dc8.after.txt"
+   },
+   {
+    "repo": "vitejs/vite",
+    "commit": "0a3c1dd20976bdbcaaf9ed46e85c417952b78e95",
+    "path": "docs/.vitepress/config.ts",
+    "before": "import { buildEnd } from './buildEnd.config'",
+    "after": "import { buildEnd } from './buildEnd.config.ts'",
+    "repoFiles": [
+     "docs/.vitepress/buildEnd.config.ts",
+     "docs/.vitepress/buildEnd.config.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "e824161e0aab3814aca1883bd7058e67034d25fce254e6629495e78d3f8a53c3",
+    "origin": "external",
+    "beforeBlob": "f0e7da8131163adb663381f46d4ef05cf42eff1a",
+    "beforeFixture": "vitejs__vite-0a3c1dd20976.before.txt",
+    "afterBlob": "df6405e2532e9103b28b1b228c92466127bb4dac",
+    "afterFixture": "vitejs__vite-0a3c1dd20976.after.txt"
+   },
+   {
+    "repo": "storybookjs/storybook",
+    "commit": "35cf3370fa21b7aa35b0a1128c64b27241e9209d",
+    "path": "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.stories.ts",
+    "before": "import { PlainButton } from './PlainButton';",
+    "after": "import { PlainButton } from './PlainButton.ts';",
+    "repoFiles": [
+     "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.ts",
+     "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+    "origin": "external",
+    "beforeBlob": "07911c6bccb47da84b217bbccb9507bfde5a903f",
+    "beforeFixture": "storybookjs__storybook-35cf3370fa21.before.txt",
+    "afterBlob": "2282648a1eb8772d03669da74f335e4f8b8b0226",
+    "afterFixture": "storybookjs__storybook-35cf3370fa21.after.txt"
+   },
+   {
+    "repo": "storybookjs/storybook",
+    "commit": "85690eb5193d8b87505a11ad6d958b2d061e07f7",
+    "path": "code/lib/test/template/stories/utils.mock.ts",
+    "before": "import * as utils from './utils';",
+    "after": "import * as utils from './utils.ts';",
+    "repoFiles": [
+     "code/lib/test/template/stories/utils.ts",
+     "code/lib/test/template/stories/utils.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+    "origin": "external",
+    "beforeBlob": "80fac1f308f230d2fea2f5018d4916f4b7ec7ca9",
+    "beforeFixture": "storybookjs__storybook-85690eb5193d.before.txt",
+    "afterBlob": "bd3955dc072961f2e277059f2b33fd792df6f9bf",
+    "afterFixture": "storybookjs__storybook-85690eb5193d.after.txt"
+   }
+  ],
+  "PACKAGE_SCRIPT": []
+ },
+ "minedCandidates": {
+  "IMPORT_EDIT": 139,
+  "PACKAGE_SCRIPT": 24
+ },
+ "bar": 10,
+ "notQualifying": {
+  "METHOD_CALL_GUARD": {
+   "external": 0,
+   "peaceCommits": 2
+  },
+  "GUARD_TOP (throw-guard v2 placement)": {
+   "note": "superseded: the corpus AST scan finds 11 (see #172); the 0 came from a diff-hunk detector bug"
+  }
+ },
+ "droppedOnRealFiles": {
+  "PACKAGE_SCRIPT": [
+   {
+    "repo": "apollographql/apollo-client",
+    "commit": "f0bb56c821e4c9431b57f2ace7637ee9fb4b403e",
+    "name": "format",
+    "why": "formatting or key order changed (the real commit inserts the script mid-object; v1 only accepts it appended last)"
+   },
+   {
+    "repo": "honojs/hono",
+    "commit": "fb0b9d42a31da027d81b50dbefac1a56e845395b",
+    "name": "test:watch",
+    "why": "formatting or key order changed (the real commit inserts the script mid-object; v1 only accepts it appended last)"
+   },
+   {
+    "repo": "immerjs/immer",
+    "commit": "83a10ef22f600e471c20d844ee526b2d67f34b2d",
+    "name": "watch",
+    "why": "formatting or key order changed (the real commit inserts the script mid-object; v1 only accepts it appended last)"
+   },
+   {
+    "repo": "sinonjs/sinon",
+    "commit": "c7848c94b6f1c964209bf217310fff67de7658f2",
+    "name": "prettier",
+    "why": "formatting or key order changed (the real commit inserts the script mid-object; v1 only accepts it appended last)"
+   },
+   {
+    "repo": "vitejs/vite-plugin-react",
+    "commit": "d21ddd2f1609106ed1b599ebb6e7c0bb74e6c8c4",
+    "name": "format",
+    "why": "formatting or key order changed (the real commit inserts the script mid-object; v1 only accepts it appended last)"
+   }
+  ]
+ }
+}

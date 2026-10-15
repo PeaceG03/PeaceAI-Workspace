@@ -1,0 +1,101 @@
+{
+ "schema": "peaceai-m45-example-repos:v1",
+ "note": "Example-only repositories (Architect option a2, M56): licensed external TS/JS repos used ONLY as evidence for proposal check kinds. Never part of the training corpus, set C or the manifest (m45-config-kinds.test.ts enforces this). Each pinned at a commit whose root LICENSE classifies as the pinned SPDX id with the pinned sha256 (trimmed text, as ext-corpus.ts). vercel/turborepo and nuxt/nuxt are listed but not mined (they would rank into set C if ever added to the corpus).",
+ "notMined": [
+  "nuxt/nuxt",
+  "vercel/turborepo"
+ ],
+ "repos": [
+  {
+   "name": "changesets/changesets",
+   "commit": "c73949ba7b3160a4aa5729223335c190de1528f8",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "3798c20e716c93f416ee2b413ac9d6e818718a90862e194ab09e96938ce8b93b"
+  },
+  {
+   "name": "egoist/tsup",
+   "commit": "198479b814f5981032dc0b7cd52c4b9e4b699ac3",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "40c971bbdc1cf1062ed14b1a04a86b42893b5fd200ff8ca5750fb955aa935dfd"
+  },
+  {
+   "name": "lerna/lerna",
+   "commit": "b00fa0321a42947bb4113bc7906021f04131d0db",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "9ed1ed1cf21f03cf71526c2ecb8b6f08ee8845b607bd93ff0f278053e103d905"
+  },
+  {
+   "name": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+  },
+  {
+   "name": "nuxt/nuxt",
+   "commit": "4caed0f26ff819455b16d2651efba24dcbf74500",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "1480ee256075bedfbeedbb6977ad1b110dc2e23a469c4506b88696a37d73b4e5"
+  },
+  {
+   "name": "oclif/core",
+   "commit": "b5c0aefa2c68c921a5c85eadd12fce097ddc33d1",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+  },
+  {
+   "name": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "name": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0"
+  },
+  {
+   "name": "typescript-eslint/typescript-eslint",
+   "commit": "c1a9d608c8cc2ce50432adebf0603f69310263f9",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "b263be8715c216f35fcb4e1cf2c748d9637e7e9ef7d2ee4bf6c49d2ae092afea"
+  },
+  {
+   "name": "unjs/nitro",
+   "commit": "9d34a3c1ae5f798209d0b7c9f18a5c8e0cbe739d",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "c22224b86658680f267dd515e962e36573c9dee6cfc1e5bd88c6edeed66bf32b"
+  },
+  {
+   "name": "unjs/unbuild",
+   "commit": "cf1c30333df2d6b19e6208f67157024975bdba82",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94"
+  },
+  {
+   "name": "vercel/turborepo",
+   "commit": "d5aeac9b216d691e5f00938f0915794932f0ff93",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "5dc290672d78272bb5c3d8a131855fc350fd3c2779e538d3ae3accbd50e974b0"
+  },
+  {
+   "name": "vitejs/vite-plugin-react",
+   "commit": "2e8512f98a4fc1b302af760c9d41900c2fa66d0a",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "f77a743a6b87e3bd1435953073f446de1b8d0da0ff24e17d1194e1b749333d27"
+  }
+ ]
+}
