@@ -1,0 +1,19 @@
+{
+ "id": "public-package-script-v1",
+ "kind": "PACKAGE_SCRIPT",
+ "status": "proposal-off",
+ "flag": "PEACEAI_PACKAGE_SCRIPT",
+ "spec": "peaceai/spec/package-script-v1.md",
+ "engine": "peaceai/lib/learned-config.ts",
+ "evidence": {
+  "examples": 12,
+  "commits": 12,
+  "repos": [
+   "apollographql/apollo-client",
+   "babel/babel",
+   "chaijs/chai",
+   "colinhacks/zod"
+  ],
+  "origin": "external-licensed"
+ }
+}
