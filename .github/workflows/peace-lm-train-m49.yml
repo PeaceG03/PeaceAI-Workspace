@@ -1,0 +1,292 @@
+name: peace-lm-train-m49
+
+# M49 (Architect-approved plan): chained pretrain (3 resumed parts, each under the 4 h train cap), then a fine-tune
+# stage on Peace-authored function-body pairs, then evals (set C v2 loss per byte, set A/B task success, set C v2 task
+# success on the #176 tasks graded by #177). Free GitHub-hosted runners only. Nothing about the model reaches this
+# public repository: no artifacts, no caches, counts-only logs. Between parts the work dir (weights + optimizer state)
+# moves only through the private Results repo (runs/lm-work/<run id>/part-N/, append-only, nothing deleted). The final
+# model lands in Results without latest.json, so every loader refuses it until the box memcheck passes. No promotion.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-lm-train
+  cancel-in-progress: false
+
+env:
+  CFG: peaceai/model/ext-train-m49.json
+
+jobs:
+  pretrain-1:
+    name: pretrain part 1
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus"
+      - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain
+      - name: Train this part (resumes; stops at the part's step budget or the 4 h cap)
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"; m() { jq -r ".model.$1" "$CFG"; }
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
+            --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
+            --steps "$(m steps)" --max-steps-this-run "$(jq -r .chain.stepsPerPart "$CFG")" --eval-every 50 --patience 4 --threads 4 \
+            --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+      - name: Save the work dir to Results (append-only; chunks under 100 MB, sha256-listed)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          WORK: ${{ runner.temp }}/work
+          PART: "1"
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M49 LM work dir part $PART (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              d="$RESULTS_DIR/runs/lm-work/$GITHUB_RUN_ID/part-$PART"; test ! -e "$d"; mkdir -p "$d"
+              tar -c -C "$WORK" . | split -b 90m -d -a 3 - "$d/work.tar.part-"
+              (cd "$d" && sha256sum work.tar.part-* > SHA256SUMS)
+              git -C "$RESULTS_DIR" add -A
+              prefix="runs/lm-work/$GITHUB_RUN_ID/part-$PART/"
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside $prefix"; exit 1; fi
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          rm -rf "$RUNNER_TEMP/work"
+
+  pretrain-2:
+    name: pretrain part 2
+    if: github.ref == 'refs/heads/main'
+    needs: pretrain-1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus"
+      - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain
+      - name: Restore the previous part's work dir from Results (parts 2 and 3)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          prev="runs/lm-work/$GITHUB_RUN_ID/part-1"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/res"
+          git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" checkout --quiet
+          (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
+          mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"
+          rm -rf "$RUNNER_TEMP/res"
+      - name: Train this part (resumes; stops at the part's step budget or the 4 h cap)
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"; m() { jq -r ".model.$1" "$CFG"; }
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
+            --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
+            --steps "$(m steps)" --max-steps-this-run "$(jq -r .chain.stepsPerPart "$CFG")" --eval-every 50 --patience 4 --threads 4 \
+            --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+      - name: Save the work dir to Results (append-only; chunks under 100 MB, sha256-listed)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          WORK: ${{ runner.temp }}/work
+          PART: "2"
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M49 LM work dir part $PART (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              d="$RESULTS_DIR/runs/lm-work/$GITHUB_RUN_ID/part-$PART"; test ! -e "$d"; mkdir -p "$d"
+              tar -c -C "$WORK" . | split -b 90m -d -a 3 - "$d/work.tar.part-"
+              (cd "$d" && sha256sum work.tar.part-* > SHA256SUMS)
+              git -C "$RESULTS_DIR" add -A
+              prefix="runs/lm-work/$GITHUB_RUN_ID/part-$PART/"
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside $prefix"; exit 1; fi
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          rm -rf "$RUNNER_TEMP/work"
+
+  pretrain-3:
+    name: pretrain part 3
+    if: github.ref == 'refs/heads/main'
+    needs: pretrain-2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus"
+      - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain
+      - name: Restore the previous part's work dir from Results (parts 2 and 3)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          prev="runs/lm-work/$GITHUB_RUN_ID/part-2"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/res"
+          git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" checkout --quiet
+          (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
+          mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"
+          rm -rf "$RUNNER_TEMP/res"
+      - name: Train this part (resumes; stops at the part's step budget or the 4 h cap)
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"; m() { jq -r ".model.$1" "$CFG"; }
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
+            --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
+            --steps "$(m steps)" --max-steps-this-run "$(jq -r .chain.stepsPerPart "$CFG")" --eval-every 50 --patience 4 --threads 4 \
+            --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+      - name: Save the work dir to Results (append-only; chunks under 100 MB, sha256-listed)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          WORK: ${{ runner.temp }}/work
+          PART: "3"
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M49 LM work dir part $PART (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              d="$RESULTS_DIR/runs/lm-work/$GITHUB_RUN_ID/part-$PART"; test ! -e "$d"; mkdir -p "$d"
+              tar -c -C "$WORK" . | split -b 90m -d -a 3 - "$d/work.tar.part-"
+              (cd "$d" && sha256sum work.tar.part-* > SHA256SUMS)
+              git -C "$RESULTS_DIR" add -A
+              prefix="runs/lm-work/$GITHUB_RUN_ID/part-$PART/"
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside $prefix"; exit 1; fi
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          rm -rf "$RUNNER_TEMP/work"
+
+  finetune-eval-land:
+    name: fine-tune, evaluate, land (no latest.json)
+    needs: pretrain-3
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Restore pretrain part 3 from Results
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          prev="runs/lm-work/$GITHUB_RUN_ID/part-3"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/res"
+          git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" checkout --quiet
+          (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
+          mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"
+          rm -rf "$RUNNER_TEMP/res"
+      - name: Fine-tune corpus (Peace-authored function-body pairs; A/B, C, #176 and safety-tool content excluded)
+        run: |
+          set -euo pipefail
+          for r in $(jq -r '.finetune.repos[]' "$CFG"); do
+            git clone --quiet --filter=blob:none "https://github.com/$r.git" "$RUNNER_TEMP/peace/${r#*/}"
+            specs+=("$r=$RUNNER_TEMP/peace/${r#*/}@$(git -C "$RUNNER_TEMP/peace/${r#*/}" rev-parse HEAD)")
+          done
+          ./node_modules/.bin/tsx peaceai/bin/ft-pairs.ts "$RUNNER_TEMP/ft" "${specs[@]}"
+      - name: Fine-tune from the pretrain best weights (same tokenizer, fresh optimizer)
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"; m() { jq -r ".model.$1" "$CFG"; }; f() { jq -r ".finetune.$1" "$CFG"; }
+          ck=best.npz; test -f "$RUNNER_TEMP/work/best.npz" || ck=checkpoint.npz
+          mkdir -p "$RUNNER_TEMP/ftwork"; cp "$RUNNER_TEMP/work/tokenizer.json" "$RUNNER_TEMP/ftwork/"
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/ft" --work "$RUNNER_TEMP/ftwork" --init-from "$RUNNER_TEMP/work/$ck" \
+            --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
+            --steps "$(f steps)" --lr "$(f lr)" --warmup "$(f warmup)" --eval-every 25 --patience "$(f patience)" --threads 4 --max-seconds 7200 \
+            > "$RUNNER_TEMP/ft.log" 2>&1 || { echo "fine-tune failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |initialized |best val_loss|stopped )' "$RUNNER_TEMP/ft.log" || true
+          ck=best.npz; test -f "$RUNNER_TEMP/ftwork/best.npz" || ck=checkpoint.npz
+          "$py" peaceai/model/export.py --work "$RUNNER_TEMP/ftwork" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint "$ck" > /dev/null
+          cp "$RUNNER_TEMP/work/metrics.jsonl" "$RUNNER_TEMP/model/train-metrics.jsonl"; cp "$RUNNER_TEMP/ftwork/metrics.jsonl" "$RUNNER_TEMP/model/ft-metrics.jsonl"
+          cp "$RUNNER_TEMP/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
+          rm -rf "$RUNNER_TEMP/work" "$RUNNER_TEMP/ftwork" "$RUNNER_TEMP/ft"
+          jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
+      - name: Evals (NON-FATAL so a trained model is never lost; aggregate counts only)
+        run: |
+          py="$RUNNER_TEMP/venv/bin/python"; M="$RUNNER_TEMP/model"
+          if ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c \
+            && for d in "$RUNNER_TEMP"/csrc/*/; do git -C "$d" checkout -q FETCH_HEAD || exit 1; done \
+            && "$py" peaceai/model/eval_c.py --model "$M" --corpus "$RUNNER_TEMP/setc" --max-bytes 4000000 --threads 4 > "$M/eval-setc-v2.txt"; then cat "$M/eval-setc-v2.txt"; else echo "set C v2 loss eval FAILED (non-fatal)"; fi
+          if "$py" peaceai/model/gen_c.py --model "$M" --ext "$RUNNER_TEMP/csrc" --out "$RUNNER_TEMP/c-pred.jsonl" \
+            && ./node_modules/.bin/tsx peaceai/bin/setc-grade.ts "$RUNNER_TEMP/c-pred.jsonl" "$RUNNER_TEMP/csrc" > "$M/eval-setc-tasks.txt"; then cat "$M/eval-setc-tasks.txt"; else echo "set C task eval FAILED (non-fatal)"; fi
+          ok=1; for r in PeaceAI-Workspace PeaceSTOCKS; do
+            git clone --quiet "https://github.com/PeaceG03/$r.git" "$RUNNER_TEMP/ab/$r" && (cd "$RUNNER_TEMP/ab/$r" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error) || ok=0
+          done
+          if [ $ok = 1 ] && "$py" peaceai/model/eval_ab.py --model "$M" --clones "$RUNNER_TEMP/ab" --node "$(command -v node)" --tsc "$PWD/node_modules/typescript" > "$M/eval-ab.txt"; then cat "$M/eval-ab.txt"; else echo "set A/B task eval FAILED (non-fatal)"; fi
+          rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" "$RUNNER_TEMP/ab" "$RUNNER_TEMP/c-pred.jsonl"
+          exit 0
+      - name: Land the model in Results only (no latest.json; refused until memcheck PASS; no promotion)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          MODEL_DIR: ${{ runner.temp }}/model
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M49 LM pretrain+finetune (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              v=$(jq -r .version "$MODEL_DIR/config.json")
+              [[ "$v" =~ ^[A-Za-z0-9._-]+$ && "$v" != "." && "$v" != ".." ]] || { echo "landing refused: bad version"; exit 1; }
+              if [ -n "$(find "$MODEL_DIR" -type l)" ]; then echo "landing refused: symlink in model dir"; exit 1; fi
+              d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp -P "$MODEL_DIR"/* "$d"/
+              git -C "$RESULTS_DIR" add -A
+              prefix="models/lm/$v/"
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          rm -rf "$RUNNER_TEMP/model"

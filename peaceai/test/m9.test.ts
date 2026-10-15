@@ -422,6 +422,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
+const LM_TRAIN_M49_WORKFLOW_SHA256 = "e92e31a7eff45b4ad8adb7fa72e284a2b84ec4ca1fa7754b319355559e335af5"; // M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
 const LM_TRAIN_WORKFLOW_SHA256 = "b3782f9f17df12980487148edd3507e0e41521b38ee3b0afa1b2e404a1c7d131"; // M38: set C v2 eval non-fatal (Auditor, run 38622524096)
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
@@ -446,6 +447,15 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
       assert.match(text, /peaceai\/bin\/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus"\n/);
       assert.match(text, /peaceai\/bin\/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain\n/);
       assert.ok(!/lm-memcheck\.ts|upload-artifact|pull_request|schedule:|push:/.test(text), f);
+      continue;
+    }
+    if (f === "peace-lm-train-m49.yml") {
+      // M49: the second training exemption, pinned to the exact reviewed file; m49-lm-workflow.test.ts pins its shape.
+      assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), LM_TRAIN_M49_WORKFLOW_SHA256, "peace-lm-train-m49.yml changed: re-review and re-pin");
+      assert.match(text, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m);
+      assert.equal((text.match(/^on:/gm) ?? []).length, 1);
+      assert.equal((text.match(/persist-credentials: false/g) ?? []).length, (text.match(/actions\/checkout@/g) ?? []).length);
+      assert.ok(!/lm-memcheck\.ts|lm-corpus\.ts|upload-artifact|actions\/cache|pull_request|schedule:|push:/.test(text), f);
       continue;
     }
     assert.ok(!/model\/train\.py|model\/export\.py|lm-corpus\.ts|lm-memcheck\.ts/.test(text), `${f} must not train`);
