@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { importEditEnabled, importEditProblem, packageScriptEnabled, packageScriptProblem } from "../lib/learned-config.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -104,11 +104,12 @@ const FIXTURE_MAX_BYTES = 65536;
 
 test("M57 L5: every recorded example replays through the engine on the REAL before/after files (fixtures pinned by git blob id)", () => {
   const lic = new Map([...JSON.parse(read("peaceai/model/ext-corpus.json")).repos, ...XR.repos].map((r: { name: string; licenseSha256: string }) => [r.name, r.licenseSha256]));
-  type Ex = { repo: string; path: string; beforeBlob: string; afterBlob: string; beforeFixture: string; afterFixture: string };
+  type Ex = { licenseSha256: string; repo: string; path: string; beforeBlob: string; afterBlob: string; beforeFixture: string; afterFixture: string };
   const all = [...EV.families.IMPORT_EDIT, ...EV.families.PACKAGE_SCRIPT] as Ex[];
   for (const x of all) {
-    const l = readFileSync(join(repo, FIX + x.repo.replace("/", "__") + ".LICENSE.txt"), "utf8").trim();
-    assert.equal(createHash("sha256").update(l).digest("hex"), lic.get(x.repo), `${x.repo}: license fixture`);
+    // LICENSE texts are not committed (they carry contact emails); each example pins its repo's license by sha256 only.
+    assert.equal(x.licenseSha256, lic.get(x.repo), `${x.repo}: license sha256 pin`);
+    assert.ok(!existsSync(join(repo, FIX + x.repo.replace("/", "__") + ".LICENSE.txt")), `${x.repo}: no committed LICENSE text`);
     for (const f of [x.beforeFixture, x.afterFixture]) assert.match(f, /^[\w.-]+-[0-9a-f]{12}\.(before|after)\.txt$/);
   }
   for (const x of EV.families.IMPORT_EDIT as (Ex & { after: string; repoFiles: string[] })[])
@@ -207,7 +208,7 @@ test("refusal count is what the PR states", () => {
 const REFUSALS_STATED = 90; // 18 IMPORT_EDIT + 72 PACKAGE_SCRIPT
 
 test("engine, specs and this test are protected; specs pinned", () => {
-  for (const p of ["peaceai/lib/learned-config.ts", "peaceai/spec/import-edit-v1.md", "peaceai/spec/package-script-v1.md", "peaceai/test/m45-config-kinds.test.ts", "peaceai/rules/proposals/m45-evidence.json", "peaceai/test/fixtures/m45/storybookjs__storybook.LICENSE.txt"])
+  for (const p of ["peaceai/lib/learned-config.ts", "peaceai/spec/import-edit-v1.md", "peaceai/spec/package-script-v1.md", "peaceai/test/m45-config-kinds.test.ts", "peaceai/rules/proposals/m45-evidence.json"])
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   const h = (p: string) => createHash("sha256").update(read(p)).digest("hex");
   assert.equal(h("peaceai/spec/import-edit-v1.md"), IMPORT_SPEC_SHA);
