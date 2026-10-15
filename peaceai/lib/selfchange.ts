@@ -40,6 +40,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/learned-multibody\.ts$|^peaceai\/spec\/multibody-v1\.md$|^peaceai\/test\/m32-multibody\.test\.ts$/, why: "the multi-line body edit rule, its spec and its proofs (M32)" },
   { pattern: /^peaceai\/spec\/test-dateargs-v1\.md$|^peaceai\/test\/m35-date-args\.test\.ts$/, why: "the Date-argument test-line grammar spec and its proofs (M35)" },
   { pattern: /^peaceai\/lib\/taskmap\.ts$|^peaceai\/test\/m46-issue-text\.test\.ts$/, why: "the issue-text cleaning that feeds every rule trigger, and its proofs (M46)" },
+  { pattern: /^peaceai\/spec\/throw-guard-top-v1\.md$|^peaceai\/test\/m47-guard-top\.test\.ts$/, why: "the throw-guard function-top placement proposal, its spec and proofs (M47)" },
   { pattern: /^peaceai\/lib\/learned-config\.ts$|^peaceai\/spec\/(import-edit|package-script)-v1\.md$|^peaceai\/test\/m45-config-kinds\.test\.ts$/, why: "the IMPORT_EDIT and PACKAGE_SCRIPT proposal kinds, their specs and proofs (M45)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
