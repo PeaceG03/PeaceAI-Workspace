@@ -9,10 +9,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256Hex } from "../lib/heldout.ts";
 import { splitOf } from "../lib/lmcorpus.ts";
-import { EXT_MANIFEST_SCHEMA, manifestRepoProblems, type ExtManifestEntry } from "../lib/extcorpus.ts";
+import { EXT_MANIFEST_SCHEMA, manifestRepoProblems, manifestShaPinProblem, type ExtManifestEntry } from "../lib/extcorpus.ts";
 
 const [work, out] = process.argv.slice(2, 4).map((p) => resolve(p));
-const lines = readFileSync(resolve(import.meta.dirname, "../model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean);
+const manifestBytes = readFileSync(resolve(import.meta.dirname, "../model/ext-manifest.jsonl"));
+const pinProblem = manifestShaPinProblem(process.argv, manifestBytes);
+if (pinProblem) { console.log(`ext-fetch refused: ${pinProblem}`); process.exit(1); }
+const lines = manifestBytes.toString("utf8").split("\n").filter(Boolean);
 // Validate every manifest (and set C) repo name and commit against ^[\w.-]+/[\w.-]+$ and the committed config
 // BEFORE any work dir is created or any fetch runs (Auditor #153).
 const cfgAll = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/ext-corpus.json"), "utf8"));

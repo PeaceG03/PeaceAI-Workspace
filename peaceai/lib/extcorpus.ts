@@ -124,3 +124,14 @@ export function manifestRepoProblems(pairs: readonly { repo: string; commit: str
   }
   return [...new Set(out)];
 }
+
+// Auditor #178: `--manifest-sha <hex>` pins the committed ext-manifest.jsonl bytes. Fail closed: a flag with no value,
+// a non-hex value, or a hash that differs from the manifest is a problem. Absent flag: no pin (M37 workflow).
+export function manifestShaPinProblem(argv: readonly string[], manifestBytes: Uint8Array): string | null {
+  const i = argv.indexOf("--manifest-sha");
+  if (i < 0) return null;
+  const want = argv[i + 1] ?? "";
+  if (!/^[0-9a-f]{64}$/.test(want)) return "--manifest-sha needs a 64-hex sha256";
+  const got = createHash("sha256").update(manifestBytes).digest("hex");
+  return got === want ? null : `manifest sha256 ${got} != pinned ${want}`;
+}

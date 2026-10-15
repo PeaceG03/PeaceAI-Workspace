@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { FT_AUTHOR, FT_SOURCE_LABEL, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
-import { isSafetyToolFile } from "../lib/extcorpus.ts";
+import { isSafetyToolFile, manifestShaPinProblem } from "../lib/extcorpus.ts";
 const repo = join(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(join(repo, p), "utf8");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -157,4 +157,48 @@ test("workflow (M52, Architect (a)): both manifest shas the model trained on lan
   assert.match(ftStep, /\.trainedOn = \{pretrainManifestSha256: \$p, finetuneManifestSha256: \$f\}/);
   assert.match(ftStep, /manifest sha missing: refused/);
   assert.ok(ftStep.indexOf("trainedOn") < ftStep.indexOf("jq -r '\"model"), "written before the model is reported/landed");
+});
+
+const PIN = "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e";
+test("Auditor #178: every ext-fetch and ext-manifest-check step pins --manifest-sha; repoCapBytes 11 MB", () => {
+  const WF = read(".github/workflows/peace-lm-train-m49.yml");
+  const fetches = WF.match(/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus"[^\n]*/g) ?? [];
+  const checks = WF.match(/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain[^\n]*/g) ?? [];
+  assert.equal(fetches.length, 3); assert.equal(checks.length, 3);
+  for (const l of [...fetches, ...checks]) assert.ok(l.endsWith(` --manifest-sha ${PIN}`), l);
+  assert.equal(JSON.parse(read("peaceai/model/ext-train-m49.json")).corpus.repoCapBytes, 11000000);
+});
+
+test("Auditor #178: --manifest-sha is fail-closed (missing, malformed or mismatched value refuses)", () => {
+  const b = Buffer.from("x\n"), h = sha("x\n");
+  assert.equal(manifestShaPinProblem(["a", "b"], b), null);
+  assert.equal(manifestShaPinProblem(["--manifest-sha", h], b), null);
+  assert.match(manifestShaPinProblem(["--manifest-sha"], b)!, /64-hex/);
+  assert.match(manifestShaPinProblem(["--manifest-sha", "ZZ"], b)!, /64-hex/);
+  assert.match(manifestShaPinProblem(["--manifest-sha", "0".repeat(64)], b)!, /!= pinned/);
+  for (const f of ["peaceai/bin/ext-fetch.ts", "peaceai/bin/ext-manifest-check.ts"]) {
+    const src = read(f); assert.ok(src.indexOf("manifestShaPinProblem(process.argv") > 0 && src.indexOf("manifestShaPinProblem(process.argv") < src.indexOf("extCorpusProblems(") + (f.includes("fetch") ? 1e9 : 0), f);
+  }
+  const r = (() => { try { execFileSync("./node_modules/.bin/tsx", ["peaceai/bin/ext-manifest-check.ts", tmpdir(), "pretrain", "--manifest-sha", "0".repeat(64)], { cwd: repo, encoding: "utf8" }); return 0; } catch (e: any) { return e.status; } })();
+  assert.equal(r, 1, "a wrong pin exits 1 before reading the corpus");
+});
+
+test("Auditor #178: set A/B candidates decompress through a 50 MB cap and an over-cap output is refused", () => {
+  const WF = read(".github/workflows/peace-lm-train-m49.yml");
+  const at = WF.lastIndexOf("\n", WF.indexOf("base64 -d | gunzip")) + 1;
+  const step = WF.slice(at, WF.indexOf("\n", WF.indexOf("\n", at) + 1));
+  assert.match(step, /gunzip \| head -c 50000000 > "\$RUNNER_TEMP\/ab-cands\.jsonl"/);
+  assert.match(step, /stat -c %s "\$RUNNER_TEMP\/ab-cands\.jsonl"\)" -lt 50000000 \] \|\| \{[^}]*refused[^}]*exit 0; \}/);
+  assert.equal((WF.match(/\| gunzip/g) ?? []).length, 1, "no other uncapped gunzip");
+  // Behaviour, with the cap scaled down to 1000 bytes: under passes, a bomb is truncated and refused.
+  const d = mkdtempSync(join(tmpdir(), "m49cap-"));
+  const run = (bytes: number) => {
+    const gz = execFileSync("bash", ["-c", `head -c ${bytes} /dev/zero | gzip | base64 -w0`], { encoding: "utf8" });
+    const sh = step.replaceAll("50000000", "1000").replaceAll("$RUNNER_TEMP", d) + "\necho KEPT";
+    return execFileSync("bash", ["-eo", "pipefail", "-c", sh], { env: { ...process.env, CANDS: gz }, encoding: "utf8" });
+  };
+  assert.match(run(500), /KEPT/);
+  const big = run(1_000_000);
+  assert.ok(!/KEPT/.test(big) && /FAILED|refused/.test(big), big);
+  assert.ok(!existsSync(join(d, "ab-cands.jsonl")) || readFileSync(join(d, "ab-cands.jsonl")).length <= 1000);
 });

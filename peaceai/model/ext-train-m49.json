@@ -5,6 +5,6 @@
  "model": { "d_model": 320, "n_layer": 6, "n_head": 5, "ctx": 1024, "vocab": 8192, "batch": 8, "steps": 2100 },
  "chain": { "parts": 3, "stepsPerPart": 700, "maxSecondsPerPart": 14400 },
  "finetune": { "steps": 300, "lr": 0.0001, "warmup": 10, "patience": 4, "repos": ["PeaceG03/PeaceAI-Workspace", "PeaceG03/PeaceSTOCKS"] },
- "corpus": { "slice": "full licensed pool minus set C v2 and heldout-c-excluded", "repoCapBytes": 12000000, "regen": "on the box: ext-corpus.ts with repoCapBytes, then ext-memcheck.ts; the regenerated manifest + PASS memcheck record land as their own protected PR before any run" },
+ "corpus": { "slice": "full licensed pool minus set C v2 and heldout-c-excluded", "repoCapBytes": 11000000, "regen": "on the box: ext-corpus.ts with repoCapBytes, then ext-memcheck.ts; the regenerated manifest + PASS memcheck record land as their own protected PR before any run" },
  "eval": ["setC-loss-per-byte", "setA-B-task-success", "setC-task-success-#176"]
 }
