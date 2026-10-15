@@ -9,7 +9,8 @@ import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { applyRule } from "../lib/learned.ts";
 import { unknownNames, type Refusal } from "../lib/learned-guard.ts";
 import { nlDecision } from "../lib/nlparse.ts";
-import { cleanRefusals, formatRefusals, noCandidateComment } from "../lib/refusal-reason.ts";
+import { scanText } from "../lib/leak.ts";
+import { cleanRefusals, formatRefusals, NO_CANDIDATE_TEXT, noCandidateComment } from "../lib/refusal-reason.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const dir = join(repo, "peaceai/rules/learned");
@@ -17,10 +18,8 @@ const specs = readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f)
 const approved = admitRules(specs, loadApprovedList(join(repo, "peaceai/rules/approved.json"))).filter((a) => a.decision === "APPROVED" && a.spec).map((a) => a.spec!);
 const kinds = new Set(approved.map((s) => s.kind));
 const isTest = (p: string) => p.endsWith(".test.ts");
-const SECRET_LINE = '  const token = "ghp_DO_NOT_LEAK";';
 const SRC = [
   "export function eligibilityForBarCount(barCount: number): string {",
-  SECRET_LINE,
   '  if (barCount < 1) return "LEVEL_0";',
   '  if (barCount < 20) return "LEVEL_1";',
   '  return "LEVEL_3";',
@@ -67,13 +66,29 @@ test("unknownNames: free names only (no property names, no allowed built-ins), s
   assert.deepEqual(unknownNames(e("a<0||b<0||c<0||d<0||e<0||f<0||g<0"), new Set()), ["a", "b", "c", "d", "e"]);
 });
 
-test("reasons never carry file contents or arbitrary text", () => {
-  for (const cond of ["limit < 0", "eval(barCount)"]) assert.ok(!refusals(cond).line.includes("ghp_"), "no file contents");
+test("reasons never echo secrets typed into the issue condition, or arbitrary text", () => {
+  // Fake credentials typed into the ISSUE CONDITION itself (the only user text a reason can echo).
+  const GHP = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+  const AKIA = "AKIA" + "IOSFODNN7EXAMPLE";
+  const HEX = "deadbeef".repeat(5);
+  const r = refusals(`${GHP} < 0 || ${AKIA} > barCount || limit < 0`);
+  assert.equal(r.made, 0);
+  assert.equal(r.line, "public-throw-guard-top-v1=unsafe_condition: limit", "secret-looking names dropped, plain names kept");
+  const only = refusals(`${GHP} < 0 || ${AKIA} > barCount`);
+  assert.equal(only.line, "public-throw-guard-top-v1=unsafe_condition", "all names secret-looking: the code alone");
+  for (const tok of [GHP, AKIA, "gho_x1", "ghs_x1", "ghu_x1", "ghr_x1", "github_pat_x1", "xoxb_1", HEX]) {
+    assert.equal(cleanRefusals([{ id: "x-v1", reason: `unsafe_condition: ${tok}` }])[0]!.reason, "unsafe_condition", tok);
+    assert.equal(noCandidateComment(`x-v1=unsafe_condition: ${tok}`), NO_CANDIDATE_TEXT, tok);
+  }
+  for (const body of [noCandidateComment(r.line), noCandidateComment(only.line)]) {
+    assert.ok(!body.includes(GHP) && !body.includes(AKIA), body);
+    assert.deepEqual(scanText(body), [], "the posted body passes the leak scanner");
+  }
   assert.deepEqual(cleanRefusals([{ id: "x-v1", reason: 'leak: "ghp_abc"\nmore' }, { id: "../etc", reason: "function_not_found" }]), [{ id: "x-v1", reason: "refused" }]);
   assert.equal(formatRefusals([]), "");
   assert.match(noCandidateComment("public-throw-guard-top-v1=unsafe_condition: limit"), /refused it: `public-throw-guard-top-v1=unsafe_condition: limit`\./);
   assert.equal(noCandidateComment("x=`$(id)`"), noCandidateComment(""), "unsafe line dropped");
-  assert.equal(noCandidateComment(""), "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove `peaceai:failed` to retry.");
+  assert.equal(NO_CANDIDATE_TEXT, "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove `peaceai:failed` to retry.");
 });
 
 test("peace-task wiring: output declared, passed by env (never inlined in run), comment via body file", () => {
@@ -82,6 +97,12 @@ test("peace-task wiring: output declared, passed by env (never inlined in run), 
   assert.match(wf, /RULE_REFUSALS: \$\{\{ needs\.generate\.outputs\.rule_refusals \}\}/);
   assert.match(wf, /peaceai\/bin\/no-candidate-comment\.ts/);
   assert.ok(!/run:[^\n]*\$\{\{[^}]*rule_refusals/.test(wf) && !/^\s+[^#\n]*gh issue comment[^\n]*\$\{\{/m.test(wf), "no expression inside a run script");
+  const why = wf.slice(wf.indexOf("- name: Say why no candidate was made"));
+  const fb = why.slice(why.indexOf("- name: Fallback no-candidate comment"));
+  assert.match(fb, /if: always\(\) && env\.NL_REASON == '' && env\.NO_CANDIDATES == 'true' && steps\.why_post\.outcome != 'success'/);
+  assert.ok(fb.split("\n- ")[0]!.includes(NO_CANDIDATE_TEXT.replace(/`/g, "\\`")), "fallback posts the fixed text without checkout/npm/tsx");
+  const fbRun = fb.slice(fb.indexOf("run: |"), fb.indexOf("\n      - ", 5));
+  assert.ok(fbRun.includes("gh issue comment") && !/tsx|npm|node_modules/.test(fbRun), "fallback needs no tooling");
   const gen = readFileSync(join(repo, "peaceai/bin/generate.ts"), "utf8");
   assert.match(gen, /writeOutput\(\{ rule_refusals: refusalLine \}\)/);
 });

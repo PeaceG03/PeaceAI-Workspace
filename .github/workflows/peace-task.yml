@@ -536,11 +536,17 @@ jobs:
           node-version: 22
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
-      - name: Say why no candidate was made (rule ids and reason codes only)
+      - name: Say why no candidate was made (rule ids and reason codes only; leak-scanned)
+        id: why_post
         if: env.NL_REASON == '' && env.NO_CANDIDATES == 'true'
         run: |
+          # bin/no-candidate-comment.ts runs scanText over the full body; anything flagged drops the reason.
           PEACEAI_BODY_FILE="$RUNNER_TEMP/no-candidate.md" ./node_modules/.bin/tsx peaceai/bin/no-candidate-comment.ts
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/no-candidate.md"
+      - name: Fallback no-candidate comment (fixed text) if checkout, install or the reason step failed
+        if: always() && env.NL_REASON == '' && env.NO_CANDIDATES == 'true' && steps.why_post.outcome != 'success'
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry."
       - name: Say the parser was unsure, with the supported phrasings (fixed text; leak-checked)
         if: env.NL_REASON != '' && env.NO_CANDIDATES == 'true'
         run: |
