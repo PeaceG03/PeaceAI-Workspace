@@ -127,7 +127,7 @@ jobs:
           set -euo pipefail
           prev="runs/lm-work/$GITHUB_RUN_ID/part-1"
           ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/res"
-          git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
           ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" checkout --quiet
           (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
           mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"
@@ -209,7 +209,7 @@ jobs:
           set -euo pipefail
           prev="runs/lm-work/$GITHUB_RUN_ID/part-2"
           ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/res"
-          git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
           ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" checkout --quiet
           (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
           mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"
@@ -289,7 +289,7 @@ jobs:
           set -euo pipefail
           prev="runs/lm-work/$GITHUB_RUN_ID/part-3"
           ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/res"
-          git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" sparse-checkout set "$prev"
           ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/res" checkout --quiet
           (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
           mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"

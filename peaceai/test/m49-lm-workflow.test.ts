@@ -225,3 +225,12 @@ test("key guard refuses $GITHUB_ENV / $GITHUB_PATH / ::set-env / ::add-path writ
   assert.deepEqual(envPathWriteProblems({ j: `    steps:\n      - name: ok\n        run: echo "A=1" >> "$GITHUB_ENV"\n` }), []);
   assert.deepEqual(envPathWriteProblems(keyJob("echo hi")), []);
 });
+
+test("run 38778546963: every git command on the partial Results clone runs inside with-deploy-key.sh (lazy blob fetch needs the key)", () => {
+  const WF = read(".github/workflows/peace-lm-train-m49.yml");
+  const lines = WF.split("\n").filter((l) => /git (clone|-C "\$RUNNER_TEMP\/res")/.test(l) && l.includes("res"));
+  assert.equal(lines.filter((l) => l.includes("--filter=blob:none --sparse")).length, 3);
+  assert.equal(lines.filter((l) => l.includes("sparse-checkout set")).length, 3);
+  for (const l of lines) assert.match(l.trim(), /^\.\/peaceai\/bin\/with-deploy-key\.sh git /, l);
+});
+
