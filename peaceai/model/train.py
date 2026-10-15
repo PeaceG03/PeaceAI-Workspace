@@ -25,6 +25,11 @@ ap.add_argument("--n-layer", type=int, default=6)
 ap.add_argument("--n-head", type=int, default=6)
 ap.add_argument("--ctx", type=int, default=256)
 ap.add_argument("--vocab", type=int, default=4096)
+ap.add_argument("--lr", type=float, default=6e-4)
+ap.add_argument("--warmup", type=int, default=30)
+# M49 fine-tune stage: start from these weights (p.* arrays of a checkpoint/best .npz with the same model shape);
+# fresh optimizer state. Ignored when the work dir already has a checkpoint (resume wins).
+ap.add_argument("--init-from", default="")
 ap.add_argument("--patience", type=int, default=0)  # early stop after N evals without a held-out improvement; 0 = off
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -81,7 +86,7 @@ train_bytes = sum(len(docs[i].encode()) for i in train_ids)
 print(f"tokens train={len(train_tok)} heldout={len(held_tok)} bytes_per_token={train_bytes / len(train_tok):.2f}", flush=True)
 
 cfg = {"schema": lm.MODEL_SCHEMA, "d_model": args.d_model, "n_head": args.n_head, "n_layer": args.n_layer,
-       "vocab_size": args.vocab, "ctx": args.ctx, "lr": 6e-4, "warmup": 30, "total_steps": args.steps,
+       "vocab_size": args.vocab, "ctx": args.ctx, "lr": args.lr, "warmup": args.warmup, "total_steps": args.steps,
        "batch": args.batch, "weight_decay": 0.1, "grad_clip": 1.0, "seed": args.seed}
 T, B = cfg["ctx"], cfg["batch"]
 
@@ -103,6 +108,13 @@ if os.path.exists(W("checkpoint.npz")):
     print(f"resumed step={step}", flush=True)
 else:
     params = lm.init_params(cfg, args.seed)
+    if args.init_from:
+        with np.load(args.init_from, allow_pickle=False) as z:
+            init = {k[2:]: z[k].astype(np.float32) for k in z.files if k.startswith("p.")}
+        if sorted(init) != sorted(params) or any(init[k].shape != params[k].shape for k in params):
+            raise SystemExit("INIT_SHAPE_MISMATCH")
+        params = init
+        print("initialized from weights", flush=True)
     state = {"t": 0, "m": {k: np.zeros_like(v) for k, v in params.items()}, "v": {k: np.zeros_like(v) for k, v in params.items()}}
     rng = np.random.Generator(np.random.PCG64(args.seed + 1))
     step = 0

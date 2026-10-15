@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "ef69ba831e6de8fa8d5d817379e4b5226bf85d1fa43f6304a3e8c8591b588e1a"; // merge of main after #177 (M50 set C v2 grader) + this PR's protected entries
+const PROTECTED_DIGEST = "c5c86cc57bf14d33f55766c7e2123de1a69f3d030c7bbbbeae66e78681c84ecd"; // merge of main after #195 (M56 IMPORT_EDIT v2) + this PR's M57 protected entry
