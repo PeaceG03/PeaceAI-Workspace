@@ -30,14 +30,15 @@ test("off by default; not approved; not wired; v1 untouched", () => {
   assert.equal(safeCondition(expr("s.startsWith('x')").expression, new Set(["s"])), false, "v1 grammar still refuses method calls");
 });
 
-test("evidence: AST scan of the pinned external corpus; every recorded guard is first-statement shaped and accepted", () => {
+test("evidence: AST scan of the pinned example-only repos; every recorded guard is first-statement shaped and accepted", () => {
   const setc = new Set((JSON.parse(read("peaceai/model/heldout-c.json")).sets.C as { repo: string }[]).map((r) => r.repo));
-  const man = new Map(read("peaceai/model/ext-manifest.jsonl").split("\n").filter(Boolean).slice(1).map((l) => { const e = JSON.parse(l); return [`${e.repo}\0${e.path}`, e]; }));
-  for (const x of EV.examples as { repo: string; commit: string; path: string; sha256: string; params: string[]; guard: string; license: string }[]) {
+  const pins = new Map((JSON.parse(read("peaceai/rules/proposals/m45-example-repos.json")).repos as { name: string; commit: string; spdx: string; licenseSha256: string }[]).map((r) => [r.name, r]));
+  for (const x of EV.examples as { repo: string; commit: string; path: string; sha256: string; params: string[]; guard: string; license: string; licenseSha256: string }[]) {
     assert.ok(!setc.has(x.repo));
-    const m = man.get(`${x.repo}\0${x.path}`);
-    assert.ok(m, `${x.repo} ${x.path} not in the manifest`);
-    assert.equal(m.sha256, x.sha256); assert.equal(m.commit, x.commit); assert.equal(m.origin, "external"); assert.equal(m.license, x.license);
+    const p = pins.get(x.repo);
+    assert.ok(p, `${x.repo} is not on the example-only list`);
+    assert.equal(x.commit, p.commit); assert.equal(x.license, p.spdx); assert.equal(x.licenseSha256, p.licenseSha256);
+    assert.match(x.sha256, /^[0-9a-f]{64}$/);
     const sf = ts.createSourceFile("g.ts", x.guard, ts.ScriptTarget.Latest, true);
     assert.equal(sf.statements.length, 1);
     const c = guardCondition(sf.statements[0]!);
@@ -48,6 +49,12 @@ test("evidence: AST scan of the pinned external corpus; every recorded guard is 
   assert.equal(REC.evidence.repos, new Set(EV.examples.map((x: { repo: string }) => x.repo)).size);
   assert.equal(REC.evidence.qualifies, EV.examples.length >= EV.bar);
   assert.equal(EV.bar, 5);
+});
+
+test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
+  const corpus = new Set<string>((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string }[]).map((r) => r.name));
+  for (const l of read("peaceai/model/ext-manifest.jsonl").split("\n")) if (l.trim()) { const r = JSON.parse(l).repo; if (r) corpus.add(r); }
+  for (const x of EV.examples as { repo: string }[]) assert.ok(!corpus.has(x.repo), `${x.repo} is in the training corpus`);
 });
 
 test("METHOD_GUARD accepts the method forms (#149 folded in) and builds one-line and block guards first", () => {
@@ -120,4 +127,4 @@ test("engine, spec, evidence and this test are protected; spec pinned", () => {
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   assert.equal(createHash("sha256").update(read("peaceai/spec/method-guard-v1.md")).digest("hex"), SPEC_SHA);
 });
-const SPEC_SHA = "6ee9c1518a29d24ffa1520870995d7ad880ac08cb988cbf74bf4d50661de81e7";
+const SPEC_SHA = "4dc3b8326f699913f5b031408e54a6f144e0e0a8da1987c216cfd2d834af03d9";

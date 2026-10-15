@@ -1,158 +1,357 @@
 {
- "schema": "peaceai-m58-method-guard-evidence:v1",
- "source": "AST scan of peaceai/model/ext-manifest.jsonl (external licensed files only, set C excluded, sha256 verified against the manifest), as M47 did for function-top: functions whose FIRST statement is `if (cond) throw new XError(..)` (one-line or block) with a condition accepted by methodGuardCondition. Test, fixture, playground and built-output paths are skipped (at least one parameter-rooted method call).",
+ "schema": "peaceai-m58-method-guard-evidence:v2",
+ "source": "M60 (Architect: skill examples must not overlap the training corpus; the 9 M58 examples were all from corpus repos and are dropped): the same AST scan as M58 (functions whose FIRST statement is `if (cond) throw new XError(..)`, one-line or block, condition accepted by methodGuardCondition; test, fixture, playground and built-output paths skipped) over the 11 minable example-only repos in m45-example-repos.json at their pinned commits (vercel/turborepo and nuxt/nuxt are listed but not mined). Each file's sha256 is recorded at the pinned commit.",
  "bar": 5,
  "counts": {
-  "files": 12354,
-  "shaBad": 3,
-  "functionsWithParams": 33817,
-  "firstStatementMethodGuards": 9,
-  "oneLine": 0,
-  "block": 9,
-  "repos": 5
+  "repos_scanned": 11,
+  "files": 10463,
+  "functionsWithParams": 31559,
+  "firstStatementMethodGuards": 22,
+  "oneLine": 5,
+  "block": 17,
+  "repos": 5,
+  "droppedCorpusOverlap": 9
  },
  "byRepo": {
-  "angular/angular": 1,
-  "denoland/std": 2,
-  "honojs/hono": 1,
-  "jestjs/jest": 1,
-  "withastro/astro": 4
+  "microsoft/rushstack": 5,
+  "oclif/core": 4,
+  "pnpm/pnpm": 11,
+  "storybookjs/storybook": 1,
+  "vitejs/vite-plugin-react": 1
  },
  "byMethod": {
-  "endsWith": 2,
-  "includes": 3,
-  "test": 2,
-  "has": 2
+  "includes": 7,
+  "trim": 3,
+  "has": 3,
+  "test": 5,
+  "startsWith": 5,
+  "endsWith": 1
  },
  "examples": [
   {
-   "repo": "angular/angular",
-   "commit": "3d0c9c8c350ce0bc753717f91a91d50f27e18c9d",
-   "path": "adev/shared-docs/pipeline/guides/index.mts",
-   "sha256": "47ca7f7e6f6188cf6c9deb1ea3e9382a0d316df7e19fbbfefb5e78594f7dbceb",
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/rush-daemon/src/GlobalCommandRequest.ts",
+   "sha256": "07c30c4120a386b378560e23085405b0483216f9444e54390b3f0c4be9bddeed",
    "params": [
-    "filePath"
+    "name"
    ],
-   "line": 54,
+   "line": 199,
    "form": "block",
-   "guard": "if (!filePath.endsWith('.md')) {\n        throw new Error(`Input file \"${filePath}\" does not end in a \".md\" file extension.`);\n      }",
-   "license": "MIT"
+   "guard": "if (name.length === 0 || name.includes('=') || name.includes('\\0')) {\n    throw new Error(`Invalid global command environment variable name: \"${name}\".`);\n  }",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
   },
   {
-   "repo": "denoland/std",
-   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
-   "path": "xml/_parser.ts",
-   "sha256": "538e1a1d8c306eb5fd133e6cedd716fa82d8aaf6054ceb3c4d3b1432a8ac239c",
-   "params": [
-    "target",
-    "content",
-    "line",
-    "column",
-    "offset"
-   ],
-   "line": 623,
-   "form": "block",
-   "guard": "if (target.includes(\":\")) {\n      throw new XmlSyntaxError(\n        \"Cannot use ':' in processing instruction target (Namespaces §3)\",\n        { line, column, offset },\n      );\n    }",
-   "license": "MIT"
-  },
-  {
-   "repo": "denoland/std",
-   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
-   "path": "xml/stringify.ts",
-   "sha256": "755aa6bf8a8b54cdaac9ccfc75deb99d005d1355f33d2b264f0af6c09134f5fe",
-   "params": [
-    "text"
-   ],
-   "line": 186,
-   "form": "block",
-   "guard": "if (text.includes(\"--\")) {\n    throw new TypeError(\n      `Cannot serialize comment: XML forbids \"--\" within comments`,\n    );\n  }",
-   "license": "MIT"
-  },
-  {
-   "repo": "honojs/hono",
-   "commit": "588ec13fa68ea44fed1b5e1b503341db2bf09d70",
-   "path": "src/middleware/ip-restriction/index.ts",
-   "sha256": "2b68d88cd86843c6a09e299fc0408b3236832406d498c1c076990ef07584a9bc",
-   "params": [
-    "rule",
-    "prefix",
-    "max"
-   ],
-   "line": 42,
-   "form": "block",
-   "guard": "if (!/^[0-9]{1,3}$/.test(prefix)) {\n    throw new TypeError(`Invalid rule: ${rule}`)\n  }",
-   "license": "MIT"
-  },
-  {
-   "repo": "jestjs/jest",
-   "commit": "61050e9323e742539dc2360236671110e37329e6",
-   "path": "packages/jest-snapshot-utils/src/utils.ts",
-   "sha256": "bda415a4f34f89ed280574d0e276ca1c67319fe6a2603da7da5a51b9bd63ac76",
-   "params": [
-    "key"
-   ],
-   "line": 126,
-   "form": "block",
-   "guard": "if (!/ \\d+$/.test(key)) {\n    throw new Error('Snapshot keys must end with a number.');\n  }",
-   "license": "MIT"
-  },
-  {
-   "repo": "withastro/astro",
-   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
-   "path": "packages/astro/src/content/loaders/file.ts",
-   "sha256": "918471197b377b5c434f7963fc29f600fe7d00558b3c6a740077e4fce446e10e",
-   "params": [
-    "fileName",
-    "options"
-   ],
-   "line": 30,
-   "form": "block",
-   "guard": "if (fileName.includes('*')) {\n\t\tthrow new AstroError(FileGlobNotSupported);\n\t}",
-   "license": "MIT"
-  },
-  {
-   "repo": "withastro/astro",
-   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
-   "path": "packages/astro/src/integrations/hooks.ts",
-   "sha256": "6fb494dd890521d937d794321401d6fc300f551ac7f8465914dcd70473ca492e",
-   "params": [
-    "filename",
-    "integrationName"
-   ],
-   "line": 167,
-   "form": "block",
-   "guard": "if (!filename.endsWith('.d.ts')) {\n\t\tthrow new Error(\n\t\t\t`Integration ${colors.bold(integrationName)} is injecting a type that does not end with \"${colors.bold('.d.ts')}\"`,\n\t\t);\n\t}",
-   "license": "MIT"
-  },
-  {
-   "repo": "withastro/astro",
-   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
-   "path": "packages/astro/src/runtime/server/serialize.ts",
-   "sha256": "b5a2c37e5b5d21ec2c59a503ffc17ef7c76a581c490db1f0aa82650a265a76e3",
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/rush-daemon/src/GlobalCommandRequest.ts",
+   "sha256": "07c30c4120a386b378560e23085405b0483216f9444e54390b3f0c4be9bddeed",
    "params": [
     "value",
-    "metadata",
-    "parents"
+    "kind"
    ],
-   "line": 24,
+   "line": 268,
    "form": "block",
-   "guard": "if (parents.has(value)) {\n\t\tthrow new Error(`Cyclic reference detected while serializing props for <${metadata.displayName} client:${metadata.hydrate}>!\n\nCyclic references cannot be safely serialized for client-side usage. Please remove the cyclic reference.`);\n\t}",
-   "license": "MIT"
+   "guard": "if (value.length === 0 || value.trim() !== value) {\n    throw new Error(`Invalid global command ${kind}: \"${value}\".`);\n  }",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
   },
   {
-   "repo": "withastro/astro",
-   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
-   "path": "packages/astro/src/runtime/server/serialize.ts",
-   "sha256": "b5a2c37e5b5d21ec2c59a503ffc17ef7c76a581c490db1f0aa82650a265a76e3",
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/rush-daemon/src/InteractiveRequestInputRouter.ts",
+   "sha256": "c757cf1065785c89971ec26bffd78c7a6360330ff5eff62cea088dfd5875a0dc",
+   "params": [
+    "requestId"
+   ],
+   "line": 399,
+   "form": "block",
+   "guard": "if (requestId.length === 0 || requestId.trim() !== requestId) {\n    throw new Error(`Invalid interactive request id: \"${requestId}\".`);\n  }",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+  },
+  {
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/rush-daemon/src/PhasedRequestSelection.ts",
+   "sha256": "8608f7c42c7e0cd069397efd5be034d9ac012f56724ec86853b3b5898fde165d",
    "params": [
     "value",
-    "metadata",
-    "parents"
+    "kind"
+   ],
+   "line": 14,
+   "form": "block",
+   "guard": "if (value.length === 0 || value.trim() !== value) {\n    throw new Error(`Invalid phased request ${kind}: \"${value}\".`);\n  }",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+  },
+  {
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/rush-lib/src/logic/operations/AsyncOperationQueue.ts",
+   "sha256": "4e9eca221db3d4d49ad2998ca0ead854555670cb107e49c26f2e006b2f2ff352",
+   "params": [
+    "operation",
+    "dependencyChain"
+   ],
+   "line": 380,
+   "form": "block",
+   "guard": "if (dependencyChain.has(operation)) {\n    throw new Error(\n      'A cyclic dependency was encountered:\\n  ' +\n        [...dependencyChain, operation]\n          .map((visitedTask) => visitedTask.name)\n          .reverse()\n          .join('\\n  -> ') +\n        `\\nConsider using the decoupledLocalDependencies option in ${RushConstants.rushJsonFilename}.`\n    );\n  }",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+  },
+  {
+   "repo": "oclif/core",
+   "commit": "b5c0aefa2c68c921a5c85eadd12fce097ddc33d1",
+   "path": "src/args.ts",
+   "sha256": "21e31138b0262e2257d3cad39f80460338addd88fb0957430bff2ae998cbf7c8",
+   "params": [
+    "input",
+    "_",
+    "opts"
    ],
    "line": 42,
+   "form": "one-line",
+   "guard": "if (!/^-?\\d+$/.test(input)) throw new Error(`Expected an integer but received: ${input}`)",
+   "license": "MIT",
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+  },
+  {
+   "repo": "oclif/core",
+   "commit": "b5c0aefa2c68c921a5c85eadd12fce097ddc33d1",
+   "path": "src/flags.ts",
+   "sha256": "439dfd5647f6b8a04c924bae4abd4464939bc3832cd8e4d45164ee93f21081fa",
+   "params": [
+    "input",
+    "_",
+    "opts"
+   ],
+   "line": 95,
+   "form": "one-line",
+   "guard": "if (!/^-?\\d+$/.test(input)) throw new CLIError(`Expected an integer but received: ${input}`)",
+   "license": "MIT",
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+  },
+  {
+   "repo": "oclif/core",
+   "commit": "b5c0aefa2c68c921a5c85eadd12fce097ddc33d1",
+   "path": "src/parser/parse.ts",
+   "sha256": "69be8b2c1c5e3a60af6f53e9d24eee4eb6caaff4ce511d8975193981d823b061",
+   "params": [
+    "flag",
+    "input"
+   ],
+   "line": 114,
+   "form": "one-line",
+   "guard": "if (flag.options && !flag.options.includes(input)) throw new FlagInvalidOptionError(flag, input)",
+   "license": "MIT",
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+  },
+  {
+   "repo": "oclif/core",
+   "commit": "b5c0aefa2c68c921a5c85eadd12fce097ddc33d1",
+   "path": "src/parser/parse.ts",
+   "sha256": "69be8b2c1c5e3a60af6f53e9d24eee4eb6caaff4ce511d8975193981d823b061",
+   "params": [
+    "name",
+    "arg",
+    "input"
+   ],
+   "line": 284,
    "form": "block",
-   "guard": "if (parents.has(value)) {\n\t\tthrow new Error(`Cyclic reference detected while serializing props for <${metadata.displayName} client:${metadata.hydrate}>!\n\nCyclic references cannot be safely serialized for client-side usage. Please remove the cyclic reference.`);\n\t}",
-   "license": "MIT"
+   "guard": "if (arg.options && !arg.options.includes(input)) {\n        throw new ArgInvalidOptionError(arg, input)\n      }",
+   "license": "MIT",
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm/scripts/rustfmt.mjs",
+   "sha256": "e7260b38dc5caa3ba2a529adc4dd1eb59aa448782a35984269d8b9453b0ee1fb",
+   "params": [
+    "config",
+    "root"
+   ],
+   "line": 12,
+   "form": "block",
+   "guard": "if (!/^[a-f0-9]{40}$/.test(config.revision)) {\n    throw new Error('rustfmt.json must pin a full Git commit SHA')\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm/scripts/test-affected.mjs",
+   "sha256": "b7a6271881f926c31a5c7114fc06f144d3151190c6bb8a4c4612f9c3845e5e34",
+   "params": [
+    "value"
+   ],
+   "line": 156,
+   "form": "one-line",
+   "guard": "if (value === '' || value.startsWith('-')) throw new Error(`--base needs a revision, not '${value}'`)",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/__utils__/test-ipc-server/src/TestIpcServer.ts",
+   "sha256": "adfd53488a61d05328eaff7eae5bab771e3eb7e375a5c6ca2e73556770d6a2b9",
+   "params": [
+    "arg"
+   ],
+   "line": 177,
+   "form": "block",
+   "guard": "if (arg.length === 0 || !/^[\\w\\-./\\\\:@ +=,~]+$/.test(arg) || arg.endsWith('\\\\')) {\n    throw new Error(`Unsupported character in shell argument: ${JSON.stringify(arg)}`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/engine/pm/commands/src/setup/ghActionsEnv.ts",
+   "sha256": "7dff8ca72c2b67f7494e65d229706ef7b6ab922374e0c914646f96bae7563d88",
+   "params": [
+    "name",
+    "value"
+   ],
+   "line": 53,
+   "form": "block",
+   "guard": "if (value.includes('\\n') || value.includes('\\r') || value.includes('\\0')) {\n    throw new PnpmError('BAD_GITHUB_ACTIONS_ENVIRONMENT_VALUE', `${name} cannot contain newline or NUL characters`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/registry-access/commands/src/team.ts",
+   "sha256": "e2308f5a720713a76e51d68a826654b08423808c73a209dd0c292f0d4fa5946d",
+   "params": [
+    "spec"
+   ],
+   "line": 405,
+   "form": "block",
+   "guard": "if (!spec.startsWith('@')) {\n    throw new PnpmError('TEAM_INVALID_SCOPE',\n      `Team spec must start with @scope, got \"${spec}\". Use @scope or @scope:team format.`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/releasing/commands/src/publish/registryConfigKeys.ts",
+   "sha256": "49a43d933b32d6bee8565e1b242b5da97f26f42bdc5a7246814b98bf75666493",
+   "params": [
+    "longest"
+   ],
+   "line": 73,
+   "form": "block",
+   "guard": "if (!longest.startsWith('//')) {\n    throw new RangeError(`The string ${JSON.stringify(longest)} is not a valid registry config key`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/resolving/local-resolver/src/index.ts",
+   "sha256": "7ee411857111b3f3e6ffb2f908cbd996c00f75551dd1eb79c302ed4e4e826304",
+   "params": [
+    "spec",
+    "projectDir"
+   ],
+   "line": 198,
+   "form": "block",
+   "guard": "if (spec.id.startsWith('file:')) {\n    throw new PnpmError('LINKED_PKG_DIR_NOT_FOUND', `Could not install from \"${spec.fetchSpec}\" as it does not exist.`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/worker/src/index.ts",
+   "sha256": "639b622d8145094cafe156ff33be31c5e6b38166d797da519d073245305d582a",
+   "params": [
+    "drive"
+   ],
+   "line": 385,
+   "form": "block",
+   "guard": "if (!/^[a-z]:$/i.test(drive)) {\n    throw new Error(`${drive} is not a valid disk on Windows`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpr/client/src/artifactEncoding.ts",
+   "sha256": "cd56bddf2a0a80fd94a8d91e3293af6a920b3779f705818e967a0225d2505d37",
+   "params": [
+    "integrity"
+   ],
+   "line": 13,
+   "form": "block",
+   "guard": "if (typeof integrity !== 'string' || !integrity.startsWith('sha512-')) {\n    throw new Error('Shared artifact blobs require sha512 integrity')\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpr/client/src/artifactEncoding.ts",
+   "sha256": "cd56bddf2a0a80fd94a8d91e3293af6a920b3779f705818e967a0225d2505d37",
+   "params": [
+    "label",
+    "encoded",
+    "allowEmpty"
+   ],
+   "line": 44,
+   "form": "block",
+   "guard": "if (typeof encoded !== 'string' || (!allowEmpty && encoded.length === 0) || /\\s/.test(encoded)) {\n    throw new Error(`Shared artifact ${label} is not valid base64`)\n  }",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpr/client/src/sharedArtifactValidation.ts",
+   "sha256": "47be6c208d42c87855221588e5dc1d3bd5a8d040a90b87b9c0d0ed17f2cb3404",
+   "params": [
+    "path",
+    "exact",
+    "folded"
+   ],
+   "line": 214,
+   "form": "one-line",
+   "guard": "if (exact.has(path)) throw new Error(`Duplicate shared artifact path ${JSON.stringify(path)}`)",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/core/src/node-logger/index.ts",
+   "sha256": "492afda988cfa58f9e22a81383ebd47a75b442dcca92e0ad08493305435d2f7c",
+   "params": [
+    "hexColor"
+   ],
+   "line": 39,
+   "form": "block",
+   "guard": "if (!/^#?[0-9A-Fa-f]{6}$/.test(hexColor)) {\n    throw new Error('Invalid hex color. It must be a 6-character hex code.');\n  }",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0"
+  },
+  {
+   "repo": "vitejs/vite-plugin-react",
+   "commit": "2e8512f98a4fc1b302af760c9d41900c2fa66d0a",
+   "path": "packages/plugin-rsc/examples/basic/src/routes/server-error/server.tsx",
+   "sha256": "4244e6a0bc6306a7486ea852dd00360b46a31a2550abaf92dcf6c75592340d77",
+   "params": [
+    "props"
+   ],
+   "line": 2,
+   "form": "block",
+   "guard": "if (props.url.searchParams.has('test-server-error')) {\n    throw new Error('test-server-error!')\n  }",
+   "license": "MIT",
+   "licenseSha256": "f77a743a6b87e3bd1435953073f446de1b8d0da0ff24e17d1194e1b749333d27"
   }
  ]
 }

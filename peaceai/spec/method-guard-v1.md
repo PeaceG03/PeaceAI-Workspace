@@ -18,7 +18,7 @@ of a uniquely named exported function (engine: `peaceai/lib/method-guard.ts`), r
    `PEACEAI_METHOD_GUARD=true` only; not in RULE_KINDS until a separate, Auditor-reviewed wiring PR; approval is
    Peace's. Builder never posts /approve-rule.
 
-Evidence (`peaceai/rules/proposals/m58-method-guard-evidence.json`), counted the way M47 counted function-top: an AST
-scan of the pinned external corpus (`ext-manifest.jsonl`, sha256 verified, set C excluded, test/fixture/playground
-and built-output paths skipped) for functions whose first statement is such a guard: 9 in 5 repos (all block form),
-at or above the bar of 5. Note: as in v1, a call or property read on a caller-supplied object can run caller code.
+Evidence (`peaceai/rules/proposals/m58-method-guard-evidence.json`), counted the way M47 counted function-top but,
+per M60, never from the training corpus: an AST scan of the 11 minable example-only repos (`m45-example-repos.json`, pinned
+commits; test/fixture/playground and built-output paths skipped) for functions whose first statement is such a guard:
+22 in 5 repos (17 block, 5 one-line), at or above the bar of 5. Note: as in v1, a call or property read on a caller-supplied object can run caller code.
