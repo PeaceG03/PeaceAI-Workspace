@@ -9,7 +9,7 @@ import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refu
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
@@ -295,7 +295,9 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
  */
 export function pathExistsIn(repo: string, tracked: readonly string[]): (path: string) => boolean {
   const all = new Set(tracked);
-  return (path) => all.has(path) || existsSync(join(repo, path));
+  // lstat, not exists: a dangling symlink at the path still occupies it (existsSync follows links and says no).
+  const onDisk = (path: string) => { try { lstatSync(join(repo, path)); return true; } catch { return false; } };
+  return (path) => all.has(path) || onDisk(path);
 }
 
 /**
