@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m45-evidence:v2",
- "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 6000 per repo; shallow clones deepened to about 6000), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts.",
+ "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 6000 per repo; shallow clones deepened to about 6000), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts. M56 (Architect a2): plus full histories of the example-only repos in peaceai/rules/proposals/m45-example-repos.json (licenses checked the same way; turborepo and nuxt not mined).",
  "families": {
   "IMPORT_EDIT": [
    {
@@ -56,6 +56,48 @@
     ],
     "license": "MIT",
     "licenseSha256": "e824161e0aab3814aca1883bd7058e67034d25fce254e6629495e78d3f8a53c3",
+    "origin": "external"
+   },
+   {
+    "repo": "storybookjs/storybook",
+    "commit": "35cf3370fa21b7aa35b0a1128c64b27241e9209d",
+    "path": "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.stories.ts",
+    "before": "import { PlainButton } from './PlainButton';",
+    "after": "import { PlainButton } from './PlainButton.ts';",
+    "repoFiles": [
+     "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.ts",
+     "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+    "origin": "external"
+   },
+   {
+    "repo": "storybookjs/storybook",
+    "commit": "b2773f72ba1b66ff1440ddd9fbf2fe68b1051666",
+    "path": "code/core/scripts/helpers/sourcefiles.ts",
+    "before": "import { BROWSER_TARGETS } from '../../code/core/src/shared/constants/environments-support';",
+    "after": "import { BROWSER_TARGETS } from '../../src/shared/constants/environments-support';",
+    "repoFiles": [
+     "code/core/src/shared/constants/environments-support.ts",
+     "code/core/src/shared/constants/environments-support.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+    "origin": "external"
+   },
+   {
+    "repo": "storybookjs/storybook",
+    "commit": "85690eb5193d8b87505a11ad6d958b2d061e07f7",
+    "path": "code/lib/test/template/stories/utils.mock.ts",
+    "before": "import * as utils from './utils';",
+    "after": "import * as utils from './utils.ts';",
+    "repoFiles": [
+     "code/lib/test/template/stories/utils.ts",
+     "code/lib/test/template/stories/utils.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
     "origin": "external"
    }
   ],
@@ -126,12 +168,23 @@
     "license": "BSD-3-Clause",
     "licenseSha256": "716360e13bcee08c264de65bd937060a95584ea9b0d40081875e8445218a89ad",
     "origin": "external"
+   },
+   {
+    "repo": "vitejs/vite-plugin-react",
+    "commit": "d21ddd2f1609106ed1b599ebb6e7c0bb74e6c8c4",
+    "path": "package.json",
+    "name": "format",
+    "command": "prettier --write .",
+    "workflowRuns": [],
+    "license": "MIT",
+    "licenseSha256": "f77a743a6b87e3bd1435953073f446de1b8d0da0ff24e17d1194e1b749333d27",
+    "origin": "external"
    }
   ]
  },
  "minedCandidates": {
-  "IMPORT_EDIT": 59,
-  "PACKAGE_SCRIPT": 14
+  "IMPORT_EDIT": 139,
+  "PACKAGE_SCRIPT": 24
  },
  "bar": 10,
  "notQualifying": {

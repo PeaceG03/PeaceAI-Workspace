@@ -6,11 +6,12 @@
  "spec": "peaceai/spec/import-edit-v1.md",
  "engine": "peaceai/lib/learned-config.ts",
  "evidence": {
-  "examples": 4,
-  "commits": 4,
+  "examples": 7,
+  "commits": 7,
   "repos": [
    "denoland/std",
    "reduxjs/redux-toolkit",
+   "storybookjs/storybook",
    "vitejs/vite"
   ],
   "origin": "external-licensed",

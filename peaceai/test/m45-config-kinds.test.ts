@@ -38,9 +38,33 @@ const PROOF_SRC = 'import { a } from "./x";\nimport type { B } from "../y/b";\ni
 let refusals = 0;
 const refuse = (r: string | null, msg: string) => { assert.notEqual(r, null, msg); refusals++; if (process.env.M45_WHY) console.log(r, "<=", msg.slice(0, 80).replace(/\n/g, " ")); };
 
+const XR = JSON.parse(read("peaceai/rules/proposals/m45-example-repos.json"));
+
+test("M56 a2: example-only repos are pinned, licensed, protected, and never in the corpus, set C or the manifest", () => {
+  assert.equal(XR.schema, "peaceai-m45-example-repos:v1");
+  assert.ok(PROTECTED_SELF.some((x) => x.pattern.test("peaceai/rules/proposals/m45-example-repos.json")));
+  const corpus = JSON.parse(read("peaceai/model/ext-corpus.json"));
+  const inCorpus = new Set<string>([...corpus.repos.map((r: { name: string }) => r.name), ...corpus.owner.map((r: { name: string }) => r.name)]);
+  const setc = new Set((JSON.parse(read("peaceai/model/heldout-c.json")).sets.C as { repo: string }[]).map((r) => r.repo));
+  const manifest = new Set(read("peaceai/model/ext-manifest.jsonl").split("\n").filter(Boolean).slice(1).map((l) => (JSON.parse(l) as { repo: string }).repo));
+  const seen = new Set<string>();
+  assert.ok(XR.repos.length >= 10 && XR.repos.length <= 15);
+  for (const r of XR.repos as { name: string; commit: string; spdx: string; licenseFile: string; licenseSha256: string }[]) {
+    assert.match(r.name, /^[\w.-]+\/[\w.-]+$/); assert.match(r.commit, /^[0-9a-f]{40}$/); assert.match(r.licenseSha256, /^[0-9a-f]{64}$/);
+    assert.ok(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"].includes(r.spdx), r.name);
+    assert.ok(!seen.has(r.name), `duplicate ${r.name}`); seen.add(r.name);
+    assert.ok(!inCorpus.has(r.name), `${r.name} is in the corpus repo list`);
+    assert.ok(!setc.has(r.name), `${r.name} is in set C`);
+    assert.ok(!manifest.has(r.name), `${r.name} is in the corpus manifest`);
+    assert.notEqual(r.name, "microsoft/TypeScript");
+  }
+  for (const n of XR.notMined as string[]) assert.ok(seen.has(n));
+  for (const fam of ["IMPORT_EDIT", "PACKAGE_SCRIPT"]) for (const x of EV.families[fam] as { repo: string }[]) assert.ok(!(XR.notMined as string[]).includes(x.repo), x.repo);
+});
+
 test("evidence: licensed external, none from set C; counts recorded against the 10-example bar", () => {
   const setc = new Set((JSON.parse(read("peaceai/model/heldout-c.json")).sets.C as { repo: string }[]).map((r) => r.repo));
-  const cfg = new Map((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string; licenseSha256: string }[]).map((r) => [r.name, r]));
+  const cfg = new Map([...(JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string; licenseSha256: string }[]), ...(XR.repos as { name: string; licenseSha256: string }[])].map((r) => [r.name, r]));
   for (const fam of ["IMPORT_EDIT", "PACKAGE_SCRIPT"]) {
     const xs = EV.families[fam] as { repo: string; commit: string; licenseSha256: string; origin: string; path: string }[];
     for (const x of xs) {
@@ -158,5 +182,5 @@ test("engine, specs and this test are protected; specs pinned", () => {
   assert.equal(h("peaceai/spec/import-edit-v1.md"), IMPORT_SPEC_SHA);
   assert.equal(h("peaceai/spec/package-script-v1.md"), SCRIPT_SPEC_SHA);
 });
-const IMPORT_SPEC_SHA = "063d59c564a38bdb843ae84a29994b3878f2247c3cc5bc5567398ccf6f4e0417";
-const SCRIPT_SPEC_SHA = "eea6853bd485209c1bd99e3e3a0d761145208f59a4a805e7cfe7b02cc807695d";
+const IMPORT_SPEC_SHA = "0220194db2f7c40067e8d54dcde55279080fc0b4a69a9ab440c1dca181fb3fc0";
+const SCRIPT_SPEC_SHA = "86c9a9966c56287f6a14276e257910cf19c1153751b92a3172367e8efac34ca6";
