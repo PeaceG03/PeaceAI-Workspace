@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "469e8c22933c17ce8f6408daf24d5e50d5f8fc9c6536b3498a61287528f304f9"; // M45 + M46 + M47 + M57 (PACKAGE_SCRIPT v2) additions in the protected set
+const PROTECTED_DIGEST = "c1f5ca80bf5d2ff014cbdcd8cc63b60f364af6ce2784de908a4e23e15321db70"; // M57+M51+M52 after #189: PACKAGE_SCRIPT v2 + split manifest + M52 core-free
