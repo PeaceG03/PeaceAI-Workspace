@@ -1,10 +1,11 @@
 // PeaceAI vs Builder coverage from the public Builder task log only (no box, no network).
 // Of Builder's logged tasks, what % PeaceAI could do end-to-end using ONLY live-proven skills.
-// Live-proven = at least one log entry by PeaceAI whose `changed` lands a repo@sha
-// (PeaceSTOCKS@sha or PeaceAI-Workspace@sha). Approved-but-unproven skills do not count.
+// Live-proven = (a) at least one log entry by PeaceAI whose `changed` lands a repo@sha
+// (PeaceSTOCKS@sha or PeaceAI-Workspace@sha), or (b) listed in LIVE_PROVEN_SINCE (check.ts) at/after
+// that MT time. Approved-but-unproven skills (APPROVED_SINCE only) do not count.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { LOG_PATH, validateLog, type Entry } from "./check.ts";
+import { LIVE_PROVEN_SINCE, LOG_PATH, validateLog, type Entry } from "./check.ts";
 
 /** A landed code change (sha), not an issue-only ref. */
 export const LIVE_LANDING = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;
@@ -37,11 +38,18 @@ export function parseLogEntries(logText: string): Entry[] {
   return logText.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
 }
 
-/** Skills with at least one PeaceAI-authored entry that landed a repo@sha. */
-export function liveProvenSkills(entries: readonly Entry[]): Set<string> {
+/**
+ * Live-proven skills: PeaceAI repo@sha landings in the log, plus LIVE_PROVEN_SINCE entries whose
+ * landing time is on or before asOfDate (end of day MT). Omit asOfDate to include every LIVE_PROVEN_SINCE skill.
+ */
+export function liveProvenSkills(entries: readonly Entry[], asOfDate?: string): Set<string> {
   const out = new Set<string>();
   for (const e of entries) {
     if (e.by === "PeaceAI" && LIVE_LANDING.test(e.changed)) out.add(e.skill);
+  }
+  const end = asOfDate ? `${asOfDate} 23:59` : null;
+  for (const [skill, since] of Object.entries(LIVE_PROVEN_SINCE)) {
+    if (end === null || since <= end) out.add(skill);
   }
   return out;
 }
@@ -75,7 +83,7 @@ export function coverageReport(logText: string, asOfDate: string, topN = 10): Co
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) throw new Error(`bad asOf date: ${asOfDate}`);
   if (!Number.isInteger(topN) || topN < 1 || topN > 50) throw new Error("topN out of range");
   const entries = parseLogEntries(logText);
-  const proven = liveProvenSkills(entries);
+  const proven = liveProvenSkills(entries, asOfDate);
   const builderAll = entries.filter((e) => e.by === "Builder");
   const start7 = addDaysYmd(asOfDate, -6);
   const builder7 = builderAll.filter((e) => e.date >= start7 && e.date <= asOfDate);
@@ -108,7 +116,7 @@ export function formatCoverageSummary(r: CoverageReport): string {
   return [
     "## PeaceAI vs Builder",
     "",
-    `Of Builder's logged tasks, % PeaceAI could do end-to-end using **only live-proven skills** (a skill counts only if the log has a PeaceAI landing with a \`repo@sha\`; approved-but-unproven skills do not count). asOf \`${r.asOf}\` MT; log sha256 \`${r.logSha256.slice(0, 16)}…\`.`,
+    `Of Builder's logged tasks, % PeaceAI could do end-to-end using **only live-proven skills** (a skill counts if the log has a PeaceAI \`repo@sha\` landing or it is in \`LIVE_PROVEN_SINCE\`; approved-but-unproven skills do not count). asOf \`${r.asOf}\` MT; log sha256 \`${r.logSha256.slice(0, 16)}…\`.`,
     "",
     `| window | PeaceAI-able |`,
     `|---|---|`,

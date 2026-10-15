@@ -56,29 +56,28 @@ test("LIVE_LANDING matches repo@sha only, not issue refs", () => {
   assert.ok(!LIVE_LANDING.test("none (fixture)"));
 });
 
-test("live-proven: PeaceAI + repo@sha only; approved-without-landing and issue-only do not count", () => {
+test("live-proven: PeaceAI + repo@sha; LIVE_PROVEN_SINCE applies from its date; issue-only does not count", () => {
   const entries = parseLogEntries(LOG);
-  assert.deepEqual([...liveProvenSkills(entries)].sort(), ["THROW_GUARD"]);
+  assert.deepEqual([...liveProvenSkills(entries, "2026-10-14")].sort(), ["THROW_GUARD"], "before WORKFLOW_STEP live proof");
+  assert.deepEqual([...liveProvenSkills(entries, "2026-10-15")].sort(), ["THROW_GUARD", "WORKFLOW_STEP"]);
 });
 
 test("coverage: all-time and last-7-days % of Builder tasks; top missing ranked by count", () => {
   const r = coverageReport(LOG, "2026-10-15");
-  assert.deepEqual(r.liveProven, ["THROW_GUARD"]);
-  // Builder seqs: 1,2,4,6,7,8 → 6 tasks; only seq4 THROW_GUARD is able → 1/6 ≈ 16.7%
+  assert.deepEqual(r.liveProven, ["THROW_GUARD", "WORKFLOW_STEP"]);
+  // Builder seqs: 1,2,4,6,7,8 → 6 tasks; seq4 THROW_GUARD + seq8 WORKFLOW_STEP → 2/6 ≈ 33.3%
   assert.equal(r.allTime.builderTasks, 6);
-  assert.equal(r.allTime.peaceaiAble, 1);
-  assert.equal(r.allTime.percent, 16.7);
-  // 7d window 2026-10-09..15 includes all of the above
+  assert.equal(r.allTime.peaceaiAble, 2);
+  assert.equal(r.allTime.percent, 33.3);
   assert.equal(r.last7Days.builderTasks, 6);
-  assert.equal(r.last7Days.peaceaiAble, 1);
-  assert.equal(r.last7Days.percent, 16.7);
+  assert.equal(r.last7Days.peaceaiAble, 2);
+  assert.equal(r.last7Days.percent, 33.3);
   assert.deepEqual(
     r.topMissing.map((m) => [m.skill, m.count]),
     [
       ["OPS_ACTION", 2],
       ["COMPLEX_FUNCTION", 1],
       ["IMPORT_EDIT", 1],
-      ["WORKFLOW_STEP", 1],
     ],
   );
 });
@@ -116,20 +115,39 @@ test("formatCoverageSummary names the metric and lists missing skills", () => {
   const md = formatCoverageSummary(coverageReport(LOG, "2026-10-15"));
   assert.match(md, /## PeaceAI vs Builder/);
   assert.match(md, /live-proven/);
-  assert.match(md, /last 7 days \| 16\.7% \(1\/6\)/);
-  assert.match(md, /all-time \| 16\.7% \(1\/6\)/);
+  assert.match(md, /last 7 days \| 33\.3% \(2\/6\)/);
+  assert.match(md, /all-time \| 33\.3% \(2\/6\)/);
   assert.match(md, /`THROW_GUARD`/);
+  assert.match(md, /`WORKFLOW_STEP`/);
   assert.match(md, /\| OPS_ACTION \| 2 \|/);
   assert.doesNotMatch(md, /TEST_CASE/); // issue-only PeaceAI entry must not invent a live-proven skill
 });
 
-test("real log: live-proven excludes APPROVED_SINCE skills without a PeaceAI@sha landing", () => {
+test("real log: WORKFLOW_STEP is live-proven (LIVE_PROVEN_SINCE + PeaceAI@sha); CHECK_OBJECT_LITERAL_ARGS is not", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   const r = coverageReport(text, denverYmd());
   assert.ok(r.liveProven.includes("THROW_GUARD"));
-  assert.ok(!r.liveProven.includes("WORKFLOW_STEP"), "approved-but-unproven");
+  assert.ok(r.liveProven.includes("WORKFLOW_STEP"), "workflow-step v2 live-proven on 2026-10-15");
   assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"), "approved-but-unproven");
   assert.ok(r.allTime.builderTasks > 0);
-  assert.ok(r.topMissing.length > 0);
+  assert.ok(!r.topMissing.some((m) => m.skill === "WORKFLOW_STEP"));
   assert.match(formatCoverageSummary(r), /PeaceAI vs Builder/);
+});
+
+test("LIVE_PROVEN_SINCE alone marks a skill live-proven even without a PeaceAI@sha log landing yet", async () => {
+  const { LIVE_PROVEN_SINCE } = await import("./check.ts");
+  assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP, "2026-10-15 12:02");
+  // Fixture: approved WORKFLOW_STEP Builder tasks, no PeaceAI landing for that skill
+  const onlyApproved =
+    [
+      line({ seq: 1, skill: "WORKFLOW_STEP", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#125" }),
+      line({ seq: 2, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14" }),
+    ].join("\n") + "\n";
+  const before = coverageReport(onlyApproved, "2026-10-14"); // before LIVE_PROVEN_SINCE
+  assert.ok(!before.liveProven.includes("WORKFLOW_STEP"));
+  assert.equal(before.allTime.peaceaiAble, 0);
+  const after = coverageReport(onlyApproved, "2026-10-15");
+  assert.ok(after.liveProven.includes("WORKFLOW_STEP"));
+  assert.equal(after.allTime.peaceaiAble, 1);
+  assert.equal(after.allTime.percent, 50);
 });

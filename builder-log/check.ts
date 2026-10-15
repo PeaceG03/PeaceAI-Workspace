@@ -31,6 +31,13 @@ export const APPROVED_SINCE = {
   CHECK_OBJECT_LITERAL_ARGS: "2026-10-13 21:30", // public-test-case(-append)-objargs-v1, #118/#119 merged 03:30Z
   WORKFLOW_STEP: "2026-10-13 22:41", // public-workflow-step-v2, #125 merged 04:41Z
 } as const;
+/**
+ * Skills with a passing live proof from this MT time on. Distinct from APPROVED_SINCE: approval alone is not
+ * live-proven. Coverage (and the skill-learner report) unions this with PeaceAI repo@sha landings in the log.
+ */
+export const LIVE_PROVEN_SINCE = {
+  WORKFLOW_STEP: "2026-10-15 12:02", // PeaceSTOCKS#6 @f57036b; tenmin-mode-sim run 38782483772 both typecheck steps passed
+} as const;
 export type Skill = (typeof APPROVED_SKILLS)[number] | (typeof MISSING_SKILLS)[number] | keyof typeof APPROVED_SINCE;
 
 export interface Entry {
