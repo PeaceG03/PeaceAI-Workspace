@@ -8,11 +8,14 @@ import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORK
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refusal } from "./learned-guard.ts";
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
+import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -57,6 +60,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "REPLACE_EXPRESSION" && !validBodyParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_WORKFLOW_STEP" && REVOKED_WORKFLOW_SPECS.has(s.id as string)) return false;
@@ -82,6 +86,14 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
 function validMethodGuardParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
   if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...METHOD_GUARD_PARAM_KEYS].join(",")) return false;
   return METHOD_GUARD_PARAM_KEYS.every((k) => typeof p[k] === "string" && METHOD_GUARD_VOCAB[k].includes(p[k] as string));
+}
+
+/** M26 wiring: COMPLEX_FUNCTION specs; public-mined only; loops is a non-empty list from the vocabulary. */
+function validComplexParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...COMPLEX_PARAM_KEYS].join(",")) return false;
+  return COMPLEX_PARAM_KEYS.every((k) => k === "loops"
+    ? Array.isArray(p[k]) && (p[k] as unknown[]).length > 0 && (p[k] as unknown[]).every((x) => typeof x === "string" && COMPLEX_VOCAB.loops.includes(x))
+    : typeof p[k] === "string" && COMPLEX_VOCAB[k].includes(p[k] as string));
 }
 
 /** M13: ADD_THROW_GUARD specs carry exactly the guard parameters, from fixed vocabularies; public-mined only. */
@@ -129,6 +141,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_TEST_CASE: TEST_TRIGGER,
   ADD_THROW_GUARD: GUARD_TRIGGER,
   METHOD_GUARD: METHOD_GUARD_TRIGGER,
+  COMPLEX_FUNCTION: COMPLEX_TRIGGER,
   ADD_FUNCTION: FUNCTION_TRIGGER,
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
   REPLACE_EXPRESSION: REPLACE_TRIGGER,
@@ -276,8 +289,29 @@ function addNullishDefault(spec: RuleSpec, g: Record<string, string>, files: rea
   return { path: file.path, content: splice(file.content, node.getStart(sf), node.getEnd(), bare ? text : `(${text})`) };
 }
 
-/** Runs one rule against the objective. Null when the trigger does not match or the edit is not unique. */
-export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {
+/**
+ * Auditor #135: a predicate that says whether a path already exists in the whole target checkout, the full
+ * `git ls-files` list or on disk (untracked/ignored files too), not just the context subset handed to a rule.
+ */
+export function pathExistsIn(repo: string, tracked: readonly string[]): (path: string) => boolean {
+  const all = new Set(tracked);
+  return (path) => all.has(path) || existsSync(join(repo, path));
+}
+
+/**
+ * Runs one rule against the objective. Null when the trigger does not match or the edit is not unique.
+ * Auditor #135 (all kinds): a generated NEW file (new test files in `extra`, or a created main file) is refused
+ * with `new_test_path_exists` when `exists` reports it already present in the full checkout.
+ */
+export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, exists?: (path: string) => boolean): LearnedEdit | null {
+  const edit = applyRuleInner(spec, objective, files, isTest, repo, why);
+  if (!edit || !exists) return edit;
+  const created = [...(edit.create ? [edit.path] : []), ...(edit.extra ?? []).filter((x) => x.create).map((x) => x.path)];
+  if (created.some((p) => exists(p))) { if (why) why.reason = "new_test_path_exists"; return null; }
+  return edit;
+}
+
+function applyRuleInner(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {
   if (spec.kind === "ADD_TEST_CASE") {
     try {
       const task = parseTestTask(spec.trigger, objective);
@@ -297,6 +331,14 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   if (spec.kind === "METHOD_GUARD") {
     try {
       return applyMethodGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
+    } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  if (spec.kind === "COMPLEX_FUNCTION") {
+    try {
+      return runComplexRule(spec.trigger, spec.params, objective, files, isTest, why); // loops refused (loop_unsupported); plain, unprotected paths only
     } catch {
       if (why) why.reason = "internal_error";
       return null;

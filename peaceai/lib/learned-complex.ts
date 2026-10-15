@@ -38,7 +38,7 @@ export const COMPLEX_PARAM_KEYS = ["body", "grading", "loops", "params", "placem
 export const COMPLEX_VOCAB: Record<(typeof COMPLEX_PARAM_KEYS)[number], readonly string[]> = {
   body: ["bounded-block"],
   grading: ["self-fail-before-pass-after-and-stub"],
-  loops: ["for-of-param", "counted-literal-or-length"],
+  loops: ["none", "for-of-param", "counted-literal-or-length"], // "none": the wired spec (loops are refused as loop_unsupported regardless)
   params: ["typed"],
   placement: ["end-of-module"],
   returns: ["annotated"],
@@ -291,36 +291,40 @@ function declared(sf: ts.SourceFile): Set<string> {
   return out;
 }
 
-export function buildComplexEdit(params: Record<string, string | string[]>, task: ComplexTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): ComplexEdit | null {
+export function buildComplexEdit(params: Record<string, string | string[]>, task: ComplexTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), why?: { reason?: string }): ComplexEdit | null {
+  const no = (r: string) => { if (why) why.reason = r; return null; };
   for (const k of COMPLEX_PARAM_KEYS) {
     const v = params[k];
-    if (k === "loops") { if (!Array.isArray(v) || v.length === 0 || !v.every((x) => COMPLEX_VOCAB.loops.includes(x))) return null; continue; }
-    if (typeof v !== "string" || !COMPLEX_VOCAB[k].includes(v)) return null;
+    if (k === "loops") { if (!Array.isArray(v) || v.length === 0 || !v.every((x) => COMPLEX_VOCAB.loops.includes(x))) return no("bad_rule_params"); continue; }
+    if (typeof v !== "string" || !COMPLEX_VOCAB[k].includes(v)) return no("bad_rule_params");
   }
-  if (!plainPath(task.file) || isProtected(task.file)) return null;
+  if (!plainPath(task.file)) return no("path_not_plain");
+  if (isProtected(task.file)) return no("protected_path");
   const target = files.find((f) => f.path === task.file);
-  if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return null;
+  if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
-  if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return null;
-  if (declared(sf).has(task.fn) || new RegExp(String.raw`\b${task.fn.replace(/\$/g, "\\$")}\b`).test(target.content) || RESERVED.test(task.fn)) return null;
+  if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return no("edit_refused");
+  if (declared(sf).has(task.fn) || new RegExp(String.raw`\b${task.fn.replace(/\$/g, "\\$")}\b`).test(target.content) || RESERVED.test(task.fn)) return no("edit_refused");
   const names = new Set(task.params.map((p) => p.name));
-  if (names.has(task.fn)) return null;
+  if (names.has(task.fn)) return no("edit_refused");
   const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
   const fnText = `export function ${task.fn}(${sig}): ${task.ret} {\n${task.body.split("\n").map((l) => `  ${l}`).join("\n")}\n}\n`;
   const fsf = ts.createSourceFile("f.ts", fnText, ts.ScriptTarget.Latest, true);
-  if ((fsf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || fsf.statements.length !== 1) return null;
+  if ((fsf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || fsf.statements.length !== 1) return no("edit_refused");
   const fd = fsf.statements[0]!;
-  if (!ts.isFunctionDeclaration(fd) || !fd.body) return null;
+  if (!ts.isFunctionDeclaration(fd) || !fd.body) return no("edit_refused");
   const allowedLoops = new Set(params.loops as string[]);
-  if (!allowedLoops.has("for-of-param") && /\bfor \(const /.test(task.body)) return null;
-  if (!allowedLoops.has("counted-literal-or-length") && /\bfor \(let /.test(task.body)) return null;
-  if (blockRefusal(fd.body, names, fsf)) return null;
+  if (!allowedLoops.has("for-of-param") && /\bfor \(const /.test(task.body)) return no(LOOP_UNSUPPORTED);
+  if (!allowedLoops.has("counted-literal-or-length") && /\bfor \(let /.test(task.body)) return no(LOOP_UNSUPPORTED);
+  const refusal = blockRefusal(fd.body, names, fsf);
+  if (refusal) return no(refusal === LOOP_UNSUPPORTED ? LOOP_UNSUPPORTED : "body_refused");
   const base = target.content.endsWith("\n") ? target.content : `${target.content}\n`;
   const content = `${base}\n${fnText}`;
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
   const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
-  if (!test || !plainPath(test.path)) return null; // new test files match the protected *.test.ts pattern by design; only the path shape is checked here
+  if (!test) return no("test_refused");
+  if (!plainPath(test.path)) return no("path_not_plain"); // new test files match the protected *.test.ts pattern by design; only the path shape is checked here
   return { path: target.path, content, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
 }
 
@@ -328,6 +332,13 @@ export function applyComplexRule(trigger: string, params: Record<string, string 
   if (!complexFunctionEnabled(env)) return null;
   const task = parseComplexTask(trigger, objective);
   return task ? buildComplexEdit(params, task, files, isTest) : null;
+}
+
+/** Job A entry (wiring): admitted only via the hash-pinned approved list, so no flag here; reasons for M59 lines. */
+export function runComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }): ComplexEdit | null {
+  const task = parseComplexTask(trigger, objective);
+  if (!task) { if (why) why.reason = "task_unparsed"; return null; }
+  return buildComplexEdit(params, task, files, isTest, why);
 }
 
 /** Job B's stub: the function's whole body replaced by a type-default return (types are always in the vocabulary). */

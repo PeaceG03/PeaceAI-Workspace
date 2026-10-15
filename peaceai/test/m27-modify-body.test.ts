@@ -189,6 +189,6 @@ test("Round 3 (Auditor #136): EDITABLE_PATHS is keyed per repository; a listed p
   assert.equal(at("PeaceG03/PeaceAI", "src/num-utils.ts"), null, "unlisted repo");
   assert.equal(at("constructor", "src/num-utils.ts"), null, "prototype keys are not repos");
   assert.equal(editablePath("toString", "src/num-utils.ts"), false);
-  assert.match(readFileSync(join(root, "peaceai/bin/generate.ts"), "utf8"), /applyRule\(a\.spec, objectiveText, \[\.\.\.candidatesForContext, \.\.\.workflowFiles\], scope\.isTest, target, why\);/, "the generator passes the task's target repo");
+  assert.match(readFileSync(join(root, "peaceai/bin/generate.ts"), "utf8"), /applyRule\(a\.spec, objectiveText, \[\.\.\.candidatesForContext, \.\.\.workflowFiles\], scope\.isTest, target, why(?:, newPathExists)?\);/, "the generator passes the task's target repo");
   assert.match(readFileSync(join(root, "peaceai/lib/minebody.ts"), "utf8"), /`PeaceG03\/\$\{label\}`\)\);/, "the miner checks fits against the mined repo's list");
 });
