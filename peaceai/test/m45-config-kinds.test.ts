@@ -80,6 +80,18 @@ test("evidence: licensed external, none from set C; counts recorded against the 
   assert.ok(!(EV.families.IMPORT_EDIT as { path: string }[]).some((x) => x.path.endsWith(".js")), "L5: no .js example");
 });
 
+test("M58 (Architect): no example overlaps the training corpus (repo in ext-corpus.json, or repo/file in the corpus manifest)", () => {
+  const corpus = JSON.parse(read("peaceai/model/ext-corpus.json"));
+  const repos = new Set<string>([...corpus.repos.map((r: { name: string }) => r.name), ...corpus.owner.map((r: { name: string }) => r.name)]);
+  const rows = read("peaceai/model/ext-manifest.jsonl").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l) as { repo: string; path: string });
+  const mRepos = new Set(rows.map((r) => r.repo)), mFiles = new Set(rows.map((r) => `${r.repo}:${r.path}`));
+  const overlap = (x: { repo: string; path: string }) => repos.has(x.repo) || mRepos.has(x.repo) || mFiles.has(`${x.repo}:${x.path}`);
+  for (const fam of ["IMPORT_EDIT", "PACKAGE_SCRIPT"]) for (const x of EV.families[fam] as { repo: string; path: string }[]) assert.ok(!overlap(x), `${fam} example ${x.repo} ${x.path} overlaps the training corpus`);
+  // The check bites: every dropped corpus-overlap example would fail it.
+  assert.equal(EV.droppedCorpusOverlap.IMPORT_EDIT.length, 4);
+  for (const x of EV.droppedCorpusOverlap.IMPORT_EDIT as { repo: string; path: string }[]) assert.ok(overlap(x), x.repo);
+});
+
 const FIX = "peaceai/test/fixtures/m45/";
 const gitBlob = (b: Buffer) => createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${b.length}\0`), b])).digest("hex");
 const fixture = (name: string, blob: string): string => {
@@ -195,11 +207,11 @@ test("refusal count is what the PR states", () => {
 const REFUSALS_STATED = 90; // 18 IMPORT_EDIT + 72 PACKAGE_SCRIPT
 
 test("engine, specs and this test are protected; specs pinned", () => {
-  for (const p of ["peaceai/lib/learned-config.ts", "peaceai/spec/import-edit-v1.md", "peaceai/spec/package-script-v1.md", "peaceai/test/m45-config-kinds.test.ts", "peaceai/rules/proposals/m45-evidence.json", "peaceai/test/fixtures/m45/vitejs__vite.LICENSE.txt"])
+  for (const p of ["peaceai/lib/learned-config.ts", "peaceai/spec/import-edit-v1.md", "peaceai/spec/package-script-v1.md", "peaceai/test/m45-config-kinds.test.ts", "peaceai/rules/proposals/m45-evidence.json", "peaceai/test/fixtures/m45/storybookjs__storybook.LICENSE.txt"])
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   const h = (p: string) => createHash("sha256").update(read(p)).digest("hex");
   assert.equal(h("peaceai/spec/import-edit-v1.md"), IMPORT_SPEC_SHA);
   assert.equal(h("peaceai/spec/package-script-v1.md"), SCRIPT_SPEC_SHA);
 });
-const IMPORT_SPEC_SHA = "88eb38b42fe035047031a49e680f61967bb5e10a5cd6e1e3c6aac9e51e3d1239";
+const IMPORT_SPEC_SHA = "4fff370966b5ea80fd5ce777f055bcf1e2e6d4fe2a89ba4c15d08de2e22cd136";
 const SCRIPT_SPEC_SHA = "223497941b1ccf43d06b2f1965bee5fd35c22b21680e29d012f73b061bc262e0";
