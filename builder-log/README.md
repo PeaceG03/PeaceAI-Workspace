@@ -18,3 +18,14 @@ The skill lists live in `check.ts`. A mark follows the rules approved at the tim
 Rules: public data only. No secrets, no private-repo code, paths or diffs, no bar values, predictions or scores. PeaceSTOCKS changes are referred to by SHA and a plain description.
 
 CI (`.github/workflows/builder-log.yml`) checks the schema and that the file at the PR base is a byte prefix of the new file: lines may only be appended.
+
+## PeaceAI vs Builder coverage
+
+`coverage.ts` (run in Actions by `builder-log.yml` and the skill-learner report) measures, of **Builder's** logged tasks, what percentage PeaceAI could do end-to-end using **only live-proven skills**:
+
+- A skill is live-proven only if the log has at least one entry with `by: PeaceAI` and a `changed` landing that includes `PeaceSTOCKS@<sha>` or `PeaceAI-Workspace@<sha>`.
+- Approved-but-unproven skills (for example `APPROVED_SINCE` without such a PeaceAI landing) do **not** count.
+- Windows: last 7 calendar days (MT, inclusive of asOf) and all-time.
+- Remaining Builder tasks are ranked by missing skill count (`top missing`).
+
+No box or network: counting over `tasks.jsonl` only.

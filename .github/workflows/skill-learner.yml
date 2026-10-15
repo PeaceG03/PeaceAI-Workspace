@@ -1,0 +1,57 @@
+name: skill-learner
+
+# M22: once a day, re-read builder-log/tasks.jsonl and propose ONE missing skill (with log examples) as a
+# skill-proposal issue, plus a ranked gap note. Counting only (no model, no network beyond this repo's issues).
+# Off unless vars.PEACEAI_SKILL_LEARNER == 'true'. It can only open an issue: it never approves, merges,
+# edits rules or pushes.
+on:
+  schedule:
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: skill-learner
+  cancel-in-progress: false
+
+jobs:
+  learn:
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && vars.PEACEAI_SKILL_LEARNER == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      - run: npm ci --ignore-scripts
+      # Auditor (#115): only proposals this workflow posted (author github-actions[bot]) count, and only their
+      # first line, exactly the marker form (peaceai/lib/skilllearn.ts MARKER_LINE). Log text in bodies is escaped.
+      - name: Skills already proposed (marker line of this workflow's own issues, any state)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&labels=skill-proposal&per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and .pull_request == null) | .body | split("\n")[0]' \
+            | grep -E '^<!-- peaceai-skill-proposal:v1 skills=[A-Z][A-Z_]*(,[A-Z][A-Z_]*){0,9} log=[0-9a-f]{64} -->$' \
+            | sed -E 's/^.*skills=([A-Z_,]+) log=.*$/\1/' | tr ',' '\n' | sort -u > "$RUNNER_TEMP/proposed.txt" || true
+      - name: One learner pass
+        run: |
+          SKILL_PROPOSED="$(cat "$RUNNER_TEMP/proposed.txt")" PEACEAI_OUT_DIR="$RUNNER_TEMP/skill" ./node_modules/.bin/tsx peaceai/bin/skill-learner.ts
+          { echo "## Gap note"; echo; echo '```'; cat "$RUNNER_TEMP/skill/gaps.tsv"; echo '```'; echo; cat "$RUNNER_TEMP/skill/coverage.md"; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Open the skill proposal (if any)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f "$RUNNER_TEMP/skill/body.md" ]; then
+            gh label create skill-proposal --repo "$GITHUB_REPOSITORY" --color c2e0c6 --force
+            gh issue create --repo "$GITHUB_REPOSITORY" --label skill-proposal --title "$(cat "$RUNNER_TEMP/skill/title.txt")" --body-file "$RUNNER_TEMP/skill/body.md"
+          else
+            echo "no skill to propose this pass"
+          fi
