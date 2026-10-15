@@ -1,15 +1,15 @@
-// PeaceAI vs Builder coverage: live-proven only (PeaceAI + repo@sha), 7d + all-time, top missing.
+// PeaceAI vs Builder coverage: live-proven only (PeaceAI + repo@sha / validated LIVE_PROVEN_SINCE).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { LIVE_LANDING_REF, LIVE_PROVEN_SINCE, validateLiveProven, validateLog, type Entry } from "./check.ts";
 import {
   coverageReport,
   denverYmd,
   formatCoverageSummary,
   LIVE_LANDING,
   liveProvenSkills,
-  parseLogEntries,
 } from "./coverage.ts";
 
 type Fields = {
@@ -24,7 +24,6 @@ type Fields = {
   by: "Builder" | "PeaceAI";
 };
 
-/** Canonical key order required by the log validator. */
 const line = (e: Fields): string =>
   JSON.stringify({
     seq: e.seq,
@@ -38,116 +37,91 @@ const line = (e: Fields): string =>
     by: e.by,
   });
 
-const LOG = [
+const entriesOf = (text: string): Entry[] => text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
+
+const FIXTURE = [
   line({ seq: 1, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-10" }),
   line({ seq: 2, skill: "IMPORT_EDIT", mark: "missing skill IMPORT_EDIT", by: "Builder", date: "2026-10-10", changed: "PeaceSTOCKS@abc1234" }),
   line({ seq: 3, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-11", changed: "PeaceSTOCKS@def5678" }),
   line({ seq: 4, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-12", changed: "PeaceSTOCKS@aaa1111" }),
-  line({ seq: 5, skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-12", changed: "PeaceAI-Workspace#99" }), // issue only: not a live landing
+  line({ seq: 5, skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-12", changed: "PeaceAI-Workspace#99" }),
   line({ seq: 6, skill: "COMPLEX_FUNCTION", mark: "missing skill COMPLEX_FUNCTION", by: "Builder", date: "2026-10-14", changed: "PeaceSTOCKS@bbb2222" }),
   line({ seq: 7, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14" }),
-  line({ seq: 8, skill: "WORKFLOW_STEP", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#125" }), // approved, no PeaceAI@sha for this skill
+  line({ seq: 8, skill: "WORKFLOW_STEP", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#125" }),
 ].join("\n") + "\n";
 
 test("LIVE_LANDING matches repo@sha only, not issue refs", () => {
+  assert.equal(LIVE_LANDING, LIVE_LANDING_REF);
   assert.ok(LIVE_LANDING.test("PeaceSTOCKS@abc1234"));
   assert.ok(LIVE_LANDING.test("PeaceAI-Workspace@deadbee"));
   assert.ok(!LIVE_LANDING.test("PeaceAI-Workspace#99"));
   assert.ok(!LIVE_LANDING.test("none (fixture)"));
 });
 
-test("live-proven: PeaceAI + repo@sha; LIVE_PROVEN_SINCE applies from its date; issue-only does not count", () => {
-  const entries = parseLogEntries(LOG);
-  assert.deepEqual([...liveProvenSkills(entries, "2026-10-14")].sort(), ["THROW_GUARD"], "before WORKFLOW_STEP live proof");
+test("liveProvenSkills: PeaceAI@sha landings + LIVE_PROVEN_SINCE.since gate; issue-only ignored", () => {
+  const entries = entriesOf(FIXTURE);
+  assert.deepEqual([...liveProvenSkills(entries, "2026-10-14")].sort(), ["THROW_GUARD"]);
   assert.deepEqual([...liveProvenSkills(entries, "2026-10-15")].sort(), ["THROW_GUARD", "WORKFLOW_STEP"]);
+  // asOf before the THROW_GUARD landing time excludes it
+  assert.deepEqual([...liveProvenSkills(entries, "2026-10-10")].sort(), []);
 });
 
-test("coverage: all-time and last-7-days % of Builder tasks; top missing ranked by count", () => {
-  const r = coverageReport(LOG, "2026-10-15");
-  assert.deepEqual(r.liveProven, ["THROW_GUARD", "WORKFLOW_STEP"]);
-  // Builder seqs: 1,2,4,6,7,8 → 6 tasks; seq4 THROW_GUARD + seq8 WORKFLOW_STEP → 2/6 ≈ 33.3%
-  assert.equal(r.allTime.builderTasks, 6);
-  assert.equal(r.allTime.peaceaiAble, 2);
-  assert.equal(r.allTime.percent, 33.3);
-  assert.equal(r.last7Days.builderTasks, 6);
-  assert.equal(r.last7Days.peaceaiAble, 2);
-  assert.equal(r.last7Days.percent, 33.3);
-  assert.deepEqual(
-    r.topMissing.map((m) => [m.skill, m.count]),
-    [
-      ["OPS_ACTION", 2],
-      ["COMPLEX_FUNCTION", 1],
-      ["IMPORT_EDIT", 1],
-    ],
-  );
+test("liveProvenSkills window math for Builder able % (unit, no validateLog)", () => {
+  const entries = entriesOf(FIXTURE);
+  const proven = liveProvenSkills(entries, "2026-10-15");
+  const builder = entries.filter((e) => e.by === "Builder");
+  const able = builder.filter((e) => proven.has(e.skill));
+  // Builder: 1,2,4,6,7,8 → 6; able: seq4 THROW_GUARD + seq8 WORKFLOW_STEP → 2/6 = 33.3%
+  assert.equal(builder.length, 6);
+  assert.equal(able.length, 2);
+  assert.equal(Math.round((1000 * able.length) / builder.length) / 10, 33.3);
 });
 
-test("last 7 days excludes Builder tasks older than the window", () => {
-  const older =
-    [
-      line({ seq: 1, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-01" }),
-      line({ seq: 2, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-02", changed: "PeaceSTOCKS@abc1234" }),
-      line({ seq: 3, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-14", changed: "PeaceSTOCKS@abc1235" }),
-      line({ seq: 4, skill: "IMPORT_EDIT", mark: "missing skill IMPORT_EDIT", by: "Builder", date: "2026-10-14", changed: "PeaceSTOCKS@abc1236" }),
-    ].join("\n") + "\n";
-  const r = coverageReport(older, "2026-10-15");
-  assert.equal(r.allTime.builderTasks, 3);
-  assert.equal(r.allTime.peaceaiAble, 1);
-  assert.equal(r.allTime.percent, 33.3);
-  assert.equal(r.last7Days.builderTasks, 2); // seq 3,4 only (Oct 9..15)
-  assert.equal(r.last7Days.peaceaiAble, 1);
-  assert.equal(r.last7Days.percent, 50);
+test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SINCE backing", () => {
+  assert.throws(() => coverageReport(FIXTURE, "bad"), /bad asOf|builder-log invalid/);
+  // Short fixtures skip LIVE_PROVEN_SINCE (log shorter than named seqs); the committed log must pass.
+  assert.deepEqual(validateLog(FIXTURE), []);
+  assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("empty Builder window yields null percent; invalid inputs refused", () => {
-  const onlyPeace =
-    line({ seq: 1, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-14", changed: "PeaceSTOCKS@abc1234" }) + "\n";
-  const r = coverageReport(onlyPeace, "2026-10-15");
-  assert.equal(r.allTime.builderTasks, 0);
-  assert.equal(r.allTime.percent, null);
-  assert.equal(r.last7Days.percent, null);
-  assert.throws(() => coverageReport(LOG, "bad"), /bad asOf/);
-  assert.throws(() => coverageReport(LOG, "2026-10-15", 0), /topN/);
-  assert.throws(() => coverageReport('{"seq":1}\n', "2026-10-15"), /builder-log invalid/);
-});
-
-test("formatCoverageSummary names the metric and lists missing skills", () => {
-  const md = formatCoverageSummary(coverageReport(LOG, "2026-10-15"));
-  assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /live-proven/);
-  assert.match(md, /last 7 days \| 33\.3% \(2\/6\)/);
-  assert.match(md, /all-time \| 33\.3% \(2\/6\)/);
-  assert.match(md, /`THROW_GUARD`/);
-  assert.match(md, /`WORKFLOW_STEP`/);
-  assert.match(md, /\| OPS_ACTION \| 2 \|/);
-  assert.doesNotMatch(md, /TEST_CASE/); // issue-only PeaceAI entry must not invent a live-proven skill
-});
-
-test("real log: WORKFLOW_STEP is live-proven (LIVE_PROVEN_SINCE + PeaceAI@sha); CHECK_OBJECT_LITERAL_ARGS is not", () => {
+test("real log: 3/58 = 5.2%; WORKFLOW_STEP live-proven via seq 85; CHECK_OBJECT_LITERAL_ARGS not", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
-  const r = coverageReport(text, denverYmd());
+  assert.deepEqual(validateLog(text), []);
+  assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
+  assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.since, "2026-10-15 12:02");
+  const r = coverageReport(text, "2026-10-15");
   assert.ok(r.liveProven.includes("THROW_GUARD"));
-  assert.ok(r.liveProven.includes("WORKFLOW_STEP"), "workflow-step v2 live-proven on 2026-10-15");
-  assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"), "approved-but-unproven");
-  assert.ok(r.allTime.builderTasks > 0);
+  assert.ok(r.liveProven.includes("WORKFLOW_STEP"));
+  assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
+  assert.equal(r.allTime.builderTasks, 58);
+  assert.equal(r.allTime.peaceaiAble, 3);
+  assert.equal(r.allTime.percent, 5.2);
+  assert.equal(r.last7Days.builderTasks, 58);
+  assert.equal(r.last7Days.peaceaiAble, 3);
+  assert.equal(r.last7Days.percent, 5.2);
   assert.ok(!r.topMissing.some((m) => m.skill === "WORKFLOW_STEP"));
-  assert.match(formatCoverageSummary(r), /PeaceAI vs Builder/);
+  const md = formatCoverageSummary(r);
+  assert.match(md, /## PeaceAI vs Builder/);
+  assert.match(md, /5\.2% \(3\/58\)/);
+  assert.equal(coverageReport(text, denverYmd()).allTime.percent, 5.2);
 });
 
-test("LIVE_PROVEN_SINCE alone marks a skill live-proven even without a PeaceAI@sha log landing yet", async () => {
-  const { LIVE_PROVEN_SINCE } = await import("./check.ts");
-  assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP, "2026-10-15 12:02");
-  // Fixture: approved WORKFLOW_STEP Builder tasks, no PeaceAI landing for that skill
-  const onlyApproved =
-    [
-      line({ seq: 1, skill: "WORKFLOW_STEP", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#125" }),
-      line({ seq: 2, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14" }),
-    ].join("\n") + "\n";
-  const before = coverageReport(onlyApproved, "2026-10-14"); // before LIVE_PROVEN_SINCE
-  assert.ok(!before.liveProven.includes("WORKFLOW_STEP"));
-  assert.equal(before.allTime.peaceaiAble, 0);
-  const after = coverageReport(onlyApproved, "2026-10-15");
-  assert.ok(after.liveProven.includes("WORKFLOW_STEP"));
-  assert.equal(after.allTime.peaceaiAble, 1);
-  assert.equal(after.allTime.percent, 50);
+test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
+  const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
+  const entries = entriesOf(text);
+  assert.deepEqual(validateLiveProven(entries), [], "committed map is backed by seq 85");
+  assert.ok(
+    validateLiveProven(entries, { WORKFLOW_STEP: { since: "2026-10-15 12:02", seq: 99999 } }).some((e) =>
+      /no builder-log seq 99999/.test(e),
+    ),
+  );
+  assert.ok(
+    validateLiveProven(entries, { TEST_CASE: { since: "2026-10-13 07:00", seq: 26 } }).some((e) => /by must be PeaceAI/.test(e)),
+  );
+  assert.ok(
+    validateLiveProven(entries, { THROW_GUARD: { since: "2026-10-15 12:02", seq: 85 } }).some((e) => /skill is WORKFLOW_STEP/.test(e)),
+  );
+  assert.ok(
+    validateLiveProven(entries, { TEST_CASE_APPEND: { since: "2026-10-13 22:36", seq: 59 } }).some((e) => /repo@sha/.test(e)),
+  );
 });

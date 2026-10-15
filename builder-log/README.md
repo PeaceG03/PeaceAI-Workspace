@@ -21,10 +21,11 @@ CI (`.github/workflows/builder-log.yml`) checks the schema and that the file at 
 
 ## PeaceAI vs Builder coverage
 
-`coverage.ts` (run in Actions by `builder-log.yml` and the skill-learner report) measures, of **Builder's** logged tasks, what percentage PeaceAI could do end-to-end using **only live-proven skills**:
+`coverage.ts` (printed in the `builder-log` Actions job summary) measures, of **Builder's** logged tasks, what percentage PeaceAI could do end-to-end using **only live-proven skills**:
 
-- A skill is live-proven if (a) the log has at least one entry with `by: PeaceAI` and a `changed` landing that includes `PeaceSTOCKS@<sha>` or `PeaceAI-Workspace@<sha>`, or (b) it is listed in `LIVE_PROVEN_SINCE` in `check.ts` (with its proof landing time).
-- Approved-but-unproven skills (`APPROVED_SINCE` only, not yet in `LIVE_PROVEN_SINCE` and with no PeaceAI `@sha` landing) do **not** count.
+- A skill is live-proven if (a) the log has a `by: PeaceAI` entry with a `PeaceSTOCKS@<sha>` or `PeaceAI-Workspace@<sha>` landing on/before the asOf date, or (b) it is listed in `LIVE_PROVEN_SINCE` in `check.ts`.
+- Every `LIVE_PROVEN_SINCE` entry must name a builder-log `seq` that backs it (`by: PeaceAI`, same skill, `repo@sha` in `changed`). `check.ts` / `validateLog` fail if a map entry is unbacked.
+- Approved-but-unproven skills (`APPROVED_SINCE` only) do **not** count.
 - Windows: last 7 calendar days (MT, inclusive of asOf) and all-time.
 - Remaining Builder tasks are ranked by missing skill count (`top missing`).
 

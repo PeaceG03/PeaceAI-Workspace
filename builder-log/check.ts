@@ -32,12 +32,16 @@ export const APPROVED_SINCE = {
   WORKFLOW_STEP: "2026-10-13 22:41", // public-workflow-step-v2, #125 merged 04:41Z
 } as const;
 /**
- * Skills with a passing live proof from this MT time on. Distinct from APPROVED_SINCE: approval alone is not
- * live-proven. Coverage (and the skill-learner report) unions this with PeaceAI repo@sha landings in the log.
+ * Skills with a passing live proof from `since` (MT) on. Distinct from APPROVED_SINCE: approval alone is not
+ * live-proven. Every entry MUST name a builder-log `seq` that backs it: that line must be by PeaceAI, use the
+ * same skill, and land a repo@sha in `changed`. validateLog / validateLiveProven refuse an unbacked map.
  */
-export const LIVE_PROVEN_SINCE = {
-  WORKFLOW_STEP: "2026-10-15 12:02", // PeaceSTOCKS#6 @f57036b; tenmin-mode-sim run 38782483772 both typecheck steps passed
-} as const;
+export type LiveProvenRef = { readonly since: string; readonly seq: number };
+export const LIVE_PROVEN_SINCE: Readonly<Record<string, LiveProvenRef>> = {
+  WORKFLOW_STEP: { since: "2026-10-15 12:02", seq: 85 }, // PeaceSTOCKS#6 @f57036b; tenmin-mode-sim run 38782483772
+};
+/** repo@sha landing in a changed field (not an issue-only ref). */
+export const LIVE_LANDING_REF = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;
 export type Skill = (typeof APPROVED_SKILLS)[number] | (typeof MISSING_SKILLS)[number] | keyof typeof APPROVED_SINCE;
 
 export interface Entry {
@@ -90,10 +94,45 @@ export function validateEntry(raw: unknown, expectSeq: number): string[] {
   return errs;
 }
 
+
+/** Refuse LIVE_PROVEN_SINCE entries that are not backed by a PeaceAI repo@sha log line for that skill. */
+export function validateLiveProven(
+  entries: readonly Entry[],
+  map: Readonly<Record<string, LiveProvenRef>> = LIVE_PROVEN_SINCE,
+): string[] {
+  const bySeq = new Map(entries.map((e) => [e.seq, e]));
+  const errs: string[] = [];
+  for (const [skill, ref] of Object.entries(map)) {
+    if (!ref || typeof ref.since !== "string" || typeof ref.seq !== "number") {
+      errs.push(`LIVE_PROVEN_SINCE.${skill}: need { since, seq }`);
+      continue;
+    }
+    if (!/^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d$/.test(ref.since)) {
+      errs.push(`LIVE_PROVEN_SINCE.${skill}: bad since (want YYYY-MM-DD HH:MM MT)`);
+    }
+    if (!Number.isInteger(ref.seq) || ref.seq < 1) {
+      errs.push(`LIVE_PROVEN_SINCE.${skill}: seq must be a positive integer`);
+      continue;
+    }
+    const e = bySeq.get(ref.seq);
+    if (!e) {
+      errs.push(`LIVE_PROVEN_SINCE.${skill}: no builder-log seq ${ref.seq}`);
+      continue;
+    }
+    if (e.by !== "PeaceAI") errs.push(`LIVE_PROVEN_SINCE.${skill}: seq ${ref.seq} by must be PeaceAI (got ${e.by})`);
+    if (e.skill !== skill) errs.push(`LIVE_PROVEN_SINCE.${skill}: seq ${ref.seq} skill is ${e.skill}, not ${skill}`);
+    if (!LIVE_LANDING_REF.test(e.changed)) {
+      errs.push(`LIVE_PROVEN_SINCE.${skill}: seq ${ref.seq} changed must include a repo@sha landing`);
+    }
+  }
+  return errs;
+}
+
 export function validateLog(text: string): string[] {
   if (text.length > 0 && !text.endsWith("\n")) return ["file must end with a newline"];
   const errs: string[] = [];
   const lines = text.split("\n").slice(0, -1);
+  const entries: Entry[] = [];
   lines.forEach((line, i) => {
     let v: unknown;
     try {
@@ -104,7 +143,14 @@ export function validateLog(text: string): string[] {
     }
     if (JSON.stringify(v) !== line) errs.push(`line ${i + 1}: not canonical JSON (one compact object per line)`);
     for (const e of validateEntry(v, i + 1)) errs.push(`line ${i + 1}: ${e}`);
+    if (typeof v === "object" && v !== null) entries.push(v as Entry);
   });
+  // LIVE_PROVEN_SINCE is checked once the log is long enough to contain every named seq (short schema
+  // fixtures are not required to embed the full backing history).
+  if (errs.length === 0) {
+    const need = Object.values(LIVE_PROVEN_SINCE).reduce((m, r) => Math.max(m, r.seq), 0);
+    if (entries.length >= need) errs.push(...validateLiveProven(entries));
+  }
   return errs;
 }
 
