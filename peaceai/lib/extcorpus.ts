@@ -129,3 +129,10 @@ export function manifestRepoProblems(pairs: readonly { repo: string; commit: str
   }
   return [...new Set(out)];
 }
+
+/** M51 follow-up: --write owns only schema, rule and sets of heldout-c.json. Every other field already in the file
+ * (wiredAsEval, wiredBy, ...) is kept as is; wiredAsEval defaults to false only when the file has none. */
+export function mergeHeldoutC(existing: unknown, owned: { schema: string; rule: string; sets: unknown }): Record<string, unknown> {
+  const prev = existing && typeof existing === "object" && !Array.isArray(existing) ? (existing as Record<string, unknown>) : {};
+  return { ...(("wiredAsEval" in prev) ? {} : { wiredAsEval: false }), ...prev, ...owned, ...(("wiredAsEval" in prev) ? { wiredAsEval: prev.wiredAsEval } : {}) };
+}

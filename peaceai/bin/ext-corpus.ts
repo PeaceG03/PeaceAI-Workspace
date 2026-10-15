@@ -16,7 +16,7 @@ import { COREFREE_MIN_RUN } from "../lib/lm.ts";
 import { readManifestBytes, writeParts } from "../lib/manifestparts.ts";
 import { classifyLicense, CODE_FILE, heldOutHashes } from "../lib/lmcorpus.ts";
 import { agentMade, builderLogRefs, excludedForC, sha256Hex } from "../lib/heldout.ts";
-import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
+import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, mergeHeldoutC, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const cfg = JSON.parse(readFileSync(join(model, "ext-corpus.json"), "utf8"));
@@ -145,6 +145,9 @@ if (write) {
   writeFileSync(join(model, "ext-path-exclusions.json"), JSON.stringify({ schema: "peaceai-ext-path-exclusions:v1", rule: "Architect M51 option (b): a file whose repository path trips the pre-push leak scanner (lib/leak.ts scanText on the path) is excluded from the corpus; no hook exception, no path encoding. Entries identify each file by repo, pinned commit and content sha256 (the path is not stored, since storing it would trip the same scan).", count: leaks.length, entries: leaks.map((l) => ({ ...l, reason: `path-leak: ${l.kinds.join("+")}-like text in the repository path` })) }, null, 1) + "\n");
   // Auditor #148 follow-up: the counts-only summary (no paths, no text) is committed next to the manifest.
   writeFileSync(join(model, "ext-summary.json"), JSON.stringify({ ...summary, manifestSha256: sha256Hex(readManifestBytes(model, "ext-manifest")) }, null, 1) + "\n");
-  writeFileSync(join(model, "heldout-c.json"), JSON.stringify({ schema: "peaceai-heldout-c:v2", rule: EXT_C_RULE, wiredAsEval: false, sets: { C: cEntries } }, null, 1) + "\n");
+  const hcPath = join(model, "heldout-c.json");
+  let prevC: unknown = {};
+  try { prevC = JSON.parse(readFileSync(hcPath, "utf8")); } catch { prevC = {}; }
+  writeFileSync(hcPath, JSON.stringify(mergeHeldoutC(prevC, { schema: "peaceai-heldout-c:v2", rule: EXT_C_RULE, sets: { C: cEntries } }), null, 1) + "\n");
 }
 console.log(`ext corpus stage=${cfg.stage} repos=${pool.length} refused=${summary.refused.length} train_files=${summary.train.files} train_bytes=${summary.train.bytes} setC_repos=${summary.setC.repos} setC_files=${summary.setC.files} memcheck_scanned=${summary.memcheck.scannedDocs} memcheck_dropped=${summary.memcheck.droppedCoreText} excluded=${JSON.stringify(summary.excluded)}`);

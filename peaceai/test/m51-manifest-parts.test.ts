@@ -89,3 +89,19 @@ test("M51 option (b): path-leak exclusions are listed with a reason (no paths), 
   const summary = JSON.parse(readFileSync(join(model, "ext-summary.json"), "utf8"));
   assert.equal(summary.excluded["path-leak"], ex.count);
 });
+
+test("M51 follow-up: --write keeps heldout-c.json fields it does not own (wiredAsEval, wiredBy, others), same key order", async () => {
+  const { mergeHeldoutC } = await import("../lib/extcorpus.ts");
+  const prev = { schema: "old", rule: "old", wiredAsEval: true, sets: { C: [1] }, wiredBy: "Peace", extra: { a: 1 } };
+  const m = mergeHeldoutC(prev, { schema: "peaceai-heldout-c:v2", rule: "R", sets: { C: [2] } });
+  assert.deepEqual(m, { schema: "peaceai-heldout-c:v2", rule: "R", wiredAsEval: true, sets: { C: [2] }, wiredBy: "Peace", extra: { a: 1 } });
+  assert.deepEqual(Object.keys(m), Object.keys(prev));
+  assert.equal(mergeHeldoutC({}, { schema: "s", rule: "r", sets: {} }).wiredAsEval, false);
+  // The committed file round-trips byte-identically through the merge (what a --write rebuild of the same sets does).
+  const path = join(import.meta.dirname, "../model/heldout-c.json");
+  const cur = JSON.parse(readFileSync(path, "utf8"));
+  assert.equal(JSON.stringify(mergeHeldoutC(cur, { schema: cur.schema, rule: cur.rule, sets: cur.sets }), null, 1) + "\n", readFileSync(path, "utf8"));
+  const src = readFileSync(join(import.meta.dirname, "../bin/ext-corpus.ts"), "utf8");
+  assert.match(src, /mergeHeldoutC\(prevC,/);
+  assert.doesNotMatch(src, /wiredAsEval: false, sets:/);
+});
