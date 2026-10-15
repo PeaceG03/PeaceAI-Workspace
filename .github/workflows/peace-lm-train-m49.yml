@@ -59,6 +59,9 @@ jobs:
             --steps "$(m steps)" --max-steps-this-run "$(jq -r .chain.stepsPerPart "$CFG")" --eval-every 50 --patience 4 --threads 4 \
             --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
           grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          # M52 (Architect (a)): the pretrain manifest sha travels with the work dir; every part must train on the same one.
+          ms=$(sha256sum "$RUNNER_TEMP/corpus/manifest.jsonl" | cut -c1-64)
+          if [ -f "$RUNNER_TEMP/work/pretrain-manifest.sha256" ]; then [ "$(cat "$RUNNER_TEMP/work/pretrain-manifest.sha256")" = "$ms" ] || { echo "pretrain manifest changed between parts: refused"; exit 1; }; else echo "$ms" > "$RUNNER_TEMP/work/pretrain-manifest.sha256"; fi
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
@@ -138,6 +141,9 @@ jobs:
             --steps "$(m steps)" --max-steps-this-run "$(jq -r .chain.stepsPerPart "$CFG")" --eval-every 50 --patience 4 --threads 4 \
             --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
           grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          # M52 (Architect (a)): the pretrain manifest sha travels with the work dir; every part must train on the same one.
+          ms=$(sha256sum "$RUNNER_TEMP/corpus/manifest.jsonl" | cut -c1-64)
+          if [ -f "$RUNNER_TEMP/work/pretrain-manifest.sha256" ]; then [ "$(cat "$RUNNER_TEMP/work/pretrain-manifest.sha256")" = "$ms" ] || { echo "pretrain manifest changed between parts: refused"; exit 1; }; else echo "$ms" > "$RUNNER_TEMP/work/pretrain-manifest.sha256"; fi
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
@@ -217,6 +223,9 @@ jobs:
             --steps "$(m steps)" --max-steps-this-run "$(jq -r .chain.stepsPerPart "$CFG")" --eval-every 50 --patience 4 --threads 4 \
             --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
           grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          # M52 (Architect (a)): the pretrain manifest sha travels with the work dir; every part must train on the same one.
+          ms=$(sha256sum "$RUNNER_TEMP/corpus/manifest.jsonl" | cut -c1-64)
+          if [ -f "$RUNNER_TEMP/work/pretrain-manifest.sha256" ]; then [ "$(cat "$RUNNER_TEMP/work/pretrain-manifest.sha256")" = "$ms" ] || { echo "pretrain manifest changed between parts: refused"; exit 1; }; else echo "$ms" > "$RUNNER_TEMP/work/pretrain-manifest.sha256"; fi
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
@@ -308,6 +317,11 @@ jobs:
           "$py" peaceai/model/export.py --work "$RUNNER_TEMP/ftwork" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint "$ck" > /dev/null
           cp "$RUNNER_TEMP/work/metrics.jsonl" "$RUNNER_TEMP/model/train-metrics.jsonl"; cp "$RUNNER_TEMP/ftwork/metrics.jsonl" "$RUNNER_TEMP/model/ft-metrics.jsonl"
           cp "$RUNNER_TEMP/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
+          # M52 (Architect (a)): both manifest shas the model trained on, in config.json; promotion requires a core-free
+          # proof per corpus for exactly these shas (corefree_proof.py --stage and the memcheck, both on the box).
+          pre=$(cat "$RUNNER_TEMP/work/pretrain-manifest.sha256"); fts=$(sha256sum "$RUNNER_TEMP/ft/manifest.jsonl" | cut -c1-64)
+          [[ "$pre" =~ ^[0-9a-f]{64}$ && "$fts" =~ ^[0-9a-f]{64}$ ]] || { echo "manifest sha missing: refused"; exit 1; }
+          jq --arg p "$pre" --arg f "$fts" '.trainedOn = {pretrainManifestSha256: $p, finetuneManifestSha256: $f}' "$RUNNER_TEMP/model/config.json" > "$RUNNER_TEMP/cfg.json" && mv "$RUNNER_TEMP/cfg.json" "$RUNNER_TEMP/model/config.json"
           rm -rf "$RUNNER_TEMP/work" "$RUNNER_TEMP/ftwork" "$RUNNER_TEMP/ft"
           jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
       - name: Verify the checkout and the landing scripts before the key is used

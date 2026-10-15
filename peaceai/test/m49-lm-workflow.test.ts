@@ -149,3 +149,12 @@ test("train.py --init-from: loads weights of the same shape, refuses a different
   execFileSync("mkdir", ["-p", join(d, "w3")]); execFileSync("cp", [join(d, "w1/tokenizer.json"), join(d, "w3/")]);
   assert.throws(() => tr(join(d, "w3"), "--init-from", join(d, "w1/checkpoint.npz"), "--d-model", "32"), /INIT_SHAPE_MISMATCH/);
 });
+
+test("workflow (M52, Architect (a)): both manifest shas the model trained on land in config.json trainedOn", () => {
+  assert.equal((WF.match(/pretrain-manifest\.sha256/g) ?? []).length >= 7, true);
+  assert.equal((WF.match(/pretrain manifest changed between parts: refused/g) ?? []).length, 3);
+  const ftStep = steps("finetune-land").find((x) => x.startsWith("name: Fine-tune from the pretrain"))!;
+  assert.match(ftStep, /\.trainedOn = \{pretrainManifestSha256: \$p, finetuneManifestSha256: \$f\}/);
+  assert.match(ftStep, /manifest sha missing: refused/);
+  assert.ok(ftStep.indexOf("trainedOn") < ftStep.indexOf("jq -r '\"model"), "written before the model is reported/landed");
+});

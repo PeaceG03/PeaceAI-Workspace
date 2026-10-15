@@ -68,3 +68,7 @@ set C v2 improved, but loss alone isn't producing passing edits. This run is aim
   finetune-land); no job that runs generated code holds any key, so no read-only key is needed.
 - L6: the fine-tune data is labelled "all PeaceG03 public commits".
 - M5 (memcheck schema for the fine-tune manifest) is a separate protected PR.
+- M5 (Architect (a), with #179): each pretrain part records the pretrain manifest sha in the work dir (parts must
+  agree); the fine-tune step writes `config.json` `trainedOn: { pretrainManifestSha256, finetuneManifestSha256 }`.
+  On the box: `corefree_proof.py --stage pretrain` and `--stage finetune`, then one memcheck of the final model with
+  `PEACEAI_LM_TRAIN_CORPUS` + `PEACEAI_LM_FT_CORPUS`. A missing, mismatched or swapped proof blocks promotion.
