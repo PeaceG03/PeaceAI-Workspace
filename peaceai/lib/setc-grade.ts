@@ -11,18 +11,27 @@ export interface Graded { id: string; verdict: Verdict; why: string }
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const kindOf = (p: string) => (/\.m?ts$/.test(p) ? ts.ScriptKind.TS : ts.ScriptKind.JS);
 
+const OPERAND_END = new Set<ts.SyntaxKind>([ts.SyntaxKind.Identifier, ts.SyntaxKind.PrivateIdentifier, ts.SyntaxKind.NumericLiteral, ts.SyntaxKind.BigIntLiteral,
+  ts.SyntaxKind.StringLiteral, ts.SyntaxKind.RegularExpressionLiteral, ts.SyntaxKind.NoSubstitutionTemplateLiteral, ts.SyntaxKind.TemplateTail,
+  ts.SyntaxKind.CloseParenToken, ts.SyntaxKind.CloseBracketToken, ts.SyntaxKind.CloseBraceToken, ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken,
+  ts.SyntaxKind.ThisKeyword, ts.SyntaxKind.SuperKeyword, ts.SyntaxKind.NullKeyword, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword]);
+
 /** Token texts of a code fragment (trivia skipped). Used only for comparison. Template literals are rescanned after
  *  each `${...}` so the rest of the template is compared as one literal token, never as code. */
 export function tokens(text: string, path: string): string[] {
   const sc = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text);
   const out: string[] = [];
   const braces: boolean[] = []; // true = this "{" opened a template substitution
+  let afterOperand = false; // "!" right after an operand is a non-null assertion (x! / 2) and still ends it
   for (let k = sc.scan(); k !== ts.SyntaxKind.EndOfFileToken; k = sc.scan()) {
-    if (k === ts.SyntaxKind.SlashToken || k === ts.SyntaxKind.SlashEqualsToken) { const r = sc.reScanSlashToken(); if (r === ts.SyntaxKind.RegularExpressionLiteral) k = r; }
+    // Auditor #177: "/" starts a regex only where an expression may begin, i.e. not right after a token that ends an
+    // operand (identifier, literal, keyword operand, ")", "]", "}", template end, regex): `a / b / c` stays division.
+    if ((k === ts.SyntaxKind.SlashToken || k === ts.SyntaxKind.SlashEqualsToken) && !afterOperand) { const r = sc.reScanSlashToken(); if (r === ts.SyntaxKind.RegularExpressionLiteral) k = r; }
     if (k === ts.SyntaxKind.OpenBraceToken) braces.push(false);
     else if (k === ts.SyntaxKind.CloseBraceToken && braces.pop() === true) k = sc.reScanTemplateToken(false);
     if (k === ts.SyntaxKind.TemplateHead || k === ts.SyntaxKind.TemplateMiddle) braces.push(true);
     out.push(`${k}:${sc.getTokenText()}`);
+    afterOperand = OPERAND_END.has(k) || (k === ts.SyntaxKind.ExclamationToken && afterOperand);
   }
   return out;
 }
@@ -68,8 +77,11 @@ export function gradeOne(t: CTask, source: string, body: string | undefined): Gr
 
 export interface Summary { tasks: number; pass: number; fail: number; ungradable: number; perRepo: Record<string, { tasks: number; pass: number; fail: number; ungradable: number }>; unknownPredictions: number }
 
-/** Grade every task. Predictions for ids not in the list are counted and ignored; duplicates are refused. */
-export function gradeAll(tasks: readonly CTask[], readSource: (t: CTask) => string, predictions: readonly { id: string; body: string }[], expectedCount: number): { summary: Summary; graded: Graded[] } {
+/** Predictions for ids not in the list are counted and ignored; duplicates are refused. */
+export interface CTaskList { tasks: readonly CTask[]; counts: Record<string, { chosen: number }> }
+/** Grade every task in the list. The expected count is the list's own declaredCount (never a caller argument). */
+export function gradeAll(list: CTaskList, readSource: (t: CTask) => string, predictions: readonly { id: string; body: string }[]): { summary: Summary; graded: Graded[] } {
+  const tasks = list.tasks, expectedCount = declaredCount(list);
   if (tasks.length !== expectedCount) throw new Error(`task count ${tasks.length} != declared ${expectedCount}`);
   const ids = new Set(tasks.map((t) => t.id));
   if (ids.size !== tasks.length) throw new Error("duplicate task id");

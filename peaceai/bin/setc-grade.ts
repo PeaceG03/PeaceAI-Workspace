@@ -8,5 +8,5 @@ const N = declaredCount(L);
 if (N !== 138 || T.length !== N) throw new Error(`task list has ${T.length} tasks, declares ${N}, expected 138`);
 const ext = process.argv[3] ?? process.env.EXT_DIR ?? "/workspace/ext";
 const preds = readFileSync(process.argv[2]!, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
-const { summary } = gradeAll(T, (t) => readFileSync(`${ext}/${t.repo.replace("/", "__")}/${t.path}`, "utf8"), preds, N);
+const { summary } = gradeAll(L, (t) => readFileSync(`${ext}/${t.repo.replace("/", "__")}/${t.path}`, "utf8"), preds);
 console.log(JSON.stringify(summary));
