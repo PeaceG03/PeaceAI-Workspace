@@ -19,7 +19,10 @@ export function cleanIssueText(input: TaskInput): string {
     // M5: target routing lines are not part of the task.
     .replace(/^[ \t]*target:[ \t]*\S+[ \t]*$/gim, " ")
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[`*>#]/g, " ")
+    // M46: a leading ">" is a Markdown quote marker; every other ">" is kept so comparison operators survive
+    // (>, >=, and the > of =>). <, <=, ===, !== were never touched. Backticks, "*" and "#" are still dropped.
+    .replace(/^[ \t]*(?:>[ \t]?)+/gm, "")
+    .replace(/[`*#]/g, " ")
     // Markdown emphasis underscores only; identifiers such as MAX_ITEMS keep theirs.
     .replace(/(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, " ")
     .replace(/[ \t]+/g, " ")
