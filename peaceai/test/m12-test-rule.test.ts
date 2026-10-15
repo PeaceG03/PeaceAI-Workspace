@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", ".github/workflows/corpus-checks.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "b510f6ed420055eadb30d7a7bd66dd1e9a82c8feb3b491ba4964e21067fe3d93"; // merge of main after #167 (M45) plus corpus-checks.yml
+const PROTECTED_DIGEST = "f7acf98bc0ab587f7e7bac1711af623289db428b98682a41c4350646d3ace566"; // merge of main 3ccb158 (#195 M56) + corpus-checks.yml
