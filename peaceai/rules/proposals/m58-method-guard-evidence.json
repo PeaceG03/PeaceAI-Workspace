@@ -1,0 +1,158 @@
+{
+ "schema": "peaceai-m58-method-guard-evidence:v1",
+ "source": "AST scan of peaceai/model/ext-manifest.jsonl (external licensed files only, set C excluded, sha256 verified against the manifest), as M47 did for function-top: functions whose FIRST statement is `if (cond) throw new XError(..)` (one-line or block) with a condition accepted by methodGuardCondition. Test, fixture, playground and built-output paths are skipped (at least one parameter-rooted method call).",
+ "bar": 5,
+ "counts": {
+  "files": 12354,
+  "shaBad": 3,
+  "functionsWithParams": 33817,
+  "firstStatementMethodGuards": 9,
+  "oneLine": 0,
+  "block": 9,
+  "repos": 5
+ },
+ "byRepo": {
+  "angular/angular": 1,
+  "denoland/std": 2,
+  "honojs/hono": 1,
+  "jestjs/jest": 1,
+  "withastro/astro": 4
+ },
+ "byMethod": {
+  "endsWith": 2,
+  "includes": 3,
+  "test": 2,
+  "has": 2
+ },
+ "examples": [
+  {
+   "repo": "angular/angular",
+   "commit": "3d0c9c8c350ce0bc753717f91a91d50f27e18c9d",
+   "path": "adev/shared-docs/pipeline/guides/index.mts",
+   "sha256": "47ca7f7e6f6188cf6c9deb1ea3e9382a0d316df7e19fbbfefb5e78594f7dbceb",
+   "params": [
+    "filePath"
+   ],
+   "line": 54,
+   "form": "block",
+   "guard": "if (!filePath.endsWith('.md')) {\n        throw new Error(`Input file \"${filePath}\" does not end in a \".md\" file extension.`);\n      }",
+   "license": "MIT"
+  },
+  {
+   "repo": "denoland/std",
+   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
+   "path": "xml/_parser.ts",
+   "sha256": "538e1a1d8c306eb5fd133e6cedd716fa82d8aaf6054ceb3c4d3b1432a8ac239c",
+   "params": [
+    "target",
+    "content",
+    "line",
+    "column",
+    "offset"
+   ],
+   "line": 623,
+   "form": "block",
+   "guard": "if (target.includes(\":\")) {\n      throw new XmlSyntaxError(\n        \"Cannot use ':' in processing instruction target (Namespaces §3)\",\n        { line, column, offset },\n      );\n    }",
+   "license": "MIT"
+  },
+  {
+   "repo": "denoland/std",
+   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
+   "path": "xml/stringify.ts",
+   "sha256": "755aa6bf8a8b54cdaac9ccfc75deb99d005d1355f33d2b264f0af6c09134f5fe",
+   "params": [
+    "text"
+   ],
+   "line": 186,
+   "form": "block",
+   "guard": "if (text.includes(\"--\")) {\n    throw new TypeError(\n      `Cannot serialize comment: XML forbids \"--\" within comments`,\n    );\n  }",
+   "license": "MIT"
+  },
+  {
+   "repo": "honojs/hono",
+   "commit": "588ec13fa68ea44fed1b5e1b503341db2bf09d70",
+   "path": "src/middleware/ip-restriction/index.ts",
+   "sha256": "2b68d88cd86843c6a09e299fc0408b3236832406d498c1c076990ef07584a9bc",
+   "params": [
+    "rule",
+    "prefix",
+    "max"
+   ],
+   "line": 42,
+   "form": "block",
+   "guard": "if (!/^[0-9]{1,3}$/.test(prefix)) {\n    throw new TypeError(`Invalid rule: ${rule}`)\n  }",
+   "license": "MIT"
+  },
+  {
+   "repo": "jestjs/jest",
+   "commit": "61050e9323e742539dc2360236671110e37329e6",
+   "path": "packages/jest-snapshot-utils/src/utils.ts",
+   "sha256": "bda415a4f34f89ed280574d0e276ca1c67319fe6a2603da7da5a51b9bd63ac76",
+   "params": [
+    "key"
+   ],
+   "line": 126,
+   "form": "block",
+   "guard": "if (!/ \\d+$/.test(key)) {\n    throw new Error('Snapshot keys must end with a number.');\n  }",
+   "license": "MIT"
+  },
+  {
+   "repo": "withastro/astro",
+   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
+   "path": "packages/astro/src/content/loaders/file.ts",
+   "sha256": "918471197b377b5c434f7963fc29f600fe7d00558b3c6a740077e4fce446e10e",
+   "params": [
+    "fileName",
+    "options"
+   ],
+   "line": 30,
+   "form": "block",
+   "guard": "if (fileName.includes('*')) {\n\t\tthrow new AstroError(FileGlobNotSupported);\n\t}",
+   "license": "MIT"
+  },
+  {
+   "repo": "withastro/astro",
+   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
+   "path": "packages/astro/src/integrations/hooks.ts",
+   "sha256": "6fb494dd890521d937d794321401d6fc300f551ac7f8465914dcd70473ca492e",
+   "params": [
+    "filename",
+    "integrationName"
+   ],
+   "line": 167,
+   "form": "block",
+   "guard": "if (!filename.endsWith('.d.ts')) {\n\t\tthrow new Error(\n\t\t\t`Integration ${colors.bold(integrationName)} is injecting a type that does not end with \"${colors.bold('.d.ts')}\"`,\n\t\t);\n\t}",
+   "license": "MIT"
+  },
+  {
+   "repo": "withastro/astro",
+   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
+   "path": "packages/astro/src/runtime/server/serialize.ts",
+   "sha256": "b5a2c37e5b5d21ec2c59a503ffc17ef7c76a581c490db1f0aa82650a265a76e3",
+   "params": [
+    "value",
+    "metadata",
+    "parents"
+   ],
+   "line": 24,
+   "form": "block",
+   "guard": "if (parents.has(value)) {\n\t\tthrow new Error(`Cyclic reference detected while serializing props for <${metadata.displayName} client:${metadata.hydrate}>!\n\nCyclic references cannot be safely serialized for client-side usage. Please remove the cyclic reference.`);\n\t}",
+   "license": "MIT"
+  },
+  {
+   "repo": "withastro/astro",
+   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
+   "path": "packages/astro/src/runtime/server/serialize.ts",
+   "sha256": "b5a2c37e5b5d21ec2c59a503ffc17ef7c76a581c490db1f0aa82650a265a76e3",
+   "params": [
+    "value",
+    "metadata",
+    "parents"
+   ],
+   "line": 42,
+   "form": "block",
+   "guard": "if (parents.has(value)) {\n\t\tthrow new Error(`Cyclic reference detected while serializing props for <${metadata.displayName} client:${metadata.hydrate}>!\n\nCyclic references cannot be safely serialized for client-side usage. Please remove the cyclic reference.`);\n\t}",
+   "license": "MIT"
+  }
+ ]
+}
