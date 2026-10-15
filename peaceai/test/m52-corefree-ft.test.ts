@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { ftManifestEntryProblem, manifestProvesNoCore, validCoreFreeProof } from "../lib/lm.ts";
+import { dualCoreFreeDecision, ftManifestEntryProblem, manifestProvesNoCore, trainedOnShas, validCoreFreeProof, verifyModelDir, modelFileShas, MEMCHECK_SCHEMA } from "../lib/lm.ts";
 import { protectedReason } from "../lib/selfchange.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
@@ -26,16 +26,16 @@ function env() {
   const model = join(dir, "model"); mkdirSync(model);
   writeFileSync(join(model, "config.json"), JSON.stringify({ version: "lm-v1-000000000052" }));
   let k = 0;
-  const run = (docs: { doc: unknown; text: string }[], man: unknown[]) => {
+  const run = (docs: { doc: unknown; text: string }[], man: unknown[], stage?: string) => {
     const d = join(dir, `c${k++}`); mkdirSync(d);
     const manText = man.map((x) => JSON.stringify(x)).join("\n") + "\n";
     writeFileSync(join(d, "docs.jsonl"), docs.map((x) => JSON.stringify(x)).join("\n") + "\n");
     writeFileSync(join(d, "manifest.jsonl"), manText);
-    const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model], { encoding: "utf8" });
-    const p = join(model, "corefree-proof.json");
+    const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model, ...(stage ? ["--stage", stage] : [])], { encoding: "utf8" });
+    const p = join(model, stage ? `corefree-proof-${stage}.json` : "corefree-proof.json");
     return { status: r.status, stderr: r.stderr, out: r.stdout ? JSON.parse(r.stdout) : null, proof: existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null, manSha: H(manText) };
   };
-  return { run };
+  return { run, model };
 }
 const DOCS = [0, 1, 2, 3, 4, 5].map((i) => ({ doc: i, text: body(i + 1) }));
 const MAN = DOCS.map((d) => ft(d.doc));
@@ -100,4 +100,81 @@ test("M52: the strict rule is not the fallback for a valid fine-tune proof; the 
   const mc = readFileSync(join(repo, "peaceai/bin/lm-memcheck.ts"), "utf8");
   assert.match(mc, /validCoreFreeProof\(proof, \{ modelId, manifest: tm, manifestSha256: trainManifestSha, docSha256 \}\)/);
   assert.match(mc, /manifestProvesNoCore\(tm, coreShas, CORE_SOURCE, docSha256\)/);
+});
+
+// ---- Architect (a): one proof per corpus, both manifest shas in config.json, both required for promotion.
+const PRE_DOCS = [0, 1, 2, 3].map((i) => ({ doc: i, text: body(i + 50) }));
+const C40b = "fedcba9876543210fedcba9876543210fedcba98";
+const PRE_MAN = PRE_DOCS.map((d) => ({ doc: d.doc, stage: "pretrain", repo: "honojs/hono", commit: C40b, license: "MIT", path: `src/p${d.doc}.ts`, sha256: H(d.text), bytes: Buffer.byteLength(d.text), origin: "external", split: "train" }));
+const preSha = new Map<unknown, string>(PRE_DOCS.map((d) => [d.doc, H(d.text)]));
+function dualSetup() {
+  const e = env();
+  const p = e.run(PRE_DOCS, PRE_MAN, "pretrain"), f = e.run(DOCS, MAN, "finetune");
+  assert.equal(p.status, 0, p.stderr); assert.equal(f.status, 0, f.stderr);
+  assert.equal(p.proof.corpus, "pretrain"); assert.equal(f.proof.corpus, "finetune");
+  assert.equal(p.proof.noCoreFiles, "PROVEN"); assert.equal(f.proof.noCoreFiles, "PROVEN");
+  const cfg = { schema: "peaceai-lm:v1", version: "lm-v1-000000000052", trainedOn: { pretrainManifestSha256: p.manSha, finetuneManifestSha256: f.manSha } };
+  const corpora = { pretrain: { manifest: PRE_MAN, manifestSha256: p.manSha, docSha256: preSha }, finetune: { manifest: MAN, manifestSha256: f.manSha, docSha256: docSha } };
+  return { ...e, cfg, corpora, proofs: { pretrain: p.proof, finetune: f.proof } };
+}
+
+test("M52 (a) pass: both per-corpus proofs, each for the manifest sha the model trained on", () => {
+  const { cfg, corpora, proofs, model } = dualSetup();
+  assert.ok(existsSync(join(model, "corefree-proof-pretrain.json")) && existsSync(join(model, "corefree-proof-finetune.json")));
+  assert.deepEqual(dualCoreFreeDecision(cfg, proofs, corpora), { ok: true, reasons: [], trainedOn: { pretrain: cfg.trainedOn.pretrainManifestSha256, finetune: cfg.trainedOn.finetuneManifestSha256 } });
+});
+
+test("M52 (a) a missing proof blocks promotion (either one)", () => {
+  const { cfg, corpora, proofs } = dualSetup();
+  assert.deepEqual(dualCoreFreeDecision(cfg, { ...proofs, finetune: null }, corpora).reasons, ["finetune:MISSING_PROOF"]);
+  assert.deepEqual(dualCoreFreeDecision(cfg, { ...proofs, pretrain: undefined }, corpora).reasons, ["pretrain:MISSING_PROOF"]);
+  assert.equal(dualCoreFreeDecision({ ...cfg, trainedOn: undefined }, proofs, corpora).reasons[0], "NO_TRAINED_ON");
+  assert.equal(dualCoreFreeDecision({ ...cfg, trainedOn: { pretrainManifestSha256: cfg.trainedOn.pretrainManifestSha256 } }, proofs, corpora).ok, false, "one sha missing in config");
+});
+
+test("M52 (a) a mismatched manifest sha fails closed (config vs proof, config vs corpus)", () => {
+  const { cfg, corpora, proofs } = dualSetup();
+  const other = "1".repeat(64);
+  assert.deepEqual(dualCoreFreeDecision({ ...cfg, trainedOn: { ...cfg.trainedOn, finetuneManifestSha256: other } }, proofs, corpora).reasons, ["finetune:CORPUS_NOT_TRAINED_ON"]);
+  assert.deepEqual(dualCoreFreeDecision({ ...cfg, trainedOn: { ...cfg.trainedOn, finetuneManifestSha256: other } }, proofs, { ...corpora, finetune: { ...corpora.finetune, manifestSha256: other } }).reasons, ["finetune:MANIFEST_MISMATCH"], "proof is for another manifest");
+  assert.deepEqual(dualCoreFreeDecision(cfg, { ...proofs, pretrain: { ...proofs.pretrain, manifestSha256: other } }, corpora).reasons, ["pretrain:MANIFEST_MISMATCH"]);
+  assert.equal(trainedOnShas({ trainedOn: { pretrainManifestSha256: other, finetuneManifestSha256: other } }), null, "the same sha for both corpora is refused");
+  assert.equal(trainedOnShas({ trainedOn: { pretrainManifestSha256: other, finetuneManifestSha256: "2".repeat(64), extra: 1 } }), null);
+});
+
+test("M52 (a) a swapped proof is refused (by corpus label, and by sha even if relabelled)", () => {
+  const { cfg, corpora, proofs } = dualSetup();
+  const sw = dualCoreFreeDecision(cfg, { pretrain: proofs.finetune, finetune: proofs.pretrain }, corpora).reasons;
+  assert.deepEqual(sw, ["pretrain:SWAPPED_PROOF", "finetune:SWAPPED_PROOF"]);
+  const relabel = dualCoreFreeDecision(cfg, { pretrain: { ...proofs.finetune, corpus: "pretrain" }, finetune: { ...proofs.pretrain, corpus: "finetune" } }, corpora).reasons;
+  assert.deepEqual(relabel, ["pretrain:MANIFEST_MISMATCH", "finetune:MANIFEST_MISMATCH"]);
+  assert.equal(dualCoreFreeDecision(cfg, proofs, { pretrain: corpora.finetune, finetune: corpora.pretrain }).ok, false, "corpora swapped");
+});
+
+test("M52 (a) --stage must match the manifest schema; the single-corpus file is untouched by --stage", () => {
+  const e = env();
+  assert.equal(e.run(DOCS, MAN, "pretrain").status, 1);
+  assert.equal(e.run(PRE_DOCS, PRE_MAN, "finetune").status, 1);
+  assert.ok(!existsSync(join(e.model, "corefree-proof.json")));
+});
+
+test("M52 (a) loaders refuse a two-corpus model unless memcheck recorded both proofs valid for its trainedOn shas", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m52v-"));
+  const trainedOn = { pretrainManifestSha256: "3".repeat(64), finetuneManifestSha256: "4".repeat(64) };
+  writeFileSync(join(dir, "config.json"), JSON.stringify({ schema: "peaceai-lm:v1", version: "lm-v1-000000000052", trainedOn }));
+  writeFileSync(join(dir, "tokenizer.json"), "{}"); writeFileSync(join(dir, "weights.npz"), "w");
+  const mc = (extra: Record<string, unknown>) => writeFileSync(join(dir, "memcheck.json"), JSON.stringify({ schema: MEMCHECK_SCHEMA, status: "PASS", files: modelFileShas(dir), ...extra }));
+  mc({}); assert.deepEqual(verifyModelDir(dir), { ok: false, reason: "MEMCHECK_FAILED" });
+  mc({ coreFreeProofs: { ok: false, reasons: ["finetune:MISSING_PROOF"], trainedOn: { pretrain: "3".repeat(64), finetune: "4".repeat(64) } } }); assert.equal(verifyModelDir(dir).ok, false);
+  mc({ coreFreeProofs: { ok: true, reasons: [], trainedOn: { pretrain: "3".repeat(64), finetune: "5".repeat(64) } } }); assert.equal(verifyModelDir(dir).ok, false, "memcheck was for other manifests");
+  mc({ coreFreeProofs: { ok: true, reasons: [], trainedOn: { pretrain: "3".repeat(64), finetune: "4".repeat(64) } } }); assert.deepEqual(verifyModelDir(dir), { ok: true, version: "lm-v1-000000000052" });
+});
+
+test("M52 (a) memcheck runs once on the final model against both corpora, fails closed, never falls back to strict", () => {
+  const mc = readFileSync(join(repo, "peaceai/bin/lm-memcheck.ts"), "utf8");
+  assert.match(mc, /PEACEAI_LM_FT_CORPUS/);
+  assert.match(mc, /dualCoreFreeDecision\(cfgNow, \{ pretrain: readProof\("pretrain"\), finetune: readProof\("finetune"\) \}/);
+  assert.match(mc, /scan = dual && !dual\.ok \? null :/, "a failed dual decision means no scan, so status FAIL");
+  assert.match(mc, /buildSubstringIndex\(\[\.\.\.pre\.txt, \.\.\.ft\.txt\]\)/, "the exemption corpus is both corpora");
+  assert.match(mc, /if \("trainedOn" in cfgNow \|\| ftCorpus\)/, "a trainedOn model cannot be checked as single-corpus");
 });

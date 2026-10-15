@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
-import { COREFREE_MIN_RUN, docIdsMatch, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
+import { COREFREE_MIN_RUN, docIdsMatch, dualCoreFreeDecision, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
 
 const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
@@ -37,6 +37,11 @@ const prompts = [
 ];
 
 const trainCorpus = process.env.PEACEAI_LM_TRAIN_CORPUS ? resolve(process.env.PEACEAI_LM_TRAIN_CORPUS) : "";
+// M52 (Architect (a)): a two-corpus model (config.json trainedOn) is checked once, as the final fine-tuned model,
+// against BOTH corpora: PEACEAI_LM_TRAIN_CORPUS (pretrain) and PEACEAI_LM_FT_CORPUS (fine-tune), with both
+// per-corpus proofs required. Anything missing or mismatched: FAIL (blocks promotion), never the strict fallback.
+const ftCorpus = process.env.PEACEAI_LM_FT_CORPUS ? resolve(process.env.PEACEAI_LM_FT_CORPUS) : "";
+let dual: { ok: boolean; reasons: string[]; trainedOn: unknown } | null = null;
 let trainManifestSha = "";
 let noCoreProof = trainCorpus ? "PROVEN" : "NOT_GIVEN";
 let proofState = trainCorpus ? "INVALID:MISSING" : "NOT_GIVEN";
@@ -56,7 +61,29 @@ else {
   // proving zero core files against the current core tree. Anything else (no training corpus given, no proof, an
   // invalid proof, a manifest that no longer proves it): the strict 32-character rule.
   let exempt: PublicOnlyExemption | null = null;
-  if (trainCorpus) {
+  const cfgNow = JSON.parse(readFileSync(join(modelDir, "config.json"), "utf8"));
+  if ("trainedOn" in cfgNow || ftCorpus) {
+    const coreShas = new Set((tree.raw ?? []).filter((t) => !isAsciiBlank(t)).map((t) => h(t)));
+    const load = (dir: string) => {
+      const mText = readFileSync(join(dir, "manifest.jsonl"), "utf8");
+      const man: (ManifestEntry & Record<string, unknown>)[] = mText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const docSha256 = new Map<unknown, string>(), ids: unknown[] = [], txt: string[] = [];
+      for (const l of readFileSync(join(dir, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); docSha256.set(d.doc, h(String(d.text))); ids.push(d.doc); txt.push(String(d.text)); }
+      const proves = docIdsMatch(man.map((m) => m.doc), ids) && manifestProvesNoCore(man, coreShas, CORE_SOURCE, docSha256) && (tree.raw ?? []).length > 0;
+      return { manifest: man, manifestSha256: h(mText), docSha256, txt, proves };
+    };
+    const readProof = (st: string) => { try { return JSON.parse(readFileSync(join(modelDir, `corefree-proof-${st}.json`), "utf8")); } catch { return null; } };
+    if (!trainCorpus || !ftCorpus) dual = { ok: false, reasons: [trainCorpus ? "FINETUNE_CORPUS_REQUIRED" : "PRETRAIN_CORPUS_REQUIRED"], trainedOn: null };
+    else {
+      const pre = load(trainCorpus), ft = load(ftCorpus);
+      const d = dualCoreFreeDecision(cfgNow, { pretrain: readProof("pretrain"), finetune: readProof("finetune") }, { pretrain: pre, finetune: ft });
+      if (!pre.proves) d.reasons.push("pretrain:NOT_PROVEN"); if (!ft.proves) d.reasons.push("finetune:NOT_PROVEN");
+      dual = { ok: d.reasons.length === 0, reasons: d.reasons, trainedOn: d.trainedOn };
+      trainManifestSha = pre.manifestSha256; noCoreProof = dual.ok ? "PROVEN" : "NOT_PROVEN"; proofState = dual.ok ? "VALID" : `INVALID:${d.reasons.join(",")}`;
+      if (dual.ok) exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex([...pre.txt, ...ft.txt]), minRun: COREFREE_MIN_RUN };
+    }
+    if (!dual.ok) reason = `COREFREE_PROOFS:${dual.reasons.join(",")}`;
+  } else if (trainCorpus) {
     const tmText = readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8");
     const tm: (ManifestEntry & Record<string, unknown>)[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
     // M39: empty / whitespace-only core files carry no text; they never make a training file "core" (allowlisted
@@ -83,7 +110,7 @@ else {
       exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex(tt), minRun: COREFREE_MIN_RUN };
     }
   }
-  scan = scanSamples(r.response.samples as Sample[], core, baseline, (tree.raw ?? []).length ? coreRaw : null, exempt);
+  scan = dual && !dual.ok ? null : scanSamples(r.response.samples as Sample[], core, baseline, (tree.raw ?? []).length ? coreRaw : null, exempt);
 }
 const after = modelFileShas(modelDir);
 if (JSON.stringify(before) !== JSON.stringify(after)) { scan = null; reason = "FILES_CHANGED"; }
@@ -98,6 +125,7 @@ const report = {
   substringRule: scan?.substringRule ?? "strict",
   trainingManifest: trainCorpus ? { sha256: trainManifestSha, noCoreFiles: noCoreProof } : null,
   coreFreeProof: { state: proofState, ...(proofSha ? { sha256: proofSha } : {}) },
+  ...(dual ? { coreFreeProofs: dual } : {}),
   settings: { promptTokens: 64, newTokens: 128, decoding: ["greedy", "sampled t=0.8 top-k 40 seed 9"], minSamples: 100 },
   scanners: ["core-text (hashed long lines and 4-line shingles; public corpus as baseline)", "core-substring (any 32+ character run of generated text found in core; no baseline)", "personal-info (leak.ts)"],
   scan,
