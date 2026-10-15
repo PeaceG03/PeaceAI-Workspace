@@ -30,5 +30,9 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./node_modules/.bin/tsx builder-log/check.ts --base "$BASE_SHA"
+      - name: PeaceAI repo@sha landings exist
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/tsx builder-log/check.ts --verify-shas
       - name: PeaceAI vs Builder coverage
         run: ./node_modules/.bin/tsx builder-log/coverage.ts >> "$GITHUB_STEP_SUMMARY"

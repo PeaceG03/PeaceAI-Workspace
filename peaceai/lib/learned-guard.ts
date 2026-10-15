@@ -177,6 +177,8 @@ export function unknownNames(e: ts.Expression, params: ReadonlySet<string>): str
 }
 
 export function applyGuardRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: Refusal): GuardEdit | null {
+  const no = (reason: string): null => { if (why) why.reason = reason; return null; };
   const task = parseGuardTask(trigger, objective);
-  return task ? buildGuardEdit(params, task, files, isTest, why) : null;
+  if (!task) return no("task_unparsed");
+  return buildGuardEdit(params, task, files, isTest, why);
 }

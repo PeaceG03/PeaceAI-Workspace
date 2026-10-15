@@ -1,5 +1,5 @@
 // Builder task log validator: schema per line + append-only against a base revision.
-// Usage: tsx builder-log/check.ts [--base <git-rev>]
+// Usage: tsx builder-log/check.ts [--base <git-rev>] [--verify-shas]
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
@@ -163,6 +163,74 @@ export function appendOnly(base: string, head: string): string[] {
   return [`existing line ${i + 1} was modified or removed (log is append-only)`];
 }
 
+
+/** Public GitHub owner/repo for each landing label in `changed`. */
+export const LANDING_REPOS: Readonly<Record<"PeaceSTOCKS" | "PeaceAI-Workspace", string>> = {
+  PeaceSTOCKS: "PeaceG03/PeaceSTOCKS",
+  "PeaceAI-Workspace": "PeaceG03/PeaceAI-Workspace",
+};
+
+export type ShaResolver = (repo: string, sha: string) => boolean | Promise<boolean>;
+
+const LANDING_CAPTURE = /(PeaceSTOCKS|PeaceAI-Workspace)@([0-9a-f]{7,40})/g;
+
+/** Every PeaceAI repo@sha landing in the log (deduped by repo@sha; first seq wins for error text). */
+export function peaceAiShaLandings(entries: readonly Entry[]): { seq: number; label: string; repo: string; sha: string }[] {
+  const out: { seq: number; label: string; repo: string; sha: string }[] = [];
+  const seen = new Set<string>();
+  for (const e of entries) {
+    if (e.by !== "PeaceAI") continue;
+    for (const m of e.changed.matchAll(LANDING_CAPTURE)) {
+      const label = m[1] as "PeaceSTOCKS" | "PeaceAI-Workspace";
+      const sha = m[2]!;
+      const repo = LANDING_REPOS[label];
+      const key = `${repo}@${sha}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ seq: e.seq, label, repo, sha });
+    }
+  }
+  return out;
+}
+
+/**
+ * Fail-closed: each PeaceAI repo@sha must resolve true via `resolve`. Lookup errors and false both become errs.
+ * Injectable so unit tests can stub the GitHub API (no network).
+ */
+export async function verifyPeaceAiShas(entries: readonly Entry[], resolve: ShaResolver): Promise<string[]> {
+  const errs: string[] = [];
+  for (const hit of peaceAiShaLandings(entries)) {
+    let ok = false;
+    try {
+      ok = await resolve(hit.repo, hit.sha);
+    } catch {
+      errs.push(`seq ${hit.seq}: ${hit.label}@${hit.sha} lookup failed (fail closed)`);
+      continue;
+    }
+    if (!ok) errs.push(`seq ${hit.seq}: ${hit.label}@${hit.sha} does not exist`);
+  }
+  return errs;
+}
+
+/** GitHub Commits API resolver using a token (contents:read is enough for public + this-repo commits). */
+export function makeGithubShaResolver(token: string, fetchImpl: typeof fetch = fetch): ShaResolver {
+  if (!token) throw new Error("GITHUB_TOKEN is required for --verify-shas");
+  return async (repo, sha) => {
+    const url = `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(sha)}`;
+    const res = await fetchImpl(url, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "PeaceAI-Workspace-builder-log",
+      },
+    });
+    if (res.status === 200) return true;
+    if (res.status === 404) return false;
+    throw new Error(`HTTP ${res.status}`);
+  };
+}
+
 function baseText(rev: string): string {
   try {
     return execFileSync("git", ["show", `${rev}:${LOG_PATH}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
@@ -173,14 +241,29 @@ function baseText(rev: string): string {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+async function main(): Promise<void> {
   const head = readFileSync(LOG_PATH, "utf8");
   const errs = validateLog(head);
   const i = process.argv.indexOf("--base");
   if (i > 0) errs.push(...appendOnly(baseText(process.argv[i + 1]!), head));
+  if (errs.length === 0 && process.argv.includes("--verify-shas")) {
+    const entries = head.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
+    const token = process.env.GITHUB_TOKEN ?? "";
+    errs.push(...(await verifyPeaceAiShas(entries, makeGithubShaResolver(token))));
+  }
   if (errs.length) {
     for (const e of errs) console.error(`builder-log: ${e}`);
     process.exit(1);
   }
-  console.log(`builder-log: ${head.split("\n").length - 1} entries OK${i > 0 ? " (append-only vs base)" : ""}`);
+  const bits = [`${head.split("\n").length - 1} entries OK`];
+  if (i > 0) bits.push("append-only vs base");
+  if (process.argv.includes("--verify-shas")) bits.push("PeaceAI repo@sha verified");
+  console.log(`builder-log: ${bits.join("; ")}`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => {
+    console.error(`builder-log: ${e instanceof Error ? e.message : e}`);
+    process.exit(1);
+  });
 }

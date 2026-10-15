@@ -155,7 +155,7 @@ export function applyMethodGuardRule(
   const no = (r: string) => { if (why) why.reason = r; return null; };
   for (const k of METHOD_GUARD_PARAM_KEYS) if (typeof params[k] !== "string" || !METHOD_GUARD_VOCAB[k].includes(params[k] as string)) return no("bad_rule_params");
   const task = parseGuardTask(trigger, objective);
-  if (!task) return null;
+  if (!task) return no("task_unparsed");
   if (task.cond.length > METHOD_GUARD_MAX_COND) return no("condition_too_long");
   const target = files.find((f) => f.path === task.file);
   if (!target || (isTest ?? ((p) => /\.test\.ts$/.test(p)))(target.path)) return no("target_file_not_found");
