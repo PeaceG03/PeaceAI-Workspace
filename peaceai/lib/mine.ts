@@ -2,9 +2,12 @@
 // AST shape each small hunk makes, and counts how often each shape repeats (hunks, distinct commits,
 // distinct files). No model of any kind: TypeScript's parser plus fixed structural rules.
 import ts from "typescript";
+import { blockRefusal } from "./learned-complex.ts";
 
 export const MINER_VERSION = "peaceai-miner:v3" as const;
 export const MAX_ADDED = 12;
+/** M26: largest pure-add hunk checked for new multi-statement functions (COMPLEX_FUNCTION only). */
+export const MAX_COMPLEX_ADDED = 40;
 export const MAX_REMOVED = 6;
 export const SOURCE_FILE = /\.(ts|tsx|mts|cts)$/;
 export const SKIP_FILE = /(\.test\.|\.spec\.|\.d\.ts$|(^|\/)(dist|node_modules|build)\/)/;
@@ -21,6 +24,8 @@ export const SHAPES = {
   THROW_GUARD: { covered: null },
   // M15: a new top-level exported function whose body is one return statement (kernel has no ADD_FUNCTION family).
   PURE_FUNCTION: { covered: null },
+  // M26: a new exported function with a multi-statement body (planner-style; peaceai/lib/learned-complex.ts grammar).
+  COMPLEX_FUNCTION: { covered: null },
   // M27: one if-condition / return expression replaced, and one guard line added mid-body (peaceai/lib/minebody.ts).
   EXPR_REPLACE: { covered: null },
   GUARD_MID: { covered: null },
@@ -142,6 +147,21 @@ function additiveShape(node: ts.Node, sf: ts.SourceFile): { shape: Shape; style:
   if (ts.isImportDeclaration(node)) return { shape: "IMPORT", style: {} };
   if (ts.isFunctionDeclaration(node) && p && ts.isSourceFile(p) && node.name && node.body && !node.asteriskToken && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
     const st = node.body.statements;
+    const last0 = p.statements[p.statements.length - 1] === node;
+    const typed = node.parameters.length > 0 && node.parameters.every((x) => !!x.type && ts.isIdentifier(x.name) && !x.dotDotDotToken) ? "typed" : "other";
+    if (st.length > 1 && ts.isReturnStatement(st[st.length - 1]!)) {
+      const names = new Set(node.parameters.flatMap((x) => (ts.isIdentifier(x.name) ? [x.name.text] : [])));
+      let loops = 0;
+      const walk = (n: ts.Node): void => { if (ts.isForStatement(n) || ts.isForOfStatement(n) || ts.isWhileStatement(n) || ts.isDoStatement(n) || ts.isForInStatement(n)) loops++; ts.forEachChild(n, walk); };
+      walk(node.body);
+      return { shape: "COMPLEX_FUNCTION", style: {
+        body: blockRefusal(node.body, names, sf) === null ? "bounded-block" : "other",
+        loops: loops === 0 ? "none" : loops <= 2 ? "one-or-two" : "many",
+        params: typed,
+        returns: node.type ? "annotated" : "none",
+        placement: last0 ? "end-of-module" : "inside-module",
+      } };
+    }
     if (st.length !== 1 || !ts.isReturnStatement(st[0]!) || !st[0]!.expression) return null;
     const last = p.statements[p.statements.length - 1] === node;
     return { shape: "PURE_FUNCTION", style: {
@@ -259,7 +279,19 @@ export function observeFile(commit: string, path: string, postContent: string, h
     if (h.oldStart === 0 && h.oldCount === 0 && h.newStart === 1 && h.removed.length === 0 && h.added.length > MAX_ADDED) {
       for (const st of post.statements) {
         const sh = additiveShape(st, post);
-        if (sh?.shape === "PURE_FUNCTION") out.push({ shape: "PURE_FUNCTION", commit, path, line: lineOf(post, st.getStart(post)), style: { ...sh.style, placement: "new-module" } });
+        if (sh?.shape === "PURE_FUNCTION" || sh?.shape === "COMPLEX_FUNCTION") out.push({ shape: sh.shape, commit, path, line: lineOf(post, st.getStart(post)), style: { ...sh.style, placement: "new-module" } });
+      }
+      continue;
+    }
+    // M26: a pure-add hunk up to MAX_COMPLEX_ADDED lines is checked for whole new top-level COMPLEX_FUNCTIONs only.
+    if (h.removed.length === 0 && h.added.length > MAX_ADDED && h.added.length <= MAX_COMPLEX_ADDED) {
+      const to = h.newStart + h.newCount - 1;
+      const last = post.statements[post.statements.length - 1];
+      for (const st of post.statements) {
+        const a = lineOf(post, st.getStart(post));
+        if (a < h.newStart || lineOf(post, st.getEnd()) > to) continue;
+        const sh = additiveShape(st, post);
+        if (sh?.shape === "COMPLEX_FUNCTION") out.push({ shape: sh.shape, commit, path, line: a, style: { ...sh.style, placement: st === last ? "end-of-module" : "inside-module" } });
       }
       continue;
     }
@@ -294,7 +326,7 @@ export function observeFile(commit: string, path: string, postContent: string, h
       }
     }
     // M17: a pure function in a hunk that creates the file (old side empty) was added as a new module.
-    if (h.oldStart === 0 && h.oldCount === 0) for (const o of found) if (o.shape === "PURE_FUNCTION") o.style = { ...o.style, placement: "new-module" };
+    if (h.oldStart === 0 && h.oldCount === 0) for (const o of found) if (o.shape === "PURE_FUNCTION" || o.shape === "COMPLEX_FUNCTION") o.style = { ...o.style, placement: "new-module" };
     out.push(...found);
   }
   return out;
