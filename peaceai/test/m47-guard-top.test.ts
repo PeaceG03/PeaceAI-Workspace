@@ -5,7 +5,7 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyGuardRule, GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "../lib/learned-guard.ts";
+import { applyGuardRule, GUARD_TOP_TRIGGER, GUARD_TRIGGER, type Refusal } from "../lib/learned-guard.ts";
 import { specFileText, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -75,3 +75,12 @@ test("spec, evidence and this test are protected; spec md pinned", () => {
   assert.equal(createHash("sha256").update(read("peaceai/spec/throw-guard-top-v1.md")).digest("hex"), SPEC_SHA);
 });
 const SPEC_SHA = "4b9378cc304e11869429854eede33bea9f18d82968be8932c9a085ceb0db80ee";
+
+test("applyGuardRule: failed parse sets why.reason to task_unparsed (RULE_REFUSALS)", () => {
+  const why: Refusal = {};
+  assert.equal(applyGuardRule(V1.trigger, V1.params, "not a guard header at all", files, isTest, why), null);
+  assert.equal(why.reason, "task_unparsed");
+  const okWhy: Refusal = {};
+  assert.ok(applyGuardRule(V1.trigger, V1.params, task(false), files, isTest, okWhy));
+  assert.equal(okWhy.reason, undefined);
+});

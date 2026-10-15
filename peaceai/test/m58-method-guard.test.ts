@@ -6,8 +6,8 @@ import { join, resolve } from "node:path";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import test from "node:test";
 import ts from "typescript";
-import { buildMethodGuardEdit, guardCondition, methodGuardCondition, methodGuardEnabled, safeRegexLiteral } from "../lib/method-guard.ts";
-import { safeCondition } from "../lib/learned-guard.ts";
+import { applyMethodGuardRule, buildMethodGuardEdit, guardCondition, METHOD_GUARD_TRIGGER, methodGuardCondition, methodGuardEnabled, safeRegexLiteral } from "../lib/method-guard.ts";
+import { safeCondition, type Refusal } from "../lib/learned-guard.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -164,6 +164,30 @@ test("METHOD_GUARD refuses everything else", () => {
   assert.equal(refusals, REFUSALS_STATED);
 });
 const REFUSALS_STATED = 49;
+
+test("applyMethodGuardRule: failed parse sets why.reason to task_unparsed (RULE_REFUSALS)", () => {
+  const params = {
+    error: "Error",
+    form: "block",
+    grading: "self-fail-before-pass-after",
+    message: "code-only",
+    placement: "function-top",
+    test: "new-file",
+  };
+  const why: Refusal = {};
+  assert.equal(
+    applyMethodGuardRule(METHOD_GUARD_TRIGGER, params, "this is not a method-guard header", [{ path: "src/f.ts", content: SRC }], undefined, why),
+    null,
+  );
+  assert.equal(why.reason, "task_unparsed");
+  // Valid header still works (sanity: refusal path did not break the happy path).
+  const okWhy: Refusal = {};
+  const obj =
+    "guard f in src/f.ts with a method: throw BAD_S when s.startsWith('#')\n- `f('#x')` throws BAD_S\n- `f('ok')` is 2";
+  const edit = applyMethodGuardRule(METHOD_GUARD_TRIGGER, params, obj, [{ path: "src/f.ts", content: SRC }], (p) => p.endsWith(".test.ts"), okWhy);
+  assert.ok(edit, "parsed task should edit");
+  assert.equal(okWhy.reason, undefined);
+});
 
 test("engine, spec, evidence and this test are protected; spec pinned", () => {
   for (const p of ["peaceai/lib/method-guard.ts", "peaceai/spec/method-guard-v1.md", "peaceai/test/m58-method-guard.test.ts", "peaceai/rules/proposals/m58-method-guard-evidence.json", "peaceai/rules/proposals/public-method-guard-v1.json", "peaceai/rules/learned/public-method-guard-v1.json"])
