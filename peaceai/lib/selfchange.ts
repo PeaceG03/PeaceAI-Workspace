@@ -47,6 +47,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^\.github\/workflows\/peace-lm-train-m49\.yml$|^peaceai\/model\/ext-train-m49\.json$|^peaceai\/lib\/ftpairs\.ts$|^peaceai\/bin\/ft-pairs\.ts$|^peaceai\/model\/(eval_ab|gen_c)\.py$|^peaceai\/model\/spans\.cjs$|^peaceai\/spec\/lm-run-m49\.md$|^peaceai\/test\/m49-lm-workflow\.test\.ts$/, why: "the M49 training workflow, its fine-tune data selection, evals, spec and proofs" },
   { pattern: /^peaceai\/lib\/import-edit-v2\.ts$|^peaceai\/spec\/import-edit-v2\.md$|^peaceai\/test\/m56-import-edit-v2\.test\.ts$/, why: "the IMPORT_EDIT v2 proposal kind, its spec and proofs (M56)" },
   { pattern: /^peaceai\/lib\/package-script-v2\.ts$|^peaceai\/spec\/package-script-v2\.md$|^peaceai\/test\/m57-package-script-v2\.test\.ts$/, why: "the PACKAGE_SCRIPT v2 proposal kind, its spec and proofs (M57)" },
+  { pattern: /^peaceai\/lib\/method-guard\.ts$|^peaceai\/spec\/method-guard-v1\.md$|^peaceai\/test\/m58-method-guard\.test\.ts$/, why: "the METHOD_GUARD proposal kind, its spec and proofs (M58)" },
   { pattern: /^\.github\/workflows\/corpus-checks\.yml$/, why: "the dispatch-only whole-corpus memcheck and core-free proof (no training)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },

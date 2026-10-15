@@ -1,0 +1,17 @@
+{
+ "id": "public-method-guard-v1",
+ "kind": "METHOD_GUARD",
+ "status": "proposal-off",
+ "flag": "PEACEAI_METHOD_GUARD",
+ "spec": "peaceai/spec/method-guard-v1.md",
+ "engine": "peaceai/lib/method-guard.ts",
+ "foldsIn": "#149 (regex-literal .test(param), no-arg getTime/trim)",
+ "evidence": {
+  "examples": 21,
+  "repos": 5,
+  "method": "AST scan of the pinned example-only repos (no training-corpus overlap; M60)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true
+ }
+}
