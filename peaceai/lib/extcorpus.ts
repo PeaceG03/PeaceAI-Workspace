@@ -13,7 +13,7 @@ export const BUILT_STAGES: readonly Stage[] = ["pretrain"];
 /** Corpus size band for the pretrain stage (bytes of used training text). */
 export const EXT_MIN_BYTES = 50_000_000, EXT_MAX_BYTES = 100_000_000;
 /** Per-repository cap on used training bytes (files in path order), so no single repo dominates. */
-export const EXT_REPO_CAP_BYTES = 6_000_000;
+export const EXT_REPO_CAP_BYTES = 11_000_000; // M51 (M49 plan): 6 MB -> 11 MB; 12 MB measured 101.9 MB, over EXT_MAX_BYTES
 
 /** Set C v2 rule (Architect, option 2). Committed before the carve. */
 export const EXT_C_PERCENT = 15;
@@ -31,7 +31,12 @@ export function extCRepos(pool: readonly string[]): string[] {
   return sorted.slice(0, Math.ceil((sorted.length * EXT_C_PERCENT) / 100)).sort();
 }
 
-export type ExtExclusion = Exclusion | "generated-path" | "secret" | "duplicate" | "core" | "held-out" | "authorship" | "repo-cap" | "core-text" | "safety-tool";
+export type ExtExclusion = Exclusion | "generated-path" | "secret" | "duplicate" | "core" | "held-out" | "authorship" | "repo-cap" | "core-text" | "safety-tool" | "path-leak";
+/** M51 option (b) (Architect): a file whose repository path itself trips the leak scanner (home-path-like or
+ * email-like text in the path) is excluded, because the committed manifest records paths and the pre-push scan
+ * blocks them. No hook exception and no path encoding; the excluded files are listed (repo, commit, content
+ * sha256, finding kinds) in peaceai/model/ext-path-exclusions.json, written by the build. */
+export function pathLeakKinds(path: string): string[] { return [...new Set(scanText(path).map((f) => f.kind))].sort(); }
 /** Generic hex API key / secret / token literal (Auditor #148 follow-up): a key-like name assigned a 32+ hex string. */
 export const HEX_SECRET = /(?:api[_-]?key|apikey|secret|token|access[_-]?key|auth)[\w$-]*["'`]?\s*[:=]\s*["'`][0-9a-fA-F]{32,}["'`]/i;
 /** File filter for external code: the M9 filters plus generated/vendored path forms and the secret scanner. */
@@ -125,13 +130,9 @@ export function manifestRepoProblems(pairs: readonly { repo: string; commit: str
   return [...new Set(out)];
 }
 
-// Auditor #178: `--manifest-sha <hex>` pins the committed ext-manifest.jsonl bytes. Fail closed: a flag with no value,
-// a non-hex value, or a hash that differs from the manifest is a problem. Absent flag: no pin (M37 workflow).
-export function manifestShaPinProblem(argv: readonly string[], manifestBytes: Uint8Array): string | null {
-  const i = argv.indexOf("--manifest-sha");
-  if (i < 0) return null;
-  const want = argv[i + 1] ?? "";
-  if (!/^[0-9a-f]{64}$/.test(want)) return "--manifest-sha needs a 64-hex sha256";
-  const got = createHash("sha256").update(manifestBytes).digest("hex");
-  return got === want ? null : `manifest sha256 ${got} != pinned ${want}`;
+/** M51 follow-up: --write owns only schema, rule and sets of heldout-c.json. Every other field already in the file
+ * (wiredAsEval, wiredBy, ...) is kept as is; wiredAsEval defaults to false only when the file has none. */
+export function mergeHeldoutC(existing: unknown, owned: { schema: string; rule: string; sets: unknown }): Record<string, unknown> {
+  const prev = existing && typeof existing === "object" && !Array.isArray(existing) ? (existing as Record<string, unknown>) : {};
+  return { ...(("wiredAsEval" in prev) ? {} : { wiredAsEval: false }), ...prev, ...owned, ...(("wiredAsEval" in prev) ? { wiredAsEval: prev.wiredAsEval } : {}) };
 }

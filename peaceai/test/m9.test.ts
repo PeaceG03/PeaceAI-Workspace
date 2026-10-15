@@ -413,7 +413,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".py"))) {
     const text = readFileSync(join(dir, f), "utf8");
     const imports = [...text.matchAll(/^\s*(?:import|from)\s+([A-Za-z_.]+)/gm)].map((m) => m[1]!.split(".")[0]);
-    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm"].includes(i!), `${f} imports ${i}`);
+    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm", "manifest_parts"].includes(i!), `${f} imports ${i}`);
     assert.ok(!/huggingface|from_pretrained|torch|tensorflow|transformers|tiktoken|sentencepiece|openai|anthropic|urllib|requests|socket|http/i.test(text), f);
   }
   for (const f of ["lib/lm.ts", "lib/fill.ts", "lib/lmcorpus.ts", "bin/lm-fill.ts", "bin/lm-memcheck.ts", "bin/lm-corpus.ts"]) {
@@ -423,7 +423,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
 });
 
 const LM_TRAIN_M49_WORKFLOW_SHA256 = "1a90a8cb37e999d0883252d1ca613b4a602d7d920d235fd7d3dbbdea6c453d4d"; // M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
-const LM_TRAIN_WORKFLOW_SHA256 = "b3782f9f17df12980487148edd3507e0e41521b38ee3b0afa1b2e404a1c7d131"; // M38: set C v2 eval non-fatal (Auditor, run 38622524096)
+const LM_TRAIN_WORKFLOW_SHA256 = "9355431302d31ed8ca132ee60e8f2ab2728c462bfbe7a7bacdeb013820ae6211"; // M51: pinned to the #148 manifest by sha (--manifest-sha), so M37 never trains on the M49 corpus
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
   const wfDir = join(repo, ".github/workflows");
@@ -444,8 +444,9 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
       assert.match(landing, /DEPLOY_KEY: \$\{\{ secrets\.PEACEAI_RESULTS_DEPLOY_KEY \}\}/);
       assert.ok(!/      - name: /.test(landing.slice(10)), "the landing step is the last step");
       // M37: the corpus is the M36 manifest corpus (ext-fetch, sha256 per file) checked by ext-manifest-check.
-      assert.match(text, /peaceai\/bin\/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus"\n/);
-      assert.match(text, /peaceai\/bin\/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain\n/);
+      // M51: pinned to the #148 manifest by its sha256, so it can never train on the M49 corpus.
+      assert.match(text, /peaceai\/bin\/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus" --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/);
+      assert.match(text, /peaceai\/bin\/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/);
       assert.ok(!/lm-memcheck\.ts|upload-artifact|pull_request|schedule:|push:/.test(text), f);
       continue;
     }

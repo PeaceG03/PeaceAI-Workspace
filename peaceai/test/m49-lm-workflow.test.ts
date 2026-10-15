@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { FT_AUTHOR, FT_SOURCE_LABEL, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
-import { isSafetyToolFile, manifestShaPinProblem } from "../lib/extcorpus.ts";
+import { isSafetyToolFile } from "../lib/extcorpus.ts";
 const repo = join(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(join(repo, p), "utf8");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -169,15 +169,13 @@ test("Auditor #178: every ext-fetch and ext-manifest-check step pins --manifest-
   assert.equal(JSON.parse(read("peaceai/model/ext-train-m49.json")).corpus.repoCapBytes, 11000000);
 });
 
-test("Auditor #178: --manifest-sha is fail-closed (missing, malformed or mismatched value refuses)", () => {
-  const b = Buffer.from("x\n"), h = sha("x\n");
-  assert.equal(manifestShaPinProblem(["a", "b"], b), null);
-  assert.equal(manifestShaPinProblem(["--manifest-sha", h], b), null);
-  assert.match(manifestShaPinProblem(["--manifest-sha"], b)!, /64-hex/);
-  assert.match(manifestShaPinProblem(["--manifest-sha", "ZZ"], b)!, /64-hex/);
-  assert.match(manifestShaPinProblem(["--manifest-sha", "0".repeat(64)], b)!, /!= pinned/);
+test("Auditor #178: --manifest-sha uses M51 readManifestBytes pin (wrong pin refuses)", () => {
+  // #189 dropped the duplicate manifestShaPinProblem helper; bins pin via readManifestBytes + inline compare.
   for (const f of ["peaceai/bin/ext-fetch.ts", "peaceai/bin/ext-manifest-check.ts"]) {
-    const src = read(f); assert.ok(src.indexOf("manifestShaPinProblem(process.argv") > 0 && src.indexOf("manifestShaPinProblem(process.argv") < src.indexOf("extCorpusProblems(") + (f.includes("fetch") ? 1e9 : 0), f);
+    const src = read(f);
+    assert.match(src, /readManifestBytes/, f);
+    assert.match(src, /--manifest-sha/, f);
+    assert.equal(src.includes("manifestShaPinProblem"), false, f);
   }
   const r = (() => { try { execFileSync("./node_modules/.bin/tsx", ["peaceai/bin/ext-manifest-check.ts", tmpdir(), "pretrain", "--manifest-sha", "0".repeat(64)], { cwd: repo, encoding: "utf8" }); return 0; } catch (e: any) { return e.status; } })();
   assert.equal(r, 1, "a wrong pin exits 1 before reading the corpus");
