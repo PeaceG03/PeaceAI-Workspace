@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import test from "node:test";
 import { importEditV2Enabled, importEditV2Problem, V2_MAX_NAMES } from "../lib/import-edit-v2.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -118,7 +119,7 @@ const SPEC_SHA = "84616d669dc84374df690d351be0d78e722e00011524400f94438a3ce54b23
 
 test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
   const corpus = new Set<string>((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string }[]).map((r) => r.name));
-  for (const l of read("peaceai/model/ext-manifest.jsonl").split("\n")) if (l.trim()) { const r = JSON.parse(l).repo; if (r) corpus.add(r); }
+  for (const l of readManifestBytes(join(root, "peaceai/model"), "ext-manifest").toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l).repo; if (r) corpus.add(r); }
   const ex = JSON.parse(read("peaceai/rules/proposals/m56-import-edit-v2-evidence.json")).examples as { repo: string }[];
   for (const x of ex) assert.ok(!corpus.has(x.repo), `${x.repo} is in the training corpus`);
 });
