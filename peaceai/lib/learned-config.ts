@@ -66,11 +66,35 @@ export function importEditProblem(path: string, before: string, after: string, r
 
 const LIFECYCLE = /^(install|uninstall|prepare|prepublish|prepublishOnly|prepack|postpack|publish|shrinkwrap|restart|start|stop|test|version|dependencies)$/;
 const SCRIPT_NAME = /^[a-z][a-z0-9:-]{0,40}$/;
-// The command: one tool from node_modules/.bin (or npm run <script>), flags and relative paths; no shell syntax.
-const COMMAND = /^(?:tsc|eslint|prettier|vitest|jest|mocha|rollup|vite|npm run [a-z][a-z0-9:-]{0,40})(?: (?:--?[A-Za-z][\w-]{0,30}(?:=[\w./:@-]{1,80})?|[\w./*@-]{1,120}))*$/;
-// M2 (Auditor #167): no code-loading flags, tool configs or plugins, and no absolute paths.
-const BANNED_ARG = /^(?:--?(?:require|r|config|c|loader|import|experimental-loader|plugin|rulesdir|resolve-plugins-relative-to|configLoader|setupFiles|setupFilesAfterEach|globalSetup|transform|preset|environment|reporter|resolver|testRunner|watchPlugins)(?:=|$)|\/)|(?:jest|vitest|vite|rollup|eslint|prettier|mocha)\.config|\.(?:eslintrc|mocharc|prettierrc)|^-[A-Za-z]*[rc][A-Za-z]*$/;
-const BANNED = /curl|wget|\bsh\b|bash|\bnode\b|npx|eval|\$|`|;|&|\||>|<|\\|\.\.\//;
+// #167 round 2: an ALLOW list of flags per tool (anything else is refused, so new code-loading flags never slip through).
+export const TOOL_FLAGS: Record<string, readonly string[]> = {
+  tsc: ["--noEmit", "-p", "--project", "--pretty", "--incremental"],
+  eslint: ["--fix", "--cache", "--quiet", "--max-warnings"],
+  prettier: ["--write", "--check", "--list-different"],
+  vitest: ["run", "--run", "--watch", "--coverage", "--passWithNoTests"],
+  jest: ["--watch", "--coverage", "--ci", "--passWithNoTests", "--runInBand"],
+  mocha: ["--recursive", "--watch", "--exit"],
+};
+const POSITIONAL = /^(?!.*\.\.)[\w.*@-][\w./*@-]{0,119}$/; // relative path or glob: no leading "/", no "..", no shell syntax
+const FLAG_VALUE = /^[\w.-]{1,40}$/;
+/** null = the command is one allowed tool with allowed flags and relative paths/globs; else the reason. */
+export function scriptCommandProblem(cmd: string): string | null {
+  if (cmd.length > 300 || /\s{2,}|^\s|\s$/.test(cmd)) return "command not a short, single-spaced string";
+  const run = /^npm run ([a-z][a-z0-9:-]{0,40})$/.exec(cmd);
+  if (run) return null;
+  const [tool, ...args] = cmd.split(" ");
+  const allowed = TOOL_FLAGS[tool!];
+  if (!allowed) return "command outside the allowed tools";
+  for (const a of args) {
+    if (a.startsWith("-")) {
+      const [flag, value] = a.split(/=(.*)/s);
+      if (!allowed.includes(flag!)) return `flag ${flag} is not allowed for ${tool}`;
+      if (value !== undefined && !FLAG_VALUE.test(value)) return "flag value";
+    } else if (allowed.includes(a)) continue; // subcommand such as `vitest run`
+    else if (!POSITIONAL.test(a)) return "argument is not a relative path or glob";
+  }
+  return null;
+}
 
 /** Script names a workflow runs (`npm run x`, `pnpm run x`, `pnpm x`, `yarn x`, `npm test`/`npm start`). */
 export function workflowScriptNames(workflows: readonly string[]): Set<string> {
@@ -81,8 +105,9 @@ export function workflowScriptNames(workflows: readonly string[]): Set<string> {
 
 /** PACKAGE_SCRIPT v1: exactly one NEW non-lifecycle script added to package.json; nothing else differs.
  *  M1 (Auditor #167): existing scripts are never changed, and no script name a workflow runs may be added. */
-export function packageScriptProblem(path: string, before: string, after: string, workflows: readonly string[]): string | null {
+export function packageScriptProblem(path: string, before: string, after: string, workflows: readonly string[] | undefined): string | null {
   if (path !== "package.json") return "only the root package.json";
+  if (!Array.isArray(workflows) || workflows.length === 0) return "workflow list missing or empty (the target's workflows must be read first)";
   let a: Record<string, unknown>, b: Record<string, unknown>;
   try { a = JSON.parse(before); b = JSON.parse(after); } catch { return "not JSON"; }
   const { scripts: sa = {}, ...ra } = a as { scripts?: Record<string, unknown> };
@@ -100,10 +125,9 @@ export function packageScriptProblem(path: string, before: string, after: string
   // npm runs pre<x>/post<x> around script x: refuse a hook for any script or lifecycle event.
   const hooked = /^(?:pre|post)(.+)$/.exec(k)?.[1];
   if (hooked !== undefined && (LIFECYCLE.test(hooked) || hooked in (sa as object) || hooked in (sb as object))) return "lifecycle script";
-  if (typeof cmd !== "string" || cmd.length > 300) return "command not a short string";
-  if (BANNED.test(cmd)) return "command uses shell syntax, a network tool or node directly";
-  if (!COMMAND.test(cmd)) return "command outside the allowed tools";
-  if (cmd.split(" ").slice(1).some((a) => BANNED_ARG.test(a))) return "code-loading flag, tool config, plugin or absolute path";
+  if (typeof cmd !== "string") return "command not a string";
+  const why = scriptCommandProblem(cmd);
+  if (why) return why;
   // Every other byte identical: the new file must be the old file with only that one value inserted or replaced.
   const ind = Number(before.match(/^\{\n( +)"/)?.[1]?.length ?? 2);
   if (JSON.stringify(a, null, ind) !== before.replace(/\n$/, "")) return "package.json is not in standard JSON formatting";

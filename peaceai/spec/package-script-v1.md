@@ -8,11 +8,15 @@ Add ONE new `scripts` entry in the root `package.json`. Refused unless all hold:
    same indent and trailing newline, so no other byte moves.
 2. **Name.** `^[a-z][a-z0-9:-]{0,40}$` and not a lifecycle script (`install`, `prepare`, `publish`, `shrinkwrap`,
    `start`, `test`, `version`, ...), nor a `pre`/`post` hook of any lifecycle event or existing script.
-3. **Command.** At most 300 characters; one allowed tool (`tsc`, `eslint`, `prettier`, `vitest`, `jest`,
-   `mocha`, `rollup`, `vite`, or `npm run <script>`) followed by flags and relative paths only. `tsx` is not allowed (Auditor #167 M2). Refused arguments: `--require`/`-r`,
-   `--config`/`-c`, `--loader`, `--import`, setup/transform/preset/reporter/resolver flags, eslint `--plugin`/`--rulesdir`,
-   any jest/vitest/vite/rollup/eslint/prettier/mocha config file, and any argument starting with `/`. No `curl`, `wget`,
-   `sh`, `bash`, `node`, `npx`, `eval`, `$`, backticks, `;`, `&`, `|`, `<`, `>`, `\` or `../`.
+3. **Command (#167 round 2: allow list).** At most 300 characters, single spaces; either `npm run <script>` alone,
+   or one tool with ONLY its allowed flags (`--flag` or `--flag=<[\w.-]{1,40}>`), its subcommands, and relative
+   paths/globs (no leading `/`, no `..`, no shell syntax):
+   `tsc` --noEmit -p --project --pretty --incremental; `eslint` --fix --cache --quiet --max-warnings;
+   `prettier` --write --check --list-different; `vitest` run --run --watch --coverage --passWithNoTests;
+   `jest` --watch --coverage --ci --passWithNoTests --runInBand; `mocha` --recursive --watch --exit.
+   Every other flag (e.g. `--require`, `--config`, `--setupFilesAfterEnv`, `--testEnvironment`, `--reporters`,
+   `--file=`, `--ui=`, `--plugin`) and every other tool (`tsx`, `node`, `npx`, `vite`, `rollup`, shells) is refused.
+   The target's workflow files must be supplied: a missing or empty workflow list is refused.
 4. **Behavior proof.** The workflow or check that runs the script fails before and passes after.
 5. **Off by default.** Only `PEACEAI_PACKAGE_SCRIPT=true` turns the check on; not in RULE_KINDS until a separate,
    Auditor-reviewed wiring PR; approval is Peace's. Builder never posts /approve-rule. package.json stays on
