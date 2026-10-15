@@ -140,9 +140,13 @@ export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
  * from a source other than core, and its content hash must match no core file. An empty or unreadable manifest
  * proves nothing.
  */
-export function manifestProvesNoCore(manifest: readonly Record<string, unknown>[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI"): boolean {
+export function manifestProvesNoCore(manifest: readonly Record<string, unknown>[], coreFileShas: ReadonlySet<string>, coreSource = "PeaceG03/PeaceAI", docSha256?: ReadonlyMap<unknown, string>): boolean {
   if (manifest.length === 0) return false;
   const shaOk = (m: Record<string, unknown>) => typeof m.sha256 === "string" && /^[0-9a-f]{64}$/.test(m.sha256) && !coreFileShas.has(m.sha256);
+  // M52 (Architect, M49 M5): the fine-tune schema (ft-pairs.ts). All entries one schema, exact keys; its content
+  // sha256 comes only from the doc text (docSha256), never from the manifest. No doc hashes given: fails closed.
+  const ft = manifest.map((m) => m !== null && typeof m === "object" && ("function" in m || "sha" in m)); // keys only the fine-tune schema has
+  if (ft.some(Boolean)) return ft.every(Boolean) && !!docSha256 && manifest.every((m) => ftManifestEntryProblem(m) === null && shaOk({ sha256: docSha256.get(m.doc) }));
   // M39 (Architect): the external manifest schema (ext-fetch.ts: repo + license + sha256). All entries one schema;
   // any unknown field or malformed entry fails closed. The internal schema keeps its visibility check unchanged.
   if (manifest.every((m) => m !== null && typeof m === "object" && "repo" in m)) return manifest.every((m) => extManifestEntryProblem(m, coreSource) === null && shaOk(m));
@@ -177,6 +181,24 @@ export function extManifestEntryProblem(m: Record<string, unknown>, coreSource =
   return "bad origin";
 }
 
+/** M52: keys of an M49 fine-tune manifest entry (ft-pairs.ts); all required, anything else refused. */
+export const FT_PROOF_KEYS = ["doc", "split", "repo", "sha", "path", "function"] as const;
+/** Same rules as corefree_proof.py's ft_problem(): null when the entry is acceptable. */
+export function ftManifestEntryProblem(m: Record<string, unknown>): string | null {
+  if (m === null || typeof m !== "object" || Array.isArray(m)) return "not an object";
+  const keys = new Set<string>(FT_PROOF_KEYS);
+  const unknown = Object.keys(m).filter((k) => !keys.has(k)).sort();
+  if (unknown.length) return `unknown field ${unknown[0]}`;
+  const missing = FT_PROOF_KEYS.filter((k) => !Object.hasOwn(m, k)).sort();
+  if (missing.length) return `missing field ${missing[0]}`;
+  if (typeof m.doc !== "number" || !Number.isInteger(m.doc) || m.doc < 0 || typeof m.path !== "string" || !m.path) return "bad doc/path";
+  if (typeof m.function !== "string" || !m.function) return "bad function";
+  if (m.split !== "train" && m.split !== "heldout") return "bad split";
+  if (typeof m.sha !== "string" || !/^[0-9a-f]{40}$/.test(m.sha)) return "bad sha";
+  if (typeof m.repo !== "string" || !EXT_PROOF_OWNER_PUBLIC.has(m.repo)) return "fine-tune entry: not a public owner repo";
+  return null;
+}
+
 /**
  * The core-free proof attached to a model's Results record (written at training time by
  * peaceai/model/corefree_proof.py): the training manifest's hash, and for EVERY manifest file its content sha256,
@@ -187,7 +209,7 @@ export function extManifestEntryProblem(m: Record<string, unknown>, coreSource =
 export const COREFREE_PROOF_SCHEMA = "peaceai-lm-corefree-proof:v1";
 export interface CoreFreeProofFile { doc: number; path: string; source: string; sha256: string; coreExact: boolean; coreNearMax: number }
 export interface CoreFreeProof { schema: string; model: string; noCoreFiles: string; manifestSha256: string; coreCommit: string; near: { method: string; threshold: number }; files: CoreFreeProofFile[] }
-export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string }): { ok: boolean; reason?: string } {
+export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string; docSha256?: ReadonlyMap<unknown, string> }): { ok: boolean; reason?: string } {
   const p = proof as CoreFreeProof | null;
   if (!p || typeof p !== "object") return { ok: false, reason: "MISSING" };
   if (p.schema !== COREFREE_PROOF_SCHEMA) return { ok: false, reason: "BAD_SCHEMA" };
@@ -201,7 +223,9 @@ export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manif
   const byDoc = new Map(p.files.map((f) => [f?.doc, f]));
   for (const m of ctx.manifest) {
     const f = byDoc.get(m.doc);
-    if (!f || f.path !== m.path || f.sha256 !== m.sha256) return { ok: false, reason: "FILE_MISMATCH" };
+    // M52: a fine-tune entry carries no sha256; its expected hash is the doc text's (docSha256), never the proof's own.
+    const want = "function" in m || "sha" in m ? ctx.docSha256?.get(m.doc) : m.sha256;
+    if (!f || f.path !== m.path || typeof want !== "string" || f.sha256 !== want) return { ok: false, reason: "FILE_MISMATCH" };
     if (f.coreExact !== false) return { ok: false, reason: "CORE_EXACT" };
     if (typeof f.coreNearMax !== "number" || !(f.coreNearMax >= 0 && f.coreNearMax < t)) return { ok: false, reason: "CORE_NEAR" };
   }

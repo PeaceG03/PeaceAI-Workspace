@@ -67,14 +67,17 @@ else {
     let proof: unknown = null;
     try { proof = JSON.parse(readFileSync(join(modelDir, "corefree-proof.json"), "utf8")); } catch { proof = null; }
     const modelId = String(JSON.parse(readFileSync(join(modelDir, "config.json"), "utf8")).version ?? "");
-    const v = validCoreFreeProof(proof, { modelId, manifest: tm, manifestSha256: trainManifestSha });
+    // M52: doc text hashes (the fine-tune manifest carries none; its proof is checked against these).
+    const docSha256 = new Map<unknown, string>();
+    for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); docSha256.set(d.doc, h(String(d.text))); }
+    const v = validCoreFreeProof(proof, { modelId, manifest: tm, manifestSha256: trainManifestSha, docSha256 });
     proofState = v.ok ? "VALID" : `INVALID:${v.reason}`;
     if (proof !== null && v.ok) proofSha = h(readFileSync(join(modelDir, "corefree-proof.json"), "utf8"));
     // M40: docs.jsonl ids must equal the manifest ids, else the manifest proves nothing (strict rule).
     const docIds: unknown[] = [];
     for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) docIds.push(JSON.parse(l).doc);
     if (!docIdsMatch(tm.map((m) => m.doc), docIds)) noCoreProof = "NOT_PROVEN";
-    if (!manifestProvesNoCore(tm, coreShas, CORE_SOURCE) || (tree.raw ?? []).length === 0) noCoreProof = "NOT_PROVEN";
+    if (!manifestProvesNoCore(tm, coreShas, CORE_SOURCE, docSha256) || (tree.raw ?? []).length === 0) noCoreProof = "NOT_PROVEN";
     if (v.ok && noCoreProof === "PROVEN") {
       const tt: string[] = [];
       for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) tt.push(JSON.parse(l).text);
