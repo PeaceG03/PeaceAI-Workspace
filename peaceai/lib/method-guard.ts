@@ -1,6 +1,6 @@
 // M58 proposal (OFF until approved): METHOD_GUARD, a NEW kind beside ADD_THROW_GUARD v1 and its function-top
 // placement (both unchanged). Spec: peaceai/spec/method-guard-v1.md. Not wired into learned.ts RULE_KINDS and not in
-// approved.json; OFF unless PEACEAI_METHOD_GUARD is exactly "true". Builder never approves.
+// approved.json until Peace /approve-rule; Job A only runs it when admitted. Builder never approves.
 // The edit: ONE guard as the FIRST statement of a uniquely named exported function, in the one-line form
 // `if (cond) throw new Error("CODE");` or the block form `if (cond) {\n  throw new Error("CODE");\n}` (the file's
 // majority style). The condition grammar is v1's (parameters, literals, property reads, comparisons, `!`, `&&`/`||`,
@@ -12,7 +12,8 @@
 // X is a parameter or a property chain rooted at one; never optional chaining, computed access or a call result.
 // Note (as v1): a call or property read on a caller-supplied object can run the caller's own code.
 import ts from "typescript";
-import { exportedFunction } from "./learned-guard.ts";
+import { exportedFunction, parseGuardTask, type Refusal, unknownNames } from "./learned-guard.ts";
+import { buildTestEdit } from "./learned-test.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
 const plainPath = (p: string) => !p.startsWith("/") && !p.split("/").some((s) => s === "" || s === "." || s === "..");
@@ -21,6 +22,20 @@ const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(
 export const METHOD_GUARD_FLAG = "PEACEAI_METHOD_GUARD";
 export const methodGuardEnabled = (env: Record<string, string | undefined>): boolean => env[METHOD_GUARD_FLAG] === "true";
 export const METHOD_GUARD_MAX_COND = 160;
+export const METHOD_GUARD_PARAM_KEYS = ["error", "form", "grading", "message", "placement", "test"] as const;
+export const METHOD_GUARD_VOCAB: Record<(typeof METHOD_GUARD_PARAM_KEYS)[number], readonly string[]> = {
+  error: ["Error"],
+  form: ["block", "one-line"],
+  grading: ["self-fail-before-pass-after"],
+  message: ["code-only"],
+  placement: ["function-top"],
+  test: ["new-file"],
+};
+const NAME = String.raw`[A-Za-z_$][\w$]*`;
+const FILE = String.raw`[\w./-]+\.ts`;
+/** Distinct from ADD_THROW_GUARD / function-top: requires a method call in the condition. */
+export const METHOD_GUARD_TRIGGER = String.raw`^guard \x60?(?<fn>${NAME})\x60? in \x60?(?<file>${FILE})\x60? with a method ?: throw \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60? (?:when|if) (?<cond>[^\n]{1,${METHOD_GUARD_MAX_COND}}?)\.?$`;
+
 const ONE_ARG = new Set(["startsWith", "endsWith", "includes", "has"]);
 const NO_ARG = new Set(["getTime", "trim"]);
 const CALLS = new Set(["Number.isFinite", "Number.isInteger", "Number.isNaN", "Number.isSafeInteger", "Array.isArray"]);
@@ -126,4 +141,40 @@ export function buildMethodGuardEdit(path: string, content: string, fnName: stri
   const f2 = exportedFunction(post, fnName);
   if (!f2 || !f2.body.statements.length || !guardCondition(f2.body.statements[0]!)) return null;
   return out;
+}
+
+/** Job A entry: parse the method-guard header, build the first-statement edit + self-graded test. */
+export function applyMethodGuardRule(
+  trigger: string,
+  params: Record<string, string | string[]>,
+  objective: string,
+  files: readonly { path: string; content: string }[],
+  isTest?: (p: string) => boolean,
+  why?: Refusal,
+): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
+  const no = (r: string) => { if (why) why.reason = r; return null; };
+  for (const k of METHOD_GUARD_PARAM_KEYS) if (typeof params[k] !== "string" || !METHOD_GUARD_VOCAB[k].includes(params[k] as string)) return no("bad_rule_params");
+  const task = parseGuardTask(trigger, objective);
+  if (!task) return null;
+  if (task.cond.length > METHOD_GUARD_MAX_COND) return no("condition_too_long");
+  const target = files.find((f) => f.path === task.file);
+  if (!target || (isTest ?? ((p) => /\.test\.ts$/.test(p)))(target.path)) return no("target_file_not_found");
+  const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
+  const fn = exportedFunction(sf, task.fn);
+  if (!fn) return no("function_not_found");
+  const names = new Set<string>();
+  for (const p of fn.params) { if (!ts.isIdentifier(p.name)) return no("destructured_parameter"); names.add(p.name.text); }
+  const cond = parseExpr(task.cond);
+  if (!cond) return no("condition_unparsable");
+  if (!methodGuardCondition(cond, names)) {
+    const unknown = unknownNames(cond, names);
+    return no(unknown.length ? `unsafe_condition: ${unknown.join(",")}` : "unsafe_condition");
+  }
+  const form = params.form as GuardForm;
+  const edited = buildMethodGuardEdit(target.path, target.content, task.fn, task.cond, task.code, form);
+  if (!edited) return no("edit_refused");
+  const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
+  const test = buildTestEdit(testParams, task.test, files, isTest);
+  if (!test) return no("test_refused");
+  return { path: target.path, content: edited, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
 }
