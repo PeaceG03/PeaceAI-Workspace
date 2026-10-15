@@ -4,9 +4,9 @@ process.env.PEACEAI_COMPLEX_FUNCTION = "true"; // the flag defaults off; the eng
 import { applyComplexRule, COMPLEX_TRIGGER } from "../lib/learned-complex.ts";
 const P = { body: "bounded-block", grading: "self-fail-before-pass-after-and-stub", loops: ["for-of-param", "counted-literal-or-length"], params: "typed", placement: "end-of-module", returns: "annotated", test: "new-file" };
 const files = [{ path: "src/a.ts", content: "export const x = 1;\n" }];
-const t = (body: string) => `add complex function monthsSpan(from: string, to: string): string[] to src/a.ts with body:\n${body}\n- monthsSpan("2026-09", "2026-11") equals ["2026-09", "2026-10", "2026-11"]`;
-const ok = `const out: string[] = [];\nlet y = Number(from.slice(0, 4));\nlet m = Number(from.slice(5, 7));\nfor (let i = 0; i < 48; i++) {\nconst key = String(y) + "-" + String(m).padStart(2, "0");\nif (to.slice(0, 7) < key) break;\nout.push(key);\nm += 1;\nif (m === 13) { m = 1; y += 1; }\n}\nreturn out;`;
-test("builds a bounded planner function", () => {
+const t = (body: string) => `add complex function monthsSpan(from: string, to: string): string[] to src/a.ts with body:\n${body}\n- monthsSpan("2026-09", "2026-11") equals ["2026-09", "2026-11"]`;
+const ok = `const a = from.slice(0, 7);\nconst b = to.slice(0, 7);\nif (b < a) return [];\nif (a === b) return [a];\nreturn [a, b];`; // loop-free: loops are refused by name (loop_unsupported) until mined loop examples exist
+test("builds a bounded multi-statement function", () => {
   const e = applyComplexRule(COMPLEX_TRIGGER, P, t(ok), files);
   assert.ok(e && e.content.includes("export function monthsSpan(from: string, to: string): string[]"));
 });
@@ -136,3 +136,37 @@ test("evidence: no overlap with the training corpus or ext-manifest d4399d79", (
   assert.ok(repos.size > 10);
   for (const e of m26Ev.examples) { assert.ok(!repos.has(e.repo), e.repo); assert.ok(!shas.has(e.sha256), e.path); }
 });
+
+// ---- Auditor #135: plain paths only; Architect: loops refused by name ----
+import { LOOP_UNSUPPORTED, plainPath as complexPlainPath } from "../lib/learned-complex.ts";
+for (const path of ["../a.ts", "/tmp/a.ts", "src/../a.ts"]) {
+  test(`non-plain target path refused: ${path}`, () => {
+    assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(ok).replace("src/a.ts", path), [{ path, content: "export const x = 1;\n" }], undefined, ON), null);
+  });
+  test(`non-plain generated test path refused: ${path}`, () => {
+    // the generated test lands next to the target, so its path inherits the non-plain segments
+    const task = t(ok).replace("src/a.ts", path);
+    const e = applyComplexRule(COMPLEX_TRIGGER, P, task, [{ path, content: "export const x = 1;\n" }], () => false, ON);
+    assert.equal(e, null);
+    // the same check guards the generated test path: what the test builder would emit next to this target is refused
+    assert.equal(complexPlainPath(path.replace(/\.ts$/, ".monthsspan-0000000.test.ts")), false);
+    assert.equal(complexPlainPath(path), false);
+    const good = applyComplexRule(COMPLEX_TRIGGER, P, t(ok), files, undefined, ON);
+    assert.ok(good && good.extra.every((x) => !x.path.startsWith("/") && !x.path.split("/").some((s) => s === "" || s === "." || s === "..")));
+  });
+}
+const loopForms: Record<string, string> = {
+  for: "const out: string[] = [];\nfor (let i = 0; i < 3; i++) { out.push(from); }\nreturn out;",
+  "for-of": "const out: string[] = [];\nfor (const c of from) { out.push(c); }\nreturn out;",
+  "for-in": "const out: string[] = [];\nfor (const k in [from]) { out.push(k); }\nreturn out;",
+  while: "const out: string[] = [];\nwhile (out.length < 2) { out.push(to); }\nreturn out;",
+  do: "const out: string[] = [];\ndo { out.push(to); } while (out.length < 2);\nreturn out;",
+};
+for (const [form, body] of Object.entries(loopForms)) {
+  test(`loop refused with loop_unsupported: ${form}`, () => {
+    const sf = ts.createSourceFile("f.ts", `function f(from: string, to: string): string[] {\n${body}\n}`, ts.ScriptTarget.Latest, true);
+    const fn = sf.statements[0] as ts.FunctionDeclaration;
+    assert.equal(blockRefusal(fn.body!, new Set(["from", "to"]), sf), LOOP_UNSUPPORTED);
+    assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(body), files, undefined, ON), null);
+  });
+}

@@ -27,6 +27,11 @@ import { PROTECTED_SELF } from "./selfchange.ts";
 /** Off unless PEACEAI_COMPLEX_FUNCTION is exactly "true" (M26 refresh). */
 export const COMPLEX_FUNCTION_FLAG = "PEACEAI_COMPLEX_FUNCTION";
 export const complexFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[COMPLEX_FUNCTION_FLAG] === "true";
+/** Named refusal for every loop form until real mined loop examples exist. */
+export const LOOP_UNSUPPORTED = "loop_unsupported";
+const LOOPS_SUPPORTED: boolean = false;
+/** Auditor #135: no leading '/', and no '', '.' or '..' segments (same check as METHOD_GUARD). */
+export const plainPath = (p: string): boolean => !p.startsWith("/") && !p.split("/").some((x) => x === "" || x === "." || x === "..");
 const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(path));
 
 export const COMPLEX_PARAM_KEYS = ["body", "grading", "loops", "params", "placement", "returns", "test"] as const;
@@ -160,6 +165,8 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
   };
   const local = (n: string) => !params.has(n) && !locals.has(n) && !counters.has(n) && !RESERVED.test(n);
   const stmt = (s: ts.Statement, depth: number, inLoop: boolean): string | null => {
+    // Architect (M26 refresh): no mined example has a loop yet, so every loop form is refused by name.
+    if (LOOPS_SUPPORTED === false && (ts.isForStatement(s) || ts.isForOfStatement(s) || ts.isForInStatement(s) || ts.isWhileStatement(s) || ts.isDoStatement(s))) return LOOP_UNSUPPORTED;
     if (++statements > MAX_STATEMENTS) return "too many statements";
     if (depth > MAX_DEPTH) return "nested too deep";
     if (ts.isBlock(s)) { statements--; for (const x of s.statements) { const r = stmt(x, depth, inLoop); if (r) return r; } return null; }
@@ -290,7 +297,7 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
     if (k === "loops") { if (!Array.isArray(v) || v.length === 0 || !v.every((x) => COMPLEX_VOCAB.loops.includes(x))) return null; continue; }
     if (typeof v !== "string" || !COMPLEX_VOCAB[k].includes(v)) return null;
   }
-  if (isProtected(task.file)) return null;
+  if (!plainPath(task.file) || isProtected(task.file)) return null;
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return null;
   const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
@@ -313,7 +320,7 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
   const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
-  if (!test) return null;
+  if (!test || !plainPath(test.path)) return null; // new test files match the protected *.test.ts pattern by design; only the path shape is checked here
   return { path: target.path, content, extra: [{ path: test.path, content: test.content, create: true }], selfGrade: true };
 }
 
