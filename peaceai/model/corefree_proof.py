@@ -16,10 +16,14 @@ ap.add_argument("--corpus", required=True)
 ap.add_argument("--core-dir", required=True)
 ap.add_argument("--model", required=True)
 ap.add_argument("--near", type=float, default=0.8)
+# M52 (Architect (a)): a two-corpus model (pretrain + fine-tune) gets one proof per corpus:
+# MODEL_DIR/corefree-proof-<stage>.json, carrying "corpus": <stage>. Without --stage: the single-corpus file, unchanged.
+ap.add_argument("--stage", choices=["pretrain", "finetune"])
 args = ap.parse_args()
+PROOF_NAME = f"corefree-proof-{args.stage}.json" if args.stage else "corefree-proof.json"
 # M40 (Auditor #160): a stale proof from an earlier run never survives a refused or crashed run.
 try:
-    os.remove(os.path.join(args.model, "corefree-proof.json"))
+    os.remove(os.path.join(args.model, PROOF_NAME))
 except FileNotFoundError:
     pass
 # M40: ASCII whitespace only (Python's \s also matches NBSP, U+2000-200A, U+3000, \x1c-\x1f, U+FEFF); same set as JS.
@@ -157,6 +161,8 @@ is_ft = [isinstance(m, dict) and ("function" in m or "sha" in m) for m in man]  
 if any(is_ft) and not all(is_ft):
     sys.exit("corefree_proof: manifest refused (mixed fine-tune and other schema)")
 schema = "finetune" if man and all(is_ft) else "external" if man and all(isinstance(m, dict) and "repo" in m for m in man) else "internal"
+if args.stage and (schema == "finetune") != (args.stage == "finetune"):
+    sys.exit(f"corefree_proof: --stage {args.stage} does not match the {schema} manifest")
 if schema == "finetune":
     for m in man:
         why = ft_problem(m)
@@ -222,7 +228,9 @@ core_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=args.core_dir, ca
 proof = {"schema": "peaceai-lm-corefree-proof:v1", "model": model, "noCoreFiles": "PROVEN" if proven else "NOT_PROVEN",
          "manifestSha256": hashlib.sha256(man_text.encode()).hexdigest(), "coreCommit": core_commit,
          "near": {"method": "minhash 64 perms / 16 bands / 8-token shingles", "threshold": args.near}, "files": files}
-json.dump(proof, open(os.path.join(args.model, "corefree-proof.json"), "w"), indent=1)
+if args.stage:
+    proof["corpus"] = args.stage
+json.dump(proof, open(os.path.join(args.model, PROOF_NAME), "w"), indent=1)
 print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files),
                   "maxNear": max((f["coreNearMax"] for f in files), default=0.0), "coreFiles": len(core_texts),
                   "schema": schema, "ignoredEmpty": ignored_empty, "allowlistedPublicOrigin": allowlisted, "pinnedCoreFiles": len(pinned_texts)}))

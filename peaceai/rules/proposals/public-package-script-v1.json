@@ -6,15 +6,9 @@
  "spec": "peaceai/spec/package-script-v1.md",
  "engine": "peaceai/lib/learned-config.ts",
  "evidence": {
-  "examples": 5,
-  "commits": 5,
-  "repos": [
-   "apollographql/apollo-client",
-   "honojs/hono",
-   "immerjs/immer",
-   "sinonjs/sinon",
-   "vitejs/vite-plugin-react"
-  ],
+  "examples": 0,
+  "commits": 0,
+  "repos": [],
   "origin": "external-licensed",
   "bar": 10,
   "qualifies": false

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { importEditEnabled, importEditProblem, packageScriptEnabled, packageScriptProblem } from "../lib/learned-config.ts";
@@ -81,14 +81,46 @@ test("evidence: licensed external, none from set C; counts recorded against the 
   assert.ok(!(EV.families.IMPORT_EDIT as { path: string }[]).some((x) => x.path.endsWith(".js")), "L5: no .js example");
 });
 
-test("L5: every recorded example replays through the engine", () => {
-  for (const x of EV.families.IMPORT_EDIT as { path: string; before: string; after: string; repoFiles: string[] }[])
-    assert.equal(importEditProblem(x.path, x.before + "\nexport {};\n", x.after + "\nexport {};\n", new Set(x.repoFiles)), null, `${x.path}: ${x.after}`);
-  for (const x of EV.families.PACKAGE_SCRIPT as { name: string; command: string; workflowRuns: string[] }[]) {
-    const before = JSON.stringify({ name: "x", scripts: {} }, null, 2) + "\n";
-    const after = JSON.stringify({ name: "x", scripts: { [x.name]: x.command } }, null, 2) + "\n";
-    assert.equal(packageScriptProblem("package.json", before, after, x.workflowRuns.length ? x.workflowRuns.map((n) => `run: npm run ${n}`) : ["name: ci"]), null, x.name);
+test("M58 (Architect): no example overlaps the training corpus (repo in ext-corpus.json, or repo/file in the corpus manifest)", () => {
+  const corpus = JSON.parse(read("peaceai/model/ext-corpus.json"));
+  const repos = new Set<string>([...corpus.repos.map((r: { name: string }) => r.name), ...corpus.owner.map((r: { name: string }) => r.name)]);
+  const rows = readManifestBytes(join(repo, "peaceai/model"), "ext-manifest").toString("utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l) as { repo: string; path: string });
+  const mRepos = new Set(rows.map((r) => r.repo)), mFiles = new Set(rows.map((r) => `${r.repo}:${r.path}`));
+  const overlap = (x: { repo: string; path: string }) => repos.has(x.repo) || mRepos.has(x.repo) || mFiles.has(`${x.repo}:${x.path}`);
+  for (const fam of ["IMPORT_EDIT", "PACKAGE_SCRIPT"]) for (const x of EV.families[fam] as { repo: string; path: string }[]) assert.ok(!overlap(x), `${fam} example ${x.repo} ${x.path} overlaps the training corpus`);
+  // The check bites: every dropped corpus-overlap example would fail it.
+  assert.equal(EV.droppedCorpusOverlap.IMPORT_EDIT.length, 4);
+  for (const x of EV.droppedCorpusOverlap.IMPORT_EDIT as { repo: string; path: string }[]) assert.ok(overlap(x), x.repo);
+});
+
+const FIX = "peaceai/test/fixtures/m45/";
+const gitBlob = (b: Buffer) => createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${b.length}\0`), b])).digest("hex");
+const fixture = (name: string, blob: string): string => {
+  const b = readFileSync(join(repo, FIX + name));
+  assert.ok(b.length <= FIXTURE_MAX_BYTES, `${name} too large`);
+  assert.equal(gitBlob(b), blob, `${name}: fixture is not the real blob`);
+  return b.toString("utf8");
+};
+const FIXTURE_MAX_BYTES = 65536;
+
+test("M57 L5: every recorded example replays through the engine on the REAL before/after files (fixtures pinned by git blob id)", () => {
+  const lic = new Map([...JSON.parse(read("peaceai/model/ext-corpus.json")).repos, ...XR.repos].map((r: { name: string; licenseSha256: string }) => [r.name, r.licenseSha256]));
+  type Ex = { licenseSha256: string; repo: string; path: string; beforeBlob: string; afterBlob: string; beforeFixture: string; afterFixture: string };
+  const all = [...EV.families.IMPORT_EDIT, ...EV.families.PACKAGE_SCRIPT] as Ex[];
+  for (const x of all) {
+    // LICENSE texts are not committed (they carry contact emails); each example pins its repo's license by sha256 only.
+    assert.equal(x.licenseSha256, lic.get(x.repo), `${x.repo}: license sha256 pin`);
+    assert.ok(!existsSync(join(repo, FIX + x.repo.replace("/", "__") + ".LICENSE.txt")), `${x.repo}: no committed LICENSE text`);
+    for (const f of [x.beforeFixture, x.afterFixture]) assert.match(f, /^[\w.-]+-[0-9a-f]{12}\.(before|after)\.txt$/);
   }
+  for (const x of EV.families.IMPORT_EDIT as (Ex & { after: string; repoFiles: string[] })[])
+    assert.equal(importEditProblem(x.path, fixture(x.beforeFixture, x.beforeBlob), fixture(x.afterFixture, x.afterBlob), new Set(x.repoFiles)), null, `${x.repo} ${x.path}: ${x.after}`);
+  for (const x of EV.families.PACKAGE_SCRIPT as (Ex & { name: string; workflowRuns: string[] })[])
+    assert.equal(packageScriptProblem("package.json", fixture(x.beforeFixture, x.beforeBlob), fixture(x.afterFixture, x.afterBlob), x.workflowRuns.length ? x.workflowRuns.map((n) => `run: npm run ${n}`) : ["name: ci"]), null, `${x.repo} ${x.name}`);
+  // Tamper proof: a changed byte breaks the blob pin.
+  const x0 = all[0]!;
+  const b = Buffer.from(readFileSync(join(repo, FIX + x0.beforeFixture))); b[0] = b[0]! ^ 1;
+  assert.notEqual(gitBlob(b), x0.beforeBlob);
 });
 
 test("IMPORT_EDIT accepts extension-only and directory-move specifier changes that resolve", () => {
@@ -183,5 +215,5 @@ test("engine, specs and this test are protected; specs pinned", () => {
   assert.equal(h("peaceai/spec/import-edit-v1.md"), IMPORT_SPEC_SHA);
   assert.equal(h("peaceai/spec/package-script-v1.md"), SCRIPT_SPEC_SHA);
 });
-const IMPORT_SPEC_SHA = "88eb38b42fe035047031a49e680f61967bb5e10a5cd6e1e3c6aac9e51e3d1239";
-const SCRIPT_SPEC_SHA = "86c9a9966c56287f6a14276e257910cf19c1153751b92a3172367e8efac34ca6";
+const IMPORT_SPEC_SHA = "4fff370966b5ea80fd5ce777f055bcf1e2e6d4fe2a89ba4c15d08de2e22cd136";
+const SCRIPT_SPEC_SHA = "223497941b1ccf43d06b2f1965bee5fd35c22b21680e29d012f73b061bc262e0";
