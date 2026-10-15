@@ -18,7 +18,7 @@ Add ONE new `scripts` entry in the root `package.json`. Refused unless all hold:
    Auditor-reviewed wiring PR; approval is Peace's. Builder never posts /approve-rule. package.json stays on
    PROTECTED_SELF for self-changes; this kind applies to target repos only.
 
-Evidence: after the #167 review rules, 4 of 12 mined licensed external commits (new scripts only) replay through the engine; below the 10-example bar, so this kind does not qualify yet (`peaceai/rules/proposals/m45-evidence.json`).
+Evidence: after the #167 review rules, 4 of 14 mined licensed external commits (new scripts only) replay through the engine; below the 10-example bar, so this kind does not qualify yet (`peaceai/rules/proposals/m45-evidence.json`).
 
 Live-proof plan (after approval only): one valid peace-task on PeaceSTOCKS (add a `typecheck:<x>` script running
 `tsc -p <tsconfig> --noEmit`, as in builder-log entry 39) must yield a counted candidate; one bad task (a

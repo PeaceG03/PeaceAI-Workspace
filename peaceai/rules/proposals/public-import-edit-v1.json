@@ -6,9 +6,10 @@
  "spec": "peaceai/spec/import-edit-v1.md",
  "engine": "peaceai/lib/learned-config.ts",
  "evidence": {
-  "examples": 2,
-  "commits": 2,
+  "examples": 4,
+  "commits": 4,
   "repos": [
+   "denoland/std",
    "reduxjs/redux-toolkit",
    "vitejs/vite"
   ],

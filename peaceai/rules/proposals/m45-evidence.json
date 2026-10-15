@@ -1,8 +1,36 @@
 {
  "schema": "peaceai-m45-evidence:v2",
- "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 3000, or 1500 on the shallow clones), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts.",
+ "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 6000 per repo; shallow clones deepened to about 6000), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts.",
  "families": {
   "IMPORT_EDIT": [
+   {
+    "repo": "denoland/std",
+    "commit": "37de78e337e2640220a022fb4760dcf9a6387b92",
+    "path": "path/extname.ts",
+    "before": "import { extname as windowsExtname } from \"./posix/extname.ts\";",
+    "after": "import { extname as windowsExtname } from \"./windows/extname.ts\";",
+    "repoFiles": [
+     "path/windows/extname.ts",
+     "path/windows/extname.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
+    "origin": "external"
+   },
+   {
+    "repo": "denoland/std",
+    "commit": "7286baa1a5973d9dd0d18182aeb731d246a8cd5a",
+    "path": "path/glob.ts",
+    "before": "import { isGlob as _isGlob } from \"./_common/is_glob.ts\";",
+    "after": "import { isGlob as _isGlob } from \"./is_glob.ts\";",
+    "repoFiles": [
+     "path/is_glob.ts",
+     "path/is_glob.ts"
+    ],
+    "license": "MIT",
+    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
+    "origin": "external"
+   },
    {
     "repo": "reduxjs/redux-toolkit",
     "commit": "653803ee1dc8f0a9a7c46f3568871c6f959680d6",
@@ -102,8 +130,8 @@
   ]
  },
  "minedCandidates": {
-  "IMPORT_EDIT": 32,
-  "PACKAGE_SCRIPT": 12
+  "IMPORT_EDIT": 59,
+  "PACKAGE_SCRIPT": 14
  },
  "bar": 10,
  "notQualifying": {
@@ -112,9 +140,7 @@
    "peaceCommits": 2
   },
   "GUARD_TOP (throw-guard v2 placement)": {
-   "external": 0,
-   "peaceCommits": 0,
-   "note": "0 of 334 added guard lines in PeaceSTOCKS/PeaceAI-Workspace sit at function top ahead of an early return (before authorship filtering)"
+   "note": "superseded: the corpus AST scan finds 11 (see #172); the 0 came from a diff-hunk detector bug"
   }
  }
 }
