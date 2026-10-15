@@ -13,7 +13,7 @@ export const BUILT_STAGES: readonly Stage[] = ["pretrain"];
 /** Corpus size band for the pretrain stage (bytes of used training text). */
 export const EXT_MIN_BYTES = 50_000_000, EXT_MAX_BYTES = 100_000_000;
 /** Per-repository cap on used training bytes (files in path order), so no single repo dominates. */
-export const EXT_REPO_CAP_BYTES = 6_000_000;
+export const EXT_REPO_CAP_BYTES = 11_000_000; // M51 (M49 plan): 6 MB -> 11 MB; 12 MB measured 101.9 MB, over EXT_MAX_BYTES
 
 /** Set C v2 rule (Architect, option 2). Committed before the carve. */
 export const EXT_C_PERCENT = 15;
@@ -31,7 +31,12 @@ export function extCRepos(pool: readonly string[]): string[] {
   return sorted.slice(0, Math.ceil((sorted.length * EXT_C_PERCENT) / 100)).sort();
 }
 
-export type ExtExclusion = Exclusion | "generated-path" | "secret" | "duplicate" | "core" | "held-out" | "authorship" | "repo-cap" | "core-text" | "safety-tool";
+export type ExtExclusion = Exclusion | "generated-path" | "secret" | "duplicate" | "core" | "held-out" | "authorship" | "repo-cap" | "core-text" | "safety-tool" | "path-leak";
+/** M51 option (b) (Architect): a file whose repository path itself trips the leak scanner (home-path-like or
+ * email-like text in the path) is excluded, because the committed manifest records paths and the pre-push scan
+ * blocks them. No hook exception and no path encoding; the excluded files are listed (repo, commit, content
+ * sha256, finding kinds) in peaceai/model/ext-path-exclusions.json, written by the build. */
+export function pathLeakKinds(path: string): string[] { return [...new Set(scanText(path).map((f) => f.kind))].sort(); }
 /** Generic hex API key / secret / token literal (Auditor #148 follow-up): a key-like name assigned a 32+ hex string. */
 export const HEX_SECRET = /(?:api[_-]?key|apikey|secret|token|access[_-]?key|auth)[\w$-]*["'`]?\s*[:=]\s*["'`][0-9a-fA-F]{32,}["'`]/i;
 /** File filter for external code: the M9 filters plus generated/vendored path forms and the secret scanner. */

@@ -13,9 +13,10 @@ import { indexGitTree } from "../lib/coreindex.ts";
 import { addText, emptyIndex, findCoreText } from "../lib/coretext.ts";
 import { buildSubstringIndex, countCoreSubstrings } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN } from "../lib/lm.ts";
+import { readManifestBytes, writeParts } from "../lib/manifestparts.ts";
 import { classifyLicense, CODE_FILE, heldOutHashes } from "../lib/lmcorpus.ts";
 import { agentMade, builderLogRefs, excludedForC, sha256Hex } from "../lib/heldout.ts";
-import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
+import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const cfg = JSON.parse(readFileSync(join(model, "ext-corpus.json"), "utf8"));
@@ -79,12 +80,14 @@ const safetyShas = safetyToolShas(JSON.parse(readFileSync(join(model, "safety-to
 const seen = new Set<string>();
 const docs: string[] = [];
 const manifest: ExtManifestEntry[] = [];
+const pathLeaks: { repo: string; commit: string; sha256: string; kinds: string[] }[] = [];
 function admit(repo: string, commit: string, license: string, origin: ExtManifestEntry["origin"], files: { path: string; text: string }[], keep: (p: string, t: string) => ExtExclusion | null) {
   let bytes = 0, used = 0;
   curRepo = repo;
   for (const f of files) {
     const sha256 = sha256Hex(f.text);
     let why: ExtExclusion | null = keep(f.path, f.text);
+    if (!why) { const kinds = pathLeakKinds(f.path); if (kinds.length) { why = "path-leak"; pathLeaks.push({ repo, commit, sha256, kinds }); } }
     if (!why && safetyShas.has(sha256)) why = "safety-tool";
     if (!why && coreShas.has(sha256)) why = "core";
     if (!why && (ab.has(sha256) || cHashes.has(sha256))) why = "held-out";
@@ -134,9 +137,14 @@ writeFileSync(join(out, "docs.jsonl"), docs.join("\n") + "\n");
 writeFileSync(join(out, "manifest.jsonl"), manifestText);
 writeFileSync(join(out, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
 if (write) {
-  writeFileSync(join(model, "ext-manifest.jsonl"), JSON.stringify({ schema: EXT_MANIFEST_SCHEMA, config: sha256Hex(readFileSync(join(model, "ext-corpus.json"))), entries: manifest.length }) + "\n" + manifestText);
+  // M51: written as split parts (each under the 2 MB pre-push limit) + index.json; the parts join to the whole manifest.
+  const whole = Buffer.from(JSON.stringify({ schema: EXT_MANIFEST_SCHEMA, config: sha256Hex(readFileSync(join(model, "ext-corpus.json"))), entries: manifest.length }) + "\n" + manifestText);
+  writeParts(model, "ext-manifest", whole);
+  // M51 option (b): the files excluded because their path trips the leak scanner, with the reason (no paths stored).
+  const leaks = [...pathLeaks].sort((a, b) => (a.repo + a.sha256 < b.repo + b.sha256 ? -1 : 1));
+  writeFileSync(join(model, "ext-path-exclusions.json"), JSON.stringify({ schema: "peaceai-ext-path-exclusions:v1", rule: "Architect M51 option (b): a file whose repository path trips the pre-push leak scanner (lib/leak.ts scanText on the path) is excluded from the corpus; no hook exception, no path encoding. Entries identify each file by repo, pinned commit and content sha256 (the path is not stored, since storing it would trip the same scan).", count: leaks.length, entries: leaks.map((l) => ({ ...l, reason: `path-leak: ${l.kinds.join("+")}-like text in the repository path` })) }, null, 1) + "\n");
   // Auditor #148 follow-up: the counts-only summary (no paths, no text) is committed next to the manifest.
-  writeFileSync(join(model, "ext-summary.json"), JSON.stringify({ ...summary, manifestSha256: sha256Hex(readFileSync(join(model, "ext-manifest.jsonl"))) }, null, 1) + "\n");
+  writeFileSync(join(model, "ext-summary.json"), JSON.stringify({ ...summary, manifestSha256: sha256Hex(readManifestBytes(model, "ext-manifest")) }, null, 1) + "\n");
   writeFileSync(join(model, "heldout-c.json"), JSON.stringify({ schema: "peaceai-heldout-c:v2", rule: EXT_C_RULE, wiredAsEval: false, sets: { C: cEntries } }, null, 1) + "\n");
 }
 console.log(`ext corpus stage=${cfg.stage} repos=${pool.length} refused=${summary.refused.length} train_files=${summary.train.files} train_bytes=${summary.train.bytes} setC_repos=${summary.setC.repos} setC_files=${summary.setC.files} memcheck_scanned=${summary.memcheck.scannedDocs} memcheck_dropped=${summary.memcheck.droppedCoreText} excluded=${JSON.stringify(summary.excluded)}`);

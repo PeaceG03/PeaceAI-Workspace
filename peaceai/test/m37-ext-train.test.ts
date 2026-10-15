@@ -1,5 +1,6 @@
 // M37: training workflow on the M36 external corpus: stage gate, runner-side manifest check, memcheck record, set C v2 eval gate.
 import assert from "node:assert/strict";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -46,7 +47,7 @@ test("check: clean corpus passes; fails on sha mismatch, held-out (A/B/C or set 
 
 test("committed memcheck record: PASS for the committed manifest, every doc scanned, zero hits", () => {
   const m = JSON.parse(readFileSync(join(root, "peaceai/model/ext-memcheck.json"), "utf8"));
-  const man = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"));
+  const man = readManifestBytes(join(root, "peaceai/model"), "ext-manifest");
   assert.equal(m.schema, EXT_MEMCHECK_SCHEMA);
   assert.equal(m.status, "PASS");
   assert.equal(m.manifestSha256, H(man as unknown as string));
@@ -83,7 +84,7 @@ test("Auditor #153: ext-fetch validates repo names and pins against the config b
   const owner = cfg.owner[0];
   assert.deepEqual(manifestRepoProblems([{ repo: owner.name, commit: owner.commit }], cfg), []);
   // The committed manifest and set C pass, and the CLI validates before creating its work dir.
-  const lines = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l));
+  const lines = readManifestBytes(join(root, "peaceai/model"), "ext-manifest").toString("utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l));
   const c = JSON.parse(readFileSync(join(root, "peaceai/model/heldout-c.json"), "utf8"));
   assert.deepEqual(manifestRepoProblems([...lines.map((e: { repo: string; commit: string }) => e), ...c.sets.C.map((e: { repo: string; sha: string }) => ({ repo: e.repo, commit: e.sha }))], cfg), []);
   const src = readFileSync(join(root, "peaceai/bin/ext-fetch.ts"), "utf8");
@@ -108,7 +109,7 @@ test("safety-tool files refused by content sha256: renamed or copied files are s
     assert.ok(f.paths.includes(p), p);
     assert.ok(shas.has(H(readFileSync(join(root, p), "utf8"))), `current ${p} is listed`);
   }
-  const man = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l));
+  const man = readManifestBytes(join(root, "peaceai/model"), "ext-manifest").toString("utf8").split("\n").filter(Boolean).slice(1).map((l) => JSON.parse(l));
   assert.ok(man.every((m: { sha256: string }) => !shas.has(m.sha256)), "no safety-tool content in the committed manifest");
   assert.ok(protectedReason("peaceai/model/safety-tool-sha256.json"));
 });
