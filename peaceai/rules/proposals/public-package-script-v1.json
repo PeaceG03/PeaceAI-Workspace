@@ -12,5 +12,6 @@
   "origin": "external-licensed",
   "bar": 10,
   "qualifies": false
- }
+ },
+ "note": "Architect (2026-10-15): v1 has 0 real-file examples (M57: all 5 earlier ones insert the script mid-object), so it stays off."
 }
