@@ -77,7 +77,13 @@ for t in core_texts:
         buckets.setdefault((b, s[b * ROWS:(b + 1) * ROWS]), []).append(len(sigs))
     sigs.append(s)
 
-man_text = open(os.path.join(args.corpus, "manifest.jsonl"), encoding="utf-8").read()
+# M51: the corpus manifest may be one file or split parts (manifest/ + index.json), never both; fail closed.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import manifest_parts  # noqa: E402
+try:
+    man_text = manifest_parts.read_manifest_bytes(args.corpus, "manifest").decode("utf-8")
+except ValueError as e:
+    sys.exit(f"corefree_proof: manifest refused ({e})")
 man = [json.loads(l) for l in man_text.split("\n") if l.strip()]
 
 # M39 (Architect): two manifest schemas. Internal (lm-corpus.ts: source + visibility, unchanged: every entry must be

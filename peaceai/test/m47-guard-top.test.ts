@@ -1,5 +1,6 @@
 // M47 proposal proofs: throw-guard function-top placement (off until approved).
 import assert from "node:assert/strict";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -57,7 +58,7 @@ test("function-top keeps v1's refusals (unsafe or non-parameter conditions, wron
 
 test("evidence: 10+ external first-statement guards ahead of an early return, each in the #148 manifest with its sha256", () => {
   const ev = JSON.parse(read("peaceai/rules/proposals/m47-guard-top-evidence.json"));
-  const man = new Map(read("peaceai/model/ext-manifest.jsonl").trim().split("\n").slice(1).map((l) => JSON.parse(l)).map((e: { repo: string; path: string; sha256: string; license: string }) => [`${e.repo}/${e.path}`, e]));
+  const man = new Map(readManifestBytes(join(repo, "peaceai/model"), "ext-manifest").toString("utf8").trim().split("\n").slice(1).map((l) => JSON.parse(l)).map((e: { repo: string; path: string; sha256: string; license: string }) => [`${e.repo}/${e.path}`, e]));
   assert.ok(ev.examples.length >= 10 && ev.counts.topGuardThenEarlyReturn >= 10);
   for (const x of ev.examples as { repo: string; path: string; sha256: string }[]) {
     const m = man.get(`${x.repo}/${x.path}`);

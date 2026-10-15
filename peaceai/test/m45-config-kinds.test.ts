@@ -4,6 +4,7 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { importEditEnabled, importEditProblem, packageScriptEnabled, packageScriptProblem } from "../lib/learned-config.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 import { RULE_KINDS } from "../lib/learned.ts";
@@ -46,7 +47,7 @@ test("M56 a2: example-only repos are pinned, licensed, protected, and never in t
   const corpus = JSON.parse(read("peaceai/model/ext-corpus.json"));
   const inCorpus = new Set<string>([...corpus.repos.map((r: { name: string }) => r.name), ...corpus.owner.map((r: { name: string }) => r.name)]);
   const setc = new Set((JSON.parse(read("peaceai/model/heldout-c.json")).sets.C as { repo: string }[]).map((r) => r.repo));
-  const manifest = new Set(read("peaceai/model/ext-manifest.jsonl").split("\n").filter(Boolean).slice(1).map((l) => (JSON.parse(l) as { repo: string }).repo));
+  const manifest = new Set(readManifestBytes(join(repo, "peaceai/model"), "ext-manifest").toString("utf8").split("\n").filter(Boolean).slice(1).map((l) => (JSON.parse(l) as { repo: string }).repo));
   const seen = new Set<string>();
   assert.ok(XR.repos.length >= 10 && XR.repos.length <= 15);
   for (const r of XR.repos as { name: string; commit: string; spdx: string; licenseFile: string; licenseSha256: string }[]) {

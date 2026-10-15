@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import test from "node:test";
 import ts from "typescript";
 import { buildMethodGuardEdit, guardCondition, methodGuardCondition, methodGuardEnabled, safeRegexLiteral } from "../lib/method-guard.ts";
@@ -87,7 +88,7 @@ test("evidence: AST scan of the pinned example-only repos; every recorded guard 
 
 test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
   const corpus = new Set<string>((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string }[]).map((r) => r.name));
-  for (const l of read("peaceai/model/ext-manifest.jsonl").split("\n")) if (l.trim()) { const r = JSON.parse(l).repo; if (r) corpus.add(r); }
+  for (const l of readManifestBytes(join(root, "peaceai/model"), "ext-manifest").toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l).repo; if (r) corpus.add(r); }
   for (const x of EV.examples as { repo: string }[]) assert.ok(!corpus.has(x.repo), `${x.repo} is in the training corpus`);
 });
 

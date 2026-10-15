@@ -11,6 +11,7 @@ import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN, docIdsMatch, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 
 const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
 const corpus = resolve(process.env.PEACEAI_LM_CORPUS ?? "");
@@ -19,7 +20,7 @@ const counts = { core: Number(process.env.PEACEAI_MEMCHECK_CORE ?? 96), public: 
 const CORE_SOURCE = "PeaceG03/PeaceAI";
 
 const before = modelFileShas(modelDir);
-const manifest: ManifestEntry[] = readFileSync(join(corpus, "manifest.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const manifest: ManifestEntry[] = readManifestBytes(corpus, "manifest").toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const texts = new Map<number, string>();
 for (const l of readFileSync(join(corpus, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); texts.set(d.doc, d.text); }
 const h = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -57,7 +58,7 @@ else {
   // invalid proof, a manifest that no longer proves it): the strict 32-character rule.
   let exempt: PublicOnlyExemption | null = null;
   if (trainCorpus) {
-    const tmText = readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8");
+    const tmText = readManifestBytes(trainCorpus, "manifest").toString("utf8"); // M51: one file or split parts, never both
     const tm: (ManifestEntry & Record<string, unknown>)[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
     // M39: empty / whitespace-only core files carry no text; they never make a training file "core" (allowlisted
     // public-origin files are already out of tree.raw, matched by path and exact-bytes pin in coreindex.ts).
