@@ -3,6 +3,7 @@
 // Specs: peaceai/spec/import-edit-v1.md, peaceai/spec/package-script-v1.md. Not wired into learned.ts RULE_KINDS
 // and not in approved.json; each kind is OFF unless its flag is exactly "true". Builder never approves.
 import ts from "typescript";
+import { posix } from "node:path";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
 export const IMPORT_EDIT_FLAG = "PEACEAI_IMPORT_EDIT";
@@ -29,8 +30,24 @@ function topImports(text: string): { imps: Imp[]; rest: string; bad: boolean } {
 const RELATIVE = /^\.{1,2}\/[\w./-]{1,200}$/;
 const stem = (s: string) => s.replace(/\.(ts|tsx|js|mjs|cjs)$/, "");
 
+export const IMPORT_MAX_UP = 3;
+const RESOLVE_EXT = ["", ".ts", ".tsx", ".mts", "/index.ts"];
+/** L4 (Auditor #167): the new specifier, resolved from the file's own folder, stays inside the repo (at most
+ *  IMPORT_MAX_UP leading ../), names an existing file and is not protected. null = resolves. */
+export function importResolveProblem(path: string, spec: string, repoFiles: ReadonlySet<string>): string | null {
+  const up = /^(?:\.\.\/)*/.exec(spec.replace(/^\.\//, ""))![0].length / 3;
+  if (up > IMPORT_MAX_UP) return "specifier climbs too far";
+  const joined = posix.normalize(posix.join(posix.dirname(path), spec));
+  if (joined.startsWith("../") || joined === ".." || joined.startsWith("/")) return "specifier leaves the repo";
+  const bases = [joined, joined.replace(/\.(js|mjs|cjs)$/, "")];
+  const hit = bases.flatMap((b) => RESOLVE_EXT.map((e) => b + e)).find((c) => repoFiles.has(c));
+  if (!hit) return "specifier does not resolve to a repo file";
+  if (isProtected(hit)) return "specifier resolves to a protected file";
+  return null;
+}
+
 /** IMPORT_EDIT v1: exactly one existing import's specifier changes; every other byte is identical. null = inside. */
-export function importEditProblem(path: string, before: string, after: string): string | null {
+export function importEditProblem(path: string, before: string, after: string, repoFiles: ReadonlySet<string>): string | null {
   if (!plainPath(path) || !/\.(ts|mts)$/.test(path) || path.endsWith(".d.ts")) return "not a plain .ts path";
   if (isProtected(path)) return "protected path";
   const a = topImports(before), b = topImports(after);
@@ -44,17 +61,27 @@ export function importEditProblem(path: string, before: string, after: string): 
   if (x.text.replace(JSON.stringify(x.spec).slice(1, -1), "\0") !== y.text.replace(JSON.stringify(y.spec).slice(1, -1), "\0")) return "more than the specifier changed";
   if (!RELATIVE.test(x.spec) || !RELATIVE.test(y.spec)) return "only relative specifiers may change";
   if (stem(x.spec) !== stem(y.spec) && x.spec.split("/").pop() !== y.spec.split("/").pop()) return "specifier must keep its module (extension or directory move only)";
-  return null;
+  return importResolveProblem(path, y.spec, repoFiles);
 }
 
-const LIFECYCLE = /^(pre|post)|^(install|uninstall|prepare|prepublish|prepublishOnly|prepack|postpack|publish|restart|start|stop|test|version|dependencies)$/;
+const LIFECYCLE = /^(install|uninstall|prepare|prepublish|prepublishOnly|prepack|postpack|publish|shrinkwrap|restart|start|stop|test|version|dependencies)$/;
 const SCRIPT_NAME = /^[a-z][a-z0-9:-]{0,40}$/;
 // The command: one tool from node_modules/.bin (or npm run <script>), flags and relative paths; no shell syntax.
-const COMMAND = /^(?:tsc|tsx|eslint|prettier|vitest|jest|mocha|rollup|vite|npm run [a-z][a-z0-9:-]{0,40})(?: (?:--?[A-Za-z][\w-]{0,30}(?:=[\w./:@-]{1,80})?|[\w./*@-]{1,120}))*$/;
+const COMMAND = /^(?:tsc|eslint|prettier|vitest|jest|mocha|rollup|vite|npm run [a-z][a-z0-9:-]{0,40})(?: (?:--?[A-Za-z][\w-]{0,30}(?:=[\w./:@-]{1,80})?|[\w./*@-]{1,120}))*$/;
+// M2 (Auditor #167): no code-loading flags, tool configs or plugins, and no absolute paths.
+const BANNED_ARG = /^(?:--?(?:require|r|config|c|loader|import|experimental-loader|plugin|rulesdir|resolve-plugins-relative-to|configLoader|setupFiles|setupFilesAfterEach|globalSetup|transform|preset|environment|reporter|resolver|testRunner|watchPlugins)(?:=|$)|\/)|(?:jest|vitest|vite|rollup|eslint|prettier|mocha)\.config|\.(?:eslintrc|mocharc|prettierrc)|^-[A-Za-z]*[rc][A-Za-z]*$/;
 const BANNED = /curl|wget|\bsh\b|bash|\bnode\b|npx|eval|\$|`|;|&|\||>|<|\\|\.\.\//;
 
-/** PACKAGE_SCRIPT v1: exactly one non-lifecycle script added or changed in package.json; nothing else differs. */
-export function packageScriptProblem(path: string, before: string, after: string): string | null {
+/** Script names a workflow runs (`npm run x`, `pnpm run x`, `pnpm x`, `yarn x`, `npm test`/`npm start`). */
+export function workflowScriptNames(workflows: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  for (const w of workflows) for (const m of w.matchAll(/\b(?:npm|pnpm|yarn)\s+(?:run(?:-script)?\s+)?(?:-[\w-]+\s+)*([a-z][\w:.-]*)/g)) out.add(m[1]!);
+  return out;
+}
+
+/** PACKAGE_SCRIPT v1: exactly one NEW non-lifecycle script added to package.json; nothing else differs.
+ *  M1 (Auditor #167): existing scripts are never changed, and no script name a workflow runs may be added. */
+export function packageScriptProblem(path: string, before: string, after: string, workflows: readonly string[]): string | null {
   if (path !== "package.json") return "only the root package.json";
   let a: Record<string, unknown>, b: Record<string, unknown>;
   try { a = JSON.parse(before); b = JSON.parse(after); } catch { return "not JSON"; }
@@ -66,11 +93,17 @@ export function packageScriptProblem(path: string, before: string, after: string
   if (keys.length !== 1) return keys.length ? "more than one script changed" : "no script changed";
   const k = keys[0]!; const cmd = (sb as Record<string, unknown>)[k];
   if (!(k in sb)) return "removes a script";
+  if (k in (sa as object)) return "changes an existing script (only new scripts may be added)";
+  if (workflowScriptNames(workflows).has(k)) return "a workflow runs this script name";
   if (!SCRIPT_NAME.test(k)) return "script name";
   if (LIFECYCLE.test(k)) return "lifecycle script";
+  // npm runs pre<x>/post<x> around script x: refuse a hook for any script or lifecycle event.
+  const hooked = /^(?:pre|post)(.+)$/.exec(k)?.[1];
+  if (hooked !== undefined && (LIFECYCLE.test(hooked) || hooked in (sa as object) || hooked in (sb as object))) return "lifecycle script";
   if (typeof cmd !== "string" || cmd.length > 300) return "command not a short string";
   if (BANNED.test(cmd)) return "command uses shell syntax, a network tool or node directly";
   if (!COMMAND.test(cmd)) return "command outside the allowed tools";
+  if (cmd.split(" ").slice(1).some((a) => BANNED_ARG.test(a))) return "code-loading flag, tool config, plugin or absolute path";
   // Every other byte identical: the new file must be the old file with only that one value inserted or replaced.
   const ind = Number(before.match(/^\{\n( +)"/)?.[1]?.length ?? 2);
   if (JSON.stringify(a, null, ind) !== before.replace(/\n$/, "")) return "package.json is not in standard JSON formatting";

@@ -1,209 +1,120 @@
 {
- "schema": "peaceai-m45-evidence:v1",
- "source": "licensed external commits from peaceai/model/ext-corpus.json repos; set C (heldout-c.json) repos excluded; LICENSE blob at each commit equals the pinned one, whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed); miner caps each family at 12",
+ "schema": "peaceai-m45-evidence:v2",
+ "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 3000, or 1500 on the shallow clones), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts.",
  "families": {
   "IMPORT_EDIT": [
    {
-    "repo": "TanStack/query",
-    "commit": "63d425bdba1610a594d4c9e528b5262b4e378f92",
-    "path": "scripts/generate-docs.ts",
+    "repo": "reduxjs/redux-toolkit",
+    "commit": "653803ee1dc8f0a9a7c46f3568871c6f959680d6",
+    "path": "packages/toolkit/src/entities/models.ts",
+    "before": "import type { UncheckedIndexedAccess } from '../uncheckedindexed'",
+    "after": "import type { UncheckedIndexedAccess } from '../uncheckedindexed.js'",
+    "repoFiles": [
+     "packages/toolkit/src/uncheckedindexed.ts"
+    ],
     "license": "MIT",
-    "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+    "licenseSha256": "d7a7667d33abd427a7c05cf15c4698db60e7c29286b9c1660165ac6f58f7c8c6",
     "origin": "external"
    },
    {
-    "repo": "chalk/chalk",
-    "commit": "386909ee0bfe4346d04e3eeba712f0db597c038d",
-    "path": "examples/rainbow.js",
+    "repo": "vitejs/vite",
+    "commit": "0a3c1dd20976bdbcaaf9ed46e85c417952b78e95",
+    "path": "docs/.vitepress/config.ts",
+    "before": "import { buildEnd } from './buildEnd.config'",
+    "after": "import { buildEnd } from './buildEnd.config.ts'",
+    "repoFiles": [
+     "docs/.vitepress/buildEnd.config.ts",
+     "docs/.vitepress/buildEnd.config.ts"
+    ],
     "license": "MIT",
-    "licenseSha256": "1529f88b3675095087120854c6fa2cc1113ab2da2f88c4f6aa4ffe52e98ef81b",
-    "origin": "external"
-   },
-   {
-    "repo": "colinhacks/zod",
-    "commit": "e36743e513aadb307b29949a80d6eb0dcc8fc278",
-    "path": "packages/zod/src/v4/mini/schemas.ts",
-    "license": "MIT",
-    "licenseSha256": "f61cacc2acb8b71aa79a128b3e732bf25e02aab40747bbbd5bf00c97c9cda28d",
-    "origin": "external"
-   },
-   {
-    "repo": "denoland/std",
-    "commit": "bf7aef8c56cfe65a8d7a86ee9d404814d85f3806",
-    "path": "streams/unstable_capped_delimiter_stream.ts",
-    "license": "MIT",
-    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
-    "origin": "external"
-   },
-   {
-    "repo": "denoland/std",
-    "commit": "ed9f235ccdbd6805e8c6e5d43b341345b9e635de",
-    "path": "internal/truncate_build_message.ts",
-    "license": "MIT",
-    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
-    "origin": "external"
-   },
-   {
-    "repo": "denoland/std",
-    "commit": "2ee02b1ac834a95c50eefe98f5a6d75ad3b3ca8d",
-    "path": "front_matter/any.ts",
-    "license": "MIT",
-    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
-    "origin": "external"
-   },
-   {
-    "repo": "denoland/std",
-    "commit": "b9e8edf9013987a8144135fe1cf190b8746a3784",
-    "path": "cbor/encode_cbor_sequence.ts",
-    "license": "MIT",
-    "licenseSha256": "a0bd5b11a7455e0d29fc826162856a8a9c425ca85c9c4c3e18145473af7b399b",
-    "origin": "external"
-   },
-   {
-    "repo": "honojs/hono",
-    "commit": "3f1de47f8fda9639c7b37c02d4b43d6624bf5bdd",
-    "path": "deno_dist/utils/encode.ts",
-    "license": "MIT",
-    "licenseSha256": "2e0a854a11062f91280bdd32ad287d311a394f55e22b885948bfd965398327f9",
-    "origin": "external"
-   },
-   {
-    "repo": "mobxjs/mobx",
-    "commit": "88f0fc9a97f42b81d5f22eaff0b02515cfae1f68",
-    "path": "src/utils/utils.ts",
-    "license": "MIT",
-    "licenseSha256": "36f33ddb45055abbdea8652a06926ef04e7b1750dfecbc4dd36e322e36e2516a",
-    "origin": "external"
-   },
-   {
-    "repo": "mobxjs/mobx",
-    "commit": "f49fcbc7424043d1650ec5de12e67a6c7af78445",
-    "path": "src/api/flow.ts",
-    "license": "MIT",
-    "licenseSha256": "36f33ddb45055abbdea8652a06926ef04e7b1750dfecbc4dd36e322e36e2516a",
-    "origin": "external"
-   },
-   {
-    "repo": "mobxjs/mobx",
-    "commit": "464d0aaafda13425e38a1282019e8140056b74c6",
-    "path": "src/core/action.ts",
-    "license": "MIT",
-    "licenseSha256": "36f33ddb45055abbdea8652a06926ef04e7b1750dfecbc4dd36e322e36e2516a",
-    "origin": "external"
-   },
-   {
-    "repo": "mobxjs/mobx",
-    "commit": "515e4fc93cb1faf515c3e1fcca213bd7905244b9",
-    "path": "src/types/modifiers.ts",
-    "license": "MIT",
-    "licenseSha256": "36f33ddb45055abbdea8652a06926ef04e7b1750dfecbc4dd36e322e36e2516a",
+    "licenseSha256": "e824161e0aab3814aca1883bd7058e67034d25fce254e6629495e78d3f8a53c3",
     "origin": "external"
    }
   ],
   "PACKAGE_SCRIPT": [
    {
     "repo": "apollographql/apollo-client",
-    "commit": "5ce6a1de695a069190ca118ae4b2098bba8bf60b",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
-    "origin": "external"
-   },
-   {
-    "repo": "apollographql/apollo-client",
-    "commit": "1192e219b96c7ef10b3398d19b5c2e672ad7726e",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
-    "origin": "external"
-   },
-   {
-    "repo": "apollographql/apollo-client",
     "commit": "f0bb56c821e4c9431b57f2ace7637ee9fb4b403e",
     "path": "package.json",
+    "name": "format",
+    "command": "prettier --write .",
+    "workflowRuns": [
+     "and",
+     "build",
+     "changeset-publish",
+     "changeset-version",
+     "i",
+     "prepdist:changesets",
+     "releases:",
+     "tag"
+    ],
     "license": "MIT",
     "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
     "origin": "external"
    },
    {
-    "repo": "apollographql/apollo-client",
-    "commit": "94c7f4e3bd088a45e2d025d402b9088fba1f6a7f",
+    "repo": "honojs/hono",
+    "commit": "fb0b9d42a31da027d81b50dbefac1a56e845395b",
     "path": "package.json",
+    "name": "test:watch",
+    "command": "vitest --watch",
+    "workflowRuns": [
+     "build",
+     "denoify",
+     "format",
+     "i",
+     "install",
+     "lint",
+     "test",
+     "test:fastly",
+     "test:lagon",
+     "test:lambda",
+     "test:lambda-edge",
+     "test:node",
+     "test:wrangler"
+    ],
     "license": "MIT",
-    "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
+    "licenseSha256": "2e0a854a11062f91280bdd32ad287d311a394f55e22b885948bfd965398327f9",
     "origin": "external"
    },
    {
-    "repo": "apollographql/apollo-client",
-    "commit": "1a5720cfd97f7cfa1a36dac053adaff2e008c333",
+    "repo": "immerjs/immer",
+    "commit": "83a10ef22f600e471c20d844ee526b2d67f34b2d",
     "path": "package.json",
+    "name": "watch",
+    "command": "jest --watch",
+    "workflowRuns": [],
     "license": "MIT",
-    "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
+    "licenseSha256": "6768b01a4a41e5a49b80a34e0a52e25a00d69a1e4e99c457e579daccb3b4fecc",
     "origin": "external"
    },
    {
-    "repo": "apollographql/apollo-client",
-    "commit": "9ec666f57baf184d277315128dc9fdd8da46eadc",
+    "repo": "sinonjs/sinon",
+    "commit": "c7848c94b6f1c964209bf217310fff67de7658f2",
     "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
-    "origin": "external"
-   },
-   {
-    "repo": "apollographql/apollo-client",
-    "commit": "c3775158ac0877c59757ea494228dea8a89776ad",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "5008783bb349e14178a047f30c694c2898dcde3dd9aac4a6e11006cd114ea28f",
-    "origin": "external"
-   },
-   {
-    "repo": "babel/babel",
-    "commit": "4b8447461b4564355f45fb978bc313760e0647d4",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "8f08c824b2bb54eda2b6ee6053d2eeed46877b3b7b2ef3f60fc2b9fa580f54b2",
-    "origin": "external"
-   },
-   {
-    "repo": "chaijs/chai",
-    "commit": "b38c22bb939720b37ee61644fd2d5b98e125d0e9",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "61a961d71ad33bfc8dae0bd73c002a44f4a0f7181a75e20c0500550e1139d48c",
-    "origin": "external"
-   },
-   {
-    "repo": "chaijs/chai",
-    "commit": "110a1eab94060fc383b4c46efd0e8ce4f16dc788",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "61a961d71ad33bfc8dae0bd73c002a44f4a0f7181a75e20c0500550e1139d48c",
-    "origin": "external"
-   },
-   {
-    "repo": "chaijs/chai",
-    "commit": "2a3ecff347dd4a354b20c953ef6f6d5dc99f851a",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "61a961d71ad33bfc8dae0bd73c002a44f4a0f7181a75e20c0500550e1139d48c",
-    "origin": "external"
-   },
-   {
-    "repo": "colinhacks/zod",
-    "commit": "4063e802d539d04182fc3e66a543ae6d1ba5658e",
-    "path": "package.json",
-    "license": "MIT",
-    "licenseSha256": "f61cacc2acb8b71aa79a128b3e732bf25e02aab40747bbbd5bf00c97c9cda28d",
+    "name": "prettier",
+    "command": "prettier lib/**/*.js test/**/*.js",
+    "workflowRuns": [],
+    "license": "BSD-3-Clause",
+    "licenseSha256": "716360e13bcee08c264de65bd937060a95584ea9b0d40081875e8445218a89ad",
     "origin": "external"
    }
   ]
  },
+ "minedCandidates": {
+  "IMPORT_EDIT": 32,
+  "PACKAGE_SCRIPT": 12
+ },
+ "bar": 10,
  "notQualifying": {
   "METHOD_CALL_GUARD": {
    "external": 0,
-   "peaceCommits": 2,
-   "note": "builder-log entry 77; under the 10-example bar, not proposed"
+   "peaceCommits": 2
+  },
+  "GUARD_TOP (throw-guard v2 placement)": {
+   "external": 0,
+   "peaceCommits": 0,
+   "note": "0 of 334 added guard lines in PeaceSTOCKS/PeaceAI-Workspace sit at function top ahead of an early return (before authorship filtering)"
   }
  }
 }
