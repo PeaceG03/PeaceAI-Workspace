@@ -202,3 +202,28 @@ test("Auditor #178: set A/B candidates decompress through a 50 MB cap and an ove
   assert.ok(!/KEPT/.test(big) && /FAILED|refused/.test(big), big);
   assert.ok(!existsSync(join(d, "ab-cands.jsonl")) || readFileSync(join(d, "ab-cands.jsonl")).length <= 1000);
 });
+
+// Auditor #178 (open item): a step that writes $GITHUB_ENV or $GITHUB_PATH changes the env/PATH of every later step,
+// including the DEPLOY_KEY steps, which the verify-before-key check does not see. Ban those writes (and the legacy
+// ::set-env / ::add-path commands) anywhere in a job that holds the key.
+const ENV_PATH_WRITE = /GITHUB_ENV|GITHUB_PATH|::set-env|::add-path|ACTIONS_ALLOW_UNSECURE_COMMANDS/;
+function envPathWriteProblems(jobs: Record<string, string>): string[] {
+  const out: string[] = [];
+  for (const [job, body] of Object.entries(jobs)) {
+    if (!/DEPLOY_KEY/.test(body)) continue;
+    for (const st of body.split(/^      - /m).slice(1)) if (ENV_PATH_WRITE.test(st)) out.push(`${job}: ${st.split("\n")[0]}`);
+  }
+  return out;
+}
+
+test("workflow (Auditor #178): no job holding DEPLOY_KEY writes $GITHUB_ENV or $GITHUB_PATH", () => {
+  assert.deepEqual(envPathWriteProblems(J), []);
+});
+
+test("key guard refuses $GITHUB_ENV / $GITHUB_PATH / ::set-env / ::add-path writes in a key job, and ignores key-free jobs", () => {
+  const keyJob = (run: string) => ({ j: `    steps:\n      - name: evil\n        run: ${run}\n      - name: land\n        env:\n          DEPLOY_KEY: x\n` });
+  for (const run of ['echo "PATH=/tmp/x" >> "$GITHUB_ENV"', 'echo /tmp/bin >> $GITHUB_PATH', 'echo "LD_PRELOAD=/tmp/x.so" >> ${GITHUB_ENV}', 'echo "::set-env name=PATH::/tmp"', 'echo "::add-path::/tmp"'])
+    assert.equal(envPathWriteProblems(keyJob(run)).length, 1, run);
+  assert.deepEqual(envPathWriteProblems({ j: `    steps:\n      - name: ok\n        run: echo "A=1" >> "$GITHUB_ENV"\n` }), []);
+  assert.deepEqual(envPathWriteProblems(keyJob("echo hi")), []);
+});
