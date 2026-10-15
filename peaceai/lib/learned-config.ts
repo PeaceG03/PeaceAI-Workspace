@@ -67,14 +67,15 @@ export function importEditProblem(path: string, before: string, after: string, r
 const LIFECYCLE = /^(install|uninstall|prepare|prepublish|prepublishOnly|prepack|postpack|publish|shrinkwrap|restart|start|stop|test|version|dependencies)$/;
 const SCRIPT_NAME = /^[a-z][a-z0-9:-]{0,40}$/;
 // #167 round 2: an ALLOW list of flags per tool (anything else is refused, so new code-loading flags never slip through).
-export const TOOL_FLAGS: Record<string, readonly string[]> = {
-  tsc: ["--noEmit", "-p", "--project", "--pretty", "--incremental"],
-  eslint: ["--fix", "--cache", "--quiet", "--max-warnings"],
-  prettier: ["--write", "--check", "--list-different"],
-  vitest: ["run", "--run", "--watch", "--coverage", "--passWithNoTests"],
-  jest: ["--watch", "--coverage", "--ci", "--passWithNoTests", "--runInBand"],
-  mocha: ["--recursive", "--watch", "--exit"],
-};
+// #167 round 3: a Map (no prototype lookups such as "__proto__", "constructor" or "toString"); mocha dropped
+// (its spec files are code it loads, and positional paths cannot be confined to a test folder safely).
+export const TOOL_FLAGS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
+  ["tsc", ["--noEmit", "-p", "--project", "--pretty", "--incremental"]],
+  ["eslint", ["--fix", "--cache", "--quiet", "--max-warnings"]],
+  ["prettier", ["--write", "--check", "--list-different"]],
+  ["vitest", ["run", "--run", "--watch", "--coverage", "--passWithNoTests"]],
+  ["jest", ["--watch", "--coverage", "--ci", "--passWithNoTests", "--runInBand"]],
+]);
 const POSITIONAL = /^(?!.*\.\.)[\w.*@-][\w./*@-]{0,119}$/; // relative path or glob: no leading "/", no "..", no shell syntax
 const FLAG_VALUE = /^[\w.-]{1,40}$/;
 /** null = the command is one allowed tool with allowed flags and relative paths/globs; else the reason. */
@@ -83,7 +84,7 @@ export function scriptCommandProblem(cmd: string): string | null {
   const run = /^npm run ([a-z][a-z0-9:-]{0,40})$/.exec(cmd);
   if (run) return null;
   const [tool, ...args] = cmd.split(" ");
-  const allowed = TOOL_FLAGS[tool!];
+  const allowed = TOOL_FLAGS.get(tool!);
   if (!allowed) return "command outside the allowed tools";
   for (const a of args) {
     if (a.startsWith("-")) {

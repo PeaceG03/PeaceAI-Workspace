@@ -13,7 +13,8 @@ Add ONE new `scripts` entry in the root `package.json`. Refused unless all hold:
    paths/globs (no leading `/`, no `..`, no shell syntax):
    `tsc` --noEmit -p --project --pretty --incremental; `eslint` --fix --cache --quiet --max-warnings;
    `prettier` --write --check --list-different; `vitest` run --run --watch --coverage --passWithNoTests;
-   `jest` --watch --coverage --ci --passWithNoTests --runInBand; `mocha` --recursive --watch --exit.
+   `jest` --watch --coverage --ci --passWithNoTests --runInBand. (`mocha` dropped in round 3; the tool table is a
+   Map, so prototype names such as `__proto__`, `constructor` and `toString` are never tools.)
    Every other flag (e.g. `--require`, `--config`, `--setupFilesAfterEnv`, `--testEnvironment`, `--reporters`,
    `--file=`, `--ui=`, `--plugin`) and every other tool (`tsx`, `node`, `npx`, `vite`, `rollup`, shells) is refused.
    The target's workflow files must be supplied: a missing or empty workflow list is refused.
