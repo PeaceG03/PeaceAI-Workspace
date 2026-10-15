@@ -1,0 +1,155 @@
+{
+ "schema": "peaceai-heldout-c-tasks:v1",
+ "rule": "M44 (Architect): set C v2 task-success tasks, fixed before any grading. For each set C v2 repo (peaceai/model/heldout-c.json, by repo name): walk `git rev-list --no-merges --first-parent -n 400 <pinned sha>` newest first and keep a commit when `git diff-tree -r --name-status --no-renames <c>^ <c>` lists exactly two files, both status A or M, both .ts/.tsx/.js/.mjs/.cjs (no .d.ts), exactly one a test path (/\\.test\\.|\\.spec\\.|(^|\\/)tests?\\/|(^|\\/)__tests__\\// ) and one a source path. Take the first 3 per repo (cap fixed in advance). Selector: peaceai/model/heldout_c_tasks.py.",
+ "grading": "Same protocol as sets A/B (heldout-m31): holes = every function body in the source file that differs from the parent commit; the model writes each hole (attempt 1 greedy, attempts 2-5 T=0.8 top-k 40, seed 20261014, prompt = last ctx/2 tokens before the body's '{'); pass = the commit's own test file passes. Dependencies: installed once per repo at the pinned sha from its lockfile with scripts disabled (npm ci / pnpm install --frozen-lockfile, --ignore-scripts). Test command chosen from the test file alone: imports 'vitest' -> node_modules/.bin/vitest run <file>; else node --test (plus --experimental-transform-types for .ts). Ungradable (counted in the denominator, never dropped): install-failed, real-fails (the test fails on the real commit), no-changed-body. Timeouts 300 s per test run.",
+ "note": "Set C v2 is whole external repos held out from training. Its earlier 0/9 baseline belonged to the retired Peace-commit set C (M33) and is NOT comparable.",
+ "tasks": [
+  {
+   "repo": "axios/axios",
+   "sha": "2d2a21af8a433089474a2149781799c93acbcf3c",
+   "pinned": "43968f294eaf79dabf0fcc2c05fd9add6a4faf12",
+   "src": "lib/core/InterceptorManager.js",
+   "test": "tests/unit/core/InterceptorManager.test.js"
+  },
+  {
+   "repo": "axios/axios",
+   "sha": "3d253b4f17a5107e6f274ee5b2e96e03508dceb2",
+   "pinned": "43968f294eaf79dabf0fcc2c05fd9add6a4faf12",
+   "src": "lib/helpers/progressEventReducer.js",
+   "test": "tests/unit/helpers/progressEventReducer.test.js"
+  },
+  {
+   "repo": "axios/axios",
+   "sha": "b32880af48017457a1203ab2e63720902d3b71b3",
+   "pinned": "43968f294eaf79dabf0fcc2c05fd9add6a4faf12",
+   "src": "lib/adapters/http.js",
+   "test": "tests/unit/adapters/http.test.js"
+  },
+  {
+   "repo": "fastify/fastify",
+   "sha": "a479a7ce59f99b6f5a0d20f0745dbd16a3906c09",
+   "pinned": "f736849a10a9b2ca57fb09437feb8294cda76234",
+   "src": "lib/reply.js",
+   "test": "test/reply-trailers.test.js"
+  },
+  {
+   "repo": "fastify/fastify",
+   "sha": "5c081d4b7237f0eb2db9f1204dc6400e3aa1325e",
+   "pinned": "f736849a10a9b2ca57fb09437feb8294cda76234",
+   "src": "lib/reply.js",
+   "test": "test/internals/reply.test.js"
+  },
+  {
+   "repo": "fastify/fastify",
+   "sha": "c3051e5b60c0e0e95ac0638fae342e82099fe534",
+   "pinned": "f736849a10a9b2ca57fb09437feb8294cda76234",
+   "src": "lib/reply.js",
+   "test": "test/internals/reply-serialize.test.js"
+  },
+  {
+   "repo": "google/zx",
+   "sha": "cd7f23d421cbaee859334fcee8307922cc1841c3",
+   "pinned": "65fc542d88baac578967e22bea28cb610976578c",
+   "src": "src/md.ts",
+   "test": "test/md.test.ts"
+  },
+  {
+   "repo": "google/zx",
+   "sha": "4a93e7f2c2c02885134deaba6151b0c998270869",
+   "pinned": "65fc542d88baac578967e22bea28cb610976578c",
+   "src": "scripts/build-jsr.mjs",
+   "test": "test/it/build-jsr.test.js"
+  },
+  {
+   "repo": "google/zx",
+   "sha": "437a80f0a21690587d0609aefc5c61f058464e46",
+   "pinned": "65fc542d88baac578967e22bea28cb610976578c",
+   "src": "src/core.ts",
+   "test": "test/bench/buf-join.mjs"
+  },
+  {
+   "repo": "preactjs/preact",
+   "sha": "31632a23c0d3508bc2e0eb4884937a38f27a19ad",
+   "pinned": "0935fecd7e8244417a39e8470c9e7f440e51379b",
+   "src": "src/diff/children.js",
+   "test": "test/browser/lifecycles/shouldComponentUpdate.test.js"
+  },
+  {
+   "repo": "preactjs/preact",
+   "sha": "370319ced248f88a9d0f8c5668521870bd22e20e",
+   "pinned": "0935fecd7e8244417a39e8470c9e7f440e51379b",
+   "src": "compat/src/memo.js",
+   "test": "compat/test/browser/memo.test.js"
+  },
+  {
+   "repo": "preactjs/preact",
+   "sha": "8e05a6fda54cda53d2d30b19a50809f346535362",
+   "pinned": "0935fecd7e8244417a39e8470c9e7f440e51379b",
+   "src": "compat/src/portals.js",
+   "test": "compat/test/browser/portals.test.js"
+  },
+  {
+   "repo": "trpc/trpc",
+   "sha": "8b649ad874a8fe97c73962d4617912231b975736",
+   "pinned": "10e2ef98f7842b94eb3026e4f9bcfe62cc39b088",
+   "src": "packages/server/src/unstable-core-do-not-import/stream/jsonl.ts",
+   "test": "packages/server/src/unstable-core-do-not-import/stream/jsonl.test.ts"
+  },
+  {
+   "repo": "trpc/trpc",
+   "sha": "6a118b0be9bc9ba4a899c545edbcfdacfc504fad",
+   "pinned": "10e2ef98f7842b94eb3026e4f9bcfe62cc39b088",
+   "src": "packages/server/src/unstable-core-do-not-import/router.ts",
+   "test": "packages/server/src/unstable-core-do-not-import/router.test.ts"
+  },
+  {
+   "repo": "trpc/trpc",
+   "sha": "ef684c82910c4c18342088fbe64d222cb25721ed",
+   "pinned": "10e2ef98f7842b94eb3026e4f9bcfe62cc39b088",
+   "src": "packages/client/src/links/wsLink/wsClient/wsClient.ts",
+   "test": "packages/tests/server/websockets.test.ts"
+  },
+  {
+   "repo": "typeorm/typeorm",
+   "sha": "5a8a1400361a4b5cb90e805bea2c665149da3911",
+   "pinned": "fe92394287516feeada6e9c308ebe22deca2458e",
+   "src": "packages/typeorm/src/query-builder/SelectQueryBuilder.ts",
+   "test": "packages/typeorm/test/functional/query-builder/locking/query-builder-locking.test.ts"
+  },
+  {
+   "repo": "typeorm/typeorm",
+   "sha": "9f5a345d23b87e4ffdc282b441f6ff15c426c130",
+   "pinned": "fe92394287516feeada6e9c308ebe22deca2458e",
+   "src": "packages/typeorm/src/driver/sqlserver/SqlServerQueryRunner.ts",
+   "test": "packages/typeorm/test/unit/driver/sqlserver-query-lock.test.ts"
+  },
+  {
+   "repo": "typeorm/typeorm",
+   "sha": "3dddc4b8361d24e8bff5ef761167dfecf8ecaad7",
+   "pinned": "fe92394287516feeada6e9c308ebe22deca2458e",
+   "src": "packages/typeorm/src/driver/cockroachdb/CockroachDriver.ts",
+   "test": "packages/typeorm/test/github-issues/6958/issue-6958.test.ts"
+  },
+  {
+   "repo": "vitest-dev/vitest",
+   "sha": "69e6369f64455b4d78a6338521bbfc5fdb909af0",
+   "pinned": "28dc1edfb6ba5a181fe208576989063795aeadb3",
+   "src": "packages/browser/src/node/projectParent.ts",
+   "test": "test/browser/test/cdp.test.ts"
+  },
+  {
+   "repo": "vitest-dev/vitest",
+   "sha": "9f61dcca2812269494d12f632eb3d59c68b208ae",
+   "pinned": "28dc1edfb6ba5a181fe208576989063795aeadb3",
+   "src": "packages/coverage-istanbul/src/provider.ts",
+   "test": "test/coverage-test/test/uncovered-concurrent-transform.istanbul.test.ts"
+  },
+  {
+   "repo": "vitest-dev/vitest",
+   "sha": "0fa80f53c2afa3429ead7f357f0ad266b39b240a",
+   "pinned": "28dc1edfb6ba5a181fe208576989063795aeadb3",
+   "src": "packages/vitest/src/node/coverage.ts",
+   "test": "test/coverage-test/test/include-exclude.unit.test.ts"
+  }
+ ]
+}
