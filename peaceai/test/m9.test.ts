@@ -422,6 +422,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
+const LM_TRAIN_M49_WORKFLOW_SHA256 = "1a90a8cb37e999d0883252d1ca613b4a602d7d920d235fd7d3dbbdea6c453d4d"; // M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
 const LM_TRAIN_WORKFLOW_SHA256 = "9355431302d31ed8ca132ee60e8f2ab2728c462bfbe7a7bacdeb013820ae6211"; // M51: pinned to the #148 manifest by sha (--manifest-sha), so M37 never trains on the M49 corpus
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
@@ -447,6 +448,15 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
       assert.match(text, /peaceai\/bin\/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus" --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/);
       assert.match(text, /peaceai\/bin\/ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/);
       assert.ok(!/lm-memcheck\.ts|upload-artifact|pull_request|schedule:|push:/.test(text), f);
+      continue;
+    }
+    if (f === "peace-lm-train-m49.yml") {
+      // M49: the second training exemption, pinned to the exact reviewed file; m49-lm-workflow.test.ts pins its shape.
+      assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), LM_TRAIN_M49_WORKFLOW_SHA256, "peace-lm-train-m49.yml changed: re-review and re-pin");
+      assert.match(text, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m);
+      assert.equal((text.match(/^on:/gm) ?? []).length, 1);
+      assert.equal((text.match(/persist-credentials: false/g) ?? []).length, (text.match(/actions\/checkout@/g) ?? []).length);
+      assert.ok(!/lm-memcheck\.ts|lm-corpus\.ts|upload-artifact|actions\/cache|pull_request|schedule:|push:/.test(text), f);
       continue;
     }
     assert.ok(!/model\/train\.py|model\/export\.py|lm-corpus\.ts|lm-memcheck\.ts/.test(text), `${f} must not train`);
