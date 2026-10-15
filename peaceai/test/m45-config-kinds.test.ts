@@ -182,5 +182,5 @@ test("engine, specs and this test are protected; specs pinned", () => {
   assert.equal(h("peaceai/spec/import-edit-v1.md"), IMPORT_SPEC_SHA);
   assert.equal(h("peaceai/spec/package-script-v1.md"), SCRIPT_SPEC_SHA);
 });
-const IMPORT_SPEC_SHA = "0220194db2f7c40067e8d54dcde55279080fc0b4a69a9ab440c1dca181fb3fc0";
+const IMPORT_SPEC_SHA = "88eb38b42fe035047031a49e680f61967bb5e10a5cd6e1e3c6aac9e51e3d1239";
 const SCRIPT_SPEC_SHA = "86c9a9966c56287f6a14276e257910cf19c1153751b92a3172367e8efac34ca6";

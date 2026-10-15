@@ -6,8 +6,8 @@
  "spec": "peaceai/spec/import-edit-v1.md",
  "engine": "peaceai/lib/learned-config.ts",
  "evidence": {
-  "examples": 7,
-  "commits": 7,
+  "examples": 6,
+  "commits": 6,
   "repos": [
    "denoland/std",
    "reduxjs/redux-toolkit",

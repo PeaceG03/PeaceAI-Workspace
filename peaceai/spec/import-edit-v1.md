@@ -15,7 +15,7 @@ Change the module specifier of ONE existing top-level `import` in a non-protecte
 6. **Off by default.** Only `PEACEAI_IMPORT_EDIT=true` turns the check on; the kind is not in RULE_KINDS until a
    separate, Auditor-reviewed wiring PR; approval is Peace's. Builder never posts /approve-rule.
 
-Evidence: after the #167 review rules, 7 of 139 mined licensed external commits (corpus repos plus the M56 example-only repos in `peaceai/rules/proposals/m45-example-repos.json`) replay through the engine; below the 10-example bar, so this kind does not qualify yet (`peaceai/rules/proposals/m45-evidence.json`).
+Evidence: after the #167 review rules, 6 of 139 mined licensed external commits (corpus repos plus the M56 example-only repos in `peaceai/rules/proposals/m45-example-repos.json`) replay through the engine, also on the real before/after files; below the 10-example bar, so this kind does not qualify yet (`peaceai/rules/proposals/m45-evidence.json`).
 
 Live-proof plan (after approval only): one valid peace-task on PeaceSTOCKS (a `.ts`-extension import that breaks
 `tsc`, as in builder-log entry 6) must yield a counted candidate; one bad task (swap to a bare package name) must be

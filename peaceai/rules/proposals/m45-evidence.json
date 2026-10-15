@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m45-evidence:v2",
- "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 6000 per repo; shallow clones deepened to about 6000), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts. M56 (Architect a2): plus full histories of the example-only repos in peaceai/rules/proposals/m45-example-repos.json (licenses checked the same way; turborepo and nuxt not mined).",
+ "source": "single-file commits from peaceai/model/ext-corpus.json repos (newest 6000 per repo; shallow clones deepened to about 6000), set C repos excluded, LICENSE blob at each commit equal to the pinned one whose sha256 matches licenseSha256; microsoft/TypeScript skipped (pinned license sha did not reproduce; fail closed). Every recorded example is replayed through the engine by m45-config-kinds.test.ts. M56 (Architect a2): plus full histories of the example-only repos in peaceai/rules/proposals/m45-example-repos.json (licenses checked the same way; turborepo and nuxt not mined). M56 real-file check: every IMPORT_EDIT example was also replayed on the real before/after file at its commit; storybook b2773f72 was dropped (the import moved as well as changed, so more than one import changed).",
  "families": {
   "IMPORT_EDIT": [
    {
@@ -67,20 +67,6 @@
     "repoFiles": [
      "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.ts",
      "code/renderers/vue3/src/docgen/__testfixtures__/jsdoc/PlainButton.ts"
-    ],
-    "license": "MIT",
-    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
-    "origin": "external"
-   },
-   {
-    "repo": "storybookjs/storybook",
-    "commit": "b2773f72ba1b66ff1440ddd9fbf2fe68b1051666",
-    "path": "code/core/scripts/helpers/sourcefiles.ts",
-    "before": "import { BROWSER_TARGETS } from '../../code/core/src/shared/constants/environments-support';",
-    "after": "import { BROWSER_TARGETS } from '../../src/shared/constants/environments-support';",
-    "repoFiles": [
-     "code/core/src/shared/constants/environments-support.ts",
-     "code/core/src/shared/constants/environments-support.ts"
     ],
     "license": "MIT",
     "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
