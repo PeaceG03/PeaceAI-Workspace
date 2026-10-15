@@ -15,8 +15,8 @@ of a uniquely named exported function (engine: `peaceai/lib/method-guard.ts`), r
 3. **Placement.** First statement of the function body (ahead of any early return), in a non-test `.ts`/`.mts` file;
    the file parses after the edit and the inserted statement is recognised as the guard.
 4. **Behavior proof and off by default** as v1: the new test must pass with the guard and fail without it;
-   `PEACEAI_METHOD_GUARD=true` only; not in RULE_KINDS until a separate, Auditor-reviewed wiring PR; approval is
-   Peace's. Builder never posts /approve-rule.
+   `PEACEAI_METHOD_GUARD=true` is a local/dev flag only. Job A admits the rule when `public-method-guard-v1` is on the
+   approved-rules list (Peace `/approve-rule`); Builder never posts `/approve-rule`.
 
 Evidence (`peaceai/rules/proposals/m58-method-guard-evidence.json`), counted the way M47 counted function-top but,
 per M60, never from the training corpus: an AST scan of the 11 minable example-only repos (`m45-example-repos.json`, pinned
