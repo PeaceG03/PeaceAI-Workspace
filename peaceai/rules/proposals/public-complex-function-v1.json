@@ -1,0 +1,18 @@
+{
+ "id": "public-complex-function-v1",
+ "kind": "COMPLEX_FUNCTION",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_COMPLEX_FUNCTION",
+ "engine": "peaceai/lib/learned-complex.ts",
+ "loops": "refused (loop_unsupported) until mined loop examples exist",
+ "evidence": {
+  "examples": 20,
+  "repos": 5,
+  "file": "peaceai/rules/proposals/m26-complex-function-evidence.json",
+  "method": "AST scan of the pinned example-only repos (no training-corpus overlap; M60)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true
+ },
+ "learned": "peaceai/rules/learned/public-complex-function-v1.json"
+}

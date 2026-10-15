@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
-import { applyRule, specHash } from "../lib/learned.ts";
+import { applyRule, pathExistsIn, specHash } from "../lib/learned.ts";
 import { formatRefusals, type RuleRefusal } from "../lib/refusal-reason.ts";
 import { safeNewModuleOnDisk } from "../lib/learned-function.ts";
 import { acceptFill, applyFill, fillOptions, parseFillTask } from "../lib/fill.ts";
@@ -43,6 +43,7 @@ const synthesizer = new kernel.PeaceAINativeCodeSynthesizer();
 
 const baseSha = git(repo, "rev-parse", "HEAD").trim();
 const tracked = git(repo, "ls-files", "-z").split("\0").filter(Boolean);
+const newPathExists = pathExistsIn(repo, tracked);
 const baseFiles = new Set(tracked);
 // M5: the target's scope decides which files are sources; larger targets get a bounded, task-relevant set.
 const targets = loadTargets();
@@ -261,7 +262,7 @@ for (const a of planSteps ? [] : admissions) {
     ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json" || (/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(p) && !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile())).map((p) => ({ path: p, content: "" }))]
     : [];
   const why: { reason?: string } = {};
-  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why);
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists); // Auditor #135: full ls-files + disk
   if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).

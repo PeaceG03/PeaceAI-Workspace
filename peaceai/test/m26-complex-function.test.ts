@@ -170,3 +170,42 @@ for (const [form, body] of Object.entries(loopForms)) {
     assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(body), files, undefined, ON), null);
   });
 }
+
+// ---- M26 wiring: COMPLEX_FUNCTION in RULE_KINDS, Job A applyRule and nlparse; approval only with the exact hash ----
+import { applyRule as m26ApplyRule, RULE_KINDS as M26_KINDS, specHash as m26SpecHash, validateSpec as m26Validate, type RuleSpec as M26Spec } from "../lib/learned.ts";
+const COMPLEX_SPEC = JSON.parse(m26Read(m26Resolve(m26Root, "peaceai/rules/learned/public-complex-function-v1.json"), "utf8")) as M26Spec;
+const COMPLEX_SHA = "e0ff5c68586d04d5366d204e2cd7956236891b4d7ad3dc2dbb69888859bcc7d3";
+
+test("wiring: learned spec valid, hash pinned, kind wired, nlparse knows the trigger; approval only with the exact hash", () => {
+  assert.ok(M26_KINDS.includes("COMPLEX_FUNCTION" as never));
+  assert.ok(m26Validate(COMPLEX_SPEC));
+  assert.equal(m26SpecHash(COMPLEX_SPEC), COMPLEX_SHA);
+  assert.deepEqual((COMPLEX_SPEC.params as { loops: string[] }).loops, ["none"]);
+  assert.equal(COMPLEX_SPEC.trigger, COMPLEX_TRIGGER);
+  assert.ok(m26Read(m26Resolve(m26Root, "peaceai/lib/nlparse.ts"), "utf8").includes("COMPLEX_TRIGGER"));
+  const list = JSON.parse(m26Read(m26Resolve(m26Root, "peaceai/rules/approved.json"), "utf8")) as { rules: { id: string; sha256: string }[] };
+  for (const r of list.rules.filter((x) => x.id === "public-complex-function-v1")) assert.equal(r.sha256, COMPLEX_SHA, "approved only with its exact hash");
+  const rec = JSON.parse(m26Read(m26Resolve(m26Root, "peaceai/rules/proposals/public-complex-function-v1.json"), "utf8")) as { status: string; learned: string; evidence: { examples: number; bar: number } };
+  assert.match(rec.status, /^proposal-off/);
+  assert.equal(rec.evidence.examples, m26Ev.examples.length);
+  assert.ok(rec.evidence.examples >= rec.evidence.bar);
+  assert.ok(!validFor({ ...COMPLEX_SPEC, params: { ...COMPLEX_SPEC.params, loops: [] } }), "empty loops list refused");
+  assert.ok(!validFor({ ...COMPLEX_SPEC, minedFrom: "core" }), "public-mined only");
+});
+const validFor = (s: unknown) => m26Validate(s);
+
+test("Job A (applyRule, no flag needed once admitted): builds; refuses loops, non-plain and protected paths by name", () => {
+  const why = (objective: string, fs = files) => { const w: { reason?: string } = {}; const e = m26ApplyRule(COMPLEX_SPEC, objective, fs, undefined, undefined, w, () => false); return { e, r: w.reason }; };
+  const env = process.env.PEACEAI_COMPLEX_FUNCTION; delete process.env.PEACEAI_COMPLEX_FUNCTION;
+  try {
+    assert.ok(why(t(ok)).e, "builds without the dev flag");
+    for (const body of Object.values(loopForms)) assert.equal(why(t(body)).r, LOOP_UNSUPPORTED);
+    for (const p of ["../a.ts", "/tmp/a.ts", "src/../a.ts"]) assert.equal(why(t(ok).replace("src/a.ts", p), [{ path: p, content: "export const x = 1;\n" }]).r, "path_not_plain");
+    assert.equal(why(t(ok).replace("src/a.ts", "peaceai/lib/target.ts"), [{ path: "peaceai/lib/target.ts", content: "export const x = 1;\n" }]).r, "protected_path");
+    assert.equal(why("add complex function nope").r, "task_unparsed");
+  } finally { if (env !== undefined) process.env.PEACEAI_COMPLEX_FUNCTION = env; }
+});
+
+test("learned spec, proposal record and the all-kinds new-test-path proofs are protected", () => {
+  for (const p of ["peaceai/rules/learned/public-complex-function-v1.json", "peaceai/rules/proposals/public-complex-function-v1.json", "peaceai/test/m26-new-test-path.test.ts"]) assert.ok(M26_PROTECTED.some((x) => x.pattern.test(p)), p);
+});

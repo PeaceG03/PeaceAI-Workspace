@@ -16,6 +16,7 @@ import { cleanIssueText } from "./taskmap.ts";
 import { TEST_TRIGGER } from "./learned-test.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
+import { COMPLEX_TRIGGER } from "./learned-complex.ts";
 import { REPLACE_TRIGGER } from "./learned-body.ts";
 import { FUNCTION_TRIGGER } from "./learned-function.ts";
 import { WORKFLOW_TRIGGER } from "./learned-workflow.ts";
@@ -71,6 +72,8 @@ const CANONICAL: RegExp[] = [
   new RegExp(GUARD_TOP_TRIGGER, "imu"),
   // M62: METHOD_GUARD (method call in the condition; distinct phrase).
   new RegExp(METHOD_GUARD_TRIGGER, "imu"),
+  // M26 wiring: COMPLEX_FUNCTION header line ("add complex function ... with body:"); canonical form only.
+  new RegExp(COMPLEX_TRIGGER, "imu"),
 ];
 // Numbered plan lines ("Step 2: ...", "2. ...", "2) ..."), read the same way the planner reads them.
 const STEP_WORD = /^step\s*\d{1,2}\s*[-:.)]\s*/iu;
@@ -285,16 +288,17 @@ export interface ParseOptions { model: NbModel | null; approvedKinds: ReadonlySe
 // The last CANONICAL entries are the M8 learned-rule triggers, in this order.
 // M12: ADD_TEST_CASE has no plain-language family (family null): it is only accepted in its canonical form.
 const LEARNED_TRIGGERS: { re: RegExp; kind: string; family: Family | null }[] = [
-  { re: CANONICAL[CANONICAL.length - 10]!, kind: "SET_LITERAL", family: "set-literal" },
-  { re: CANONICAL[CANONICAL.length - 9]!, kind: "ADD_SWITCH_CASE", family: "switch-case" },
-  { re: CANONICAL[CANONICAL.length - 8]!, kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
-  { re: CANONICAL[CANONICAL.length - 7]!, kind: "ADD_TEST_CASE", family: null },
-  { re: CANONICAL[CANONICAL.length - 6]!, kind: "ADD_THROW_GUARD", family: null },
-  { re: CANONICAL[CANONICAL.length - 5]!, kind: "ADD_FUNCTION", family: null },
-  { re: CANONICAL[CANONICAL.length - 4]!, kind: "ADD_WORKFLOW_STEP", family: null },
-  { re: CANONICAL[CANONICAL.length - 3]!, kind: "REPLACE_EXPRESSION", family: null },
-  { re: CANONICAL[CANONICAL.length - 2]!, kind: "ADD_THROW_GUARD", family: null },
-  { re: CANONICAL[CANONICAL.length - 1]!, kind: "METHOD_GUARD", family: null },
+  { re: CANONICAL[CANONICAL.length - 11]!, kind: "SET_LITERAL", family: "set-literal" },
+  { re: CANONICAL[CANONICAL.length - 10]!, kind: "ADD_SWITCH_CASE", family: "switch-case" },
+  { re: CANONICAL[CANONICAL.length - 9]!, kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
+  { re: CANONICAL[CANONICAL.length - 8]!, kind: "ADD_TEST_CASE", family: null },
+  { re: CANONICAL[CANONICAL.length - 7]!, kind: "ADD_THROW_GUARD", family: null },
+  { re: CANONICAL[CANONICAL.length - 6]!, kind: "ADD_FUNCTION", family: null },
+  { re: CANONICAL[CANONICAL.length - 5]!, kind: "ADD_WORKFLOW_STEP", family: null },
+  { re: CANONICAL[CANONICAL.length - 4]!, kind: "REPLACE_EXPRESSION", family: null },
+  { re: CANONICAL[CANONICAL.length - 3]!, kind: "ADD_THROW_GUARD", family: null },
+  { re: CANONICAL[CANONICAL.length - 2]!, kind: "METHOD_GUARD", family: null },
+  { re: CANONICAL[CANONICAL.length - 1]!, kind: "COMPLEX_FUNCTION", family: null },
 ];
 
 const TEST_ONLY = /^(?:then |and |also |finally )?(?:add|write|include) (?:a |an |some |focused |unit )*tests?\b[^.]*\.?$/iu;
