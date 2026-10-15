@@ -42,6 +42,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/taskmap\.ts$|^peaceai\/test\/m46-issue-text\.test\.ts$/, why: "the issue-text cleaning that feeds every rule trigger, and its proofs (M46)" },
   { pattern: /^peaceai\/spec\/throw-guard-top-v1\.md$|^peaceai\/test\/m47-guard-top\.test\.ts$/, why: "the throw-guard function-top placement proposal, its spec and proofs (M47)" },
   { pattern: /^peaceai\/bin\/heldout-c-tasks\.ts$|^peaceai\/model\/heldout-c-tasks\.json$|^peaceai\/spec\/heldout-c-tasks-v1\.md$|^peaceai\/test\/m48-setc-tasks\.test\.ts$/, why: "the set C v2 task list PeaceAI is measured on, its builder, spec and proofs (M48)" },
+  { pattern: /^peaceai\/lib\/setc-grade\.ts$|^peaceai\/bin\/setc-grade\.ts$|^peaceai\/spec\/setc-grade-v1\.md$|^peaceai\/test\/m50-setc-grade\.test\.ts$/, why: "the set C v2 grader PeaceAI is scored by, its spec and proofs (M50)" },
   { pattern: /^peaceai\/lib\/method-guard\.ts$|^peaceai\/spec\/method-guard-v1\.md$|^peaceai\/test\/m58-method-guard\.test\.ts$/, why: "the METHOD_GUARD proposal kind, its spec and proofs (M58)" },
   { pattern: /^peaceai\/lib\/learned-config\.ts$|^peaceai\/spec\/(import-edit|package-script)-v1\.md$|^peaceai\/test\/m45-config-kinds\.test\.ts$/, why: "the IMPORT_EDIT and PACKAGE_SCRIPT proposal kinds, their specs and proofs (M45)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
