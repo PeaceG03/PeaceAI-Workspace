@@ -1,5 +1,6 @@
 """M9 core-free proof for a model's Results record (written at training time, next to the weights).
 
+Manifest schemas: internal (lm-corpus.ts), external (ext-fetch.ts), fine-tune (M49 ft-pairs.ts; M52).
 Usage: corefree_proof.py --corpus TRAIN_CORPUS_DIR --core-dir CORE_CHECKOUT --model MODEL_DIR [--near 0.8]
 Writes MODEL_DIR/corefree-proof.json:
   schema, model (config.json version), noCoreFiles (PROVEN only if every file passes), manifestSha256,
@@ -119,8 +120,43 @@ def ext_problem(m):
     return None
 
 
-schema = "external" if man and all(isinstance(m, dict) and "repo" in m for m in man) else "internal"
-if schema == "external":
+# M52 (Architect, M49 M5): a third schema, the M49 fine-tune manifest (ft-pairs.ts: doc, split, repo, sha, path,
+# function; all six required, nothing else). Only Peace's public owner repos. It carries no content sha256, so the
+# proof records the sha256 of the doc text itself. Unknown fields, mixed schemas or anything malformed: fail closed.
+FT_KEYS = {"doc", "split", "repo", "sha", "path", "function"}
+
+
+def ft_problem(m):
+    if not isinstance(m, dict):
+        return "not an object"
+    unknown = set(m) - FT_KEYS
+    if unknown:
+        return f"unknown field {sorted(unknown)[0]}"
+    if FT_KEYS - set(m):
+        return f"missing field {sorted(FT_KEYS - set(m))[0]}"
+    if type(m["doc"]) is not int or m["doc"] < 0 or not isinstance(m["path"], str) or not m["path"]:
+        return "bad doc/path"
+    if not isinstance(m["function"], str) or not m["function"]:
+        return "bad function"
+    if m["split"] not in ("train", "heldout"):
+        return "bad split"
+    if not isinstance(m["sha"], str) or not re.fullmatch(r"[0-9a-f]{40}", m["sha"]):
+        return "bad sha"
+    if not isinstance(m["repo"], str) or m["repo"] not in OWNER_PUBLIC:
+        return "fine-tune entry: not a public owner repo"
+    return None
+
+
+is_ft = [isinstance(m, dict) and ("function" in m or "sha" in m) for m in man]  # keys only the fine-tune schema has
+if any(is_ft) and not all(is_ft):
+    sys.exit("corefree_proof: manifest refused (mixed fine-tune and other schema)")
+schema = "finetune" if man and all(is_ft) else "external" if man and all(isinstance(m, dict) and "repo" in m for m in man) else "internal"
+if schema == "finetune":
+    for m in man:
+        why = ft_problem(m)
+        if why:
+            sys.exit(f"corefree_proof: fine-tune manifest refused (doc {m.get('doc') if isinstance(m, dict) else '?'}: {why})")
+elif schema == "external":
     for m in man:
         why = ext_problem(m)
         if why:
@@ -149,8 +185,10 @@ ignored_empty = 0
 allowlisted = 0
 for m in man:
     t = docs[m["doc"]]
-    src = m["repo"] if schema == "external" else m["source"]
+    src = m["source"] if schema == "internal" else m["repo"]
     tsha = hashlib.sha256(t.encode()).hexdigest()
+    if schema == "finetune":
+        m = {**m, "sha256": tsha}  # derived from the doc text (the fine-tune manifest carries none)
     if tsha != m["sha256"]:
         sys.exit(f"corefree_proof: doc {m['doc']} text does not hash to its manifest sha256")
     if blank(t):
@@ -171,7 +209,7 @@ for m in man:
         cands.update(buckets.get((b, s[b * ROWS:(b + 1) * ROWS]), ()))
     near = max((sum(x == y for x, y in zip(s, sigs[c])) / NPERM for c in cands), default=0.0)
     files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": bool(exact), "coreNearMax": round(near, 4)})
-visible = all(m.get("visibility") == "public" for m in man) if schema == "internal" else True  # external: checked above
+visible = all(m.get("visibility") == "public" for m in man) if schema == "internal" else True  # external/finetune: checked above
 proven = len(files) > 0 and all((not f["coreExact"]) and f["coreNearMax"] < args.near for f in files) and visible
 model = json.load(open(os.path.join(args.model, "config.json")))["version"]
 core_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=args.core_dir, capture_output=True, check=True, text=True).stdout.strip()
