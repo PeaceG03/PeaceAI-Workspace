@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "d55f3c21b822a8710c4b5b16eb9d58e1492a486d72ae34692938282eca91de77"; // M45: learned-config.ts, import-edit/package-script specs and m45 test join the protected set
+const PROTECTED_DIGEST = "3cfbeeb53ea7bba4a716500fb690f3a657cd522f35da739165eecd1c922873c6"; // M45 + M46: learned-config, m45 test, taskmap.ts and m46 test in the protected set
