@@ -49,19 +49,20 @@
    "commit": "3d0c9c8c350ce0bc753717f91a91d50f27e18c9d",
    "license": "MIT",
    "origin": "external",
-   "files": 1824,
-   "bytes": 5999992,
+   "files": 3182,
+   "bytes": 10999984,
    "excluded": {
-    "core-text": 12,
+    "core-text": 23,
     "too-large": 20,
     "not-code": 8,
     "secret": 1,
+    "path-leak": 57,
     "personal-info": 37,
-    "duplicate": 256,
+    "duplicate": 453,
     "core": 1,
     "excluded-dir": 15,
-    "repo-cap": 5183,
     "generated": 1,
+    "repo-cap": 3560,
     "generated-path": 1
    }
   },
@@ -180,11 +181,12 @@
    "commit": "95e51a0518b15015304eca9844b3f64c1fc167ca",
    "license": "MIT",
    "origin": "external",
-   "files": 589,
-   "bytes": 1437504,
+   "files": 588,
+   "bytes": 1401025,
    "excluded": {
     "not-code": 3,
     "core-text": 757,
+    "path-leak": 1,
     "core": 19,
     "personal-info": 18,
     "nested-license": 13,
@@ -199,19 +201,19 @@
    "commit": "0c9913ae87283f96e868a8f1c20a3389827632d0",
    "license": "MIT",
    "origin": "external",
-   "files": 2616,
-   "bytes": 5999994,
+   "files": 3262,
+   "bytes": 10999986,
    "excluded": {
     "not-code": 3,
-    "core-text": 20,
-    "duplicate": 44,
+    "core-text": 22,
+    "duplicate": 103,
     "nested-license": 18,
     "secret": 2,
     "personal-info": 4,
     "minified": 9,
     "too-large": 14,
-    "repo-cap": 1723,
-    "generated-path": 7
+    "generated-path": 7,
+    "repo-cap": 1016
    }
   },
   {
@@ -421,15 +423,16 @@
    "commit": "a1422f12598bfa74b71aae8a07a62ccbf8b09f31",
    "license": "MIT",
    "origin": "external",
-   "files": 553,
-   "bytes": 3627268,
+   "files": 551,
+   "bytes": 3624442,
    "excluded": {
     "not-code": 1,
     "core-text": 78,
     "duplicate": 74,
     "too-large": 2,
     "personal-info": 11,
-    "excluded-dir": 5
+    "excluded-dir": 5,
+    "path-leak": 2
    }
   },
   {
@@ -499,13 +502,13 @@
    "commit": "3f1086bdafa79f3cfc60411bddeb34b60af8a885",
    "license": "MIT",
    "origin": "external",
-   "files": 5033,
-   "bytes": 5999998,
+   "files": 9875,
+   "bytes": 11000000,
    "excluded": {
-    "core-text": 48,
+    "core-text": 50,
     "excluded-dir": 872,
     "personal-info": 28,
-    "duplicate": 2247,
+    "duplicate": 3089,
     "core": 68,
     "minified": 126,
     "held-out": 34,
@@ -514,8 +517,9 @@
     "nested-license": 2601,
     "generated-path": 143,
     "secret": 1,
+    "path-leak": 15,
     "too-large": 73,
-    "repo-cap": 14348,
+    "repo-cap": 8647,
     "binary": 1
    }
   },
@@ -524,17 +528,18 @@
    "commit": "c2c9ef4dcd05b3e4d88844ea3a13dc23819ca2a5",
    "license": "MIT",
    "origin": "external",
-   "files": 980,
-   "bytes": 881068,
+   "files": 977,
+   "bytes": 879966,
    "excluded": {
     "not-code": 8,
     "personal-info": 3,
     "nested-license": 483,
     "excluded-dir": 8,
     "core-text": 4,
-    "duplicate": 94,
+    "duplicate": 95,
     "held-out": 2,
     "core": 18,
+    "path-leak": 2,
     "generated-path": 4
    }
   },
@@ -556,17 +561,16 @@
    "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
    "license": "MIT",
    "origin": "external",
-   "files": 1828,
-   "bytes": 5999993,
+   "files": 2595,
+   "bytes": 7571525,
    "excluded": {
-    "core-text": 7,
+    "core-text": 8,
     "not-code": 5,
-    "duplicate": 123,
+    "duplicate": 192,
     "excluded-dir": 94,
     "personal-info": 17,
     "minified": 2,
     "core": 1,
-    "repo-cap": 837,
     "nested-license": 89
    }
   },
@@ -585,19 +589,20 @@
  ],
  "refused": [],
  "excluded": {
-  "core-text": 1217,
+  "core-text": 1233,
   "authorship": 231,
   "safety-tool": 10,
   "held-out": 67,
   "not-code": 242,
-  "duplicate": 9895,
+  "duplicate": 11063,
   "secret": 16,
   "too-large": 186,
+  "path-leak": 77,
   "personal-info": 200,
   "core": 208,
   "excluded-dir": 1335,
-  "repo-cap": 22091,
   "generated": 136,
+  "repo-cap": 13223,
   "generated-path": 274,
   "nested-license": 37194,
   "minified": 165,
@@ -605,17 +610,17 @@
   "license-header": 1
  },
  "train": {
-  "files": 47940,
-  "bytes": 82375170
+  "files": 55547,
+  "bytes": 98906281
  },
  "setC": {
   "repos": 7,
   "files": 6870
  },
  "memcheck": {
-  "scannedDocs": 49157,
-  "droppedCoreText": 1217,
+  "scannedDocs": 56780,
+  "droppedCoreText": 1233,
   "remainingHits": 0
  },
- "manifestSha256": "040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af"
+ "manifestSha256": "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e"
 }

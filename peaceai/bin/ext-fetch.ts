@@ -8,11 +8,16 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256Hex } from "../lib/heldout.ts";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { splitOf } from "../lib/lmcorpus.ts";
 import { EXT_MANIFEST_SCHEMA, manifestRepoProblems, type ExtManifestEntry } from "../lib/extcorpus.ts";
 
 const [work, out] = process.argv.slice(2, 4).map((p) => resolve(p));
-const lines = readFileSync(resolve(import.meta.dirname, "../model/ext-manifest.jsonl"), "utf8").split("\n").filter(Boolean);
+// M51: the committed manifest is one file or split parts (never both); --manifest-sha pins its whole-manifest sha256.
+const manifestBuf = readManifestBytes(resolve(import.meta.dirname, "../model"), "ext-manifest");
+const pinIdx = process.argv.indexOf("--manifest-sha");
+if (pinIdx >= 0 && sha256Hex(manifestBuf) !== process.argv[pinIdx + 1]) { console.log(`ext-fetch refused: manifest sha256 ${sha256Hex(manifestBuf)} is not the pinned ${process.argv[pinIdx + 1]}`); process.exit(1); }
+const lines = manifestBuf.toString("utf8").split("\n").filter(Boolean);
 // Validate every manifest (and set C) repo name and commit against ^[\w.-]+/[\w.-]+$ and the committed config
 // BEFORE any work dir is created or any fetch runs (Auditor #153).
 const cfgAll = JSON.parse(readFileSync(resolve(import.meta.dirname, "../model/ext-corpus.json"), "utf8"));

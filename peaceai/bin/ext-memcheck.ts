@@ -10,6 +10,7 @@ import { emptyIndex, findCoreText } from "../lib/coretext.ts";
 import { buildSubstringIndex, countCoreSubstrings } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN } from "../lib/lm.ts";
 import { sha256Hex } from "../lib/heldout.ts";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { EXT_MEMCHECK_SCHEMA } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
@@ -28,7 +29,7 @@ for (const l of readFileSync(join(corpus, "docs.jsonl"), "utf8").split("\n")) {
   const h = findCoreText(t.split("\n"), tree.text, empty);
   r.coreLineHits += h.lineHits; r.coreShingleHits += h.shingleHits; r.coreRunHits += countCoreSubstrings(t, sub);
 }
-const manifestText = readFileSync(join(model, "ext-manifest.jsonl"));
+const manifestText = readManifestBytes(model, "ext-manifest"); // M51: one file or split parts
 const entries = manifestText.toString().split("\n").filter(Boolean).length - 1;
 const pass = r.scannedDocs === entries && r.coreFileHits + r.coreLineHits + r.coreShingleHits + r.coreRunHits === 0;
 writeFileSync(join(model, "ext-memcheck.json"), JSON.stringify({ schema: EXT_MEMCHECK_SCHEMA, status: pass ? "PASS" : "FAIL", manifestSha256: sha256Hex(manifestText), entries, ...r, minRun: COREFREE_MIN_RUN }, null, 1) + "\n");
