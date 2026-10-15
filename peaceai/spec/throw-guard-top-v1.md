@@ -14,6 +14,8 @@ FIRST statement, ahead of any leading `if (...) return` exits. v1 inserts it aft
 Evidence (`peaceai/rules/proposals/m47-guard-top-evidence.json`), AST scan of the #148 external manifest
 (47,642 external licensed files read, sha256 verified): 588 functions start with a parameter guard (31 repos); 11 of
 those (10 files, 7 repos) put the guard ahead of an early return, the exact shape this placement adds.
+The evidence backs the guard's POSITION (first statement, ahead of early returns), not its form: the mined guards use
+many conditions and error classes, while the form stays v1's (one line, `new Error("CODE")`, v1 condition grammar).
 
 Live-proof plan (after approval only): (1) valid: retry `eligibilityForBarCount` (#166) with the "at the top" phrasing;
 the candidate must put the guard first and count, full PeaceSTOCKS suite green; (2) bad: the same phrasing naming a

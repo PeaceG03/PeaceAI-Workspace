@@ -70,4 +70,4 @@ test("spec, evidence and this test are protected; spec md pinned", () => {
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   assert.equal(createHash("sha256").update(read("peaceai/spec/throw-guard-top-v1.md")).digest("hex"), SPEC_SHA);
 });
-const SPEC_SHA = "46b4b51a19555d1cb4a259f87a3f6dcfead32a0027c669ea5dd82764d7bf6f11";
+const SPEC_SHA = "4b9378cc304e11869429854eede33bea9f18d82968be8932c9a085ceb0db80ee";
