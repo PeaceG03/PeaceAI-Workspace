@@ -18,13 +18,16 @@ const files = [{ path: "src/u.ts", content: SRC }];
 const isTest = (p: string) => p.endsWith(".test.ts");
 const task = (top: boolean) => cleanIssueText({ title: "t", body: `guard \`eligibility\` in \`src/u.ts\`${top ? " at the top" : ""}: throw INVALID_BAR_COUNT when !Number.isInteger(barCount) || barCount < 0\n- \`eligibility(-1)\` throws INVALID_BAR_COUNT\n- \`eligibility(20)\` is \`"LEVEL_3"\`` });
 
-test("spec is valid, canonical, differs from v1 only in id/shape/miner/trigger/placement/evidence, and is NOT approved", () => {
+test("spec is valid, canonical, differs from v1 only in id/shape/miner/trigger/placement/evidence", () => {
   assert.ok(validateSpec(TOP));
   assert.equal(read("peaceai/rules/learned/public-throw-guard-top-v1.json"), specFileText(TOP));
   assert.equal(TOP.trigger, GUARD_TOP_TRIGGER);
   assert.deepEqual({ ...TOP.params, placement: "function-entry" }, V1.params);
   assert.equal(TOP.params.placement, "function-top");
-  assert.ok(!read("peaceai/rules/approved.json").includes("public-throw-guard-top-v1"));
+  // May be approved (via peace-approve-rule) only with exactly its hash; same pattern as m19 workflow-step.
+  const list = JSON.parse(read("peaceai/rules/approved.json")) as { rules?: { id: string; sha256: string }[] } | { id: string; sha256: string }[];
+  const entries = (Array.isArray(list) ? list : list.rules ?? []).filter((r) => r.id === "public-throw-guard-top-v1");
+  for (const r of entries) assert.equal(r.sha256, "ecf1c4e0a148b84969916419dc257f13dbc737697f57a1de1fec1eabb60accbf", "top-v1 approved only with its exact hash");
   assert.ok(!validateSpec({ ...TOP, params: { ...TOP.params, placement: "function-end" } }), "unknown placement refused");
 });
 
