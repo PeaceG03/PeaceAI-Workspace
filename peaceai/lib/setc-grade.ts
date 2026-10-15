@@ -11,15 +11,25 @@ export interface Graded { id: string; verdict: Verdict; why: string }
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const kindOf = (p: string) => (/\.m?ts$/.test(p) ? ts.ScriptKind.TS : ts.ScriptKind.JS);
 
-/** Token texts of a code fragment (trivia skipped). Used only for comparison. */
+/** Token texts of a code fragment (trivia skipped). Used only for comparison. Template literals are rescanned after
+ *  each `${...}` so the rest of the template is compared as one literal token, never as code. */
 export function tokens(text: string, path: string): string[] {
   const sc = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text);
   const out: string[] = [];
+  const braces: boolean[] = []; // true = this "{" opened a template substitution
   for (let k = sc.scan(); k !== ts.SyntaxKind.EndOfFileToken; k = sc.scan()) {
     if (k === ts.SyntaxKind.SlashToken || k === ts.SyntaxKind.SlashEqualsToken) { const r = sc.reScanSlashToken(); if (r === ts.SyntaxKind.RegularExpressionLiteral) k = r; }
-    out.push(sc.getTokenText());
+    if (k === ts.SyntaxKind.OpenBraceToken) braces.push(false);
+    else if (k === ts.SyntaxKind.CloseBraceToken && braces.pop() === true) k = sc.reScanTemplateToken(false);
+    if (k === ts.SyntaxKind.TemplateHead || k === ts.SyntaxKind.TemplateMiddle) braces.push(true);
+    out.push(`${k}:${sc.getTokenText()}`);
   }
   return out;
+}
+
+/** The task count the task list itself declares (sum of per-repo "chosen"). */
+export function declaredCount(list: { counts: Record<string, { chosen: number }> }): number {
+  return Object.values(list.counts).reduce((a, c) => a + c.chosen, 0);
 }
 
 function parses(text: string, path: string): ts.SourceFile | null {
@@ -59,7 +69,8 @@ export function gradeOne(t: CTask, source: string, body: string | undefined): Gr
 export interface Summary { tasks: number; pass: number; fail: number; ungradable: number; perRepo: Record<string, { tasks: number; pass: number; fail: number; ungradable: number }>; unknownPredictions: number }
 
 /** Grade every task. Predictions for ids not in the list are counted and ignored; duplicates are refused. */
-export function gradeAll(tasks: readonly CTask[], readSource: (t: CTask) => string, predictions: readonly { id: string; body: string }[]): { summary: Summary; graded: Graded[] } {
+export function gradeAll(tasks: readonly CTask[], readSource: (t: CTask) => string, predictions: readonly { id: string; body: string }[], expectedCount: number): { summary: Summary; graded: Graded[] } {
+  if (tasks.length !== expectedCount) throw new Error(`task count ${tasks.length} != declared ${expectedCount}`);
   const ids = new Set(tasks.map((t) => t.id));
   if (ids.size !== tasks.length) throw new Error("duplicate task id");
   const pred = new Map<string, string>(); let unknown = 0;
