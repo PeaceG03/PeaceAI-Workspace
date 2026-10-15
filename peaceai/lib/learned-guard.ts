@@ -17,7 +17,7 @@ export const GUARD_VOCAB: Record<(typeof GUARD_PARAM_KEYS)[number], readonly str
   grading: ["self-fail-before-pass-after"],
   lines: ["one"],
   message: ["code-only"],
-  placement: ["function-entry"],
+  placement: ["function-entry", "function-top"], // M47 proposal: function-top = first statement, ahead of any early return
   test: ["new-file"],
 };
 export const MAX_COND_CHARS = 160;
@@ -25,6 +25,9 @@ const NAME = String.raw`[A-Za-z_$][\w$]*`;
 const FILE = String.raw`[\w./-]+\.ts`;
 /** Header line (the rule's trigger). Backticks are optional: the cleaned issue text turns them into spaces. */
 export const GUARD_TRIGGER = String.raw`^guard \x60?(?<fn>${NAME})\x60? in \x60?(?<file>${FILE})\x60? ?: throw \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60? (?:when|if) (?<cond>[^\n]{1,${MAX_COND_CHARS}}?)\.?$`;
+
+/** M47: the function-top rule's own header (distinct phrase, so a task never matches both placements). */
+export const GUARD_TOP_TRIGGER = String.raw`^guard \x60?(?<fn>${NAME})\x60? in \x60?(?<file>${FILE})\x60? at the top ?: throw \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60? (?:when|if) (?<cond>[^\n]{1,${MAX_COND_CHARS}}?)\.?$`;
 
 export interface GuardTask { fn: string; file: string; code: string; cond: string; test: TestTask }
 export interface GuardEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
@@ -126,7 +129,8 @@ export function buildGuardEdit(
   if (new RegExp(`["'\`]${task.code}\\b`).test(target.content)) return null; // the code already exists in this file: not a new guard
   const stmts = fn.body.statements;
   let i = 0;
-  while (i < stmts.length && isExitGuard(stmts[i]!)) i++;
+  // M47 (proposal, off until approved): "function-top" puts the guard first, ahead of leading early returns.
+  if (params.placement !== "function-top") while (i < stmts.length && isExitGuard(stmts[i]!)) i++;
   const lineIndent = (pos: number) => /[ \t]*$/.exec(target.content.slice(0, pos))![0];
   let content: string;
   if (stmts.length === 0) {
