@@ -21,13 +21,17 @@ const B = (cond: string, form: "one-line" | "block" = "block", src = SRC, code =
 let refusals = 0;
 const refuse = (r: unknown, msg: string) => { assert.ok(r === null || r === false, msg); refusals++; };
 
-test("off by default; not approved; not wired; v1 untouched", () => {
+test("off by default until approved; v1 untouched; wired for /approve-rule", () => {
   assert.equal(methodGuardEnabled({}), false);
   assert.equal(methodGuardEnabled({ PEACEAI_METHOD_GUARD: "1" }), false);
   assert.equal(methodGuardEnabled({ PEACEAI_METHOD_GUARD: "true" }), true);
-  assert.ok(!read("peaceai/rules/approved.json").includes("public-method-guard-v1"));
   assert.match(REC.status, /^proposal-off/);
-  assert.ok(!read("peaceai/lib/learned.ts").includes("method-guard"));
+  assert.ok(read("peaceai/lib/learned.ts").includes("METHOD_GUARD"));
+  assert.ok(read("peaceai/rules/learned/public-method-guard-v1.json").includes("METHOD_GUARD"));
+  // May be approved (via peace-approve-rule) only with exactly its hash; same pattern as m47/#184.
+  const list = JSON.parse(read("peaceai/rules/approved.json")) as { rules?: { id: string; sha256: string }[] } | { id: string; sha256: string }[];
+  const entries = (Array.isArray(list) ? list : list.rules ?? []).filter((r) => r.id === "public-method-guard-v1");
+  for (const r of entries) assert.equal(r.sha256, "d8287e62f4114f1673d1e835efdc33174c02f480263edddffb5e4efbca728160", "method-guard-v1 approved only with its exact hash");
   assert.equal(safeCondition(expr("s.startsWith('x')").expression, new Set(["s"])), false, "v1 grammar still refuses method calls");
 });
 
@@ -162,8 +166,8 @@ test("METHOD_GUARD refuses everything else", () => {
 const REFUSALS_STATED = 49;
 
 test("engine, spec, evidence and this test are protected; spec pinned", () => {
-  for (const p of ["peaceai/lib/method-guard.ts", "peaceai/spec/method-guard-v1.md", "peaceai/test/m58-method-guard.test.ts", "peaceai/rules/proposals/m58-method-guard-evidence.json", "peaceai/rules/proposals/public-method-guard-v1.json"])
+  for (const p of ["peaceai/lib/method-guard.ts", "peaceai/spec/method-guard-v1.md", "peaceai/test/m58-method-guard.test.ts", "peaceai/rules/proposals/m58-method-guard-evidence.json", "peaceai/rules/proposals/public-method-guard-v1.json", "peaceai/rules/learned/public-method-guard-v1.json"])
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   assert.equal(createHash("sha256").update(read("peaceai/spec/method-guard-v1.md")).digest("hex"), SPEC_SHA);
 });
-const SPEC_SHA = "4dc3b8326f699913f5b031408e54a6f144e0e0a8da1987c216cfd2d834af03d9";
+const SPEC_SHA = "dc3f900b43d00b767db719763d1eb205acc4f1f179f0c774d611bd545040c4f8";
