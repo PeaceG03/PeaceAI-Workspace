@@ -11,6 +11,7 @@ import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN, docIdsMatch, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 
 const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
 const corpus = resolve(process.env.PEACEAI_LM_CORPUS ?? "");
@@ -19,7 +20,7 @@ const counts = { core: Number(process.env.PEACEAI_MEMCHECK_CORE ?? 96), public: 
 const CORE_SOURCE = "PeaceG03/PeaceAI";
 
 const before = modelFileShas(modelDir);
-const manifest: ManifestEntry[] = readFileSync(join(corpus, "manifest.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const manifest: ManifestEntry[] = readManifestBytes(corpus, "manifest").toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const texts = new Map<number, string>();
 for (const l of readFileSync(join(corpus, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); texts.set(d.doc, d.text); }
 const h = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -57,7 +58,7 @@ else {
   // invalid proof, a manifest that no longer proves it): the strict 32-character rule.
   let exempt: PublicOnlyExemption | null = null;
   if (trainCorpus) {
-    const tmText = readFileSync(join(trainCorpus, "manifest.jsonl"), "utf8");
+    const tmText = readManifestBytes(trainCorpus, "manifest").toString("utf8"); // M51: one file or split parts, never both
     const tm: (ManifestEntry & Record<string, unknown>)[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
     // M39: empty / whitespace-only core files carry no text; they never make a training file "core" (allowlisted
     // public-origin files are already out of tree.raw, matched by path and exact-bytes pin in coreindex.ts).
@@ -66,14 +67,17 @@ else {
     let proof: unknown = null;
     try { proof = JSON.parse(readFileSync(join(modelDir, "corefree-proof.json"), "utf8")); } catch { proof = null; }
     const modelId = String(JSON.parse(readFileSync(join(modelDir, "config.json"), "utf8")).version ?? "");
-    const v = validCoreFreeProof(proof, { modelId, manifest: tm, manifestSha256: trainManifestSha });
+    // M52: doc text hashes (the fine-tune manifest carries none; its proof is checked against these).
+    const docSha256 = new Map<unknown, string>();
+    for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); docSha256.set(d.doc, h(String(d.text))); }
+    const v = validCoreFreeProof(proof, { modelId, manifest: tm, manifestSha256: trainManifestSha, docSha256 });
     proofState = v.ok ? "VALID" : `INVALID:${v.reason}`;
     if (proof !== null && v.ok) proofSha = h(readFileSync(join(modelDir, "corefree-proof.json"), "utf8"));
     // M40: docs.jsonl ids must equal the manifest ids, else the manifest proves nothing (strict rule).
     const docIds: unknown[] = [];
     for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) docIds.push(JSON.parse(l).doc);
     if (!docIdsMatch(tm.map((m) => m.doc), docIds)) noCoreProof = "NOT_PROVEN";
-    if (!manifestProvesNoCore(tm, coreShas, CORE_SOURCE) || (tree.raw ?? []).length === 0) noCoreProof = "NOT_PROVEN";
+    if (!manifestProvesNoCore(tm, coreShas, CORE_SOURCE, docSha256) || (tree.raw ?? []).length === 0) noCoreProof = "NOT_PROVEN";
     if (v.ok && noCoreProof === "PROVEN") {
       const tt: string[] = [];
       for (const l of readFileSync(join(trainCorpus, "docs.jsonl"), "utf8").split("\n")) if (l) tt.push(JSON.parse(l).text);

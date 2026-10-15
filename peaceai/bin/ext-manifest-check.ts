@@ -6,17 +6,20 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256Hex } from "../lib/heldout.ts";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { allHeldOutHashes } from "../lib/lmcorpus.ts";
 import { extCorpusProblems, safetyToolShas } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const corpus = resolve(process.argv[2] ?? "");
-const stage = process.argv[3] ?? "pretrain";
+const stage = process.argv[3] && !process.argv[3].startsWith("--") ? process.argv[3] : "pretrain";
 const rd = (p: string) => readFileSync(join(model, p), "utf8");
 const c = JSON.parse(rd("heldout-c.json"));
 const docs = new Map<number, string>();
 for (const l of readFileSync(join(corpus, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); docs.set(d.doc, d.text); }
-const manifestBytes = readFileSync(join(model, "ext-manifest.jsonl"));
+const manifestBytes = readManifestBytes(model, "ext-manifest"); // M51: one file or split parts, never both
+const pin = process.argv.indexOf("--manifest-sha");
+if (pin >= 0 && sha256Hex(manifestBytes) !== process.argv[pin + 1]) { console.log(`ext-manifest-check: manifest sha256 ${sha256Hex(manifestBytes)} is not the pinned ${process.argv[pin + 1]}`); console.log("ext-manifest-check FAIL"); process.exit(1); }
 const problems = extCorpusProblems({
   manifestText: manifestBytes.toString("utf8"), cfg: JSON.parse(rd("ext-corpus.json")), memcheck: JSON.parse(rd("ext-memcheck.json")),
   manifestSha256: sha256Hex(manifestBytes), heldOut: allHeldOutHashes(JSON.parse(rd("heldout.json")), c),

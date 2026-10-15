@@ -1,5 +1,6 @@
 // M36: external pretraining corpus (license-verified, provenance manifest, stage field) and set C v2 (whole held-out repos).
 import assert from "node:assert/strict";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -12,7 +13,7 @@ const root = resolve(import.meta.dirname, "../..");
 const rd = (p: string) => readFileSync(join(root, "peaceai/model", p), "utf8");
 const cfg = JSON.parse(rd("ext-corpus.json"));
 const c = JSON.parse(rd("heldout-c.json")) as HeldOutCFile & { rule: string; wiredAsEval: boolean; sets: { C: { repo: string; sha: string; spdx: string; contentSha256: string[] }[] } };
-const lines = rd("ext-manifest.jsonl").split("\n").filter(Boolean);
+const lines = readManifestBytes(join(root, "peaceai/model"), "ext-manifest").toString("utf8").split("\n").filter(Boolean);
 const header = JSON.parse(lines[0]!);
 const man: ExtManifestEntry[] = lines.slice(1).map((l) => JSON.parse(l));
 
@@ -105,7 +106,7 @@ test("Architect #148: safety-scanner tool files are never in the corpus", () => 
 
 test("memcheck record (box, against core): PASS for the committed manifest, every doc scanned, zero hits", () => {
   const m = JSON.parse(rd("ext-memcheck.json"));
-  const bytes = readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"));
+  const bytes = readManifestBytes(join(root, "peaceai/model"), "ext-manifest");
   assert.equal(m.schema, EXT_MEMCHECK_SCHEMA);
   assert.equal(m.status, "PASS");
   assert.equal(m.manifestSha256, createHash("sha256").update(bytes).digest("hex"));
@@ -117,7 +118,7 @@ test("memcheck record (box, against core): PASS for the committed manifest, ever
 
 test("summary: counts only, bound to the committed manifest", () => {
   const s = JSON.parse(rd("ext-summary.json"));
-  assert.equal(s.manifestSha256, createHash("sha256").update(readFileSync(join(root, "peaceai/model/ext-manifest.jsonl"))).digest("hex"));
+  assert.equal(s.manifestSha256, createHash("sha256").update(readManifestBytes(join(root, "peaceai/model"), "ext-manifest")).digest("hex"));
   assert.equal(s.train.files, man.length);
   assert.equal(s.memcheck.scannedDocs - s.memcheck.droppedCoreText, man.length);
   assert.ok(!/"path"|"text"/.test(rd("ext-summary.json")), "no paths or text");
