@@ -1,0 +1,14 @@
+{
+ "id": "public-import-edit-v2",
+ "kind": "IMPORT_EDIT_V2",
+ "status": "proposal-off",
+ "flag": "PEACEAI_IMPORT_EDIT_V2",
+ "spec": "peaceai/spec/import-edit-v2.md",
+ "engine": "peaceai/lib/import-edit-v2.ts",
+ "evidence": {
+  "examples": 25,
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true
+ }
+}

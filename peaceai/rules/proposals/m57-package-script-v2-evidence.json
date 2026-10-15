@@ -1,0 +1,40 @@
+{
+ "schema": "peaceai-m57-package-script-v2-evidence:v1",
+ "source": "M57: the 25 PACKAGE_SCRIPT candidates already mined (skills-m45 out6, m55, m56), replayed through packageScriptV2Problem on the REAL package.json before/after each commit with the REAL .github/workflows at that commit. Fixtures under peaceai/test/fixtures/m57 pinned by git blob id; workflowRuns are the script names those workflows run. M59 (Architect): apollo-client f0bb56c8 and hono fb0b9d42 dropped with their fixtures (their real files contain email addresses the pre-push scan blocks); LICENSE text is not committed, licenses are pinned and verified by sha256 against ext-corpus.json / m45-example-repos.json only. M60 (Architect, no overlap with training): dropped 0 examples whose repo is in the training corpus list or manifest (); 1 remain.",
+ "bar": 10,
+ "candidates": 25,
+ "examples": [
+  {
+   "repo": "unjs/nitro",
+   "commit": "de4b7b1ba3e65c0a0cc5c08312ba9a716a86c632",
+   "path": "package.json",
+   "name": "test:vite",
+   "command": "pnpm vitest run test/vite",
+   "license": "MIT",
+   "licenseSha256": "c22224b86658680f267dd515e962e36573c9dee6cfc1e5bd88c6edeed66bf32b",
+   "origin": "external",
+   "beforeFixture": "unjs__nitro-de4b7b1ba3e6.before.txt",
+   "beforeBlob": "3bb84e61e8ad1ebf5beacd74d0fd69915d4cc8c5",
+   "afterFixture": "unjs__nitro-de4b7b1ba3e6.after.txt",
+   "afterBlob": "be6e116264efb9e7788a0c25dece73d3905546a9",
+   "workflowRuns": [
+    "build",
+    "changelogen",
+    "dlx",
+    "fmt",
+    "gen-presets",
+    "i",
+    "install",
+    "lint",
+    "publish",
+    "registry-url:",
+    "runs-on:",
+    "stub",
+    "test:rolldown",
+    "typecheck",
+    "vitest",
+    "with"
+   ]
+  }
+ ]
+}
