@@ -13,6 +13,10 @@
 // Note (as v1): a call or property read on a caller-supplied object can run the caller's own code.
 import ts from "typescript";
 import { exportedFunction } from "./learned-guard.ts";
+import { PROTECTED_SELF } from "./selfchange.ts";
+
+const plainPath = (p: string) => !p.startsWith("/") && !p.split("/").some((s) => s === "" || s === "." || s === "..");
+const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(path));
 
 export const METHOD_GUARD_FLAG = "PEACEAI_METHOD_GUARD";
 export const methodGuardEnabled = (env: Record<string, string | undefined>): boolean => env[METHOD_GUARD_FLAG] === "true";
@@ -92,7 +96,8 @@ const parseExpr = (text: string): ts.Expression | null => {
 export type GuardForm = "one-line" | "block";
 /** Inserts the guard as the function's first statement. null = refused. */
 export function buildMethodGuardEdit(path: string, content: string, fnName: string, condText: string, code: string, form: GuardForm): string | null {
-  if (!/\.(ts|mts)$/.test(path) || path.endsWith(".d.ts") || /\.test\.ts$/.test(path)) return null;
+  if (!plainPath(path) || !/\.(ts|mts)$/.test(path) || path.endsWith(".d.ts") || /\.test\.ts$/.test(path)) return null;
+  if (isProtected(path)) return null;
   if (condText.length > METHOD_GUARD_MAX_COND || !/^[A-Z][A-Z0-9_]{2,63}$/.test(code)) return null;
   if (form !== "one-line" && form !== "block") return null;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);

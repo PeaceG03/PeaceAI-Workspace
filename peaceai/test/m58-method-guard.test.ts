@@ -1,7 +1,7 @@
 // M58: METHOD_GUARD proposal (a new kind; ADD_THROW_GUARD v1 unchanged). Evidence, acceptance and refusal proofs.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
@@ -30,25 +30,59 @@ test("off by default; not approved; not wired; v1 untouched", () => {
   assert.equal(safeCondition(expr("s.startsWith('x')").expression, new Set(["s"])), false, "v1 grammar still refuses method calls");
 });
 
-test("evidence: AST scan of the pinned example-only repos; every recorded guard is first-statement shaped and accepted", () => {
+test("evidence: AST scan of the pinned example-only repos; every recorded guard replays on its blob-pinned fixture", () => {
   const setc = new Set((JSON.parse(read("peaceai/model/heldout-c.json")).sets.C as { repo: string }[]).map((r) => r.repo));
   const pins = new Map((JSON.parse(read("peaceai/rules/proposals/m45-example-repos.json")).repos as { name: string; commit: string; spdx: string; licenseSha256: string }[]).map((r) => [r.name, r]));
-  for (const x of EV.examples as { repo: string; commit: string; path: string; sha256: string; params: string[]; guard: string; license: string; licenseSha256: string }[]) {
+  const FIX = "peaceai/test/fixtures/m58/";
+  const gitBlob = (b: Buffer) => createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${b.length}\0`), b])).digest("hex");
+  const fx = (n: string, blob: string) => {
+    assert.match(n, /^[\w.-]+-[0-9a-f]{12}\.txt$/);
+    const b = readFileSync(join(root, FIX + n));
+    assert.ok(b.length <= 65536, n);
+    assert.equal(gitBlob(b), blob, `${n}: not the real blob`);
+    return b.toString("utf8");
+  };
+  assert.deepEqual(readdirSync(join(root, FIX)).filter((n) => !/^[\w.-]+-[0-9a-f]{12}\.txt$/.test(n)), [], "fixtures hold only source files (no LICENSE text; license pinned by sha256 in the repo records)");
+  for (const x of EV.examples as { repo: string; commit: string; path: string; sha256: string; params: string[]; line: number; form: string; guard: string; license: string; licenseSha256: string; fixture: string; fileBlob: string }[]) {
     assert.ok(!setc.has(x.repo));
     const p = pins.get(x.repo);
     assert.ok(p, `${x.repo} is not on the example-only list`);
     assert.equal(x.commit, p.commit); assert.equal(x.license, p.spdx); assert.equal(x.licenseSha256, p.licenseSha256);
     assert.match(x.sha256, /^[0-9a-f]{64}$/);
-    const sf = ts.createSourceFile("g.ts", x.guard, ts.ScriptTarget.Latest, true);
-    assert.equal(sf.statements.length, 1);
-    const c = guardCondition(sf.statements[0]!);
-    assert.ok(c && methodGuardCondition(c, new Set(x.params)), x.guard);
+    assert.match(x.fileBlob, /^[0-9a-f]{40}$/);
+    const body = fx(x.fixture, x.fileBlob);
+    assert.equal(createHash("sha256").update(body).digest("hex"), x.sha256, `${x.repo} ${x.path}`);
+    const sf = ts.createSourceFile(x.path, body, ts.ScriptTarget.Latest, true);
+    let found = false;
+    const visit = (n: ts.Node) => {
+      const bodyNode = (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n)) && n.body && ts.isBlock(n.body) ? n.body : null;
+      if (bodyNode && bodyNode.statements.length) {
+        const st = bodyNode.statements[0]!;
+        const startLine = sf.getLineAndCharacterOfPosition(st.getStart(sf)).line + 1;
+        if (startLine === x.line) {
+          const c = guardCondition(st);
+          assert.ok(c && methodGuardCondition(c, new Set(x.params)), `${x.repo} ${x.path}:${x.line}`);
+          const oneLine = ts.isThrowStatement((st as ts.IfStatement).thenStatement);
+          assert.equal(oneLine ? "one-line" : "block", x.form, `${x.repo} ${x.path}:${x.line} form`);
+          found = true;
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    assert.ok(found, `${x.repo} ${x.path}:${x.line} not found as first-statement method guard in fixture`);
+    // the recorded guard text still parses on its own
+    const gsf = ts.createSourceFile("g.ts", x.guard, ts.ScriptTarget.Latest, true);
+    assert.equal(gsf.statements.length, 1);
+    const gc = guardCondition(gsf.statements[0]!);
+    assert.ok(gc && methodGuardCondition(gc, new Set(x.params)), x.guard);
   }
   assert.equal(EV.counts.firstStatementMethodGuards, EV.examples.length);
   assert.equal(REC.evidence.examples, EV.examples.length);
   assert.equal(REC.evidence.repos, new Set(EV.examples.map((x: { repo: string }) => x.repo)).size);
   assert.equal(REC.evidence.qualifies, EV.examples.length >= EV.bar);
-  assert.equal(EV.bar, 5);
+  assert.equal(EV.bar, 10);
+  assert.equal(REC.evidence.bar, 10);
 });
 
 test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
@@ -113,6 +147,10 @@ test("METHOD_GUARD refuses everything else", () => {
   refuse(buildMethodGuardEdit("src/f.ts", SRC.replace("export function", "function"), "f", "s.startsWith('#')", "BAD_S", "block"), "not exported");
   refuse(buildMethodGuardEdit("src/f.ts", SRC + SRC, "f", "s.startsWith('#')", "BAD_S", "block"), "two implementations");
   refuse(buildMethodGuardEdit("src/f.ts", "export function f({ s }: { s: string }) { return s; }\n", "f", "s.startsWith('#')", "BAD_S", "block"), "destructured parameter");
+  refuse(buildMethodGuardEdit("peaceai/lib/gate.ts", SRC, "f", "s.startsWith('#')", "BAD_S", "block"), "protected gate");
+  refuse(buildMethodGuardEdit("peaceai/lib/selfchange.ts", SRC, "f", "s.startsWith('#')", "BAD_S", "block"), "protected selfchange");
+  refuse(buildMethodGuardEdit("../src/f.ts", SRC, "f", "s.startsWith('#')", "BAD_S", "block"), "path contains ..");
+  refuse(buildMethodGuardEdit("/src/f.ts", SRC, "f", "s.startsWith('#')", "BAD_S", "block"), "leading /");
   refuse(B("s.startsWith('#')); evil(("), "injection");
   refuse(guardCondition(ts.createSourceFile("g.ts", "if (s.startsWith('a')) { throw new Error('A'); } else { x(); }", ts.ScriptTarget.Latest, true).statements[0]!), "else branch");
   refuse(guardCondition(ts.createSourceFile("g.ts", "if (s.startsWith('a')) { log(); throw new Error('A'); }", ts.ScriptTarget.Latest, true).statements[0]!), "block with more than the throw");
@@ -120,7 +158,7 @@ test("METHOD_GUARD refuses everything else", () => {
   refuse(safeRegexLiteral("/a/gi"), "regex flags");
   assert.equal(refusals, REFUSALS_STATED);
 });
-const REFUSALS_STATED = 45;
+const REFUSALS_STATED = 49;
 
 test("engine, spec, evidence and this test are protected; spec pinned", () => {
   for (const p of ["peaceai/lib/method-guard.ts", "peaceai/spec/method-guard-v1.md", "peaceai/test/m58-method-guard.test.ts", "peaceai/rules/proposals/m58-method-guard-evidence.json", "peaceai/rules/proposals/public-method-guard-v1.json"])

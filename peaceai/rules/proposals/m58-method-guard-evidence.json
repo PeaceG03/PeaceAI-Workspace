@@ -1,21 +1,21 @@
 {
  "schema": "peaceai-m58-method-guard-evidence:v2",
- "source": "M60 (Architect: skill examples must not overlap the training corpus; the 9 M58 examples were all from corpus repos and are dropped): the same AST scan as M58 (functions whose FIRST statement is `if (cond) throw new XError(..)`, one-line or block, condition accepted by methodGuardCondition; test, fixture, playground and built-output paths skipped) over the 11 minable example-only repos in m45-example-repos.json at their pinned commits (vercel/turborepo and nuxt/nuxt are listed but not mined). Each file's sha256 is recorded at the pinned commit.",
- "bar": 5,
+ "source": "M60 (Architect: skill examples must not overlap the training corpus; the 9 M58 examples were all from corpus repos and are dropped): the same AST scan as M58 (functions whose FIRST statement is `if (cond) throw new XError(..)`, one-line or block, condition accepted by methodGuardCondition; test, fixture, playground and built-output paths skipped) over the 11 minable example-only repos in m45-example-repos.json at their pinned commits (vercel/turborepo and nuxt/nuxt are listed but not mined). Each file's sha256 is recorded at the pinned commit. M61 (Auditor): every example is replayed on its REAL source file under peaceai/test/fixtures/m58, pinned by git blob id; LICENSE text is not committed (licenseSha256 only). Bar raised to 10 (Architect); 22 examples clear it. Dropped pnpm TestIpcServer.ts: comment cites a Windows Users path the pre-push home-path scan blocks (1 example); 21 remain, still >= bar 10.",
+ "bar": 10,
  "counts": {
   "repos_scanned": 11,
   "files": 10463,
   "functionsWithParams": 31559,
-  "firstStatementMethodGuards": 22,
+  "firstStatementMethodGuards": 21,
   "oneLine": 5,
-  "block": 17,
+  "block": 16,
   "repos": 5,
   "droppedCorpusOverlap": 9
  },
  "byRepo": {
   "microsoft/rushstack": 5,
   "oclif/core": 4,
-  "pnpm/pnpm": 11,
+  "pnpm/pnpm": 10,
   "storybookjs/storybook": 1,
   "vitejs/vite-plugin-react": 1
  },
@@ -40,7 +40,9 @@
    "form": "block",
    "guard": "if (name.length === 0 || name.includes('=') || name.includes('\\0')) {\n    throw new Error(`Invalid global command environment variable name: \"${name}\".`);\n  }",
    "license": "MIT",
-   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fixture": "microsoft__rushstack-0d7a148378f4.txt",
+   "fileBlob": "0d7a148378f4730fd862e092e0eeea0949d6d206"
   },
   {
    "repo": "microsoft/rushstack",
@@ -55,7 +57,9 @@
    "form": "block",
    "guard": "if (value.length === 0 || value.trim() !== value) {\n    throw new Error(`Invalid global command ${kind}: \"${value}\".`);\n  }",
    "license": "MIT",
-   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fixture": "microsoft__rushstack-0d7a148378f4.txt",
+   "fileBlob": "0d7a148378f4730fd862e092e0eeea0949d6d206"
   },
   {
    "repo": "microsoft/rushstack",
@@ -69,7 +73,9 @@
    "form": "block",
    "guard": "if (requestId.length === 0 || requestId.trim() !== requestId) {\n    throw new Error(`Invalid interactive request id: \"${requestId}\".`);\n  }",
    "license": "MIT",
-   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fixture": "microsoft__rushstack-ce7a039e2c02.txt",
+   "fileBlob": "ce7a039e2c02b942d32937ea83026c7dd6bf1741"
   },
   {
    "repo": "microsoft/rushstack",
@@ -84,7 +90,9 @@
    "form": "block",
    "guard": "if (value.length === 0 || value.trim() !== value) {\n    throw new Error(`Invalid phased request ${kind}: \"${value}\".`);\n  }",
    "license": "MIT",
-   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fixture": "microsoft__rushstack-baaf5b343dcf.txt",
+   "fileBlob": "baaf5b343dcfd9c0af3308d71bcdbe43eeed7266"
   },
   {
    "repo": "microsoft/rushstack",
@@ -99,7 +107,9 @@
    "form": "block",
    "guard": "if (dependencyChain.has(operation)) {\n    throw new Error(\n      'A cyclic dependency was encountered:\\n  ' +\n        [...dependencyChain, operation]\n          .map((visitedTask) => visitedTask.name)\n          .reverse()\n          .join('\\n  -> ') +\n        `\\nConsider using the decoupledLocalDependencies option in ${RushConstants.rushJsonFilename}.`\n    );\n  }",
    "license": "MIT",
-   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fixture": "microsoft__rushstack-e0344f716fb0.txt",
+   "fileBlob": "e0344f716fb013498f50dc3d51015b93438cbda3"
   },
   {
    "repo": "oclif/core",
@@ -115,7 +125,9 @@
    "form": "one-line",
    "guard": "if (!/^-?\\d+$/.test(input)) throw new Error(`Expected an integer but received: ${input}`)",
    "license": "MIT",
-   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61",
+   "fixture": "oclif__core-bd11e3cfda1e.txt",
+   "fileBlob": "bd11e3cfda1e74856d743c5b64510142540db722"
   },
   {
    "repo": "oclif/core",
@@ -131,7 +143,9 @@
    "form": "one-line",
    "guard": "if (!/^-?\\d+$/.test(input)) throw new CLIError(`Expected an integer but received: ${input}`)",
    "license": "MIT",
-   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61",
+   "fixture": "oclif__core-d72e2b91b964.txt",
+   "fileBlob": "d72e2b91b96480a9543fb9abdcbac5b5edc5f3c9"
   },
   {
    "repo": "oclif/core",
@@ -146,7 +160,9 @@
    "form": "one-line",
    "guard": "if (flag.options && !flag.options.includes(input)) throw new FlagInvalidOptionError(flag, input)",
    "license": "MIT",
-   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61",
+   "fixture": "oclif__core-ce9822642b43.txt",
+   "fileBlob": "ce9822642b434870af192b486147ff2dfe5c6b33"
   },
   {
    "repo": "oclif/core",
@@ -162,7 +178,9 @@
    "form": "block",
    "guard": "if (arg.options && !arg.options.includes(input)) {\n        throw new ArgInvalidOptionError(arg, input)\n      }",
    "license": "MIT",
-   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61",
+   "fixture": "oclif__core-ce9822642b43.txt",
+   "fileBlob": "ce9822642b434870af192b486147ff2dfe5c6b33"
   },
   {
    "repo": "pnpm/pnpm",
@@ -177,7 +195,9 @@
    "form": "block",
    "guard": "if (!/^[a-f0-9]{40}$/.test(config.revision)) {\n    throw new Error('rustfmt.json must pin a full Git commit SHA')\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-7b1f8e000c0f.txt",
+   "fileBlob": "7b1f8e000c0fd4e598c0e3f2fb2f3eaef444de60"
   },
   {
    "repo": "pnpm/pnpm",
@@ -191,21 +211,9 @@
    "form": "one-line",
    "guard": "if (value === '' || value.startsWith('-')) throw new Error(`--base needs a revision, not '${value}'`)",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
-  },
-  {
-   "repo": "pnpm/pnpm",
-   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
-   "path": "pnpm11/__utils__/test-ipc-server/src/TestIpcServer.ts",
-   "sha256": "adfd53488a61d05328eaff7eae5bab771e3eb7e375a5c6ca2e73556770d6a2b9",
-   "params": [
-    "arg"
-   ],
-   "line": 177,
-   "form": "block",
-   "guard": "if (arg.length === 0 || !/^[\\w\\-./\\\\:@ +=,~]+$/.test(arg) || arg.endsWith('\\\\')) {\n    throw new Error(`Unsupported character in shell argument: ${JSON.stringify(arg)}`)\n  }",
-   "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-aab006931489.txt",
+   "fileBlob": "aab006931489a0f37193df40dc89410e5945f2c6"
   },
   {
    "repo": "pnpm/pnpm",
@@ -220,7 +228,9 @@
    "form": "block",
    "guard": "if (value.includes('\\n') || value.includes('\\r') || value.includes('\\0')) {\n    throw new PnpmError('BAD_GITHUB_ACTIONS_ENVIRONMENT_VALUE', `${name} cannot contain newline or NUL characters`)\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-7a4b1d65b6d7.txt",
+   "fileBlob": "7a4b1d65b6d794e3fbbaa70d846429a7d49dc474"
   },
   {
    "repo": "pnpm/pnpm",
@@ -234,7 +244,9 @@
    "form": "block",
    "guard": "if (!spec.startsWith('@')) {\n    throw new PnpmError('TEAM_INVALID_SCOPE',\n      `Team spec must start with @scope, got \"${spec}\". Use @scope or @scope:team format.`)\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-166d9c63536e.txt",
+   "fileBlob": "166d9c63536e437aa3c241bb7171533d2024dbbb"
   },
   {
    "repo": "pnpm/pnpm",
@@ -248,7 +260,9 @@
    "form": "block",
    "guard": "if (!longest.startsWith('//')) {\n    throw new RangeError(`The string ${JSON.stringify(longest)} is not a valid registry config key`)\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-2d254872a0f6.txt",
+   "fileBlob": "2d254872a0f6cd886584e3e05a4bbba0b4a935b3"
   },
   {
    "repo": "pnpm/pnpm",
@@ -263,7 +277,9 @@
    "form": "block",
    "guard": "if (spec.id.startsWith('file:')) {\n    throw new PnpmError('LINKED_PKG_DIR_NOT_FOUND', `Could not install from \"${spec.fetchSpec}\" as it does not exist.`)\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-fb3b02870815.txt",
+   "fileBlob": "fb3b02870815a68e5ce7749c9725510a9e3b6fa5"
   },
   {
    "repo": "pnpm/pnpm",
@@ -277,7 +293,9 @@
    "form": "block",
    "guard": "if (!/^[a-z]:$/i.test(drive)) {\n    throw new Error(`${drive} is not a valid disk on Windows`)\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-8d6bc1566be8.txt",
+   "fileBlob": "8d6bc1566be87931f2cc6cd40fb2f9f326f968ec"
   },
   {
    "repo": "pnpm/pnpm",
@@ -291,7 +309,9 @@
    "form": "block",
    "guard": "if (typeof integrity !== 'string' || !integrity.startsWith('sha512-')) {\n    throw new Error('Shared artifact blobs require sha512 integrity')\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-fe3564bc975b.txt",
+   "fileBlob": "fe3564bc975b0c0791b65db66c3fd6beb32732a4"
   },
   {
    "repo": "pnpm/pnpm",
@@ -307,7 +327,9 @@
    "form": "block",
    "guard": "if (typeof encoded !== 'string' || (!allowEmpty && encoded.length === 0) || /\\s/.test(encoded)) {\n    throw new Error(`Shared artifact ${label} is not valid base64`)\n  }",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-fe3564bc975b.txt",
+   "fileBlob": "fe3564bc975b0c0791b65db66c3fd6beb32732a4"
   },
   {
    "repo": "pnpm/pnpm",
@@ -323,7 +345,9 @@
    "form": "one-line",
    "guard": "if (exact.has(path)) throw new Error(`Duplicate shared artifact path ${JSON.stringify(path)}`)",
    "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48"
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fixture": "pnpm__pnpm-5c452c27e26a.txt",
+   "fileBlob": "5c452c27e26a910731dd63425d6f21c442bb9e08"
   },
   {
    "repo": "storybookjs/storybook",
@@ -337,7 +361,9 @@
    "form": "block",
    "guard": "if (!/^#?[0-9A-Fa-f]{6}$/.test(hexColor)) {\n    throw new Error('Invalid hex color. It must be a 6-character hex code.');\n  }",
    "license": "MIT",
-   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0"
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fixture": "storybookjs__storybook-09bd81913203.txt",
+   "fileBlob": "09bd81913203cbfe1b157137ce9d4bf36383c688"
   },
   {
    "repo": "vitejs/vite-plugin-react",
@@ -351,7 +377,9 @@
    "form": "block",
    "guard": "if (props.url.searchParams.has('test-server-error')) {\n    throw new Error('test-server-error!')\n  }",
    "license": "MIT",
-   "licenseSha256": "f77a743a6b87e3bd1435953073f446de1b8d0da0ff24e17d1194e1b749333d27"
+   "licenseSha256": "f77a743a6b87e3bd1435953073f446de1b8d0da0ff24e17d1194e1b749333d27",
+   "fixture": "vitejs__vite-plugin-react-8ec4ecdcaaf0.txt",
+   "fileBlob": "8ec4ecdcaaf008aaea34e06bfb5e4841cf2538c5"
   }
  ]
 }

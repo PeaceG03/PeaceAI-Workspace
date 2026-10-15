@@ -7,11 +7,11 @@
  "engine": "peaceai/lib/method-guard.ts",
  "foldsIn": "#149 (regex-literal .test(param), no-arg getTime/trim)",
  "evidence": {
-  "examples": 22,
+  "examples": 21,
   "repos": 5,
   "method": "AST scan of the pinned example-only repos (no training-corpus overlap; M60)",
   "origin": "external-licensed",
-  "bar": 5,
+  "bar": 10,
   "qualifies": true
  }
 }
