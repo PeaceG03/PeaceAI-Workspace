@@ -543,9 +543,12 @@ jobs:
           # bin/no-candidate-comment.ts runs scanText over the full body; anything flagged drops the reason.
           PEACEAI_BODY_FILE="$RUNNER_TEMP/no-candidate.md" ./node_modules/.bin/tsx peaceai/bin/no-candidate-comment.ts
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/no-candidate.md"
+          touch "$RUNNER_TEMP/no-candidate-posted"
       - name: Fallback no-candidate comment (fixed text) if checkout, install or the reason step failed
         if: always() && env.NL_REASON == '' && env.NO_CANDIDATES == 'true' && steps.why_post.outcome != 'success'
         run: |
+          # Skip when the reason comment was already posted (marker written right after a successful post).
+          if [ -e "$RUNNER_TEMP/no-candidate-posted" ]; then exit 0; fi
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry."
       - name: Say the parser was unsure, with the supported phrasings (fixed text; leak-checked)
         if: env.NL_REASON != '' && env.NO_CANDIDATES == 'true'

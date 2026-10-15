@@ -10,7 +10,7 @@ import { applyRule } from "../lib/learned.ts";
 import { unknownNames, type Refusal } from "../lib/learned-guard.ts";
 import { nlDecision } from "../lib/nlparse.ts";
 import { scanText } from "../lib/leak.ts";
-import { cleanRefusals, formatRefusals, NO_CANDIDATE_TEXT, noCandidateComment } from "../lib/refusal-reason.ts";
+import { allowedName, cleanRefusals, formatRefusals, NO_CANDIDATE_TEXT, noCandidateComment } from "../lib/refusal-reason.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const dir = join(repo, "peaceai/rules/learned");
@@ -68,23 +68,71 @@ test("unknownNames: free names only (no property names, no allowed built-ins), s
 
 test("reasons never echo secrets typed into the issue condition, or arbitrary text", () => {
   // Fake credentials typed into the ISSUE CONDITION itself (the only user text a reason can echo).
-  const GHP = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
-  const AKIA = "AKIA" + "IOSFODNN7EXAMPLE";
-  const HEX = "deadbeef".repeat(5);
-  const r = refusals(`${GHP} < 0 || ${AKIA} > barCount || limit < 0`);
-  assert.equal(r.made, 0);
-  assert.equal(r.line, "public-throw-guard-top-v1=unsafe_condition: limit", "secret-looking names dropped, plain names kept");
-  const only = refusals(`${GHP} < 0 || ${AKIA} > barCount`);
-  assert.equal(only.line, "public-throw-guard-top-v1=unsafe_condition", "all names secret-looking: the code alone");
-  for (const tok of [GHP, AKIA, "gho_x1", "ghs_x1", "ghu_x1", "ghr_x1", "github_pat_x1", "xoxb_1", HEX]) {
-    assert.equal(cleanRefusals([{ id: "x-v1", reason: `unsafe_condition: ${tok}` }])[0]!.reason, "unsafe_condition", tok);
-    assert.equal(noCandidateComment(`x-v1=unsafe_condition: ${tok}`), NO_CANDIDATE_TEXT, tok);
+  // Every bypass Auditor found on 1103251 must print the code alone; `limit` on its own stays printed.
+  const CODE = "public-throw-guard-top-v1=unsafe_condition";
+  // fake(prefix, body): every fake credential is joined at runtime so no whole token literal is in this file.
+  const fake = (prefix: string, body: string) => [prefix, body].join("");
+  const BODY = fake("A1b2C3d4E5f6", "G7h8I9j0K1l2M3n4O5p6Q7r8");
+  const GHP = fake("gh" + "p_", BODY);
+  const AKIA = fake("AK" + "IA", "IOSFODNN7EXAMPLE");
+  const HEX31 = fake("deadbeefcafebabe", "0123456789abcde"); // 31 hex chars (one under the old 32-char rule)
+  const HIGH = fake("qZ7xR2mK9vL4pW8n", "B3tY6hJ1cF5dG0sA"); // 32-char high-entropy string
+  assert.equal(HEX31.length, 31);
+  assert.equal(HIGH.length, 32);
+  const T = {
+    akiaLower: fake("ak" + "ia", "iosfodnn7example"),
+    akiaMixed: fake("Ak" + "IA", "IOSFODNN7EXAMPLE"),
+    asia: fake("AS" + "IA", "IOSFODNN7EXAMPLE"),
+    glpatU: fake("gl" + "pat_", "xYz12AbC34dEf56GhI78"),
+    skLive: fake("sk" + "_live_", "51HxYz2eZvKYlo2C"),
+    skProjU: fake("sk" + "_proj_", "aB3dE5gH7jK9mN1pQ3"),
+    npm: fake("np" + "m_", "aB3dE5gH7jK9mN1pQ3sT5vW7"),
+    gDollar: fake("g$" + "hp_", "A1b2C3d4E5f6G7h8"),
+    glpatD: fake("gl" + "pat-", "xYz12AbC34dEf56GhI78"),
+    skProjD: fake("sk" + "-proj-", "aB3dE5gH7jK9mN1pQ3"),
+    xoxbD: fake("xo" + "xb-", "1234-5678-aBcDeFgHiJkL"),
+    gho: fake("gh" + "o_", "x1"), ghPat: fake("git" + "hub_pat_", "x1"), xoxbU: fake("xo" + "xb_", "1"),
+  };
+  const conditions: [string, string][] = [
+    ["31-char hex", `${HEX31} < 0`],
+    ["split ghp,<body>", `ghp < 0 || ${BODY} < 0`],
+    ["lowercase akia", `${T.akiaLower} < 0`],
+    ["mixed-case AkIA", `${T.akiaMixed} < 0`],
+    ["ASIA key", `${T.asia} < 0`],
+    ["glpat_", `${T.glpatU} < 0`],
+    ["sk_live_", `${T.skLive} < 0`],
+    ["sk_proj_", `${T.skProjU} < 0`],
+    ["npm_", `${T.npm} < 0`],
+    ["g$hp_", `${T.gDollar} < 0`],
+    ["glpat- (split)", `${T.glpatD} < 0`],
+    ["sk-proj- (split)", `${T.skProjD} < 0`],
+    ["xoxb- (split)", `${T.xoxbD} < 0`],
+    ["32-char high entropy", `${HIGH} < 0`],
+    ["ghp_ with limit", `${GHP} < 0 || limit < 0`],
+    ["AKIA with limit", `${AKIA} > barCount || limit < 0`],
+  ];
+  const skipped: string[] = [];
+  for (const [what, cond] of conditions) {
+    const d = nlDecision({ title: "[scanner] guard", body: body(cond) }, undefined, kinds, null);
+    if (d.status !== "canonical") { skipped.push(what); continue; } // refused before any rule ran: nothing can be echoed
+    const r = refusals(cond);
+    assert.equal(r.made, 0, what);
+    assert.equal(r.line, CODE, `${what}: code only, got ${r.line}`);
+    const c = noCandidateComment(r.line);
+    assert.deepEqual(scanText(c), [], what);
   }
-  for (const body of [noCandidateComment(r.line), noCandidateComment(only.line)]) {
-    assert.ok(!body.includes(GHP) && !body.includes(AKIA), body);
-    assert.deepEqual(scanText(body), [], "the posted body passes the leak scanner");
+  assert.deepEqual(skipped, [], "every bypass reaches the rule (none hidden by the parser)");
+  // The same tokens handed straight to the sanitizer (covers forms the parser never lets through).
+  for (const tok of [HEX31, HIGH, GHP, BODY, AKIA, ...Object.values(T), "aBCDEfoo", "abcdefghijklmnopqrstuvwxy"]) {
+    for (const reason of [`unsafe_condition: ${tok}`, `unsafe_condition: limit,${tok}`, `unsafe_condition: ghp,${tok}`]) {
+      assert.ok(["unsafe_condition", "refused"].includes(cleanRefusals([{ id: "x-v1", reason }])[0]!.reason), reason); // code only
+      assert.equal(noCandidateComment(`x-v1=${reason}`), NO_CANDIDATE_TEXT, reason);
+    }
   }
-  assert.deepEqual(cleanRefusals([{ id: "x-v1", reason: 'leak: "ghp_abc"\nmore' }, { id: "../etc", reason: "function_not_found" }]), [{ id: "x-v1", reason: "refused" }]);
+  assert.equal(refusals("!Number.isInteger(limit) || limit < 0").line, "public-throw-guard-top-v1=unsafe_condition: limit", "limit still printed");
+  for (const ok of ["limit", "maxBars", "maxBarCountLimit", "aBCDe"]) assert.ok(allowedName(ok), ok);
+  for (const bad of ["Limit", "aBCDEf", "lim1t", "a_b", "abcdefghijklmnopqrstuvwxy", "aBcDeFgHiJkL", "maxBarCountLimitValueX"]) assert.ok(!allowedName(bad), bad);
+  assert.deepEqual(cleanRefusals([{ id: "x-v1", reason: `leak: "${fake("gh" + "p_", "abc")}"\nmore` }, { id: "../etc", reason: "function_not_found" }]), [{ id: "x-v1", reason: "refused" }]);
   assert.equal(formatRefusals([]), "");
   assert.match(noCandidateComment("public-throw-guard-top-v1=unsafe_condition: limit"), /refused it: `public-throw-guard-top-v1=unsafe_condition: limit`\./);
   assert.equal(noCandidateComment("x=`$(id)`"), noCandidateComment(""), "unsafe line dropped");
@@ -103,6 +151,9 @@ test("peace-task wiring: output declared, passed by env (never inlined in run), 
   assert.ok(fb.split("\n- ")[0]!.includes(NO_CANDIDATE_TEXT.replace(/`/g, "\\`")), "fallback posts the fixed text without checkout/npm/tsx");
   const fbRun = fb.slice(fb.indexOf("run: |"), fb.indexOf("\n      - ", 5));
   assert.ok(fbRun.includes("gh issue comment") && !/tsx|npm|node_modules/.test(fbRun), "fallback needs no tooling");
+  const postRun = why.slice(why.indexOf("run: |"), why.indexOf("\n      - ", 5));
+  assert.match(postRun, /--body-file "\$RUNNER_TEMP\/no-candidate\.md"\n\s+touch "\$RUNNER_TEMP\/no-candidate-posted"/, "marker written right after a successful post");
+  assert.ok(fbRun.indexOf('if [ -e "$RUNNER_TEMP/no-candidate-posted" ]; then exit 0; fi') >= 0 && fbRun.indexOf("no-candidate-posted") < fbRun.indexOf("gh issue comment"), "fallback skips when the marker exists");
   const gen = readFileSync(join(repo, "peaceai/bin/generate.ts"), "utf8");
   assert.match(gen, /writeOutput\(\{ rule_refusals: refusalLine \}\)/);
 });
