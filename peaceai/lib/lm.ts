@@ -43,6 +43,13 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
   try {
     const cfg = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
     if (cfg.schema !== "peaceai-lm:v1" || !/^lm-v1-[0-9a-f]{12}$/.test(cfg.version)) return { ok: false, reason: "CONFIG_INVALID" };
+    // M52 (Architect (a)): a two-corpus model loads only when its memcheck recorded both core-free proofs valid for
+    // exactly the manifests the model says it trained on.
+    if ("trainedOn" in cfg) {
+      const t = trainedOnShas(cfg);
+      const d = (mc as { coreFreeProofs?: { ok?: boolean; trainedOn?: unknown } }).coreFreeProofs;
+      if (!t || d?.ok !== true || JSON.stringify(d.trainedOn) !== JSON.stringify(t)) return { ok: false, reason: "MEMCHECK_FAILED" };
+    }
     return { ok: true, version: cfg.version };
   } catch { return { ok: false, reason: "CONFIG_INVALID" }; }
 }
@@ -230,6 +237,38 @@ export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manif
     if (typeof f.coreNearMax !== "number" || !(f.coreNearMax >= 0 && f.coreNearMax < t)) return { ok: false, reason: "CORE_NEAR" };
   }
   return { ok: true };
+}
+
+/** M52 (Architect (a)): a model trained on two corpora (pretrain + fine-tune) records both manifest sha256 values in
+ *  config.json as trainedOn: { pretrainManifestSha256, finetuneManifestSha256 }. null when absent or malformed. */
+export const COREFREE_STAGES = ["pretrain", "finetune"] as const;
+export type CoreFreeStage = (typeof COREFREE_STAGES)[number];
+export function trainedOnShas(cfg: unknown): Record<CoreFreeStage, string> | null {
+  const t = (cfg as { trainedOn?: Record<string, unknown> } | null)?.trainedOn;
+  if (!t || typeof t !== "object" || Array.isArray(t)) return null;
+  if (Object.keys(t).sort().join(",") !== "finetuneManifestSha256,pretrainManifestSha256") return null;
+  const p = t.pretrainManifestSha256, f = t.finetuneManifestSha256;
+  if (typeof p !== "string" || typeof f !== "string" || !/^[0-9a-f]{64}$/.test(p) || !/^[0-9a-f]{64}$/.test(f) || p === f) return null;
+  return { pretrain: p, finetune: f };
+}
+export interface CorpusForProof { manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string; docSha256: ReadonlyMap<unknown, string> }
+/** M52: both per-corpus proofs (corefree-proof-<stage>.json) are required. Each must name its own corpus, be for
+ *  the manifest sha the model trained on (config.json trainedOn), match the corpus given here, and be valid. Any
+ *  missing proof, sha mismatch or swapped proof blocks promotion (fail closed). */
+export function dualCoreFreeDecision(cfg: unknown, proofs: Record<CoreFreeStage, unknown>, corpora: Record<CoreFreeStage, CorpusForProof>): { ok: boolean; reasons: string[]; trainedOn: Record<CoreFreeStage, string> | null } {
+  const t = trainedOnShas(cfg);
+  if (!t) return { ok: false, reasons: ["NO_TRAINED_ON"], trainedOn: null };
+  const modelId = String((cfg as { version?: unknown }).version ?? "");
+  const reasons: string[] = [];
+  for (const st of COREFREE_STAGES) {
+    const p = proofs[st] as { corpus?: unknown } | null | undefined, c = corpora[st];
+    if (p === null || p === undefined || typeof p !== "object") { reasons.push(`${st}:MISSING_PROOF`); continue; }
+    if (p.corpus !== st) { reasons.push(`${st}:SWAPPED_PROOF`); continue; }
+    if (!c || c.manifestSha256 !== t[st]) { reasons.push(`${st}:CORPUS_NOT_TRAINED_ON`); continue; }
+    const v = validCoreFreeProof(p, { modelId, manifest: c.manifest, manifestSha256: t[st], docSha256: c.docSha256 });
+    if (!v.ok) reasons.push(`${st}:${v.reason}`);
+  }
+  return { ok: reasons.length === 0, reasons, trainedOn: t };
 }
 
 // ---- where the model may run
