@@ -1,8 +1,8 @@
 // M49: build the fine-tune corpus (docs.jsonl + manifest.jsonl, train.py format) from local clones of Peace's
-// public repos. Usage: ft-pairs.ts <out dir> <repo>=<clone dir>@<head sha> ...  Prints counts only.
+// public repos: all PeaceG03 public commits (Peace, Builder and agents share the noreply identity). Usage: ft-pairs.ts <out dir> <repo>=<clone dir>@<head sha> ...  Prints counts only.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { FT_AUTHOR, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
+import { FT_AUTHOR, FT_SOURCE_LABEL, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
 const rd = (p: string) => JSON.parse(readFileSync(new URL(`../model/${p}`, import.meta.url), "utf8"));
 const H = rd("heldout.json"), CX = rd("heldout-c-excluded.json"), C = rd("heldout-c.json"), T = rd("heldout-c-tasks.json"), S = rd("safety-tool-sha256.json");
 const commits = new Set<string>([...["A", "B"].flatMap((k) => (H.sets[k] ?? []).map((e: { repo: string; sha: string }) => `${e.repo}@${e.sha}`)), ...CX.commits.map((e: { repo: string; sha: string }) => `${e.repo}@${e.sha}`)]);
@@ -31,5 +31,6 @@ for (const s of specs) {
 }
 mkdirSync(out!, { recursive: true });
 writeFileSync(`${out}/docs.jsonl`, docs.join("\n") + "\n"); writeFileSync(`${out}/manifest.jsonl`, man.join("\n") + "\n");
+console.log(`ft-pairs source: ${FT_SOURCE_LABEL}`);
 console.log(`ft-pairs docs=${n} train=${counts.train ?? 0} heldout=${counts.heldout ?? 0}`);
 if (!counts.train || !counts.heldout) { console.log("ft-pairs: empty split, refused"); process.exit(1); }

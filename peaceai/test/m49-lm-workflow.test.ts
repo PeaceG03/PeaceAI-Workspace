@@ -7,7 +7,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { FT_AUTHOR, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
+import { FT_AUTHOR, FT_SOURCE_LABEL, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
+import { isSafetyToolFile } from "../lib/extcorpus.ts";
 const repo = join(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(join(repo, p), "utf8");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -34,6 +35,19 @@ test("fine-tune pairs refuse: other authors, merges, held-out commits/paths/cont
   assert.equal(pairsOf({ ...C, files: [{ path: "src/x.ts", before: null, after: A }] }, NONE).length, 0, "new files carry no before-body");
 });
 
+test("fine-tune pairs refuse every version of a safety-tool file, by path as well as by content sha (Auditor #178 M3)", () => {
+  const W = { ...C, repo: "PeaceG03/PeaceAI-Workspace" };
+  for (const p of ["peaceai/lib/leak.ts", "peaceai/bin/leak-scan.ts", "peaceai/bin/core-scan.ts", "peaceai/lib/trigger.ts"]) {
+    assert.ok(isSafetyToolFile(W.repo, p), p);
+    assert.equal(pairsOf({ ...W, files: [{ path: p, before: B, after: A }] }, NONE).length, 0, `${p}: new, unlisted content still refused`);
+  }
+  assert.equal(pairsOf({ ...W, files: [{ path: "src/x.ts", before: B, after: A }] }, NONE).length, 1, "a normal file still yields a pair");
+  assert.equal(pairsOf({ ...W, files: [{ path: "src/x.ts", before: B, after: A }] }, { ...NONE, contentSha256: new Set([sha(A)]) }).length, 0, "content sha refusal still applies");
+  const S = JSON.parse(read("peaceai/model/safety-tool-sha256.json"));
+  assert.ok(S.sha256.length > 0 && read("peaceai/bin/ft-pairs.ts").includes("...S.sha256"), "the CLI also refuses safety-tool content shas");
+  assert.match(FT_SOURCE_LABEL, /^all PeaceG03 public commits/);
+});
+
 test("ft-pairs CLI fails closed: reads every exclusion list, A/B paths included", () => {
   const s = read("peaceai/bin/ft-pairs.ts");
   for (const f of ["heldout.json", "heldout-c-excluded.json", "heldout-c.json", "heldout-c-tasks.json", "safety-tool-sha256.json"]) assert.ok(s.includes(`"${f}"`), f);
@@ -43,24 +57,73 @@ test("ft-pairs CLI fails closed: reads every exclusion list, A/B paths included"
 const WF = read(".github/workflows/peace-lm-train-m49.yml");
 test("workflow: dispatch on main only, chained parts, no artifacts or caches, Results-only with path prefixes, no latest.json", () => {
   assert.match(WF, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m);
-  assert.equal((WF.match(/if: github\.ref == 'refs\/heads\/main'/g) ?? []).length, 4);
+  assert.equal((WF.match(/if: github\.ref == 'refs\/heads\/main'/g) ?? []).length, 5);
   assert.match(WF, /  pretrain-2:\n(?:.*\n){0,3}    needs: pretrain-1\n/); assert.match(WF, /  pretrain-3:\n(?:.*\n){0,3}    needs: pretrain-2\n/);
   assert.match(WF, /    needs: pretrain-3\n/);
   assert.match(WF, /group: peace-lm-train\n  cancel-in-progress: false/, "shares the training lock with the M37 workflow");
   assert.ok(!/upload-artifact|actions\/cache|latest\.json\s*>|>\s*.*latest\.json|cp .*latest\.json/.test(WF));
   assert.equal((WF.match(/sha256sum -c --quiet SHA256SUMS/g) ?? []).length, 3, "every restore verifies the chunks");
-  assert.equal((WF.match(/landing refused: path outside/g) ?? []).length, 4, "every Results write checks its prefix");
-  assert.equal((WF.match(/test ! -e "\$d"/g) ?? []).length, 4, "append-only: never overwrite");
+  assert.equal((WF.match(/landing refused: path outside/g) ?? []).length, 5, "every Results write checks its prefix");
+  assert.equal((WF.match(/test ! -e "\$d"/g) ?? []).length, 5, "append-only: never overwrite");
   assert.ok(!/git -C "\$RESULTS_DIR" rm|rm -rf "\$RESULTS_DIR/.test(WF), "nothing deleted in Results");
   assert.match(WF, /ext-manifest-check\.ts "\$RUNNER_TEMP\/corpus" pretrain/);
   for (const u of WF.matchAll(/uses: (\S+)/g)) assert.match(u[1]!, /@[0-9a-f]{40}$/, "actions pinned by sha");
 });
 
-test("workflow: evals are non-fatal and cover set C loss, set C tasks (#177 grader) and sets A/B", () => {
-  const ev = WF.slice(WF.indexOf("- name: Evals"), WF.indexOf("- name: Land the model"));
-  assert.ok(!/set -e/.test(ev)); assert.match(ev, /\n          exit 0\n/);
-  for (const s of ["eval_c.py", "gen_c.py", "setc-grade.ts", "eval_ab.py"]) assert.ok(ev.includes(s), s);
-  assert.match(ev, /npm ci --ignore-scripts/, "Peace repos install without lifecycle scripts");
+function jobs(wf: string): Record<string, string> {
+  const out: Record<string, string> = {}; const body = wf.slice(wf.indexOf("\njobs:\n") + 7);
+  const parts = body.split(/^  (?=[\w-]+:\n)/m).filter(Boolean);
+  for (const p of parts) out[p.slice(0, p.indexOf(":"))] = p;
+  return out;
+}
+const J = jobs(WF);
+const steps = (job: string) => J[job]!.split(/^      - /m).slice(1);
+
+test("workflow (Auditor #178 H1): the model lands before any eval; generated code runs only in a job with no environment and no secrets", () => {
+  assert.deepEqual(Object.keys(J), ["pretrain-1", "pretrain-2", "pretrain-3", "finetune-land", "eval-ab"]);
+  const L = J["finetune-land"]!, E = J["eval-ab"]!;
+  assert.ok(L.indexOf("- name: Land the model") < L.indexOf("eval_c.py") && L.indexOf("- name: Land the model") < L.indexOf("gen_c.py") && L.indexOf("- name: Land the model") < L.indexOf("eval_ab.py"));
+  assert.ok(!/tsx", "--test|tsx --test|npm ci --ignore-scripts --no-audit --no-fund --loglevel=error\) \|\|/.test(L.slice(L.indexOf("- name: Fine-tune corpus"))), "no Peace repo install or test run in the landing job");
+  assert.match(L, /eval_ab\.py --gen /); assert.ok(!/eval_ab\.py --run/.test(L));
+  assert.match(E, /needs: finetune-land/); assert.match(E, /eval_ab\.py --run /);
+  assert.ok(!/environment:|secrets\.|DEPLOY_KEY|with-deploy-key|results-write|weights|\$RUNNER_TEMP\/model/.test(E), "eval-ab: no environment, no secret, no model");
+  assert.match(E, /permissions:\n      contents: read\n/); assert.match(E, /persist-credentials: false/);
+  assert.match(E, /npm ci --ignore-scripts/, "Peace repos install without lifecycle scripts");
+  for (const s of ["eval_c.py", "gen_c.py", "setc-grade.ts"]) assert.ok(L.includes(s), s);
+  for (const st of [...steps("finetune-land"), ...steps("eval-ab")].filter((x) => /eval_c|gen_c|eval_ab/.test(x))) { assert.ok(!/set -e/.test(st)); assert.match(st, /\n          exit 0\n/, "evals are non-fatal"); }
+});
+
+test("workflow (Auditor #178 H1): every DEPLOY_KEY step is preceded by a checkout/diff/landing-script hash check", () => {
+  const pins = /LANDING_SHA256: \|-\n((?:    [0-9a-f]{64}  \S+\n)+)/.exec(WF)![1]!.trim().split("\n").map((l) => l.trim().split(/\s+/));
+  assert.deepEqual(pins.map((p) => p[1]).sort(), ["peaceai/bin/results-write.sh", "peaceai/bin/with-deploy-key.sh"]);
+  for (const [h, f] of pins) assert.equal(sha(read(f!)), h, `${f} changed: re-review and re-pin LANDING_SHA256`);
+  let keySteps = 0;
+  for (const job of Object.keys(J)) {
+    const st = steps(job);
+    st.forEach((x, i) => {
+      if (!/DEPLOY_KEY/.test(x)) return;
+      keySteps++;
+      const prev = st[i - 1];
+      assert.ok(prev && /^name: Verify the checkout and the landing scripts/.test(prev), `${job}: key step not immediately preceded by the verify step: ${x.split("\n")[0]}`);
+      for (const k of ['test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', "git diff --exit-code", "git status --porcelain --untracked-files=all", 'sha256sum -c --quiet -']) assert.ok(prev!.includes(k), `${job}: ${k}`);
+    });
+  }
+  assert.equal(keySteps, 8);
+});
+
+test("workflow (Auditor #178 H2): a failed set C checkout cannot kill the job; the model lands on success() || failure() if config.json exists", () => {
+  assert.ok(!/\|\| exit 1; done/.test(WF), "no exit 1 inside the checkout loop");
+  assert.match(WF, /checkout_c\(\) \{ local d; for d in "\$RUNNER_TEMP"\/csrc\/\*\/; do git -C "\$d" checkout -q FETCH_HEAD \|\| return 1; done; \}/);
+  const land = steps("finetune-land").find((x) => x.startsWith("name: Land the model"))!;
+  assert.match(land, /\n        if: \(success\(\) \|\| failure\(\)\) && steps\.landverify\.outcome == 'success'\n/);
+  assert.match(land, /test -f "\$MODEL_DIR\/config\.json" \|\| \{ echo "no trained model/);
+  const v = steps("finetune-land").find((x) => /id: landverify/.test(x))!;
+  assert.match(v, /if: success\(\) \|\| failure\(\)/);
+});
+
+test("workflow (Auditor #178 M4): restores run only in jobs that hold the key for their own landing; no read-only key needed", () => {
+  for (const job of Object.keys(J)) if (/Restore/.test(J[job]!)) assert.ok(/environment: peaceai-results/.test(J[job]!) && /results-write\.sh/.test(J[job]!), job);
+  assert.ok(!/Restore/.test(J["eval-ab"]!));
 });
 
 test("config: ctx 1024, 3 parts that fit the 4 h cap, fine-tune knobs; parts cover the step total", () => {

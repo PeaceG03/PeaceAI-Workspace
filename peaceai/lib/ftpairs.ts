@@ -1,9 +1,12 @@
-// M49 fine-tune stage data: function-body pairs from Peace-authored commits (this includes Builder patch-flow
-// landings, which carry Peace's noreply identity) in Peace's public repos. Pure selection logic; the CLI does git I/O.
+// M49 fine-tune stage data: function-body pairs from every public commit under the PeaceG03 noreply identity in
+// Peace's public repos. That identity is shared by Peace, Builder patch-flow landings and other agent commits, so the
+// data is labelled "all PeaceG03 public commits", not "Peace-authored". Pure selection logic; the CLI does git I/O.
 import ts from "typescript";
 import { createHash } from "node:crypto";
+import { isSafetyToolFile } from "./extcorpus.ts";
 
 export const FT_SCHEMA = "peaceai-ft-pairs:v1";
+export const FT_SOURCE_LABEL = "all PeaceG03 public commits (Peace, Builder and agent commits under the PeaceG03 noreply identity)";
 export const FT_AUTHOR = "301894882+PeaceG03@users.noreply.github.com";
 export const FT_MAX_BODY_CHARS = 4000;
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -39,6 +42,7 @@ export function pairsOf(c: FtCommit, ex: FtExclusions): FtDoc[] {
   for (const f of c.files) {
     if (!/\.(ts|mts)$/.test(f.path) || f.path.endsWith(".d.ts") || isTestPath(f.path) || f.before === null) continue;
     if (ex.paths.has(`${c.repo}:${f.path}`)) continue;
+    if (isSafetyToolFile(c.repo, f.path)) continue; // every version of a safety tool, not just the known shas (Auditor #178 M3)
     if (ex.contentSha256.has(sha(f.after)) || ex.contentSha256.has(sha(f.before))) continue;
     const a = bodies(f.path, f.before), b = bodies(f.path, f.after);
     for (const [name, body] of b) {

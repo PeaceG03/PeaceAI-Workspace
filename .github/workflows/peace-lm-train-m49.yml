@@ -1,11 +1,14 @@
 name: peace-lm-train-m49
 
 # M49 (Architect-approved plan): chained pretrain (3 resumed parts, each under the 4 h train cap), then a fine-tune
-# stage on Peace-authored function-body pairs, then evals (set C v2 loss per byte, set A/B task success, set C v2 task
+# stage on function-body pairs from all PeaceG03 public commits, then evals (set C v2 loss per byte, set A/B task success, set C v2 task
 # success on the #176 tasks graded by #177). Free GitHub-hosted runners only. Nothing about the model reaches this
 # public repository: no artifacts, no caches, counts-only logs. Between parts the work dir (weights + optimizer state)
 # moves only through the private Results repo (runs/lm-work/<run id>/part-N/, append-only, nothing deleted). The final
 # model lands in Results without latest.json, so every loader refuses it until the box memcheck passes. No promotion.
+# The model lands before any eval. Model-generated code is only ever executed in the eval-ab job, which has no
+# environment, no secrets and no model (it gets only the generated candidate bodies). Every step that uses
+# DEPLOY_KEY is preceded by a check that the checkout is GITHUB_SHA, unmodified, and the landing scripts match pins.
 on:
   workflow_dispatch:
 
@@ -17,6 +20,10 @@ concurrency:
 
 env:
   CFG: peaceai/model/ext-train-m49.json
+  # Pinned hashes of the only scripts that ever touch DEPLOY_KEY (re-pinned with the m49 test when they change).
+  LANDING_SHA256: |-
+    bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
 
 jobs:
   pretrain-1:
@@ -53,6 +60,13 @@ jobs:
             --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
           grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Save the work dir to Results (append-only; chunks under 100 MB, sha256-listed)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
@@ -96,6 +110,13 @@ jobs:
         run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus"
       - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
         run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Restore the previous part's work dir from Results (parts 2 and 3)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
@@ -118,6 +139,13 @@ jobs:
             --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
           grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Save the work dir to Results (append-only; chunks under 100 MB, sha256-listed)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
@@ -161,6 +189,13 @@ jobs:
         run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus"
       - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
         run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Restore the previous part's work dir from Results (parts 2 and 3)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
@@ -183,6 +218,13 @@ jobs:
             --max-seconds "$(jq -r .chain.maxSecondsPerPart "$CFG")" > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
           grep -E '^(params=|tokens |resumed |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Save the work dir to Results (append-only; chunks under 100 MB, sha256-listed)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
@@ -201,8 +243,8 @@ jobs:
               done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
           rm -rf "$RUNNER_TEMP/work"
 
-  finetune-eval-land:
-    name: fine-tune, evaluate, land (no latest.json)
+  finetune-land:
+    name: fine-tune, land (no latest.json), static evals
     needs: pretrain-3
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -210,6 +252,8 @@ jobs:
     environment: peaceai-results
     permissions:
       contents: read
+    outputs:
+      ab_candidates: ${{ steps.abgen.outputs.ab_candidates }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -222,6 +266,13 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Restore pretrain part 3 from Results
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
@@ -234,7 +285,7 @@ jobs:
           (cd "$RUNNER_TEMP/res/$prev" && sha256sum -c --quiet SHA256SUMS)
           mkdir -p "$RUNNER_TEMP/work"; cat "$RUNNER_TEMP/res/$prev"/work.tar.part-* | tar -x -C "$RUNNER_TEMP/work"
           rm -rf "$RUNNER_TEMP/res"
-      - name: Fine-tune corpus (Peace-authored function-body pairs; A/B, C, #176 and safety-tool content excluded)
+      - name: Fine-tune corpus (function-body pairs from all PeaceG03 public commits; A/B, C, #176 and safety-tool files excluded by path and sha)
         run: |
           set -euo pipefail
           for r in $(jq -r '.finetune.repos[]' "$CFG"); do
@@ -259,25 +310,23 @@ jobs:
           cp "$RUNNER_TEMP/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
           rm -rf "$RUNNER_TEMP/work" "$RUNNER_TEMP/ftwork" "$RUNNER_TEMP/ft"
           jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
-      - name: Evals (NON-FATAL so a trained model is never lost; aggregate counts only)
+      - name: Verify the checkout and the landing scripts before the key is used
+        id: landverify
+        if: success() || failure()
         run: |
-          py="$RUNNER_TEMP/venv/bin/python"; M="$RUNNER_TEMP/model"
-          if ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c \
-            && for d in "$RUNNER_TEMP"/csrc/*/; do git -C "$d" checkout -q FETCH_HEAD || exit 1; done \
-            && "$py" peaceai/model/eval_c.py --model "$M" --corpus "$RUNNER_TEMP/setc" --max-bytes 4000000 --threads 4 > "$M/eval-setc-v2.txt"; then cat "$M/eval-setc-v2.txt"; else echo "set C v2 loss eval FAILED (non-fatal)"; fi
-          if "$py" peaceai/model/gen_c.py --model "$M" --ext "$RUNNER_TEMP/csrc" --out "$RUNNER_TEMP/c-pred.jsonl" \
-            && ./node_modules/.bin/tsx peaceai/bin/setc-grade.ts "$RUNNER_TEMP/c-pred.jsonl" "$RUNNER_TEMP/csrc" > "$M/eval-setc-tasks.txt"; then cat "$M/eval-setc-tasks.txt"; else echo "set C task eval FAILED (non-fatal)"; fi
-          ok=1; for r in PeaceAI-Workspace PeaceSTOCKS; do
-            git clone --quiet "https://github.com/PeaceG03/$r.git" "$RUNNER_TEMP/ab/$r" && (cd "$RUNNER_TEMP/ab/$r" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error) || ok=0
-          done
-          if [ $ok = 1 ] && "$py" peaceai/model/eval_ab.py --model "$M" --clones "$RUNNER_TEMP/ab" --node "$(command -v node)" --tsc "$PWD/node_modules/typescript" > "$M/eval-ab.txt"; then cat "$M/eval-ab.txt"; else echo "set A/B task eval FAILED (non-fatal)"; fi
-          rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" "$RUNNER_TEMP/ab" "$RUNNER_TEMP/c-pred.jsonl"
-          exit 0
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
       - name: Land the model in Results only (no latest.json; refused until memcheck PASS; no promotion)
+        if: (success() || failure()) && steps.landverify.outcome == 'success'
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
           MODEL_DIR: ${{ runner.temp }}/model
         run: |
+          set -euo pipefail
+          test -f "$MODEL_DIR/config.json" || { echo "no trained model (config.json missing): nothing to land"; exit 1; }
           ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M49 LM pretrain+finetune (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               v=$(jq -r .version "$MODEL_DIR/config.json")
@@ -289,4 +338,75 @@ jobs:
               while IFS= read -r name; do [ -z "$name" ] && continue
                 if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi
               done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
-          rm -rf "$RUNNER_TEMP/model"
+      - name: Static evals after landing (NON-FATAL; parse and inference only, nothing executed; aggregate counts only)
+        id: static
+        run: |
+          py="$RUNNER_TEMP/venv/bin/python"; M="$RUNNER_TEMP/model"; E="$RUNNER_TEMP/evals"; mkdir -p "$E"
+          test -f "$M/config.json" || { echo "no model: evals skipped"; exit 0; }
+          checkout_c() { local d; for d in "$RUNNER_TEMP"/csrc/*/; do git -C "$d" checkout -q FETCH_HEAD || return 1; done; }
+          if ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c && checkout_c \
+            && "$py" peaceai/model/eval_c.py --model "$M" --corpus "$RUNNER_TEMP/setc" --max-bytes 4000000 --threads 4 > "$E/eval-setc-v2.txt"; then cat "$E/eval-setc-v2.txt"; else echo "set C v2 loss eval FAILED (non-fatal)"; echo FAILED > "$E/eval-setc-v2.txt"; fi
+          if "$py" peaceai/model/gen_c.py --model "$M" --ext "$RUNNER_TEMP/csrc" --out "$RUNNER_TEMP/c-pred.jsonl" \
+            && ./node_modules/.bin/tsx peaceai/bin/setc-grade.ts "$RUNNER_TEMP/c-pred.jsonl" "$RUNNER_TEMP/csrc" > "$E/eval-setc-tasks.txt"; then cat "$E/eval-setc-tasks.txt"; else echo "set C task eval FAILED (non-fatal)"; echo FAILED > "$E/eval-setc-tasks.txt"; fi
+          rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" "$RUNNER_TEMP/c-pred.jsonl"
+          exit 0
+      - name: Set A/B candidate bodies (NON-FATAL; inference and parsing only; tests run in the secret-free eval-ab job)
+        id: abgen
+        run: |
+          py="$RUNNER_TEMP/venv/bin/python"; M="$RUNNER_TEMP/model"
+          test -f "$M/config.json" || { echo "no model: A/B generation skipped"; exit 0; }
+          ok=1; for r in PeaceAI-Workspace PeaceSTOCKS; do git clone --quiet "https://github.com/PeaceG03/$r.git" "$RUNNER_TEMP/ab/$r" || ok=0; done
+          if [ $ok = 1 ] && "$py" peaceai/model/eval_ab.py --gen "$RUNNER_TEMP/ab-cands.jsonl" --model "$M" --clones "$RUNNER_TEMP/ab" --node "$(command -v node)" --tsc "$PWD/node_modules/typescript"; then
+            b64=$(gzip -9c "$RUNNER_TEMP/ab-cands.jsonl" | base64 -w0)
+            if [ "${#b64}" -le 900000 ]; then echo "ab_candidates=$b64" >> "$GITHUB_OUTPUT"; echo "A/B candidates: ${#b64} bytes"; else echo "A/B candidates too large (${#b64}); eval-ab will report FAILED"; fi
+          else echo "set A/B generation FAILED (non-fatal)"; fi
+          rm -rf "$RUNNER_TEMP/ab" "$RUNNER_TEMP/ab-cands.jsonl" "$RUNNER_TEMP/model"
+          exit 0
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Record the static eval counts in Results (append-only)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          EVALS: ${{ runner.temp }}/evals
+        run: |
+          set -euo pipefail
+          test -d "$EVALS" || { echo "no eval counts to record"; exit 0; }
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M49 LM static eval counts (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              d="$RESULTS_DIR/runs/lm-evals/$GITHUB_RUN_ID"; test ! -e "$d"; mkdir -p "$d"; cp "$EVALS"/*.txt "$d"/
+              git -C "$RESULTS_DIR" add -A
+              prefix="runs/lm-evals/$GITHUB_RUN_ID/"
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside $prefix"; exit 1; fi
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+
+  eval-ab:
+    name: set A/B task success (no environment, no secrets, no model)
+    needs: finetune-land
+    if: github.ref == 'refs/heads/main' && needs.finetune-land.outputs.ab_candidates != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Run each set A/B commit's tests with the candidate bodies (NON-FATAL; aggregate counts only)
+        env:
+          CANDS: ${{ needs.finetune-land.outputs.ab_candidates }}
+        run: |
+          printf '%s' "$CANDS" | base64 -d | gunzip > "$RUNNER_TEMP/ab-cands.jsonl" || { echo "set A/B candidates unreadable: FAILED (non-fatal)"; exit 0; }
+          ok=1; for r in PeaceAI-Workspace PeaceSTOCKS; do
+            git clone --quiet "https://github.com/PeaceG03/$r.git" "$RUNNER_TEMP/ab/$r" && (cd "$RUNNER_TEMP/ab/$r" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error) || ok=0
+          done
+          if [ $ok = 1 ] && python3 peaceai/model/eval_ab.py --run "$RUNNER_TEMP/ab-cands.jsonl" --clones "$RUNNER_TEMP/ab" --node "$(command -v node)"; then :; else echo "set A/B task eval FAILED (non-fatal)"; fi
+          exit 0

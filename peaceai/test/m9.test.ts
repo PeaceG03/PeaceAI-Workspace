@@ -422,7 +422,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   }
 });
 
-const LM_TRAIN_M49_WORKFLOW_SHA256 = "e92e31a7eff45b4ad8adb7fa72e284a2b84ec4ca1fa7754b319355559e335af5"; // M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
+const LM_TRAIN_M49_WORKFLOW_SHA256 = "109f1183f1fd40b4bb3cdb3e1ff6261e53fe5e5a66418c52904ce7c4efb35091"; // M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
 const LM_TRAIN_WORKFLOW_SHA256 = "b3782f9f17df12980487148edd3507e0e41521b38ee3b0afa1b2e404a1c7d131"; // M38: set C v2 eval non-fatal (Auditor, run 38622524096)
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {

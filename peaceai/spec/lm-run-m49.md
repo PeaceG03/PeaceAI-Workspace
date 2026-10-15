@@ -20,7 +20,7 @@ set C v2 improved, but loss alone isn't producing passing edits. This run is aim
 3. More steps within the free limits: about 2x the current steps, split over 2 resumed jobs. Patience stays on, so a
    flat run stops early instead of burning the budget.
 4. New stage, function-body fine-tune (after pretrain, same model):
-   - Data: Peace-authored commits (authorship-filtered, the same filter as the miner) plus Builder-landed changes
+   - Data: all PeaceG03 public commits (the noreply-identity filter matches Peace, Builder and agent commits alike)
      (patch-flow commits from Results with matching SHA-256), as (file with body blanked) -> body pairs.
    - Strict exclusion: no set A/B held-out commit, nothing in heldout-c-excluded, no set C v2 file, and no
      M48 task (peaceai/model/heldout-c-tasks.json) by file content sha256.
@@ -53,3 +53,18 @@ set C v2 improved, but loss alone isn't producing passing edits. This run is aim
   land as their own protected PR before any run (the workflow trains only on the committed, memchecked manifest).
 - Depends on #177 (setc-grade.ts) for the set C task eval; until it merges that eval step reports FAILED (non-fatal).
 - No run is triggered by this PR. Box dry run, then the chained run, only when the Architect says go.
+
+## Auditor #178 fixes
+- H1: the model lands right after fine-tuning. Set C loss and set C task evals (parse/inference only) run after the
+  landing, and their counts land separately in `runs/lm-evals/<run id>/`. Set A/B candidate bodies are generated in the
+  landing job (inference only) and handed to the `eval-ab` job as a gzip+base64 job output (capped at 900 kB); only
+  `eval-ab` runs tests, and it has no environment, no secrets and no model. Before every DEPLOY_KEY step: HEAD must be
+  GITHUB_SHA, `git diff --exit-code`, no untracked files, and `with-deploy-key.sh`/`results-write.sh` must match the
+  pinned sha256 in the workflow env.
+- H2: the set C checkout loop returns false instead of `exit 1`; the land step runs on `success() || failure()`, only
+  when its verify step passed and `config.json` exists.
+- M3: `pairsOf` drops `isSafetyToolFile(repo, path)` files (every version) in addition to the safety-tool content shas.
+- M4: the restore steps stay inside jobs that already hold the write key for their own landing (pretrain parts and
+  finetune-land); no job that runs generated code holds any key, so no read-only key is needed.
+- L6: the fine-tune data is labelled "all PeaceG03 public commits".
+- M5 (memcheck schema for the fine-tune manifest) is a separate protected PR.
