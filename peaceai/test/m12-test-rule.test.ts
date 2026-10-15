@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "1c9442e81c1fe1c069d5124785d7533a02f0d89d52bd72f95401705bdae717b9"; // M50: set C v2 grader, CLI, spec and test in the protected set
+const PROTECTED_DIGEST = "6c2437d134d0bfa923f8a410a25a7169fb9136e28e73678deb22ccecc6d7add9"; // M50+M52 (merge of main): set C v2 grader, CLI, spec and test in the protected set
