@@ -44,6 +44,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/bin\/heldout-c-tasks\.ts$|^peaceai\/model\/heldout-c-tasks\.json$|^peaceai\/spec\/heldout-c-tasks-v1\.md$|^peaceai\/test\/m48-setc-tasks\.test\.ts$/, why: "the set C v2 task list PeaceAI is measured on, its builder, spec and proofs (M48)" },
   { pattern: /^peaceai\/lib\/setc-grade\.ts$|^peaceai\/bin\/setc-grade\.ts$|^peaceai\/spec\/setc-grade-v1\.md$|^peaceai\/test\/m50-setc-grade\.test\.ts$/, why: "the set C v2 grader PeaceAI is scored by, its spec and proofs (M50)" },
   { pattern: /^\.github\/workflows\/peace-lm-train-m49\.yml$|^peaceai\/model\/ext-train-m49\.json$|^peaceai\/lib\/ftpairs\.ts$|^peaceai\/bin\/ft-pairs\.ts$|^peaceai\/model\/(eval_ab|gen_c)\.py$|^peaceai\/model\/spans\.cjs$|^peaceai\/spec\/lm-run-m49\.md$|^peaceai\/test\/m49-lm-workflow\.test\.ts$/, why: "the M49 training workflow, its fine-tune data selection, evals, spec and proofs" },
+  { pattern: /^\.github\/workflows\/corpus-checks\.yml$/, why: "the dispatch-only whole-corpus memcheck and core-free proof (no training)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
