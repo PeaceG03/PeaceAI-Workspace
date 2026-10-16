@@ -67,8 +67,17 @@ function addDaysYmd(ymd: string, deltaDays: number): string {
   return `${y}-${mo}-${day}`;
 }
 
+/**
+ * Auditor #216: a Builder task counts only if its (latest-retagged) skill is live-proven AND its mark was
+ * "PeaceAI-able today" when logged. A historical "missing skill X" entry stays uncounted even after X is
+ * approved/proven (APPROVED_SINCE: history keeps the mark it had then); only an appended retag can change it.
+ */
+export function countable(e: Pick<Entry, "skill" | "mark">, proven: ReadonlySet<string>): boolean {
+  return proven.has(e.skill) && !e.mark.startsWith("missing skill");
+}
+
 function windowStats(builder: readonly Entry[], proven: ReadonlySet<string>): WindowStats {
-  const able = builder.filter((e) => proven.has(e.skill)).length;
+  const able = builder.filter((e) => countable(e, proven)).length;
   const n = builder.length;
   return {
     builderTasks: n,
@@ -88,13 +97,14 @@ export function coverageReport(logText: string, asOfDate: string, topN = 10): Co
   const proven = liveProvenSkills(entries, asOfDate);
   // Retag lines are not tasks; each Builder task takes the skill of its latest retag (log order), if any.
   const retag = new Map<number, Entry["skill"]>();
-  for (const e of entries) { const t = retagTarget(e); if (t !== null) retag.set(t, e.skill); }
-  const builderAll = entries.filter((e) => e.by === "Builder" && retagTarget(e) === null).map((e) => (retag.has(e.seq) ? { ...e, skill: retag.get(e.seq)! } : e));
+  const retagMark = new Map<number, string>();
+  for (const e of entries) { const t = retagTarget(e); if (t !== null) { retag.set(t, e.skill); retagMark.set(t, e.mark); } }
+  const builderAll = entries.filter((e) => e.by === "Builder" && retagTarget(e) === null).map((e) => (retag.has(e.seq) ? { ...e, skill: retag.get(e.seq)!, mark: retagMark.get(e.seq)! } : e));
   const start7 = addDaysYmd(asOfDate, -6);
   const builder7 = builderAll.filter((e) => e.date >= start7 && e.date <= asOfDate);
   const miss = new Map<string, number>();
   for (const e of builderAll) {
-    if (!proven.has(e.skill)) miss.set(e.skill, (miss.get(e.skill) ?? 0) + 1);
+    if (!countable(e, proven)) miss.set(e.skill, (miss.get(e.skill) ?? 0) + 1);
   }
   const topMissing = [...miss.entries()]
     .map(([skill, count]) => ({ skill, count }))

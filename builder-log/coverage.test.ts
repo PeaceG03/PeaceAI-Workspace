@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { appendOnly, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, retagTarget, validateLiveProven, validateLog, validateRetags, type Entry } from "./check.ts";
 import {
+  countable,
   coverageReport,
   denverYmd,
   formatCoverageSummary,
@@ -84,7 +85,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 7/58 = 12.1% after retags; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; LOOP_FUNCTION 5 missing", () => {
+test("real log: 5/58 = 8.6% after retags (historical missing WORKFLOW_STEP seq 10/13 stay uncounted); WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; LOOP_FUNCTION 5 missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -96,16 +97,19 @@ test("real log: 7/58 = 12.1% after retags; WORKFLOW_STEP (seq 85), METHOD_GUARD 
   assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
   assert.equal(r.allTime.builderTasks, 58);
-  assert.equal(r.allTime.peaceaiAble, 7);
-  assert.equal(r.allTime.percent, 12.1);
+  // Counted: seq 26 TEST_CASE (logged able) + retags 70/78 THROW_GUARD + 71/77 METHOD_GUARD.
+  assert.equal(r.allTime.peaceaiAble, 5);
+  assert.equal(r.allTime.percent, 8.6);
   assert.equal(r.last7Days.builderTasks, 58);
-  assert.equal(r.last7Days.peaceaiAble, 7);
-  assert.equal(r.last7Days.percent, 12.1);
+  assert.equal(r.last7Days.peaceaiAble, 5);
+  assert.equal(r.last7Days.percent, 8.6);
+  assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_STEP"), { skill: "WORKFLOW_STEP", count: 2 }, "seq 10/13 logged before WORKFLOW_STEP approval");
   assert.deepEqual(r.topMissing.find((m) => m.skill === "LOOP_FUNCTION"), { skill: "LOOP_FUNCTION", count: 5 });
-  assert.ok(!r.topMissing.some((m) => m.skill === "WORKFLOW_STEP" || m.skill === "COMPLEX_FUNCTION"));
+  assert.ok(!r.topMissing.some((m) => m.skill === "COMPLEX_FUNCTION"));
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /12\.1% \(7\/58\)/);
+  assert.match(md, /8\.6% \(5\/58\)/);
+  assert.equal(coverageReport(text, denverYmd()).allTime.percent, 8.6);
 });
 
 test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
@@ -164,4 +168,21 @@ test("retag: appending keeps the log append-only; editing the retagged line inst
   const edited = FIXTURE.replace('"skill":"WORKFLOW_JOB","mark":"missing skill WORKFLOW_JOB"', '"skill":"THROW_GUARD","mark":"PeaceAI-able today"');
   assert.notEqual(edited, FIXTURE);
   assert.equal(appendOnly(FIXTURE, edited).length, 1);
+});
+
+test("historical missing-skill entry for a now-approved, live-proven skill stays uncounted (APPROVED_SINCE)", () => {
+  // seq 9: WORKFLOW_STEP logged before its approval (APPROVED_SINCE 2026-10-13 22:41), so marked missing.
+  const text = FIXTURE + line({ seq: 9, skill: "WORKFLOW_STEP", mark: "missing skill WORKFLOW_STEP", by: "Builder", date: "2026-10-13", time: "10:00" }) + "\n";
+  assert.deepEqual(validateLog(text), []);
+  const r = coverageReport(text, "2026-10-15");
+  assert.ok(r.liveProven.includes("WORKFLOW_STEP"), "skill is live-proven by asOf");
+  assert.equal(r.allTime.builderTasks, 7);
+  assert.equal(r.allTime.peaceaiAble, 2, "the old missing entry is not counted by name alone");
+  assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_STEP"), { skill: "WORKFLOW_STEP", count: 1 });
+  assert.equal(countable({ skill: "WORKFLOW_STEP", mark: "missing skill WORKFLOW_STEP" }, new Set(["WORKFLOW_STEP"])), false);
+  assert.equal(countable({ skill: "WORKFLOW_STEP", mark: "PeaceAI-able today" }, new Set(["WORKFLOW_STEP"])), true);
+  // An appended retag (dated after approval, so marked able) is the only way to change it.
+  const retagged = text + R(10, 9, "WORKFLOW_STEP", "PeaceAI-able today") + "\n";
+  assert.deepEqual(validateLog(retagged), []);
+  assert.equal(coverageReport(retagged, "2026-10-15").allTime.peaceaiAble, 3);
 });
