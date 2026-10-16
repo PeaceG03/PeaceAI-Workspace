@@ -14,7 +14,7 @@ const repo = resolve(import.meta.dirname, "..", "..");
 const py = process.env.PEACEAI_PYTHON ?? "python3";
 const H = (s: string) => createHash("sha256").update(s).digest("hex");
 const C40 = "0123456789abcdef0123456789abcdef01234567";
-const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i} + ${n}; }`).join("\n");
+const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i * n + 3} + ${n}; }`).join("\n");
 const ext = (doc: number, text: string, over: Record<string, unknown> = {}) => ({ doc, stage: "pretrain", repo: "honojs/hono", commit: C40, license: "MIT", path: `src/f${doc}.ts`, sha256: H(text), bytes: Buffer.byteLength(text), origin: "external", split: "train", ...over });
 const NBSP = "\u00a0\u00a0\n", FS = "\x1c\x1d\n";
 

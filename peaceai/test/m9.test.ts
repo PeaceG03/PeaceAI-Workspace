@@ -512,7 +512,7 @@ test("M9 retrain corpus filter: no private file survives; generated/vendored/fix
   try {
     const src = join(dir, "in");
     mkdirSync(src);
-    const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i} + ${n}; }`).join("\n");
+    const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i * n + 3} + ${n}; }`).join("\n");
     const docs = [
       { doc: 0, source: "PeaceG03/PeaceAI", visibility: "private", path: "src/a.ts", text: code(1) },
       { doc: 1, source: "honojs/hono", visibility: "public", path: "src/b.ts", text: code(2) },
@@ -690,7 +690,7 @@ test("lm-memcheck end to end: core-free-64 with a valid proof; strict with no pr
 test("corefree_proof.py: PROVEN only when no file copies or near-copies a core file", () => {
   const dir = mkdtempSync(join(tmpdir(), "m9-proof-"));
   try {
-    const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i} + ${n}; }`).join("\n");
+    const code = (n: number) => Array.from({ length: 40 }, (_, i) => `export function helper${n}_${i}(value: number): number { return value * ${i * n + 3} + ${n}; }`).join("\n");
     const coreDir = join(dir, "core"); mkdirSync(coreDir);
     writeFileSync(join(coreDir, "x.ts"), code(1));
     execFileSync("git", ["init", "-q"], { cwd: coreDir }); execFileSync("git", ["add", "-A"], { cwd: coreDir });
