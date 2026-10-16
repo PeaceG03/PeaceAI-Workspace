@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
-import { applyImportEditV2Rule, IMPORT_EDIT_V2_FLAG, IMPORT_EDIT_V2_TRIGGER } from "../lib/import-edit-v2.ts";
+import { applyImportEditV2Rule, buildImportEditV2, IMPORT_EDIT_V2_FLAG, IMPORT_EDIT_V2_TRIGGER } from "../lib/import-edit-v2.ts";
 import { applyRule, specFileText, specHash, TRIGGERS, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { isCanonical, parseTask } from "../lib/nlparse.ts";
 import { phrasingFor, proposalBody, parseMarker, parseSpecBlock } from "../lib/propose.ts";
@@ -186,10 +186,21 @@ test("Architect (#239): every v2 refusal maps to a sanitizer-safe short code tha
     ["added binding already bound: b", "import_edit_already_bound: b"],
     ["removed binding still used: readFileSync", "import_edit_removed_still_used: readFileSync"],
     ["specifier must keep its module (extension or directory move only)", "import_edit_module_changed"],
+    ["specifier climbs too far", "import_edit_climbs_too_far"],
+    ["specifier leaves the repo", "import_edit_leaves_repo"],
+    ["specifier does not resolve to a repo file", "import_edit_unresolved"],
+    ["specifier resolves to a protected file", "import_edit_protected_target"],
     ["something new", "import_edit_refused"],
   ];
   for (const [problem, code] of cases) {
     assert.equal(importEditV2Code(problem), code, problem);
     assert.equal(formatRefusals([{ id: "public-import-edit-v2", reason: code }]), `public-import-edit-v2=${code}`, `${code} survives sanitizing`);
   }
+});
+
+test("resolver refusals reach the refusal line as their own codes (not import_edit_refused)", () => {
+  const files = [{ path: "src/m.ts", content: 'import { a } from "./x";\nexport const k = a;\n' }, { path: "src/x.ts", content: "export const a = 1;\n" }];
+  const r = (to: string) => { const why: { reason?: string } = {}; buildImportEditV2({ from: "./x", file: "src/m.ts", to }, files, why); return why.reason; };
+  assert.equal(r('import { a } from "./gone/x";'), "import_edit_unresolved");
+  assert.equal(r('import { a } from "../../../../x";'), "import_edit_climbs_too_far");
 });
