@@ -44,6 +44,7 @@ export const LIVE_PROVEN_SINCE: Readonly<Record<string, LiveProvenRef>> = {
   METHOD_GUARD: { since: "2026-10-15 17:28", seq: 86 }, // PeaceAI-Workspace#205 landed as PeaceSTOCKS@365b91e
   COMPLEX_FUNCTION: { since: "2026-10-15 18:57", seq: 87 }, // PeaceAI-Workspace#214 landed as PeaceSTOCKS@c9a6076 (loop-free bodies only)
   LOOP_FUNCTION: { since: "2026-10-15 21:52", seq: 97 }, // PeaceAI-Workspace#229 landed as PeaceSTOCKS@22b0f3d; tenmin-mode-sim run 38847676694
+  IMPORT_EDIT: { since: "2026-10-16 00:17", seq: 101 }, // PeaceAI-Workspace#237 (proof A1) landed as PeaceSTOCKS@eb8aadc; tenmin-mode-sim run 38860420718
 };
 /** repo@sha landing in a changed field (not an issue-only ref). */
 export const LIVE_LANDING_REF = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;

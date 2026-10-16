@@ -95,6 +95,7 @@ test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags
   assert.deepEqual(LIVE_PROVEN_SINCE.METHOD_GUARD, { since: "2026-10-15 17:28", seq: 86 });
   assert.deepEqual(LIVE_PROVEN_SINCE.COMPLEX_FUNCTION, { since: "2026-10-15 18:57", seq: 87 });
   assert.deepEqual(LIVE_PROVEN_SINCE.LOOP_FUNCTION, { since: "2026-10-15 21:52", seq: 97 }); // #229 -> PeaceSTOCKS@22b0f3d
+  assert.deepEqual(LIVE_PROVEN_SINCE.IMPORT_EDIT, { since: "2026-10-16 00:17", seq: 101 }); // #237 (A1) -> PeaceSTOCKS@eb8aadc; asOf 2026-10-15 below excludes it
   const r = coverageReport(text, "2026-10-15");
   for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION", "LOOP_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
   // seq 99: #238 (rule public-test-case-objargs-v1) landed as PeaceSTOCKS@c095bbc, a by:PeaceAI repo@sha landing.
