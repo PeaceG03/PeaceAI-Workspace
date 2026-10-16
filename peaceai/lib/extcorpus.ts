@@ -31,7 +31,7 @@ export function extCRepos(pool: readonly string[]): string[] {
   return sorted.slice(0, Math.ceil((sorted.length * EXT_C_PERCENT) / 100)).sort();
 }
 
-export type ExtExclusion = Exclusion | "generated-path" | "secret" | "duplicate" | "core" | "held-out" | "authorship" | "repo-cap" | "core-text" | "safety-tool" | "path-leak";
+export type ExtExclusion = Exclusion | "generated-path" | "secret" | "duplicate" | "core" | "held-out" | "authorship" | "repo-cap" | "core-text" | "safety-tool" | "path-leak" | "core-proof";
 /** M51 option (b) (Architect): a file whose repository path itself trips the leak scanner (home-path-like or
  * email-like text in the path) is excluded, because the committed manifest records paths and the pre-push scan
  * blocks them. No hook exception and no path encoding; the excluded files are listed (repo, commit, content

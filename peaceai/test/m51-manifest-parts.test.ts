@@ -49,11 +49,11 @@ test("single-file format still reads (both readers); writeParts refuses next to 
   rmSync(d, { recursive: true });
 });
 
-test("committed M49 manifest: split parts only, each under 2 MB, joining to d4399d79…; memcheck and summary bound to it", () => {
+test("committed M49 manifest: split parts only, each under 2 MB, joining to 8458eac6…; memcheck and summary bound to it", () => {
   assert.throws(() => statSync(join(model, "ext-manifest.jsonl")), "no single-file manifest beside the parts");
   for (const f of readdirSync(join(model, "ext-manifest"))) assert.ok(statSync(join(model, "ext-manifest", f)).size < 2_000_000 && statSync(join(model, "ext-manifest", f)).size <= PART_MAX_BYTES + 1000, f);
   const whole = readManifestBytes(model, "ext-manifest");
-  assert.equal(sha(whole), "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e");
+  assert.equal(sha(whole), "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231");
   assert.equal(JSON.parse(readFileSync(join(model, "ext-memcheck.json"), "utf8")).manifestSha256, sha(whole));
   assert.equal(JSON.parse(readFileSync(join(model, "ext-summary.json"), "utf8")).manifestSha256, sha(whole));
   for (const p of ["peaceai/model/ext-manifest/index.json", "peaceai/model/ext-manifest/part-000.jsonl", "peaceai/lib/manifestparts.ts", "peaceai/model/manifest_parts.py", "peaceai/test/m51-manifest-parts.test.ts"]) assert.ok(protectedReason(p), p);
@@ -65,7 +65,7 @@ test("--manifest-sha pin: the M37 workflow pins the #148 manifest, so ext-fetch 
   const d = mkdtempSync(join(tmpdir(), "m51-")); mkdirSync(join(d, "c")); writeFileSync(join(d, "c/docs.jsonl"), "");
   const tsx = join(repo, "node_modules/.bin/tsx");
   const f = spawnSync(tsx, [join(repo, "peaceai/bin/ext-fetch.ts"), join(d, "w"), join(d, "o"), "--manifest-sha", "040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af"], { encoding: "utf8" });
-  assert.equal(f.status, 1); assert.match(f.stdout, /ext-fetch refused: manifest sha256 d4399d79/);
+  assert.equal(f.status, 1); assert.match(f.stdout, /ext-fetch refused: manifest sha256 8458eac6/);
   const m = spawnSync(tsx, [join(repo, "peaceai/bin/ext-manifest-check.ts"), join(d, "c"), "pretrain", "--manifest-sha", "040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af"], { encoding: "utf8" });
   assert.equal(m.status, 1); assert.match(m.stdout, /is not the pinned 040eb0c4/);
   rmSync(d, { recursive: true });

@@ -159,7 +159,7 @@ test("workflow (M52, Architect (a)): both manifest shas the model trained on lan
   assert.ok(ftStep.indexOf("trainedOn") < ftStep.indexOf("jq -r '\"model"), "written before the model is reported/landed");
 });
 
-const PIN = "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e";
+const PIN = "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231";
 test("Auditor #178: every ext-fetch and ext-manifest-check step pins --manifest-sha; repoCapBytes 11 MB", () => {
   const WF = read(".github/workflows/peace-lm-train-m49.yml");
   const fetches = WF.match(/ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/corpus"[^\n]*/g) ?? [];

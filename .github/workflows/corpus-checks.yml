@@ -47,7 +47,7 @@ jobs:
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail
@@ -78,7 +78,7 @@ jobs:
           test "$rc" -eq 0
           test -f "$RUNNER_TEMP/checks/ext-memcheck.json"
           test "$(jq -r .status "$RUNNER_TEMP/checks/ext-memcheck.json")" = PASS
-          test "$(jq -r .manifestSha256 "$RUNNER_TEMP/checks/ext-memcheck.json")" = d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+          test "$(jq -r .manifestSha256 "$RUNNER_TEMP/checks/ext-memcheck.json")" = 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Core-free proof (counts only; fail unless PROVEN)
         run: |
           set -euo pipefail

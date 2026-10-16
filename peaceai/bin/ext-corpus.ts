@@ -78,6 +78,11 @@ for (const r of pool.filter((p) => cNames.has(p.name))) {
 
 const safetyShas = safetyToolShas(JSON.parse(readFileSync(join(model, "safety-tool-sha256.json"), "utf8")));
 const seen = new Set<string>();
+// M49 (Architect (A)): per-doc exclusion by content sha256, mirroring fine-tune's excludedDocSha256 (ft-corefree.json):
+// docs the box core-free proof (corefree_proof.py --stage pretrain) flagged as core are dropped from the pretrain corpus.
+const DOCX = JSON.parse(readFileSync(join(model, "ext-doc-exclusions.json"), "utf8"));
+if (DOCX.schema !== "peaceai-ext-doc-exclusions:v1" || !Array.isArray(DOCX.excludedDocSha256) || DOCX.excludedDocSha256.some((h: unknown) => typeof h !== "string" || !/^[0-9a-f]{64}$/.test(h))) throw new Error("ext-doc-exclusions.json unreadable: fail closed");
+const excludedDocs = new Set<string>(DOCX.excludedDocSha256);
 const docs: string[] = [];
 const manifest: ExtManifestEntry[] = [];
 const pathLeaks: { repo: string; commit: string; sha256: string; kinds: string[] }[] = [];
@@ -90,6 +95,7 @@ function admit(repo: string, commit: string, license: string, origin: ExtManifes
     if (!why) { const kinds = pathLeakKinds(f.path); if (kinds.length) { why = "path-leak"; pathLeaks.push({ repo, commit, sha256, kinds }); } }
     if (!why && safetyShas.has(sha256)) why = "safety-tool";
     if (!why && coreShas.has(sha256)) why = "core";
+    if (!why && excludedDocs.has(sha256)) why = "core-proof";
     if (!why && (ab.has(sha256) || cHashes.has(sha256))) why = "held-out";
     if (!why && seen.has(sha256)) why = "duplicate";
     const n = Buffer.byteLength(f.text);
