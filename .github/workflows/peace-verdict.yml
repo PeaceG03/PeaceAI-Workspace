@@ -88,6 +88,13 @@ jobs:
     if: needs.parse.outputs.ok == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # One global queue for every Results write from this workflow: concurrent /verdict comments on
+    # different issues raced on the Results clone/push ("results clone failed", Oct 16). queue: max keeps
+    # up to 100 pending runs in order instead of cancelling the older pending one (queue: single default).
+    concurrency:
+      group: peace-verdict-record-results
+      cancel-in-progress: false
+      queue: max
     environment: peaceai-results
     permissions:
       contents: read

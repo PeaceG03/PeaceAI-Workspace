@@ -445,3 +445,11 @@ exit 0
     assert.match(land, /approve-rule-pr\.sh/);
   });
 }
+
+test("peace-verdict: record is serialized in ONE global queue (no per-issue key, never cancels, queue: max)", () => {
+  const j = jobs(read("peace-verdict.yml"));
+  const record = j.get("record")!;
+  assert.match(record, /concurrency:\n {6}group: peace-verdict-record-results\n {6}cancel-in-progress: false\n {6}queue: max\n/);
+  assert.doesNotMatch(record, /group: peace-verdict-record-results\$\{\{/);
+  assert.match(record, /environment: peaceai-results/);
+});
