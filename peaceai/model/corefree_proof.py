@@ -50,13 +50,19 @@ def minhash(text):
 # that matches a pinned file counts as non-core only when its own content sha256 equals that pin; anything else that
 # copies or near-copies a pinned file is flagged like any core file. Malformed allowlist -> no pins (all files core).
 pins = {}
+pin_origin = {}  # M49 fix (2): pin sha256 -> (public repo, path) parsed from the pin's "origin" ("owner/repo@commit:path")
+ORIGIN_RE = re.compile(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-f]{7,40}:([A-Za-z0-9._/-]+)", re.ASCII)
 try:
     po = json.load(open(os.path.join(args.core_dir, "docs", "peaceai-public-origin.json"), encoding="utf-8"))
     if po.get("schema") == "peaceai-public-origin:v1" and isinstance(po.get("files"), list) and all(
             isinstance(f, dict) and isinstance(f.get("path"), str) and re.fullmatch(r"[0-9a-f]{64}", str(f.get("sha256", ""))) for f in po["files"]):
         pins = {f["path"]: f["sha256"] for f in po["files"]}
+        for f in po["files"]:
+            o = ORIGIN_RE.fullmatch(f["origin"]) if isinstance(f.get("origin"), str) else None
+            if o:
+                pin_origin[f["sha256"]] = (o.group(1), o.group(2))
 except (OSError, ValueError):
-    pins = {}
+    pins, pin_origin = {}, {}
 core_texts, pinned_texts = [], []  # pinned_texts: (pin sha256, text) of allowlisted public-origin core files
 for p in subprocess.run(["git", "ls-files", "-z"], cwd=args.core_dir, capture_output=True, check=True).stdout.decode().split("\0"):
     full = os.path.join(args.core_dir, p)
@@ -212,7 +218,13 @@ for m in man:
     # Against allowlisted public-origin core files: fine only when the content sha256 IS that file's pin.
     hit_pin = {pinned_raw.get(tsha), pinned_norm.get(norm(t))} - {None}
     hit_pin |= {sha for sha, sg in pinned_sigs if sum(x == y for x, y in zip(s, sg)) / NPERM >= args.near}
-    pin_ok = bool(hit_pin) and hit_pin == {tsha}
+    # M49 fix (2) (Architect option (i)): fine-tune docs are cut-off prefixes, often of a NEWER version of a pinned
+    # public file, so their sha256 never equals the pin. Such a doc is accepted ONLY when every pinned file it matches
+    # has a public origin whose repo AND path equal the doc's own source repo and path (e.g. a PeaceSTOCKS:src/features.ts
+    # doc against the features.ts pin). Matching a pinned file from any other repo or path stays pin_bad (refused), and
+    # the doc is still checked against every non-pinned core file below, so this never admits other core text.
+    origin_ok = schema != "internal" and bool(hit_pin) and all(pin_origin.get(h) == (m["repo"], m["path"]) for h in hit_pin)
+    pin_ok = bool(hit_pin) and (hit_pin == {tsha} or origin_ok)
     pin_bad = bool(hit_pin) and not pin_ok
     allowlisted += pin_ok
     exact = pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm

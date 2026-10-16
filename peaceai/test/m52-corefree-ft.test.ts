@@ -178,3 +178,62 @@ test("M52 (a) memcheck runs once on the final model against both corpora, fails 
   assert.match(mc, /buildSubstringIndex\(\[\.\.\.pre\.txt, \.\.\.ft\.txt\]\)/, "the exemption corpus is both corpora");
   assert.match(mc, /if \("trainedOn" in cfgNow \|\| ftCorpus\)/, "a trainedOn model cannot be checked as single-corpus");
 });
+
+// ---- M49 fix (2) (Architect option (i)): a fine-tune doc that is a prefix / near copy of a NEWER version of a pinned
+// public-origin core file is accepted only when its own repo + path equal that pin's public origin.
+const UNIV = Array.from({ length: 40 }, (_, i) => `export function elig${i}(barCount: number): string { return barCount > ${i} ? "LEVEL_${i % 3}" : "LEVEL_0"; }`).join("\n") + "\n";
+const FEAT = Array.from({ length: 40 }, (_, i) => `export function featureRecipe${i}(x: number[]): number { return x.slice(${i}).reduce((a, b) => a + b * ${i + 1}, 0); }`).join("\n") + "\n";
+const PRIV = Array.from({ length: 40 }, (_, i) => `export function privateCore${i}(s: string): string { return s.padStart(${i + 3}, "*") + "${i}"; }`).join("\n") + "\n";
+function pinEnv() {
+  const dir = mkdtempSync(join(tmpdir(), "m49p-"));
+  const core = join(dir, "core");
+  const files: Record<string, string> = { "packages/markets-scanner/src/universe.ts": UNIV, "packages/markets-scanner/src/features.ts": FEAT, "packages/private.ts": PRIV };
+  for (const [p, t] of Object.entries(files)) { mkdirSync(join(core, p, ".."), { recursive: true }); writeFileSync(join(core, p), t); }
+  mkdirSync(join(core, "docs"));
+  writeFileSync(join(core, "docs", "peaceai-public-origin.json"), JSON.stringify({ schema: "peaceai-public-origin:v1", files: [
+    { path: "packages/markets-scanner/src/features.ts", sha256: H(FEAT), origin: "PeaceG03/PeaceSTOCKS@607525c:src/features.ts" },
+    { path: "packages/markets-scanner/src/universe.ts", sha256: H(UNIV), origin: "PeaceG03/PeaceSTOCKS@99c0cfb:src/universe.ts" },
+  ] }));
+  execFileSync("git", ["init", "-q"], { cwd: core }); execFileSync("git", ["add", "-A"], { cwd: core });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"], { cwd: core });
+  const model = join(dir, "model"); mkdirSync(model);
+  writeFileSync(join(model, "config.json"), JSON.stringify({ version: "lm-v1-000000000049" }));
+  let k = 0;
+  return (docs: { doc: number; text: string }[], man: unknown[]) => {
+    const d = join(dir, `c${k++}`); mkdirSync(d);
+    writeFileSync(join(d, "docs.jsonl"), docs.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    writeFileSync(join(d, "manifest.jsonl"), man.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model, "--stage", "finetune"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const proof = JSON.parse(readFileSync(join(model, "corefree-proof-finetune.json"), "utf8"));
+    return { out: JSON.parse(r.stdout), proof, file: (doc: number) => proof.files.find((f: { doc: number }) => f.doc === doc) };
+  };
+}
+// doc 44: a cut-off prefix of a newer PeaceSTOCKS src/universe.ts (refreshEligibility appended, then truncated).
+const DOC44 = UNIV.split("\n").slice(0, 36).join("\n") + "\nexport async function refreshEligibility(storage: unknown) {\n  const counts = await storage";
+// doc 13: the featureRecipe case, src/features.ts at a newer commit (same code, reformatted whitespace + tail).
+const DOC13 = FEAT.replace(/ \{ return/g, " {\n  return").split("\n").slice(0, 70).join("\n");
+const STOCKS = (doc: number, path: string, fn: string) => ft(doc, { path, function: fn });
+
+test("M49 fix (2): doc 44 (universe.ts prefix) and doc 13 (featureRecipe, features.ts) are PROVEN only via their pin's own origin", () => {
+  const run = pinEnv();
+  const r = run([...DOCS, { doc: 13, text: DOC13 }, { doc: 44, text: DOC44 }], [...MAN, STOCKS(13, "src/features.ts", "featureRecipe"), STOCKS(44, "src/universe.ts", "refreshEligibility")]);
+  assert.notEqual(H(DOC44), H(UNIV)); assert.notEqual(H(DOC13), H(FEAT));
+  assert.equal(r.proof.noCoreFiles, "PROVEN"); assert.equal(r.out.allowlistedPublicOrigin, 2);
+  assert.equal(r.file(13).coreExact, false); assert.equal(r.file(44).coreExact, false);
+});
+
+test("M49 fix (2) negative: a doc that matches a pinned file but whose source is not the pin's origin is still refused", () => {
+  const run = pinEnv();
+  for (const [name, m] of [
+    ["other repo, same path", ft(44, { repo: "PeaceG03/PeaceAI-Workspace", path: "src/universe.ts", function: "refreshEligibility" })],
+    ["same repo, other path", STOCKS(44, "src/scanner.ts", "refreshEligibility")],
+    ["origin of the OTHER pin", STOCKS(44, "src/features.ts", "refreshEligibility")],
+  ] as const) {
+    const r = run([...DOCS, { doc: 44, text: DOC44 }], [...MAN, m]);
+    assert.equal(r.proof.noCoreFiles, "NOT_PROVEN", name); assert.equal(r.file(44).coreExact, true, name); assert.equal(r.out.allowlistedPublicOrigin, 0, name);
+  }
+  // A doc from the pin's origin that also carries non-pinned core text is still caught by the core check.
+  const mixed = run([...DOCS, { doc: 44, text: PRIV }], [...MAN, STOCKS(44, "src/universe.ts", "refreshEligibility")]);
+  assert.equal(mixed.proof.noCoreFiles, "NOT_PROVEN");
+});
