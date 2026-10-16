@@ -93,6 +93,7 @@ function validComplexParams(p: Record<string, unknown>, minedFrom: unknown): boo
   if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...COMPLEX_PARAM_KEYS].join(",")) return false;
   return COMPLEX_PARAM_KEYS.every((k) => k === "loops"
     ? Array.isArray(p[k]) && (p[k] as unknown[]).length > 0 && (p[k] as unknown[]).every((x) => typeof x === "string" && COMPLEX_VOCAB.loops.includes(x))
+      && (!(p[k] as unknown[]).includes("none") || (p[k] as unknown[]).length === 1) // Auditor #218: "none" never mixed with loop kinds
     : typeof p[k] === "string" && COMPLEX_VOCAB[k].includes(p[k] as string));
 }
 

@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", ".github/workflows/corpus-checks.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "820e810f603a26521c5ebbd2a28828233162018c7218e99323cf7c264f472e08"; // M26 wiring: + COMPLEX_FUNCTION learned spec, proposal record, all-kinds new-test-path proofs
+const PROTECTED_DIGEST = "d26c588923f90d041e4c71e69b5e2f8da035f72cd9b418d677146e909a034a0f"; // M64: + LOOP_FUNCTION learned spec, proposal record, evidence, fixtures and proofs

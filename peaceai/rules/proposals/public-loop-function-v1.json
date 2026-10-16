@@ -1,0 +1,24 @@
+{
+ "id": "public-loop-function-v1",
+ "kind": "COMPLEX_FUNCTION",
+ "shape": "LOOP_FUNCTION",
+ "status": "proposal-off-wired",
+ "engine": "peaceai/lib/learned-complex.ts",
+ "loops": "v1: counted for (start and bound each an integer literal 0..1000 or PARAM.length; i++ or i += 1; untouched counter) and for-of over a parameter; while refused as loop_while_unsupported (bounded-while grammar kept in the engine for v2); refusals loop_unbounded, loop_async, loop_label, closure_not_allowed; do-while/for-in loop_unsupported",
+ "evidence": {
+  "examples": 10,
+  "forAndForOf": 10,
+  "while": 0,
+  "whileNonExported": 0,
+  "repos": 4,
+  "file": "peaceai/rules/proposals/m64-loop-function-evidence.json",
+  "method": "AST scan of the pinned example-only repos (no training-corpus overlap; M60)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "v2WhileCandidates": 2
+ },
+ "learned": "peaceai/rules/learned/public-loop-function-v1.json",
+ "untouched": "public-complex-function-v1 (#211)",
+ "v2": "bounded while (while-bounded): deferred; 2 qualifying mined examples under the tighter start rule (bar 3), recorded as v2WhileCandidates in the evidence file"
+}
