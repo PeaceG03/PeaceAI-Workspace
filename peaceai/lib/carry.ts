@@ -26,7 +26,8 @@ export const sha256 = (s: string): string => createHash("sha256").update(s).dige
 
 export type CarryReason =
   | "carry_none_pending" | "carry_pending_invalid" | "carry_already_applied" | "carry_not_regrade" | "carry_regrade_mismatch"
-  | "carry_hash_mismatch" | "carry_not_clean" | "carry_files_changed" | "carry_no_fresh_grade" | "carry_grade_not_counts";
+  | "carry_hash_mismatch" | "carry_not_clean" | "carry_files_changed" | "carry_no_fresh_grade" | "carry_grade_not_counts"
+  | "carry_rule_unknown" | "carry_grade_type_mismatch";
 export type CarryDecision = { carry: true } | { carry: false; reason: CarryReason };
 
 // ---------- pending carry (rides at the END of the M18 regrade request comment) ----------
@@ -100,6 +101,44 @@ export interface CarryInput {
   /** `git diff --name-only <old base> <new head>` on the target; null when it could not be computed. */
   changedSinceBase: readonly string[] | null;
   fresh: FreshGrade | null;
+  /**
+   * M71: the learned rule that produced the candidate, resolved by carry-check from main's approved list and
+   * main's spec file (never from the candidate or the issue). `undefined` keeps the original (pre-M71) check for
+   * non-learned candidates; `null` means the candidate names a learned rule that main does not approve (refused).
+   */
+  rule?: DeclaredRule | null;
+  /** M71: the regraded candidate's own Job B gates on the new head (Results), for suite-graded rules. */
+  suite?: SuiteGrade | null;
+}
+
+// ---------- M71: the grade type each approved rule declares ----------
+/** The grader a learned rule declares (spec.params.grading on main). */
+export type GradeType = "self" | "self-stub" | "suite" | "legacy";
+export interface DeclaredRule { id: string; kind: string; grading: GradeType }
+export interface SuiteGrade { applied: boolean; typecheck: boolean; suite: boolean; eligible: boolean; testGraded: boolean }
+const GRADING: Record<string, GradeType> = {
+  "self-fail-before-pass-after": "self",
+  "self-fail-before-pass-after-and-stub": "self-stub",
+  "target-suite": "suite",
+};
+/** Gradings with no M71 type (fix-commit tests, workflow-step, none) keep the original pre-M71 check ("legacy"). */
+export const gradeTypeOf = (grading: unknown): GradeType => (typeof grading === "string" && Object.hasOwn(GRADING, grading) ? GRADING[grading]! : "legacy");
+const OP = /^learned:([a-z0-9][a-z0-9.-]{0,79})@([0-9a-f]{64})$/;
+/**
+ * Resolve the declared rule for a candidate's `operationId` ("learned:<id>@<specHash>") against main's approved list
+ * (id + exact hash) and main's spec (its hash must equal both). `undefined`: not a learned candidate. `null`:
+ * a learned candidate whose rule main does not approve at that exact hash, or whose grading is unknown.
+ */
+export function declaredRule(operationId: string | null | undefined, transformations: readonly string[], approved: readonly { id: string; sha256: string }[], specOf: (id: string) => { spec: { id?: unknown; kind?: unknown; params?: { grading?: unknown } }; hash: string } | null): DeclaredRule | null | undefined {
+  if (typeof operationId !== "string" || !operationId.startsWith("learned:")) return undefined;
+  const m = OP.exec(operationId);
+  if (!m) return null;
+  const [, id, hash] = m;
+  const entry = approved.find((r) => r.id === id);
+  const loaded = specOf(id!);
+  if (!entry || !loaded || entry.sha256 !== hash || loaded.hash !== hash || loaded.spec.id !== id || typeof loaded.spec.kind !== "string") return null;
+  if (transformations.length !== 1 || transformations[0] !== `LEARNED_${loaded.spec.kind}`) return null;
+  return { id: id!, kind: loaded.spec.kind, grading: gradeTypeOf(loaded.spec.params?.grading) };
 }
 
 export function diffPaths(diff: string): string[] {
@@ -120,11 +159,35 @@ export function checkCarry(i: CarryInput): CarryDecision {
   if (i.appliedByJobA !== true || i.applyCheck !== true) return no("carry_not_clean");
   const touched = new Set(diffPaths(i.diff));
   if (i.changedSinceBase === null || touched.size === 0 || i.changedSinceBase.some((f) => touched.has(f))) return no("carry_files_changed");
+  // M71: a learned candidate is graded by the type its approved rule declares on main.
+  if (i.rule === null) return no("carry_rule_unknown");
+  if (i.rule !== undefined && i.rule.grading !== "legacy") return ruleGrade(i.rule, i.fresh, i.suite ?? null);
   const g = i.fresh;
   if (!g) return no("carry_no_fresh_grade");
   const oneFn = [...i.diff.matchAll(/^\+export function [A-Za-z_$][\w$]*\(/gm)].length === 1;
   const counts = g.verdict === "COUNTS" && g.suite === true && g.newTests > 0 && g.afterPass === true && g.beforeFail === true && (oneFn ? g.stubFail === true : g.stubFail !== false);
   return counts ? { carry: true } : no("carry_grade_not_counts");
+}
+
+function ruleGrade(rule: DeclaredRule, g: FreshGrade | null, s: SuiteGrade | null): CarryDecision {
+  const no = (reason: CarryReason): CarryDecision => ({ carry: false, reason });
+  if (rule.grading === "suite") {
+    // Suite-graded rules (WORKFLOW_JOB, TSCONFIG_SCRIPT): no test grade of its own; the fresh grade is the
+    // candidate's own Job B gates on the new head. A test grade on such a candidate does not match its rule.
+    if (!s || !s.applied) return no("carry_no_fresh_grade");
+    if (s.testGraded || g) return no("carry_grade_type_mismatch");
+    return s.typecheck && s.suite && s.eligible ? { carry: true } : no("carry_grade_not_counts");
+  }
+  if (!g) return s && s.applied && !s.testGraded ? no("carry_grade_type_mismatch") : no("carry_no_fresh_grade");
+  const base = g.verdict === "COUNTS" && g.suite === true && g.newTests > 0 && g.afterPass === true && g.beforeFail === true;
+  if (rule.grading === "self-stub") return base && g.stubFail === true ? { carry: true } : no("carry_grade_not_counts");
+  return base && g.stubFail !== false ? { carry: true } : no("carry_grade_not_counts"); // "self": no stub step declared
+}
+
+/** M71: the regraded candidate's own Job B gates, from its Results record. */
+export function suiteFromRecord(c: { applied: boolean; typecheckPassed: boolean; originalSuitePassed: boolean; eligible: boolean; testGrading?: unknown } | undefined): SuiteGrade | null {
+  if (!c) return null;
+  return { applied: c.applied === true, typecheck: c.typecheckPassed === true, suite: c.originalSuitePassed === true, eligible: c.eligible === true, testGraded: c.testGrading !== undefined && c.testGrading !== null };
 }
 
 /** The fresh grade from the regraded candidate's Results record (Job B's results, recorded by trusted Job C). */

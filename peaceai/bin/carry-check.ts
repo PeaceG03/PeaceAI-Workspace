@@ -5,7 +5,9 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { carryComment, checkCarry, freshFromRecord, latestPending } from "../lib/carry.ts";
+import { carryComment, checkCarry, declaredRule, freshFromRecord, latestPending, suiteFromRecord } from "../lib/carry.ts";
+import { loadApprovedList } from "../lib/approved.ts";
+import { specHash } from "../lib/learned.ts";
 import { scanText } from "../lib/leak.ts";
 import { latestAttempt, taskDir } from "../lib/store.ts";
 import { isRepoName } from "../lib/target.ts";
@@ -50,7 +52,16 @@ if (typeof pending === "object" && isRepoName(target) && diff) {
     changedSinceBase = names.status === 0 ? names.stdout.split("\n").filter(Boolean) : null;
   }
 }
-const d = checkCarry({ pending, task: attempt!.task, diff, appliedByJobA: cand?.applied === true, applyCheck, changedSinceBase, fresh: freshFromRecord(cand) });
+// M71: the grade type comes from main's approved list and main's spec file (this checkout), never the candidate.
+const tooling = resolve(import.meta.dirname, "../..");
+const list = loadApprovedList(join(tooling, "peaceai/rules/approved.json"));
+const specOf = (id: string) => {
+  const f = join(tooling, "peaceai/rules/learned", `${id}.json`);
+  if (!/^[a-z0-9][a-z0-9.-]{0,79}$/.test(id) || !existsSync(f)) return null;
+  try { const spec = JSON.parse(readFileSync(f, "utf8")); return { spec, hash: specHash(spec) }; } catch { return null; }
+};
+const rule = declaredRule(cand?.operationId, cand?.transformations ?? [], list.ok ? list.list.rules : [], specOf);
+const d = checkCarry({ pending, task: attempt!.task, diff, appliedByJobA: cand?.applied === true, applyCheck, changedSinceBase, fresh: freshFromRecord(cand), rule, suite: suiteFromRecord(cand) });
 if (!d.carry) stop(d.reason);
 const p = pending as Exclude<typeof pending, string | null>;
 const body = carryComment({ schema: "peaceai-carry:v1", issue, verdictCommentId: p.verdictCommentId, fromRunId: p.runId, fromCandidate: p.candidateId, runId, label: cand!.label ?? "" });
