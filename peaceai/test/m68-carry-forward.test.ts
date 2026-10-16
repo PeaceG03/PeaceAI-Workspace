@@ -129,7 +129,10 @@ test("wiring 2: the carry job is trusted, read-only, after Job C and the review;
   assert.ok(!/carry/.test(job(y, "test")), "Job B (sandboxed) is not changed");
   const cc = bin("carry-check.ts");
   assert.match(cc, /attempt\.task\.runId !== runId\) stop\("carry_not_this_run"\)/);
-  assert.match(cc, /checkCarry\(\{ pending, task: attempt!\.task, diff, appliedByJobA: cand\?\.applied === true, applyCheck, changedSinceBase, fresh: freshFromRecord\(cand\) \}\)/);
+  assert.match(cc, /checkCarry\(\{ pending, task: attempt!\.task, diff, appliedByJobA: cand\?\.applied === true, applyCheck, changedSinceBase, fresh: freshFromRecord\(cand\), rule, suite: suiteFromRecord\(cand\) \}\)/);
+  // M71: the declared grade type is read from this checkout's approved list and spec files only.
+  assert.match(cc, /loadApprovedList\(join\(tooling, "peaceai\/rules\/approved\.json"\)\)/);
+  assert.match(cc, /join\(tooling, "peaceai\/rules\/learned", `\$\{id\}\.json`\)/);
   assert.ok(!/writeNew|appendIndex|writeSummary/.test(cc), "carry-check writes nothing to Results");
 });
 test("wiring 3: peace-verdict accepts a dispatch only from the bot, re-validated, and records it on that exact attempt", () => {
