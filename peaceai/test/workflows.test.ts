@@ -244,3 +244,22 @@ test("peace-verdict: patch build disables background gc and cleanup cannot fail 
   assert.match(step, /rm -rf "\$RUNNER_TEMP\/target" \|\| \{/u);
   assert.ok(step.indexOf("test -s") < step.indexOf('rm -rf "$RUNNER_TEMP/target"'));
 });
+
+test("builder-log results-crosscheck (#217): push-to-main only, core env, read-only Results key, guarded, sparse tasks/, deleted after", () => {
+  const text = read("builder-log.yml");
+  const j = jobs(text);
+  const pr = j.get("builder-log")!, rc = j.get("results-crosscheck")!;
+  assert.ok(!/secrets\.|environment:/.test(pr), "the PR job holds no key");
+  assert.match(rc, /if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(rc, /environment: peaceai-core\n/);
+  assert.match(rc, /permissions:\n      contents: read\n      issues: read\n/);
+  assert.deepEqual([...new Set(text.match(/secrets\.[A-Z_]+/g))], ["secrets.PEACEAI_RESULTS_READ_KEY"]);
+  assert.ok(!/PEACEAI_RESULTS_DEPLOY_KEY|git push|results-write\.sh|: write/.test(text));
+  assert.match(rc, /\[ -n "\$\{DEPLOY_KEY:-\}" \] \|\| \{ echo "PEACEAI_RESULTS_READ_KEY is not set in the peaceai-core environment: refused \(fail closed\)"; exit 1; \}/);
+  const at = (s: string) => { const i = rc.indexOf(s); assert.ok(i >= 0, s); return i; };
+  assert.ok(at("Verify the checkout and the key script") < at("secrets.PEACEAI_RESULTS_READ_KEY"));
+  assert.match(rc, /bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai\/bin\/with-deploy-key\.sh/);
+  assert.match(rc, /sparse-checkout set tasks\n/);
+  assert.ok(at("trace.ts --results-dir") < at("Delete the Results clone") && at("rule-skill.ts --results-dir") < at("Delete the Results clone"));
+  assert.ok(!/upload-artifact/.test(text));
+});
