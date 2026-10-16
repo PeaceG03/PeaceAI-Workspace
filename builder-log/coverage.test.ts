@@ -5,8 +5,10 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { appendOnly, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, retagTarget, validateLiveProven, validateLog, validateRetags, type Entry } from "./check.ts";
 import {
+  approvedAt,
   countable,
   coverageReport,
+  retagCountable,
   denverYmd,
   formatCoverageSummary,
   LIVE_LANDING,
@@ -85,7 +87,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 5/58 = 8.6% after retags (historical missing WORKFLOW_STEP seq 10/13 stay uncounted); WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; LOOP_FUNCTION 5 missing", () => {
+test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags never raise coverage; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; LOOP_FUNCTION 5 missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -97,19 +99,23 @@ test("real log: 5/58 = 8.6% after retags (historical missing WORKFLOW_STEP seq 1
   assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
   assert.equal(r.allTime.builderTasks, 58);
-  // Counted: seq 26 TEST_CASE (logged able) + retags 70/78 THROW_GUARD + 71/77 METHOD_GUARD.
-  assert.equal(r.allTime.peaceaiAble, 5);
-  assert.equal(r.allTime.percent, 8.6);
+  // Counted: seq 26 TEST_CASE (logged able) + seq 70 retag THROW_GUARD (always approved; by:PeaceAI landing seq 76
+  // PeaceSTOCKS@49d26c9 references PeaceAI-Workspace#144). Not: 71/77 (before METHOD_GUARD approval), 78 (nothing
+  // landed), 10/13 (pre-approval WORKFLOW_STEP missing entries).
+  assert.equal(r.allTime.peaceaiAble, 2);
+  assert.equal(r.allTime.percent, 3.4);
   assert.equal(r.last7Days.builderTasks, 58);
-  assert.equal(r.last7Days.peaceaiAble, 5);
-  assert.equal(r.last7Days.percent, 8.6);
+  assert.equal(r.last7Days.peaceaiAble, 2);
+  assert.equal(r.last7Days.percent, 3.4);
+  assert.deepEqual(r.topMissing.find((m) => m.skill === "METHOD_GUARD"), { skill: "METHOD_GUARD", count: 2 });
+  assert.deepEqual(r.topMissing.find((m) => m.skill === "THROW_GUARD"), { skill: "THROW_GUARD", count: 1 });
   assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_STEP"), { skill: "WORKFLOW_STEP", count: 2 }, "seq 10/13 logged before WORKFLOW_STEP approval");
   assert.deepEqual(r.topMissing.find((m) => m.skill === "LOOP_FUNCTION"), { skill: "LOOP_FUNCTION", count: 5 });
   assert.ok(!r.topMissing.some((m) => m.skill === "COMPLEX_FUNCTION"));
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /8\.6% \(5\/58\)/);
-  assert.equal(coverageReport(text, denverYmd()).allTime.percent, 8.6);
+  assert.match(md, /3\.4% \(2\/58\)/);
+  assert.equal(coverageReport(text, denverYmd()).allTime.percent, 3.4);
 });
 
 test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
@@ -146,8 +152,8 @@ test("retag: coverage uses the latest tag; retag lines are not tasks", () => {
   assert.equal(retagTarget({ changed: "none (fixture)" }), null);
   const r = coverageReport(text, "2026-10-15");
   assert.equal(r.allTime.builderTasks, 6, "the three retag lines are not counted as tasks");
-  // seq 6 WORKFLOW_JOB -> THROW_GUARD (live-proven): able goes 2 -> 3
-  assert.equal(r.allTime.peaceaiAble, 3);
+  // seq 6 WORKFLOW_JOB -> THROW_GUARD: no able mark and no PeaceAI landing, so the retag cannot raise it (stays 2)
+  assert.equal(r.allTime.peaceaiAble, 2);
   // seq 7 retagged twice: the latest (WORKFLOW_JOB) wins, LOOP_FUNCTION does not appear
   assert.ok(!r.topMissing.some((m) => m.skill === "LOOP_FUNCTION"));
   assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_JOB"), { skill: "WORKFLOW_JOB", count: 1 });
@@ -181,8 +187,46 @@ test("historical missing-skill entry for a now-approved, live-proven skill stays
   assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_STEP"), { skill: "WORKFLOW_STEP", count: 1 });
   assert.equal(countable({ skill: "WORKFLOW_STEP", mark: "missing skill WORKFLOW_STEP" }, new Set(["WORKFLOW_STEP"])), false);
   assert.equal(countable({ skill: "WORKFLOW_STEP", mark: "PeaceAI-able today" }, new Set(["WORKFLOW_STEP"])), true);
-  // An appended retag (dated after approval, so marked able) is the only way to change it.
+  // Even an appended retag cannot raise it: WORKFLOW_STEP was approved after seq 9's own time.
   const retagged = text + R(10, 9, "WORKFLOW_STEP", "PeaceAI-able today") + "\n";
   assert.deepEqual(validateLog(retagged), []);
-  assert.equal(coverageReport(retagged, "2026-10-15").allTime.peaceaiAble, 3);
+  assert.equal(coverageReport(retagged, "2026-10-15").allTime.peaceaiAble, 2);
+});
+
+test("retag never raises: approval must predate the ORIGINAL task, and the task needs an able mark or a PeaceAI landing", () => {
+  const base = (extra: string[]) => FIXTURE + extra.join("\n") + "\n";
+  // (a) approved AFTER the original task: WORKFLOW_STEP since 2026-10-13 22:41, task at 2026-10-13 12:00, even with a landing.
+  const a = base([
+    line({ seq: 9, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-13", changed: "PeaceAI-Workspace#901" }),
+    line({ seq: 10, skill: "WORKFLOW_STEP", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-14", changed: "PeaceAI-Workspace#901, PeaceSTOCKS@abcdef1" }),
+    R(11, 9, "WORKFLOW_STEP", "PeaceAI-able today"),
+  ]);
+  assert.deepEqual(validateLog(a), []);
+  assert.equal(approvedAt("WORKFLOW_STEP", "2026-10-13 12:00"), false);
+  assert.equal(coverageReport(a, "2026-10-15").allTime.peaceaiAble, 2, "approval after the task: not counted");
+  // (b) approved before, but the original mark was missing and no PeaceAI landing references the task.
+  const b = base([
+    line({ seq: 9, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#902" }),
+    R(10, 9, "THROW_GUARD", "PeaceAI-able today"),
+  ]);
+  assert.deepEqual(validateLog(b), []);
+  assert.equal(coverageReport(b, "2026-10-15").allTime.peaceaiAble, 2, "no able mark, no landing: not counted");
+  // A landing of a different issue, or a different skill, is not evidence either.
+  const b2 = base([
+    line({ seq: 9, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#902" }),
+    line({ seq: 10, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-14", changed: "PeaceAI-Workspace#9021, PeaceSTOCKS@abcdef2" }),
+    line({ seq: 11, skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-14", changed: "PeaceAI-Workspace#902, PeaceSTOCKS@abcdef3" }),
+    R(12, 9, "THROW_GUARD", "PeaceAI-able today"),
+  ]);
+  assert.deepEqual(validateLog(b2), []);
+  assert.equal(coverageReport(b2, "2026-10-15").allTime.peaceaiAble, 2);
+  // Positive control: approved before + a by:PeaceAI landing of that skill referencing the task's issue.
+  const ok = base([
+    line({ seq: 9, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#902" }),
+    line({ seq: 10, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-14", changed: "PeaceSTOCKS@abcdef4", why: "PeaceAI-Workspace#902 candidate landed" }),
+    R(11, 9, "THROW_GUARD", "PeaceAI-able today"),
+  ]);
+  assert.deepEqual(validateLog(ok), []);
+  assert.equal(coverageReport(ok, "2026-10-15").allTime.peaceaiAble, 3);
+  assert.equal(retagCountable(entriesOf(ok)[8]!, "THROW_GUARD", entriesOf(ok)), true);
 });

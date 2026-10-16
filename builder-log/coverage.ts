@@ -5,7 +5,7 @@
 // against a backing PeaceAI repo@sha seq). Approved-but-unproven skills do not count.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { LIVE_LANDING_REF, LIVE_PROVEN_SINCE, LOG_PATH, retagTarget, validateLog, type Entry } from "./check.ts";
+import { APPROVED_SINCE, APPROVED_SKILLS, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, LOG_PATH, retagTarget, validateLog, type Entry } from "./check.ts";
 
 /** @deprecated use LIVE_LANDING_REF from check.ts */
 export const LIVE_LANDING = LIVE_LANDING_REF;
@@ -67,6 +67,25 @@ function addDaysYmd(ymd: string, deltaDays: number): string {
   return `${y}-${mo}-${day}`;
 }
 
+/** Skill approved at a MT "YYYY-MM-DD HH:MM" instant (APPROVED_SKILLS always; APPROVED_SINCE from its time). */
+export function approvedAt(skill: string, at: string): boolean {
+  if ((APPROVED_SKILLS as readonly string[]).includes(skill)) return true;
+  const since = (APPROVED_SINCE as Readonly<Record<string, string>>)[skill];
+  return since !== undefined && since <= at;
+}
+
+const ISSUE_REF = /PeaceAI-Workspace#(\d+)/g;
+
+/** Auditor #216: may a retag of `task` to `skill` count? Never raises coverage without approval + evidence. */
+export function retagCountable(task: Entry, skill: string, entries: readonly Entry[]): boolean {
+  if (!approvedAt(skill, `${task.date} ${task.time}`)) return false;
+  if (task.mark === "PeaceAI-able today") return true;
+  const refs = [...task.changed.matchAll(ISSUE_REF)].map((m) => m[0]);
+  if (!refs.length) return false;
+  return entries.some((p) => p.by === "PeaceAI" && p.skill === skill && p.seq > task.seq && LIVE_LANDING_REF.test(p.changed)
+    && refs.some((r) => new RegExp(`${r}(?!\\d)`).test(`${p.changed} ${p.why} ${p.asked}`)));
+}
+
 /**
  * Auditor #216: a Builder task counts only if its (latest-retagged) skill is live-proven AND its mark was
  * "PeaceAI-able today" when logged. A historical "missing skill X" entry stays uncounted even after X is
@@ -96,10 +115,17 @@ export function coverageReport(logText: string, asOfDate: string, topN = 10): Co
   const entries = parseLogEntries(logText);
   const proven = liveProvenSkills(entries, asOfDate);
   // Retag lines are not tasks; each Builder task takes the skill of its latest retag (log order), if any.
+  // Auditor #216: a retag may only lower or neutralize coverage. It becomes countable only if its skill was
+  // approved at or before the ORIGINAL task's time AND (the original mark was already able OR a by:PeaceAI
+  // repo@sha landing of that skill references the task's PeaceAI-Workspace#N). Otherwise it stays missing.
   const retag = new Map<number, Entry["skill"]>();
-  const retagMark = new Map<number, string>();
-  for (const e of entries) { const t = retagTarget(e); if (t !== null) { retag.set(t, e.skill); retagMark.set(t, e.mark); } }
-  const builderAll = entries.filter((e) => e.by === "Builder" && retagTarget(e) === null).map((e) => (retag.has(e.seq) ? { ...e, skill: retag.get(e.seq)!, mark: retagMark.get(e.seq)! } : e));
+  for (const e of entries) { const t = retagTarget(e); if (t !== null) retag.set(t, e.skill); }
+  const builderAll = entries.filter((e) => e.by === "Builder" && retagTarget(e) === null).map((e) => {
+    const skill = retag.get(e.seq);
+    if (skill === undefined) return e;
+    const mark = retagCountable(e, skill, entries) ? "PeaceAI-able today" : `missing skill ${skill}`;
+    return { ...e, skill, mark };
+  });
   const start7 = addDaysYmd(asOfDate, -6);
   const builder7 = builderAll.filter((e) => e.date >= start7 && e.date <= asOfDate);
   const miss = new Map<string, number>();
