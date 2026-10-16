@@ -1,4 +1,4 @@
-# IMPORT_EDIT v2 (M56 proposal; a NEW kind, OFF by default, not in approved.json)
+# IMPORT_EDIT v2 (M56 proposal, M66 wired; a NEW kind, not in approved.json until Peace /approve-rule)
 
 IMPORT_EDIT v1 is unchanged. v2 edits ONE existing top-level `import` in a non-protected `.ts`/`.mts`/`.tsx` file and
 is refused unless all hold (engine: `peaceai/lib/import-edit-v2.ts`):
@@ -15,8 +15,12 @@ is refused unless all hold (engine: `peaceai/lib/import-edit-v2.ts`):
    scanner). Names are plain identifiers, never `__proto__`, `constructor`, `prototype`, `default`, `eval` or
    `arguments`. Side-effect imports never gain or lose a clause. Formatting- or order-only changes are refused.
 4. **Behavior proof.** The task's check (typecheck or test) fails before and passes after, through the normal grading.
-5. **Off by default.** Only `PEACEAI_IMPORT_EDIT_V2=true` turns it on; not in RULE_KINDS until a separate,
-   Auditor-reviewed wiring PR; approval is Peace's. Builder never posts /approve-rule.
+5. **Off by default.** The dev path needs `PEACEAI_IMPORT_EDIT_V2=true`. M66 wires kind `IMPORT_EDIT_V2`
+   (`peaceai/rules/learned/public-import-edit-v2.json`) into RULE_KINDS; Job A runs it only when the hash-pinned approved
+   list names its exact hash. Approval is Peace's. Builder never posts /approve-rule.
+6. **Task phrase (M66).** `change import of SPECIFIER in FILE to: import ...` (the whole new import statement, one line).
+   The import is found by its exact specifier (exactly one match), replaced, and the result checked with rules 1-3.
+   No new test file: Job B grades the candidate with the target's own checks.
 
 Evidence (`peaceai/rules/proposals/m56-import-edit-v2-evidence.json`): 25 mined licensed external commits (22 single-line, 3 multi-line) from repos outside the training corpus (M60: 12 overlapping dropped) pass
 on their real before/after files (blob-pinned fixtures), at or above the 10-example bar. Commits that add or remove a whole import line are refused by rule 1 (93 mined).

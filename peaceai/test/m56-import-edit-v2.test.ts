@@ -24,7 +24,7 @@ test("off by default; not approved; v1 untouched", () => {
   assert.equal(importEditV2Enabled({ PEACEAI_IMPORT_EDIT_V2: "true" }), true);
   assert.ok(!read("peaceai/rules/approved.json").includes("public-import-edit-v2"));
   assert.match(REC.status, /^proposal-off/);
-  assert.ok(!read("peaceai/lib/learned.ts").includes("import-edit-v2"));
+  assert.ok(read("peaceai/lib/learned.ts").includes("import-edit-v2.ts"), "M66: wired into learned rules (Job A only via the approved list)");
 });
 
 test("evidence: licensed external (corpus or example-only list), none from set C, replays, meets the bar", () => {
@@ -115,7 +115,7 @@ test("engine, spec and this test are protected; spec pinned", () => {
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   assert.equal(createHash("sha256").update(read("peaceai/spec/import-edit-v2.md")).digest("hex"), SPEC_SHA);
 });
-const SPEC_SHA = "84616d669dc84374df690d351be0d78e722e00011524400f94438a3ce54b23a4";
+const SPEC_SHA = "04ad91ed69fa3315e1405ac653bde7010cd05837e58b9050fa23e117e726b08a";
 
 test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
   const corpus = new Set<string>((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string }[]).map((r) => r.name));
