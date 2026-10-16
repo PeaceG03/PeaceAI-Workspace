@@ -186,7 +186,43 @@ export function buildImportEditV2(task: ImportEditV2Task, files: readonly { path
   const ok = tries.filter((t) => t.problem === null);
   if (ok.length === 1) return { path: task.file, content: ok[0]!.content };
   if (ok.length > 1) return no("import_not_unique");
-  return hits.length === 1 ? no(`import_edit_refused: ${tries[0]!.problem}`) : no("import_not_unique");
+  return hits.length === 1 ? no(importEditV2Code(tries[0]!.problem!)) : no("import_not_unique");
+}
+// Architect (proof B, #239): the refusal line keeps only `code` or `code: name` (refusal-reason.ts), so a v2 problem
+// sentence is mapped to a short sanitizer-safe code here. A trailing `: name` is kept (the sanitizer still checks it).
+// Unknown problems fall back to the plain code `import_edit_refused`.
+const PROBLEM_CODES: readonly [string, string][] = [
+  ["a bare package may not be introduced or swapped", "import_edit_bare_package"],
+  ["relative and bare specifiers may not be exchanged", "import_edit_relative_bare_swap"],
+  ["specifier must keep its module", "import_edit_module_changed"],
+  ["specifier resolves to a different file than before", "import_edit_different_target"],
+  ["specifier not a plain relative or bare name", "import_edit_specifier_not_plain"],
+  ["not a plain .ts path", "import_edit_path_not_ts"],
+  ["protected path", "import_edit_protected_path"],
+  ["import attributes", "import_edit_attributes"],
+  ["syntax error", "import_edit_syntax_error"],
+  ["text outside the imports changed", "import_edit_outside_change"],
+  ["imports added or removed", "import_edit_line_added_removed"],
+  ["more than one import changed", "import_edit_many_imports"],
+  ["no import changed", "import_edit_no_change"],
+  ["side-effect import changed", "import_edit_side_effect"],
+  ["default or namespace binding changed", "import_edit_default_namespace"],
+  ["type-only flip without named bindings", "import_edit_type_flip_unnamed"],
+  ["binding name not allowed", "import_edit_bad_binding_name"],
+  ["duplicate binding", "import_edit_duplicate_binding"],
+  ["formatting or order only", "import_edit_formatting_only"],
+  ["too many binding changes", "import_edit_too_many_changes"],
+  ["removed binding still used", "import_edit_removed_still_used"],
+  ["added binding already bound", "import_edit_already_bound"],
+  ["added binding shadows a local declaration", "import_edit_shadows_local"],
+  ["added binding shadows a global", "import_edit_shadows_global"],
+  ["added binding unused", "import_edit_added_unused"],
+];
+export function importEditV2Code(problem: string): string {
+  const hit = PROBLEM_CODES.find(([p]) => problem === p || problem.startsWith(p + ":") || problem.startsWith(p + " ("));
+  if (!hit) return "import_edit_refused";
+  const i = problem.indexOf(": ");
+  return i >= 0 && problem.startsWith(hit[0] + ":") ? `${hit[1]}: ${problem.slice(i + 2)}` : hit[1];
 }
 const validParams = (params: Record<string, string | string[]>) => IMPORT_EDIT_V2_PARAM_KEYS.every((k) => typeof params[k] === "string" && IMPORT_EDIT_V2_VOCAB[k].includes(params[k] as string));
 /** Job A entry: admitted only via the hash-pinned approved list, so no flag here. */
