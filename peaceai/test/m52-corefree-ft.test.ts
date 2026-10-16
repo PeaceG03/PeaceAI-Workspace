@@ -18,6 +18,30 @@ const body = (n: number) => `export function f${n}(a: number): number {\n  const
 const ft = (doc: number, over: Record<string, unknown> = {}) => ({ doc, split: doc % 5 ? "train" : "heldout", repo: "PeaceG03/PeaceSTOCKS", sha: S40, path: `src/f${doc}.ts`, function: `f${doc}`, ...over });
 const CORE = Array.from({ length: 40 }, (_, i) => `export function coreOnly${i}(v: string): string { return v.repeat(${i}) + "${i}"; }`).join("\n");
 
+
+// M49 fix (2) (Auditor #227): fine-tune docs are checked against git, so each run commits its docs into local source
+// repos (<root>/<owner>/<repo>) and the placeholder sha S40 in the manifest becomes that real commit.
+function sourceRoot(dir: string) {
+  const root = join(dir, "src");
+  return { root, commit(docs: { doc: unknown; text: string }[], man: unknown[]): unknown[] {
+    const text = new Map(docs.map((d) => [d.doc, d.text]));
+    const shas = new Map<string, string>();
+    for (const m of man as Record<string, unknown>[]) {
+      if (!m || typeof m !== "object" || !("function" in m) || typeof m.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(m.repo) || typeof m.path !== "string" || !m.path || !text.has(m.doc)) continue;
+      const g = join(root, m.repo);
+      if (!existsSync(g)) { mkdirSync(g, { recursive: true }); execFileSync("git", ["init", "-q"], { cwd: g }); }
+      mkdirSync(join(g, m.path, ".."), { recursive: true }); writeFileSync(join(g, m.path), text.get(m.doc)!);
+      shas.set(m.repo, g);
+    }
+    const sha = new Map<string, string>();
+    for (const [repoName, g] of shas) {
+      execFileSync("git", ["add", "-A"], { cwd: g });
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c", "--allow-empty"], { cwd: g });
+      sha.set(repoName, execFileSync("git", ["rev-parse", "HEAD"], { cwd: g, encoding: "utf8" }).trim());
+    }
+    return (man as Record<string, unknown>[]).map((m) => (m && typeof m === "object" && m.sha === S40 && sha.has(m.repo as string) ? { ...m, sha: sha.get(m.repo as string) } : m));
+  } };
+}
 function env() {
   const dir = mkdtempSync(join(tmpdir(), "m52-"));
   const core = join(dir, "core"); mkdirSync(core); writeFileSync(join(core, "x.ts"), CORE);
@@ -26,12 +50,14 @@ function env() {
   const model = join(dir, "model"); mkdirSync(model);
   writeFileSync(join(model, "config.json"), JSON.stringify({ version: "lm-v1-000000000052" }));
   let k = 0;
-  const run = (docs: { doc: unknown; text: string }[], man: unknown[], stage?: string) => {
+  const src = sourceRoot(dir);
+  const run = (docs: { doc: unknown; text: string }[], man0: unknown[], stage?: string) => {
     const d = join(dir, `c${k++}`); mkdirSync(d);
+    const man = src.commit(docs, man0);
     const manText = man.map((x) => JSON.stringify(x)).join("\n") + "\n";
     writeFileSync(join(d, "docs.jsonl"), docs.map((x) => JSON.stringify(x)).join("\n") + "\n");
     writeFileSync(join(d, "manifest.jsonl"), manText);
-    const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model, ...(stage ? ["--stage", stage] : [])], { encoding: "utf8" });
+    const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model, "--source-root", src.root, ...(stage ? ["--stage", stage] : [])], { encoding: "utf8" });
     const p = join(model, stage ? `corefree-proof-${stage}.json` : "corefree-proof.json");
     return { status: r.status, stderr: r.stderr, out: r.stdout ? JSON.parse(r.stdout) : null, proof: existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null, manSha: H(manText) };
   };
@@ -177,4 +203,117 @@ test("M52 (a) memcheck runs once on the final model against both corpora, fails 
   assert.match(mc, /scan = dual && !dual\.ok \? null :/, "a failed dual decision means no scan, so status FAIL");
   assert.match(mc, /buildSubstringIndex\(\[\.\.\.pre\.txt, \.\.\.ft\.txt\]\)/, "the exemption corpus is both corpora");
   assert.match(mc, /if \("trainedOn" in cfgNow \|\| ftCorpus\)/, "a trainedOn model cannot be checked as single-corpus");
+});
+
+// ---- M49 fix (2) (Architect option (i)): a fine-tune doc that is a prefix / near copy of a NEWER version of a pinned
+// public-origin core file is accepted only when its own repo + path equal that pin's public origin.
+const UNIV = Array.from({ length: 40 }, (_, i) => `export function elig${i}(barCount: number): string { return barCount > ${i} ? "LEVEL_${i % 3}" : "LEVEL_0"; }`).join("\n") + "\n";
+const FEAT = Array.from({ length: 40 }, (_, i) => `export function featureRecipe${i}(x: number[]): number { return x.slice(${i}).reduce((a, b) => a + b * ${i + 1}, 0); }`).join("\n") + "\n";
+const PRIV = Array.from({ length: 40 }, (_, i) => `export function privateCore${i}(s: string): string { return s.padStart(${i + 3}, "*") + "${i}"; }`).join("\n") + "\n";
+function pinEnv() {
+  const dir = mkdtempSync(join(tmpdir(), "m49p-"));
+  const core = join(dir, "core");
+  const files: Record<string, string> = { "packages/markets-scanner/src/universe.ts": UNIV, "packages/markets-scanner/src/features.ts": FEAT, "packages/private.ts": PRIV };
+  for (const [p, t] of Object.entries(files)) { mkdirSync(join(core, p, ".."), { recursive: true }); writeFileSync(join(core, p), t); }
+  mkdirSync(join(core, "docs"));
+  writeFileSync(join(core, "docs", "peaceai-public-origin.json"), JSON.stringify({ schema: "peaceai-public-origin:v1", files: [
+    { path: "packages/markets-scanner/src/features.ts", sha256: H(FEAT), origin: "PeaceG03/PeaceSTOCKS@607525c:src/features.ts" },
+    { path: "packages/markets-scanner/src/universe.ts", sha256: H(UNIV), origin: "PeaceG03/PeaceSTOCKS@99c0cfb:src/universe.ts" },
+  ] }));
+  execFileSync("git", ["init", "-q"], { cwd: core }); execFileSync("git", ["add", "-A"], { cwd: core });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"], { cwd: core });
+  const model = join(dir, "model"); mkdirSync(model);
+  writeFileSync(join(model, "config.json"), JSON.stringify({ version: "lm-v1-000000000049" }));
+  let k = 0;
+  const src = sourceRoot(dir);
+  return (docs: { doc: number; text: string }[], man0: unknown[], opts: { root?: string | null; expectExit?: number } = {}) => {
+    const d = join(dir, `c${k++}`); mkdirSync(d);
+    const man = src.commit(docs, man0);
+    writeFileSync(join(d, "docs.jsonl"), docs.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    writeFileSync(join(d, "manifest.jsonl"), man.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model, "--stage", "finetune", ...(opts.root === null ? [] : ["--source-root", opts.root ?? src.root])], { encoding: "utf8" });
+    if (opts.expectExit) { assert.equal(r.status, opts.expectExit, r.stderr); assert.ok(!existsSync(join(model, "corefree-proof-finetune.json"))); return { stderr: r.stderr } as never; }
+    assert.equal(r.status, 0, r.stderr);
+    const proof = JSON.parse(readFileSync(join(model, "corefree-proof-finetune.json"), "utf8"));
+    return { out: JSON.parse(r.stdout), proof, file: (doc: number) => proof.files.find((f: { doc: number }) => f.doc === doc) };
+  };
+}
+// doc 44: a cut-off prefix of a newer PeaceSTOCKS src/universe.ts (refreshEligibility appended, then truncated).
+const DOC44 = UNIV.split("\n").slice(0, 36).join("\n") + "\nexport async function refreshEligibility(storage: unknown) {\n  const counts = await storage";
+// doc 13: the featureRecipe case, src/features.ts at a newer commit (same code, reformatted whitespace + tail).
+const DOC13 = FEAT.replace(/ \{ return/g, " {\n  return").split("\n").slice(0, 70).join("\n");
+const STOCKS = (doc: number, path: string, fn: string) => ft(doc, { path, function: fn });
+
+test("M49 fix (2): doc 44 (universe.ts prefix) and doc 13 (featureRecipe, features.ts) are PROVEN only via their pin's own origin", () => {
+  const run = pinEnv();
+  const r = run([...DOCS, { doc: 13, text: DOC13 }, { doc: 44, text: DOC44 }], [...MAN, STOCKS(13, "src/features.ts", "featureRecipe"), STOCKS(44, "src/universe.ts", "refreshEligibility")]);
+  assert.notEqual(H(DOC44), H(UNIV)); assert.notEqual(H(DOC13), H(FEAT));
+  assert.equal(r.proof.noCoreFiles, "PROVEN"); assert.equal(r.out.allowlistedPublicOrigin, 2);
+  assert.equal(r.file(13).coreExact, false); assert.equal(r.file(44).coreExact, false);
+});
+
+test("M49 fix (2) negative: a doc that matches a pinned file but whose source is not the pin's origin is still refused", () => {
+  const run = pinEnv();
+  for (const [name, m] of [
+    ["other repo, same path", ft(44, { repo: "PeaceG03/PeaceAI-Workspace", path: "src/universe.ts", function: "refreshEligibility" })],
+    ["same repo, other path", STOCKS(44, "src/scanner.ts", "refreshEligibility")],
+    ["origin of the OTHER pin", STOCKS(44, "src/features.ts", "refreshEligibility")],
+  ] as const) {
+    const r = run([...DOCS, { doc: 44, text: DOC44 }], [...MAN, m]);
+    assert.equal(r.proof.noCoreFiles, "NOT_PROVEN", name); assert.equal(r.file(44).coreExact, true, name); assert.equal(r.out.allowlistedPublicOrigin, 0, name);
+  }
+  // A doc from the pin's origin that also carries non-pinned core text is still caught by the core check.
+  const mixed = run([...DOCS, { doc: 44, text: PRIV }], [...MAN, STOCKS(44, "src/universe.ts", "refreshEligibility")]);
+  assert.equal(mixed.proof.noCoreFiles, "NOT_PROVEN");
+});
+
+test("M49 fix (2) containment: a whole pinned file plus a few verbatim private core lines, labelled with its origin, is refused", () => {
+  const run = pinEnv();
+  const priv = PRIV.split("\n");
+  for (const n of [3, 4, 6]) {
+    const mixed = UNIV + priv.slice(10, 10 + n).join("\n") + "\n";
+    const r = run([...DOCS, { doc: 44, text: mixed }], [...MAN, STOCKS(44, "src/universe.ts", "refreshEligibility")]);
+    assert.equal(r.proof.noCoreFiles, "NOT_PROVEN", `${n} private lines`); assert.equal(r.file(44).coreExact, true);
+    assert.ok(r.file(44).coreContained >= 32); assert.ok(r.file(44).coreNearMax < 0.8, "similarity alone would not catch it");
+  }
+});
+
+test("M49 fix (2) containment: half-core dilution (half private core, half new code, similarity under the threshold) is refused", () => {
+  const run = pinEnv();
+  const fresh = Array.from({ length: 40 }, (_, i) => `export const novel${i} = (q: number) => Math.max(q, ${i * 13}) - ${i};`);
+  const half = [...PRIV.split("\n").slice(0, 20), ...fresh].join("\n");
+  const r = run([...DOCS, { doc: 7, text: half }], [...MAN, ft(7)]);
+  assert.ok(r.file(7).coreNearMax < 0.8, `near ${r.file(7).coreNearMax}`);
+  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(7).coreExact, true); assert.ok(r.file(7).coreContained >= 32);
+  const clean = run([...DOCS, { doc: 7, text: fresh.join("\n") }], [...MAN, ft(7)]);
+  assert.equal(clean.proof.noCoreFiles, "PROVEN"); assert.ok(clean.file(7).coreContained < 32);
+});
+
+test("M49 fix (2) git: each fine-tune doc must be a prefix of repo@sha:path; no source root, unknown commit or a non-prefix fails closed", () => {
+  const run = pinEnv();
+  const ok = run([...DOCS, { doc: 44, text: DOC44 }], [...MAN, STOCKS(44, "src/universe.ts", "refreshEligibility")]);
+  assert.equal(ok.proof.noCoreFiles, "PROVEN");
+  run([...DOCS], MAN, { root: null, expectExit: 1 });
+  run([...DOCS], MAN, { root: join(tmpdir(), "m49-no-such-root"), expectExit: 1 });
+  run([...DOCS], [...MAN.slice(0, 5), ft(5, { sha: "f".repeat(40) })], { expectExit: 1 });
+  // The manifest names a path whose committed text is not what the doc says (doc text != committed prefix).
+  const r = run([...DOCS], [...MAN.slice(0, 5), ft(5, { path: "src/f0.ts" })], { expectExit: 1 }) as unknown as { stderr: string };
+  assert.match(r.stderr, /not a prefix/);
+});
+
+test("M49 fix (2) containment: isolated private lines pass; scattered private text past 64 shingles and 10% is refused (backstop)", () => {
+  const run = pinEnv();
+  // Two isolated private lines in mostly fresh code: no one-file run reaches 32 and the total stays under 64.
+  const priv = PRIV.split("\n");
+  const fresh = (i: number) => `export const glue${i} = (z: number) => z * ${i + 101} - ${i * 7};`;
+  const sparse = Array.from({ length: 2 }, (_, i) => [priv[i * 9]!, ...Array.from({ length: 12 }, (_, j) => fresh(i * 100 + j))]).flat().join("\n");
+  const s = run([...DOCS, { doc: 8, text: sparse }], [...MAN, ft(8)]);
+  assert.ok(s.file(8).coreContained < 32 && s.file(8).corePrivateShingles < 64, JSON.stringify(s.file(8)));
+  assert.equal(s.proof.noCoreFiles, "PROVEN");
+  // Every private line on its own, each followed by fresh code: runs stay short, but 20 private lines add up past
+  // 64 private shingles and 10% of the doc, so the backstop refuses it.
+  const scattered = priv.slice(0, 20).flatMap((l, i) => [l, fresh(i), fresh(i + 50)]).join("\n");
+  const r = run([...DOCS, { doc: 8, text: scattered }], [...MAN, ft(8)]);
+  assert.ok(r.file(8).corePrivateShingles >= 64, JSON.stringify(r.file(8)));
+  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(8).coreExact, true);
 });

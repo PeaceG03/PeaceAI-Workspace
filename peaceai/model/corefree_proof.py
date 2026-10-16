@@ -5,7 +5,8 @@ Usage: corefree_proof.py --corpus TRAIN_CORPUS_DIR --core-dir CORE_CHECKOUT --mo
 Writes MODEL_DIR/corefree-proof.json:
   schema, model (config.json version), noCoreFiles (PROVEN only if every file passes), manifestSha256,
   coreCommit, near {method, threshold}, files: [{doc, path, source, sha256, coreExact, coreNearMax}]
-coreExact: the file's text equals a core file's (raw or whitespace-normalised). coreNearMax: the highest
+coreExact: the file's text equals a core file's (raw or whitespace-normalised), or it near-copies a pinned file
+whose source is not its origin, or it holds a verbatim private-core span (coreContained >= CONTAIN_RUN shingles; M49 fix (2)). coreNearMax: the highest
 MinHash Jaccard estimate (64 permutations, 16 bands, 8-token shingles; same as corpus_filter.py) against any
 core text file that shares an LSH band (0.0 when none does). Deterministic. Prints counts only.
 """
@@ -19,6 +20,9 @@ ap.add_argument("--near", type=float, default=0.8)
 # M52 (Architect (a)): a two-corpus model (pretrain + fine-tune) gets one proof per corpus:
 # MODEL_DIR/corefree-proof-<stage>.json, carrying "corpus": <stage>. Without --stage: the single-corpus file, unchanged.
 ap.add_argument("--stage", choices=["pretrain", "finetune"])
+# M49 fix (2) (Auditor #227): a fine-tune manifest is checked against git. DIR/<owner>/<repo> must be a git repo (bare
+# is fine) holding <sha>; each doc must be a prefix of <sha>:<path>. Missing root, repo, commit or file: fail closed.
+ap.add_argument("--source-root")
 args = ap.parse_args()
 PROOF_NAME = f"corefree-proof-{args.stage}.json" if args.stage else "corefree-proof.json"
 # M40 (Auditor #160): a stale proof from an earlier run never survives a refused or crashed run.
@@ -50,13 +54,19 @@ def minhash(text):
 # that matches a pinned file counts as non-core only when its own content sha256 equals that pin; anything else that
 # copies or near-copies a pinned file is flagged like any core file. Malformed allowlist -> no pins (all files core).
 pins = {}
+pin_origin = {}  # M49 fix (2): pin sha256 -> (public repo, path) parsed from the pin's "origin" ("owner/repo@commit:path")
+ORIGIN_RE = re.compile(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-f]{7,40}:([A-Za-z0-9._/-]+)", re.ASCII)
 try:
     po = json.load(open(os.path.join(args.core_dir, "docs", "peaceai-public-origin.json"), encoding="utf-8"))
     if po.get("schema") == "peaceai-public-origin:v1" and isinstance(po.get("files"), list) and all(
             isinstance(f, dict) and isinstance(f.get("path"), str) and re.fullmatch(r"[0-9a-f]{64}", str(f.get("sha256", ""))) for f in po["files"]):
         pins = {f["path"]: f["sha256"] for f in po["files"]}
+        for f in po["files"]:
+            o = ORIGIN_RE.fullmatch(f["origin"]) if isinstance(f.get("origin"), str) else None
+            if o:
+                pin_origin[f["sha256"]] = (o.group(1), o.group(2))
 except (OSError, ValueError):
-    pins = {}
+    pins, pin_origin = {}, {}
 core_texts, pinned_texts = [], []  # pinned_texts: (pin sha256, text) of allowlisted public-origin core files
 for p in subprocess.run(["git", "ls-files", "-z"], cwd=args.core_dir, capture_output=True, check=True).stdout.decode().split("\0"):
     full = os.path.join(args.core_dir, p)
@@ -73,6 +83,47 @@ for p in subprocess.run(["git", "ls-files", "-z"], cwd=args.core_dir, capture_ou
             continue
         core_texts.append(t)
 core_raw = {hashlib.sha256(t.encode()).hexdigest() for t in core_texts}
+
+
+# M49 fix (2) (Auditor #227): containment, applied to every doc of every schema. Walk the doc's 8-token shingles in
+# order; a shingle is private to core file F when F contains it and no pinned public-origin file does. The doc is
+# refused (coreExact) when it holds a verbatim span of CONTAIN_RUN consecutive shingles all private to ONE core file
+# (CONTAIN_RUN + 7 = 39 tokens; tokens count every punctuation mark, so this is about 2 lines of code). Catches a pinned
+# file (or any public text) padded with a few verbatim private lines, and half-core dilution that MinHash averages away.
+# Measured on the M49 corpora: single-line idioms (comparators, a 40-hex regex, typeof guards) reach 16-24 shingles in
+# one core file, and runs stitched across different core files are not copies, so neither counts.
+CONTAIN_RUN = 32
+
+
+def shingle_seq(text):
+    toks = TOKEN.findall(text)
+    return [hash_(" ".join(toks[i:i + 8])) for i in range(len(toks) - 7)]
+
+
+pinned_sh = set()
+for _sha, t in pinned_texts:
+    pinned_sh.update(shingle_seq(t))
+private_idx = {}  # shingle -> ids of the non-pinned core files that hold it
+for fid, t in enumerate(core_texts):
+    for x in set(shingle_seq(t)) - pinned_sh:
+        private_idx.setdefault(x, []).append(fid)
+
+
+# Backstop (Architect): scattered copying with no long run. Refused when at least CONTAIN_TOTAL distinct shingles of
+# the doc are private core shingles AND they are at least CONTAIN_FRAC of the doc's distinct shingles.
+CONTAIN_TOTAL, CONTAIN_FRAC = 64, 0.10
+
+
+def private_run(text):
+    seq = shingle_seq(text)
+    best, runs = 0, {}
+    for x in seq:
+        runs = {f: runs.get(f, 0) + 1 for f in private_idx.get(x, ())}
+        if runs:
+            best = max(best, max(runs.values()))
+    uniq = set(seq)
+    hits = sum(1 for x in uniq if x in private_idx)
+    return best, hits, (hits / len(uniq) if uniq else 0.0)
 core_norm = {norm(t) for t in core_texts}
 buckets, sigs = {}, []
 for t in core_texts:
@@ -181,6 +232,28 @@ for sha, t in pinned_texts:
     pinned_raw[hashlib.sha256(t.encode()).hexdigest()] = sha
     pinned_norm[norm(t)] = sha
 pinned_sigs = [(sha, minhash(t)) for sha, t in pinned_texts]
+if schema == "finetune":
+    # M49 fix (2): every fine-tune doc must be a prefix of the file it claims to come from, read from git.
+    if not args.source_root:
+        sys.exit("corefree_proof: fine-tune manifest refused (no --source-root to check docs against git)")
+_git_files = {}
+
+
+def git_file(repo, sha, path):
+    key = (repo, sha, path)
+    if key not in _git_files:
+        gd = os.path.join(args.source_root, *repo.split("/"))
+        r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{sha}:{path}"], capture_output=True) if os.path.isdir(gd) else None
+        if r is not None and r.returncode != 0 and subprocess.run(["git", "-C", gd, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True).returncode != 0:
+            subprocess.run(["git", "-C", gd, "fetch", "-q", "origin", sha], capture_output=True)
+            r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{sha}:{path}"], capture_output=True)
+        try:
+            _git_files[key] = r.stdout.decode("utf-8") if r is not None and r.returncode == 0 else None
+        except UnicodeDecodeError:
+            _git_files[key] = None
+    return _git_files[key]
+
+
 docs = {}
 for line in open(os.path.join(args.corpus, "docs.jsonl"), encoding="utf-8"):
     if line.strip():
@@ -201,26 +274,38 @@ for m in man:
     tsha = hashlib.sha256(t.encode()).hexdigest()
     if schema == "finetune":
         m = {**m, "sha256": tsha}  # derived from the doc text (the fine-tune manifest carries none)
+    if schema == "finetune":
+        src_text = git_file(m["repo"], m["sha"], m["path"])
+        if src_text is None or not src_text.startswith(t):
+            sys.exit(f"corefree_proof: doc {m['doc']} is not a prefix of {m['repo']}@{m['sha']}:{m['path']} (or it cannot be read from git)")
     if tsha != m["sha256"]:
         sys.exit(f"corefree_proof: doc {m['doc']} text does not hash to its manifest sha256")
     if blank(t):
         # M39: empty / whitespace-only after normalisation: ignored (no wider byte threshold).
         ignored_empty += 1
-        files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": False, "coreNearMax": 0.0})
+        files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": False, "coreNearMax": 0.0, "coreContained": 0, "corePrivateShingles": 0})
         continue
     s = minhash(t)
     # Against allowlisted public-origin core files: fine only when the content sha256 IS that file's pin.
     hit_pin = {pinned_raw.get(tsha), pinned_norm.get(norm(t))} - {None}
     hit_pin |= {sha for sha, sg in pinned_sigs if sum(x == y for x, y in zip(s, sg)) / NPERM >= args.near}
-    pin_ok = bool(hit_pin) and hit_pin == {tsha}
+    # M49 fix (2) (Architect option (i)): fine-tune docs are cut-off prefixes, often of a NEWER version of a pinned
+    # public file, so their sha256 never equals the pin. Such a doc is accepted ONLY when every pinned file it matches
+    # has a public origin whose repo AND path equal the doc's own source repo and path (e.g. a PeaceSTOCKS:src/features.ts
+    # doc against the features.ts pin). Matching a pinned file from any other repo or path stays pin_bad (refused), and
+    # the doc is still checked against every non-pinned core file below, so this never admits other core text.
+    origin_ok = schema != "internal" and bool(hit_pin) and all(pin_origin.get(h) == (m["repo"], m["path"]) for h in hit_pin)
+    pin_ok = bool(hit_pin) and (hit_pin == {tsha} or origin_ok)
     pin_bad = bool(hit_pin) and not pin_ok
     allowlisted += pin_ok
-    exact = pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
+    contained, priv_hits, priv_frac = private_run(t)  # longest one-file verbatim private span; scattered private shingles
+    scattered = priv_hits >= CONTAIN_TOTAL and priv_frac >= CONTAIN_FRAC
+    exact = contained >= CONTAIN_RUN or scattered or pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
     cands = set()
     for b in range(BANDS):
         cands.update(buckets.get((b, s[b * ROWS:(b + 1) * ROWS]), ()))
     near = max((sum(x == y for x, y in zip(s, sigs[c])) / NPERM for c in cands), default=0.0)
-    files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": bool(exact), "coreNearMax": round(near, 4)})
+    files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": bool(exact), "coreNearMax": round(near, 4), "coreContained": contained, "corePrivateShingles": priv_hits})
 visible = all(m.get("visibility") == "public" for m in man) if schema == "internal" else True  # external/finetune: checked above
 proven = len(files) > 0 and all((not f["coreExact"]) and f["coreNearMax"] < args.near for f in files) and visible
 model = json.load(open(os.path.join(args.model, "config.json")))["version"]
@@ -231,6 +316,6 @@ proof = {"schema": "peaceai-lm-corefree-proof:v1", "model": model, "noCoreFiles"
 if args.stage:
     proof["corpus"] = args.stage
 json.dump(proof, open(os.path.join(args.model, PROOF_NAME), "w"), indent=1)
-print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files),
+print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files), "coreContainedDocs": sum(f.get("coreContained", 0) >= CONTAIN_RUN for f in files),
                   "maxNear": max((f["coreNearMax"] for f in files), default=0.0), "coreFiles": len(core_texts),
                   "schema": schema, "ignoredEmpty": ignored_empty, "allowlistedPublicOrigin": allowlisted, "pinnedCoreFiles": len(pinned_texts)}))
