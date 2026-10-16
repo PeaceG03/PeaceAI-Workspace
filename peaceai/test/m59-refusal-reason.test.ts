@@ -23,8 +23,9 @@ const LOOP = approved.some((s) => s.id === "public-loop-function-v1") ? "public-
 // (e.g. public-import-edit-v2). Every approved rule but top-v1 reports task_unparsed; top-v1 reports `top` (omitted when
 // it built a candidate). Rules that never report on a guard task (add-function, test-case, ...) are not listed.
 // #273 prep: the four un-drop rules (env-fix, loop-function-v2, tsconfig-script, workflow-job) report task_unparsed on a guard task too.
+// #320: public-env-fix-v2 (approved as 6fade25) reports task_unparsed on a guard task like env-fix v1.
 // Entries sort by id, real reasons before task_unparsed, and formatRefusals keeps at most MAX_ENTRIES=5 (intentional truncation).
-const REPORTING = new Set(["public-complex-function-v1", "public-env-fix-v1", "public-import-edit-v2", "public-loop-function-v1", "public-loop-function-v2", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1", "public-tsconfig-script-v1", "public-workflow-job-v1"]);
+const REPORTING = new Set(["public-complex-function-v1", "public-env-fix-v1", "public-env-fix-v2", "public-import-edit-v2", "public-loop-function-v1", "public-loop-function-v2", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1", "public-tsconfig-script-v1", "public-workflow-job-v1"]);
 const expected = (top: string | null) =>
   approved.map((s) => s.id).filter((id) => REPORTING.has(id)).sort()
     .flatMap((id) => (id === "public-throw-guard-top-v1" ? (top === null ? [] : [`${id}=${top}`]) : [`${id}=task_unparsed`]))
