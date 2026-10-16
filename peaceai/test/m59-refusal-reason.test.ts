@@ -22,11 +22,12 @@ const LOOP = approved.some((s) => s.id === "public-loop-function-v1") ? "public-
 // #234: expected refusal lines derive from approved.json, so they hold with and without each pending approval
 // (e.g. public-import-edit-v2). Every approved rule but top-v1 reports task_unparsed; top-v1 reports `top` (omitted when
 // it built a candidate). Rules that never report on a guard task (add-function, test-case, ...) are not listed.
-// Entries sort by id and formatRefusals keeps at most MAX_ENTRIES=5 (intentional truncation).
+// Entries sort by id, real reasons before task_unparsed, and formatRefusals keeps at most MAX_ENTRIES=5 (intentional truncation).
 const REPORTING = new Set(["public-complex-function-v1", "public-import-edit-v2", "public-loop-function-v1", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1"]);
 const expected = (top: string | null) =>
   approved.map((s) => s.id).filter((id) => REPORTING.has(id)).sort()
     .flatMap((id) => (id === "public-throw-guard-top-v1" ? (top === null ? [] : [`${id}=${top}`]) : [`${id}=task_unparsed`]))
+    .sort((a, b) => Number(a.endsWith("=task_unparsed")) - Number(b.endsWith("=task_unparsed"))) // real reasons first (stable)
     .slice(0, 5).join("; ");
 const isTest = (p: string) => p.endsWith(".test.ts");
 const SRC = [
@@ -178,4 +179,11 @@ test("Auditor hardening (#223): a listed public-loop-function-v1 entry admits as
   assert.equal(listed.length, 1, "listed once");
   assert.deepEqual(decisions, ["APPROVED"], "a listed loop rule must admit (exact sha)");
   assert.notEqual(LOOP, "");
+});
+
+test("real reasons are ordered before task_unparsed, so truncation never drops one", () => {
+  const list = ["a-v1", "b-v1", "c-v1", "d-v1", "e-v1"].map((id) => ({ id, reason: "task_unparsed" }));
+  list.push({ id: "z-v1", reason: "function_not_found" }, { id: "y-v1", reason: "unsafe_condition: limit" });
+  assert.equal(formatRefusals(list), "z-v1=function_not_found; y-v1=unsafe_condition: limit; a-v1=task_unparsed; b-v1=task_unparsed; c-v1=task_unparsed");
+  assert.equal(formatRefusals([{ id: "a-v1", reason: "task_unparsed" }, { id: "b-v1", reason: "loop_async" }]), "b-v1=loop_async; a-v1=task_unparsed");
 });

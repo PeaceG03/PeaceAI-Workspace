@@ -41,8 +41,9 @@ function validLine(line: string): boolean {
 }
 
 export function cleanRefusals(list: readonly RuleRefusal[]): RuleRefusal[] {
-  return list
-    .filter((r) => ID.test(r.id))
+  // Real reasons first (stable), task_unparsed last, so truncation to MAX_ENTRIES never drops a real reason.
+  const valid = list.filter((r) => ID.test(r.id));
+  return [...valid.filter((r) => r.reason !== "task_unparsed"), ...valid.filter((r) => r.reason === "task_unparsed")]
     .slice(0, MAX_ENTRIES)
     .map((r) => ({ id: r.id, reason: REASON.test(r.reason) ? allowNames(r.reason) : "refused" }));
 }
