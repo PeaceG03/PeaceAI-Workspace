@@ -1,0 +1,26 @@
+{
+ "id": "public-tsconfig-script-v1",
+ "kind": "TSCONFIG_SCRIPT",
+ "shape": "TSCONFIG_SCRIPT",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_TSCONFIG_SCRIPT (dev path only); Job A only via the hash-pinned approved list; target opt-in targets.json tsconfigScript: true (not set on any target yet)",
+ "engine": "peaceai/lib/tsconfig-script.ts",
+ "scope": "one new root tsconfig.NAME.json extending ./tsconfig.json in one of three fixed shapes (exclude / files / checkJs) plus one package.json line typecheck:NAME = tsc -p tsconfig.NAME.json --noEmit after the existing typecheck script",
+ "evidence": {
+  "builderExamples": [
+   "PeaceSTOCKS@f1dc065 (seq 39, reproduced)",
+   "PeaceSTOCKS@f2200a7 (reproduced)",
+   "2 private-repo examples (not listed)"
+  ],
+  "external": [
+   "vercel/turborepo d5aeac9 with-nestjs, storybook agent-eval templates (snapshots, batch-list.md)"
+  ],
+  "bar": 3
+ },
+ "learned": "peaceai/rules/learned/public-tsconfig-script-v1.json",
+ "spec": "peaceai/spec/undrop-skills-v1.md",
+ "tests": [
+  "peaceai/test/m67-undrop-skills.test.ts",
+  "peaceai/test/m67-loop-while.test.ts"
+ ]
+}

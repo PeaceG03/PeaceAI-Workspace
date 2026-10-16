@@ -6,6 +6,9 @@ import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refusal } from "./learned-guard.ts";
+import { WORKFLOW_JOB_PARAM_KEYS, WORKFLOW_JOB_TRIGGER, WORKFLOW_JOB_VOCAB, runWorkflowJobRule } from "./workflow-job.ts";
+import { TSCONFIG_SCRIPT_PARAM_KEYS, TSCONFIG_SCRIPT_TRIGGER, TSCONFIG_SCRIPT_VOCAB, runTsconfigScriptRule } from "./tsconfig-script.ts";
+import { ENV_FIX_PARAM_KEYS, ENV_FIX_TRIGGER, ENV_FIX_VOCAB, runEnvFixRule } from "./env-fix.ts";
 import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB, runImportEditV2Rule } from "./import-edit-v2.ts";
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
@@ -16,7 +19,7 @@ import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCA
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -61,6 +64,9 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "IMPORT_EDIT_V2" && !validImportEditV2Params(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "WORKFLOW_JOB" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, WORKFLOW_JOB_PARAM_KEYS, WORKFLOW_JOB_VOCAB)) return false;
+  if (s.kind === "TSCONFIG_SCRIPT" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, TSCONFIG_SCRIPT_PARAM_KEYS, TSCONFIG_SCRIPT_VOCAB)) return false;
+  if (s.kind === "ENV_FIX" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, ENV_FIX_PARAM_KEYS, ENV_FIX_VOCAB)) return false;
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
@@ -82,6 +88,12 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
     (TEST_MATCHERS as readonly unknown[]).includes(p.matcher) && (p.placement === "new-file" || p.placement === "append") && p.grading === "fail-before-pass-after" &&
     typeof p.maxLines === "string" && /^[1-9][0-9]?$/.test(p.maxLines)
   );
+}
+
+/** M67: WORKFLOW_JOB / TSCONFIG_SCRIPT / ENV_FIX specs; public-mined only, fixed one-value vocabularies. */
+function validFixedParams(p: Record<string, unknown>, minedFrom: unknown, keys: readonly string[], vocab: Record<string, readonly string[]>): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...keys].sort().join(",")) return false;
+  return keys.every((k) => typeof p[k] === "string" && vocab[k]!.includes(p[k] as string));
 }
 
 /** M66: IMPORT_EDIT_V2 specs; public-mined only, fixed one-value vocabularies. */
@@ -151,6 +163,9 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_THROW_GUARD: GUARD_TRIGGER,
   METHOD_GUARD: METHOD_GUARD_TRIGGER,
   IMPORT_EDIT_V2: IMPORT_EDIT_V2_TRIGGER,
+  WORKFLOW_JOB: WORKFLOW_JOB_TRIGGER,
+  TSCONFIG_SCRIPT: TSCONFIG_SCRIPT_TRIGGER,
+  ENV_FIX: ENV_FIX_TRIGGER,
   COMPLEX_FUNCTION: COMPLEX_TRIGGER,
   ADD_FUNCTION: FUNCTION_TRIGGER,
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
@@ -335,6 +350,16 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   if (spec.kind === "ADD_THROW_GUARD") {
     try {
       return applyGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
+    } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  // M67 un-drop batch: each admitted only via the hash-pinned approved list (Peace /approve-rule).
+  if (spec.kind === "WORKFLOW_JOB" || spec.kind === "TSCONFIG_SCRIPT" || spec.kind === "ENV_FIX") {
+    try {
+      const run = spec.kind === "WORKFLOW_JOB" ? runWorkflowJobRule : spec.kind === "TSCONFIG_SCRIPT" ? runTsconfigScriptRule : runEnvFixRule;
+      return run(spec.trigger, spec.params, objective, files, why);
     } catch {
       if (why) why.reason = "internal_error";
       return null;

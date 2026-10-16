@@ -1,0 +1,26 @@
+{
+ "id": "public-loop-function-v2",
+ "kind": "COMPLEX_FUNCTION",
+ "shape": "LOOP_WHILE",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_LOOP_FUNCTION (dev path, with PEACEAI_COMPLEX_FUNCTION); Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-complex.ts (while-literal-counter)",
+ "scope": "LOOP_FUNCTION v1 grammar plus while (C < LIT | C <= LIT), C an own let starting at an integer literal 0..1000, LIT 0..1000, exactly one top-level C += 1; every other while is loop_unbounded; own trigger 'add while loop function'",
+ "evidence": {
+  "builderExamples": [
+   "PeaceSTOCKS@3459cef (store-path, counter 0..512, += 1)"
+  ],
+  "external": [
+   "microsoft/vscode computeIndentLevel and pnpm/pnpm findEndWithoutTrailingPlusesAndDots: refused under this literal-only grammar (PARAM.length bound / decrement); refusal fixtures"
+  ],
+  "bar": 3,
+  "qualifying": 1,
+  "note": "only 1 real example fits the literal-start/literal-bound/+=1 grammar; flagged for Auditor"
+ },
+ "learned": "peaceai/rules/learned/public-loop-function-v2.json",
+ "spec": "peaceai/spec/undrop-skills-v1.md",
+ "tests": [
+  "peaceai/test/m67-undrop-skills.test.ts",
+  "peaceai/test/m67-loop-while.test.ts"
+ ]
+}

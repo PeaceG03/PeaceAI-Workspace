@@ -1,0 +1,27 @@
+{
+ "id": "public-workflow-job-v1",
+ "kind": "WORKFLOW_JOB",
+ "shape": "WORKFLOW_JOB",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_WORKFLOW_JOB (dev path only); Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/workflow-job.ts",
+ "scope": "one new job appended to an existing opted-in workflow; fixed header (runs-on ubuntu-24.04, timeout 10, permissions contents: read); setup steps copied from an existing job only if all are checkout/pnpm-setup/setup-node/install; last step runs an existing read-only script (tsc --noEmit or tsx --test). Refused: secrets, write permission, pull_request_target/workflow_run, no top-level read/none permissions. Lands through a normal Architect-merged PR (pushPathRefusal unchanged).",
+ "evidence": {
+  "builderExamples": [
+   "PeaceSTOCKS@58d91a2 (tests.yml, new workflow; same job body)",
+   "PeaceSTOCKS@d201eb3 (alert-unit; its file has issues: write, so v1 refuses it: refusal fixture)"
+  ],
+  "external": [
+   "vitejs/vite-plugin-react 2e8512f ci-rsc.yml (passes the file check)",
+   "egoist/tsup 198479b, lerna/lerna b00fa03, pnpm/pnpm 6c26d9d (refused: no read permissions / secrets elsewhere; refusal fixtures)"
+  ],
+  "bar": 3,
+  "note": "the 4 originally mined jobs qualify job-wise but 3 of their files are refused by v1's whole-file strictness"
+ },
+ "learned": "peaceai/rules/learned/public-workflow-job-v1.json",
+ "spec": "peaceai/spec/undrop-skills-v1.md",
+ "tests": [
+  "peaceai/test/m67-undrop-skills.test.ts",
+  "peaceai/test/m67-loop-while.test.ts"
+ ]
+}

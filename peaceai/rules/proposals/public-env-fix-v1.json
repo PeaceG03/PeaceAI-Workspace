@@ -1,0 +1,25 @@
+{
+ "id": "public-env-fix-v1",
+ "kind": "ENV_FIX",
+ "shape": "ENV_FIX",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_ENV_FIX (dev path only); Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/env-fix.ts",
+ "scope": "one env var read in one src/ module made strict and fail-closed (flag: unset/\"\"/0/1; int: blank->default, digits 1..MAX), helper appended, plus one new value-table test file",
+ "evidence": {
+  "builderExamples": [
+   "PeaceSTOCKS@c1b8db6 (int, reproduced)",
+   "PeaceSTOCKS@f68de39 (flag, 3 reads, reproduced)",
+   "PeaceSTOCKS@ad42237 (flag, reproduced)",
+   "PeaceSTOCKS@4b6715b, @6253466 (flag; host.ts/backfill.ts are denied paths on the PeaceSTOCKS target)"
+  ],
+  "bar": 3,
+  "definition": "Architect-approved redefinition: a code edit, not box ops"
+ },
+ "learned": "peaceai/rules/learned/public-env-fix-v1.json",
+ "spec": "peaceai/spec/undrop-skills-v1.md",
+ "tests": [
+  "peaceai/test/m67-undrop-skills.test.ts",
+  "peaceai/test/m67-loop-while.test.ts"
+ ]
+}
