@@ -10,6 +10,9 @@ import { emptyIndex } from "../lib/coretext.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
 import { promptOverlap, promptVerdict, provenanceRows, sameRuns, seqId, verdictOf, GENERIC_CORE_FILES, PROMPT_OVERLAP_MIN, type PromptOverlap, type RecordedRun } from "../lib/provenance.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
+import { countContaining, isDerivedPath, safeRepoName } from "../lib/sourcehunt.ts";
+import { execFileSync } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
 
 const out = (line: string) => console.log(line);
 const fail = (why: string): never => { out(`provenance verdict=BLOCK reason=${why}`); process.exit(1); };
@@ -81,5 +84,45 @@ sorted.forEach((run, i) => {
 for (const [sid, c] of perString) out(`provenance string=${sid} prompt_inside=${c.inside} prompt_extends=${c.extends} prompt_none=${c.none}`);
 const pv = promptVerdict(classes);
 out(`provenance prompt_runs=${classes.length} inside=${classes.filter((c) => c === "inside").length} extends=${classes.filter((c) => c === "extends").length} none=${classes.filter((c) => c === "none").length} overlap_min=${PROMPT_OVERLAP_MIN} prompt_verdict=${pv}`);
+// M49 source hunt (PEACEAI_SOURCE_HUNT=1, m49-source-hunt.yml): per string, counts only, in the same order (s01..).
+if (process.env.PEACEAI_SOURCE_HUNT === "1") {
+  const git = (dir: string, args: string[], input?: string) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 1 << 30, ...(input === undefined ? {} : { input }) });
+  const readFiles = (dir: string) => {
+    const r: { path: string; text: string }[] = [];
+    for (const p of git(dir, ["ls-files", "-z"]).split("\0").filter(Boolean)) {
+      try { const f = join(dir, p); if (statSync(f).isFile() && statSync(f).size <= 2 * 1024 * 1024) r.push({ path: p, text: readFileSync(f, "utf8") }); } catch { /* unreadable */ }
+    }
+    return r;
+  };
+  const coreNow = readFiles(coreDir);
+  const derived = coreNow.filter((f) => isDerivedPath(f.path)).map((f) => f.text), other = coreNow.filter((f) => !isDerivedPath(f.path)).map((f) => f.text);
+  // Older core versions: every blob reachable in history (full clone) that is not at HEAD, text-sized.
+  if (git(coreDir, ["rev-parse", "--is-shallow-repository"]).trim() !== "false") fail("CORE_HISTORY_SHALLOW");
+  const head = new Set(git(coreDir, ["ls-tree", "-r", "HEAD"]).split("\n").filter(Boolean).map((l) => l.split(/\s+/)[2]));
+  const objs = new Map<string, string>();
+  for (const l of git(coreDir, ["rev-list", "--objects", "--all"]).split("\n")) { const [sha, ...p] = l.split(" "); if (sha && p.length && !head.has(sha)) objs.set(sha, p.join(" ")); }
+  const sizes = git(coreDir, ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"], [...objs.keys()].join("\n") + "\n").split("\n");
+  const blobs = sizes.map((l) => l.split(" ")).filter((x) => x[1] === "blob" && Number(x[2]) <= 2 * 1024 * 1024).map((x) => x[0]!);
+  const history: { path: string; text: string }[] = [];
+  for (let i = 0; i < blobs.length; i += 500) {
+    const chunk = blobs.slice(i, i + 500);
+    const raw = execFileSync("git", ["-C", coreDir, "cat-file", "--batch"], { input: chunk.join("\n") + "\n", maxBuffer: 1 << 30 });
+    let off = 0;
+    for (const sha of chunk) {
+      const nl = raw.indexOf(10, off); const size = Number(raw.subarray(off, nl).toString().split(" ")[2]);
+      history.push({ path: objs.get(sha)!, text: raw.subarray(nl + 1, nl + 1 + size).toString("utf8") }); off = nl + 1 + size + 1;
+    }
+  }
+  // Public Peace repos: one anonymous clone per repo under PEACEAI_SOURCE_REPOS (dir names owner__repo).
+  const reposDir = process.env.PEACEAI_SOURCE_REPOS ?? "";
+  const repos = reposDir ? readdirSync(reposDir).sort().map((d) => ({ name: d.replace("__", "/"), files: readFiles(join(reposDir, d)).map((f) => f.text) })) : [];
+  if (repos.length === 0 || repos.some((r) => !safeRepoName(r.name))) fail("SOURCE_REPOS");
+  const preT = docTexts(pre), ftT = docTexts(ft);
+  out(`provenance source_hunt core_files=${coreNow.length} derived_files=${derived.length} history_blobs=${history.length} repos=${repos.length} derived_rule=dist|build|out|generated|coverage|fixtures|__snapshots__|data dirs, .generated/.gen/.min files, lockfiles, .snap`);
+  [...strings.keys()].forEach((t, i) => {
+    const hist = history.filter((h) => h.text.includes(t));
+    out(`provenance source id=${seqId(i)} pretrain_docs=${countContaining(t, preT)} finetune_docs=${countContaining(t, ftT)} core_derived_files=${countContaining(t, derived)} core_other_files=${countContaining(t, other)} core_history_blobs=${hist.length} core_history_paths=${new Set(hist.map((h) => h.path)).size}${repos.map((r) => ` repo:${r.name}=${countContaining(t, r.files)}`).join("")}`);
+  });
+}
 out(`provenance distinct=${rows.length} generic=${n("GENERIC")} leak_signal=${n("LEAK_SIGNAL")} review=${n("REVIEW")} generic_core_files_threshold=${GENERIC_CORE_FILES} verdict=${verdict}`);
 process.exit(verdict === "PASS" ? 0 : 1);

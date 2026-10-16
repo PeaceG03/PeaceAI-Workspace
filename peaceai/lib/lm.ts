@@ -298,9 +298,9 @@ export function dualCoreFreeDecision(cfg: unknown, proofs: Record<CoreFreeStage,
 /** Jobs that may load a model: the fill job, Job A, Job C, ci.yml's unit tests (tiny fixture model only), and
  *  m49-posttrain-memcheck.yml's single `memcheck` job (main-only, peaceai-core, no candidate code; it must sample the
  *  model, else lm-memcheck refuses before any proof is read), and m49-provenance-check.yml's single `provenance` job
- *  (same environment and guards, read-only, dispatch-only, no upload).
+ *  (same environment and guards, read-only, dispatch-only, no upload), and m49-source-hunt.yml's `source-hunt` job (same).
  *  Never Job B/B2 (ids `test`, `regate`), where candidate code runs. */
-export const LM_JOBS = ["lm-fill", "generate", "record", "tests", "memcheck", "provenance"] as const;
+export const LM_JOBS = ["lm-fill", "generate", "record", "tests", "memcheck", "provenance", "source-hunt"] as const;
 /** On Actions the job id decides; a job marked as running candidate code is always refused. Off Actions (the box) is allowed. */
 export function lmJobAllowed(env: Record<string, string | undefined>): boolean {
   if (env.PEACEAI_CANDIDATE_JOB === "true") return false;

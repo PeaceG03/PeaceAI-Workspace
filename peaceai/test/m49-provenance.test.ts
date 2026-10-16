@@ -75,9 +75,9 @@ json.dump({"model": "m", "samples": s}, open(a[a.index("--response") + 1], "w"))
   const expected = join(dir, "expected.json");
   const writeExp = (r: unknown) => writeFileSync(expected, JSON.stringify({ model: "m", files: { "config.json": sha("config.json"), "tokenizer.json": sha("tokenizer.json"), "weights.npz": sha("weights.npz") }, prompts: counts, unexplainedRuns: r }));
   writeExp(runs);
-  const run = () => {
+  const run = (extra: Record<string, string> = {}) => {
     const before = readdirSync(dir).sort().join(",") + "|" + readdirSync(model).sort().join(",");
-    const r = spawnSync(tsx, [join(repo, "peaceai/bin/lm-provenance.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "", PEACEAI_PYTHON: fake, PEACEAI_LM_MODEL_DIR: model, PEACEAI_LM_TRAIN_CORPUS: pre.d, PEACEAI_LM_FT_CORPUS: ft.d, PEACEAI_CORE_DIR: core, PEACEAI_PROV_EXPECTED: expected } });
+    const r = spawnSync(tsx, [join(repo, "peaceai/bin/lm-provenance.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "", PEACEAI_PYTHON: fake, PEACEAI_LM_MODEL_DIR: model, PEACEAI_LM_TRAIN_CORPUS: pre.d, PEACEAI_LM_FT_CORPUS: ft.d, PEACEAI_CORE_DIR: core, PEACEAI_PROV_EXPECTED: expected, ...extra } });
     assert.equal(readdirSync(dir).sort().join(",") + "|" + readdirSync(model).sort().join(","), before, "writes nothing");
     const all = r.stdout + r.stderr;
     for (let i = 0; i + 16 <= SECRET.length; i++) assert.ok(!all.includes(SECRET.slice(i, i + 16)), "no text printed");
@@ -87,7 +87,7 @@ json.dump({"model": "m", "samples": s}, open(a[a.index("--response") + 1], "w"))
     assert.deepEqual(ids, ids.map((_, i) => seqId(i)), "sequential ids");
     return r;
   };
-  return { run, writeExp, runs };
+  return { run, writeExp, runs, dir, core };
 }
 
 test("one core file: LEAK_SIGNAL, verdict BLOCK; the text is never printed and nothing is written", () => {
@@ -191,4 +191,40 @@ test("end to end: per-run prompt overlap lines (sequential ids, counts only), pe
   assert.ok(runs.every((m) => m[5] === "none" && Number(m[4]) < PROMPT_OVERLAP_MIN), "the core string is not in its core prompt");
   assert.match(r.stdout, /^provenance string=s01 prompt_inside=0 prompt_extends=0 prompt_none=\d+$/m);
   assert.match(r.stdout, new RegExp(`^provenance prompt_runs=${e.runs.length} inside=0 extends=0 none=${e.runs.length} overlap_min=16 prompt_verdict=LEAK$`, "m"));
+});
+
+test("source hunt (PEACEAI_SOURCE_HUNT=1): per-string counts by source (corpora, derived/other core files, core history, each public repo by name); counts only, no text", () => {
+  const e = env(1);
+  // Older core version: an earlier commit's file held the string; HEAD no longer has that blob.
+  writeFileSync(join(e.core, "src", "old.ts"), `const old = ${SECRET};\n`);
+  execFileSync("git", ["add", "-A"], { cwd: e.core }); execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "old"], { cwd: e.core });
+  writeFileSync(join(e.core, "src", "old.ts"), "const old = 1;\n");
+  mkdirSync(join(e.core, "dist"), { recursive: true }); writeFileSync(join(e.core, "dist", "bundle.js"), `var a = ${SECRET};\n`);
+  execFileSync("git", ["add", "-A"], { cwd: e.core }); execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "new"], { cwd: e.core });
+  const repos = join(e.dir, "pubrepos");
+  for (const [name, has] of [["PeaceG03__RepoA", true], ["PeaceG03__RepoB", false]] as const) {
+    const d = join(repos, name); mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "x.ts"), has ? `export const y = ${SECRET};\n` : "export const y = 1;\n");
+    execFileSync("git", ["init", "-q"], { cwd: d }); execFileSync("git", ["add", "-A"], { cwd: d });
+  }
+  const r = e.run({ PEACEAI_SOURCE_HUNT: "1", PEACEAI_SOURCE_REPOS: repos });
+  assert.match(r.stdout, /^provenance source_hunt core_files=\d+ derived_files=1 history_blobs=\d+ repos=2 /m);
+  const line = r.stdout.split("\n").find((l) => l.startsWith("provenance source id=s01 "));
+  assert.ok(line, r.stdout + r.stderr);
+  assert.match(line!, /pretrain_docs=0 finetune_docs=0 core_derived_files=1 core_other_files=1 core_history_blobs=1 core_history_paths=1 repo:PeaceG03\/RepoA=1 repo:PeaceG03\/RepoB=0$/);
+  // No public repos given: fail closed.
+  assert.match(e.run({ PEACEAI_SOURCE_HUNT: "1" }).stdout, /verdict=BLOCK reason=SOURCE_REPOS/);
+});
+
+test("m49-source-hunt.yml: dispatch-only, main-only, peaceai-core, read-only keys only, no upload/artifact/cache, LM job", () => {
+  const t = readFileSync(join(repo, ".github/workflows/m49-source-hunt.yml"), "utf8");
+  assert.match(t, /^on:\n  workflow_dispatch:\n/m);
+  assert.ok(!/workflow_run|pull_request|schedule:|^  push:/m.test(t));
+  assert.match(t, /^permissions: \{\}$/m); assert.match(t, /^jobs:\n  source-hunt:\n/m);
+  assert.ok((LM_JOBS as readonly string[]).includes("source-hunt"));
+  assert.match(t, /environment: peaceai-core\n/); assert.match(t, /github\.ref == 'refs\/heads\/main'/);
+  assert.ok(!/upload-artifact|actions\/cache|download-artifact|PEACEAI_RESULTS_DEPLOY_KEY|results-write\.sh|latest\.json|model\/train\.py|model\/export\.py|lm-memcheck\.ts|git push|contents: write|GITHUB_STEP_SUMMARY/.test(t));
+  assert.deepEqual([...new Set([...t.matchAll(/secrets\.([A-Z_]+)/g)].map((m) => m[1]))].sort(), ["PEACEAI_CORE_DEPLOY_KEY", "PEACEAI_RESULTS_READ_KEY"]);
+  assert.match(t, /PEACEAI_SOURCE_HUNT: "1"/);
+  assert.ok(t.lastIndexOf("Delete core, the model") > t.indexOf("lm-provenance.ts") && /rm -rf [^\n]*pubrepos/.test(t));
 });
