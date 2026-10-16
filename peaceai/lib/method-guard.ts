@@ -171,7 +171,7 @@ export function applyMethodGuardRule(
     return no(unknown.length ? `unsafe_condition: ${unknown.join(",")}` : "unsafe_condition");
   }
   const form = params.form as GuardForm;
-  // #315: the edit refuses a code already quoted in the file (its test could pass before the guard, so
+  // #316: the edit refuses a code already quoted in the file (its test could pass before the guard, so
   // self-grading would be unsound). Say so instead of the generic edit_refused; the refusal itself is unchanged.
   if (new RegExp(`["'\`]${task.code}\\b`).test(target.content)) return no("code_already_in_file");
   const edited = buildMethodGuardEdit(target.path, target.content, task.fn, task.cond, task.code, form);

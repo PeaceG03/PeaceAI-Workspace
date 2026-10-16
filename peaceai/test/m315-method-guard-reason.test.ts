@@ -1,4 +1,4 @@
-// #315: a method guard whose error code is already quoted in the target file is refused with
+// #316: a method guard whose error code is already quoted in the target file is refused with
 // code_already_in_file (was the generic edit_refused). Cases from the batch2 investigation:
 // sessionCollectionDue/INVALID_SESSION_DATE (et-time.ts) and alertMarker/INVALID_ALERT_KEY (tenmin-alert.ts).
 import { test } from "node:test";
