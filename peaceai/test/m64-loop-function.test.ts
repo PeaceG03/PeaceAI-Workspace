@@ -17,13 +17,15 @@ import { PROTECTED_SELF } from "../lib/selfchange.ts";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-loop-function-v1.json")) as RuleSpec;
-const SPEC_SHA = "402c60ebbb3a62d1247c85537fc09f1ca666bcb5534f846a4f2a0edaf8fd1b05";
+const SPEC_SHA = "d01626560b33dbc88bd12e7375f3e003b32f1059677b2dfeb69920e231cc2512";
 const COMPLEX = JSON.parse(read("peaceai/rules/learned/public-complex-function-v1.json")) as RuleSpec;
-const FALLBACK = { ...SPEC, params: { ...SPEC.params, loops: ["counted-literal-or-length", "for-of-param"] } } as RuleSpec;
+// v1 ships for/for-of only (while deferred: 2 qualifying while examples under the tighter start rule). V2 = the same
+// spec with while-bounded, used below as groundwork for the bounded-while grammar kept in the engine.
+const V2 = { ...SPEC, params: { ...SPEC.params, loops: ["counted-literal-or-length", "for-of-param", "while-bounded"] } } as RuleSpec;
 const files = [{ path: "src/a.ts", content: "export const x = 1;\n" }];
 const SIG = "f(n: number, xs: number[], s: string): number";
 const task = (body: string, sig = SIG, check = "- f(3, [1, 2], \"ab\") is 1") => `add loop function ${sig} to src/a.ts with body:\n${body}\n${check}`;
-const run = (body: string, spec: RuleSpec = SPEC, sig = SIG) => {
+const run = (body: string, spec: RuleSpec = V2, sig = SIG) => {
   const w: { reason?: string } = {};
   const e = applyRule(spec, spec === COMPLEX ? task(body, sig).replace("add loop function", "add complex function") : task(body, sig), files, undefined, undefined, w, () => false);
   return { e, r: w.reason };
@@ -34,15 +36,15 @@ const ok: Record<string, string> = {
   "counted, literal bound": "let t = n;\nfor (let i = 0; i < 4; i++) {\nt += i;\n}\nreturn t;",
   "counted, <= literal": "let t = n;\nfor (let i = 1; i <= 4; i++) {\nt += i;\n}\nreturn t;",
   "counted, PARAM.length bound": "let t = 0;\nfor (let i = 0; i < xs.length; i++) {\nt += xs[i];\n}\nreturn t;",
-  "counted, number parameter bound": "let t = 0;\nfor (let i = 0; i < n; i++) {\nt += 1;\n}\nreturn t;",
-  "counted, i += 1": "let t = 0;\nfor (let i = 0; i < n; i += 1) {\nt += 2;\n}\nreturn t;",
+  "counted, PARAM.length start": "let t = n;\nfor (let i = s.length; i < 9; i++) {\nt += 1;\n}\nreturn t;",
+  "counted, i += 1": "let t = n;\nfor (let i = 0; i < xs.length; i += 1) {\nt += 2;\n}\nreturn t;",
   "counted, break/continue": "let t = 0;\nfor (let i = 0; i < 9; i++) {\nif (i === 2) continue;\nif (n < i) break;\nt += i;\n}\nreturn t;",
   "for-of over a parameter": "let t = 0;\nfor (const v of xs) {\nt += v;\n}\nreturn t;",
   "for-of over a slice of a parameter": "let t = 0;\nfor (const v of xs.slice(1)) {\nt += v;\n}\nreturn t;",
-  "while up, C < B, += literal": "let c = 0;\nwhile (c < n) {\nc += 2;\n}\nreturn c;",
+  "while up, C < B, += literal": "let c = 0;\nwhile (c < xs.length) {\nc += 2;\n}\nreturn c;",
   "while up, C <= PARAM.length, ++": "let c = 0;\nlet t = 0;\nwhile (c <= xs.length) {\nt += 1;\nc++;\n}\nreturn t;",
-  "while up, swapped B > C": "let c = n;\nwhile (10 > c) {\nc += 3;\n}\nreturn c;",
-  "while down, C > B, --": "let c = n;\nwhile (c > 0) {\nc--;\n}\nreturn c;",
+  "while up, swapped B > C": "let c = 0;\nwhile (10 > c) {\nc += 3;\n}\nreturn c + n;",
+  "while down, C > B, --": "let c = xs.length;\nwhile (c > 0) {\nc--;\n}\nreturn c;",
   "while down, swapped B < C, -= literal": "let c = s.length;\nlet t = 0;\nwhile (0 < c) {\nif (s[c - 1] !== \" \") break;\nt += 1;\nc -= 1;\n}\nreturn t;",
   "two loops": "let t = 0;\nfor (const v of xs) {\nt += v;\n}\nlet c = 0;\nwhile (c < 3) {\nc += 1;\n}\nreturn t + c;",
 };
@@ -77,6 +79,25 @@ const bad: [string, string, string][] = [
   ["arrow closure", "const g = (v: number) => v + n;\nreturn g(1);", CLOSURE_NOT_ALLOWED],
   ["function expression", "const g = function (v: number) { return v; };\nreturn g(n);", CLOSURE_NOT_ALLOWED],
   ["closure inside a loop", "let t = 0;\nfor (const v of xs) {\nt += [v].map((q) => q)[0];\n}\nreturn t;", CLOSURE_NOT_ALLOWED],
+  // Auditor #218: starts and bounds are an integer literal 0..1000 or PARAM.length only.
+  ["counted number-parameter bound", "let t = 0;\nfor (let i = 0; i < n; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["while number-parameter bound", "let c = 0;\nwhile (c < n) {\nc += 1;\n}\nreturn c;", LOOP_UNBOUNDED],
+  ["counted start 1e17 (digits, wraps above 2^53)", "let t = n;\nfor (let i = 100000000000000000; i < 9; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["counted start 1e17 (exponent)", "let t = n;\nfor (let i = 1e17; i < 9; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["counted start over the literal cap", "let t = n;\nfor (let i = 1001; i < 9; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["counted negative start", "let t = n;\nfor (let i = -1000000; i < 9; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["counted number-parameter start", "let t = 0;\nfor (let i = n; i < 9; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["while start 1e17", "let c = 100000000000000000;\nwhile (c < xs.length) {\nc += 1;\n}\nreturn c;", LOOP_UNBOUNDED],
+  ["while negative start counting up", "let c = -100000000;\nwhile (c < 10) {\nc += 1;\n}\nreturn c + n;", LOOP_UNBOUNDED],
+  ["while number-parameter start", "let c = n;\nwhile (c > 0) {\nc -= 1;\n}\nreturn c;", LOOP_UNBOUNDED],
+  ["while start is an expression", "let c = xs.length - 1;\nwhile (c > 0) {\nc -= 1;\n}\nreturn c;", LOOP_UNBOUNDED],
+  ["while counter reassigned before the loop", "let c = 0;\nc = n;\nwhile (c < 10) {\nc += 1;\n}\nreturn c;", LOOP_UNBOUNDED],
+  ["counted Infinity bound", "let t = n;\nfor (let i = 0; i < Infinity; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["while Infinity bound", "let c = 0;\nwhile (c < Infinity) {\nc += 1;\n}\nreturn c + n;", LOOP_UNBOUNDED],
+  ["counted NaN bound", "let t = n;\nfor (let i = 0; i < NaN; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["while NaN bound", "let c = 10;\nwhile (c > NaN) {\nc -= 1;\n}\nreturn c + n;", LOOP_UNBOUNDED],
+  ["counted huge bound 1e9", "let t = n;\nfor (let i = 0; i < 1e9; i++) {\nt += 1;\n}\nreturn t;", LOOP_UNBOUNDED],
+  ["while huge bound 9007199254740993", "let c = 0;\nwhile (c < 9007199254740993) {\nc += 1;\n}\nreturn c + n;", LOOP_UNBOUNDED],
   ["do-while", "let c = 0;\ndo {\nc += 1;\n} while (c < 3);\nreturn c;", LOOP_UNSUPPORTED],
   ["for-in", "let t = 0;\nfor (const k in xs) {\nt += 1;\n}\nreturn t;", LOOP_UNSUPPORTED],
 ];
@@ -88,11 +109,13 @@ test("refused body_refused: index modified, growing for-of source, three loops",
 });
 
 // ---- fallback spec (for/for-of only) and #211 untouched ----
-test("fallback spec: while refused as loop_while_unsupported; for/for-of still build", () => {
-  assert.equal(run(ok["while up, C < B, += literal"]!, FALLBACK).r, LOOP_WHILE_UNSUPPORTED);
-  assert.equal(run(bad[0]![1], FALLBACK).r, LOOP_WHILE_UNSUPPORTED);
-  assert.ok(run(ok["counted, i += 1"]!, FALLBACK).e);
-  assert.ok(run(ok["for-of over a parameter"]!, FALLBACK).e);
+test("v1 spec (for/for-of only): every while is loop_while_unsupported; for/for-of forms and refusals as in V2", () => {
+  for (const [name, body] of Object.entries(ok)) {
+    const v1 = run(body, SPEC);
+    if (/while/.test(body)) assert.equal(v1.r, LOOP_WHILE_UNSUPPORTED, name); else assert.ok(v1.e, `${name}: ${v1.r}`);
+  }
+  for (const [name, body, reason] of bad) if (!/\bwhile \(/.test(body) || /\bdo \{/.test(body)) assert.equal(run(body, SPEC).r, reason, name);
+  assert.equal(run(bad[0]![1], SPEC).r, LOOP_WHILE_UNSUPPORTED, "while(true) under v1");
 });
 test("#211 public-complex-function-v1 is untouched: loops [none], every loop form is loop_unsupported", () => {
   assert.equal(specHash(COMPLEX), "e0ff5c68586d04d5366d204e2cd7956236891b4d7ad3dc2dbb69888859bcc7d3");
@@ -111,44 +134,52 @@ test("wiring: spec valid, hash pinned, own trigger, nlparse knows it, approval o
   assert.equal(SPEC.kind, "COMPLEX_FUNCTION");
   assert.equal(SPEC.trigger, LOOP_TRIGGER);
   assert.notEqual(LOOP_TRIGGER, COMPLEX_TRIGGER);
-  assert.deepEqual((SPEC.params as { loops: string[] }).loops, ["counted-literal-or-length", "for-of-param", "while-bounded"]);
+  assert.deepEqual((SPEC.params as { loops: string[] }).loops, ["counted-literal-or-length", "for-of-param"]);
+  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, loops: ["none", "for-of-param"] } }), "none mixed with loop kinds refused");
+  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, loops: ["while-bounded", "none"] } }), "none mixed with loop kinds refused");
+  assert.ok(validateSpec({ ...SPEC, params: { ...SPEC.params, loops: ["none"] } }), "none alone is fine");
   assert.ok(read("peaceai/lib/nlparse.ts").includes("new RegExp(LOOP_TRIGGER"));
   const list = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
   for (const r of list.rules.filter((x) => x.id === SPEC.id)) assert.equal(r.sha256, SPEC_SHA);
-  const rec = JSON.parse(read("peaceai/rules/proposals/public-loop-function-v1.json")) as { status: string; evidence: { examples: number; bar: number; forAndForOf: number; while: number } };
+  const rec = JSON.parse(read("peaceai/rules/proposals/public-loop-function-v1.json")) as { status: string; evidence: { examples: number; bar: number; forAndForOf: number; while: number; v2WhileCandidates: number } };
+  assert.equal(rec.evidence.while, 0); assert.equal(rec.evidence.v2WhileCandidates, EV.v2WhileCandidates.length);
   assert.match(rec.status, /^proposal-off/);
   assert.equal(rec.evidence.examples, EV.examples.length);
   assert.ok(rec.evidence.forAndForOf >= rec.evidence.bar);
   for (const p of ["peaceai/rules/learned/public-loop-function-v1.json", "peaceai/rules/proposals/public-loop-function-v1.json", "peaceai/rules/proposals/m64-loop-function-evidence.json", "peaceai/test/m64-loop-function.test.ts", "peaceai/test/fixtures/m64/x.txt"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
 });
-test("proof A (daysBackToSlotDay) builds; proof B (while(true)) is refused as loop_unbounded", () => {
+test("proof A (daysBackToSlotDay) builds; proof B (number-parameter bound) is refused as loop_unbounded", () => {
   const scan = { path: "src/scan-backstop.ts", content: "export const SCAN_SLOT_DAYS = [2, 3, 4, 5, 6] as const;\n" };
   const w: { reason?: string } = {};
   const a = applyRule(SPEC, "add loop function daysBackToSlotDay(todayUtcDay: number, slotDays: readonly number[]): number to src/scan-backstop.ts with body:\nfor (let d = 0; d <= 4; d++) {\nif (slotDays.includes((todayUtcDay + 7 - d) % 7)) return d;\n}\nreturn -1;\n- daysBackToSlotDay(2, [2, 3, 4, 5, 6]) is 0\n- daysBackToSlotDay(1, [2, 3, 4, 5, 6]) is 2", [scan], undefined, undefined, w, () => false);
   assert.ok(a, w.reason);
   const wb: { reason?: string } = {};
-  const b = applyRule(SPEC, "add loop function stepsUntilOver(limit: number): number to src/scan-backstop.ts with body:\nlet n = 0;\nwhile (true) {\nn += 1;\nif (limit < n) return n;\n}\nreturn n;\n- stepsUntilOver(3) is 4", [scan], undefined, undefined, wb, () => false);
+  const b = applyRule(SPEC, "add loop function countUpTo(limit: number): number to src/scan-backstop.ts with body:\nlet n = 0;\nfor (let i = 0; i < limit; i++) {\nn += 1;\n}\nreturn n;\n- countUpTo(3) is 3", [scan], undefined, undefined, wb, () => false);
   assert.equal(b, null); assert.equal(wb.reason, LOOP_UNBOUNDED);
+  const wt: { reason?: string } = {};
+  assert.equal(applyRule(SPEC, "add loop function stepsUntilOver(limit: number): number to src/scan-backstop.ts with body:\nlet n = 0;\nwhile (true) {\nn += 1;\nif (limit < n) return n;\n}\nreturn n;\n- stepsUntilOver(3) is 4", [scan], undefined, undefined, wt, () => false), null);
+  assert.equal(wt.reason, LOOP_WHILE_UNSUPPORTED, "while(true) under v1");
 });
 
 // ---- synthetic while tests (extra only; never counted as evidence) ----
 test("synthetic (extra): bounded whiles from the prep set", () => {
-  assert.ok(run("let c = 0;\nwhile (c < n) {\nc += 5;\n}\nreturn c;").e);
+  assert.ok(run("let c = 0;\nwhile (c < s.length) {\nc += 5;\n}\nreturn c + n;").e);
   assert.ok(run("let i = s.length;\nwhile (i > 0) {\nif (s[i - 1] !== \" \") return s.length - i;\ni -= 1;\n}\nreturn s.length;").e);
 });
 
 // ---- mined evidence (#135 sourcing rules) ----
 type Ex = { repo: string; commit: string; path: string; fn: string; line: number; exported: boolean; loops: string[]; sha256: string; license: string; licenseSha256: string; fixture: string; fileBlob: string };
-const EV = JSON.parse(read("peaceai/rules/proposals/m64-loop-function-evidence.json")) as { bar: number; manifestSha256: string; note: string; examples: Ex[] };
+const EV = JSON.parse(read("peaceai/rules/proposals/m64-loop-function-evidence.json")) as { bar: number; manifestSha256: string; note: string; examples: Ex[]; v2WhileCandidates: Ex[] };
+const ALL = () => [...EV.examples, ...EV.v2WhileCandidates];
 const PINS = JSON.parse(read("peaceai/rules/proposals/m45-example-repos.json")) as { notMined: string[]; repos: { name: string; commit: string; spdx: string; licenseFile: string; licenseSha256: string }[] };
 const gitBlob = (b: Buffer) => createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
 
-test("evidence: bars met (10 for/for-of, >= 3 while), every example pinned to an example-only repo, licenses by hash only", () => {
-  const whiles = EV.examples.filter((e) => e.loops.includes("while-bounded"));
-  assert.ok(EV.examples.length - whiles.length >= EV.bar);
-  assert.ok(whiles.length >= 3);
-  assert.match(EV.note, /NON-EXPORTED/, "the non-exported while evidence change is stated for Auditor");
-  for (const e of EV.examples) {
+test("evidence: v1 bar met (10 exported for/for-of), while deferred to v2 (2 candidates < 3), every example pinned, licenses by hash only", () => {
+  assert.ok(EV.examples.length >= EV.bar);
+  assert.ok(EV.examples.every((e) => e.exported && !e.loops.includes("while-bounded")), "v1 evidence: exported, no while");
+  assert.ok(EV.v2WhileCandidates.length < 3 && EV.v2WhileCandidates.every((e) => e.loops.includes("while-bounded")));
+  assert.match(EV.note, /deferred to v2/);
+  for (const e of ALL()) {
     const pin = PINS.repos.find((p) => p.name === e.repo);
     assert.ok(pin && !PINS.notMined.includes(e.repo), e.repo);
     assert.equal(e.commit, pin!.commit); assert.equal(e.license, pin!.spdx); assert.equal(e.licenseSha256, pin!.licenseSha256);
@@ -162,7 +193,8 @@ function loopsOf(fn: ts.FunctionDeclaration, sf: ts.SourceFile): string[] {
   const params = new Set(fn.parameters.map((p) => p.name.getText(sf)));
   const body = fn.body!;
   const assigns = (n: ts.Node, k: string) => { let h = false; const v = (x: ts.Node) => { if (ts.isBinaryExpression(x) && x.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && x.operatorToken.kind <= ts.SyntaxKind.LastAssignment && ts.isIdentifier(x.left) && x.left.text === k) h = true; if ((ts.isPrefixUnaryExpression(x) || ts.isPostfixUnaryExpression(x)) && (x.operator === ts.SyntaxKind.PlusPlusToken || x.operator === ts.SyntaxKind.MinusMinusToken) && ts.isIdentifier(x.operand) && x.operand.text === k) h = true; ts.forEachChild(x, v); }; v(n); return h; };
-  const fixed = (e: ts.Expression) => (ts.isNumericLiteral(e) && /^\d+$/.test(e.text) && Number(e.text) <= 1000) || (ts.isIdentifier(e) && params.has(e.text) && !assigns(body, e.text)) || (ts.isPropertyAccessExpression(e) && e.name.text === "length" && ts.isIdentifier(e.expression) && params.has(e.expression.text));
+  const fixed = (e: ts.Expression) => (ts.isNumericLiteral(e) && /^\d+$/.test(e.text) && Number(e.text) <= 1000) || (ts.isPropertyAccessExpression(e) && e.name.text === "length" && ts.isIdentifier(e.expression) && params.has(e.expression.text));
+  const letInit = (k: string): ts.Expression | undefined => { let r: ts.Expression | undefined; const v = (x: ts.Node) => { if (ts.isVariableDeclaration(x) && x.name.getText(sf) === k && x.initializer) r = x.initializer; ts.forEachChild(x, v); }; v(body); return r; };
   const out: string[] = [];
   const visit = (n: ts.Node): void => {
     assert.ok(!ts.isAwaitExpression(n) && !ts.isLabeledStatement(n) && !ts.isDoStatement(n) && !ts.isForInStatement(n) && !(n !== fn && ts.isFunctionLike(n)), `${fn.name!.text}: refused form`);
@@ -172,7 +204,7 @@ function loopsOf(fn: ts.FunctionDeclaration, sf: ts.SourceFile): string[] {
       out.push("for-of-param");
     } else if (ts.isForStatement(n)) {
       const d = (n.initializer as ts.VariableDeclarationList).declarations[0]!; const i = d.name.getText(sf); const c = n.condition as ts.BinaryExpression; const inc = n.incrementor!;
-      assert.ok(ts.isNumericLiteral(d.initializer!) && c && ts.isIdentifier(c.left) && c.left.text === i && [ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken].includes(c.operatorToken.kind) && fixed(c.right), `${fn.name!.text}: counted bound`);
+      assert.ok(d.initializer && fixed(d.initializer) && c && ts.isIdentifier(c.left) && c.left.text === i && [ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken].includes(c.operatorToken.kind) && fixed(c.right), `${fn.name!.text}: counted bound`);
       assert.ok(((ts.isPostfixUnaryExpression(inc) || ts.isPrefixUnaryExpression(inc)) && inc.operator === ts.SyntaxKind.PlusPlusToken) || (ts.isBinaryExpression(inc) && inc.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken && inc.right.getText(sf) === "1"), `${fn.name!.text}: step`);
       assert.ok(!assigns(n.statement, i), `${fn.name!.text}: untouched index`);
       out.push("counted-literal-or-length");
@@ -183,6 +215,8 @@ function loopsOf(fn: ts.FunctionDeclaration, sf: ts.SourceFile): string[] {
       const k = (leftCounter ? c.left : c.right).getText(sf); const bound = leftCounter ? c.right : c.left;
       const up = leftCounter ? L.includes(op) : G.includes(op);
       assert.ok([...L, ...G].includes(op) && fixed(bound) && ts.isBlock(n.statement), `${fn.name!.text}: while bound`);
+      const init = letInit(k);
+      assert.ok(init && fixed(init), `${fn.name!.text}: while start ${init?.getText(sf)}`);
       const st = (n.statement as ts.Block).statements;
       const isStep = (x: ts.Statement) => { if (!ts.isExpressionStatement(x)) return false; const e = x.expression; return (ts.isBinaryExpression(e) && e.left.getText(sf) === k && e.operatorToken.kind === (up ? ts.SyntaxKind.PlusEqualsToken : ts.SyntaxKind.MinusEqualsToken) && /^[1-9]\d*$/.test(e.right.getText(sf))) || ((ts.isPostfixUnaryExpression(e) || ts.isPrefixUnaryExpression(e)) && e.operand.getText(sf) === k && e.operator === (up ? ts.SyntaxKind.PlusPlusToken : ts.SyntaxKind.MinusMinusToken)); };
       let cont = false; const cv = (x: ts.Node) => { if (ts.isContinueStatement(x)) cont = true; ts.forEachChild(x, cv); }; cv(n.statement);
@@ -195,7 +229,7 @@ function loopsOf(fn: ts.FunctionDeclaration, sf: ts.SourceFile): string[] {
   return out;
 }
 test("evidence: every fixture is blob-pinned, <= 64 KB, and each function's loops replay through the bounded-loop definition", () => {
-  for (const e of EV.examples) {
+  for (const e of ALL()) {
     const b = readFileSync(resolve(root, e.fixture));
     assert.ok(b.length <= 65536, e.fixture);
     assert.equal(gitBlob(b), e.fileBlob, e.fixture);
@@ -210,7 +244,7 @@ test("evidence: every fixture is blob-pinned, <= 64 KB, and each function's loop
   }
 });
 test("evidence: no LICENSE text committed; fixtures dir holds exactly the evidence fixtures", () => {
-  const listed = new Set(EV.examples.map((e) => e.fixture.split("/").pop()));
+  const listed = new Set(ALL().map((e) => e.fixture.split("/").pop()));
   const have = readdirSync(resolve(root, "peaceai/test/fixtures/m64"));
   for (const f of have) { assert.ok(listed.has(f), f); assert.ok(!/licen[cs]e/i.test(f)); }
   assert.equal(have.length, listed.size);
@@ -224,7 +258,7 @@ test("evidence: no overlap with the training corpus or ext-manifest d4399d79", (
   for (const r of (JSON.parse(read("peaceai/model/ext-corpus.json")) as { repos: { name: string }[] }).repos) repos.add(r.name);
   assert.ok(repos.size > 10);
   assert.ok(repos.has("PeaceG03/PeaceSTOCKS"), "Peace's repos are in the manifest, so none are used");
-  for (const e of EV.examples) { assert.ok(!repos.has(e.repo), e.repo); assert.ok(!shas.has(e.sha256), e.path); assert.ok(!e.repo.startsWith("PeaceG03/")); }
+  for (const e of ALL()) { assert.ok(!repos.has(e.repo), e.repo); assert.ok(!shas.has(e.sha256), e.path); assert.ok(!e.repo.startsWith("PeaceG03/")); }
   for (const p of PINS.repos) assert.ok(!repos.has(p.name), `example-only repo ${p.name} not in the corpus`);
 });
 

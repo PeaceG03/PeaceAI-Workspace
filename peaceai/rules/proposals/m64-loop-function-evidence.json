@@ -3,10 +3,9 @@
  "bar": 10,
  "manifestSha256": "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e",
  "pins": "peaceai/rules/proposals/m45-example-repos.json",
- "note": "Functions from the example-only repos whose every loop fits the LOOP_FUNCTION bounded-loop definition (design: counted for with a literal / PARAM.length / number-parameter bound and an untouched counter, for-of over a parameter, bounded while with one fixed step toward a fixed bound); the rest of each body may be outside the COMPLEX vocabulary. EVIDENCE CHANGE for Auditor: while rows include NON-EXPORTED functions (exported=false); #135 counted exported functions only. If rejected, v1 ships with loops [for-of-param, counted-literal-or-length] and while is refused as loop_while_unsupported. Licenses pinned by hash only. createBase32Hash (rushstack, while row 1 of the prep) is excluded: its for loop is bounded by a local's .length (data, a const Buffer), which the definition does not allow.",
+ "note": "v1 (public-loop-function-v1) ships counted for + for-of only: params.loops [counted-literal-or-length, for-of-param]; while is refused as loop_while_unsupported. Examples are exported functions from the example-only repos whose every loop fits the bounded-loop definition (Auditor #218: starts and bounds are an integer literal 0..1000 or PARAM.length only; no number-parameter bounds); the rest of each body may be outside the COMPLEX vocabulary. While is deferred to v2: under the tighter start rule only 2 mined while examples qualify (v2WhileCandidates; Auditor accepted non-exported functions as while evidence), below the bar of 3. Dropped: typescript-eslint findLastIndex (start members.length - 1), pnpm consumeTrailingDigits (start is a number parameter), rushstack createBase32Hash (for bound is a local's .length). Licenses pinned by hash only.",
  "bars": {
-  "for-of-param+counted": 10,
-  "while-bounded": 4
+  "for-of-param+counted": 10
  },
  "examples": [
   {
@@ -168,23 +167,9 @@
    "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
    "fileBlob": "331596122862b05b91e17235666bf29b4f3aaa9f",
    "fixture": "peaceai/test/fixtures/m64/storybookjs__storybook-331596122862.txt"
-  },
-  {
-   "repo": "typescript-eslint/typescript-eslint",
-   "commit": "c1a9d608c8cc2ce50432adebf0603f69310263f9",
-   "path": "packages/eslint-plugin/src/util/misc.ts",
-   "fn": "findLastIndex",
-   "line": 196,
-   "exported": true,
-   "loops": [
-    "while-bounded"
-   ],
-   "sha256": "7a7c5abc89ca475ff7be1a471016fce24d1d3942128e4720463fa0d7f46a90db",
-   "license": "MIT",
-   "licenseSha256": "b263be8715c216f35fcb4e1cf2c748d9637e7e9ef7d2ee4bf6c49d2ae092afea",
-   "fileBlob": "a39235e17aad619e21d5f88dd8237a0be835ec35",
-   "fixture": "peaceai/test/fixtures/m64/typescript-eslint__typescript-eslint-a39235e17aad.txt"
-  },
+  }
+ ],
+ "v2WhileCandidates": [
   {
    "repo": "microsoft/vscode",
    "commit": "ce2bc857c5b748bde66ef464d7f7fc73dd1faad2",
@@ -216,22 +201,6 @@
    "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
    "fileBlob": "2e19deffa918a72b2c8df6d76dc0c278f24f1ad8",
    "fixture": "peaceai/test/fixtures/m64/pnpm__pnpm-2e19deffa918.txt"
-  },
-  {
-   "repo": "pnpm/pnpm",
-   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
-   "path": "pnpm11/resolving/npm-resolver/src/fetch.ts",
-   "fn": "consumeTrailingDigits",
-   "line": 122,
-   "exported": false,
-   "loops": [
-    "while-bounded"
-   ],
-   "sha256": "d81c1443571d1a26569e3f2afd095601c65c4f43a71af7ef13e2fea9e6697e2e",
-   "license": "MIT",
-   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
-   "fileBlob": "a7e4a61b8bd8aafffc2589ecea675455eee8daa6",
-   "fixture": "peaceai/test/fixtures/m64/pnpm__pnpm-a7e4a61b8bd8.txt"
   }
  ]
 }
