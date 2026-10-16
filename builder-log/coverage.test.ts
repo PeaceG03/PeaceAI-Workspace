@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { appendOnly, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, retagTarget, validateLiveProven, validateLog, validateRetags, type Entry } from "./check.ts";
+import {
+  appendOnly,
+  COVERAGE_NONE_SEQS,
+  isCoverageNone,
+  LIVE_LANDING_REF,
+  LIVE_PROVEN_SINCE,
+  retagTarget,
+  validateLiveProven,
+  validateLog,
+  validateRetags,
+  type Entry,
+} from "./check.ts";
 import {
   approvedAt,
   countable,
@@ -28,10 +39,11 @@ type Fields = {
   skill: string;
   mark: string;
   by: "Builder" | "PeaceAI";
+  coverage?: "none";
 };
 
-const line = (e: Fields): string =>
-  JSON.stringify({
+const line = (e: Fields): string => {
+  const o: Record<string, unknown> = {
     seq: e.seq,
     date: e.date ?? "2026-10-13",
     time: e.time ?? "12:00",
@@ -41,7 +53,10 @@ const line = (e: Fields): string =>
     skill: e.skill,
     mark: e.mark,
     by: e.by,
-  });
+  };
+  if (e.coverage !== undefined) o.coverage = e.coverage;
+  return JSON.stringify(o);
+};
 
 const entriesOf = (text: string): Entry[] => text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
 
@@ -90,7 +105,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 8/64 with PeaceAI real tasks (98/100/102/103/104/105) + Builder 26/70; seq 99 excluded as live proof; 97/101 proofs out; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 8/64 with PeaceAI real tasks (98/100/102/103/104/105) + Builder 26/70; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -101,20 +116,20 @@ test("real log: 8/64 with PeaceAI real tasks (98/100/102/103/104/105) + Builder 
   assert.deepEqual(LIVE_PROVEN_SINCE.IMPORT_EDIT, { since: "2026-10-16 00:17", seq: 101 }); // #237 (A1) -> PeaceSTOCKS@eb8aadc; asOf 2026-10-15 below excludes it
   // Allow every PeaceSTOCKS@sha that appears in the committed log (unit test of the formula; git ancestry is separate).
   const onMain = (sha: string) => /^[0-9a-f]{7,40}$/.test(sha);
-  // asOf 2026-10-15: IMPORT_EDIT not yet in LIVE_PROVEN_SINCE window; seq 102 (2026-10-16) is outside last-7.
+  assert.deepEqual([...COVERAGE_NONE_SEQS].sort((a, b) => a - b), [28, 30, 31, 35, 59, 60, 85, 86, 87, 97, 99, 101]);
+  // asOf 2026-10-15: IMPORT_EDIT not yet live-proven; all-time is now asOf-bounded so seq 102 drops out.
   const r15 = coverageReport(text, "2026-10-15", { onMain });
   for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION", "LOOP_FUNCTION"]) assert.ok(r15.liveProven.includes(s), s);
   assert.ok(r15.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
-  assert.equal(r15.allTime.builderTasks, 64); // seqs 102-105 still in all-time
-  assert.equal(r15.allTime.peaceaiAble, 8);
-  assert.equal(r15.last7Days.builderTasks, 60); // seq 102 dated 2026-10-16
+  assert.equal(r15.allTime.builderTasks, 60);
+  assert.equal(r15.allTime.peaceaiAble, 4);
+  assert.equal(r15.last7Days.builderTasks, 60);
   assert.equal(r15.last7Days.peaceaiAble, 4);
   // asOf today: full 8/64 including IMPORT_EDIT live-proven and seq 102 in the 7-day window.
   const r = coverageReport(text, "2026-10-16", { onMain });
   assert.ok(r.liveProven.includes("IMPORT_EDIT"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
-  // Denom: 58 Builder + 6 PeaceAI real (98, 100, 102, 103, 104, 105). Seq 99 asked contains "live proof A2" so it is excluded;
-  // seqs 97 and 101 are proofs / no-coverage.
+  // Denom: 58 Builder + 6 PeaceAI real (98, 100, 102, 103, 104, 105). Proof-worded rows are COVERAGE_NONE_SEQS (incl. 97/99/101).
   assert.equal(r.allTime.builderTasks, 64);
   // Counted: seq 26 TEST_CASE + seq 70 retag THROW_GUARD + PeaceAI real 98/100/102/103/104/105.
   // Not: 71/77 (before METHOD_GUARD approval), 78 (nothing landed), 10/13 (pre-approval WORKFLOW_STEP).
@@ -271,36 +286,56 @@ test("PeaceAI real task: source: peace + on-main sha counts in num and denom", (
   assert.equal(isPeaceRealTask(entriesOf(text)[8]!, (sha) => sha === "abcd123"), true);
 });
 
-test("PeaceAI proof / no-coverage records are excluded even with source: peace", () => {
-  const proof = FIXTURE + line({
+test("PeaceAI coverage:none field excludes even with source: peace; wording without field fails validateLog", () => {
+  const withField = FIXTURE + line({
     seq: 9,
     skill: "THROW_GUARD",
     mark: "PeaceAI-able today",
     by: "PeaceAI",
     date: "2026-10-14",
-    asked: "Record THROW_GUARD live proof: Peace's task PeaceAI-Workspace#901 (source: peace)",
+    asked: "Peace's task PeaceAI-Workspace#901 (source: peace): mechanism only",
     changed: "PeaceAI-Workspace#901, PeaceSTOCKS@abcd124",
-    why: "mechanism proof landed",
+    why: "mechanism landing recorded",
+    coverage: "none",
   }) + "\n";
-  assert.deepEqual(validateLog(proof), []);
-  const r = coverageReport(proof, "2026-10-15", { onMain: () => true });
+  assert.deepEqual(validateLog(withField), []);
+  assert.equal(isCoverageNone(entriesOf(withField)[8]!), true);
+  assert.equal(isProofOrNoCoverage(entriesOf(withField)[8]!), true);
+  const r = coverageReport(withField, "2026-10-15", { onMain: () => true });
   assert.equal(r.allTime.builderTasks, 6);
   assert.equal(r.allTime.peaceaiAble, 2);
-  assert.equal(isProofOrNoCoverage(entriesOf(proof)[8]!), true);
 
-  const noCov = FIXTURE + line({
+  // Auditor: proof wording without coverage:"none" (and not grandfathered) fails validateLog.
+  const wordingOnly = FIXTURE + line({
     seq: 9,
     skill: "THROW_GUARD",
     mark: "PeaceAI-able today",
     by: "PeaceAI",
     date: "2026-10-14",
-    asked: "Peace's task PeaceAI-Workspace#902 (source: peace): mechanism only",
+    asked: "Peace's task PeaceAI-Workspace#902 (source: peace): live proof wording only",
     changed: "PeaceAI-Workspace#902, PeaceSTOCKS@abcd125",
-    why: "behavior-neutral mechanism proof, no coverage credit",
+    why: "behavior-neutral mechanism proof, no coverage credit in prose",
   }) + "\n";
-  assert.deepEqual(validateLog(noCov), []);
-  assert.equal(coverageReport(noCov, "2026-10-15", { onMain: () => true }).allTime.peaceaiAble, 2);
-  assert.equal(isProofOrNoCoverage(entriesOf(noCov)[8]!), true);
+  assert.ok(validateLog(wordingOnly).some((e) => /proof wording requires coverage:"none"/.test(e)));
+});
+
+test("all-time window is bounded by asOf (later PeaceAI real tasks drop out)", () => {
+  const text = FIXTURE + line({
+    seq: 9,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    date: "2026-10-16",
+    asked: "Peace's task PeaceAI-Workspace#910 (source: peace): later real task",
+    changed: "PeaceAI-Workspace#910, PeaceSTOCKS@abcd910",
+    why: "PeaceAI produced the candidate for Peace's task #910 and it landed",
+  }) + "\n";
+  assert.deepEqual(validateLog(text), []);
+  const onMain = (sha: string) => sha === "abcd910";
+  assert.equal(coverageReport(text, "2026-10-15", { onMain }).allTime.builderTasks, 6);
+  assert.equal(coverageReport(text, "2026-10-15", { onMain }).allTime.peaceaiAble, 2);
+  assert.equal(coverageReport(text, "2026-10-16", { onMain }).allTime.builderTasks, 7);
+  assert.equal(coverageReport(text, "2026-10-16", { onMain }).allTime.peaceaiAble, 3);
 });
 
 test("PeaceAI entry without source: peace is excluded from real-task credit", () => {
