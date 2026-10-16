@@ -12,6 +12,9 @@
 // - EXPR: ADD_FUNCTION's pure vocabulary over parameters AND the function's own locals, plus read-only element
 //   access `X[INDEX]`. No other names (no module code, no globals), no `new`, no closures, no while/do, no try,
 //   no throw, no labels, no `++/--` except a counted loop's own `i++`.
+// - No helper calls (Auditor #219 note): a COMPLEX_FUNCTION or LOOP_FUNCTION body may not call another function
+//   from the same module, even an exported pure one. Such a call is refused as body_refused (pinned in
+//   m65-loop-wiring.test.ts). Allowing it needs its own spec, Auditor review and Peace /approve-rule.
 // - Limits: MAX_STATEMENTS statements, MAX_LOOPS loops, nesting depth MAX_DEPTH, MAX_BODY_CHARS of body text.
 //   Every loop terminates: for-of over an array the body cannot grow, counted loops with a fixed or input-length
 //   bound and an untouched counter. Reads at least one parameter; the last statement is a `return`.
@@ -149,6 +152,9 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
   let usesParam = false;
   // Auditor follow-up (#218): PARAM.length is a loop bound/start only on a string- or array-typed parameter (never a
   // number, boolean or untyped one), read from the enclosing function's own parameter annotations.
+  // NOTE (Auditor #219 note): this type check is a regex over the annotation's text, which is sound only because the
+  // signature grammar (FUNCTION_TYPES) admits these plain spellings. Revisit it if that grammar widens (aliases,
+  // Array<T>, unions, tuples, generics), or a widened annotation could slip past or be wrongly refused.
   const lengthParams = new Set<string>();
   if (ts.isFunctionLike(block.parent)) for (const x of block.parent.parameters) if (ts.isIdentifier(x.name) && x.type && /^(?:readonly )?(?:string|string\[\]|number\[\]|boolean\[\])$/.test(x.type.getText(sf).trim())) lengthParams.add(x.name.text);
   const names = () => new Set([...params, ...locals.keys(), ...counters]);
