@@ -1,0 +1,27 @@
+{
+ "schema": "peaceai-ft-corefree:v1",
+ "note": "M49 BLOCKING (1): box record. The fine-tune corpus is built from these pinned commits only; docs flagged by the box core-free proof are excluded by text sha256; corefree_proof.py --stage finetune then ran on the box against PeaceAI core for the resulting manifest (PROVEN). Regenerate on the box and land as its own protected PR to change it.",
+ "repos": [
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "sha": "da33d4a6e1984dfa20d215edd26f31580b6d7db3"
+  },
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "sha": "c9a6076fe92310855b14fe087bccfef97d2d9fa7"
+  }
+ ],
+ "excludedDocSha256": [
+  "6d2b2881a02c5f9bda35af3971650ec1a3b80255a0cbfe9e83e265ee6ad0bca4",
+  "a6fdbe557de931f2a14bd7f24e94083eb3308b3cd3af58f94b30e13ac51cce07"
+ ],
+ "excludedWhy": "the box proof against PeaceAI core main 40ac8f1 flagged 2 docs (PeaceSTOCKS src/features.ts: coreExact; src/universe.ts: MinHash near 0.92 to core); both dropped, the rest PROVEN",
+ "manifestSha256": "e23b51d6fb19418f0c1e568b6344bc7621196a022dd6f943b76009809701eb2b",
+ "docsSha256": "ad2d033f5a51b4b39deecd238bdd44e43a16b21e0a596215c425b8704b493d74",
+ "proof": {
+  "path": "peaceai/model/ft-corefree-proof.json",
+  "sha256": "57b341a6fd783866ca7cdab5c5ae8bc2ba0624b8f9dcf074ecc72b9adb91a9fc",
+  "noCoreFiles": "PROVEN",
+  "coreCommit": "40ac8f1cd25b878e7bd64436312ec4b69a14a0da"
+ }
+}
