@@ -19,7 +19,8 @@ export const MISSING_SKILLS = [
   "TSCONFIG_SCRIPT", // package script / tsconfig change
   "PEACEAI_SELF_CHANGE", // PeaceAI's own tooling: protected, never a PeaceAI edit by design
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
-  "ENV_FIX", // box/runner environment, no repo edit
+  "ENV_FIX", // box/runner environment; from seq 106 also strict fail-closed env-var parsing (Architect, un-drop batch)
+  "LOOP_WHILE", // counter-bounded while loops (LOOP_FUNCTION v1 covers for/for-of only)
 ] as const;
 /**
  * Skills approved later: approved for entries at or after the landing time (MT, "YYYY-MM-DD HH:MM"), and still a
