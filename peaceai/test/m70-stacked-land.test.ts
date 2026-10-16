@@ -143,3 +143,28 @@ test("provenance clause: exactly one, well-formed; stacked.ts is protected; scri
   assert.ok(!/\bpush\b"/.test(src) && !/"push"/.test(src));
   assert.ok(!/writeNew|appendIndex|record-verdict/.test(src + readFileSync(join(import.meta.dirname, "..", "lib", "stacked.ts"), "utf8")), "no Results writes");
 });
+
+test("mixed bases: an intermediate graded on an earlier chain commit is accepted; a base outside the chain, a later base and a non-batch commit refuse", () => {
+  const r = repo();
+  try {
+    const p288 = r.mk("a.ts", "x"), p289 = r.mk("b.ts", "y");
+    const Y = r.am(p288.patch); // #288 graded on X, landed as Y
+    const p290 = r.mk("c.ts", "z"); // carried #290: regraded on Y (mk builds on X; c.ts is unchanged on Y, so the diff is the same)
+    const Z = r.am(p290.patch);
+    const ok = checkStack({ issue: 289, base: r.X, head: Z, diff: p289.diff, members: [{ issue: 288, baseSha: r.X, diff: p288.diff }, { issue: 290, baseSha: Y, diff: p290.diff }], commits: collectStack(r.dir, r.X, Z) });
+    assert.deepEqual(ok, { ok: true, via: [{ sha: Y, issue: 288 }, { sha: Z, issue: 290 }] });
+    const t = trialLand({ worktree: r.dir, head: Z, patch: p289.patch, diff: p289.diff, identity: ID, suite: () => true });
+    assert.equal(t.ok, true);
+    const reason = (m: BatchMember[], head = Z) => (checkStack({ issue: 289, base: r.X, head, diff: p289.diff, members: m, commits: collectStack(r.dir, r.X, head) }) as { reason?: string }).reason;
+    // base outside the chain (a sha not in X..Z and not X)
+    assert.equal(reason([{ issue: 288, baseSha: r.X, diff: p288.diff }, { issue: 290, baseSha: "7".repeat(40), diff: p290.diff }]), "stack_other_base");
+    // base is the commit itself / a later commit: not an EARLIER chain commit
+    assert.equal(reason([{ issue: 288, baseSha: r.X, diff: p288.diff }, { issue: 290, baseSha: Z, diff: p290.diff }]), "stack_other_base");
+    assert.equal(reason([{ issue: 288, baseSha: Z, diff: p288.diff }, { issue: 290, baseSha: Y, diff: p290.diff }]), "stack_other_base");
+    // non-batch commit inside a mixed-base chain
+    writeFileSync(join(r.dir, "c.ts"), "hand\n");
+    r.g("commit", "-qam", "hand");
+    const H = r.g("rev-parse", "HEAD");
+    assert.equal(reason([{ issue: 288, baseSha: r.X, diff: p288.diff }, { issue: 290, baseSha: Y, diff: p290.diff }], H), "stack_foreign_commit");
+  } finally { r.done(); }
+});
