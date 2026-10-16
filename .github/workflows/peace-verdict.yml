@@ -493,7 +493,10 @@ jobs:
     name: retrain the shadow ranker
     needs: [record]
     # Verdicts on [test] issues never reach training, so they do not retrain.
-    if: needs.record.outputs.status == 'recorded' && needs.record.outputs.test != 'true'
+    # Off until the gated retrain: Architect ordered no auto-dispatch (run 38852518987 was auto-dispatched by a
+    # verdict). It runs only when the repo variable PEACEAI_RANKER_AUTOTRAIN is 'on', which only Architect's
+    # explicit approval sets. Manual `gh workflow run peace-train.yml` is unaffected.
+    if: vars.PEACEAI_RANKER_AUTOTRAIN == 'on' && needs.record.outputs.status == 'recorded' && needs.record.outputs.test != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
