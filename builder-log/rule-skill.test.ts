@@ -51,3 +51,12 @@ test("resultsDirLookup: the verdict's runId must be numeric (no path traversal);
   assert.deepEqual(mk("123", "123")(7), ["public-test-case-v1"]);
   for (const bad of ["../7/123", "123/..", "12a", "", 123, null]) assert.equal(mk(bad, "123")(7), null, String(bad));
 });
+
+test("loop-function-v2 and env-fix-v1 map to their builder-log skills; ENV_FIX approved from #292's merge", async () => {
+  const { RULE_SKILL } = await import("./rule-skill.ts");
+  const { APPROVED_SINCE, MISSING_SKILLS } = await import("./check.ts");
+  assert.equal(RULE_SKILL["public-loop-function-v2"], "LOOP_FUNCTION");
+  assert.equal(RULE_SKILL["public-env-fix-v1"], "ENV_FIX");
+  assert.equal(APPROVED_SINCE.ENV_FIX, "2026-10-16 11:41");
+  assert.ok(!(MISSING_SKILLS as readonly string[]).includes("ENV_FIX"));
+});

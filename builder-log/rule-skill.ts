@@ -20,6 +20,8 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-method-guard-v1": "METHOD_GUARD",
   "public-complex-function-v1": "COMPLEX_FUNCTION",
   "public-loop-function-v1": "LOOP_FUNCTION",
+  "public-loop-function-v2": "LOOP_FUNCTION",
+  "public-env-fix-v1": "ENV_FIX",
   "public-import-edit-v2": "IMPORT_EDIT",
 };
 
