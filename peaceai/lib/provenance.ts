@@ -43,3 +43,25 @@ export function provenanceRows(strings: ReadonlyMap<string, number>, coreTexts: 
 }
 
 export const verdictOf = (rows: readonly ProvRow[], matched: boolean): "PASS" | "BLOCK" => (!matched || rows.some((r) => r.cls !== "GENERIC") ? "BLOCK" : "PASS");
+
+// ---- prompt overlap (Architect/Auditor #285): each run vs its own sample's prompt (the context before the output).
+/** A tail continuation counts only when the shared part is at least PROMPT_OVERLAP_MIN (16) characters and is not
+ *  whitespace- or punctuation-dominated (`dominated`); shorter or filler overlaps (indentation, `function `) are none. */
+export const PROMPT_OVERLAP_MIN = 16;
+export type PromptOverlap = "inside" | "extends" | "none";
+/** Tail continuation length: the run must start at offset 0 of the generated output, and the longest prefix of it that
+ *  equals a suffix of the prompt is the overlap. A run elsewhere, or a mid-prompt substring match, has overlap 0. */
+export function tailOverlapLength(run: string, start: number, prompt: string): number {
+  if (start !== 0) return 0;
+  for (let k = Math.min(run.length, prompt.length); k > 0; k--) if (prompt.endsWith(run.slice(0, k))) return k;
+  return 0;
+}
+/** inside: the whole run is the prompt's tail continuation; extends: a qualifying tail continuation, then more; else none.
+ *  NOTE: PROMPT_LINKED_ALL never lifts the class verdict's BLOCK (exit code unchanged); it can only justify a memcheck
+ *  exemption PR and a re-run. */
+export function promptOverlap(run: string, start: number, prompt: string): { overlap: number; cls: PromptOverlap } {
+  const overlap = tailOverlapLength(run, start, prompt);
+  const ok = overlap >= PROMPT_OVERLAP_MIN && dominated(run.slice(0, overlap)) === "none";
+  return { overlap, cls: !ok ? "none" : overlap === run.length ? "inside" : "extends" };
+}
+export const promptVerdict = (classes: readonly PromptOverlap[]): "PROMPT_LINKED_ALL" | "LEAK" => (classes.length > 0 && classes.every((c) => c !== "none") ? "PROMPT_LINKED_ALL" : "LEAK");

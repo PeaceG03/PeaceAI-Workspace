@@ -5,10 +5,10 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
-import { duplicateSampleIds, COREFREE_MIN_RUN, LM_FILES, modelFileShas, runInfer, scanSamples, type Sample } from "../lib/lm.ts";
+import { duplicateSampleIds, promptIdOf, COREFREE_MIN_RUN, LM_FILES, modelFileShas, runInfer, scanSamples, type Sample } from "../lib/lm.ts";
 import { emptyIndex } from "../lib/coretext.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
-import { provenanceRows, sameRuns, verdictOf, GENERIC_CORE_FILES, type RecordedRun } from "../lib/provenance.ts";
+import { promptOverlap, promptVerdict, provenanceRows, sameRuns, seqId, verdictOf, GENERIC_CORE_FILES, PROMPT_OVERLAP_MIN, type PromptOverlap, type RecordedRun } from "../lib/provenance.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
 
 const out = (line: string) => console.log(line);
@@ -59,5 +59,27 @@ const rows = provenanceRows(strings, coreTexts, publicTexts);
 for (const x of rows) out(`provenance id=${x.id} length=${x.length} occurrences=${x.occurrences} core_files=${x.coreFiles} public_docs=${x.publicDocs} dominated=${x.dominated} class=${x.cls}`);
 const n = (c: string) => rows.filter((x) => x.cls === c).length;
 const verdict = verdictOf(rows, matched);
+// PROMPT_LINKED_ALL never lifts BLOCK: the exit code stays the class verdict; it only justifies a memcheck exemption PR
+// and a re-run.
+// Prompt overlap per run, against its own sample's prompt (memprompts text, looked up by the id's prompt part).
+const promptText = new Map(prompts.map((p) => [p.id, p.text]));
+const sampleById = new Map(samples.map((s) => [s.id, s]));
+const strId = new Map([...strings.keys()].map((t, i) => [t, seqId(i)]));
+const perString = new Map<string, Record<PromptOverlap, number>>();
+const classes: PromptOverlap[] = [];
+sorted.forEach((run, i) => {
+  const s = sampleById.get(run.sample);
+  const prompt = s ? promptText.get(promptIdOf(s)) : undefined;
+  const t = (s?.text ?? "").slice(run.start, run.start + run.length);
+  if (!s || prompt === undefined || t.length !== run.length || !strId.has(t)) fail("PROMPT_LOOKUP");
+  const o = promptOverlap(t, run.start, prompt!);
+  classes.push(o.cls);
+  const sid = strId.get(t)!;
+  const c = perString.get(sid) ?? { inside: 0, extends: 0, none: 0 }; c[o.cls] += 1; perString.set(sid, c);
+  out(`provenance run=r${String(i + 1).padStart(2, "0")} string=${sid} length=${run.length} overlap=${o.overlap} prompt=${o.cls}`);
+});
+for (const [sid, c] of perString) out(`provenance string=${sid} prompt_inside=${c.inside} prompt_extends=${c.extends} prompt_none=${c.none}`);
+const pv = promptVerdict(classes);
+out(`provenance prompt_runs=${classes.length} inside=${classes.filter((c) => c === "inside").length} extends=${classes.filter((c) => c === "extends").length} none=${classes.filter((c) => c === "none").length} overlap_min=${PROMPT_OVERLAP_MIN} prompt_verdict=${pv}`);
 out(`provenance distinct=${rows.length} generic=${n("GENERIC")} leak_signal=${n("LEAK_SIGNAL")} review=${n("REVIEW")} generic_core_files_threshold=${GENERIC_CORE_FILES} verdict=${verdict}`);
 process.exit(verdict === "PASS" ? 0 : 1);
