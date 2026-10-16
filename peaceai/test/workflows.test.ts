@@ -172,6 +172,8 @@ test("M3 peace-verdict: recorded verdicts dispatch training; stale PRs closed be
   const train = wf.slice(wf.indexOf("\n  train:"));
   assert.match(train, /needs: \[record\]/);
   assert.match(train, /gh workflow run peace-train\.yml/);
+  // Auto-dispatch is off unless Architect's explicit gate variable is set (no retrain before the gated retrain).
+  assert.match(train, /if: vars\.PEACEAI_RANKER_AUTOTRAIN == 'on' && needs\.record\.outputs\.status == 'recorded'/);
   assert.doesNotMatch(train, /secrets\.|environment:/);
   const respond = wf.slice(wf.indexOf("\n  respond:"), wf.indexOf("\n  train:"));
   assert.ok(respond.indexOf("Close stale PeaceAI PRs") < respond.indexOf("gh pr create"));
@@ -194,7 +196,7 @@ test("M3 peace-task: source from pick time, ranker variable to Job C only, zero-
 test("M3.1 peace-verdict: no retrain after [test] verdicts; withdrawn PRs labelled and unlabelled", () => {
   const wf = read("peace-verdict.yml");
   const train = wf.slice(wf.indexOf("\n  train:"));
-  assert.match(train, /if: needs\.record\.outputs\.status == 'recorded' && needs\.record\.outputs\.test != 'true'/);
+  assert.match(train, /if: vars\.PEACEAI_RANKER_AUTOTRAIN == 'on' && needs\.record\.outputs\.status == 'recorded' && needs\.record\.outputs\.test != 'true'/);
   assert.match(wf, /test: \$\{\{ steps\.record\.outputs\.test \}\}/);
   const respond = wf.slice(wf.indexOf("\n  respond:"), wf.indexOf("\n  train:"));
   assert.match(respond, /--json number,headRefName,labels/);
