@@ -341,7 +341,7 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   }
   if (spec.kind === "COMPLEX_FUNCTION") {
     try {
-      return runComplexRule(spec.trigger, spec.params, objective, files, isTest, why); // loops refused (loop_unsupported); plain, unprotected paths only
+      return runComplexRule(spec.trigger, spec.params, objective, files, isTest, why); // #211 loops ["none"]: loop_unsupported; M65: public-loop-function-v1 runs its for/for-of grammar (while: loop_while_unsupported). Admitted only via the hash-pinned approved list; plain, unprotected paths only
     } catch {
       if (why) why.reason = "internal_error";
       return null;

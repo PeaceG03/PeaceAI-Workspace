@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 process.env.PEACEAI_COMPLEX_FUNCTION = "true"; // the flag defaults off; the engine tests below run with it on
+process.env.PEACEAI_LOOP_FUNCTION = "true"; // M65: P lists loop forms, which the dev path also gates on PEACEAI_LOOP_FUNCTION
 import { applyComplexRule, COMPLEX_TRIGGER } from "../lib/learned-complex.ts";
 const P = { body: "bounded-block", grading: "self-fail-before-pass-after-and-stub", loops: ["for-of-param", "counted-literal-or-length"], params: "typed", placement: "end-of-module", returns: "annotated", test: "new-file" };
 const files = [{ path: "src/a.ts", content: "export const x = 1;\n" }];
@@ -58,7 +59,7 @@ import { readManifestBytes as m26Manifest } from "../lib/manifestparts.ts";
 import { COMPLEX_FUNCTION_FLAG, complexFunctionEnabled } from "../lib/learned-complex.ts";
 import { PROTECTED_SELF as M26_PROTECTED } from "../lib/selfchange.ts";
 const m26Root = m26Resolve(import.meta.dirname, "../..");
-const ON = { [COMPLEX_FUNCTION_FLAG]: "true" };
+const ON = { [COMPLEX_FUNCTION_FLAG]: "true", PEACEAI_LOOP_FUNCTION: "true" }; // M65: P lists loop forms, so the dev path also needs the loop flag
 
 test("flag: COMPLEX_FUNCTION is off unless PEACEAI_COMPLEX_FUNCTION is exactly \"true\"", () => {
   assert.equal(complexFunctionEnabled({}), false);

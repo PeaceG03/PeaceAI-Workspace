@@ -27,6 +27,9 @@ import { PROTECTED_SELF } from "./selfchange.ts";
 /** Off unless PEACEAI_COMPLEX_FUNCTION is exactly "true" (M26 refresh). */
 export const COMPLEX_FUNCTION_FLAG = "PEACEAI_COMPLEX_FUNCTION";
 export const complexFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[COMPLEX_FUNCTION_FLAG] === "true";
+/** M65 wiring: a spec that lists any loop form (public-loop-function-v1) also needs PEACEAI_LOOP_FUNCTION exactly "true" on the dev path. */
+export const LOOP_FUNCTION_FLAG = "PEACEAI_LOOP_FUNCTION";
+export const loopFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[LOOP_FUNCTION_FLAG] === "true";
 /** Named refusal for every loop form when the spec's `params.loops` is ["none"] (public-complex-function-v1, #211). */
 export const LOOP_UNSUPPORTED = "loop_unsupported";
 // M64 LOOP_FUNCTION (public-loop-function-v1): loops run only when the spec's params.loops lists the form.
@@ -144,6 +147,10 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
   let statements = 0;
   let loops = 0;
   let usesParam = false;
+  // Auditor follow-up (#218): PARAM.length is a loop bound/start only on a string- or array-typed parameter (never a
+  // number, boolean or untyped one), read from the enclosing function's own parameter annotations.
+  const lengthParams = new Set<string>();
+  if (ts.isFunctionLike(block.parent)) for (const x of block.parent.parameters) if (ts.isIdentifier(x.name) && x.type && /^(?:readonly )?(?:string|string\[\]|number\[\]|boolean\[\])$/.test(x.type.getText(sf).trim())) lengthParams.add(x.name.text);
   const names = () => new Set([...params, ...locals.keys(), ...counters]);
   const expr = (e: ts.Expression): boolean => {
     // Read-only element access X[INDEX] is allowed on top of ADD_FUNCTION's vocabulary: check it by rewriting.
@@ -186,7 +193,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
   // else (no number parameters, no 1e17 / NaN / Infinity / negative values, no expressions).
   const fixedBound = (b: ts.Expression): boolean => {
     if (ts.isNumericLiteral(b)) return /^\d+$/.test(b.text) && Number(b.text) <= MAX_LOOP_BOUND;
-    const param = ts.isPropertyAccessExpression(b) && b.name.text === "length" && ts.isIdentifier(b.expression) && params.has(b.expression.text);
+    const param = ts.isPropertyAccessExpression(b) && b.name.text === "length" && ts.isIdentifier(b.expression) && params.has(b.expression.text) && lengthParams.has(b.expression.text);
     if (param && on) usesParam = true; // a loop bound reads its parameter
     return param;
   };
@@ -430,6 +437,7 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
 
 export function applyComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, env: Record<string, string | undefined> = process.env): ComplexEdit | null {
   if (!complexFunctionEnabled(env)) return null;
+  if (Array.isArray(params.loops) && params.loops.some((x) => x !== "none") && !loopFunctionEnabled(env)) return null; // M65: loops behind their own flag
   const task = parseComplexTask(trigger, objective);
   return task ? buildComplexEdit(params, task, files, isTest) : null;
 }
