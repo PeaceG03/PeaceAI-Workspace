@@ -7,6 +7,7 @@ import { readManifestBytes } from "../lib/manifestparts.ts";
 import test from "node:test";
 import { importEditV2Enabled, importEditV2Problem, V2_MAX_NAMES } from "../lib/import-edit-v2.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
+import { admitRules, loadApprovedList } from "../lib/approved.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -22,7 +23,6 @@ test("off by default; not approved; v1 untouched", () => {
   assert.equal(importEditV2Enabled({}), false);
   assert.equal(importEditV2Enabled({ PEACEAI_IMPORT_EDIT_V2: "1" }), false);
   assert.equal(importEditV2Enabled({ PEACEAI_IMPORT_EDIT_V2: "true" }), true);
-  assert.ok(!read("peaceai/rules/approved.json").includes("public-import-edit-v2"));
   assert.match(REC.status, /^proposal-off/);
   assert.ok(read("peaceai/lib/learned.ts").includes("import-edit-v2.ts"), "M66: wired into learned rules (Job A only via the approved list)");
 });
@@ -123,4 +123,17 @@ test("no overlap: no example repo is in the training corpus list or manifest (Ar
   for (const l of readManifestBytes(join(root, "peaceai/model"), "ext-manifest").toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l).repo; if (r) corpus.add(r); }
   const ex = JSON.parse(read("peaceai/rules/proposals/m56-import-edit-v2-evidence.json")).examples as { repo: string }[];
   for (const x of ex) assert.ok(!corpus.has(x.repo), `${x.repo} is in the training corpus`);
+});
+
+test("#234: a listed public-import-edit-v2 entry is listed once with the exact sha and admits as APPROVED; unlisted never admits", () => {
+  const SHA = "b3468ea4331af00c37ab0d2ed19cff0f1d351466a5229948d1776bffcf6c4a85";
+  const file = join(root, "peaceai/rules/approved.json");
+  const listed = (JSON.parse(readFileSync(file, "utf8")) as { rules: { id: string; sha256: string }[] }).rules.filter((r) => r.id === "public-import-edit-v2");
+  const ldir = join(root, "peaceai/rules/learned");
+  const specs = readdirSync(ldir).filter((f) => f.endsWith(".json")).sort().map((f) => JSON.parse(readFileSync(join(ldir, f), "utf8")));
+  const decisions = admitRules(specs, loadApprovedList(file)).filter((a) => a.spec?.id === "public-import-edit-v2").map((a) => a.decision);
+  if (listed.length === 0) { assert.ok(!decisions.includes("APPROVED"), "not listed: never APPROVED"); return; }
+  assert.equal(listed.length, 1, "listed once");
+  assert.equal(listed[0]!.sha256, SHA, "exact sha");
+  assert.deepEqual(decisions, ["APPROVED"], "a listed entry must admit");
 });
