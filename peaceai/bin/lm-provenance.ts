@@ -1,7 +1,7 @@
 // One-off provenance check (memcheck run 38908186778, Architect/Auditor). Re-samples the model exactly as
 // lm-memcheck did (same prompts via memprompts.ts, same seed and settings, same core-free-64 exemption), checks the
 // regenerated unexplained runs equal the recorded locations (else BLOCK, fail closed), then classifies each distinct
-// run string by core file count and public doc count. Prints counts and hashed ids only; never the text; writes nothing.
+// run string by core file count and public doc count. Prints counts and sequential ids (s01, s02, ...) only, no hash of any text; never the text; writes nothing.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
@@ -47,7 +47,10 @@ if (!matched) fail("RUNS_MISMATCH");
 
 const byId = new Map(samples.map((s) => [s.id, s.text]));
 const strings = new Map<string, number>();
-for (const run of got) { const t = (byId.get(run.sample) ?? "").slice(run.start, run.start + run.length); strings.set(t, (strings.get(t) ?? 0) + 1); }
+// Deterministic id order: runs sorted by sample id (prompt kind, then number) and start; first appearance wins.
+const ord = (id: string) => { const [k, n] = id.split("-"); return [["core", "public", "empty"].indexOf(k!), Number(n)] as const; };
+const sorted = [...got].sort((a, b) => { const x = ord(a.sample), y = ord(b.sample); return x[0] - y[0] || x[1] - y[1] || a.start - b.start || a.length - b.length; });
+for (const run of sorted) { const t = (byId.get(run.sample) ?? "").slice(run.start, run.start + run.length); strings.set(t, (strings.get(t) ?? 0) + 1); }
 const rows = provenanceRows(strings, coreTexts, publicTexts);
 for (const x of rows) out(`provenance id=${x.id} length=${x.length} occurrences=${x.occurrences} core_files=${x.coreFiles} public_docs=${x.publicDocs} dominated=${x.dominated} class=${x.cls}`);
 const n = (c: string) => rows.filter((x) => x.cls === c).length;

@@ -2,15 +2,13 @@
 // Thresholds (documented, Architect): GENERIC = in any public doc, or in GENERIC_CORE_FILES (5) or more core files;
 // LEAK_SIGNAL = in exactly one core file and no public doc; REVIEW = core-only in 2..4 files, or (fail closed) in no
 // core file and no public doc. Verdict BLOCK on any LEAK_SIGNAL or REVIEW, or on any mismatch with the recorded runs.
-import { createHash } from "node:crypto";
-
 export const GENERIC_CORE_FILES = 5;
 export type ProvClass = "GENERIC" | "LEAK_SIGNAL" | "REVIEW";
 export interface RecordedRun { sample: string; start: number; length: number }
 export interface ProvRow { id: string; length: number; occurrences: number; coreFiles: number; publicDocs: number; dominated: "whitespace" | "punctuation" | "none"; cls: ProvClass }
 
-/** Hashed id only; the text itself is never returned in a printable field. */
-export const provId = (text: string) => createHash("sha256").update(`m49-prov:${text}`).digest("hex").slice(0, 16);
+/** Sequential id (s01, s02, ...). Auditor #282: no hash of the text, salted or not, ever reaches the log. */
+export const seqId = (i: number) => `s${String(i + 1).padStart(2, "0")}`;
 
 export function classify(coreFiles: number, publicDocs: number): ProvClass {
   if (publicDocs > 0 || coreFiles >= GENERIC_CORE_FILES) return "GENERIC";
@@ -35,12 +33,13 @@ export function sameRuns(recorded: readonly RecordedRun[], got: readonly Recorde
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
+/** strings: insertion order is the id order; callers insert in a deterministic order (runs sorted by sample, start). */
 export function provenanceRows(strings: ReadonlyMap<string, number>, coreTexts: readonly string[], publicTexts: readonly string[]): ProvRow[] {
-  return [...strings].map(([t, occ]) => {
+  return [...strings].map(([t, occ], i) => {
     const coreFiles = coreTexts.filter((c) => c.includes(t)).length;
     const publicDocs = publicTexts.filter((p) => p.includes(t)).length;
-    return { id: provId(t), length: t.length, occurrences: occ, coreFiles, publicDocs, dominated: dominated(t), cls: classify(coreFiles, publicDocs) };
-  }).sort((x, y) => (x.id < y.id ? -1 : 1));
+    return { id: seqId(i), length: t.length, occurrences: occ, coreFiles, publicDocs, dominated: dominated(t), cls: classify(coreFiles, publicDocs) };
+  });
 }
 
 export const verdictOf = (rows: readonly ProvRow[], matched: boolean): "PASS" | "BLOCK" => (!matched || rows.some((r) => r.cls !== "GENERIC") ? "BLOCK" : "PASS");

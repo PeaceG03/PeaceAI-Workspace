@@ -11,7 +11,7 @@ import { indexGitTree } from "../lib/coreindex.ts";
 import { emptyIndex } from "../lib/coretext.ts";
 import { COREFREE_MIN_RUN, LM_JOBS, scanSamples } from "../lib/lm.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
-import { classify, dominated, GENERIC_CORE_FILES, provId, sameRuns, verdictOf } from "../lib/provenance.ts";
+import { classify, dominated, GENERIC_CORE_FILES, sameRuns, seqId, verdictOf } from "../lib/provenance.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
@@ -35,7 +35,7 @@ test("classify: GENERIC in any public doc or >= 5 core files; LEAK_SIGNAL unique
   assert.equal(verdictOf([row("GENERIC")], false), "BLOCK");
   assert.equal(verdictOf([row("GENERIC"), row("REVIEW")], true), "BLOCK");
   assert.equal(verdictOf([row("LEAK_SIGNAL")], true), "BLOCK");
-  assert.match(provId(SECRET), /^[0-9a-f]{16}$/);
+  assert.equal(seqId(0), "s01"); assert.equal(seqId(9), "s10");
 });
 
 function env(secretInCoreFiles: number) {
@@ -81,6 +81,10 @@ json.dump({"model": "m", "samples": s}, open(a[a.index("--response") + 1], "w"))
     assert.equal(readdirSync(dir).sort().join(",") + "|" + readdirSync(model).sort().join(","), before, "writes nothing");
     const all = r.stdout + r.stderr;
     for (let i = 0; i + 16 <= SECRET.length; i++) assert.ok(!all.includes(SECRET.slice(i, i + 16)), "no text printed");
+    // Auditor #282: no hex hash of any string, salted or not, and ids are sequential s01, s02, ...
+    assert.ok(!/[0-9a-f]{8,}/i.test(all), "no hex hash in the output");
+    const ids = [...all.matchAll(/provenance id=(\S+)/g)].map((m) => m[1]);
+    assert.deepEqual(ids, ids.map((_, i) => seqId(i)), "sequential ids");
     return r;
   };
   return { run, writeExp, runs };
@@ -91,7 +95,7 @@ test("one core file: LEAK_SIGNAL, verdict BLOCK; the text is never printed and n
   const r = e.run();
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stdout, /match=true/);
-  assert.match(r.stdout, /provenance id=[0-9a-f]{16} length=\d+ occurrences=\d+ core_files=1 public_docs=0 dominated=none class=LEAK_SIGNAL/);
+  assert.match(r.stdout, /provenance id=s01 length=\d+ occurrences=\d+ core_files=1 public_docs=0 dominated=none class=LEAK_SIGNAL/);
   assert.match(r.stdout, /verdict=BLOCK/);
 });
 
@@ -126,6 +130,8 @@ test("m49-provenance-check.yml: dispatch-only, main-only, peaceai-core, read-onl
   assert.match(t, /tsx peaceai\/bin\/lm-provenance\.ts\n/);
   assert.ok(t.lastIndexOf("Delete core, the model") > t.indexOf("lm-provenance.ts"));
   const bin = readFileSync(join(repo, "peaceai/bin/lm-provenance.ts"), "utf8");
+  const lib = readFileSync(join(repo, "peaceai/lib/provenance.ts"), "utf8");
+  for (const src of [bin, lib]) assert.ok(!/createHash|createHmac|node:crypto|sha256|digest\(/.test(src), "no hashing of run text");
   assert.ok(!/writeFileSync|appendFileSync|createWriteStream|mkdirSync|https?:\/\//.test(bin), "the script writes nothing");
   // Only counts and hashed ids are printed: every out() line is from the fixed formats below.
   const outs = [...bin.matchAll(/out\(`([^`]*)`\)/g)].map((m) => m[1]);
