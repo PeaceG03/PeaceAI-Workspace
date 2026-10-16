@@ -103,6 +103,10 @@ test("memcheck PASS binds the exact file hashes; scoring works only then; a chan
   const m = memcheck(model, corpus, core);
   assert.equal(m.status, 0, m.stdout + m.stderr);
   assert.match(m.stdout, /memcheck status=PASS samples=116 core_line_hits=0 core_shingle_hits=0 core_substring_hits=0 personal_info=0/);
+  { // real infer.py: ids are unique <prompt>:<decoding>, every returned sample scanned
+    const rep = JSON.parse(readFileSync(join(model, "memcheck.json"), "utf8"));
+    assert.equal(rep.sampling.duplicateSampleIds, 0); assert.equal(rep.sampling.scannedSamples, rep.sampling.returnedTotal); assert.equal(rep.scan.scannedSamples, 116);
+  }
   const v = verifyModelDir(model);
   assert.ok(v.ok);
   const ok = spawnSync(py, [join(repo, "peaceai/model/infer.py"), "score", "--model", model, "--request", req, "--response", join(dir, "res.json")], { encoding: "utf8" });
@@ -176,7 +180,8 @@ test("scanSamples / memcheckStatus units: a core line completed from the prompt'
   assert.equal(scanSamples([s(CORE_LINE.slice(0, -16), CORE_LINE.slice(-16))], core, baseline, raw).coreLineHits, 1);
   assert.equal(memcheckStatus(null), "FAIL");
   assert.equal(memcheckStatus({ samples: 99, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "FAIL");
-  assert.equal(memcheckStatus({ samples: 100, countedSamples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "PASS");
+  assert.equal(memcheckStatus({ samples: 100, countedSamples: 100, scannedSamples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "PASS");
+  assert.equal(memcheckStatus({ samples: 100, countedSamples: 100, scannedSamples: 99, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "FAIL", "a returned sample not scanned");
   assert.equal(memcheckStatus({ samples: 116, countedSamples: 99, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "FAIL", "empty-prompt samples never count");
   assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 1, personalInfo: 0, flagged: 0 }), "FAIL");
   assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 } as never), "FAIL");

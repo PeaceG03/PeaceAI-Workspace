@@ -11,7 +11,7 @@ import { memcheckStatus, MIN_MEMCHECK_SAMPLES } from "../lib/lm.ts";
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
 
-function setup(coreFiles: number, publicDocs: number, dropKind = "") {
+function setup(coreFiles: number, publicDocs: number, dropKind = "", dupe = false) {
   const dir = mkdtempSync(join(tmpdir(), "m49mc-"));
   const core = join(dir, "core"); mkdirSync(join(core, "src"), { recursive: true });
   for (let i = 0; i < coreFiles; i++) writeFileSync(join(core, "src", `c${i}.ts`), Array.from({ length: 12 }, (_, j) => `export const privateCoreValue${i}_${j} = ${i * 100 + j};`).join("\n") + "\n");
@@ -29,7 +29,8 @@ function setup(coreFiles: number, publicDocs: number, dropKind = "") {
   writeFileSync(fake, `#!/usr/bin/env python3
 import json, sys
 a = sys.argv; req = json.load(open(a[a.index("--request") + 1]))
-s = [{"id": p["id"], "kind": k, "prompt_tail": "", "text": "x"} for p in req["prompts"] for k in ("greedy", "sampled") if not ${JSON.stringify(dropKind)} or not p["id"].startswith(${JSON.stringify(dropKind)} + "-")]
+s = [{"id": p["id"] + ":" + k, "prompt": p["id"], "kind": k, "prompt_tail": "", "text": "x"} for p in req["prompts"] for k in ("greedy", "sampled") if not ${JSON.stringify(dropKind)} or not p["id"].startswith(${JSON.stringify(dropKind)} + "-")]
+s = s + ([s[0]] if ${dupe ? "True" : "False"} else [])
 json.dump({"model": "lm-v1-000000000079", "samples": s}, open(a[a.index("--response") + 1], "w"))
 `);
   chmodSync(fake, 0o755);
@@ -66,4 +67,16 @@ test("empty-prompt samples never count toward the 100 minimum (98 counted + 16 e
 test("samples the sampler did not return are reported as NOT_RETURNED_BY_INFER", () => {
   const { rep } = setup(100, 40, "public")({});
   assert.deepEqual(rep.sampling.dropped, [{ kind: "public", count: 64, reason: "NOT_RETURNED_BY_INFER" }]);
+});
+
+test("every returned sample is scanned: scannedSamples == returned, recorded in memcheck.json; unexplained runs name <prompt>:<decoding>", () => {
+  const { rep } = setup(100, 40)({});
+  assert.equal(rep.scan.scannedSamples, 272); assert.equal(rep.sampling.returnedTotal, 272); assert.equal(rep.sampling.scannedSamples, 272);
+  assert.equal(rep.sampling.duplicateSampleIds, 0);
+});
+
+test("a duplicate (id, decoding) pair fails closed (DUPLICATE_SAMPLE_ID, no scan)", () => {
+  const { r, rep } = setup(100, 40, "", true)({});
+  assert.equal(r.status, 1); assert.equal(rep.status, "FAIL"); assert.equal(rep.reason, "DUPLICATE_SAMPLE_ID"); assert.equal(rep.scan, null);
+  assert.equal(rep.sampling.duplicateSampleIds, 1);
 });

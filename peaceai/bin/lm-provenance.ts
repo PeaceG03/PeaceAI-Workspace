@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { indexGitTree } from "../lib/coreindex.ts";
-import { COREFREE_MIN_RUN, LM_FILES, modelFileShas, runInfer, scanSamples, type Sample } from "../lib/lm.ts";
+import { duplicateSampleIds, COREFREE_MIN_RUN, LM_FILES, modelFileShas, runInfer, scanSamples, type Sample } from "../lib/lm.ts";
 import { emptyIndex } from "../lib/coretext.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
 import { provenanceRows, sameRuns, verdictOf, GENERIC_CORE_FILES, type RecordedRun } from "../lib/provenance.ts";
@@ -22,6 +22,8 @@ const CORE_SOURCE = "PeaceG03/PeaceAI";
 
 let exp: { model: string; files: Record<string, string>; prompts: { core: number; public: number; empty: number }; unexplainedRuns: RecordedRun[] };
 try { exp = JSON.parse(readFileSync(expectedPath, "utf8")); } catch { fail("EXPECTED_UNREADABLE"); throw 0; }
+// Recorded runs must name the exact sample (`<prompt>:<decoding>`); a bare prompt id is ambiguous: fail closed.
+if (exp.unexplainedRuns.some((x) => !/^[a-z]+-\d+:(greedy|sampled)$/.test(x.sample))) fail("RECORD_IDS_AMBIGUOUS");
 if (!process.env.PEACEAI_LM_TRAIN_CORPUS || !process.env.PEACEAI_LM_FT_CORPUS) fail("CORPORA_REQUIRED");
 const files = modelFileShas(modelDir);
 if (!files || LM_FILES.some((f) => files[f] !== exp.files[f])) fail("MODEL_FILES_MISMATCH");
@@ -32,6 +34,8 @@ if (built.core !== exp.prompts.core || built.public !== exp.prompts.public || bu
 const r = runInfer("sample", modelDir, { prompts, seed: 9, prompt_tokens: 64, new_tokens: 128, temperature: 0.8 }, ["--unverified", "--threads", process.env.PEACEAI_LM_THREADS ?? "8"]);
 if (!r.ok) fail(`INFER_${r.reason}`);
 const samples = (r as { ok: true; response: { samples: Sample[] } }).response.samples;
+// Sample ids are `<prompt>:<decoding>` and must be unique: a duplicate would make the id -> text lookup ambiguous.
+if (duplicateSampleIds(samples).length > 0) fail("DUPLICATE_SAMPLE_ID");
 
 const docTexts = (dir: string) => readFileSync(join(dir, "docs.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => String(JSON.parse(l).text));
 const publicTexts = [...docTexts(pre), ...docTexts(ft)];
@@ -48,8 +52,8 @@ if (!matched) fail("RUNS_MISMATCH");
 const byId = new Map(samples.map((s) => [s.id, s.text]));
 const strings = new Map<string, number>();
 // Deterministic id order: runs sorted by sample id (prompt kind, then number) and start; first appearance wins.
-const ord = (id: string) => { const [k, n] = id.split("-"); return [["core", "public", "empty"].indexOf(k!), Number(n)] as const; };
-const sorted = [...got].sort((a, b) => { const x = ord(a.sample), y = ord(b.sample); return x[0] - y[0] || x[1] - y[1] || a.start - b.start || a.length - b.length; });
+const ord = (id: string) => { const [p, dec = ""] = id.split(":"); const [k, n] = p!.split("-"); return [["core", "public", "empty"].indexOf(k!), Number(n), ["greedy", "sampled"].indexOf(dec)] as const; };
+const sorted = [...got].sort((a, b) => { const x = ord(a.sample), y = ord(b.sample); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] || a.start - b.start || a.length - b.length; });
 for (const run of sorted) { const t = (byId.get(run.sample) ?? "").slice(run.start, run.start + run.length); strings.set(t, (strings.get(t) ?? 0) + 1); }
 const rows = provenanceRows(strings, coreTexts, publicTexts);
 for (const x of rows) out(`provenance id=${x.id} length=${x.length} occurrences=${x.occurrences} core_files=${x.coreFiles} public_docs=${x.publicDocs} dominated=${x.dominated} class=${x.cls}`);
