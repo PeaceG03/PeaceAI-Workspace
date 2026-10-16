@@ -486,9 +486,10 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
 test("LM runs only in the fill job, Job A or Job C: never in Job B/B2 (workflow and code)", () => {
   // Code: the job id decides on Actions; a candidate-code job is always refused, whatever its id.
   assert.equal(lmJobAllowed({}), true);
-  for (const job of ["lm-fill", "generate", "record", "tests"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), true, job);
+  for (const job of ["lm-fill", "generate", "record", "tests", "memcheck"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), true, job);
   for (const job of ["test", "regate", "review", "finish", "select", ""]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), false, job);
   assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: "generate", PEACEAI_CANDIDATE_JOB: "true" }), false);
+  assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: "memcheck", PEACEAI_CANDIDATE_JOB: "true" }), false);
   const saved = { ...process.env };
   try {
     Object.assign(process.env, { GITHUB_ACTIONS: "true", GITHUB_JOB: "test" });
@@ -693,6 +694,39 @@ test("lm-memcheck end to end: core-free-64 with a valid proof; strict with no pr
   assert.equal(b.status, 1, b.stdout);
   assert.match(b.stdout, /rule=strict/);
   assert.equal(JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8")).trainingManifest.noCoreFiles, "NOT_PROVEN");
+});
+
+test("M49 regression (run 38902887991): on Actions in the `memcheck` job a valid proof is found; missing still fails closed; a refused job never reads a proof", () => {
+  const { dir, corpus, model, core } = tinyModel();
+  const copy = join(dir, "mc-act");
+  mkdirSync(copy, { recursive: true });
+  for (const f of ["config.json", "tokenizer.json", "weights.npz"]) writeFileSync(join(copy, f), readFileSync(join(model, f)));
+  const modelId = JSON.parse(readFileSync(join(copy, "config.json"), "utf8")).version;
+  const samples = JSON.stringify({ model: modelId, samples: Array.from({ length: 120 }, (_, i) => ({ id: `s${i}`, kind: "greedy", prompt_tail: "", text: i === 7 ? `zz(${CORE_LINE.slice(10, 50)})\n` : "x" })) });
+  const d = join(dir, "act-public"); mkdirSync(d, { recursive: true });
+  const text0 = "export const other = 2;\n";
+  writeFileSync(join(d, "docs.jsonl"), JSON.stringify({ doc: 0, text: text0 }) + "\n");
+  const man = [{ doc: 0, source: "honojs/hono", visibility: "public", path: "src/f0.ts", sha256: createHash("sha256").update(text0).digest("hex"), bytes: text0.length, license: "MIT", split: "train" }];
+  const mtext = man.map((m) => JSON.stringify(m)).join("\n") + "\n";
+  writeFileSync(join(d, "manifest.jsonl"), mtext);
+  const run = (job: string) => memcheck(copy, corpus, core, { PEACEAI_PYTHON: fakePython(dir, samples), PEACEAI_LM_TRAIN_CORPUS: d, GITHUB_ACTIONS: "true", GITHUB_JOB: job, PEACEAI_CANDIDATE_JOB: "" });
+  const proofPath = join(copy, "corefree-proof.json");
+  writeFileSync(proofPath, JSON.stringify(proofFor(modelId, man, mtext)));
+  const ok = run("memcheck");
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /status=PASS .*proof=VALID/);
+  assert.equal(JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8")).coreFreeProof.state, "VALID");
+  // Missing proof in the same job: still strict, FAIL (fail closed).
+  rmSync(proofPath, { force: true });
+  const none = run("memcheck");
+  assert.equal(none.status, 1, none.stdout);
+  assert.match(none.stdout, /status=FAIL .*rule=strict proof=INVALID:MISSING/);
+  // A job outside LM_JOBS is refused before sampling: FAIL, and the report says the proof was never checked.
+  writeFileSync(proofPath, JSON.stringify(proofFor(modelId, man, mtext)));
+  const refused = run("test");
+  assert.equal(refused.status, 1, refused.stdout);
+  const rep = JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8"));
+  assert.equal(rep.status, "FAIL"); assert.equal(rep.reason, "LM_JOB_REFUSED"); assert.equal(rep.coreFreeProof.state, "NOT_CHECKED:LM_JOB_REFUSED"); assert.equal(rep.scan, null);
 });
 
 test("corefree_proof.py: PROVEN only when no file copies or near-copies a core file", () => {

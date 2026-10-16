@@ -52,7 +52,8 @@ let proofSha = "";
 let scan: SampleScan | null = null;
 let reason = "";
 const r = before ? runInfer("sample", modelDir, { prompts, seed: 9, prompt_tokens: 64, new_tokens: 128, temperature: 0.8 }, ["--unverified", "--threads", process.env.PEACEAI_LM_THREADS ?? "8"]) : { ok: false as const, reason: "MODEL_MISSING" };
-if (!r.ok) reason = r.reason;
+// Refused / failed inference: no proof was read, so say so (status stays FAIL: scan is null).
+if (!r.ok) { reason = r.reason; if (trainCorpus) { proofState = `NOT_CHECKED:${r.reason}`; noCoreProof = "NOT_CHECKED"; } }
 else {
   const tree = indexGitTree(coreDir, () => true, true);
   const core = tree.text;
