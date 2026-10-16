@@ -13,15 +13,21 @@
  ],
  "excludedDocSha256": [
   "6d2b2881a02c5f9bda35af3971650ec1a3b80255a0cbfe9e83e265ee6ad0bca4",
-  "a6fdbe557de931f2a14bd7f24e94083eb3308b3cd3af58f94b30e13ac51cce07"
+  "a6fdbe557de931f2a14bd7f24e94083eb3308b3cd3af58f94b30e13ac51cce07",
+  "1b7d7b97e3e0a55ecfc79d3fa02baf9fc2c2c5390420e9d6be273f58469a5bc3",
+  "262a1ccbd77ecf095dee14b76294ec95aa87bd5c7ed7ed99c26b0ababc63a697",
+  "09ac3dc1c769ec28119ad681ada0a848018c0ba5df896b9290e5013fd702abdc",
+  "2ea78b6d353d044295489fc60eae602e509f4f0baeeb7afd217c11857a1cedef",
+  "dc05e85155f91773960d29873981003eec955c9aad7615cdf518f2709edd33f9",
+  "d315b3c88a30705221d5901fdbf56c0c541c91276cca4a778bd5d0b4af39110e"
  ],
- "excludedWhy": "the box proof against PeaceAI core main 40ac8f1 flagged 2 docs (PeaceSTOCKS src/features.ts: coreExact; src/universe.ts: MinHash near 0.92 to core); both dropped, the rest PROVEN",
- "manifestSha256": "e23b51d6fb19418f0c1e568b6344bc7621196a022dd6f943b76009809701eb2b",
- "docsSha256": "ad2d033f5a51b4b39deecd238bdd44e43a16b21e0a596215c425b8704b493d74",
+ "excludedWhy": "re-recorded with #227's checker (--source-root, CONTAIN_RUN=32 + 64/10% backstop) against PeaceAI core with public-origin pins 1-17 (3d9fa3a): 8 docs dropped: PeaceSTOCKS src/features.ts (coreExact) and src/universe.ts (near 0.92) from the first record, plus 6 Architect-excluded docs (src/storage.ts x2, src/intraday-backfill.ts x1, src/object-storage.ts x3: verbatim private-core spans); the rest PROVEN",
+ "manifestSha256": "a5692c5a723607b7f32f50d674e2ed1964f5f68f79ea4820758014fdf2e93850",
+ "docsSha256": "bd76dd86eed2b366889247367b0dd1d977eac0bb806f31709a7724405355e336",
  "proof": {
   "path": "peaceai/model/ft-corefree-proof.json",
-  "sha256": "57b341a6fd783866ca7cdab5c5ae8bc2ba0624b8f9dcf074ecc72b9adb91a9fc",
+  "sha256": "0ced2d400c10c2b24ba82e79e2f3936cec26d560285dfdcd550e7037f2bded1c",
   "noCoreFiles": "PROVEN",
-  "coreCommit": "40ac8f1cd25b878e7bd64436312ec4b69a14a0da"
+  "coreCommit": "3d9fa3aa183159c21fb24d7fcd52e5700cf4259a"
  }
 }
