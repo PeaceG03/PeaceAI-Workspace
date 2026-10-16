@@ -14,10 +14,10 @@ export const MIN_FILES = 2;
 /** A default kind is learned only with at least this many observed examples. */
 export const MIN_KIND_SUPPORT = 2;
 /** Rule versions. ADD_NULLISH_DEFAULT v2: single-read only, kinds with support, trigger limited to those kinds. */
-const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2, ADD_TEST_CASE: 1, ADD_THROW_GUARD: 1, ADD_FUNCTION: 2, ADD_WORKFLOW_STEP: 2, REPLACE_EXPRESSION: 1, METHOD_GUARD: 1, COMPLEX_FUNCTION: 1, IMPORT_EDIT_V2: 2 };
+const RULE_VERSION: Record<RuleKind, number> = { SET_LITERAL: 1, ADD_SWITCH_CASE: 1, ADD_NULLISH_DEFAULT: 2, ADD_TEST_CASE: 1, ADD_THROW_GUARD: 1, ADD_FUNCTION: 2, ADD_WORKFLOW_STEP: 2, REPLACE_EXPRESSION: 1, METHOD_GUARD: 1, COMPLEX_FUNCTION: 1, IMPORT_EDIT_V2: 2, WORKFLOW_JOB: 1, TSCONFIG_SCRIPT: 1, ENV_FIX: 1 };
 const NAMED_CONTEXTS = ["object-property", "top-level-const", "local-const"];
 const KIND_OF: Partial<Record<string, RuleKind>> = { LITERAL_CHANGE: "SET_LITERAL", SWITCH_CASE: "ADD_SWITCH_CASE", NULLISH_DEFAULT: "ADD_NULLISH_DEFAULT", TEST_CASE: "ADD_TEST_CASE", TEST_CASE_APPEND: "ADD_TEST_CASE", THROW_GUARD: "ADD_THROW_GUARD", PURE_FUNCTION: "ADD_FUNCTION", WORKFLOW_STEP: "ADD_WORKFLOW_STEP", EXPR_REPLACE: "REPLACE_EXPRESSION" };
-const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default", ADD_TEST_CASE: "test-case", ADD_THROW_GUARD: "throw-guard", ADD_FUNCTION: "add-function", ADD_WORKFLOW_STEP: "workflow-step", REPLACE_EXPRESSION: "replace-expression", METHOD_GUARD: "method-guard" , COMPLEX_FUNCTION: "complex-function", IMPORT_EDIT_V2: "import-edit" };
+const SLUG: Record<RuleKind, string> = { SET_LITERAL: "set-literal", ADD_SWITCH_CASE: "add-switch-case", ADD_NULLISH_DEFAULT: "add-nullish-default", ADD_TEST_CASE: "test-case", ADD_THROW_GUARD: "throw-guard", ADD_FUNCTION: "add-function", ADD_WORKFLOW_STEP: "workflow-step", REPLACE_EXPRESSION: "replace-expression", METHOD_GUARD: "method-guard" , COMPLEX_FUNCTION: "complex-function", IMPORT_EDIT_V2: "import-edit", WORKFLOW_JOB: "workflow-job", TSCONFIG_SCRIPT: "tsconfig-script", ENV_FIX: "env-fix" };
 /** M12: upper line bound of the majority size bucket of mined test cases (">40" is capped at 40). */
 const MAX_LINES: Record<string, string> = { "<=12": "12", "13-40": "40", ">40": "40" };
 
@@ -99,6 +99,9 @@ export function proposeRules(stats: readonly ShapeStats[], minedFrom: "public" |
 }
 
 export const PHRASING: Record<RuleKind, string> = {
+  WORKFLOW_JOB: "add workflow job `JOB` to `.github/workflows/FILE.yml` running `pnpm run SCRIPT` (optionally: as step `NAME`). Adds one new job at the end of an existing workflow: runs-on ubuntu-24.04, permissions contents: read, the setup steps copied from an existing job (checkout, pnpm/action-setup, setup-node, install only), then the script. Refused: secrets anywhere in the file (workflow_job_secrets), any write permission (workflow_job_write_permission), pull_request_target/workflow_run (workflow_job_privileged_trigger), no top-level read/none permissions, an existing job name, a script that is not read-only tsc --noEmit or tsx --test",
+  TSCONFIG_SCRIPT: "add typecheck script `typecheck:NAME` with new `tsconfig.NAME.json` excluding `GLOB` (or: checking only `src/file.ts`, or: checking `scripts/*.mjs` with checkJs). Writes one new root tsconfig that extends ./tsconfig.json in that fixed shape and one package.json line `\"typecheck:NAME\": \"tsc -p tsconfig.NAME.json --noEmit\"` right after the existing typecheck script",
+  ENV_FIX: "make env `NAME` strict in `src/file.ts` as a flag (or: as an integer 1..MAX). Flag: every `X === \"1\"` / `X !== \"1\"` read becomes a fail-closed helper (unset/\"\"/0 false, 1 true, anything else throws NAME_INVALID). Integer: the one `Number(X) > 0 ? Number(X) : DEFAULT` read becomes a helper (blank -> DEFAULT, digits 1..MAX, else throws). Plus one new test file with the value table",
   SET_LITERAL: "set `NAME` to VALUE  (optionally: set `NAME` in `path/file.ts` to VALUE)",
   ADD_SWITCH_CASE: 'add case "label" returning VALUE to the switch in `functionName`',
   ADD_NULLISH_DEFAULT: "default `obj.field` to VALUE in `functionName`",
@@ -114,9 +117,10 @@ export const PHRASING: Record<RuleKind, string> = {
 const KIND_VALUE: Record<string, string> = { array: "`[]`", null: "`null`", string: 'a string literal (`"..."`)', number: "a number", boolean: "`true`/`false`" };
 /** Task phrasing for one spec; for ADD_NULLISH_DEFAULT it names the only VALUE kinds the trigger accepts. */
 export const LOOP_PHRASING = "add loop function `name(a: T, b: U): R` to `src/file.ts` with body:, then the body lines (COMPLEX_FUNCTION's grammar plus at most 2 loops: `for (let i = START; i < BOUND; i++)` / `i += 1` with START and BOUND each an integer literal 0..1000 or `PARAM.length` of a string or array parameter, the counter never assigned in the body; or `for (const x of PARAM)` over a parameter or non-growing local; refused: while (loop_while_unsupported), unprovable bounds (loop_unbounded), async (loop_async), labels (loop_label), closures (closure_not_allowed), do/for-in (loop_unsupported)), then one bullet per test check (`- CALL equals [..]` / `- CALL is VALUE` / `- CALL throws CODE`). Plain unprotected non-test .ts target only";
+export const WHILE_PHRASING = "add while loop function `name(a: T, b: U): R` to `src/file.ts` with body:, then the body lines (LOOP_FUNCTION v1 grammar plus `while (C < LIT)` / `while (C <= LIT)` where C is an own `let` starting at an integer literal 0..1000, LIT an integer literal 0..1000, and exactly one top-level `C += 1`; any other while is loop_unbounded), then one bullet per test check";
 export const isLoopSpec = (spec: RuleSpec): boolean => spec.kind === "COMPLEX_FUNCTION" && Array.isArray(spec.params.loops) && spec.params.loops.some((x) => x !== "none");
 export function phrasingFor(spec: RuleSpec): string {
-  if (isLoopSpec(spec)) return LOOP_PHRASING;
+  if (isLoopSpec(spec)) return (spec.params.loops as string[]).includes("while-literal-counter") ? WHILE_PHRASING : LOOP_PHRASING;
   if (spec.kind !== "ADD_NULLISH_DEFAULT") return PHRASING[spec.kind];
   const kinds = Array.isArray(spec.params.kinds) ? spec.params.kinds : [];
   return `${PHRASING.ADD_NULLISH_DEFAULT}, where VALUE is ${kinds.map((k) => KIND_VALUE[k] ?? k).join(" or ")}. Refused when \`obj.field\` is read more than once in that function (one default would cover only the first read).`;

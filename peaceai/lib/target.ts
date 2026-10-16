@@ -25,6 +25,8 @@ export interface TargetConfig {
   verdictRoute?: "pr" | "patch";
   /** M19: workflow files ADD_WORKFLOW_STEP may append a step to (must also match .github/workflows/*.yml). */
   workflowPattern?: string;
+  /** M67: TSCONFIG_SCRIPT candidates (package.json + one new root tsconfig.NAME.json) allowed on this target. */
+  tsconfigScript?: boolean;
 }
 
 export interface TargetsFile {
@@ -49,6 +51,7 @@ export function loadTargets(path = join(import.meta.dirname, "..", "targets.json
     // M19: opt-in only, anchored under .github/workflows/, and never for this Workspace (its workflows are protected).
     if (c.workflowPattern !== undefined && (typeof c.workflowPattern !== "string" || !c.workflowPattern.startsWith("^\\.github/workflows/") || !c.workflowPattern.endsWith("$") || name === "PeaceG03/PeaceAI-Workspace")) throw new Error("invalid workflow pattern");
     if (c.workflowPattern !== undefined) new RegExp(c.workflowPattern);
+    if (c.tsconfigScript !== undefined && (c.tsconfigScript !== true || name === "PeaceG03/PeaceAI-Workspace")) throw new Error("invalid tsconfigScript");
   }
   return file;
 }
@@ -112,5 +115,6 @@ export function scopeOf(config: TargetConfig) {
     isTest: (path: string) => test.test(path),
     isDenied: (path: string) => deny.some((d) => d.test(path)),
     isWorkflow: (path: string) => !!workflow && workflow.test(path) && WORKFLOW_FILE.test(path),
+    tsconfigScript: config.tsconfigScript === true,
   };
 }
