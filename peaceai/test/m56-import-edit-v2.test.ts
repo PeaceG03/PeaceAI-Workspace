@@ -24,7 +24,7 @@ test("off by default; not approved; v1 untouched", () => {
   assert.equal(importEditV2Enabled({ PEACEAI_IMPORT_EDIT_V2: "true" }), true);
   assert.ok(!read("peaceai/rules/approved.json").includes("public-import-edit-v2"));
   assert.match(REC.status, /^proposal-off/);
-  assert.ok(!read("peaceai/lib/learned.ts").includes("import-edit-v2"));
+  assert.ok(read("peaceai/lib/learned.ts").includes("import-edit-v2.ts"), "M66: wired into learned rules (Job A only via the approved list)");
 });
 
 test("evidence: licensed external (corpus or example-only list), none from set C, replays, meets the bar", () => {
@@ -58,7 +58,8 @@ test("IMPORT_EDIT v2 accepts names added/removed, type flips, node: toggles and 
   assert.equal(P(SRC.replace('import type { T } from "zod"', 'import { type T } from "zod"')), null, "type modifier moves into the braces");
   assert.equal(P(SRC.replace('"node:path"', '"path"')), null, "node: prefix toggled");
   assert.equal(P(SRC.replace('"./x"', '"./x.ts"')), null, "extension-only change");
-  assert.equal(P(SRC.replace('"./x"', '"./lib/x"')), null, "directory move");
+  assert.equal(importEditV2Problem("src/m.ts", SRC, SRC.replace('"./x"', '"./lib/x"'), new Set(["src/lib/x.ts", "y/b.ts"])), null, "directory move (the old path no longer resolves)");
+  assert.equal(P(SRC.replace('"./x"', '"./lib/x"')), "specifier resolves to a different file than before", "Auditor #226: ./x still resolves, so ./lib/x would switch modules");
   const JSX = 'import { a } from "./x";\nexport const C = () => <div>{a}{b}</div>;\n';
   assert.equal(importEditV2Problem("src/c.tsx", JSX, JSX.replace("{ a }", "{ a, b }"), FILES), null, "M57: .tsx files parse as TSX");
 });
@@ -115,7 +116,7 @@ test("engine, spec and this test are protected; spec pinned", () => {
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   assert.equal(createHash("sha256").update(read("peaceai/spec/import-edit-v2.md")).digest("hex"), SPEC_SHA);
 });
-const SPEC_SHA = "84616d669dc84374df690d351be0d78e722e00011524400f94438a3ce54b23a4";
+const SPEC_SHA = "89b3c5443990f4979568218e8164c8d8efdc24d9028a77ca327650955c9aab9d";
 
 test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
   const corpus = new Set<string>((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string }[]).map((r) => r.name));

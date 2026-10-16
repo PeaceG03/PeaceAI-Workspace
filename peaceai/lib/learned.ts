@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import ts from "typescript";
 import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORKS, TEST_MATCHERS, TEST_PARAM_KEYS, TEST_TRIGGER } from "./learned-test.ts";
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refusal } from "./learned-guard.ts";
+import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB, runImportEditV2Rule } from "./import-edit-v2.ts";
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
@@ -15,7 +16,7 @@ import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCA
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -59,6 +60,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (!ev || ![ev.hunks, ev.commits, ev.files].every((n) => Number.isInteger(n) && (n as number) >= 0) || !Array.isArray(ev.repos)) return false;
   if (s.kind === "ADD_TEST_CASE" && !validTestParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_THROW_GUARD" && !validGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "IMPORT_EDIT_V2" && !validImportEditV2Params(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
@@ -80,6 +82,12 @@ function validTestParams(p: Record<string, unknown>, minedFrom: unknown): boolea
     (TEST_MATCHERS as readonly unknown[]).includes(p.matcher) && (p.placement === "new-file" || p.placement === "append") && p.grading === "fail-before-pass-after" &&
     typeof p.maxLines === "string" && /^[1-9][0-9]?$/.test(p.maxLines)
   );
+}
+
+/** M66: IMPORT_EDIT_V2 specs; public-mined only, fixed one-value vocabularies. */
+function validImportEditV2Params(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...IMPORT_EDIT_V2_PARAM_KEYS].join(",")) return false;
+  return IMPORT_EDIT_V2_PARAM_KEYS.every((k) => typeof p[k] === "string" && IMPORT_EDIT_V2_VOCAB[k].includes(p[k] as string));
 }
 
 /** M62: METHOD_GUARD specs; public-mined only. */
@@ -142,6 +150,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_TEST_CASE: TEST_TRIGGER,
   ADD_THROW_GUARD: GUARD_TRIGGER,
   METHOD_GUARD: METHOD_GUARD_TRIGGER,
+  IMPORT_EDIT_V2: IMPORT_EDIT_V2_TRIGGER,
   COMPLEX_FUNCTION: COMPLEX_TRIGGER,
   ADD_FUNCTION: FUNCTION_TRIGGER,
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
@@ -326,6 +335,14 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   if (spec.kind === "ADD_THROW_GUARD") {
     try {
       return applyGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
+    } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  if (spec.kind === "IMPORT_EDIT_V2") {
+    try {
+      return runImportEditV2Rule(spec.trigger, spec.params, objective, files, why); // M66: one existing import; admitted only via the hash-pinned approved list; graded by the target's own checks
     } catch {
       if (why) why.reason = "internal_error";
       return null;
