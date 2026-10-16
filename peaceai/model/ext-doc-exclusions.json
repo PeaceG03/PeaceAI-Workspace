@@ -54,5 +54,11 @@
   "rollup/rollup",
   "vercel/next.js",
   "withastro/astro"
- ]
+ ],
+ "proof": {
+  "coreCommit": "caa7e8a9d835292c33becab4e9a3537ef452217f",
+  "note": "corefree_proof.py --stage pretrain on the ext-fetch corpus of manifest 8458eac6, PeaceAI core caa7e8a (pins 1-17): PROVEN with #227's checker and with #245's checker (byte-identical proofs)",
+  "pretrainProofSha256": "c2b37e1c6becd8d33ce38ffc19ff3299ef08e904568a27afb58409252b9bed12",
+  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231"
+ }
 }

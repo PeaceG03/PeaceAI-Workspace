@@ -16,7 +16,7 @@ import { COREFREE_MIN_RUN } from "../lib/lm.ts";
 import { readManifestBytes, writeParts } from "../lib/manifestparts.ts";
 import { classifyLicense, CODE_FILE, heldOutHashes } from "../lib/lmcorpus.ts";
 import { agentMade, builderLogRefs, excludedForC, sha256Hex } from "../lib/heldout.ts";
-import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, mergeHeldoutC, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
+import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, mergeHeldoutC, parseDocExclusions, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const cfg = JSON.parse(readFileSync(join(model, "ext-corpus.json"), "utf8"));
@@ -80,9 +80,7 @@ const safetyShas = safetyToolShas(JSON.parse(readFileSync(join(model, "safety-to
 const seen = new Set<string>();
 // M49 (Architect (A)): per-doc exclusion by content sha256, mirroring fine-tune's excludedDocSha256 (ft-corefree.json):
 // docs the box core-free proof (corefree_proof.py --stage pretrain) flagged as core are dropped from the pretrain corpus.
-const DOCX = JSON.parse(readFileSync(join(model, "ext-doc-exclusions.json"), "utf8"));
-if (DOCX.schema !== "peaceai-ext-doc-exclusions:v1" || !Array.isArray(DOCX.excludedDocSha256) || DOCX.excludedDocSha256.some((h: unknown) => typeof h !== "string" || !/^[0-9a-f]{64}$/.test(h))) throw new Error("ext-doc-exclusions.json unreadable: fail closed");
-const excludedDocs = new Set<string>(DOCX.excludedDocSha256);
+const excludedDocs = parseDocExclusions(JSON.parse(readFileSync(join(model, "ext-doc-exclusions.json"), "utf8")));
 const docs: string[] = [];
 const manifest: ExtManifestEntry[] = [];
 const pathLeaks: { repo: string; commit: string; sha256: string; kinds: string[] }[] = [];

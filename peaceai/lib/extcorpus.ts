@@ -136,3 +136,12 @@ export function mergeHeldoutC(existing: unknown, owned: { schema: string; rule: 
   const prev = existing && typeof existing === "object" && !Array.isArray(existing) ? (existing as Record<string, unknown>) : {};
   return { ...(("wiredAsEval" in prev) ? {} : { wiredAsEval: false }), ...prev, ...owned, ...(("wiredAsEval" in prev) ? { wiredAsEval: prev.wiredAsEval } : {}) };
 }
+
+/** M49 (Architect (A)): peaceai/model/ext-doc-exclusions.json, docs the box core-free proof flagged, by content sha256.
+ * Fail closed: a wrong schema, a missing or non-array list, or any entry that is not 64 lowercase hex throws. */
+export const EXT_DOC_EXCLUSIONS_SCHEMA = "peaceai-ext-doc-exclusions:v1";
+export function parseDocExclusions(x: unknown): ReadonlySet<string> {
+  const o = x as { schema?: unknown; excludedDocSha256?: unknown } | null;
+  if (!o || typeof o !== "object" || o.schema !== EXT_DOC_EXCLUSIONS_SCHEMA || !Array.isArray(o.excludedDocSha256) || o.excludedDocSha256.some((h) => typeof h !== "string" || !/^[0-9a-f]{64}$/.test(h))) throw new Error("ext-doc-exclusions.json unreadable: fail closed");
+  return new Set<string>(o.excludedDocSha256 as string[]);
+}
