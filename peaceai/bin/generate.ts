@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
-import { applyRule, pathExistsIn, specHash } from "../lib/learned.ts";
+import { applyRule, pathExistsIn, specHash, type LearnedEdit } from "../lib/learned.ts";
 import { formatRefusals, type RuleRefusal } from "../lib/refusal-reason.ts";
 import { safeNewModuleOnDisk } from "../lib/learned-function.ts";
 import { acceptFill, applyFill, fillOptions, parseFillTask } from "../lib/fill.ts";
@@ -253,12 +253,31 @@ outer: for (const variant of planSteps ? [] : variants) {
 // M8: learned edit rules. Public rules live in this repository, core-mined rules in core. Each one runs
 // only when the hash-pinned approved list names its id with the exact content hash; anything else, or a
 // missing/corrupt list, refuses it (no candidate). The list path is fixed except for local tests.
+// Live proofs #306/#307 (M67 wiring): the minimal non-source files each config family reads. WORKFLOW_JOB: the
+// target's opted-in workflow files plus package.json. TSCONFIG_SCRIPT (only on a tsconfigScript target):
+// package.json plus the root tsconfig*.json regular files. Nothing else outside src/ is shown to either rule.
+const readTracked = (p: string) => ({ path: p, content: readFileSync(join(repo, p), "utf8") });
+const regularFile = (p: string) => !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile();
+function m67ContextFiles(kind: "WORKFLOW_JOB" | "TSCONFIG_SCRIPT"): { path: string; content: string }[] {
+  if (kind === "WORKFLOW_JOB") return tracked.filter((p) => (scope.isWorkflow?.(p) || p === "package.json") && regularFile(p)).map(readTracked);
+  if (!scope.tsconfigScript) return [];
+  return tracked.filter((p) => (p === "package.json" || /^tsconfig(?:\.[a-z][a-z0-9-]{0,20})?\.json$/.test(p)) && regularFile(p)).map(readTracked);
+}
+function m67EditOk(kind: string, edit: LearnedEdit): boolean {
+  if (edit.create || edit.fixSha !== undefined || edit.selfGrade || !baseFiles.has(edit.path)) return false;
+  if (kind === "WORKFLOW_JOB") return !!scope.isWorkflow?.(edit.path) && (edit.extra ?? []).length === 0;
+  const extra = edit.extra ?? [];
+  return !!scope.tsconfigScript && edit.path === "package.json" && extra.length === 1 && extra[0]!.create === true
+    && /^tsconfig\.[a-z][a-z0-9-]{0,20}\.json$/.test(extra[0]!.path) && !baseFiles.has(extra[0]!.path);
+}
 let learnedCandidates = 0;
 const ruleRefusals: RuleRefusal[] = []; // M59: why each matching approved rule made no candidate
 for (const a of planSteps ? [] : admissions) {
   if (a.decision !== "APPROVED" || !a.spec || candidates.length >= MAX_CANDIDATES) continue;
   // M19: a workflow-step rule also sees the opted-in workflow files, package.json and the lockfile names.
-  const workflowFiles = a.spec.kind === "ADD_WORKFLOW_STEP"
+  const workflowFiles = a.spec.kind === "WORKFLOW_JOB" || a.spec.kind === "TSCONFIG_SCRIPT"
+    ? m67ContextFiles(a.spec.kind)
+    : a.spec.kind === "ADD_WORKFLOW_STEP"
     ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json" || (/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(p) && !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile())).map((p) => ({ path: p, content: "" }))]
     : [];
   const why: { reason?: string } = {};
@@ -269,17 +288,21 @@ for (const a of planSteps ? [] : admissions) {
   const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
   if (edit.create && !newModule && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
-  if (edit.extra && a.spec.kind !== "ADD_WORKFLOW_STEP" && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
+  // Live proofs #306/#307: WORKFLOW_JOB (job block, no extra) and TSCONFIG_SCRIPT (package.json + one new root
+  // tsconfig) are graded by the target suite; each is accepted only by its own family check below.
+  const m67Config = a.spec.kind === "WORKFLOW_JOB" || a.spec.kind === "TSCONFIG_SCRIPT";
+  if (m67Config && !m67EditOk(a.spec.kind, edit)) continue;
+  if (edit.extra && !m67Config && a.spec.kind !== "ADD_WORKFLOW_STEP" && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
   if (edit.selfGrade && !edit.extra) continue;
   // M19: a workflow edit only from the workflow-step rule, on an existing opted-in workflow, self-graded.
-  if (!scope.isSource(edit.path) && !(a.spec.kind === "ADD_WORKFLOW_STEP" && scope.isWorkflow?.(edit.path) && baseFiles.has(edit.path) && !edit.create && edit.selfGrade && edit.extra?.length === 0)) continue;
+  if (!scope.isSource(edit.path) && !m67Config && !(a.spec.kind === "ADD_WORKFLOW_STEP" && scope.isWorkflow?.(edit.path) && baseFiles.has(edit.path) && !edit.create && edit.selfGrade && edit.extra?.length === 0)) continue;
   if (a.spec.kind === "ADD_WORKFLOW_STEP" && edit.extra?.length !== 0) continue;
   // M14: a test rule that appends edits an existing test file only by adding lines at its end.
   if (!edit.create && edit.fixSha !== undefined) {
     const cur = candidatesForContext.find((f) => f.path === edit.path);
     if (!/^[0-9a-f]{40}$/.test(edit.fixSha) || !cur || !scope.isTest(edit.path) || !edit.content.startsWith(cur.content) || edit.extra) continue;
   }
-  const current = edit.create ? null : candidatesForContext.find((f) => f.path === edit.path)!;
+  const current = edit.create ? null : (m67Config ? workflowFiles : candidatesForContext).find((f) => f.path === edit.path)!;
   const diff = toDiff([current
     ? { operation: "EDIT_FILE", path: edit.path, expectedCurrentFingerprint: kernel.sourceFingerprint(current.path, current.content), content: edit.content, transformation: `LEARNED_${a.spec.kind}` }
     : { operation: "CREATE_FILE", path: edit.path, expectedCurrentFingerprint: null, content: edit.content, transformation: `LEARNED_${a.spec.kind}` },
