@@ -108,3 +108,18 @@ test("malformed Results file: coded error, its bytes never reach the row or erro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---- stacked-batch provenance (peaceai/lib/stacked.ts) ----
+const X = "1".repeat(40), Y = "2".repeat(40), V1 = "3".repeat(40);
+const STACKED = `PeaceAI-Workspace#500 landed; stacked: base ${X.slice(0, 12)} landed-on ${Y.slice(0, 12)} via ${V1.slice(0, 12)}`;
+test("stacked provenance: matches git -> ok; mismatch, malformed, missing dep -> T_STACK_MISMATCH", async () => {
+  const withStack = (st: { onto: string; via: string[] } | null): TraceDeps => ({ ...deps(), stack: async () => st });
+  const ok = (await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, STACKED), withStack({ onto: Y, via: [V1] })))[0]!;
+  assert.equal(ok.status, "ok");
+  assert.match(ok.detail, /stacked on 222222222222 via 1$/);
+  assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, STACKED), withStack({ onto: V1, via: [V1] })))[0]!.code, "T_STACK_MISMATCH");
+  assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, STACKED), withStack({ onto: Y, via: [V1, X] })))[0]!.code, "T_STACK_MISMATCH");
+  assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, STACKED), withStack(null)))[0]!.code, "T_STACK_MISMATCH");
+  assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, STACKED), deps()))[0]!.code, "T_STACK_MISMATCH");
+  assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, "#500 stacked: base zz"), withStack({ onto: Y, via: [V1] })))[0]!.code, "T_STACK_MISMATCH");
+});

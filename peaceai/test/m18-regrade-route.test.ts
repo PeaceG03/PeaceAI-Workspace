@@ -211,7 +211,7 @@ test("pre-#106 / old-format regrades are refused: invalid request -> 0 candidate
   rmSync(dir, { recursive: true, force: true });
   // Builder side: the box-side (M16) local regrade is gone; a stale base is refused outright.
   const apply = readFileSync(join(repo, "peaceai/bin/apply-verdict-patch.ts"), "utf8");
-  assert.match(apply, /if \(head !== baseSha\)\n\s+die\(`stale base:/);
+  assert.match(apply, /if \(head !== baseSha && !stackedVia\)\n\s+die\(`stale base:/); // stacked landing: the refusal stands unless lib/stacked.ts accepted the stack
   assert.doesNotMatch(apply, /rebaseAndRegrade\(/);
 });
 

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { effectiveVerdict, type TaskRecord, type VerdictRecord } from "../peaceai/lib/records.ts";
 import { parsePatchComment, PATCH_MARKER, sha256, verifyPatch, type PatchComment } from "../peaceai/lib/patch.ts";
+import { parseProvenance } from "../peaceai/lib/stacked.ts";
 import { LANDING_REPOS, type Entry } from "./check.ts";
 
 export const BOT = "github-actions[bot]";
@@ -24,7 +25,8 @@ export type TraceCode =
   | "T_RESULTS_UNREADABLE" // Results lookup failed (fail closed)
   | "T_TREE_MISMATCH" // patch on first parent != landing tree
   | "T_APPLY_FAILED" // patch does not apply to first parent
-  | "T_LOOKUP_FAILED"; // comment / git lookup failed (fail closed)
+  | "T_LOOKUP_FAILED" // comment / git lookup failed (fail closed)
+  | "T_STACK_MISMATCH"; // a `stacked:` provenance clause (lib/stacked.ts) does not match git
 
 /** Reviewed exemptions: line seq -> reason. Each one is reported, never silent. */
 export const GRANDFATHERED: Readonly<Record<number, string>> = {
@@ -49,6 +51,8 @@ export interface TraceDeps {
   results: ((issue: number) => Promise<ResultsView>) | null;
   /** Tree of `patch` applied to `sha`'s first parent, or null if it does not apply; plus sha's own tree. */
   trees(repo: string, sha: string, patch: string): Promise<{ applied: string | null; landing: string }>;
+  /** Stacked landings: the landing's first parent and the merge-free chain base..parent (full shas), or null. */
+  stack?(repo: string, sha: string, base: string): Promise<{ onto: string; via: string[] } | null>;
 }
 
 export interface TraceRow {
@@ -90,12 +94,12 @@ export async function traceLine(e: Entry, deps: TraceDeps): Promise<TraceRow[]> 
       rows.push(fail("T_NO_ISSUE", "no single PeaceAI-Workspace#N on the line"));
       continue;
     }
-    rows.push(await traceOne(e.seq, landing, repo, sha, issue, deps));
+    rows.push(await traceOne(e.seq, landing, repo, sha, issue, deps, e.why));
   }
   return rows;
 }
 
-async function traceOne(seq: number, landing: string, repo: string, sha: string, issue: number, deps: TraceDeps): Promise<TraceRow> {
+async function traceOne(seq: number, landing: string, repo: string, sha: string, issue: number, deps: TraceDeps, why = ""): Promise<TraceRow> {
   const fail = (code: TraceCode, detail: string): TraceRow => ({ seq, landing, issue, status: "fail", code, detail });
   let bodies: string[];
   try {
@@ -135,8 +139,24 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
   }
   if (t.applied === null) return fail("T_APPLY_FAILED", `patch does not apply to ${sha}^1`);
   if (t.applied !== t.landing) return fail("T_TREE_MISMATCH", `patch on ${sha}^1 gives ${t.applied.slice(0, 12)}, landing tree ${t.landing.slice(0, 12)}`);
+  let stackNote = "";
+  if (/\bstacked:/.test(why)) {
+    const pv = parseProvenance(why);
+    if (!pv) return fail("T_STACK_MISMATCH", "malformed or repeated stacked provenance clause");
+    let st: { onto: string; via: string[] } | null;
+    try {
+      st = deps.stack ? await deps.stack(repo, sha, pv.base) : null;
+    } catch (err) {
+      void err;
+      st = null;
+    }
+    if (!st) return fail("T_STACK_MISMATCH", "stacked chain could not be resolved");
+    if (!st.onto.startsWith(pv.onto) || st.via.length !== pv.via.length || st.via.some((v, k) => !v.startsWith(pv.via[k]!)))
+      return fail("T_STACK_MISMATCH", `landing ${sha}^1 / chain from ${pv.base} does not match the stacked clause`);
+    stackNote = `, stacked on ${pv.onto} via ${pv.via.length}`;
+  }
   const res = deps.results ? "Results verified" : "Results NOT checked (public mode)";
-  return { seq, landing, issue, status: "ok", detail: `${comment.candidateId} run ${comment.runId}, ${res}, tree ${t.landing.slice(0, 12)}` };
+  return { seq, landing, issue, status: "ok", detail: `${comment.candidateId} run ${comment.runId}, ${res}, tree ${t.landing.slice(0, 12)}${stackNote}` };
 }
 
 export async function traceAll(entries: readonly Entry[], deps: TraceDeps): Promise<TraceRow[]> {
@@ -212,6 +232,17 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
       const pick = effectiveVerdict(verdicts).pick;
       const resultsDiff = pick.candidateId && /^candidate-\d{1,3}$/.test(pick.candidateId) ? raw(`${dir}/candidates/${pick.candidateId}.diff`) : null;
       return { latestRunId, target: task.target ?? WORKSPACE, pick, resultsDiff };
+    },
+    async stack(repo, sha, base) {
+      const dir = clones[repo];
+      if (!dir) throw new Error(`no local clone for ${repo}`);
+      const g = (args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+      const full = g(["rev-parse", "--verify", `${base}^{commit}`]);
+      const onto = g(["rev-parse", `${sha}^1`]);
+      if (spawnSync("git", ["-C", dir, "merge-base", "--is-ancestor", full, onto]).status !== 0 || full === onto) return null;
+      const all = g(["rev-list", "--reverse", `${full}..${onto}`]).split("\n").filter(Boolean);
+      const fp = g(["rev-list", "--reverse", "--first-parent", `${full}..${onto}`]).split("\n").filter(Boolean);
+      return all.join() === fp.join() ? { onto, via: all } : null;
     },
     async trees(repo, sha, patch) {
       const dir = clones[repo];

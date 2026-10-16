@@ -30,7 +30,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/bin\/test-candidates\.ts$/, why: "the grading harness (M14)" },
   { pattern: /^peaceai\/bin\/(verdict-stale|regrade-fetch|record-task|record-verdict|carry-check|carry-verdict)\.ts$|^peaceai\/lib\/(regrade|carry)\.ts$/, why: "the stale-base regrade route through Job B and its Results records (M18), and carry-forward verdicts" },
   { pattern: /^peaceai\/bin\/(generate|regate)\.ts$|^peaceai\/lib\/(records|rank|diff)\.ts$/, why: "candidate generation and the Job B check files: grading, eligibility and diff parsing (M17)" },
-  { pattern: /^peaceai\/bin\/apply-verdict-patch\.ts$|^peaceai\/lib\/rebase\.ts$/, why: "the stale-base re-apply and fresh regrade (M16)" },
+  { pattern: /^peaceai\/bin\/apply-verdict-patch\.ts$|^peaceai\/lib\/(rebase|stacked)\.ts$/, why: "the stale-base re-apply and fresh regrade (M16), and the stacked-batch landing exception" },
   { pattern: /^peaceai\/lib\/(leak|approval|approved|scope|prguard|kernelguard|coretext|coreindex|substr|policy|gate|selfchange|selfpropose|learned|learned-test|learned-guard|learned-function|learned-complex|learned-body|minebody|learned-workflow|objargs|minetest|mineworkflow|results|verdict|trigger|diff)\.ts$/, why: "gates, approvals, leak/scope scanners and the self-change rules" },
   { pattern: /^peaceai\/lib\/target\.ts$|^peaceai\/targets\.json$/, why: "per-target scope config, incl. opted-in workflow files (M19)" },
   { pattern: /^peaceai\/proof\/workflow-step-proof\.md$/, why: "workflow-step grading and live-proof procedure (Auditor #107 changes 4, 6)" },
