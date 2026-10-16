@@ -106,7 +106,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 8/64 with PeaceAI real tasks (98/100/102/103/104/105) + Builder 26/70; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 18/74 with PeaceAI real tasks (98/100/102-105, batch 106-115) + Builder 26/70; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -131,14 +131,14 @@ test("real log: 8/64 with PeaceAI real tasks (98/100/102/103/104/105) + Builder 
   assert.ok(r.liveProven.includes("IMPORT_EDIT"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
   // Denom: 58 Builder + 6 PeaceAI real (98, 100, 102, 103, 104, 105). Proof-worded rows are COVERAGE_NONE_SEQS (incl. 97/99/101).
-  assert.equal(r.allTime.builderTasks, 64);
-  // Counted: seq 26 TEST_CASE + seq 70 retag THROW_GUARD + PeaceAI real 98/100/102/103/104/105.
+  assert.equal(r.allTime.builderTasks, 74);
+  // Counted: seq 26 TEST_CASE + seq 70 retag THROW_GUARD + PeaceAI real 98/100/102/103/104/105 + batch 106-115 (THROW_GUARD).
   // Not: 71/77 (before METHOD_GUARD approval), 78 (nothing landed), 10/13 (pre-approval WORKFLOW_STEP).
-  assert.equal(r.allTime.peaceaiAble, 8);
-  assert.equal(r.allTime.percent, 12.5);
-  assert.equal(r.last7Days.builderTasks, 64);
-  assert.equal(r.last7Days.peaceaiAble, 8);
-  assert.equal(r.last7Days.percent, 12.5);
+  assert.equal(r.allTime.peaceaiAble, 18);
+  assert.equal(r.allTime.percent, 24.3);
+  assert.equal(r.last7Days.builderTasks, 74);
+  assert.equal(r.last7Days.peaceaiAble, 18);
+  assert.equal(r.last7Days.percent, 24.3);
   assert.deepEqual(r.topMissing.find((m) => m.skill === "METHOD_GUARD"), { skill: "METHOD_GUARD", count: 2 });
   assert.deepEqual(r.topMissing.find((m) => m.skill === "THROW_GUARD"), { skill: "THROW_GUARD", count: 1 });
   assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_STEP"), { skill: "WORKFLOW_STEP", count: 2 }, "seq 10/13 logged before WORKFLOW_STEP approval");
@@ -146,8 +146,8 @@ test("real log: 8/64 with PeaceAI real tasks (98/100/102/103/104/105) + Builder 
   assert.ok(!r.topMissing.some((m) => m.skill === "COMPLEX_FUNCTION"));
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /12\.5% \(8\/64\)/);
-  assert.equal(coverageReport(text, denverYmd(), { onMain }).allTime.percent, 12.5);
+  assert.match(md, /24\.3% \(18\/74\)/);
+  assert.equal(coverageReport(text, denverYmd(), { onMain }).allTime.percent, 24.3);
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/58.
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
   assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 58);
