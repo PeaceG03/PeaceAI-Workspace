@@ -1,0 +1,125 @@
+name: m49-provenance-check
+
+# One-off provenance check for the unexplained runs of memcheck run 38908186778 (model lm-v1-1bfbea221e71, training
+# run 38861784010). Read-only: same peaceai-core environment and read-only keys as m49-posttrain-memcheck.yml; it
+# re-samples the model with lm-memcheck's exact prompts and settings, checks the regenerated run locations equal the
+# recorded ones (peaceai/model/m49-provenance-38908186778.json), and logs per distinct string a hashed id, length,
+# core file count, public doc count, dominance and class. Never prints text; no upload, no artifact, no cache; writes
+# nothing. Core, the model, the corpora and the clones are deleted at the end. Dispatch only, main only.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "peace-lm-train-m49 run id (must have concluded success on main)"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: m49-provenance-check
+  cancel-in-progress: false
+
+env:
+  # Pinned hashes of the only scripts that ever touch a deploy key (same pins as m49-posttrain-memcheck.yml).
+  LANDING_SHA256: |-
+    bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    7e2650ddd67247f4a45a0968409e448fa00d3a66ee1acc9409c8c29aab018754  peaceai/bin/clone-core.sh
+
+jobs:
+  provenance:
+    name: provenance of memcheck unexplained runs (counts only)
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: peaceai-core
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Resolve and check the training run (API, read-only)
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          rid="$INPUT_RUN_ID"
+          [[ "$rid" =~ ^[0-9]{1,20}$ ]] || { echo "refused: run id is not a number"; exit 1; }
+          r=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$rid" --jq '[.path, .head_branch, .event, .status, .conclusion, .head_repository.full_name] | join(" ")')
+          test "$r" = ".github/workflows/peace-lm-train-m49.yml main workflow_dispatch completed success PeaceG03/PeaceAI-Workspace" || { echo "refused: run $rid is not a successful peace-lm-train-m49 run on main ($r)"; exit 1; }
+          echo "rid=$rid" >> "$GITHUB_OUTPUT"
+          echo "training run $rid: success on main"
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Rebuild the pretrain corpus from the provenance manifest (anonymous, sha256 per file)
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/pre" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
+      - name: Rebuild the fine-tune corpus at the pinned commits (anonymous clones, also the --source-root)
+        run: |
+          set -euo pipefail
+          FTC=peaceai/model/ft-corefree.json; specs=()
+          while read -r r sha; do
+            [[ "$r" =~ ^PeaceG03/[A-Za-z0-9._-]+$ && "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "unpinned fine-tune repo: refused"; exit 1; }
+            d="$RUNNER_TEMP/srcroot/$r"
+            git clone --quiet "https://github.com/$r.git" "$d"
+            git -C "$d" checkout --quiet --detach "$sha"
+            test "$(git -C "$d" rev-parse HEAD)" = "$sha" || { echo "pinned commit missing: refused"; exit 1; }
+            specs+=("$r=$d@$sha")
+          done < <(jq -r '.repos[] | "\(.repo) \(.sha)"' "$FTC")
+          ./node_modules/.bin/tsx peaceai/bin/ft-pairs.ts "$RUNNER_TEMP/ft" "${specs[@]}"
+      - name: Verify the checkout and the landing scripts before any key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Fetch the landed model (read-only key, sparse, models/lm/<version>/ only)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+          RID: ${{ steps.run.outputs.rid }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_READ_KEY is not set in the peaceai-core environment: refused (fail closed)"; exit 1; }
+          res="$RUNNER_TEMP/res"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --filter=blob:none --no-checkout git@github.com:PeaceG03/PeaceAI-Results.git "$res"
+          c=$(git -C "$res" log --format=%H --fixed-strings --grep="M49 LM pretrain+finetune (run $RID)" origin/HEAD)
+          [ "$(printf '%s\n' "$c" | grep -c .)" = 1 ] || { echo "refused: expected exactly one Results landing commit for run $RID"; exit 1; }
+          d=$(git -C "$res" diff-tree --no-commit-id --name-only -r "$c" | sed -n 's#^\(models/lm/[A-Za-z0-9._-]*\)/.*#\1#p' | sort -u)
+          [ "$(printf '%s\n' "$d" | grep -c .)" = 1 ] || { echo "refused: landing commit does not hold exactly one models/lm/<version>/"; exit 1; }
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set "$d"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet --detach "$c"
+          if [ -n "$(find "$res/$d" -type l)" ]; then echo "refused: symlink in model dir"; exit 1; fi
+          mkdir -p "$RUNNER_TEMP/model"; cp "$res/$d"/* "$RUNNER_TEMP/model/"
+          rm -rf "$res"
+          rm -f "$RUNNER_TEMP/model"/memcheck.json "$RUNNER_TEMP/model"/corefree-proof*.json
+          pre=$(sha256sum "$RUNNER_TEMP/pre/manifest.jsonl" | cut -c1-64); fts=$(sha256sum "$RUNNER_TEMP/ft/manifest.jsonl" | cut -c1-64)
+          test "$(jq -r .trainedOn.pretrainManifestSha256 "$RUNNER_TEMP/model/config.json")" = "$pre" || { echo "refused: model was not trained on the rebuilt pretrain corpus"; exit 1; }
+          test "$(jq -r .trainedOn.finetuneManifestSha256 "$RUNNER_TEMP/model/config.json")" = "$fts" || { echo "refused: model was not trained on the rebuilt fine-tune corpus"; exit 1; }
+          jq -r '"model \(.version)"' "$RUNNER_TEMP/model/config.json"
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Provenance of the unexplained runs (counts and hashed ids only)
+        env:
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+          PEACEAI_LM_MODEL_DIR: ${{ runner.temp }}/model
+          PEACEAI_LM_TRAIN_CORPUS: ${{ runner.temp }}/pre
+          PEACEAI_LM_FT_CORPUS: ${{ runner.temp }}/ft
+          PEACEAI_CORE_DIR: ${{ runner.temp }}/peaceai-core
+          PEACEAI_LM_THREADS: "4"
+        run: ./node_modules/.bin/tsx peaceai/bin/lm-provenance.ts
+      - name: Delete core, the model, the corpora and the clones
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/model" "$RUNNER_TEMP/res" "$RUNNER_TEMP/src" "$RUNNER_TEMP/srcroot" "$RUNNER_TEMP/pre" "$RUNNER_TEMP/ft"
