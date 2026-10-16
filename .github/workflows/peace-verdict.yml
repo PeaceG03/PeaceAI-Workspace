@@ -443,13 +443,18 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
             "Verdict recorded: $LABEL right. No patch posted for \`$TARGET\`: stale base, ${REASON:-regrade-request-failed}."
           exit 1
-      - name: Build the format-patch (one noreply commit on the task's base)
-        if: steps.stale.outputs.stale == 'false'
+      - name: Build the format-patch (one noreply commit on the task's base, or on the new head for a carried verdict)
+        if: steps.stale.outputs.stale == 'false' || (steps.stale.outputs.stale == 'carry' && steps.stale.outputs.ok == 'true')
+        env:
+          CARRY_HEAD: ${{ steps.stale.outputs.stale == 'carry' && steps.stale.outputs.head || '' }}
         run: |
           set -euo pipefail
           case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
           case "$BASE_SHA" in *[!0-9a-f]*|"") echo "bad base sha"; exit 1 ;; esac
-          tools/peaceai/bin/clone-target.sh "$TARGET" "$RUNNER_TEMP/target" "$BASE_SHA"
+          # Carry-forward (lib/carry.ts): verdict-stale.ts checked hash, clean apply, untouched files and a fresh COUNTS grade.
+          PATCH_BASE="$BASE_SHA"
+          if [ -n "$CARRY_HEAD" ]; then case "$CARRY_HEAD" in *[!0-9a-f]*) echo "bad carry head"; exit 1 ;; esac; PATCH_BASE="$CARRY_HEAD"; fi
+          tools/peaceai/bin/clone-target.sh "$TARGET" "$RUNNER_TEMP/target" "$PATCH_BASE"
           cd "$RUNNER_TEMP/target"
           # Auditor (#107, change 5): .github/workflows/** never goes through PeaceAI's push path.
           if grep -qE '^(diff --git a/.* b/|\+\+\+ b/|--- a/|rename (from|to) |copy (from|to) )\.github/workflows/' "$RUNNER_TEMP/chosen/chosen.diff"; then
@@ -469,7 +474,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/target" || { sleep 2; rm -rf "$RUNNER_TEMP/target" || echo "target cleanup incomplete (ignored)"; }
       - name: Check the patch and write the comment
         id: body
-        if: steps.stale.outputs.stale == 'false'
+        if: steps.stale.outputs.stale == 'false' || (steps.stale.outputs.stale == 'carry' && steps.stale.outputs.ok == 'true')
         env:
           PATCH_FILE: ${{ runner.temp }}/verdict.patch
           CHOSEN_DIFF: ${{ runner.temp }}/chosen/chosen.diff
@@ -481,7 +486,7 @@ jobs:
           BODY_FILE: ${{ runner.temp }}/patch-comment.md
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
       - name: Fail closed
-        if: always() && steps.stale.outputs.stale == 'false' && steps.body.outputs.ok != 'true'
+        if: always() && (steps.stale.outputs.stale == 'false' || steps.stale.outputs.stale == 'carry') && steps.body.outputs.ok != 'true'
         env:
           REASON: ${{ steps.body.outputs.reason }}
         run: |

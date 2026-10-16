@@ -22,6 +22,7 @@ import {
   retagCountable,
   denverYmd,
   formatCoverageSummary,
+  EXCL_SELF_LABEL,
   isPeaceRealTask,
   isProofOrNoCoverage,
   LIVE_LANDING,
@@ -380,4 +381,24 @@ test("PeaceAI real task: sha not on main is excluded (fail closed)", () => {
     }),
     false,
   );
+});
+
+test("secondary figure excludes PEACEAI_SELF_CHANGE, is labelled, and never replaces the official figure (which stays first)", () => {
+  const row = (seq: number, skill: string, mark: string) => JSON.stringify({ seq, date: "2026-10-16", time: "01:00", asked: "A synthetic coverage task", changed: "none (synthetic)", why: "Synthetic row for the secondary figure test", skill, mark, by: "Builder" });
+  const log = [row(1, "PEACEAI_SELF_CHANGE", "missing skill PEACEAI_SELF_CHANGE"), row(2, "PEACEAI_SELF_CHANGE", "missing skill PEACEAI_SELF_CHANGE"), row(3, "ENV_FIX", "missing skill ENV_FIX"), row(4, "ENV_FIX", "missing skill ENV_FIX")].join("\n") + "\n";
+  const r = coverageReport(log, "2026-10-16");
+  assert.equal(r.allTime.builderTasks, 4, "official denominator unchanged");
+  assert.equal(r.excludingSelfChange.allTime.builderTasks, 2);
+  assert.equal(r.excludingSelfChange.last7Days.builderTasks, 2);
+  assert.equal(r.excludingSelfChange.label, EXCL_SELF_LABEL);
+  assert.match(EXCL_SELF_LABEL, /secondary: excluding PEACEAI_SELF_CHANGE \(not the official figure\)/);
+  const md = formatCoverageSummary(r);
+  const official = md.indexOf("| all-time | 0% (0/4) |"), secondary = md.indexOf("| window (excl. PEACEAI_SELF_CHANGE) |");
+  assert.ok(official > 0 && secondary > official, "official first, secondary after");
+  assert.match(md, /\| all-time \| 0% \(0\/2\) \|/);
+  // Real log: the official figure is exactly what it was; the secondary only ever drops tasks.
+  const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
+  const real = coverageReport(text, "2026-10-16");
+  assert.ok(real.excludingSelfChange.allTime.builderTasks < real.allTime.builderTasks);
+  assert.equal(real.excludingSelfChange.allTime.peaceaiAble, real.allTime.peaceaiAble);
 });
