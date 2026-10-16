@@ -8,7 +8,7 @@ import { buildTestEdit, parseTestTask, TEST_ASSERTS, TEST_CHECKS, TEST_FRAMEWORK
 import { applyGuardRule, GUARD_PARAM_KEYS, GUARD_TRIGGER, GUARD_VOCAB, type Refusal } from "./learned-guard.ts";
 import { WORKFLOW_JOB_PARAM_KEYS, WORKFLOW_JOB_TRIGGER, WORKFLOW_JOB_VOCAB, runWorkflowJobRule } from "./workflow-job.ts";
 import { TSCONFIG_SCRIPT_PARAM_KEYS, TSCONFIG_SCRIPT_TRIGGER, TSCONFIG_SCRIPT_VOCAB, runTsconfigScriptRule } from "./tsconfig-script.ts";
-import { ENV_FIX_PARAM_KEYS, ENV_FIX_TRIGGER, ENV_FIX_VOCAB, runEnvFixRule } from "./env-fix.ts";
+import { ENV_FIX_TRIGGER, runEnvFixRule, validEnvFixParams } from "./env-fix.ts";
 import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB, runImportEditV2Rule } from "./import-edit-v2.ts";
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
@@ -67,7 +67,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "IMPORT_EDIT_V2" && !validImportEditV2Params(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "WORKFLOW_JOB" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, WORKFLOW_JOB_PARAM_KEYS, WORKFLOW_JOB_VOCAB)) return false;
   if (s.kind === "TSCONFIG_SCRIPT" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, TSCONFIG_SCRIPT_PARAM_KEYS, TSCONFIG_SCRIPT_VOCAB)) return false;
-  if (s.kind === "ENV_FIX" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, ENV_FIX_PARAM_KEYS, ENV_FIX_VOCAB)) return false;
+  if (s.kind === "ENV_FIX" && (s.minedFrom !== "public" || !validEnvFixParams(s.params as Record<string, unknown>))) return false; // v2: optional `int`
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
