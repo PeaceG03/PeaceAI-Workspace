@@ -85,6 +85,29 @@ test("Job A: names, type flips and node: toggles build; everything else is refus
   assert.match(one.e!.content, /^import type \{ A \} from "\.\/x";\nimport \{ b, c \} from "\.\/x";\n/, "exactly one of two same-specifier imports gives a valid edit");
 });
 
+test("Auditor #226: an added name may not shadow a local declaration or a global; a directory move may not switch modules", () => {
+  const base = (body: string) => [{ path: "src/m.ts", content: `import { a } from "./x";\n${body}\n` }, { path: "src/x.ts", content: "" }, { path: "src/evil/x.ts", content: "" }];
+  const cases: [string, string, RegExp][] = [
+    ["export const k = a + setTimeout(() => 0, 1);", "import { a, setTimeout } from \"./x\";", /shadows a global: setTimeout$/],
+    ["export const k = a + Number(fetch);", "import { a, fetch } from \"./x\";", /shadows a global: fetch$/],
+    ["const b = 1;\nexport const k = a + b;", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
+    ["export function f(b: number) { return a + b; }", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
+    ["export function f() { const { b } = { b: 1 }; return a + b; }", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
+    ["export function b() { return a; }", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
+    ["type B = number;\nexport const k: B = a;", "import { a, type B } from \"./x\";", /shadows a local declaration: B$/],
+    ["try { a(); } catch (b) { void b; }", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
+    ["export const k = a;", "import { a } from \"./evil/x\";", /directory move while the old specifier still resolves$/],
+  ];
+  for (const [body, to, re] of cases) {
+    const { e, r } = job(`change import of \`./x\` in \`src/m.ts\` to: \`${to}\``, base(body));
+    assert.equal(e, null, to); assert.match(r ?? "", re, `${body} | ${to}: ${r}`);
+  }
+  const moved = [{ path: "src/m.ts", content: 'import { a } from "./x";\nexport const k = a;\n' }, { path: "src/evil/x.ts", content: "" }];
+  assert.ok(job('change import of `./x` in `src/m.ts` to: `import { a } from "./evil/x";`', moved).e, "allowed once ./x no longer resolves");
+  const ok = job('change import of `./x` in `src/m.ts` to: `import { a, b } from "./x";`', base("export const k = a + b;"));
+  assert.ok(ok.e, ok.r);
+});
+
 test("evidence: every single-line m56 example rebuilds through the task phrase to its real after-file", () => {
   const ev = JSON.parse(read("peaceai/rules/proposals/m56-import-edit-v2-evidence.json"));
   let n = 0;

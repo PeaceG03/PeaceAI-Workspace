@@ -63,8 +63,30 @@ export function v2SpecProblem(path: string, from: string, to: string, repoFiles:
   }
   if (!RELATIVE.test(from) || !RELATIVE.test(to)) return "relative and bare specifiers may not be exchanged";
   if (stem(from) !== stem(to) && from.split("/").pop() !== to.split("/").pop()) return "specifier must keep its module (extension or directory move only)";
-  return importResolveProblem(path, to, repoFiles);
+  const toProblem = importResolveProblem(path, to, repoFiles);
+  if (toProblem) return toProblem;
+  // Auditor #226 (2): a directory move must not switch to a different, still-existing module: the old specifier
+  // may no longer resolve (an extension-only change keeps the same module and is exempt).
+  if (stem(from) !== stem(to) && importResolveProblem(path, from, repoFiles) === null) return "directory move while the old specifier still resolves";
+  return null;
 }
+
+/** Auditor #226 (1): every name declared anywhere in the file outside its imports (variables, parameters, destructuring,
+ *  functions, classes, types, interfaces, enums, namespaces, type parameters, catch variables). */
+function declaredNames(text: string, tsx: boolean): Set<string> {
+  const sf = ts.createSourceFile(tsx ? "d.tsx" : "d.ts", text, ts.ScriptTarget.Latest, true, tsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const out = new Set<string>();
+  const visit = (n: ts.Node): void => {
+    if (ts.isImportDeclaration(n)) return;
+    if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n) || ts.isEnumDeclaration(n) || ts.isModuleDeclaration(n) || ts.isTypeParameterDeclaration(n) || ts.isImportEqualsDeclaration(n)) && n.name && ts.isIdentifier(n.name)) out.add(n.name.text);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+/** Auditor #226 (1): globals an added import would shadow (the running engine's globals plus TypeScript lib/DOM names). */
+const LIB_GLOBALS = new Set(["globalThis", "window", "document", "self", "navigator", "location", "fetch", "Request", "Response", "Headers", "URL", "URLSearchParams", "AbortController", "AbortSignal", "Blob", "File", "FormData", "TextEncoder", "TextDecoder", "structuredClone", "queueMicrotask", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate", "console", "process", "Buffer", "require", "module", "exports", "__dirname", "__filename", "JSON", "Math", "Reflect", "Proxy", "Promise", "Symbol", "Error", "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "Array", "Object", "String", "Number", "Boolean", "BigInt", "Function", "Intl", "Atomics", "SharedArrayBuffer", "ArrayBuffer", "DataView", "crypto", "performance", "EventTarget", "Event", "undefined", "NaN", "Infinity", "isNaN", "isFinite", "parseInt", "parseFloat", "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI", "escape", "unescape"]);
+const isGlobal = (name: string) => LIB_GLOBALS.has(name) || name in globalThis;
 
 /** IMPORT_EDIT v2: exactly one existing import changes its specifier (v2SpecProblem) and/or its named bindings. */
 export function importEditV2Problem(path: string, before: string, after: string, repoFiles: ReadonlySet<string>): string | null {
@@ -96,9 +118,12 @@ export function importEditV2Problem(path: string, before: string, after: string,
   const restWords = words(a.rest, tsx);
   const otherLocals = new Set(a.imps.filter((i) => i !== x).flatMap((i) => [i.def, i.ns, ...(i.named ?? []).map((n) => n.local)]).filter((n): n is string => !!n));
   for (const k of removed) { const n = xs.get(k)!; if (restWords.has(n.local)) return `removed binding still used: ${n.local}`; }
+  const declared = declaredNames(before, tsx);
   for (const k of added) {
     const n = ys.get(k)!;
     if (otherLocals.has(n.local) || n.local === x.def || n.local === x.ns || xn.some((m) => m.local === n.local)) return `added binding already bound: ${n.local}`;
+    if (declared.has(n.local)) return `added binding shadows a local declaration: ${n.local}`;
+    if (isGlobal(n.local)) return `added binding shadows a global: ${n.local}`;
     if (!restWords.has(n.local)) return `added binding unused: ${n.local}`;
   }
   return null;
