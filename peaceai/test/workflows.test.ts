@@ -343,3 +343,105 @@ test("carry-forward carry job: core env (main-only, read-only keys), read-only R
   // The write key stays in the separate peaceai-results environment, only on the record path.
   assert.ok(!j.get("carry-apply")!.includes("secrets."), "carry-apply holds no key");
 });
+
+// #286 follow-up: approval PRs whose own pull_request runs are held for approval (external-contributor setting).
+// The bot never approves, cancels or deletes them and the setting is not relaxed; it says so on the PR, waits for
+// a human approval, and retries the same exact-head merge once. Human PR checks are untouched.
+{
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const { spawnSync } = await import("node:child_process");
+  const SHA = "6c220579d76e47467b9eb009f0b556a4c1d26adf";
+  const BR = "peaceai-approve-rule/a6b02e310551-e27782";
+  const run = (o: { id: number; status?: string; conclusion: string | null; sha?: string; branch?: string; event?: string }) => ({
+    id: o.id, head_sha: o.sha ?? SHA, head_branch: o.branch ?? BR, event: o.event ?? "pull_request",
+    status: o.status ?? "completed", conclusion: o.conclusion, html_url: `https://github.com/PeaceG03/PeaceAI-Workspace/actions/runs/${o.id}`,
+  });
+  /** Runs await-held-runs.sh against a fake gh whose N-th `api` call returns polls[N] (the last one repeats). */
+  function held(polls: unknown[][], args = [SHA, BR, "286"]) {
+    const dir = mkdtempSync(join(tmpdir(), "held-"));
+    try {
+      polls.forEach((p, i) => writeFileSync(join(dir, `poll${i}.json`), JSON.stringify({ workflow_runs: p })));
+      writeFileSync(join(dir, "gh"), `#!/usr/bin/env bash
+echo "$*" >> ${JSON.stringify(join(dir, "gh.log"))}
+case "$1" in
+  api) n=$(cat ${JSON.stringify(join(dir, "n"))} 2>/dev/null || echo 0); echo $((n+1)) > ${JSON.stringify(join(dir, "n"))}
+       f=${JSON.stringify(dir)}/poll$n.json; [ -e "$f" ] || f=${JSON.stringify(dir)}/poll${polls.length - 1}.json; cat "$f" ;;
+esac
+exit 0
+`);
+      chmodSync(join(dir, "gh"), 0o755);
+      const r = spawnSync("peaceai/bin/await-held-runs.sh", args, { encoding: "utf8", env: { ...process.env, PEACEAI_GH: join(dir, "gh"),
+        GH_TOKEN: "dummy", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", PEACEAI_HELD_INTERVAL: "0", PEACEAI_HELD_TIMEOUT: "3" } });
+      const log = existsSync(join(dir, "gh.log")) ? readFileSync(join(dir, "gh.log"), "utf8") : "";
+      return { status: r.status, out: r.stdout + r.stderr, log };
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  test("#286 held runs: held, then approved and passed -> exit 0, one PR comment with the run links, read-only API", () => {
+    const r = held([
+      [run({ id: 1, conclusion: "action_required" }), run({ id: 2, conclusion: "action_required" })],
+      [run({ id: 1, status: "in_progress", conclusion: null }), run({ id: 2, conclusion: "action_required" })],
+      [run({ id: 1, conclusion: "success" }), run({ id: 2, conclusion: "success" })],
+    ]);
+    assert.equal(r.status, 0, r.out);
+    const comments = r.log.split("\n").filter((l) => l.startsWith("pr comment"));
+    assert.equal(comments.length, 1);
+    assert.match(comments[0]!, /pr comment 286 --repo PeaceG03\/PeaceAI-Workspace --body /);
+    assert.match(r.log, /actions\/runs\/1\b[\s\S]*actions\/runs\/2\b/);
+    assert.match(r.log, /Approve and run/);
+    for (const l of r.log.split("\n").filter((x) => x.startsWith("api "))) {
+      assert.equal(l, `api repos/PeaceG03/PeaceAI-Workspace/actions/runs?head_sha=${SHA}&event=pull_request&per_page=100`);
+    }
+  });
+
+  test("#286 held runs: no held run -> exit 2 (refusal has another cause), no comment", () => {
+    const r = held([[run({ id: 1, conclusion: "success" }), run({ id: 9, conclusion: "action_required", sha: "f".repeat(40) }), run({ id: 8, conclusion: "action_required", branch: "feature" })]]);
+    assert.equal(r.status, 2, r.out);
+    assert.doesNotMatch(r.log, /pr comment/);
+  });
+
+  test("#286 held runs: an approved run that fails, never approved by the deadline, or unreadable API -> exit 1", () => {
+    assert.equal(held([[run({ id: 1, conclusion: "action_required" })], [run({ id: 1, conclusion: "failure" })]]).status, 1);
+    assert.equal(held([[run({ id: 1, conclusion: "action_required" })]]).status, 1);
+    const dir = mkdtempSync(join(tmpdir(), "held-bad-"));
+    try {
+      writeFileSync(join(dir, "gh"), "#!/usr/bin/env bash\necho not-json\n"); chmodSync(join(dir, "gh"), 0o755);
+      const r = spawnSync("peaceai/bin/await-held-runs.sh", [SHA, BR, "286"], { encoding: "utf8", env: { ...process.env, PEACEAI_GH: join(dir, "gh"), GH_TOKEN: "d", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace" } });
+      assert.equal(r.status, 1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("#286 held runs: only peaceai-approve-rule/ branches, a full sha and a numeric PR", () => {
+    const ok = [[run({ id: 1, conclusion: "action_required" })], [run({ id: 1, conclusion: "success" })]];
+    assert.equal(held(ok, [SHA, "feature/x", "286"]).status, 1);
+    assert.equal(held(ok, ["abc", BR, "286"]).status, 1);
+    assert.equal(held(ok, [SHA, BR, "286;x"]).status, 1);
+  });
+
+  test("#286 held runs: the bot never approves, cancels, deletes or re-runs runs and never admin-merges", () => {
+    const h = readFileSync("peaceai/bin/await-held-runs.sh", "utf8");
+    const code = h.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+    assert.doesNotMatch(code, /\/approve|run cancel|run delete|run rerun|-X\s*(POST|DELETE|PUT|PATCH)|--method|pr merge/);
+    const pr = readFileSync("peaceai/bin/approve-rule-pr.sh", "utf8");
+    assert.doesNotMatch(pr, /--admin|--auto|run cancel|run delete|\/approve\b/);
+    // The required gate runs first and is unchanged; the retry is the same exact-head squash merge, once.
+    assert.ok(pr.indexOf('await-checks.sh" "$sha" $REQUIRED_CHECKS') < pr.indexOf("if ! merge; then"));
+    assert.match(pr, /merge\(\) \{ gh pr merge "\$pr" --repo "\$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "\$sha" /);
+    assert.match(pr, /if ! merge; then\n[\s\S]*?"\$here\/await-held-runs\.sh" "\$sha" "\$branch" "\$pr"[\s\S]*?\n  if ! merge; then\n/);
+    assert.equal((pr.match(/\bmerge;/g) ?? []).length, 2);
+  });
+
+  test("#286 held runs: human PR checks keep their pull_request triggers; landing job has room for both waits", () => {
+    for (const f of ["ci.yml", "leak-check.yml"]) {
+      assert.match(read(f), /^on:\n {2}pull_request:\n {4}branches: \[main\]\n/m, f);
+      const on = read(f).split(/^on:\n/m)[1]!.split(/^\S/m)[0]!;
+      assert.doesNotMatch(on, /branches-ignore|paths-ignore|paths:/, f);
+      assert.doesNotMatch(read(f), /peaceai-approve-rule|github\.head_ref/, f);
+    }
+    const land = jobs(read("peace-approve-rule.yml")).get("results-land")!;
+    assert.match(land, /timeout-minutes: 60\b/);
+    assert.match(land, /approve-rule-pr\.sh/);
+  });
+}

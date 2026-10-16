@@ -26,7 +26,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/rules\//, why: "approved learned-rule list and rule specs" },
   { pattern: /^peaceai\/test\//, why: "the live test suite (new tests go under peaceai/self-tests/)" },
   { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.test\.ts$/, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
-  { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/, why: "approval, leak, scan, hook, gate and self-change tools" },
+  { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|await-held-runs\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/, why: "approval, leak, scan, hook, gate and self-change tools" },
   { pattern: /^peaceai\/bin\/test-candidates\.ts$/, why: "the grading harness (M14)" },
   { pattern: /^peaceai\/bin\/(verdict-stale|regrade-fetch|record-task|record-verdict|carry-check|carry-verdict)\.ts$|^peaceai\/lib\/(regrade|carry)\.ts$/, why: "the stale-base regrade route through Job B and its Results records (M18), and carry-forward verdicts" },
   { pattern: /^peaceai\/bin\/(generate|regate)\.ts$|^peaceai\/lib\/(records|rank|diff)\.ts$/, why: "candidate generation and the Job B check files: grading, eligibility and diff parsing (M17)" },
