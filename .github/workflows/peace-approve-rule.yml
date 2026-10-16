@@ -257,7 +257,7 @@ jobs:
       (inputs.push_proof == true ||
        needs.workspace.outputs.changed == 'true' || needs.results-reverify.outputs.changed == 'true')
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60  # #286: dispatched checks (<=25 min) + held-run approval wait (<=25 min)
     permissions:
       contents: write
       pull-requests: write

@@ -5,7 +5,9 @@
 # branch (token pushes start no pull_request/push workflows; dispatch is the one trigger the token may use).
 # The dispatched jobs report under their exact required names (leak-check, tamper-proof, tests) on the
 # branch's head commit. It polls that commit's check-runs until every required check has finished, and
-# squash-merges with --match-head-commit only when all of them succeeded.
+# squash-merges with --match-head-commit only when all of them succeeded. If that merge is refused because the
+# PR's own pull_request runs are held for approval, await-held-runs.sh says so on the PR and waits for Peace to
+# approve them (never approves, cancels or deletes them itself), then the same merge is retried once.
 # Never pushes to main: the only push is to refs/heads/peaceai-approve-rule/<...>; main changes only by the
 # squash merge, which branch protection still gates on the required checks.
 # Usage (results-land only): approve-rule-pr.sh <message-file>. Needs GH_TOKEN and GITHUB_REPOSITORY.
@@ -36,9 +38,18 @@ if ! "$here/await-checks.sh" "$sha" $REQUIRED_CHECKS; then
   echo "required checks did not pass on #$pr ($sha); not merged" >&2
   exit 1
 fi
-if ! gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$sha" --subject "$(head -n1 "$msg") (#$pr)" --body "$(tail -n +3 "$msg")"; then
-  echo "merge refused for #$pr ($sha) even though the dispatched checks passed (branch protection did not accept them?); not merged" >&2
-  exit 1
+merge() { gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$sha" --subject "$(head -n1 "$msg") (#$pr)" --body "$(tail -n +3 "$msg")"; }
+if ! merge; then
+  # #286: a refusal after green required checks is usually pull_request runs held for approval on this head.
+  # Make it visible on the PR, wait for a human to approve them, then retry the same exact-head merge once.
+  if ! "$here/await-held-runs.sh" "$sha" "$branch" "$pr"; then
+    echo "merge refused for #$pr ($sha) even though the dispatched checks passed; not merged" >&2
+    exit 1
+  fi
+  if ! merge; then
+    echo "merge refused for #$pr ($sha) after the held runs passed; not merged" >&2
+    exit 1
+  fi
 fi
 merged="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json mergeCommit --jq .mergeCommit.oid)"
 echo "merge_sha=$merged" >> "${GITHUB_OUTPUT:-/dev/null}"
