@@ -1,0 +1,237 @@
+{
+ "schema": "peaceai-m64-loop-function-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e",
+ "pins": "peaceai/rules/proposals/m45-example-repos.json",
+ "note": "Functions from the example-only repos whose every loop fits the LOOP_FUNCTION bounded-loop definition (design: counted for with a literal / PARAM.length / number-parameter bound and an untouched counter, for-of over a parameter, bounded while with one fixed step toward a fixed bound); the rest of each body may be outside the COMPLEX vocabulary. EVIDENCE CHANGE for Auditor: while rows include NON-EXPORTED functions (exported=false); #135 counted exported functions only. If rejected, v1 ships with loops [for-of-param, counted-literal-or-length] and while is refused as loop_while_unsupported. Licenses pinned by hash only. createBase32Hash (rushstack, while row 1 of the prep) is excluded: its for loop is bounded by a local's .length (data, a const Buffer), which the definition does not allow.",
+ "bars": {
+  "for-of-param+counted": 10,
+  "while-bounded": 4
+ },
+ "examples": [
+  {
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/reporter/src/exit/CommandJson.ts",
+   "fn": "separateJsonControls",
+   "line": 34,
+   "exported": true,
+   "loops": [
+    "counted-literal-or-length"
+   ],
+   "sha256": "1d27862102f505f4b69adfbb665a02fe29022e272e75fe24716ef354045a63c2",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fileBlob": "83f4cd715d0388e07c24fef4c68a43651e3f2370",
+   "fixture": "peaceai/test/fixtures/m64/microsoft__rushstack-83f4cd715d03.txt"
+  },
+  {
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "libraries/reporter/src/reporters/InteractiveRendering.ts",
+   "fn": "renderActiveProjectsRow",
+   "line": 224,
+   "exported": true,
+   "loops": [
+    "counted-literal-or-length"
+   ],
+   "sha256": "9b9a66bc83febce4ec3b693d3e99e0ad0e78e8caae233228109212873de0d170",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fileBlob": "1240562cc786dcecd8d241d0d664ecdecbfc3279",
+   "fixture": "peaceai/test/fixtures/m64/microsoft__rushstack-1240562cc786.txt"
+  },
+  {
+   "repo": "microsoft/rushstack",
+   "commit": "9f5a08754a61b46eeb22bfb2f862f92cab9b61ef",
+   "path": "apps/zipsync/src/crc32.ts",
+   "fn": "fallbackCrc32",
+   "line": 25,
+   "exported": true,
+   "loops": [
+    "counted-literal-or-length"
+   ],
+   "sha256": "f1641b5442c061be6b32059c37b4cae8aaf332adb6104335aa3fefbb1e8990ea",
+   "license": "MIT",
+   "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5",
+   "fileBlob": "18017c5885238fdbf6613acd9e2a296ced9d5c72",
+   "fixture": "peaceai/test/fixtures/m64/microsoft__rushstack-18017c588523.txt"
+  },
+  {
+   "repo": "typescript-eslint/typescript-eslint",
+   "commit": "c1a9d608c8cc2ce50432adebf0603f69310263f9",
+   "path": "packages/type-utils/src/requiresQuoting.ts",
+   "fn": "requiresQuoting",
+   "line": 3,
+   "exported": true,
+   "loops": [
+    "counted-literal-or-length"
+   ],
+   "sha256": "5b7ecb4af35727d60dc73c08409bd7a3b690c48b6812bde62f3f7308e66f2c94",
+   "license": "MIT",
+   "licenseSha256": "b263be8715c216f35fcb4e1cf2c748d9637e7e9ef7d2ee4bf6c49d2ae092afea",
+   "fileBlob": "a5b9750c1973a8057621a9f1cb22c147cd3292b0",
+   "fixture": "peaceai/test/fixtures/m64/typescript-eslint__typescript-eslint-a5b9750c1973.txt"
+  },
+  {
+   "repo": "typescript-eslint/typescript-eslint",
+   "commit": "c1a9d608c8cc2ce50432adebf0603f69310263f9",
+   "path": "packages/typescript-estree/src/node-utils.ts",
+   "fn": "firstDefined",
+   "line": 777,
+   "exported": true,
+   "loops": [
+    "counted-literal-or-length"
+   ],
+   "sha256": "12e7eb3865ab0192b6d2cc370edcab4c8eea1e3d9b7d5043f3ec4d3b4a16131b",
+   "license": "MIT",
+   "licenseSha256": "b263be8715c216f35fcb4e1cf2c748d9637e7e9ef7d2ee4bf6c49d2ae092afea",
+   "fileBlob": "2ffffa3782ea53163b8a7eb51aa830aff27556d0",
+   "fixture": "peaceai/test/fixtures/m64/typescript-eslint__typescript-eslint-2ffffa3782ea.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/workspace/package-patterns/src/index.ts",
+   "fn": "normalizePatterns",
+   "line": 12,
+   "exported": true,
+   "loops": [
+    "for-of-param"
+   ],
+   "sha256": "c2c179ac83f204636467e19d84d1f93221525651412ba8c0fa96b6b04f43a153",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "40b9d5439297d76026843a759b4d5f9d3e5cb2e3",
+   "fixture": "peaceai/test/fixtures/m64/pnpm__pnpm-40b9d5439297.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/releasing/versioning/src/versionMath.ts",
+   "fn": "maxBumpType",
+   "line": 8,
+   "exported": true,
+   "loops": [
+    "for-of-param"
+   ],
+   "sha256": "70daef54fdaae4b8e87b47a9abeddb91c0a9334dac941d46b250f8ff96b36fc6",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "1a7e64fc08308dc28b45b9167d137f6551fc39c6",
+   "fixture": "peaceai/test/fixtures/m64/pnpm__pnpm-1a7e64fc0830.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/core/src/shared/open-service/services/module-graph/engine/dependency-graph/scope.ts",
+   "fn": "isInsideAnyWorkspace",
+   "line": 3,
+   "exported": true,
+   "loops": [
+    "for-of-param"
+   ],
+   "sha256": "1993d825e3c0ff73bcbacc95d3359a1af01c27c0171b895b824795dbbbcb26de",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "c59c0660f19baf1fed4cac6ee66492d8f7aafb2f",
+   "fixture": "peaceai/test/fixtures/m64/storybookjs__storybook-c59c0660f19b.txt"
+  },
+  {
+   "repo": "typescript-eslint/typescript-eslint",
+   "commit": "c1a9d608c8cc2ce50432adebf0603f69310263f9",
+   "path": "packages/eslint-plugin/src/util/misc.ts",
+   "fn": "findFirstResult",
+   "line": 74,
+   "exported": true,
+   "loops": [
+    "for-of-param"
+   ],
+   "sha256": "7a7c5abc89ca475ff7be1a471016fce24d1d3942128e4720463fa0d7f46a90db",
+   "license": "MIT",
+   "licenseSha256": "b263be8715c216f35fcb4e1cf2c748d9637e7e9ef7d2ee4bf6c49d2ae092afea",
+   "fileBlob": "a39235e17aad619e21d5f88dd8237a0be835ec35",
+   "fixture": "peaceai/test/fixtures/m64/typescript-eslint__typescript-eslint-a39235e17aad.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/renderers/web-components/src/docgen/component-docgen/utils.ts",
+   "fn": "firstValue",
+   "line": 28,
+   "exported": true,
+   "loops": [
+    "for-of-param"
+   ],
+   "sha256": "27ef11c89e4d6977029c89c834bd39e05ef92844431b5e2b370d90b68bcd26c9",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "331596122862b05b91e17235666bf29b4f3aaa9f",
+   "fixture": "peaceai/test/fixtures/m64/storybookjs__storybook-331596122862.txt"
+  },
+  {
+   "repo": "typescript-eslint/typescript-eslint",
+   "commit": "c1a9d608c8cc2ce50432adebf0603f69310263f9",
+   "path": "packages/eslint-plugin/src/util/misc.ts",
+   "fn": "findLastIndex",
+   "line": 196,
+   "exported": true,
+   "loops": [
+    "while-bounded"
+   ],
+   "sha256": "7a7c5abc89ca475ff7be1a471016fce24d1d3942128e4720463fa0d7f46a90db",
+   "license": "MIT",
+   "licenseSha256": "b263be8715c216f35fcb4e1cf2c748d9637e7e9ef7d2ee4bf6c49d2ae092afea",
+   "fileBlob": "a39235e17aad619e21d5f88dd8237a0be835ec35",
+   "fixture": "peaceai/test/fixtures/m64/typescript-eslint__typescript-eslint-a39235e17aad.txt"
+  },
+  {
+   "repo": "microsoft/vscode",
+   "commit": "ce2bc857c5b748bde66ef464d7f7fc73dd1faad2",
+   "path": "src/vs/base/common/jsonFormatter.ts",
+   "fn": "computeIndentLevel",
+   "line": 226,
+   "exported": false,
+   "loops": [
+    "while-bounded"
+   ],
+   "sha256": "7eeb3862ecdee342fbbdd9a531e347caea2b5c9e1c07f563734e9a406eef8f76",
+   "license": "MIT",
+   "licenseSha256": "20535828272932407c2f5172aeb714ac7b374a34e5ecb1825af509f2902cde54",
+   "fileBlob": "2e431ca8db8c5a2fc5beaa55355b613b42a1d0c4",
+   "fixture": "peaceai/test/fixtures/m64/microsoft__vscode-2e431ca8db8c.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/installing/deps-resolver/src/linkPathToPeerVersion.ts",
+   "fn": "findEndWithoutTrailingPlusesAndDots",
+   "line": 57,
+   "exported": false,
+   "loops": [
+    "while-bounded"
+   ],
+   "sha256": "2ca4f1ca70d26f7197dfa68180b72991d23d87c66e087052b8b1ffd22ecd6fb7",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "2e19deffa918a72b2c8df6d76dc0c278f24f1ad8",
+   "fixture": "peaceai/test/fixtures/m64/pnpm__pnpm-2e19deffa918.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/resolving/npm-resolver/src/fetch.ts",
+   "fn": "consumeTrailingDigits",
+   "line": 122,
+   "exported": false,
+   "loops": [
+    "while-bounded"
+   ],
+   "sha256": "d81c1443571d1a26569e3f2afd095601c65c4f43a71af7ef13e2fea9e6697e2e",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "a7e4a61b8bd8aafffc2589ecea675455eee8daa6",
+   "fixture": "peaceai/test/fixtures/m64/pnpm__pnpm-a7e4a61b8bd8.txt"
+  }
+ ]
+}

@@ -27,9 +27,23 @@ import { PROTECTED_SELF } from "./selfchange.ts";
 /** Off unless PEACEAI_COMPLEX_FUNCTION is exactly "true" (M26 refresh). */
 export const COMPLEX_FUNCTION_FLAG = "PEACEAI_COMPLEX_FUNCTION";
 export const complexFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[COMPLEX_FUNCTION_FLAG] === "true";
-/** Named refusal for every loop form until real mined loop examples exist. */
+/** Named refusal for every loop form when the spec's `params.loops` is ["none"] (public-complex-function-v1, #211). */
 export const LOOP_UNSUPPORTED = "loop_unsupported";
-const LOOPS_SUPPORTED: boolean = false;
+// M64 LOOP_FUNCTION (public-loop-function-v1): loops run only when the spec's params.loops lists the form.
+// Named refusals (M59 refusal lines) when loops are enabled:
+export const LOOP_UNBOUNDED = "loop_unbounded"; // while(true), a non-comparison condition, an unprovable bound or step
+export const LOOP_ASYNC = "loop_async"; // async / await / for await anywhere in the body
+export const LOOP_LABEL = "loop_label"; // labels, break/continue to a label
+export const CLOSURE_NOT_ALLOWED = "closure_not_allowed"; // nested function, arrow or method
+export const LOOP_WHILE_UNSUPPORTED = "loop_while_unsupported"; // a while when the spec allows for/for-of only
+export const NAMED_REFUSALS: ReadonlySet<string> = new Set([LOOP_UNSUPPORTED, LOOP_UNBOUNDED, LOOP_ASYNC, LOOP_LABEL, CLOSURE_NOT_ALLOWED, LOOP_WHILE_UNSUPPORTED]);
+/** Which loop forms a spec allows; numberParams are the task's `number` parameters (allowed counted/while bounds). */
+export interface LoopPolicy { forOf: boolean; counted: boolean; whileBounded: boolean; numberParams: ReadonlySet<string> }
+export const NO_LOOPS: LoopPolicy = { forOf: false, counted: false, whileBounded: false, numberParams: new Set() };
+export const loopPolicy = (loops: readonly string[], numberParams: ReadonlySet<string> = new Set()): LoopPolicy => ({
+  forOf: loops.includes("for-of-param"), counted: loops.includes("counted-literal-or-length"), whileBounded: loops.includes("while-bounded"), numberParams,
+});
+const anyLoops = (p: LoopPolicy) => p.forOf || p.counted || p.whileBounded;
 /** Auditor #135: no leading '/', and no '', '.' or '..' segments (same check as METHOD_GUARD). */
 export const plainPath = (p: string): boolean => !p.startsWith("/") && !p.split("/").some((x) => x === "" || x === "." || x === "..");
 const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(path));
@@ -38,7 +52,7 @@ export const COMPLEX_PARAM_KEYS = ["body", "grading", "loops", "params", "placem
 export const COMPLEX_VOCAB: Record<(typeof COMPLEX_PARAM_KEYS)[number], readonly string[]> = {
   body: ["bounded-block"],
   grading: ["self-fail-before-pass-after-and-stub"],
-  loops: ["none", "for-of-param", "counted-literal-or-length"], // "none": the wired spec (loops are refused as loop_unsupported regardless)
+  loops: ["none", "for-of-param", "counted-literal-or-length", "while-bounded"], // "none": #211's spec (every loop -> loop_unsupported); the others: M64 public-loop-function-v1
   params: ["typed"],
   placement: ["end-of-module"],
   returns: ["annotated"],
@@ -56,6 +70,8 @@ const TYPE = String.raw`(?:readonly )?(?:string|number|boolean)(?:\[\])?`;
 const PARAM = String.raw`${NAME}: ?${TYPE}`;
 /** Header line; the body lines follow it (each a statement), then the test bullets. */
 export const COMPLEX_TRIGGER = String.raw`^add (?:a )?complex function \x60?(?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE})\x60? to \x60?(?<file>${FILE})\x60? with body ?:?[ \t]*$`;
+/** M64: LOOP_FUNCTION header ("add loop function ... with body:"); same signature grammar, its own phrase. */
+export const LOOP_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "loop function");
 const LOCAL_TYPES = new Set(FUNCTION_TYPES as readonly string[]);
 const RESERVED = /^(?:constructor|prototype|__proto__|eval|arguments|globalThis|process|require|import|Function|undefined|NaN|Infinity)$/;
 
@@ -93,7 +109,7 @@ export function parseComplexTask(trigger: string, objective: string): ComplexTas
  * True when every statement of the block is in the bounded grammar (see the header). `params` are read-only.
  * Returns the reason for a refusal (string) or null when the block is safe.
  */
-export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string> }
+export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string>; loops?: LoopPolicy }
 /** Option A (Auditor): the callable module functions: exported, top-level, one declaration with a body, not async/generator. */
 export function moduleFunctions(sf: ts.SourceFile): Map<string, ts.FunctionDeclaration | null> {
   const out = new Map<string, ts.FunctionDeclaration | null>();
@@ -117,7 +133,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     if (!f || !f.body) { callRefusal = `${name} is not an exported same-file function`; return false; }
     const ps = new Set<string>();
     for (const x of f.parameters) { if (!ts.isIdentifier(x.name) || !x.type || x.dotDotDotToken || x.initializer || x.questionToken) { callRefusal = `${name} has untyped/destructured/optional parameters`; return false; } ps.add(x.name.text); }
-    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called });
+    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called, loops: ctx.loops ? { ...ctx.loops, numberParams: new Set() } : undefined });
     if (r) { callRefusal = `${name}: ${r}`; return false; }
     ctx.called.add(name);
     return true;
@@ -164,9 +180,26 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     return safeBody((st.expression as ts.ParenthesizedExpression).expression, new Set([...ns, dummy]));
   };
   const local = (n: string) => !params.has(n) && !locals.has(n) && !counters.has(n) && !RESERVED.test(n);
+  const pol = ctx.loops ?? NO_LOOPS;
+  const on = anyLoops(pol);
+  const fixedBound = (b: ts.Expression): boolean => {
+    if (ts.isNumericLiteral(b)) return /^\d+$/.test(b.text) && Number(b.text) <= MAX_LOOP_BOUND;
+    const param = (ts.isPropertyAccessExpression(b) && b.name.text === "length" && ts.isIdentifier(b.expression) && params.has(b.expression.text))
+      || (on && ts.isIdentifier(b) && params.has(b.text) && pol.numberParams.has(b.text)); // M64: an (unassignable) number parameter
+    if (param && on) usesParam = true; // a loop bound reads its parameter
+    return param;
+  };
   const stmt = (s: ts.Statement, depth: number, inLoop: boolean): string | null => {
-    // Architect (M26 refresh): no mined example has a loop yet, so every loop form is refused by name.
-    if (LOOPS_SUPPORTED === false && (ts.isForStatement(s) || ts.isForOfStatement(s) || ts.isForInStatement(s) || ts.isWhileStatement(s) || ts.isDoStatement(s))) return LOOP_UNSUPPORTED;
+    // #211 (loops ["none"]): every loop form is refused by name.
+    if (!on && (ts.isForStatement(s) || ts.isForOfStatement(s) || ts.isForInStatement(s) || ts.isWhileStatement(s) || ts.isDoStatement(s))) return LOOP_UNSUPPORTED;
+    if (on) {
+      if (ts.isDoStatement(s) || ts.isForInStatement(s)) return LOOP_UNSUPPORTED;
+      if (ts.isLabeledStatement(s) || ((ts.isBreakStatement(s) || ts.isContinueStatement(s)) && s.label)) return LOOP_LABEL;
+      if (ts.isForOfStatement(s) && s.awaitModifier) return LOOP_ASYNC;
+      if (ts.isForOfStatement(s) && !pol.forOf) return LOOP_UNSUPPORTED;
+      if (ts.isForStatement(s) && !pol.counted) return LOOP_UNSUPPORTED;
+      if (ts.isWhileStatement(s)) return whileStmt(s, depth);
+    }
     if (++statements > MAX_STATEMENTS) return "too many statements";
     if (depth > MAX_DEPTH) return "nested too deep";
     if (ts.isBlock(s)) { statements--; for (const x of s.statements) { const r = stmt(x, depth, inLoop); if (r) return r; } return null; }
@@ -234,13 +267,12 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
       if (!ts.isIdentifier(d.name) || !local(d.name.text) || !d.initializer || !ts.isNumericLiteral(d.initializer) || !/^\d+$/.test(d.initializer.text)) return "counter starts at an integer literal";
       const i = d.name.text;
       const c = s.condition;
-      if (!c || !ts.isBinaryExpression(c) || ![ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken].includes(c.operatorToken.kind) || !ts.isIdentifier(c.left) || c.left.text !== i) return "condition must be i < BOUND or i <= BOUND";
-      const b = c.right;
-      const literal = ts.isNumericLiteral(b) && /^\d+$/.test(b.text) && Number(b.text) <= MAX_LOOP_BOUND;
-      const length = ts.isPropertyAccessExpression(b) && b.name.text === "length" && ts.isIdentifier(b.expression) && params.has(b.expression.text);
-      if (!literal && !length) return `bound must be an integer literal <= ${MAX_LOOP_BOUND} or PARAM.length`;
+      if (!c || !ts.isBinaryExpression(c) || ![ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken].includes(c.operatorToken.kind) || !ts.isIdentifier(c.left) || c.left.text !== i) return on ? LOOP_UNBOUNDED : "condition must be i < BOUND or i <= BOUND";
+      if (!fixedBound(c.right)) return on ? LOOP_UNBOUNDED : `bound must be an integer literal <= ${MAX_LOOP_BOUND} or PARAM.length`;
       const inc = s.incrementor;
-      if (!inc || !ts.isPostfixUnaryExpression(inc) || inc.operator !== ts.SyntaxKind.PlusPlusToken || !ts.isIdentifier(inc.operand) || inc.operand.text !== i) return "incrementor must be i++";
+      const plusPlus = !!inc && ts.isPostfixUnaryExpression(inc) && inc.operator === ts.SyntaxKind.PlusPlusToken && ts.isIdentifier(inc.operand) && inc.operand.text === i;
+      const plusOne = on && !!inc && ts.isBinaryExpression(inc) && inc.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken && ts.isIdentifier(inc.left) && inc.left.text === i && ts.isNumericLiteral(inc.right) && inc.right.text === "1"; // M64: i += 1
+      if (!plusPlus && !plusOne) return on ? LOOP_UNBOUNDED : "incrementor must be i++";
       counters.add(i);
       const r = stmt(s.statement, depth + 1, true);
       counters.delete(i);
@@ -248,6 +280,48 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     }
     return `${ts.SyntaxKind[s.kind]} not allowed`;
   };
+  // M64 bounded while: `while (C < B | C <= B)` (or `B > C`, `B >= C`) with exactly one top-level `C += POS` / `C++`, or
+  // `while (C > B | C >= B)` (or `B < C`, `B <= C`) with exactly one top-level `C -= POS` / `C--`. C is an own let local
+  // assigned nowhere else in the body; B is a literal <= MAX_LOOP_BOUND, a number parameter or PARAM.length (never a
+  // local copy); no `continue` anywhere in the body (it could skip the step).
+  function whileStmt(s: ts.WhileStatement, depth: number): string | null {
+    if (!pol.whileBounded) return LOOP_WHILE_UNSUPPORTED;
+    if (++loops > MAX_LOOPS) return "too many loops";
+    const c = s.expression;
+    const L = ts.SyntaxKind.LessThanToken, LE = ts.SyntaxKind.LessThanEqualsToken, G = ts.SyntaxKind.GreaterThanToken, GE = ts.SyntaxKind.GreaterThanEqualsToken;
+    if (!ts.isBinaryExpression(c) || ![L, LE, G, GE].includes(c.operatorToken.kind)) return LOOP_UNBOUNDED;
+    const op = c.operatorToken.kind;
+    const isCounter = (e: ts.Expression) => ts.isIdentifier(e) && locals.get(e.text)?.kind === "let";
+    let k: string, bound: ts.Expression, up: boolean;
+    if (isCounter(c.left) && !isCounter(c.right)) { k = (c.left as ts.Identifier).text; bound = c.right; up = op === L || op === LE; }
+    else if (isCounter(c.right) && !isCounter(c.left)) { k = (c.right as ts.Identifier).text; bound = c.left; up = op === G || op === GE; }
+    else return LOOP_UNBOUNDED;
+    if (!fixedBound(bound) || !ts.isBlock(s.statement)) return LOOP_UNBOUNDED;
+    const isStep = (x: ts.Statement): boolean => {
+      if (!ts.isExpressionStatement(x)) return false;
+      const e = x.expression;
+      if (ts.isBinaryExpression(e)) return ts.isIdentifier(e.left) && e.left.text === k && e.operatorToken.kind === (up ? ts.SyntaxKind.PlusEqualsToken : ts.SyntaxKind.MinusEqualsToken) && ts.isNumericLiteral(e.right) && /^[1-9]\d*$/.test(e.right.text);
+      return (ts.isPostfixUnaryExpression(e) || ts.isPrefixUnaryExpression(e)) && ts.isIdentifier(e.operand) && e.operand.text === k && e.operator === (up ? ts.SyntaxKind.PlusPlusToken : ts.SyntaxKind.MinusMinusToken);
+    };
+    const touches = (n: ts.Node): boolean => {
+      let hit = false;
+      const v = (x: ts.Node): void => {
+        if (ts.isContinueStatement(x)) hit = true;
+        if (ts.isBinaryExpression(x) && x.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && x.operatorToken.kind <= ts.SyntaxKind.LastAssignment && ts.isIdentifier(x.left) && x.left.text === k) hit = true;
+        if ((ts.isPrefixUnaryExpression(x) || ts.isPostfixUnaryExpression(x)) && (x.operator === ts.SyntaxKind.PlusPlusToken || x.operator === ts.SyntaxKind.MinusMinusToken) && ts.isIdentifier(x.operand) && x.operand.text === k) hit = true;
+        ts.forEachChild(x, v);
+      };
+      v(n);
+      return hit;
+    };
+    const body = s.statement.statements;
+    if (body.filter(isStep).length !== 1 || body.some((x) => !isStep(x) && touches(x))) return LOOP_UNBOUNDED;
+    if (!expr(c)) return "condition outside the vocabulary";
+    if (++statements > MAX_STATEMENTS) return "too many statements";
+    if (depth + 1 > MAX_DEPTH) return "nested too deep";
+    for (const x of body) { if (isStep(x)) continue; const r = stmt(x, depth + 1, true); if (r) return r; }
+    return null;
+  }
   const st = block.statements;
   if (st.length === 0 || !ts.isReturnStatement(st[st.length - 1]!)) return "the last statement must be a return";
   for (const s of st) { const r = stmt(s, 1, false); if (r) return r; }
@@ -314,10 +388,19 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   const fd = fsf.statements[0]!;
   if (!ts.isFunctionDeclaration(fd) || !fd.body) return no("edit_refused");
   const allowedLoops = new Set(params.loops as string[]);
+  const pol = loopPolicy([...allowedLoops], new Set(task.params.filter((p) => p.type === "number").map((p) => p.name)));
+  if (anyLoops(pol)) {
+    // M64: named refusals checked on the whole body before the statement grammar.
+    if (/\b(?:async|await)\b/.test(task.body)) return no(LOOP_ASYNC);
+    let closure = false;
+    const v = (n: ts.Node): void => { if (ts.isFunctionLike(n)) closure = true; else ts.forEachChild(n, v); };
+    fd.body.statements.forEach(v);
+    if (closure) return no(CLOSURE_NOT_ALLOWED);
+  }
   if (!allowedLoops.has("for-of-param") && /\bfor \(const /.test(task.body)) return no(LOOP_UNSUPPORTED);
   if (!allowedLoops.has("counted-literal-or-length") && /\bfor \(let /.test(task.body)) return no(LOOP_UNSUPPORTED);
-  const refusal = blockRefusal(fd.body, names, fsf);
-  if (refusal) return no(refusal === LOOP_UNSUPPORTED ? LOOP_UNSUPPORTED : "body_refused");
+  const refusal = blockRefusal(fd.body, names, fsf, { module: moduleFunctions(fsf), stack: [], called: new Set(), loops: pol });
+  if (refusal) return no(NAMED_REFUSALS.has(refusal) ? refusal : "body_refused");
   const base = target.content.endsWith("\n") ? target.content : `${target.content}\n`;
   const content = `${base}\n${fnText}`;
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
@@ -353,8 +436,8 @@ export function stubComplexBody(content: string, fn: string): string | null {
 }
 
 /** Option A: the same-file functions a body calls (transitively, vetted). Null when the body is refused. */
-export function calledFunctions(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile): string[] | null {
-  const ctx: CallCtx = { module: moduleFunctions(sf), stack: [], called: new Set() };
+export function calledFunctions(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile, loops: LoopPolicy = NO_LOOPS): string[] | null {
+  const ctx: CallCtx = { module: moduleFunctions(sf), stack: [], called: new Set(), loops };
   return blockRefusal(block, params, sf, ctx) === null ? [...ctx.called].sort() : null;
 }
 
@@ -367,7 +450,9 @@ export function stubForGrading(content: string, fn: string, added: readonly stri
   const f = moduleFunctions(sf).get(fn);
   if (!f?.body) return null;
   const ps = new Set(f.parameters.map((x) => (ts.isIdentifier(x.name) ? x.name.text : "")));
-  const called = calledFunctions(f.body, ps, sf);
+  // M64: the candidate already passed Job A under its spec; list callees with every bounded loop form allowed.
+  const nums = new Set(f.parameters.filter((x) => ts.isIdentifier(x.name) && x.type?.getText(sf) === "number").map((x) => (x.name as ts.Identifier).text));
+  const called = calledFunctions(f.body, ps, sf, loopPolicy(["for-of-param", "counted-literal-or-length", "while-bounded"], nums));
   if (called === null) return null;
   let cur: string | null = content;
   for (const n of [fn, ...called.filter((c) => added.includes(c))]) { cur = stubComplexBody(cur, n); if (cur === null) return null; }

@@ -167,7 +167,7 @@ for (const [form, body] of Object.entries(loopForms)) {
     const sf = ts.createSourceFile("f.ts", `function f(from: string, to: string): string[] {\n${body}\n}`, ts.ScriptTarget.Latest, true);
     const fn = sf.statements[0] as ts.FunctionDeclaration;
     assert.equal(blockRefusal(fn.body!, new Set(["from", "to"]), sf), LOOP_UNSUPPORTED);
-    assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(body), files, undefined, ON), null);
+    assert.equal(applyComplexRule(COMPLEX_TRIGGER, { ...P, loops: ["none"] }, t(body), files, undefined, ON), null); // M64: loops run only when the spec lists them (see m64-loop-function.test.ts)
   });
 }
 

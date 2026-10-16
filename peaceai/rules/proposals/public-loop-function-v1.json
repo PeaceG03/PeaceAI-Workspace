@@ -1,0 +1,23 @@
+{
+ "id": "public-loop-function-v1",
+ "kind": "COMPLEX_FUNCTION",
+ "shape": "LOOP_FUNCTION",
+ "status": "proposal-off-wired",
+ "engine": "peaceai/lib/learned-complex.ts",
+ "loops": "counted for (literal <= 1000 / PARAM.length / number-parameter bound, i++ or i += 1, untouched counter), for-of over a parameter, bounded while (one fixed step toward a fixed bound; B < C accepted); refusals loop_unbounded, loop_async, loop_label, closure_not_allowed, do-while/for-in loop_unsupported",
+ "fallback": "if Auditor rejects the non-exported while evidence: params.loops [counted-literal-or-length, for-of-param]; while refused as loop_while_unsupported",
+ "evidence": {
+  "examples": 14,
+  "forAndForOf": 10,
+  "while": 4,
+  "whileNonExported": 3,
+  "repos": 5,
+  "file": "peaceai/rules/proposals/m64-loop-function-evidence.json",
+  "method": "AST scan of the pinned example-only repos (no training-corpus overlap; M60)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true
+ },
+ "learned": "peaceai/rules/learned/public-loop-function-v1.json",
+ "untouched": "public-complex-function-v1 (#211)"
+}

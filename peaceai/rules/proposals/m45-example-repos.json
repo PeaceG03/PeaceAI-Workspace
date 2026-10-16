@@ -35,6 +35,13 @@
    "licenseSha256": "9d13e4d2acd5c7624b1b368b0aca2cf0a7fc7588c6e8d53ceda7b452e55826f5"
   },
   {
+   "name": "microsoft/vscode",
+   "commit": "ce2bc857c5b748bde66ef464d7f7fc73dd1faad2",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE.txt",
+   "licenseSha256": "20535828272932407c2f5172aeb714ac7b374a34e5ecb1825af509f2902cde54"
+  },
+  {
    "name": "nuxt/nuxt",
    "commit": "4caed0f26ff819455b16d2651efba24dcbf74500",
    "spdx": "MIT",
