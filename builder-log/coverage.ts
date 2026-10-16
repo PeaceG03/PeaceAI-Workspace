@@ -5,12 +5,23 @@
 // listed in LIVE_PROVEN_SINCE whose `since` is on/before asOf (each map entry is validated in check.ts
 // against a backing PeaceAI repo@sha seq). Approved-but-unproven skills do not count.
 // PeaceAI real task (counts in BOTH numerator and denominator): by PeaceAI, asked contains
-// "(source: peace)", PeaceSTOCKS@sha is on PeaceSTOCKS main (fail closed if unverifiable), and not a
-// proof / no-coverage record (seqs 97 and 101 stay excluded; any "live proof" or "no coverage" mark too).
+// "(source: peace)", PeaceSTOCKS@sha is on PeaceSTOCKS main (fail closed if unverifiable), and not
+// coverage:none (optional field, or grandfather COVERAGE_NONE_SEQS 97/99/101). Both windows are
+// bounded by asOf (all-time = every task with date <= asOf).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { APPROVED_SINCE, APPROVED_SKILLS, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, LOG_PATH, retagTarget, validateLog, type Entry } from "./check.ts";
+import {
+  APPROVED_SINCE,
+  APPROVED_SKILLS,
+  isCoverageNone,
+  LIVE_LANDING_REF,
+  LIVE_PROVEN_SINCE,
+  LOG_PATH,
+  retagTarget,
+  validateLog,
+  type Entry,
+} from "./check.ts";
 
 /** @deprecated use LIVE_LANDING_REF from check.ts */
 export const LIVE_LANDING = LIVE_LANDING_REF;
@@ -41,12 +52,9 @@ export interface CoverageReport {
 /** Injectable: true iff `sha` is an ancestor of PeaceSTOCKS main (or clone HEAD). */
 export type OnMainChecker = (sha: string) => boolean;
 
-/** Proof / no-coverage seqs that stay excluded even if wording drifts. */
-export const NO_COVERAGE_SEQS: ReadonlySet<number> = new Set([97, 101]);
+export { isCoverageNone, COVERAGE_NONE, COVERAGE_NONE_SEQS } from "./check.ts";
 
 const SOURCE_PEACE = /\(source:\s*peace\)/i;
-const LIVE_PROOF_MARK = /\blive proof\b/i;
-const NO_COVERAGE_MARK = /\bno coverage\b/i;
 const PEACE_STOCKS_SHA = /PeaceSTOCKS@([0-9a-f]{7,40})/;
 
 export function parseLogEntries(logText: string): Entry[] {
@@ -118,21 +126,19 @@ export function peaceStocksSha(changed: string): string | null {
   return m ? m[1]! : null;
 }
 
-/** True if the entry is marked as a proof or no-coverage record. */
-export function isProofOrNoCoverage(e: Pick<Entry, "seq" | "asked" | "why">): boolean {
-  if (NO_COVERAGE_SEQS.has(e.seq)) return true;
-  const text = `${e.asked}\n${e.why}`;
-  return LIVE_PROOF_MARK.test(text) || NO_COVERAGE_MARK.test(text);
+/** @deprecated use isCoverageNone — wording heuristics removed. */
+export function isProofOrNoCoverage(e: Pick<Entry, "seq" | "coverage">): boolean {
+  return isCoverageNone(e);
 }
 
 /**
- * PeaceAI real task: source: peace, not a proof/no-coverage record, PeaceSTOCKS@sha on main.
+ * PeaceAI real task: source: peace, not coverage:none, PeaceSTOCKS@sha on main.
  * Fail closed when `onMain` is null/undefined or throws / returns false.
  */
 export function isPeaceRealTask(e: Entry, onMain?: OnMainChecker | null): boolean {
   if (e.by !== "PeaceAI") return false;
   if (!SOURCE_PEACE.test(e.asked)) return false;
-  if (isProofOrNoCoverage(e)) return false;
+  if (isCoverageNone(e)) return false;
   const sha = peaceStocksSha(e.changed);
   if (!sha) return false;
   if (!onMain) return false;
@@ -224,10 +230,13 @@ export function coverageReport(logText: string, asOfDate: string, topNOrOpts: nu
   const peaceReal = entries.filter((e) => isPeaceRealTask(e, onMain));
   const peaceRealSeqs = new Set(peaceReal.map((e) => e.seq));
   const allTasks = [...builderAll, ...peaceReal];
+  // Both windows are asOf-bounded (inclusive calendar date MT).
+  const asOfTasks = allTasks.filter((e) => e.date <= asOfDate);
   const start7 = addDaysYmd(asOfDate, -6);
-  const all7 = allTasks.filter((e) => e.date >= start7 && e.date <= asOfDate);
+  const all7 = asOfTasks.filter((e) => e.date >= start7);
   const miss = new Map<string, number>();
   for (const e of builderAll) {
+    if (e.date > asOfDate) continue;
     if (!countable(e, proven)) miss.set(e.skill, (miss.get(e.skill) ?? 0) + 1);
   }
   const topMissing = [...miss.entries()]
@@ -238,7 +247,7 @@ export function coverageReport(logText: string, asOfDate: string, topNOrOpts: nu
     asOf: asOfDate,
     liveProven: [...proven].sort(),
     last7Days: windowStats(all7, proven, peaceRealSeqs),
-    allTime: windowStats(allTasks, proven, peaceRealSeqs),
+    allTime: windowStats(asOfTasks, proven, peaceRealSeqs),
     topMissing,
     logSha256: createHash("sha256").update(logText).digest("hex"),
   };
@@ -255,7 +264,7 @@ export function formatCoverageSummary(r: CoverageReport): string {
   return [
     "## PeaceAI vs Builder",
     "",
-    `Of Builder's logged tasks plus PeaceAI **real tasks** (\`source: peace\`, PeaceSTOCKS@sha on main, not a proof/no-coverage record), % PeaceAI could do end-to-end using **only live-proven skills** for Builder rows (PeaceAI \`repo@sha\` landing on/before asOf, or \`LIVE_PROVEN_SINCE\` backed by such a log seq; approved-but-unproven skills do not count). PeaceAI real tasks count in both the numerator and the denominator. asOf \`${r.asOf}\` MT; log sha256 \`${r.logSha256.slice(0, 16)}…\`.`,
+    `Of Builder's logged tasks plus PeaceAI **real tasks** (\`source: peace\`, PeaceSTOCKS@sha on main, not \`coverage:"none"\` / COVERAGE_NONE_SEQS), % PeaceAI could do end-to-end using **only live-proven skills** for Builder rows (PeaceAI \`repo@sha\` landing on/before asOf, or \`LIVE_PROVEN_SINCE\` backed by such a log seq; approved-but-unproven skills do not count). PeaceAI real tasks count in both the numerator and the denominator. All-time is bounded by asOf. asOf \`${r.asOf}\` MT; log sha256 \`${r.logSha256.slice(0, 16)}…\`.`,
     "",
     `| window | PeaceAI-able |`,
     `|---|---|`,

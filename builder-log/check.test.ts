@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { appendOnly, LOG_PATH, peaceAiShaLandings, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
+import { appendOnly, COVERAGE_NONE_SEQS, LOG_PATH, peaceAiShaLandings, validateCoverageNoneSeqs, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
 
 const ok = {
   seq: 1, date: "2026-10-13", time: "01:05", asked: "Fix the typecheck failure", changed: "PeaceSTOCKS@369f6ea",
@@ -89,4 +89,20 @@ test("verifyPeaceAiShas: injectable resolver; made-up sha fails closed", async (
   assert.deepEqual(ok, ["seq 2: PeaceSTOCKS@deadbee does not exist"]);
   const boom = await verifyPeaceAiShas(entries, async () => { throw new Error("network"); });
   assert.ok(boom.some((e) => /lookup failed \(fail closed\)/.test(e)));
+});
+
+test("optional coverage:none is accepted; other coverage values and key orders are refused", () => {
+  assert.deepEqual(validateLog(line({ ...ok, coverage: "none" })), []);
+  assert.ok(validateLog(line({ ...ok, coverage: "all" })).some((e) => /coverage must be "none"/.test(e)));
+  const shuffled = { coverage: "none", ...ok };
+  assert.ok(validateLog(line(shuffled)).some((e) => /keys must be exactly/.test(e)), "coverage must be trailing");
+});
+
+test("COVERAGE_NONE_SEQS allowlist is backed on the committed log", () => {
+  const text = readFileSync(LOG_PATH, "utf8");
+  assert.deepEqual(validateLog(text), []);
+  assert.deepEqual([...COVERAGE_NONE_SEQS].sort((a, b) => a - b), [97, 99, 101]);
+  const entries = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
+  assert.deepEqual(validateCoverageNoneSeqs(entries), []);
+  assert.ok(validateCoverageNoneSeqs(entries, new Set([99999])).some((e) => /no builder-log seq 99999/.test(e)));
 });
