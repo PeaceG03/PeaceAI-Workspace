@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,7 +26,7 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - run: ./node_modules/.bin/tsc -p builder-log/tsconfig.json --noEmit
-      - run: ./node_modules/.bin/tsx --test builder-log/check.test.ts builder-log/coverage.test.ts
+      - run: ./node_modules/.bin/tsx --test builder-log/check.test.ts builder-log/coverage.test.ts builder-log/trace.test.ts
       - name: Schema + append-only against the base revision
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -34,5 +35,48 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./node_modules/.bin/tsx builder-log/check.ts --verify-shas
+      - name: Clone PeaceSTOCKS anonymously (outside the workspace)
+        run: git clone --quiet https://github.com/PeaceG03/PeaceSTOCKS.git "$RUNNER_TEMP/stocks"
+      - name: PeaceAI landings trace to verdict patches (public part; Results check runs on main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/tsx builder-log/trace.ts --no-results --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: PeaceAI vs Builder coverage
         run: ./node_modules/.bin/tsx builder-log/coverage.ts >> "$GITHUB_STEP_SUMMARY"
+
+  trace-results:
+    # Full trace incl. the Results cross-check. The Results key lives in the main-only peaceai-results
+    # environment, so this runs on push to main only; Results is cloned read-only and deleted after.
+    name: builder-log trace (Results)
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'PeaceG03' && github.triggering_actor == 'PeaceG03'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: peaceai-results
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Clone PeaceSTOCKS anonymously and Results read-only (outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          git clone --quiet https://github.com/PeaceG03/PeaceSTOCKS.git "$RUNNER_TEMP/stocks"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/results" >/dev/null 2>&1
+      - name: PeaceAI landings trace to verdict patches (full)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/tsx builder-log/trace.ts --results-dir "$RUNNER_TEMP/results" --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
+      - name: Delete Results
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/results" "$RUNNER_TEMP"/peaceai-ssh.*
