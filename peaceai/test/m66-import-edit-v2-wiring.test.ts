@@ -204,3 +204,17 @@ test("resolver refusals reach the refusal line as their own codes (not import_ed
   assert.equal(r('import { a } from "./gone/x";'), "import_edit_unresolved");
   assert.equal(r('import { a } from "../../../../x";'), "import_edit_climbs_too_far");
 });
+
+test("Auditor: import_edit_protected_target is reachable (directory move onto a protected file of the same name)", async () => {
+  const { importEditV2Problem, importEditV2Code, v2SpecProblem } = await import("../lib/import-edit-v2.ts");
+  const repo = new Set(["src/m.ts", "peaceai/lib/gate.ts", "src/lib/gate.ts"]);
+  // Old specifier resolves to nothing (a real move) and the basename is kept, so module_changed and
+  // different_target do not fire; the new target is protected (PROTECTED_SELF peaceai/lib/gate.ts).
+  assert.equal(v2SpecProblem("src/m.ts", "./old/gate", "../peaceai/lib/gate", repo), "specifier resolves to a protected file");
+  const before = 'import { g } from "./old/gate";\nexport const x = g;\n';
+  const p = importEditV2Problem("src/m.ts", before, before.replace("./old/gate", "../peaceai/lib/gate"), repo);
+  assert.equal(p, "specifier resolves to a protected file");
+  assert.equal(importEditV2Code(p!), "import_edit_protected_target");
+  // Same move onto an unprotected file of that name is allowed.
+  assert.equal(importEditV2Problem("src/m.ts", before, before.replace("./old/gate", "./lib/gate"), repo), null);
+});
