@@ -7,14 +7,15 @@ is refused unless all hold (engine: `peaceai/lib/import-edit-v2.ts`):
    import declarations is identical; the file parses before and after; no import attributes.
 2. **Specifier.** Either unchanged (a plain relative path or a bare name), or the `node:` prefix of a Node builtin is
    toggled, or a v1-style relative change (extension-only or directory move keeping the file name) that resolves to an
-   existing, non-protected repo file within 3 `../`; a directory move is refused while the old specifier still
-   resolves (Auditor #226: it would switch to a different module). A bare package is never introduced or swapped, and relative and
+   existing, non-protected repo file within 3 `../`; old and new must resolve to the SAME repo file
+   (same resolution order), or the old specifier must resolve to nothing, so neither an extension change nor a
+   directory move can switch modules (Auditor #226). A bare package is never introduced or swapped, and relative and
    bare specifiers are never exchanged (no new dependency).
 3. **Bindings.** The default and namespace bindings are kept. Named bindings may be added or removed, and a `type`
    modifier flipped, at most 5 changes in total. A removed binding may not be used in the file's code; an added one
    must be used in the code and may not already be bound, neither by an import nor by any declaration in the file
    (variable, parameter, destructuring, function, class, type, interface, enum, namespace, type parameter, catch
-   variable), and may not shadow a global (`setTimeout`, `fetch`, `Buffer`, ...) (Auditor #226). Comments and strings do not count as uses (TypeScript
+   variable), and may not shadow a global (`setTimeout`, `fetch`, `Buffer`, DOM types such as `HTMLElement`, ...) (Auditor #226). Comments and strings do not count as uses (TypeScript
    scanner). Names are plain identifiers, never `__proto__`, `constructor`, `prototype`, `default`, `eval` or
    `arguments`. Side-effect imports never gain or lose a clause. Formatting- or order-only changes are refused.
 4. **Behavior proof.** The task's check (typecheck or test) fails before and passes after, through the normal grading.

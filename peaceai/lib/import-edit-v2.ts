@@ -10,6 +10,8 @@ import ts from "typescript";
 import { builtinModules } from "node:module";
 import { PROTECTED_SELF } from "./selfchange.ts";
 import { importResolveProblem } from "./learned-config.ts";
+import { posix } from "node:path";
+const RESOLVE_EXT = ["", ".ts", ".tsx", ".mts", "/index.ts"]; // same order as learned-config.ts importResolveProblem
 
 export const IMPORT_EDIT_V2_FLAG = "PEACEAI_IMPORT_EDIT_V2";
 export const importEditV2Enabled = (env: Record<string, string | undefined>): boolean => env[IMPORT_EDIT_V2_FLAG] === "true";
@@ -65,10 +67,21 @@ export function v2SpecProblem(path: string, from: string, to: string, repoFiles:
   if (stem(from) !== stem(to) && from.split("/").pop() !== to.split("/").pop()) return "specifier must keep its module (extension or directory move only)";
   const toProblem = importResolveProblem(path, to, repoFiles);
   if (toProblem) return toProblem;
-  // Auditor #226 (2): a directory move must not switch to a different, still-existing module: the old specifier
-  // may no longer resolve (an extension-only change keeps the same module and is exempt).
-  if (stem(from) !== stem(to) && importResolveProblem(path, from, repoFiles) === null) return "directory move while the old specifier still resolves";
+  // Auditor #226: no relative change may switch modules. Old and new must resolve to the SAME repo file, or the old
+  // specifier must resolve to nothing (a real move). Covers extension-only (./x -> ./x.tsx beside x.ts; ./x.ts -> ./x.js;
+  // ./x -> ./x.js beside x/index.ts) and directory moves alike.
+  const oldHit = resolvedFile(path, from, repoFiles);
+  if (oldHit !== null && oldHit !== resolvedFile(path, to, repoFiles)) return "specifier resolves to a different file than before";
   return null;
+}
+
+/** The repo file a relative specifier resolves to, in importResolveProblem's own order (null when none). */
+export function resolvedFile(path: string, spec: string, repoFiles: ReadonlySet<string>): string | null {
+  if (!RELATIVE.test(spec)) return null;
+  const joined = posix.normalize(posix.join(posix.dirname(path), spec));
+  if (joined.startsWith("../") || joined === ".." || joined.startsWith("/")) return null;
+  const bases = [joined, joined.replace(/\.(js|mjs|cjs)$/, "")];
+  return bases.flatMap((b) => RESOLVE_EXT.map((e) => b + e)).find((c) => repoFiles.has(c)) ?? null;
 }
 
 /** Auditor #226 (1): every name declared anywhere in the file outside its imports (variables, parameters, destructuring,
@@ -86,7 +99,8 @@ function declaredNames(text: string, tsx: boolean): Set<string> {
 }
 /** Auditor #226 (1): globals an added import would shadow (the running engine's globals plus TypeScript lib/DOM names). */
 const LIB_GLOBALS = new Set(["globalThis", "window", "document", "self", "navigator", "location", "fetch", "Request", "Response", "Headers", "URL", "URLSearchParams", "AbortController", "AbortSignal", "Blob", "File", "FormData", "TextEncoder", "TextDecoder", "structuredClone", "queueMicrotask", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate", "console", "process", "Buffer", "require", "module", "exports", "__dirname", "__filename", "JSON", "Math", "Reflect", "Proxy", "Promise", "Symbol", "Error", "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "Array", "Object", "String", "Number", "Boolean", "BigInt", "Function", "Intl", "Atomics", "SharedArrayBuffer", "ArrayBuffer", "DataView", "crypto", "performance", "EventTarget", "Event", "undefined", "NaN", "Infinity", "isNaN", "isFinite", "parseInt", "parseFloat", "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI", "escape", "unescape"]);
-const isGlobal = (name: string) => LIB_GLOBALS.has(name) || name in globalThis;
+const DOM_GLOBALS = new Set(["Element", "Node", "NodeList", "HTMLCollection", "Window", "Document", "DocumentFragment", "ShadowRoot", "Text", "Comment", "Range", "Selection", "CustomEvent", "KeyboardEvent", "MouseEvent", "PointerEvent", "FocusEvent", "InputEvent", "TouchEvent", "WheelEvent", "UIEvent", "MutationObserver", "ResizeObserver", "IntersectionObserver", "Storage", "localStorage", "sessionStorage", "DOMParser", "DOMRect", "CSSStyleDeclaration", "XMLHttpRequest", "WebSocket", "Worker", "Image", "Audio", "history", "screen", "alert", "confirm", "prompt", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle", "matchMedia", "customElements", "CanvasRenderingContext2D", "ImageData", "FileReader", "Notification", "IDBDatabase", "indexedDB"]);
+const isGlobal = (name: string) => LIB_GLOBALS.has(name) || DOM_GLOBALS.has(name) || /^(?:HTML|SVG)\w*Element$/.test(name) || name in globalThis;
 
 /** IMPORT_EDIT v2: exactly one existing import changes its specifier (v2SpecProblem) and/or its named bindings. */
 export function importEditV2Problem(path: string, before: string, after: string, repoFiles: ReadonlySet<string>): string | null {

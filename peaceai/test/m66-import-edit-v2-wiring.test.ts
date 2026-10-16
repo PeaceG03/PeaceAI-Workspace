@@ -96,7 +96,7 @@ test("Auditor #226: an added name may not shadow a local declaration or a global
     ["export function b() { return a; }", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
     ["type B = number;\nexport const k: B = a;", "import { a, type B } from \"./x\";", /shadows a local declaration: B$/],
     ["try { a(); } catch (b) { void b; }", "import { a, b } from \"./x\";", /shadows a local declaration: b$/],
-    ["export const k = a;", "import { a } from \"./evil/x\";", /directory move while the old specifier still resolves$/],
+    ["export const k = a;", "import { a } from \"./evil/x\";", /specifier resolves to a different file than before$/],
   ];
   for (const [body, to, re] of cases) {
     const { e, r } = job(`change import of \`./x\` in \`src/m.ts\` to: \`${to}\``, base(body));
@@ -106,6 +106,27 @@ test("Auditor #226: an added name may not shadow a local declaration or a global
   assert.ok(job('change import of `./x` in `src/m.ts` to: `import { a } from "./evil/x";`', moved).e, "allowed once ./x no longer resolves");
   const ok = job('change import of `./x` in `src/m.ts` to: `import { a, b } from "./x";`', base("export const k = a + b;"));
   assert.ok(ok.e, ok.r);
+});
+
+test("Auditor #226: an extension-only change may not switch to a different file; DOM type globals are not shadowed", () => {
+  const run = (spec: string, to: string, tree: string[], use = "a") => job(`change import of \`${spec}\` in \`src/m.ts\` to: \`import { ${use} } from "${to}";\``, [{ path: "src/m.ts", content: `import { a } from "${spec}";\nexport const k = ${use === "a" ? "a" : `[a, ${use.split(", ")[1]}]`};\n` }, ...tree.map((p) => ({ path: p, content: "" }))]);
+  const bad: [string, string, string[]][] = [
+    ["./x", "./x.tsx", ["src/x.ts", "src/x.tsx"]],
+    ["./x.ts", "./x.js", ["src/x.ts", "src/x.js"]],
+    ["./x", "./x.js", ["src/x/index.ts", "src/x.js"]],
+  ];
+  for (const [from, to, tree] of bad) assert.equal(run(from, to, tree).r, "import_edit_refused: specifier resolves to a different file than before", `${from} -> ${to} with ${tree}`);
+  const good: [string, string, string[]][] = [
+    ["./x", "./x.ts", ["src/x.ts", "src/x.tsx"]],
+    ["./x.ts", "./x", ["src/x.ts", "src/x.js"]],
+    ["./x.tsx", "./x", ["src/x.tsx"]],
+    ["./x.js", "./x", ["src/x.ts"]],
+    ["./x.ts", "./x.js", ["src/x.ts"]],
+    ["./old/x", "./x", ["src/x.ts"]],
+  ];
+  for (const [from, to, tree] of good) { const { e, r } = run(from, to, tree); assert.ok(e, `${from} -> ${to} with ${tree}: ${r}`); }
+  for (const g of ["HTMLElement", "HTMLInputElement", "SVGPathElement", "Element", "KeyboardEvent", "MutationObserver", "localStorage"])
+    assert.match(run("./x", "./x", ["src/x.ts"], `a, ${g}`).r ?? "", new RegExp(`shadows a global: ${g}$`), g);
 });
 
 test("evidence: every single-line m56 example rebuilds through the task phrase to its real after-file", () => {

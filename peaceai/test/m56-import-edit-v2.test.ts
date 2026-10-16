@@ -59,7 +59,7 @@ test("IMPORT_EDIT v2 accepts names added/removed, type flips, node: toggles and 
   assert.equal(P(SRC.replace('"node:path"', '"path"')), null, "node: prefix toggled");
   assert.equal(P(SRC.replace('"./x"', '"./x.ts"')), null, "extension-only change");
   assert.equal(importEditV2Problem("src/m.ts", SRC, SRC.replace('"./x"', '"./lib/x"'), new Set(["src/lib/x.ts", "y/b.ts"])), null, "directory move (the old path no longer resolves)");
-  assert.equal(P(SRC.replace('"./x"', '"./lib/x"')), "directory move while the old specifier still resolves", "Auditor #226: ./x still resolves, so ./lib/x would switch modules");
+  assert.equal(P(SRC.replace('"./x"', '"./lib/x"')), "specifier resolves to a different file than before", "Auditor #226: ./x still resolves, so ./lib/x would switch modules");
   const JSX = 'import { a } from "./x";\nexport const C = () => <div>{a}{b}</div>;\n';
   assert.equal(importEditV2Problem("src/c.tsx", JSX, JSX.replace("{ a }", "{ a, b }"), FILES), null, "M57: .tsx files parse as TSX");
 });
@@ -116,7 +116,7 @@ test("engine, spec and this test are protected; spec pinned", () => {
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
   assert.equal(createHash("sha256").update(read("peaceai/spec/import-edit-v2.md")).digest("hex"), SPEC_SHA);
 });
-const SPEC_SHA = "a741c8f098a2d1994790eabc61fb22cc15e607c78384a119fd230ed86abb5d10";
+const SPEC_SHA = "89b3c5443990f4979568218e8164c8d8efdc24d9028a77ca327650955c9aab9d";
 
 test("no overlap: no example repo is in the training corpus list or manifest (Architect M60)", () => {
   const corpus = new Set<string>((JSON.parse(read("peaceai/model/ext-corpus.json")).repos as { name: string }[]).map((r) => r.name));
