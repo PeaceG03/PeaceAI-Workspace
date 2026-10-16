@@ -161,3 +161,12 @@ test("peace-task wiring: output declared, passed by env (never inlined in run), 
   const gen = readFileSync(join(repo, "peaceai/bin/generate.ts"), "utf8");
   assert.match(gen, /writeOutput\(\{ rule_refusals: refusalLine \}\)/);
 });
+
+test("Auditor hardening (#223): a listed public-loop-function-v1 entry admits as APPROVED, so a tampered sha fails m59 itself", () => {
+  const listed = (JSON.parse(readFileSync(join(repo, "peaceai/rules/approved.json"), "utf8")) as { rules: { id: string }[] }).rules.filter((r) => r.id === "public-loop-function-v1");
+  const decisions = admitRules(specs, loadApprovedList(join(repo, "peaceai/rules/approved.json"))).filter((a) => a.spec?.id === "public-loop-function-v1").map((a) => a.decision);
+  if (listed.length === 0) { assert.ok(!decisions.includes("APPROVED"), "not listed: never APPROVED"); assert.equal(LOOP, ""); return; }
+  assert.equal(listed.length, 1, "listed once");
+  assert.deepEqual(decisions, ["APPROVED"], "a listed loop rule must admit (exact sha)");
+  assert.notEqual(LOOP, "");
+});
