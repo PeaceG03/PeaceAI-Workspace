@@ -274,7 +274,7 @@ test("M49 fix (2) containment: a whole pinned file plus a few verbatim private c
     const mixed = UNIV + priv.slice(10, 10 + n).join("\n") + "\n";
     const r = run([...DOCS, { doc: 44, text: mixed }], [...MAN, STOCKS(44, "src/universe.ts", "refreshEligibility")]);
     assert.equal(r.proof.noCoreFiles, "NOT_PROVEN", `${n} private lines`); assert.equal(r.file(44).coreExact, true);
-    assert.ok(r.file(44).coreContained > 0); assert.ok(r.file(44).coreNearMax < 0.8, "similarity alone would not catch it");
+    assert.ok(r.file(44).coreContained >= 16); assert.ok(r.file(44).coreNearMax < 0.8, "similarity alone would not catch it");
   }
 });
 
@@ -284,9 +284,9 @@ test("M49 fix (2) containment: half-core dilution (half private core, half new c
   const half = [...PRIV.split("\n").slice(0, 20), ...fresh].join("\n");
   const r = run([...DOCS, { doc: 7, text: half }], [...MAN, ft(7)]);
   assert.ok(r.file(7).coreNearMax < 0.8, `near ${r.file(7).coreNearMax}`);
-  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(7).coreExact, true); assert.ok(r.file(7).coreContained > 0);
+  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(7).coreExact, true); assert.ok(r.file(7).coreContained >= 16);
   const clean = run([...DOCS, { doc: 7, text: fresh.join("\n") }], [...MAN, ft(7)]);
-  assert.equal(clean.proof.noCoreFiles, "PROVEN"); assert.equal(clean.file(7).coreContained, 0);
+  assert.equal(clean.proof.noCoreFiles, "PROVEN"); assert.ok(clean.file(7).coreContained < 16);
 });
 
 test("M49 fix (2) git: each fine-tune doc must be a prefix of repo@sha:path; no source root, unknown commit or a non-prefix fails closed", () => {

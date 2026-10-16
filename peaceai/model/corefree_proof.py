@@ -5,7 +5,8 @@ Usage: corefree_proof.py --corpus TRAIN_CORPUS_DIR --core-dir CORE_CHECKOUT --mo
 Writes MODEL_DIR/corefree-proof.json:
   schema, model (config.json version), noCoreFiles (PROVEN only if every file passes), manifestSha256,
   coreCommit, near {method, threshold}, files: [{doc, path, source, sha256, coreExact, coreNearMax}]
-coreExact: the file's text equals a core file's (raw or whitespace-normalised). coreNearMax: the highest
+coreExact: the file's text equals a core file's (raw or whitespace-normalised), or it near-copies a pinned file
+whose source is not its origin, or it holds a verbatim private-core span (coreContained >= CONTAIN_RUN shingles; M49 fix (2)). coreNearMax: the highest
 MinHash Jaccard estimate (64 permutations, 16 bands, 8-token shingles; same as corpus_filter.py) against any
 core text file that shares an LSH band (0.0 when none does). Deterministic. Prints counts only.
 """
@@ -84,27 +85,35 @@ for p in subprocess.run(["git", "ls-files", "-z"], cwd=args.core_dir, capture_ou
 core_raw = {hashlib.sha256(t.encode()).hexdigest() for t in core_texts}
 
 
-# M49 fix (2) (Auditor #227): containment. A doc's 8-token shingles and its significant lines (>= 30 chars after
-# whitespace normalisation) that are NOT in any pinned public-origin file's text must not appear in any non-pinned core
-# file. Applied to every doc of every schema: catches a pinned file (or any public text) padded with a few verbatim
-# private lines, and half-core dilution that MinHash similarity averages away.
-def shingles(text):
+# M49 fix (2) (Auditor #227): containment, applied to every doc of every schema. Walk the doc's 8-token shingles in
+# order; a shingle counts as private when it occurs in a non-pinned core file and in no pinned public-origin file. The
+# doc is refused (coreExact) when it holds a verbatim private span of CONTAIN_RUN consecutive private shingles
+# (CONTAIN_RUN + 7 = 23 tokens, about 2-3 lines of code). This catches a pinned file (or any public text) padded with a
+# few verbatim private lines, and half-core dilution that MinHash similarity averages away. A run, not any single
+# shingle: on the M49 corpora 1-3 shingle hits are boilerplate (import lines, common signatures) in 36% of pretrain docs.
+CONTAIN_RUN = 16
+
+
+def shingle_seq(text):
     toks = TOKEN.findall(text)
-    return {hash_(" ".join(toks[i:i + 8])) for i in range(len(toks) - 7)}
+    return [hash_(" ".join(toks[i:i + 8])) for i in range(len(toks) - 7)]
 
 
-def sig_lines(text):
-    return {hash_(n) for n in (ASCII_WS.sub(" ", ln).strip() for ln in text.split("\n")) if len(n) >= 30}
-
-
-core_sh, core_ln = set(), set()
-for t in core_texts:
-    core_sh |= shingles(t)
-    core_ln |= sig_lines(t)
-pinned_sh, pinned_ln = set(), set()
+pinned_sh = set()
 for _sha, t in pinned_texts:
-    pinned_sh |= shingles(t)
-    pinned_ln |= sig_lines(t)
+    pinned_sh.update(shingle_seq(t))
+private_sh = set()
+for t in core_texts:
+    private_sh.update(shingle_seq(t))
+private_sh -= pinned_sh
+
+
+def private_run(text):
+    best = cur = 0
+    for x in shingle_seq(text):
+        cur = cur + 1 if x in private_sh else 0
+        best = max(best, cur)
+    return best
 core_norm = {norm(t) for t in core_texts}
 buckets, sigs = {}, []
 for t in core_texts:
@@ -279,8 +288,8 @@ for m in man:
     pin_ok = bool(hit_pin) and (hit_pin == {tsha} or origin_ok)
     pin_bad = bool(hit_pin) and not pin_ok
     allowlisted += pin_ok
-    contained = len((shingles(t) - pinned_sh) & core_sh) + len((sig_lines(t) - pinned_ln) & core_ln)
-    exact = contained > 0 or pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
+    contained = private_run(t)  # longest verbatim private-core span, in shingles
+    exact = contained >= CONTAIN_RUN or pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
     cands = set()
     for b in range(BANDS):
         cands.update(buckets.get((b, s[b * ROWS:(b + 1) * ROWS]), ()))
@@ -296,6 +305,6 @@ proof = {"schema": "peaceai-lm-corefree-proof:v1", "model": model, "noCoreFiles"
 if args.stage:
     proof["corpus"] = args.stage
 json.dump(proof, open(os.path.join(args.model, PROOF_NAME), "w"), indent=1)
-print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files), "coreContainedDocs": sum(f["coreContained"] > 0 for f in files),
+print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files), "coreContainedDocs": sum(f["coreContained"] >= CONTAIN_RUN for f in files),
                   "maxNear": max((f["coreNearMax"] for f in files), default=0.0), "coreFiles": len(core_texts),
                   "schema": schema, "ignoredEmpty": ignored_empty, "allowlistedPublicOrigin": allowlisted, "pinnedCoreFiles": len(pinned_texts)}))
