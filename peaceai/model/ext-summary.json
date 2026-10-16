@@ -49,20 +49,21 @@
    "commit": "3d0c9c8c350ce0bc753717f91a91d50f27e18c9d",
    "license": "MIT",
    "origin": "external",
-   "files": 3182,
-   "bytes": 10999984,
+   "files": 3231,
+   "bytes": 10999996,
    "excluded": {
     "core-text": 23,
     "too-large": 20,
     "not-code": 8,
+    "core-proof": 3,
     "secret": 1,
     "path-leak": 57,
     "personal-info": 37,
-    "duplicate": 453,
+    "duplicate": 462,
     "core": 1,
     "excluded-dir": 15,
     "generated": 1,
-    "repo-cap": 3560,
+    "repo-cap": 3499,
     "generated-path": 1
    }
   },
@@ -162,13 +163,14 @@
    "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
    "license": "MIT",
    "origin": "external",
-   "files": 1172,
-   "bytes": 5510267,
+   "files": 1158,
+   "bytes": 5345419,
    "excluded": {
     "not-code": 2,
     "personal-info": 23,
     "core-text": 24,
     "duplicate": 10,
+    "core-proof": 14,
     "generated": 3,
     "too-large": 1,
     "secret": 1,
@@ -221,13 +223,14 @@
    "commit": "e35a025d6e947ed2db0c1378e130f2bd0438732c",
    "license": "MIT",
    "origin": "external",
-   "files": 476,
-   "bytes": 3143568,
+   "files": 472,
+   "bytes": 3012939,
    "excluded": {
     "not-code": 1,
     "duplicate": 4,
     "core-text": 11,
     "personal-info": 1,
+    "core-proof": 4,
     "too-large": 1,
     "generated": 1,
     "held-out": 1
@@ -310,9 +313,10 @@
    "commit": "76c4f5078b1e77cc2ac54a18b2cc79e346a1d7a0",
    "license": "Apache-2.0",
    "origin": "external",
-   "files": 68,
-   "bytes": 858444,
+   "files": 65,
+   "bytes": 731993,
    "excluded": {
+    "core-proof": 3,
     "not-code": 7,
     "core-text": 3,
     "too-large": 37,
@@ -349,11 +353,10 @@
    "commit": "f427515a38f6a671f8de663e6bcc040ed81f114e",
    "license": "MIT",
    "origin": "external",
-   "files": 94,
-   "bytes": 682194,
+   "files": 96,
+   "bytes": 698453,
    "excluded": {
-    "not-code": 1,
-    "core-text": 2
+    "not-code": 1
    }
   },
   {
@@ -387,8 +390,8 @@
    "commit": "9d6c05bf33ce56ad103969dbbebb627e9d2782a1",
    "license": "MIT",
    "origin": "external",
-   "files": 4499,
-   "bytes": 3417955,
+   "files": 4496,
+   "bytes": 3415923,
    "excluded": {
     "generated-path": 2,
     "not-code": 1,
@@ -398,6 +401,7 @@
     "generated": 4,
     "personal-info": 4,
     "core": 13,
+    "core-proof": 3,
     "license-header": 1,
     "secret": 1
    }
@@ -423,8 +427,8 @@
    "commit": "a1422f12598bfa74b71aae8a07a62ccbf8b09f31",
    "license": "MIT",
    "origin": "external",
-   "files": 551,
-   "bytes": 3624442,
+   "files": 549,
+   "bytes": 3443225,
    "excluded": {
     "not-code": 1,
     "core-text": 78,
@@ -432,6 +436,7 @@
     "too-large": 2,
     "personal-info": 11,
     "excluded-dir": 5,
+    "core-proof": 2,
     "path-leak": 2
    }
   },
@@ -440,15 +445,16 @@
    "commit": "97611099c648ad66d2ea4a4d3601c0a0a82c9c48",
    "license": "MIT",
    "origin": "external",
-   "files": 10569,
-   "bytes": 4457130,
+   "files": 10565,
+   "bytes": 4453302,
    "excluded": {
     "not-code": 2,
     "nested-license": 8,
+    "core-proof": 5,
     "secret": 1,
     "generated": 7,
     "core-text": 3,
-    "duplicate": 2225,
+    "duplicate": 2224,
     "core": 34,
     "excluded-dir": 16,
     "minified": 18,
@@ -502,13 +508,13 @@
    "commit": "3f1086bdafa79f3cfc60411bddeb34b60af8a885",
    "license": "MIT",
    "origin": "external",
-   "files": 9875,
+   "files": 9923,
    "bytes": 11000000,
    "excluded": {
     "core-text": 50,
     "excluded-dir": 872,
     "personal-info": 28,
-    "duplicate": 3089,
+    "duplicate": 3090,
     "core": 68,
     "minified": 126,
     "held-out": 34,
@@ -519,7 +525,8 @@
     "secret": 1,
     "path-leak": 15,
     "too-large": 73,
-    "repo-cap": 8647,
+    "core-proof": 1,
+    "repo-cap": 8597,
     "binary": 1
    }
   },
@@ -561,14 +568,15 @@
    "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
    "license": "MIT",
    "origin": "external",
-   "files": 2595,
-   "bytes": 7571525,
+   "files": 2589,
+   "bytes": 7520792,
    "excluded": {
     "core-text": 8,
     "not-code": 5,
     "duplicate": 192,
     "excluded-dir": 94,
     "personal-info": 17,
+    "core-proof": 6,
     "minified": 2,
     "core": 1,
     "nested-license": 89
@@ -589,20 +597,21 @@
  ],
  "refused": [],
  "excluded": {
-  "core-text": 1233,
+  "core-text": 1231,
   "authorship": 231,
   "safety-tool": 10,
   "held-out": 67,
   "not-code": 242,
-  "duplicate": 11063,
+  "duplicate": 11072,
   "secret": 16,
   "too-large": 186,
+  "core-proof": 41,
   "path-leak": 77,
   "personal-info": 200,
   "core": 208,
   "excluded-dir": 1335,
   "generated": 136,
-  "repo-cap": 13223,
+  "repo-cap": 13112,
   "generated-path": 274,
   "nested-license": 37194,
   "minified": 165,
@@ -610,17 +619,17 @@
   "license-header": 1
  },
  "train": {
-  "files": 55547,
-  "bytes": 98906281
+  "files": 55610,
+  "bytes": 98262814
  },
  "setC": {
   "repos": 7,
   "files": 6870
  },
  "memcheck": {
-  "scannedDocs": 56780,
-  "droppedCoreText": 1233,
+  "scannedDocs": 56841,
+  "droppedCoreText": 1231,
   "remainingHits": 0
  },
- "manifestSha256": "d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e"
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231"
 }

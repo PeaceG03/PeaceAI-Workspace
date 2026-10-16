@@ -508,4 +508,4 @@ test("protected set: pinned entries (now incl. learned-test.ts and minetest.ts) 
   for (const p of ["peaceai/lib/learned.ts", "peaceai/lib/learned-test.ts", "peaceai/lib/minetest.ts", "peaceai/lib/gate.ts", "peaceai/lib/results.ts", "peaceai/lib/diff.ts", "peaceai/bin/test-candidates.ts", "peaceai/rules/learned/public-test-case-v1.json", "peaceai/rules/approved.json", ".github/workflows/peace-task.yml", ".github/workflows/corpus-checks.yml", "peaceai/test/m12-test-rule.test.ts", "peaceai/test/m42-prepush-reach.test.ts", "src/cal.test.ts"])
     assert.ok(protectedReason(p), p);
 });
-const PROTECTED_DIGEST = "d6f9fc926866652a2f53f3c60dba281282c31a86b8621202ae3e0ae9dad3e461"; // M66: + IMPORT_EDIT v2 learned spec and wiring proofs (m66-import-edit-v2-wiring.test.ts). M49 BLOCKING (1): + ft-core gate. M65: + LOOP_FUNCTION wiring proofs
+const PROTECTED_DIGEST = "4e07cbe13a5718918d94c9b7204bba27383d17b4f03200b5f218ef3342924c1a"; // M66: + IMPORT_EDIT v2 learned spec and wiring proofs (m66-import-edit-v2-wiring.test.ts). M49 BLOCKING (1): + ft-core gate. M65: + LOOP_FUNCTION wiring proofs

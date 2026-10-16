@@ -47,9 +47,9 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
       - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Train this part (resumes; stops at the part's step budget or the 4 h cap)
         run: |
           set -euo pipefail
@@ -110,9 +110,9 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
       - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail
@@ -192,9 +192,9 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
       - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Manifest check (pretrain stage, provenance, held-out hashes, set C v2 repos, memcheck record)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha d4399d79c366fa638292f7c5e859a36d12f085937eac793b8f7e5f729e5d780e
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail

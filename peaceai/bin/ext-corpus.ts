@@ -16,7 +16,7 @@ import { COREFREE_MIN_RUN } from "../lib/lm.ts";
 import { readManifestBytes, writeParts } from "../lib/manifestparts.ts";
 import { classifyLicense, CODE_FILE, heldOutHashes } from "../lib/lmcorpus.ts";
 import { agentMade, builderLogRefs, excludedForC, sha256Hex } from "../lib/heldout.ts";
-import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, mergeHeldoutC, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
+import { EXT_C_RULE, EXT_MANIFEST_SCHEMA, EXT_REPO_CAP_BYTES, extCRepos, extFileExclusion, isSafetyToolFile, pathLeakKinds, mergeHeldoutC, parseDocExclusions, safetyToolShas, validExtConfig, type ExtExclusion, type ExtManifestEntry, type ExtRepo } from "../lib/extcorpus.ts";
 
 const model = resolve(import.meta.dirname, "../model");
 const cfg = JSON.parse(readFileSync(join(model, "ext-corpus.json"), "utf8"));
@@ -78,6 +78,9 @@ for (const r of pool.filter((p) => cNames.has(p.name))) {
 
 const safetyShas = safetyToolShas(JSON.parse(readFileSync(join(model, "safety-tool-sha256.json"), "utf8")));
 const seen = new Set<string>();
+// M49 (Architect (A)): per-doc exclusion by content sha256, mirroring fine-tune's excludedDocSha256 (ft-corefree.json):
+// docs the box core-free proof (corefree_proof.py --stage pretrain) flagged as core are dropped from the pretrain corpus.
+const excludedDocs = parseDocExclusions(JSON.parse(readFileSync(join(model, "ext-doc-exclusions.json"), "utf8")));
 const docs: string[] = [];
 const manifest: ExtManifestEntry[] = [];
 const pathLeaks: { repo: string; commit: string; sha256: string; kinds: string[] }[] = [];
@@ -90,6 +93,7 @@ function admit(repo: string, commit: string, license: string, origin: ExtManifes
     if (!why) { const kinds = pathLeakKinds(f.path); if (kinds.length) { why = "path-leak"; pathLeaks.push({ repo, commit, sha256, kinds }); } }
     if (!why && safetyShas.has(sha256)) why = "safety-tool";
     if (!why && coreShas.has(sha256)) why = "core";
+    if (!why && excludedDocs.has(sha256)) why = "core-proof";
     if (!why && (ab.has(sha256) || cHashes.has(sha256))) why = "held-out";
     if (!why && seen.has(sha256)) why = "duplicate";
     const n = Buffer.byteLength(f.text);

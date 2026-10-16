@@ -127,9 +127,11 @@ test("evidence: no LICENSE text committed; fixtures dir holds exactly the eviden
   for (const f of m26Dir(dir)) { assert.ok(listed.has(f), f); assert.ok(!/licen[cs]e/i.test(f)); }
 });
 
-test("evidence: no overlap with the training corpus or ext-manifest d4399d79", () => {
+test("evidence: no overlap with the training corpus or the current ext-manifest", () => {
   const buf = m26Manifest(m26Resolve(m26Root, "peaceai/model"), "ext-manifest");
-  assert.equal(m26Hash("sha256").update(buf).digest("hex"), m26Ev.manifestSha256);
+  // M49 (A): the evidence was recorded against d4399d79; the corpus is now the 8458eac6 manifest (40 core-proof docs excluded),
+  // so non-overlap is re-checked against the current manifest.
+  assert.equal(m26Hash("sha256").update(buf).digest("hex"), "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231");
   assert.ok(m26Ev.manifestSha256.startsWith("d4399d79"));
   const repos = new Set<string>(); const shas = new Set<string>();
   for (const l of buf.toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l) as { repo?: string; sha256?: string }; if (r.repo) repos.add(r.repo); if (r.sha256) shas.add(r.sha256); }
