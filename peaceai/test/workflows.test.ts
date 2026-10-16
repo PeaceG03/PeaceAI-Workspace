@@ -245,6 +245,48 @@ test("peace-verdict: patch build disables background gc and cleanup cannot fail 
   assert.ok(step.indexOf("test -s") < step.indexOf('rm -rf "$RUNNER_TEMP/target"'));
 });
 
+test("m49-posttrain-memcheck: one job, core env only, read-only keys, guarded, nothing written, counts-only upload", () => {
+  const text = read("m49-posttrain-memcheck.yml");
+  const j = jobs(text);
+  assert.deepEqual([...j.keys()], ["memcheck"]);
+  const m = j.get("memcheck")!;
+  // Triggers: a completed peace-lm-train-m49 run (success checked in `if`) or a dispatch with a run id; nothing else.
+  assert.match(text, /^on:\n  workflow_run:\n    workflows: \[peace-lm-train-m49\]\n    types: \[completed\]\n  workflow_dispatch:\n    inputs:\n      run_id:\n/m);
+  assert.ok(!/pull_request|schedule:|^  push:/m.test(text));
+  assert.match(m, /github\.event\.workflow_run\.conclusion == 'success' && github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.match(m, /github\.event\.workflow_run\.head_repository\.full_name == 'PeaceG03\/PeaceAI-Workspace' &&/);
+  assert.match(m, /\.head_repository\.full_name\] \| join/);
+  assert.match(m, /github\.ref == 'refs\/heads\/main'/);
+  // Least privilege: one environment (core), contents+actions read only; the only secrets are the two read keys.
+  assert.equal((text.match(/^ +environment:/gm) ?? []).length, 1); assert.match(m, /environment: peaceai-core\n/);
+  assert.match(m, /permissions:\n      contents: read\n      actions: read\n    steps:/);
+  assert.ok(!/: write/.test(text));
+  assert.deepEqual([...new Set(text.match(/secrets\.[A-Z_]+/g))].sort(), ["secrets.PEACEAI_CORE_DEPLOY_KEY", "secrets.PEACEAI_RESULTS_READ_KEY"]);
+  assert.ok(!/PEACEAI_RESULTS_DEPLOY_KEY|results-write\.sh|latest\.json|git push|git commit|model\/train\.py/.test(text), "read-only: no Results write, no promotion, no training");
+  assert.match(text, /persist-credentials: false/); assert.equal((text.match(/actions\/checkout@/g) ?? []).length, 1);
+  // The run id is checked through the API before anything else; the dispatch input reaches the script only via env.
+  assert.match(m, /INPUT_RUN_ID: \$\{\{ inputs\.run_id \}\}/);
+  assert.match(m, /"\.github\/workflows\/peace-lm-train-m49\.yml main workflow_dispatch completed success PeaceG03\/PeaceAI-Workspace"/);
+  // Missing secret: fail closed with a clear message.
+  assert.match(m, /\[ -n "\$\{DEPLOY_KEY:-\}" \] \|\| \{ echo "PEACEAI_RESULTS_READ_KEY is not set in the peaceai-core environment: refused \(fail closed\)"; exit 1; \}/);
+  // Same checkout and script-hash guard as corpus-checks, before either key is used.
+  const at = (s: string) => { const i = m.indexOf(s); assert.ok(i >= 0, s); return i; };
+  const guard = at("Verify the checkout and the landing scripts before any key is used");
+  assert.ok(guard < at("secrets.PEACEAI_RESULTS_READ_KEY") && guard < at("secrets.PEACEAI_CORE_DEPLOY_KEY"));
+  assert.equal(text.match(/LANDING_SHA256: \|-\n.*\n.*\n/)![0], read("corpus-checks.yml").match(/LANDING_SHA256: \|-\n.*\n.*\n/)![0]);
+  // Both corpora rebuilt (pinned manifest; ft-pairs at the pinned commits), both proofs (fine-tune with --source-root), memcheck.
+  assert.match(m, /ext-fetch\.ts "\$RUNNER_TEMP\/src" "\$RUNNER_TEMP\/pre" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231\n/);
+  assert.match(m, /ft-pairs\.ts "\$RUNNER_TEMP\/ft"/);
+  assert.match(m, /--stage pretrain\n/); assert.match(m, /--stage finetune --source-root "\$RUNNER_TEMP\/srcroot"\n/);
+  assert.ok(at("--stage finetune") < at("lm-memcheck.ts"));
+  // Core, model, corpora and clones deleted before the one upload, which holds only the count-level JSONs.
+  assert.equal((text.match(/upload-artifact@/g) ?? []).length, 1);
+  assert.ok(at("Delete core, the model") < at("upload-artifact@"));
+  assert.match(m, /rm -rf "\$RUNNER_TEMP\/peaceai-core" "\$RUNNER_TEMP"\/peaceai-ssh\.\* "\$RUNNER_TEMP\/model"/);
+  assert.match(m, /path: \$\{\{ runner\.temp \}\}\/checks\/\n/);
+  assert.match(m, /for f in memcheck\.json corefree-proof-pretrain\.json corefree-proof-finetune\.json; do/);
+});
+
 test("builder-log results-crosscheck (#217): push-to-main only, core env, read-only Results key, guarded, sparse tasks/, deleted after", () => {
   const text = read("builder-log.yml");
   const j = jobs(text);
@@ -260,6 +302,7 @@ test("builder-log results-crosscheck (#217): push-to-main only, core env, read-o
   assert.ok(at("Verify the checkout and the key script") < at("secrets.PEACEAI_RESULTS_READ_KEY"));
   assert.match(rc, /bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai\/bin\/with-deploy-key\.sh/);
   assert.match(rc, /sparse-checkout set tasks\n/);
+  assert.match(rc, /rule-skill\.ts --results-dir "\$RUNNER_TEMP\/results" --ci >>/);
   assert.ok(at("trace.ts --results-dir") < at("Delete the Results clone") && at("rule-skill.ts --results-dir") < at("Delete the Results clone"));
   assert.ok(!/upload-artifact/.test(text));
 });

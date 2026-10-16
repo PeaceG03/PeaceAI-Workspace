@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./node_modules/.bin/tsx builder-log/trace.ts --results-dir "$RUNNER_TEMP/results" --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: Rule-skill cross-check against Results
-        run: ./node_modules/.bin/tsx builder-log/rule-skill.ts --results-dir "$RUNNER_TEMP/results" >> "$GITHUB_STEP_SUMMARY"
+        run: ./node_modules/.bin/tsx builder-log/rule-skill.ts --results-dir "$RUNNER_TEMP/results" --ci >> "$GITHUB_STEP_SUMMARY"
       - name: Delete the Results clone
         if: always()
         run: rm -rf "$RUNNER_TEMP/results" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/stocks"
