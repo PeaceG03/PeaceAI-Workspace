@@ -101,7 +101,8 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
   try {
     bodies = await deps.botComments(issue);
   } catch (err) {
-    return fail("T_LOOKUP_FAILED", `comments: ${String(err)}`);
+    void err;
+    return fail("T_LOOKUP_FAILED", "issue comments lookup failed");
   }
   const posted = bodies.filter((b) => b.replace(/\r\n/g, "\n").startsWith(PATCH_MARKER + "\n")).pop();
   if (!posted) return fail("T_NO_PATCH_COMMENT", `#${issue} has no bot verdict patch comment`);
@@ -114,17 +115,23 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
     try {
       view = await deps.results(issue);
     } catch (err) {
-      return fail("T_RESULTS_UNREADABLE", String(err));
+      void err;
+      return fail("T_RESULTS_UNREADABLE", "Results record missing or unreadable");
     }
     const reasons = verifyPatch({ comment, resultsDiff: view.resultsDiff, effectivePick: view.pick, latestRunId: view.latestRunId });
-    if (view.target.toLowerCase() !== comment.target.toLowerCase()) reasons.push("patch target does not match the Results task target");
-    if (reasons.length) return fail("T_HASH_MISMATCH", reasons.join("; "));
+    if (view.target.toLowerCase() !== comment.target.toLowerCase()) reasons.push("target");
+    if (reasons.length) {
+      // Codes and hashes only: never Results bytes or reason prose derived from them.
+      const rs = view.resultsDiff === null ? "none" : sha256(view.resultsDiff);
+      return fail("T_HASH_MISMATCH", `H_RESULTS_VERIFY(${reasons.length}) patch-sha256 ${comment.patchSha256} diff-sha256 ${comment.diffSha256} results-diff-sha256 ${rs}`);
+    }
   }
   let t: { applied: string | null; landing: string };
   try {
     t = await deps.trees(repo, sha, comment.patch);
   } catch (err) {
-    return fail("T_LOOKUP_FAILED", `git: ${String(err)}`);
+    void err;
+    return fail("T_LOOKUP_FAILED", "git tree lookup failed");
   }
   if (t.applied === null) return fail("T_APPLY_FAILED", `patch does not apply to ${sha}^1`);
   if (t.applied !== t.landing) return fail("T_TREE_MISMATCH", `patch on ${sha}^1 gives ${t.applied.slice(0, 12)}, landing tree ${t.landing.slice(0, 12)}`);
@@ -189,12 +196,19 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
       const latestRunId = runs[runs.length - 1] ?? null;
       if (!latestRunId) return { latestRunId, target: "", pick: { decided: false, candidateId: null }, resultsDiff: null };
       const dir = `tasks/${issue}/${latestRunId}`;
-      const task = JSON.parse(raw(`${dir}/task.json`) ?? "null") as TaskRecord | null;
+      const parse = <T>(text: string | null): T | null => {
+        try {
+          return JSON.parse(text ?? "null") as T;
+        } catch {
+          throw new Error("Results JSON malformed");
+        }
+      };
+      const task = parse<TaskRecord>(raw(`${dir}/task.json`));
       if (!task) throw new Error("Results task record missing");
       const verdicts = names(`${dir}/verdicts`)
         .filter((n) => /^\d{1,20}\.json$/.test(n))
-        .map((n) => JSON.parse(raw(`${dir}/verdicts/${n}`) ?? "null") as VerdictRecord)
-        .filter(Boolean);
+        .map((n) => parse<VerdictRecord>(raw(`${dir}/verdicts/${n}`)))
+        .filter((v): v is VerdictRecord => v !== null);
       const pick = effectiveVerdict(verdicts).pick;
       const resultsDiff = pick.candidateId && /^candidate-\d{1,3}$/.test(pick.candidateId) ? raw(`${dir}/candidates/${pick.candidateId}.diff`) : null;
       return { latestRunId, target: task.target ?? WORKSPACE, pick, resultsDiff };
@@ -253,7 +267,8 @@ async function main(): Promise<void> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
-    console.error(`T_LOOKUP_FAILED: ${String(err)}`);
+    void err;
+    console.error("T_LOOKUP_FAILED: trace aborted");
     process.exit(1);
   });
 }

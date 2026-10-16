@@ -1,8 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NOREPLY_FROM, patchCommentBody, sha256 } from "../peaceai/lib/patch.ts";
 import type { Entry } from "./check.ts";
-import { GRANDFATHERED, issueOf, traceAll, traceErrors, traceLine, type ResultsView, type TraceDeps } from "./trace.ts";
+import { GRANDFATHERED, issueOf, makeGhDeps, traceAll, traceErrors, traceLine, type ResultsView, type TraceDeps } from "./trace.ts";
 
 const DIFF = "diff --git a/x.ts b/x.ts\nindex 0000000..1111111 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1,2 @@\n a\n+b\n";
 const PATCH = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\n${NOREPLY_FROM}\nSubject: [PATCH] t\n\n---\n${DIFF}`;
@@ -50,7 +53,8 @@ test("hash mismatch: tampered patch vs posted patch-sha256", async () => {
 test("hash mismatch: Results candidate diff differs", async () => {
   const [r] = await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1"), deps({ view: { ...VIEW, resultsDiff: DIFF + "+x\n" } }));
   assert.equal(r!.code, "T_HASH_MISMATCH");
-  assert.match(r!.detail, /Results/);
+  assert.match(r!.detail, /^H_RESULTS_VERIFY\(\d+\) patch-sha256 [0-9a-f]{64} diff-sha256 [0-9a-f]{64} results-diff-sha256 [0-9a-f]{64}$/);
+  assert.ok(!r!.detail.includes("+x"));
 });
 
 test("tree mismatch and apply failure", async () => {
@@ -85,4 +89,22 @@ test("grandfathered lines are reported, lines without a landing produce no row, 
 
 test("every grandfather entry carries a reason with its code", () => {
   for (const [s, why] of Object.entries(GRANDFATHERED)) assert.match(why, /^T_[A-Z_]+: .{20,}/, `seq ${s}`);
+});
+
+test("malformed Results file: coded error, its bytes never reach the row or errors", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "res-"));
+  try {
+    const SECRET = "SECRET-RESULTS-BYTES-42";
+    mkdirSync(join(dir, "tasks/500/7/verdicts"), { recursive: true });
+    writeFileSync(join(dir, "tasks/500/7/task.json"), `{"baseSha": "${SECRET}", oops`);
+    const real = makeGhDeps({}, { dir });
+    const d: TraceDeps = { ...deps(), results: real.results };
+    const e = line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1");
+    const rows = await traceAll([e], d);
+    assert.equal(rows[0]!.code, "T_RESULTS_UNREADABLE");
+    const out = JSON.stringify(rows) + traceErrors([e], rows).join("\n");
+    assert.ok(!out.includes(SECRET) && !out.includes("oops") && !/JSON|Unexpected|position/.test(rows[0]!.detail), out);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
