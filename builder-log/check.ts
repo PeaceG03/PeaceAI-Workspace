@@ -55,11 +55,18 @@ export const COVERAGE_NONE = "none" as const;
 export type CoverageFlag = typeof COVERAGE_NONE;
 
 /**
- * Historical proof seqs that predate the `coverage` field. The log is append-only, so those rows cannot
- * gain the field without a rewrite. New proof rows must set `"coverage":"none"` instead of relying on
- * wording. coverage.ts treats either the field or this allowlist as no-coverage.
+ * Historical PeaceAI rows whose asked/why already say "live proof" / "proof A" / "no coverage" but that
+ * predate the `coverage` field. Append-only: they cannot gain the field without a rewrite. validateLog
+ * grandfathers these seqs; new PeaceAI rows with that wording must set `"coverage":"none"`.
+ * coverage.ts also treats the allowlist as no real-task credit (none of these are source: peace except
+ * 99/101, which stay uncredited).
  */
-export const COVERAGE_NONE_SEQS: ReadonlySet<number> = new Set([97, 99, 101]);
+export const COVERAGE_NONE_SEQS: ReadonlySet<number> = new Set([
+  28, 30, 31, 35, 59, 60, 85, 86, 87, 97, 99, 101,
+]);
+
+/** PeaceAI prose that requires coverage:"none" unless the seq is in COVERAGE_NONE_SEQS. */
+export const COVERAGE_NONE_WORDING = /live proof|proof A|no coverage/i;
 
 export interface Entry {
   seq: number;
@@ -115,6 +122,16 @@ export function validateEntry(raw: unknown, expectSeq: number): string[] {
   if (e.mark !== want) errs.push(`mark must be "${want}"`);
   if (e.by !== "Builder" && e.by !== "PeaceAI") errs.push("by must be Builder or PeaceAI");
   if (e.by === "PeaceAI" && !approved) errs.push("a PeaceAI-authored entry must use an approved skill");
+  if (e.by === "PeaceAI") {
+    const prose = `${String(e.asked)}\n${String(e.why)}`;
+    if (COVERAGE_NONE_WORDING.test(prose)) {
+      const hasField = e.coverage === COVERAGE_NONE;
+      const grandfathered = COVERAGE_NONE_SEQS.has(expectSeq);
+      if (!hasField && !grandfathered) {
+        errs.push('PeaceAI asked/why proof wording requires coverage:"none" (or a COVERAGE_NONE_SEQS grandfather)');
+      }
+    }
+  }
   const text = JSON.stringify(raw);
   for (const [re, what] of FORBIDDEN) if (re.test(text)) errs.push(what);
   return errs;

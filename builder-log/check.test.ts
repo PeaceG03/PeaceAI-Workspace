@@ -101,8 +101,36 @@ test("optional coverage:none is accepted; other coverage values and key orders a
 test("COVERAGE_NONE_SEQS allowlist is backed on the committed log", () => {
   const text = readFileSync(LOG_PATH, "utf8");
   assert.deepEqual(validateLog(text), []);
-  assert.deepEqual([...COVERAGE_NONE_SEQS].sort((a, b) => a - b), [97, 99, 101]);
+  assert.deepEqual([...COVERAGE_NONE_SEQS].sort((a, b) => a - b), [28, 30, 31, 35, 59, 60, 85, 86, 87, 97, 99, 101]);
   const entries = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
   assert.deepEqual(validateCoverageNoneSeqs(entries), []);
   assert.ok(validateCoverageNoneSeqs(entries, new Set([99999])).some((e) => /no builder-log seq 99999/.test(e)));
+});
+
+test("PeaceAI proof wording without coverage:none fails unless grandfathered; with the field it passes", () => {
+  const base = {
+    ...ok,
+    by: "PeaceAI" as const,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    asked: "Record THROW_GUARD live proof for a blank id",
+    why: "tenmin-mode-sim passed on the landed sha",
+  };
+  assert.ok(
+    validateLog(line(base)).some((e) => /proof wording requires coverage:"none"/.test(e)),
+    "wording without field must fail",
+  );
+  assert.deepEqual(validateLog(line({ ...base, coverage: "none" })), [], "field satisfies the wording rule");
+  assert.ok(
+    validateLog(line({ ...base, asked: "Peace's task #1 (source: peace): proof A2 landing", why: "landed ok enough" })).some((e) =>
+      /proof wording requires coverage:"none"/.test(e),
+    ),
+    "proof A wording also requires the field",
+  );
+  assert.ok(
+    validateLog(line({ ...base, asked: "Peace's task #1 (source: peace): mechanism only", why: "behavior-neutral, no coverage credit" })).some((e) =>
+      /proof wording requires coverage:"none"/.test(e),
+    ),
+    "no coverage wording also requires the field",
+  );
 });
