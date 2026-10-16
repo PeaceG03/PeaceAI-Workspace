@@ -1,4 +1,4 @@
-// One-off provenance check for memcheck unexplained runs (memcheck run 38908186778). Pure helpers; no I/O.
+// One-off provenance check for memcheck unexplained runs (memcheck run 38913032640). Pure helpers; no I/O.
 // Thresholds (documented, Architect): GENERIC = in any public doc, or in GENERIC_CORE_FILES (5) or more core files;
 // LEAK_SIGNAL = in exactly one core file and no public doc; REVIEW = core-only in 2..4 files, or (fail closed) in no
 // core file and no public doc. Verdict BLOCK on any LEAK_SIGNAL or REVIEW, or on any mismatch with the recorded runs.
