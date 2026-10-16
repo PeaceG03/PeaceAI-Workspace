@@ -50,6 +50,24 @@ export const LIVE_PROVEN_SINCE: Readonly<Record<string, LiveProvenRef>> = {
 export const LIVE_LANDING_REF = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;
 export type Skill = (typeof APPROVED_SKILLS)[number] | (typeof MISSING_SKILLS)[number] | keyof typeof APPROVED_SINCE;
 
+/** Sole allowed value of the optional `coverage` field (proof / no-credit landings). */
+export const COVERAGE_NONE = "none" as const;
+export type CoverageFlag = typeof COVERAGE_NONE;
+
+/**
+ * Historical PeaceAI rows whose asked/why already say "live proof" / "proof A" / "no coverage" but that
+ * predate the `coverage` field. Append-only: they cannot gain the field without a rewrite. validateLog
+ * grandfathers these seqs; new PeaceAI rows with that wording must set `"coverage":"none"`.
+ * coverage.ts also treats the allowlist as no real-task credit (none of these are source: peace except
+ * 99/101, which stay uncredited).
+ */
+export const COVERAGE_NONE_SEQS: ReadonlySet<number> = new Set([
+  28, 30, 31, 35, 59, 60, 85, 86, 87, 97, 99, 101,
+]);
+
+/** PeaceAI prose that requires coverage:"none" unless the seq is in COVERAGE_NONE_SEQS. */
+export const COVERAGE_NONE_WORDING = /live proof|proof A|no coverage/i;
+
 export interface Entry {
   seq: number;
   date: string; // YYYY-MM-DD (America/Denver)
@@ -60,9 +78,12 @@ export interface Entry {
   skill: Skill;
   mark: string; // "PeaceAI-able today" | "missing skill <SKILL>"
   by: "Builder" | "PeaceAI";
+  /** When present must be "none": exclude from PeaceAI real-task coverage credit. */
+  coverage?: CoverageFlag;
 }
 
-const KEYS = ["seq", "date", "time", "asked", "changed", "why", "skill", "mark", "by"];
+const KEYS = ["seq", "date", "time", "asked", "changed", "why", "skill", "mark", "by"] as const;
+const KEYS_WITH_COVERAGE = [...KEYS, "coverage"] as const;
 // Diff ref: PeaceSTOCKS@<sha>, PeaceAI-Workspace@<sha>, PeaceAI-Workspace#<n>, "none (...)"; several joined by ", ".
 const REF = /^(?:(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}|PeaceAI-Workspace#\d+)$/;
 // Public repo: refuse secret-shaped text and private-repo references.
@@ -77,7 +98,13 @@ export function validateEntry(raw: unknown, expectSeq: number): string[] {
   const errs: string[] = [];
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return ["not an object"];
   const keys = Object.keys(e);
-  if (keys.join() !== KEYS.join()) errs.push(`keys must be exactly ${KEYS.join(",")} in order`);
+  const keyLine = keys.join(",");
+  if (keyLine !== KEYS.join(",") && keyLine !== KEYS_WITH_COVERAGE.join(",")) {
+    errs.push(`keys must be exactly ${KEYS.join(",")} in order, or the same with trailing coverage`);
+  }
+  if (Object.prototype.hasOwnProperty.call(e, "coverage") && e.coverage !== COVERAGE_NONE) {
+    errs.push(`coverage must be "${COVERAGE_NONE}" when present`);
+  }
   if (e.seq !== expectSeq) errs.push(`seq must be ${expectSeq}`);
   if (typeof e.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) errs.push("bad date");
   if (typeof e.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(e.time)) errs.push("bad time");
@@ -95,6 +122,16 @@ export function validateEntry(raw: unknown, expectSeq: number): string[] {
   if (e.mark !== want) errs.push(`mark must be "${want}"`);
   if (e.by !== "Builder" && e.by !== "PeaceAI") errs.push("by must be Builder or PeaceAI");
   if (e.by === "PeaceAI" && !approved) errs.push("a PeaceAI-authored entry must use an approved skill");
+  if (e.by === "PeaceAI") {
+    const prose = `${String(e.asked)}\n${String(e.why)}`;
+    if (COVERAGE_NONE_WORDING.test(prose)) {
+      const hasField = e.coverage === COVERAGE_NONE;
+      const grandfathered = COVERAGE_NONE_SEQS.has(expectSeq);
+      if (!hasField && !grandfathered) {
+        errs.push('PeaceAI asked/why proof wording requires coverage:"none" (or a COVERAGE_NONE_SEQS grandfather)');
+      }
+    }
+  }
   const text = JSON.stringify(raw);
   for (const [re, what] of FORBIDDEN) if (re.test(text)) errs.push(what);
   return errs;
@@ -160,6 +197,25 @@ export function validateLiveProven(
   return errs;
 }
 
+
+/** Refuse allowlist seqs missing from `entries`. Caller gates short fixtures (see validateLog). */
+export function validateCoverageNoneSeqs(
+  entries: readonly Entry[],
+  allow: ReadonlySet<number> = COVERAGE_NONE_SEQS,
+): string[] {
+  const bySeq = new Map(entries.map((e) => [e.seq, e]));
+  const errs: string[] = [];
+  for (const seq of [...allow].sort((a, b) => a - b)) {
+    if (!bySeq.has(seq)) errs.push(`COVERAGE_NONE_SEQS: no builder-log seq ${seq}`);
+  }
+  return errs;
+}
+
+/** True when the entry opts out of PeaceAI real-task coverage (field or grandfather allowlist). */
+export function isCoverageNone(e: Pick<Entry, "seq" | "coverage">): boolean {
+  return e.coverage === COVERAGE_NONE || COVERAGE_NONE_SEQS.has(e.seq);
+}
+
 export function validateLog(text: string): string[] {
   if (text.length > 0 && !text.endsWith("\n")) return ["file must end with a newline"];
   const errs: string[] = [];
@@ -183,6 +239,10 @@ export function validateLog(text: string): string[] {
   if (errs.length === 0) {
     const need = Object.values(LIVE_PROVEN_SINCE).reduce((m, r) => Math.max(m, r.seq), 0);
     if (entries.length >= need) errs.push(...validateLiveProven(entries));
+  }
+  if (errs.length === 0) {
+    const need = [...COVERAGE_NONE_SEQS].reduce((m, n) => Math.max(m, n), 0);
+    if (entries.length >= need) errs.push(...validateCoverageNoneSeqs(entries));
   }
   return errs;
 }
