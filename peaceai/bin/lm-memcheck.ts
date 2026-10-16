@@ -2,7 +2,9 @@
 // prompts), scans every output with the core-text scanner (public corpus as baseline) and the personal-info
 // scanner, and writes memcheck.json bound to the model files' sha256. Fail closed: any hit, too few samples,
 // an inference error or files that changed during the check -> FAIL (exit 1). Prints counts only; no
-// sample text is written anywhere. Runs where the core checkout is (the box), never on public runners.
+// sample text is written anywhere. Runs where the core checkout is: GitHub-hosted ephemeral runners are accepted
+// (Architect policy, M49: m49-posttrain-memcheck.yml, core env, read-only keys, deleted before upload); never on a
+// bot's own computer.
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";

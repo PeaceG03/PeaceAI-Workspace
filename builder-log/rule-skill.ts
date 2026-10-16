@@ -1,7 +1,7 @@
 // Cross-check (Auditor, #244): a by:PeaceAI repo@sha landing line's `skill` must match the learned rule that
 // produced the landed candidate. The rule comes from Results: the issue's `right` verdict record names
 // (runId, candidateId); that run's ranking.json gives the candidate's operationId (learned:<rule>@<sha256>).
-// Usage: tsx builder-log/rule-skill.ts --results-dir <PeaceAI-Results clone>
+// Usage: tsx builder-log/rule-skill.ts --results-dir <PeaceAI-Results clone> [--ci]   (--ci: errors name skills only)
 // Fails closed: unknown rule, missing record, several rules, or a mismatch are all errors.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,7 +33,8 @@ const OP = /^learned:([a-z0-9-]+)@[0-9a-f]{64}$/;
 /** Rule ids of the candidates chosen `right` on an issue (null = lookup failed). */
 export type RuleLookup = (issue: number) => string[] | null;
 
-export function checkRuleSkills(entries: readonly Entry[], lookup: RuleLookup): string[] {
+/** ci: errors name builder-log skills only, never learned rule ids (public CI step summary). */
+export function checkRuleSkills(entries: readonly Entry[], lookup: RuleLookup, opts: { ci?: boolean } = {}): string[] {
   const errs: string[] = [];
   for (const e of entries) {
     if (e.by !== "PeaceAI" || !LIVE_LANDING_REF.test(e.changed)) continue;
@@ -42,9 +43,9 @@ export function checkRuleSkills(entries: readonly Entry[], lookup: RuleLookup): 
     if (issue === null) { errs.push(`seq ${e.seq}: no single PeaceAI-Workspace#N to find the producing rule`); continue; }
     const rules = lookup(issue);
     if (rules === null || rules.length === 0) { errs.push(`seq ${e.seq}: no chosen candidate rule for #${issue} (fail closed)`); continue; }
-    const skills = [...new Set(rules.map((r) => RULE_SKILL[r] ?? `unknown rule ${r}`))];
+    const skills = [...new Set(rules.map((r) => RULE_SKILL[r] ?? (opts.ci ? "unknown rule" : `unknown rule ${r}`)))];
     if (skills.length !== 1) { errs.push(`seq ${e.seq}: #${issue} chosen candidates map to several skills: ${skills.join(", ")}`); continue; }
-    if (skills[0] !== e.skill) errs.push(`seq ${e.seq}: skill ${e.skill} but #${issue}'s landed candidate came from ${rules.join(", ")} (${skills[0]})`);
+    if (skills[0] !== e.skill) errs.push(opts.ci ? `seq ${e.seq}: skill ${e.skill} but #${issue}'s landed candidate's skill is ${skills[0]}` : `seq ${e.seq}: skill ${e.skill} but #${issue}'s landed candidate came from ${rules.join(", ")} (${skills[0]})`);
   }
   return errs;
 }
@@ -62,7 +63,9 @@ export function resultsDirLookup(dir: string): RuleLookup {
         for (const f of readdirSync(vd)) {
           const v = JSON.parse(readFileSync(join(vd, f), "utf8")) as { verdict?: string; runId?: string; candidateId?: string };
           if (v.verdict !== "right") continue;
-          const rk = JSON.parse(readFileSync(join(base, String(v.runId), "ranking.json"), "utf8")) as { candidates: { id: string; operationId: string | null }[] };
+          // The run id names a directory under tasks/<N>/: digits only, never a path (Auditor).
+          if (typeof v.runId !== "string" || !/^[0-9]{1,20}$/.test(v.runId)) return null;
+          const rk = JSON.parse(readFileSync(join(base, v.runId, "ranking.json"), "utf8")) as { candidates: { id: string; operationId: string | null }[] };
           const c = rk.candidates.find((x) => x.id === v.candidateId);
           const m = c?.operationId ? OP.exec(c.operationId) : null;
           if (!m) return null;
@@ -80,7 +83,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const i = process.argv.indexOf("--results-dir");
   if (i < 0 || !process.argv[i + 1]) { console.error("rule-skill: --results-dir <PeaceAI-Results clone> is required"); process.exit(2); }
   const entries = readFileSync(LOG_PATH, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
-  const errs = checkRuleSkills(entries, resultsDirLookup(process.argv[i + 1]!));
+  const errs = checkRuleSkills(entries, resultsDirLookup(process.argv[i + 1]!), { ci: process.argv.includes("--ci") });
   for (const e of errs) console.error(`rule-skill: ${e}`);
   for (const [s, r] of Object.entries(RULE_SKILL_EXEMPT)) console.log(`rule-skill: seq ${s} exempt: ${r}`);
   if (errs.length) process.exit(1);

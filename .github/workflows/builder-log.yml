@@ -37,9 +37,60 @@ jobs:
         run: ./node_modules/.bin/tsx builder-log/check.ts --verify-shas
       - name: Clone PeaceSTOCKS anonymously (outside the workspace)
         run: git clone --quiet https://github.com/PeaceG03/PeaceSTOCKS.git "$RUNNER_TEMP/stocks"
-      - name: PeaceAI landings trace to verdict patches (public part; Results cross-check not wired yet, see PR #217)
+      - name: PeaceAI landings trace to verdict patches (public part; Results verified by the results-crosscheck job on main)
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./node_modules/.bin/tsx builder-log/trace.ts --no-results --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: PeaceAI vs Builder coverage
         run: ./node_modules/.bin/tsx builder-log/coverage.ts >> "$GITHUB_STEP_SUMMARY"
+
+  # PR #217 Results cross-check (Architect): push to main only, peaceai-core environment, read-only
+  # PEACEAI_RESULTS_READ_KEY (deploy key, read-only), sparse tasks/ clone, nothing written anywhere.
+  # Output is codes and fixed details only (trace.ts Results mode; rule-skill.ts errors).
+  results-crosscheck:
+    name: builder-log Results cross-check (trace + rule-skill)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'PeaceG03/PeaceAI-Workspace'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: peaceai-core
+    permissions:
+      contents: read
+      issues: read
+    env:
+      LANDING_SHA256: |-
+        bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Clone PeaceSTOCKS anonymously (outside the workspace)
+        run: git clone --quiet https://github.com/PeaceG03/PeaceSTOCKS.git "$RUNNER_TEMP/stocks"
+      - name: Verify the checkout and the key script before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Clone Results read-only (sparse tasks/ only)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_READ_KEY is not set in the peaceai-core environment: refused (fail closed)"; exit 1; }
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/results"
+          ./peaceai/bin/with-deploy-key.sh git -C "$RUNNER_TEMP/results" sparse-checkout set tasks
+      - name: PeaceAI landings trace to verdict patches (Results verified)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/tsx builder-log/trace.ts --results-dir "$RUNNER_TEMP/results" --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
+      - name: Rule-skill cross-check against Results
+        run: ./node_modules/.bin/tsx builder-log/rule-skill.ts --results-dir "$RUNNER_TEMP/results" --ci >> "$GITHUB_STEP_SUMMARY"
+      - name: Delete the Results clone
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/results" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/stocks"
