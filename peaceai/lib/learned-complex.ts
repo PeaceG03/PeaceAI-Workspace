@@ -44,12 +44,12 @@ export const CLOSURE_NOT_ALLOWED = "closure_not_allowed"; // nested function, ar
 export const LOOP_WHILE_UNSUPPORTED = "loop_while_unsupported"; // a while when the spec allows for/for-of only
 export const NAMED_REFUSALS: ReadonlySet<string> = new Set([LOOP_UNSUPPORTED, LOOP_UNBOUNDED, LOOP_ASYNC, LOOP_LABEL, CLOSURE_NOT_ALLOWED, LOOP_WHILE_UNSUPPORTED]);
 /** Which loop forms a spec allows (bounds and starts: an integer literal 0..MAX_LOOP_BOUND or PARAM.length only). */
-export interface LoopPolicy { forOf: boolean; counted: boolean; whileBounded: boolean }
+export interface LoopPolicy { forOf: boolean; counted: boolean; whileBounded: boolean; whileLiteral?: boolean }
 export const NO_LOOPS: LoopPolicy = { forOf: false, counted: false, whileBounded: false };
 export const loopPolicy = (loops: readonly string[]): LoopPolicy => ({
-  forOf: loops.includes("for-of-param"), counted: loops.includes("counted-literal-or-length"), whileBounded: loops.includes("while-bounded"),
+  forOf: loops.includes("for-of-param"), counted: loops.includes("counted-literal-or-length"), whileBounded: loops.includes("while-bounded"), whileLiteral: loops.includes("while-literal-counter"),
 });
-const anyLoops = (p: LoopPolicy) => p.forOf || p.counted || p.whileBounded;
+const anyLoops = (p: LoopPolicy) => p.forOf || p.counted || p.whileBounded || !!p.whileLiteral;
 /** Auditor #135: no leading '/', and no '', '.' or '..' segments (same check as METHOD_GUARD). */
 export const plainPath = (p: string): boolean => !p.startsWith("/") && !p.split("/").some((x) => x === "" || x === "." || x === "..");
 const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(path));
@@ -58,7 +58,7 @@ export const COMPLEX_PARAM_KEYS = ["body", "grading", "loops", "params", "placem
 export const COMPLEX_VOCAB: Record<(typeof COMPLEX_PARAM_KEYS)[number], readonly string[]> = {
   body: ["bounded-block"],
   grading: ["self-fail-before-pass-after-and-stub"],
-  loops: ["none", "for-of-param", "counted-literal-or-length", "while-bounded"], // "none": #211's spec (every loop -> loop_unsupported); the others: M64 public-loop-function-v1
+  loops: ["none", "for-of-param", "counted-literal-or-length", "while-bounded", "while-literal-counter"], // "while-literal-counter": undrop LOOP_WHILE (public-loop-function-v2); "none": #211's spec (every loop -> loop_unsupported); the others: M64 public-loop-function-v1
   params: ["typed"],
   placement: ["end-of-module"],
   returns: ["annotated"],
@@ -78,6 +78,8 @@ const PARAM = String.raw`${NAME}: ?${TYPE}`;
 export const COMPLEX_TRIGGER = String.raw`^add (?:a )?complex function \x60?(?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE})\x60? to \x60?(?<file>${FILE})\x60? with body ?:?[ \t]*$`;
 /** M64: LOOP_FUNCTION header ("add loop function ... with body:"); same signature grammar, its own phrase. */
 export const LOOP_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "loop function");
+/** LOOP_WHILE (public-loop-function-v2): its own header phrase so v1 (while refused) and v2 never share a task. */
+export const WHILE_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "while loop function");
 const LOCAL_TYPES = new Set(FUNCTION_TYPES as readonly string[]);
 const RESERVED = /^(?:constructor|prototype|__proto__|eval|arguments|globalThis|process|require|import|Function|undefined|NaN|Infinity)$/;
 
@@ -302,7 +304,19 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
   // assigned nowhere else in the body; B is a literal <= MAX_LOOP_BOUND, a number parameter or PARAM.length (never a
   // local copy); no `continue` anywhere in the body (it could skip the step).
   function whileStmt(s: ts.WhileStatement, depth: number): string | null {
-    if (!pol.whileBounded) return LOOP_WHILE_UNSUPPORTED;
+    if (!pol.whileBounded && !pol.whileLiteral) return LOOP_WHILE_UNSUPPORTED;
+    // LOOP_WHILE (public-loop-function-v2, "while-literal-counter"): ONLY `while (C < LIT)` / `while (C <= LIT)` with C an
+    // own let starting at an integer literal and exactly one top-level `C += 1`. Anything else is loop_unbounded.
+    if (pol.whileLiteral && !pol.whileBounded) {
+      const w = s.expression;
+      const lit = (e: ts.Expression | undefined) => !!e && ts.isNumericLiteral(e) && /^\d+$/.test(e.text) && Number(e.text) <= MAX_LOOP_BOUND;
+      if (!ts.isBinaryExpression(w) || (w.operatorToken.kind !== ts.SyntaxKind.LessThanToken && w.operatorToken.kind !== ts.SyntaxKind.LessThanEqualsToken)) return LOOP_UNBOUNDED;
+      if (!ts.isIdentifier(w.left) || locals.get(w.left.text)?.kind !== "let" || !lit(w.right) || !lit(starts.get(w.left.text))) return LOOP_UNBOUNDED;
+      const name = w.left.text;
+      if (!ts.isBlock(s.statement)) return LOOP_UNBOUNDED;
+      const plusOne = (x: ts.Statement) => ts.isExpressionStatement(x) && ts.isBinaryExpression(x.expression) && x.expression.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken && ts.isIdentifier(x.expression.left) && x.expression.left.text === name && ts.isNumericLiteral(x.expression.right) && x.expression.right.text === "1";
+      if (s.statement.statements.filter(plusOne).length !== 1) return LOOP_UNBOUNDED;
+    }
     if (++loops > MAX_LOOPS) return "too many loops";
     const c = s.expression;
     const L = ts.SyntaxKind.LessThanToken, LE = ts.SyntaxKind.LessThanEqualsToken, G = ts.SyntaxKind.GreaterThanToken, GE = ts.SyntaxKind.GreaterThanEqualsToken;

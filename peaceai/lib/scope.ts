@@ -1,6 +1,8 @@
 import ts from "typescript";
 import type { DiffFile } from "./diff.ts";
 import { STEP_NAME_LINE, STEP_RUN_LINE, WORKFLOW_FILE, workflowCandidateReason } from "./learned-workflow.ts";
+import { workflowJobLinesReason } from "./workflow-job.ts";
+import { tsconfigScriptCandidateReason } from "./tsconfig-script.ts";
 
 // Candidate diffs may only touch source under src/. Existing tests are frozen; new test files may be added.
 export const TEST_FILE = /\.test\.ts$/;
@@ -13,6 +15,8 @@ export interface CandidateScope {
   isDenied: (path: string) => boolean;
   /** M19: workflow files the target opts in for ADD_WORKFLOW_STEP (targets.json `workflowPattern`). */
   isWorkflow?: (path: string) => boolean;
+  /** M67: the target opts in to TSCONFIG_SCRIPT candidates (targets.json `tsconfigScript: true`). */
+  tsconfigScript?: boolean;
 }
 export const WORKSPACE_SCOPE: CandidateScope = {
   isSource: (path) => isSafeCandidatePath(path),
@@ -49,8 +53,20 @@ export function checkCandidateScope(
     const why = workflowCandidateReason(paths, (p) => !scope.isSource(p) && !!scope.isWorkflow?.(p));
     if (why) violations.push({ path: paths.join(","), reason: why });
   }
+  // M67 TSCONFIG_SCRIPT: on an opted-in target, package.json + one new root tsconfig.NAME.json, both re-checked.
+  const tsPaths = new Set<string>();
+  if (scope.tsconfigScript && files.some((f) => /^(?:package\.json|tsconfig\.[^/]+\.json)$/.test(f.newPath ?? ""))) {
+    const why = tsconfigScriptCandidateReason(files.map((f) => ({ path: f.newPath ?? f.oldPath ?? "(unknown)", isNew: f.isNew, addedLines: f.addedLines, removedLines: f.removedLines })));
+    if (why) violations.push({ path: "package.json", reason: `tsconfig script: ${why}` });
+    else {
+      for (const f of files) tsPaths.add(f.newPath!);
+      if (baseFiles.has(files.find((f) => f.isNew)!.newPath!)) violations.push({ path: "tsconfig", reason: "creates a file that already exists" });
+      if (!baseFiles.has("package.json")) violations.push({ path: "package.json", reason: "edits a file missing from base" });
+    }
+  }
   for (const file of files) {
     const path = file.newPath ?? file.oldPath ?? "(unknown)";
+    if (tsPaths.has(path) && !file.isDeleted && !file.isRename && !file.isBinary && !file.modeChange && (file.newMode === null || file.newMode === "100644")) continue;
     if (file.isDeleted) violations.push({ path, reason: "deletes a file" });
     if (file.isRename) violations.push({ path, reason: "renames or copies a file" });
     if (file.isBinary) violations.push({ path, reason: "binary change" });
@@ -207,7 +223,11 @@ export function workflowStepReason(file: DiffFile, exists: boolean): string | nu
   if (!WORKFLOW_FILE.test(file.newPath ?? "")) return "not a workflow file";
   if (file.isNew || !exists) return "workflow must already exist";
   if (file.removedLines.length) return "removes or changes lines";
-  if (file.addedLines.length !== 2) return "must add exactly one two-line step";
+  // M67 WORKFLOW_JOB: one new job block appended at the end of the file (fixed read-only header; workflow-job.ts).
+  if (file.addedLines.length !== 2) {
+    const job = file.appendOnly ? workflowJobLinesReason(file.addedLines) : "not appended at the end";
+    return job === null ? null : `must add exactly one two-line step (or one read-only job block: ${job})`;
+  }
   const n = STEP_NAME_LINE.exec(file.addedLines[0]!);
   const r = STEP_RUN_LINE.exec(file.addedLines[1]!);
   if (!n || !r || r[1]!.length !== n[1]!.length + 2) return "not a name/run package-script step";
