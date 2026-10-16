@@ -21,7 +21,6 @@ export const MISSING_SKILLS = [
   "PEACEAI_SELF_CHANGE", // PeaceAI's own tooling: protected, never a PeaceAI edit by design
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
   "ENV_FIX", // box/runner environment, no repo edit
-  "LOOP_FUNCTION", // new function whose body needs a loop (COMPLEX_FUNCTION refuses loops: loop_unsupported)
 ] as const;
 /**
  * Skills approved later: approved for entries at or after the landing time (MT, "YYYY-MM-DD HH:MM"), and still a
@@ -32,6 +31,7 @@ export const APPROVED_SINCE = {
   WORKFLOW_STEP: "2026-10-13 22:41", // public-workflow-step-v2, #125 merged 04:41Z
   METHOD_GUARD: "2026-10-15 12:01", // public-method-guard-v1, #201 merged bdd1e27
   COMPLEX_FUNCTION: "2026-10-15 16:27", // public-complex-function-v1 (loop-free only), #211 merged f33baa1; earlier entries keep "missing skill"
+  LOOP_FUNCTION: "2026-10-15 21:29", // public-loop-function-v1 (bounded for/for-of), approval PR #225 merged 95c1e79 (03:29Z); earlier entries keep "missing skill"
 } as const;
 /**
  * Skills with a passing live proof from `since` (MT) on. Distinct from APPROVED_SINCE: approval alone is not
@@ -43,6 +43,7 @@ export const LIVE_PROVEN_SINCE: Readonly<Record<string, LiveProvenRef>> = {
   WORKFLOW_STEP: { since: "2026-10-15 12:02", seq: 85 }, // PeaceSTOCKS#6 @f57036b; tenmin-mode-sim run 38782483772
   METHOD_GUARD: { since: "2026-10-15 17:28", seq: 86 }, // PeaceAI-Workspace#205 landed as PeaceSTOCKS@365b91e
   COMPLEX_FUNCTION: { since: "2026-10-15 18:57", seq: 87 }, // PeaceAI-Workspace#214 landed as PeaceSTOCKS@c9a6076 (loop-free bodies only)
+  LOOP_FUNCTION: { since: "2026-10-15 21:52", seq: 97 }, // PeaceAI-Workspace#229 landed as PeaceSTOCKS@22b0f3d; tenmin-mode-sim run 38847676694
 };
 /** repo@sha landing in a changed field (not an issue-only ref). */
 export const LIVE_LANDING_REF = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;
