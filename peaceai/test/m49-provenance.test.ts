@@ -11,7 +11,7 @@ import { indexGitTree } from "../lib/coreindex.ts";
 import { emptyIndex } from "../lib/coretext.ts";
 import { COREFREE_MIN_RUN, LM_JOBS, scanSamples } from "../lib/lm.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
-import { classify, dominated, GENERIC_CORE_FILES, sameRuns, seqId, verdictOf } from "../lib/provenance.ts";
+import { classify, dominated, GENERIC_CORE_FILES, PROMPT_OVERLAP_MIN, promptOverlap, promptVerdict, sameRuns, seqId, verdictOf } from "../lib/provenance.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
@@ -135,7 +135,7 @@ test("m49-provenance-check.yml: dispatch-only, main-only, peaceai-core, read-onl
   assert.ok(!/writeFileSync|appendFileSync|createWriteStream|mkdirSync|https?:\/\//.test(bin), "the script writes nothing");
   // Only counts and hashed ids are printed: every out() line is from the fixed formats below.
   const outs = [...bin.matchAll(/out\(`([^`]*)`\)/g)].map((m) => m[1]);
-  for (const o of outs) assert.ok(!/\$\{t\}|\$\{x\.text|\$\{s\.text|byId|prompt/.test(o!), o);
+  for (const o of outs) assert.ok(!/\$\{t\}|\$\{x\.text|\$\{s\.text|byId|\$\{prompt|\$\{p\.|promptText|sampleById|\.text\b|\$\{run\.sample/.test(o!), o);
 });
 
 test("the recorded runs fixture is the memcheck run 38913032640 record (40 runs, model lm-v1-1bfbea221e71)", () => {
@@ -152,4 +152,31 @@ test("recorded runs with a bare prompt id (no :<decoding>) are ambiguous: BLOCK,
   e.writeExp(e.runs.map((x) => ({ ...x, sample: x.sample.split(":")[0] })));
   const r = e.run();
   assert.equal(r.status, 1); assert.match(r.stdout, /verdict=BLOCK reason=RECORD_IDS_AMBIGUOUS/);
+});
+
+test("prompt overlap per run: inside / extends (tail or substring, then continues) / none; verdict PROMPT_LINKED_ALL only with no none", () => {
+  const run = "export function computeSomethingUnique(a, b) {";
+  assert.equal(PROMPT_OVERLAP_MIN, 8);
+  assert.deepEqual(promptOverlap(run, `// ctx\n${run}\n}`), { overlap: run.length, cls: "inside" });
+  const tail = promptOverlap(run, "header\nexport function compute"); // prompt tail, then the run continues
+  assert.equal(tail.cls, "extends"); assert.equal(tail.overlap, "export function compute".length);
+  const mid = promptOverlap(run, "xx SomethingUnique yy"); // a prompt substring inside the run
+  assert.equal(mid.cls, "extends"); assert.equal(mid.overlap, "SomethingUnique".length);
+  assert.deepEqual(promptOverlap(run, "nothing in common here"), { overlap: promptOverlap(run, "nothing in common here").overlap, cls: "none" });
+  assert.ok(promptOverlap(run, "nothing in common here").overlap < PROMPT_OVERLAP_MIN);
+  assert.equal(promptOverlap("", "abc").cls, "none");
+  assert.equal(promptVerdict(["inside", "extends"]), "PROMPT_LINKED_ALL");
+  assert.equal(promptVerdict(["inside", "none"]), "LEAK");
+  assert.equal(promptVerdict([]), "LEAK", "no runs: fail closed");
+});
+
+test("end to end: per-run prompt overlap lines (sequential ids, counts only), per-string summary, prompt verdict; no text", () => {
+  const e = env(5);
+  const r = e.run(); // run() also asserts no text, no hex, nothing written
+  const runs = [...r.stdout.matchAll(/^provenance run=(r\d+) string=(s\d+) length=(\d+) overlap=(\d+) prompt=(inside|extends|none)$/gm)];
+  assert.equal(runs.length, e.runs.length);
+  assert.deepEqual(runs.map((m) => m[1]), runs.map((_, i) => `r${String(i + 1).padStart(2, "0")}`));
+  assert.ok(runs.every((m) => m[5] === "none" && Number(m[4]) < PROMPT_OVERLAP_MIN), "the core string is not in its core prompt");
+  assert.match(r.stdout, /^provenance string=s01 prompt_inside=0 prompt_extends=0 prompt_none=\d+$/m);
+  assert.match(r.stdout, new RegExp(`^provenance prompt_runs=${e.runs.length} inside=0 extends=0 none=${e.runs.length} overlap_min=8 prompt_verdict=LEAK$`, "m"));
 });

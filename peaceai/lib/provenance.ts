@@ -43,3 +43,19 @@ export function provenanceRows(strings: ReadonlyMap<string, number>, coreTexts: 
 }
 
 export const verdictOf = (rows: readonly ProvRow[], matched: boolean): "PASS" | "BLOCK" => (!matched || rows.some((r) => r.cls !== "GENERIC") ? "BLOCK" : "PASS");
+
+// ---- prompt overlap (Architect/Auditor): each run vs its own sample's prompt (the context before the output).
+/** Minimum shared characters for a run to count as overlapping its prompt; shorter common substrings are noise. */
+export const PROMPT_OVERLAP_MIN = 8;
+export type PromptOverlap = "inside" | "extends" | "none";
+/** Longest substring of `run` that occurs in `prompt` (characters). */
+export function promptOverlapLength(run: string, prompt: string): number {
+  let best = 0;
+  for (let i = 0; i < run.length && run.length - i > best; i++) for (let j = run.length; j - i > best; j--) if (prompt.includes(run.slice(i, j))) { best = j - i; break; }
+  return best;
+}
+export function promptOverlap(run: string, prompt: string): { overlap: number; cls: PromptOverlap } {
+  const overlap = run.length === 0 ? 0 : promptOverlapLength(run, prompt);
+  return { overlap, cls: run.length > 0 && overlap === run.length ? "inside" : overlap >= PROMPT_OVERLAP_MIN ? "extends" : "none" };
+}
+export const promptVerdict = (classes: readonly PromptOverlap[]): "PROMPT_LINKED_ALL" | "LEAK" => (classes.length > 0 && classes.every((c) => c !== "none") ? "PROMPT_LINKED_ALL" : "LEAK");
