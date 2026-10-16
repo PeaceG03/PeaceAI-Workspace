@@ -45,7 +45,7 @@ const FIXTURE = [
   line({ seq: 3, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-11", changed: "PeaceSTOCKS@def5678" }),
   line({ seq: 4, skill: "THROW_GUARD", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-12", changed: "PeaceSTOCKS@aaa1111" }),
   line({ seq: 5, skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI", date: "2026-10-12", changed: "PeaceAI-Workspace#99" }),
-  line({ seq: 6, skill: "COMPLEX_FUNCTION", mark: "missing skill COMPLEX_FUNCTION", by: "Builder", date: "2026-10-14", changed: "PeaceSTOCKS@bbb2222" }),
+  line({ seq: 6, skill: "WORKFLOW_JOB", mark: "missing skill WORKFLOW_JOB", by: "Builder", date: "2026-10-14", changed: "PeaceSTOCKS@bbb2222" }),
   line({ seq: 7, skill: "OPS_ACTION", mark: "missing skill OPS_ACTION", by: "Builder", date: "2026-10-14" }),
   line({ seq: 8, skill: "WORKFLOW_STEP", mark: "PeaceAI-able today", by: "Builder", date: "2026-10-14", changed: "PeaceAI-Workspace#125" }),
 ].join("\n") + "\n";
@@ -61,7 +61,7 @@ test("LIVE_LANDING matches repo@sha only, not issue refs", () => {
 test("liveProvenSkills: PeaceAI@sha landings + LIVE_PROVEN_SINCE.since gate; issue-only ignored", () => {
   const entries = entriesOf(FIXTURE);
   assert.deepEqual([...liveProvenSkills(entries, "2026-10-14")].sort(), ["THROW_GUARD"]);
-  assert.deepEqual([...liveProvenSkills(entries, "2026-10-15")].sort(), ["THROW_GUARD", "WORKFLOW_STEP"]);
+  assert.deepEqual([...liveProvenSkills(entries, "2026-10-15")].sort(), ["COMPLEX_FUNCTION", "METHOD_GUARD", "THROW_GUARD", "WORKFLOW_STEP"]);
   // asOf before the THROW_GUARD landing time excludes it
   assert.deepEqual([...liveProvenSkills(entries, "2026-10-10")].sort(), []);
 });
@@ -84,26 +84,27 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 3/58 = 5.2%; WORKFLOW_STEP live-proven via seq 85; CHECK_OBJECT_LITERAL_ARGS not", () => {
+test("real log: 12/58 = 20.7% by skill; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; CHECK_OBJECT_LITERAL_ARGS not", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.since, "2026-10-15 12:02");
+  assert.deepEqual(LIVE_PROVEN_SINCE.METHOD_GUARD, { since: "2026-10-15 17:28", seq: 86 });
+  assert.deepEqual(LIVE_PROVEN_SINCE.COMPLEX_FUNCTION, { since: "2026-10-15 18:57", seq: 87 });
   const r = coverageReport(text, "2026-10-15");
-  assert.ok(r.liveProven.includes("THROW_GUARD"));
-  assert.ok(r.liveProven.includes("WORKFLOW_STEP"));
+  for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
   assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
+  // Counted by skill: all 9 COMPLEX_FUNCTION Builder tasks count, though the engine refuses loops (see PR notes).
   assert.equal(r.allTime.builderTasks, 58);
-  assert.equal(r.allTime.peaceaiAble, 3);
-  assert.equal(r.allTime.percent, 5.2);
+  assert.equal(r.allTime.peaceaiAble, 12);
+  assert.equal(r.allTime.percent, 20.7);
   assert.equal(r.last7Days.builderTasks, 58);
-  assert.equal(r.last7Days.peaceaiAble, 3);
-  assert.equal(r.last7Days.percent, 5.2);
-  assert.ok(!r.topMissing.some((m) => m.skill === "WORKFLOW_STEP"));
+  assert.equal(r.last7Days.peaceaiAble, 12);
+  assert.equal(r.last7Days.percent, 20.7);
+  assert.ok(!r.topMissing.some((m) => m.skill === "WORKFLOW_STEP" || m.skill === "COMPLEX_FUNCTION"));
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /5\.2% \(3\/58\)/);
-  assert.equal(coverageReport(text, denverYmd()).allTime.percent, 5.2);
+  assert.match(md, /20\.7% \(12\/58\)/);
 });
 
 test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {

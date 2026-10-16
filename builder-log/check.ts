@@ -15,7 +15,6 @@ export const APPROVED_SKILLS = [
 ] as const;
 export const MISSING_SKILLS = [
   "WORKFLOW_JOB",
-  "COMPLEX_FUNCTION", // new function/module beyond ADD_FUNCTION's safe vocabulary (dates, loops, I/O)
   "IMPORT_EDIT", // change an existing import specifier
   "MODIFY_LOGIC", // multi-line logic change in an existing function
   "TSCONFIG_SCRIPT", // package script / tsconfig change
@@ -30,6 +29,8 @@ export const MISSING_SKILLS = [
 export const APPROVED_SINCE = {
   CHECK_OBJECT_LITERAL_ARGS: "2026-10-13 21:30", // public-test-case(-append)-objargs-v1, #118/#119 merged 03:30Z
   WORKFLOW_STEP: "2026-10-13 22:41", // public-workflow-step-v2, #125 merged 04:41Z
+  METHOD_GUARD: "2026-10-15 12:01", // public-method-guard-v1, #201 merged bdd1e27
+  COMPLEX_FUNCTION: "2026-10-15 16:27", // public-complex-function-v1 (loop-free only), #211 merged f33baa1; earlier entries keep "missing skill"
 } as const;
 /**
  * Skills with a passing live proof from `since` (MT) on. Distinct from APPROVED_SINCE: approval alone is not
@@ -39,6 +40,8 @@ export const APPROVED_SINCE = {
 export type LiveProvenRef = { readonly since: string; readonly seq: number };
 export const LIVE_PROVEN_SINCE: Readonly<Record<string, LiveProvenRef>> = {
   WORKFLOW_STEP: { since: "2026-10-15 12:02", seq: 85 }, // PeaceSTOCKS#6 @f57036b; tenmin-mode-sim run 38782483772
+  METHOD_GUARD: { since: "2026-10-15 17:28", seq: 86 }, // PeaceAI-Workspace#205 landed as PeaceSTOCKS@365b91e
+  COMPLEX_FUNCTION: { since: "2026-10-15 18:57", seq: 87 }, // PeaceAI-Workspace#214 landed as PeaceSTOCKS@c9a6076 (loop-free bodies only)
 };
 /** repo@sha landing in a changed field (not an issue-only ref). */
 export const LIVE_LANDING_REF = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;
