@@ -1,9 +1,14 @@
-// PeaceAI vs Builder coverage from the public Builder task log only (no box, no network).
-// Of Builder's logged tasks, what % PeaceAI could do end-to-end using ONLY live-proven skills.
+// PeaceAI vs Builder coverage from the public Builder task log only (no box, no network by default).
+// Of Builder's logged tasks PLUS PeaceAI real tasks, what % PeaceAI could do end-to-end using ONLY
+// live-proven skills (Builder rows) or already-landed real tasks (PeaceAI rows).
 // Live-proven = (a) a PeaceAI log entry whose `changed` lands a repo@sha on/before asOf, or (b) a skill
 // listed in LIVE_PROVEN_SINCE whose `since` is on/before asOf (each map entry is validated in check.ts
 // against a backing PeaceAI repo@sha seq). Approved-but-unproven skills do not count.
+// PeaceAI real task (counts in BOTH numerator and denominator): by PeaceAI, asked contains
+// "(source: peace)", PeaceSTOCKS@sha is on PeaceSTOCKS main (fail closed if unverifiable), and not a
+// proof / no-coverage record (seqs 97 and 101 stay excluded; any "live proof" or "no coverage" mark too).
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { APPROVED_SINCE, APPROVED_SKILLS, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, LOG_PATH, retagTarget, validateLog, type Entry } from "./check.ts";
 
@@ -11,9 +16,10 @@ import { APPROVED_SINCE, APPROVED_SKILLS, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, L
 export const LIVE_LANDING = LIVE_LANDING_REF;
 
 export interface WindowStats {
+  /** Tasks in the window (Builder non-retag + PeaceAI real tasks). */
   builderTasks: number;
   peaceaiAble: number;
-  /** Percent 0..100 to one decimal, or null when there are no Builder tasks in the window. */
+  /** Percent 0..100 to one decimal, or null when there are no tasks in the window. */
   percent: number | null;
 }
 
@@ -31,6 +37,17 @@ export interface CoverageReport {
   topMissing: MissingSkillCount[];
   logSha256: string;
 }
+
+/** Injectable: true iff `sha` is an ancestor of PeaceSTOCKS main (or clone HEAD). */
+export type OnMainChecker = (sha: string) => boolean;
+
+/** Proof / no-coverage seqs that stay excluded even if wording drifts. */
+export const NO_COVERAGE_SEQS: ReadonlySet<number> = new Set([97, 101]);
+
+const SOURCE_PEACE = /\(source:\s*peace\)/i;
+const LIVE_PROOF_MARK = /\blive proof\b/i;
+const NO_COVERAGE_MARK = /\bno coverage\b/i;
+const PEACE_STOCKS_SHA = /PeaceSTOCKS@([0-9a-f]{7,40})/;
 
 export function parseLogEntries(logText: string): Entry[] {
   const errors = validateLog(logText);
@@ -95,9 +112,74 @@ export function countable(e: Pick<Entry, "skill" | "mark">, proven: ReadonlySet<
   return proven.has(e.skill) && !e.mark.startsWith("missing skill");
 }
 
-function windowStats(builder: readonly Entry[], proven: ReadonlySet<string>): WindowStats {
-  const able = builder.filter((e) => countable(e, proven)).length;
-  const n = builder.length;
+/** Extract the PeaceSTOCKS@sha from `changed`, if any. */
+export function peaceStocksSha(changed: string): string | null {
+  const m = PEACE_STOCKS_SHA.exec(changed);
+  return m ? m[1]! : null;
+}
+
+/** True if the entry is marked as a proof or no-coverage record. */
+export function isProofOrNoCoverage(e: Pick<Entry, "seq" | "asked" | "why">): boolean {
+  if (NO_COVERAGE_SEQS.has(e.seq)) return true;
+  const text = `${e.asked}\n${e.why}`;
+  return LIVE_PROOF_MARK.test(text) || NO_COVERAGE_MARK.test(text);
+}
+
+/**
+ * PeaceAI real task: source: peace, not a proof/no-coverage record, PeaceSTOCKS@sha on main.
+ * Fail closed when `onMain` is null/undefined or throws / returns false.
+ */
+export function isPeaceRealTask(e: Entry, onMain?: OnMainChecker | null): boolean {
+  if (e.by !== "PeaceAI") return false;
+  if (!SOURCE_PEACE.test(e.asked)) return false;
+  if (isProofOrNoCoverage(e)) return false;
+  const sha = peaceStocksSha(e.changed);
+  if (!sha) return false;
+  if (!onMain) return false;
+  try {
+    return onMain(sha) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Offline checker: `git -C clonePath merge-base --is-ancestor <sha> HEAD`.
+ * Fail closed on any git error. Clone should be on main (or contain main history).
+ */
+export function makeGitOnMainChecker(clonePath: string): OnMainChecker {
+  if (!clonePath) throw new Error("PeaceSTOCKS clone path is required");
+  return (sha: string): boolean => {
+    if (!/^[0-9a-f]{7,40}$/.test(sha)) return false;
+    try {
+      execFileSync("git", ["-C", clonePath, "merge-base", "--is-ancestor", sha, "HEAD"], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+/** Resolve PEACESTOCKS_CLONE → checker, or null (fail closed) when unset/unusable. */
+export function defaultOnMainChecker(): OnMainChecker | null {
+  const p = process.env.PEACESTOCKS_CLONE?.trim();
+  if (!p) return null;
+  try {
+    return makeGitOnMainChecker(p);
+  } catch {
+    return null;
+  }
+}
+
+function windowStats(
+  tasks: readonly Entry[],
+  proven: ReadonlySet<string>,
+  peaceRealSeqs: ReadonlySet<number>,
+): WindowStats {
+  const able = tasks.filter((e) => (peaceRealSeqs.has(e.seq) ? true : countable(e, proven))).length;
+  const n = tasks.length;
   return {
     builderTasks: n,
     peaceaiAble: able,
@@ -105,13 +187,26 @@ function windowStats(builder: readonly Entry[], proven: ReadonlySet<string>): Wi
   };
 }
 
+export type CoverageOptions = {
+  /** Max missing skills to list (default 10). */
+  topN?: number;
+  /**
+   * PeaceSTOCKS@sha → on main? Omit/null = fail closed (no PeaceAI real task counts).
+   * Pass a stub in unit tests; CLI uses PEACESTOCKS_CLONE via defaultOnMainChecker().
+   */
+  onMain?: OnMainChecker | null;
+};
+
 /**
  * @param asOfDate end date (MT, YYYY-MM-DD) of the rolling 7-day window (inclusive).
- * @param topN max missing skills to list (default 10).
+ * @param topNOrOpts max missing skills (default 10), or options including onMain.
  */
-export function coverageReport(logText: string, asOfDate: string, topN = 10): CoverageReport {
+export function coverageReport(logText: string, asOfDate: string, topNOrOpts: number | CoverageOptions = 10): CoverageReport {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) throw new Error(`bad asOf date: ${asOfDate}`);
+  const opts: CoverageOptions = typeof topNOrOpts === "number" ? { topN: topNOrOpts } : topNOrOpts;
+  const topN = opts.topN ?? 10;
   if (!Number.isInteger(topN) || topN < 1 || topN > 50) throw new Error("topN out of range");
+  const onMain = opts.onMain === undefined ? null : opts.onMain;
   const entries = parseLogEntries(logText);
   const proven = liveProvenSkills(entries, asOfDate);
   // Retag lines are not tasks; each Builder task takes the skill of its latest retag (log order), if any.
@@ -126,8 +221,11 @@ export function coverageReport(logText: string, asOfDate: string, topN = 10): Co
     const mark = retagCountable(e, skill, entries) ? "PeaceAI-able today" : `missing skill ${skill}`;
     return { ...e, skill, mark };
   });
+  const peaceReal = entries.filter((e) => isPeaceRealTask(e, onMain));
+  const peaceRealSeqs = new Set(peaceReal.map((e) => e.seq));
+  const allTasks = [...builderAll, ...peaceReal];
   const start7 = addDaysYmd(asOfDate, -6);
-  const builder7 = builderAll.filter((e) => e.date >= start7 && e.date <= asOfDate);
+  const all7 = allTasks.filter((e) => e.date >= start7 && e.date <= asOfDate);
   const miss = new Map<string, number>();
   for (const e of builderAll) {
     if (!countable(e, proven)) miss.set(e.skill, (miss.get(e.skill) ?? 0) + 1);
@@ -139,15 +237,15 @@ export function coverageReport(logText: string, asOfDate: string, topN = 10): Co
   return {
     asOf: asOfDate,
     liveProven: [...proven].sort(),
-    last7Days: windowStats(builder7, proven),
-    allTime: windowStats(builderAll, proven),
+    last7Days: windowStats(all7, proven, peaceRealSeqs),
+    allTime: windowStats(allTasks, proven, peaceRealSeqs),
     topMissing,
     logSha256: createHash("sha256").update(logText).digest("hex"),
   };
 }
 
 function pct(w: WindowStats): string {
-  if (w.percent === null) return "n/a (0 Builder tasks)";
+  if (w.percent === null) return "n/a (0 tasks)";
   return `${w.percent}% (${w.peaceaiAble}/${w.builderTasks})`;
 }
 
@@ -157,7 +255,7 @@ export function formatCoverageSummary(r: CoverageReport): string {
   return [
     "## PeaceAI vs Builder",
     "",
-    `Of Builder's logged tasks, % PeaceAI could do end-to-end using **only live-proven skills** (PeaceAI \`repo@sha\` landing on/before asOf, or \`LIVE_PROVEN_SINCE\` backed by such a log seq; approved-but-unproven skills do not count). asOf \`${r.asOf}\` MT; log sha256 \`${r.logSha256.slice(0, 16)}…\`.`,
+    `Of Builder's logged tasks plus PeaceAI **real tasks** (\`source: peace\`, PeaceSTOCKS@sha on main, not a proof/no-coverage record), % PeaceAI could do end-to-end using **only live-proven skills** for Builder rows (PeaceAI \`repo@sha\` landing on/before asOf, or \`LIVE_PROVEN_SINCE\` backed by such a log seq; approved-but-unproven skills do not count). PeaceAI real tasks count in both the numerator and the denominator. asOf \`${r.asOf}\` MT; log sha256 \`${r.logSha256.slice(0, 16)}…\`.`,
     "",
     `| window | PeaceAI-able |`,
     `|---|---|`,
@@ -183,5 +281,5 @@ export function denverYmd(now: Date = new Date()): string {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const head = readFileSync(LOG_PATH, "utf8");
   const asOf = process.argv[2] && /^\d{4}-\d{2}-\d{2}$/.test(process.argv[2]) ? process.argv[2]! : denverYmd();
-  process.stdout.write(formatCoverageSummary(coverageReport(head, asOf)));
+  process.stdout.write(formatCoverageSummary(coverageReport(head, asOf, { onMain: defaultOnMainChecker() })));
 }

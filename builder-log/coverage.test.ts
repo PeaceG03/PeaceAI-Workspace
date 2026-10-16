@@ -11,8 +11,11 @@ import {
   retagCountable,
   denverYmd,
   formatCoverageSummary,
+  isPeaceRealTask,
+  isProofOrNoCoverage,
   LIVE_LANDING,
   liveProvenSkills,
+  peaceStocksSha,
 } from "./coverage.ts";
 
 type Fields = {
@@ -87,7 +90,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags never raise coverage; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87), LOOP_FUNCTION (97), CHECK_OBJECT_LITERAL_ARGS (99) live-proven; LOOP_FUNCTION 5 still missing (logged before its approval)", () => {
+test("real log: 5/61 with PeaceAI real tasks (98/100/102) + Builder 26/70; seq 99 excluded as live proof; 97/101 proofs out; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -96,20 +99,30 @@ test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags
   assert.deepEqual(LIVE_PROVEN_SINCE.COMPLEX_FUNCTION, { since: "2026-10-15 18:57", seq: 87 });
   assert.deepEqual(LIVE_PROVEN_SINCE.LOOP_FUNCTION, { since: "2026-10-15 21:52", seq: 97 }); // #229 -> PeaceSTOCKS@22b0f3d
   assert.deepEqual(LIVE_PROVEN_SINCE.IMPORT_EDIT, { since: "2026-10-16 00:17", seq: 101 }); // #237 (A1) -> PeaceSTOCKS@eb8aadc; asOf 2026-10-15 below excludes it
-  const r = coverageReport(text, "2026-10-15");
-  for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION", "LOOP_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
-  // seq 99: #238 (rule public-test-case-objargs-v1) landed as PeaceSTOCKS@c095bbc, a by:PeaceAI repo@sha landing.
-  assert.ok(r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
+  // Allow every PeaceSTOCKS@sha that appears in the committed log (unit test of the formula; git ancestry is separate).
+  const onMain = (sha: string) => /^[0-9a-f]{7,40}$/.test(sha);
+  // asOf 2026-10-15: IMPORT_EDIT not yet in LIVE_PROVEN_SINCE window; seq 102 (2026-10-16) is outside last-7.
+  const r15 = coverageReport(text, "2026-10-15", { onMain });
+  for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION", "LOOP_FUNCTION"]) assert.ok(r15.liveProven.includes(s), s);
+  assert.ok(r15.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
+  assert.equal(r15.allTime.builderTasks, 61); // seq 102 still in all-time
+  assert.equal(r15.allTime.peaceaiAble, 5);
+  assert.equal(r15.last7Days.builderTasks, 60); // seq 102 dated 2026-10-16
+  assert.equal(r15.last7Days.peaceaiAble, 4);
+  // asOf today: full 5/61 including IMPORT_EDIT live-proven and seq 102 in the 7-day window.
+  const r = coverageReport(text, "2026-10-16", { onMain });
+  assert.ok(r.liveProven.includes("IMPORT_EDIT"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
-  assert.equal(r.allTime.builderTasks, 58);
-  // Counted: seq 26 TEST_CASE (logged able) + seq 70 retag THROW_GUARD (always approved; by:PeaceAI landing seq 76
-  // PeaceSTOCKS@49d26c9 references PeaceAI-Workspace#144). Not: 71/77 (before METHOD_GUARD approval), 78 (nothing
-  // landed), 10/13 (pre-approval WORKFLOW_STEP missing entries).
-  assert.equal(r.allTime.peaceaiAble, 2);
-  assert.equal(r.allTime.percent, 3.4);
-  assert.equal(r.last7Days.builderTasks, 58);
-  assert.equal(r.last7Days.peaceaiAble, 2);
-  assert.equal(r.last7Days.percent, 3.4);
+  // Denom: 58 Builder + 3 PeaceAI real (98, 100, 102). Seq 99 asked contains "live proof A2" so it is excluded;
+  // seqs 97 and 101 are proofs / no-coverage.
+  assert.equal(r.allTime.builderTasks, 61);
+  // Counted: seq 26 TEST_CASE + seq 70 retag THROW_GUARD + PeaceAI real 98/100/102.
+  // Not: 71/77 (before METHOD_GUARD approval), 78 (nothing landed), 10/13 (pre-approval WORKFLOW_STEP).
+  assert.equal(r.allTime.peaceaiAble, 5);
+  assert.equal(r.allTime.percent, 8.2);
+  assert.equal(r.last7Days.builderTasks, 61);
+  assert.equal(r.last7Days.peaceaiAble, 5);
+  assert.equal(r.last7Days.percent, 8.2);
   assert.deepEqual(r.topMissing.find((m) => m.skill === "METHOD_GUARD"), { skill: "METHOD_GUARD", count: 2 });
   assert.deepEqual(r.topMissing.find((m) => m.skill === "THROW_GUARD"), { skill: "THROW_GUARD", count: 1 });
   assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_STEP"), { skill: "WORKFLOW_STEP", count: 2 }, "seq 10/13 logged before WORKFLOW_STEP approval");
@@ -117,8 +130,11 @@ test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags
   assert.ok(!r.topMissing.some((m) => m.skill === "COMPLEX_FUNCTION"));
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /3\.4% \(2\/58\)/);
-  assert.equal(coverageReport(text, denverYmd()).allTime.percent, 3.4);
+  assert.match(md, /8\.2% \(5\/61\)/);
+  assert.equal(coverageReport(text, denverYmd(), { onMain }).allTime.percent, 8.2);
+  // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/58.
+  assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
+  assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 58);
 });
 
 test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
@@ -232,4 +248,101 @@ test("retag never raises: approval must predate the ORIGINAL task, and the task 
   assert.deepEqual(validateLog(ok), []);
   assert.equal(coverageReport(ok, "2026-10-15").allTime.peaceaiAble, 3);
   assert.equal(retagCountable(entriesOf(ok)[8]!, "THROW_GUARD", entriesOf(ok)), true);
+});
+
+test("PeaceAI real task: source: peace + on-main sha counts in num and denom", () => {
+  const text = FIXTURE + line({
+    seq: 9,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    date: "2026-10-14",
+    asked: "Peace's task PeaceAI-Workspace#900 (source: peace): guard something real",
+    changed: "PeaceAI-Workspace#900, PeaceSTOCKS@abcd123",
+    why: "PeaceAI produced the candidate for Peace's task #900 and it landed",
+  }) + "\n";
+  assert.deepEqual(validateLog(text), []);
+  const deny = coverageReport(text, "2026-10-15");
+  assert.equal(deny.allTime.builderTasks, 6);
+  assert.equal(deny.allTime.peaceaiAble, 2, "fail closed without onMain");
+  const allow = coverageReport(text, "2026-10-15", { onMain: (sha) => sha === "abcd123" });
+  assert.equal(allow.allTime.builderTasks, 7);
+  assert.equal(allow.allTime.peaceaiAble, 3);
+  assert.equal(isPeaceRealTask(entriesOf(text)[8]!, (sha) => sha === "abcd123"), true);
+});
+
+test("PeaceAI proof / no-coverage records are excluded even with source: peace", () => {
+  const proof = FIXTURE + line({
+    seq: 9,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    date: "2026-10-14",
+    asked: "Record THROW_GUARD live proof: Peace's task PeaceAI-Workspace#901 (source: peace)",
+    changed: "PeaceAI-Workspace#901, PeaceSTOCKS@abcd124",
+    why: "mechanism proof landed",
+  }) + "\n";
+  assert.deepEqual(validateLog(proof), []);
+  const r = coverageReport(proof, "2026-10-15", { onMain: () => true });
+  assert.equal(r.allTime.builderTasks, 6);
+  assert.equal(r.allTime.peaceaiAble, 2);
+  assert.equal(isProofOrNoCoverage(entriesOf(proof)[8]!), true);
+
+  const noCov = FIXTURE + line({
+    seq: 9,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    date: "2026-10-14",
+    asked: "Peace's task PeaceAI-Workspace#902 (source: peace): mechanism only",
+    changed: "PeaceAI-Workspace#902, PeaceSTOCKS@abcd125",
+    why: "behavior-neutral mechanism proof, no coverage credit",
+  }) + "\n";
+  assert.deepEqual(validateLog(noCov), []);
+  assert.equal(coverageReport(noCov, "2026-10-15", { onMain: () => true }).allTime.peaceaiAble, 2);
+  assert.equal(isProofOrNoCoverage(entriesOf(noCov)[8]!), true);
+});
+
+test("PeaceAI entry without source: peace is excluded from real-task credit", () => {
+  const text = FIXTURE + line({
+    seq: 9,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    date: "2026-10-14",
+    asked: "Guard planBackfillRanges against non-positive maxRanges, landed",
+    changed: "PeaceSTOCKS@abcd126",
+    why: "candidate chosen in review and landed on main",
+  }) + "\n";
+  assert.deepEqual(validateLog(text), []);
+  assert.equal(isPeaceRealTask(entriesOf(text)[8]!, () => true), false);
+  assert.equal(coverageReport(text, "2026-10-15", { onMain: () => true }).allTime.builderTasks, 6);
+  assert.equal(coverageReport(text, "2026-10-15", { onMain: () => true }).allTime.peaceaiAble, 2);
+});
+
+test("PeaceAI real task: sha not on main is excluded (fail closed)", () => {
+  const text = FIXTURE + line({
+    seq: 9,
+    skill: "THROW_GUARD",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    date: "2026-10-14",
+    asked: "Peace's task PeaceAI-Workspace#903 (source: peace): guard something",
+    changed: "PeaceAI-Workspace#903, PeaceSTOCKS@deadbee",
+    why: "PeaceAI produced the candidate for Peace's task #903 and it landed",
+  }) + "\n";
+  assert.deepEqual(validateLog(text), []);
+  assert.equal(peaceStocksSha("PeaceSTOCKS@deadbee"), "deadbee");
+  assert.equal(isPeaceRealTask(entriesOf(text)[8]!, (sha) => sha === "onmain1"), false);
+  assert.equal(isPeaceRealTask(entriesOf(text)[8]!, null), false, "null checker fails closed");
+  const r = coverageReport(text, "2026-10-15", { onMain: (sha) => sha === "onmain1" });
+  assert.equal(r.allTime.builderTasks, 6);
+  assert.equal(r.allTime.peaceaiAble, 2);
+  // Checker throw also fails closed.
+  assert.equal(
+    isPeaceRealTask(entriesOf(text)[8]!, () => {
+      throw new Error("git missing");
+    }),
+    false,
+  );
 });

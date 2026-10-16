@@ -42,6 +42,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./node_modules/.bin/tsx builder-log/trace.ts --no-results --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: PeaceAI vs Builder coverage
+        env:
+          PEACESTOCKS_CLONE: ${{ runner.temp }}/stocks
         run: ./node_modules/.bin/tsx builder-log/coverage.ts >> "$GITHUB_STEP_SUMMARY"
 
   # PR #217 Results cross-check (Architect): push to main only, peaceai-core environment, read-only
