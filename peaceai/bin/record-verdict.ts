@@ -27,6 +27,12 @@ if (!attempt) {
   out({ status: "no-task" });
   process.exit(0);
 }
+// Carry-forward (lib/carry.ts): a carried verdict applies only to the attempt it was checked against.
+const expectRun = process.env.EXPECT_RUN_ID ?? "";
+if (expectRun && attempt.task.runId !== expectRun) {
+  out({ status: "carry-stale" });
+  process.exit(0);
+}
 const { label, verdict } = parsed.command;
 const shown = attempt.ranking.presentation.find((p) => p.label === label);
 if (label !== null && !shown) {
