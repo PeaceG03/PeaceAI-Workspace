@@ -87,7 +87,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags never raise coverage; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87), LOOP_FUNCTION (97) live-proven; LOOP_FUNCTION 5 still missing (logged before its approval)", () => {
+test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags never raise coverage; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87), LOOP_FUNCTION (97), CHECK_OBJECT_LITERAL_ARGS (99) live-proven; LOOP_FUNCTION 5 still missing (logged before its approval)", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -97,7 +97,8 @@ test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags
   assert.deepEqual(LIVE_PROVEN_SINCE.LOOP_FUNCTION, { since: "2026-10-15 21:52", seq: 97 }); // #229 -> PeaceSTOCKS@22b0f3d
   const r = coverageReport(text, "2026-10-15");
   for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION", "LOOP_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
-  assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
+  // seq 99: #238 (rule public-test-case-objargs-v1) landed as PeaceSTOCKS@c095bbc, a by:PeaceAI repo@sha landing.
+  assert.ok(r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
   assert.equal(r.allTime.builderTasks, 58);
   // Counted: seq 26 TEST_CASE (logged able) + seq 70 retag THROW_GUARD (always approved; by:PeaceAI landing seq 76
