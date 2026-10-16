@@ -294,7 +294,7 @@ jobs:
             echo "refused: .github/workflows/** goes in only through a normal PR that Architect merges"; exit 1
           fi
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
-          git add -A -- src
+          "$GITHUB_WORKSPACE/tools/peaceai/bin/stage-chosen.sh" "$RUNNER_TEMP/chosen/chosen.diff"
           git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
             commit -q -m "PeaceAI candidate chosen in review of #${ISSUE_NUMBER}"
           git push -q origin "HEAD:refs/heads/$branch"
@@ -406,7 +406,7 @@ jobs:
             echo "refused: .github/workflows/** goes in only through a normal PR that Architect merges"; exit 1
           fi
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
-          git add -A -- src
+          "$GITHUB_WORKSPACE/tools/peaceai/bin/stage-chosen.sh" "$RUNNER_TEMP/chosen/chosen.diff"
           git -c user.name=PeaceG03 -c user.email=301894882+PeaceG03@users.noreply.github.com \
             commit -q -m "PeaceAI candidate chosen in review of PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}"
           auth="$(printf 'x-access-token:%s' "$TARGET_PR_TOKEN" | base64 -w0)"
@@ -509,7 +509,7 @@ jobs:
             echo "refused: .github/workflows/** goes in only through a normal PR that Architect merges"; exit 1
           fi
           git apply --whitespace=nowarn "$RUNNER_TEMP/chosen/chosen.diff"
-          git add -A -- src
+          "$GITHUB_WORKSPACE/tools/peaceai/bin/stage-chosen.sh" "$RUNNER_TEMP/chosen/chosen.diff"
           # No background auto-gc/maintenance: a detached gc writing .git/objects raced the cleanup below
           # ("rm: cannot remove .git/objects: Directory not empty", #86) and failed a patch that was already built.
           GIT_AUTHOR_DATE="$COMMENT_CREATED_AT" GIT_COMMITTER_DATE="$COMMENT_CREATED_AT" \
