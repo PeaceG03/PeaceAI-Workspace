@@ -19,7 +19,6 @@ export const MISSING_SKILLS = [
   "TSCONFIG_SCRIPT", // package script / tsconfig change
   "PEACEAI_SELF_CHANGE", // PeaceAI's own tooling: protected, never a PeaceAI edit by design
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
-  "ENV_FIX", // box/runner environment, no repo edit
 ] as const;
 /**
  * Skills approved later: approved for entries at or after the landing time (MT, "YYYY-MM-DD HH:MM"), and still a
@@ -31,6 +30,7 @@ export const APPROVED_SINCE = {
   METHOD_GUARD: "2026-10-15 12:01", // public-method-guard-v1, #201 merged bdd1e27
   COMPLEX_FUNCTION: "2026-10-15 16:27", // public-complex-function-v1 (loop-free only), #211 merged f33baa1; earlier entries keep "missing skill"
   LOOP_FUNCTION: "2026-10-15 21:29", // public-loop-function-v1 (bounded for/for-of), approval PR #225 merged 95c1e79 (03:29Z); earlier entries keep "missing skill"
+  ENV_FIX: "2026-10-16 11:41", // public-env-fix-v1 (strict env flag edit), approval PR #292 merged 6fdb337 (17:41Z); earlier entries keep "missing skill"
   IMPORT_EDIT: "2026-10-15 22:33", // public-import-edit-v2, approval PR #234 merged ba5f2b7 (04:33Z); earlier entries keep "missing skill"
 } as const;
 /**
