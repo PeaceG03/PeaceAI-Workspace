@@ -112,6 +112,9 @@ for fid, t in enumerate(core_texts):
 # Backstop (Architect): scattered copying with no long run. Refused when at least CONTAIN_TOTAL distinct shingles of
 # the doc are private core shingles AND they are at least CONTAIN_FRAC of the doc's distinct shingles.
 CONTAIN_TOTAL, CONTAIN_FRAC = 64, 0.10
+# Auditor (#227, non-blocking): OR arm. A doc with at least CONTAIN_ABS distinct private core shingles is refused
+# whatever its size (a big doc can dilute a large copy under 10%). Highest clean-corpus count seen: 288.
+CONTAIN_ABS = 400
 
 
 def private_run(text):
@@ -239,11 +242,19 @@ if schema == "finetune":
 _git_files = {}
 
 
+def clone_is_github_repo(gd, repo):
+    u = subprocess.run(["git", "-C", gd, "remote", "get-url", "origin"], capture_output=True, text=True)
+    url = u.stdout.strip() if u.returncode == 0 else ""
+    host_path = url.split("://", 1)[-1].removeprefix("git@").replace("github.com:", "github.com/", 1).removesuffix(".git")
+    return host_path == f"github.com/{repo}"
+
+
 def git_file(repo, sha, path):
     key = (repo, sha, path)
     if key not in _git_files:
         gd = os.path.join(args.source_root, *repo.split("/"))
-        r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{sha}:{path}"], capture_output=True) if os.path.isdir(gd) else None
+        # Auditor (#227, non-blocking): the clone must BE the GitHub repo: its origin URL is pinned to github.com/<repo>.
+        r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{sha}:{path}"], capture_output=True) if os.path.isdir(gd) and clone_is_github_repo(gd, repo) else None
         if r is not None and r.returncode != 0 and subprocess.run(["git", "-C", gd, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True).returncode != 0:
             subprocess.run(["git", "-C", gd, "fetch", "-q", "origin", sha], capture_output=True)
             r = subprocess.run(["git", "-C", gd, "cat-file", "blob", f"{sha}:{path}"], capture_output=True)
@@ -299,7 +310,7 @@ for m in man:
     pin_bad = bool(hit_pin) and not pin_ok
     allowlisted += pin_ok
     contained, priv_hits, priv_frac = private_run(t)  # longest one-file verbatim private span; scattered private shingles
-    scattered = priv_hits >= CONTAIN_TOTAL and priv_frac >= CONTAIN_FRAC
+    scattered = (priv_hits >= CONTAIN_TOTAL and priv_frac >= CONTAIN_FRAC) or priv_hits >= CONTAIN_ABS
     exact = contained >= CONTAIN_RUN or scattered or pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
     cands = set()
     for b in range(BANDS):
