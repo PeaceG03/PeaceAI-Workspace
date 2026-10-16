@@ -19,6 +19,15 @@ const approved = admitRules(specs, loadApprovedList(join(repo, "peaceai/rules/ap
 const kinds = new Set(approved.map((s) => s.kind));
 // The loop rule's entry appears only once public-loop-function-v1 is approved (#220/#221); the same expectations hold either way.
 const LOOP = approved.some((s) => s.id === "public-loop-function-v1") ? "public-loop-function-v1=task_unparsed; " : "";
+// #234: expected refusal lines derive from approved.json, so they hold with and without each pending approval
+// (e.g. public-import-edit-v2). Every approved rule but top-v1 reports task_unparsed; top-v1 reports `top` (omitted when
+// it built a candidate). Rules that never report on a guard task (add-function, test-case, ...) are not listed.
+// Entries sort by id and formatRefusals keeps at most MAX_ENTRIES=5 (intentional truncation).
+const REPORTING = new Set(["public-complex-function-v1", "public-import-edit-v2", "public-loop-function-v1", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1"]);
+const expected = (top: string | null) =>
+  approved.map((s) => s.id).filter((id) => REPORTING.has(id)).sort()
+    .flatMap((id) => (id === "public-throw-guard-top-v1" ? (top === null ? [] : [`${id}=${top}`]) : [`${id}=task_unparsed`]))
+    .slice(0, 5).join("; ");
 const isTest = (p: string) => p.endsWith(".test.ts");
 const SRC = [
   "export function eligibilityForBarCount(barCount: number): string {",
@@ -51,17 +60,17 @@ test("#191: `limit` is reported as unsafe_condition: limit by top-v1, with no ca
   const r = refusals("!Number.isInteger(limit) || limit < 0");
   assert.equal(r.made, 0);
   // Non-matching kinds report task_unparsed so RULE_REFUSALS / the comment show every refusal.
-  assert.equal(r.line, `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-top-v1=unsafe_condition: limit; public-throw-guard-v1=task_unparsed`);
+  assert.equal(r.line, expected("unsafe_condition: limit"));
 });
 
 test("other refusal reasons: unknown function, several unknown names, disallowed call; a good task has none", () => {
-  assert.equal(refusals("barCount < 0", "nope").line, `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-top-v1=function_not_found; public-throw-guard-v1=task_unparsed`);
-  assert.equal(refusals("limit < 0 || max > barCount").line, `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-top-v1=unsafe_condition: limit,max; public-throw-guard-v1=task_unparsed`);
-  assert.equal(refusals("eval(barCount)").line, `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-top-v1=unsafe_condition: eval; public-throw-guard-v1=task_unparsed`);
+  assert.equal(refusals("barCount < 0", "nope").line, expected("function_not_found"));
+  assert.equal(refusals("limit < 0 || max > barCount").line, expected("unsafe_condition: limit,max"));
+  assert.equal(refusals("eval(barCount)").line, expected("unsafe_condition: eval"));
   const ok = refusals("!Number.isInteger(barCount) || barCount < 0");
   assert.equal(ok.made, 1);
   // Top-v1 produced a candidate; other kinds still report task_unparsed (trigger mismatch).
-  assert.equal(ok.line, `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-v1=task_unparsed`);
+  assert.equal(ok.line, expected(null));
 });
 
 test("unknownNames: free names only (no property names, no allowed built-ins), sorted, max 5", () => {
@@ -73,7 +82,7 @@ test("unknownNames: free names only (no property names, no allowed built-ins), s
 test("reasons never echo secrets typed into the issue condition, or arbitrary text", () => {
   // Fake credentials typed into the ISSUE CONDITION itself (the only user text a reason can echo).
   // Every bypass Auditor found on 1103251 must print the code alone; `limit` on its own stays printed.
-  const CODE = `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-top-v1=unsafe_condition; public-throw-guard-v1=task_unparsed`;
+  const CODE = expected("unsafe_condition");
   // fake(prefix, body): every fake credential is joined at runtime so no whole token literal is in this file.
   const fake = (prefix: string, body: string) => [prefix, body].join("");
   const BODY = fake("A1b2C3d4E5f6", "G7h8I9j0K1l2M3n4O5p6Q7r8");
@@ -133,7 +142,7 @@ test("reasons never echo secrets typed into the issue condition, or arbitrary te
       assert.equal(noCandidateComment(`x-v1=${reason}`), NO_CANDIDATE_TEXT, reason);
     }
   }
-  assert.equal(refusals("!Number.isInteger(limit) || limit < 0").line, `public-complex-function-v1=task_unparsed; ${LOOP}public-method-guard-v1=task_unparsed; public-throw-guard-top-v1=unsafe_condition: limit; public-throw-guard-v1=task_unparsed`, "limit still printed");
+  assert.equal(refusals("!Number.isInteger(limit) || limit < 0").line, expected("unsafe_condition: limit"), "limit still printed");
   for (const ok of ["limit", "maxBars", "maxBarCountLimit", "aBCDe"]) assert.ok(allowedName(ok), ok);
   for (const bad of ["Limit", "aBCDEf", "lim1t", "a_b", "abcdefghijklmnopqrstuvwxy", "aBcDeFgHiJkL", "maxBarCountLimitValueX"]) assert.ok(!allowedName(bad), bad);
   assert.deepEqual(cleanRefusals([{ id: "x-v1", reason: `leak: "${fake("gh" + "p_", "abc")}"\nmore` }, { id: "../etc", reason: "function_not_found" }]), [{ id: "x-v1", reason: "refused" }]);
