@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { LM_JOBS } from "../lib/lm.ts";
 
 const dir = ".github/workflows";
 const files = readdirSync(dir).filter((f) => f.endsWith(".yml"));
@@ -249,6 +250,8 @@ test("m49-posttrain-memcheck: one job, core env only, read-only keys, guarded, n
   const text = read("m49-posttrain-memcheck.yml");
   const j = jobs(text);
   assert.deepEqual([...j.keys()], ["memcheck"]);
+  // Run 38902887991: the job that runs lm-memcheck.ts must be an LM job, else sampling is refused (LM_JOB_REFUSED).
+  assert.ok((LM_JOBS as readonly string[]).includes("memcheck"), "memcheck job id must be in LM_JOBS");
   const m = j.get("memcheck")!;
   // Triggers: a completed peace-lm-train-m49 run (success checked in `if`) or a dispatch with a run id; nothing else.
   assert.match(text, /^on:\n  workflow_run:\n    workflows: \[peace-lm-train-m49\]\n    types: \[completed\]\n  workflow_dispatch:\n    inputs:\n      run_id:\n/m);
