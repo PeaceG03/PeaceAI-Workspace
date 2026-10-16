@@ -493,15 +493,15 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/review.md"
 
   # Carry-forward verdicts (lib/carry.ts). Trusted, after Job C recorded and the review posted: reads only Results
-  # (read-only clone; results-write.sh commits nothing because carry-check.ts writes nothing) and the issue, plus an
-  # anonymous clone of the public target. No write token; Job B stays sandboxed and is never re-entered.
+  # (plain read-only clone with PEACEAI_RESULTS_READ_KEY; no write key, no push) and the issue, plus an anonymous
+  # clone of the public target. Its core environment is main-only and holds read-only keys. Job B is never re-entered.
   carry:
     name: carry-forward check (pending verdict)
     needs: [select, record, review]
-    if: always() && needs.select.outputs.issue != '' && needs.record.result == 'success' && needs.review.result == 'success'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.select.outputs.issue != '' && needs.record.result == 'success' && needs.review.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: peaceai-results
+    environment: peaceai-core
     permissions:
       contents: read
       issues: read
@@ -509,24 +509,41 @@ jobs:
       carry: ${{ steps.check.outputs.carry }}
     env:
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
+      LANDING_SHA256: |-
+        bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Verify the checkout and the key script before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$LANDING_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Clone Results read-only
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_READ_KEY is not set in the peaceai-core environment: refused (fail closed)"; exit 1; }
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 git@github.com:PeaceG03/PeaceAI-Results.git "$RUNNER_TEMP/results"
       - name: Check all four carry conditions against the pending carry (trusted outputs only)
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
           BODY_FILE: ${{ runner.temp }}/carry-comment.md
-        run: |
-          RUN_ID="$GITHUB_RUN_ID" ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "carry check #$ISSUE_NUMBER (writes nothing)" \
-            ./node_modules/.bin/tsx peaceai/bin/carry-check.ts
+        run: RUN_ID="$GITHUB_RUN_ID" RESULTS_DIR="$RUNNER_TEMP/results" ./node_modules/.bin/tsx peaceai/bin/carry-check.ts
+      - name: Delete the Results clone
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/results" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP"/carry-target-*
       - name: Hand the carry comment to the apply job
         if: steps.check.outputs.carry == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

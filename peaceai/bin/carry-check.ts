@@ -1,4 +1,4 @@
-// peace-task `carry` job (trusted; Results read-only through results-write.sh, issue read-only, no write token):
+// peace-task `carry` job (trusted; plain read-only Results clone at RESULTS_DIR, issue read-only, no write token):
 // after Job C recorded a regrade attempt, decide whether the owner's original verdict carries (lib/carry.ts).
 // Outputs carry=true|false and reason; on true writes the carry comment body to BODY_FILE. Nothing is written.
 import { spawnSync } from "node:child_process";

@@ -82,11 +82,9 @@ test("peace-task: serialized sweep, core env only on Job A and Job B2, Results e
   assert.match(c, /environment: peaceai-results/);
   assert.match(c, /PEACEAI_RESULTS_DEPLOY_KEY/);
   for (const [name, block] of j) {
-    if (name !== "generate" && name !== "regate") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
+    if (name !== "generate" && name !== "regate" && name !== "carry") assert.ok(!block.includes("peaceai-core") && !block.includes("CORE_DEPLOY_KEY"), name);
     // M9: the flag-gated lm-fill job reads the verified model from Results (no core, no write).
-    // Carry-forward: the carry job reads Results read-only (results-write.sh commits nothing; contents/issues read only).
-    if (name !== "record" && name !== "lm-fill" && name !== "carry") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
-    if (name === "carry") assert.ok(/permissions:\n\s+contents: read\n\s+issues: read\n/.test(block) && block.includes("(writes nothing)") && !/write/.test(block.replace(/results-write\.sh|\(writes nothing\)/g, "")), "carry job is read-only");
+    if (name !== "record" && name !== "lm-fill") assert.ok(!block.includes("environment: peaceai-results") && !block.includes("RESULTS_DEPLOY_KEY"), name);
   }
   assert.match(j.get("review")!, /needs: \[select, generate, record\]/);
   assert.match(j.get("review")!, /if: always\(\) && needs\.record\.result == 'success' && needs\.generate\.outputs\.candidates != '0'/);
@@ -316,4 +314,29 @@ test("#273 prep: peace-approve-rule concurrency is per issue and never cancels, 
   assert.equal(m![1], "peace-approve-rule-${{ github.event.issue.number || github.event_name }}");
   assert.equal(m![2], "false");
   assert.equal(text.match(/^\s*concurrency:/gm)!.length, 1, "no job-level group re-serialising approvals");
+});
+
+test("carry-forward carry job: core env (main-only, read-only keys), read-only Results clone, no write key and no push reachable", () => {
+  const text = read("peace-task.yml");
+  const j = jobs(text);
+  const c = j.get("carry")!;
+  assert.ok(c, "carry job");
+  assert.equal((c.match(/^ +environment:/gm) ?? []).length, 1); assert.match(c, /environment: peaceai-core\n/);
+  assert.match(c, /permissions:\n      contents: read\n      issues: read\n    outputs:/);
+  assert.ok(!/: write/.test(c), "no write permission");
+  assert.deepEqual([...new Set(c.match(/secrets\.[A-Z_]+/g))], ["secrets.PEACEAI_RESULTS_READ_KEY"]);
+  assert.ok(!/PEACEAI_RESULTS_DEPLOY_KEY|CORE_DEPLOY_KEY|peaceai-results\b|results-write\.sh|git push|git commit|gh workflow run|gh api [^\n]*-F|gh issue comment/.test(c), "no write key, no push, no write call");
+  assert.match(c, /persist-credentials: false/); assert.equal((c.match(/actions\/checkout@/g) ?? []).length, 1);
+  assert.match(c, /if: always\(\) && github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main' &&/);
+  assert.match(c, /\[ -n "\$\{DEPLOY_KEY:-\}" \] \|\| \{ echo "PEACEAI_RESULTS_READ_KEY is not set in the peaceai-core environment: refused \(fail closed\)"; exit 1; \}/);
+  assert.match(c, /\.\/peaceai\/bin\/with-deploy-key\.sh git clone --quiet --depth 1 git@github\.com:PeaceG03\/PeaceAI-Results\.git "\$RUNNER_TEMP\/results"\n/);
+  const at = (s: string) => { const i = c.indexOf(s); assert.ok(i >= 0, s); return i; };
+  assert.ok(at("Verify the checkout and the key script") < at("secrets.PEACEAI_RESULTS_READ_KEY"));
+  assert.match(c, /bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai\/bin\/with-deploy-key\.sh/);
+  assert.ok(at("carry-check.ts") < at("Delete the Results clone") && at("Delete the Results clone") < at("upload-artifact@"));
+  // Scripts the job runs never reach a push or results-write.sh.
+  const scripts = [...new Set(c.match(/peaceai\/bin\/[\w.-]+\.(?:ts|sh)/g))];
+  for (const f of scripts) assert.ok(!/results-write\.sh|git push|"push"|'push'/.test(readFileSync(`${dir}/../../${f}`, "utf8")), f);
+  // The write key stays in the separate peaceai-results environment, only on the record path.
+  assert.ok(!j.get("carry-apply")!.includes("secrets."), "carry-apply holds no key");
 });
