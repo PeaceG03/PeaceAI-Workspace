@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { LIVE_LANDING_REF, LIVE_PROVEN_SINCE, validateLiveProven, validateLog, type Entry } from "./check.ts";
+import { appendOnly, LIVE_LANDING_REF, LIVE_PROVEN_SINCE, retagTarget, validateLiveProven, validateLog, validateRetags, type Entry } from "./check.ts";
 import {
   coverageReport,
   denverYmd,
@@ -84,7 +84,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 12/58 = 20.7% by skill; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; CHECK_OBJECT_LITERAL_ARGS not", () => {
+test("real log: 7/58 = 12.1% after retags; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; LOOP_FUNCTION 5 missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -94,17 +94,18 @@ test("real log: 12/58 = 20.7% by skill; WORKFLOW_STEP (seq 85), METHOD_GUARD (86
   const r = coverageReport(text, "2026-10-15");
   for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
   assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
-  // Counted by skill: all 9 COMPLEX_FUNCTION Builder tasks count, though the engine refuses loops (see PR notes).
+  // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
   assert.equal(r.allTime.builderTasks, 58);
-  assert.equal(r.allTime.peaceaiAble, 12);
-  assert.equal(r.allTime.percent, 20.7);
+  assert.equal(r.allTime.peaceaiAble, 7);
+  assert.equal(r.allTime.percent, 12.1);
   assert.equal(r.last7Days.builderTasks, 58);
-  assert.equal(r.last7Days.peaceaiAble, 12);
-  assert.equal(r.last7Days.percent, 20.7);
+  assert.equal(r.last7Days.peaceaiAble, 7);
+  assert.equal(r.last7Days.percent, 12.1);
+  assert.deepEqual(r.topMissing.find((m) => m.skill === "LOOP_FUNCTION"), { skill: "LOOP_FUNCTION", count: 5 });
   assert.ok(!r.topMissing.some((m) => m.skill === "WORKFLOW_STEP" || m.skill === "COMPLEX_FUNCTION"));
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
-  assert.match(md, /20\.7% \(12\/58\)/);
+  assert.match(md, /12\.1% \(7\/58\)/);
 });
 
 test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
@@ -125,4 +126,42 @@ test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
   assert.ok(
     validateLiveProven(entries, { TEST_CASE_APPEND: { since: "2026-10-13 22:36", seq: 59 } }).some((e) => /repo@sha/.test(e)),
   );
+});
+
+const R = (seq: number, target: number, skill: string, mark: string, by: "Builder" | "PeaceAI" = "Builder") =>
+  line({ seq, skill, mark, by, date: "2026-10-15", time: "19:35", changed: `none (retag seq ${target})` });
+
+test("retag: coverage uses the latest tag; retag lines are not tasks", () => {
+  const text = FIXTURE + [
+    R(9, 6, "THROW_GUARD", "PeaceAI-able today"),
+    R(10, 7, "LOOP_FUNCTION", "missing skill LOOP_FUNCTION"),
+    R(11, 7, "WORKFLOW_JOB", "missing skill WORKFLOW_JOB"),
+  ].join("\n") + "\n";
+  assert.deepEqual(validateLog(text), []);
+  assert.equal(retagTarget({ changed: "none (retag seq 6)" }), 6);
+  assert.equal(retagTarget({ changed: "none (fixture)" }), null);
+  const r = coverageReport(text, "2026-10-15");
+  assert.equal(r.allTime.builderTasks, 6, "the three retag lines are not counted as tasks");
+  // seq 6 WORKFLOW_JOB -> THROW_GUARD (live-proven): able goes 2 -> 3
+  assert.equal(r.allTime.peaceaiAble, 3);
+  // seq 7 retagged twice: the latest (WORKFLOW_JOB) wins, LOOP_FUNCTION does not appear
+  assert.ok(!r.topMissing.some((m) => m.skill === "LOOP_FUNCTION"));
+  assert.deepEqual(r.topMissing.find((m) => m.skill === "WORKFLOW_JOB"), { skill: "WORKFLOW_JOB", count: 1 });
+});
+
+test("retag: the referenced seq must exist, be earlier, be a Builder task and not itself a retag", () => {
+  const bad = (extra: string[]) => validateLog(FIXTURE + extra.join("\n") + "\n");
+  assert.ok(bad([R(9, 42, "THROW_GUARD", "PeaceAI-able today")]).some((e) => /missing or later seq 42/.test(e)));
+  assert.ok(bad([R(9, 9, "THROW_GUARD", "PeaceAI-able today")]).some((e) => /missing or later seq 9/.test(e)));
+  assert.ok(bad([R(9, 3, "THROW_GUARD", "PeaceAI-able today")]).some((e) => /must be a Builder task/.test(e)));
+  assert.ok(bad([R(9, 6, "THROW_GUARD", "PeaceAI-able today"), R(10, 9, "OPS_ACTION", "missing skill OPS_ACTION")]).some((e) => /references another retag/.test(e)));
+  assert.ok(validateRetags(entriesOf(FIXTURE + R(9, 6, "THROW_GUARD", "PeaceAI-able today", "PeaceAI") + "\n")).some((e) => /must be by Builder/.test(e)));
+});
+
+test("retag: appending keeps the log append-only; editing the retagged line instead is refused", () => {
+  const withRetag = FIXTURE + R(9, 6, "THROW_GUARD", "PeaceAI-able today") + "\n";
+  assert.deepEqual(appendOnly(FIXTURE, withRetag), []);
+  const edited = FIXTURE.replace('"skill":"WORKFLOW_JOB","mark":"missing skill WORKFLOW_JOB"', '"skill":"THROW_GUARD","mark":"PeaceAI-able today"');
+  assert.notEqual(edited, FIXTURE);
+  assert.equal(appendOnly(FIXTURE, edited).length, 1);
 });

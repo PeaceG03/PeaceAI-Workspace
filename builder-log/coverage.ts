@@ -5,7 +5,7 @@
 // against a backing PeaceAI repo@sha seq). Approved-but-unproven skills do not count.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { LIVE_LANDING_REF, LIVE_PROVEN_SINCE, LOG_PATH, validateLog, type Entry } from "./check.ts";
+import { LIVE_LANDING_REF, LIVE_PROVEN_SINCE, LOG_PATH, retagTarget, validateLog, type Entry } from "./check.ts";
 
 /** @deprecated use LIVE_LANDING_REF from check.ts */
 export const LIVE_LANDING = LIVE_LANDING_REF;
@@ -86,7 +86,10 @@ export function coverageReport(logText: string, asOfDate: string, topN = 10): Co
   if (!Number.isInteger(topN) || topN < 1 || topN > 50) throw new Error("topN out of range");
   const entries = parseLogEntries(logText);
   const proven = liveProvenSkills(entries, asOfDate);
-  const builderAll = entries.filter((e) => e.by === "Builder");
+  // Retag lines are not tasks; each Builder task takes the skill of its latest retag (log order), if any.
+  const retag = new Map<number, Entry["skill"]>();
+  for (const e of entries) { const t = retagTarget(e); if (t !== null) retag.set(t, e.skill); }
+  const builderAll = entries.filter((e) => e.by === "Builder" && retagTarget(e) === null).map((e) => (retag.has(e.seq) ? { ...e, skill: retag.get(e.seq)! } : e));
   const start7 = addDaysYmd(asOfDate, -6);
   const builder7 = builderAll.filter((e) => e.date >= start7 && e.date <= asOfDate);
   const miss = new Map<string, number>();

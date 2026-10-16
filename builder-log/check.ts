@@ -21,6 +21,7 @@ export const MISSING_SKILLS = [
   "PEACEAI_SELF_CHANGE", // PeaceAI's own tooling: protected, never a PeaceAI edit by design
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
   "ENV_FIX", // box/runner environment, no repo edit
+  "LOOP_FUNCTION", // new function whose body needs a loop (COMPLEX_FUNCTION refuses loops: loop_unsupported)
 ] as const;
 /**
  * Skills approved later: approved for entries at or after the landing time (MT, "YYYY-MM-DD HH:MM"), and still a
@@ -98,6 +99,32 @@ export function validateEntry(raw: unknown, expectSeq: number): string[] {
 }
 
 
+/**
+ * Retag (append-only correction of an earlier entry's skill): a Builder line whose `changed` is exactly
+ * `none (retag seq N)`. Its `skill` replaces seq N's skill for coverage (latest retag wins); it is not a task.
+ */
+export const RETAG = /^none \(retag seq ([1-9]\d*)\)$/;
+export const retagTarget = (e: Pick<Entry, "changed">): number | null => {
+  const m = RETAG.exec(e.changed);
+  return m ? Number(m[1]) : null;
+};
+
+/** A retag must point at an earlier, existing, non-retag Builder entry. */
+export function validateRetags(entries: readonly Entry[]): string[] {
+  const bySeq = new Map(entries.map((e) => [e.seq, e]));
+  const errs: string[] = [];
+  for (const e of entries) {
+    const t = retagTarget(e);
+    if (t === null) continue;
+    if (e.by !== "Builder") errs.push(`seq ${e.seq}: a retag must be by Builder`);
+    const target = bySeq.get(t);
+    if (!target || t >= e.seq) { errs.push(`seq ${e.seq}: retag references missing or later seq ${t}`); continue; }
+    if (retagTarget(target) !== null) errs.push(`seq ${e.seq}: retag references another retag (seq ${t})`);
+    if (target.by !== "Builder") errs.push(`seq ${e.seq}: retag target seq ${t} must be a Builder task`);
+  }
+  return errs;
+}
+
 /** Refuse LIVE_PROVEN_SINCE entries that are not backed by a PeaceAI repo@sha log line for that skill. */
 export function validateLiveProven(
   entries: readonly Entry[],
@@ -150,6 +177,7 @@ export function validateLog(text: string): string[] {
   });
   // LIVE_PROVEN_SINCE is checked once the log is long enough to contain every named seq (short schema
   // fixtures are not required to embed the full backing history).
+  if (errs.length === 0) errs.push(...validateRetags(entries));
   if (errs.length === 0) {
     const need = Object.values(LIVE_PROVEN_SINCE).reduce((m, r) => Math.max(m, r.seq), 0);
     if (entries.length >= need) errs.push(...validateLiveProven(entries));
