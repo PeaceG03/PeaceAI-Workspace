@@ -56,9 +56,20 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
 
 // ---- memorization check
 
-export interface Sample { id: string; kind: string; prompt_tail: string; text: string }
+/** id is unique per sample: `<prompt id>:<decoding>` (infer.py); prompt is the prompt id both decodings share. */
+export interface Sample { id: string; prompt?: string; kind: string; prompt_tail: string; text: string }
+/** The prompt a sample continues: its `prompt` field, else the id before any `:<decoding>` suffix. */
+export const promptIdOf = (s: Sample): string => s.prompt ?? s.id.split(":")[0]!;
+/** Sample ids that occur more than once (a duplicate (id, decoding) pair fails the memcheck closed). */
+export function duplicateSampleIds(samples: readonly Sample[]): string[] {
+  const seen = new Set<string>(), dup = new Set<string>();
+  for (const s of samples) { const k = String(s.id); if (seen.has(k)) dup.add(k); seen.add(k); }
+  return [...dup];
+}
 export interface SampleScan {
   samples: number;
+  /** Samples the loop actually scanned; must equal samples (Auditor: scanned == returned, else FAIL). */
+  scannedSamples?: number;
   /** Samples that count toward MIN_MEMCHECK_SAMPLES: those from a non-empty prompt (ids not `empty-*`). Empty-prompt
    *  outputs are scanned but never count toward the minimum (Auditor, run 38905982366). */
   countedSamples?: number;
@@ -81,9 +92,10 @@ export interface PublicOnlyExemption { prompts: ReadonlyMap<string, string>; tra
 
 /** Scans model output for core text (the core-text scanner, public corpus as the baseline) and personal info. */
 export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex, coreRaw: SubstringIndex | null, exempt: PublicOnlyExemption | null = null): SampleScan {
-  const scan: SampleScan = { samples: samples.length, countedSamples: samples.filter((s) => !s.id.startsWith("empty-")).length, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
+  const scan: SampleScan = { samples: samples.length, countedSamples: samples.filter((s) => !promptIdOf(s).startsWith("empty-")).length, scannedSamples: 0, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
   if (exempt) { scan.substringRule = "core-free-64"; scan.unexplainedHits = 0; scan.countedHits = 0; scan.longestUnexplained = 0; scan.unexplainedRuns = []; }
   for (const s of samples) {
+    scan.scannedSamples! += 1;
     // The prompt's last partial line is joined to the output, so a core line the model completes is caught too.
     // When the model added fewer than SHINGLE_LINE non-space characters to that line, the line is the prompt's
     // own text (an echo, not model output) and is left out; every generated line after it is still scanned.
@@ -97,7 +109,7 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
     if (exempt) {
       // Public-only model: a window found in this sample's prompt or in the public training corpus is explained.
       // A sample with no recorded prompt explains nothing. Without the core index: fail closed (1 unexplained).
-      const prompt = exempt.prompts.get(s.id);
+      const prompt = exempt.prompts.get(promptIdOf(s));
       const unexplained = coreRaw
         ? coreSubstringWindows(s.text, coreRaw).filter((st) => {
             const w = s.text.slice(st, st + coreRaw.n);
@@ -147,6 +159,7 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
 export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
   // Fail closed: the minimum counts non-empty-prompt samples only (and never more than were scanned).
   if (!scan || Math.min(scan.samples, scan.countedSamples ?? 0) < MIN_MEMCHECK_SAMPLES) return "FAIL";
+  if (scan.scannedSamples !== scan.samples) return "FAIL"; // every returned sample must have been scanned
   const substring = scan.substringRule === "core-free-64" ? scan.countedHits ?? 1 : scan.coreSubstringHits;
   return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && substring === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
 }

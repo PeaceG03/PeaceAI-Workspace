@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { indexGitTree, TEXT_EXT } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
-import { COREFREE_MIN_RUN, docIdsMatch, dualCoreFreeDecision, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
+import { duplicateSampleIds, promptIdOf, COREFREE_MIN_RUN, docIdsMatch, dualCoreFreeDecision, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
@@ -41,6 +41,8 @@ let scan: SampleScan | null = null;
 let reason = "";
 const r = before ? runInfer("sample", modelDir, { prompts, seed: 9, prompt_tokens: 64, new_tokens: 128, temperature: 0.8 }, ["--unverified", "--threads", process.env.PEACEAI_LM_THREADS ?? "8"]) : { ok: false as const, reason: "MODEL_MISSING" };
 // Refused / failed inference: no proof was read, so say so (status stays FAIL: scan is null).
+const dupIds = r.ok ? duplicateSampleIds((r.response.samples ?? []) as Sample[]) : [];
+if (r.ok && dupIds.length > 0) reason = "DUPLICATE_SAMPLE_ID";
 if (!r.ok) { reason = r.reason; if (trainCorpus) { proofState = `NOT_CHECKED:${r.reason}`; noCoreProof = "NOT_CHECKED"; } }
 else {
   const tree = tree0 ?? indexGitTree(coreDir, () => true, true);
@@ -106,6 +108,9 @@ else {
 }
 const after = modelFileShas(modelDir);
 if (JSON.stringify(before) !== JSON.stringify(after)) { scan = null; reason = "FILES_CHANGED"; }
+const returnedTotal = r.ok ? ((r.response.samples ?? []) as Sample[]).length : 0;
+if (scan && (scan.scannedSamples ?? -1) < returnedTotal) { scan = null; reason = "SCANNED_LESS_THAN_RETURNED"; }
+if (dupIds.length > 0) { scan = null; reason = "DUPLICATE_SAMPLE_ID"; }
 const status = memcheckStatus(scan);
 const report = {
   schema: MEMCHECK_SCHEMA,
@@ -117,13 +122,13 @@ const report = {
   sampling: (() => {
     const DECODINGS = 2;
     const returned: Record<string, number> = { core: 0, public: 0, empty: 0 };
-    if (r.ok) for (const x of (r.response.samples ?? []) as Sample[]) returned[kindOf(String(x.id))] = (returned[kindOf(String(x.id))] ?? 0) + 1;
+    if (r.ok) for (const x of (r.response.samples ?? []) as Sample[]) returned[kindOf(promptIdOf(x))] = (returned[kindOf(promptIdOf(x))] ?? 0) + 1;
     const dropped: { kind: string; count: number; reason: string }[] = promptShortfall.map((d) => ({ ...d, count: d.count * DECODINGS }));
     for (const k of ["core", "public", "empty"] as const) {
       const miss = built[k] * DECODINGS - (returned[k] ?? 0);
       if (miss > 0) dropped.push({ kind: k, count: miss, reason: r.ok ? "NOT_RETURNED_BY_INFER" : `INFER_${r.reason}` });
     }
-    return { requestedPrompts: counts, builtPrompts: built, decodingsPerPrompt: DECODINGS, expectedSamples: (counts.core + counts.public + counts.empty) * DECODINGS, returnedSamples: returned, countedTowardMinimum: scan?.countedSamples ?? 0, emptyPromptSamplesNotCounted: returned.empty, dropped };
+    return { requestedPrompts: counts, builtPrompts: built, decodingsPerPrompt: DECODINGS, expectedSamples: (counts.core + counts.public + counts.empty) * DECODINGS, returnedSamples: returned, returnedTotal, scannedSamples: scan?.scannedSamples ?? 0, duplicateSampleIds: dupIds.length, countedTowardMinimum: scan?.countedSamples ?? 0, emptyPromptSamplesNotCounted: returned.empty, dropped };
   })(),
   substringRule: scan?.substringRule ?? "strict",
   trainingManifest: trainCorpus ? { sha256: trainManifestSha, noCoreFiles: noCoreProof } : null,

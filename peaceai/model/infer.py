@@ -83,7 +83,7 @@ else:
         ids = ([lm.EOD] + tok.encode(str(pr["text"])))[-int(req.get("prompt_tokens", 64)):]
         for kind, temp in (("greedy", 0.0), ("sampled", float(req.get("temperature", 0.8)))):
             gen = lm.generate(p, cfg, ids, int(req.get("new_tokens", 128)), rng, temp)
-            res.append({"id": pr["id"], "kind": kind, "prompt_tail": tok.decode(ids).split("\n")[-1], "text": tok.decode(gen)})
+            res.append({"id": f"{pr['id']}:{kind}", "prompt": pr["id"], "kind": kind, "prompt_tail": tok.decode(ids).split("\n")[-1], "text": tok.decode(gen)})
     out["samples"] = res
 with open(args.response, "w") as f:
     json.dump(out, f)

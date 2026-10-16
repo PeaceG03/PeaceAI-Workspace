@@ -61,13 +61,13 @@ function env(secretInCoreFiles: number) {
   writeFileSync(fake, `#!/usr/bin/env python3
 import json, sys
 a = sys.argv; req = json.load(open(a[a.index("--request") + 1]))
-s = [{"id": p["id"], "kind": k, "prompt_tail": "", "text": (${JSON.stringify(`zz(${SECRET})\n`)} if p["id"] == "core-0" else "x")} for p in req["prompts"] for k in ("greedy", "sampled")]
+s = [{"id": p["id"] + ":" + k, "prompt": p["id"], "kind": k, "prompt_tail": "", "text": (${JSON.stringify(`zz(${SECRET})\n`)} if p["id"] == "core-0" else "x")} for p in req["prompts"] for k in ("greedy", "sampled")]
 json.dump({"model": "m", "samples": s}, open(a[a.index("--response") + 1], "w"))
 `);
   chmodSync(fake, 0o755);
   // Expected runs computed exactly as lm-memcheck would.
   const { prompts } = buildMemcheckPrompts(pre.d, core, counts, "PeaceG03/PeaceAI");
-  const samples = prompts.flatMap((p) => ["greedy", "sampled"].map((k) => ({ id: p.id, kind: k, prompt_tail: "", text: text(p.id) })));
+  const samples = prompts.flatMap((p) => ["greedy", "sampled"].map((k) => ({ id: `${p.id}:${k}`, prompt: p.id, kind: k, prompt_tail: "", text: text(p.id) })));
   const tree = indexGitTree(core, () => true, true);
   const pub = [...pre.docs, ...ft.docs].map((x) => x.text);
   const runs = scanSamples(samples, emptyIndex(), emptyIndex(), buildSubstringIndex(tree.raw ?? []), { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex(pub), minRun: COREFREE_MIN_RUN }).unexplainedRuns!;
@@ -108,7 +108,7 @@ test("3 core files: REVIEW, BLOCK; 5 core files: GENERIC, PASS", () => {
 
 test("regenerated runs that differ from the recorded locations: BLOCK, fail closed", () => {
   const e = env(5);
-  e.writeExp([...e.runs, { sample: "core-1", start: 0, length: 32 }]);
+  e.writeExp([...e.runs, { sample: "core-1:greedy", start: 0, length: 32 }]);
   const r = e.run();
   assert.equal(r.status, 1); assert.match(r.stdout, /match=false/); assert.match(r.stdout, /verdict=BLOCK reason=RUNS_MISMATCH/);
   e.writeExp(e.runs.map((x) => ({ ...x, start: x.start + 1 })));
@@ -143,4 +143,11 @@ test("the recorded runs fixture is the memcheck run 38908186778 record (40 runs,
   assert.equal(f.model, "lm-v1-1bfbea221e71"); assert.equal(f.memcheckRun, 38908186778); assert.equal(f.unexplainedRuns.length, 40);
   assert.equal(f.files["weights.npz"], "1bfbea221e7171bac7dacf229f63850b0ba9dc5a84d1f7d2ac0419733e77fb96");
   assert.ok(f.unexplainedRuns.every((r: { length: number }) => r.length >= 32 && r.length < 64));
+});
+
+test("recorded runs with a bare prompt id (no :<decoding>) are ambiguous: BLOCK, fail closed", () => {
+  const e = env(5);
+  e.writeExp(e.runs.map((x) => ({ ...x, sample: x.sample.split(":")[0] })));
+  const r = e.run();
+  assert.equal(r.status, 1); assert.match(r.stdout, /verdict=BLOCK reason=RECORD_IDS_AMBIGUOUS/);
 });
