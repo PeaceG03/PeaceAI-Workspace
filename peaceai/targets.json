@@ -29,7 +29,8 @@
       "originalSuite": "related",
       "writeEnvironment": "peacestocks-write",
       "verdictRoute": "patch",
-      "workflowPattern": "^\\.github/workflows/tenmin-mode-sim\\.yml$"
+      "workflowPattern": "^\\.github/workflows/tenmin-mode-sim\\.yml$",
+      "tsconfigScript": true
     }
   }
 }
