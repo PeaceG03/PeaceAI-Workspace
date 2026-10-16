@@ -297,11 +297,25 @@ jobs:
       - name: Fine-tune corpus (function-body pairs from all PeaceG03 public commits; A/B, C, #176 and safety-tool files excluded by path and sha)
         run: |
           set -euo pipefail
-          for r in $(jq -r '.finetune.repos[]' "$CFG"); do
-            git clone --quiet --filter=blob:none "https://github.com/$r.git" "$RUNNER_TEMP/peace/${r#*/}"
-            specs+=("$r=$RUNNER_TEMP/peace/${r#*/}@$(git -C "$RUNNER_TEMP/peace/${r#*/}" rev-parse HEAD)")
-          done
+          # M49 BLOCKING (1): built only from the repo commits pinned in the box core-free record (never HEAD); the
+          # record's repos must be exactly the config's fine-tune repos; docs the box proof flagged as core are dropped.
+          FTC=peaceai/model/ft-corefree.json
+          test "$(jq -c '[.repos[].repo]' "$FTC")" = "$(jq -c '.finetune.repos' "$CFG")" || { echo "ft-corefree repos are not the config's fine-tune repos: refused"; exit 1; }
+          gate=()
+          while read -r r sha; do
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "unpinned fine-tune repo: refused"; exit 1; }
+            git clone --quiet "https://github.com/$r.git" "$RUNNER_TEMP/peace/${r#*/}"
+            git -C "$RUNNER_TEMP/peace/${r#*/}" checkout --quiet --detach "$sha"
+            test "$(git -C "$RUNNER_TEMP/peace/${r#*/}" rev-parse HEAD)" = "$sha" || { echo "pinned commit missing: refused"; exit 1; }
+            specs+=("$r=$RUNNER_TEMP/peace/${r#*/}@$sha"); gate+=("$r@$sha")
+          done < <(jq -r '.repos[] | "\(.repo) \(.sha)"' "$FTC")
           ./node_modules/.bin/tsx peaceai/bin/ft-pairs.ts "$RUNNER_TEMP/ft" "${specs[@]}"
+          printf '%s\n' "${gate[@]}" > "$RUNNER_TEMP/ft-gate-repos"
+      - name: Fine-tune core gate (refuse unless the box core-free proof's sha is recorded for exactly this corpus)
+        run: |
+          set -euo pipefail
+          mapfile -t gate < "$RUNNER_TEMP/ft-gate-repos"
+          ./node_modules/.bin/tsx peaceai/bin/ft-gate.ts "$RUNNER_TEMP/ft" "${gate[@]}"
       - name: Fine-tune from the pretrain best weights (same tokenizer, fresh optimizer)
         run: |
           set -euo pipefail
