@@ -274,7 +274,7 @@ test("M49 fix (2) containment: a whole pinned file plus a few verbatim private c
     const mixed = UNIV + priv.slice(10, 10 + n).join("\n") + "\n";
     const r = run([...DOCS, { doc: 44, text: mixed }], [...MAN, STOCKS(44, "src/universe.ts", "refreshEligibility")]);
     assert.equal(r.proof.noCoreFiles, "NOT_PROVEN", `${n} private lines`); assert.equal(r.file(44).coreExact, true);
-    assert.ok(r.file(44).coreContained >= 16); assert.ok(r.file(44).coreNearMax < 0.8, "similarity alone would not catch it");
+    assert.ok(r.file(44).coreContained >= 32); assert.ok(r.file(44).coreNearMax < 0.8, "similarity alone would not catch it");
   }
 });
 
@@ -284,9 +284,9 @@ test("M49 fix (2) containment: half-core dilution (half private core, half new c
   const half = [...PRIV.split("\n").slice(0, 20), ...fresh].join("\n");
   const r = run([...DOCS, { doc: 7, text: half }], [...MAN, ft(7)]);
   assert.ok(r.file(7).coreNearMax < 0.8, `near ${r.file(7).coreNearMax}`);
-  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(7).coreExact, true); assert.ok(r.file(7).coreContained >= 16);
+  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(7).coreExact, true); assert.ok(r.file(7).coreContained >= 32);
   const clean = run([...DOCS, { doc: 7, text: fresh.join("\n") }], [...MAN, ft(7)]);
-  assert.equal(clean.proof.noCoreFiles, "PROVEN"); assert.ok(clean.file(7).coreContained < 16);
+  assert.equal(clean.proof.noCoreFiles, "PROVEN"); assert.ok(clean.file(7).coreContained < 32);
 });
 
 test("M49 fix (2) git: each fine-tune doc must be a prefix of repo@sha:path; no source root, unknown commit or a non-prefix fails closed", () => {
@@ -299,4 +299,21 @@ test("M49 fix (2) git: each fine-tune doc must be a prefix of repo@sha:path; no 
   // The manifest names a path whose committed text is not what the doc says (doc text != committed prefix).
   const r = run([...DOCS], [...MAN.slice(0, 5), ft(5, { path: "src/f0.ts" })], { expectExit: 1 }) as unknown as { stderr: string };
   assert.match(r.stderr, /not a prefix/);
+});
+
+test("M49 fix (2) containment: isolated private lines pass; scattered private text past 64 shingles and 10% is refused (backstop)", () => {
+  const run = pinEnv();
+  // Two isolated private lines in mostly fresh code: no one-file run reaches 32 and the total stays under 64.
+  const priv = PRIV.split("\n");
+  const fresh = (i: number) => `export const glue${i} = (z: number) => z * ${i + 101} - ${i * 7};`;
+  const sparse = Array.from({ length: 2 }, (_, i) => [priv[i * 9]!, ...Array.from({ length: 12 }, (_, j) => fresh(i * 100 + j))]).flat().join("\n");
+  const s = run([...DOCS, { doc: 8, text: sparse }], [...MAN, ft(8)]);
+  assert.ok(s.file(8).coreContained < 32 && s.file(8).corePrivateShingles < 64, JSON.stringify(s.file(8)));
+  assert.equal(s.proof.noCoreFiles, "PROVEN");
+  // Every private line on its own, each followed by fresh code: runs stay short, but 20 private lines add up past
+  // 64 private shingles and 10% of the doc, so the backstop refuses it.
+  const scattered = priv.slice(0, 20).flatMap((l, i) => [l, fresh(i), fresh(i + 50)]).join("\n");
+  const r = run([...DOCS, { doc: 8, text: scattered }], [...MAN, ft(8)]);
+  assert.ok(r.file(8).corePrivateShingles >= 64, JSON.stringify(r.file(8)));
+  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(8).coreExact, true);
 });

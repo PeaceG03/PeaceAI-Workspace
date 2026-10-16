@@ -86,12 +86,13 @@ core_raw = {hashlib.sha256(t.encode()).hexdigest() for t in core_texts}
 
 
 # M49 fix (2) (Auditor #227): containment, applied to every doc of every schema. Walk the doc's 8-token shingles in
-# order; a shingle counts as private when it occurs in a non-pinned core file and in no pinned public-origin file. The
-# doc is refused (coreExact) when it holds a verbatim private span of CONTAIN_RUN consecutive private shingles
-# (CONTAIN_RUN + 7 = 23 tokens, about 2-3 lines of code). This catches a pinned file (or any public text) padded with a
-# few verbatim private lines, and half-core dilution that MinHash similarity averages away. A run, not any single
-# shingle: on the M49 corpora 1-3 shingle hits are boilerplate (import lines, common signatures) in 36% of pretrain docs.
-CONTAIN_RUN = 16
+# order; a shingle is private to core file F when F contains it and no pinned public-origin file does. The doc is
+# refused (coreExact) when it holds a verbatim span of CONTAIN_RUN consecutive shingles all private to ONE core file
+# (CONTAIN_RUN + 7 = 39 tokens; tokens count every punctuation mark, so this is about 2 lines of code). Catches a pinned
+# file (or any public text) padded with a few verbatim private lines, and half-core dilution that MinHash averages away.
+# Measured on the M49 corpora: single-line idioms (comparators, a 40-hex regex, typeof guards) reach 16-24 shingles in
+# one core file, and runs stitched across different core files are not copies, so neither counts.
+CONTAIN_RUN = 32
 
 
 def shingle_seq(text):
@@ -102,18 +103,27 @@ def shingle_seq(text):
 pinned_sh = set()
 for _sha, t in pinned_texts:
     pinned_sh.update(shingle_seq(t))
-private_sh = set()
-for t in core_texts:
-    private_sh.update(shingle_seq(t))
-private_sh -= pinned_sh
+private_idx = {}  # shingle -> ids of the non-pinned core files that hold it
+for fid, t in enumerate(core_texts):
+    for x in set(shingle_seq(t)) - pinned_sh:
+        private_idx.setdefault(x, []).append(fid)
+
+
+# Backstop (Architect): scattered copying with no long run. Refused when at least CONTAIN_TOTAL distinct shingles of
+# the doc are private core shingles AND they are at least CONTAIN_FRAC of the doc's distinct shingles.
+CONTAIN_TOTAL, CONTAIN_FRAC = 64, 0.10
 
 
 def private_run(text):
-    best = cur = 0
-    for x in shingle_seq(text):
-        cur = cur + 1 if x in private_sh else 0
-        best = max(best, cur)
-    return best
+    seq = shingle_seq(text)
+    best, runs = 0, {}
+    for x in seq:
+        runs = {f: runs.get(f, 0) + 1 for f in private_idx.get(x, ())}
+        if runs:
+            best = max(best, max(runs.values()))
+    uniq = set(seq)
+    hits = sum(1 for x in uniq if x in private_idx)
+    return best, hits, (hits / len(uniq) if uniq else 0.0)
 core_norm = {norm(t) for t in core_texts}
 buckets, sigs = {}, []
 for t in core_texts:
@@ -273,7 +283,7 @@ for m in man:
     if blank(t):
         # M39: empty / whitespace-only after normalisation: ignored (no wider byte threshold).
         ignored_empty += 1
-        files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": False, "coreNearMax": 0.0, "coreContained": 0})
+        files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": False, "coreNearMax": 0.0, "coreContained": 0, "corePrivateShingles": 0})
         continue
     s = minhash(t)
     # Against allowlisted public-origin core files: fine only when the content sha256 IS that file's pin.
@@ -288,13 +298,14 @@ for m in man:
     pin_ok = bool(hit_pin) and (hit_pin == {tsha} or origin_ok)
     pin_bad = bool(hit_pin) and not pin_ok
     allowlisted += pin_ok
-    contained = private_run(t)  # longest verbatim private-core span, in shingles
-    exact = contained >= CONTAIN_RUN or pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
+    contained, priv_hits, priv_frac = private_run(t)  # longest one-file verbatim private span; scattered private shingles
+    scattered = priv_hits >= CONTAIN_TOTAL and priv_frac >= CONTAIN_FRAC
+    exact = contained >= CONTAIN_RUN or scattered or pin_bad or hashlib.sha256(t.encode()).hexdigest() in core_raw or m.get("sha256") in core_raw or norm(t) in core_norm
     cands = set()
     for b in range(BANDS):
         cands.update(buckets.get((b, s[b * ROWS:(b + 1) * ROWS]), ()))
     near = max((sum(x == y for x, y in zip(s, sigs[c])) / NPERM for c in cands), default=0.0)
-    files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": bool(exact), "coreNearMax": round(near, 4), "coreContained": contained})
+    files.append({"doc": m["doc"], "path": m["path"], "source": src, "sha256": m["sha256"], "coreExact": bool(exact), "coreNearMax": round(near, 4), "coreContained": contained, "corePrivateShingles": priv_hits})
 visible = all(m.get("visibility") == "public" for m in man) if schema == "internal" else True  # external/finetune: checked above
 proven = len(files) > 0 and all((not f["coreExact"]) and f["coreNearMax"] < args.near for f in files) and visible
 model = json.load(open(os.path.join(args.model, "config.json")))["version"]
@@ -305,6 +316,6 @@ proof = {"schema": "peaceai-lm-corefree-proof:v1", "model": model, "noCoreFiles"
 if args.stage:
     proof["corpus"] = args.stage
 json.dump(proof, open(os.path.join(args.model, PROOF_NAME), "w"), indent=1)
-print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files), "coreContainedDocs": sum(f["coreContained"] >= CONTAIN_RUN for f in files),
+print(json.dumps({"model": model, "noCoreFiles": proof["noCoreFiles"], "files": len(files), "coreExact": sum(f["coreExact"] for f in files), "coreContainedDocs": sum(f.get("coreContained", 0) >= CONTAIN_RUN for f in files),
                   "maxNear": max((f["coreNearMax"] for f in files), default=0.0), "coreFiles": len(core_texts),
                   "schema": schema, "ignoredEmpty": ignored_empty, "allowlistedPublicOrigin": allowlisted, "pinnedCoreFiles": len(pinned_texts)}))
