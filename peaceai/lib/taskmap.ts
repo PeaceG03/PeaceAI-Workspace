@@ -20,12 +20,15 @@ export function cleanIssueText(input: TaskInput): string {
     .replace(/^[ \t]*target:[ \t]*\S+[ \t]*$/gim, " ")
     .replace(/```[\s\S]*?```/g, " ")
     // M46: a leading ">" is a Markdown quote marker; every other ">" is kept so comparison operators survive
-    // (>, >=, and the > of =>). <, <=, ===, !== were never touched. Backticks, "*" and "#" are still dropped.
+    // (>, >=, and the > of =>). <, <=, ===, !== were never touched. Backticks and "#" are still dropped; "*" too, except below.
     .replace(/^[ \t]*(?:>[ \t]?)+/gm, "")
-    .replace(/[`*#]/g, " ")
+    // Live proof #304: a binary "*" between spaces (`a * b`) is code, not Markdown emphasis or a bullet; keep it.
+    .replace(/[`#]|(?<!\S )\*|\*(?! )/g, " ")
     // Markdown emphasis underscores only; identifiers such as MAX_ITEMS keep theirs.
     .replace(/(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, " ")
     .replace(/[ \t]+/g, " ")
+    // Live proof #307: a stripped trailing backtick must not leave a space before the line end (`$` triggers).
+    .replace(/ +$/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return text.slice(0, MAX_OBJECTIVE_CHARS);

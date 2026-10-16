@@ -46,7 +46,7 @@ const isRead = (n: ts.Node, name: string): n is ts.PropertyAccessExpression | ts
 const isOneLit = (e: ts.Expression) => ts.isStringLiteral(e) && e.text === "1";
 const numberOf = (e: ts.Expression, name: string) => ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Number" && e.arguments.length === 1 && isRead(e.arguments[0]!, name);
 
-export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }): { path: string; content: string; extra: { path: string; content: string; create: true }[] } | null {
+export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
   const no = (r: string) => { if (why) why.reason = r; return null; };
   if (!plainPath(task.file) || !task.file.startsWith("src/") || /\.test\.ts$/.test(task.file)) return no("path_not_plain");
   if (isProtected(task.file)) return no("protected_path");
@@ -106,7 +106,9 @@ export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; co
     `});`,
     ``,
   ].join("\n");
-  return { path: task.file, content, extra: [{ path: testPath, content: testText, create: true }] };
+  // Live proof #305: params.grading is self-fail-before-pass-after, so the edit is self-graded; without selfGrade
+  // generate.ts silently dropped it (no candidate, no refusal reason).
+  return { path: task.file, content, extra: [{ path: testPath, content: testText, create: true }], selfGrade: true };
 }
 
 const validParams = (params: Record<string, string | string[]>) => ENV_FIX_PARAM_KEYS.every((k) => typeof params[k] === "string" && ENV_FIX_VOCAB[k].includes(params[k] as string));
