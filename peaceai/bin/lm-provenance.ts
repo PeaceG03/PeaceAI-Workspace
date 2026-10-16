@@ -59,6 +59,8 @@ const rows = provenanceRows(strings, coreTexts, publicTexts);
 for (const x of rows) out(`provenance id=${x.id} length=${x.length} occurrences=${x.occurrences} core_files=${x.coreFiles} public_docs=${x.publicDocs} dominated=${x.dominated} class=${x.cls}`);
 const n = (c: string) => rows.filter((x) => x.cls === c).length;
 const verdict = verdictOf(rows, matched);
+// PROMPT_LINKED_ALL never lifts BLOCK: the exit code stays the class verdict; it only justifies a memcheck exemption PR
+// and a re-run.
 // Prompt overlap per run, against its own sample's prompt (memprompts text, looked up by the id's prompt part).
 const promptText = new Map(prompts.map((p) => [p.id, p.text]));
 const sampleById = new Map(samples.map((s) => [s.id, s]));
@@ -70,7 +72,7 @@ sorted.forEach((run, i) => {
   const prompt = s ? promptText.get(promptIdOf(s)) : undefined;
   const t = (s?.text ?? "").slice(run.start, run.start + run.length);
   if (!s || prompt === undefined || t.length !== run.length || !strId.has(t)) fail("PROMPT_LOOKUP");
-  const o = promptOverlap(t, prompt!);
+  const o = promptOverlap(t, run.start, prompt!);
   classes.push(o.cls);
   const sid = strId.get(t)!;
   const c = perString.get(sid) ?? { inside: 0, extends: 0, none: 0 }; c[o.cls] += 1; perString.set(sid, c);

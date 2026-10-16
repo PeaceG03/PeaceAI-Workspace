@@ -154,20 +154,32 @@ test("recorded runs with a bare prompt id (no :<decoding>) are ambiguous: BLOCK,
   assert.equal(r.status, 1); assert.match(r.stdout, /verdict=BLOCK reason=RECORD_IDS_AMBIGUOUS/);
 });
 
-test("prompt overlap per run: inside / extends (tail or substring, then continues) / none; verdict PROMPT_LINKED_ALL only with no none", () => {
-  const run = "export function computeSomethingUnique(a, b) {";
-  assert.equal(PROMPT_OVERLAP_MIN, 8);
-  assert.deepEqual(promptOverlap(run, `// ctx\n${run}\n}`), { overlap: run.length, cls: "inside" });
-  const tail = promptOverlap(run, "header\nexport function compute"); // prompt tail, then the run continues
-  assert.equal(tail.cls, "extends"); assert.equal(tail.overlap, "export function compute".length);
-  const mid = promptOverlap(run, "xx SomethingUnique yy"); // a prompt substring inside the run
-  assert.equal(mid.cls, "extends"); assert.equal(mid.overlap, "SomethingUnique".length);
-  assert.deepEqual(promptOverlap(run, "nothing in common here"), { overlap: promptOverlap(run, "nothing in common here").overlap, cls: "none" });
-  assert.ok(promptOverlap(run, "nothing in common here").overlap < PROMPT_OVERLAP_MIN);
-  assert.equal(promptOverlap("", "abc").cls, "none");
+test("prompt overlap (Auditor #285): only a >= 16-char non-filler tail continuation at offset 0 extends; everything else none", () => {
+  assert.equal(PROMPT_OVERLAP_MIN, 16);
+  const run = "computeSomethingUnique(alpha, beta) + gammaValue";
+  // True tail continuation: the prompt ends with the run's first 22 characters, the run starts the output.
+  const tail = promptOverlap(run, 0, "header line\nconst v = computeSomethingUnique");
+  assert.equal(tail.cls, "extends"); assert.equal(tail.overlap, "computeSomethingUnique".length);
+  assert.equal(promptOverlap(run.slice(0, 22), 0, "const v = computeSomethingUnique").cls, "inside");
+  // The same overlap not at offset 0: none.
+  assert.equal(promptOverlap(run, 5, "const v = computeSomethingUnique").cls, "none");
+  // 8+ shared spaces: none (whitespace-dominated, and under 16 when short).
+  assert.equal(promptOverlap("                    return x;", 0, "foo {\n                    ").cls, "none");
+  // A common keyword at the tail: none.
+  assert.equal(promptOverlap("function computeSomethingUnique() {", 0, "export function ").cls, "none");
+  assert.equal(promptOverlap("return computeSomethingUnique(a, b);", 0, "  if (x) return ").cls, "none");
+  // A mid-prompt match (the run's text is inside the prompt but not at its tail): none.
+  assert.equal(promptOverlap(run, 0, `xx ${run} yy and then more text`).cls, "none");
+  assert.equal(promptOverlap(run, 0, "nothing in common").cls, "none");
   assert.equal(promptVerdict(["inside", "extends"]), "PROMPT_LINKED_ALL");
-  assert.equal(promptVerdict(["inside", "none"]), "LEAK");
+  assert.equal(promptVerdict(["extends", "none"]), "LEAK");
   assert.equal(promptVerdict([]), "LEAK", "no runs: fail closed");
+});
+
+test("PROMPT_LINKED_ALL never lifts BLOCK: the exit code is the class verdict's", () => {
+  const bin = readFileSync(join(repo, "peaceai/bin/lm-provenance.ts"), "utf8");
+  assert.match(bin, /process\.exit\(verdict === "PASS" \? 0 : 1\);\s*$/);
+  assert.ok(!/pv === "PROMPT_LINKED_ALL"[^\n]*exit|exit\([^)]*pv/.test(bin));
 });
 
 test("end to end: per-run prompt overlap lines (sequential ids, counts only), per-string summary, prompt verdict; no text", () => {
@@ -178,5 +190,5 @@ test("end to end: per-run prompt overlap lines (sequential ids, counts only), pe
   assert.deepEqual(runs.map((m) => m[1]), runs.map((_, i) => `r${String(i + 1).padStart(2, "0")}`));
   assert.ok(runs.every((m) => m[5] === "none" && Number(m[4]) < PROMPT_OVERLAP_MIN), "the core string is not in its core prompt");
   assert.match(r.stdout, /^provenance string=s01 prompt_inside=0 prompt_extends=0 prompt_none=\d+$/m);
-  assert.match(r.stdout, new RegExp(`^provenance prompt_runs=${e.runs.length} inside=0 extends=0 none=${e.runs.length} overlap_min=8 prompt_verdict=LEAK$`, "m"));
+  assert.match(r.stdout, new RegExp(`^provenance prompt_runs=${e.runs.length} inside=0 extends=0 none=${e.runs.length} overlap_min=16 prompt_verdict=LEAK$`, "m"));
 });
