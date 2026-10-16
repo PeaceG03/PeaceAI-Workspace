@@ -36,3 +36,8 @@ test("committed list: 40 entries, all valid; ext-corpus.ts reads it only through
   assert.ok(at('excludedDocs.has(sha256)) why = "core-proof"') < at('seen.has(sha256)) why = "duplicate"'));
   assert.ok(at('why = "core-proof"') < at('why = "repo-cap"'));
 });
+
+test("protected: the exclusion list, its builder and this test are in PROTECTED_SELF", async () => {
+  const { protectedReason } = await import("../lib/selfchange.ts");
+  for (const p of ["peaceai/model/ext-doc-exclusions.json", "peaceai/bin/ext-corpus.ts", "peaceai/lib/extcorpus.ts", "peaceai/test/m49-ext-doc-exclusions.test.ts"]) assert.ok(protectedReason(p), p);
+});
