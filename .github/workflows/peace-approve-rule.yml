@@ -24,8 +24,10 @@ on:
 
 permissions: {}
 
+# #273 prep: one group per approval issue, so a second /approve-rule queues on its own issue instead of replacing
+# (dropping) the single pending run of a shared group. cron / dispatch runs keep one group per event.
 concurrency:
-  group: peace-approve-rule
+  group: peace-approve-rule-${{ github.event.issue.number || github.event_name }}
   cancel-in-progress: false
 
 jobs:

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LOOP_UNBOUNDED, LOOP_WHILE_UNSUPPORTED, LOOP_ASYNC, LOOP_LABEL, CLOSURE_NOT_ALLOWED, WHILE_TRIGGER } from "../lib/learned-complex.ts";
-import { applyRule, validateSpec, type RuleSpec } from "../lib/learned.ts";
+import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -23,11 +23,15 @@ const run = (body: string, spec: RuleSpec = V2, head?: string) => {
   return { e, r: w.reason };
 };
 
-test("spec: valid, own trigger, while-literal-counter only (no while-bounded)", () => {
+const approvedEntry = (id: string) => (JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string; approval?: { author?: string } }[] }).rules.find((r) => r.id === id);
+/** #273 prep: holds before AND after Peace's /approve-rule (any order): if approved, it pins this exact spec and Peace approved it. */
+const approvalOk = (s: RuleSpec) => { const e = approvedEntry(s.id); return !e || (e.sha256 === specHash(s) && e.approval?.author === "PeaceG03"); };
+
+test("spec: valid, own trigger, while-literal-counter only (no while-bounded); approval-agnostic", () => {
   assert.ok(validateSpec(V2));
   assert.equal(V2.trigger, WHILE_TRIGGER);
   assert.deepEqual(V2.params.loops, ["counted-literal-or-length", "for-of-param", "while-literal-counter"]);
-  assert.ok(!read("peaceai/rules/approved.json").includes("public-loop-function-v2"), "not approved: Peace /approve-rule only");
+  assert.ok(approvalOk(V2), "approved only by Peace /approve-rule, pinned to this spec");
 });
 
 // Real example (PeaceSTOCKS@3459cef, store-path assertNoReparseAncestors): `let depth = 0; while (depth < 512) { ...; depth += 1; }`.

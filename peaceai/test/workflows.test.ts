@@ -306,3 +306,12 @@ test("builder-log results-crosscheck (#217): push-to-main only, core env, read-o
   assert.ok(at("trace.ts --results-dir") < at("Delete the Results clone") && at("rule-skill.ts --results-dir") < at("Delete the Results clone"));
   assert.ok(!/upload-artifact/.test(text));
 });
+
+test("#273 prep: peace-approve-rule concurrency is per issue and never cancels, so approvals queue instead of being dropped", () => {
+  const text = read("peace-approve-rule.yml");
+  const m = /^concurrency:\n {2}group: (.+)\n {2}cancel-in-progress: (\w+)$/m.exec(text);
+  assert.ok(m, "top-level concurrency block");
+  assert.equal(m![1], "peace-approve-rule-${{ github.event.issue.number || github.event_name }}");
+  assert.equal(m![2], "false");
+  assert.equal(text.match(/^\s*concurrency:/gm)!.length, 1, "no job-level group re-serialising approvals");
+});

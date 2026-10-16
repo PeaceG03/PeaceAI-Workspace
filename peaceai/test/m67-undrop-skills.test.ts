@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { applyRule, validateSpec, type RuleSpec } from "../lib/learned.ts";
+import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { workflowJobEnabled, workflowJobFileProblem, workflowJobLinesReason, applyWorkflowJobRule } from "../lib/workflow-job.ts";
 import { tsconfigScriptEnabled, tsconfigScriptCandidateReason, tsconfigTextProblem } from "../lib/tsconfig-script.ts";
 import { envFixEnabled, applyEnvFixRule } from "../lib/env-fix.ts";
@@ -40,10 +40,14 @@ const run = (s: RuleSpec, objective: string, files: { path: string; content: str
 };
 const lines = (a: string, b: string) => { const x = a.split("\n"), y = b.split("\n"); let i = 0; while (i < x.length && x[i] === y[i]) i++; return y.slice(i).filter((l, k, arr) => k < arr.length - 1 || l !== ""); };
 
-test("specs: valid, not approved, off by default on the dev path, protected", () => {
+const approvedEntry = (id: string) => (JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string; approval?: { author?: string } }[] }).rules.find((r) => r.id === id);
+/** #273 prep: holds before AND after Peace's /approve-rule (any order): if approved, it pins this exact spec and Peace approved it. */
+const approvalOk = (s: RuleSpec) => { const e = approvedEntry(s.id); return !e || (e.sha256 === specHash(s) && e.approval?.author === "PeaceG03"); };
+
+test("specs: valid, approval-agnostic (Peace-approved + hash-pinned if listed), off by default on the dev path, protected", () => {
   for (const s of [WJ, TS, EF]) {
     assert.ok(validateSpec(s), s.id);
-    assert.ok(!read("peaceai/rules/approved.json").includes(s.id), `${s.id}: Peace /approve-rule only`);
+    assert.ok(approvalOk(s), `${s.id}: approved only by Peace /approve-rule, pinned to this spec`);
     assert.ok(PROTECTED_SELF.some((p) => p.pattern.test(`peaceai/rules/learned/${s.id}.json`)), s.id);
   }
   assert.equal(workflowJobEnabled({}), false);
