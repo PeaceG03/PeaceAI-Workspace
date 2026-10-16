@@ -111,7 +111,7 @@ export function validateSummary(value: unknown, ctx: SummaryContext = NO_CLAIMS)
       c.id === `candidate-${index + 1}` &&
       c.file === `candidates/candidate-${index + 1}.diff` &&
       Array.isArray(c.transformations) &&
-      c.transformations.every((t) => typeof t === "string" && /^[A-Z_]{1,40}$/.test(t)) &&
+      c.transformations.every((t) => typeof t === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(t)) &&
       // Kernel ids; learned and lm-fill ids only when bound to an approved rule hash / verified model id.
       operationIdAllowed(c.operationId, ctx) &&
       Number.isInteger(c.diffBytes) &&

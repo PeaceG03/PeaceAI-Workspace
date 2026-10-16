@@ -125,4 +125,7 @@ test("summary schema is strict", () => {
   assert.equal(validateSummary({ ...good, candidates: [{ ...good.candidates[0], file: "../x" }] }), false);
   assert.equal(validateSummary({ ...good, candidates: [{ ...good.candidates[0], note: "core text" }] }), false);
   assert.equal(validateSummary({ ...good, candidates: [{ ...good.candidates[0], transformations: ["lower case text"] }] }), false);
+  // #237: learned kinds may carry a version digit (LEARNED_IMPORT_EDIT_V2); a leading digit, lower case or a dash stays refused.
+  assert.equal(validateSummary({ ...good, candidates: [{ ...good.candidates[0], transformations: ["LEARNED_IMPORT_EDIT_V2"] }] }), true);
+  for (const t of ["2LEARNED", "LEARNED_v2", "LEARNED-V2", ""]) assert.equal(validateSummary({ ...good, candidates: [{ ...good.candidates[0], transformations: [t] }] }), false, t);
 });

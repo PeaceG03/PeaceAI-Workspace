@@ -34,7 +34,7 @@ export function validChosenMeta(m: unknown): m is ChosenMeta {
     typeof c.runId === "string" && /^\d{1,20}$/.test(c.runId) &&
     typeof c.candidateId === "string" && /^candidate-\d{1,3}$/.test(c.candidateId) &&
     typeof c.baseSha === "string" && SHA.test(c.baseSha) &&
-    Array.isArray(c.transformations) && c.transformations.length > 0 && c.transformations.every((t) => typeof t === "string" && /^[A-Z_]{1,40}$/.test(t)) &&
+    Array.isArray(c.transformations) && c.transformations.length > 0 && c.transformations.every((t) => typeof t === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(t)) &&
     (c.operationId === null || (typeof c.operationId === "string" && c.operationId.length <= 200 && /^[\w:@.-]+$/.test(c.operationId))) &&
     (!("selfGrade" in c) || c.selfGrade === true) &&
     (!("fixSha" in c) || (typeof c.fixSha === "string" && SHA.test(c.fixSha)))
