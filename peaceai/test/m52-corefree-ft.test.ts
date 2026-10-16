@@ -29,7 +29,7 @@ function sourceRoot(dir: string) {
     for (const m of man as Record<string, unknown>[]) {
       if (!m || typeof m !== "object" || !("function" in m) || typeof m.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(m.repo) || typeof m.path !== "string" || !m.path || !text.has(m.doc)) continue;
       const g = join(root, m.repo);
-      if (!existsSync(g)) { mkdirSync(g, { recursive: true }); execFileSync("git", ["init", "-q"], { cwd: g }); }
+      if (!existsSync(g)) { mkdirSync(g, { recursive: true }); execFileSync("git", ["init", "-q"], { cwd: g }); execFileSync("git", ["remote", "add", "origin", `https://github.com/${m.repo}.git`], { cwd: g }); }
       mkdirSync(join(g, m.path, ".."), { recursive: true }); writeFileSync(join(g, m.path), text.get(m.doc)!);
       shas.set(m.repo, g);
     }
@@ -226,9 +226,10 @@ function pinEnv() {
   writeFileSync(join(model, "config.json"), JSON.stringify({ version: "lm-v1-000000000049" }));
   let k = 0;
   const src = sourceRoot(dir);
-  return (docs: { doc: number; text: string }[], man0: unknown[], opts: { root?: string | null; expectExit?: number } = {}) => {
+  return (docs: { doc: number; text: string }[], man0: unknown[], opts: { root?: string | null; expectExit?: number; badOrigin?: boolean } = {}) => {
     const d = join(dir, `c${k++}`); mkdirSync(d);
     const man = src.commit(docs, man0);
+    if (opts.badOrigin) for (const r of new Set((man as { repo: string }[]).map((m) => m.repo))) execFileSync("git", ["remote", "set-url", "origin", `https://example.com/${r}.git`], { cwd: join(src.root, r) });
     writeFileSync(join(d, "docs.jsonl"), docs.map((x) => JSON.stringify(x)).join("\n") + "\n");
     writeFileSync(join(d, "manifest.jsonl"), man.map((x) => JSON.stringify(x)).join("\n") + "\n");
     const r = spawnSync(py, [join(repo, "peaceai/model/corefree_proof.py"), "--corpus", d, "--core-dir", core, "--model", model, "--stage", "finetune", ...(opts.root === null ? [] : ["--source-root", opts.root ?? src.root])], { encoding: "utf8" });
@@ -316,4 +317,21 @@ test("M49 fix (2) containment: isolated private lines pass; scattered private te
   const r = run([...DOCS, { doc: 8, text: scattered }], [...MAN, ft(8)]);
   assert.ok(r.file(8).corePrivateShingles >= 64, JSON.stringify(r.file(8)));
   assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(r.file(8).coreExact, true);
+});
+
+test("M49 follow-up (Auditor #227): >= 400 private core shingles is refused even when diluted under 10%", () => {
+  const run = pinEnv();
+  const priv = PRIV.split("\n").filter(Boolean);
+  const fresh = (i: number) => `export const pad${i} = (w: number) => w * ${i + 211} - ${i * 3} + ${i % 17};`;
+  const big = priv.flatMap((l, i) => [l, ...Array.from({ length: 14 }, (_, j) => fresh(i * 100 + j))]).join("\n");
+  const r = run([...DOCS, { doc: 9, text: big }], [...MAN, ft(9)]);
+  const f = r.file(9);
+  assert.ok(f.coreContained < 32 && f.corePrivateShingles >= 400, JSON.stringify(f));
+  assert.equal(r.proof.noCoreFiles, "NOT_PROVEN"); assert.equal(f.coreExact, true);
+});
+
+test("M49 follow-up (Auditor #227): a source clone whose origin is not github.com/<repo> fails closed", () => {
+  const run = pinEnv();
+  assert.equal(run([...DOCS], MAN).proof.noCoreFiles, "PROVEN");
+  run([...DOCS], MAN, { badOrigin: true, expectExit: 1 });
 });
