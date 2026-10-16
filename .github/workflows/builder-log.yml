@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,7 +26,7 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - run: ./node_modules/.bin/tsc -p builder-log/tsconfig.json --noEmit
-      - run: ./node_modules/.bin/tsx --test builder-log/check.test.ts builder-log/coverage.test.ts
+      - run: ./node_modules/.bin/tsx --test builder-log/check.test.ts builder-log/coverage.test.ts builder-log/trace.test.ts
       - name: Schema + append-only against the base revision
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -34,5 +35,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./node_modules/.bin/tsx builder-log/check.ts --verify-shas
+      - name: Clone PeaceSTOCKS anonymously (outside the workspace)
+        run: git clone --quiet https://github.com/PeaceG03/PeaceSTOCKS.git "$RUNNER_TEMP/stocks"
+      - name: PeaceAI landings trace to verdict patches (public part; Results cross-check not wired yet, see PR #217)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/tsx builder-log/trace.ts --no-results --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: PeaceAI vs Builder coverage
         run: ./node_modules/.bin/tsx builder-log/coverage.ts >> "$GITHUB_STEP_SUMMARY"
