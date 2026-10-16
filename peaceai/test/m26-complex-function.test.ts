@@ -1,18 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 process.env.PEACEAI_COMPLEX_FUNCTION = "true"; // the flag defaults off; the engine tests below run with it on
-process.env.PEACEAI_LOOP_FUNCTION = "true"; // M65: P lists loop forms, which the dev path also gates on PEACEAI_LOOP_FUNCTION
 import { applyComplexRule, COMPLEX_TRIGGER } from "../lib/learned-complex.ts";
 const P = { body: "bounded-block", grading: "self-fail-before-pass-after-and-stub", loops: ["for-of-param", "counted-literal-or-length"], params: "typed", placement: "end-of-module", returns: "annotated", test: "new-file" };
 const files = [{ path: "src/a.ts", content: "export const x = 1;\n" }];
+// Auditor #219 note: PEACEAI_LOOP_FUNCTION is passed per call (P lists loop forms, so the dev path gates on it), not set file-wide.
+const LOOP_ENV = { ...process.env, PEACEAI_LOOP_FUNCTION: "true" };
 const t = (body: string) => `add complex function monthsSpan(from: string, to: string): string[] to src/a.ts with body:\n${body}\n- monthsSpan("2026-09", "2026-11") equals ["2026-09", "2026-11"]`;
 const ok = `const a = from.slice(0, 7);\nconst b = to.slice(0, 7);\nif (b < a) return [];\nif (a === b) return [a];\nreturn [a, b];`; // loop-free: loops are refused by name (loop_unsupported) until mined loop examples exist
 test("builds a bounded multi-statement function", () => {
-  const e = applyComplexRule(COMPLEX_TRIGGER, P, t(ok), files);
+  const e = applyComplexRule(COMPLEX_TRIGGER, P, t(ok), files, undefined, LOOP_ENV);
   assert.ok(e && e.content.includes("export function monthsSpan(from: string, to: string): string[]"));
 });
 for (const bad of ["while (true) {}\nreturn [];", "for (let i = 0; i < 1e9; i++) {}\nreturn [];", "const out: string[] = [];\nfor (const v of out) { out.push(v); }\nreturn out;", "return globalThis.x;", "const f = () => 1;\nreturn [];", "for (let j = 0; j < 3; j++) { j = 0; }\nreturn [];", "return [];"]) {
-  test(`refuses ${JSON.stringify(bad.slice(0, 40))}`, () => assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(bad), files), null));
+  test(`refuses ${JSON.stringify(bad.slice(0, 40))}`, () => assert.equal(applyComplexRule(COMPLEX_TRIGGER, P, t(bad), files, undefined, LOOP_ENV), null));
 }
 
 import ts from "typescript";

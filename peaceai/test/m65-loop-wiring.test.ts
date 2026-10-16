@@ -27,7 +27,7 @@ test("Job A: admitted only with the exact hash; builds once admitted with no dev
   assert.equal(admitRules([SPEC], list("0".repeat(64)))[0]!.decision, "HASH_CHANGED");
   assert.equal(admitRules([SPEC], { ok: true, list: { schema: "peaceai-approved-rules:v1", rules: [] } as never })[0]!.decision, "NOT_APPROVED");
   const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string }[] };
-  assert.ok(!onMain.rules.some((r) => r.id === SPEC.id), "not approved on this branch (Peace /approve-rule only)");
+  for (const r of onMain.rules.filter((x) => x.id === SPEC.id) as { id: string; sha256: string }[]) assert.equal(r.sha256, SHA, "listed only with its exact hash (Peace /approve-rule, #220)");
   const saved = { c: process.env.PEACEAI_COMPLEX_FUNCTION, l: process.env[LOOP_FUNCTION_FLAG] };
   delete process.env.PEACEAI_COMPLEX_FUNCTION; delete process.env[LOOP_FUNCTION_FLAG];
   try {
@@ -75,4 +75,16 @@ test("proposal: loop phrasing and description, marker and spec block carry the e
 
 test("wiring proofs are protected", () => {
   assert.ok(PROTECTED_SELF.some((x) => x.pattern.test("peaceai/test/m65-loop-wiring.test.ts")));
+});
+
+test("Auditor #219 note: a loop function cannot call a same-file helper (body_refused), even an exported pure one", () => {
+  const withHelper = [{ path: "src/a.ts", content: "export function dbl(n: number): number {\n  return n + n;\n}\n" }];
+  const w: { reason?: string } = {};
+  const task = t("sumDbl(xs: number[]): number", "let s = 0;\nfor (const x of xs) {\ns += dbl(x);\n}\nreturn s;", "- sumDbl([1, 2]) is 6");
+  assert.equal(applyRule(SPEC, task, withHelper, undefined, undefined, w, () => false), null);
+  assert.equal(w.reason, "body_refused");
+  const env = { PEACEAI_COMPLEX_FUNCTION: "true", [LOOP_FUNCTION_FLAG]: "true" };
+  assert.equal(applyComplexRule(LOOP_TRIGGER, SPEC.params as Record<string, string | string[]>, task, withHelper, undefined, env), null);
+  assert.ok(applyComplexRule(LOOP_TRIGGER, SPEC.params as Record<string, string | string[]>, task.replace("s += dbl(x);", "s += x + x;"), withHelper, undefined, env), "same loop without the call builds");
+  assert.match(read("peaceai/lib/learned-complex.ts"), /No helper calls \(Auditor #219 note\)/);
 });
