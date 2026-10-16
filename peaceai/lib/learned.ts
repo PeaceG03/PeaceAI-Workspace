@@ -14,6 +14,7 @@ import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, ME
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
+import { loadTargets, scopeOf } from "./target.ts";
 import { join } from "node:path";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
@@ -332,10 +333,23 @@ export function pathExistsIn(repo: string, tracked: readonly string[]): (path: s
  */
 export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, exists?: (path: string) => boolean): LearnedEdit | null {
   const edit = applyRuleInner(spec, objective, files, isTest, repo, why);
-  if (!edit || !exists) return edit;
+  if (!edit) return edit;
+  // #314 (Architect): the target's denyPatterns are enforced here too, so every caller (generate.ts, box
+  // dry-runs, tools) refuses a denied path even when it hands in an unfiltered file list. Same order as
+  // scope.ts checkCandidateScope: an opted-in workflow file is checked by its own rules, not by deny.
+  if (repo && deniedEditPath(repo, [edit.path, ...(edit.extra ?? []).map((x) => x.path)])) { if (why) why.reason = "denied_path"; return null; }
+  if (!exists) return edit;
   const created = [...(edit.create ? [edit.path] : []), ...(edit.extra ?? []).filter((x) => x.create).map((x) => x.path)];
   if (created.some((p) => exists(p))) { if (why) why.reason = "new_test_path_exists"; return null; }
   return edit;
+}
+
+/** True when `repo` is a configured target and any path is denied for it (opted-in workflow files excepted). */
+export function deniedEditPath(repo: string, paths: readonly string[]): boolean {
+  const config = loadTargets().targets[repo];
+  if (!config) return false;
+  const scope = scopeOf(config);
+  return paths.some((p) => !(!scope.isSource(p) && scope.isWorkflow(p)) && scope.isDenied(p));
 }
 
 function applyRuleInner(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {
