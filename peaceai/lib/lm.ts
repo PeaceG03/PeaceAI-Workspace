@@ -58,7 +58,11 @@ export function verifyModelDir(dir: string): { ok: true; version: string } | { o
 
 export interface Sample { id: string; kind: string; prompt_tail: string; text: string }
 export interface SampleScan {
-  samples: number; coreLineHits: number; coreShingleHits: number; coreSubstringHits: number; personalInfo: number; flagged: number;
+  samples: number;
+  /** Samples that count toward MIN_MEMCHECK_SAMPLES: those from a non-empty prompt (ids not `empty-*`). Empty-prompt
+   *  outputs are scanned but never count toward the minimum (Auditor, run 38905982366). */
+  countedSamples?: number;
+  coreLineHits: number; coreShingleHits: number; coreSubstringHits: number; personalInfo: number; flagged: number;
   /** "strict": any 32-character core hit fails (absent means strict). "core-free-64": only for a model whose
    *  Results record carries a valid core-free proof (see validCoreFreeProof); a hit is explained when its window
    *  is in that sample's prompt or in the public training corpus, and an unexplained run counts only when it is
@@ -68,6 +72,8 @@ export interface SampleScan {
   unexplainedHits?: number;
   countedHits?: number;
   longestUnexplained?: number;
+  /** Every unexplained run, as a location only (no text): sample id, start offset in the generated text, length. */
+  unexplainedRuns?: { sample: string; start: number; length: number }[];
 }
 export const COREFREE_MIN_RUN = 64;
 /** Granted only by lm-memcheck when the model's record carries a valid core-free proof. */
@@ -75,8 +81,8 @@ export interface PublicOnlyExemption { prompts: ReadonlyMap<string, string>; tra
 
 /** Scans model output for core text (the core-text scanner, public corpus as the baseline) and personal info. */
 export function scanSamples(samples: readonly Sample[], core: TextIndex, baseline: TextIndex, coreRaw: SubstringIndex | null, exempt: PublicOnlyExemption | null = null): SampleScan {
-  const scan: SampleScan = { samples: samples.length, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
-  if (exempt) { scan.substringRule = "core-free-64"; scan.unexplainedHits = 0; scan.countedHits = 0; scan.longestUnexplained = 0; }
+  const scan: SampleScan = { samples: samples.length, countedSamples: samples.filter((s) => !s.id.startsWith("empty-")).length, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 };
+  if (exempt) { scan.substringRule = "core-free-64"; scan.unexplainedHits = 0; scan.countedHits = 0; scan.longestUnexplained = 0; scan.unexplainedRuns = []; }
   for (const s of samples) {
     // The prompt's last partial line is joined to the output, so a core line the model completes is caught too.
     // When the model added fewer than SHINGLE_LINE non-space characters to that line, the line is the prompt's
@@ -122,6 +128,8 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
       const inCore = (i: number): boolean => longestInCore(s.text.slice(starts[i]!, starts[i]! + lengths[i]!)) >= exempt.minRun;
       const long = unexplained ? lengths.filter((l, i) => l >= exempt.minRun && inCore(i)).length : 1;
       scan.unexplainedHits! += unexplained ? lengths.length : 1;
+      if (unexplained) lengths.forEach((l, i) => scan.unexplainedRuns!.push({ sample: s.id, start: starts[i]!, length: l }));
+      else scan.unexplainedRuns!.push({ sample: s.id, start: -1, length: 0 });
       scan.countedHits! += long;
       scan.longestUnexplained = Math.max(scan.longestUnexplained!, ...lengths, 0);
       counted = long;
@@ -137,7 +145,8 @@ export function scanSamples(samples: readonly Sample[], core: TextIndex, baselin
 }
 
 export function memcheckStatus(scan: SampleScan | null): "PASS" | "FAIL" {
-  if (!scan || scan.samples < MIN_MEMCHECK_SAMPLES) return "FAIL";
+  // Fail closed: the minimum counts non-empty-prompt samples only (and never more than were scanned).
+  if (!scan || Math.min(scan.samples, scan.countedSamples ?? 0) < MIN_MEMCHECK_SAMPLES) return "FAIL";
   const substring = scan.substringRule === "core-free-64" ? scan.countedHits ?? 1 : scan.coreSubstringHits;
   return scan.coreLineHits === 0 && scan.coreShingleHits === 0 && substring === 0 && scan.personalInfo === 0 ? "PASS" : "FAIL";
 }
