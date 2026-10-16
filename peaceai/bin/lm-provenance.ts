@@ -1,4 +1,4 @@
-// One-off provenance check (memcheck run 38908186778, Architect/Auditor). Re-samples the model exactly as
+// One-off provenance check (memcheck run 38913032640, Architect/Auditor). Re-samples the model exactly as
 // lm-memcheck did (same prompts via memprompts.ts, same seed and settings, same core-free-64 exemption), checks the
 // regenerated unexplained runs equal the recorded locations (else BLOCK, fail closed), then classifies each distinct
 // run string by core file count and public doc count. Prints counts and sequential ids (s01, s02, ...) only, no hash of any text; never the text; writes nothing.
@@ -17,7 +17,7 @@ const modelDir = resolve(process.env.PEACEAI_LM_MODEL_DIR ?? "");
 const pre = resolve(process.env.PEACEAI_LM_TRAIN_CORPUS ?? "");
 const ft = resolve(process.env.PEACEAI_LM_FT_CORPUS ?? "");
 const coreDir = resolve(process.env.PEACEAI_CORE_DIR ?? "");
-const expectedPath = resolve(process.env.PEACEAI_PROV_EXPECTED ?? "peaceai/model/m49-provenance-38908186778.json");
+const expectedPath = resolve(process.env.PEACEAI_PROV_EXPECTED ?? "peaceai/model/m49-provenance-38913032640.json");
 const CORE_SOURCE = "PeaceG03/PeaceAI";
 
 let exp: { model: string; files: Record<string, string>; prompts: { core: number; public: number; empty: number }; unexplainedRuns: RecordedRun[] };

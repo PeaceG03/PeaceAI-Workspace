@@ -1,4 +1,4 @@
-// One-off provenance check for memcheck run 38908186778: classification thresholds, fail-closed run matching,
+// One-off provenance check for memcheck run 38913032640: classification thresholds, fail-closed run matching,
 // no text ever printed, nothing written, no artifact uploaded.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -138,11 +138,13 @@ test("m49-provenance-check.yml: dispatch-only, main-only, peaceai-core, read-onl
   for (const o of outs) assert.ok(!/\$\{t\}|\$\{x\.text|\$\{s\.text|byId|prompt/.test(o!), o);
 });
 
-test("the recorded runs fixture is the memcheck run 38908186778 record (40 runs, model lm-v1-1bfbea221e71)", () => {
-  const f = JSON.parse(readFileSync(join(repo, "peaceai/model/m49-provenance-38908186778.json"), "utf8"));
-  assert.equal(f.model, "lm-v1-1bfbea221e71"); assert.equal(f.memcheckRun, 38908186778); assert.equal(f.unexplainedRuns.length, 40);
+test("the recorded runs fixture is the memcheck run 38913032640 record (40 runs, model lm-v1-1bfbea221e71)", () => {
+  const f = JSON.parse(readFileSync(join(repo, "peaceai/model/m49-provenance-38913032640.json"), "utf8"));
+  assert.equal(f.model, "lm-v1-1bfbea221e71"); assert.equal(f.memcheckRun, 38913032640); assert.equal(f.unexplainedRuns.length, 40);
   assert.equal(f.files["weights.npz"], "1bfbea221e7171bac7dacf229f63850b0ba9dc5a84d1f7d2ac0419733e77fb96");
   assert.ok(f.unexplainedRuns.every((r: { length: number }) => r.length >= 32 && r.length < 64));
+  assert.ok(f.unexplainedRuns.every((r: { sample: string }) => /^[a-z]+-\d+:(greedy|sampled)$/.test(r.sample)), "full <prompt>:<decoding> ids");
+  assert.deepEqual(f.prompts, { core: 96, public: 32, empty: 8 });
 });
 
 test("recorded runs with a bare prompt id (no :<decoding>) are ambiguous: BLOCK, fail closed", () => {

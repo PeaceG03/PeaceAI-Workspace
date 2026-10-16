@@ -1,9 +1,9 @@
 name: m49-provenance-check
 
-# One-off provenance check for the unexplained runs of memcheck run 38908186778 (model lm-v1-1bfbea221e71, training
+# One-off provenance check for the unexplained runs of memcheck run 38913032640 (model lm-v1-1bfbea221e71, training
 # run 38861784010). Read-only: same peaceai-core environment and read-only keys as m49-posttrain-memcheck.yml; it
 # re-samples the model with lm-memcheck's exact prompts and settings, checks the regenerated run locations equal the
-# recorded ones (peaceai/model/m49-provenance-38908186778.json), and logs per distinct string a sequential id (s01, s02, ...; no hash of the text), length,
+# recorded ones (peaceai/model/m49-provenance-38913032640.json), and logs per distinct string a sequential id (s01, s02, ...; no hash of the text), length,
 # core file count, public doc count, dominance and class. Never prints text; no upload, no artifact, no cache; writes
 # nothing. Core, the model, the corpora and the clones are deleted at the end. Dispatch only, main only.
 on:
