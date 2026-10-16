@@ -64,7 +64,7 @@ test("LIVE_LANDING matches repo@sha only, not issue refs", () => {
 test("liveProvenSkills: PeaceAI@sha landings + LIVE_PROVEN_SINCE.since gate; issue-only ignored", () => {
   const entries = entriesOf(FIXTURE);
   assert.deepEqual([...liveProvenSkills(entries, "2026-10-14")].sort(), ["THROW_GUARD"]);
-  assert.deepEqual([...liveProvenSkills(entries, "2026-10-15")].sort(), ["COMPLEX_FUNCTION", "METHOD_GUARD", "THROW_GUARD", "WORKFLOW_STEP"]);
+  assert.deepEqual([...liveProvenSkills(entries, "2026-10-15")].sort(), ["COMPLEX_FUNCTION", "LOOP_FUNCTION", "METHOD_GUARD", "THROW_GUARD", "WORKFLOW_STEP"]);
   // asOf before the THROW_GUARD landing time excludes it
   assert.deepEqual([...liveProvenSkills(entries, "2026-10-10")].sort(), []);
 });
@@ -87,15 +87,16 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags never raise coverage; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87) live-proven; LOOP_FUNCTION 5 missing", () => {
+test("real log: 2/58 = 3.4% (seq 26 + seq 70 via PeaceAI landing seq 76); retags never raise coverage; WORKFLOW_STEP (seq 85), METHOD_GUARD (86), COMPLEX_FUNCTION (87), LOOP_FUNCTION (97) live-proven; LOOP_FUNCTION 5 still missing (logged before its approval)", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.since, "2026-10-15 12:02");
   assert.deepEqual(LIVE_PROVEN_SINCE.METHOD_GUARD, { since: "2026-10-15 17:28", seq: 86 });
   assert.deepEqual(LIVE_PROVEN_SINCE.COMPLEX_FUNCTION, { since: "2026-10-15 18:57", seq: 87 });
+  assert.deepEqual(LIVE_PROVEN_SINCE.LOOP_FUNCTION, { since: "2026-10-15 21:52", seq: 97 }); // #229 -> PeaceSTOCKS@22b0f3d
   const r = coverageReport(text, "2026-10-15");
-  for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
+  for (const s of ["THROW_GUARD", "WORKFLOW_STEP", "METHOD_GUARD", "COMPLEX_FUNCTION", "LOOP_FUNCTION"]) assert.ok(r.liveProven.includes(s), s);
   assert.ok(!r.liveProven.includes("CHECK_OBJECT_LITERAL_ARGS"));
   // Retags (seq 88-96): 70/78 -> THROW_GUARD, 71/77 -> METHOD_GUARD, 8/12/17/19/22 -> LOOP_FUNCTION.
   assert.equal(r.allTime.builderTasks, 58);
