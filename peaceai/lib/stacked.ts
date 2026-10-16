@@ -6,7 +6,8 @@
 // `--stacked-batch <issues>` is given. A patch graded on X may land on Y only if ALL hold (else REFUSED):
 //   (a) every commit in X..Y is a landed PeaceAI verdict patch of the same batch: linear first-parent chain,
 //       noreply author, and its diff equals (byte for byte) the Results-verified diff of a batch issue whose
-//       task base is X; each batch issue matches at most one commit, the landing issue none;
+//       task base is X or an earlier commit of the same chain (mixed-base batches: carried tasks regraded on
+//       an intermediate landing); each batch issue matches at most one commit, the landing issue none;
 //   (b) the task's touched files are disjoint from every file those commits changed;
 //   (c) the patch applies byte-identically on Y: plain `git am` (no 3-way), and the resulting commit's diff
 //       equals the verified diff;
@@ -28,7 +29,7 @@ export type StackReason =
   | "stack_bad_input" // malformed shas / empty batch
   | "stack_not_linear" // X not an ancestor of Y, a merge in X..Y, or a broken first-parent chain
   | "stack_foreign_commit" // a commit in X..Y is not a verified verdict patch of this batch (or not noreply)
-  | "stack_other_base" // a matched batch issue was graded on a base other than X
+  | "stack_other_base" // a matched batch issue was graded on a base that is neither X nor an earlier commit of the chain
   | "stack_duplicate" // two commits match one batch issue, or a commit matches the landing issue itself
   | "stack_files_overlap" // the task touches a file an intermediate commit changed
   | "stack_not_byte_identical" // the patch does not apply as-is on Y, or the applied diff differs
@@ -63,6 +64,8 @@ export function checkStack(i: StackInput): StackDecision {
   const used = new Set<number>();
   const via: { sha: string; issue: number }[] = [];
   const changed = new Set<string>();
+  // Mixed bases: a batch issue may have been graded on X or on any commit of the chain BEFORE its own commit.
+  const graded = new Set<string>([i.base]);
   for (const c of i.commits) {
     if (c.authorEmail !== NOREPLY_EMAIL) return no("stack_foreign_commit", `commit ${c.sha.slice(0, 12)} author is not the noreply identity`);
     if (sameDiff(c.diff, i.diff)) return no("stack_duplicate", `commit ${c.sha.slice(0, 12)} is the landing task's own patch`);
@@ -70,11 +73,12 @@ export function checkStack(i: StackInput): StackDecision {
     if (hits.length === 0) return no("stack_foreign_commit", `commit ${c.sha.slice(0, 12)} matches no verified patch of this batch`);
     if (hits.length > 1) return no("stack_duplicate", `commit ${c.sha.slice(0, 12)} matches several batch issues`);
     const m = hits[0]!;
-    if (m.baseSha !== i.base) return no("stack_other_base", `#${m.issue} was graded on ${m.baseSha.slice(0, 12)}, not ${i.base.slice(0, 12)}`);
+    if (!graded.has(m.baseSha)) return no("stack_other_base", `#${m.issue} was graded on ${m.baseSha.slice(0, 12)}, which is neither the base ${i.base.slice(0, 12)} nor an earlier commit of the chain`);
     if (used.has(m.issue)) return no("stack_duplicate", `#${m.issue} matches more than one commit`);
     used.add(m.issue);
     via.push({ sha: c.sha, issue: m.issue });
     for (const f of diffPaths(c.diff)) changed.add(f);
+    graded.add(c.sha);
   }
   const touched = diffPaths(i.diff);
   if (touched.length === 0) return no("stack_bad_input", "the landing diff names no files");
