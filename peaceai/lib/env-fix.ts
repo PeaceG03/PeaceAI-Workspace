@@ -6,6 +6,10 @@
 //   int   the one read of X is `Number(X) > 0 ? Number(X) : DEFAULT` (DEFAULT an identifier or integer literal);
 //         it becomes `strictNAME(X)`, with an appended helper: blank -> DEFAULT, plain digits 1..MAX -> the number,
 //         else throws NAME_INVALID.
+// v2 (public-env-fix-v2, params.int = "ternary-nullish-or"): int also accepts, as the ONE read of X,
+//         `Number(X ?? "N")` (N a plain-digit string literal) and `Number(X) || D` (D an integer literal, an
+//         identifier, or a product of integer literals such as `5 * 3_600_000`); the default must be >= 1 when literal.
+//         Refused: env_fix_bad_default (non-numeric / zero / fractional default), env_fix_mixed_reads (any other read).
 // Plus ONE new test file with the value table (blank, 0/1 or in-range, and the fail-closed values).
 // Refused (short codes): env_fix_read_not_found, env_fix_mixed_reads (any other read of X in the file),
 // env_fix_helper_taken, env_fix_bad_max, path_not_plain, protected_path, target_missing, env_fix_test_exists.
@@ -20,6 +24,14 @@ export const ENV_FIX_VOCAB: Record<(typeof ENV_FIX_PARAM_KEYS)[number], readonly
   helper: ["end-of-module-fail-closed"],
   test: ["new-file-value-table"],
 };
+/** v2 only: optional `int` param. Absent = v1 (ternary shape only); a v1 spec's hash and behaviour are unchanged. */
+export const ENV_FIX_INT_VOCAB = ["ternary-nullish-or"] as const;
+export function validEnvFixParams(p: Record<string, unknown>): boolean {
+  const keys = Object.keys(p).filter((k) => k !== "int");
+  if (keys.sort().join(",") !== [...ENV_FIX_PARAM_KEYS].sort().join(",")) return false;
+  if (!ENV_FIX_PARAM_KEYS.every((k) => typeof p[k] === "string" && ENV_FIX_VOCAB[k].includes(p[k] as string))) return false;
+  return !("int" in p) || (typeof p.int === "string" && (ENV_FIX_INT_VOCAB as readonly string[]).includes(p.int));
+}
 const ENVNAME = String.raw`[A-Z][A-Z0-9_]{1,60}`;
 const FILE = String.raw`[\w./-]+\.ts`;
 /** make env NAME strict in src/FILE.ts as a flag | as an integer 1..MAX */
@@ -46,7 +58,15 @@ const isRead = (n: ts.Node, name: string): n is ts.PropertyAccessExpression | ts
 const isOneLit = (e: ts.Expression) => ts.isStringLiteral(e) && e.text === "1";
 const numberOf = (e: ts.Expression, name: string) => ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Number" && e.arguments.length === 1 && isRead(e.arguments[0]!, name);
 
-export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
+/** v2 `|| D` default: integer literal >= 1, an identifier, or a product of integer literals >= 1. */
+function intDefault(e: ts.Expression): boolean {
+  if (ts.isParenthesizedExpression(e)) return intDefault(e.expression);
+  if (ts.isNumericLiteral(e)) return /^[1-9][\d_]*$/.test(e.getText()) ;
+  if (ts.isIdentifier(e)) return e.text !== "undefined" && e.text !== "NaN" && e.text !== "Infinity";
+  return ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AsteriskToken && intDefault(e.left) && intDefault(e.right) && !ts.isIdentifier(e.left) && !ts.isIdentifier(e.right);
+}
+
+export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }, wide = false): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
   const no = (r: string) => { if (why) why.reason = r; return null; };
   if (!plainPath(task.file) || !task.file.startsWith("src/") || /\.test\.ts$/.test(task.file)) return no("path_not_plain");
   if (isProtected(task.file)) return no("protected_path");
@@ -74,9 +94,34 @@ export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; co
       covered.add(read);
       covered.add((n.whenTrue as ts.CallExpression).arguments[0]!);
     }
+    if (wide && task.mode === "int") {
+      // v2: Number(X ?? "N")
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Number" && n.arguments.length === 1) {
+        const a = n.arguments[0]!;
+        if (ts.isBinaryExpression(a) && a.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken && isRead(a.left, task.name)) {
+          covered.add(a.left);
+          if (!(ts.isStringLiteral(a.right) || ts.isNoSubstitutionTemplateLiteral(a.right)) || !/^\d{1,15}$/.test(a.right.text) || Number(a.right.text) < 1) { badDefault = true; }
+          else { def = String(Number(a.right.text)); edits.push({ start: n.getStart(sf), end: n.getEnd(), text: `${helper}(${a.left.getText(sf)})` }); }
+        }
+      }
+      // v2: Number(X) || D
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.BarBarToken && numberOf(n.left, task.name)) {
+        const read = (n.left as ts.CallExpression).arguments[0]!;
+        covered.add(read);
+        if (!intDefault(n.right)) badDefault = true;
+        else { def = n.right.getText(sf); edits.push({ start: n.getStart(sf), end: n.getEnd(), text: `${helper}(${read.getText(sf)})` }); }
+      }
+    }
     ts.forEachChild(n, visit);
   };
+  let badDefault = false;
   visit(sf);
+  if (badDefault) return no("env_fix_bad_default");
+  const d0 = def as string | null; // assigned inside the visitor closure
+  if (wide && task.mode === "int" && d0 !== null && /^[\d_ *()]+$/.test(d0)) {
+    const v = d0.replace(/[_ ()]/g, "").split("*").reduce((a: number, b: string) => a * Number(b), 1);
+    if (!Number.isSafeInteger(v) || v < 1 || v > task.max) return no("env_fix_bad_default"); // literal default outside 1..MAX
+  }
   if (!reads.length) return no("env_fix_read_not_found");
   if (!edits.length) return no("env_fix_mixed_reads");
   if (reads.some((r) => !covered.has(r)) || (task.mode === "int" && edits.length !== 1)) return no("env_fix_mixed_reads");
@@ -111,12 +156,12 @@ export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; co
   return { path: task.file, content, extra: [{ path: testPath, content: testText, create: true }], selfGrade: true };
 }
 
-const validParams = (params: Record<string, string | string[]>) => ENV_FIX_PARAM_KEYS.every((k) => typeof params[k] === "string" && ENV_FIX_VOCAB[k].includes(params[k] as string));
+const validParams = (params: Record<string, string | string[]>) => validEnvFixParams(params as Record<string, unknown>);
 export function runEnvFixRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], why?: { reason?: string }) {
   if (!validParams(params)) { if (why) why.reason = "bad_rule_params"; return null; }
   const task = parseEnvFixTask(trigger, objective);
   if (!task) { if (why) why.reason = "task_unparsed"; return null; }
-  return buildEnvFix(task, files, why);
+  return buildEnvFix(task, files, why, params.int === "ternary-nullish-or");
 }
 export function applyEnvFixRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], env: Record<string, string | undefined> = process.env, why?: { reason?: string }) {
   return envFixEnabled(env) ? runEnvFixRule(trigger, params, objective, files, why) : null;

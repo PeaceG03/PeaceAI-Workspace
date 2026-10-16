@@ -1,0 +1,138 @@
+{
+ "rule": "public-env-fix-v2",
+ "note": "Read sites only (one line each). External lines are quoted under their pinned license; no file bodies are copied. corpus check: none of these repos is in lm-corpus.",
+ "examples": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "commit": "54b4241",
+   "path": "src/tenmin-redispatch.ts",
+   "line": 659,
+   "before": "  const delayMs = Number(process.env.TENMIN_POST_DISPATCH_CHECK_DELAY_MS ?? \"15000\");",
+   "form": "nullish-string",
+   "origin": "peace"
+  },
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "commit": "54b4241",
+   "path": "src/gap-refill.ts",
+   "line": 101,
+   "before": "  const deadline = Date.now() + (Number(process.env.REFILL_BUDGET_MS) || 5 * 3_600_000);",
+   "form": "or-default",
+   "origin": "peace"
+  },
+  {
+   "repo": "oclif/core",
+   "commit": "b5c0aefa2c68c921a5c85eadd12fce097ddc33d1",
+   "path": "src/parser/parse.ts",
+   "line": 76,
+   "before": "    const timeout = setTimeout(() => { ac.abort(); }, Number(process.env.OCLIF_STDIN_TIMEOUT_MS) || 10)",
+   "form": "or-default",
+   "origin": "external",
+   "license": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "7cc15970a8e8c7060a11dd2135b49f89a1c15de76e1c6926b3f3fb06ed24ed61"
+  },
+  {
+   "repo": "Marki-dev/meteor",
+   "commit": "02964d74cdd99e6e0e62e079b4e51295d2d98a8a",
+   "path": "index.ts",
+   "line": 24,
+   "before": "  port: Number(process.env.S3_PORT ?? '9000'),",
+   "form": "nullish-string",
+   "origin": "external",
+   "license": "Apache-2.0",
+   "licenseFile": "LICENSE.md",
+   "licenseSha256": "b2c261d7e7f9db68656f2a9bb857ef5ffc87327058ac25dcf2cdcafe7d67db90"
+  },
+  {
+   "repo": "IOT-echo-system/cloud-bff",
+   "commit": "840b2213ccb75f0d4777f477726eafc9f3a45758",
+   "path": "index.ts",
+   "line": 6,
+   "before": "const port = Number(process.env.PORT ?? '3001')",
+   "form": "nullish-string",
+   "origin": "external",
+   "license": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "0f740b888d2ff890f275a0a09487df2ccfdfeb352c37b11f9622a4a6d2bd6bce"
+  },
+  {
+   "repo": "GeKaixing/GK",
+   "commit": "d7f14ffaaa073b0f84e5f21dc80d39d1d964cf02",
+   "path": "auth.ts",
+   "line": 18,
+   "before": "  const parsed = Number(process.env.GOOGLE_OAUTH_TIMEOUT_MS ?? \"15000\");",
+   "form": "nullish-string",
+   "origin": "external",
+   "license": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "cfee237ead507751d7ea1d19cf52a1cf4a27f908b99e41543a40a7b975165938"
+  },
+  {
+   "repo": "Zenika/github-archiver",
+   "commit": "7b53fb63636114a2eae75351faa7149bae285832",
+   "path": "index.ts",
+   "line": 36,
+   "before": "  Number(process.env.GITHUB_REPOSITORY_PAGE_SIZE) || 10;",
+   "form": "or-default",
+   "origin": "external",
+   "license": "MIT",
+   "licenseFile": "LICENCE",
+   "licenseSha256": "9159ea00b60c84f1e5f23b05ed59ee85e69d22279aabb05bf167d74d5d6d881b"
+  },
+  {
+   "repo": "secondfry/dependency-downgrader",
+   "commit": "3fca381f591f93413c6e617f9f7b69e1ee7042d0",
+   "path": "index.ts",
+   "line": 259,
+   "before": "const PARALLEL_LIMIT = Number(process.env.PARALLEL_LIMIT) || 8;",
+   "form": "or-default",
+   "origin": "external",
+   "license": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "0c62dad46ef868191fecbddc38c599f9d57d0525b4c85c0e4ae3b50b8b8bcf85"
+  },
+  {
+   "repo": "silverwind/cidr-tools",
+   "commit": "299a741189c9839a38d6c6a3c4dd398d4342fe26",
+   "path": "bench.ts",
+   "line": 3,
+   "before": "const runs = Number(process.env.BENCH_RUNS) || 5;",
+   "form": "or-default",
+   "origin": "external",
+   "license": "BSD-2-Clause",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "23e60503dc06abf04b9e535e17797b4e0f9224e6c5abf9207317d5a67c88c743"
+  },
+  {
+   "repo": "silverwind/rrdir",
+   "commit": "7f0385e23fe15ae7e21aca4ecaa4d060cd24fbd9",
+   "path": "bench.ts",
+   "line": 9,
+   "before": "const runs = Number(process.env.BENCH_RUNS) || 10;",
+   "form": "or-default",
+   "origin": "external",
+   "license": "BSD-2-Clause",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "23e60503dc06abf04b9e535e17797b4e0f9224e6c5abf9207317d5a67c88c743"
+  }
+ ],
+ "refusals": [
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "commit": "14daeb6",
+   "path": "peaceai/bin/carry-check.ts",
+   "before": "const issue = Number(process.env.ISSUE_NUMBER ?? \"\");",
+   "expect": "env_fix_bad_default",
+   "why": "non-numeric (empty) default"
+  },
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "commit": "54b4241",
+   "path": "src/tenmin-redispatch.ts",
+   "before": "    const chain = Number(env.TENMIN_CHAIN || \"0\") || 0;",
+   "expect": "env_fix_mixed_reads",
+   "why": "read is X || \"0\", not one of the two shapes (default 0 too)"
+  }
+ ]
+}
