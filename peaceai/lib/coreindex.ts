@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { addText, emptyIndex, type TextIndex } from "./coretext.ts";
 
 const MAX_FILE_BYTES = 1_000_000;
-const TEXT_EXT = /\.(?:[cm]?[jt]sx?|json|md|ya?ml|ps1|psm1|sh|py|txt|html|css|toml)$/i;
+export const TEXT_EXT = /\.(?:[cm]?[jt]sx?|json|md|ya?ml|ps1|psm1|sh|py|txt|html|css|toml)$/i;
 
 export interface TreeIndex {
   /** Paths left out of the text index because they matched a public-origin pin. */

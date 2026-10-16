@@ -176,7 +176,8 @@ test("scanSamples / memcheckStatus units: a core line completed from the prompt'
   assert.equal(scanSamples([s(CORE_LINE.slice(0, -16), CORE_LINE.slice(-16))], core, baseline, raw).coreLineHits, 1);
   assert.equal(memcheckStatus(null), "FAIL");
   assert.equal(memcheckStatus({ samples: 99, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "FAIL");
-  assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "PASS");
+  assert.equal(memcheckStatus({ samples: 100, countedSamples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "PASS");
+  assert.equal(memcheckStatus({ samples: 116, countedSamples: 99, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 0, personalInfo: 0, flagged: 0 }), "FAIL", "empty-prompt samples never count");
   assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, coreSubstringHits: 1, personalInfo: 0, flagged: 0 }), "FAIL");
   assert.equal(memcheckStatus({ samples: 100, coreLineHits: 0, coreShingleHits: 0, personalInfo: 0, flagged: 0 } as never), "FAIL");
 });
@@ -680,6 +681,8 @@ test("lm-memcheck end to end: core-free-64 with a valid proof; strict with no pr
   const report = JSON.parse(readFileSync(join(copy, "memcheck.json"), "utf8"));
   assert.equal(report.coreFreeProof.state, "VALID");
   assert.match(report.coreFreeProof.sha256, /^[0-9a-f]{64}$/);
+  // Unexplained runs are listed as locations only (sample id, offset, length), never text.
+  assert.deepEqual(report.scan.unexplainedRuns, [{ sample: "s7", start: 3, length: 40 }]);
   // Invalid proof (another model / a file flagged near core): strict, FAIL.
   for (const [over, why] of [[{ model: "lm-v1-other" }, "OTHER_MODEL"], [{ files: [{ ...proofFor(modelId, pub.man, pub.text).files[0], coreNearMax: 0.9 }] }, "CORE_NEAR"]] as const) {
     writeFileSync(proofPath, JSON.stringify(proofFor(modelId, pub.man, pub.text, over as Record<string, unknown>)));

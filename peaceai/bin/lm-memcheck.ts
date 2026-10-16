@@ -6,9 +6,9 @@
 // (Architect policy, M49: m49-posttrain-memcheck.yml, core env, read-only keys, deleted before upload); never on a
 // bot's own computer.
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { indexGitTree } from "../lib/coreindex.ts";
+import { indexGitTree, TEXT_EXT } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
 import { COREFREE_MIN_RUN, docIdsMatch, dualCoreFreeDecision, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
@@ -33,11 +33,38 @@ const promptOf = (m: ManifestEntry) => {
   const start = parseInt(h(`off:${m.path}`).slice(0, 8), 16) % Math.max(1, lines.length - 8);
   return lines.slice(start).join("\n").slice(0, 400);
 };
+// Run 38905982366: a core-free corpus holds no core docs, so core prompts drawn only from the corpus were 0 of 96
+// (40 prompts x 2 decodings = 80 samples). Core prompts now come from the corpus's core docs first, then from the
+// core checkout itself (text files, public-origin pins excluded, blank files skipped), same deterministic pick.
+let tree0: ReturnType<typeof indexGitTree> | null = null;
+try { tree0 = indexGitTree(coreDir, () => true, true); } catch { tree0 = null; }
+const fromCorpus = pick(manifest.filter((m) => m.source === CORE_SOURCE && (texts.get(m.doc) ?? "").trim() !== ""), counts.core).map(promptOf);
+const corePaths = tree0 ? [...tree0.paths].filter((p) => TEXT_EXT.test(p) && !(tree0!.publicOrigin ?? []).includes(p)) : [];
+const fromTree: string[] = [];
+for (const p of [...corePaths].sort((a, b) => (h(`m9:${a}`) < h(`m9:${b}`) ? -1 : 1))) {
+  if (fromCorpus.length + fromTree.length >= counts.core) break;
+  try {
+    const full = join(coreDir, p);
+    if (!statSync(full).isFile() || statSync(full).size > 2 * 1024 * 1024) continue;
+    const t = readFileSync(full, "utf8");
+    if (isAsciiBlank(t)) continue;
+    const lines = t.split("\n");
+    const start = parseInt(h(`off:${p}`).slice(0, 8), 16) % Math.max(1, lines.length - 8);
+    const text = lines.slice(start).join("\n").slice(0, 400);
+    if (text.trim() !== "") fromTree.push(text);
+  } catch { /* unreadable: skipped, reported as a shortfall */ }
+}
+const publicPrompts = pick(manifest.filter((m) => m.source !== CORE_SOURCE && (texts.get(m.doc) ?? "").trim() !== ""), counts.public).map(promptOf);
 const prompts = [
-  ...pick(manifest.filter((m) => m.source === CORE_SOURCE), counts.core).map((m, i) => ({ id: `core-${i}`, text: promptOf(m) })),
-  ...pick(manifest.filter((m) => m.source !== CORE_SOURCE), counts.public).map((m, i) => ({ id: `public-${i}`, text: promptOf(m) })),
+  ...[...fromCorpus, ...fromTree].map((text, i) => ({ id: `core-${i}`, text })),
+  ...publicPrompts.map((text, i) => ({ id: `public-${i}`, text })),
   ...Array.from({ length: counts.empty }, (_, i) => ({ id: `empty-${i}`, text: "" })),
 ];
+const kindOf = (id: string) => id.split("-")[0]!;
+const built = { core: fromCorpus.length + fromTree.length, public: publicPrompts.length, empty: counts.empty };
+const promptShortfall: { kind: string; count: number; reason: string }[] = [];
+if (built.core < counts.core) promptShortfall.push({ kind: "core", count: counts.core - built.core, reason: tree0 ? "NOT_ENOUGH_CORE_TEXT (corpus core docs + core checkout files)" : "CORE_CHECKOUT_UNREADABLE" });
+if (built.public < counts.public) promptShortfall.push({ kind: "public", count: counts.public - built.public, reason: "NOT_ENOUGH_PUBLIC_DOCS" });
 
 const trainCorpus = process.env.PEACEAI_LM_TRAIN_CORPUS ? resolve(process.env.PEACEAI_LM_TRAIN_CORPUS) : "";
 // M52 (Architect (a)): a two-corpus model (config.json trainedOn) is checked once, as the final fine-tuned model,
@@ -55,7 +82,7 @@ const r = before ? runInfer("sample", modelDir, { prompts, seed: 9, prompt_token
 // Refused / failed inference: no proof was read, so say so (status stays FAIL: scan is null).
 if (!r.ok) { reason = r.reason; if (trainCorpus) { proofState = `NOT_CHECKED:${r.reason}`; noCoreProof = "NOT_CHECKED"; } }
 else {
-  const tree = indexGitTree(coreDir, () => true, true);
+  const tree = tree0 ?? indexGitTree(coreDir, () => true, true);
   const core = tree.text;
   const coreRaw = buildSubstringIndex(tree.raw ?? []);
   const baseline = emptyIndex();
@@ -125,7 +152,18 @@ const report = {
   ...(reason ? { reason } : {}),
   files: before,
   model: r.ok ? r.response.model : null,
-  prompts: counts,
+  prompts: built,
+  sampling: (() => {
+    const DECODINGS = 2;
+    const returned: Record<string, number> = { core: 0, public: 0, empty: 0 };
+    if (r.ok) for (const x of (r.response.samples ?? []) as Sample[]) returned[kindOf(String(x.id))] = (returned[kindOf(String(x.id))] ?? 0) + 1;
+    const dropped: { kind: string; count: number; reason: string }[] = promptShortfall.map((d) => ({ ...d, count: d.count * DECODINGS }));
+    for (const k of ["core", "public", "empty"] as const) {
+      const miss = built[k] * DECODINGS - (returned[k] ?? 0);
+      if (miss > 0) dropped.push({ kind: k, count: miss, reason: r.ok ? "NOT_RETURNED_BY_INFER" : `INFER_${r.reason}` });
+    }
+    return { requestedPrompts: counts, builtPrompts: built, decodingsPerPrompt: DECODINGS, expectedSamples: (counts.core + counts.public + counts.empty) * DECODINGS, returnedSamples: returned, countedTowardMinimum: scan?.countedSamples ?? 0, emptyPromptSamplesNotCounted: returned.empty, dropped };
+  })(),
   substringRule: scan?.substringRule ?? "strict",
   trainingManifest: trainCorpus ? { sha256: trainManifestSha, noCoreFiles: noCoreProof } : null,
   coreFreeProof: { state: proofState, ...(proofSha ? { sha256: proofSha } : {}) },
@@ -135,5 +173,5 @@ const report = {
   scan,
 };
 writeFileSync(join(modelDir, "memcheck.json"), JSON.stringify(report, null, 2) + "\n");
-console.log(`memcheck status=${status} samples=${scan?.samples ?? 0} core_line_hits=${scan?.coreLineHits ?? "-"} core_shingle_hits=${scan?.coreShingleHits ?? "-"} core_substring_hits=${scan?.coreSubstringHits ?? "-"} personal_info=${scan?.personalInfo ?? "-"} rule=${scan?.substringRule ?? "strict"}${scan?.substringRule === "core-free-64" ? ` unexplained_hits=${scan.unexplainedHits} longest_unexplained=${scan.longestUnexplained} counted_hits_64=${scan.countedHits}` : ""} proof=${proofState}${reason ? ` reason=${reason}` : ""}`);
+console.log(`memcheck status=${status} samples=${scan?.samples ?? 0} core_line_hits=${scan?.coreLineHits ?? "-"} core_shingle_hits=${scan?.coreShingleHits ?? "-"} core_substring_hits=${scan?.coreSubstringHits ?? "-"} personal_info=${scan?.personalInfo ?? "-"} rule=${scan?.substringRule ?? "strict"}${scan?.substringRule === "core-free-64" ? ` unexplained_hits=${scan.unexplainedHits} longest_unexplained=${scan.longestUnexplained} counted_hits_64=${scan.countedHits}` : ""} proof=${proofState}${reason ? ` reason=${reason}` : ""} counted_samples=${scan?.countedSamples ?? 0} prompts=core:${built.core}/${counts.core},public:${built.public}/${counts.public},empty:${built.empty}`);
 process.exit(status === "PASS" ? 0 : 1);
