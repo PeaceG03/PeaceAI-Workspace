@@ -1,10 +1,15 @@
 // M18 verdict job (patch route): is the task base still the target's head? If not, write the regrade
 // request comment (lib/regrade.ts) instead of building a patch on the old base. Fails closed.
+// Carry-forward (lib/carry.ts): the request also carries a PENDING CARRY for the owner's verdict (its comment id,
+// label, candidate, old base, diff hash); the workflow re-queues the task. After the regrade, the trusted peace-task
+// carry job decides from Results/issue facts whether that verdict carries to the new attempt.
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { scanText } from "../lib/leak.ts";
+import { pendingCarryBlock } from "../lib/carry.ts";
 import { regradeComment, validChosenMeta } from "../lib/regrade.ts";
+import { createHash } from "node:crypto";
 import { isRepoName } from "../lib/target.ts";
 
 const out = (pairs: Record<string, string>) => {
@@ -23,7 +28,17 @@ if (head === base) { out({ stale: "false", head }); process.exit(0); }
 const metaFile = join(dir, "chosen.json");
 const meta = existsSync(metaFile) ? JSON.parse(readFileSync(metaFile, "utf8")) : null;
 if (!validChosenMeta(meta) || meta.baseSha !== base) { out({ stale: "true", head, ok: "false", reason: "chosen-meta-missing" }); process.exit(0); }
-const body = regradeComment(meta, head, readFileSync(join(dir, "chosen.diff"), "utf8"));
+const diff = readFileSync(join(dir, "chosen.diff"), "utf8");
+const request = regradeComment(meta, head, diff);
+// Pending carry only for the owner's own verdict comment (a carried verdict that goes stale again is not re-carried).
+const issue = Number(process.env.ISSUE_NUMBER ?? "");
+const vid = process.env.VERDICT_COMMENT_ID ?? "";
+const label = process.env.LABEL ?? "";
+const ownVerdict = process.env.VERDICT_SOURCE === "comment";
+const pending = request && ownVerdict && Number.isInteger(issue) && issue > 0 && /^\d{1,20}$/.test(vid) && /^[A-Z]$/.test(label)
+  ? pendingCarryBlock({ schema: "peaceai-carry-pending:v1", issue, verdictCommentId: vid, label, runId: meta.runId, candidateId: meta.candidateId, oldBase: base, diffSha256: createHash("sha256").update(diff).digest("hex") })
+  : "";
+const body = request ? request + pending : null;
 if (!body) { out({ stale: "true", head, ok: "false", reason: "regrade-request-too-large" }); process.exit(0); }
 if (scanText(body).length > 0) { out({ stale: "true", head, ok: "false", reason: "personal-info-in-regrade-request" }); process.exit(0); }
 writeFileSync(process.env.BODY_FILE ?? "", body);

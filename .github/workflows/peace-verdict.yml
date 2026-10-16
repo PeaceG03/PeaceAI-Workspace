@@ -4,6 +4,13 @@ name: peace-verdict
 on:
   issue_comment:
     types: [created]
+  # Carry-forward (lib/carry.ts): dispatched ONLY by peace-task's carry job (github-actions[bot]) with the id of its
+  # carry comment; the parse job re-validates it against the owner's original /verdict comment before anything runs.
+  workflow_dispatch:
+    inputs:
+      carry_comment_id:
+        description: "Carry comment id (peace-task carry job only)"
+        required: true
 
 permissions: {}
 
@@ -11,12 +18,15 @@ jobs:
   parse:
     name: parse verdict
     if: >-
-      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.repository == 'PeaceG03/PeaceAI-Workspace' && (
+      (github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]' && github.triggering_actor == 'github-actions[bot]') || (
+      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request == null &&
       github.event.comment.user.login == 'PeaceG03' &&
       github.event.sender.login == 'PeaceG03' &&
       contains(github.event.issue.labels.*.name, 'peace-task') &&
       startsWith(github.event.comment.body, '/verdict')
+      ))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -24,6 +34,12 @@ jobs:
       issues: write
     outputs:
       ok: ${{ steps.parse.outputs.ok }}
+      issue: ${{ steps.src.outputs.issue }}
+      body: ${{ steps.src.outputs.body }}
+      comment_id: ${{ steps.src.outputs.comment_id }}
+      created_at: ${{ steps.src.outputs.created_at }}
+      expect_run: ${{ steps.src.outputs.expect_run }}
+      source: ${{ steps.src.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,13 +49,32 @@ jobs:
           node-version: 22
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Verdict source (the owner's comment, or a re-validated carry)
+        id: src
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          CARRY_COMMENT_ID: ${{ inputs.carry_comment_id }}
+          C_BODY: ${{ github.event.comment.body }}
+          C_ID: ${{ github.event.comment.id }}
+          C_AT: ${{ github.event.comment.created_at }}
+          C_ISSUE: ${{ github.event.issue.number }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            ./node_modules/.bin/tsx peaceai/bin/carry-verdict.ts
+            echo "source=carry" >> "$GITHUB_OUTPUT"
+          else
+            { echo "ok=true"; echo "issue=$C_ISSUE"; echo "comment_id=$C_ID"; echo "created_at=$C_AT"; echo "expect_run="; echo "source=comment"
+              echo "body<<EOF_VERDICT_BODY"; printf '%s\n' "$C_BODY"; echo "EOF_VERDICT_BODY"; } >> "$GITHUB_OUTPUT"
+          fi
       - name: Parse
         id: parse
+        if: steps.src.outputs.ok == 'true'
         env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_BODY: ${{ steps.src.outputs.body }}
         run: ./node_modules/.bin/tsx peaceai/bin/parse-verdict.ts
       - name: Reject malformed command
-        if: steps.parse.outputs.ok != 'true'
+        if: steps.src.outputs.source == 'comment' && steps.parse.outputs.ok != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -83,10 +118,11 @@ jobs:
         id: record
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          COMMENT_ID: ${{ github.event.comment.id }}
-          COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ needs.parse.outputs.body }}
+          COMMENT_ID: ${{ needs.parse.outputs.comment_id }}
+          COMMENT_CREATED_AT: ${{ needs.parse.outputs.created_at }}
+          ISSUE_NUMBER: ${{ needs.parse.outputs.issue }}
+          EXPECT_RUN_ID: ${{ needs.parse.outputs.expect_run }}
         run: |
           export CHOSEN_OUT_DIR="$RUNNER_TEMP/chosen"
           ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "verdict #$ISSUE_NUMBER comment $COMMENT_ID" \
@@ -111,7 +147,7 @@ jobs:
     timeout-minutes: 10
     # One respond job per issue at a time, so two quick verdicts cannot both see "no open PR".
     concurrency:
-      group: peace-verdict-respond-${{ github.event.issue.number }}
+      group: peace-verdict-respond-${{ needs.parse.outputs.issue }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -120,7 +156,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_NUMBER: ${{ needs.parse.outputs.issue }}
       STATUS: ${{ needs.record.outputs.status }}
       LABEL: ${{ needs.record.outputs.label }}
       VERDICT: ${{ needs.record.outputs.verdict }}
@@ -271,14 +307,14 @@ jobs:
     # Main-only environment holding TARGET_PR_TOKEN for this one target (see docs in README "Targets").
     environment: ${{ needs.record.outputs.write_env }}
     concurrency:
-      group: peace-verdict-respond-${{ github.event.issue.number }}-target
+      group: peace-verdict-respond-${{ needs.parse.outputs.issue }}-target
       cancel-in-progress: false
     permissions:
       contents: read
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_NUMBER: ${{ needs.parse.outputs.issue }}
       TARGET: ${{ needs.record.outputs.target }}
       LABEL: ${{ needs.record.outputs.label }}
       VERDICT: ${{ needs.record.outputs.verdict }}
@@ -390,20 +426,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
-      group: peace-verdict-respond-${{ github.event.issue.number }}-patch
+      group: peace-verdict-respond-${{ needs.parse.outputs.issue }}-patch
       cancel-in-progress: false
     permissions:
       contents: read
       issues: write
+      actions: write # carry-forward: re-queue the regrade sweep (gh workflow run peace-task.yml)
     env:
       GH_TOKEN: ${{ github.token }}
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_NUMBER: ${{ needs.parse.outputs.issue }}
       TARGET: ${{ needs.record.outputs.target }}
       LABEL: ${{ needs.record.outputs.label }}
       CANDIDATE: ${{ needs.record.outputs.candidate }}
       RUN_ID: ${{ needs.record.outputs.run_id }}
       BASE_SHA: ${{ needs.record.outputs.base_sha }}
-      COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+      COMMENT_CREATED_AT: ${{ needs.parse.outputs.created_at }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -429,12 +466,21 @@ jobs:
         env:
           CHOSEN_DIR: ${{ runner.temp }}/chosen
           BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+          VERDICT_COMMENT_ID: ${{ needs.parse.outputs.comment_id }}
+          VERDICT_SOURCE: ${{ needs.parse.outputs.source }}
         run: tools/node_modules/.bin/tsx tools/peaceai/bin/verdict-stale.ts
       - name: Post the regrade request
         if: steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok == 'true'
         env:
           BODY_FILE: ${{ runner.temp }}/regrade-comment.md
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+      # Carry-forward: re-queue the regrade through the existing path (the owner's peace-task label stays; only
+      # peaceai:done is removed) and start a sweep. The carry itself is decided later by peace-task's carry job.
+      - name: Re-queue the regrade (pending carry)
+        if: steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok == 'true' && needs.parse.outputs.source == 'comment'
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label peaceai:done >/dev/null
+          gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
       - name: Stale base without a regrade request (fail closed)
         if: steps.stale.outputs.stale != 'false' && steps.stale.outputs.ok != 'true'
         env:

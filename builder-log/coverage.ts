@@ -47,7 +47,15 @@ export interface CoverageReport {
   /** Builder tasks whose skill is not live-proven, ranked by count desc then name. */
   topMissing: MissingSkillCount[];
   logSha256: string;
+  /**
+   * SECONDARY figure, never the official one: the same windows with PEACEAI_SELF_CHANGE tasks (protected by design,
+   * PeaceAI may never edit itself) dropped from numerator and denominator. last7Days / allTime above stay official.
+   */
+  excludingSelfChange: { label: typeof EXCL_SELF_LABEL; last7Days: WindowStats; allTime: WindowStats };
 }
+
+export const SELF_CHANGE_SKILL = "PEACEAI_SELF_CHANGE";
+export const EXCL_SELF_LABEL = "secondary: excluding PEACEAI_SELF_CHANGE (not the official figure)";
 
 /** Injectable: true iff `sha` is an ancestor of PeaceSTOCKS main (or clone HEAD). */
 export type OnMainChecker = (sha: string) => boolean;
@@ -250,8 +258,15 @@ export function coverageReport(logText: string, asOfDate: string, topNOrOpts: nu
     allTime: windowStats(asOfTasks, proven, peaceRealSeqs),
     topMissing,
     logSha256: createHash("sha256").update(logText).digest("hex"),
+    excludingSelfChange: {
+      label: EXCL_SELF_LABEL,
+      last7Days: windowStats(all7.filter(notSelf), proven, peaceRealSeqs),
+      allTime: windowStats(asOfTasks.filter(notSelf), proven, peaceRealSeqs),
+    },
   };
 }
+
+const notSelf = (e: { skill: string }) => e.skill !== SELF_CHANGE_SKILL;
 
 function pct(w: WindowStats): string {
   if (w.percent === null) return "n/a (0 tasks)";
@@ -270,6 +285,13 @@ export function formatCoverageSummary(r: CoverageReport): string {
     `|---|---|`,
     `| last 7 days | ${pct(r.last7Days)} |`,
     `| all-time | ${pct(r.allTime)} |`,
+    "",
+    `Official figure: the table above. Below, ${EXCL_SELF_LABEL}:`,
+    "",
+    `| window (excl. ${SELF_CHANGE_SKILL}) | PeaceAI-able |`,
+    `|---|---|`,
+    `| last 7 days | ${pct(r.excludingSelfChange.last7Days)} |`,
+    `| all-time | ${pct(r.excludingSelfChange.allTime)} |`,
     "",
     `Live-proven skills: ${r.liveProven.length ? r.liveProven.map((s) => `\`${s}\``).join(", ") : "(none)"}.`,
     "",
