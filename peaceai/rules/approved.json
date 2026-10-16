@@ -218,6 +218,19 @@
       }
     },
     {
+      "id": "public-tsconfig-script-v1",
+      "sha256": "c2c604f52d8d5655b843805bfe35cf44eb290e6f2fe010d0da92a880c9c77ed8",
+      "source": "workspace",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Workspace/issues/271#issuecomment-6221846751",
+        "commentId": 6221846751,
+        "issue": 271,
+        "repo": "PeaceG03/PeaceAI-Workspace",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-16T18:13:25Z"
+      }
+    },
+    {
       "id": "public-workflow-job-v1",
       "sha256": "45d5b390cfb621bcf695f2288c67bb4a1cc86a7917160b51d919f776ebdfc65a",
       "source": "workspace",
