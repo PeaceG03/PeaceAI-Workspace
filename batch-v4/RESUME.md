@@ -74,3 +74,5 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Suites on #336 and #337: typecheck OK, npm test 14/14, test:self 2/2, test:tools 956/957 (only the box-only m48 test fails).
 - m75/third-party-notices at 09b4971: THIRD_PARTY_NOTICES covers 118 fixtures in 18 repo/license groups, with peacestocks excluded. All license hashes match the evidence records. The Apache NOTICE for ifc-viewx is included. The nitro email is omitted because the leak scan blocks emails; the hash of the text as written is recorded. Test file: m75-third-party-notices. PR not opened yet.
 - Next: m75/nlparse-named-triggers.
+- 22:14 MDT: opened #339 (m75/third-party-notices 09b4971; suite 959/960) and #340 (m75/nlparse-named-canonical e239bc7, LEARNED_CANONICAL keyed by name; suite 963/964). In both, the only failure is the box-only m48 test. Nothing merged.
+- Open: #336, #337 (approval PRs), #339, #340; issue #338 is waiting for Peace's /approve-rule.
