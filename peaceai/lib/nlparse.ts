@@ -46,7 +46,7 @@ const RESERVED = new Set("break case catch class const continue debugger default
 
 // ---- canonical phrasings (what the engines already accept; a task containing one is left unchanged)
 
-const CANONICAL: RegExp[] = [
+const PLAIN_CANONICAL: readonly RegExp[] = [
   new RegExp(String.raw`\badd (?:a |an |the )?(?:property|key|entry|field) ${ID} with (?:the )?value (?:${LIT}) to (?:the )?(?:object |config |constant )?${ID}\b`, "iu"),
   new RegExp(String.raw`\badd (?:a |an )?(?:guard(?: clause)?|early return) to (?:the )?(?:function )?${ID} that returns (?:${LIT}) (?:when|if) (?:the )?(?:parameter )?${ID} is (?:empty|blank|null|undefined|missing|negative|zero|not finite|nan)\b`, "iu"),
   new RegExp(String.raw`\badd (?:the (?:value|item) )?(?:${LIT}) to (?:the )?(?:array|list) ${ID}\b`, "iu"),
@@ -58,38 +58,47 @@ const CANONICAL: RegExp[] = [
   /\badd (?:an |a )?exported (?:constant|const) `?[A-Z][A-Z0-9_]{1,40}`?(?: of type (?:string|number|boolean))? (?:to|in) `?[A-Za-z0-9_./-]+\.tsx?`?/i,
   /\badd (?:a |an )?helper\b/i,
   /\brename (?:the )?(?:symbol |function |const(?:ant)? |type )?[A-Za-z_$][\w$]* to [A-Za-z_$][\w$]*/i,
-  // M8 learned-rule triggers (line-anchored, as the rule engine reads them).
-  new RegExp(String.raw`^(?:set|change|update) (?:the )?(?:value of )?${ID}(?: in ${FILE})? to (?:"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false)\.?$`, "imu"),
-  new RegExp(String.raw`^add (?:a )?case (?:"[^"\n]+"|'[^'\n]+') (?:returning|that returns) (?:${LIT}) to (?:the )?switch in ${ID}(?: in ${FILE})?\.?$`, "imu"),
-  new RegExp(String.raw`^default ${ID}(?:\.${ID})+ to (?:\[\]|null|"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false) in ${ID}(?: in ${FILE})?\.?$`, "imu"),
-  // M12: the ADD_TEST_CASE rule's header line (its own trigger; the checks and the fix line follow it).
-  new RegExp(TEST_TRIGGER, "imu"),
-  // M13: the ADD_THROW_GUARD rule's header line (its test bullets follow it).
-  new RegExp(GUARD_TRIGGER, "imu"),
-  // M15: the ADD_FUNCTION rule's header line (its test bullets follow it).
-  new RegExp(FUNCTION_TRIGGER, "imu"),
-  // M19: the ADD_WORKFLOW_STEP rule's header line.
-  new RegExp(WORKFLOW_TRIGGER, "imu"),
-  // M27: the REPLACE_EXPRESSION rule's header line (its test bullets follow it).
-  new RegExp(REPLACE_TRIGGER, "imu"),
-  // M57: the ADD_THROW_GUARD function-top header line (public-throw-guard-top-v1, approved in #185).
-  new RegExp(GUARD_TOP_TRIGGER, "imu"),
-  // M62: METHOD_GUARD (method call in the condition; distinct phrase).
-  new RegExp(METHOD_GUARD_TRIGGER, "imu"),
-  // M26 wiring: COMPLEX_FUNCTION header line ("add complex function ... with body:"); canonical form only.
-  new RegExp(COMPLEX_TRIGGER, "imu"),
-  // M64: LOOP_FUNCTION header line ("add loop function ... with body:"), public-loop-function-v1 (kind COMPLEX_FUNCTION).
-  new RegExp(LOOP_TRIGGER, "imu"),
-  // M66: IMPORT_EDIT v2 header line ("change import of SPEC in FILE to: import ..."); canonical form only.
-  new RegExp(IMPORT_EDIT_V2_TRIGGER, "imu"),
-  // M67 un-drop batch: LOOP_WHILE (kind COMPLEX_FUNCTION), WORKFLOW_JOB, TSCONFIG_SCRIPT, ENV_FIX header lines; canonical form only.
-  new RegExp(WHILE_TRIGGER, "imu"),
-  new RegExp(WORKFLOW_JOB_TRIGGER, "imu"),
-  new RegExp(TSCONFIG_SCRIPT_TRIGGER, "imu"),
-  new RegExp(ENV_FIX_TRIGGER, "imu"),
-  // M74: DATE family header line ("add date function ... with body:"), public-date-function-v1 (kind COMPLEX_FUNCTION).
-  new RegExp(DATE_TRIGGER, "imu"),
 ];
+/**
+ * Learned-rule triggers (line-anchored, as the rule engine reads them), keyed by name. Each entry carries the rule kind
+ * that must be approved before its wording counts as canonical. M75: keyed by name instead of length-N indexing, so
+ * adding a trigger can never shift another trigger's kind.
+ */
+export const LEARNED_CANONICAL = {
+  // M8 learned-rule triggers (line-anchored, as the rule engine reads them).
+  setLiteral: { re: new RegExp(String.raw`^(?:set|change|update) (?:the )?(?:value of )?${ID}(?: in ${FILE})? to (?:"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false)\.?$`, "imu"), kind: "SET_LITERAL", family: "set-literal" },
+  switchCase: { re: new RegExp(String.raw`^add (?:a )?case (?:"[^"\n]+"|'[^'\n]+') (?:returning|that returns) (?:${LIT}) to (?:the )?switch in ${ID}(?: in ${FILE})?\.?$`, "imu"), kind: "ADD_SWITCH_CASE", family: "switch-case" },
+  nullishDefault: { re: new RegExp(String.raw`^default ${ID}(?:\.${ID})+ to (?:\[\]|null|"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false) in ${ID}(?: in ${FILE})?\.?$`, "imu"), kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
+  // M12: the ADD_TEST_CASE rule's header line (its own trigger; the checks and the fix line follow it).
+  testCase: { re: new RegExp(TEST_TRIGGER, "imu"), kind: "ADD_TEST_CASE", family: null },
+  // M13: the ADD_THROW_GUARD rule's header line (its test bullets follow it).
+  throwGuard: { re: new RegExp(GUARD_TRIGGER, "imu"), kind: "ADD_THROW_GUARD", family: null },
+  // M15: the ADD_FUNCTION rule's header line (its test bullets follow it).
+  addFunction: { re: new RegExp(FUNCTION_TRIGGER, "imu"), kind: "ADD_FUNCTION", family: null },
+  // M19: the ADD_WORKFLOW_STEP rule's header line.
+  workflowStep: { re: new RegExp(WORKFLOW_TRIGGER, "imu"), kind: "ADD_WORKFLOW_STEP", family: null },
+  // M27: the REPLACE_EXPRESSION rule's header line (its test bullets follow it).
+  replaceExpression: { re: new RegExp(REPLACE_TRIGGER, "imu"), kind: "REPLACE_EXPRESSION", family: null },
+  // M57: the ADD_THROW_GUARD function-top header line (public-throw-guard-top-v1, approved in #185).
+  throwGuardTop: { re: new RegExp(GUARD_TOP_TRIGGER, "imu"), kind: "ADD_THROW_GUARD", family: null },
+  // M62: METHOD_GUARD (method call in the condition; distinct phrase).
+  methodGuard: { re: new RegExp(METHOD_GUARD_TRIGGER, "imu"), kind: "METHOD_GUARD", family: null },
+  // M26 wiring: COMPLEX_FUNCTION header line ("add complex function ... with body:"); canonical form only.
+  complexFunction: { re: new RegExp(COMPLEX_TRIGGER, "imu"), kind: "COMPLEX_FUNCTION", family: null },
+  // M64: LOOP_FUNCTION header line ("add loop function ... with body:"), public-loop-function-v1 (kind COMPLEX_FUNCTION).
+  loopFunction: { re: new RegExp(LOOP_TRIGGER, "imu"), kind: "COMPLEX_FUNCTION", family: null },
+  // M66: IMPORT_EDIT v2 header line ("change import of SPEC in FILE to: import ..."); canonical form only.
+  importEditV2: { re: new RegExp(IMPORT_EDIT_V2_TRIGGER, "imu"), kind: "IMPORT_EDIT_V2", family: null },
+  // M67 un-drop batch: LOOP_WHILE (kind COMPLEX_FUNCTION), WORKFLOW_JOB, TSCONFIG_SCRIPT, ENV_FIX header lines; canonical form only.
+  loopWhile: { re: new RegExp(WHILE_TRIGGER, "imu"), kind: "COMPLEX_FUNCTION", family: null },
+  workflowJob: { re: new RegExp(WORKFLOW_JOB_TRIGGER, "imu"), kind: "WORKFLOW_JOB", family: null },
+  tsconfigScript: { re: new RegExp(TSCONFIG_SCRIPT_TRIGGER, "imu"), kind: "TSCONFIG_SCRIPT", family: null },
+  envFix: { re: new RegExp(ENV_FIX_TRIGGER, "imu"), kind: "ENV_FIX", family: null },
+  // M74: DATE family header line ("add date function ... with body:"), public-date-function-v1 (kind COMPLEX_FUNCTION).
+  dateFunction: { re: new RegExp(DATE_TRIGGER, "imu"), kind: "COMPLEX_FUNCTION", family: null },
+} as const satisfies Record<string, { re: RegExp; kind: string; family: Family | null }>;
+export type LearnedTriggerName = keyof typeof LEARNED_CANONICAL;
+const CANONICAL: readonly RegExp[] = [...PLAIN_CANONICAL, ...Object.values(LEARNED_CANONICAL).map((t) => t.re)];
 // Numbered plan lines ("Step 2: ...", "2. ...", "2) ..."), read the same way the planner reads them.
 const STEP_WORD = /^step\s*\d{1,2}\s*[-:.)]\s*/iu;
 const STEP_NUM = /^\d{1,2}\s*[.)]\s*/u;
@@ -300,28 +309,8 @@ export type ParseResult =
 
 export interface ParseOptions { model: NbModel | null; approvedKinds: ReadonlySet<string> }
 
-// The last CANONICAL entries are the M8 learned-rule triggers, in this order.
 // M12: ADD_TEST_CASE has no plain-language family (family null): it is only accepted in its canonical form.
-const LEARNED_TRIGGERS: { re: RegExp; kind: string; family: Family | null }[] = [
-  { re: CANONICAL[CANONICAL.length - 18]!, kind: "SET_LITERAL", family: "set-literal" },
-  { re: CANONICAL[CANONICAL.length - 17]!, kind: "ADD_SWITCH_CASE", family: "switch-case" },
-  { re: CANONICAL[CANONICAL.length - 16]!, kind: "ADD_NULLISH_DEFAULT", family: "nullish-default" },
-  { re: CANONICAL[CANONICAL.length - 15]!, kind: "ADD_TEST_CASE", family: null },
-  { re: CANONICAL[CANONICAL.length - 14]!, kind: "ADD_THROW_GUARD", family: null },
-  { re: CANONICAL[CANONICAL.length - 13]!, kind: "ADD_FUNCTION", family: null },
-  { re: CANONICAL[CANONICAL.length - 12]!, kind: "ADD_WORKFLOW_STEP", family: null },
-  { re: CANONICAL[CANONICAL.length - 11]!, kind: "REPLACE_EXPRESSION", family: null },
-  { re: CANONICAL[CANONICAL.length - 10]!, kind: "ADD_THROW_GUARD", family: null },
-  { re: CANONICAL[CANONICAL.length - 9]!, kind: "METHOD_GUARD", family: null },
-  { re: CANONICAL[CANONICAL.length - 8]!, kind: "COMPLEX_FUNCTION", family: null },
-  { re: CANONICAL[CANONICAL.length - 7]!, kind: "COMPLEX_FUNCTION", family: null },
-  { re: CANONICAL[CANONICAL.length - 6]!, kind: "IMPORT_EDIT_V2", family: null },
-  { re: CANONICAL[CANONICAL.length - 5]!, kind: "COMPLEX_FUNCTION", family: null },
-  { re: CANONICAL[CANONICAL.length - 4]!, kind: "WORKFLOW_JOB", family: null },
-  { re: CANONICAL[CANONICAL.length - 3]!, kind: "TSCONFIG_SCRIPT", family: null },
-  { re: CANONICAL[CANONICAL.length - 2]!, kind: "ENV_FIX", family: null },
-  { re: CANONICAL[CANONICAL.length - 1]!, kind: "COMPLEX_FUNCTION", family: null }, // M74 DATE family
-];
+const LEARNED_TRIGGERS: readonly { name: LearnedTriggerName; re: RegExp; kind: string; family: Family | null }[] = (Object.keys(LEARNED_CANONICAL) as LearnedTriggerName[]).map((name) => ({ name, ...LEARNED_CANONICAL[name] }));
 
 const TEST_ONLY = /^(?:then |and |also |finally )?(?:add|write|include) (?:a |an |some |focused |unit )*tests?\b[^.]*\.?$/iu;
 
@@ -394,7 +383,7 @@ export function parseTask(task: { title: string; body: string }, opts: ParseOpti
   if (isCanonical(full)) {
     // A learned-rule trigger is only canonical once that rule is approved; otherwise say so instead.
     const learned = LEARNED_TRIGGERS.find((t) => t.re.test(full.split("\n").map((l) => l.trim()).filter(Boolean).join("\n")) || full.split("\n").some((l) => t.re.test(l.trim())));
-    const other = CANONICAL.slice(0, CANONICAL.length - LEARNED_TRIGGERS.length).some((re) => re.test(full));
+    const other = PLAIN_CANONICAL.some((re) => re.test(full));
     if (learned && !other && !opts.approvedKinds.has(learned.kind)) return { status: "unsure", reason: "RULE_NOT_APPROVED", hint: learned.family };
     return { status: "canonical", objective: full };
   }
