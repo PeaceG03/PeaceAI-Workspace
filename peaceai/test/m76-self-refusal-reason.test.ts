@@ -7,13 +7,14 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { applyRule, namedTargetFile, type RuleSpec } from "../lib/learned.ts";
-import { isSelfProtected, WORKSPACE_TARGET } from "../lib/self-zone.ts";
+import { isSelfProtected, SAFE_HELPERS, WORKSPACE_TARGET } from "../lib/self-zone.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const spec = (id: string) => JSON.parse(readFileSync(resolve(root, `peaceai/rules/learned/${id}.json`), "utf8")) as RuleSpec;
 const COMPLEX = spec("public-complex-function-v1");
 const GUARD = spec("public-throw-guard-top-v1");
+const DATES = SAFE_HELPERS.find((p) => p.endsWith("/dates.ts"))!; // the safe-zone date helper (named via SAFE_HELPERS; m72 keeps its path out of other files)
 const isTest = (p: string) => p.endsWith(".test.ts");
 const complexTask = (file: string) => `add complex function \`zoneCount(a: number, b: number): number\` to \`${file}\` with body:\nconst s = a + b;\nif (s < 0) return 0;\nreturn s;\n- zoneCount(1, 2) is 3`;
 /** What generate.ts hands the rules on this Workspace: tracked files that are in scope and not denied. */
@@ -54,9 +55,9 @@ test("only the Workspace target is affected; other repos and no-repo callers kee
 });
 
 test("a real landing in the safe zone still builds (nothing else changes)", () => {
-  const { e, r } = run(COMPLEX, "add complex function `utcYearKey(day: string): string` to `peaceai/self-tests/helpers/dates.ts` with body:\nconst d = day.slice(0, 10);\nif (d.length !== 10) throw new Error(\"BAD_DAY\");\nreturn d.slice(0, 4);\n- utcYearKey(\"2026-10-16\") is \"2026\"", WORKSPACE_TARGET, [...jobAFiles(), { path: "peaceai/self-tests/helpers/dates.ts", content: readFileSync(resolve(root, "peaceai/self-tests/helpers/dates.ts"), "utf8") }]);
+  const { e, r } = run(COMPLEX, "add complex function `utcYearKey(day: string): string` to `" + DATES + "` with body:\nconst d = day.slice(0, 10);\nif (d.length !== 10) throw new Error(\"BAD_DAY\");\nreturn d.slice(0, 4);\n- utcYearKey(\"2026-10-16\") is \"2026\"", WORKSPACE_TARGET, [...jobAFiles(), { path: DATES, content: readFileSync(resolve(root, DATES), "utf8") }]);
   assert.ok(e, r);
-  assert.equal(e!.path, "peaceai/self-tests/helpers/dates.ts");
+  assert.equal(e!.path, DATES);
 });
 
 test("namedTargetFile reads the trigger's own file group; null when there is none or no match", () => {
