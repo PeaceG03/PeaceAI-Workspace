@@ -19,6 +19,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-add-function-v2": "ADD_FUNCTION_NEW_MODULE",
   "public-method-guard-v1": "METHOD_GUARD",
   "public-complex-function-v1": "COMPLEX_FUNCTION",
+  "public-date-function-v1": "COMPLEX_FUNCTION", // M74 DATE family: the COMPLEX_FUNCTION engine with Date types (kind COMPLEX_FUNCTION)
   "public-loop-function-v1": "LOOP_FUNCTION",
   "public-loop-function-v2": "LOOP_FUNCTION",
   "public-env-fix-v1": "ENV_FIX",
