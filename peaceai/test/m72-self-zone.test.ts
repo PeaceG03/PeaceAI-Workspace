@@ -60,7 +60,7 @@ test("safe zone: only new tests, docs and the named helpers; odd shapes are refu
 test("no safe-zone shape is protected by PROTECTED_SELF, and nothing outside self-tests imports the helpers", () => {
   for (const p of [...SAFE_HELPERS, "peaceai/self-tests/a.test.ts", "peaceai/self-tests/helpers/a.test.ts", "peaceai/docs/a.md"])
     assert.equal(PROTECTED_SELF.some((x) => x.pattern.test(p)), false, p);
-  const files = execFileSync("git", ["-C", root, "ls-files", "*.ts"], { encoding: "utf8" }).split("\n").filter((p) => p && !p.startsWith("peaceai/self-tests/") && p !== "peaceai/lib/self-zone.ts" && p !== "peaceai/test/m72-self-zone.test.ts");
+  const files = execFileSync("git", ["-C", root, "ls-files", "*.ts"], { encoding: "utf8" }).split("\n").filter((p) => p && !p.startsWith("peaceai/self-tests/") && p !== "peaceai/lib/self-zone.ts" && p !== "peaceai/test/m72-self-zone.test.ts" && p !== "peaceai/test/m77-test-self-helpers.test.ts"); // m77 writes canary helpers tests in a scratch tree (paths only, no import)
   for (const p of files) assert.doesNotMatch(read(p), /self-tests\/helpers\//, p);
 });
 
@@ -140,7 +140,7 @@ test("wiring: Job B digests before/after apply and after the passes; tamper-proo
   const tp = read("peaceai/proof/tamper-proof.ts");
   assert.ok(tp.indexOf("selfZoneSelfCheck()") < tp.indexOf("PROOF_SANDBOX_USER is required"));
   assert.match(read(".github/workflows/ci.yml"), /- run: npm run test:self/);
-  assert.equal(JSON.parse(read("package.json")).scripts["test:self"], "tsx --test peaceai/self-tests/*.test.ts");
+  assert.equal(JSON.parse(read("package.json")).scripts["test:self"], "tsx --test $(find peaceai/self-tests -name '*.test.ts' -type f | LC_ALL=C sort)", "M77: helpers/** tests run too (m77-test-self-helpers)");
   assert.ok(readdirSync(join(root, "peaceai/self-tests")).some((f) => f.endsWith(".test.ts")));
   assert.equal(selfProtectedReason("peaceai/lib/self-zone.ts") !== null && isSelfProtected("peaceai/lib/selfchange.ts"), true);
 });
