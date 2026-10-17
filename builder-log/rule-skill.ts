@@ -27,6 +27,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-workflow-job-v1": "WORKFLOW_JOB",
   "public-tsconfig-script-v1": "TSCONFIG_SCRIPT",
   "public-import-edit-v2": "IMPORT_EDIT",
+  "public-test-case-existing-v1": "TEST_CASE_EXISTING", // M80: kind TEST_EXISTING, shape TEST_CASE_EXISTING
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */
