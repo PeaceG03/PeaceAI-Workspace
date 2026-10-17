@@ -9,7 +9,8 @@
       "install": "npm",
       "originalSuite": "full",
       "writeEnvironment": null,
-      "verdictRoute": "pr"
+      "verdictRoute": "pr",
+      "selfZone": true
     },
     "PeaceG03/PeaceSTOCKS": {
       "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
