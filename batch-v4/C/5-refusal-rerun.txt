@@ -1,0 +1,1 @@
+read-only-ops rerun ok=false reason=op_not_allowlisted log=/workspace/v4-notes/batch-v4/C/ops.jsonl

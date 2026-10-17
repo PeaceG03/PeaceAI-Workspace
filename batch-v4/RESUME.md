@@ -77,3 +77,4 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - 22:14 MDT: opened #339 (m75/third-party-notices 09b4971; suite 959/960) and #340 (m75/nlparse-named-canonical e239bc7, LEARNED_CANONICAL keyed by name; suite 963/964). In both, the only failure is the box-only m48 test. Nothing merged.
 - Open: #336, #337 (approval PRs), #339, #340; issue #338 is waiting for Peace's /approve-rule.
 - CI green on #336, #337, #339 and #340.
+- 22:22 MDT: C live proof done. Evidence is in batch-v4/C (RESULT.md, ops.jsonl, outputs 1-6).

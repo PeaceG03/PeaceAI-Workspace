@@ -1,0 +1,1 @@
+read-only-ops run_status ok=false reason=repo_not_allowlisted log=/workspace/v4-notes/batch-v4/C/ops.jsonl
