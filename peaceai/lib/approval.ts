@@ -1,7 +1,7 @@
 // M8: validation for the approval write path. Pure functions; the workflow passes GitHub's event data
 // (via env only) and the repository files. An agent never calls this to approve: only Peace's
 // `/approve-rule <hash>` comment, delivered by GitHub to the workflow, can produce a list entry.
-import { APPROVER, validateEntry, type ApprovalEntry } from "./approved.ts";
+import { APPROVER, validateEntry, validateList, withEntry, type ApprovalEntry, type ApprovedList } from "./approved.ts";
 import { specHash, validateSpec } from "./learned.ts";
 import { parseMarker, parseSpecBlock } from "./propose.ts";
 
@@ -178,4 +178,106 @@ export function branchProblem(branch: string, files: readonly string[], aheadBy:
   }
   if (touchesList) return "approved list changed outside the approval workflow";
   return null;
+}
+
+/** The commit message approve-rule.ts writes for the entries it added (one source of truth for the catch-up pass). */
+export function approvalMessage(added: readonly ApprovalEntry[]): string {
+  return [
+    `approve learned rule${added.length > 1 ? "s" : ""}: ${added.map((e) => e.id).join(", ")}`,
+    "",
+    ...added.flatMap((e) => [`Rule: ${e.id}`, `SHA-256: ${e.sha256}`, `Approval: ${e.approval.url}`, `Approval-Author: ${e.approval.author}`, ...(e.attestation ? [`Attestation: PeaceG03/PeaceAI-Results@${e.attestation.commit}:${e.attestation.path}`] : []), ""]),
+    "Written by the peace-approve-rule workflow from the approval comment(s) above.",
+  ].join("\n");
+}
+
+// ---- M82: scheduled catch-up for an approval PR whose landing job gave up.
+// approve-rule-pr.sh waits <=25 min for the dispatched checks and <=25 min for Peace to "Approve and run" the
+// held pull_request runs, then exits and leaves the PR open. The scheduled pass re-checks such a PR from
+// scratch and squash-merges it with --match-head-commit only when every guard below holds again. It never
+// updates the branch, never approves/cancels/re-runs a run, never edits the list and never lands a Results
+// (core) entry; a refusal leaves the PR untouched for Peace.
+
+export const BOT_LOGIN = "github-actions[bot]";
+export const BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com";
+export const CATCHUP_REQUIRED_CHECKS = ["leak-check", "tamper-proof", "tests"] as const;
+/** The landing job's own timeout is 60 min; a younger PR may still be handled by it. */
+export const CATCHUP_MIN_AGE_MS = 65 * 60_000;
+const CATCHUP_BRANCH = /^peaceai-approve-rule\/[0-9a-f]{12}-[0-9a-f]{6}$/;
+
+export type CatchupReason =
+  | "NOT_APPROVAL_PR" | "TOO_YOUNG" | "NOT_ONE_COMMIT" | "NOT_BOT_COMMIT" | "BRANCH" | "STALE_LIST" | "LIST_INVALID"
+  | "NOT_ONE_ENTRY" | "NOT_WORKSPACE" | "HEAD_LIST_MISMATCH" | "MESSAGE_MISMATCH" | "COMMENT_MISSING" | "CHECKS_PENDING"
+  | "CHECK_FAILED" | "HELD_RUNS" | "RUN_FAILED" | Refusal;
+
+export interface CatchupInput {
+  repo: string;
+  now: number;
+  pr: { number: number; user: string; headRef: string; headRepo: string; baseRef: string; draft: boolean; createdAt: string; headSha: string };
+  commits: readonly { sha: string; parents: readonly string[]; authorName: string; authorEmail: string; committerEmail: string; message: string }[];
+  files: readonly string[];
+  /** main...head compare: commits on head not on main. */
+  aheadBy: number;
+  /** approved.json text on main, at the approval commit's parent, and at the PR head. */
+  mainListText: string;
+  parentListText: string;
+  headListText: string;
+  /** The approval comment (by id) and its issue, re-read from the API; null when unreadable or deleted. */
+  approval: (commentId: number) => { comment: { id: number; body: string; user: string; association: string; url: string; createdAt: string; issue: number }; issue: { number: number; labels: readonly string[]; body: string; isPull: boolean } } | null;
+  /** The public spec file on main for a rule id (null when absent). */
+  spec: (id: string) => unknown;
+  checkRuns: readonly { id: number; name: string; status: string; conclusion: string | null }[];
+  prRuns: readonly { id: number; event: string; headSha: string; headBranch: string; status: string; conclusion: string | null }[];
+}
+export type CatchupDecision = { action: "merge"; sha: string; subject: string; body: string; entry: ApprovalEntry } | { action: "wait" | "refuse"; reason: CatchupReason };
+
+const parseList = (text: string): ApprovedList | null => { try { const o = JSON.parse(text); return validateList(o) ? o : null; } catch { return null; } };
+
+export function catchupDecision(x: CatchupInput): CatchupDecision {
+  const refuse = (reason: CatchupReason): CatchupDecision => ({ action: "refuse", reason });
+  const wait = (reason: CatchupReason): CatchupDecision => ({ action: "wait", reason });
+  const p = x.pr;
+  // 1. Only a PR the bot itself opened from its own approval branch in this repository, against main.
+  if (p.user !== BOT_LOGIN || p.headRepo !== x.repo || p.baseRef !== "main" || p.draft || !CATCHUP_BRANCH.test(p.headRef) || !/^[0-9a-f]{40}$/.test(p.headSha)) return refuse("NOT_APPROVAL_PR");
+  const created = Date.parse(p.createdAt);
+  if (!Number.isFinite(created)) return refuse("NOT_APPROVAL_PR");
+  if (x.now - created < CATCHUP_MIN_AGE_MS) return wait("TOO_YOUNG");
+  // 2. Exactly one bot commit, at the head, changing only the list, exactly one commit ahead of main (same rule as tamper-proof).
+  if (x.commits.length !== 1 || x.commits[0]!.sha !== p.headSha || x.commits[0]!.parents.length !== 1) return refuse("NOT_ONE_COMMIT");
+  const c = x.commits[0]!;
+  if (c.authorName !== BOT_LOGIN || c.authorEmail !== BOT_EMAIL || c.committerEmail !== BOT_EMAIL) return refuse("NOT_BOT_COMMIT");
+  if (branchProblem(p.headRef, x.files, x.aheadBy)) return refuse("BRANCH");
+  // 3. The list on main is byte-identical to the one the approval commit was cut from, so the squash lands exactly the head list.
+  if (x.parentListText !== x.mainListText) return refuse("STALE_LIST");
+  const main = parseList(x.mainListText);
+  const head = parseList(x.headListText);
+  if (!main || !head) return refuse("LIST_INVALID");
+  // 4. Re-verification: exactly one new or re-pinned entry, from a Workspace /approve-rule that validates again now
+  //    against the proposal issue and the spec file on main (its sha must still match).
+  const changed = head.rules.filter((r) => !main.rules.some((m) => JSON.stringify(m) === JSON.stringify(r)));
+  if (changed.length !== 1) return refuse("NOT_ONE_ENTRY");
+  const claimed = changed[0]!;
+  if (claimed.source !== "workspace") return refuse("NOT_WORKSPACE");
+  const got = x.approval(claimed.approval.commentId);
+  if (!got || got.issue.isPull || got.comment.id !== claimed.approval.commentId || got.issue.number !== got.comment.issue) return refuse("COMMENT_MISSING");
+  const r = validateWorkspaceApproval(
+    { repo: x.repo, body: got.comment.body, author: got.comment.user, association: got.comment.association, commentId: got.comment.id, url: got.comment.url, createdAt: got.comment.createdAt, issue: got.issue.number, labels: got.issue.labels, issueBody: got.issue.body },
+    (() => { const m = parseMarker(got.issue.body); return m ? x.spec(m.id) : null; })(), main.rules,
+  );
+  if (!r.ok) return refuse(r.reason);
+  if (JSON.stringify(r.entry) !== JSON.stringify(claimed)) return refuse("HEAD_LIST_MISMATCH");
+  if (x.headListText !== JSON.stringify(withEntry(main, r.entry), null, 2) + "\n") return refuse("HEAD_LIST_MISMATCH");
+  const msg = approvalMessage([r.entry]);
+  if (c.message.replace(/\s+$/, "") !== msg) return refuse("MESSAGE_MISMATCH");
+  // 5. Every required check-run on the exact head succeeded (latest run of each name), as approve-rule-pr.sh requires.
+  for (const name of CATCHUP_REQUIRED_CHECKS) {
+    const latest = x.checkRuns.filter((k) => k.name === name).sort((a, b) => b.id - a.id)[0];
+    if (!latest || latest.status !== "completed") return wait("CHECKS_PENDING");
+    if (latest.conclusion !== "success") return refuse("CHECK_FAILED");
+  }
+  // 6. The PR's own pull_request runs on that head: none still held or running, none failed.
+  const runs = x.prRuns.filter((k) => k.event === "pull_request" && k.headSha === p.headSha && k.headBranch === p.headRef);
+  if (runs.some((k) => k.conclusion === "action_required" || k.status !== "completed")) return wait("HELD_RUNS");
+  if (runs.some((k) => k.conclusion !== "success" && k.conclusion !== "skipped")) return refuse("RUN_FAILED");
+  const lines = msg.split("\n");
+  return { action: "merge", sha: p.headSha, subject: `${lines[0]} (#${p.number})`, body: lines.slice(2).join("\n").replace(/\s+$/, ""), entry: r.entry };
 }
