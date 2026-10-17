@@ -93,3 +93,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - 23:02 MDT: opened #348 (m77/test-self-helpers ce5272b; suite 969/970, test:self 3/3 with #345). #347 is merged; refiling the protected-file refusal proof next. #346 is still waiting on its held runs (deadline about 23:18 MDT).
 - 23:03 MDT: filed the refiled refusal proof as #349.
 - 23:07 MDT: #349 refused as expected: https://github.com/PeaceG03/PeaceAI-Workspace/issues/349#issuecomment-6229947829 (public-complex-function-v1=self_protected_path; peace-task run 39004776788).
+
+## 05:15Z (23:15 MDT) update
+- #346 MERGED 05:13:54Z (23:13:54 MDT) as bf5e75f; landing run 39004004744 success. approved.json has public-date-function-v1 (0b48c156...).
+- B landing proof filed: https://github.com/PeaceG03/PeaceAI-Workspace/issues/350 (watching the review; refusal proof next).
+- M78 leak-scope self-zone PR in progress: worktree /workspace/v4-lk, branch m78/leak-scope-self-zone (scope.ts selfZoneExempt + leak-scan imports inSafeZone, base targets.json). m78 test 21/21 with m72. After merge, #345 needs a leak-check rerun.
