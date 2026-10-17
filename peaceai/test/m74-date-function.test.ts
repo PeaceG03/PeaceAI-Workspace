@@ -16,6 +16,7 @@ import { admitRules } from "../lib/approved.ts";
 import { applyComplexRule, COMPLEX_TRIGGER, DATE_FUNCTION_FLAG, DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, DATE_TRIGGER, dateRefusal, LOOP_TRIGGER, NAMED_REFUSALS, stubComplexBody } from "../lib/learned-complex.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
+import { parseTask } from "../lib/nlparse.ts";
 import { isDateSpec, parseMarker, parseSpecBlock, phrasingFor, proposalBody } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 
@@ -234,4 +235,11 @@ test("phrasing and proposal body: date branch, marker and spec block pin the exa
   assert.equal(specHash(parseSpecBlock(body) as RuleSpec), SHA);
   for (const c of [DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER]) assert.ok(body.includes(c), c);
   assert.doesNotMatch(body, /Every loop form is refused/);
+});
+
+test("nlparse: the date phrase is canonical only when COMPLEX_FUNCTION is approved; RULE_NOT_APPROVED otherwise", () => {
+  const body = task("minutesSinceMidnight(d: Date): number", MSM, '- minutesSinceMidnight(new Date("2026-10-16T05:30:00Z")) is 330');
+  const off = parseTask({ title: "", body }, { model: null, approvedKinds: new Set() });
+  assert.equal(off.status, "unsure"); if (off.status === "unsure") assert.equal(off.reason, "RULE_NOT_APPROVED");
+  assert.equal(parseTask({ title: "", body }, { model: null, approvedKinds: new Set(["COMPLEX_FUNCTION"]) }).status, "canonical");
 });
