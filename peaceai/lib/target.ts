@@ -4,6 +4,7 @@
 // treated as PRIVATE and fails closed: its content is never fetched into a public run. Only targets
 // with a scope config in peaceai/targets.json run at all.
 import { WORKFLOW_FILE } from "./learned-workflow.ts";
+import { inSafeZone, isSelfProtected, WORKSPACE_TARGET } from "./self-zone.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -27,6 +28,9 @@ export interface TargetConfig {
   workflowPattern?: string;
   /** M67: TSCONFIG_SCRIPT candidates (package.json + one new root tsconfig.NAME.json) allowed on this target. */
   tsconfigScript?: boolean;
+  /** M72 SELF_CHANGE stage 1: this Workspace only. Its safe zone (self-zone.ts) joins the editable paths;
+   * protected files stay refused. Enabled by its own reviewed one-commit approval PR. */
+  selfZone?: boolean;
 }
 
 export interface TargetsFile {
@@ -52,6 +56,7 @@ export function loadTargets(path = join(import.meta.dirname, "..", "targets.json
     if (c.workflowPattern !== undefined && (typeof c.workflowPattern !== "string" || !c.workflowPattern.startsWith("^\\.github/workflows/") || !c.workflowPattern.endsWith("$") || name === "PeaceG03/PeaceAI-Workspace")) throw new Error("invalid workflow pattern");
     if (c.workflowPattern !== undefined) new RegExp(c.workflowPattern);
     if (c.tsconfigScript !== undefined && (c.tsconfigScript !== true || name === "PeaceG03/PeaceAI-Workspace")) throw new Error("invalid tsconfigScript");
+    if (c.selfZone !== undefined && (c.selfZone !== true || name !== WORKSPACE_TARGET)) throw new Error("invalid selfZone");
   }
   return file;
 }
@@ -110,11 +115,15 @@ export function scopeOf(config: TargetConfig) {
   const test = new RegExp(config.testPattern);
   const deny = config.denyPatterns.map((p) => new RegExp(p, "i"));
   const workflow = typeof config.workflowPattern === "string" ? new RegExp(config.workflowPattern) : null;
+  const selfZone = config.selfZone === true;
+  const plainSource = (path: string) => source.test(path) && !path.split("/").some((p) => p === "" || p.startsWith("."));
   return {
-    isSource: (path: string) => source.test(path) && !path.split("/").some((p) => p === "" || p.startsWith(".")),
+    isSource: (path: string) => plainSource(path) || (selfZone && inSafeZone(path)),
     isTest: (path: string) => test.test(path),
-    isDenied: (path: string) => deny.some((d) => d.test(path)),
+    // M72: outside src/, a self-zone target denies every protected file (belt and braces; isSource already excludes them).
+    isDenied: (path: string) => deny.some((d) => d.test(path)) || (selfZone && !plainSource(path) && isSelfProtected(path)),
     isWorkflow: (path: string) => !!workflow && workflow.test(path) && WORKFLOW_FILE.test(path),
     tsconfigScript: config.tsconfigScript === true,
+    selfZone,
   };
 }

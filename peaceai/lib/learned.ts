@@ -15,6 +15,7 @@ import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "
 import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
+import { selfZoneEditRefusal, WORKSPACE_TARGET } from "./self-zone.ts";
 import { join } from "node:path";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
@@ -338,10 +339,23 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   // dry-runs, tools) refuses a denied path even when it hands in an unfiltered file list. Same order as
   // scope.ts checkCandidateScope: an opted-in workflow file is checked by its own rules, not by deny.
   if (repo && deniedEditPath(repo, [edit.path, ...(edit.extra ?? []).map((x) => x.path)])) { if (why) why.reason = "denied_path"; return null; }
+  // M72 SELF_CHANGE stage 1: on this Workspace a candidate outside src/ may only touch the safe zone, and never a
+  // protected file (grading, leak/tamper checks, verdict/approval, scope lists, lm.ts, workflows, the lists).
+  if (repo === WORKSPACE_TARGET) {
+    const r = selfZoneRefusal([edit.path, ...(edit.extra ?? []).map((x) => x.path)]);
+    if (r) { if (why) why.reason = r; return null; }
+  }
   if (!exists) return edit;
   const created = [...(edit.create ? [edit.path] : []), ...(edit.extra ?? []).filter((x) => x.create).map((x) => x.path)];
   if (created.some((p) => exists(p))) { if (why) why.reason = "new_test_path_exists"; return null; }
   return edit;
+}
+
+/** M72: the Workspace refusal for a set of edit paths: protected first, then outside the (enabled) safe zone. */
+export function selfZoneRefusal(paths: readonly string[], enabled = loadTargets().targets[WORKSPACE_TARGET]?.selfZone === true): "self_protected_path" | "outside_safe_zone" | null {
+  const r = selfZoneEditRefusal(paths);
+  if (r) return r;
+  return !enabled && paths.some((p) => !/^src\//.test(p)) ? "outside_safe_zone" : null;
 }
 
 /** True when `repo` is a configured target and any path is denied for it (opted-in workflow files excepted). */

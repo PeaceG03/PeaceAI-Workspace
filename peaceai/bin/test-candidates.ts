@@ -18,6 +18,7 @@ import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
+import { protectedDigest, WORKSPACE_TARGET } from "../lib/self-zone.ts";
 
 const inDir = resolve(process.env.PEACEAI_IN_DIR ?? "");
 const resultsFile = resolve(process.env.PEACEAI_RESULTS_FILE ?? "");
@@ -31,6 +32,8 @@ const targets = loadTargets();
 const targetConfig = targets.targets[process.env.PEACEAI_TARGET || targets.default];
 if (!targetConfig) throw new Error("target has no scope config");
 const scope = scopeOf(targetConfig);
+// M72: on this Workspace every candidate is checked against a digest of all protected files (self-zone.ts).
+const digestProtected = (process.env.PEACEAI_TARGET || targets.default) === WORKSPACE_TARGET;
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -506,8 +509,11 @@ for (const candidate of selected) {
     // there are judged on the candidate (a regression fails it). Base failures are environment noise.
     const judged = related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
     if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${related.length} judged=${judged.length}`);
+    const digestBefore = digestProtected ? protectedDigest(tree) : "";
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", diffPath])) continue;
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", diffPath])) continue;
+    // M72: applying the candidate must leave every protected file byte-identical; otherwise it never counts.
+    if (digestProtected && protectedDigest(tree) !== digestBefore) { console.log(`${candidate.id} protected_digest=changed stage=apply`); continue; }
     result.applied = true;
     // M14: a graded learned test may also append cases to an existing test file (scope allows it only with fixSha).
     const appended = candidate.fixSha ? files.filter((file) => file.appendOnly && file.newPath && scope.isTest(file.newPath)).map((file) => file.newPath!).sort() : [];
@@ -552,6 +558,12 @@ for (const candidate of selected) {
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
     if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
+    // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
+    if (digestProtected && protectedDigest(tree) !== digestBefore) {
+      console.log(`${candidate.id} protected_digest=changed stage=tests`);
+      Object.assign(result, { applied: false, typecheckPassed: false, originalSuitePassed: false, newTestsPassed: false });
+      if (result.testGrading) result.testGrading = { ...result.testGrading, afterFix: false, beforeFix: null, verdict: "UNGRADABLE" };
+    }
   } finally {
     killSandbox();
     // The tools copy may be read-only (Job B makes them so); restore write access before removing.
