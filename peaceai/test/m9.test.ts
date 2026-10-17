@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { acceptFill, applyFill, fillHole, fillKey, fillOptions, FILLS_SCHEMA, parseFillTask } from "../lib/fill.ts";
-import { activeWithLm, COREFREE_MIN_RUN, lmJobAllowed, manifestProvesNoCore, validCoreFreeProof, type PublicOnlyExemption, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
+import { activeWithLm, COREFREE_MIN_RUN, lmJobAllowed, LM_JOB_WORKFLOWS, LM_JOBS, manifestProvesNoCore, validCoreFreeProof, type PublicOnlyExemption, runInfer, diffScoreItems, lmEvaluate, lmFlags, lmShadowRanking, memcheckStatus, scanSamples, verifyModelDir } from "../lib/lm.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { ALLOWED_SPDX, classifyLicense, fileExclusion, splitOf } from "../lib/lmcorpus.ts";
 
@@ -492,7 +492,9 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
 test("LM runs only in the fill job, Job A or Job C: never in Job B/B2 (workflow and code)", () => {
   // Code: the job id decides on Actions; a candidate-code job is always refused, whatever its id.
   assert.equal(lmJobAllowed({}), true);
-  for (const job of ["lm-fill", "generate", "record", "tests", "memcheck"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), true, job);
+  const W = (job: string, path: string) => ({ GITHUB_ACTIONS: "true", GITHUB_JOB: job, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", GITHUB_WORKFLOW_REF: `PeaceG03/PeaceAI-Workspace/${path}@refs/heads/main` });
+  for (const [job, path] of Object.entries(LM_JOB_WORKFLOWS)) assert.equal(lmJobAllowed(W(job, path)), true, job);
+  for (const job of ["lm-fill", "generate", "record", "tests", "memcheck"]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), false, `${job} without a workflow ref`);
   for (const job of ["test", "regate", "review", "finish", "select", ""]) assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: job }), false, job);
   assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: "generate", PEACEAI_CANDIDATE_JOB: "true" }), false);
   assert.equal(lmJobAllowed({ GITHUB_ACTIONS: "true", GITHUB_JOB: "memcheck", PEACEAI_CANDIDATE_JOB: "true" }), false);
@@ -717,7 +719,7 @@ test("M49 regression (run 38902887991): on Actions in the `memcheck` job a valid
   const man = [{ doc: 0, source: "honojs/hono", visibility: "public", path: "src/f0.ts", sha256: createHash("sha256").update(text0).digest("hex"), bytes: text0.length, license: "MIT", split: "train" }];
   const mtext = man.map((m) => JSON.stringify(m)).join("\n") + "\n";
   writeFileSync(join(d, "manifest.jsonl"), mtext);
-  const run = (job: string) => memcheck(copy, corpus, core, { PEACEAI_PYTHON: fakePython(dir, samples), PEACEAI_LM_TRAIN_CORPUS: d, GITHUB_ACTIONS: "true", GITHUB_JOB: job, PEACEAI_CANDIDATE_JOB: "" });
+  const run = (job: string) => memcheck(copy, corpus, core, { PEACEAI_PYTHON: fakePython(dir, samples), PEACEAI_LM_TRAIN_CORPUS: d, GITHUB_ACTIONS: "true", GITHUB_JOB: job, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", GITHUB_WORKFLOW_REF: "PeaceG03/PeaceAI-Workspace/.github/workflows/m49-posttrain-memcheck.yml@refs/heads/main", PEACEAI_CANDIDATE_JOB: "" });
   const proofPath = join(copy, "corefree-proof.json");
   writeFileSync(proofPath, JSON.stringify(proofFor(modelId, man, mtext)));
   const ok = run("memcheck");
@@ -769,4 +771,28 @@ test("corefree_proof.py: PROVEN only when no file copies or near-copies a core f
     assert.equal(near.noCoreFiles, "NOT_PROVEN");
     assert.ok(near.files[0].coreNearMax >= 0.8);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("lmJobAllowed pins each LM job to its workflow path and this repository, not GITHUB_JOB alone", () => {
+  const W = (job: string, ref: string, repo = "PeaceG03/PeaceAI-Workspace") => ({ GITHUB_ACTIONS: "true", GITHUB_JOB: job, GITHUB_REPOSITORY: repo, GITHUB_WORKFLOW_REF: ref });
+  assert.deepEqual(Object.keys(LM_JOB_WORKFLOWS).sort(), [...LM_JOBS].sort(), "every LM job has exactly one pinned workflow");
+  // Right job id, wrong workflow: refused (e.g. a `record` job in peace-verdict.yml, or `tests` in a new workflow).
+  assert.equal(lmJobAllowed(W("record", "PeaceG03/PeaceAI-Workspace/.github/workflows/peace-verdict.yml@refs/heads/main")), false);
+  assert.equal(lmJobAllowed(W("tests", "PeaceG03/PeaceAI-Workspace/.github/workflows/evil.yml@refs/pull/1/merge")), false);
+  assert.equal(lmJobAllowed(W("generate", "PeaceG03/PeaceAI-Workspace/.github/workflows/ci.yml@refs/heads/main")), false);
+  // Path-prefix tricks and other repositories: refused.
+  assert.equal(lmJobAllowed(W("tests", "PeaceG03/PeaceAI-Workspace/.github/workflows/ci.yml.evil.yml@refs/heads/main")), false);
+  assert.equal(lmJobAllowed(W("tests", "Other/PeaceAI-Workspace/.github/workflows/ci.yml@refs/heads/main")), false);
+  assert.equal(lmJobAllowed(W("tests", "PeaceG03/PeaceAI-Workspace/.github/workflows/ci.yml@refs/heads/main", "Other/Fork")), false);
+  assert.equal(lmJobAllowed(W("tests", "PeaceG03/PeaceAI-Workspace/.github/workflows/ci.yml")), false, "no @ref");
+  // Pinned path on any ref of this repo (PR runs of ci.yml keep the tiny fixture model), candidate jobs never.
+  assert.equal(lmJobAllowed(W("tests", "PeaceG03/PeaceAI-Workspace/.github/workflows/ci.yml@refs/pull/9/merge")), true);
+  assert.equal(lmJobAllowed({ ...W("generate", "PeaceG03/PeaceAI-Workspace/.github/workflows/peace-task.yml@refs/heads/main"), PEACEAI_CANDIDATE_JOB: "true" }), false);
+});
+
+test("every pinned LM workflow file defines its job id", () => {
+  for (const [job, path] of Object.entries(LM_JOB_WORKFLOWS)) {
+    const y = readFileSync(path, "utf8");
+    assert.match(y, new RegExp(`^  ${job.replace(/-/g, "\\-")}:\\s*$`, "m"), `${path} defines ${job}`);
+  }
 });

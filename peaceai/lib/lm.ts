@@ -301,10 +301,31 @@ export function dualCoreFreeDecision(cfg: unknown, proofs: Record<CoreFreeStage,
  *  (same environment and guards, read-only, dispatch-only, no upload), and m49-source-hunt.yml's `source-hunt` job (same).
  *  Never Job B/B2 (ids `test`, `regate`), where candidate code runs. */
 export const LM_JOBS = ["lm-fill", "generate", "record", "tests", "memcheck", "provenance", "source-hunt"] as const;
-/** On Actions the job id decides; a job marked as running candidate code is always refused. Off Actions (the box) is allowed. */
+/** Each LM job id is pinned to the one workflow file that defines it: GITHUB_JOB alone is a plain job id that any
+ *  workflow (or a new one) can reuse, so the job must also run from its own workflow in this repository. */
+export const LM_JOB_WORKFLOWS: Readonly<Record<(typeof LM_JOBS)[number], string>> = {
+  "lm-fill": ".github/workflows/peace-task.yml",
+  generate: ".github/workflows/peace-task.yml",
+  record: ".github/workflows/peace-task.yml",
+  tests: ".github/workflows/ci.yml",
+  memcheck: ".github/workflows/m49-posttrain-memcheck.yml",
+  provenance: ".github/workflows/m49-provenance-check.yml",
+  "source-hunt": ".github/workflows/m49-source-hunt.yml",
+};
+export const LM_REPO = "PeaceG03/PeaceAI-Workspace";
+/** On Actions the job id AND its workflow path decide (GITHUB_WORKFLOW_REF = "<repo>/<path>@<ref>", repository
+ *  pinned); a job marked as running candidate code is always refused. Off Actions (the box) is allowed. */
 export function lmJobAllowed(env: Record<string, string | undefined>): boolean {
   if (env.PEACEAI_CANDIDATE_JOB === "true") return false;
-  if (env.GITHUB_ACTIONS === "true") return (LM_JOBS as readonly string[]).includes(env.GITHUB_JOB ?? "");
+  if (env.GITHUB_ACTIONS === "true") {
+    const job = env.GITHUB_JOB ?? "";
+    if (!Object.hasOwn(LM_JOB_WORKFLOWS, job)) return false;
+    const path = LM_JOB_WORKFLOWS[job as keyof typeof LM_JOB_WORKFLOWS];
+    const ref = env.GITHUB_WORKFLOW_REF ?? "";
+    const at = ref.indexOf("@");
+    if (at < 0 || env.GITHUB_REPOSITORY !== LM_REPO) return false;
+    return ref.slice(0, at) === `${LM_REPO}/${path}`;
+  }
   return true;
 }
 
