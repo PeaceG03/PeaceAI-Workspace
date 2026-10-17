@@ -127,3 +127,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Fixes along the way: runExistingTests is a separate runner (m23 pins runGradedTests); package.json up to the tree root is readable under the permission model; literal dynamic imports join the read closure; THIRD_PARTY_NOTICES now lists the m80 fixtures; PROTECTED_DIGEST re-pinned.
 - Next: Auditor review (parent sends) -> merge at the passed head with --match-head-commit -> rule-proposal issue -> Peace /approve-rule -> file TE/ proofs A and B and the 5 tasks.
 - Proof drafts and tasks are in batch-v4/TE/.
+
+## 2026-10-17 ~10:40 MDT
+- #361 merged as bdd0c93 after the Auditor PASS; main CI green (ci, builder-log, leak-check).
+- Rule-proposal issue #362 filed (label rule-proposal). Marker and spec block hash to 81aba1e3e190ceff2e95c87b1faef43ed60bdb935bc11dfff290f2b8c32e3377 on main; proposal-gate PASS.
+- Waiting for Peace: /approve-rule 81aba1e3e190ceff2e95c87b1faef43ed60bdb935bc11dfff290f2b8c32e3377 on #362. File TE/ proofs and tasks only once approved.json has the rule.
