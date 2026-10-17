@@ -1,0 +1,13 @@
+diff --git a/.github/workflows/tenmin-mode-sim.yml b/.github/workflows/tenmin-mode-sim.yml
+index 012011f224dcea89973e14f26e4de49bbd439bdd..c22c6b1bb20bd7e0a401029f9e3611373cb7f195 100644
+--- a/.github/workflows/tenmin-mode-sim.yml
++++ b/.github/workflows/tenmin-mode-sim.yml
+@@ -25,6 +25,8 @@ jobs:
+         run: pnpm run typecheck
+       - name: Typecheck lib sources
+         run: pnpm run typecheck:lib
++      - name: Typecheck scanner
++        run: pnpm run typecheck:scanner
+   typecheck-worker:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 10

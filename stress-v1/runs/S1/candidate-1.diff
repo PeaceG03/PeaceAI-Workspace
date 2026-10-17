@@ -1,0 +1,25 @@
+diff --git a/package.json b/package.json
+index 2b8b886e29e4e94ea051cfcb77016e68ae328e2a..f2a653427062ad363555232835446dee6b587d99 100644
+--- a/package.json
++++ b/package.json
+@@ -11,6 +11,7 @@
+   "types": "./src/index.ts",
+   "scripts": {
+     "typecheck": "tsc -p tsconfig.json --noEmit",
++    "typecheck:readapi": "tsc -p tsconfig.readapi.json --noEmit",
+     "typecheck:scanner": "tsc -p tsconfig.scanner.json --noEmit",
+     "typecheck:lib": "tsc -p tsconfig.lib.json --noEmit",
+     "typecheck:worker": "tsc -p tsconfig.worker.json --noEmit",
+diff --git a/tsconfig.readapi.json b/tsconfig.readapi.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..6cc40fe5787bdd547ebf4490daba47d6b643151f
+--- /dev/null
++++ b/tsconfig.readapi.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "./tsconfig.json",
++  "include": [],
++  "files": [
++    "src/read-api.ts"
++  ]
++}

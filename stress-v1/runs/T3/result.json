@@ -1,0 +1,46 @@
+{
+ "id": "T3",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-test-case-existing-v1@81aba1e3e190ceff2e95c87b1faef43ed60bdb935bc11dfff290f2b8c32e3377",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true,
+    "grading": "COUNTS"
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "src/massive-provider.grouped-daily-path-eea7ac7.test.ts"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "557/557",
+    "acceptance": true,
+    "acceptance_notes": [
+     "newtest passes=True kills_stub=True (stubbed-run rc=1 0/1)"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 400.7
+}

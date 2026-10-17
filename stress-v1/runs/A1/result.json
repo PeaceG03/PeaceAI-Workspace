@@ -1,0 +1,47 @@
+{
+ "id": "A1",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-add-function-v1@b5f13fcca732c6ce7a22a66647ffdaf7b6035cf8d6aba6830ef6f6fa811e7999",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true,
+    "grading": "COUNTS"
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "src/num-utils.pctof-returns-the-expected-65c9289.test.ts",
+     "src/num-utils.ts"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "557/557",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 35.0
+}

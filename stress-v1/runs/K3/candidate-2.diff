@@ -1,0 +1,28 @@
+diff --git a/src/oct2024-tenmin-oneoff.OneOffResult-member.test.ts b/src/oct2024-tenmin-oneoff.OneOffResult-member.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ecc3c8e4fa03ad6e86801dae9fc39712b3b5659e
+--- /dev/null
++++ b/src/oct2024-tenmin-oneoff.OneOffResult-member.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import type { OneOffResult } from "./oct2024-tenmin-oneoff";
++
++test("OneOffResult accepts \"partial\"", () => {
++  const value: OneOffResult = "partial";
++  assert.equal(value, "partial");
++});
+diff --git a/src/oct2024-tenmin-oneoff.ts b/src/oct2024-tenmin-oneoff.ts
+index 45688eff00e9636db2a1a7e6e522f59ca317a6c7..e0c4f9dd1a34e44135bd8288b559524d116c6f05 100644
+--- a/src/oct2024-tenmin-oneoff.ts
++++ b/src/oct2024-tenmin-oneoff.ts
+@@ -84,7 +84,7 @@ export function parseChainIndex(input: string | undefined): number {
+   return Number(s);
+ }
+ 
+-export type OneOffResult = "sealed" | "budget" | "fatal" | "refused" | "chain_cap";
++export type OneOffResult = "sealed" | "budget" | "fatal" | "refused" | "chain_cap" | "partial";
+ /** What the workflow does after a run: dispatch the next run, start the post-seal run, or stop and alert. */
+ export function decideOneOffNext(result: OneOffResult, chainIndex: number, maxChain = ONEOFF_MAX_CHAIN): "dispatch" | "post_seal" | "alert" {
+   if (result === "sealed") return "post_seal";

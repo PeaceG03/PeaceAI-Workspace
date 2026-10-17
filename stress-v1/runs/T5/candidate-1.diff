@@ -1,0 +1,14 @@
+diff --git a/src/ticker-reference-dated.page-keys-45124b5.test.ts b/src/ticker-reference-dated.page-keys-45124b5.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4ad2c77106e276e9636ceeb3bb02acd7446720e
+--- /dev/null
++++ b/src/ticker-reference-dated.page-keys-45124b5.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { datedTickerPageKey } from "./ticker-reference-dated";
++
++test("page keys", () => {
++  assert.equal(datedTickerPageKey("2024-10-15", 2), "permanent/ticker-reference-dated/2024-10-15/page-002.rdust");
++  assert.throws(() => datedTickerPageKey("2024-10-15", 0), /INVALID_DATED_TICKER_PAGE/);
++});

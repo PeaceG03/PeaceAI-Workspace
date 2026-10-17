@@ -1,0 +1,13 @@
+diff --git a/src/daily-bars-sidecar.ts b/src/daily-bars-sidecar.ts
+index 9fe1628d2377a8564f7913823513a43280c1de2c..8f15f7d9aa5156fd8c0d5c5f9dc1e5bf8228264a 100644
+--- a/src/daily-bars-sidecar.ts
++++ b/src/daily-bars-sidecar.ts
+@@ -8,7 +8,7 @@
+ //   permanent/daily-bars-sidecar/YYYY-MM-DD/manifest.json sha256 of file, payload and lines; seals the day
+ // The decoder is a separate module (daily-bars-pack-decode.ts) that shares no code with this file.
+ import { createHash } from "node:crypto";
+-import type { CanonicalDailyBar, SecurityMasterRecord } from "./contracts";
++import { type CanonicalDailyBar, type SecurityMasterRecord } from "./contracts";
+ import { stableJson } from "./identity";
+ import type { ReplyDustStore } from "./intraday-reply-dust";
+ import { sameBytes } from "./intraday-reply-dust";

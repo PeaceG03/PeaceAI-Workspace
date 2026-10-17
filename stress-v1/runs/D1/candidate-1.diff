@@ -1,0 +1,26 @@
+diff --git a/src/et-time.ts b/src/et-time.ts
+index 2a74b94d3c4d9474284c39b795d985b45b97f274..c17243ea0c67d37e85a850396d089de3d3ba9463 100644
+--- a/src/et-time.ts
++++ b/src/et-time.ts
+@@ -82,3 +82,7 @@ export function utcMinuteOfDay(now: Date): number {
+ export function utcDateKey(d: Date): string {
+   return d.toISOString().slice(0, 10);
+ }
++
++export function utcWeekdayOf(d: Date): number {
++  return d.getUTCDay();
++}
+diff --git a/src/et-time.utcweekdayof-returns-the-30d89fd.test.ts b/src/et-time.utcweekdayof-returns-the-30d89fd.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..330a774074d3b2e356412e5a6c9f5f6d9f203817
+--- /dev/null
++++ b/src/et-time.utcweekdayof-returns-the-30d89fd.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { utcWeekdayOf } from "./et-time";
++
++test("utcWeekdayOf returns the expected values", () => {
++  assert.equal(utcWeekdayOf(new Date("2026-10-17T12:00:00Z")), 6);
++  assert.equal(utcWeekdayOf(new Date("2026-10-18T00:00:00Z")), 0);
++});

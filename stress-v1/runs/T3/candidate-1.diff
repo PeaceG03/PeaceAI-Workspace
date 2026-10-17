@@ -1,0 +1,14 @@
+diff --git a/src/massive-provider.grouped-daily-path-eea7ac7.test.ts b/src/massive-provider.grouped-daily-path-eea7ac7.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..096b6557406dc59992b61640d456cae6d3ed812f
+--- /dev/null
++++ b/src/massive-provider.grouped-daily-path-eea7ac7.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { groupedDailyPath } from "./massive-provider";
++
++test("grouped daily path", () => {
++  assert.equal(groupedDailyPath("2024-10-15"), "/v2/aggs/grouped/locale/us/market/stocks/2024-10-15");
++  assert.throws(() => groupedDailyPath("2024-1-5"), /INVALID_GROUPED_DAILY_DATE/);
++});

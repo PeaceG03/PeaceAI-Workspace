@@ -1,0 +1,26 @@
+diff --git a/src/tenmin-range-reply-dust.istenminreplydustkey-returns-the-c817813.test.ts b/src/tenmin-range-reply-dust.istenminreplydustkey-returns-the-c817813.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..23feb9247ff7c330e39fbfb297d748bb1e75e16f
+--- /dev/null
++++ b/src/tenmin-range-reply-dust.istenminreplydustkey-returns-the-c817813.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { isTenMinReplyDustKey } from "./tenmin-range-reply-dust";
++
++test("isTenMinReplyDustKey returns the expected values", () => {
++  assert.equal(isTenMinReplyDustKey("permanent/tenmin-reply-dust/2024-01-01_2024-02-29/manifest.json"), true);
++  assert.equal(isTenMinReplyDustKey("permanent/daily/x"), false);
++});
+diff --git a/src/tenmin-range-reply-dust.ts b/src/tenmin-range-reply-dust.ts
+index fe4e893be9c210c7303df4a4bac9656c9b6d9611..f18e27085dd7ae4c5f3a2401265b7b9c87239a4a 100644
+--- a/src/tenmin-range-reply-dust.ts
++++ b/src/tenmin-range-reply-dust.ts
+@@ -1542,3 +1542,7 @@ export async function readRangeSecurityDay(
+     observedAt,
+   });
+ }
++
++export function isTenMinReplyDustKey(key: string): boolean {
++  return key.startsWith("permanent/tenmin-reply-dust/");
++}

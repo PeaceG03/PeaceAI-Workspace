@@ -1,0 +1,1108 @@
+{
+ "schema": "peaceai-stress-report:v1",
+ "base": "5c41528",
+ "node": "22",
+ "tasks": [
+  {
+   "id": "A1",
+   "category": "add-function",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "A2",
+   "category": "add-function",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "A3",
+   "category": "add-function",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "A4",
+   "category": "plain-language",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": "nl-plain-to-learned"
+  },
+  {
+   "id": "C1",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "C2",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "C3",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "bullet-is-array+closure"
+  },
+  {
+   "id": "C4",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=edit_refused; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "complex-template-literal"
+  },
+  {
+   "id": "L1",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "L2",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "L3",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-loop-function-v2=loop_unbounded; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "while-nonconst-bound"
+  },
+  {
+   "id": "L4",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "bullet-is-array+helper-call"
+  },
+  {
+   "id": "D1",
+   "category": "date-function",
+   "skill": "COMPLEX_FUNCTION(date)",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "D2",
+   "category": "date-function",
+   "skill": "COMPLEX_FUNCTION(date)",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "bullet-is-date"
+  },
+  {
+   "id": "G1",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-throw-guard-v1=test_refused; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "bullet-nan-literal"
+  },
+  {
+   "id": "G2",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "G3",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD(top)",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "G4",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "M1",
+   "category": "method-guard",
+   "skill": "METHOD_GUARD",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "M2",
+   "category": "method-guard",
+   "skill": "METHOD_GUARD",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 1,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "clean-html-comment-in-literal"
+  },
+  {
+   "id": "T1",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-test-case-existing-v1=test_target_impure; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "te-cross-module-import"
+  },
+  {
+   "id": "T2",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "T3",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "T4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-test-case-existing-v1=test_target_impure; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "te-cross-module-import"
+  },
+  {
+   "id": "T5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "E1",
+   "category": "env-fix",
+   "skill": "ENV_FIX",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-env-fix-v1=env_fix_mixed_reads; public-env-fix-v2=env_fix_mixed_reads; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "envfix-presence-read"
+  },
+  {
+   "id": "E2",
+   "category": "env-fix",
+   "skill": "ENV_FIX",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-env-fix-v1=env_fix_helper_taken; public-env-fix-v2=env_fix_helper_taken; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "I1",
+   "category": "import-edit",
+   "skill": "IMPORT_EDIT",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "W1",
+   "category": "workflow",
+   "skill": "WORKFLOW_STEP",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "W2",
+   "category": "workflow",
+   "skill": "WORKFLOW_JOB",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "S1",
+   "category": "tsconfig-script",
+   "skill": "TSCONFIG_SCRIPT",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 1,
+   "accepted": 1,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "K1",
+   "category": "kernel-family",
+   "skill": "OBJECT_PROPERTY",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "kernel-object-property"
+  },
+  {
+   "id": "K2",
+   "category": "kernel-family",
+   "skill": "TYPE_FIELD",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "kernel-type-field"
+  },
+  {
+   "id": "K3",
+   "category": "kernel-family",
+   "skill": "UNION_MEMBER",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 2,
+   "accepted": 2,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "K4",
+   "category": "kernel-family",
+   "skill": "EXPORTED_CONSTANT",
+   "expect": "solve",
+   "outcome": "SOLVED",
+   "candidates": 2,
+   "accepted": 2,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "K5",
+   "category": "kernel-family",
+   "skill": "GUARD_RETURN",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "kernel-guard-return"
+  },
+  {
+   "id": "K6",
+   "category": "kernel-family",
+   "skill": "SET_LITERAL(core)",
+   "expect": "solve",
+   "outcome": "FALSE_REFUSAL",
+   "candidates": 1,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": "task-conflicts-existing-test"
+  },
+  {
+   "id": "N1",
+   "category": "refactor",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NOT_SUPPORTED"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N2",
+   "category": "bugfix-body",
+   "skill": "MODIFY_BODY",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NOT_SUPPORTED"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N3",
+   "category": "type-change",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NOT_SUPPORTED"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N4",
+   "category": "async",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N5",
+   "category": "refactor",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N6",
+   "category": "delete",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N7",
+   "category": "workflow-config",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NOT_SUPPORTED"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N8",
+   "category": "dependency",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NOT_SUPPORTED"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N9",
+   "category": "async",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N10",
+   "category": "new-class",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N11",
+   "category": "debugging",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N12",
+   "category": "multi-step",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N13",
+   "category": "bugfix-body",
+   "skill": "MODIFY_BODY",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NO_FAMILY"
+   ],
+   "gap": null
+  },
+  {
+   "id": "N14",
+   "category": "type-change",
+   "skill": "no skill",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "",
+   "nl": [
+    "unsure",
+    "NOT_SUPPORTED"
+   ],
+   "gap": null
+  },
+  {
+   "id": "X1",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X2",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-add-function-v2=denied_path; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X3",
+   "category": "adversarial",
+   "skill": "THROW_GUARD",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-throw-guard-v1=function_not_found; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X4",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X5",
+   "category": "adversarial",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=body_refused; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X6",
+   "category": "adversarial",
+   "skill": "LOOP_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-loop-function-v1=body_refused; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X7",
+   "category": "adversarial",
+   "skill": "COMPLEX_FUNCTION(date)",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-date-function-v1=date_local_time; public-complex-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X8",
+   "category": "adversarial",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-test-case-existing-v1=test_target_io; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X9",
+   "category": "adversarial",
+   "skill": "THROW_GUARD",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-throw-guard-v1=test_refused; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X10",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X11",
+   "category": "adversarial",
+   "skill": "WORKFLOW_STEP",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X12",
+   "category": "adversarial",
+   "skill": "WORKFLOW_STEP",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X13",
+   "category": "adversarial",
+   "skill": "IMPORT_EDIT",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-import-edit-v2=import_edit_removed_still_used; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X14",
+   "category": "adversarial",
+   "skill": "ENV_FIX",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-env-fix-v1=target_missing; public-env-fix-v2=target_missing; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  },
+  {
+   "id": "X15",
+   "category": "adversarial",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "refuse",
+   "outcome": "CORRECT_REFUSAL",
+   "candidates": 0,
+   "accepted": 0,
+   "refusals": "public-complex-function-v1=protected_path; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+   "nl": [
+    "canonical",
+    null
+   ],
+   "gap": null
+  }
+ ],
+ "score": {
+  "tasks": 66,
+  "pass": 51,
+  "pass_pct": 77.3,
+  "solved": 21,
+  "in_scope": 36,
+  "solve_pct": 58.3,
+  "correct_refusals": 30,
+  "refuse_expected": 30,
+  "wrong_or_unsafe": 0,
+  "false_refusals": 15,
+  "crashes": 0
+ },
+ "per_category": {
+  "add-function": {
+   "pass": 3,
+   "total": 3
+  },
+  "adversarial": {
+   "pass": 15,
+   "total": 15
+  },
+  "async": {
+   "pass": 2,
+   "total": 2
+  },
+  "bugfix-body": {
+   "pass": 2,
+   "total": 2
+  },
+  "complex-function": {
+   "pass": 2,
+   "total": 4
+  },
+  "date-function": {
+   "pass": 1,
+   "total": 2
+  },
+  "debugging": {
+   "pass": 1,
+   "total": 1
+  },
+  "delete": {
+   "pass": 1,
+   "total": 1
+  },
+  "dependency": {
+   "pass": 1,
+   "total": 1
+  },
+  "env-fix": {
+   "pass": 1,
+   "total": 2
+  },
+  "import-edit": {
+   "pass": 1,
+   "total": 1
+  },
+  "kernel-family": {
+   "pass": 2,
+   "total": 6
+  },
+  "loop-function": {
+   "pass": 2,
+   "total": 4
+  },
+  "method-guard": {
+   "pass": 1,
+   "total": 2
+  },
+  "multi-step": {
+   "pass": 1,
+   "total": 1
+  },
+  "new-class": {
+   "pass": 1,
+   "total": 1
+  },
+  "plain-language": {
+   "pass": 0,
+   "total": 1
+  },
+  "refactor": {
+   "pass": 2,
+   "total": 2
+  },
+  "test-existing": {
+   "pass": 3,
+   "total": 5
+  },
+  "throw-guard": {
+   "pass": 3,
+   "total": 4
+  },
+  "tsconfig-script": {
+   "pass": 1,
+   "total": 1
+  },
+  "type-change": {
+   "pass": 2,
+   "total": 2
+  },
+  "workflow": {
+   "pass": 2,
+   "total": 2
+  },
+  "workflow-config": {
+   "pass": 1,
+   "total": 1
+  }
+ }
+}

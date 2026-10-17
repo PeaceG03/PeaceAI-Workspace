@@ -1,0 +1,24 @@
+diff --git a/src/ticker-reference-dated.MAX-DATED-TICKER-PAGES.test.ts b/src/ticker-reference-dated.MAX-DATED-TICKER-PAGES.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a96cc6f9fd92d1e12ef95b672173647e2c83f83f
+--- /dev/null
++++ b/src/ticker-reference-dated.MAX-DATED-TICKER-PAGES.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { MAX_DATED_TICKER_PAGES } from "./ticker-reference-dated";
++
++test("MAX_DATED_TICKER_PAGES is 500", () => {
++  assert.equal(MAX_DATED_TICKER_PAGES, 500);
++});
+diff --git a/src/ticker-reference-dated.ts b/src/ticker-reference-dated.ts
+index d91553c959284a552f9b436f18b84d28e87a671f..e5ad1f5f5b0c0f53c72536ad6bdb4e27c0a7c1e1 100644
+--- a/src/ticker-reference-dated.ts
++++ b/src/ticker-reference-dated.ts
+@@ -943,3 +943,5 @@ async function buildOneDatedDate(input: {
+     ...(yieldedForScan ? { yieldedForScan } : {}),
+   };
+ }
++
++export const MAX_DATED_TICKER_PAGES = 500;

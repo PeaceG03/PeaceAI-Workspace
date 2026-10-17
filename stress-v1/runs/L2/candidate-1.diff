@@ -1,0 +1,31 @@
+diff --git a/src/features.countabove-returns-the-expected-fbb61bc.test.ts b/src/features.countabove-returns-the-expected-fbb61bc.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..51e98cd4728812527d9ce77175a8b6be37a9c97a
+--- /dev/null
++++ b/src/features.countabove-returns-the-expected-fbb61bc.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { countAbove } from "./features";
++
++test("countAbove returns the expected values", () => {
++  assert.equal(countAbove([1, 5, 3], 2), 2);
++  assert.equal(countAbove([], 0), 0);
++  assert.equal(countAbove([1, 1], 1), 0);
++});
+diff --git a/src/features.ts b/src/features.ts
+index 3765e101cac4bc5833eaa7fdc9571223b5499ab6..b46fd6df54f2f3cacfe891fa5db348c9675db184 100644
+--- a/src/features.ts
++++ b/src/features.ts
+@@ -81,3 +81,11 @@ export function sampleVariance(values: readonly number[]): number {
+   }
+   return sq / (values.length - 1);
+ }
++
++export function countAbove(values: readonly number[], limit: number): number {
++  let n = 0;
++  for (const v of values) {
++  if (v > limit) n += 1;
++  }
++  return n;
++}

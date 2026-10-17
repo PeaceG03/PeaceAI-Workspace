@@ -1,0 +1,78 @@
+{
+ "id": "K3",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "UPDATE_FUNCTION_BODY",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "src/oct2024-tenmin-oneoff.ts"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "556/556",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1"
+    ],
+    "pass": true
+   }
+  },
+  {
+   "id": "candidate-2",
+   "op": "PAIRED_SOURCE_TEST_CHANGE",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "src/oct2024-tenmin-oneoff.OneOffResult-member.test.ts",
+     "src/oct2024-tenmin-oneoff.ts"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "557/557",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 66.5
+}

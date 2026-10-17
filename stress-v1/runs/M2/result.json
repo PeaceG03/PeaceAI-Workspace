@@ -1,0 +1,26 @@
+{
+ "id": "M2",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-method-guard-v1@d8287e62f4114f1673d1e835efdc33174c02f480263edddffb5e4efbca728160",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": false,
+    "grading": "REJECTED_FAILS_BOTH"
+   },
+   "accepted": false
+  }
+ ],
+ "outcome": "FALSE_REFUSAL",
+ "seconds": 11.2
+}

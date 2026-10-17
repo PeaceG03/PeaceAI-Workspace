@@ -1,0 +1,25 @@
+{
+ "id": "K6",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:core-set-literal-v1@1f70027c4a12dbe18b57170b60eb82ee537a238933e6f384cf4e4774a5aa9d87",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": false,
+    "newTestsPassed": true
+   },
+   "accepted": false
+  }
+ ],
+ "outcome": "FALSE_REFUSAL",
+ "seconds": 12.7
+}

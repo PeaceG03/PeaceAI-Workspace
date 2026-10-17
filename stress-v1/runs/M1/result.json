@@ -1,0 +1,47 @@
+{
+ "id": "M1",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-method-guard-v1@d8287e62f4114f1673d1e835efdc33174c02f480263edddffb5e4efbca728160",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true,
+    "grading": "COUNTS"
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "src/ticker-reference-dated.requestcontainsapikey-throws-4584fe7.test.ts",
+     "src/ticker-reference-dated.ts"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "557/557",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 31.7
+}

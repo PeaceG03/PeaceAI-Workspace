@@ -1,0 +1,26 @@
+diff --git a/src/storage.storageutilizationpercent-throws-4a2ae94.test.ts b/src/storage.storageutilizationpercent-throws-4a2ae94.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d03c4e85b6a79a586fa9226a3d7e84efa517279d
+--- /dev/null
++++ b/src/storage.storageutilizationpercent-throws-4a2ae94.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { storageUtilizationPercent } from "./storage";
++
++test("storageUtilizationPercent throws NEGATIVE_MB_PER_DAY", () => {
++  assert.throws(() => storageUtilizationPercent(-1), /NEGATIVE_MB_PER_DAY/);
++  assert.equal(storageUtilizationPercent(128), 315);
++});
+diff --git a/src/storage.ts b/src/storage.ts
+index d0f9248e38b85b137abf7393f60bd5a40aa68f79..178b5d814b17ed8179c29f7a7b062b01d67cad98 100644
+--- a/src/storage.ts
++++ b/src/storage.ts
+@@ -564,6 +564,7 @@ export class MarketStorage implements MarketStore {
+ }
+ 
+ export function storageUtilizationPercent(mbPerDay: number): number {
++  if (mbPerDay < 0) throw new Error("NEGATIVE_MB_PER_DAY");
+   const gbPerYear = (mbPerDay * 252) / 1024;
+   return gbPerYear * 10;
+ }

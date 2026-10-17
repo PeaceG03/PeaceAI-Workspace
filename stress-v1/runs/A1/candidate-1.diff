@@ -1,0 +1,27 @@
+diff --git a/src/num-utils.pctof-returns-the-expected-65c9289.test.ts b/src/num-utils.pctof-returns-the-expected-65c9289.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e44f358e5b3f820fbeb288f3fed59d6fd72a509
+--- /dev/null
++++ b/src/num-utils.pctof-returns-the-expected-65c9289.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { pctOf } from "./num-utils";
++
++test("pctOf returns the expected values", () => {
++  assert.equal(pctOf(1, 4), 25);
++  assert.equal(pctOf(3, 0), 0);
++  assert.equal(pctOf(0, 5), 0);
++});
+diff --git a/src/num-utils.ts b/src/num-utils.ts
+index 274cee7343c098ca7ad8fe605128968bee2c9024..d8c5907356e293f949a96411d6ca4640cd0697ed 100644
+--- a/src/num-utils.ts
++++ b/src/num-utils.ts
+@@ -30,3 +30,7 @@ export function sumOf(values: readonly number[]): number {
+   }
+   return total;
+ }
++
++export function pctOf(part: number, whole: number): number {
++  return whole === 0 ? 0 : (part / whole) * 100;
++}

@@ -1,0 +1,24 @@
+diff --git a/src/rdust-names.isrdustfilename-returns-the-6f04220.test.ts b/src/rdust-names.isrdustfilename-returns-the-6f04220.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a8b90b4666290ce38bf191cdee20b45ba12c0f3
+--- /dev/null
++++ b/src/rdust-names.isrdustfilename-returns-the-6f04220.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { isRdustFileName } from "./rdust-names";
++
++test("isRdustFileName returns the expected values", () => {
++  assert.equal(isRdustFileName("page-001.rdust"), true);
++  assert.equal(isRdustFileName(".rdust"), false);
++  assert.equal(isRdustFileName("a.json"), false);
++});
+diff --git a/src/rdust-names.ts b/src/rdust-names.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1110264cbeccf7d30945d96838ba3202e7798bc1
+--- /dev/null
++++ b/src/rdust-names.ts
+@@ -0,0 +1,3 @@
++export function isRdustFileName(name: string): boolean {
++  return name.endsWith(".rdust") && name.length > 6;
++}

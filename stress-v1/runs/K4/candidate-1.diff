@@ -1,0 +1,10 @@
+diff --git a/src/ticker-reference-dated.ts b/src/ticker-reference-dated.ts
+index d91553c959284a552f9b436f18b84d28e87a671f..e5ad1f5f5b0c0f53c72536ad6bdb4e27c0a7c1e1 100644
+--- a/src/ticker-reference-dated.ts
++++ b/src/ticker-reference-dated.ts
+@@ -943,3 +943,5 @@ async function buildOneDatedDate(input: {
+     ...(yieldedForScan ? { yieldedForScan } : {}),
+   };
+ }
++
++export const MAX_DATED_TICKER_PAGES = 500;

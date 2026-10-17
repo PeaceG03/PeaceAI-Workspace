@@ -1,0 +1,26 @@
+diff --git a/src/tenmin-redispatch.iscancelabledispatchstatus-b9d713d.test.ts b/src/tenmin-redispatch.iscancelabledispatchstatus-b9d713d.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..190aa81ea1311a3b4f4bfdf72933d8ce10d05de2
+--- /dev/null
++++ b/src/tenmin-redispatch.iscancelabledispatchstatus-b9d713d.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { isCancelableDispatchStatus } from "./tenmin-redispatch";
++
++test("isCancelableDispatchStatus throws EMPTY_DISPATCH_STATUS", () => {
++  assert.throws(() => isCancelableDispatchStatus(''), /EMPTY_DISPATCH_STATUS/);
++  assert.equal(isCancelableDispatchStatus('queued'), true);
++});
+diff --git a/src/tenmin-redispatch.ts b/src/tenmin-redispatch.ts
+index dd5c5ac7821e8e5da3180c3aa456681e8e6551d1..d22593e964cc855c16d7ffeb5b1296fac6c67e37 100644
+--- a/src/tenmin-redispatch.ts
++++ b/src/tenmin-redispatch.ts
+@@ -499,6 +499,7 @@ export function cancelledScheduledScan(
+ 
+ /** Pure: statuses where the just-dispatched tenmin_history run may still be cancelled. */
+ export function isCancelableDispatchStatus(status: string): boolean {
++  if (status === '') throw new Error("EMPTY_DISPATCH_STATUS");
+   return TENMIN_CANCELABLE_DISPATCH_STATUSES.has(status);
+ }
+ 

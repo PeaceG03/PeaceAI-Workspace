@@ -1,0 +1,26 @@
+diff --git a/src/massive-provider.groupeddailypath-throws-grouped-a421a54.test.ts b/src/massive-provider.groupeddailypath-throws-grouped-a421a54.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c719a36675f1139aa00d79020123dcdace338a2
+--- /dev/null
++++ b/src/massive-provider.groupeddailypath-throws-grouped-a421a54.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { groupedDailyPath } from "./massive-provider";
++
++test("groupedDailyPath throws GROUPED_DAILY_TOO_OLD", () => {
++  assert.throws(() => groupedDailyPath('1989-12-31'), /GROUPED_DAILY_TOO_OLD/);
++  assert.equal(groupedDailyPath('2024-10-15'), '/v2/aggs/grouped/locale/us/market/stocks/2024-10-15');
++});
+diff --git a/src/massive-provider.ts b/src/massive-provider.ts
+index 53e77868427734ae9ff651e8bfcd00ac8d7734b1..b910b513d1e227533453ef6502e26c4788c1582e 100644
+--- a/src/massive-provider.ts
++++ b/src/massive-provider.ts
+@@ -291,6 +291,7 @@ export function massiveTenMinuteBarsFromReply(input: {
+ export const GROUPED_DAILY_PARAMS: Readonly<Record<string, string>> = { adjusted: "false", include_otc: "false" };
+ export function groupedDailyPath(sessionDate: string): string {
+   if (sessionDate.length !== 10) throw new Error("INVALID_GROUPED_DAILY_DATE");
++  if (sessionDate < '1990-01-01') throw new Error("GROUPED_DAILY_TOO_OLD");
+   return `/v2/aggs/grouped/locale/us/market/stocks/${sessionDate}`;
+ }
+ 

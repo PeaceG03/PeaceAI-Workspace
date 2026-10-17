@@ -1,0 +1,28 @@
+diff --git a/src/storage.ts b/src/storage.ts
+index d0f9248e38b85b137abf7393f60bd5a40aa68f79..18d9022fa0b7ccb42f2af03282481be14edcd2f6 100644
+--- a/src/storage.ts
++++ b/src/storage.ts
+@@ -567,3 +567,8 @@ export function storageUtilizationPercent(mbPerDay: number): number {
+   const gbPerYear = (mbPerDay * 252) / 1024;
+   return gbPerYear * 10;
+ }
++
++export function yearsOfStorageGb(mbPerDay: number, years: number): number {
++  const perYear = (mbPerDay * 252) / 1024;
++  return perYear * years;
++}
+diff --git a/src/storage.yearsofstoragegb-returns-the-30a0d60.test.ts b/src/storage.yearsofstoragegb-returns-the-30a0d60.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..284b3c1acb2d815dab4bad0748e5eaa686270a45
+--- /dev/null
++++ b/src/storage.yearsofstoragegb-returns-the-30a0d60.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { yearsOfStorageGb } from "./storage";
++
++test("yearsOfStorageGb returns the expected values", () => {
++  assert.equal(yearsOfStorageGb(1024, 2), 504);
++  assert.equal(yearsOfStorageGb(0, 5), 0);
++  assert.equal(yearsOfStorageGb(512, 1), 126);
++});

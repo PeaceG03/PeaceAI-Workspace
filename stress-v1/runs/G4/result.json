@@ -1,0 +1,47 @@
+{
+ "id": "G4",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-throw-guard-v1@bec9151e12edf04cc5e3aede2d9d04d0f452189de769d0a14e34756b247231f3",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true,
+    "grading": "COUNTS"
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "src/storage.storageutilizationpercent-throws-4a2ae94.test.ts",
+     "src/storage.ts"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "557/557",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 35.5
+}

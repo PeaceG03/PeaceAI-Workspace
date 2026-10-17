@@ -1,0 +1,13 @@
+diff --git a/src/oct2024-tenmin-oneoff.ts b/src/oct2024-tenmin-oneoff.ts
+index 45688eff00e9636db2a1a7e6e522f59ca317a6c7..403ca412d6134e4f0c031673eae9c48c11eb47bc 100644
+--- a/src/oct2024-tenmin-oneoff.ts
++++ b/src/oct2024-tenmin-oneoff.ts
+@@ -30,7 +30,7 @@ export const ONEOFF_FIRST_FLOOR = "2024-10-11";
+ export const ONEOFF_PREFIX = `permanent/tenmin-reply-dust/${ONEOFF_CAL_FROM}_${ONEOFF_CAL_TO}/`;
+ export const ONEOFF_SESSIONS = tradingSessionsBetween(ONEOFF_FIRST_FLOOR, ONEOFF_CAL_TO);
+ export const ONEOFF_DEFAULT_BUDGET_MS = 5 * 3_600_000 + 15 * 60_000;
+-export const ONEOFF_MAX_CHAIN = 10;
++export const ONEOFF_MAX_CHAIN = 12;
+ export const ONEOFF_SPACING_MS = 12_500;
+ 
+ /** Same windows as the box driver: 05:15-06:15Z and 09:15-10:15Z (scans at 05:30 / 09:30). */

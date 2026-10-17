@@ -1,0 +1,47 @@
+{
+ "id": "S1",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-tsconfig-script-v1@c2c604f52d8d5655b843805bfe35cf44eb290e6f2fe010d0da92a880c9c77ed8",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     "package.json",
+     "tsconfig.readapi.json"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "556/556",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1",
+     "cmd rc=0"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 32.3
+}

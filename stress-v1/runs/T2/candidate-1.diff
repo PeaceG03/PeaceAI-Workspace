@@ -1,0 +1,16 @@
+diff --git a/src/num-utils.band-positions-3f42482.test.ts b/src/num-utils.band-positions-3f42482.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4ccb1181e8774fee0fb3ae730cd004c2fcf6436
+--- /dev/null
++++ b/src/num-utils.band-positions-3f42482.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { bandOf } from "./num-utils";
++
++test("band positions", () => {
++  assert.equal(bandOf(5, 0, 10), "inside");
++  assert.equal(bandOf(-1, 0, 10), "below");
++  assert.equal(bandOf(11, 0, 10), "above");
++  assert.throws(() => bandOf(1, 5, 0), /BAD_BAND/);
++});

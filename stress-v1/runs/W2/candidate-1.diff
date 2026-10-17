@@ -1,0 +1,25 @@
+diff --git a/.github/workflows/tenmin-mode-sim.yml b/.github/workflows/tenmin-mode-sim.yml
+index 012011f224dcea89973e14f26e4de49bbd439bdd..feee3e743f5cfc8db0f60d37511f0262e7d6af4a 100644
+--- a/.github/workflows/tenmin-mode-sim.yml
++++ b/.github/workflows/tenmin-mode-sim.yml
+@@ -42,3 +42,20 @@ jobs:
+       - run: pnpm install --frozen-lockfile
+       - name: Typecheck worker
+         run: pnpm run typecheck:worker
++  typecheck-scanner:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@v4
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9.15.9
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++      - run: pnpm install --frozen-lockfile
++      - name: Typecheck scanner
++        run: pnpm run typecheck:scanner

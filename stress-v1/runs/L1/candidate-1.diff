@@ -1,0 +1,31 @@
+diff --git a/src/num-utils.maxof-returns-the-expected-6af5cea.test.ts b/src/num-utils.maxof-returns-the-expected-6af5cea.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..63bab3570994b1f834ae6c4a44a5152bc50f3a8c
+--- /dev/null
++++ b/src/num-utils.maxof-returns-the-expected-6af5cea.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { maxOf } from "./num-utils";
++
++test("maxOf returns the expected values", () => {
++  assert.equal(maxOf([1, 5, 3]), 5);
++  assert.equal(maxOf([]), 0);
++  assert.equal(maxOf([-2, 0.5]), 0.5);
++});
+diff --git a/src/num-utils.ts b/src/num-utils.ts
+index 274cee7343c098ca7ad8fe605128968bee2c9024..45597dd9ad419e82d2262d3ede14a1e10a76dbac 100644
+--- a/src/num-utils.ts
++++ b/src/num-utils.ts
+@@ -30,3 +30,11 @@ export function sumOf(values: readonly number[]): number {
+   }
+   return total;
+ }
++
++export function maxOf(values: readonly number[]): number {
++  let best = 0;
++  for (const v of values) {
++  if (v > best) best = v;
++  }
++  return best;
++}

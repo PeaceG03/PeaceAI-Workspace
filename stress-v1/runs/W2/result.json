@@ -1,0 +1,45 @@
+{
+ "id": "W2",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-workflow-job-v1@45d5b390cfb621bcf695f2288c67bb4a1cc86a7917160b51d919f776ebdfc65a",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": true
+   },
+   "accepted": true,
+   "grade": {
+    "applies": true,
+    "files": [
+     ".github/workflows/tenmin-mode-sim.yml"
+    ],
+    "typecheck": true,
+    "typecheck_detail": {
+     "typecheck": true,
+     "typecheck:scanner": true,
+     "typecheck:lib": true,
+     "typecheck:worker": true
+    },
+    "suite": true,
+    "suite_counts": "556/556",
+    "acceptance": true,
+    "acceptance_notes": [
+     "accept 1/1"
+    ],
+    "pass": true
+   }
+  }
+ ],
+ "outcome": "SOLVED",
+ "seconds": 30.0
+}
