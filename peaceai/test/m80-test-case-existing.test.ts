@@ -85,8 +85,9 @@ test("spec: valid, hash pinned, own kind and trigger, fixed vocabulary; nothing 
   assert.ok(validateSpec(TC));
   assert.equal(new RegExp(TEST_TRIGGER, "i").test("add a characterization test for f in src/a.ts"), false);
   assert.equal(new RegExp(TEST_EXISTING_TRIGGER, "i").test("add a regression test for f in src/a.ts"), false);
-  const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string }[] };
-  assert.ok(!onMain.rules.some((r) => r.id === SPEC.id), "not approved by this PR (Peace /approve-rule only)");
+  // Approval lands only via Peace's /approve-rule bot PR; whether or not it has landed, any listed entry must pin this exact spec hash.
+  const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
+  for (const r of onMain.rules.filter((r) => r.id === SPEC.id)) assert.equal(r.sha256, SHA, "a listed entry pins the exact spec hash");
 });
 
 test("Job A: admitted only with the exact hash; the dev path needs its flag exactly \"true\"", () => {
