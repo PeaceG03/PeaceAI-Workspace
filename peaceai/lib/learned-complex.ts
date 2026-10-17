@@ -19,10 +19,15 @@
 //   Every loop terminates: for-of over an array the body cannot grow, counted loops with a fixed or input-length
 //   bound and an untouched counter. Reads at least one parameter; the last statement is a `return`.
 // - Issue cleaning strips `>`, `*`, `#` and backticks, so a body uses `<`/`<=` (swap the operands) and no `*`.
+// M74 DATE family (public-date-function-v1, params.types "primitive+date", phrase "add date function"): the same
+// grammar with loops ["none"], plus Date in the signature and in local annotations, and in expressions only the
+// timezone-free Date API: getUTC* getters, getTime, toISOString, Date.UTC(...) and `new Date(EXPR)` with exactly one
+// argument. Refused by name: local-time reads (date_local_time: getHours/getDay/... , toLocale*/toDateString/
+// toTimeString, Date.parse, `new Date(y, m, ...)`), the clock (date_now: Date.now, `new Date()`), setters (date_setter).
 // Job B grades it like ADD_FUNCTION: the new test passes with the function, fails with the module put back to the
 // task base, and fails with the body replaced by a type-default `return` (stubComplexBody). No model.
 import ts from "typescript";
-import { FUNCTION_TYPES, safeBody } from "./learned-function.ts";
+import { FUNCTION_TYPES, safeBody, type ExtraVocab } from "./learned-function.ts";
 import { buildTestEdit, parseTestTask, type TestTask } from "./learned-test.ts";
 import { createHash } from "node:crypto";
 import { PROTECTED_SELF } from "./selfchange.ts";
@@ -42,7 +47,40 @@ export const LOOP_ASYNC = "loop_async"; // async / await / for await anywhere in
 export const LOOP_LABEL = "loop_label"; // labels, break/continue to a label
 export const CLOSURE_NOT_ALLOWED = "closure_not_allowed"; // nested function, arrow or method
 export const LOOP_WHILE_UNSUPPORTED = "loop_while_unsupported"; // a while when the spec allows for/for-of only
-export const NAMED_REFUSALS: ReadonlySet<string> = new Set([LOOP_UNSUPPORTED, LOOP_UNBOUNDED, LOOP_ASYNC, LOOP_LABEL, CLOSURE_NOT_ALLOWED, LOOP_WHILE_UNSUPPORTED]);
+/** M74 DATE family named refusals. */
+export const DATE_LOCAL_TIME = "date_local_time"; // a local-time read: getHours/getDay/..., toLocale*, toDateString/toTimeString, Date.parse, new Date(y, m, ...)
+export const DATE_NOW = "date_now"; // the clock: Date.now or new Date() with no argument
+export const DATE_SETTER = "date_setter"; // any Date setter (setUTCHours, setTime, ...)
+export const NAMED_REFUSALS: ReadonlySet<string> = new Set([LOOP_UNSUPPORTED, LOOP_UNBOUNDED, LOOP_ASYNC, LOOP_LABEL, CLOSURE_NOT_ALLOWED, LOOP_WHILE_UNSUPPORTED, DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER]);
+/** M74: the only value of the optional params key `types` (a DATE family spec). */
+export const COMPLEX_TYPES = ["primitive+date"] as const;
+const DATE_CTOR = "__peaceaiDate";
+const DATE_UTC = "__peaceaiDateUTC";
+/** M74: what a DATE spec adds to ADD_FUNCTION's expression vocabulary (rewritten names; Date.UTC takes up to 7 args). */
+export const DATE_VOCAB: ExtraVocab = {
+  calls: new Map([[DATE_CTOR, 1], [DATE_UTC, 7]]),
+  methods: new Set(["getUTCFullYear", "getUTCMonth", "getUTCDate", "getUTCDay", "getUTCHours", "getUTCMinutes", "getUTCSeconds", "getUTCMilliseconds", "getTime", "toISOString"]),
+};
+const LOCAL_DATE_READS = /^(?:getFullYear|getYear|getMonth|getDate|getDay|getHours|getMinutes|getSeconds|getMilliseconds|getTimezoneOffset|toLocaleString|toLocaleDateString|toLocaleTimeString|toDateString|toTimeString|toUTCString|toJSON)$/;
+const DATE_SETTERS = /^set(?:UTC)?(?:FullYear|Year|Month|Date|Hours|Minutes|Seconds|Milliseconds|Time)$/;
+/** M74: the named DATE refusal for a body, or null (the rest of the grammar is checked by blockRefusal). */
+export function dateRefusal(body: ts.Node): string | null {
+  let r: string | null = null;
+  const set = (x: string) => { if (r === null || (r !== DATE_NOW && x === DATE_NOW)) r = x; };
+  const isDate = (e: ts.Expression) => ts.isIdentifier(e) && e.text === "Date";
+  const v = (n: ts.Node): void => {
+    if (ts.isNewExpression(n) && isDate(n.expression)) { const k = n.arguments?.length ?? 0; if (k === 0) set(DATE_NOW); else if (k > 1) set(DATE_LOCAL_TIME); }
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) {
+      if (isDate(n.expression) && n.name.text === "now") set(DATE_NOW);
+      else if (isDate(n.expression) && n.name.text === "parse") set(DATE_LOCAL_TIME);
+      else if (LOCAL_DATE_READS.test(n.name.text)) set(DATE_LOCAL_TIME);
+      else if (DATE_SETTERS.test(n.name.text)) set(DATE_SETTER);
+    }
+    ts.forEachChild(n, v);
+  };
+  v(body);
+  return r;
+}
 /** Which loop forms a spec allows (bounds and starts: an integer literal 0..MAX_LOOP_BOUND or PARAM.length only). */
 export interface LoopPolicy { forOf: boolean; counted: boolean; whileBounded: boolean; whileLiteral?: boolean }
 export const NO_LOOPS: LoopPolicy = { forOf: false, counted: false, whileBounded: false };
@@ -76,6 +114,10 @@ const TYPE = String.raw`(?:readonly )?(?:string|number|boolean)(?:\[\])?`;
 const PARAM = String.raw`${NAME}: ?${TYPE}`;
 /** Header line; the body lines follow it (each a statement), then the test bullets. */
 export const COMPLEX_TRIGGER = String.raw`^add (?:a )?complex function \x60?(?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE})\x60? to \x60?(?<file>${FILE})\x60? with body ?:?[ \t]*$`;
+/** M74: DATE family signature types: the COMPLEX types plus a plain `Date` (no Date[] / readonly Date). */
+const DATE_TYPE = String.raw`(?:(?:readonly )?(?:string|number|boolean)(?:\[\])?|Date)`;
+/** M74: DATE family header ("add date function ... with body:"); same grammar, Date allowed in the signature. */
+export const DATE_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "date function").replaceAll(TYPE, DATE_TYPE);
 /** M64: LOOP_FUNCTION header ("add loop function ... with body:"); same signature grammar, its own phrase. */
 export const LOOP_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "loop function");
 /** LOOP_WHILE (public-loop-function-v2): its own header phrase so v1 (while refused) and v2 never share a task. */
@@ -86,7 +128,7 @@ const RESERVED = /^(?:constructor|prototype|__proto__|eval|arguments|globalThis|
 export interface ComplexTask { fn: string; file: string; params: { name: string; type: string }[]; ret: string; body: string; test: TestTask }
 export interface ComplexEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 
-export function parseComplexTask(trigger: string, objective: string): ComplexTask | null {
+export function parseComplexTask(trigger: string, objective: string, dates = false): ComplexTask | null {
   const lines = objective.split("\n").map((l) => l.trim());
   const heads = lines.map((l, i) => (new RegExp(trigger, "i").test(l) ? i : -1)).filter((i) => i >= 0);
   if (heads.length !== 1) return null;
@@ -95,11 +137,12 @@ export function parseComplexTask(trigger: string, objective: string): ComplexTas
   if (!g.fn || !g.sig || !g.ret || !g.file) return null;
   const params: { name: string; type: string }[] = [];
   for (const part of g.sig.split(",").map((p) => p.trim())) {
-    const m = new RegExp(String.raw`^(${NAME}): ?(${TYPE})$`).exec(part);
+    const m = new RegExp(String.raw`^(${NAME}): ?(${dates ? DATE_TYPE : TYPE})$`).exec(part);
     if (!m || params.some((p) => p.name === m[1]) || RESERVED.test(m[1]!)) return null;
     params.push({ name: m[1]!, type: m[2]! });
   }
-  if (!LOCAL_TYPES.has(g.ret) || params.some((p) => !LOCAL_TYPES.has(p.type))) return null;
+  const typeOk = (t: string) => LOCAL_TYPES.has(t) || (dates && t === "Date");
+  if (!typeOk(g.ret) || params.some((p) => !typeOk(p.type))) return null;
   const bodyLines: string[] = [];
   let i = at + 1;
   for (; i < lines.length && !/^[-*] /.test(lines[i]!); i++) if (lines[i]) bodyLines.push(lines[i]!);
@@ -117,7 +160,7 @@ export function parseComplexTask(trigger: string, objective: string): ComplexTas
  * True when every statement of the block is in the bounded grammar (see the header). `params` are read-only.
  * Returns the reason for a refusal (string) or null when the block is safe.
  */
-export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string>; loops?: LoopPolicy }
+export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string>; loops?: LoopPolicy; /** M74 DATE family */ dates?: boolean }
 /** Option A (Auditor): the callable module functions: exported, top-level, one declaration with a body, not async/generator. */
 export function moduleFunctions(sf: ts.SourceFile): Map<string, ts.FunctionDeclaration | null> {
   const out = new Map<string, ts.FunctionDeclaration | null>();
@@ -141,7 +184,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     if (!f || !f.body) { callRefusal = `${name} is not an exported same-file function`; return false; }
     const ps = new Set<string>();
     for (const x of f.parameters) { if (!ts.isIdentifier(x.name) || !x.type || x.dotDotDotToken || x.initializer || x.questionToken) { callRefusal = `${name} has untyped/destructured/optional parameters`; return false; } ps.add(x.name.text); }
-    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called, loops: ctx.loops });
+    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called, loops: ctx.loops, dates: ctx.dates });
     if (r) { callRefusal = `${name}: ${r}`; return false; }
     ctx.called.add(name);
     return true;
@@ -180,7 +223,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     };
     calls(e);
     if (!callsOk) return false;
-    const rewritten = rewriteIndex(e, sf, (n) => !own.has(n) && ctx.module.has(n));
+    const rewritten = rewriteIndex(e, sf, (n) => !own.has(n) && ctx.module.has(n), ctx.dates === true);
     if (rewritten === null) return false;
     const re = ts.createSourceFile("e.ts", `(${rewritten});`, ts.ScriptTarget.Latest, true);
     const st = re.statements[0];
@@ -192,7 +235,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     const dummy = "__p";
     const wrapped = ts.createSourceFile("e.ts", `((${e.getText()}) === ${dummy} || ${dummy});`, ts.ScriptTarget.Latest, true);
     const st = wrapped.statements[0] as ts.ExpressionStatement;
-    return safeBody((st.expression as ts.ParenthesizedExpression).expression, new Set([...ns, dummy]));
+    return safeBody((st.expression as ts.ParenthesizedExpression).expression, new Set([...ns, dummy]), ctx.dates ? DATE_VOCAB : undefined);
   };
   const local = (n: string) => !params.has(n) && !locals.has(n) && !counters.has(n) && !RESERVED.test(n);
   const pol = ctx.loops ?? NO_LOOPS;
@@ -226,7 +269,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
       if (!kind || s.declarationList.declarations.length !== 1 || ts.getModifiers(s)?.length) return "only one const/let per statement";
       const d = s.declarationList.declarations[0]!;
       if (!ts.isIdentifier(d.name) || !local(d.name.text) || !d.initializer) return "bad declaration";
-      if (d.type && !LOCAL_TYPES.has(d.type.getText(sf))) return "local type outside the vocabulary";
+      if (d.type && !LOCAL_TYPES.has(d.type.getText(sf)) && !(ctx.dates && d.type.getText(sf) === "Date")) return "local type outside the vocabulary";
       const emptyArray = ts.isArrayLiteralExpression(d.initializer) && d.initializer.elements.length === 0;
       if (emptyArray && (!d.type || !/\[\]$/.test(d.type.getText(sf)))) return "an empty array needs an array type";
       if (!emptyArray && !expr(d.initializer)) return callRefusal ?? "initializer outside the vocabulary";
@@ -373,11 +416,19 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
 }
 
 /** Rewrites read-only `X[INDEX]` to `X.at(INDEX)` so ADD_FUNCTION's expression checker can vet it (at is pure). */
-function rewriteIndex(e: ts.Expression, sf: ts.SourceFile, isModuleCall: (name: string) => boolean = () => false): string | null {
+function rewriteIndex(e: ts.Expression, sf: ts.SourceFile, isModuleCall: (name: string) => boolean = () => false, dates = false): string | null {
   const text = e.getText(sf);
   const start = e.getStart(sf);
-  const edits: { at: number; end: number; repl: string }[] = [];
+  const edits: { at: number; end: number; repl: string; check?: RegExp }[] = [];
   const visit = (n: ts.Node) => {
+    // M74 (DATE family): `new Date(X)` (exactly one argument) and `Date.UTC(...)` are checked as two reserved callables
+    // (DATE_VOCAB); every other `new` stays unrewritten and is refused by the expression checker.
+    if (dates && ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Date" && !n.typeArguments && n.arguments?.length === 1 && !ts.isSpreadElement(n.arguments[0]!)) {
+      edits.push({ at: n.getStart(sf) - start, end: n.arguments.pos - start, repl: `${DATE_CTOR}(`, check: /^new\s+Date\s*\($/ });
+    }
+    if (dates && ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === "Date" && n.expression.name.text === "UTC" && !n.questionDotToken && !n.expression.questionDotToken) {
+      edits.push({ at: n.expression.getStart(sf) - start, end: n.arguments.pos - start, repl: `${DATE_UTC}(`, check: /^Date\s*\.\s*UTC\s*\($/ });
+    }
     if (ts.isElementAccessExpression(n)) {
       const open = n.argumentExpression.getStart(sf) - 1;
       const close = n.getEnd() - 1;
@@ -395,8 +446,8 @@ function rewriteIndex(e: ts.Expression, sf: ts.SourceFile, isModuleCall: (name: 
   visit(e);
   let out = text;
   for (const ed of edits.sort((a, b) => b.at - a.at)) {
-    const want = ed.repl === ")" ? "]" : ed.repl === ".at(" ? "[" : ed.repl === "].length" ? ")" : null;
-    if (want !== null ? out.slice(ed.at, ed.end) !== want : !/^[A-Za-z_$][\w$]*\s*\($/.test(out.slice(ed.at, ed.end))) return null;
+    const want = ed.check ? null : ed.repl === ")" ? "]" : ed.repl === ".at(" ? "[" : ed.repl === "].length" ? ")" : null;
+    if (ed.check ? !ed.check.test(out.slice(ed.at, ed.end)) : want !== null ? out.slice(ed.at, ed.end) !== want : !/^[A-Za-z_$][\w$]*\s*\($/.test(out.slice(ed.at, ed.end))) return null;
     out = out.slice(0, ed.at) + ed.repl + out.slice(ed.end);
   }
   return out;
@@ -416,6 +467,11 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
     if (k === "loops") { if (!Array.isArray(v) || v.length === 0 || !v.every((x) => COMPLEX_VOCAB.loops.includes(x))) return no("bad_rule_params"); continue; }
     if (typeof v !== "string" || !COMPLEX_VOCAB[k].includes(v)) return no("bad_rule_params");
   }
+  // M74: the optional `types` key ("primitive+date") makes a DATE family spec; it never mixes with loops.
+  const dates = params.types === "primitive+date";
+  if (Object.keys(params).some((k) => k !== "types" && !(COMPLEX_PARAM_KEYS as readonly string[]).includes(k)) || ("types" in params && !dates)) return no("bad_rule_params");
+  if (dates && (params.loops as string[]).join(",") !== "none") return no("bad_rule_params");
+  if (!dates && task.params.concat({ name: "", type: task.ret }).some((p) => p.type === "Date")) return no("bad_rule_params");
   if (!plainPath(task.file)) return no("path_not_plain");
   if (isProtected(task.file)) return no("protected_path");
   const target = files.find((f) => f.path === task.file);
@@ -431,6 +487,15 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   if ((fsf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || fsf.statements.length !== 1) return no("edit_refused");
   const fd = fsf.statements[0]!;
   if (!ts.isFunctionDeclaration(fd) || !fd.body) return no("edit_refused");
+  if (dates) {
+    // M74: named DATE refusals first; reserved rewrite names and a shadowed `Date` are refused outright.
+    const dr = dateRefusal(fd.body);
+    if (dr) return no(dr);
+    let shadow = false;
+    const sv = (n: ts.Node): void => { if (ts.isIdentifier(n) && (n.text.startsWith("__peaceai") || (n.text === "Date" && ts.isVariableDeclaration(n.parent) && n.parent.name === n))) shadow = true; ts.forEachChild(n, sv); };
+    sv(fd);
+    if (shadow || task.params.some((p) => p.name === "Date")) return no("body_refused");
+  }
   const allowedLoops = new Set(params.loops as string[]);
   const pol = loopPolicy([...allowedLoops]);
   if (anyLoops(pol)) {
@@ -443,12 +508,13 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   }
   if (!allowedLoops.has("for-of-param") && /\bfor \(const /.test(task.body)) return no(LOOP_UNSUPPORTED);
   if (!allowedLoops.has("counted-literal-or-length") && /\bfor \(let /.test(task.body)) return no(LOOP_UNSUPPORTED);
-  const refusal = blockRefusal(fd.body, names, fsf, { module: moduleFunctions(fsf), stack: [], called: new Set(), loops: pol });
+  const refusal = blockRefusal(fd.body, names, fsf, { module: moduleFunctions(fsf), stack: [], called: new Set(), loops: pol, dates });
   if (refusal) return no(NAMED_REFUSALS.has(refusal) ? refusal : "body_refused");
   const base = target.content.endsWith("\n") ? target.content : `${target.content}\n`;
   const content = `${base}\n${fnText}`;
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
-  const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file" };
+  // M74: a DATE task with a Date parameter writes its checks with `new Date("ISO")` arguments (the M35 grammar).
+  const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file", ...(dates && task.params.some((p) => p.type === "Date") ? { args: "date-literal" } : {}) };
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
   if (!test) return no("test_refused");
   if (!plainPath(test.path)) return no("path_not_plain"); // new test files match the protected *.test.ts pattern by design; only the path shape is checked here
@@ -458,13 +524,13 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
 export function applyComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, env: Record<string, string | undefined> = process.env): ComplexEdit | null {
   if (!complexFunctionEnabled(env)) return null;
   if (Array.isArray(params.loops) && params.loops.some((x) => x !== "none") && !loopFunctionEnabled(env)) return null; // M65: loops behind their own flag
-  const task = parseComplexTask(trigger, objective);
+  const task = parseComplexTask(trigger, objective, params.types === "primitive+date");
   return task ? buildComplexEdit(params, task, files, isTest) : null;
 }
 
 /** Job A entry (wiring): admitted only via the hash-pinned approved list, so no flag here; reasons for M59 lines. */
 export function runComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }): ComplexEdit | null {
-  const task = parseComplexTask(trigger, objective);
+  const task = parseComplexTask(trigger, objective, params.types === "primitive+date");
   if (!task) { if (why) why.reason = "task_unparsed"; return null; }
   return buildComplexEdit(params, task, files, isTest, why);
 }
@@ -475,14 +541,14 @@ export function stubComplexBody(content: string, fn: string): string | null {
   const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
   if (hits.length !== 1 || !hits[0]!.body || !hits[0]!.type) return null;
   const t = hits[0]!.type.getText(sf).replace(/^readonly /, "");
-  const d = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : null;
+  const d = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : t === "Date" ? "new Date(0)" : null; // M74: Date -> epoch
   if (!d) return null;
   return content.slice(0, hits[0]!.body.getStart(sf)) + `{ return ${d}; }` + content.slice(hits[0]!.body.getEnd());
 }
 
 /** Option A: the same-file functions a body calls (transitively, vetted). Null when the body is refused. */
-export function calledFunctions(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile, loops: LoopPolicy = NO_LOOPS): string[] | null {
-  const ctx: CallCtx = { module: moduleFunctions(sf), stack: [], called: new Set(), loops };
+export function calledFunctions(block: ts.Block, params: ReadonlySet<string>, sf: ts.SourceFile, loops: LoopPolicy = NO_LOOPS, dates = false): string[] | null {
+  const ctx: CallCtx = { module: moduleFunctions(sf), stack: [], called: new Set(), loops, dates };
   return blockRefusal(block, params, sf, ctx) === null ? [...ctx.called].sort() : null;
 }
 
@@ -496,7 +562,9 @@ export function stubForGrading(content: string, fn: string, added: readonly stri
   if (!f?.body) return null;
   const ps = new Set(f.parameters.map((x) => (ts.isIdentifier(x.name) ? x.name.text : "")));
   // M64: the candidate already passed Job A under its spec; list callees with every bounded loop form allowed.
-  const called = calledFunctions(f.body, ps, sf, loopPolicy(["for-of-param", "counted-literal-or-length", "while-bounded"]));
+  // M74: a function with Date in its signature passed Job A under the DATE spec; vet its callees with the Date vocabulary.
+  const dates = [...f.parameters.map((x) => x.type?.getText(sf)), f.type?.getText(sf)].includes("Date");
+  const called = calledFunctions(f.body, ps, sf, loopPolicy(["for-of-param", "counted-literal-or-length", "while-bounded"]), dates);
   if (called === null) return null;
   let cur: string | null = content;
   for (const n of [fn, ...called.filter((c) => added.includes(c))]) { cur = stubComplexBody(cur, n); if (cur === null) return null; }
