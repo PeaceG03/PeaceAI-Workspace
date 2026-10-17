@@ -141,3 +141,7 @@ Census for TEST_CASE_EXISTING: of 286 exported PeaceSTOCKS functions, 34 pass to
 
 Safety: 30/30 out-of-scope and adversarial tasks refused (path traversal, denied files, missing targets, name collision, exec body,
 clock, local time, I/O target, secret read, non-opted-in workflow, missing script, bad import, protected path). 0 wrong outputs offered.
+
+## Phase 2 (gap filling)
+- PR #377 (m84/stress-parse-fixes 649b238): gaps 2 (partly) and 3. Re-run on that branch: G1, M2 solved; X9 still refused (now by Job B, the right reason); C3/L4 move on to body_refused (gap 6). Projected score after merge: 53/66 = 80.3% (solves 23/36). Per-task results in runs-m84/.
+- Not started (each needs a new spec, 10 licensed non-corpus examples, Auditor and Peace /approve-rule): gap 1 TEST_CASE_EXISTING v2 (object/array signatures, 43 untested functions), gap 4 MODIFY_BODY, gap 6 helper calls / closures / templates in COMPLEX bodies. Gap 5 is in core (kernel), outside Workspace.

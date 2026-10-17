@@ -1,0 +1,12 @@
+{
+ "id": "C3",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "public-complex-function-v1=body_refused; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+ "candidates": [],
+ "outcome": "FALSE_REFUSAL",
+ "seconds": 2.6
+}
