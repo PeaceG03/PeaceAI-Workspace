@@ -22,6 +22,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-loop-function-v1": "LOOP_FUNCTION",
   "public-loop-function-v2": "LOOP_FUNCTION",
   "public-env-fix-v1": "ENV_FIX",
+  "public-env-fix-v2": "ENV_FIX",
   "public-workflow-job-v1": "WORKFLOW_JOB",
   "public-tsconfig-script-v1": "TSCONFIG_SCRIPT",
   "public-import-edit-v2": "IMPORT_EDIT",

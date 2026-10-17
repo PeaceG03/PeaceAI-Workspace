@@ -72,3 +72,7 @@ test("workflow-job-v1 and tsconfig-script-v1 map to their skills; both approved 
   for (const s of ["WORKFLOW_JOB", "TSCONFIG_SCRIPT"]) assert.ok(!(MISSING_SKILLS as readonly string[]).includes(s));
   assert.match(GRANDFATHERED[119]!, /^T_NO_PATCH_COMMENT: #306 .*PeaceSTOCKS PR #9/);
 });
+
+test("public-env-fix-v2 maps to ENV_FIX", () => {
+  assert.equal(RULE_SKILL["public-env-fix-v2"], "ENV_FIX");
+});
