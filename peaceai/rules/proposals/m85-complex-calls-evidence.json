@@ -1,0 +1,203 @@
+{
+ "schema": "peaceai-m85-complex-calls-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "pins": "peaceai/rules/proposals/m45-example-repos.json",
+ "note": "COMPLEX calls/callbacks (public-complex-calls-v1): 11 exported functions from 3 pinned example-only permissive repos (m45 pins; not in lm-corpus, repo and file sha checked against ext-manifest 8458eac6 + ext-corpus.json). Each body passes the extended vocabulary (vetted inside its own module: calls to the module's own exported functions whose bodies pass the same vocabulary, depth <= 2, and/or one-parameter expression-bodied arrows as the single argument of map/filter/some/every/find/findIndex; for / for-of loops as in public-loop-function-v1), uses at least one of the two, and is refused by the plain COMPLEX vocabulary on the same text (plainRefusal). Found by an AST scan of every non-test .ts file (<= 64 KiB) in the 11 pinned example trees. Peace's public repos were checked first (see peace): PeaceSTOCKS has no fitting function; PeaceAI-Workspace has one (lib/stacked.ts provenanceClause); both repos are in the corpus manifest, so neither counts. Licenses pinned by hash only.",
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "5c41528a4e608d8f53de996e583a97776d232d08",
+   "fits": 0
+  },
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "checkedAt": "4732f47b54772664b3e02761a47ac66d8a259f97",
+   "fits": 1
+  }
+ ],
+ "examples": [
+  {
+   "repo": "lerna/lerna",
+   "commit": "b00fa0321a42947bb4113bc7906021f04131d0db",
+   "path": "libs/e2e-utils/src/lib/snapshot-serializer-utils.ts",
+   "fn": "trimEnds",
+   "line": 74,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "f9f772fd6eb9af9c3cef5e0512234313307ca1a3d1cae90927c941d145c37f29",
+   "license": "MIT",
+   "licenseSha256": "9ed1ed1cf21f03cf71526c2ecb8b6f08ee8845b607bd93ff0f278053e103d905",
+   "fileBlob": "e5bb653da4962759549b0621ca1aef0961b23cf1",
+   "fixture": "peaceai/test/fixtures/m85-calls/lerna__lerna-e5bb653da496.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/config/reader/src/parseCAFileContents.ts",
+   "fn": "parseCAFileContents",
+   "line": 1,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "6fc24ba843a1c590a3ada67d83497db1519edd14ade6119e6ff57cffebd6a9cb",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "c74a21bf05446b1a39ca2d978760e8336be8d078",
+   "fixture": "peaceai/test/fixtures/m85-calls/pnpm__pnpm-c74a21bf0544.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/config/reader/src/quoteAndJoin.ts",
+   "fn": "quoteAndJoin",
+   "line": 2,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "2897fe730233c47ab7bb548e0c796287cd00bd1f010d5ed408fb21f122ebeb74",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "65a5ee8f0a5c1267098b5b33afffef458094b7ec",
+   "fixture": "peaceai/test/fixtures/m85-calls/pnpm__pnpm-65a5ee8f0a5c.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/deps/github-actions/src/index.ts",
+   "fn": "normalizeGitHubActionSelector",
+   "line": 39,
+   "exported": true,
+   "calls": [
+    "isGitHubActionSelector"
+   ],
+   "callback": false,
+   "plainRefusal": "condition outside the vocabulary",
+   "sha256": "d6c8c541fa20ed5ee299e05abdc562e650394f7c016cead727114e34e87ff819",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "991843ed579d5500526b94955cc7210a418bc54f",
+   "fixture": "peaceai/test/fixtures/m85-calls/pnpm__pnpm-991843ed579d.txt"
+  },
+  {
+   "repo": "pnpm/pnpm",
+   "commit": "6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef",
+   "path": "pnpm11/installing/commands/src/recursive/updateSelectors.ts",
+   "fn": "makeIgnorePatterns",
+   "line": 204,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "0bdb70565208c86906a93c613128a84e39ff1b21c7e0dfdec2b1b0f1d4c201fd",
+   "license": "MIT",
+   "licenseSha256": "eb35030d4c9e5fdec972f998de59f6cad4ac321e84f9fe2bc27c87fe9b359e48",
+   "fileBlob": "9f6821b088811c0a567d35b651f7f7dc2f26463b",
+   "fixture": "peaceai/test/fixtures/m85-calls/pnpm__pnpm-9f6821b08881.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/core/src/common/utils/cli.ts",
+   "fn": "parseList",
+   "line": 62,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "3c1ed290ca2b5521512758b9a01ce8dc56a98118a5fb44cf13115186f469dce1",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "046a266a64c851dd298a3c8fafe5b4e95ac08465",
+   "fixture": "peaceai/test/fixtures/m85-calls/storybookjs__storybook-046a266a64c8.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/core/src/core-server/utils/manifests/mdx-manifest.ts",
+   "fn": "mdxDocJsonPointer",
+   "line": 94,
+   "exported": true,
+   "calls": [
+    "mdxPayloadJsonPointer"
+   ],
+   "callback": false,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "1f08ec7d044d6f79a25cf2a2cbd0dba7639c720a97ab5082ba6da0dfd017b2a6",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "edf47b427bdb077235241bd8dc4fd31b2490d8d5",
+   "fixture": "peaceai/test/fixtures/m85-calls/storybookjs__storybook-edf47b427bdb.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/lib/docgen-harness/src/perf/docgen-shared/child-output.ts",
+   "fn": "outputTail",
+   "line": 1,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "acfeec27978f606c63e7cb58aaabc2aff1ad7ba79ad5a41d6a5938526735865a",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "c9778ba246ea4d0a562d867727136f1a8c5df4d4",
+   "fixture": "peaceai/test/fixtures/m85-calls/storybookjs__storybook-c9778ba246ea.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/renderers/vue3/src/docgen/shared/render-primitives.ts",
+   "fn": "wrapSlotContent",
+   "line": 410,
+   "exported": true,
+   "calls": [
+    "indent"
+   ],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "3de8c9132b3258efb4fc189ff06adcf79cf5728a15877b0444fb9a66f76fc8c6",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "232dadf5d54ff92371c6d29177bc35631f014042",
+   "fixture": "peaceai/test/fixtures/m85-calls/storybookjs__storybook-232dadf5d54f.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/renderers/vue3/src/docgen/shared/render-primitives.ts",
+   "fn": "indent",
+   "line": 414,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "return value outside the vocabulary",
+   "sha256": "3de8c9132b3258efb4fc189ff06adcf79cf5728a15877b0444fb9a66f76fc8c6",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "232dadf5d54ff92371c6d29177bc35631f014042",
+   "fixture": "peaceai/test/fixtures/m85-calls/storybookjs__storybook-232dadf5d54f.txt"
+  },
+  {
+   "repo": "storybookjs/storybook",
+   "commit": "ef018cd3e37acf5aa044fa3fe6d00dd323d0630c",
+   "path": "code/renderers/vue3/src/docgen/story-docs/transform-template/forward-setup.ts",
+   "fn": "setupReferencesWarning",
+   "line": 62,
+   "exported": true,
+   "calls": [],
+   "callback": true,
+   "plainRefusal": "initializer outside the vocabulary",
+   "sha256": "88ca63fa46de314b9228b2bd654834c5863a602ef1e84c97fdaec8788f519ded",
+   "license": "MIT",
+   "licenseSha256": "9b91634b66e5abc0906d678efc798c65c9c8aaeb8d29878bd288caf955a2f7a0",
+   "fileBlob": "0193573f45317db29af4c02bc2fe2eda7d08c25d",
+   "fixture": "peaceai/test/fixtures/m85-calls/storybookjs__storybook-0193573f4531.txt"
+  }
+ ]
+}

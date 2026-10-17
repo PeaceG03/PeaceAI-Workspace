@@ -1,0 +1,25 @@
+{
+ "id": "public-complex-calls-v1",
+ "kind": "COMPLEX_FUNCTION",
+ "shape": "COMPLEX_CALLS",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_COMPLEX_FUNCTION + PEACEAI_LOOP_FUNCTION (dev path); Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-complex.ts (calls module-exported-pure + callbacks array-method-arrow)",
+ "scope": "COMPLEX_FUNCTION grammar with for / for-of loops (public-loop-function-v1's), vetted inside the whole target module: calls to the module's own exported, non-async functions whose bodies pass the same vocabulary (depth 2, no recursion); a one-parameter expression-bodied arrow (optionally typed from the vocabulary) only as the single argument of map/filter/some/every/find/findIndex, never nested; trigger 'add complex function' or 'add loop function'",
+ "refusals": "not_needed (a task using neither a module call nor a callback: the older specs cover it), body_refused (non-exported/impure/async/re-exported callees, recursion, any other closure, block-bodied or multi-parameter arrows, other methods, optional calls, __peaceai* names), loop_while_unsupported and the loop spec's named loop refusals",
+ "evidence": {
+  "examples": 11,
+  "repos": 3,
+  "file": "peaceai/rules/proposals/m85-complex-calls-evidence.json",
+  "method": "AST scan of the pinned example-only permissive trees (m45 pins): each example passes the extended vocabulary, uses it, and is refused by the plain vocabulary (no training-corpus overlap)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: PeaceSTOCKS 0 fits, PeaceAI-Workspace 1 (lib/stacked.ts provenanceClause); both are in the corpus manifest, so neither counts"
+ },
+ "learned": "peaceai/rules/learned/public-complex-calls-v1.json",
+ "tests": [
+  "peaceai/test/m85-complex-calls.test.ts"
+ ],
+ "untouched": "public-complex-function-v1, public-loop-function-v1, public-loop-function-v2, public-date-function-v1 (no calls/callbacks keys: module helpers uncallable, closures refused, as Auditor #219 decided)"
+}

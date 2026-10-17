@@ -134,6 +134,7 @@ repo: lerna/lerna
 license: MIT (LICENSE, sha256 of trimmed text 9ed1ed1cf21f03cf71526c2ecb8b6f08ee8845b607bd93ff0f278053e103d905)
 fixtures (commit path):
   b00fa0321a42947bb4113bc7906021f04131d0db peaceai/test/fixtures/m67/workflow-job/lerna__lerna-website-deploy.yml
+  b00fa0321a42947bb4113bc7906021f04131d0db peaceai/test/fixtures/m85-calls/lerna__lerna-e5bb653da496.txt
 license URL: https://github.com/lerna/lerna/blob/b00fa0321a42947bb4113bc7906021f04131d0db/LICENSE
 ---- license text ----
 Copyright (c) 2015-present Lerna Contributors
@@ -553,6 +554,10 @@ fixtures (commit path):
   6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m64/pnpm__pnpm-2e19deffa918.txt
   6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m64/pnpm__pnpm-40b9d5439297.txt
   6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m67/workflow-job/pnpm__pnpm-pacquet-ci.yml
+  6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m85-calls/pnpm__pnpm-c74a21bf0544.txt
+  6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m85-calls/pnpm__pnpm-65a5ee8f0a5c.txt
+  6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m85-calls/pnpm__pnpm-991843ed579d.txt
+  6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef peaceai/test/fixtures/m85-calls/pnpm__pnpm-9f6821b08881.txt
 license URL: https://github.com/pnpm/pnpm/blob/6c26d9d8afaf9fcdd92ed19c8eb98753b8f151ef/LICENSE
 ---- license text ----
 The MIT License (MIT)
@@ -646,6 +651,11 @@ fixtures (commit path):
   ef018cd3e37acf5aa044fa3fe6d00dd323d0630c peaceai/test/fixtures/m64/storybookjs__storybook-c59c0660f19b.txt
   f5ea72f90e92256631a8c4ea4341eeff44b64141 peaceai/test/fixtures/m56/storybookjs__storybook-f5ea72f90e92.after.txt
   f5ea72f90e92256631a8c4ea4341eeff44b64141 peaceai/test/fixtures/m56/storybookjs__storybook-f5ea72f90e92.before.txt
+  ef018cd3e37acf5aa044fa3fe6d00dd323d0630c peaceai/test/fixtures/m85-calls/storybookjs__storybook-046a266a64c8.txt
+  ef018cd3e37acf5aa044fa3fe6d00dd323d0630c peaceai/test/fixtures/m85-calls/storybookjs__storybook-edf47b427bdb.txt
+  ef018cd3e37acf5aa044fa3fe6d00dd323d0630c peaceai/test/fixtures/m85-calls/storybookjs__storybook-c9778ba246ea.txt
+  ef018cd3e37acf5aa044fa3fe6d00dd323d0630c peaceai/test/fixtures/m85-calls/storybookjs__storybook-232dadf5d54f.txt
+  ef018cd3e37acf5aa044fa3fe6d00dd323d0630c peaceai/test/fixtures/m85-calls/storybookjs__storybook-0193573f4531.txt
 license URL: https://github.com/storybookjs/storybook/blob/22c13a7f90f249e7fb53305eaeb4af61f38ebd05/LICENSE
 ---- license text ----
 The MIT License (MIT)

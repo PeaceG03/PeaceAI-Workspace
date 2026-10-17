@@ -165,20 +165,15 @@ function ownStatements(body: ts.Block): ts.Statement[] {
   return out;
 }
 
-export function applyReplaceRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), repo?: string): BodyEdit | null {
-  if (!okParams(params, BODY_PARAM_KEYS, BODY_VOCAB)) return null;
-  const heads = objective.split("\n").map((l) => l.trim()).filter((l) => new RegExp(trigger, "i").test(l));
-  if (heads.length !== 1) return null;
-  const g = new RegExp(trigger, "i").exec(heads[0]!)!.groups ?? {};
-  const site = g.site === "condition" ? "if-condition" : "return-expression";
-  if (!(params.sites as string[]).includes(site)) return null;
-  const oldText = strip(g.old ?? ""), newText = strip(g.new ?? "");
+/**
+ * M85: the engine's site check and rewrite, shared by Job A (applyReplaceRule, after the scope and allow-list checks)
+ * and the evidence replay (replaceFits): the new module text, or null when the edit is refused.
+ */
+export function replaceSite(path: string, text: string, fnName: string, site: "if-condition" | "return-expression", oldText: string, newText: string): string | null {
   const oldE = parseExpr(oldText), newE = parseExpr(newText);
   if (!oldE || !newE || sameTokens(oldText, newText)) return null;
-  const target = files.find((f) => f.path === g.file);
-  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || !editablePath(repo, target.path)) return null;
-  const sf = ts.createSourceFile(target.path, target.content, ts.ScriptTarget.Latest, true);
-  const fn = exportedFunction(sf, g.fn!);
+  const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+  const fn = exportedFunction(sf, fnName);
   if (!fn) return null;
   const params0 = new Set<string>();
   for (const p of fn.params) { if (!ts.isIdentifier(p.name)) return null; params0.add(p.name.text); }
@@ -192,8 +187,36 @@ export function applyReplaceRule(trigger: string, params: Record<string, string 
   // Names: the old expression's own, the parameters, and the function's const/let locals declared before the site.
   const allowed = new Set([...freeNames(oldE), ...params0, ...localsBefore(fn.body, e.getStart(sf))]);
   if (!safeExpression(newE, allowed, calleesOf(oldE))) return null;
-  const content = target.content.slice(0, e.getStart(sf)) + newE.getText() + target.content.slice(e.getEnd());
-  if (!parses(target.path, content)) return null;
+  const content = text.slice(0, e.getStart(sf)) + newE.getText() + text.slice(e.getEnd());
+  return parses(path, content) ? content : null;
+}
+
+/** M85 evidence replay: the one exported function of `text` in which the engine accepts this replacement, or null. */
+export function replaceFits(text: string, site: "condition" | "return", oldText: string, newText: string, path = "m.ts"): string | null {
+  const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+  const names = new Set<string>();
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name) names.add(st.name.text);
+    if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) names.add(d.name.text);
+  }
+  const hits = [...names].filter((n) => replaceSite(path, text, n, site === "condition" ? "if-condition" : "return-expression", oldText, newText) !== null);
+  return hits.length === 1 ? hits[0]! : null;
+}
+
+export function applyReplaceRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), repo?: string): BodyEdit | null {
+  if (!okParams(params, BODY_PARAM_KEYS, BODY_VOCAB)) return null;
+  const heads = objective.split("\n").map((l) => l.trim()).filter((l) => new RegExp(trigger, "i").test(l));
+  if (heads.length !== 1) return null;
+  const g = new RegExp(trigger, "i").exec(heads[0]!)!.groups ?? {};
+  const site = g.site === "condition" ? "if-condition" : "return-expression";
+  if (!(params.sites as string[]).includes(site)) return null;
+  const oldText = strip(g.old ?? ""), newText = strip(g.new ?? "");
+  const oldE = parseExpr(oldText), newE = parseExpr(newText);
+  if (!oldE || !newE || sameTokens(oldText, newText)) return null;
+  const target = files.find((f) => f.path === g.file);
+  if (!target || isTest(target.path) || PROTECTED_SELF.some((p) => p.pattern.test(target.path)) || !editablePath(repo, target.path)) return null;
+  const content = replaceSite(target.path, target.content, g.fn!, site, oldText, newText);
+  if (content === null) return null;
   const tt = testFor(g.fn!, g.file!, `${g.file}\0${g.fn}\0${site}\0${oldText}\0${newText}`, objective);
   if (!tt) return null;
   const test = buildTestEdit(TEST_PARAMS, tt, files, isTest);

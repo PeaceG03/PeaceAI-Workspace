@@ -139,6 +139,8 @@ export const DATE_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "date fu
 /** M64: LOOP_FUNCTION header ("add loop function ... with body:"); same signature grammar, its own phrase. */
 export const LOOP_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "loop function");
 /** LOOP_WHILE (public-loop-function-v2): its own header phrase so v1 (while refused) and v2 never share a task. */
+/** M85 (public-complex-calls-v1): the complex or loop phrasing; tasks needing neither calls nor callbacks are not_needed. */
+export const CALLS_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "(?:complex|loop) function");
 export const WHILE_TRIGGER = COMPLEX_TRIGGER.replace("complex function", "while loop function");
 const LOCAL_TYPES = new Set(FUNCTION_TYPES as readonly string[]);
 const RESERVED = /^(?:constructor|prototype|__proto__|eval|arguments|globalThis|process|require|import|Function|undefined|NaN|Infinity)$/;
