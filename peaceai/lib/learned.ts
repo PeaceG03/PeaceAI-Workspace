@@ -12,6 +12,7 @@ import { ENV_FIX_TRIGGER, runEnvFixRule, validEnvFixParams } from "./env-fix.ts"
 import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB, runImportEditV2Rule } from "./import-edit-v2.ts";
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
+import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, validTestExistingParams } from "./learned-test-existing.ts";
 import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
@@ -21,7 +22,7 @@ import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCA
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX", "TEST_EXISTING"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -70,6 +71,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "TSCONFIG_SCRIPT" && !validFixedParams(s.params as Record<string, unknown>, s.minedFrom, TSCONFIG_SCRIPT_PARAM_KEYS, TSCONFIG_SCRIPT_VOCAB)) return false;
   if (s.kind === "ENV_FIX" && (s.minedFrom !== "public" || !validEnvFixParams(s.params as Record<string, unknown>))) return false; // v2: optional `int`
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "TEST_EXISTING" && !validTestExistingParams(s.params as Record<string, unknown>, s.minedFrom)) return false; // M80
   if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "REPLACE_EXPRESSION" && !validBodyParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
@@ -174,6 +176,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_FUNCTION: FUNCTION_TRIGGER,
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
   REPLACE_EXPRESSION: REPLACE_TRIGGER,
+  TEST_EXISTING: TEST_EXISTING_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -425,6 +428,17 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   if (spec.kind === "METHOD_GUARD") {
     try {
       return applyMethodGuardRule(spec.trigger, spec.params, objective, files, isTest, why);
+    } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  if (spec.kind === "TEST_EXISTING") {
+    try {
+      // The tested module itself may not be a denied path of the target (the new test file is checked by applyRule).
+      const t = parseExistingTestTask(spec.trigger, objective);
+      if (t && repo && deniedEditPath(repo, [t.file])) { if (why) why.reason = "denied_path"; return null; }
+      return runExistingTestRule(spec.trigger, spec.params, objective, files, isTest, why); // M80: one new test file for an existing exported pure function; admitted only via the hash-pinned approved list; graded fix-free in Job B
     } catch {
       if (why) why.reason = "internal_error";
       return null;
