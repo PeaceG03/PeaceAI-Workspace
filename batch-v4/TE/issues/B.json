@@ -1,0 +1,4 @@
+{
+ "title": "PeaceAI live proof B: characterization test refused for date-local easternSessionDate (test-case-existing)",
+ "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for easternSessionDate in src/tenmin-range-reply-dust.ts: eastern session date\n- easternSessionDate(1760716800000) is \"2025-10-17\"\n\n(Live proof B refusal of public-test-case-existing-v1 (proposal #362, approved via #367). Expected: no candidate; the refusal reason is test_target_date_local (easternSessionDate formats through Intl in the America/New_York zone, which is not a pure function of its arguments). No patch. MECHANISM PROOF ONLY. Does NOT count toward coverage: no builder-log coverage line (coverage: none).)\n"
+}
