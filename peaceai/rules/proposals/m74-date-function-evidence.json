@@ -2,7 +2,7 @@
   "schema": "peaceai-m74-date-function-evidence:v1",
   "bar": 10,
   "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
-  "note": "WIP (engine not yet built). DATE family (public-date-function-v1): 10 exported or module functions from example-only permissive repos that are not in lm-corpus (repo and file sha checked against ext-manifest 8458eac6 + ext-corpus.json). Every Date use is in the planned vocabulary: Date-typed params/returns, getUTC* getters, getTime, toISOString, Date.UTC, new Date(EXPR) with exactly one argument. No local-time getters, no Date.now, no argless new Date(), no setters. PeaceSTOCKS inRefillGuard / inOneOffGuardWindow fit too, but Peace's repos are in the corpus manifest, so they are not counted. Dropped candidates: ymichael/WidgetTimeline daysBetween (unary + on a Date), juspay/epigos/jeanibarz (module constants), Emanuele-web04 requireValidDate (template-literal throw), SudhanshuPanthri isMarketLikelyOpen (default param new Date()), RedPlanetHQ/3Tea isSameUTCDay (license NOASSERTION / MPL-2.0).",
+  "note": "DATE family (public-date-function-v1): 10 exported or module functions from example-only permissive repos that are not in lm-corpus (repo and file sha checked against ext-manifest 8458eac6 + ext-corpus.json). Every Date use is in the planned vocabulary: Date-typed params/returns, getUTC* getters, getTime, toISOString, Date.UTC, new Date(EXPR) with exactly one argument. No local-time getters, no Date.now, no argless new Date(), no setters. PeaceSTOCKS inRefillGuard / inOneOffGuardWindow fit too, but Peace's repos are in the corpus manifest, so they are not counted. Dropped candidates: ymichael/WidgetTimeline daysBetween (unary + on a Date), juspay/epigos/jeanibarz (module constants), Emanuele-web04 requireValidDate (template-literal throw), SudhanshuPanthri isMarketLikelyOpen (default param new Date()), RedPlanetHQ/3Tea isSameUTCDay (license NOASSERTION / MPL-2.0).",
   "examples": [
     {
       "repo": "amarbayar/event-os",
@@ -15,7 +15,12 @@
       "license": "MIT",
       "licenseSha256": "19465ed3b969de7f2ed5dd6932060905f4857b4e8f8a6946495f856da8ace71b",
       "fileBlob": "93cc26220bf2506f4d024ab3456f3cd6e9852ffa",
-      "fixture": "peaceai/test/fixtures/m74/amarbayar__event-os-93cc26220bf2.txt"
+      "fixture": "peaceai/test/fixtures/m74/amarbayar__event-os-93cc26220bf2.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes"
+      ],
+      "signature": "(Date): number"
     },
     {
       "repo": "pnp/spfx-copilot-components",
@@ -28,7 +33,15 @@
       "license": "MIT",
       "licenseSha256": "6641204ebf5a6b2fde75e15fbaf3f1947fb2ca5396249f5980247d8fb609d01f",
       "fileBlob": "b97e2016c15719d8552aaec2afc63515e3d7adb6",
-      "fixture": "peaceai/test/fixtures/m74/pnp__spfx-copilot-components-b97e2016c157.txt"
+      "fixture": "peaceai/test/fixtures/m74/pnp__spfx-copilot-components-b97e2016c157.txt",
+      "dateApi": [
+        "Date.UTC",
+        "getUTCDate",
+        "getUTCFullYear",
+        "getUTCMonth",
+        "new Date(1)"
+      ],
+      "signature": "(Date): Date"
     },
     {
       "repo": "tradeblocks-org/tradeblocks",
@@ -41,7 +54,11 @@
       "license": "MIT",
       "licenseSha256": "f4012adb3b961258f67b00e69c8317ff20a4da8d434731c630599bab8412262b",
       "fileBlob": "512bfc8ab12d5aab5be623f230dfe52b2de24bff",
-      "fixture": "peaceai/test/fixtures/m74/tradeblocks-org__tradeblocks-512bfc8ab12d.txt"
+      "fixture": "peaceai/test/fixtures/m74/tradeblocks-org__tradeblocks-512bfc8ab12d.txt",
+      "dateApi": [
+        "toISOString"
+      ],
+      "signature": "(Date): string"
     },
     {
       "repo": "tradeblocks-org/tradeblocks",
@@ -54,7 +71,12 @@
       "license": "MIT",
       "licenseSha256": "f4012adb3b961258f67b00e69c8317ff20a4da8d434731c630599bab8412262b",
       "fileBlob": "512bfc8ab12d5aab5be623f230dfe52b2de24bff",
-      "fixture": "peaceai/test/fixtures/m74/tradeblocks-org__tradeblocks-512bfc8ab12d.txt"
+      "fixture": "peaceai/test/fixtures/m74/tradeblocks-org__tradeblocks-512bfc8ab12d.txt",
+      "dateApi": [
+        "Date.UTC",
+        "new Date(1)"
+      ],
+      "signature": "(number, number, number): Date"
     },
     {
       "repo": "nbharathik/ifc-viewx",
@@ -68,7 +90,11 @@
       "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
       "fileBlob": "6f9ff56c05bc90092d0b6d75c9c2f4e4f187a53d",
       "fixture": "peaceai/test/fixtures/m74/nbharathik__ifc-viewx-6f9ff56c05bc.txt",
-      "licenseNote": "GitHub reports NOASSERTION; the LICENSE file at the pinned commit classifies as Apache-2.0 (lmcorpus classifyLicense)"
+      "licenseNote": "GitHub reports NOASSERTION; the LICENSE file at the pinned commit classifies as Apache-2.0 (lmcorpus classifyLicense)",
+      "dateApi": [
+        "getTime"
+      ],
+      "signature": "(Date): number"
     },
     {
       "repo": "Scifi-ally/Mimir",
@@ -81,7 +107,12 @@
       "license": "MIT",
       "licenseSha256": "ef294bbaf329b6a5d6bb820b31199efaafaff293fbabe730ebebd57fa56d222f",
       "fileBlob": "240f3aad98d078c5f410c2708194bc6f1e72d67f",
-      "fixture": "peaceai/test/fixtures/m74/Scifi-ally__Mimir-240f3aad98d0.txt"
+      "fixture": "peaceai/test/fixtures/m74/Scifi-ally__Mimir-240f3aad98d0.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes"
+      ],
+      "signature": "(Date): number"
     },
     {
       "repo": "uwblueprint/social-diversity-for-children",
@@ -94,7 +125,12 @@
       "license": "MIT",
       "licenseSha256": "3b0581993ce2abffb527d8b6c623eeedb448a01aa2134d25318aa838cbd11bfc",
       "fileBlob": "e60798098caca983e1e41171c0d3a4216bc46884",
-      "fixture": "peaceai/test/fixtures/m74/uwblueprint__social-diversity-for-children-e60798098cac.txt"
+      "fixture": "peaceai/test/fixtures/m74/uwblueprint__social-diversity-for-children-e60798098cac.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes"
+      ],
+      "signature": "(Date): number"
     },
     {
       "repo": "vetmogee/schedula",
@@ -107,7 +143,13 @@
       "license": "MIT",
       "licenseSha256": "7298f1e1885417173390839b6dcda659d3eb99f683a0931f3f2bfa93a37ee24e",
       "fileBlob": "f57b9c8847cdfe5fe76ebcb4d178cce9649c914d",
-      "fixture": "peaceai/test/fixtures/m74/vetmogee__schedula-f57b9c8847cd.txt"
+      "fixture": "peaceai/test/fixtures/m74/vetmogee__schedula-f57b9c8847cd.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes",
+        "new Date(1)"
+      ],
+      "signature": "(Date): number"
     },
     {
       "repo": "vetmogee/schedula",
@@ -120,7 +162,13 @@
       "license": "MIT",
       "licenseSha256": "7298f1e1885417173390839b6dcda659d3eb99f683a0931f3f2bfa93a37ee24e",
       "fileBlob": "f57b9c8847cdfe5fe76ebcb4d178cce9649c914d",
-      "fixture": "peaceai/test/fixtures/m74/vetmogee__schedula-f57b9c8847cd.txt"
+      "fixture": "peaceai/test/fixtures/m74/vetmogee__schedula-f57b9c8847cd.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes",
+        "new Date(1)"
+      ],
+      "signature": "(Date): string"
     },
     {
       "repo": "DEADover/DzenAnalytics",
@@ -133,7 +181,12 @@
       "license": "MIT",
       "licenseSha256": "085c3e8d2468ce317ed6f6e68cb533a210672542cd4335c349648220c600760e",
       "fileBlob": "8ae63355e3dd3399537cbc000fa850d5a05574db",
-      "fixture": "peaceai/test/fixtures/m74/DEADover__DzenAnalytics-8ae63355e3dd.txt"
+      "fixture": "peaceai/test/fixtures/m74/DEADover__DzenAnalytics-8ae63355e3dd.txt",
+      "dateApi": [
+        "getUTCDay",
+        "new Date(1)"
+      ],
+      "signature": "(string): boolean"
     }
   ],
   "pins": [

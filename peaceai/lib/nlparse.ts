@@ -20,7 +20,7 @@ import { IMPORT_EDIT_V2_TRIGGER } from "./import-edit-v2.ts";
 import { WORKFLOW_JOB_TRIGGER } from "./workflow-job.ts";
 import { TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
 import { ENV_FIX_TRIGGER } from "./env-fix.ts";
-import { COMPLEX_TRIGGER, LOOP_TRIGGER, WHILE_TRIGGER } from "./learned-complex.ts";
+import { COMPLEX_TRIGGER, DATE_TRIGGER, LOOP_TRIGGER, WHILE_TRIGGER } from "./learned-complex.ts";
 import { REPLACE_TRIGGER } from "./learned-body.ts";
 import { FUNCTION_TRIGGER } from "./learned-function.ts";
 import { WORKFLOW_TRIGGER } from "./learned-workflow.ts";
@@ -87,6 +87,8 @@ const CANONICAL: RegExp[] = [
   new RegExp(WORKFLOW_JOB_TRIGGER, "imu"),
   new RegExp(TSCONFIG_SCRIPT_TRIGGER, "imu"),
   new RegExp(ENV_FIX_TRIGGER, "imu"),
+  // M74: DATE family header line ("add date function ... with body:"), public-date-function-v1 (kind COMPLEX_FUNCTION).
+  new RegExp(DATE_TRIGGER, "imu"),
 ];
 // Numbered plan lines ("Step 2: ...", "2. ...", "2) ..."), read the same way the planner reads them.
 const STEP_WORD = /^step\s*\d{1,2}\s*[-:.)]\s*/iu;
