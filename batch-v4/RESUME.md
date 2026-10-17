@@ -120,3 +120,10 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - PR #360 (m79/builder-log-coverage-batch, head b775950): seq 123-132; READ_ONLY_OPS APPROVED_SINCE; date rule -> COMPLEX_FUNCTION in RULE_SKILL; seq 124 trace grandfather (PR route); coverage test 27/83; gaps.md TEST_CASE proposal. All PR checks green. Box: trace Results mode verified, rule-skill vs Results OK.
 - Coverage now 32.5% (27/83), was 26.3% (20/76).
 - Waiting: Auditor review (I cannot SendToAgent; parent must send). Merge only after Auditor PASS, at the passed head, with --match-head-commit, never --admin.
+
+## 2026-10-17 ~10:35 MDT M80 TEST_CASE_EXISTING
+- Branch m80/test-case-existing head ee6ab23 (worktree /workspace/v4-te). PR #361 is open. Spec sha256 81aba1e3e190ceff2e95c87b1faef43ed60bdb935bc11dfff290f2b8c32e3377.
+- Suite (Node 22, box): typecheck OK, npm test 14/14, test:self 3/3, test:tools 1007/1008 (only the m48 box-only test fails).
+- Fixes along the way: runExistingTests is a separate runner (m23 pins runGradedTests); package.json up to the tree root is readable under the permission model; literal dynamic imports join the read closure; THIRD_PARTY_NOTICES now lists the m80 fixtures; PROTECTED_DIGEST re-pinned.
+- Next: Auditor review (parent sends) -> merge at the passed head with --match-head-commit -> rule-proposal issue -> Peace /approve-rule -> file TE/ proofs A and B and the 5 tasks.
+- Proof drafts and tasks are in batch-v4/TE/.

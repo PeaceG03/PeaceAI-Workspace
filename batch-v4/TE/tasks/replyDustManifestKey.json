@@ -1,0 +1,1 @@
+{"title": "[task] characterization test for replyDustManifestKey", "body": "add a characterization test for replyDustManifestKey in src/intraday-reply-dust.ts: manifest key per session\n- replyDustManifestKey(\"2026-01-05\") is \"permanent/intraday-reply-dust/2026-01-05/manifest.json\"\n- replyDustManifestKey(\"bad\") throws INVALID_SESSION_DATE\n"}
