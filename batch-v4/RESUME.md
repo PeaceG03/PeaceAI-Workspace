@@ -64,3 +64,10 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 ## 22:03 MDT
 - Notes and drafts now live on the pushed branch notes/batch-v4 (worktree /workspace/v4-notes). Edit them there, then commit and push after every step.
 - #331 at 753a998 and #333 at 568dea7: CI all green. #335 at deb62b5: CI all green.
+
+## 22:10 MDT (Peace merged #331 f6e4b7a, #333 58dd971, #335 eb6ef57)
+- Closed #332 and #334, each with a comment pointing to the PR that supersedes it.
+- Fresh approval PRs on main eb6ef57: #336 m72/self-zone-enable-v4 b8fa5c9 (selfZone) and #337 m73/read-only-ops-enable-v3 4ced0bb (read-only-ops enabled). Each is exactly 1 commit ahead.
+- Filed rule-proposal issue #338 (label rule-proposal). The spec hash on main still matches the marker and the spec block: 0b48c156542e1d0cdfe06b46e31d5a170cb214264c2517977d52442ffd298ae6.
+- Peace posts on #338: /approve-rule 0b48c156542e1d0cdfe06b46e31d5a170cb214264c2517977d52442ffd298ae6
+- Next: a THIRD_PARTY_NOTICES PR, then the PR keying nlparse CANONICAL entries by name.
