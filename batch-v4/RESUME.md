@@ -63,4 +63,4 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 
 ## 22:03 MDT
 - Notes and drafts now live on the pushed branch notes/batch-v4 (worktree /workspace/v4-notes). Edit them there, then commit and push after every step.
-- #331 at 753a998 and #333 at 568dea7: CI all green. #335 at deb62b5: CI pending.
+- #331 at 753a998 and #333 at 568dea7: CI all green. #335 at deb62b5: CI all green.
