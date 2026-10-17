@@ -38,6 +38,9 @@ export const complexFunctionEnabled = (env: Record<string, string | undefined>):
 /** M65 wiring: a spec that lists any loop form (public-loop-function-v1) also needs PEACEAI_LOOP_FUNCTION exactly "true" on the dev path. */
 export const LOOP_FUNCTION_FLAG = "PEACEAI_LOOP_FUNCTION";
 export const loopFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[LOOP_FUNCTION_FLAG] === "true";
+/** M74: a spec with types "primitive+date" (public-date-function-v1) also needs PEACEAI_DATE_FUNCTION exactly "true" on the dev path. */
+export const DATE_FUNCTION_FLAG = "PEACEAI_DATE_FUNCTION";
+export const dateFunctionEnabled = (env: Record<string, string | undefined>): boolean => env[DATE_FUNCTION_FLAG] === "true";
 /** Named refusal for every loop form when the spec's `params.loops` is ["none"] (public-complex-function-v1, #211). */
 export const LOOP_UNSUPPORTED = "loop_unsupported";
 // M64 LOOP_FUNCTION (public-loop-function-v1): loops run only when the spec's params.loops lists the form.
@@ -524,6 +527,7 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
 export function applyComplexRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, env: Record<string, string | undefined> = process.env): ComplexEdit | null {
   if (!complexFunctionEnabled(env)) return null;
   if (Array.isArray(params.loops) && params.loops.some((x) => x !== "none") && !loopFunctionEnabled(env)) return null; // M65: loops behind their own flag
+  if (params.types !== undefined && !dateFunctionEnabled(env)) return null; // M74: Date types behind their own flag
   const task = parseComplexTask(trigger, objective, params.types === "primitive+date");
   return task ? buildComplexEdit(params, task, files, isTest) : null;
 }

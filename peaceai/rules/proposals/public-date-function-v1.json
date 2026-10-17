@@ -1,0 +1,26 @@
+{
+ "id": "public-date-function-v1",
+ "kind": "COMPLEX_FUNCTION",
+ "shape": "DATE_FUNCTION",
+ "status": "proposal-off-wired",
+ "flag": "PEACEAI_DATE_FUNCTION (dev path, with PEACEAI_COMPLEX_FUNCTION); Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-complex.ts (types primitive+date)",
+ "scope": "COMPLEX_FUNCTION v1 grammar (loops none) plus Date in parameter, local and return types; timezone-free Date vocabulary only: getUTC* getters, getTime, toISOString, Date.UTC(...), new Date(EXPR) with exactly one argument; own trigger 'add date function'",
+ "refusals": "date_now (Date.now, new Date()), date_local_time (local getters, toLocale*, toDateString, toTimeString, toUTCString, toJSON, Date.parse, new Date(y, m, ...)), date_setter (every set*); a shadowed Date, a parameter named Date or any __peaceai* identifier is body_refused; a non-date spec keeps refusing Date types",
+ "evidence": {
+  "examples": 10,
+  "repos": 8,
+  "file": "peaceai/rules/proposals/m74-date-function-evidence.json",
+  "method": "AST check of pinned example-only permissive repos, each function's Date API recorded (no training-corpus overlap)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "PeaceSTOCKS inRefillGuard / inOneOffGuardWindow fit the grammar but are not counted (Peace's repos are in the corpus manifest)"
+ },
+ "learned": "peaceai/rules/learned/public-date-function-v1.json",
+ "tests": [
+  "peaceai/test/m74-date-function.test.ts"
+ ],
+ "untouched": "public-complex-function-v1, public-loop-function-v1, public-loop-function-v2 (no types key: Date types refused)",
+ "dropped": "planner family (needs object/interface types and module constants)"
+}
