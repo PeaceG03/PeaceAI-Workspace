@@ -60,3 +60,7 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - m74/date-function -> f6656e7 (dev flag PEACEAI_DATE_FUNCTION, proposal record, m74 test) -> deb62b5 (nlparse LEARNED_TRIGGERS index fix + approval test). PR #335 opened. Suite 936/937 (m48 only).
 - Drafts: proofs/v4/B/{rule-proposal.md, live-proof-B-landing.md (PeaceSTOCKS src/et-time.ts utcMinuteOfDay), live-proof-B-refusal.md (etHourNow -> date_local_time), README.md}.
 - Peace posts after #335 merges and the proposal issue is filed: /approve-rule 0b48c156542e1d0cdfe06b46e31d5a170cb214264c2517977d52442ffd298ae6
+
+## 22:03 MDT
+- Notes and drafts now live on the pushed branch notes/batch-v4 (worktree /workspace/v4-notes). Edit them there, then commit and push after every step.
+- #331 at 753a998 and #333 at 568dea7: CI all green. #335 at deb62b5: CI pending.
