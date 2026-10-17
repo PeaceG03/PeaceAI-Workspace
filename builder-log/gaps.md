@@ -15,3 +15,12 @@ Built from `tasks.jsonl` entries 1-84. Count = entries marked `missing skill <SK
 | 9 | TSCONFIG_SCRIPT | 1 | yes | 39 |
 
 Next batch (PeaceAI-Workspace M45 proposal, off until approved): IMPORT_EDIT and PACKAGE_SCRIPT, 12 licensed external examples each. COMPLEX_FUNCTION sub-families stay under the 10-example bar (method-call guards: 0 external, 2 Peace commits).
+
+## Next-skill proposal (batch v4, 2026-10-17): TEST_CASE for existing code (fix-free grading)
+
+Found while picking the #353-#359 real tasks. Many PeaceSTOCKS helpers have no test at all. Examples: `isTenMinRangeOutageError`, `tenMinRangeGapReason`, `tenMinMassiveRequestsOf`, `replyDustManifestKey`, `dateFromDaysSinceEpoch` and `tenMinRangePrefix`. TEST_CASE (public-test-case-v1 and its append and objargs variants) cannot add those tests.
+
+- **Why:** its grading is fail-before-pass-after against a `Fix: <sha>` commit. Job B reverse-applies that commit's source diff onto today's base (test-candidates.ts gradeTest, results.ts validateFix). The new test must fail on the reverted tree. For older code, the commit that introduced or last changed the function no longer reverse-applies on main, because later commits grew the same files. Of the 203 latest non-merge PeaceSTOCKS commits, only 44 touch src only and still reverse-apply. None of those 44 introduced an untested helper. The stub-body fallback (M23) only covers a fix that created its own module.
+- **Effect:** TEST_CASE can only regression-test recent fixes. It cannot raise test coverage of existing code. It found no target in this batch.
+- **Proposed skill:** `TEST_CASE_EXISTING` (a characterization test). Same task grammar, without `Fix:`. Grade it like the self-graded function rules. The new test must pass on today's base. It must also fail when the tested function's body is replaced by a type-default stub (stubComplexBody-style, confined, with the Auditor #129 stub-credit rules). It may only call exported functions of one module with literal arguments. No new source edits.
+- **Risk to review:** a characterization test pins current behavior, bugs included, so Peace's /verdict is the check on intent. It needs its own spec, evidence (10+ licensed examples), Auditor review and /approve-rule. Nothing changes until then.

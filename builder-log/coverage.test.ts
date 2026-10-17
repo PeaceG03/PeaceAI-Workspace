@@ -106,7 +106,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 20/76 with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122) + Builder 26/70; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 20/76 as of 2026-10-16, 27/83 as of 2026-10-17 with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132) + Builder 26/70; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -147,7 +147,13 @@ test("real log: 20/76 with PeaceAI real tasks (98/100/102-105, batch 106-115, 11
   const md = formatCoverageSummary(r);
   assert.match(md, /## PeaceAI vs Builder/);
   assert.match(md, /26\.3% \(20\/76\)/);
-  assert.equal(coverageReport(text, denverYmd(), { onMain }).allTime.percent, 26.3);
+  // Batch v4 coverage (seq 126-132, #353-#359 landed 2026-10-17 as PeaceSTOCKS@1a6e6cd..47cfaaf): +7 PeaceAI real tasks in
+  // both numerator and denominator -> 27/83. Proof rows 123-125 (ops C, self-change A #341/#345, date B #350) are coverage:none.
+  const r17 = coverageReport(text, "2026-10-17", { onMain });
+  assert.equal(r17.allTime.builderTasks, 83);
+  assert.equal(r17.allTime.peaceaiAble, 27);
+  assert.equal(r17.allTime.percent, 32.5);
+  assert.equal(coverageReport(text, denverYmd(), { onMain }).allTime.percent, 32.5);
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/58.
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
   assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 58);

@@ -36,6 +36,7 @@ export const GRANDFATHERED: Readonly<Record<number, string>> = {
   31: "T_APPLY_FAILED: #97 patch (sha256 b2a4bc2a... verified) conflicted at end of module with #96 (landed first as 8a4310d); Builder hand-resolved by keeping both functions",
   85: "T_NO_ISSUE: WORKFLOW_STEP lands through a PeaceSTOCKS PR (#6, task #131), not a verdict patch; the line names no PeaceAI-Workspace#N and there is no patch to trace",
   119: "T_NO_PATCH_COMMENT: #306 is a WORKFLOW_JOB candidate; the verdict patch route refuses .github/workflows/** by design (run 38980914018), so it landed byte-identical to Results tasks/306/38971869061 candidate-1.diff (sha256 b3a43c45...) through reviewed PeaceSTOCKS PR #9 (merge 2f1ff83)",
+  124: "T_NO_PATCH_COMMENT: #341 is a Workspace self-zone task; the Workspace verdict route is a bot PR, not a patch comment, so it landed as bot verdict PR #345 (branch peace-task/issue-341-candidate-1-92fc7276, head d98848a, diff identical to the review) merged as PeaceAI-Workspace@b0c412e with leak-check passing under the #351 self-zone exemption",
 };
 
 export interface ResultsView {

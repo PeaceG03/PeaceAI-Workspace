@@ -31,6 +31,7 @@ export const APPROVED_SINCE = {
   ENV_FIX: "2026-10-16 11:41", // public-env-fix-v1 (strict env flag edit), approval PR #292 merged 6fdb337 (17:41Z); earlier entries keep "missing skill"
   WORKFLOW_JOB: "2026-10-16 11:46", // public-workflow-job-v1, approval PR #296 merged 782a309 (17:46Z); earlier entries keep "missing skill"
   TSCONFIG_SCRIPT: "2026-10-16 12:17", // public-tsconfig-script-v1, approval PR #300 merged ed44b44 (18:17Z); earlier entries keep "missing skill"
+  READ_ONLY_OPS: "2026-10-16 22:18", // read-only ops (GET-only allowlist, peaceai/read-only-ops.json enabled), PR #337 merged 8890c49 (04:18Z); not a code edit and not a learned rule, so it never credits a Builder OPS_ACTION row
   IMPORT_EDIT: "2026-10-15 22:33", // public-import-edit-v2, approval PR #234 merged ba5f2b7 (04:33Z); earlier entries keep "missing skill"
 } as const;
 /**
