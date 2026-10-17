@@ -80,3 +80,4 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - 22:22 MDT: C live proof done. Evidence is in batch-v4/C (RESULT.md, ops.jsonl, outputs 1-6).
 - 22:25 MDT: main CI is green on 944ee28 (ci, leak-check and builder-log all passed). Filed A landing #341. Next, after it gets its review: the A refusal, then B once #338 is approved.
 - 22:38 MDT: A landing #341 got its review at https://github.com/PeaceG03/PeaceAI-Workspace/issues/341#issuecomment-6229605136 (peace-task run 39002327203). Candidate A changes only dates.ts and adds the new dates.utcmonthkey test, with no protected_digest line in Job B. Needs Peace: /verdict A right.
+- 22:39 MDT: filed A refusal #343. Peace posted /approve-rule on #338, and the bot opened approved.json PR #342 (one commit; the landing job merges it after checks, and I am not touching it).
