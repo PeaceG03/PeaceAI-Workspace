@@ -32,6 +32,7 @@ export const APPROVED_SINCE = {
   WORKFLOW_JOB: "2026-10-16 11:46", // public-workflow-job-v1, approval PR #296 merged 782a309 (17:46Z); earlier entries keep "missing skill"
   TSCONFIG_SCRIPT: "2026-10-16 12:17", // public-tsconfig-script-v1, approval PR #300 merged ed44b44 (18:17Z); earlier entries keep "missing skill"
   READ_ONLY_OPS: "2026-10-16 22:18", // read-only ops (GET-only allowlist, peaceai/read-only-ops.json enabled), PR #337 merged 8890c49 (04:18Z); not a code edit and not a learned rule, so it never credits a Builder OPS_ACTION row
+  TEST_CASE_EXISTING: "2026-10-17 13:42", // public-test-case-existing-v1 (fix-free characterization test), approval PR #367 squash-merged b200b05 (19:42Z); earlier entries keep "missing skill"
   IMPORT_EDIT: "2026-10-15 22:33", // public-import-edit-v2, approval PR #234 merged ba5f2b7 (04:33Z); earlier entries keep "missing skill"
 } as const;
 /**
@@ -46,6 +47,7 @@ export const LIVE_PROVEN_SINCE: Readonly<Record<string, LiveProvenRef>> = {
   COMPLEX_FUNCTION: { since: "2026-10-15 18:57", seq: 87 }, // PeaceAI-Workspace#214 landed as PeaceSTOCKS@c9a6076 (loop-free bodies only)
   LOOP_FUNCTION: { since: "2026-10-15 21:52", seq: 97 }, // PeaceAI-Workspace#229 landed as PeaceSTOCKS@22b0f3d; tenmin-mode-sim run 38847676694
   IMPORT_EDIT: { since: "2026-10-16 00:17", seq: 101 }, // PeaceAI-Workspace#237 (proof A1) landed as PeaceSTOCKS@eb8aadc; tenmin-mode-sim run 38860420718
+  TEST_CASE_EXISTING: { since: "2026-10-17 15:32", seq: 133 }, // PeaceAI-Workspace#368 (proof A) landed as PeaceSTOCKS@83904c3
 };
 /** repo@sha landing in a changed field (not an issue-only ref). */
 export const LIVE_LANDING_REF = /(?:PeaceSTOCKS|PeaceAI-Workspace)@[0-9a-f]{7,40}/;
