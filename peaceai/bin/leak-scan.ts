@@ -3,7 +3,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { parseTerms, scanText } from "../lib/leak.ts";
-import { APPROVE_BRANCH_PREFIX, approvalExemptionProblem, checkPullRequestScope, type ApprovalFacts, type ChangedPath, type PullRequestContext } from "../lib/scope.ts";
+import { APPROVE_BRANCH_PREFIX, approvalExemptionProblem, checkPullRequestScope, PEACE_TASK_BRANCH, type ApprovalFacts, type ChangedPath, type PullRequestContext, type SelfZoneFacts } from "../lib/scope.ts";
+import { inSafeZone, WORKSPACE_TARGET } from "../lib/self-zone.ts";
 import { OWNER } from "../lib/trigger.ts";
 
 const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -63,7 +64,20 @@ if (/^[0-9a-f]{40}$/.test(base)) {
     const why = approvalExemptionProblem(changes, pr, approval);
     console.log(why ? `approval-branch exemption refused: ${why}` : "approval-branch exemption: all conditions hold");
   }
-  for (const violation of checkPullRequestScope(changes, pr, OWNER, approval)) fail(`scope ${violation.path}: ${violation.reason}`);
+  // M78: a verdict branch (peace-task/issue-*) may add/modify exactly the self-zone safe paths (inSafeZone), only when
+  // the BASE commit's targets.json enables selfZone and this is the Workspace (the PR's own targets.json is never read).
+  let zone: SelfZoneFacts | null = null;
+  if (pr && PEACE_TASK_BRANCH.test(pr.headRef)) {
+    let on = false;
+    try {
+      const t = JSON.parse(git("show", `${base}:peaceai/targets.json`)) as { targets?: Record<string, { selfZone?: unknown }> };
+      on = t.targets?.[WORKSPACE_TARGET]?.selfZone === true;
+    } catch { on = false; }
+    const here = (process.env.GITHUB_REPOSITORY ?? "") === WORKSPACE_TARGET && pr.baseRepo === WORKSPACE_TARGET && pr.headRepo === WORKSPACE_TARGET;
+    zone = { enabled: on && here, allowed: inSafeZone };
+    console.log(`self-zone exemption: ${zone.enabled ? "on" : "off"} (base selfZone ${on}, workspace ${here})`);
+  }
+  for (const violation of checkPullRequestScope(changes, pr, OWNER, approval, zone)) fail(`scope ${violation.path}: ${violation.reason}`);
   }
 } else if (process.env.LEAK_REQUIRE_BASE === "true") {
   fail("missing base commit for PR range");
