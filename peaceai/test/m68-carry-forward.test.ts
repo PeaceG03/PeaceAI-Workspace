@@ -149,3 +149,12 @@ test("protected: carry lib and both carry bins are PROTECTED_SELF (pinned digest
   for (const f of ["peaceai/lib/carry.ts", "peaceai/bin/carry-check.ts", "peaceai/bin/carry-verdict.ts", "peaceai/bin/verdict-stale.ts"])
     assert.ok(PROTECTED_SELF.some((p) => p.pattern.test(f)), f);
 });
+
+test("carry note wording follows the declared grade type: suite rules never say COUNTS", () => {
+  const n = { schema: "peaceai-carry:v1" as const, issue: 307, verdictCommentId: "6226885612", fromRunId: "38974810419", fromCandidate: "candidate-1", runId: "38983499457", label: "A" };
+  const suite = carryComment(n, "suite");
+  assert.ok(!/COUNTS/.test(suite));
+  assert.match(suite, /fresh suite-only grade on the new head passed/);
+  for (const g of ["self", "self-stub", "legacy", undefined] as const) assert.match(carryComment(n, g), /fresh Job B grade on the new head is COUNTS/);
+  assert.equal(parseCarryComment(suite)?.runId, "38983499457", "wording change keeps the carry-json parseable");
+});

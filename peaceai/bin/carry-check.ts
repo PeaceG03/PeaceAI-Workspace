@@ -64,7 +64,7 @@ const rule = declaredRule(cand?.operationId, cand?.transformations ?? [], list.o
 const d = checkCarry({ pending, task: attempt!.task, diff, appliedByJobA: cand?.applied === true, applyCheck, changedSinceBase, fresh: freshFromRecord(cand), rule, suite: suiteFromRecord(cand) });
 if (!d.carry) stop(d.reason);
 const p = pending as Exclude<typeof pending, string | null>;
-const body = carryComment({ schema: "peaceai-carry:v1", issue, verdictCommentId: p.verdictCommentId, fromRunId: p.runId, fromCandidate: p.candidateId, runId, label: cand!.label ?? "" });
+const body = carryComment({ schema: "peaceai-carry:v1", issue, verdictCommentId: p.verdictCommentId, fromRunId: p.runId, fromCandidate: p.candidateId, runId, label: cand!.label ?? "" }, rule ? rule.grading : undefined);
 if (scanText(body).length > 0) stop("carry_leak_scan");
 writeFileSync(process.env.BODY_FILE ?? "", body);
 out({ carry: "true", reason: "" });
