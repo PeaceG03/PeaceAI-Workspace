@@ -336,7 +336,16 @@ export function pathExistsIn(repo: string, tracked: readonly string[]): (path: s
  */
 export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, exists?: (path: string) => boolean): LearnedEdit | null {
   const edit = applyRuleInner(spec, objective, files, isTest, repo, why);
-  if (!edit) return edit;
+  if (!edit) {
+    // M76: Job A hands the rules only in-scope files, so a Workspace task naming a protected (or out-of-zone) file
+    // used to read as target_file_not_found. Name the real reason instead. This only renames a refusal; it never builds.
+    if (repo === WORKSPACE_TARGET && why?.reason === "target_file_not_found") {
+      const file = namedTargetFile(spec, objective);
+      const r = file === null ? null : selfZoneRefusal([file]);
+      if (r) why.reason = r;
+    }
+    return edit;
+  }
   // #314 (Architect): the target's denyPatterns are enforced here too, so every caller (generate.ts, box
   // dry-runs, tools) refuses a denied path even when it hands in an unfiltered file list. Same order as
   // scope.ts checkCandidateScope: an opted-in workflow file is checked by its own rules, not by deny.
@@ -351,6 +360,16 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   const created = [...(edit.create ? [edit.path] : []), ...(edit.extra ?? []).filter((x) => x.create).map((x) => x.path)];
   if (created.some((p) => exists(p))) { if (why) why.reason = "new_test_path_exists"; return null; }
   return edit;
+}
+
+/** M76: the file a rule's own trigger names (its `file` group), or null when the trigger has none or does not match. */
+export function namedTargetFile(spec: RuleSpec, objective: string): string | null {
+  try {
+    const m = new RegExp(spec.trigger, "imu").exec(objective);
+    return typeof m?.groups?.file === "string" ? m.groups.file : null;
+  } catch {
+    return null;
+  }
 }
 
 /** M72: the Workspace refusal for a set of edit paths: protected first, then outside the (enabled) safe zone. */
