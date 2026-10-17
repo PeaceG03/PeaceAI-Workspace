@@ -191,11 +191,32 @@ export function approvalExemptionProblem(changes: readonly ChangedPath[], pr: Pu
   return null;
 }
 
+/** M78: a PeaceAI verdict branch (peace-task/issue-<n>-...), the only non-owner branch the self-zone exemption covers. */
+export const PEACE_TASK_BRANCH = /^peace-task\/issue-\d+-/;
+
+/**
+ * M78: facts the leak check gathers for the self-zone exemption (never trusted from the PR): whether the BASE
+ * commit's targets.json enables the Workspace self zone (and the check runs in the Workspace), and the safe-zone
+ * predicate itself (self-zone.ts inSafeZone, imported, not duplicated).
+ */
+export interface SelfZoneFacts {
+  enabled: boolean;
+  allowed: (path: string) => boolean;
+}
+
+/** M78: a non-owner verdict PR may add or modify exactly the safe-zone paths, only while the self zone is on. */
+export function selfZoneExempt(change: ChangedPath, pr: PullRequestContext | null, zone: SelfZoneFacts | null): boolean {
+  if (!pr || !zone || !zone.enabled) return false;
+  if (!pr.headRepo || pr.headRepo !== pr.baseRepo || !PEACE_TASK_BRANCH.test(pr.headRef)) return false;
+  return (change.status === "A" || change.status === "M") && zone.allowed(change.path);
+}
+
 export function checkPullRequestScope(
   changes: readonly ChangedPath[],
   pr: PullRequestContext | null,
   owner: string,
   approval: ApprovalFacts | null = null,
+  zone: SelfZoneFacts | null = null,
 ): ScopeViolation[] {
   const privileged = mayChangeProtected(pr, owner);
   // The approved list may change outside an owner PR only on a verified approval branch (Auditor's conditions).
@@ -204,6 +225,7 @@ export function checkPullRequestScope(
   for (const change of changes) {
     if (privileged) continue;
     if (listExempt && change.path === APPROVED_LIST_PATH) continue;
+    if (selfZoneExempt(change, pr, zone)) continue; // M78: safe-zone landing on a verdict branch (zone on at the base)
     const added = change.status === "A";
     if (TEST_FILE.test(change.path) && added && isSafeCandidatePath(change.path)) continue;
     if (isProtectedPath(change.path))
