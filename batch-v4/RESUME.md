@@ -108,3 +108,9 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Peace approved (00:22 MDT): 6-10 genuine PeaceSTOCKS tasks on live-proven approved rules. Baseline 20/76.
 - Filed 7 (each a different file, dry-run + graded on bf284ed, suite 544/544): #353 utcDateKey (date), #354 utcDaysBetween (date), #355 isUtcWeekend (date), #356 sumOf (loop), #357 sampleVariance (loop), #358 monthKeyOf (add-function), #359 storageUtilizationPercent (complex). See batch-v4/coverage/.
 - Watching reviews. Never /verdict. Gaps to record: TEST_CASE cannot cover untested helpers (fix commits no longer revert on main); IMPORT_EDIT has no genuine target (verbatimModuleSyntax clean, all builtins node:-prefixed).
+
+## 07:15Z (01:15 MDT) coverage reviews all posted
+- #353-#359: each review posted exactly one candidate; added lines match the box dry-run diff for all 7. All wait on Peace's /verdict (none posted by me).
+- Coverage still 20/76 until verdicts land on PeaceSTOCKS main and Builder logs the rows.
+- No misfire or wrong refusal, so builder-log/gaps.md was not touched. Findings (not misfires): TEST_CASE cannot cover the untested helpers (their introducing commits no longer reverse-apply on main); IMPORT_EDIT has no genuine target (verbatimModuleSyntax clean, no bare builtin imports); THROW/METHOD_GUARD skipped (guards change scanner-chain behavior on bad input); TSCONFIG_SCRIPT has no real gap.
+- Box note: zstd CLI was missing (159 suite failures); installed with apt.
