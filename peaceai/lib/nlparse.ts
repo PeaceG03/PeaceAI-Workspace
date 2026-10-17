@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanIssueText } from "./taskmap.ts";
 import { TEST_TRIGGER } from "./learned-test.ts";
+import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
 import { IMPORT_EDIT_V2_TRIGGER } from "./import-edit-v2.ts";
@@ -96,6 +97,8 @@ export const LEARNED_CANONICAL = {
   envFix: { re: new RegExp(ENV_FIX_TRIGGER, "imu"), kind: "ENV_FIX", family: null },
   // M74: DATE family header line ("add date function ... with body:"), public-date-function-v1 (kind COMPLEX_FUNCTION).
   dateFunction: { re: new RegExp(DATE_TRIGGER, "imu"), kind: "COMPLEX_FUNCTION", family: null },
+  // M80: TEST_CASE_EXISTING header line ("add a characterization test for ..."), public-test-case-existing-v1 (kind TEST_EXISTING).
+  testExisting: { re: new RegExp(TEST_EXISTING_TRIGGER, "imu"), kind: "TEST_EXISTING", family: null },
 } as const satisfies Record<string, { re: RegExp; kind: string; family: Family | null }>;
 export type LearnedTriggerName = keyof typeof LEARNED_CANONICAL;
 const CANONICAL: readonly RegExp[] = [...PLAIN_CANONICAL, ...Object.values(LEARNED_CANONICAL).map((t) => t.re)];

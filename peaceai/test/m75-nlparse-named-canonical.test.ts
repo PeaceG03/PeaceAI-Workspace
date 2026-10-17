@@ -11,6 +11,7 @@ import { COMPLEX_TRIGGER, DATE_TRIGGER, LOOP_TRIGGER, WHILE_TRIGGER } from "../l
 import { FUNCTION_TRIGGER } from "../lib/learned-function.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "../lib/learned-guard.ts";
 import { TEST_TRIGGER } from "../lib/learned-test.ts";
+import { TEST_EXISTING_TRIGGER } from "../lib/learned-test-existing.ts";
 import { WORKFLOW_TRIGGER } from "../lib/learned-workflow.ts";
 import { METHOD_GUARD_TRIGGER } from "../lib/method-guard.ts";
 import { LEARNED_CANONICAL, parseTask, type LearnedTriggerName } from "../lib/nlparse.ts";
@@ -23,13 +24,13 @@ const KINDS: Record<LearnedTriggerName, string> = {
   throwGuard: "ADD_THROW_GUARD", addFunction: "ADD_FUNCTION", workflowStep: "ADD_WORKFLOW_STEP", replaceExpression: "REPLACE_EXPRESSION",
   throwGuardTop: "ADD_THROW_GUARD", methodGuard: "METHOD_GUARD", complexFunction: "COMPLEX_FUNCTION", loopFunction: "COMPLEX_FUNCTION",
   importEditV2: "IMPORT_EDIT_V2", loopWhile: "COMPLEX_FUNCTION", workflowJob: "WORKFLOW_JOB", tsconfigScript: "TSCONFIG_SCRIPT",
-  envFix: "ENV_FIX", dateFunction: "COMPLEX_FUNCTION",
+  envFix: "ENV_FIX", dateFunction: "COMPLEX_FUNCTION", testExisting: "TEST_EXISTING",
 };
 const ENGINE: Partial<Record<LearnedTriggerName, string>> = {
   testCase: TEST_TRIGGER, throwGuard: GUARD_TRIGGER, addFunction: FUNCTION_TRIGGER, workflowStep: WORKFLOW_TRIGGER, replaceExpression: REPLACE_TRIGGER,
   throwGuardTop: GUARD_TOP_TRIGGER, methodGuard: METHOD_GUARD_TRIGGER, complexFunction: COMPLEX_TRIGGER, loopFunction: LOOP_TRIGGER,
   importEditV2: IMPORT_EDIT_V2_TRIGGER, loopWhile: WHILE_TRIGGER, workflowJob: WORKFLOW_JOB_TRIGGER, tsconfigScript: TSCONFIG_SCRIPT_TRIGGER,
-  envFix: ENV_FIX_TRIGGER, dateFunction: DATE_TRIGGER,
+  envFix: ENV_FIX_TRIGGER, dateFunction: DATE_TRIGGER, testExisting: TEST_EXISTING_TRIGGER,
 };
 
 test("every learned trigger is keyed by name with its pinned kind, and each name maps to its own engine trigger", () => {
@@ -60,6 +61,7 @@ const SAMPLES: [LearnedTriggerName, string][] = [
   ["loopFunction", fn("add loop function")],
   ["loopWhile", fn("add while loop function")],
   ["dateFunction", 'add date function `f(d: Date): number` to `src/a.ts` with body:\nconst m = d.getUTCHours() * 60;\nreturn m + d.getUTCMinutes();\n- f(new Date("2026-10-16T05:30:00Z")) is 330'],
+  ["testExisting", 'add a characterization test for `isOutage` in `src/a.ts`: outage codes\n- isOutage("MASSIVE_HTTP_503 x") is true\n- isOutage("MASSIVE_HTTP_404") is false'],
 ];
 for (const [name, body] of SAMPLES) test(`approval by name: ${name}`, () => {
   assert.ok(body.split("\n").some((l) => LEARNED_CANONICAL[name].re.test(l.trim())), `${name}: sample matches its own trigger`);

@@ -286,14 +286,18 @@ for (const a of planSteps ? [] : admissions) {
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
   const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
-  if (edit.create && !newModule && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
+  // M80: TEST_CASE_EXISTING creates exactly ONE new test file (never an existing path) and nothing else: no source
+  // edit, no extra file, no fix commit. Job B grades it fix-free (passes today, fails with the function stubbed).
+  const existingTest = a.spec.kind === "TEST_EXISTING";
+  if (existingTest && !(edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path))) continue;
+  if (edit.create && !newModule && !existingTest && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   // Live proofs #306/#307: WORKFLOW_JOB (job block, no extra) and TSCONFIG_SCRIPT (package.json + one new root
   // tsconfig) are graded by the target suite; each is accepted only by its own family check below.
   const m67Config = a.spec.kind === "WORKFLOW_JOB" || a.spec.kind === "TSCONFIG_SCRIPT";
   if (m67Config && !m67EditOk(a.spec.kind, edit)) continue;
   if (edit.extra && !m67Config && a.spec.kind !== "ADD_WORKFLOW_STEP" && ((edit.create && !newModule) || !edit.selfGrade || edit.extra.length === 0 || edit.extra.some((x) => x.create !== true || baseFiles.has(x.path) || !scope.isTest(x.path) || x.path === edit.path))) continue;
-  if (edit.selfGrade && !edit.extra) continue;
+  if (edit.selfGrade && !edit.extra && !existingTest) continue;
   // M19: a workflow edit only from the workflow-step rule, on an existing opted-in workflow, self-graded.
   if (!scope.isSource(edit.path) && !m67Config && !(a.spec.kind === "ADD_WORKFLOW_STEP" && scope.isWorkflow?.(edit.path) && baseFiles.has(edit.path) && !edit.create && edit.selfGrade && edit.extra?.length === 0)) continue;
   if (a.spec.kind === "ADD_WORKFLOW_STEP" && edit.extra?.length !== 0) continue;

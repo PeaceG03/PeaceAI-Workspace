@@ -14,6 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
+import { existingTargetRefusal, moduleReadClosure } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -128,6 +129,40 @@ function runGradedTests(tree: string, tsx: string, tests: readonly string[], mod
 }
 /** Round 2 (Auditor #129): the real code must pass this many runs (pass 2 plus these) before a stub is graded. */
 const REAL_RUNS_REQUIRED = 3;
+/**
+ * M80 (TEST_CASE_EXISTING): runGradedTests's confined command with the tested module's relative import closure
+ * (`reads`, tree-relative, the module included) and the `package.json` of every directory from those files up to the
+ * tree root (module-type lookups; absent paths grant nothing) added to the read list. Everything else is the same:
+ * no fs write, no child_process, worker threads only for tsx's loader, tsx cache off, one process per test file, the
+ * stub's notes on a parent-only write-only channel. Node < 22 never reaches this (the caller is not-confined first).
+ */
+function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
+  const modules = realpathSync(join(tree, "node_modules"));
+  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
+  const realTree = realpathSync(tree);
+  const pkgs = new Set<string>();
+  for (const r of [...reads, ...tests]) { let d = dirname(r); for (;;) { pkgs.add(join(realTree, d === "." ? "" : d, "package.json")); if (d === "." || d === "/" || d === "") break; d = dirname(d); } }
+  const outs: string[] = [];
+  let ok = true, seen = 0;
+  for (const t of tests) {
+    const args = ["--permission", `--allow-fs-read=${realpathSync(join(tree, t))}`, ...reads.map((r) => `--allow-fs-read=${realpathSync(join(tree, r))}`), ...[...pkgs].sort().map((p) => `--allow-fs-read=${p}`), `--allow-fs-read=${modules}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t];
+    let dir: string | null = null, fd: number | undefined;
+    if (notes) {
+      dir = mkdtempSync(join(tmpdir(), `${newStubCode()}-`));
+      fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
+    }
+    try {
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1" }, fd);
+      ok &&= r.ok;
+      outs.push(r.out);
+      if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  return { ok, out: outs.join("\n"), confined: true, notes: seen };
+}
 
 // M7 repair budget (Job B timeout is 25 minutes; up to five candidates run in parallel jobs).
 const REPAIR_ENABLED = process.env.PEACEAI_REPAIR !== "off";
@@ -258,6 +293,63 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
   if (!stub || (stub.throws && tests.some(expectsThrow))) return null;
   writeFileSync(file, stub.content);
   return { file, real, fn, stubbed: [...created] };
+}
+
+/**
+ * M80: fix-free grading of a TEST_CASE_EXISTING candidate. The candidate is exactly one new test file; its run on
+ * today's code is pass 2 (`afterFix`). It must pass REAL_RUNS_REQUIRED times in all (two more confined runs), then
+ * it runs confined with the tested function's body replaced by the write-only type-default stub (M23 route). The
+ * stub failure is credited only when the parent saw the stub run and every failing test failed by an assertion.
+ * `fixSha` records the task base. Never graded unconfined (Node < 22: not-confined). The test may import only the
+ * runner, strict assert and the one sibling module, and call exactly one of its functions (gradedTestSourceProblem,
+ * as for the stub route); the target analysis is re-run on the real tree. Reads are narrowed to the test, the
+ * module's relative import closure and node_modules.
+ */
+function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string): TestGrading {
+  const base = summary.baseSha;
+  const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
+  const f = files[0];
+  if (files.length !== 1 || newTests.length !== 1 || !f || !f.isNew || !f.newPath || f.newPath !== newTests[0] || !scope.isTest(f.newPath) || baseFiles.has(f.newPath)) return ungradable("not-test-only");
+  if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+  const testPath = f.newPath;
+  const test = readFileSync(join(tree, testPath), "utf8");
+  const dir = dirname(testPath);
+  const specs = [...test.matchAll(/^import [^;\n]* from "(\.\/[\w.-]+)";$/gm)].map((m) => m[1]!);
+  if (specs.length !== 1) return ungradable("not-test-only");
+  const spec = specs[0]!.replace(/\.ts$/, "");
+  const modPath = join(dir, `${spec}.ts`);
+  if (!baseFiles.has(modPath) || !scope.isSource(modPath) || scope.isTest(modPath)) return ungradable("not-test-only");
+  const file = join(tree, modPath);
+  try { if (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile() || relative(tree, realpathSync(file)).startsWith("..")) return ungradable("not-applied"); } catch { return ungradable("not-applied"); }
+  const real = readFileSync(file, "utf8");
+  if (gradedTestSourceProblem(test, [spec, `${spec}.ts`], declaredFunctions(real), moduleDataKeys(real))) return ungradable("not-test-only");
+  const a = importedBindings(test, spec);
+  const b = importedBindings(test, `${spec}.ts`);
+  if (!a || !b) return ungradable("not-test-only");
+  const imported = [...a, ...b];
+  const called = imported.filter((x) => callsFunction(test, x.local));
+  if (imported.length !== 1 || called.length !== 1) return ungradable("not-test-only");
+  const fn = called[0]!.imported;
+  if (existingTargetRefusal(modPath, real, fn) !== null) return ungradable("not-test-only");
+  const regular = (rel: string): string | null => {
+    try { const p = join(tree, rel); if (!lstatSync(p).isFile() || relative(tree, realpathSync(p)).startsWith("..")) return null; return readFileSync(p, "utf8"); } catch { return null; }
+  };
+  const reads = moduleReadClosure(modPath, regular);
+  if (!reads) return ungradable("module-imports-repo-files");
+  if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runExistingTests(tree, newTests, reads).ok) return ungradable("real-not-stable");
+  const stub = stubAll(real, [fn]);
+  if (!stub || stub.throws) return ungradable("revert-failed");
+  let run: { ok: boolean; out: string; confined: boolean; notes: number };
+  writeFileSync(file, stub.content);
+  try {
+    run = runExistingTests(tree, newTests, reads, true);
+  } finally {
+    writeFileSync(file, real);
+  }
+  const credited = !run.ok && stubFailureCredited(run.out, run.notes);
+  console.log(`grading: test-existing stub (tested ${fn} in ${modPath}; failure credited: ${credited}; stub notes: ${run.notes}; permission model: ${run.confined}; reads: ${reads.length} module files)`);
+  if (!run.ok && !credited) return { ...ungradable("stub-not-reached"), stubbed: [fn] };
+  return { fixSha: base, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok, !run.ok), reason: null, stubFails: !run.ok, stubbed: [fn] };
 }
 
 /**
@@ -557,7 +649,8 @@ for (const candidate of selected) {
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
-    if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
+    if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx);
+    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {
       console.log(`${candidate.id} protected_digest=changed stage=tests`);
