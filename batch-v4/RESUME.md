@@ -132,3 +132,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - #361 merged as bdd0c93 after the Auditor PASS; main CI green (ci, builder-log, leak-check).
 - Rule-proposal issue #362 filed (label rule-proposal). Marker and spec block hash to 81aba1e3e190ceff2e95c87b1faef43ed60bdb935bc11dfff290f2b8c32e3377 on main; proposal-gate PASS.
 - Waiting for Peace: /approve-rule 81aba1e3e190ceff2e95c87b1faef43ed60bdb935bc11dfff290f2b8c32e3377 on #362. File TE/ proofs and tasks only once approved.json has the rule.
+
+## 2026-10-17 ~14:25 MDT
+- approved.json has public-test-case-existing-v1 (approval PR #367, b200b05).
+- Filed: #368 proof A (one candidate), #369 proof B (refused test_target_date_local), #370-#374 the 5 real tasks (Builder pre-file). Box dry-run: one edit each; local Job B COUNTS x6; PeaceSTOCKS suite 556/556, 4 typechecks ok.
+- M82 deadline fix: PR #375 (m82/approval-catchup 57b32a9). Scheduled approval-catchup job + approve-rule-catchup.ts + catchupDecision in lib/approval.ts. Suite 1019/1020 (m48 only); CI green. Needs Auditor (parent sends the message).
