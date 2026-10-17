@@ -14,9 +14,7 @@ export const APPROVED_SKILLS = [
   "ADD_FUNCTION_NEW_MODULE", // public-add-function-v2
 ] as const;
 export const MISSING_SKILLS = [
-  "WORKFLOW_JOB",
   "MODIFY_LOGIC", // multi-line logic change in an existing function
-  "TSCONFIG_SCRIPT", // package script / tsconfig change
   "PEACEAI_SELF_CHANGE", // PeaceAI's own tooling: protected, never a PeaceAI edit by design
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
 ] as const;
@@ -31,6 +29,8 @@ export const APPROVED_SINCE = {
   COMPLEX_FUNCTION: "2026-10-15 16:27", // public-complex-function-v1 (loop-free only), #211 merged f33baa1; earlier entries keep "missing skill"
   LOOP_FUNCTION: "2026-10-15 21:29", // public-loop-function-v1 (bounded for/for-of), approval PR #225 merged 95c1e79 (03:29Z); earlier entries keep "missing skill"
   ENV_FIX: "2026-10-16 11:41", // public-env-fix-v1 (strict env flag edit), approval PR #292 merged 6fdb337 (17:41Z); earlier entries keep "missing skill"
+  WORKFLOW_JOB: "2026-10-16 11:46", // public-workflow-job-v1, approval PR #296 merged 782a309 (17:46Z); earlier entries keep "missing skill"
+  TSCONFIG_SCRIPT: "2026-10-16 12:17", // public-tsconfig-script-v1, approval PR #300 merged ed44b44 (18:17Z); earlier entries keep "missing skill"
   IMPORT_EDIT: "2026-10-15 22:33", // public-import-edit-v2, approval PR #234 merged ba5f2b7 (04:33Z); earlier entries keep "missing skill"
 } as const;
 /**

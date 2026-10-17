@@ -35,6 +35,7 @@ export const GRANDFATHERED: Readonly<Record<number, string>> = {
   27: "T_NO_PATCH_COMMENT: #90 verdict patch build failed again (PR #89); Builder applied Results candidate-1.diff (sha256 5d13821f...) directly, per the 58db153 commit message",
   31: "T_APPLY_FAILED: #97 patch (sha256 b2a4bc2a... verified) conflicted at end of module with #96 (landed first as 8a4310d); Builder hand-resolved by keeping both functions",
   85: "T_NO_ISSUE: WORKFLOW_STEP lands through a PeaceSTOCKS PR (#6, task #131), not a verdict patch; the line names no PeaceAI-Workspace#N and there is no patch to trace",
+  119: "T_NO_PATCH_COMMENT: #306 is a WORKFLOW_JOB candidate; the verdict patch route refuses .github/workflows/** by design (run 38980914018), so it landed byte-identical to Results tasks/306/38971869061 candidate-1.diff (sha256 b3a43c45...) through reviewed PeaceSTOCKS PR #9 (merge 2f1ff83)",
 };
 
 export interface ResultsView {

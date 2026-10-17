@@ -60,3 +60,15 @@ test("loop-function-v2 and env-fix-v1 map to their builder-log skills; ENV_FIX a
   assert.equal(APPROVED_SINCE.ENV_FIX, "2026-10-16 11:41");
   assert.ok(!(MISSING_SKILLS as readonly string[]).includes("ENV_FIX"));
 });
+
+test("workflow-job-v1 and tsconfig-script-v1 map to their skills; both approved from their approval merges (#296, #300)", async () => {
+  const { RULE_SKILL } = await import("./rule-skill.ts");
+  const { APPROVED_SINCE, MISSING_SKILLS } = await import("./check.ts");
+  const { GRANDFATHERED } = await import("./trace.ts");
+  assert.equal(RULE_SKILL["public-workflow-job-v1"], "WORKFLOW_JOB");
+  assert.equal(RULE_SKILL["public-tsconfig-script-v1"], "TSCONFIG_SCRIPT");
+  assert.equal(APPROVED_SINCE.WORKFLOW_JOB, "2026-10-16 11:46");
+  assert.equal(APPROVED_SINCE.TSCONFIG_SCRIPT, "2026-10-16 12:17");
+  for (const s of ["WORKFLOW_JOB", "TSCONFIG_SCRIPT"]) assert.ok(!(MISSING_SKILLS as readonly string[]).includes(s));
+  assert.match(GRANDFATHERED[119]!, /^T_NO_PATCH_COMMENT: #306 .*PeaceSTOCKS PR #9/);
+});
