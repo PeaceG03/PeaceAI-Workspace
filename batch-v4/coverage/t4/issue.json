@@ -1,0 +1,1 @@
+{"title": "[num-utils] sumOf: total of a number list", "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd loop function `sumOf(values: readonly number[]): number` to `src/num-utils.ts` with body:\nlet total = 0;\nfor (const v of values) {\ntotal += v;\n}\nreturn total;\n- sumOf([1, 2, 3]) is 6\n- sumOf([]) is 0\n- sumOf([0.5, -2]) is -1.5\n"}

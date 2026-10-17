@@ -1,0 +1,29 @@
+diff --git a/src/scan-backstop.ts b/src/scan-backstop.ts
+index 25d718f..3a1c982 100644
+--- a/src/scan-backstop.ts
++++ b/src/scan-backstop.ts
+@@ -141,3 +141,8 @@ export function daysBackToSlotDay(todayUtcDay: number, slotDays: readonly number
+   }
+   return -1;
+ }
++
++export function isUtcWeekend(d: Date): boolean {
++  const day = d.getUTCDay();
++  return day === 0 || day === 6;
++}
+diff --git a/src/scan-backstop.isutcweekend-returns-the-73eeab0.test.ts b/src/scan-backstop.isutcweekend-returns-the-73eeab0.test.ts
+new file mode 100644
+index 0000000..dbb18b0
+--- /dev/null
++++ b/src/scan-backstop.isutcweekend-returns-the-73eeab0.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { isUtcWeekend } from "./scan-backstop";
++
++test("isUtcWeekend returns the expected values", () => {
++  assert.equal(isUtcWeekend(new Date("2026-10-17T12:00:00Z")), true);
++  assert.equal(isUtcWeekend(new Date("2026-10-18T00:00:00Z")), true);
++  assert.equal(isUtcWeekend(new Date("2026-10-16T23:30:00Z")), false);
++  assert.equal(isUtcWeekend(new Date("2026-10-19T00:00:00Z")), false);
++});

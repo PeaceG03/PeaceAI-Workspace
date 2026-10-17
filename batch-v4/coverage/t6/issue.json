@@ -1,0 +1,1 @@
+{"title": "[daily-bars] monthKeyOf: YYYY-MM partition key of a session date", "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `monthKeyOf(sessionDate: string): string` to `src/daily-bar-sessions.ts` returning sessionDate.slice(0, 7)\n- monthKeyOf(\"2024-10-31\") is \"2024-10\"\n- monthKeyOf(\"2025-01-02\") is \"2025-01\"\n"}

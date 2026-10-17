@@ -1,0 +1,28 @@
+diff --git a/src/storage.ts b/src/storage.ts
+index ffdaf6f..d0f9248 100644
+--- a/src/storage.ts
++++ b/src/storage.ts
+@@ -562,3 +562,8 @@ export class MarketStorage implements MarketStore {
+   }
+ 
+ }
++
++export function storageUtilizationPercent(mbPerDay: number): number {
++  const gbPerYear = (mbPerDay * 252) / 1024;
++  return gbPerYear * 10;
++}
+diff --git a/src/storage.storageutilizationpercent-a97378b.test.ts b/src/storage.storageutilizationpercent-a97378b.test.ts
+new file mode 100644
+index 0000000..5fbfccb
+--- /dev/null
++++ b/src/storage.storageutilizationpercent-a97378b.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { storageUtilizationPercent } from "./storage";
++
++test("storageUtilizationPercent returns the expected values", () => {
++  assert.equal(storageUtilizationPercent(128), 315);
++  assert.equal(storageUtilizationPercent(1024), 2520);
++  assert.equal(storageUtilizationPercent(0), 0);
++});

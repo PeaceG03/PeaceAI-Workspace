@@ -1,0 +1,27 @@
+diff --git a/src/et-time.ts b/src/et-time.ts
+index 6010774..2a74b94 100644
+--- a/src/et-time.ts
++++ b/src/et-time.ts
+@@ -78,3 +78,7 @@ export function utcMinuteOfDay(now: Date): number {
+   const m = now.getUTCMinutes();
+   return h * 60 + m;
+ }
++
++export function utcDateKey(d: Date): string {
++  return d.toISOString().slice(0, 10);
++}
+diff --git a/src/et-time.utcdatekey-returns-the-expected-4eddc18.test.ts b/src/et-time.utcdatekey-returns-the-expected-4eddc18.test.ts
+new file mode 100644
+index 0000000..c2c8557
+--- /dev/null
++++ b/src/et-time.utcdatekey-returns-the-expected-4eddc18.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { utcDateKey } from "./et-time";
++
++test("utcDateKey returns the expected values", () => {
++  assert.equal(utcDateKey(new Date("2026-10-16T23:59:59Z")), "2026-10-16");
++  assert.equal(utcDateKey(new Date("2024-02-29T00:00:00Z")), "2024-02-29");
++  assert.equal(utcDateKey(new Date("2026-01-01T04:59:00Z")), "2026-01-01");
++});

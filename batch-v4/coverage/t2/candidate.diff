@@ -1,0 +1,29 @@
+diff --git a/src/us-calendar.ts b/src/us-calendar.ts
+index 68065d4..be7fffa 100644
+--- a/src/us-calendar.ts
++++ b/src/us-calendar.ts
+@@ -144,3 +144,8 @@ export function usEquityCalendarRulesTable(fromYear = 2020, toYear = 2035): {
+ export function usEquityCalendarSha256(fromYear = 2020, toYear = 2035): string {
+   return sha256(stableJson(usEquityCalendarRulesTable(fromYear, toYear)));
+ }
++
++export function utcDaysBetween(from: Date, to: Date): number {
++  const ms = to.getTime() - from.getTime();
++  return Math.round(ms / 86400000);
++}
+diff --git a/src/us-calendar.utcdaysbetween-returns-the-2eaf2f8.test.ts b/src/us-calendar.utcdaysbetween-returns-the-2eaf2f8.test.ts
+new file mode 100644
+index 0000000..3ea9adc
+--- /dev/null
++++ b/src/us-calendar.utcdaysbetween-returns-the-2eaf2f8.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { utcDaysBetween } from "./us-calendar";
++
++test("utcDaysBetween returns the expected values", () => {
++  assert.equal(utcDaysBetween(new Date("2024-02-28T00:00:00Z"), new Date("2024-03-01T00:00:00Z")), 2);
++  assert.equal(utcDaysBetween(new Date("2024-03-01T00:00:00Z"), new Date("2024-02-28T00:00:00Z")), -2);
++  assert.equal(utcDaysBetween(new Date("2026-10-16T05:00:00Z"), new Date("2026-10-16T20:00:00Z")), 1);
++  assert.equal(utcDaysBetween(new Date("2026-10-16T05:00:00Z"), new Date("2026-10-16T10:00:00Z")), 0);
++});

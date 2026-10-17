@@ -1,0 +1,31 @@
+diff --git a/src/num-utils.ts b/src/num-utils.ts
+index 9a76944..274cee7 100644
+--- a/src/num-utils.ts
++++ b/src/num-utils.ts
+@@ -22,3 +22,11 @@ export function countWholeHours(ms: number): number {
+   }
+   return t;
+ }
++
++export function sumOf(values: readonly number[]): number {
++  let total = 0;
++  for (const v of values) {
++  total += v;
++  }
++  return total;
++}
+diff --git a/src/num-utils.sumof-returns-the-expected-5849ac7.test.ts b/src/num-utils.sumof-returns-the-expected-5849ac7.test.ts
+new file mode 100644
+index 0000000..5e4ca76
+--- /dev/null
++++ b/src/num-utils.sumof-returns-the-expected-5849ac7.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { sumOf } from "./num-utils";
++
++test("sumOf returns the expected values", () => {
++  assert.equal(sumOf([1, 2, 3]), 6);
++  assert.equal(sumOf([]), 0);
++  assert.equal(sumOf([0.5, -2]), -1.5);
++});
