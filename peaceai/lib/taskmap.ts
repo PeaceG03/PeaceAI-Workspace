@@ -13,9 +13,19 @@ export interface RequestVariant {
   targetPath: string;
 }
 
+/** True when offset `at` is inside a '...' or "..." literal opened earlier on the same line (no escapes counted). */
+export function insideQuote(all: string, at: number): boolean {
+  const line = all.slice(all.lastIndexOf("\n", at - 1) + 1, at);
+  let q: string | null = null;
+  for (const c of line) if (q) { if (c === q) q = null; } else if (c === "'" || c === '"') q = c;
+  return q !== null;
+}
+
 export function cleanIssueText(input: TaskInput): string {
   const text = `${input.title}\n\n${input.body}`
-    .replace(/<!--[\s\S]*?-->/g, " ")
+    // Stress v1 (M2): an HTML comment is hidden Markdown, except when it sits inside a quoted literal on its line
+    // (e.g. an expected value '<!-- key: a -->'); that one is task data and is kept verbatim.
+    .replace(/<!--[\s\S]*?-->/g, (m, at: number, all: string) => (insideQuote(all, at) && !m.includes("\n") ? m : " "))
     // M5: target routing lines are not part of the task.
     .replace(/^[ \t]*target:[ \t]*\S+[ \t]*$/gim, " ")
     .replace(/```[\s\S]*?```/g, " ")

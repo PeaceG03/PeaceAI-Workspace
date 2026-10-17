@@ -24,11 +24,13 @@ const FILE = String.raw`[\w./-]+\.ts`;
 export const TEST_TRIGGER = String.raw`^add (?:a )?(?:regression )?test for \x60?(?<symbol>${NAME})\x60? in \x60?(?<file>${FILE})\x60?(?: ?: (?<title>[^\n]{1,120}?))?\.?$`;
 /** Fix commit line: the commit whose source change the new test must pin. Required (no fix, no candidate). */
 export const FIX_LINE = /^fix(?:ed)?(?: (?:in|by))?:? ?(?<sha>[0-9a-f]{40})\.?$/i;
-const LIT = String.raw`"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false|null|undefined`;
+const LIT = String.raw`"[^"\n]*"|'[^'\n]*'|-?\d+(?:\.\d+)?|true|false|null|undefined|NaN|-?Infinity`;
 const CHECK_LINE: { kind: TestCheckKind; re: RegExp }[] = [
   { kind: "rejects", re: /^[-*] (?<expr>.+) rejects with \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60?\.?$/ },
   { kind: "throws", re: /^[-*] (?<expr>.+) throws \x60?(?<code>[A-Z][A-Z0-9_]{2,63})\x60?\.?$/ },
   { kind: "deepEqual", re: /^[-*] (?<expr>.+) equals \x60?(?<value>[[{].*[\]}])\x60?\.?$/ },
+  // Stress v1: "is [..]" / "is {..}" is the natural wording of an array/object expectation: the same deepEqual check.
+  { kind: "deepEqual", re: /^[-*] (?<expr>.+) is \x60?(?<value>[[{].*[\]}])\x60?\.?$/ },
   { kind: "equal", re: new RegExp(String.raw`^[-*] (?<expr>.+) is \x60?(?<value>${LIT})\x60?\.?$`) },
 ];
 
@@ -101,8 +103,8 @@ function isLiteralValue(n: ts.Node, dates = false): boolean {
   if (dates && isDateLiteral(n)) return true;
   if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isNumericLiteral(n)) return true;
   if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.NullKeyword) return true;
-  if (ts.isIdentifier(n) && n.text === "undefined") return true;
-  if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)) return true;
+  if (ts.isIdentifier(n) && (n.text === "undefined" || n.text === "NaN" || n.text === "Infinity")) return true;
+  if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && (ts.isNumericLiteral(n.operand) || (ts.isIdentifier(n.operand) && n.operand.text === "Infinity"))) return true;
   if (ts.isArrayLiteralExpression(n)) return n.elements.every((x) => isLiteralValue(x, dates));
   if (ts.isObjectLiteralExpression(n))
     return n.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && isLiteralValue(p.initializer, dates));
