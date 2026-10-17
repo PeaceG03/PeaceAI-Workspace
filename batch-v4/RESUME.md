@@ -98,3 +98,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - #346 MERGED 05:13:54Z (23:13:54 MDT) as bf5e75f; landing run 39004004744 success. approved.json has public-date-function-v1 (0b48c156...).
 - B landing proof filed: https://github.com/PeaceG03/PeaceAI-Workspace/issues/350 (watching the review; refusal proof next).
 - M78 leak-scope self-zone PR in progress: worktree /workspace/v4-lk, branch m78/leak-scope-self-zone (scope.ts selfZoneExempt + leak-scan imports inSafeZone, base targets.json). m78 test 21/21 with m72. After merge, #345 needs a leak-check rerun.
+
+## 05:37Z (23:37 MDT) update
+- B landing #350: review posted (one candidate, utcMinuteOfDay + et-time.utcminuteofday-returns-the-e970ad7.test.ts) https://github.com/PeaceG03/PeaceAI-Workspace/issues/350#issuecomment-6230083385. Awaiting Peace's /verdict (A right → patch file on the issue, Stocks route is no-PR).
+- B refusal #352: `public-date-function-v1=date_local_time` https://github.com/PeaceG03/PeaceAI-Workspace/issues/352#issuecomment-6230186786
+- M78 PR #351 (m78/leak-scope-self-zone, head 60ba59d): scope.ts selfZoneExempt; leak-scan imports inSafeZone and reads base targets.json; safety-tool-sha256.json lists the new leak-scan sha. tools 981/986 (only box-only m48 fail), self 2/2, src 14/14, typecheck clean. Dry run on #345 head → LEAK PASS. After merge: rerun #345 leak-check (scanner checked out from main) and approve #345's held runs.
