@@ -863,3 +863,239 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+==============================================================================
+repo: DojoCodingLabs/hacienda-cr
+license: MIT (LICENSE, sha256 of trimmed text aa59452c342d7845a4d6a429f8ff3844ef781fa5df5ac7e97076fc1115483047)
+fixtures (commit path):
+  31807c224c6dcf23671e2698c568064646cc5059 peaceai/test/fixtures/m80/DojoCodingLabs__hacienda-cr-25683c31b916.txt
+license URL: https://github.com/DojoCodingLabs/hacienda-cr/blob/31807c224c6dcf23671e2698c568064646cc5059/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2025 Dojo Coding Labs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: brazilian-utils/javascript
+license: MIT (LICENSE, sha256 of trimmed text ef17ef605dd6feac3101350e9e99493648798419611fa15dfdc776ed1e80d946)
+fixtures (commit path):
+  a89f82ea7f9db662521eba9547ae979cdcbe9b6c peaceai/test/fixtures/m80/brazilian-utils__javascript-eae100a5ddb3.txt
+license URL: https://github.com/brazilian-utils/javascript/blob/a89f82ea7f9db662521eba9547ae979cdcbe9b6c/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2018 Hyan Mandian
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: dahlia/optique
+license: MIT (LICENSE, sha256 of trimmed text 4af8950193d3e837ae3e387daaa2d5f22d6437846d3b89f298b2c2e0b78bb0d8)
+fixtures (commit path):
+  efe76ae7e36e5f9bf106883955c806bd9b38f99f peaceai/test/fixtures/m80/dahlia__optique-b1b8789c7e23.txt
+license URL: https://github.com/dahlia/optique/blob/efe76ae7e36e5f9bf106883955c806bd9b38f99f/LICENSE
+---- license text ----
+MIT License
+
+Copyright 2025–2026 Hong Minhee
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: dailker/everyutil-js
+license: MIT (LICENSE, sha256 of trimmed text 4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f)
+fixtures (commit path):
+  9e0828ca51b6b469b871d8994bf8b55f8e827d07 peaceai/test/fixtures/m80/dailker__everyutil-js-042cb5c33798.txt
+  5900e88dd451d418eadadf3a8fbf254ffb32842d peaceai/test/fixtures/m80/dailker__everyutil-js-b75774d2521b.txt
+  37878fcf2aa7055fad03e24e45216866a029afa5 peaceai/test/fixtures/m80/dailker__everyutil-js-78fcbdda8c84.txt
+license URL: https://github.com/dailker/everyutil-js/blob/9e0828ca51b6b469b871d8994bf8b55f8e827d07/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2024 GitHub @dailker
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: enylin/taiwan-id-validator
+license: MIT (LICENSE, sha256 of trimmed text 8574ff9ffeef47dbcc61da29a05e78f70075b5c825f193b1e2c759da98b5315b)
+fixtures (commit path):
+  ef279d9387c2d6cbfd4a7f70e4fef18bf13678c3 peaceai/test/fixtures/m80/enylin__taiwan-id-validator-b6a582a5552c.txt
+  ef279d9387c2d6cbfd4a7f70e4fef18bf13678c3 peaceai/test/fixtures/m80/enylin__taiwan-id-validator-4af803c0a20e.txt
+  ef279d9387c2d6cbfd4a7f70e4fef18bf13678c3 peaceai/test/fixtures/m80/enylin__taiwan-id-validator-79aa183320e7.txt
+license URL: https://github.com/enylin/taiwan-id-validator/blob/ef279d9387c2d6cbfd4a7f70e4fef18bf13678c3/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2021 enylin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: open-gsd/gsd-pi
+license: MIT (LICENSE, sha256 of trimmed text bf8ef5028c5653a745881fb7c5e88887b0bd7d4ed4c5f16f5fb6a0ddab7f7918)
+fixtures (commit path):
+  54b0d515b7762e89b31aaf70e677a60372938b2b peaceai/test/fixtures/m80/open-gsd__gsd-pi-ed6af9fcd7f4.txt
+license URL: https://github.com/open-gsd/gsd-pi/blob/54b0d515b7762e89b31aaf70e677a60372938b2b/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Open GSD
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: pete-mc/dataverse-powertools
+license: MIT (LICENSE.md, sha256 of trimmed text 76ad09705a95546704a682d086b102c67d3e26524bdf89e90698c5f83edf5208)
+fixtures (commit path):
+  7ab7130bb6f35de2ef901f925a49b61b71fb5997 peaceai/test/fixtures/m80/pete-mc__dataverse-powertools-38a98e295cf8.txt
+license URL: https://github.com/pete-mc/dataverse-powertools/blob/7ab7130bb6f35de2ef901f925a49b61b71fb5997/LICENSE.md
+---- license text ----
+MIT License
+
+Copyright (c) 2023 Dataverse PowerTools
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: syavorsky/comment-parser
+license: MIT (LICENSE, sha256 of trimmed text 1de040b1722b381660661a789563634a67b8abf9588c6a746f41158ad281d0f9)
+fixtures (commit path):
+  41ac9ddeda615c5c7b40839baa68787f687a5bdb peaceai/test/fixtures/m80/syavorsky__comment-parser-0ce8dac937a1.txt
+  a77c94095fe4fc7c6f28c6fea80ecf0e1f6c8e20 peaceai/test/fixtures/m80/syavorsky__comment-parser-e8a222994531.txt
+license URL: https://github.com/syavorsky/comment-parser/blob/41ac9ddeda615c5c7b40839baa68787f687a5bdb/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014 Sergii Iavorskyi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

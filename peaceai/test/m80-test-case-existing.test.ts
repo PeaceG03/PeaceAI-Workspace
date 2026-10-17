@@ -232,7 +232,7 @@ test("PeaceSTOCKS-shaped helpers are accepted; their impure neighbours are refus
 });
 
 // ---- the read closure for the confined run ----
-test("moduleReadClosure: relative imports and re-exports, type-only included; fails closed on dynamic imports and unresolved paths", () => {
+test("moduleReadClosure: relative imports, re-exports and literal dynamic imports, type-only included; fails closed on non-literal dynamic imports, require and unresolved paths", () => {
   const fs: Record<string, string> = {
     "src/a.ts": 'import type { T } from "./t";\nimport { b } from "./b";\nexport * from "./c.js";\nimport x from "pkg";\nexport function a(): number { return b(); }\n',
     "src/t.ts": "export type T = number;\n", "src/b.ts": 'import { d } from "./d/index.ts";\nexport function b(): number { return d; }\n', "src/c.ts": "export const c = 1;\n", "src/d/index.ts": "export const d = 1;\n",
@@ -240,7 +240,8 @@ test("moduleReadClosure: relative imports and re-exports, type-only included; fa
   const r = (p: string) => fs[p] ?? null;
   assert.deepEqual(moduleReadClosure("src/a.ts", r), ["src/a.ts", "src/b.ts", "src/c.ts", "src/d/index.ts", "src/t.ts"]);
   assert.equal(moduleReadClosure("src/a.ts", (p) => (p === "src/b.ts" ? 'import { z } from "./missing";\n' : r(p))), null);
-  assert.equal(moduleReadClosure("src/a.ts", (p) => (p === "src/c.ts" ? 'export const c = await import("./t");\n' : r(p))), null);
+  assert.deepEqual(moduleReadClosure("src/a.ts", (p) => (p === "src/c.ts" ? 'export async function c(): Promise<number> { return (await import("./e")).e; }\n' : p === "src/e.ts" ? "export const e = 1;\n" : r(p))), ["src/a.ts", "src/b.ts", "src/c.ts", "src/d/index.ts", "src/e.ts", "src/t.ts"], "a literal dynamic import joins the closure");
+  assert.equal(moduleReadClosure("src/a.ts", (p) => (p === "src/c.ts" ? 'const n = "./t";\nexport const c = await import(n);\n' : r(p))), null, "a non-literal dynamic import fails closed");
   assert.equal(moduleReadClosure("src/a.ts", (p) => (p === "src/c.ts" ? 'const c = require("./t");\n' : r(p))), null);
   assert.equal(moduleReadClosure("src/a.ts", r, 3), null, "bounded");
   assert.equal(moduleReadClosure("src/a.ts", (p) => (p === "src/a.ts" ? 'import "../../../x";\n' : null)), null, "escapes the tree");

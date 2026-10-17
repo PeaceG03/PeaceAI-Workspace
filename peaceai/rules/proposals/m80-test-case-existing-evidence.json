@@ -95,7 +95,7 @@
    "fileBlob": "ed6af9fcd7f43fc39f3bbdeae2627e2592908085",
    "fixture": "peaceai/test/fixtures/m80/open-gsd__gsd-pi-ed6af9fcd7f4.txt",
    "license": "MIT",
-   "licenseSha256": "3a160aec61eeb28e75e8017346ee190db07986a09c4bd72555cc706f1d99e27e"
+   "licenseSha256": "bf8ef5028c5653a745881fb7c5e88887b0bd7d4ed4c5f16f5fb6a0ddab7f7918"
   },
   {
    "repo": "DojoCodingLabs/hacienda-cr",
@@ -114,7 +114,7 @@
    "fileBlob": "25683c31b9167239ba64ddb15d76ffb0c10344a9",
    "fixture": "peaceai/test/fixtures/m80/DojoCodingLabs__hacienda-cr-25683c31b916.txt",
    "license": "MIT",
-   "licenseSha256": "6d6552337d5d19c7d918582d064d203813a2d06f18374e9334d1834efa46c2b4"
+   "licenseSha256": "aa59452c342d7845a4d6a429f8ff3844ef781fa5df5ac7e97076fc1115483047"
   },
   {
    "repo": "pete-mc/dataverse-powertools",
@@ -152,7 +152,7 @@
    "fileBlob": "eae100a5ddb31a16c98f24b64a0a86b2171a1fef",
    "fixture": "peaceai/test/fixtures/m80/brazilian-utils__javascript-eae100a5ddb3.txt",
    "license": "MIT",
-   "licenseSha256": "011614aa8673d6e27de07231f637afe5f9fadc9bb961f7d69701a7b9ba989673"
+   "licenseSha256": "ef17ef605dd6feac3101350e9e99493648798419611fa15dfdc776ed1e80d946"
   },
   {
    "repo": "dailker/everyutil-js",
@@ -171,7 +171,7 @@
    "fileBlob": "042cb5c3379832f0b9675b1f09c4d1588489013d",
    "fixture": "peaceai/test/fixtures/m80/dailker__everyutil-js-042cb5c33798.txt",
    "license": "MIT",
-   "licenseSha256": "de9cd4726bde2e90909e1259e6ab71806bf4c6e48d08f3d39d64537901756eb9"
+   "licenseSha256": "4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f"
   },
   {
    "repo": "dailker/everyutil-js",
@@ -190,7 +190,7 @@
    "fileBlob": "b75774d2521b7d115add383338ba2a2698fdf9ce",
    "fixture": "peaceai/test/fixtures/m80/dailker__everyutil-js-b75774d2521b.txt",
    "license": "MIT",
-   "licenseSha256": "de9cd4726bde2e90909e1259e6ab71806bf4c6e48d08f3d39d64537901756eb9"
+   "licenseSha256": "4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f"
   },
   {
    "repo": "dailker/everyutil-js",
@@ -209,7 +209,7 @@
    "fileBlob": "78fcbdda8c84a3eeb3384bb22e0450d1de462eee",
    "fixture": "peaceai/test/fixtures/m80/dailker__everyutil-js-78fcbdda8c84.txt",
    "license": "MIT",
-   "licenseSha256": "de9cd4726bde2e90909e1259e6ab71806bf4c6e48d08f3d39d64537901756eb9"
+   "licenseSha256": "4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f"
   },
   {
    "repo": "syavorsky/comment-parser",
@@ -266,7 +266,7 @@
    "fileBlob": "b1b8789c7e2334df3738d13330f23cc7ac277eee",
    "fixture": "peaceai/test/fixtures/m80/dahlia__optique-b1b8789c7e23.txt",
    "license": "MIT",
-   "licenseSha256": "186fb62c958db442a250a63fdc57eaf5eaa083cfe262c93627c637a303a09c1c"
+   "licenseSha256": "4af8950193d3e837ae3e387daaa2d5f22d6437846d3b89f298b2c2e0b78bb0d8"
   },
   {
    "repo": "enylin/taiwan-id-validator",
@@ -285,7 +285,7 @@
    "fileBlob": "b6a582a5552c60ea24f1c21e4b70ca0ffc73cbcd",
    "fixture": "peaceai/test/fixtures/m80/enylin__taiwan-id-validator-b6a582a5552c.txt",
    "license": "MIT",
-   "licenseSha256": "131eb41a782f28fdebf94a40cb44024948fef25751f2510c9863a5cca5755780"
+   "licenseSha256": "8574ff9ffeef47dbcc61da29a05e78f70075b5c825f193b1e2c759da98b5315b"
   },
   {
    "repo": "enylin/taiwan-id-validator",
@@ -304,7 +304,7 @@
    "fileBlob": "4af803c0a20e007d90860b1d396c1b2ec0ebcc31",
    "fixture": "peaceai/test/fixtures/m80/enylin__taiwan-id-validator-4af803c0a20e.txt",
    "license": "MIT",
-   "licenseSha256": "131eb41a782f28fdebf94a40cb44024948fef25751f2510c9863a5cca5755780"
+   "licenseSha256": "8574ff9ffeef47dbcc61da29a05e78f70075b5c825f193b1e2c759da98b5315b"
   },
   {
    "repo": "enylin/taiwan-id-validator",
@@ -323,7 +323,7 @@
    "fileBlob": "79aa183320e7c6a9efb57c5485d15cb4aebefae7",
    "fixture": "peaceai/test/fixtures/m80/enylin__taiwan-id-validator-79aa183320e7.txt",
    "license": "MIT",
-   "licenseSha256": "131eb41a782f28fdebf94a40cb44024948fef25751f2510c9863a5cca5755780"
+   "licenseSha256": "8574ff9ffeef47dbcc61da29a05e78f70075b5c825f193b1e2c759da98b5315b"
   }
  ]
 }

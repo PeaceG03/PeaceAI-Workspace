@@ -396,9 +396,10 @@ export function runExistingTestRule(trigger: string, params: Record<string, stri
 }
 
 /**
- * Job B: the repo files a module loads (relative imports and re-exports, transitively, type-only included), for
- * the confined run's read list. Null (fail closed) when a relative specifier does not resolve to exactly one regular
- * in-tree file, a dynamic import or require appears, or the set exceeds `max` files.
+ * Job B: the repo files a module may load (relative imports, re-exports, `import("...")` types and literal dynamic
+ * imports, transitively, type-only included), for the confined run's read list. Null (fail closed) when a relative
+ * specifier does not resolve to exactly one regular in-tree file, a non-literal dynamic import, require or
+ * import-equals appears, or the set exceeds `max` files.
  */
 export function moduleReadClosure(start: string, read: (rel: string) => string | null, max = 200): string[] | null {
   const seen = new Set<string>();
@@ -420,7 +421,11 @@ export function moduleReadClosure(start: string, read: (rel: string) => string |
     const specs: string[] = [];
     const v = (n: ts.Node): void => {
       if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) specs.push(n.moduleSpecifier.text);
-      if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) bad = true;
+      // A dynamic import with a literal specifier joins the closure (it may never run; if it does, it can load);
+      // any other dynamic import, require or import-equals fails closed.
+      if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { const a = n.arguments[0]; if (n.arguments.length >= 1 && a && ts.isStringLiteral(a)) specs.push(a.text); else bad = true; }
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "require") bad = true;
+      if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) specs.push(n.argument.literal.text);
       if (ts.isImportEqualsDeclaration(n)) bad = true;
       ts.forEachChild(n, v);
     };

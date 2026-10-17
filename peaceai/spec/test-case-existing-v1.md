@@ -69,7 +69,9 @@ The analysis is conservative: a refused function may be pure, never the reverse 
   analysis is re-run on the real tree. Otherwise `not-test-only`.
 - Never unconfined: Node < 22 is `not-confined`. Reads are narrowed to the test, the module, the module's relative
   import closure (`moduleReadClosure`: every relative import/re-export, type-only included, must resolve to exactly one
-  regular in-tree `.ts` file; dynamic import/require fails closed: `module-imports-repo-files`) and node_modules.
+  regular in-tree `.ts` file; literal `import("./x")` calls and types join it; a non-literal dynamic import, require or
+  import-equals fails closed: `module-imports-repo-files`), the `package.json` of each directory up to the tree root
+  (module-type lookups) and node_modules.
 - Pass 2 (today's code) plus two more confined runs must all pass (`real-not-stable` otherwise).
 - Then NAME's body becomes the write-only type-default stub (`stubAll`, M23 round 3: no code, writes a note to the
   parent-only channel, returns "" / 0 / false / []). The failure is credited only when the parent saw the stub run and
