@@ -9,7 +9,7 @@
   "scripts": {
     "test": "tsx --test src/*.test.ts",
     "test:tools": "tsx --test peaceai/test/*.test.ts",
-    "test:self": "tsx --test peaceai/self-tests/*.test.ts",
+    "test:self": "tsx --test $(find peaceai/self-tests -name '*.test.ts' -type f | LC_ALL=C sort)",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
