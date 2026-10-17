@@ -13,19 +13,20 @@ export interface RequestVariant {
   targetPath: string;
 }
 
-/** True when offset `at` is inside a '...' or "..." literal opened earlier on the same line (no escapes counted). */
-export function insideQuote(all: string, at: number): boolean {
-  const line = all.slice(all.lastIndexOf("\n", at - 1) + 1, at);
-  let q: string | null = null;
-  for (const c of line) if (q) { if (c === q) q = null; } else if (c === "'" || c === '"') q = c;
-  return q !== null;
+/** True when the HTML comment at [at, end) sits inside one inline code span (`...`) on its own line (Auditor #377 note:
+ *  code spans only; a comment in plain prose or a bare quote is still hidden Markdown and removed). */
+export function insideCodeSpan(all: string, at: number, end: number): boolean {
+  const lineStart = all.lastIndexOf("\n", at - 1) + 1;
+  const nl = all.indexOf("\n", end);
+  const before = all.slice(lineStart, at), after = all.slice(end, nl < 0 ? all.length : nl);
+  return (before.split("\x60").length - 1) % 2 === 1 && after.includes("\x60");
 }
 
 export function cleanIssueText(input: TaskInput): string {
   const text = `${input.title}\n\n${input.body}`
-    // Stress v1 (M2): an HTML comment is hidden Markdown, except when it sits inside a quoted literal on its line
-    // (e.g. an expected value '<!-- key: a -->'); that one is task data and is kept verbatim.
-    .replace(/<!--[\s\S]*?-->/g, (m, at: number, all: string) => (insideQuote(all, at) && !m.includes("\n") ? m : " "))
+    // Stress v1 (M2): an HTML comment is hidden Markdown, except inside an inline code span on its line
+    // (e.g. `'<!-- key: a -->'`); that one is task data and is kept verbatim (Auditor #377: code spans only).
+    .replace(/<!--[\s\S]*?-->/g, (m, at: number, all: string) => (!m.includes("\n") && insideCodeSpan(all, at, at + m.length) ? m : " "))
     // M5: target routing lines are not part of the task.
     .replace(/^[ \t]*target:[ \t]*\S+[ \t]*$/gim, " ")
     .replace(/```[\s\S]*?```/g, " ")

@@ -5,7 +5,7 @@
 //   -Infinity as literal values (task G1).
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanIssueText, insideQuote } from "../lib/taskmap.ts";
+import { cleanIssueText, insideCodeSpan } from "../lib/taskmap.ts";
 import { parseTestTask, buildTestEdit } from "../lib/learned-test.ts";
 
 const clean = (body: string) => cleanIssueText({ title: "T", body });
@@ -19,18 +19,22 @@ test("an HTML comment inside a quoted literal survives cleaning; a bare one is s
   assert.ok(out.includes("'<!-- scanner-alert-key: a -->'"), out);
   assert.ok(!out.includes("hidden note"), out);
   assert.ok(!clean('a "x" <!-- y --> b').includes("y"));
-  assert.ok(clean('- f() is "<!-- z -->"').includes('"<!-- z -->"'));
+  assert.ok(clean('- f() is `"<!-- z -->"`').includes('"<!-- z -->"'));
+  // Auditor #377 note: outside a code span a quoted comment is hidden Markdown and removed.
+  assert.ok(!clean('- f() is "<!-- z -->"').includes("<!--"));
+  assert.ok(!clean("- f() is '<!-- z -->'").includes("<!--"));
 });
 
 test("a comment spanning lines is never kept, even when a quote is open", () => {
   assert.ok(!clean("- f() is '<!-- a\nb -->'").includes("<!--"));
 });
 
-test("insideQuote: per line, either quote kind, closed quotes do not count", () => {
-  assert.equal(insideQuote("x 'a' <", 6), false);
-  assert.equal(insideQuote("x 'a <", 5), true);
-  assert.equal(insideQuote('say "it\'s <', 10), true);
-  assert.equal(insideQuote("'open\nnext <", 11), false);
+test("insideCodeSpan: only inside an open backtick span that closes later on the same line", () => {
+  const at = (t: string) => [t.indexOf("<!--"), t.indexOf("-->") + 3] as const;
+  const t1 = "x `'<!-- a -->'` y"; assert.equal(insideCodeSpan(t1, ...at(t1)), true);
+  const t2 = "x `a` <!-- b --> `c`"; assert.equal(insideCodeSpan(t2, ...at(t2)), false);
+  const t3 = "x `<!-- a -->\nb`"; assert.equal(insideCodeSpan(t3, ...at(t3)), false);
+  const t4 = "x '<!-- a -->'"; assert.equal(insideCodeSpan(t4, ...at(t4)), false);
 });
 
 test("`is [..]` reads as deepEqual and builds assert.deepEqual", () => {
