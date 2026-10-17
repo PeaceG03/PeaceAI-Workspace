@@ -137,3 +137,7 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - approved.json has public-test-case-existing-v1 (approval PR #367, b200b05).
 - Filed: #368 proof A (one candidate), #369 proof B (refused test_target_date_local), #370-#374 the 5 real tasks (Builder pre-file). Box dry-run: one edit each; local Job B COUNTS x6; PeaceSTOCKS suite 556/556, 4 typechecks ok.
 - M82 deadline fix: PR #375 (m82/approval-catchup 57b32a9). Scheduled approval-catchup job + approve-rule-catchup.ts + catchupDecision in lib/approval.ts. Suite 1019/1020 (m48 only); CI green. Needs Auditor (parent sends the message).
+
+## 2026-10-17 ~16:10 MDT
+- #375 merged bf439a9. Verdicts A right on #368, #370-#374; stacked on PeaceSTOCKS 47cfaaf..5c41528 (CI Tests green, run 39072877942).
+- Builder-log PR #376 (m83/builder-log-te 9c5f147): seq 133 proof + 134-138 real; TEST_CASE_EXISTING APPROVED_SINCE 2026-10-17 13:42 + LIVE_PROVEN seq 133; rule-skill mapping; coverage 32/88 (36.4%). Trace Results mode OK; rule-skill OK. Awaiting Auditor PASS (parent relays); do not merge before.
