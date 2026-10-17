@@ -114,3 +114,9 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Coverage still 20/76 until verdicts land on PeaceSTOCKS main and Builder logs the rows.
 - No misfire or wrong refusal, so builder-log/gaps.md was not touched. Findings (not misfires): TEST_CASE cannot cover the untested helpers (their introducing commits no longer reverse-apply on main); IMPORT_EDIT has no genuine target (verbatimModuleSyntax clean, no bare builtin imports); THROW/METHOD_GUARD skipped (guards change scanner-chain behavior on bad input); TSCONFIG_SCRIPT has no real gap.
 - Box note: zstd CLI was missing (159 suite failures); installed with apt.
+
+## 15:33Z (09:33 MDT) builder-log PR
+- PeaceSTOCKS CI test passed on 47cfaaf (run 39044337705).
+- PR #360 (m79/builder-log-coverage-batch, head b775950): seq 123-132; READ_ONLY_OPS APPROVED_SINCE; date rule -> COMPLEX_FUNCTION in RULE_SKILL; seq 124 trace grandfather (PR route); coverage test 27/83; gaps.md TEST_CASE proposal. All PR checks green. Box: trace Results mode verified, rule-skill vs Results OK.
+- Coverage now 32.5% (27/83), was 26.3% (20/76).
+- Waiting: Auditor review (I cannot SendToAgent; parent must send). Merge only after Auditor PASS, at the passed head, with --match-head-commit, never --admin.
