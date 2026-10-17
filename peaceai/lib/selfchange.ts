@@ -54,7 +54,6 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^\.github\/workflows\/corpus-checks\.yml$/, why: "the dispatch-only whole-corpus memcheck and core-free proof (no training)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
-  { pattern: /^peaceai\/lib\/(self-zone|read-only-ops)\.ts$|^peaceai\/bin\/read-only-ops\.ts$|^peaceai\/proof\//, why: "the M72 self-zone protected list and safe zone, the read-only ops allowlist, and the tamper proof" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
 ];
 

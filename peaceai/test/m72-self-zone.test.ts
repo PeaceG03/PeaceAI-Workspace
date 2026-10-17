@@ -81,7 +81,7 @@ test("applyRule refuses a Workspace candidate on a protected file or outside the
   };
   assert.ok(run("src/a.ts").edit);
   for (const p of ["peaceai/lib/repair.ts", "peaceai/lib/repairloop.ts"]) assert.equal(run(p).why, "self_protected_path", p);
-  assert.equal(run("peaceai/proof/x.ts").why, "protected_path", "already refused by the engine via PROTECTED_SELF");
+  assert.equal(run("peaceai/proof/x.ts").why, "self_protected_path");
   assert.equal(run("peaceai/self-tests/helpers/text.ts").why, "outside_safe_zone", "zone off on main");
 });
 
