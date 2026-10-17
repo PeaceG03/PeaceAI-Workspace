@@ -98,10 +98,9 @@ function runCandidateCapture(cwd: string, command: string, args: string[], timeo
  * in its own process (not under `--test`, whose child would not inherit the note fd). With `notes`, the test's
  * stderr is a parent-only file opened write-only: the stub's "ran" notes land there and only the parent reads it.
  * Older runtimes run the same direct command without the permission flags (`confined: false` is logged).
- * M80: `extraReads` (tree-relative) adds the tested module's import closure for TEST_CASE_EXISTING (read only).
  */
 const PERMISSION_NODE_MAJOR = 22;
-function runGradedTests(tree: string, tsx: string, tests: readonly string[], module: string, notes = false, extraReads: readonly string[] = []): { ok: boolean; out: string; confined: boolean; notes: number } {
+function runGradedTests(tree: string, tsx: string, tests: readonly string[], module: string, notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
   const confined = Number(process.versions.node.split(".")[0]) >= PERMISSION_NODE_MAJOR;
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
@@ -109,7 +108,7 @@ function runGradedTests(tree: string, tsx: string, tests: readonly string[], mod
   let ok = true, seen = 0;
   for (const t of tests) {
     const args = confined
-      ? ["--permission", `--allow-fs-read=${realpathSync(join(tree, t))}`, `--allow-fs-read=${realpathSync(module)}`, ...extraReads.map((r) => `--allow-fs-read=${realpathSync(join(tree, r))}`), `--allow-fs-read=${modules}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t]
+      ? ["--permission", `--allow-fs-read=${realpathSync(join(tree, t))}`, `--allow-fs-read=${realpathSync(module)}`, `--allow-fs-read=${modules}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t]
       : ["--import", loader, "--test-reporter=tap", t];
     let dir: string | null = null, fd: number | undefined;
     if (notes) {
@@ -130,6 +129,40 @@ function runGradedTests(tree: string, tsx: string, tests: readonly string[], mod
 }
 /** Round 2 (Auditor #129): the real code must pass this many runs (pass 2 plus these) before a stub is graded. */
 const REAL_RUNS_REQUIRED = 3;
+/**
+ * M80 (TEST_CASE_EXISTING): runGradedTests's confined command with the tested module's relative import closure
+ * (`reads`, tree-relative, the module included) and the `package.json` of every directory from those files up to the
+ * tree root (module-type lookups; absent paths grant nothing) added to the read list. Everything else is the same:
+ * no fs write, no child_process, worker threads only for tsx's loader, tsx cache off, one process per test file, the
+ * stub's notes on a parent-only write-only channel. Node < 22 never reaches this (the caller is not-confined first).
+ */
+function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
+  const modules = realpathSync(join(tree, "node_modules"));
+  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
+  const realTree = realpathSync(tree);
+  const pkgs = new Set<string>();
+  for (const r of [...reads, ...tests]) { let d = dirname(r); for (;;) { pkgs.add(join(realTree, d === "." ? "" : d, "package.json")); if (d === "." || d === "/" || d === "") break; d = dirname(d); } }
+  const outs: string[] = [];
+  let ok = true, seen = 0;
+  for (const t of tests) {
+    const args = ["--permission", `--allow-fs-read=${realpathSync(join(tree, t))}`, ...reads.map((r) => `--allow-fs-read=${realpathSync(join(tree, r))}`), ...[...pkgs].sort().map((p) => `--allow-fs-read=${p}`), `--allow-fs-read=${modules}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t];
+    let dir: string | null = null, fd: number | undefined;
+    if (notes) {
+      dir = mkdtempSync(join(tmpdir(), `${newStubCode()}-`));
+      fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
+    }
+    try {
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1" }, fd);
+      ok &&= r.ok;
+      outs.push(r.out);
+      if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  return { ok, out: outs.join("\n"), confined: true, notes: seen };
+}
 
 // M7 repair budget (Job B timeout is 25 minutes; up to five candidates run in parallel jobs).
 const REPAIR_ENABLED = process.env.PEACEAI_REPAIR !== "off";
@@ -303,14 +336,13 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   };
   const reads = moduleReadClosure(modPath, regular);
   if (!reads) return ungradable("module-imports-repo-files");
-  const extra = reads.filter((r) => r !== modPath);
-  if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runGradedTests(tree, tsx, newTests, file, false, extra).ok) return ungradable("real-not-stable");
+  if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runExistingTests(tree, newTests, reads).ok) return ungradable("real-not-stable");
   const stub = stubAll(real, [fn]);
   if (!stub || stub.throws) return ungradable("revert-failed");
   let run: { ok: boolean; out: string; confined: boolean; notes: number };
   writeFileSync(file, stub.content);
   try {
-    run = runGradedTests(tree, tsx, newTests, file, true, extra);
+    run = runExistingTests(tree, newTests, reads, true);
   } finally {
     writeFileSync(file, real);
   }

@@ -1,0 +1,28 @@
+{
+  "id": "public-test-case-existing-v1",
+  "kind": "TEST_EXISTING",
+  "shape": "TEST_CASE_EXISTING",
+  "status": "proposal-off-wired",
+  "flag": "PEACEAI_TEST_EXISTING (dev path); Job A only via the hash-pinned approved list",
+  "engine": "peaceai/lib/learned-test-existing.ts (Job B: gradeExisting in peaceai/bin/test-candidates.ts)",
+  "scope": "one NEW test file next to an existing plain, unprotected, non-test module, importing only the named exported function; checks in the ADD_TEST_CASE bullet grammar (is / equals / throws; no rejects, no Fix line), every check calling the target with literal arguments; no source edit; target fully typed with string/number/boolean (arrays), 0-4 parameters, provably pure by a transitive module-local analysis; own trigger 'add a characterization test for'",
+  "grading": "fix-free: pass on today's code three times (confined), then fail by assertion failures only with the target's body replaced by the write-only type-default stub (M23 route, reads narrowed to the test, the module's relative import closure, package.json lookups and node_modules); passes-with-stub is REJECTED_PASSES_BOTH; anything else UNGRADABLE",
+  "refusals": "test_target_async (async, generators, Promise/AsyncIterable returns, await/yield, async closures), test_target_io (process/console/require/globalThis/fetch/timers/crypto/performance/storage globals, Node builtin value imports, import.meta, dynamic import), test_target_date_local (Date.now, argless new Date(), local-time reads, Date.parse, new Date(y, m, ...), Intl), test_target_impure (imported values, module let/var/classes, mutated or stateful-regex module consts, mutation of non-local values, Date setters, this/arguments/eval/Function/Math.random, other new/Object.*/globals), self_protected_path (PeaceAI protected paths, test files, .d.ts), test_target_signature, test_target_not_exported, test_target_not_found, test_target_too_large, test_check_refused; plus denied_path, path_not_plain, target_file_not_found, new_test_path_exists",
+  "evidence": {
+    "examples": 13,
+    "repos": 8,
+    "file": "peaceai/rules/proposals/m80-test-case-existing-evidence.json",
+    "method": "AST miner over 411 cloned permissive TypeScript repos: non-merge commits changing only test files that add calls to an existing exported sibling-module function; existingTargetRefusal replayed on the module pinned at the parent (no training-corpus overlap)",
+    "origin": "external-licensed",
+    "bar": 10,
+    "qualifies": true,
+    "note": "Peace's public repos checked first: PeaceSTOCKS 6 and PeaceAI-Workspace 11 test-only commits, none qualifying, and both are in the corpus manifest, so none would count"
+  },
+  "learned": "peaceai/rules/learned/public-test-case-existing-v1.json",
+  "spec": "peaceai/spec/test-case-existing-v1.md",
+  "tests": [
+    "peaceai/test/m80-test-case-existing.test.ts"
+  ],
+  "untouched": "public-test-case-v1 (ADD_TEST_CASE keeps its Fix-line grammar and fix-commit grading; the two headers never match each other)",
+  "dropped": "rejects checks (async targets are refused), object/Date parameters, appending to existing test files"
+}
