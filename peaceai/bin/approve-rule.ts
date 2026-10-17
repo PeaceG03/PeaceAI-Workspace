@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA, loadApprovedList, withEntry, type ApprovalEntry, type ApprovedList } from "../lib/approved.ts";
-import { entryFromAttestation, validateWorkspaceApproval, verifySyncChange, type AttestationRecord } from "../lib/approval.ts";
+import { approvalMessage, entryFromAttestation, validateWorkspaceApproval, verifySyncChange, type AttestationRecord } from "../lib/approval.ts";
 
 const mode = process.argv[2];
 const listPath = resolve(process.env.PEACEAI_APPROVED_LIST_OUT ?? "peaceai/rules/approved.json");
@@ -79,11 +79,6 @@ if (mode === "workspace") {
 
 if (added.length === 0) finish(true, "NOTHING_NEW");
 writeFileSync(listPath, JSON.stringify(list, null, 2) + "\n");
-const msg = [
-  `approve learned rule${added.length > 1 ? "s" : ""}: ${added.map((e) => e.id).join(", ")}`,
-  "",
-  ...added.flatMap((e) => [`Rule: ${e.id}`, `SHA-256: ${e.sha256}`, `Approval: ${e.approval.url}`, `Approval-Author: ${e.approval.author}`, ...(e.attestation ? [`Attestation: PeaceG03/PeaceAI-Results@${e.attestation.commit}:${e.attestation.path}`] : []), ""]),
-  "Written by the peace-approve-rule workflow from the approval comment(s) above.",
-].join("\n");
+const msg = approvalMessage(added);
 if (process.env.PEACEAI_MESSAGE_FILE) writeFileSync(process.env.PEACEAI_MESSAGE_FILE, msg + "\n");
 finish(true, "ADDED", added);
