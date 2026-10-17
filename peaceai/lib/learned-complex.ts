@@ -105,6 +105,21 @@ export const COMPLEX_VOCAB: Record<(typeof COMPLEX_PARAM_KEYS)[number], readonly
   returns: ["annotated"],
   test: ["new-file"],
 };
+/**
+ * M85 (stress C3, L4; public-complex-calls-v1): two optional keys, always together in one spec.
+ * - calls "module-exported-pure": the body may call the target module's own exported functions (Option A vetting:
+ *   each callee's body passes this same vocabulary, depth <= MAX_CALL_DEPTH, no recursion). Without the key only the
+ *   new function itself is the module (#219), so existing helpers stay uncallable for the older specs.
+ * - callbacks "array-method-arrow": an arrow function only as the single argument of .map/.filter/.some/.every/.find/
+ *   .findIndex, with one plain identifier parameter (optionally typed from the vocabulary), an expression body vetted
+ *   by this vocabulary, no nesting. Any other function-like node is still refused.
+ * A spec with these keys refuses a task that uses neither (not_needed): the older specs cover it.
+ */
+export const COMPLEX_OPTIONAL_VOCAB = { calls: ["module-exported-pure"], callbacks: ["array-method-arrow"] } as const;
+export const CALLBACK_METHODS: ReadonlySet<string> = new Set(["map", "filter", "some", "every", "find", "findIndex"]);
+export const MAX_CALLBACKS = 4;
+export const NOT_NEEDED = "not_needed";
+const CB = "__peaceaiCb";
 export const MAX_STATEMENTS = 20;
 export const MAX_LOOPS = 2;
 export const MAX_DEPTH = 3;
@@ -163,7 +178,7 @@ export function parseComplexTask(trigger: string, objective: string, dates = fal
  * True when every statement of the block is in the bounded grammar (see the header). `params` are read-only.
  * Returns the reason for a refusal (string) or null when the block is safe.
  */
-export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string>; loops?: LoopPolicy; /** M74 DATE family */ dates?: boolean }
+export interface CallCtx { module: ReadonlyMap<string, ts.FunctionDeclaration | null>; stack: readonly string[]; called: Set<string>; loops?: LoopPolicy; /** M74 DATE family */ dates?: boolean; /** M85 array-method arrow callbacks */ callbacks?: boolean; /** M85: set when a callback was used */ usedCallback?: { v: boolean } }
 /** Option A (Auditor): the callable module functions: exported, top-level, one declaration with a body, not async/generator. */
 export function moduleFunctions(sf: ts.SourceFile): Map<string, ts.FunctionDeclaration | null> {
   const out = new Map<string, ts.FunctionDeclaration | null>();
@@ -187,7 +202,7 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     if (!f || !f.body) { callRefusal = `${name} is not an exported same-file function`; return false; }
     const ps = new Set<string>();
     for (const x of f.parameters) { if (!ts.isIdentifier(x.name) || !x.type || x.dotDotDotToken || x.initializer || x.questionToken) { callRefusal = `${name} has untyped/destructured/optional parameters`; return false; } ps.add(x.name.text); }
-    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called, loops: ctx.loops, dates: ctx.dates });
+    const r = blockRefusal(f.body, ps, sf, { module: ctx.module, stack: [...ctx.stack, name], called: ctx.called, loops: ctx.loops, dates: ctx.dates, callbacks: ctx.callbacks, usedCallback: ctx.usedCallback });
     if (r) { callRefusal = `${name}: ${r}`; return false; }
     ctx.called.add(name);
     return true;
@@ -206,7 +221,51 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
   const lengthParams = new Set<string>();
   if (ts.isFunctionLike(block.parent)) for (const x of block.parent.parameters) if (ts.isIdentifier(x.name) && x.type && /^(?:readonly )?(?:string|string\[\]|number\[\]|boolean\[\])$/.test(x.type.getText(sf).trim())) lengthParams.add(x.name.text);
   const names = () => new Set([...params, ...locals.keys(), ...counters]);
-  const expr = (e: ts.Expression): boolean => {
+  const expr = (e: ts.Expression, esf: ts.SourceFile = sf, cb = false): boolean => {
+    // M85: array-method arrow callbacks are vetted one by one (parameter as a const local), then replaced by a
+    // placeholder identifier so the rest of the expression is checked by the unchanged vocabulary below.
+    if (!cb) {
+      const arrows: ts.ArrowFunction[] = [];
+      let bad = false;
+      const cv = (n: ts.Node): void => {
+        if (ts.isFunctionLike(n)) {
+          const p = n.parent;
+          if (ctx.callbacks && ts.isArrowFunction(n) && ts.isCallExpression(p) && p.arguments.length === 1 && p.arguments[0] === n && ts.isPropertyAccessExpression(p.expression) && !p.expression.questionDotToken && !p.questionDotToken && !p.typeArguments && CALLBACK_METHODS.has(p.expression.name.text)) arrows.push(n);
+          else bad = true;
+          return;
+        }
+        ts.forEachChild(n, cv);
+      };
+      cv(e);
+      // The placeholder name can never be written by a task (only with callbacks on, so older specs are unchanged).
+      const iv = (n: ts.Node): void => { if (ts.isIdentifier(n) && n.text.startsWith("__peaceai")) bad = true; ts.forEachChild(n, iv); };
+      if (ctx.callbacks) iv(e);
+      if (bad || arrows.length > MAX_CALLBACKS) return false;
+      if (arrows.length) {
+        for (const a of arrows) {
+          if (a.modifiers?.length || a.typeParameters || a.type || a.parameters.length !== 1 || ts.isBlock(a.body)) return false;
+          const p = a.parameters[0]!;
+          if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || (p.type && !LOCAL_TYPES.has(p.type.getText(esf))) || !local(p.name.text)) return false;
+          let nested = false;
+          const nv = (n: ts.Node): void => { if (ts.isFunctionLike(n)) nested = true; else ts.forEachChild(n, nv); };
+          nv(a.body);
+          if (nested) return false;
+          const name = p.name.text;
+          locals.set(name, { kind: "const", pushable: false });
+          const ok = expr(a.body as ts.Expression, esf, true);
+          locals.delete(name);
+          if (!ok) return false;
+        }
+        const start = e.getStart(esf);
+        let text = e.getText(esf);
+        for (const a of [...arrows].sort((x, y) => y.getStart(esf) - x.getStart(esf))) text = text.slice(0, a.getStart(esf) - start) + CB + text.slice(a.getEnd() - start);
+        const rsf = ts.createSourceFile("cb.ts", `(${text});`, ts.ScriptTarget.Latest, true);
+        const st = rsf.statements[0];
+        if (rsf.statements.length !== 1 || !st || !ts.isExpressionStatement(st) || !ts.isParenthesizedExpression(st.expression) || (rsf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return false;
+        if (ctx.usedCallback) ctx.usedCallback.v = true;
+        return expr(st.expression.expression, rsf, true);
+      }
+    }
     // Read-only element access X[INDEX] is allowed on top of ADD_FUNCTION's vocabulary: check it by rewriting.
     let okAccess = true;
     const visit = (n: ts.Node): void => {
@@ -226,19 +285,22 @@ export function blockRefusal(block: ts.Block, params: ReadonlySet<string>, sf: t
     };
     calls(e);
     if (!callsOk) return false;
-    const rewritten = rewriteIndex(e, sf, (n) => !own.has(n) && ctx.module.has(n), ctx.dates === true);
+    const rewritten = rewriteIndex(e, esf, (n) => !own.has(n) && ctx.module.has(n), ctx.dates === true);
     if (rewritten === null) return false;
     const re = ts.createSourceFile("e.ts", `(${rewritten});`, ts.ScriptTarget.Latest, true);
     const st = re.statements[0];
     if (re.statements.length !== 1 || !st || !ts.isExpressionStatement(st) || !ts.isParenthesizedExpression(st.expression) || (re as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return false;
-    return safeBodyNoParam(st.expression.expression, names());
+    const withCb = cb && e.getText(esf).includes(CB);
+    return safeBodyNoParam(st.expression.expression, withCb ? new Set([...names(), CB]) : names(), withCb);
   };
-  const safeBodyNoParam = (e: ts.Expression, ns: Set<string>) => {
+  const safeBodyNoParam = (e: ts.Expression, ns: Set<string>, withCb = false) => {
     // safeBody requires reading a parameter; locals-only expressions are fine inside a block (usesParam is tracked here).
     const dummy = "__p";
     const wrapped = ts.createSourceFile("e.ts", `((${e.getText()}) === ${dummy} || ${dummy});`, ts.ScriptTarget.Latest, true);
     const st = wrapped.statements[0] as ts.ExpressionStatement;
-    return safeBody((st.expression as ts.ParenthesizedExpression).expression, new Set([...ns, dummy]), ctx.dates ? DATE_VOCAB : undefined);
+    const base = ctx.dates ? DATE_VOCAB : undefined;
+    const vocab = withCb ? { calls: base?.calls ?? new Map<string, number>(), methods: new Set([...(base?.methods ?? []), ...CALLBACK_METHODS]) } : base;
+    return safeBody((st.expression as ts.ParenthesizedExpression).expression, new Set([...ns, dummy]), vocab);
   };
   const local = (n: string) => !params.has(n) && !locals.has(n) && !counters.has(n) && !RESERVED.test(n);
   const pol = ctx.loops ?? NO_LOOPS;
@@ -472,7 +534,10 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   }
   // M74: the optional `types` key ("primitive+date") makes a DATE family spec; it never mixes with loops.
   const dates = params.types === "primitive+date";
-  if (Object.keys(params).some((k) => k !== "types" && !(COMPLEX_PARAM_KEYS as readonly string[]).includes(k)) || ("types" in params && !dates)) return no("bad_rule_params");
+  // M85: the optional calls/callbacks pair (public-complex-calls-v1); never with Date types.
+  const extended = "calls" in params || "callbacks" in params;
+  if (extended && (params.calls !== COMPLEX_OPTIONAL_VOCAB.calls[0] || params.callbacks !== COMPLEX_OPTIONAL_VOCAB.callbacks[0] || "types" in params)) return no("bad_rule_params");
+  if (Object.keys(params).some((k) => k !== "types" && k !== "calls" && k !== "callbacks" && !(COMPLEX_PARAM_KEYS as readonly string[]).includes(k)) || ("types" in params && !dates)) return no("bad_rule_params");
   if (dates && (params.loops as string[]).join(",") !== "none") return no("bad_rule_params");
   if (!dates && task.params.concat({ name: "", type: task.ret }).some((p) => p.type === "Date")) return no("bad_rule_params");
   if (!plainPath(task.file)) return no("path_not_plain");
@@ -507,14 +572,28 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
     let closure = false;
     const v = (n: ts.Node): void => { if (ts.isFunctionLike(n)) closure = true; else ts.forEachChild(n, v); };
     fd.body.statements.forEach(v);
-    if (closure) return no(CLOSURE_NOT_ALLOWED);
+    if (closure && !extended) return no(CLOSURE_NOT_ALLOWED);
   }
+  if (extended && /__peaceai/.test(task.body)) return no("body_refused");
   if (!allowedLoops.has("for-of-param") && /\bfor \(const /.test(task.body)) return no(LOOP_UNSUPPORTED);
   if (!allowedLoops.has("counted-literal-or-length") && /\bfor \(let /.test(task.body)) return no(LOOP_UNSUPPORTED);
-  const refusal = blockRefusal(fd.body, names, fsf, { module: moduleFunctions(fsf), stack: [], called: new Set(), loops: pol, dates });
-  if (refusal) return no(NAMED_REFUSALS.has(refusal) ? refusal : "body_refused");
   const base = target.content.endsWith("\n") ? target.content : `${target.content}\n`;
   const content = `${base}\n${fnText}`;
+  if (!extended) {
+    const refusal = blockRefusal(fd.body, names, fsf, { module: moduleFunctions(fsf), stack: [], called: new Set(), loops: pol, dates });
+    if (refusal) return no(NAMED_REFUSALS.has(refusal) ? refusal : "body_refused");
+  } else {
+    // M85: vet the new function inside the whole module, so the module's own exported functions are callable.
+    const msf = ts.createSourceFile(target.path, content, ts.ScriptTarget.Latest, true);
+    if ((msf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return no("edit_refused");
+    const mod = moduleFunctions(msf);
+    const mfd = mod.get(task.fn);
+    if (!mfd?.body) return no("edit_refused");
+    const ctx: CallCtx = { module: mod, stack: [], called: new Set(), loops: pol, callbacks: true, usedCallback: { v: false } };
+    const refusal = blockRefusal(mfd.body, names, msf, ctx);
+    if (refusal) return no(NAMED_REFUSALS.has(refusal) ? refusal : "body_refused");
+    if (ctx.called.size === 0 && !ctx.usedCallback!.v) return no(NOT_NEEDED);
+  }
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
   // M85 (stress D2): a DATE task whose declared return is Date may write `is new Date("ISO")` (deepEqual); this
   // builder-only key is never a learned spec param, so ADD_TEST_CASE specs keep refusing Date expected values (M35).

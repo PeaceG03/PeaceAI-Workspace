@@ -291,14 +291,15 @@ const STUB_PRELUDE = `import { writeSync as __peaceaiStubWrite } from "node:fs";
  * true when no type default applies (then `return undefined`); the caller still refuses expects-throw tests there.
  * The note helper itself is added once by stubAll.
  */
-export function stubBody(content: string, fn: string, requireExport = true): { content: string; throws: boolean } | null {
+export function stubBody(content: string, fn: string, requireExport = true, objects = false): { content: string; throws: boolean } | null {
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   const hits = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn);
   if (hits.length !== 1) return null;
   const f = hits[0]!;
   if (!f.body || f.asteriskToken || (requireExport && !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword))) return null;
   const t = f.type?.getText(sf).replace(/^readonly /, "") ?? "";
-  const dflt = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : null;
+  // M85 (test-case-existing-v2 only, `objects`): any other annotated return (a plain-data object type) stubs to `{}`.
+  const dflt = t === "string" ? '""' : t === "number" ? "0" : t === "boolean" ? "false" : /\[\]$/.test(t) ? "[]" : objects && t !== "" ? "({} as never)" : null;
   const stub = `{ __peaceaiStubRan(); return ${dflt ?? "undefined as never"}; }`;
   return { content: content.slice(0, f.body.getStart(sf)) + stub + content.slice(f.body.getEnd()), throws: dflt === null };
 }
@@ -352,12 +353,12 @@ export function declaredFunctions(content: string): string[] {
  * M23 (Auditor): stub EVERY function in `fns` (the functions the fix commit created in this module), applied
  * one at a time on the result. Null (fail closed) when any of them is missing today or cannot be stubbed.
  */
-export function stubAll(content: string, fns: readonly string[]): { content: string; throws: boolean } | null {
+export function stubAll(content: string, fns: readonly string[], objects = false): { content: string; throws: boolean } | null {
   if (fns.length === 0 || new Set(fns).size !== fns.length) return null;
   let cur = content;
   let throws = false;
   for (const fn of fns) {
-    const s = stubBody(cur, fn, false);
+    const s = stubBody(cur, fn, false, objects);
     if (!s) return null;
     cur = s.content;
     throws ||= s.throws;

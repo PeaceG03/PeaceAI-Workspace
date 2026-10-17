@@ -31,8 +31,16 @@ export const TEST_EXISTING_VOCAB = {
   grading: ["pass-now-fail-stub"],
   matcher: ["regex"],
   placement: ["new-file"],
-  target: ["exported-pure-function"],
+  // M85 (public-test-case-existing-v2): "exported-pure-function-v2" widens the target only: plain-data object types
+  // (interfaces / type aliases / object type literals of the vocabulary, string/number literal unions) in the
+  // signature, and named value imports from relative sibling modules followed by the same purity analysis (bounded).
+  target: ["exported-pure-function", "exported-pure-function-v2"],
 } as const;
+/** M85 bounds for the v2 target: sibling modules followed, import depth, structural type nesting. */
+export const MAX_IMPORT_MODULES = 4;
+export const MAX_IMPORT_DEPTH = 2;
+export const MAX_TYPE_DEPTH = 3;
+export const MAX_TYPE_MEMBERS = 16;
 
 // Named refusals (each one is a distinct, stable reason string in Job A's refusal lines).
 export const TEST_TARGET_NOT_FOUND = "test_target_not_found";
@@ -76,7 +84,9 @@ interface ModuleIndex {
   /** module-level let/var, classes, namespaces: state the analysis does not follow */
   mutable: Set<string>;
   enums: Set<string>;
-  imports: Map<string, { spec: string; typeOnly: boolean }>;
+  imports: Map<string, { spec: string; typeOnly: boolean; imported?: string }>;
+  /** M85: non-generic interfaces and type aliases declared in the module (name -> declaration) */
+  types: Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration | null>;
   /** module names that are mutated (assigned through or receiver of a mutating call) anywhere in the module */
   mutated: Set<string>;
   exportNames: Set<string>;
@@ -91,7 +101,7 @@ function rootName(e: ts.Expression): ts.Expression {
 }
 
 function indexModule(sf: ts.SourceFile): ModuleIndex {
-  const idx: ModuleIndex = { fns: new Map(), consts: new Map(), mutable: new Set(), enums: new Set(), imports: new Map(), mutated: new Set(), exportNames: new Set() };
+  const idx: ModuleIndex = { fns: new Map(), consts: new Map(), mutable: new Set(), enums: new Set(), imports: new Map(), mutated: new Set(), exportNames: new Set(), types: new Map() };
   for (const s of sf.statements) {
     if (ts.isFunctionDeclaration(s) && s.name) { const l = idx.fns.get(s.name.text) ?? []; l.push(s); idx.fns.set(s.name.text, l); if (exported(s) && !hasMod(s, ts.SyntaxKind.DefaultKeyword)) idx.exportNames.add(s.name.text); }
     else if (ts.isVariableStatement(s)) {
@@ -104,6 +114,7 @@ function indexModule(sf: ts.SourceFile): ModuleIndex {
       }
     } else if (ts.isClassDeclaration(s) && s.name) idx.mutable.add(s.name.text);
     else if (ts.isEnumDeclaration(s)) idx.enums.add(s.name.text);
+    else if (ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s)) idx.types.set(s.name.text, idx.types.has(s.name.text) || s.typeParameters?.length || (ts.isInterfaceDeclaration(s) && s.heritageClauses?.length) ? null : s);
     else if (ts.isModuleDeclaration(s) && ts.isIdentifier(s.name)) idx.mutable.add(s.name.text);
     else if (ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)) {
       const c = s.importClause; const spec = s.moduleSpecifier.text;
@@ -111,7 +122,7 @@ function indexModule(sf: ts.SourceFile): ModuleIndex {
       if (c.name) idx.imports.set(c.name.text, { spec, typeOnly: !!c.isTypeOnly });
       const nb = c.namedBindings;
       if (nb && ts.isNamespaceImport(nb)) idx.imports.set(nb.name.text, { spec, typeOnly: !!c.isTypeOnly });
-      if (nb && ts.isNamedImports(nb)) for (const el of nb.elements) idx.imports.set(el.name.text, { spec, typeOnly: !!c.isTypeOnly || el.isTypeOnly });
+      if (nb && ts.isNamedImports(nb)) for (const el of nb.elements) idx.imports.set(el.name.text, { spec, typeOnly: !!c.isTypeOnly || el.isTypeOnly, imported: (el.propertyName ?? el.name).text });
     } else if (ts.isImportEqualsDeclaration(s)) idx.mutable.add(s.name.text);
     else if (ts.isExportDeclaration(s) && !s.isTypeOnly && !s.moduleSpecifier && s.exportClause && ts.isNamedExports(s.exportClause))
       for (const el of s.exportClause.elements) if (!el.isTypeOnly && !el.propertyName) idx.exportNames.add(el.name.text);
@@ -149,7 +160,99 @@ function isValueReference(n: ts.Identifier): boolean {
   return true;
 }
 
-interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile }
+interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile; v2?: V2Ctx }
+/** M85: the v2 target's cross-module state: where this module is, how to read siblings, what was followed. */
+interface V2Ctx { path: string; depth: number; read: (rel: string) => string | null; modules: Map<string, { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null>; followed: Set<string> }
+
+const normRel = (p: string): string | null => {
+  const out: string[] = [];
+  for (const s of p.split("/")) { if (s === "" || s === ".") continue; if (s === "..") { if (!out.length) return null; out.pop(); } else out.push(s); }
+  return out.join("/");
+};
+/** M85: a relative specifier from `from` to exactly one readable, plain, unprotected, non-test .ts module (else null). */
+function resolveSibling(from: string, spec: string, read: (rel: string) => string | null): string | null {
+  if (!spec.startsWith("./") && !spec.startsWith("../")) return null;
+  const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
+  const base = normRel(`${dir}/${spec}`);
+  if (base === null) return null;
+  const hits = [...new Set([base, `${base}.ts`, `${base}/index.ts`, ...(/\.js$/.test(base) ? [base.replace(/\.js$/, ".ts")] : [])])].filter((c) => /\.ts$/.test(c) && read(c) !== null);
+  if (hits.length !== 1) return null;
+  const t = hits[0]!;
+  if (!plainPath(t) || isProtected(t) || /\.(?:test|spec)\.ts$/.test(t) || /\.d\.ts$/.test(t)) return null;
+  return t;
+}
+function siblingModule(v: V2Ctx, path: string): { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null {
+  if (v.modules.has(path)) return v.modules.get(path)!;
+  if (v.modules.size >= MAX_IMPORT_MODULES + 1) return null;
+  const text = v.read(path);
+  let m: { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null = null;
+  if (text !== null && text.length <= 65536) {
+    const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+    if (!(sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) m = { idx: indexModule(sf), sf, fns: new Set(), consts: new Set() };
+  }
+  v.modules.set(path, m);
+  return m;
+}
+/** M85: a named value import from a relative sibling, followed into that module with the same analysis. */
+function followImport(a: Analysis, imp: { spec: string; imported?: string }): void {
+  const add = (r: string) => a.reasons.add(r);
+  const v = a.v2!;
+  if (!imp.imported || imp.imported === "default") { add(TEST_TARGET_IMPURE); return; }
+  const target = resolveSibling(v.path, imp.spec, v.read);
+  if (!target) { add(TEST_TARGET_IMPURE); return; }
+  const key = `${target}\0${imp.imported}`;
+  if (v.followed.has(key)) return;
+  v.followed.add(key);
+  if (v.depth >= MAX_IMPORT_DEPTH) { add(TEST_TARGET_TOO_LARGE); return; }
+  const m = siblingModule(v, target);
+  if (!m) { add(v.modules.size > MAX_IMPORT_MODULES ? TEST_TARGET_TOO_LARGE : TEST_TARGET_IMPURE); return; }
+  // Only names the sibling itself declares and exports (functions or consts); re-exports are not followed.
+  if (!m.idx.exportNames.has(imp.imported) || !(m.idx.fns.has(imp.imported) || m.idx.consts.has(imp.imported))) { add(TEST_TARGET_IMPURE); return; }
+  const sub: Analysis = { reasons: a.reasons, fns: m.fns, consts: m.consts, idx: m.idx, sf: m.sf, v2: { ...v, path: target, depth: v.depth + 1 } };
+  resolveName(sub, imp.imported, new Set());
+}
+
+/**
+ * M85: a plain-data type for the v2 target: the vocabulary primitives (arrays), string/number/boolean literal types
+ * and unions of them with null/undefined, object type literals of property signatures only, and references to a
+ * module-local non-generic interface/type alias of the same shape, or (followed) one a relative sibling exports.
+ */
+function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx | undefined, depth = 0): boolean {
+  if (TYPES.test(t.getText(sf).trim())) return true;
+  if (depth > MAX_TYPE_DEPTH) return false;
+  const rec = (x: ts.TypeNode) => structuralType(x, idx, sf, v2, depth + 1);
+  if (ts.isParenthesizedTypeNode(t)) return rec(t.type);
+  if (ts.isArrayTypeNode(t)) return rec(t.elementType);
+  if (ts.isTypeOperatorNode(t)) return t.operator === ts.SyntaxKind.ReadonlyKeyword && ts.isArrayTypeNode(t.type) && rec(t.type);
+  if (ts.isLiteralTypeNode(t)) return ts.isStringLiteral(t.literal) || ts.isNumericLiteral(t.literal) || t.literal.kind === ts.SyntaxKind.NullKeyword || t.literal.kind === ts.SyntaxKind.TrueKeyword || t.literal.kind === ts.SyntaxKind.FalseKeyword;
+  if (t.kind === ts.SyntaxKind.UndefinedKeyword || t.kind === ts.SyntaxKind.StringKeyword || t.kind === ts.SyntaxKind.NumberKeyword || t.kind === ts.SyntaxKind.BooleanKeyword) return true;
+  if (ts.isUnionTypeNode(t)) return t.types.length <= 12 && t.types.every(rec);
+  if (ts.isTypeLiteralNode(t)) return plainMembers(t.members, rec);
+  if (ts.isTypeReferenceNode(t)) {
+    if (!ts.isIdentifier(t.typeName) || t.typeArguments?.length) return false;
+    const n = t.typeName.text;
+    if (idx.enums.has(n)) return true;
+    const d = idx.types.get(n);
+    if (d) return ts.isInterfaceDeclaration(d) ? plainMembers(d.members, rec) : rec(d.type);
+    if (d === null) return false;
+    const imp = idx.imports.get(n);
+    if (!imp || !v2 || !imp.imported || imp.imported === "default") return false;
+    const target = resolveSibling(v2.path, imp.spec, v2.read);
+    const m = target ? siblingModule(v2, target) : null;
+    if (!m || !target) return false;
+    const sd = m.idx.types.get(imp.imported);
+    if (m.idx.enums.has(imp.imported)) return true;
+    if (!sd) return false;
+    const sv: V2Ctx = { ...v2, path: target, depth: v2.depth + 1 };
+    if (sv.depth > MAX_IMPORT_DEPTH) return false;
+    const srec = (x: ts.TypeNode) => structuralType(x, m.idx, m.sf, sv, depth + 1);
+    return ts.isInterfaceDeclaration(sd) ? plainMembers(sd.members, srec) : srec(sd.type);
+  }
+  return false;
+}
+function plainMembers(ms: ts.NodeArray<ts.TypeElement>, rec: (x: ts.TypeNode) => boolean): boolean {
+  return ms.length <= MAX_TYPE_MEMBERS && ms.every((m) => ts.isPropertySignature(m) && !!m.type && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && rec(m.type));
+}
 
 /** Fresh: a value created inside the function (so mutating it touches nothing outside). */
 function isFresh(e: ts.Expression | undefined, fresh: ReadonlySet<string>): boolean {
@@ -192,7 +295,12 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
   if (a.idx.enums.has(name)) return;
   if (a.idx.mutable.has(name)) { add(TEST_TARGET_IMPURE); return; }
   const imp = a.idx.imports.get(name);
-  if (imp) { if (!imp.typeOnly) add(NODE_BUILTINS.test(imp.spec) ? TEST_TARGET_IO : TEST_TARGET_IMPURE); return; }
+  if (imp) {
+    if (imp.typeOnly) return;
+    if (a.v2 && !NODE_BUILTINS.test(imp.spec) && (imp.spec.startsWith("./") || imp.spec.startsWith("../"))) { followImport(a, imp); return; }
+    add(NODE_BUILTINS.test(imp.spec) ? TEST_TARGET_IO : TEST_TARGET_IMPURE);
+    return;
+  }
   if (IO_GLOBALS.has(name)) { add(TEST_TARGET_IO); return; }
   if (LOCAL_TIME_GLOBALS.has(name)) { add(TEST_TARGET_DATE_LOCAL); return; }
   if (PURE_GLOBALS.has(name)) return;
@@ -293,7 +401,7 @@ export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: stri
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string): string | null {
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null } }): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
@@ -307,9 +415,12 @@ export function existingTargetRefusal(path: string, content: string, fn: string)
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) return TEST_TARGET_ASYNC;
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
-  if (f.typeParameters?.length || !TYPES.test(ret) || f.parameters.length > MAX_PARAMS) return TEST_TARGET_SIGNATURE;
-  for (const p of f.parameters) if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || !p.type || !TYPES.test(p.type.getText(sf).trim())) return TEST_TARGET_SIGNATURE;
-  const a: Analysis = { reasons: new Set(), fns: new Set([fn]), consts: new Set(), idx, sf };
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set() } : undefined;
+  const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
+  if (f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS) return TEST_TARGET_SIGNATURE;
+  for (const p of f.parameters) if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || !p.type || !typeOk(p.type)) return TEST_TARGET_SIGNATURE;
+  if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
+  const a: Analysis = { reasons: new Set(), fns: v2 ? v2.modules.get(path)!.fns : new Set([fn]), consts: v2 ? v2.modules.get(path)!.consts : new Set(), idx, sf, v2 };
   analyzeFunction(a, f);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   return null;
@@ -362,8 +473,11 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (isProtected(task.file)) return no(SELF_PROTECTED_PATH);
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
-  const r = existingTargetRefusal(target.path, target.content, task.symbol);
+  const v2 = params.target === "exported-pure-function-v2";
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: { read: (rel) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null } } : undefined);
   if (r) return no(r);
+  // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
+  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
   // Every check calls the target itself (the only name the test imports), with literal arguments.
   for (const c of task.checks) {
     if (!(params.checks as string[]).includes(c.kind)) return no(TEST_CHECK_REFUSED);
@@ -374,7 +488,9 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
     v(e);
     if (!calls) return no(TEST_CHECK_REFUSED);
   }
-  const testParams = { assert: params.assert as string, checks: params.checks as string[], framework: params.framework as string, grading: "fail-before-pass-after", matcher: params.matcher as string, maxLines: params.maxLines as string, placement: "new-file" };
+  // M85 (v2): a check passing an object literal is written under the M20 object-argument grammar (plain bounded data).
+  const objectArgs = v2 && task.checks.some((c) => { const x = parseCheck(c.expr); let has = false; const w = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some(ts.isObjectLiteralExpression)) has = true; ts.forEachChild(n, w); }; if (x) w(x); return has; });
+  const testParams = { assert: params.assert as string, checks: params.checks as string[], framework: params.framework as string, grading: "fail-before-pass-after", matcher: params.matcher as string, maxLines: params.maxLines as string, placement: "new-file", ...(objectArgs ? { args: "object-literal" } : {}) };
   const title = task.title ?? `${task.symbol} characterization`;
   const test = buildTestEdit(testParams, { ...task, title, fixSha: task.id }, files, isTest);
   if (!test) return no("test_refused");
