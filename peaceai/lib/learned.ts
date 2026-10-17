@@ -338,13 +338,13 @@ export function applyRule(spec: RuleSpec, objective: string, files: readonly Sou
   // #314 (Architect): the target's denyPatterns are enforced here too, so every caller (generate.ts, box
   // dry-runs, tools) refuses a denied path even when it hands in an unfiltered file list. Same order as
   // scope.ts checkCandidateScope: an opted-in workflow file is checked by its own rules, not by deny.
-  if (repo && deniedEditPath(repo, [edit.path, ...(edit.extra ?? []).map((x) => x.path)])) { if (why) why.reason = "denied_path"; return null; }
-  // M72 SELF_CHANGE stage 1: on this Workspace a candidate outside src/ may only touch the safe zone, and never a
+  // M72 SELF_CHANGE stage 1 (checked first, so the reason is named even when the zone is on): on this Workspace a candidate outside src/ may only touch the safe zone, and never a
   // protected file (grading, leak/tamper checks, verdict/approval, scope lists, lm.ts, workflows, the lists).
   if (repo === WORKSPACE_TARGET) {
     const r = selfZoneRefusal([edit.path, ...(edit.extra ?? []).map((x) => x.path)]);
     if (r) { if (why) why.reason = r; return null; }
   }
+  if (repo && deniedEditPath(repo, [edit.path, ...(edit.extra ?? []).map((x) => x.path)])) { if (why) why.reason = "denied_path"; return null; }
   if (!exists) return edit;
   const created = [...(edit.create ? [edit.path] : []), ...(edit.extra ?? []).filter((x) => x.create).map((x) => x.path)];
   if (created.some((p) => exists(p))) { if (why) why.reason = "new_test_path_exists"; return null; }

@@ -65,11 +65,11 @@ test("no safe-zone shape is protected by PROTECTED_SELF, and nothing outside sel
 });
 
 test("selfZoneRefusal: safe-zone paths are refused until the target enables selfZone", () => {
-  assert.equal(loadTargets().targets[WORKSPACE_TARGET]!.selfZone, undefined, "off on main until its approval PR");
-  assert.equal(selfZoneRefusal(["peaceai/docs/a.md"]), "outside_safe_zone");
+  assert.ok([undefined, true].includes(loadTargets().targets[WORKSPACE_TARGET]!.selfZone), "off until its approval PR sets it to true");
+  assert.equal(selfZoneRefusal(["peaceai/docs/a.md"], false), "outside_safe_zone");
   assert.equal(selfZoneRefusal(["peaceai/docs/a.md"], true), null);
   assert.equal(selfZoneRefusal(["peaceai/lib/self-zone.ts"], true), "self_protected_path");
-  assert.equal(selfZoneRefusal(["src/a.ts"]), null);
+  assert.equal(selfZoneRefusal(["src/a.ts"], false), null);
 });
 
 test("applyRule refuses a Workspace candidate on a protected file or outside the zone (by name)", () => {
@@ -82,7 +82,9 @@ test("applyRule refuses a Workspace candidate on a protected file or outside the
   assert.ok(run("src/a.ts").edit);
   for (const p of ["peaceai/lib/repair.ts", "peaceai/lib/repairloop.ts"]) assert.equal(run(p).why, "self_protected_path", p);
   assert.equal(run("peaceai/proof/x.ts").why, "self_protected_path");
-  assert.equal(run("peaceai/self-tests/helpers/text.ts").why, "outside_safe_zone", "zone off on main");
+  const helper = run("peaceai/self-tests/helpers/text.ts");
+  if (loadTargets().targets[WORKSPACE_TARGET]!.selfZone === true) assert.deepEqual([helper.edit?.path, helper.edit?.extra?.[0]?.path.startsWith("peaceai/self-tests/helpers/text.")], ["peaceai/self-tests/helpers/text.ts", true], "zone on: a safe-zone landing is built");
+  else assert.equal(helper.why, "outside_safe_zone", "zone off: refused by name");
 });
 
 test("loadTargets: selfZone only true and only on this Workspace", () => {
@@ -94,8 +96,8 @@ test("loadTargets: selfZone only true and only on this Workspace", () => {
     assert.throws(write((t) => { t.targets[WORKSPACE_TARGET].selfZone = "true"; }), /selfZone/);
     assert.throws(write((t) => { t.targets[WORKSPACE_TARGET].selfZone = false; }), /selfZone/);
     assert.throws(write((t) => { t.targets["PeaceG03/PeaceSTOCKS"].selfZone = true; }), /selfZone/);
-    const on = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: true });
-    const off = scopeOf(base.targets[WORKSPACE_TARGET]);
+    const on = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: true as const });
+    const off = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: undefined });
     assert.ok(on.isSource("peaceai/docs/a.md") && !off.isSource("peaceai/docs/a.md"));
     assert.ok(!on.isSource("peaceai/lib/self-zone.ts") && on.isDenied("peaceai/lib/self-zone.ts"));
     assert.ok(on.isSource("src/a.ts") && !on.isDenied("src/a.ts"));
