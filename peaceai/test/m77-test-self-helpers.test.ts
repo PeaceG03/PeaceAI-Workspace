@@ -17,7 +17,7 @@ function runIn(files: Record<string, string>) {
   try {
     for (const [p, c] of Object.entries(files)) { mkdirSync(join(dir, p, ".."), { recursive: true }); writeFileSync(join(dir, p), c); }
     symlinkSync(resolve(root, "node_modules"), join(dir, "node_modules"));
-    const env = { ...process.env, PATH: `${resolve(root, "node_modules/.bin")}:${process.env.PATH ?? ""}` };
+    const env: Record<string, string | undefined> = { ...process.env, PATH: `${resolve(root, "node_modules/.bin")}:${process.env.PATH ?? ""}` };
     delete env.NODE_TEST_CONTEXT; // run as a top-level test run so failures set the exit code
     const r = spawnSync("sh", ["-c", SCRIPT], { cwd: dir, env, encoding: "utf8" });
     return { code: r.status, out: `${r.stdout}${r.stderr}` };
