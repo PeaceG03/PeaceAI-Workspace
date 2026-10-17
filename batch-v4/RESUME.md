@@ -103,3 +103,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - B landing #350: review posted (one candidate, utcMinuteOfDay + et-time.utcminuteofday-returns-the-e970ad7.test.ts) https://github.com/PeaceG03/PeaceAI-Workspace/issues/350#issuecomment-6230083385. Awaiting Peace's /verdict (A right → patch file on the issue, Stocks route is no-PR).
 - B refusal #352: `public-date-function-v1=date_local_time` https://github.com/PeaceG03/PeaceAI-Workspace/issues/352#issuecomment-6230186786
 - M78 PR #351 (m78/leak-scope-self-zone, head 60ba59d): scope.ts selfZoneExempt; leak-scan imports inSafeZone and reads base targets.json; safety-tool-sha256.json lists the new leak-scan sha. tools 981/986 (only box-only m48 fail), self 2/2, src 14/14, typecheck clean. Dry run on #345 head → LEAK PASS. After merge: rerun #345 leak-check (scanner checked out from main) and approve #345's held runs.
+
+## 06:55Z (00:55 MDT) coverage workstream
+- Peace approved (00:22 MDT): 6-10 genuine PeaceSTOCKS tasks on live-proven approved rules. Baseline 20/76.
+- Filed 7 (each a different file, dry-run + graded on bf284ed, suite 544/544): #353 utcDateKey (date), #354 utcDaysBetween (date), #355 isUtcWeekend (date), #356 sumOf (loop), #357 sampleVariance (loop), #358 monthKeyOf (add-function), #359 storageUtilizationPercent (complex). See batch-v4/coverage/.
+- Watching reviews. Never /verdict. Gaps to record: TEST_CASE cannot cover untested helpers (fix commits no longer revert on main); IMPORT_EDIT has no genuine target (verbatimModuleSyntax clean, all builtins node:-prefixed).
