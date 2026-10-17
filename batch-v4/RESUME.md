@@ -85,3 +85,4 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - #342 (bot approved.json PR) is not merged. The landing run 39002704888 failed because m59 refusal-reason tests 549, 550 and 552 hard-code a REPORTING set, and the approved date rule shifts the 5-entry line. Fix PR #344 (m75/refusal-reason-date 21e8a28) adds public-date-function-v1 to REPORTING. Suite 966/967 both on main and with #342's approved.json applied.
 - The landing script dispatches checks on #342's own branch head, which lacks the fix, so #342 cannot pass as it stands. After #344 merges, a fresh landing is needed: re-run run 39002704888's failed job, or Peace posts /approve-rule again. That cuts a new branch from main. Then close #342. Never update-branch it.
 - B live proofs: blocked until a new approved.json PR merges.
+- 22:55 MDT: #344 CI all green (tests, leak-check, tamper-proof, builder-log).
