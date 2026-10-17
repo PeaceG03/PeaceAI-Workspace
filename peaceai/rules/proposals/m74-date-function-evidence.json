@@ -1,0 +1,250 @@
+{
+  "schema": "peaceai-m74-date-function-evidence:v1",
+  "bar": 10,
+  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+  "note": "DATE family (public-date-function-v1): 10 exported or module functions from example-only permissive repos that are not in lm-corpus (repo and file sha checked against ext-manifest 8458eac6 + ext-corpus.json). Every Date use is in the planned vocabulary: Date-typed params/returns, getUTC* getters, getTime, toISOString, Date.UTC, new Date(EXPR) with exactly one argument. No local-time getters, no Date.now, no argless new Date(), no setters. PeaceSTOCKS inRefillGuard / inOneOffGuardWindow fit too, but Peace's repos are in the corpus manifest, so they are not counted. Dropped candidates: ymichael/WidgetTimeline daysBetween (unary + on a Date), juspay/epigos/jeanibarz (module constants), Emanuele-web04 requireValidDate (template-literal throw), SudhanshuPanthri isMarketLikelyOpen (default param new Date()), RedPlanetHQ/3Tea isSameUTCDay (license NOASSERTION / MPL-2.0).",
+  "examples": [
+    {
+      "repo": "amarbayar/event-os",
+      "commit": "e00a720e6a292d4d3d8b2a32ecf3abd10ce7892c",
+      "path": "src/lib/agenda-time.ts",
+      "fn": "minutesSinceMidnight",
+      "line": 29,
+      "exported": true,
+      "sha256": "8065a17e7804d74512f2e04ac074818ea39c270f157b5f73c18dc238572ba8c2",
+      "license": "MIT",
+      "licenseSha256": "19465ed3b969de7f2ed5dd6932060905f4857b4e8f8a6946495f856da8ace71b",
+      "fileBlob": "93cc26220bf2506f4d024ab3456f3cd6e9852ffa",
+      "fixture": "peaceai/test/fixtures/m74/amarbayar__event-os-93cc26220bf2.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes"
+      ],
+      "signature": "(Date): number"
+    },
+    {
+      "repo": "pnp/spfx-copilot-components",
+      "commit": "993a2cfd6de74d3f0565aea83daa14e3e7e5d72c",
+      "path": "samples/zava-one-hub/src/shared/utils/evergreenDates.ts",
+      "fn": "startOfUtcDay",
+      "line": 5,
+      "exported": false,
+      "sha256": "b9f3401de934d8c6124dd36f58407a5bf5510622596b14b22696a6595f3f6330",
+      "license": "MIT",
+      "licenseSha256": "6641204ebf5a6b2fde75e15fbaf3f1947fb2ca5396249f5980247d8fb609d01f",
+      "fileBlob": "b97e2016c15719d8552aaec2afc63515e3d7adb6",
+      "fixture": "peaceai/test/fixtures/m74/pnp__spfx-copilot-components-b97e2016c157.txt",
+      "dateApi": [
+        "Date.UTC",
+        "getUTCDate",
+        "getUTCFullYear",
+        "getUTCMonth",
+        "new Date(1)"
+      ],
+      "signature": "(Date): Date"
+    },
+    {
+      "repo": "tradeblocks-org/tradeblocks",
+      "commit": "a7f07f7410ffcec04bb127af334ee8820650dc7f",
+      "path": "packages/lib/calculations/xnys-session-calendar.ts",
+      "fn": "isoDate",
+      "line": 31,
+      "exported": false,
+      "sha256": "6113e34b319fb81c81f4dd579c56065ccb39b25c518c6eee7db0f8c17792acc3",
+      "license": "MIT",
+      "licenseSha256": "f4012adb3b961258f67b00e69c8317ff20a4da8d434731c630599bab8412262b",
+      "fileBlob": "512bfc8ab12d5aab5be623f230dfe52b2de24bff",
+      "fixture": "peaceai/test/fixtures/m74/tradeblocks-org__tradeblocks-512bfc8ab12d.txt",
+      "dateApi": [
+        "toISOString"
+      ],
+      "signature": "(Date): string"
+    },
+    {
+      "repo": "tradeblocks-org/tradeblocks",
+      "commit": "a7f07f7410ffcec04bb127af334ee8820650dc7f",
+      "path": "packages/lib/calculations/xnys-session-calendar.ts",
+      "fn": "utcDate",
+      "line": 35,
+      "exported": false,
+      "sha256": "6113e34b319fb81c81f4dd579c56065ccb39b25c518c6eee7db0f8c17792acc3",
+      "license": "MIT",
+      "licenseSha256": "f4012adb3b961258f67b00e69c8317ff20a4da8d434731c630599bab8412262b",
+      "fileBlob": "512bfc8ab12d5aab5be623f230dfe52b2de24bff",
+      "fixture": "peaceai/test/fixtures/m74/tradeblocks-org__tradeblocks-512bfc8ab12d.txt",
+      "dateApi": [
+        "Date.UTC",
+        "new Date(1)"
+      ],
+      "signature": "(number, number, number): Date"
+    },
+    {
+      "repo": "nbharathik/ifc-viewx",
+      "commit": "6f831b81595619fd8421c08f35118e11ee5eff7a",
+      "path": "src/geo/solar.ts",
+      "fn": "julianCenturies",
+      "line": 31,
+      "exported": false,
+      "sha256": "883c6e75c79eddffe57829f0d3d164f8344b10d64bba33c3b5993047e8754277",
+      "license": "Apache-2.0",
+      "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+      "fileBlob": "6f9ff56c05bc90092d0b6d75c9c2f4e4f187a53d",
+      "fixture": "peaceai/test/fixtures/m74/nbharathik__ifc-viewx-6f9ff56c05bc.txt",
+      "licenseNote": "GitHub reports NOASSERTION; the LICENSE file at the pinned commit classifies as Apache-2.0 (lmcorpus classifyLicense)",
+      "dateApi": [
+        "getTime"
+      ],
+      "signature": "(Date): number"
+    },
+    {
+      "repo": "Scifi-ally/Mimir",
+      "commit": "4e30eb0204db8dee76c89042e0f0dbf645ae7178",
+      "path": "backend/src/suggestions/timing.ts",
+      "fn": "getMinutesInIST",
+      "line": 28,
+      "exported": false,
+      "sha256": "733748b00730a8c0bb930559d0f2dfc254700da8d9646ab8365f96aa7ee8288f",
+      "license": "MIT",
+      "licenseSha256": "ef294bbaf329b6a5d6bb820b31199efaafaff293fbabe730ebebd57fa56d222f",
+      "fileBlob": "240f3aad98d078c5f410c2708194bc6f1e72d67f",
+      "fixture": "peaceai/test/fixtures/m74/Scifi-ally__Mimir-240f3aad98d0.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes"
+      ],
+      "signature": "(Date): number"
+    },
+    {
+      "repo": "uwblueprint/social-diversity-for-children",
+      "commit": "4a04b87d681d539b454c1d572cbc103188ef9195",
+      "path": "utils/time/convert.ts",
+      "fn": "totalUTCMinutes",
+      "line": 15,
+      "exported": true,
+      "sha256": "7844b1e650c9b32fb071e365632d18f93ff3a70c9f52697b9a21b6041b4e5184",
+      "license": "MIT",
+      "licenseSha256": "3b0581993ce2abffb527d8b6c623eeedb448a01aa2134d25318aa838cbd11bfc",
+      "fileBlob": "e60798098caca983e1e41171c0d3a4216bc46884",
+      "fixture": "peaceai/test/fixtures/m74/uwblueprint__social-diversity-for-children-e60798098cac.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes"
+      ],
+      "signature": "(Date): number"
+    },
+    {
+      "repo": "vetmogee/schedula",
+      "commit": "c395c2bcd75351ec2728ccf0e6cc1242d3673dbe",
+      "path": "src/lib/duration.ts",
+      "fn": "durationToMinutes",
+      "line": 11,
+      "exported": true,
+      "sha256": "81825da1b55de1c1388691f931a2e5336b9d01b5161f73e60a342d0a912a4bc7",
+      "license": "MIT",
+      "licenseSha256": "7298f1e1885417173390839b6dcda659d3eb99f683a0931f3f2bfa93a37ee24e",
+      "fileBlob": "f57b9c8847cdfe5fe76ebcb4d178cce9649c914d",
+      "fixture": "peaceai/test/fixtures/m74/vetmogee__schedula-f57b9c8847cd.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes",
+        "new Date(1)"
+      ],
+      "signature": "(Date): number"
+    },
+    {
+      "repo": "vetmogee/schedula",
+      "commit": "c395c2bcd75351ec2728ccf0e6cc1242d3673dbe",
+      "path": "src/lib/duration.ts",
+      "fn": "durationToTimeString",
+      "line": 32,
+      "exported": true,
+      "sha256": "81825da1b55de1c1388691f931a2e5336b9d01b5161f73e60a342d0a912a4bc7",
+      "license": "MIT",
+      "licenseSha256": "7298f1e1885417173390839b6dcda659d3eb99f683a0931f3f2bfa93a37ee24e",
+      "fileBlob": "f57b9c8847cdfe5fe76ebcb4d178cce9649c914d",
+      "fixture": "peaceai/test/fixtures/m74/vetmogee__schedula-f57b9c8847cd.txt",
+      "dateApi": [
+        "getUTCHours",
+        "getUTCMinutes",
+        "new Date(1)"
+      ],
+      "signature": "(Date): string"
+    },
+    {
+      "repo": "DEADover/DzenAnalytics",
+      "commit": "aa018a7ad6bc32e59d7c94d45550135f1349630a",
+      "path": "src/lib/historicalRates.ts",
+      "fn": "isWeekendUTC",
+      "line": 221,
+      "exported": true,
+      "sha256": "5951533bbc61aefa5ed5f64e616be360790cffcd0526296d9646aad74a9e7c62",
+      "license": "MIT",
+      "licenseSha256": "085c3e8d2468ce317ed6f6e68cb533a210672542cd4335c349648220c600760e",
+      "fileBlob": "8ae63355e3dd3399537cbc000fa850d5a05574db",
+      "fixture": "peaceai/test/fixtures/m74/DEADover__DzenAnalytics-8ae63355e3dd.txt",
+      "dateApi": [
+        "getUTCDay",
+        "new Date(1)"
+      ],
+      "signature": "(string): boolean"
+    }
+  ],
+  "pins": [
+    {
+      "name": "amarbayar/event-os",
+      "commit": "e00a720e6a292d4d3d8b2a32ecf3abd10ce7892c",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "pnp/spfx-copilot-components",
+      "commit": "993a2cfd6de74d3f0565aea83daa14e3e7e5d72c",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "tradeblocks-org/tradeblocks",
+      "commit": "a7f07f7410ffcec04bb127af334ee8820650dc7f",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "nbharathik/ifc-viewx",
+      "commit": "6f831b81595619fd8421c08f35118e11ee5eff7a",
+      "spdx": "NOASSERTION",
+      "classified": "Apache-2.0",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "Scifi-ally/Mimir",
+      "commit": "4e30eb0204db8dee76c89042e0f0dbf645ae7178",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "uwblueprint/social-diversity-for-children",
+      "commit": "4a04b87d681d539b454c1d572cbc103188ef9195",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "vetmogee/schedula",
+      "commit": "c395c2bcd75351ec2728ccf0e6cc1242d3673dbe",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "name": "DEADover/DzenAnalytics",
+      "commit": "aa018a7ad6bc32e59d7c94d45550135f1349630a",
+      "spdx": "MIT",
+      "classified": "MIT",
+      "licenseFile": "LICENSE"
+    }
+  ]
+}

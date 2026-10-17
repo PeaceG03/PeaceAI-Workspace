@@ -112,7 +112,9 @@ function validMethodGuardParams(p: Record<string, unknown>, minedFrom: unknown):
 
 /** M26 wiring: COMPLEX_FUNCTION specs; public-mined only; loops is a non-empty list from the vocabulary. */
 function validComplexParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...COMPLEX_PARAM_KEYS].join(",")) return false;
+  // M74: optional `types: "primitive+date"` (public-date-function-v1), only with loops ["none"].
+  if ("types" in p && (p.types !== "primitive+date" || !Array.isArray(p.loops) || (p.loops as unknown[]).join(",") !== "none")) return false;
+  if (minedFrom !== "public" || Object.keys(p).filter((k) => k !== "types").sort().join(",") !== [...COMPLEX_PARAM_KEYS].join(",")) return false;
   return COMPLEX_PARAM_KEYS.every((k) => k === "loops"
     ? Array.isArray(p[k]) && (p[k] as unknown[]).length > 0 && (p[k] as unknown[]).every((x) => typeof x === "string" && COMPLEX_VOCAB.loops.includes(x))
       && (!(p[k] as unknown[]).includes("none") || (p[k] as unknown[]).length === 1) // Auditor #218: "none" never mixed with loop kinds

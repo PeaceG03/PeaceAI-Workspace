@@ -94,7 +94,9 @@ const BINARY = new Set([
  * Not allowed: any other name (so no calls into the module or globals), `new`, assignment, `++/--`, `delete`,
  * closures, spread, element access, optional chaining. Note: a caller-supplied object could still run a getter.
  */
-export function safeBody(e: ts.Expression, params: ReadonlySet<string>): boolean {
+/** M74 (public-date-function-v1): extra callables and methods a spec may add to the vocabulary (each call's argument cap). */
+export interface ExtraVocab { calls: ReadonlyMap<string, number>; methods: ReadonlySet<string> }
+export function safeBody(e: ts.Expression, params: ReadonlySet<string>, extra?: ExtraVocab): boolean {
   let usesParam = false;
   const ok = (n: ts.Node): boolean => {
     if (ts.isParenthesizedExpression(n)) return ok(n.expression);
@@ -108,9 +110,11 @@ export function safeBody(e: ts.Expression, params: ReadonlySet<string>): boolean
     if (ts.isConditionalExpression(n)) return ok(n.condition) && ok(n.whenTrue) && ok(n.whenFalse);
     if (ts.isBinaryExpression(n)) return BINARY.has(n.operatorToken.kind) && ok(n.left) && ok(n.right);
     if (ts.isCallExpression(n)) {
-      if (n.questionDotToken || n.typeArguments || n.arguments.length > 4 || !n.arguments.every((a) => !ts.isSpreadElement(a) && ok(a))) return false;
       const callee = n.expression;
-      if (ts.isPropertyAccessExpression(callee) && !callee.questionDotToken && ts.isIdentifier(callee.name) && METHODS.has(callee.name.text) && !CALLS.has(callee.getText())) {
+      const extraCall = ts.isIdentifier(callee) && !!extra?.calls.has(callee.text);
+      if (n.questionDotToken || n.typeArguments || n.arguments.length > (extraCall ? extra!.calls.get((callee as ts.Identifier).text)! : 4) || !n.arguments.every((a) => !ts.isSpreadElement(a) && ok(a))) return false;
+      if (extraCall) return true;
+      if (ts.isPropertyAccessExpression(callee) && !callee.questionDotToken && ts.isIdentifier(callee.name) && (METHODS.has(callee.name.text) || !!extra?.methods.has(callee.name.text)) && !CALLS.has(callee.getText())) {
         // padStart/padEnd: the target length must be a small integer literal (bounded output).
         if (PAD.has(callee.name.text)) { const len = n.arguments[0]; if (!len || !ts.isNumericLiteral(len) || !/^\d+$/.test(len.text) || Number(len.text) > MAX_PAD) return false; }
         return ok(callee.expression);
