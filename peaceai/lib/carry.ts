@@ -64,9 +64,15 @@ export function validCarryNote(n: unknown): n is CarryNote {
     typeof o.fromRunId === "string" && ID.test(o.fromRunId) && typeof o.fromCandidate === "string" && /^candidate-\d{1,3}$/.test(o.fromCandidate) &&
     typeof o.runId === "string" && ID.test(o.runId) && o.runId !== o.fromRunId && typeof o.label === "string" && /^[A-Z]$/.test(o.label);
 }
-export function carryComment(n: CarryNote): string {
+/** How the carry note words the fresh grade: by the grade type the rule declares (suite rules have no COUNTS verdict). */
+export function freshGradeWords(grading: GradeType | undefined): string {
+  return grading === "suite"
+    ? "its fresh suite-only grade on the new head passed (typecheck, original suite and eligibility; this rule has no test grade)"
+    : "its fresh Job B grade on the new head is COUNTS";
+}
+export function carryComment(n: CarryNote, grading?: GradeType): string {
   if (!validCarryNote(n)) throw new Error("bad carry note");
-  return [CARRY_MARKER, `Verdict carried forward: the regraded candidate (run ${n.runId}, label ${n.label}) is the same diff, applies cleanly, touches no file that changed since the old base, and its fresh Job B grade on the new head is COUNTS. The owner's original verdict (comment ${n.verdictCommentId}) is recorded on this attempt; no second /verdict is needed.`, "", "<!-- carry-json", JSON.stringify(n), "carry-json -->", ""].join("\n");
+  return [CARRY_MARKER, `Verdict carried forward: the regraded candidate (run ${n.runId}, label ${n.label}) is the same diff, applies cleanly, touches no file that changed since the old base, and ${freshGradeWords(grading)}. The owner's original verdict (comment ${n.verdictCommentId}) is recorded on this attempt; no second /verdict is needed.`, "", "<!-- carry-json", JSON.stringify(n), "carry-json -->", ""].join("\n");
 }
 export function parseCarryComment(body: string): CarryNote | null {
   const b = body.replace(/\r\n/g, "\n");
