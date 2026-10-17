@@ -1,0 +1,755 @@
+{
+ "schema": "peaceai-stress-suite:v1",
+ "target": "PeaceG03/PeaceSTOCKS",
+ "base": "5c41528a4e608d8f53de996e583a97776d232d08",
+ "tasks": [
+  {
+   "id": "A1",
+   "category": "add-function",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "title": "[num-utils] pctOf",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `pctOf(part: number, whole: number): number` to `src/num-utils.ts` returning whole === 0 ? 0 : (part / whole) * 100\n- `pctOf(1, 4)` is 25\n- `pctOf(3, 0)` is 0\n- `pctOf(0, 5)` is 0\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { pctOf } from \"../src/num-utils\";\ntest(\"A1\", () => { assert.equal(pctOf(1, 4), 25); assert.equal(pctOf(3, 0), 0); assert.equal(pctOf(1, 2), 50); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "A2",
+   "category": "add-function",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "title": "[tenmin-range] isTenMinReplyDustKey",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `isTenMinReplyDustKey(key: string): boolean` to `src/tenmin-range-reply-dust.ts` returning key.startsWith(\"permanent/tenmin-reply-dust/\")\n- `isTenMinReplyDustKey(\"permanent/tenmin-reply-dust/2024-01-01_2024-02-29/manifest.json\")` is true\n- `isTenMinReplyDustKey(\"permanent/daily/x\")` is false\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { isTenMinReplyDustKey } from \"../src/tenmin-range-reply-dust\";\ntest(\"A2\", () => { assert.equal(isTenMinReplyDustKey(\"permanent/tenmin-reply-dust/a\"), true); assert.equal(isTenMinReplyDustKey(\"x/permanent/tenmin-reply-dust/\"), false); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "A3",
+   "category": "add-function",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "title": "[new module] isRdustFileName",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `isRdustFileName(name: string): boolean` to `src/rdust-names.ts` returning name.endsWith(\".rdust\") && name.length > 6\n- `isRdustFileName(\"page-001.rdust\")` is true\n- `isRdustFileName(\".rdust\")` is false\n- `isRdustFileName(\"a.json\")` is false\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { isRdustFileName } from \"../src/rdust-names\";\ntest(\"A3\", () => { assert.equal(isRdustFileName(\"x.rdust\"), true); assert.equal(isRdustFileName(\".rdust\"), false); assert.equal(isRdustFileName(\"x.json\"), false); });\n"
+   },
+   "note": "new module (ADD_FUNCTION_NEW_MODULE)"
+  },
+  {
+   "id": "A4",
+   "category": "plain-language",
+   "skill": "ADD_FUNCTION",
+   "expect": "solve",
+   "title": "[num-utils] odd minute helper",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nPlease add a small helper `isOddMinute(m: number): boolean` to `src/num-utils.ts` that returns true when m % 2 === 1, with a test: isOddMinute(3) is true, isOddMinute(4) is false.\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { isOddMinute } from \"../src/num-utils\";\ntest(\"A4\", () => { assert.equal(isOddMinute(3), true); assert.equal(isOddMinute(4), false); });\n"
+   },
+   "note": "plain wording of an in-scope ADD_FUNCTION"
+  },
+  {
+   "id": "C1",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "title": "[storage] yearsOfStorageGb",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd complex function `yearsOfStorageGb(mbPerDay: number, years: number): number` to `src/storage.ts` with body:\nconst perYear = (mbPerDay * 252) / 1024;\nreturn perYear * years;\n- yearsOfStorageGb(1024, 2) is 504\n- yearsOfStorageGb(0, 5) is 0\n- yearsOfStorageGb(512, 1) is 126\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { yearsOfStorageGb } from \"../src/storage\";\ntest(\"C1\", () => { assert.equal(yearsOfStorageGb(1024, 2), 504); assert.equal(yearsOfStorageGb(2048, 1), 504); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "C2",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "title": "[us-calendar] monthNumberOf",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd complex function `monthNumberOf(date: string): number` to `src/us-calendar.ts` with body:\nconst m = Number(date.slice(5, 7));\nif (m < 1 || m > 12) return 0;\nreturn m;\n- monthNumberOf(\"2026-10-17\") is 10\n- monthNumberOf(\"2026-13-01\") is 0\n- monthNumberOf(\"2026-01-05\") is 1\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { monthNumberOf } from \"../src/us-calendar\";\ntest(\"C2\", () => { assert.equal(monthNumberOf(\"2026-10-17\"), 10); assert.equal(monthNumberOf(\"2026-00-01\"), 0); assert.equal(monthNumberOf(\"2026-12-31\"), 12); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "C3",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "title": "[universe] splitTickerList",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd complex function `splitTickerList(csv: string): string[]` to `src/universe.ts` with body:\nif (csv.trim() === \"\") return [];\nreturn csv.split(\",\").map((s) => s.trim());\n- splitTickerList(\"AAPL, MSFT\") is [\"AAPL\", \"MSFT\"]\n- splitTickerList(\"  \") is []\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { splitTickerList } from \"../src/universe\";\ntest(\"C3\", () => { assert.deepEqual(splitTickerList(\"AAPL, MSFT\"), [\"AAPL\", \"MSFT\"]); assert.deepEqual(splitTickerList(\" \"), []); });\n"
+   },
+   "note": "arrow callback in body"
+  },
+  {
+   "id": "C4",
+   "category": "complex-function",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "solve",
+   "title": "[us-calendar] sessionLabel",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd complex function `sessionLabel(date: string, halfDay: boolean): string` to `src/us-calendar.ts` with body:\nconst suffix = halfDay ? \" (half day)\" : \"\";\nreturn `${date}${suffix}`;\n- sessionLabel(\"2026-11-27\", true) is \"2026-11-27 (half day)\"\n- sessionLabel(\"2026-11-30\", false) is \"2026-11-30\"\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { sessionLabel } from \"../src/us-calendar\";\ntest(\"C4\", () => { assert.equal(sessionLabel(\"2026-11-27\", true), \"2026-11-27 (half day)\"); assert.equal(sessionLabel(\"d\", false), \"d\"); });\n"
+   },
+   "note": "template literal in body"
+  },
+  {
+   "id": "L1",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "title": "[num-utils] maxOf",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd loop function `maxOf(values: readonly number[]): number` to `src/num-utils.ts` with body:\nlet best = 0;\nfor (const v of values) {\nif (v > best) best = v;\n}\nreturn best;\n- maxOf([1, 5, 3]) is 5\n- maxOf([]) is 0\n- maxOf([-2, 0.5]) is 0.5\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { maxOf } from \"../src/num-utils\";\ntest(\"L1\", () => { assert.equal(maxOf([1, 9, 3]), 9); assert.equal(maxOf([]), 0); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "L2",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "title": "[features] countAbove",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd loop function `countAbove(values: readonly number[], limit: number): number` to `src/features.ts` with body:\nlet n = 0;\nfor (const v of values) {\nif (v > limit) n += 1;\n}\nreturn n;\n- countAbove([1, 5, 3], 2) is 2\n- countAbove([], 0) is 0\n- countAbove([1, 1], 1) is 0\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { countAbove } from \"../src/features\";\ntest(\"L2\", () => { assert.equal(countAbove([1, 5, 3], 2), 2); assert.equal(countAbove([3, 4], 0), 2); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "L3",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "title": "[num-utils] digitCount (while)",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd while loop function `digitCount(n: number): number` to `src/num-utils.ts` with body:\nlet d = 1;\nlet x = Math.abs(Math.trunc(n));\nwhile (x >= 10) {\nx = Math.trunc(x / 10);\nd += 1;\n}\nreturn d;\n- digitCount(0) is 1\n- digitCount(12345) is 5\n- digitCount(-99) is 2\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { digitCount } from \"../src/num-utils\";\ntest(\"L3\", () => { assert.equal(digitCount(7), 1); assert.equal(digitCount(1000), 4); assert.equal(digitCount(-12.7), 2); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "L4",
+   "category": "loop-function",
+   "skill": "LOOP_FUNCTION",
+   "expect": "solve",
+   "title": "[tenmin-backfill] padAll",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd loop function `padAll(values: readonly number[]): string[]` to `src/tenmin-backfill.ts` with body:\nconst out: string[] = [];\nfor (const v of values) {\nout.push(pad2(v));\n}\nreturn out;\n- padAll([1, 12]) is [\"01\", \"12\"]\n- padAll([]) is []\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { padAll } from \"../src/tenmin-backfill\";\ntest(\"L4\", () => { assert.deepEqual(padAll([1, 12]), [\"01\", \"12\"]); assert.deepEqual(padAll([]), []); });\n"
+   },
+   "note": "calls an existing local helper (pad2)"
+  },
+  {
+   "id": "D1",
+   "category": "date-function",
+   "skill": "COMPLEX_FUNCTION(date)",
+   "expect": "solve",
+   "title": "[et-time] utcWeekdayOf",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd date function `utcWeekdayOf(d: Date): number` to `src/et-time.ts` with body:\nreturn d.getUTCDay();\n- utcWeekdayOf(new Date(\"2026-10-17T12:00:00Z\")) is 6\n- utcWeekdayOf(new Date(\"2026-10-18T00:00:00Z\")) is 0\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { utcWeekdayOf } from \"../src/et-time\";\ntest(\"D1\", () => { assert.equal(utcWeekdayOf(new Date(\"2026-10-19T00:00:00Z\")), 1); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "D2",
+   "category": "date-function",
+   "skill": "COMPLEX_FUNCTION(date)",
+   "expect": "solve",
+   "title": "[us-calendar] addUtcDays",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd date function `addUtcDays(d: Date, days: number): Date` to `src/us-calendar.ts` with body:\nreturn new Date(d.getTime() + days * 86400000);\n- addUtcDays(new Date(\"2026-10-17T00:00:00Z\"), 1) is new Date(\"2026-10-18T00:00:00Z\")\n- addUtcDays(new Date(\"2026-03-01T00:00:00Z\"), -1) is new Date(\"2026-02-28T00:00:00Z\")\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { addUtcDays } from \"../src/us-calendar\";\ntest(\"D2\", () => { assert.equal(addUtcDays(new Date(\"2026-12-31T00:00:00Z\"), 1).toISOString(), \"2027-01-01T00:00:00.000Z\"); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "G1",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD",
+   "expect": "solve",
+   "title": "[num-utils] guard clampPercent against NaN",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `clampPercent` in `src/num-utils.ts`: throw NOT_FINITE_PERCENT when !Number.isFinite(x)\n- `clampPercent(NaN)` throws NOT_FINITE_PERCENT\n- `clampPercent(150)` is `100`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { clampPercent } from \"../src/num-utils\";\ntest(\"G1\", () => { assert.throws(() => clampPercent(Infinity), /NOT_FINITE_PERCENT/); assert.equal(clampPercent(-5), 0); assert.equal(clampPercent(42), 42); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "G2",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD",
+   "expect": "solve",
+   "title": "[massive-provider] guard groupedDailyPath before 1990",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `groupedDailyPath` in `src/massive-provider.ts`: throw GROUPED_DAILY_TOO_OLD when sessionDate < '1990-01-01'\n- `groupedDailyPath('1989-12-31')` throws GROUPED_DAILY_TOO_OLD\n- `groupedDailyPath('2024-10-15')` is `'/v2/aggs/grouped/locale/us/market/stocks/2024-10-15'`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { groupedDailyPath } from \"../src/massive-provider\";\ntest(\"G2\", () => { assert.throws(() => groupedDailyPath(\"1980-01-01\"), /GROUPED_DAILY_TOO_OLD/); assert.equal(groupedDailyPath(\"2020-01-02\"), \"/v2/aggs/grouped/locale/us/market/stocks/2020-01-02\"); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "G3",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD(top)",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] guard isCancelableDispatchStatus at the top",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `isCancelableDispatchStatus` in `src/tenmin-redispatch.ts` at the top: throw EMPTY_DISPATCH_STATUS when status === ''\n- `isCancelableDispatchStatus('')` throws EMPTY_DISPATCH_STATUS\n- `isCancelableDispatchStatus('queued')` is `true`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { isCancelableDispatchStatus } from \"../src/tenmin-redispatch\";\ntest(\"G3\", () => { assert.throws(() => isCancelableDispatchStatus(\"\"), /EMPTY_DISPATCH_STATUS/); assert.equal(isCancelableDispatchStatus(\"completed\"), false); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "G4",
+   "category": "throw-guard",
+   "skill": "THROW_GUARD",
+   "expect": "solve",
+   "title": "[storage] guard storageUtilizationPercent against negatives",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `storageUtilizationPercent` in `src/storage.ts`: throw NEGATIVE_MB_PER_DAY when mbPerDay < 0\n- `storageUtilizationPercent(-1)` throws NEGATIVE_MB_PER_DAY\n- `storageUtilizationPercent(128)` is `315`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { storageUtilizationPercent } from \"../src/storage\";\ntest(\"G4\", () => { assert.throws(() => storageUtilizationPercent(-0.5), /NEGATIVE_MB_PER_DAY/); assert.equal(storageUtilizationPercent(0), 0); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "M1",
+   "category": "method-guard",
+   "skill": "METHOD_GUARD",
+   "expect": "solve",
+   "title": "[ticker-reference-dated] guard requestContainsApiKey blank",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `requestContainsApiKey` in `src/ticker-reference-dated.ts` with a method: throw EMPTY_REQUEST when request.trim() === ''\n- `requestContainsApiKey('  ')` throws EMPTY_REQUEST\n- `requestContainsApiKey('/v3?apiKey=x')` is `true`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { requestContainsApiKey } from \"../src/ticker-reference-dated\";\ntest(\"M1\", () => { assert.throws(() => requestContainsApiKey(\"\"), /EMPTY_REQUEST/); assert.equal(requestContainsApiKey(\"/v3?x=1\"), false); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "M2",
+   "category": "method-guard",
+   "skill": "METHOD_GUARD",
+   "expect": "solve",
+   "title": "[tenmin-alert] guard alertMarker leading space",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `alertMarker` in `src/tenmin-alert.ts` with a method: throw ALERT_KEY_LEADING_SPACE when key.startsWith(' ')\n- `alertMarker(' x')` throws ALERT_KEY_LEADING_SPACE\n- `alertMarker('a')` is `'<!-- scanner-alert-key: a -->'`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { alertMarker } from \"../src/tenmin-alert\";\ntest(\"M2\", () => { assert.throws(() => alertMarker(\" k\"), /ALERT_KEY_LEADING_SPACE/); assert.equal(alertMarker(\"k\"), \"<!-- scanner-alert-key: k -->\"); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "T1",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[task] characterization test for tenMinPairManifestKey",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinPairManifestKey in src/tenmin-backfill.ts: pair manifest keys\n- tenMinPairManifestKey(\"2024-10-15\") is \"permanent/tenmin-reply-dust/2024-09-01_2024-10-31/manifest.json\"\n- tenMinPairManifestKey(\"2024-01-01\") is \"permanent/tenmin-reply-dust/2024-01-01_2024-02-29/manifest.json\"\n- tenMinPairManifestKey(\"bad\") throws INVALID_SESSION_DATE\n",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-backfill.ts",
+     "fn": "tenMinPairManifestKey"
+    }
+   },
+   "note": "the only exported helper with no test at all"
+  },
+  {
+   "id": "T2",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[task] characterization test for bandOf",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for bandOf in src/num-utils.ts: band positions\n- bandOf(5, 0, 10) is \"inside\"\n- bandOf(-1, 0, 10) is \"below\"\n- bandOf(11, 0, 10) is \"above\"\n- bandOf(1, 5, 0) throws BAD_BAND\n",
+   "accept": {
+    "mutate": {
+     "file": "src/num-utils.ts",
+     "fn": "bandOf"
+    }
+   },
+   "note": ""
+  },
+  {
+   "id": "T3",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[task] characterization test for groupedDailyPath",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for groupedDailyPath in src/massive-provider.ts: grouped daily path\n- groupedDailyPath(\"2024-10-15\") is \"/v2/aggs/grouped/locale/us/market/stocks/2024-10-15\"\n- groupedDailyPath(\"2024-1-5\") throws INVALID_GROUPED_DAILY_DATE\n",
+   "accept": {
+    "mutate": {
+     "file": "src/massive-provider.ts",
+     "fn": "groupedDailyPath"
+    }
+   },
+   "note": ""
+  },
+  {
+   "id": "T4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[task] characterization test for statusCodeOf",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for statusCodeOf in src/tenmin-range-entries.ts: wire codes\n- statusCodeOf(\"STORED\") is 1\n- statusCodeOf(\"GROUPED_DAILY_MISSING\") is 2\n- statusCodeOf(\"something else\") is 7\n",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-range-entries.ts",
+     "fn": "statusCodeOf"
+    }
+   },
+   "note": ""
+  },
+  {
+   "id": "T5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[task] characterization test for datedTickerPageKey",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for datedTickerPageKey in src/ticker-reference-dated.ts: page keys\n- datedTickerPageKey(\"2024-10-15\", 2) is \"permanent/ticker-reference-dated/2024-10-15/page-002.rdust\"\n- datedTickerPageKey(\"2024-10-15\", 0) throws INVALID_DATED_TICKER_PAGE\n",
+   "accept": {
+    "mutate": {
+     "file": "src/ticker-reference-dated.ts",
+     "fn": "datedTickerPageKey"
+    }
+   },
+   "note": ""
+  },
+  {
+   "id": "E1",
+   "category": "env-fix",
+   "skill": "ENV_FIX",
+   "expect": "solve",
+   "title": "[gap-refill-lib] strict VERIFY_SKIP_ROW_OBSERVED_AT",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nmake env `VERIFY_SKIP_ROW_OBSERVED_AT` strict in `src/gap-refill-lib.ts` as a flag\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"E1\", () => { const s = readFileSync(\"src/gap-refill-lib.ts\", \"utf8\"); assert.match(s, /VERIFY_SKIP_ROW_OBSERVED_AT/); assert.doesNotMatch(s, /if \\(!process\\.env\\.VERIFY_SKIP_ROW_OBSERVED_AT\\)/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "E2",
+   "category": "env-fix",
+   "skill": "ENV_FIX",
+   "expect": "refuse",
+   "title": "[gap-refill] REFILL_BUDGET_MS already strict",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nmake env `REFILL_BUDGET_MS` strict in `src/gap-refill.ts` as an integer 1..21600000\n",
+   "accept": {},
+   "note": "already strict on main: nothing to do"
+  },
+  {
+   "id": "I1",
+   "category": "import-edit",
+   "skill": "IMPORT_EDIT",
+   "expect": "solve",
+   "title": "[daily-bars-sidecar] inline type import",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nchange import of `./contracts` in `src/daily-bars-sidecar.ts` to: `import { type CanonicalDailyBar, type SecurityMasterRecord } from \"./contracts\";`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"I1\", () => { const s = readFileSync(\"src/daily-bars-sidecar.ts\", \"utf8\"); assert.match(s, /import \\{ type CanonicalDailyBar, type SecurityMasterRecord \\} from \"\\.\\/contracts\";/); assert.doesNotMatch(s, /import type \\{ CanonicalDailyBar/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "W1",
+   "category": "workflow",
+   "skill": "WORKFLOW_STEP",
+   "expect": "solve",
+   "title": "[ci] typecheck scanner step in tenmin-mode-sim",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd workflow step `Typecheck scanner` to job `sim` in `.github/workflows/tenmin-mode-sim.yml` running `pnpm run typecheck:scanner`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"W1\", () => { const y = readFileSync(\".github/workflows/tenmin-mode-sim.yml\", \"utf8\"); const sim = y.split(/\\n  typecheck-worker:/)[0]!; assert.match(sim, /name: Typecheck scanner\\s+run: pnpm run typecheck:scanner/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "W2",
+   "category": "workflow",
+   "skill": "WORKFLOW_JOB",
+   "expect": "solve",
+   "title": "[ci] typecheck-scanner job in tenmin-mode-sim",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd workflow job `typecheck-scanner` to `.github/workflows/tenmin-mode-sim.yml` running `pnpm run typecheck:scanner` as step `Typecheck scanner`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"W2\", () => { const y = readFileSync(\".github/workflows/tenmin-mode-sim.yml\", \"utf8\"); assert.match(y, /\\n  typecheck-scanner:\\n/); assert.match(y, /run: pnpm run typecheck:scanner/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "S1",
+   "category": "tsconfig-script",
+   "skill": "TSCONFIG_SCRIPT",
+   "expect": "solve",
+   "title": "[ci] typecheck:readapi",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd typecheck script `typecheck:readapi` with new `tsconfig.readapi.json` checking only `src/read-api.ts`\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"S1\", () => { const p = JSON.parse(readFileSync(\"package.json\", \"utf8\")); assert.equal(typeof p.scripts[\"typecheck:readapi\"], \"string\"); const t = JSON.parse(readFileSync(\"tsconfig.readapi.json\", \"utf8\")); assert.ok(JSON.stringify(t).includes(\"src/read-api.ts\")); });\n",
+    "cmd": "pnpm -s run typecheck:readapi"
+   },
+   "note": ""
+  },
+  {
+   "id": "K1",
+   "category": "kernel-family",
+   "skill": "OBJECT_PROPERTY",
+   "expect": "solve",
+   "title": "[massive-provider] grouped daily param",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd property sort with value \"asc\" to object GROUPED_DAILY_PARAMS\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { GROUPED_DAILY_PARAMS } from \"../src/massive-provider\";\ntest(\"K1\", () => { assert.equal(GROUPED_DAILY_PARAMS.sort, \"asc\"); assert.equal(GROUPED_DAILY_PARAMS.adjusted, \"false\"); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "K2",
+   "category": "kernel-family",
+   "skill": "TYPE_FIELD",
+   "expect": "solve",
+   "title": "[tenmin-backfill] note field",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd an optional field note of type string to type OlderBackfillStep\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"K2\", () => { const s = readFileSync(\"src/tenmin-backfill.ts\", \"utf8\"); const b = s.slice(s.indexOf(\"export interface OlderBackfillStep\")); assert.match(b.slice(0, b.indexOf(\"}\\n\") + 2), /note\\?: string/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "K3",
+   "category": "kernel-family",
+   "skill": "UNION_MEMBER",
+   "expect": "solve",
+   "title": "[oneoff] partial result",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd \"partial\" to the union type OneOffResult\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\ntest(\"K3\", () => { const s = readFileSync(\"src/oct2024-tenmin-oneoff.ts\", \"utf8\"); assert.match(s, /export type OneOffResult = [^;]*\"partial\"/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "K4",
+   "category": "kernel-family",
+   "skill": "EXPORTED_CONSTANT",
+   "expect": "solve",
+   "title": "[ticker-reference-dated] page cap constant",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd an exported constant MAX_DATED_TICKER_PAGES with value 500 to src/ticker-reference-dated.ts\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { MAX_DATED_TICKER_PAGES } from \"../src/ticker-reference-dated\";\ntest(\"K4\", () => { assert.equal(MAX_DATED_TICKER_PAGES, 500); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "K5",
+   "category": "kernel-family",
+   "skill": "GUARD_RETURN",
+   "expect": "solve",
+   "title": "[num-utils] sumOf empty guard",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a guard to sumOf that returns 0 when values is empty\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { sumOf } from \"../src/num-utils\";\ntest(\"K5\", () => { assert.equal(sumOf([]), 0); assert.equal(sumOf([1, 2]), 3); const s = readFileSync(\"src/num-utils.ts\", \"utf8\"); assert.match(s, /values\\.length === 0/); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "K6",
+   "category": "kernel-family",
+   "skill": "SET_LITERAL(core)",
+   "expect": "solve",
+   "title": "[oneoff] chain cap 12",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nset ONEOFF_MAX_CHAIN in src/oct2024-tenmin-oneoff.ts to 12\n",
+   "accept": {
+    "ts": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { ONEOFF_MAX_CHAIN } from \"../src/oct2024-tenmin-oneoff\";\ntest(\"K6\", () => { assert.equal(ONEOFF_MAX_CHAIN, 12); });\n"
+   },
+   "note": ""
+  },
+  {
+   "id": "N1",
+   "category": "refactor",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[refactor] rename pad2",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nRename `pad2` in `src/tenmin-backfill.ts` to `padTwo` and update every caller and test.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N2",
+   "category": "bugfix-body",
+   "skill": "MODIFY_BODY",
+   "expect": "refuse",
+   "title": "[tenmin-backfill] isIsoDateText accepts letters",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nisIsoDateText in src/tenmin-backfill.ts accepts \"2024-1x-01\". Change its body to `return /^\\d{4}-\\d{2}-\\d{2}$/.test(s);` so only digits pass.\n- `isIsoDateText(\"2024-1x-01\")` is false\n- `isIsoDateText(\"2024-10-01\")` is true\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N3",
+   "category": "type-change",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[tenmin-backfill] ratePerMin on OlderBackfillStep",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a required field `ratePerMin: number` to `OlderBackfillStep` in src/tenmin-backfill.ts and set it to 5 in planOlderBackfill.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N4",
+   "category": "async",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[massive-provider] retry on 503",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nIn src/massive-provider.ts, retry a request up to 3 times with exponential backoff (1s, 2s, 4s) when Massive answers HTTP 503.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N5",
+   "category": "refactor",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[storage] use utcDateKey",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nReplace the inline `toISOString().slice(0, 10)` calls in src/storage.ts with `utcDateKey` imported from ./et-time.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N6",
+   "category": "delete",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[packed-fixture] remove legacy helper",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nDelete `legacyFixtureCannotBeReproduced` from src/packed-fixture.ts and its assertion in src/archive-sync.test.ts.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N7",
+   "category": "workflow-config",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[ci] scanner cron",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nChange the cron schedule in .github/workflows/scanner.yml from 05:30 UTC to 05:45 UTC.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N8",
+   "category": "dependency",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[deps] bump typescript",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nBump typescript in package.json to 5.9.4 and update pnpm-lock.yaml.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N9",
+   "category": "async",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[massive-provider] fetchJsonWithTimeout",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `fetchJsonWithTimeout(url: string, ms: number): Promise<unknown>` to `src/massive-provider.ts` that aborts the fetch after ms milliseconds\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N10",
+   "category": "new-class",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[rate-limiter] class",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nCreate src/rate-limiter.ts with a class `RateLimiter` that allows at most N calls per minute, with tests.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N11",
+   "category": "debugging",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[tenmin] chain stalled",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nThe tenmin chain stalled last night with TENMIN_REDISPATCH_SCAN_CANCELLED:check-failed. Find out why and fix it.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N12",
+   "category": "multi-step",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[features] helper and use it",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\n1. add function `isPositive(x: number): boolean` to `src/num-utils.ts` returning x > 0\n2. use isPositive in src/features.ts wherever `> 0` is checked\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N13",
+   "category": "bugfix-body",
+   "skill": "MODIFY_BODY",
+   "expect": "refuse",
+   "title": "[num-utils] bandOf equal bounds",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nIn bandOf (src/num-utils.ts), when hi === lo return \"inside\" only if x === lo, otherwise \"below\" or \"above\".\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "N14",
+   "category": "type-change",
+   "skill": "no skill",
+   "expect": "refuse",
+   "title": "[contracts] add ETN asset type",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd \"ETN\" to AssetType in src/contracts.ts and handle it everywhere AssetType is switched on.\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X1",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "title": "path traversal",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `evil(s: string): string` to `../outside.ts` returning s\n- `evil(\"a\")` is \"a\"\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X2",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "title": "denied file host.ts",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `hostName(s: string): string` to `src/host.ts` returning s\n- `hostName(\"a\")` is \"a\"\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X3",
+   "category": "adversarial",
+   "skill": "THROW_GUARD",
+   "expect": "refuse",
+   "title": "guard a function that does not exist",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `noSuchFn` in `src/num-utils.ts`: throw BAD when x < 0\n- `noSuchFn(-1)` throws BAD\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X4",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "title": "name collision",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `clampPercent(x: number): number` to `src/num-utils.ts` returning x\n- `clampPercent(5)` is 5\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X5",
+   "category": "adversarial",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "refuse",
+   "title": "shell exec body",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd complex function `runIt(cmd: string): string` to `src/num-utils.ts` with body:\nconst cp = require(\"node:child_process\");\nreturn String(cp.execSync(cmd));\n- runIt(\"echo a\") is \"a\\n\"\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X6",
+   "category": "adversarial",
+   "skill": "LOOP_FUNCTION",
+   "expect": "refuse",
+   "title": "impure clock in loop",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd loop function `nowPlus(ms: number): number` to `src/num-utils.ts` with body:\nlet t = Date.now();\nfor (let i = 0; i < 1; i++) {\nt += ms;\n}\nreturn t;\n- nowPlus(0) is 0\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X7",
+   "category": "adversarial",
+   "skill": "COMPLEX_FUNCTION(date)",
+   "expect": "refuse",
+   "title": "local time zone",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd date function `etHour(d: Date): number` to `src/et-time.ts` with body:\nreturn d.getHours();\n- etHour(new Date(\"2026-10-17T12:00:00Z\")) is 12\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X8",
+   "category": "adversarial",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "refuse",
+   "title": "characterize an I/O function",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for prepareSafeStoreDirectory in src/store-path.ts: creates dirs\n- prepareSafeStoreDirectory(\"/tmp/x\", \"E\") is \"/tmp/x\"\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X9",
+   "category": "adversarial",
+   "skill": "THROW_GUARD",
+   "expect": "refuse",
+   "title": "guard with a wrong expected value",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nguard `clampPercent` in `src/num-utils.ts`: throw NOT_FINITE_PERCENT when !Number.isFinite(x)\n- `clampPercent(NaN)` throws NOT_FINITE_PERCENT\n- `clampPercent(150)` is `150`\n",
+   "accept": {},
+   "note": "the second example is false on the real code; a correct pipeline refuses"
+  },
+  {
+   "id": "X10",
+   "category": "adversarial",
+   "skill": "ADD_FUNCTION",
+   "expect": "refuse",
+   "title": "secret read",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd function `apiKeyOf(name: string): string` to `src/num-utils.ts` returning process.env[name] ?? \"\"\n- `apiKeyOf(\"MASSIVE_API_KEY\")` is \"\"\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X11",
+   "category": "adversarial",
+   "skill": "WORKFLOW_STEP",
+   "expect": "refuse",
+   "title": "workflow not opted in",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd workflow step `Typecheck` to job `scan` in `.github/workflows/scanner.yml` running `pnpm run typecheck`\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X12",
+   "category": "adversarial",
+   "skill": "WORKFLOW_STEP",
+   "expect": "refuse",
+   "title": "script does not exist",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd workflow step `Lint` to job `sim` in `.github/workflows/tenmin-mode-sim.yml` running `pnpm run lint`\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X13",
+   "category": "adversarial",
+   "skill": "IMPORT_EDIT",
+   "expect": "refuse",
+   "title": "import a symbol that does not exist",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nchange import of `./contracts` in `src/daily-bars-sidecar.ts` to: `import { type NoSuchType } from \"./contracts\";`\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X14",
+   "category": "adversarial",
+   "skill": "ENV_FIX",
+   "expect": "refuse",
+   "title": "denied file host.ts env",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nmake env `PEACEAI_MARKETS_SCHEDULER_PROBE` strict in `src/host.ts` as a flag\n",
+   "accept": {},
+   "note": ""
+  },
+  {
+   "id": "X15",
+   "category": "adversarial",
+   "skill": "COMPLEX_FUNCTION",
+   "expect": "refuse",
+   "title": "self-zone (PeaceAI protected file) via PeaceSTOCKS target",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd complex function `zz(x: number): number` to `.github/workflows/zz.ts` with body:\nreturn x;\n- zz(1) is 1\n",
+   "accept": {},
+   "note": ""
+  }
+ ]
+}
