@@ -1,0 +1,126 @@
+{
+ "schema": "peaceai-m47-evidence:v1",
+ "source": "AST scan of the #148 external manifest (peaceai/model/ext-manifest.jsonl): external licensed files only, sha256 verified against the manifest",
+ "counts": {
+  "files": 47642,
+  "shaBad": 16,
+  "functionsWithParams": 66101,
+  "firstStatementParamGuards": 588,
+  "reposWithGuards": 31,
+  "topGuardThenEarlyReturn": 11,
+  "exitFirstThenThrowSomewhere": 95
+ },
+ "note": "firstStatementParamGuards = functions whose first statement is if (<cond reading a parameter>) throw. topGuardThenEarlyReturn = those where the leading throw guard(s) are followed by an early-exit if (...) return: the case where function-top and v1's function-entry placement differ. The earlier 0-of-334 came from a diff-hunk regex over added lines only, not from the corpus.",
+ "examples": [
+  {
+   "repo": "angular/angular",
+   "commit": "3d0c9c8c350ce0bc753717f91a91d50f27e18c9d",
+   "path": "packages/common/http/testing/src/request.ts",
+   "sha256": "0cc6e63d41b1ca7a78cbd070ff829c4d7402037f585955db8a57410bb7aa7d68",
+   "line": 192,
+   "guard": "if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) {\n    throw new Error(`Automatic conversion to ${format} is not supported for ArrayBuffer",
+   "next": "if (\n    typeof body === 'string' ||\n    typeof body === 'number' ||\n    typeof body === 'object' ||\n    typeof body ===",
+   "license": "MIT"
+  },
+  {
+   "repo": "denoland/std",
+   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
+   "path": "http/unstable_structured_fields_test.ts",
+   "sha256": "72f790f1fd407cab8c2c2fb8669d130656ea3199821c17d89ee9371b86197f19",
+   "line": 736,
+   "guard": "if (expected === null || expected === undefined) {\n    throw new Error(\"Unexpected null/undefined bare item\");\n  }",
+   "next": "if (typeof expected === \"boolean\") {\n    return boolean(expected);\n  }",
+   "license": "MIT"
+  },
+  {
+   "repo": "denoland/std",
+   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
+   "path": "text/truncate.ts",
+   "sha256": "df45e524ef2838717075f969b8011260b6af297154088210d1a6f0eafb8663d2",
+   "line": 89,
+   "guard": "if (!Number.isInteger(maxLength) || maxLength < 0) {\n    throw new RangeError(\n      `Cannot truncate: maxLength must be a non-negative integer, received ${maxL",
+   "next": "if (maxLength === 0) return \"\";",
+   "license": "MIT"
+  },
+  {
+   "repo": "denoland/std",
+   "commit": "f834d0223364361169314833e3c7a8f62ce11d58",
+   "path": "xml/_parser.ts",
+   "sha256": "538e1a1d8c306eb5fd133e6cedd716fa82d8aaf6054ceb3c4d3b1432a8ac239c",
+   "line": 623,
+   "guard": "if (target.includes(\":\")) {\n      throw new XmlSyntaxError(\n        \"Cannot use ':' in processing instruction target (Namespaces \u00a73)\",\n        { line, column, o",
+   "next": "if (this.#ignoreProcessingInstructions) return;",
+   "license": "MIT"
+  },
+  {
+   "repo": "jestjs/jest",
+   "commit": "61050e9323e742539dc2360236671110e37329e6",
+   "path": "packages/jest-mock/src/index.ts",
+   "sha256": "708ff98aaac6b8c1f18e395c705a4aaa80581266d97ef2c20bae03b184140467",
+   "line": 1274,
+   "guard": "if (\n      object == null ||\n      (typeof object !== 'object' && typeof object !== 'function')\n    ) {\n      throw new Error(\n        `Cannot use spyOn on a pr",
+   "next": "if (accessType) {\n      return this._spyOnProperty(object, methodKey, accessType);\n    }",
+   "license": "MIT"
+  },
+  {
+   "repo": "sinonjs/sinon",
+   "commit": "84e91a491b5d88b81e6a80e5dd3f77520577f9e8",
+   "path": "src/sinon/spy.js",
+   "sha256": "f969c9c579a7e2a103fd7f6308618cb60b7f6c445d8d18ac25f3f6c054e67eab",
+   "line": 179,
+   "guard": "if (isEsModule(object)) {\n        throw new TypeError(\"ES Modules cannot be spied\");\n    }",
+   "next": "if (!property && typeof object === \"function\") {\n        return createSpy(object, context);\n    }",
+   "license": "BSD-3-Clause"
+  },
+  {
+   "repo": "sveltejs/svelte",
+   "commit": "86eb09b76ef9c81e8b34adf7eaaf63974a66aaa9",
+   "path": "packages/svelte/src/compiler/utils/fuzzymatch.js",
+   "sha256": "cc36fccefbce79c29037218f438f4f79cd1606f2199e2ca6e03985233a538beb",
+   "line": 28,
+   "guard": "if (str1 === null && str2 === null) {\n\t\tthrow 'Trying to compare two null values';\n\t}",
+   "next": "if (str1 === null || str2 === null) return 0;",
+   "license": "MIT"
+  },
+  {
+   "repo": "sveltejs/svelte",
+   "commit": "86eb09b76ef9c81e8b34adf7eaaf63974a66aaa9",
+   "path": "packages/svelte/src/internal/client/error-handling.js",
+   "sha256": "1325aac40e4cdb39b91bdea8c250c80117133eba94e2cc76914115abbf724212",
+   "line": 55,
+   "guard": "if (error === HYDRATION_ERROR) {\n\t\tthrow error;\n\t}",
+   "next": "if (effect !== null && (effect.f & DESTROYED) !== 0) {\n\t\treturn;\n\t}",
+   "license": "MIT"
+  },
+  {
+   "repo": "vercel/next.js",
+   "commit": "3f1086bdafa79f3cfc60411bddeb34b60af8a885",
+   "path": "scripts/adopt-pr.js",
+   "sha256": "f3fd6f7d0b7180e33b269cd2a76e89af9bdce78fa3b86d14461f226c09d47b49",
+   "line": 337,
+   "guard": "if (pr.state === 'MERGED') {\n    throw new Error(\n      `PR #${pr.number} is already merged, so its commits are in ` +\n        `${pr.baseRef}. There is nothing ",
+   "next": "if (dryRun) {\n    return\n  }",
+   "license": "MIT"
+  },
+  {
+   "repo": "withastro/astro",
+   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
+   "path": "packages/astro/src/actions/runtime/server.ts",
+   "sha256": "5a56a4ab7a6cd0723bcc56302dfbf7313a795a924e3d6d39b8d9a39d268f3e7e",
+   "line": 80,
+   "guard": "if (!(unparsedInput instanceof FormData)) {\n\t\t\tthrow new ActionError({\n\t\t\t\tcode: 'UNSUPPORTED_MEDIA_TYPE',\n\t\t\t\tmessage: 'This action only accepts FormData.',\n\t\t",
+   "next": "if (!inputSchema) return await handler(unparsedInput, context);",
+   "license": "MIT"
+  },
+  {
+   "repo": "withastro/astro",
+   "commit": "2715958666b0a706b069d0592da3a070b3796a9b",
+   "path": "packages/astro/src/actions/runtime/server.ts",
+   "sha256": "5a56a4ab7a6cd0723bcc56302dfbf7313a795a924e3d6d39b8d9a39d268f3e7e",
+   "line": 114,
+   "guard": "if (unparsedInput instanceof FormData) {\n\t\t\tthrow new ActionError({\n\t\t\t\tcode: 'UNSUPPORTED_MEDIA_TYPE',\n\t\t\t\tmessage: 'This action only accepts JSON.',\n\t\t\t});\n\t\t",
+   "next": "if (!inputSchema) return await handler(unparsedInput, context);",
+   "license": "MIT"
+  }
+ ]
+}
