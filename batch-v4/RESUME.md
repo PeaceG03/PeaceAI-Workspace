@@ -141,3 +141,7 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 ## 2026-10-17 ~16:10 MDT
 - #375 merged bf439a9. Verdicts A right on #368, #370-#374; stacked on PeaceSTOCKS 47cfaaf..5c41528 (CI Tests green, run 39072877942).
 - Builder-log PR #376 (m83/builder-log-te 9c5f147): seq 133 proof + 134-138 real; TEST_CASE_EXISTING APPROVED_SINCE 2026-10-17 13:42 + LIVE_PROVEN seq 133; rule-skill mapping; coverage 32/88 (36.4%). Trace Results mode OK; rule-skill OK. Awaiting Auditor PASS (parent relays); do not merge before.
+
+## 2026-10-17 ~17:25 MDT stress test v1
+- Branch notes/stress-v1 (worktree /workspace/stress/repo): 66 tasks, runner, REPORT.md, report.json. Score 51/66 = 77.3% (21/36 solves, 30/30 refusals, 0 wrong, 15 false refusals, 0 crashes). Box needs Node 22 for confined Job B (/workspace/stress/node22).
+- PR #377 m84/stress-parse-fixes 649b238 (taskmap HTML comment in quotes; 'is [..]' deepEqual; NaN/Infinity). Re-run: 53/66. Needs Auditor.
