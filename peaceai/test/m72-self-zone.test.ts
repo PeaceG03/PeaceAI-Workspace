@@ -99,7 +99,8 @@ test("loadTargets: selfZone only true and only on this Workspace", () => {
     const on = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: true as const });
     const off = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: undefined });
     assert.ok(on.isSource("peaceai/docs/a.md") && !off.isSource("peaceai/docs/a.md"));
-    assert.ok(!on.isSource("peaceai/lib/self-zone.ts") && on.isDenied("peaceai/lib/self-zone.ts"));
+    for (const p of MUST_BE_PROTECTED) assert.ok(!on.isSource(p), p);
+    assert.equal(on.isDenied("README.md"), off.isDenied("README.md"), "isDenied (read by validateFix) is unchanged by the zone");
     assert.ok(on.isSource("src/a.ts") && !on.isDenied("src/a.ts"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

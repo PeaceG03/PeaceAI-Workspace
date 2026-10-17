@@ -4,7 +4,7 @@
 // treated as PRIVATE and fails closed: its content is never fetched into a public run. Only targets
 // with a scope config in peaceai/targets.json run at all.
 import { WORKFLOW_FILE } from "./learned-workflow.ts";
-import { inSafeZone, isSelfProtected, WORKSPACE_TARGET } from "./self-zone.ts";
+import { inSafeZone, WORKSPACE_TARGET } from "./self-zone.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -120,8 +120,9 @@ export function scopeOf(config: TargetConfig) {
   return {
     isSource: (path: string) => plainSource(path) || (selfZone && inSafeZone(path)),
     isTest: (path: string) => test.test(path),
-    // M72: outside src/, a self-zone target denies every protected file (belt and braces; isSource already excludes them).
-    isDenied: (path: string) => deny.some((d) => d.test(path)) || (selfZone && !plainSource(path) && isSelfProtected(path)),
+    // M72: isDenied is unchanged by the self zone (validateFix reads it for fix commits); protected files are never
+    // isSource (inSafeZone excludes them), and applyRule refuses them by name (self_protected_path).
+    isDenied: (path: string) => deny.some((d) => d.test(path)),
     isWorkflow: (path: string) => !!workflow && workflow.test(path) && WORKFLOW_FILE.test(path),
     tsconfigScript: config.tsconfigScript === true,
     selfZone,
