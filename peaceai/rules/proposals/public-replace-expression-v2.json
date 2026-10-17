@@ -1,0 +1,25 @@
+{
+ "id": "public-replace-expression-v2",
+ "kind": "REPLACE_EXPRESSION",
+ "shape": "EXPR_REPLACE",
+ "status": "proposal-off-wired",
+ "flag": "none (the engine has no dev flag); Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-body.ts (M27 engine after Auditor #136 rounds 1-3; Job B: gradeSelf replaceExpression, assertion-only before-run)",
+ "scope": "replace ONE if-condition or return value in place inside the uniquely named exported function, matched token by token; NEW over OLD's names, the parameters and prior const/let locals, the fixed pure vocabulary and OLD's callees; per-repo EDITABLE_PATHS allow-list only (8 PeaceSTOCKS leaf modules, 4 Workspace modules); one new test file from the task's bullets",
+ "refusals": "no candidate (null) on a path off the allow-list, a protected or test path, zero or several sites, a site in a nested function, NEW equal to OLD by tokens, a constant condition, or NEW outside the vocabulary",
+ "evidence": {
+  "examples": 15,
+  "repos": 14,
+  "file": "peaceai/rules/proposals/m85-replace-expression-v2-evidence.json",
+  "method": "git history scan of 411 cloned permissive TypeScript repos: one-hunk single-line if/return replacements in exported functions that the engine's own site and vocabulary checks accept on the parent text (no training-corpus overlap)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: no fitting commit in PeaceSTOCKS (217 commits) or PeaceAI-Workspace (228 commits); both are in the corpus manifest. Supersedes M27's 5/27 Peace-only evidence (spec removed in 2504a18); public-replace-expression-v1 stays absent"
+ },
+ "learned": "peaceai/rules/learned/public-replace-expression-v2.json",
+ "tests": [
+  "peaceai/test/m85-replace-expression.test.ts"
+ ],
+ "untouched": "EDITABLE_PATHS (not widened), the engine's vocabulary and Job B grading"
+}

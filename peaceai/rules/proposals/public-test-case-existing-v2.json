@@ -1,0 +1,25 @@
+{
+ "id": "public-test-case-existing-v2",
+ "kind": "TEST_EXISTING",
+ "shape": "TEST_CASE_EXISTING",
+ "status": "proposal-off-wired",
+ "flag": "none for the v2 target; Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-test-existing.ts (target exported-pure-function-v2); Job B: gradeExisting with the v2 re-check over the scope's non-test source files and the object-aware stub",
+ "scope": "the v1 characterization test (one new test file, no source edit) for an existing exported function whose signature uses plain-data types (interfaces, type aliases, object types, arrays, unions and literals; tuples are refused; at most 3 deep and 16 members, no functions, classes or index signatures) or whose body calls pure exports of relative sibling modules (at most 4 modules, 2 hops, each vetted by the same purity analysis); checks may pass object literals",
+ "refusals": "the v1 refusals by name; not_needed when the v1 target already accepts the function (one candidate per task)",
+ "evidence": {
+  "examples": 13,
+  "repos": 7,
+  "file": "peaceai/rules/proposals/m85-test-case-existing-v2-evidence.json",
+  "method": "git history scan of 411 cloned permissive TypeScript repos: commits adding or changing a test that calls an existing exported function the v1 target refuses and the v2 target accepts on the module at the commit (siblings pinned as fixtures; no training-corpus overlap)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: PeaceSTOCKS has two fitting functions (decideBackfill, estimateTenMinRangeRemaining) and PeaceAI-Workspace none; both repos are in the corpus manifest, so they are recorded and not counted. 3 of the 13 examples need a followed sibling import (gap 7); the rest are signature-only (gap 1)"
+ },
+ "learned": "peaceai/rules/learned/public-test-case-existing-v2.json",
+ "tests": [
+  "peaceai/test/m85-test-case-existing-v2.test.ts"
+ ],
+ "untouched": "public-test-case-existing-v1 (same params, target exported-pure-function) and its grading"
+}
