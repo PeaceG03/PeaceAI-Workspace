@@ -15,6 +15,9 @@ export interface RequestVariant {
 
 /** True when the HTML comment at [at, end) sits inside one inline code span (`...`) on its own line (Auditor #377 note:
  *  code spans only; a comment in plain prose or a bare quote is still hidden Markdown and removed). */
+/** Private-use placeholder for a template literal's backtick while the Markdown backticks are stripped. */
+const TEMPLATE_TICK = "\uE000";
+
 export function insideCodeSpan(all: string, at: number, end: number): boolean {
   const lineStart = all.lastIndexOf("\n", at - 1) + 1;
   const nl = all.indexOf("\n", end);
@@ -34,7 +37,12 @@ export function cleanIssueText(input: TaskInput): string {
     // (>, >=, and the > of =>). <, <=, ===, !== were never touched. Backticks and "#" are still dropped; "*" too, except below.
     .replace(/^[ \t]*(?:>[ \t]?)+/gm, "")
     // Live proof #304: a binary "*" between spaces (`a * b`) is code, not Markdown emphasis or a bullet; keep it.
+    // M85 (stress C4): a backtick span holding a `${...}` substitution on one line is a template literal (code), not
+    // Markdown: its backticks are kept (TEMPLATE_TICK placeholder) while every other backtick is dropped.
+    .replace(/\uE000/g, " ")
+    .replace(/`[^`\n]*\$\{[^`\n]*`/g, (m) => m.replaceAll("`", TEMPLATE_TICK))
     .replace(/[`#]|(?<!\S )\*|\*(?! )/g, " ")
+    .replaceAll(TEMPLATE_TICK, "`")
     // Markdown emphasis underscores only; identifiers such as MAX_ITEMS keep theirs.
     .replace(/(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, " ")
     .replace(/[ \t]+/g, " ")

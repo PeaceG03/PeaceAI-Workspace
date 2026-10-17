@@ -31,6 +31,8 @@ const CHECK_LINE: { kind: TestCheckKind; re: RegExp }[] = [
   { kind: "deepEqual", re: /^[-*] (?<expr>.+) equals \x60?(?<value>[[{].*[\]}])\x60?\.?$/ },
   // Stress v1: "is [..]" / "is {..}" is the natural wording of an array/object expectation: the same deepEqual check.
   { kind: "deepEqual", re: /^[-*] (?<expr>.+) is \x60?(?<value>[[{].*[\]}])\x60?\.?$/ },
+  // M85 (stress D2): a Date result is written `is new Date("ISO")`; read as deepEqual (Dates compare by time value).
+  { kind: "deepEqual", re: /^[-*] (?<expr>.+) is \x60?(?<value>new Date\("[^"\n]{1,32}"\))\x60?\.?$/ },
   { kind: "equal", re: new RegExp(String.raw`^[-*] (?<expr>.+) is \x60?(?<value>${LIT})\x60?\.?$`) },
 ];
 
@@ -154,9 +156,9 @@ export function importStyle(files: readonly { path: string; content: string }[],
   return ts_ > none ? "ts" : "none";
 }
 
-const renderValue = (text: string) => {
+const renderValue = (text: string, date = false) => {
   const e = parseExpr(text);
-  return e && isLiteralValue(e) ? e.getText() : null;
+  return e && (isLiteralValue(e) || (date && isDateLiteral(e))) ? e.getText() : null;
 };
 const slug = (s: string) => {
   const full = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -203,9 +205,9 @@ export function buildTestEdit(
     roots.add(root);
     const expr = e.getText();
     if (c.kind === "equal" || c.kind === "deepEqual") {
-      const v = renderValue(c.value ?? "");
+      const v = renderValue(c.value ?? "", c.kind === "deepEqual" && params.expected === "date-literal");
       if (v === null) return null;
-      if (c.kind === "deepEqual" && !/^[[{]/.test(v)) return null;
+      if (c.kind === "deepEqual" && !/^(?:[[{]|new Date\(")/.test(v)) return null;
       body.push(`  assert.${c.kind}(${expr}, ${v});`);
     } else if (c.kind === "throws") body.push(`  assert.throws(() => ${expr}, /${c.code}/);`);
     else body.push(`  await assert.rejects(async () => ${expr}, /${c.code}/);`);

@@ -516,8 +516,10 @@ export function buildComplexEdit(params: Record<string, string | string[]>, task
   const base = target.content.endsWith("\n") ? target.content : `${target.content}\n`;
   const content = `${base}\n${fnText}`;
   const withFn = files.map((f) => (f.path === target.path ? { path: f.path, content } : f));
+  // M85 (stress D2): a DATE task whose declared return is Date may write `is new Date("ISO")` (deepEqual); this
+  // builder-only key is never a learned spec param, so ADD_TEST_CASE specs keep refusing Date expected values (M35).
   // M74: a DATE task with a Date parameter writes its checks with `new Date("ISO")` arguments (the M35 grammar).
-  const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file", ...(dates && task.params.some((p) => p.type === "Date") ? { args: "date-literal" } : {}) };
+  const testParams = { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "fail-before-pass-after", matcher: "regex", maxLines: "12", placement: "new-file", ...(dates && task.params.some((p) => p.type === "Date") ? { args: "date-literal" } : {}), ...(dates && task.ret === "Date" ? { expected: "date-literal" } : {}) };
   const test = buildTestEdit(testParams, task.test, withFn, isTest);
   if (!test) return no("test_refused");
   if (!plainPath(test.path)) return no("path_not_plain"); // new test files match the protected *.test.ts pattern by design; only the path shape is checked here
