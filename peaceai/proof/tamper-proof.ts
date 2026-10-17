@@ -8,6 +8,13 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { selfZoneSelfCheck } from "../lib/self-zone.ts";
+
+// M72: before anything else, the self-change protected list must still cover every gate and overlap no safe-zone path.
+const selfZoneProblems = selfZoneSelfCheck();
+if (selfZoneProblems.length) throw new Error(`self-zone self-check failed: ${selfZoneProblems.join("; ")}`);
+console.log("tamper-proof: self-zone self-check ok");
+
 const repo = resolve(process.cwd());
 const sandboxUser = process.env.PROOF_SANDBOX_USER ?? "";
 if (!sandboxUser) throw new Error("PROOF_SANDBOX_USER is required");

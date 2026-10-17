@@ -2,3 +2,5 @@ node_modules/
 .peaceai-out/
 *.log
 __pycache__/
+wt-*/
+/node_modules

@@ -9,6 +9,7 @@
   "scripts": {
     "test": "tsx --test src/*.test.ts",
     "test:tools": "tsx --test peaceai/test/*.test.ts",
+    "test:self": "tsx --test peaceai/self-tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
