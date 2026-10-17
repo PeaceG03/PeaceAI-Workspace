@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 process.env.PEACEAI_COMPLEX_FUNCTION = "true";
-import { inSafeZone, isSelfProtected, MUST_BE_PROTECTED, protectedDigest, SAFE_HELPERS, selfProtectedReason, selfZoneEditRefusal, selfZoneSelfCheck, WORKSPACE_TARGET } from "../lib/self-zone.ts";
+import { inSafeZone, isSelfProtected, MUST_BE_PROTECTED, protectedDigest, SAFE_HELPERS, SELF_ZONE_EXTRA_PROTECTED, selfProtectedReason, selfZoneEditRefusal, selfZoneSelfCheck, SRC_EXEMPT_ENTRY, WORKSPACE_TARGET } from "../lib/self-zone.ts";
 import { applyRule, selfZoneRefusal } from "../lib/learned.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
@@ -99,7 +99,7 @@ test("loadTargets: selfZone only true and only on this Workspace", () => {
     const on = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: true as const });
     const off = scopeOf({ ...base.targets[WORKSPACE_TARGET], selfZone: undefined });
     assert.ok(on.isSource("peaceai/docs/a.md") && !off.isSource("peaceai/docs/a.md"));
-    for (const p of MUST_BE_PROTECTED) assert.ok(!on.isSource(p), p);
+    for (const p of MUST_BE_PROTECTED.filter((x) => !x.startsWith("src/"))) assert.ok(!on.isSource(p), p); // src/ protected paths: refused by applyRule and the digest, not by scope
     assert.equal(on.isDenied("README.md"), off.isDenied("README.md"), "isDenied (read by validateFix) is unchanged by the zone");
     assert.ok(on.isSource("src/a.ts") && !on.isDenied("src/a.ts"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -143,4 +143,36 @@ test("wiring: Job B digests before/after apply and after the passes; tamper-proo
   assert.equal(JSON.parse(read("package.json")).scripts["test:self"], "tsx --test peaceai/self-tests/*.test.ts");
   assert.ok(readdirSync(join(root, "peaceai/self-tests")).some((f) => f.endsWith(".test.ts")));
   assert.equal(selfProtectedReason("peaceai/lib/self-zone.ts") !== null && isSelfProtected("peaceai/lib/selfchange.ts"), true);
+});
+
+test("Auditor #331: safe-zone shapes covered by PROTECTED_SELF (public-origin) are refused, never in the zone", () => {
+  for (const p of ["peaceai/self-tests/public-origin.test.ts", "peaceai/self-tests/helpers/public-origin.test.ts", "peaceai/docs/peaceai-public-origin.md"]) {
+    assert.equal(inSafeZone(p), false, p);
+    assert.ok(isSelfProtected(p), p);
+    assert.equal(selfZoneEditRefusal([p]), "self_protected_path", p);
+    assert.equal(selfZoneRefusal([p], true), "self_protected_path", p);
+    assert.equal(scopeOf({ ...loadTargets().targets[WORKSPACE_TARGET]!, selfZone: true as const }).isSource(p), false, p);
+  }
+  assert.equal(selfZoneEditRefusal(["peaceai/read-only-ops.json"]), "self_protected_path");
+});
+
+test("Auditor #331: under src/ every PROTECTED_SELF entry still applies except the frozen-existing-test entry (left to scope)", () => {
+  assert.ok(SRC_EXEMPT_ENTRY && SRC_EXEMPT_ENTRY.why.startsWith("existing tests anywhere"));
+  assert.equal(PROTECTED_SELF.filter((p) => p.why.startsWith("existing tests anywhere")).length, 1);
+  // Probes: every tracked path and every must-be-protected path, re-rooted under src/, plus hand-made ones.
+  const tracked = execFileSync("git", ["-C", root, "ls-files"], { encoding: "utf8" }).split("\n").filter(Boolean);
+  const probes = [...new Set([...tracked, ...MUST_BE_PROTECTED].map((p) => `src/${p}`).concat(["src/public-origin.ts", "src/x/peaceai-public-origin.json", "src/PUBLIC-ORIGIN.ts", "src/a.test.ts", "src/x/y.ts"]))];
+  let protectedProbes = 0;
+  for (const p of probes) {
+    const plain = !p.split("/").some((x) => x === "" || x === "." || x === ".." || x.startsWith("."));
+    if (!plain) continue;
+    const want = SELF_ZONE_EXTRA_PROTECTED.some((x) => x.pattern.test(p)) || PROTECTED_SELF.some((x) => x !== SRC_EXEMPT_ENTRY && x.pattern.test(p));
+    assert.equal(isSelfProtected(p), want, p);
+    assert.equal(selfZoneEditRefusal([p]) === "self_protected_path", want, p);
+    if (want) protectedProbes++;
+  }
+  assert.ok(protectedProbes >= 3, "the probes exercise real protected entries under src/ (most PROTECTED_SELF entries are anchored outside src/)");
+  for (const p of ["src/public-origin.ts", "src/x/peaceai-public-origin.json"]) assert.equal(selfZoneEditRefusal([p]), "self_protected_path", p);
+  for (const p of ["src/a.ts", "src/a.test.ts", "src/x/y.ts"]) assert.equal(selfZoneEditRefusal([p]), null, `${p}: ordinary src candidates (incl. a new test) unaffected`);
+  assert.equal(selfProtectedReason("src/config.test.ts"), null, "existing src tests: frozen by scope.ts (modifies an existing test file), not the digest");
 });

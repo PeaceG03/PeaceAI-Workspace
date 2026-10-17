@@ -29,7 +29,7 @@ export const SELF_ZONE_EXTRA_PROTECTED: readonly { pattern: RegExp; why: string 
   { pattern: /^peaceai\/bin\/(test-candidates|generate|regate|gate)\.ts$|^peaceai\/lib\/(records|rank|diff|learned[^/]*|repair|repairloop|repairrecord|gate)\.ts$/, why: "generation and grading: Job A rules, the Job B harness, its records and the repair loop" },
   { pattern: /^peaceai\/lib\/(leak|kernelguard|coretext|coreindex|substr|policy|prguard)\.ts$|^peaceai\/bin\/(leak-scan|prepush-scan|core-scan|kernel-guard|install-pre-push)\.(ts|sh)$/, why: "leak and core-text checks" },
   { pattern: /^peaceai\/lib\/(verdict|approval|approved|carry|regrade|stacked|rebase|results|trigger)\.ts$|^peaceai\/bin\/(approve-rule|approve-rule-pr|record-verdict|record-task|parse-verdict|apply-verdict-patch|carry-check|carry-verdict|verdict-stale|check-approved-list|await-checks|await-held-runs)\.(ts|sh)$/, why: "the verdict and approval flow" },
-  { pattern: /^peaceai\/lib\/read-only-ops\.ts$|^peaceai\/bin\/read-only-ops\.ts$/, why: "the read-only ops allowlist" },
+  { pattern: /^peaceai\/lib\/read-only-ops\.ts$|^peaceai\/bin\/read-only-ops\.ts$|^peaceai\/read-only-ops\.json$/, why: "the read-only ops allowlist and its enable file" },
   { pattern: /^peaceai\/rules\//, why: "the approved list and rule specs" },
   { pattern: /^\.github\//, why: "workflows" },
   { pattern: /^builder-log\//, why: "the Builder task log" },
@@ -50,25 +50,32 @@ export const SAFE_ZONE: readonly { pattern: RegExp; what: string }[] = [
 const plain = (p: string) => !p.startsWith("/") && !p.includes("\\") && !p.split("/").some((s) => s === "" || s === "." || s === ".." || s.startsWith("."));
 const inSafeZoneShape = (path: string): boolean => (SAFE_HELPERS as readonly string[]).includes(path) || SAFE_ZONE.some((z) => z.pattern.test(path));
 
-/** Protected for stage 1: the extra list, then PROTECTED_SELF. Safe-zone shapes and src/ are never protected here. */
+/**
+ * The one PROTECTED_SELF entry src/ is exempt from: "existing tests anywhere". Under src/ that rule is enforced by the
+ * scope gate instead (existing src tests are frozen; NEW src tests are how every ordinary candidate is graded), so the
+ * digest must not treat a candidate's new src test as a protected change. Every other PROTECTED_SELF entry applies to
+ * src/ paths too (Auditor #331: e.g. a src/...public-origin... file stays protected).
+ */
+export const SRC_EXEMPT_ENTRY = PROTECTED_SELF.find((p) => p.why.startsWith("existing tests anywhere"))!;
+
+/** Protected for stage 1: the extra list, then PROTECTED_SELF (no early exit for safe-zone shapes; Auditor #331). */
 export function selfProtectedReason(path: string): string | null {
   if (!plain(path)) return "path is not a plain relative path";
   const extra = SELF_ZONE_EXTRA_PROTECTED.find((p) => p.pattern.test(path));
   if (extra) return extra.why;
-  if (inSafeZoneShape(path)) return null; // pinned by a test: no safe-zone shape matches PROTECTED_SELF except via its new-self-test carve-out
-  if (/^src\//.test(path)) return null; // the Workspace's ordinary task scope is governed by targets.json
-  return PROTECTED_SELF.find((p) => p.pattern.test(path))?.why ?? null;
+  const src = /^src\//.test(path);
+  return PROTECTED_SELF.find((p) => !(src && p === SRC_EXEMPT_ENTRY) && p.pattern.test(path))?.why ?? null;
 }
 export const isSelfProtected = (path: string): boolean => selfProtectedReason(path) !== null;
 
 /** A non-src path a Workspace candidate may touch: a safe-zone shape that no protected pattern covers. */
 export function inSafeZone(path: string): boolean {
-  return plain(path) && inSafeZoneShape(path) && !SELF_ZONE_EXTRA_PROTECTED.some((p) => p.pattern.test(path));
+  return plain(path) && inSafeZoneShape(path) && !SELF_ZONE_EXTRA_PROTECTED.some((p) => p.pattern.test(path)) && !PROTECTED_SELF.some((p) => p.pattern.test(path));
 }
 
 /** applyRule's stage-1 check for a Workspace candidate: src/ (ordinary scope) or the safe zone, never protected. */
 export function selfZoneEditRefusal(paths: readonly string[]): "self_protected_path" | "outside_safe_zone" | null {
-  for (const p of paths) if (!/^src\//.test(p) && isSelfProtected(p)) return "self_protected_path";
+  for (const p of paths) if (isSelfProtected(p)) return "self_protected_path"; // src/ too (only the frozen-test entry is left to scope)
   for (const p of paths) if (!/^src\//.test(p) && !inSafeZone(p)) return "outside_safe_zone";
   return null;
 }
@@ -97,7 +104,10 @@ export const MUST_BE_PROTECTED = [
   "peaceai/lib/lm.ts", "peaceai/bin/test-candidates.ts", "peaceai/lib/records.ts", "peaceai/lib/leak.ts", "peaceai/bin/leak-scan.ts",
   "peaceai/proof/tamper-proof.ts", "peaceai/lib/verdict.ts", "peaceai/lib/approved.ts", "peaceai/bin/approve-rule.ts", "peaceai/bin/record-verdict.ts",
   "peaceai/rules/approved.json", ".github/workflows/ci.yml", ".github/workflows/peace-verdict.yml", "peaceai/lib/learned.ts", "peaceai/bin/generate.ts",
-  "peaceai/lib/read-only-ops.ts", "package.json",
+  "peaceai/lib/read-only-ops.ts", "peaceai/read-only-ops.json", "package.json",
+  // Auditor #331: safe-zone shapes that a PROTECTED_SELF entry still covers (the public-origin allowlist).
+  "peaceai/self-tests/public-origin.test.ts", "peaceai/self-tests/helpers/public-origin.test.ts", "peaceai/docs/peaceai-public-origin.md",
+  "src/public-origin.ts", "src/x/peaceai-public-origin.json",
 ] as const;
 export function selfZoneSelfCheck(): string[] {
   const problems: string[] = [];
