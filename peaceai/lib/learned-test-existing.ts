@@ -275,14 +275,18 @@ function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): vo
   v2.scanned.add(key);
   const a = analysisFor(v2, idx, sf);
   for (const s of sf.statements) {
-    if (ts.isExpressionStatement(s)) analyzeExpression(a, s.expression);
-    else if (ts.isEnumDeclaration(s)) for (const mem of s.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
-    else if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) {
-      const init = d.initializer;
-      if (!init) continue;
-      const x = ts.isParenthesizedExpression(init) ? init.expression : init;
-      if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) continue;
-      analyzeExpression(a, init);
+    if (ts.isExpressionStatement(s)) {
+      analyzeExpression(a, s.expression);
+    } else if (ts.isEnumDeclaration(s)) {
+      for (const mem of s.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
+    } else if (ts.isVariableStatement(s)) {
+      for (const d of s.declarationList.declarations) {
+        const init = d.initializer;
+        if (!init) continue;
+        const x = ts.isParenthesizedExpression(init) ? init.expression : init;
+        if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) continue;
+        analyzeExpression(a, init);
+      }
     }
   }
 }
