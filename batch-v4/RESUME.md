@@ -145,3 +145,9 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 ## 2026-10-17 ~17:25 MDT stress test v1
 - Branch notes/stress-v1 (worktree /workspace/stress/repo): 66 tasks, runner, REPORT.md, report.json. Score 51/66 = 77.3% (21/36 solves, 30/30 refusals, 0 wrong, 15 false refusals, 0 crashes). Box needs Node 22 for confined Job B (/workspace/stress/node22).
 - PR #377 m84/stress-parse-fixes 649b238 (taskmap HTML comment in quotes; 'is [..]' deepEqual; NaN/Infinity). Re-run: 53/66. Needs Auditor.
+
+## 2026-10-17 ~18:50 MDT phase 2 batch (M85)
+- #377 merged 4732f47. PR #378 m85/skill-batch 2cd356d (on main, not stacked; includes Auditor code-span note 794613a). Checks green (tests, tamper-proof, leak-check, builder-log). Not merged; no /approve-rule.
+- Specs (proposal-off-wired): public-complex-calls-v1 b1fb4bdb..., public-test-case-existing-v2 2baeab3b..., public-replace-expression-v2 50fd5723.... Proposal issues get filed after merge, per the usual flow.
+- Stress on the branch: 55/66 (25/36 solves). Simulated-approval run: worktree /workspace/v4-m85-sim (local approved.json edit, never push), RUNS=/workspace/stress/runs-m85-sim, log /workspace/stress/runs-m85-sim.log; score with python3 /workspace/stress/score.py <runs dir>.
+- Mining scratch: /workspace/mine85.
