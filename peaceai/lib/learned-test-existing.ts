@@ -266,8 +266,10 @@ function noteEnum(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile, name: string):
   for (const mem of decl.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
 }
 /**
- * Statements that run because this module is loaded (the target, or a value-imported sibling):
- * expression statements, enum initializers, and const/let initializers that are not function bodies.
+ * Statements that run because this module is loaded (the target, or a value-imported sibling).
+ * Expression statements and enum initializers get the full purity walk. Other initializers are
+ * checked only for the clock and local time, so a module-level `new WeakMap()` or `Promise.resolve()`
+ * does not by itself refuse a pure exported function (v1 does not scan those either).
  */
 function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): void {
   const key = `mod\0${v2.path}`;
@@ -281,11 +283,10 @@ function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): vo
       for (const mem of s.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
     } else if (ts.isVariableStatement(s)) {
       for (const d of s.declarationList.declarations) {
-        const init = d.initializer;
-        if (!init) continue;
-        const x = ts.isParenthesizedExpression(init) ? init.expression : init;
-        if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) continue;
-        analyzeExpression(a, init);
+        if (!d.initializer) continue;
+        const dr = dateRefusal(d.initializer);
+        if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) a.reasons.add(TEST_TARGET_DATE_LOCAL);
+        else if (dr === DATE_SETTER) a.reasons.add(TEST_TARGET_IMPURE);
       }
     }
   }

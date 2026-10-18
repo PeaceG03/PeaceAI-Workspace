@@ -144,6 +144,11 @@ test("v2 purity: enum initializers and sibling top-level statements run on load;
   const enumSib = "export enum E { A = Date.now() }\n";
   const enumImp = 'import type { E } from "./b";\nexport function f(x: E): number { return 1; }\n';
   assert.equal(existingTargetRefusal("src/a.ts", enumImp, "f", sib([{ path: "src/b.ts", content: enumSib }])), TEST_TARGET_DATE_LOCAL, "a followed enum's initializer is not skipped");
+  const clockConst = "const opened = Date.now();\nexport function f(n: number): number { return n; }\n";
+  assert.equal(existingTargetRefusal("src/a.ts", clockConst, "f"), null, "v1 does not scan an unused const");
+  assert.equal(existingTargetRefusal("src/a.ts", clockConst, "f", sib([])), TEST_TARGET_DATE_LOCAL);
+  const weak = "const sessions = new WeakMap<object, number>();\nexport function f(n: number): number { return n; }\n";
+  assert.equal(existingTargetRefusal("src/a.ts", weak, "f", sib([])), null, "an unused WeakMap is not a v2 refusal");
 });
 
 test("Job A: builds one new test file (object-literal arguments allowed); not_needed for v1 targets", () => {
