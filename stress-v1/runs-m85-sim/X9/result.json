@@ -1,0 +1,26 @@
+{
+ "id": "X9",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "",
+ "candidates": [
+  {
+   "id": "candidate-1",
+   "op": "learned:public-throw-guard-v1@bec9151e12edf04cc5e3aede2d9d04d0f452189de769d0a14e34756b247231f3",
+   "files": null,
+   "jobB": {
+    "applied": true,
+    "typecheckPassed": true,
+    "originalSuitePassed": true,
+    "newTestsPassed": false,
+    "grading": "REJECTED_FAILS_BOTH"
+   },
+   "accepted": false
+  }
+ ],
+ "outcome": "CORRECT_REFUSAL",
+ "seconds": 13.7
+}

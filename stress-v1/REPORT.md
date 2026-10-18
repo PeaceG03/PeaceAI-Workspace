@@ -148,5 +148,12 @@ clock, local time, I/O target, secret read, non-opted-in workflow, missing scrip
 
 ## Phase 2 batch (PR #378, m85/skill-batch 2cd356d, on main 4732f47)
 - Full re-run on the branch as it stands (approved.json unchanged): **55/66 = 83.3%** (solves 25/36, correct refusals 30/30, 0 wrong, 0 crashes). C4 (template literal) and D2 (Date expected value) are now solved by mechanism alone. Remaining false refusals: A4, C3, L3, L4, T1, T4, E1, K1, K2, K5, K6. Per-task results in runs-m85/.
-- C3, L4, T1, T4 need the three new specs approved (public-complex-calls-v1, public-test-case-existing-v2, public-replace-expression-v2). A simulated-approval run (local copy only, never pushed) is recorded below once finished.
-- Simulated-approval run (local copy only, with the 3 new spec shas listed; never pushed): stopped partway for a box update, after 15 of 66 tasks (A1-G1). On those 15 tasks, C3 and L4 are SOLVED (they were false refusals), there are 0 wrong, and only A4 and L3 remain false refusals. T1 and T4 were not reached. The full simulated score is not measured yet.
+- C3, L4, T1, T4 need the three new specs approved (public-complex-calls-v1, public-test-case-existing-v2, public-replace-expression-v2). A simulated-approval run (local copy only, never pushed) is recorded below.
+- Simulated-approval run, finished 2026-10-18 on Node 22 (zstd 1.5.7, the pin PeaceSTOCKS writes with). Local approved.json only: the three spec shas below, fake issue 999999, file kept outside the repo and never committed. Re-ran the tasks the new specs can change plus every refusal: C3, L4, T1, T4, E2, N1–N14, X1–X15. The other 32 tasks are the branch run (runs-m85/, approved.json unchanged); only these four outcomes moved.
+  - **59/66 = 89.4%** (solves 29/36 = 80.6%, correct refusals 30/30, 0 wrong, 0 crashes).
+  - C3 and L4 SOLVED by `public-complex-calls-v1` (b1fb4bdbb338c7d697bec62dfff109bfbf38fd3addb82fb27c1b5c8b41c71e21). T1 and T4 SOLVED by `public-test-case-existing-v2` (2baeab3b89fa11fd20b324e3cded5b39d5b0e85764445ebc894f46e4efe87e08). Each accepted candidate: 4 typechecks, suite 557/557, acceptance test passes.
+  - `public-replace-expression-v2` (50fd5723ad988ff4732606343c04c583216e5984f9fcae4b87e72ad3757f8c88) was admitted and produced no accepted candidate on these tasks.
+  - Refusals stayed refusals (0 accepted). X5/X6 still `body_refused` (including the calls spec). X8 `test_target_io` on v1 and v2. X15 `protected_path`. X9 still one candidate, Job B did not accept it.
+  - Remaining false refusals: A4, L3, E1, K1, K2, K5, K6.
+  - Per-task results in runs-m85-sim/ (result.json only). An earlier pass without zstd graded C3 WRONG at 398/557 (the known 159 zstd failures) and was discarded; it was not a bad candidate.
+

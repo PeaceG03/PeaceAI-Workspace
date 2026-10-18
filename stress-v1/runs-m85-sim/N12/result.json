@@ -1,0 +1,12 @@
+{
+ "id": "N12",
+ "jobA_rc": 0,
+ "nl": [
+  "unsure",
+  "NO_FAMILY"
+ ],
+ "refusals": "",
+ "candidates": [],
+ "outcome": "CORRECT_REFUSAL",
+ "seconds": 1.5
+}
