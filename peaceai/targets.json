@@ -29,7 +29,7 @@
       "install": "pnpm",
       "originalSuite": "related",
       "writeEnvironment": "peacestocks-write",
-      "verdictRoute": "patch",
+      "verdictRoute": "pr",
       "workflowPattern": "^\\.github/workflows/tenmin-mode-sim\\.yml$",
       "tsconfigScript": true
     }

@@ -112,6 +112,7 @@ jobs:
       write_env: ${{ steps.record.outputs.write_env }}
       route: ${{ steps.record.outputs.route }}
       run_id: ${{ steps.record.outputs.run_id }}
+      diff_sha256: ${{ steps.record.outputs.diff_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -253,19 +254,27 @@ jobs:
           ROUTE: ${{ needs.record.outputs.route }}
           CHOSEN: ${{ needs.record.outputs.chosen }}
         run: |
-          if [ "$ROUTE" = "patch" ]; then
+          # A pr target with its main-only write environment opens a bot PR and never merges.
+          # Peace approving that environment is the push OK. The PR into the default branch is still theirs.
+          # A pr or patch target with no such environment posts the checked patch file, so a missing token never drops a verdict.
+          env_ok=false
+          if [ "$ROUTE" != "patch" ] && [ -n "$WRITE_ENV" ] && gh api "repos/$GITHUB_REPOSITORY/environments/$WRITE_ENV" >/dev/null 2>&1; then
+            env_ok=true
+          fi
+          if [ "$env_ok" = "true" ]; then
+            echo "target_pr=true" >> "$GITHUB_OUTPUT"
+            echo "target_patch=false" >> "$GITHUB_OUTPUT"
+          elif [ "$ROUTE" = "patch" ] || [ "$ROUTE" = "pr" ]; then
             echo "target_pr=false" >> "$GITHUB_OUTPUT"
             if [ "$CHOSEN" = "true" ]; then
               echo "target_patch=true" >> "$GITHUB_OUTPUT"
             else
-              msg="Verdict recorded: $LABEL $VERDICT. \`$TARGET\` uses the patch route; no patch is posted for this verdict."
+              msg="Verdict recorded: $LABEL $VERDICT. No patch is posted for this verdict."
               if [ "$WITHDREW" = "true" ]; then
                 msg="$msg The earlier patch on this issue is no longer the effective pick, so the apply script will refuse it."
               fi
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$msg"
             fi
-          elif [ -n "$WRITE_ENV" ] && gh api "repos/$GITHUB_REPOSITORY/environments/$WRITE_ENV" >/dev/null 2>&1; then
-            echo "target_pr=true" >> "$GITHUB_OUTPUT"
           else
             echo "target_pr=false" >> "$GITHUB_OUTPUT"
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
@@ -319,6 +328,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: write # stale base: re-queue the regrade sweep (same as the patch job; the target token is not used here)
     env:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ needs.parse.outputs.issue }}
@@ -328,6 +338,8 @@ jobs:
       CANDIDATE: ${{ needs.record.outputs.candidate }}
       WITHDREW: ${{ needs.record.outputs.withdrew }}
       HAS_TOKEN: ${{ secrets.TARGET_PR_TOKEN != '' }}
+      DIFF_SHA: ${{ needs.record.outputs.diff_sha256 }}
+      BASE_SHA: ${{ needs.record.outputs.base_sha }}
     steps:
       - name: Fail closed without a write token
         if: env.HAS_TOKEN != 'true'
@@ -388,8 +400,48 @@ jobs:
         with:
           name: peaceai-chosen
           path: ${{ runner.temp }}/chosen
-      - name: Open a PR on the target for the chosen candidate
+      - name: Check the chosen diff hash
+        id: hash
         if: env.HAS_TOKEN == 'true' && steps.guard.outputs.open_pr == 'true'
+        run: |
+          set -euo pipefail
+          got="$(sha256sum "$RUNNER_TEMP/chosen/chosen.diff" | awk '{print $1}')"
+          if [ -z "$DIFF_SHA" ] || [ "$got" != "$DIFF_SHA" ]; then
+            echo "refused: chosen diff hash does not match the Results record"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+      # Same stale-base rule as the patch route: never open a PR built on an old base.
+      - name: Stale-base check
+        id: stale
+        if: env.HAS_TOKEN == 'true' && steps.guard.outputs.open_pr == 'true' && steps.hash.outputs.ok == 'true'
+        env:
+          CHOSEN_DIR: ${{ runner.temp }}/chosen
+          BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+          VERDICT_COMMENT_ID: ${{ needs.parse.outputs.comment_id }}
+          VERDICT_SOURCE: ${{ needs.parse.outputs.source }}
+        run: tools/node_modules/.bin/tsx tools/peaceai/bin/verdict-stale.ts
+      - name: Post the regrade request
+        if: steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok == 'true'
+        env:
+          BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+      - name: Re-queue the regrade (pending carry)
+        if: steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok == 'true' && needs.parse.outputs.source == 'comment'
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label peaceai:done >/dev/null
+          gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
+      - name: Stale base without a regrade request (fail closed)
+        if: steps.stale.outputs.stale == 'error' || (steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok != 'true')
+        env:
+          REASON: ${{ steps.stale.outputs.reason }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Verdict recorded: $LABEL right. No PR opened on \`$TARGET\`: stale base, ${REASON:-regrade-request-failed}."
+          exit 1
+      - name: Open a PR on the target for the chosen candidate
+        if: env.HAS_TOKEN == 'true' && steps.guard.outputs.open_pr == 'true' && steps.stale.outputs.stale == 'false' && steps.hash.outputs.ok == 'true'
         env:
           TARGET_PR_TOKEN: ${{ secrets.TARGET_PR_TOKEN }}
           BASE_SHA: ${{ needs.record.outputs.base_sha }}
@@ -400,6 +452,11 @@ jobs:
           cd "$RUNNER_TEMP/target"
           base_branch="$(GH_TOKEN="$TARGET_PR_TOKEN" gh repo view "$TARGET" --json defaultBranchRef -q .defaultBranchRef.name)"
           branch="peace-task/issue-${ISSUE_NUMBER}-${CANDIDATE}-$(openssl rand -hex 4)"
+          case "$branch" in
+            peace-task/issue-"${ISSUE_NUMBER}"-"${CANDIDATE}"-*) ;;
+            *) echo "refused: branch is not a peace-task branch"; exit 1 ;;
+          esac
+          if [ "$branch" = "$base_branch" ] || [ "$branch" = "main" ]; then echo "refused: would push the default branch"; exit 1; fi
           git checkout -q -b "$branch"
           # Auditor (#107, change 5): .github/workflows/** never goes through PeaceAI's push path.
           if grep -qE '^(diff --git a/.* b/|\+\+\+ b/|--- a/|rename (from|to) |copy (from|to) )\.github/workflows/' "$RUNNER_TEMP/chosen/chosen.diff"; then
@@ -417,7 +474,7 @@ jobs:
             --body "Candidate chosen by owner review on PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}.")"
           echo "pr_url=$url" >> "$GITHUB_ENV"
       - name: Reply
-        if: env.HAS_TOKEN == 'true'
+        if: env.HAS_TOKEN == 'true' && steps.stale.outputs.stale != 'true' && steps.stale.outputs.stale != 'error'
         env:
           REPLY: ${{ steps.guard.outputs.reply }}
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY${pr_url:+ $pr_url}"

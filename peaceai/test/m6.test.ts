@@ -475,8 +475,9 @@ test("apply script: refuses a dirty worktree or a clone of another repository", 
 
 // ----
 // Workflows and config
-test("targets: PeaceSTOCKS uses the patch route; the Workspace keeps PRs", () => {
-  assert.equal(targets.targets[PS]!.verdictRoute, "patch");
+test("targets: PeaceSTOCKS lands by bot PR; the Workspace keeps PRs", () => {
+  assert.equal(targets.targets[PS]!.verdictRoute, "pr");
+  assert.equal(targets.targets[PS]!.writeEnvironment, "peacestocks-write");
   assert.equal(targets.targets[WS]!.verdictRoute, "pr");
 });
 
@@ -487,7 +488,16 @@ test("workflows: patch job has no environment or secrets; index is built only af
   assert.ok(!/environment:|secrets\./.test(job), "no write environment or token");
   assert.match(job, /permissions:\n      contents: read\n      issues: write\n/);
   assert.match(job, /Re-check the target is public[\s\S]*clone-target\.sh[\s\S]*format-patch[\s\S]*verdict-patch\.ts[\s\S]*--body-file/);
-  assert.match(verdict, /if \[ "\$ROUTE" = "patch" \]; then/);
+  assert.match(verdict, /elif \[ "\$ROUTE" = "patch" \] \|\| \[ "\$ROUTE" = "pr" \]; then/);
+  const targetPr = verdict.slice(verdict.indexOf("  target-pr:"), verdict.indexOf("  target-patch:"));
+  assert.ok(targetPr.indexOf("Check the chosen diff hash") < targetPr.indexOf("Stale-base check"));
+  assert.ok(targetPr.indexOf("Stale-base check") < targetPr.indexOf("Open a PR on the target"));
+  assert.match(targetPr, /steps\.stale\.outputs\.stale == 'false'/);
+  assert.match(targetPr, /steps\.stale\.outputs\.stale == 'error' \|\| \(steps\.stale\.outputs\.stale == 'true' && steps\.stale\.outputs\.ok != 'true'\)/);
+  assert.match(targetPr, /steps\.stale\.outputs\.stale != 'true' && steps\.stale\.outputs\.stale != 'error'/);
+  assert.match(targetPr, /HEAD:refs\/heads\/\$branch/);
+  assert.doesNotMatch(targetPr, /pr merge|git push[^\n]*\bmain\b/);
+  assert.match(targetPr, /refused: would push the default branch/);
   assert.match(verdict, /route: \$\{\{ steps\.record\.outputs\.route \}\}/);
   const task = readFileSync(join(repo, ".github/workflows/peace-task.yml"), "utf8");
   const gen = task.slice(task.indexOf('name: "Job A: generate"'), task.indexOf('name: "Job B'));
