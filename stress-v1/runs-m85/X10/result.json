@@ -1,0 +1,12 @@
+{
+ "id": "X10",
+ "jobA_rc": 0,
+ "nl": [
+  "canonical",
+  null
+ ],
+ "refusals": "public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-env-fix-v2=task_unparsed; public-import-edit-v2=task_unparsed",
+ "candidates": [],
+ "outcome": "CORRECT_REFUSAL",
+ "seconds": 2.3
+}

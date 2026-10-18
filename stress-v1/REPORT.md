@@ -145,3 +145,7 @@ clock, local time, I/O target, secret read, non-opted-in workflow, missing scrip
 ## Phase 2 (gap filling)
 - PR #377 (m84/stress-parse-fixes 649b238): gaps 2 (partly) and 3. Re-run on that branch: G1, M2 solved; X9 still refused (now by Job B, the right reason); C3/L4 move on to body_refused (gap 6). Projected score after merge: 53/66 = 80.3% (solves 23/36). Per-task results in runs-m84/.
 - Not started (each needs a new spec, 10 licensed non-corpus examples, Auditor and Peace /approve-rule): gap 1 TEST_CASE_EXISTING v2 (object/array signatures, 43 untested functions), gap 4 MODIFY_BODY, gap 6 helper calls / closures / templates in COMPLEX bodies. Gap 5 is in core (kernel), outside Workspace.
+
+## Phase 2 batch (PR #378, m85/skill-batch 2cd356d, on main 4732f47)
+- Full re-run on the branch as it stands (approved.json unchanged): **55/66 = 83.3%** (solves 25/36, correct refusals 30/30, 0 wrong, 0 crashes). C4 (template literal) and D2 (Date expected value) are now solved by mechanism alone. Remaining false refusals: A4, C3, L3, L4, T1, T4, E1, K1, K2, K5, K6. Per-task results in runs-m85/.
+- C3, L4, T1, T4 need the three new specs approved (public-complex-calls-v1, public-test-case-existing-v2, public-replace-expression-v2). A simulated-approval run (local copy only, never pushed) is recorded below once finished.
