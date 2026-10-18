@@ -433,7 +433,7 @@ jobs:
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label peaceai:done >/dev/null
           gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
       - name: Stale base without a regrade request (fail closed)
-        if: steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok != 'true'
+        if: steps.stale.outputs.stale == 'error' || (steps.stale.outputs.stale == 'true' && steps.stale.outputs.ok != 'true')
         env:
           REASON: ${{ steps.stale.outputs.reason }}
         run: |
@@ -474,7 +474,7 @@ jobs:
             --body "Candidate chosen by owner review on PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}.")"
           echo "pr_url=$url" >> "$GITHUB_ENV"
       - name: Reply
-        if: env.HAS_TOKEN == 'true' && steps.stale.outputs.stale != 'true'
+        if: env.HAS_TOKEN == 'true' && steps.stale.outputs.stale != 'true' && steps.stale.outputs.stale != 'error'
         env:
           REPLY: ${{ steps.guard.outputs.reply }}
         run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY${pr_url:+ $pr_url}"

@@ -493,6 +493,8 @@ test("workflows: patch job has no environment or secrets; index is built only af
   assert.ok(targetPr.indexOf("Check the chosen diff hash") < targetPr.indexOf("Stale-base check"));
   assert.ok(targetPr.indexOf("Stale-base check") < targetPr.indexOf("Open a PR on the target"));
   assert.match(targetPr, /steps\.stale\.outputs\.stale == 'false'/);
+  assert.match(targetPr, /steps\.stale\.outputs\.stale == 'error' \|\| \(steps\.stale\.outputs\.stale == 'true' && steps\.stale\.outputs\.ok != 'true'\)/);
+  assert.match(targetPr, /steps\.stale\.outputs\.stale != 'true' && steps\.stale\.outputs\.stale != 'error'/);
   assert.match(targetPr, /HEAD:refs\/heads\/\$branch/);
   assert.doesNotMatch(targetPr, /pr merge|git push[^\n]*\bmain\b/);
   assert.match(targetPr, /refused: would push the default branch/);
