@@ -1,5 +1,6 @@
 // Verdict job: append one verdict to the latest attempt of an issue in a Results checkout.
-import { appendFileSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { chosenMetaOf } from "../lib/regrade.ts";
 import { join, resolve } from "node:path";
 import { effectiveVerdict, stableJson, VERDICT_SCHEMA, withdraws, type VerdictRecord } from "../lib/records.ts";
@@ -67,9 +68,10 @@ if (verdict === "right" && shown && process.env.CHOSEN_OUT_DIR) {
   const meta = rc ? chosenMetaOf(attempt.task, rc) : null;
   if (meta) writeFileSync(join(target, "chosen.json"), JSON.stringify(meta) + "\n");
 }
+const diffSha256 = chosen ? createHash("sha256").update(readFileSync(chosen)).digest("hex") : "";
 out({
   status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", withdrew: String(withdrew),
-  test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen, run_id: attempt.task.runId,
+  test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen, diff_sha256: diffSha256, run_id: attempt.task.runId,
   ...targetOutputs(attempt.task.target),
 });
 

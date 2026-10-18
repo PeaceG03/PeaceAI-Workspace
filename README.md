@@ -396,13 +396,20 @@ live in `peaceai/targets.json`: today this Workspace and `PeaceG03/PeaceSTOCKS`.
   fails if any test that passed on the base fails with the candidate. Type checking is always the whole
   project; new tests run alone in their own pass.
 - **Verdict route per target (M6).** `verdictRoute` in `peaceai/targets.json` says what `/verdict X right`
-  does. `pr` opens a PR (this Workspace; a target with a main-only write environment holding
-  `TARGET_PR_TOKEN`). `patch` (PeaceSTOCKS) needs no token at all: the `target-patch` job re-checks the
-  target is public, applies the chosen candidate to an anonymous clone at the task's base, commits it as
-  `PeaceG03 <301894882+PeaceG03@users.noreply.github.com>` (dated at the verdict), exports it with
-  `git format-patch --full-index --no-stat --no-signature`, checks the patch's diff is byte-identical to the
-  chosen diff in Results and carries no personal info, and posts it in a code block with its `patch-sha256`
-  and `diff-sha256`. Anything off posts a reason instead of a patch. `wrong`/`unsure` post no patch.
+  does. `pr` opens a PR and never merges it. This Workspace opens that PR in-repo. PeaceSTOCKS uses the
+  same route: the `target-pr` job runs only in the main-only `peacestocks-write` environment (Peace's
+  approval of that environment is the push OK), re-checks the target is public, refuses a chosen diff
+  whose SHA-256 is not the one recorded from Results, refuses a stale base (regrade, same as the patch
+  job), refuses `.github/workflows/**`, commits as the noreply identity on a `peace-task/issue-…` branch,
+  and opens a PR into the default branch. It never merges and never pushes that branch name if it is
+  `main`. Until `peacestocks-write` exists, a `pr` target falls back to the patch file below, so a missing
+  token does not drop the verdict. `patch` (no write token anywhere) is that file: the `target-patch` job
+  re-checks the target is public, applies the chosen candidate to an anonymous clone at the task's base,
+  commits it as `PeaceG03 <301894882+PeaceG03@users.noreply.github.com>` (dated at the verdict), exports it
+  with `git format-patch --full-index --no-stat --no-signature`, checks the patch's diff is byte-identical
+  to the chosen diff in Results and carries no personal info, and posts it in a code block with its
+  `patch-sha256` and `diff-sha256`. Anything off posts a reason instead of a patch. `wrong`/`unsure` post
+  no patch.
 - **Applying a patch (owner, from the Builder box):**
   `peaceai/bin/apply-verdict-patch.sh <issue> --worktree <clean PeaceSTOCKS clone>` takes the latest patch
   comment from `github-actions[bot]`, reads Results read-only through `gh` (latest attempt, verdicts, the
