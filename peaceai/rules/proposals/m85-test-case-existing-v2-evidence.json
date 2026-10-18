@@ -1,0 +1,453 @@
+{
+ "schema": "peaceai-m85-test-case-existing-v2-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "TEST_EXISTING v2 target (public-test-case-existing-v2): 13 commits from 7 permissive repos outside lm-corpus (repo and module sha checked against ext-manifest 8458eac6 + ext-corpus.json) where a test file was added or changed to call an existing exported function that the v1 target refuses (object/array/union-typed signature, or a body using a sibling module's pure exports) and the v2 target accepts on the module text at the parent commit (every commit changes test files only), following relative imports only through the pinned sibling fixtures (3 examples need a sibling). Found by scanning the history of 411 cloned permissive TypeScript repos (at most 3 per repo). Dropped: anton-abyzov/vskill and songsid/AgEnD parsePaneSize (no LICENSE at the commit), awslabs/aidlc-workflows and open-gsd/gsd-pi formatMarkdownSelfHealNotification (module over 64 KiB), one fork duplicate (Waishnav/devspace). Peace's public repos were checked first (see peace): two PeaceSTOCKS functions fit, but both repos are in the corpus manifest, so they are recorded and not counted.",
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "5c41528a4e608d8f53de996e583a97776d232d08",
+   "fits": [
+    "decideBackfill",
+    "estimateTenMinRangeRemaining"
+   ],
+   "counted": 0
+  },
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "checkedAt": "b121f4704697be1e43701c74e80cb59dc069da6e",
+   "fits": [],
+   "counted": 0
+  }
+ ],
+ "pins": [
+  {
+   "name": "1210350468/devpilot",
+   "commit": "9aa7ef989643da9c6d10d9b7906b548d316ce8ad",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "adhi-jp/minecraft-modding-mcp",
+   "commit": "24189e0729f7dbf9ac8e8cfb9c11d304ed113d67",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "adhi-jp/minecraft-modding-mcp",
+   "commit": "13e1b8e8f8ae3b57e3478a7858f1888dd5b21459",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dailker/everyutil-js",
+   "commit": "fcb7ad9471bd1bd26f66bc4b1fa82a7cb6d01969",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dailker/everyutil-js",
+   "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dailker/everyutil-js",
+   "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "eriknewton/sanctuary-framework",
+   "commit": "f5be9c12894e74c3c214efedd5c8a826545846cd",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "eriknewton/sanctuary-framework",
+   "commit": "f5be9c12894e74c3c214efedd5c8a826545846cd",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "flyingrobots/graft",
+   "commit": "b39908ff9cf0d1491a6dde4cdfc899e23b5a3def",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "flyingrobots/graft",
+   "commit": "bf43d91f2ca3fb00e9b2f891daf337e6cfe7b36b",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "flyingrobots/graft",
+   "commit": "bee0dcb5fe8f8af75a580e01bba863c8c2a61cc8",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "open-gsd/gsd-pi",
+   "commit": "c36d580710fbb01b679d6e187c41d7331ce19f2a",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "songsid/AgEnD",
+   "commit": "89560b9bfc8ff32a4986bbee5de884c643e29c96",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  }
+ ],
+ "examples": [
+  {
+   "repo": "1210350468/devpilot",
+   "commit": "9aa7ef989643da9c6d10d9b7906b548d316ce8ad",
+   "parent": "06e22a131693257f35363fd95b6a0724fbb9a52b",
+   "test": "src/local-agent-pi-sandbox.test.ts",
+   "testStatus": "A",
+   "changedFiles": 2,
+   "module": "src/local-agent-pi-sandbox.ts",
+   "fn": "createPiSandboxModeRef",
+   "line": 75,
+   "signature": "(PiSandboxWriteMode): PiSandboxModeRef",
+   "v1Refusal": "test_target_signature",
+   "framework": "other",
+   "sha256": "84811d450cb612a39b513925c81421d747a84f3f9caff4114254cadabbba23db",
+   "fileBlob": "0a6ce62c5f6c48a4679c5d1a9888cd3118710705",
+   "fixture": "peaceai/test/fixtures/m85-te2/1210350468__devpilot-0a6ce62c5f6c.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "85fe8ea6f1f2fb5801a3e14a3ce61047aee54065579038a66e23e2df8284fc68"
+  },
+  {
+   "repo": "adhi-jp/minecraft-modding-mcp",
+   "commit": "24189e0729f7dbf9ac8e8cfb9c11d304ed113d67",
+   "parent": "610d89526788f226e7994ac71817a1aaff43cc77",
+   "test": "tests/errors.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/error-mapping.ts",
+   "fn": "statusForErrorCode",
+   "line": 35,
+   "signature": "(string): number",
+   "v1Refusal": "test_target_impure",
+   "framework": "node:test",
+   "sha256": "87b36ae3a59cddd12a9e4cfc8ec02594de2c0e7943ab231747a50f249e044835",
+   "fileBlob": "89faf5f258a0e71482dedacb9061f9c1f22efe78",
+   "fixture": "peaceai/test/fixtures/m85-te2/adhi-jp__minecraft-modding-mcp-89faf5f258a0.txt",
+   "siblings": [
+    {
+     "repo": "adhi-jp/minecraft-modding-mcp",
+     "commit": "24189e0729f7dbf9ac8e8cfb9c11d304ed113d67",
+     "path": "src/errors.ts",
+     "fileBlob": "af93c499cf82dff76a170d243ffedb714facb137",
+     "sha256": "e9eaa3c13d59d83c9635f9a60f504354935d17bca102141702fe45c3042d6f4f",
+     "fixture": "peaceai/test/fixtures/m85-te2/adhi-jp__minecraft-modding-mcp-af93c499cf82.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "eebcc388abfed4f666c0cebaeceddb52e6915ff2393890384f69e8f5f2da47de"
+  },
+  {
+   "repo": "adhi-jp/minecraft-modding-mcp",
+   "commit": "13e1b8e8f8ae3b57e3478a7858f1888dd5b21459",
+   "parent": "8bdd7f2a1e2001ec091e39d722c004c5a77e6637",
+   "test": "tests/path-resolver.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/path-resolver.ts",
+   "fn": "buildJarSignature",
+   "line": 84,
+   "signature": "({ mtimeMs: number; size: number }): string",
+   "v1Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "e62b289c9ef370faf7a86d11f0e6e61e4aaf10bbb6ccb09633d743cfbbe319b7",
+   "fileBlob": "ddb42761543e0fe9a95b8dbedaa7f5b653579a7a",
+   "fixture": "peaceai/test/fixtures/m85-te2/adhi-jp__minecraft-modding-mcp-ddb42761543e.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "eebcc388abfed4f666c0cebaeceddb52e6915ff2393890384f69e8f5f2da47de"
+  },
+  {
+   "repo": "dailker/everyutil-js",
+   "commit": "fcb7ad9471bd1bd26f66bc4b1fa82a7cb6d01969",
+   "parent": "af1e1dffb318c5fa72450fc6d2d78e12c2aa05e5",
+   "test": "test/network/buildFTPURL.test.ts",
+   "testStatus": "A",
+   "changedFiles": 1,
+   "module": "src/network/buildFTPURL.ts",
+   "fn": "buildFTPURL",
+   "line": 8,
+   "signature": "({host: string, port?: number, user?: string, password?: string, path?: string}): string",
+   "v1Refusal": "test_target_signature",
+   "framework": "other",
+   "sha256": "2d2e89dc96dc6c1115b4e385324eb9335b82962a03ed13ddbf7a4270835cf79b",
+   "fileBlob": "5170a9292a269e7745c153630eed072ac4038dcf",
+   "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-5170a9292a26.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f"
+  },
+  {
+   "repo": "dailker/everyutil-js",
+   "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+   "parent": "3d552ac755186eddc15538188aca1eb69fcddc06",
+   "test": "test/color/lighten.test.ts",
+   "testStatus": "A",
+   "changedFiles": 1,
+   "module": "src/color/darken.ts",
+   "fn": "darken",
+   "line": 14,
+   "signature": "(string, number): string",
+   "v1Refusal": "test_target_impure",
+   "framework": "other",
+   "sha256": "c41aa82452c9a7172d16d1325af745b2765a6289cc0f3d67704f04de0f0a294b",
+   "fileBlob": "f67fa6e7900df7f57a284dd863d10320486d06cb",
+   "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-f67fa6e7900d.txt",
+   "siblings": [
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/hexToRgb.ts",
+     "fileBlob": "db204300f4ed9ec6a7524c52eee5210c1fb28d50",
+     "sha256": "b38b93c05949d6ba0905d3d46746495321304c328c1f8d8409f31d90ba1d4f08",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-db204300f4ed.txt"
+    },
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/hslToRgb.ts",
+     "fileBlob": "60c1788b9b2c2c5176c5de96ee1cbf6409011c02",
+     "sha256": "3ed7a390157562c64fdc04c28916793852235fa24e3b69a864601e4e9991b429",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-60c1788b9b2c.txt"
+    },
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/parseColorString.ts",
+     "fileBlob": "1603cc2c3b3bfc36869bada44e3a0ae1618800f8",
+     "sha256": "a7bc5f6d5c1bbb12673577b9a1ee8ebec1a6418f324e0f0a95cd59f01b29061d",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-1603cc2c3b3b.txt"
+    },
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/rgbToHex.ts",
+     "fileBlob": "b492cb712310c456157ea88726068287ea987d47",
+     "sha256": "d409a54d2123eac7a3b1cbd6c6ee8c5f7a157060e49754a75ad71595e9064d85",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-b492cb712310.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f"
+  },
+  {
+   "repo": "dailker/everyutil-js",
+   "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+   "parent": "3d552ac755186eddc15538188aca1eb69fcddc06",
+   "test": "test/color/lighten.test.ts",
+   "testStatus": "A",
+   "changedFiles": 1,
+   "module": "src/color/lighten.ts",
+   "fn": "lighten",
+   "line": 14,
+   "signature": "(string, number): string",
+   "v1Refusal": "test_target_impure",
+   "framework": "other",
+   "sha256": "cb337e3cece82f8ded77f97b0e575d08544de39051e76690e7feacec52e317ae",
+   "fileBlob": "a8613b4f09b77b6935a644628787ff5051179e57",
+   "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-a8613b4f09b7.txt",
+   "siblings": [
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/hexToRgb.ts",
+     "fileBlob": "db204300f4ed9ec6a7524c52eee5210c1fb28d50",
+     "sha256": "b38b93c05949d6ba0905d3d46746495321304c328c1f8d8409f31d90ba1d4f08",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-db204300f4ed.txt"
+    },
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/hslToRgb.ts",
+     "fileBlob": "60c1788b9b2c2c5176c5de96ee1cbf6409011c02",
+     "sha256": "3ed7a390157562c64fdc04c28916793852235fa24e3b69a864601e4e9991b429",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-60c1788b9b2c.txt"
+    },
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/parseColorString.ts",
+     "fileBlob": "1603cc2c3b3bfc36869bada44e3a0ae1618800f8",
+     "sha256": "a7bc5f6d5c1bbb12673577b9a1ee8ebec1a6418f324e0f0a95cd59f01b29061d",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-1603cc2c3b3b.txt"
+    },
+    {
+     "repo": "dailker/everyutil-js",
+     "commit": "228b39810f9ff1333f38c5637f28f9ec07a4ea34",
+     "path": "src/color/rgbToHex.ts",
+     "fileBlob": "b492cb712310c456157ea88726068287ea987d47",
+     "sha256": "d409a54d2123eac7a3b1cbd6c6ee8c5f7a157060e49754a75ad71595e9064d85",
+     "fixture": "peaceai/test/fixtures/m85-te2/dailker__everyutil-js-b492cb712310.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "4b39ff3723542793040a81ad9779aff448654b5b845f62386ef807904ec5985f"
+  },
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "f5be9c12894e74c3c214efedd5c8a826545846cd",
+   "parent": "32d86a8804bfb6ed4387139ac57f19e9ae5cc5ee",
+   "test": "server/test/cocoon/fortress-view.test.ts",
+   "testStatus": "A",
+   "changedFiles": 5,
+   "module": "server/src/cocoon/fortress-view.ts",
+   "fn": "generateFortressViewHTML",
+   "line": 22,
+   "signature": "(FortressViewOptions): string",
+   "v1Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "6808e84059ee55a4180b8ea0f17cf45388a65f031608369dafb29a122a337a4f",
+   "fileBlob": "07b6d434c1254b9fb041d6e92f855d60d94f0ae1",
+   "fixture": "peaceai/test/fixtures/m85-te2/eriknewton__sanctuary-framework-07b6d434c125.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "f5be9c12894e74c3c214efedd5c8a826545846cd",
+   "parent": "32d86a8804bfb6ed4387139ac57f19e9ae5cc5ee",
+   "test": "server/test/cocoon/tier-classifier.test.ts",
+   "testStatus": "A",
+   "changedFiles": 5,
+   "module": "server/src/cocoon/tier-classifier.ts",
+   "fn": "classifyTool",
+   "line": 45,
+   "signature": "(string): 1 | 2 | 3",
+   "v1Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "cf6edfcbd48f8b1a41edb2c3ccdcad9fa6dc31df20cdcfddd6ba96ccc4f0bf26",
+   "fileBlob": "f105c7461286fbd1eaafdcb6cbd323c5147f3226",
+   "fixture": "peaceai/test/fixtures/m85-te2/eriknewton__sanctuary-framework-f105c7461286.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "flyingrobots/graft",
+   "commit": "b39908ff9cf0d1491a6dde4cdfc899e23b5a3def",
+   "parent": "1af06bc3567895cc8fb142cb1903fea0b6ec6436",
+   "test": "test/unit/mcp/daemon-session-reaper.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/mcp/daemon-session-host.ts",
+   "fn": "resolveSessionInactivityTtlMs",
+   "line": 82,
+   "signature": "(number | undefined): number",
+   "v1Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "5d7422335a5dc37aaa874d9d2862a67af5e9790ae4cbc7e0aa89d90709466419",
+   "fileBlob": "9bd11375bdf71a69eb8d00ca689702732129a1e6",
+   "fixture": "peaceai/test/fixtures/m85-te2/flyingrobots__graft-9bd11375bdf7.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "fea9fca54e11b52ddd49455ba03003309954537a2210b68d4b0575b733362d64"
+  },
+  {
+   "repo": "flyingrobots/graft",
+   "commit": "bf43d91f2ca3fb00e9b2f891daf337e6cfe7b36b",
+   "parent": "036a72d53893edaad0c3d6af23af06f945afef0f",
+   "test": "test/unit/warp/stale-docs.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/warp/stale-docs.ts",
+   "fn": "checkVersionDrift",
+   "line": 197,
+   "signature": "(string, string): VersionDriftReport",
+   "v1Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "609ec003a9c1b2eed05166901331c827aea54c70da785ce16348887e73feb832",
+   "fileBlob": "59442a9ed99eda6a424c5c835d16c1ca920d0bb3",
+   "fixture": "peaceai/test/fixtures/m85-te2/flyingrobots__graft-59442a9ed99e.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "fea9fca54e11b52ddd49455ba03003309954537a2210b68d4b0575b733362d64"
+  },
+  {
+   "repo": "flyingrobots/graft",
+   "commit": "bee0dcb5fe8f8af75a580e01bba863c8c2a61cc8",
+   "parent": "37204231e31b29b8041b80e1d224f30422580511",
+   "test": "test/unit/warp/indexer.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/warp/observers.ts",
+   "fn": "fileSymbolsLens",
+   "line": 26,
+   "signature": "(string): Lens",
+   "v1Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "095a58887ff724a9a443d3e1304287c2f6f14439ccb6f8dece13f6d8b5b2b3cd",
+   "fileBlob": "13d1004a6861bc40f49fde1cea784b5c6482c0ed",
+   "fixture": "peaceai/test/fixtures/m85-te2/flyingrobots__graft-13d1004a6861.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "fea9fca54e11b52ddd49455ba03003309954537a2210b68d4b0575b733362d64"
+  },
+  {
+   "repo": "open-gsd/gsd-pi",
+   "commit": "c36d580710fbb01b679d6e187c41d7331ce19f2a",
+   "parent": "42a7a570d11aecd7c6d7a2c9f8a8c385c2e2e67f",
+   "test": "src/resources/extensions/gsd/tests/model-router.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/resources/extensions/gsd/model-router.ts",
+   "fn": "defaultRoutingConfig",
+   "line": 581,
+   "signature": "(): DynamicRoutingConfig",
+   "v1Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "1d362b0bb1446c47152dfbfc924dedc74bb3413fac2105aa26bda02d9acb9d9f",
+   "fileBlob": "82352d30681c2e515d038b1863ac19b7f8e24e58",
+   "fixture": "peaceai/test/fixtures/m85-te2/open-gsd__gsd-pi-82352d30681c.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "bf8ef5028c5653a745881fb7c5e88887b0bd7d4ed4c5f16f5fb6a0ddab7f7918"
+  },
+  {
+   "repo": "songsid/AgEnD",
+   "commit": "89560b9bfc8ff32a4986bbee5de884c643e29c96",
+   "parent": "b4101f669f13f7bdb9e78173844fe756adfcded8",
+   "test": "tests/claude-dangerous-command-dialog.test.ts",
+   "testStatus": "M",
+   "changedFiles": 1,
+   "module": "src/backend/claude-code.ts",
+   "fn": "claudeDangerousCommandPromptState",
+   "line": 199,
+   "signature": "(string): ClaudeDangerousCommandPromptState",
+   "v1Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "5dd7cf733df438c8d1302d2cf8d1b50f3c1647142c392bb7066c05d3e862053e",
+   "fileBlob": "7097e7a86d959879332bbe590ab7ae1bc2c4d935",
+   "fixture": "peaceai/test/fixtures/m85-te2/songsid__AgEnD-7097e7a86d95.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "b054a7cf22500b2a317513f206d94cd40458c7bb87a8edd1183e2d7a26ea9693"
+  }
+ ]
+}

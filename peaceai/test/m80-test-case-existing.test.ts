@@ -339,14 +339,15 @@ test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three r
   assert.ok(g.length > 0);
   assert.match(g, /PERMISSION_NODE_MAJOR\) return ungradable\("not-confined"\)/);
   assert.match(g, /gradedTestSourceProblem\(test,/);
-  assert.match(g, /existingTargetRefusal\(modPath, real, fn\) !== null/);
+  // M85: the v2 candidate is re-checked under the v2 target; any other under v1 (opts undefined).
+  assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \} : undefined\) !== null/);
   assert.match(g, /moduleReadClosure\(modPath, regular\)/);
   assert.match(g, /i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runExistingTests\(tree, newTests, reads\)\.ok\)/);
   assert.match(g, /run = runExistingTests\(tree, newTests, reads, true\);/);
   const r = tc.slice(tc.indexOf("function runExistingTests("), tc.indexOf("function gradeExisting("));
   assert.match(r, /const args = \["--permission", /);
   assert.doesNotMatch(r, /allow-fs-write|allow-child-process|allow-addons|allow-wasi/);
-  assert.match(g, /stubAll\(real, \[fn\]\)/);
+  assert.match(g, /stubAll\(real, \[fn\], v2\)/);
   assert.match(g, /finally \{\n    writeFileSync\(file, real\);/);
   assert.match(g, /stubFailureCredited\(run\.out, run\.notes\)/);
   assert.match(tc, /candidate\.transformations\.includes\("LEARNED_TEST_EXISTING"\)\) result\.testGrading = gradeExisting\(/);

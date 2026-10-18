@@ -13,7 +13,7 @@ import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, validTestExistingParams } from "./learned-test-existing.ts";
-import { COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
+import { COMPLEX_OPTIONAL_VOCAB, COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
 import { selfZoneEditRefusal, WORKSPACE_TARGET } from "./self-zone.ts";
@@ -116,7 +116,9 @@ function validMethodGuardParams(p: Record<string, unknown>, minedFrom: unknown):
 function validComplexParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
   // M74: optional `types: "primitive+date"` (public-date-function-v1), only with loops ["none"].
   if ("types" in p && (p.types !== "primitive+date" || !Array.isArray(p.loops) || (p.loops as unknown[]).join(",") !== "none")) return false;
-  if (minedFrom !== "public" || Object.keys(p).filter((k) => k !== "types").sort().join(",") !== [...COMPLEX_PARAM_KEYS].join(",")) return false;
+  // M85: optional calls + callbacks pair (public-complex-calls-v1): both or neither, fixed values, never with types.
+  if (("calls" in p || "callbacks" in p) && (p.calls !== COMPLEX_OPTIONAL_VOCAB.calls[0] || p.callbacks !== COMPLEX_OPTIONAL_VOCAB.callbacks[0] || "types" in p)) return false;
+  if (minedFrom !== "public" || Object.keys(p).filter((k) => k !== "types" && k !== "calls" && k !== "callbacks").sort().join(",") !== [...COMPLEX_PARAM_KEYS].join(",")) return false;
   return COMPLEX_PARAM_KEYS.every((k) => k === "loops"
     ? Array.isArray(p[k]) && (p[k] as unknown[]).length > 0 && (p[k] as unknown[]).every((x) => typeof x === "string" && COMPLEX_VOCAB.loops.includes(x))
       && (!(p[k] as unknown[]).includes("none") || (p[k] as unknown[]).length === 1) // Auditor #218: "none" never mixed with loop kinds
