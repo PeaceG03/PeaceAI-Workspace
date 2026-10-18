@@ -151,3 +151,9 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Specs (proposal-off-wired): public-complex-calls-v1 b1fb4bdb..., public-test-case-existing-v2 2baeab3b..., public-replace-expression-v2 50fd5723.... Proposal issues get filed after merge, per the usual flow.
 - Stress on the branch: 55/66 (25/36 solves). Simulated-approval run: worktree /workspace/v4-m85-sim (local approved.json edit, never push), RUNS=/workspace/stress/runs-m85-sim, log /workspace/stress/runs-m85-sim.log; score with python3 /workspace/stress/score.py <runs dir>.
 - Mining scratch: /workspace/mine85.
+
+## 2026-10-17 ~18:45 MDT STOP (box update)
+- Workspace: m85/skill-batch head 2cd356d (pushed, clean), PR #378 open and green (tests, tamper-proof, leak-check, builder-log). Not merged; no /approve-rule.
+- notes/stress-v1: branch score 55/66 recorded. The simulated-approval run was killed after 15/66 tasks: C3 and L4 SOLVED, 0 wrong. T1 and T4 were not reached.
+- Background jobs killed: stress sim run, TE2/REPLACE miners (their evidence is already built and committed).
+- NEXT: (1) re-run the simulated-approval stress: `WS=/workspace/v4-m85-sim RUNS=/workspace/stress/runs-m85-sim python3 /workspace/stress/repo/stress-v1/run.py` with PATH=/workspace/stress/node22/bin. To run only the impacted tasks: C3 L4 T1 T4 plus the X*/N* refusals. Worktree /workspace/v4-m85-sim = 2cd356d + a local-only approved.json with fake issue 999999 entries; NEVER commit it. If the box is rebuilt, recreate it with git worktree add + the 3 entries. (2) Score with /workspace/stress/score.py, then record in notes/stress-v1 REPORT.md. (3) Update the PR #378 body stress section with gh pr edit. (4) Report to the parent.
