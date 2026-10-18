@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
-import { existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_TARGET_IMPURE, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
+import { existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_IO, TEST_TARGET_SIGNATURE, TEST_TARGET_TOO_LARGE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -81,12 +81,69 @@ test("target: plain-data signatures and pure sibling imports pass under v2 only;
 });
 
 test("target negatives under v2: impure sibling, package import, unreadable sibling, class and function members", () => {
-  assert.notEqual(existingTargetRefusal("src/a.ts", A, "stamped", sib(FILES)), null, "sibling reads the clock");
+  assert.equal(existingTargetRefusal("src/a.ts", A, "stamped", sib(FILES)), TEST_TARGET_DATE_LOCAL, "sibling reads the clock");
   assert.notEqual(existingTargetRefusal("src/a.ts", A, "joined", sib(FILES)), null, "node: import is not followed");
   assert.notEqual(existingTargetRefusal("src/a.ts", A, "scaled", sib([FILES[0]!])), null, "sibling not readable");
   assert.equal(existingTargetRefusal("src/a.ts", A, "withClass", sib(FILES)), TEST_TARGET_SIGNATURE);
   assert.equal(existingTargetRefusal("src/a.ts", A, "withFn", sib(FILES)), TEST_TARGET_SIGNATURE);
   assert.equal(existingTargetRefusal("src/a.ts", A, "tuple", sib(FILES)), TEST_TARGET_SIGNATURE, "tuples are not in the v2 vocabulary");
+});
+
+test("v2 bounds: 4 sibling modules and import depth 2, refused before a further read", () => {
+  const iface = (n: string) => `export interface ${n} { n: number }\n`;
+  const param = (k: number) => `{ ${Array.from({ length: k }, (_, i) => `t${i}: T${i}`).join("; ")} }`;
+  const src = (k: number) => [
+    ...Array.from({ length: k }, (_, i) => `import type { T${i} } from "./s${i}";`),
+    `export function f(x: ${param(k)}): number { return x.t0.n; }`,
+    "",
+  ].join("\n");
+  const files = (k: number) => Array.from({ length: k }, (_, i) => ({ path: `src/s${i}.ts`, content: iface(`T${i}`) }));
+  const seen = (k: number) => {
+    const reads: string[] = [];
+    const map = new Map(files(k).map((f) => [f.path, f.content]));
+    const r = existingTargetRefusal("src/a.ts", src(k), "f", { v2: { read: (rel) => { reads.push(rel); return map.get(rel) ?? null; } } });
+    return { r, reads };
+  };
+  const four = seen(4);
+  assert.equal(four.r, null, "4 sibling interfaces are the cap");
+  assert.ok(four.reads.includes("src/s3.ts"));
+  const five = seen(5);
+  assert.equal(five.r, TEST_TARGET_TOO_LARGE, "a 5th sibling is too large");
+  assert.ok(!five.reads.includes("src/s4.ts"), "the 5th sibling is not read");
+  const chain = new Map<string, string>([
+    ["src/s.ts", 'import type { B } from "./b";\nexport interface A { n: number; b: B }\n'],
+    ["src/b.ts", 'import type { E } from "./c";\nexport interface B { n: number; e: E }\n'],
+    ["src/c.ts", "export enum E { A = Date.now() }\n"],
+  ]);
+  const deepReads: string[] = [];
+  const deep = existingTargetRefusal("src/a.ts", 'import type { A } from "./s";\nexport function f(x: A): number { return x.n; }\n', "f", { v2: { read: (rel) => { deepReads.push(rel); return chain.get(rel) ?? null; } } });
+  assert.equal(deep, TEST_TARGET_TOO_LARGE, "import depth past 2");
+  assert.ok(deepReads.includes("src/b.ts") && !deepReads.includes("src/c.ts"), "the depth-3 module is not read");
+  const pure = new Map<string, string>([
+    ["src/s.ts", 'import type { E } from "./b";\nexport interface A { n: number; e: E }\n'],
+    ["src/b.ts", "export enum E { A = 1 }\n"],
+  ]);
+  assert.equal(existingTargetRefusal("src/a.ts", 'import type { A } from "./s";\nexport function f(x: A): number { return x.n; }\n', "f", { v2: { read: (rel) => pure.get(rel) ?? null } }), null, "a pure enum at depth 2");
+});
+
+test("v2 purity: enum initializers and sibling top-level statements run on load; v1 is unchanged", () => {
+  const execEnum = 'import { execFileSync } from "node:child_process";\nexport enum E { A = execFileSync("id").length }\nexport function f(x: E): number { return 1; }\n';
+  const clockEnum = 'export enum E { A = Date.now() }\nexport function f(x: E): number { return 1; }\n';
+  const hoursEnum = 'export enum E { A = new Date().getHours() }\nexport function f(x: E): number { return 1; }\n';
+  for (const src of [execEnum, clockEnum, hoursEnum]) assert.equal(existingTargetRefusal("src/a.ts", src, "f"), TEST_TARGET_SIGNATURE, "v1 still refuses an enum parameter");
+  assert.equal(existingTargetRefusal("src/a.ts", execEnum, "f", sib([])), TEST_TARGET_IO);
+  assert.equal(existingTargetRefusal("src/a.ts", clockEnum, "f", sib([])), TEST_TARGET_DATE_LOCAL);
+  assert.equal(existingTargetRefusal("src/a.ts", hoursEnum, "f", sib([])), TEST_TARGET_DATE_LOCAL);
+  const top = 'Date.now();\nexport function f(n: number): number { return n; }\n';
+  assert.equal(existingTargetRefusal("src/a.ts", top, "f"), null, "v1 does not gain a new top-level scan");
+  assert.equal(existingTargetRefusal("src/a.ts", top, "f", sib([])), TEST_TARGET_DATE_LOCAL);
+  const sibTop = 'Date.now();\nexport function g(n: number): number { return n; }\n';
+  const importer = 'import { g } from "./b";\nexport function f(n: number): number { return g(n); }\n';
+  assert.equal(existingTargetRefusal("src/a.ts", importer, "f"), TEST_TARGET_IMPURE, "v1 still refuses the import itself");
+  assert.equal(existingTargetRefusal("src/a.ts", importer, "f", sib([{ path: "src/b.ts", content: sibTop }])), TEST_TARGET_DATE_LOCAL);
+  const enumSib = "export enum E { A = Date.now() }\n";
+  const enumImp = 'import type { E } from "./b";\nexport function f(x: E): number { return 1; }\n';
+  assert.equal(existingTargetRefusal("src/a.ts", enumImp, "f", sib([{ path: "src/b.ts", content: enumSib }])), TEST_TARGET_DATE_LOCAL, "a followed enum's initializer is not skipped");
 });
 
 test("Job A: builds one new test file (object-literal arguments allowed); not_needed for v1 targets", () => {

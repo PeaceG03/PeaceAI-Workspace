@@ -161,29 +161,53 @@ function isValueReference(n: ts.Identifier): boolean {
 }
 
 interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile; v2?: V2Ctx }
-/** M85: the v2 target's cross-module state: where this module is, how to read siblings, what was followed. */
-interface V2Ctx { path: string; depth: number; read: (rel: string) => string | null; modules: Map<string, { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null>; followed: Set<string> }
+interface V2Ctx {
+  path: string;
+  /** The target module. Counted in `modules` so it is parsed once, never as one of the 4 siblings. */
+  root: string;
+  depth: number;
+  read: (rel: string) => string | null;
+  modules: Map<string, { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null>;
+  followed: Set<string>;
+  /** Shared with the analysis, including refusals found while resolving a signature. */
+  reasons: Set<string>;
+  /** Enums and value-loaded modules already scanned for initializers and top-level statements. */
+  scanned: Set<string>;
+}
 
 const normRel = (p: string): string | null => {
   const out: string[] = [];
   for (const s of p.split("/")) { if (s === "" || s === ".") continue; if (s === "..") { if (!out.length) return null; out.pop(); } else out.push(s); }
   return out.join("/");
 };
-/** M85: a relative specifier from `from` to exactly one readable, plain, unprotected, non-test .ts module (else null). */
-function resolveSibling(from: string, spec: string, read: (rel: string) => string | null): string | null {
+/** M85: relative specifier candidates from `from` (no read). Null when the specifier is not relative or escapes the root. */
+function siblingCandidates(from: string, spec: string): string[] | null {
   if (!spec.startsWith("./") && !spec.startsWith("../")) return null;
   const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
   const base = normRel(`${dir}/${spec}`);
   if (base === null) return null;
-  const hits = [...new Set([base, `${base}.ts`, `${base}/index.ts`, ...(/\.js$/.test(base) ? [base.replace(/\.js$/, ".ts")] : [])])].filter((c) => /\.ts$/.test(c) && read(c) !== null);
+  return [...new Set([base, `${base}.ts`, `${base}/index.ts`, ...(/\.js$/.test(base) ? [base.replace(/\.js$/, ".ts")] : [])])].filter((c) => /\.ts$/.test(c));
+}
+/** M85: a relative specifier from `from` to exactly one readable, plain, unprotected, non-test .ts module (else null). */
+function resolveSibling(from: string, spec: string, read: (rel: string) => string | null): string | null {
+  const candidates = siblingCandidates(from, spec);
+  if (!candidates) return null;
+  const hits = candidates.filter((c) => read(c) !== null);
   if (hits.length !== 1) return null;
   const t = hits[0]!;
   if (!plainPath(t) || isProtected(t) || /\.(?:test|spec)\.ts$/.test(t) || /\.d\.ts$/.test(t)) return null;
   return t;
 }
+/** Sibling modules already entered (the target module is not one of them). */
+function siblingSlots(v: V2Ctx): number {
+  let n = 0;
+  for (const k of v.modules.keys()) if (k !== v.root) n += 1;
+  return n;
+}
 function siblingModule(v: V2Ctx, path: string): { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null {
   if (v.modules.has(path)) return v.modules.get(path)!;
-  if (v.modules.size >= MAX_IMPORT_MODULES + 1) return null;
+  // Cap before the read: 4 siblings, not 5, and the target does not consume a slot.
+  if (path !== v.root && siblingSlots(v) >= MAX_IMPORT_MODULES) { v.reasons.add(TEST_TARGET_TOO_LARGE); return null; }
   const text = v.read(path);
   let m: { idx: ModuleIndex; sf: ts.SourceFile; fns: Set<string>; consts: Set<string> } | null = null;
   if (text !== null && text.length <= 65536) {
@@ -193,23 +217,74 @@ function siblingModule(v: V2Ctx, path: string): { idx: ModuleIndex; sf: ts.Sourc
   v.modules.set(path, m);
   return m;
 }
+/**
+ * Resolve a sibling without reading past the cap or the depth bound.
+ * A module already loaded (a second name from it) is reused with no new read.
+ */
+function pickSibling(v: V2Ctx, spec: string): string | null {
+  if (v.depth >= MAX_IMPORT_DEPTH) { v.reasons.add(TEST_TARGET_TOO_LARGE); return null; }
+  const candidates = siblingCandidates(v.path, spec);
+  if (!candidates) return null;
+  const known = candidates.filter((c) => v.modules.get(c));
+  if (known.length === 1) return known[0]!;
+  if (siblingSlots(v) >= MAX_IMPORT_MODULES) { v.reasons.add(TEST_TARGET_TOO_LARGE); return null; }
+  return resolveSibling(v.path, spec, v.read);
+}
 /** M85: a named value import from a relative sibling, followed into that module with the same analysis. */
 function followImport(a: Analysis, imp: { spec: string; imported?: string }): void {
   const add = (r: string) => a.reasons.add(r);
   const v = a.v2!;
   if (!imp.imported || imp.imported === "default") { add(TEST_TARGET_IMPURE); return; }
-  const target = resolveSibling(v.path, imp.spec, v.read);
-  if (!target) { add(TEST_TARGET_IMPURE); return; }
+  const target = pickSibling(v, imp.spec);
+  if (!target) { add(v.reasons.has(TEST_TARGET_TOO_LARGE) ? TEST_TARGET_TOO_LARGE : TEST_TARGET_IMPURE); return; }
   const key = `${target}\0${imp.imported}`;
   if (v.followed.has(key)) return;
   v.followed.add(key);
-  if (v.depth >= MAX_IMPORT_DEPTH) { add(TEST_TARGET_TOO_LARGE); return; }
   const m = siblingModule(v, target);
-  if (!m) { add(v.modules.size > MAX_IMPORT_MODULES ? TEST_TARGET_TOO_LARGE : TEST_TARGET_IMPURE); return; }
+  if (!m) { add(v.reasons.has(TEST_TARGET_TOO_LARGE) ? TEST_TARGET_TOO_LARGE : TEST_TARGET_IMPURE); return; }
   // Only names the sibling itself declares and exports (functions or consts); re-exports are not followed.
   if (!m.idx.exportNames.has(imp.imported) || !(m.idx.fns.has(imp.imported) || m.idx.consts.has(imp.imported))) { add(TEST_TARGET_IMPURE); return; }
-  const sub: Analysis = { reasons: a.reasons, fns: m.fns, consts: m.consts, idx: m.idx, sf: m.sf, v2: { ...v, path: target, depth: v.depth + 1 } };
+  const subV: V2Ctx = { ...v, path: target, depth: v.depth + 1 };
+  const sub: Analysis = { reasons: a.reasons, fns: m.fns, consts: m.consts, idx: m.idx, sf: m.sf, v2: subV };
+  // The sibling module runs on import: its top-level statements and enum initializers, not only the imported name.
+  analyzeLoadedModule(subV, m.idx, m.sf);
   resolveName(sub, imp.imported, new Set());
+}
+
+function analysisFor(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): Analysis {
+  const cached = v2.modules.get(v2.path);
+  return { reasons: v2.reasons, fns: cached?.fns ?? new Set(), consts: cached?.consts ?? new Set(), idx, sf, v2 };
+}
+/** Enum member initializers run when the module loads. A pure number/string enum stays allowed. */
+function noteEnum(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile, name: string): void {
+  const key = `enum\0${sf.fileName}\0${name}`;
+  if (v2.scanned.has(key)) return;
+  v2.scanned.add(key);
+  const decl = sf.statements.find((s) => ts.isEnumDeclaration(s) && s.name.text === name);
+  if (!decl || !ts.isEnumDeclaration(decl)) return;
+  const a = analysisFor(v2, idx, sf);
+  for (const mem of decl.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
+}
+/**
+ * Statements that run because this module is loaded (the target, or a value-imported sibling):
+ * expression statements, enum initializers, and const/let initializers that are not function bodies.
+ */
+function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): void {
+  const key = `mod\0${v2.path}`;
+  if (v2.scanned.has(key)) return;
+  v2.scanned.add(key);
+  const a = analysisFor(v2, idx, sf);
+  for (const s of sf.statements) {
+    if (ts.isExpressionStatement(s)) analyzeExpression(a, s.expression);
+    else if (ts.isEnumDeclaration(s)) for (const mem of s.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
+    else if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) {
+      const init = d.initializer;
+      if (!init) continue;
+      const x = ts.isParenthesizedExpression(init) ? init.expression : init;
+      if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) continue;
+      analyzeExpression(a, init);
+    }
+  }
 }
 
 /**
@@ -231,20 +306,21 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
   if (ts.isTypeReferenceNode(t)) {
     if (!ts.isIdentifier(t.typeName) || t.typeArguments?.length) return false;
     const n = t.typeName.text;
-    if (idx.enums.has(n)) return true;
+    if (idx.enums.has(n)) { if (v2) noteEnum(v2, idx, sf, n); return true; }
     const d = idx.types.get(n);
     if (d) return ts.isInterfaceDeclaration(d) ? plainMembers(d.members, rec) : rec(d.type);
     if (d === null) return false;
     const imp = idx.imports.get(n);
     if (!imp || !v2 || !imp.imported || imp.imported === "default") return false;
-    const target = resolveSibling(v2.path, imp.spec, v2.read);
+    const target = pickSibling(v2, imp.spec);
     const m = target ? siblingModule(v2, target) : null;
     if (!m || !target) return false;
+    if (m.idx.enums.has(imp.imported)) { noteEnum({ ...v2, path: target, depth: v2.depth + 1 }, m.idx, m.sf, imp.imported); return true; }
     const sd = m.idx.types.get(imp.imported);
-    if (m.idx.enums.has(imp.imported)) return true;
     if (!sd) return false;
+    // pickSibling already refused depth >= MAX before this read, so the sibling sits at depth+1 <= MAX.
     const sv: V2Ctx = { ...v2, path: target, depth: v2.depth + 1 };
-    if (sv.depth > MAX_IMPORT_DEPTH) return false;
+    if (sv.depth > MAX_IMPORT_DEPTH) { v2.reasons.add(TEST_TARGET_TOO_LARGE); return false; }
     const srec = (x: ts.TypeNode) => structuralType(x, m.idx, m.sf, sv, depth + 1);
     return ts.isInterfaceDeclaration(sd) ? plainMembers(sd.members, srec) : srec(sd.type);
   }
@@ -292,7 +368,7 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
     analyzeExpression(a, a.idx.consts.get(name)!.initializer!);
     return;
   }
-  if (a.idx.enums.has(name)) return;
+  if (a.idx.enums.has(name)) { if (a.v2) noteEnum(a.v2, a.idx, a.sf, name); return; }
   if (a.idx.mutable.has(name)) { add(TEST_TARGET_IMPURE); return; }
   const imp = a.idx.imports.get(name);
   if (imp) {
@@ -415,12 +491,18 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) return TEST_TARGET_ASYNC;
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
-  const v2: V2Ctx | undefined = opts?.v2 ? { path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set() } : undefined;
-  const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
-  if (f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS) return TEST_TARGET_SIGNATURE;
-  for (const p of f.parameters) if (!ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || !p.type || !typeOk(p.type)) return TEST_TARGET_SIGNATURE;
+  const reasons = new Set<string>();
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set() } : undefined;
   if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
-  const a: Analysis = { reasons: new Set(), fns: v2 ? v2.modules.get(path)!.fns : new Set([fn]), consts: v2 ? v2.modules.get(path)!.consts : new Set(), idx, sf, v2 };
+  const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
+  const sigBad = !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || !p.type || !typeOk(p.type));
+  if (sigBad) {
+    if (v2) for (const r of PRIORITY) if (v2.reasons.has(r)) return r;
+    return TEST_TARGET_SIGNATURE;
+  }
+  const cached = v2?.modules.get(path);
+  const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2 };
+  if (v2) analyzeLoadedModule(v2, idx, sf);
   analyzeFunction(a, f);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   return null;
