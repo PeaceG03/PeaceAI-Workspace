@@ -25,8 +25,10 @@ const LOOP = approved.some((s) => s.id === "public-loop-function-v1") ? "public-
 // #273 prep: the four un-drop rules (env-fix, loop-function-v2, tsconfig-script, workflow-job) report task_unparsed on a guard task too.
 // #320: public-env-fix-v2 (approved as 6fade25) reports task_unparsed on a guard task like env-fix v1.
 // M74 (#338/#342): public-date-function-v1 (COMPLEX_FUNCTION, own "add date function" trigger) reports task_unparsed too.
+// M85 (#380): public-complex-calls-v1 reports task_unparsed on a guard task (its trigger is "add complex function"),
+// so once that approval is on the list it takes a slot in the capped line and env-fix-v2 drops off the end.
 // Entries sort by id, real reasons before task_unparsed, and formatRefusals keeps at most MAX_ENTRIES=5 (intentional truncation).
-const REPORTING = new Set(["public-complex-function-v1", "public-date-function-v1", "public-env-fix-v1", "public-env-fix-v2", "public-import-edit-v2", "public-loop-function-v1", "public-loop-function-v2", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1", "public-tsconfig-script-v1", "public-workflow-job-v1"]);
+const REPORTING = new Set(["public-complex-calls-v1", "public-complex-function-v1", "public-date-function-v1", "public-env-fix-v1", "public-env-fix-v2", "public-import-edit-v2", "public-loop-function-v1", "public-loop-function-v2", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1", "public-tsconfig-script-v1", "public-workflow-job-v1"]);
 const expected = (top: string | null) =>
   approved.map((s) => s.id).filter((id) => REPORTING.has(id)).sort()
     .flatMap((id) => (id === "public-throw-guard-top-v1" ? (top === null ? [] : [`${id}=${top}`]) : [`${id}=task_unparsed`]))
