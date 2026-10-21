@@ -169,3 +169,4 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - After landing: builder-log rows (by PeaceAI, source: peace, PeaceSTOCKS@sha) -> coverage 40/96 = 41.7% if all 8 land.
 - complex-calls-v1 / replace-expression-v2: no genuine PeaceSTOCKS target found; not invented.
 - 22:50 MDT: the 3 gaps are in batch-v4/v5/gaps-next.md and on Workspace branch m86/gaps-batch-v5 (builder-log/gaps.md append, pushed, NO PR). Filing still held: parent relayed an approval, but no message from Peace OKs this batch; needs Peace's own OK.
+- 22:42 MDT: Peace OK'd filing ("Yes, file all 8", via widget). Filed #390-#397 (v5/filed.txt). Watching peace-task reviews (watch.sh).
