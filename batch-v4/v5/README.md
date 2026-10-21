@@ -23,3 +23,9 @@ Findings (gaps, not misfires):
 - No genuine target found for public-complex-calls-v1 (adds new functions only; nothing needs one) or public-replace-expression-v2 (no known real bug). Not invented.
 
 To file (needs Peace's OK): bash file.sh (gh as PeaceG03, label peace-task -> peace-intake -> peace-task sweep).
+
+## Outcome (2026-10-20/21)
+- Filed #390-#397 (Peace OK 22:42 MDT). Reviews #390-#396: one candidate each, byte-identical to the box-graded diffs.
+- #397 parseFetchIdentityKey: REFUSED, no eligible candidate (run 39547838234, Job B REJECTED_FAILS_BOTH). The `\u0000` text in the bullet came back from GitHub as backslash + raw NUL, so the generated key was wrong; the test failed on the real code too. Safe refusal; not refiled. Gap 4.
+- Verdicts A right on #390-#396 → peacestocks-write runs approved by Peace → bot PRs PeaceSTOCKS#11-#17 → squash-merged (Builder, Peace's chat OK) as cb6f257 da54c21 39a7112 975e843 6d68dd8 abd442b 8b1f413. Landed files byte-identical to the reviewed diffs. PeaceSTOCKS CI Tests green on all; clean clone at 8b1f413: 4 typechecks + 563/563 (Node 22).
+- Builder-log PR #398 (m87/builder-log-pr-route): seq 139-145, trace.ts PR route, rule-skill v2 mapping, coverage 39/95 = 41.1%, gaps.md (m86 content folded in).
