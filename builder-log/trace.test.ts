@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NOREPLY_FROM, patchCommentBody, sha256 } from "../peaceai/lib/patch.ts";
 import type { Entry } from "./check.ts";
-import { GRANDFATHERED, issueOf, makeGhDeps, traceAll, traceErrors, traceLine, type ResultsView, type TraceDeps } from "./trace.ts";
+import { GRANDFATHERED, RIGHT_REPLY, issueOf, makeGhDeps, traceAll, traceErrors, traceLine, type ResultsView, type TraceDeps } from "./trace.ts";
 
 const DIFF = "diff --git a/x.ts b/x.ts\nindex 0000000..1111111 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1,2 @@\n a\n+b\n";
 const PATCH = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\n${NOREPLY_FROM}\nSubject: [PATCH] t\n\n---\n${DIFF}`;
@@ -187,4 +187,81 @@ test("PR route: a patch comment, when present, still takes the patch route", asy
   const [r] = await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1"), d);
   assert.equal(r!.status, "ok");
   assert.doesNotMatch(r!.detail, /via PeaceSTOCKS#/);
+});
+
+// ---- M89: Workspace self-landing found by its verdict branch (reply has no PR URL) ----
+const WS_REPLY = "Verdict recorded: A right. Opening a PR for A.";
+const WS_SHA = "4eb6818";
+const WS_PR = { merged: true, mergeCommit: WS_SHA + "0".repeat(33), headRef: "peace-task/issue-500-candidate-1-0123abcd", diff: DIFF };
+function wsDeps(o: { comments?: string[]; pulls?: Record<number, Partial<typeof WS_PR>>; list?: number[] | (() => never); view?: ResultsView | null; trees?: { applied: string | null; landing: string } } = {}): TraceDeps {
+  const pulls = o.pulls ?? { 406: {} };
+  return {
+    botComments: async (n) => (n === 500 ? (o.comments ?? [WS_REPLY]) : []),
+    results: o.view === null ? null : async () => o.view ?? { ...VIEW, target: "PeaceG03/PeaceAI-Workspace" },
+    trees: async () => o.trees ?? { applied: "t1", landing: "t1" },
+    pullRequest: async (_r, n) => {
+      if (!(n in pulls)) throw new Error("404");
+      return { ...WS_PR, ...pulls[n] };
+    },
+    verdictPulls: async () => (typeof o.list === "function" ? o.list() : (o.list ?? Object.keys(pulls).map(Number))),
+  };
+}
+const wsLine = (why = "landed through bot verdict PR PeaceAI-Workspace#406 (branch x) merged as PeaceAI-Workspace@4eb6818") =>
+  line(`PeaceAI-Workspace#500, PeaceAI-Workspace@${WS_SHA}`, 900, why);
+
+test("M89: RIGHT_REPLY matches the Workspace route reply (prguard planPr) and not other verdicts", () => {
+  assert.ok(RIGHT_REPLY.test(WS_REPLY));
+  assert.ok(RIGHT_REPLY.test("Verdict recorded: B right. PR #7 already holds this candidate, so no new PR was opened."));
+  for (const b of ["Verdict recorded: A wrong.", "Verdict recorded: A unsure. Stored as a label for A; your pick still counts.", "PeaceAI review.", "/verdict A right"]) assert.ok(!RIGHT_REPLY.test(b), b);
+});
+
+test("M89: Workspace self-landing traced by branch -> ok (Results and public mode)", async () => {
+  const [r] = await traceLine(wsLine(), wsDeps());
+  assert.equal(r!.status, "ok", r!.detail);
+  assert.match(r!.detail, /^candidate-1 via PeaceAI-Workspace#406 \(peace-task\/issue-500-candidate-1-0123abcd\), Results verified, tree t1$/);
+  const [p] = await traceLine(wsLine(), wsDeps({ view: null }));
+  assert.equal(p!.status, "ok");
+  assert.match(p!.detail, /Results NOT checked/);
+});
+
+test("M89: only the PR merged as the landing counts; closed siblings and other issues are ignored", async () => {
+  const pulls = { 404: { merged: false, mergeCommit: null }, 405: { headRef: "peace-task/issue-501-candidate-1-0123abcd" }, 406: {} };
+  const [r] = await traceLine(wsLine(), wsDeps({ pulls }));
+  assert.equal(r!.status, "ok", r!.detail);
+  assert.match(r!.detail, /via PeaceAI-Workspace#406 /);
+});
+
+test("M89: none or several merged as the landing -> T_PR_MISMATCH; why must name the found PR", async () => {
+  assert.equal((await traceLine(wsLine(), wsDeps({ pulls: { 406: { merged: false } } })))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(wsLine(), wsDeps({ pulls: { 406: { mergeCommit: "1234567" + "0".repeat(33) } } })))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(wsLine(), wsDeps({ pulls: { 406: { headRef: "feature/x" } } })))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(wsLine(), wsDeps({ list: [] })))[0]!.code, "T_PR_MISMATCH");
+  const two = await traceLine(wsLine(), wsDeps({ pulls: { 406: {}, 407: { headRef: "peace-task/issue-500-candidate-2-0123abcd" } } }));
+  assert.equal(two[0]!.code, "T_PR_MISMATCH");
+  assert.match(two[0]!.detail, /^2 verdict branch PRs/);
+  assert.equal((await traceLine(wsLine("landed as PeaceAI-Workspace@4eb6818"), wsDeps()))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(wsLine("verdict PR PeaceAI-Workspace#407"), wsDeps()))[0]!.code, "T_PR_MISMATCH");
+});
+
+test("M89: tree, Results pick and lookup failures fail closed", async () => {
+  assert.equal((await traceLine(wsLine(), wsDeps({ trees: { applied: "t2", landing: "t1" } })))[0]!.code, "T_TREE_MISMATCH");
+  assert.equal((await traceLine(wsLine(), wsDeps({ view: { ...VIEW, target: "PeaceG03/PeaceAI-Workspace", pick: { decided: true, candidateId: "candidate-2" } } })))[0]!.code, "T_HASH_MISMATCH");
+  assert.equal((await traceLine(wsLine(), wsDeps({ list: () => { throw new Error("403"); } })))[0]!.code, "T_LOOKUP_FAILED");
+  assert.equal((await traceLine(wsLine(), wsDeps({ list: [999] })))[0]!.code, "T_LOOKUP_FAILED");
+  const d = wsDeps();
+  delete d.verdictPulls;
+  assert.equal((await traceLine(wsLine(), d))[0]!.code, "T_LOOKUP_FAILED");
+});
+
+test("M89: no right-verdict reply -> T_NO_PATCH_COMMENT; branch lookup is Workspace-only", async () => {
+  assert.equal((await traceLine(wsLine(), wsDeps({ comments: [] })))[0]!.code, "T_NO_PATCH_COMMENT");
+  assert.equal((await traceLine(wsLine(), wsDeps({ comments: ["Verdict recorded: A wrong."] })))[0]!.code, "T_NO_PATCH_COMMENT");
+  const stocks = line("PeaceAI-Workspace#500, PeaceSTOCKS@4eb6818", 900, "verdict PR PeaceSTOCKS#406");
+  assert.equal((await traceLine(stocks, wsDeps()))[0]!.code, "T_NO_PATCH_COMMENT", "PeaceSTOCKS still needs the reply URL");
+});
+
+test("M89: grandfathered 221-225 stay exempt and are reported, not re-traced", async () => {
+  for (const s of [221, 222, 223, 224, 225]) assert.match(GRANDFATHERED[s]!, /^T_NO_PATCH_COMMENT: #\d+ is a Workspace self-zone task/);
+  const rows = await traceAll([{ ...wsLine(), seq: 221 }], wsDeps());
+  assert.equal(rows[0]!.status, "grandfathered");
 });

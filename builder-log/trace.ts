@@ -1,5 +1,6 @@
 // Traces every by:PeaceAI repo@sha landing back to its verdict patch (Auditor residual after #216).
 // M87: or, on the verdict PR route (#379, peacestocks-write), back to the bot-opened verdict PR: see tracePr.
+// M89: a Workspace self-landing (reply without a PR URL) is found by its verdict branch: see traceByBranch.
 // For each landing: the line's PeaceAI-Workspace#N must carry a PeaceAI verdict patch comment from
 // github-actions[bot]; the patch must verify against PeaceAI-Results exactly as apply-verdict-patch.ts
 // does (lib/patch.ts verifyPatch); and the patch applied to the landing's first parent must give a tree
@@ -9,6 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { effectiveVerdict, type TaskRecord, type VerdictRecord } from "../peaceai/lib/records.ts";
 import { parsePatchComment, PATCH_MARKER, sha256, verifyPatch, type PatchComment } from "../peaceai/lib/patch.ts";
 import { parseProvenance } from "../peaceai/lib/stacked.ts";
@@ -64,6 +66,8 @@ export interface TraceDeps {
   stack?(repo: string, sha: string, base: string): Promise<{ onto: string; via: string[] } | null>;
   /** M87 PR route: a target-repo pull request (state, merge commit, head branch, and its diff). */
   pullRequest?(repo: string, n: number): Promise<PullView>;
+  /** M89 Workspace self-landing: numbers of `repo` PRs (any state) whose head is peace-task/issue-<issue>-candidate-*. */
+  verdictPulls?(repo: string, issue: number): Promise<number[]>;
 }
 
 export interface PullView {
@@ -77,6 +81,8 @@ export interface PullView {
 export const PR_REPLY = /Opening a PR for ([A-Z])\. https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d{1,9})\s*$/;
 /** M87: the verdict branch prguard.ts prBranch names: peace-task/issue-<n>-<candidate id>-<8 hex>. */
 const PR_BRANCH = /^peace-task\/issue-(\d{1,9})-(candidate-\d{1,3})-[0-9a-f]{8}$/;
+/** M89: the Workspace verdict route's reply names no PR URL (prguard.ts planPr); a recorded `right` verdict is required. */
+export const RIGHT_REPLY = /^Verdict recorded: [A-Z] right\./;
 
 export interface TraceRow {
   seq: number;
@@ -135,6 +141,8 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
   if (!posted) {
     const pr = bodies.map((b) => PR_REPLY.exec(b.trim())).filter((m): m is RegExpExecArray => m !== null).pop();
     if (pr) return tracePr(seq, landing, repo, sha, issue, deps, why, pr[2]!, Number(pr[3]));
+    // M89: Workspace self-landing. The reply carries no PR URL, so find the verdict PR by its branch.
+    if (repo.toLowerCase() === WORKSPACE.toLowerCase() && bodies.some((b) => RIGHT_REPLY.test(b.trim()))) return traceByBranch(seq, landing, repo, sha, issue, deps, why);
     return fail("T_NO_PATCH_COMMENT", `#${issue} has no bot verdict patch comment`);
   }
   const comment: PatchComment | null = parsePatchComment(posted);
@@ -184,6 +192,31 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
   }
   const res = deps.results ? "Results verified" : "Results NOT checked (public mode)";
   return { seq, landing, issue, status: "ok", detail: `${comment.candidateId} run ${comment.runId}, ${res}, tree ${t.landing.slice(0, 12)}${stackNote}` };
+}
+
+/**
+ * M89 Workspace self-landing route: the bot verdict reply names no PR URL, so list the Workspace PRs on this
+ * issue's verdict branches (peace-task/issue-<n>-candidate-*). Exactly one may be merged as the landing; it is
+ * then checked exactly like the M87 PR route (why names it once, branch, tree, Results pick). Read-only.
+ */
+async function traceByBranch(seq: number, landing: string, repo: string, sha: string, issue: number, deps: TraceDeps, why: string): Promise<TraceRow> {
+  const fail = (code: TraceCode, detail: string): TraceRow => ({ seq, landing, issue, status: "fail", code, detail });
+  if (!deps.verdictPulls || !deps.pullRequest) return fail("T_LOOKUP_FAILED", "no verdict branch lookup");
+  const hits: number[] = [];
+  try {
+    const ns = [...new Set(await deps.verdictPulls(repo, issue))].filter((n) => Number.isInteger(n) && n > 0).sort((a, b) => a - b);
+    for (const n of ns) {
+      const pr = await deps.pullRequest(repo, n);
+      const br = PR_BRANCH.exec(pr.headRef);
+      if (br && Number(br[1]) === issue && pr.merged && pr.mergeCommit !== null && pr.mergeCommit.startsWith(sha)) hits.push(n);
+    }
+  } catch (err) {
+    void err;
+    return fail("T_LOOKUP_FAILED", `verdict branch lookup for #${issue} failed`);
+  }
+  if (hits.length === 0) return fail("T_PR_MISMATCH", `no verdict branch PR for #${issue} is merged as ${sha}`);
+  if (hits.length > 1) return fail("T_PR_MISMATCH", `${hits.length} verdict branch PRs for #${issue} are merged as ${sha}`);
+  return tracePr(seq, landing, repo, sha, issue, deps, why, repo, hits[0]!);
 }
 
 /**
@@ -331,6 +364,16 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
       const diff = gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${repo}/pulls/${n}`]);
       return { merged: j.merged === true, mergeCommit: j.mergeCommit ?? null, headRef: String(j.headRef), diff };
     },
+    async verdictPulls(repo, issue) {
+      // Read-only: closed and open PRs, filtered by the exact verdict-branch prefix for this issue.
+      const prefix = `peace-task/issue-${issue}-candidate-`;
+      return gh(["api", "--paginate", `repos/${repo}/pulls?state=all&per_page=100`, "--jq", ".[] | [.number, .head.ref] | @tsv"])
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => l.split("\t"))
+        .filter(([, ref]) => typeof ref === "string" && ref.startsWith(prefix))
+        .map(([n]) => Number(n));
+    },
     async trees(repo, sha, patch) {
       const dir = clones[repo];
       if (!dir) throw new Error(`no local clone for ${repo}`);
@@ -368,6 +411,8 @@ async function main(): Promise<void> {
       if (repo && dir) clones[repo] = dir;
     }
   });
+  // M89: Workspace self-landings trace against this checkout unless a Workspace clone is given.
+  if (!clones[WORKSPACE]) clones[WORKSPACE] = fileURLToPath(new URL("..", import.meta.url));
   const ri = process.argv.indexOf("--results-dir");
   const results = process.argv.includes("--no-results") ? null : ri > 0 ? { dir: process.argv[ri + 1]! } : "gh";
   const rows = await traceAll(entries, makeGhDeps(clones, results));
