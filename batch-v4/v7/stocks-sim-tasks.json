@@ -1,0 +1,31 @@
+{
+ "schema": "peaceai-stress-suite:v1",
+ "target": "PeaceG03/PeaceSTOCKS",
+ "base": "8b1f413",
+ "tasks": [
+  {
+   "id": "P1",
+   "title": "[scan-backstop] lastScanSlot: characterization test",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for lastScanSlot in src/scan-backstop.ts: last scan slots\n- lastScanSlot(new Date(\"2026-10-21T16:00:00Z\")) is new Date(\"2026-10-21T09:30:00.000Z\")\n- lastScanSlot(new Date(\"2026-10-19T00:10:00Z\")) is new Date(\"2026-10-17T09:30:00.000Z\")\n- lastScanSlot(new Date(\"2026-10-18T12:00:00Z\")) is new Date(\"2026-10-17T09:30:00.000Z\")\n\n(Local box sim only, never filed: TEST_CASE_EXISTING v3 dry-run on PeaceSTOCKS 8b1f413.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "src/scan-backstop.ts",
+     "fn": "lastScanSlot"
+    }
+   }
+  },
+  {
+   "id": "P2",
+   "title": "[scan-backstop] dueSlot: characterization test",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for dueSlot in src/scan-backstop.ts: due backstop slots\n- dueSlot(new Date(\"2026-10-21T10:15:00Z\")) is new Date(\"2026-10-21T09:30:00.000Z\")\n- dueSlot(new Date(\"2026-10-21T06:30:00Z\")) is new Date(\"2026-10-21T05:30:00.000Z\")\n- dueSlot(new Date(\"2026-10-21T12:00:00Z\")) is null\n\n(Local box sim only, never filed: TEST_CASE_EXISTING v3 dry-run on PeaceSTOCKS 8b1f413.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "src/scan-backstop.ts",
+     "fn": "dueSlot"
+    }
+   }
+  }
+ ]
+}
