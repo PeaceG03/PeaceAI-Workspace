@@ -1,4 +1,5 @@
 // Traces every by:PeaceAI repo@sha landing back to its verdict patch (Auditor residual after #216).
+// M87: or, on the verdict PR route (#379, peacestocks-write), back to the bot-opened verdict PR: see tracePr.
 // For each landing: the line's PeaceAI-Workspace#N must carry a PeaceAI verdict patch comment from
 // github-actions[bot]; the patch must verify against PeaceAI-Results exactly as apply-verdict-patch.ts
 // does (lib/patch.ts verifyPatch); and the patch applied to the landing's first parent must give a tree
@@ -26,7 +27,8 @@ export type TraceCode =
   | "T_TREE_MISMATCH" // patch on first parent != landing tree
   | "T_APPLY_FAILED" // patch does not apply to first parent
   | "T_LOOKUP_FAILED" // comment / git lookup failed (fail closed)
-  | "T_STACK_MISMATCH"; // a `stacked:` provenance clause (lib/stacked.ts) does not match git
+  | "T_STACK_MISMATCH" // a `stacked:` provenance clause (lib/stacked.ts) does not match git
+  | "T_PR_MISMATCH"; // M87 PR route: the verdict PR is not merged as the landing, not this issue's branch, or not named in `why`
 
 /** Reviewed exemptions: line seq -> reason. Each one is reported, never silent. */
 export const GRANDFATHERED: Readonly<Record<number, string>> = {
@@ -55,7 +57,21 @@ export interface TraceDeps {
   trees(repo: string, sha: string, patch: string): Promise<{ applied: string | null; landing: string }>;
   /** Stacked landings: the landing's first parent and the merge-free chain base..parent (full shas), or null. */
   stack?(repo: string, sha: string, base: string): Promise<{ onto: string; via: string[] } | null>;
+  /** M87 PR route: a target-repo pull request (state, merge commit, head branch, and its diff). */
+  pullRequest?(repo: string, n: number): Promise<PullView>;
 }
+
+export interface PullView {
+  merged: boolean;
+  mergeCommit: string | null;
+  headRef: string;
+  diff: string;
+}
+
+/** M87: the verdict job's reply on the PR route (prguard.ts planPr reply + the opened PR's URL), last line. */
+export const PR_REPLY = /Opening a PR for ([A-Z])\. https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d{1,9})\s*$/;
+/** M87: the verdict branch prguard.ts prBranch names: peace-task/issue-<n>-<candidate id>-<8 hex>. */
+const PR_BRANCH = /^peace-task\/issue-(\d{1,9})-(candidate-\d{1,3})-[0-9a-f]{8}$/;
 
 export interface TraceRow {
   seq: number;
@@ -111,7 +127,11 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
     return fail("T_LOOKUP_FAILED", "issue comments lookup failed");
   }
   const posted = bodies.filter((b) => b.replace(/\r\n/g, "\n").startsWith(PATCH_MARKER + "\n")).pop();
-  if (!posted) return fail("T_NO_PATCH_COMMENT", `#${issue} has no bot verdict patch comment`);
+  if (!posted) {
+    const pr = bodies.map((b) => PR_REPLY.exec(b.trim())).filter((m): m is RegExpExecArray => m !== null).pop();
+    if (pr) return tracePr(seq, landing, repo, sha, issue, deps, why, pr[2]!, Number(pr[3]));
+    return fail("T_NO_PATCH_COMMENT", `#${issue} has no bot verdict patch comment`);
+  }
   const comment: PatchComment | null = parsePatchComment(posted);
   if (!comment) return fail("T_PATCH_MALFORMED", `#${issue} patch comment is malformed`);
   if (comment.target.toLowerCase() !== repo.toLowerCase()) return fail("T_TARGET_MISMATCH", `patch target ${comment.target} is not ${repo}`);
@@ -159,6 +179,61 @@ async function traceOne(seq: number, landing: string, repo: string, sha: string,
   }
   const res = deps.results ? "Results verified" : "Results NOT checked (public mode)";
   return { seq, landing, issue, status: "ok", detail: `${comment.candidateId} run ${comment.runId}, ${res}, tree ${t.landing.slice(0, 12)}${stackNote}` };
+}
+
+/**
+ * M87 PR route (#379): the verdict job opened PR <n> on the target; the landing must be that PR merged
+ * (its merge commit), from this issue's verdict branch, named in `why` as "verdict PR <Label>#<n>".
+ * The PR's diff applied to the landing's first parent must give the landing tree (squash or merge). With
+ * Results: the branch candidate is the effective `right` pick and the Results candidate diff gives the same tree.
+ */
+async function tracePr(seq: number, landing: string, repo: string, sha: string, issue: number, deps: TraceDeps, why: string, prRepo: string, n: number): Promise<TraceRow> {
+  const fail = (code: TraceCode, detail: string): TraceRow => ({ seq, landing, issue, status: "fail", code, detail });
+  if (prRepo.toLowerCase() !== repo.toLowerCase()) return fail("T_TARGET_MISMATCH", `verdict PR repo ${prRepo} is not ${repo}`);
+  const label = landing.split("@")[0]!;
+  const named = [...why.matchAll(/\bverdict PR ([\w-]+)#(\d{1,9})\b/g)];
+  if (named.length !== 1 || named[0]![1] !== label || Number(named[0]![2]) !== n) return fail("T_PR_MISMATCH", `why must name the verdict PR once as "verdict PR ${label}#${n}"`);
+  if (!deps.pullRequest) return fail("T_LOOKUP_FAILED", "no pull request lookup");
+  let pr: PullView;
+  try {
+    pr = await deps.pullRequest(repo, n);
+  } catch (err) {
+    void err;
+    return fail("T_LOOKUP_FAILED", `${label}#${n} lookup failed`);
+  }
+  if (!pr.merged || !pr.mergeCommit || !pr.mergeCommit.startsWith(sha)) return fail("T_PR_MISMATCH", `${label}#${n} is not merged as ${sha}`);
+  const br = PR_BRANCH.exec(pr.headRef);
+  if (!br || Number(br[1]) !== issue) return fail("T_PR_MISMATCH", `${label}#${n} head branch is not a verdict branch for #${issue}`);
+  const tree = async (patch: string): Promise<TraceRow | string> => {
+    let t: { applied: string | null; landing: string };
+    try {
+      t = await deps.trees(repo, sha, patch);
+    } catch (err) {
+      void err;
+      return fail("T_LOOKUP_FAILED", "git tree lookup failed");
+    }
+    if (t.applied === null) return fail("T_APPLY_FAILED", `diff does not apply to ${sha}^1`);
+    if (t.applied !== t.landing) return fail("T_TREE_MISMATCH", `diff on ${sha}^1 gives ${t.applied.slice(0, 12)}, landing tree ${t.landing.slice(0, 12)}`);
+    return t.landing;
+  };
+  const prTree = await tree(pr.diff);
+  if (typeof prTree !== "string") return prTree;
+  if (deps.results) {
+    let view: ResultsView;
+    try {
+      view = await deps.results(issue);
+    } catch (err) {
+      void err;
+      return fail("T_RESULTS_UNREADABLE", "Results record missing or unreadable");
+    }
+    // Codes and hashes only: never Results bytes.
+    if (view.target.toLowerCase() !== repo.toLowerCase() || !view.pick.decided || view.pick.candidateId !== br[2] || view.resultsDiff === null)
+      return fail("T_HASH_MISMATCH", `H_RESULTS_PR pick/target does not match ${pr.headRef}`);
+    const rt = await tree(view.resultsDiff);
+    if (typeof rt !== "string") return { ...rt, code: "T_HASH_MISMATCH", detail: `H_RESULTS_PR results-diff-sha256 ${sha256(view.resultsDiff)}` };
+  }
+  const res = deps.results ? "Results verified" : "Results NOT checked (public mode)";
+  return { seq, landing, issue, status: "ok", detail: `${br[2]} via ${label}#${n} (${pr.headRef}), ${res}, tree ${prTree.slice(0, 12)}` };
 }
 
 export async function traceAll(entries: readonly Entry[], deps: TraceDeps): Promise<TraceRow[]> {
@@ -245,6 +320,11 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
       const all = g(["rev-list", "--reverse", `${full}..${onto}`]).split("\n").filter(Boolean);
       const fp = g(["rev-list", "--reverse", "--first-parent", `${full}..${onto}`]).split("\n").filter(Boolean);
       return all.join() === fp.join() ? { onto, via: all } : null;
+    },
+    async pullRequest(repo, n) {
+      const j = JSON.parse(gh(["api", `repos/${repo}/pulls/${n}`, "--jq", "{merged: .merged, mergeCommit: .merge_commit_sha, headRef: .head.ref}"])) as Omit<PullView, "diff">;
+      const diff = gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${repo}/pulls/${n}`]);
+      return { merged: j.merged === true, mergeCommit: j.mergeCommit ?? null, headRef: String(j.headRef), diff };
     },
     async trees(repo, sha, patch) {
       const dir = clones[repo];

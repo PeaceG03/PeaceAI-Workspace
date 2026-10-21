@@ -123,3 +123,68 @@ test("stacked provenance: matches git -> ok; mismatch, malformed, missing dep ->
   assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, STACKED), deps()))[0]!.code, "T_STACK_MISMATCH");
   assert.equal((await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, "#500 stacked: base zz"), withStack({ onto: Y, via: [V1] })))[0]!.code, "T_STACK_MISMATCH");
 });
+
+// ---- M87: verdict PR route (#379, peacestocks-write) ----
+const PR_REPLY_BODY = (n = 11, repo = "PeaceG03/PeaceSTOCKS") => `Verdict recorded: A right. Opening a PR for A. https://github.com/${repo}/pull/${n}`;
+const PR_VIEW = { merged: true, mergeCommit: "abcdef1" + "0".repeat(33), headRef: "peace-task/issue-500-candidate-1-0123abcd", diff: DIFF };
+function prDeps(o: { comments?: string[]; pr?: Partial<typeof PR_VIEW>; view?: ResultsView | null; trees?: (patch: string) => { applied: string | null; landing: string } } = {}): TraceDeps {
+  return {
+    botComments: async (n) => (n === 500 ? (o.comments ?? [PR_REPLY_BODY()]) : []),
+    results: o.view === null ? null : async () => o.view ?? VIEW,
+    trees: async (_r, _s, patch) => (o.trees ? o.trees(patch) : { applied: "t1", landing: "t1" }),
+    pullRequest: async () => ({ ...PR_VIEW, ...o.pr }),
+  };
+}
+const prLine = (why = "landed through verdict PR PeaceSTOCKS#11 (squash) as PeaceSTOCKS@abcdef1") => line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 900, why);
+
+test("PR route: bot PR reply + merged verdict PR + tree + Results pick -> ok", async () => {
+  const [r] = await traceLine(prLine(), prDeps());
+  assert.equal(r!.status, "ok", r!.detail);
+  assert.match(r!.detail, /^candidate-1 via PeaceSTOCKS#11 \(peace-task\/issue-500-candidate-1-0123abcd\), Results verified, tree t1$/);
+  const [p] = await traceLine(prLine(), prDeps({ view: null }));
+  assert.equal(p!.status, "ok");
+  assert.match(p!.detail, /Results NOT checked/);
+});
+
+test("PR route: why must name the same verdict PR exactly once", async () => {
+  assert.equal((await traceLine(prLine("landed as PeaceSTOCKS@abcdef1"), prDeps()))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(prLine("verdict PR PeaceSTOCKS#12"), prDeps()))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(prLine("verdict PR PeaceSTOCKS#11 and verdict PR PeaceSTOCKS#11"), prDeps()))[0]!.code, "T_PR_MISMATCH");
+});
+
+test("PR route: PR in another repo -> T_TARGET_MISMATCH; no bot reply -> T_NO_PATCH_COMMENT", async () => {
+  assert.equal((await traceLine(prLine(), prDeps({ comments: [PR_REPLY_BODY(11, "evil/PeaceSTOCKS")] })))[0]!.code, "T_TARGET_MISMATCH");
+  assert.equal((await traceLine(prLine(), prDeps({ comments: [] })))[0]!.code, "T_NO_PATCH_COMMENT");
+  assert.equal((await traceLine(prLine(), prDeps({ comments: ["Verdict recorded: A right."] })))[0]!.code, "T_NO_PATCH_COMMENT");
+});
+
+test("PR route: unmerged, merged as another commit, or foreign branch -> T_PR_MISMATCH", async () => {
+  assert.equal((await traceLine(prLine(), prDeps({ pr: { merged: false } })))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(prLine(), prDeps({ pr: { mergeCommit: "1234567" + "0".repeat(33) } })))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(prLine(), prDeps({ pr: { headRef: "peace-task/issue-501-candidate-1-0123abcd" } })))[0]!.code, "T_PR_MISMATCH");
+  assert.equal((await traceLine(prLine(), prDeps({ pr: { headRef: "feature/x" } })))[0]!.code, "T_PR_MISMATCH");
+});
+
+test("PR route: PR diff not the landing -> T_TREE_MISMATCH / T_APPLY_FAILED", async () => {
+  assert.equal((await traceLine(prLine(), prDeps({ trees: () => ({ applied: "t2", landing: "t1" }) })))[0]!.code, "T_TREE_MISMATCH");
+  assert.equal((await traceLine(prLine(), prDeps({ trees: () => ({ applied: null, landing: "t1" }) })))[0]!.code, "T_APPLY_FAILED");
+});
+
+test("PR route: Results pick differs from the branch candidate, or the Results diff is not the landing -> T_HASH_MISMATCH (codes only)", async () => {
+  const other = await traceLine(prLine(), prDeps({ view: { ...VIEW, pick: { decided: true, candidateId: "candidate-2" } } }));
+  assert.equal(other[0]!.code, "T_HASH_MISMATCH");
+  const undecided = await traceLine(prLine(), prDeps({ view: { ...VIEW, pick: { decided: false, candidateId: null } } }));
+  assert.equal(undecided[0]!.code, "T_HASH_MISMATCH");
+  const RD = DIFF + "+x\n";
+  const diffd = await traceLine(prLine(), prDeps({ view: { ...VIEW, resultsDiff: RD }, trees: (p) => ({ applied: p === RD ? "t9" : "t1", landing: "t1" }) }));
+  assert.equal(diffd[0]!.code, "T_HASH_MISMATCH");
+  assert.match(diffd[0]!.detail, /^H_RESULTS_PR results-diff-sha256 [0-9a-f]{64}$/);
+  assert.ok(!diffd[0]!.detail.includes("+x"));
+});
+
+test("PR route: a patch comment, when present, still takes the patch route", async () => {
+  const d = prDeps({ comments: [PR_REPLY_BODY(), comment()] });
+  const [r] = await traceLine(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1"), d);
+  assert.equal(r!.status, "ok");
+  assert.doesNotMatch(r!.detail, /via PeaceSTOCKS#/);
+});
