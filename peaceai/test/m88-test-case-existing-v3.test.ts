@@ -21,7 +21,7 @@ const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v3.json")) as RuleSpec;
 const V1 = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v1.json")) as RuleSpec;
 const V2 = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v2.json")) as RuleSpec;
-const SHA = "5f543fb61f5af8bb64be324368ec1bcc1e1982757e5b54077197d226ab969008";
+const SHA = "b31df045b2de0fe7ce970f556de3c16fe14afce10a689905b172a053c68d3557";
 
 const A = [
   "export interface Win { start: Date; end: Date; label: string }",
@@ -193,4 +193,62 @@ test("graded test source: fixed Date literals only, and only for v3 grading", ()
     'assert.equal(dayKey(new Date("2026-10-17", "x")), "x");',
   ]) assert.notEqual(gradedTestSourceProblem(src(body), ["./a", "./a.ts"], ["dayKey"], [], true), null, body);
   assert.match(read("peaceai/bin/test-candidates.ts"), /gradedTestSourceProblem\(test, \[spec, `\$\{spec\}\.ts`\], declaredFunctions\(real\), moduleDataKeys\(real\), v3\)/);
+});
+
+// ---- mined evidence ----
+type Pin = { path: string; fileBlob: string; sha256: string; fixture: string; repo: string; commit: string };
+type Ex = Pin & { module: string; fn: string; signature: string; v1Refusal: string; v2Refusal: string; siblings: Pin[]; license: string; licenseSha256: string };
+const EV = JSON.parse(read("peaceai/rules/proposals/m88-test-case-existing-v3-evidence.json")) as { bar: number; manifestSha256: string; examples: Ex[]; peace: { repo: string; checkedAt: string; counted: number }[] };
+const gitBlob = (b: Buffer) => createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
+const pinned = (p: { fixture: string; fileBlob: string; sha256: string }) => {
+  const b = readFileSync(resolve(root, p.fixture));
+  assert.ok(b.length <= 65536, p.fixture);
+  assert.equal(gitBlob(b), p.fileBlob, p.fixture);
+  assert.equal(createHash("sha256").update(b).digest("hex"), p.sha256, p.fixture);
+  return b.toString("utf8");
+};
+test("evidence: bar met; every module and sibling blob-pinned; v1 and v2 refuse and v3 accepts each on the pinned text", () => {
+  assert.ok(EV.examples.length >= EV.bar && EV.bar >= 10);
+  assert.equal(new Set(EV.examples.map((e) => `${e.repo}\0${e.module}\0${e.fn}`)).size, EV.examples.length);
+  const perRepo = new Map<string, number>();
+  for (const e of EV.examples) perRepo.set(e.repo, (perRepo.get(e.repo) ?? 0) + 1);
+  assert.ok([...perRepo.values()].every((n) => n <= 3), "at most 3 per repo");
+  for (const e of EV.examples) {
+    const text = pinned(e);
+    const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
+    const rd = { read: (rel: string) => sibs.get(rel) ?? null };
+    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+    assert.notEqual(e.v2Refusal, null);
+    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true }), null, `${e.repo} ${e.fn} v3`);
+    // v3 differs from v2 only by the global Date, so a v2 refusal that v3 lifts is a Date in the signature's types.
+    assert.ok(/\bDate\b/.test(e.signature) || /\bDate\b/.test(text) || [...sibs.values()].some((t) => /\bDate\b/.test(t)), `${e.fn}: Date in the signature or a followed type`);
+  }
+});
+test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {
+  const notices = read("THIRD_PARTY_NOTICES");
+  const listed = new Set<string>();
+  for (const e of EV.examples) {
+    assert.ok(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"].includes(e.license), e.repo);
+    assert.ok(notices.includes(`repo: ${e.repo}\nlicense: ${e.license} (`) && notices.includes(`sha256 of trimmed text ${e.licenseSha256})`), e.repo);
+    for (const p of [e, ...e.siblings]) { assert.ok(notices.includes(` ${p.fixture}\n`), p.fixture); listed.add(p.fixture.split("/").pop()!); }
+  }
+  const have = readdirSync(resolve(root, "peaceai/test/fixtures/m88-te3"));
+  for (const f of have) assert.ok(listed.has(f), f);
+  assert.equal(have.length, listed.size);
+});
+test("evidence: no overlap with the training corpus or the ext-manifest; Peace's repos checked first and not counted", () => {
+  const buf = readManifestBytes(resolve(root, "peaceai/model"), "ext-manifest");
+  assert.equal(createHash("sha256").update(buf).digest("hex"), EV.manifestSha256);
+  const repos = new Set<string>(); const shas = new Set<string>();
+  for (const l of buf.toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l) as { repo?: string; sha256?: string }; if (r.repo) repos.add(r.repo); if (r.sha256) shas.add(r.sha256); }
+  for (const r of (JSON.parse(read("peaceai/model/ext-corpus.json")) as { repos: { name: string }[] }).repos) repos.add(r.name);
+  for (const e of EV.examples) { assert.ok(!repos.has(e.repo), e.repo); for (const p of [e, ...e.siblings]) assert.ok(!shas.has(p.sha256), p.fixture); assert.ok(!e.repo.startsWith("PeaceG03/")); }
+  for (const p of EV.peace) { assert.ok(repos.has(p.repo)); assert.equal(p.counted, 0); assert.match(p.checkedAt, /^[0-9a-f]{40}$/); }
+  const rec = JSON.parse(read("peaceai/rules/proposals/public-test-case-existing-v3.json")) as { status: string; evidence: { examples: number; repos: number; bar: number; qualifies: boolean } };
+  assert.match(rec.status, /^proposal-off/);
+  assert.equal(rec.evidence.examples, EV.examples.length);
+  assert.equal(rec.evidence.repos, new Set(EV.examples.map((e) => e.repo)).size);
+  assert.ok(rec.evidence.qualifies && rec.evidence.examples >= rec.evidence.bar);
+  assert.deepEqual(SPEC.evidence.repos, [...new Set(EV.examples.map((e) => e.repo))].sort());
 });
