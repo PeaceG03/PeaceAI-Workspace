@@ -28,6 +28,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-tsconfig-script-v1": "TSCONFIG_SCRIPT",
   "public-import-edit-v2": "IMPORT_EDIT",
   "public-test-case-existing-v1": "TEST_CASE_EXISTING", // M80: kind TEST_EXISTING, shape TEST_CASE_EXISTING
+  "public-test-case-existing-v2": "TEST_CASE_EXISTING", // M85: v2 target (plain-data object/array signatures, sibling imports); same kind
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */

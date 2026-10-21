@@ -33,3 +33,14 @@ CI (`.github/workflows/builder-log.yml`) checks the schema and that the file at 
 - Remaining Builder tasks are ranked by missing skill count (`top missing`).
 
 Counting is over `tasks.jsonl` only; the optional PeaceSTOCKS clone is read-only ancestry, not a network call from the coverage math itself.
+
+## Verdict PR route (M87)
+
+Since #379 and the `peacestocks-write` environment (2026-10-20), a `/verdict X right` on a PeaceSTOCKS task can land through a
+PR the verdict job opens on PeaceSTOCKS (Peace approves the environment run; the bot never merges) instead of a patch comment.
+`trace.ts` traces such a landing when the issue has no patch comment but has the bot's reply `… Opening a PR for X. <PR URL>`:
+the `why` must name it once as `verdict PR PeaceSTOCKS#<n>`; the PR must be merged with the landing as its merge commit; its head
+branch must be this issue's `peace-task/issue-<N>-<candidate>-<hex>`; and its diff applied to the landing's first parent must give
+the landing tree. In Results mode the branch candidate must be the effective `right` pick and the Results candidate diff must give
+the same tree (`T_PR_MISMATCH` / `T_HASH_MISMATCH H_RESULTS_PR`, codes and hashes only). First landings: seq 139-145 (#390-#396 via
+PeaceSTOCKS#11-#17).
