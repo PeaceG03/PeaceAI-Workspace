@@ -60,3 +60,9 @@ and the two 1000-page listing caps (a59def2 + 27acba9, MODIFY_LOGIC). All are `m
 (ENV_FIX 11:41, WORKFLOW_JOB 11:46, TSCONFIG_SCRIPT 12:17) or has no rule. Every other first-parent commit on PeaceSTOCKS main since
 seq 96 is a PeaceAI landing with its own row; 2f1ff83 is the merge of PeaceSTOCKS#9 (PeaceAI's b5b9c4b, seq 119). Coverage becomes
 39/170 (22.9%) from 2026-10-21; the secondary figure excluding PEACEAI_SELF_CHANGE is 39/78 (50%).
+
+## PeaceAI Workspace landings (2026-10-21)
+
+Seq 221-225 record Peace's self-zone tasks #399-#403 (public-test-case-existing-v1), landed by PeaceAI through bot verdict PRs #406-#410
+(merge commits 4eb6818, 4d187f8, 9af05b4, 4a69bef, c2c10e1). The Workspace verdict reply names no PR URL, so trace.ts reports them as
+GRANDFATHERED T_NO_PATCH_COMMENT (like seq 124). coverage.ts counts PeaceSTOCKS landings only, so they do not change the figure (39/170).

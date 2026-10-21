@@ -175,6 +175,9 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
   assert.equal(r20.excludingSelfChange.allTime.builderTasks, 78);
   assert.equal(r20.excludingSelfChange.allTime.percent, 50);
   const today = coverageReport(text, denverYmd(), { onMain });
+  // Seq 221-225 (#399-#403, PeaceAI TEST_CASE_EXISTING landings on PeaceAI-Workspace via verdict PRs #406-#410, 2026-10-21)
+  // name no PeaceSTOCKS@sha, so isPeaceRealTask leaves them out: the figure stays 39/170.
+  assert.equal(today.allTime.peaceaiAble, 39);
   assert.equal(today.allTime.builderTasks, 170);
   assert.equal(today.allTime.percent, 22.9);
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/133.
