@@ -1,0 +1,15 @@
+diff --git a/src/tenmin-redispatch.cancel-plan-c00398a.test.ts b/src/tenmin-redispatch.cancel-plan-c00398a.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e1ea81dcf1b6492239f298a25d12064815b58749
+--- /dev/null
++++ b/src/tenmin-redispatch.cancel-plan-c00398a.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { planCancelDispatchedRun } from "./tenmin-redispatch";
++
++test("cancel plan", () => {
++  assert.deepEqual(planCancelDispatchedRun(undefined), { action: "none", detail: "dispatched-run-not-found" });
++  assert.deepEqual(planCancelDispatchedRun({ id: 7, event: "workflow_dispatch", status: "in_progress", conclusion: null, created_at: "2024-01-01T00:00:00Z" }), { action: "cancel", runId: 7 });
++  assert.deepEqual(planCancelDispatchedRun({ id: 8, event: "workflow_dispatch", status: "completed", conclusion: "success", created_at: "2024-01-01T00:00:00Z" }), { action: "none", detail: "status=completed:conclusion=success" });
++});

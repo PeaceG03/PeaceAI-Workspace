@@ -1,0 +1,16 @@
+diff --git a/src/tenmin-redispatch.heal-dispatch-4268f30.test.ts b/src/tenmin-redispatch.heal-dispatch-4268f30.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7d02dfa46104438885f34cf1223f46aaa1fa584
+--- /dev/null
++++ b/src/tenmin-redispatch.heal-dispatch-4268f30.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { shouldDispatchHeal } from "./tenmin-redispatch";
++
++test("heal dispatch", () => {
++  assert.equal(shouldDispatchHeal({ dispatch: false, nextAction: "wait", reason: "WAIT_GUARD_WINDOW", nextChain: 1 }), true);
++  assert.equal(shouldDispatchHeal({ dispatch: false, nextAction: "wait", reason: "WAIT_NEAR_GUARD_WINDOW", nextChain: 1 }), true);
++  assert.equal(shouldDispatchHeal({ dispatch: true, nextAction: "continue", reason: "WAIT_GUARD_WINDOW", nextChain: 1 }), false);
++  assert.equal(shouldDispatchHeal({ dispatch: false, nextAction: "wait", reason: "OTHER", nextChain: 1 }), false);
++});

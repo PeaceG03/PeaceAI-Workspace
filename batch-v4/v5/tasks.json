@@ -1,0 +1,119 @@
+{
+ "schema": "peaceai-stress-suite:v1",
+ "target": "PeaceG03/PeaceSTOCKS",
+ "base": "5c41528a4e608d8f53de996e583a97776d232d08",
+ "tasks": [
+  {
+   "id": "V1",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-backfill] tenMinPairManifestKey: characterization test for the two-month pair manifest key",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinPairManifestKey in src/tenmin-backfill.ts: pair manifest keys\n- tenMinPairManifestKey(\"2024-10-15\") is \"permanent/tenmin-reply-dust/2024-09-01_2024-10-31/manifest.json\"\n- tenMinPairManifestKey(\"2024-01-01\") is \"permanent/tenmin-reply-dust/2024-01-01_2024-02-29/manifest.json\"\n- tenMinPairManifestKey(\"bad\") throws INVALID_SESSION_DATE\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). The R2 manifest key for a two-month ten-minute pair (built through tenmin-history's pairRangeForDate) and its INVALID_SESSION_DATE guard have no test anywhere; this pins its current behaviour. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tenMinPairManifestKey stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-backfill.ts",
+     "fn": "tenMinPairManifestKey"
+    }
+   }
+  },
+  {
+   "id": "V2",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[scan-yield] isIdleScannerRun: characterization test for the idle scanner-run check",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for isIdleScannerRun in src/scan-yield.ts: idle scanner runs\n- isIdleScannerRun({ display_title: \"Scanner restarter\" }) is true\n- isIdleScannerRun({ display_title: \"Scanner tenmin daily (off)\" }) is true\n- isIdleScannerRun({ display_title: \"Scanner\" }) is false\n- isIdleScannerRun({ display_title: null }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). The check that decides which scanner.yml runs never call Massive or write R2 (restarter, or daily tick switched off) has no direct test; this pins its current behaviour. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with isIdleScannerRun stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/scan-yield.ts",
+     "fn": "isIdleScannerRun"
+    }
+   }
+  },
+  {
+   "id": "V3",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-history] countGappedPlannedFetches: characterization test for counting gapped planned fetches",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for countGappedPlannedFetches in src/tenmin-history.ts: gapped planned fetches\n- countGappedPlannedFetches([{ securityId: \"S\", symbol: \"A\", fetchFrom: \"f\", fetchTo: \"t\" }], [{ securityId: \"S\", symbol: \"A\", reason: \"r\", at: \"x\", fetchFrom: \"f\", fetchTo: \"t\" }]) is 1\n- countGappedPlannedFetches([{ securityId: \"S\", symbol: \"A\", fetchFrom: \"f\", fetchTo: \"t\" }], [{ securityId: \"S\", symbol: \"B\", reason: \"r\", at: \"x\", fetchFrom: \"f\", fetchTo: \"t\" }]) is 0\n- countGappedPlannedFetches([{ securityId: \"S\", symbol: \"A\", fetchFrom: \"f\", fetchTo: \"t\" }], [{ securityId: \"S\", symbol: \"A\", reason: \"r\", at: \"x\" }]) is 0\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). The gapped-fetch count behind the ten-minute range remaining estimate is never called directly by a test; this pins that a gap counts only when it matches a planned fetch and carries its fetch window. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with countGappedPlannedFetches stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-history.ts",
+     "fn": "countGappedPlannedFetches"
+    }
+   }
+  },
+  {
+   "id": "V4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-history] countOrphanFetches: characterization test for counting orphan fetches",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for countOrphanFetches in src/tenmin-history.ts: orphan fetches\n- countOrphanFetches([{ securityId: \"S\", symbol: \"A\", fetchFrom: \"f\", fetchTo: \"t\" }], [], [{ securityId: \"S\", symbol: \"B\", reason: \"r\", at: \"x\", fetchFrom: \"f\", fetchTo: \"t\" }]) is 1\n- countOrphanFetches([{ securityId: \"S\", symbol: \"A\", fetchFrom: \"f\", fetchTo: \"t\" }], [], [{ securityId: \"S\", symbol: \"A\", reason: \"r\", at: \"x\", fetchFrom: \"f\", fetchTo: \"t\" }]) is 0\n- countOrphanFetches([], [], []) is 0\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). The orphan-fetch count (stored or gapped fetches that are no longer planned) is never called directly by a test; this pins its current behaviour. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with countOrphanFetches stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-history.ts",
+     "fn": "countOrphanFetches"
+    }
+   }
+  },
+  {
+   "id": "V5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] shouldDispatchHeal: characterization test for the heal-dispatch decision",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for shouldDispatchHeal in src/tenmin-redispatch.ts: heal dispatch\n- shouldDispatchHeal({ dispatch: false, nextAction: \"wait\", reason: \"WAIT_GUARD_WINDOW\", nextChain: 1 }) is true\n- shouldDispatchHeal({ dispatch: false, nextAction: \"wait\", reason: \"WAIT_NEAR_GUARD_WINDOW\", nextChain: 1 }) is true\n- shouldDispatchHeal({ dispatch: true, nextAction: \"continue\", reason: \"WAIT_GUARD_WINDOW\", nextChain: 1 }) is false\n- shouldDispatchHeal({ dispatch: false, nextAction: \"wait\", reason: \"OTHER\", nextChain: 1 }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). The rule that only a guard-window wait triggers a heal dispatch has no direct test; this pins its current behaviour. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with shouldDispatchHeal stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "shouldDispatchHeal"
+    }
+   }
+  },
+  {
+   "id": "V6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] planCancelDispatchedRun: characterization test for the dispatched-run cancel plan",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for planCancelDispatchedRun in src/tenmin-redispatch.ts: cancel plan\n- planCancelDispatchedRun(undefined) is { action: \"none\", detail: \"dispatched-run-not-found\" }\n- planCancelDispatchedRun({ id: 7, event: \"workflow_dispatch\", status: \"in_progress\", conclusion: null, created_at: \"2024-01-01T00:00:00Z\" }) is { action: \"cancel\", runId: 7 }\n- planCancelDispatchedRun({ id: 8, event: \"workflow_dispatch\", status: \"completed\", conclusion: \"success\", created_at: \"2024-01-01T00:00:00Z\" }) is { action: \"none\", detail: \"status=completed:conclusion=success\" }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). The plan for cancelling a dispatched tenmin_history run on SCAN_CANCELLED has no direct test; this pins which statuses cancel and the detail text otherwise. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with planCancelDispatchedRun stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "planCancelDispatchedRun"
+    }
+   }
+  },
+  {
+   "id": "V7",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-mode] planUpgraded: characterization test for plan-upgrade detection",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for planUpgraded in src/tenmin-mode.ts: plan upgrades\n- planUpgraded({ windowStart: \"2024-01-01\", ratePerMin: 5 }, undefined) is false\n- planUpgraded({ windowStart: \"2023-01-01\", ratePerMin: 5 }, { windowStart: \"2024-01-01\", ratePerMin: 5 }) is true\n- planUpgraded({ windowStart: \"2024-01-01\", ratePerMin: 10 }, { windowStart: \"2024-01-01\", ratePerMin: 5 }) is true\n- planUpgraded({ windowStart: \"2025-01-01\", ratePerMin: 5 }, { windowStart: \"2024-01-01\", ratePerMin: 10 }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). Plan-upgrade detection (an older window or a higher rate than the previous plan) has no direct test; this pins its current behaviour. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with planUpgraded stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-mode.ts",
+     "fn": "planUpgraded"
+    }
+   }
+  },
+  {
+   "id": "V8",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-range-reply-dust] parseFetchIdentityKey: characterization test for parsing fetch identity keys",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for parseFetchIdentityKey in src/tenmin-range-reply-dust.ts: fetch identity keys\n- parseFetchIdentityKey(\"S1\\u0000AAPL\\u00002024-01-02\\u00002024-01-05\") is { securityId: \"S1\", symbol: \"AAPL\", fetchFrom: \"2024-01-02\", fetchTo: \"2024-01-05\" }\n- parseFetchIdentityKey(\"a|b\") is undefined\n- parseFetchIdentityKey(\"\") is undefined\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v2): Peace's task (source: peace). parseFetchIdentityKey has no test anywhere; this pins the NUL-separated four-part split and that malformed keys parse to undefined. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 5c41528 (Workspace main efd3f76, Node 22) built exactly one candidate (public-test-case-existing-v2); a local Job B run graded it COUNTS (the new test passes on the current code and fails with parseFetchIdentityKey stubbed); suite 564/564 with all eight new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-range-reply-dust.ts",
+     "fn": "parseFetchIdentityKey"
+    }
+   }
+  }
+ ]
+}

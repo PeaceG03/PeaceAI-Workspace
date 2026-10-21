@@ -161,3 +161,10 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 ## 2026-10-18 simulated-approval finished
 - notes/stress-v1 41f64e7: simulated score **59/66 = 89.4%** (solves 29/36, refusals 30/30, 0 wrong). C3 L4 T1 T4 SOLVED. Local approved.json never committed. PR #378 body updated. Head still 2cd356d. Not merged. No /approve-rule.
 - Next: Auditor on #378 (priority), then merge at that head, then the 3 rule-proposal issues.
+
+## 2026-10-20 ~22:45 MDT batch-v5 (TEST_CASE_EXISTING v2 real tasks) — drafted + box-graded, NOT filed
+- State verified: Workspace main efd3f76 (25 rules), PeaceSTOCKS main 5c41528, coverage 32/88 = 36.4% (coverage.ts with PEACESTOCKS_CLONE). peacestocks-write env exists (Peace, Oct 20).
+- 8 tasks in batch-v4/v5 (issues/*.json, tasks.json). Local Job A/B: each exactly one v2 candidate, COUNTS; all 8 together 564/564 + 4 typechecks; stub kill checked. See v5/README.md.
+- NOT filed: filing issues needs Peace's explicit OK (his last message was "what's next?"). When OK'd: `bash /workspace/batch-v5/file.sh` (copy in v5/file.sh), avoid 05:30Z/09:30Z; then watch peace-task reviews; Peace posts /verdict A right -> peace-verdict needs Peace to approve the peacestocks-write env run -> bot PR on PeaceSTOCKS (first live test of #379 route; bot never merges).
+- After landing: builder-log rows (by PeaceAI, source: peace, PeaceSTOCKS@sha) -> coverage 40/96 = 41.7% if all 8 land.
+- complex-calls-v1 / replace-expression-v2: no genuine PeaceSTOCKS target found; not invented.

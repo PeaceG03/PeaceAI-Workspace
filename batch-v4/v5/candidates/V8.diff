@@ -1,0 +1,15 @@
+diff --git a/src/tenmin-range-reply-dust.fetch-identity-keys-6e5c5bf.test.ts b/src/tenmin-range-reply-dust.fetch-identity-keys-6e5c5bf.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6c9e8fe6e3536b57fa616c8bc1359ec6ad74b637
+--- /dev/null
++++ b/src/tenmin-range-reply-dust.fetch-identity-keys-6e5c5bf.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { parseFetchIdentityKey } from "./tenmin-range-reply-dust";
++
++test("fetch identity keys", () => {
++  assert.deepEqual(parseFetchIdentityKey("S1\u0000AAPL\u00002024-01-02\u00002024-01-05"), { securityId: "S1", symbol: "AAPL", fetchFrom: "2024-01-02", fetchTo: "2024-01-05" });
++  assert.equal(parseFetchIdentityKey("a|b"), undefined);
++  assert.equal(parseFetchIdentityKey(""), undefined);
++});

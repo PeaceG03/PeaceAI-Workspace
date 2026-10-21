@@ -1,0 +1,16 @@
+diff --git a/src/scan-yield.idle-scanner-runs-e9a89d2.test.ts b/src/scan-yield.idle-scanner-runs-e9a89d2.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2706ca2e561ec37326bfd559f04191a731aba89f
+--- /dev/null
++++ b/src/scan-yield.idle-scanner-runs-e9a89d2.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { isIdleScannerRun } from "./scan-yield";
++
++test("idle scanner runs", () => {
++  assert.equal(isIdleScannerRun({ display_title: "Scanner restarter" }), true);
++  assert.equal(isIdleScannerRun({ display_title: "Scanner tenmin daily (off)" }), true);
++  assert.equal(isIdleScannerRun({ display_title: "Scanner" }), false);
++  assert.equal(isIdleScannerRun({ display_title: null }), false);
++});

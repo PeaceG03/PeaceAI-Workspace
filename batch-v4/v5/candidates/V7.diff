@@ -1,0 +1,16 @@
+diff --git a/src/tenmin-mode.plan-upgrades-46e907d.test.ts b/src/tenmin-mode.plan-upgrades-46e907d.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1cf4120abb774aa64f58123ce462722950757ecb
+--- /dev/null
++++ b/src/tenmin-mode.plan-upgrades-46e907d.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { planUpgraded } from "./tenmin-mode";
++
++test("plan upgrades", () => {
++  assert.equal(planUpgraded({ windowStart: "2024-01-01", ratePerMin: 5 }, undefined), false);
++  assert.equal(planUpgraded({ windowStart: "2023-01-01", ratePerMin: 5 }, { windowStart: "2024-01-01", ratePerMin: 5 }), true);
++  assert.equal(planUpgraded({ windowStart: "2024-01-01", ratePerMin: 10 }, { windowStart: "2024-01-01", ratePerMin: 5 }), true);
++  assert.equal(planUpgraded({ windowStart: "2025-01-01", ratePerMin: 5 }, { windowStart: "2024-01-01", ratePerMin: 10 }), false);
++});
