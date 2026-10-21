@@ -1,0 +1,13 @@
+batch-v7 filed 2026-10-21 12:26 MDT (18:26Z) with Peace's OK (12:25 MDT). PeaceSTOCKS base 8b1f413, Workspace main 2201cc5.
+Each issue: exactly one candidate (A), Job B grading=COUNTS, review diff byte-identical to candidates/W*.diff. No /verdict posted.
+W1  #415 dueSlot                              A COUNTS (run 39652707526) review matches local diff
+W2  #416 lastScanSlot                         A COUNTS (run 39653163041) review matches local diff
+W3  #417 inRefillGuard                        A COUNTS (run 39653800040) review matches local diff
+W4  #418 classifyPlanProbe                    A COUNTS (run 39654370112) review matches local diff
+W5  #419 lastOutcomeFromRecord                A COUNTS (run 39654954030) review matches local diff
+W6  #420 eligibilityForBarCount               A COUNTS (run 39655543408) review matches local diff
+W7  #421 resolveTenMinDelistedCoverageForSeal A COUNTS (run 39656055414) review matches local diff
+W8  #422 tenMinRangeEntriesObjectKey          A COUNTS (run 39656581000) review matches local diff
+W9  #423 tenMinDailyIndexKey                  A COUNTS (run 39657138537) review matches local diff
+W10 #424 isTransientFailure                   A COUNTS (run 39657734117) review matches local diff
+W11 #425 guardWindowState                     A COUNTS (run 39658229171) review matches local diff
