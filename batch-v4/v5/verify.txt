@@ -1,0 +1,8 @@
+390 tenMinPairManifestKey cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/390#issuecomment-6308262504
+391 isIdleScannerRun cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/391#issuecomment-6308305191
+392 countGappedPlannedFetches cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/392#issuecomment-6308353206
+393 countOrphanFetches cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/393#issuecomment-6308398888
+394 shouldDispatchHeal cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/394#issuecomment-6308443445
+395 planCancelDispatchedRun cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/395#issuecomment-6308492492
+396 planUpgraded cands ['A'] match_local [True] https://github.com/PeaceG03/PeaceAI-Workspace/issues/396#issuecomment-6308535849
+397 parseFetchIdentityKey NO REVIEW ['PeaceAI found no eligible candidate for this task. The attempt was recorded.']
