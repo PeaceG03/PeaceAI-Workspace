@@ -1,0 +1,16 @@
+diff --git a/peaceai/self-tests/helpers/text.truncate-edges-b62d4a7.test.ts b/peaceai/self-tests/helpers/text.truncate-edges-b62d4a7.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef8356bad73073250c6f4aa5030466e22008160
+--- /dev/null
++++ b/peaceai/self-tests/helpers/text.truncate-edges-b62d4a7.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { truncate } from "./text";
++
++test("truncate edges", () => {
++  assert.equal(truncate("abcd", 1), "…");
++  assert.equal(truncate("abcd", 4), "abcd");
++  assert.equal(truncate("abcd", -2), "");
++  assert.equal(truncate("", 3), "");
++});

@@ -1,0 +1,15 @@
+diff --git a/peaceai/self-tests/helpers/text.plural-counts-a04874b.test.ts b/peaceai/self-tests/helpers/text.plural-counts-a04874b.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f51ea6885d9ba55f8308b4f3edde16d4045476fe
+--- /dev/null
++++ b/peaceai/self-tests/helpers/text.plural-counts-a04874b.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { plural } from "./text";
++
++test("plural counts", () => {
++  assert.equal(plural(0, "run"), "0 runs");
++  assert.equal(plural(1, "file"), "1 file");
++  assert.equal(plural(-1, "run"), "-1 runs");
++});

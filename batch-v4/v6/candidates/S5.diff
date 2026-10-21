@@ -1,0 +1,15 @@
+diff --git a/src/text.short-limits-bea6667.test.ts b/src/text.short-limits-bea6667.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..965b4bc33bb027d33fe3e718439ca5cab30fb244
+--- /dev/null
++++ b/src/text.short-limits-bea6667.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { truncate } from "./text";
++
++test("short limits", () => {
++  assert.equal(truncate("abc", 1), "a");
++  assert.equal(truncate("abc", 0), "");
++  assert.equal(truncate("abcd", 2), "a…");
++});

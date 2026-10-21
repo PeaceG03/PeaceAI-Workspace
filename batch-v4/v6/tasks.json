@@ -1,0 +1,98 @@
+{
+ "schema": "peaceai-stress-suite:v1",
+ "target": "PeaceG03/PeaceAI-Workspace",
+ "base": "c7ba0a5",
+ "tasks": [
+  {
+   "id": "S1",
+   "title": "[self-tests/helpers] utcDayKey: characterization test for the UTC day key helper",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for utcDayKey in peaceai/self-tests/helpers/dates.ts: utc day keys\n- utcDayKey(new Date(\"2026-10-17T05:59:00Z\")) is \"2026-10-17\"\n- utcDayKey(new Date(\"2026-12-31T23:59:59Z\")) is \"2026-12-31\"\n- utcDayKey(new Date(\"2024-02-29T00:00:00Z\")) is \"2024-02-29\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). The existing helpers test checks one mid-day value only; this pins the UTC day boundary, year end and a leap day. Self-zone task on PeaceAI-Workspace: one new peaceai/self-tests/helpers/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Node 22) built no candidate: test_target_signature on v1 and v2 (Date parameter); filed only once a Date-argument skill is approved. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "peaceai/self-tests/helpers/dates.ts",
+     "fn": "utcDayKey"
+    }
+   }
+  },
+  {
+   "id": "S2",
+   "title": "[self-tests/helpers] minutesOfUtcDay: characterization test for minutes of the UTC day at the bounds",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for minutesOfUtcDay in peaceai/self-tests/helpers/dates.ts: utc minute bounds\n- minutesOfUtcDay(new Date(\"2026-10-16T00:00:00Z\")) is 0\n- minutesOfUtcDay(new Date(\"2026-10-16T23:59:59Z\")) is 1439\n- minutesOfUtcDay(new Date(\"2026-10-16T12:30:00Z\")) is 750\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). The existing helpers test checks one value; this pins both ends of the day (seconds are dropped). Self-zone task on PeaceAI-Workspace: one new peaceai/self-tests/helpers/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Node 22) built no candidate: test_target_signature on v1 and v2 (Date parameter); filed only once a Date-argument skill is approved. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "peaceai/self-tests/helpers/dates.ts",
+     "fn": "minutesOfUtcDay"
+    }
+   }
+  },
+  {
+   "id": "S3",
+   "title": "[self-tests/helpers] plural: characterization test for plural at zero and negative counts",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for plural in peaceai/self-tests/helpers/text.ts: plural counts\n- plural(0, \"run\") is \"0 runs\"\n- plural(1, \"file\") is \"1 file\"\n- plural(-1, \"run\") is \"-1 runs\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). The existing helpers test covers 1 and 3 only; this pins zero and negative counts. Self-zone task on PeaceAI-Workspace: one new peaceai/self-tests/helpers/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Workspace main, Node 22) built exactly one candidate (public-test-case-existing-v1); a local Job B run graded it COUNTS (the new test passes on the current code and fails with plural stubbed); with all five new tests of this batch: typecheck ok, npm test 17/17, test:self 5/5, test:tools 1077/1078 (only the box-only m48 snapshot test). Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "peaceai/self-tests/helpers/text.ts",
+     "fn": "plural"
+    }
+   }
+  },
+  {
+   "id": "S4",
+   "title": "[self-tests/helpers] truncate: characterization test for the helper truncate at its edges",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for truncate in peaceai/self-tests/helpers/text.ts: truncate edges\n- truncate(\"abcd\", 1) is \"…\"\n- truncate(\"abcd\", 4) is \"abcd\"\n- truncate(\"abcd\", -2) is \"\"\n- truncate(\"\", 3) is \"\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). The existing helpers test does not cover max 1, an exact fit, a negative max or empty text; this pins them. Self-zone task on PeaceAI-Workspace: one new peaceai/self-tests/helpers/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Workspace main, Node 22) built exactly one candidate (public-test-case-existing-v1); a local Job B run graded it COUNTS (the new test passes on the current code and fails with truncate stubbed); with all five new tests of this batch: typecheck ok, npm test 17/17, test:self 5/5, test:tools 1077/1078 (only the box-only m48 snapshot test). Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "peaceai/self-tests/helpers/text.ts",
+     "fn": "truncate"
+    }
+   }
+  },
+  {
+   "id": "S5",
+   "title": "[text] truncate: characterization test for truncate with limits of one or less",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for truncate in src/text.ts: short limits\n- truncate(\"abc\", 1) is \"a\"\n- truncate(\"abc\", 0) is \"\"\n- truncate(\"abcd\", 2) is \"a…\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). src/text.test.ts never reaches the maxLength <= 1 branch; this pins it (the negative-limit case is a separate bug task, not pinned here). Self-zone task on PeaceAI-Workspace: one new src/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Workspace main, Node 22) built exactly one candidate (public-test-case-existing-v1); a local Job B run graded it COUNTS (the new test passes on the current code and fails with truncate stubbed); with all five new tests of this batch: typecheck ok, npm test 17/17, test:self 5/5, test:tools 1077/1078 (only the box-only m48 snapshot test). Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "src/text.ts",
+     "fn": "truncate"
+    }
+   }
+  },
+  {
+   "id": "S6",
+   "title": "[text] slugify: characterization test for slugify on empty and punctuation-only titles",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for slugify in src/text.ts: slug edges\n- slugify(\"\") is \"\"\n- slugify(\"---\") is \"\"\n- slugify(\"Top 10 Tips\") is \"top-10-tips\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). src/text.test.ts covers one title; this pins empty and punctuation-only input and digits. Self-zone task on PeaceAI-Workspace: one new src/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Workspace main, Node 22) built exactly one candidate (public-test-case-existing-v1); a local Job B run graded it COUNTS (the new test passes on the current code and fails with slugify stubbed); with all five new tests of this batch: typecheck ok, npm test 17/17, test:self 5/5, test:tools 1077/1078 (only the box-only m48 snapshot test). Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "src/text.ts",
+     "fn": "slugify"
+    }
+   }
+  },
+  {
+   "id": "S7",
+   "title": "[config] parseQuantity: characterization test for parseQuantity on decimals, zero, padding and exponents",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nadd a characterization test for parseQuantity in src/config.ts: quantity parsing\n- parseQuantity(\"2.5\") is 1\n- parseQuantity(\"0\") is 1\n- parseQuantity(\" 3 \") is 3\n- parseQuantity(\"1e2\") is 100\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). src/config.test.ts covers 7, -2 and abc; this pins decimals, zero, padded and exponent input (Number() semantics). Self-zone task on PeaceAI-Workspace: one new src/*.test.ts file only. No gate, grading, approval, leak, rule or workflow file is touched. A box dry-run on PeaceAI-Workspace c7ba0a5 (Workspace main, Node 22) built exactly one candidate (public-test-case-existing-v1); a local Job B run graded it COUNTS (the new test passes on the current code and fails with parseQuantity stubbed); with all five new tests of this batch: typecheck ok, npm test 17/17, test:self 5/5, test:tools 1077/1078 (only the box-only m48 snapshot test). Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "expect": "solve",
+   "accept": {
+    "mutate": {
+     "file": "src/config.ts",
+     "fn": "parseQuantity"
+    }
+   }
+  },
+  {
+   "id": "S8",
+   "title": "[text] truncate: a negative limit returns text longer than the limit",
+   "body": "Target: PeaceG03/PeaceAI-Workspace\n\nin truncate in src/text.ts: replace return text.slice(0, maxLength) with text.slice(0, Math.max(0, maxLength))\n- truncate(\"abc\", -1) is \"\"\n- truncate(\"abc\", 1) is \"a\"\n- truncate(\"abc\", 0) is \"\"\n\n(Builder pre-file, MODIFY_BODY, public-replace-expression-v2): Peace's task (source: peace). Bug: truncate(\"abc\", -1) returns \"ab\", longer than the limit, because slice(0, -1) counts from the end. Self-zone task on PeaceAI-Workspace: one expression in src/text.ts plus one new src/*.test.ts file. A box dry-run on PeaceAI-Workspace c7ba0a5 (Node 22) built no candidate. Expected: refused today (src/text.ts is not in the replace rule's EDITABLE_PATHS).)",
+   "expect": "refuse",
+   "accept": {}
+  }
+ ]
+}

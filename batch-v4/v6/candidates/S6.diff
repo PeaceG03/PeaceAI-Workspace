@@ -1,0 +1,15 @@
+diff --git a/src/text.slug-edges-11b42e4.test.ts b/src/text.slug-edges-11b42e4.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..05e27fe93d308c80dbb542180d59c87b0db3c4d9
+--- /dev/null
++++ b/src/text.slug-edges-11b42e4.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { slugify } from "./text";
++
++test("slug edges", () => {
++  assert.equal(slugify(""), "");
++  assert.equal(slugify("---"), "");
++  assert.equal(slugify("Top 10 Tips"), "top-10-tips");
++});
