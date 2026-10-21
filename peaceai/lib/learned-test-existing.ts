@@ -12,7 +12,7 @@
 //   outside the vocabulary (test_target_signature). No model.
 import ts from "typescript";
 import { createHash } from "node:crypto";
-import { buildTestEdit, checkRoot, FIX_LINE, parseTestTask, type TestTask } from "./learned-test.ts";
+import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, buildTestEdit, checkRoot, FIX_LINE, parseTestTask, type TestTask } from "./learned-test.ts";
 import { DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, dateRefusal, plainPath } from "./learned-complex.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
@@ -34,7 +34,10 @@ export const TEST_EXISTING_VOCAB = {
   // M85 (public-test-case-existing-v2): "exported-pure-function-v2" widens the target only: plain-data object types
   // (interfaces / type aliases / object type literals of the vocabulary, string/number literal unions) in the
   // signature, and named value imports from relative sibling modules followed by the same purity analysis (bounded).
-  target: ["exported-pure-function", "exported-pure-function-v2"],
+  // M88 (public-test-case-existing-v3): "exported-pure-function-v3" = the v2 target plus the built-in `Date` in the
+  // signature (parameters, return, members), Date literal arguments and expected values, and object literals nested
+  // inside array arguments (gap 1). Clock, local-time and setter use stay refused by the same Date rules as v1/v2.
+  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3"],
 } as const;
 /** M85 bounds for the v2 target: sibling modules followed, import depth, structural type nesting. */
 export const MAX_IMPORT_MODULES = 4;
@@ -173,6 +176,8 @@ interface V2Ctx {
   reasons: Set<string>;
   /** Enums and value-loaded modules already scanned for initializers and top-level statements. */
   scanned: Set<string>;
+  /** M88 (v3 only): the built-in `Date` is a plain-data type (never when the module declares or imports a `Date`). */
+  dates?: boolean;
 }
 
 const normRel = (p: string): string | null => {
@@ -311,6 +316,8 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
   if (ts.isTypeReferenceNode(t)) {
     if (!ts.isIdentifier(t.typeName) || t.typeArguments?.length) return false;
     const n = t.typeName.text;
+    // M88: the global Date only (a module-local or imported `Date` shadows it and is analyzed as any other name).
+    if (n === "Date" && v2?.dates && !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n)) return true;
     if (idx.enums.has(n)) { if (v2) noteEnum(v2, idx, sf, n); return true; }
     const d = idx.types.get(n);
     if (d) return ts.isInterfaceDeclaration(d) ? plainMembers(d.members, rec) : rec(d.type);
@@ -482,7 +489,7 @@ export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: stri
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null } }): string | null {
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean }): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
@@ -497,7 +504,7 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
   const reasons = new Set<string>();
-  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set() } : undefined;
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true } : undefined;
   if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
   const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
   const sigBad = !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || !p.type || !typeOk(p.type));
@@ -560,24 +567,33 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (isProtected(task.file)) return no(SELF_PROTECTED_PATH);
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
-  const v2 = params.target === "exported-pure-function-v2";
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: { read: (rel) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null } } : undefined);
+  const v3 = params.target === "exported-pure-function-v3";
+  const v2 = params.target === "exported-pure-function-v2" || v3;
+  const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3 } : undefined);
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
   if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
+  // M88: likewise v3 leaves a target v2 already takes to v2.
+  if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib }) === null) return no("not_needed");
   // Every check calls the target itself (the only name the test imports), with literal arguments.
   for (const c of task.checks) {
     if (!(params.checks as string[]).includes(c.kind)) return no(TEST_CHECK_REFUSED);
     const e = parseCheck(c.expr);
-    if (!e || checkRoot(e) !== task.symbol) return no(TEST_CHECK_REFUSED);
+    if (!e || checkRoot(e, v3) !== task.symbol) return no(TEST_CHECK_REFUSED);
     let calls = false;
     const v = (n: ts.Node): void => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === task.symbol) calls = true; ts.forEachChild(n, v); };
     v(e);
     if (!calls) return no(TEST_CHECK_REFUSED);
   }
   // M85 (v2): a check passing an object literal is written under the M20 object-argument grammar (plain bounded data).
-  const objectArgs = v2 && task.checks.some((c) => { const x = parseCheck(c.expr); let has = false; const w = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some(ts.isObjectLiteralExpression)) has = true; ts.forEachChild(n, w); }; if (x) w(x); return has; });
-  const testParams = { assert: params.assert as string, checks: params.checks as string[], framework: params.framework as string, grading: "fail-before-pass-after", matcher: params.matcher as string, maxLines: params.maxLines as string, placement: "new-file", ...(objectArgs ? { args: "object-literal" } : {}) };
+  const objectArgs = !v3 && v2 && task.checks.some((c) => { const x = parseCheck(c.expr); let has = false; const w = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some(ts.isObjectLiteralExpression)) has = true; ts.forEachChild(n, w); }; if (x) w(x); return has; });
+  // M88 gap 1 (v2): objects only inside array arguments (`f([{ a: 1 }])`) get the same bounded object grammar
+  // through the internal nested mode (the M20 `object-literal` mode keeps its direct-argument trigger unchanged).
+  const nestedObjects = !v3 && v2 && !objectArgs && task.checks.some((c) => { const x = parseCheck(c.expr); let has = false; const w = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some((g) => ts.isArrayLiteralExpression(g) && g.elements.some(ts.isObjectLiteralExpression))) has = true; ts.forEachChild(n, w); }; if (x) w(x); return has; });
+  // M88 (v3): one internal args mode (never selectable by a spec's params): bounded plain-data objects, including
+  // objects nested inside array arguments, and Date literals as arguments and expected values.
+  const testParams = { assert: params.assert as string, checks: params.checks as string[], framework: params.framework as string, grading: "fail-before-pass-after", matcher: params.matcher as string, maxLines: params.maxLines as string, placement: "new-file", ...(v3 ? { args: ARGS_PLAIN_DATA_V3 } : objectArgs ? { args: "object-literal" } : nestedObjects ? { args: ARGS_NESTED_OBJECTS } : {}) };
   const title = task.title ?? `${task.symbol} characterization`;
   const test = buildTestEdit(testParams, { ...task, title, fixSha: task.id }, files, isTest);
   if (!test) return no("test_refused");

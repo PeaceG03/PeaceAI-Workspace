@@ -156,10 +156,19 @@ export function importStyle(files: readonly { path: string; content: string }[],
   return ts_ > none ? "ts" : "none";
 }
 
-const renderValue = (text: string, date = false) => {
+const renderValue = (text: string, date = false, nestedDates = false) => {
   const e = parseExpr(text);
-  return e && (isLiteralValue(e) || (date && isDateLiteral(e))) ? e.getText() : null;
+  return e && (isLiteralValue(e, nestedDates) || (date && isDateLiteral(e))) ? e.getText() : null;
 };
+/**
+ * M88: the args mode only buildExistingTestEdit passes for `public-test-case-existing-v3` (no spec's params can name
+ * it: TEST_EXISTING_VOCAB has no args key and the test specs' vocabulary does not list it). Bounded plain-data object
+ * literals anywhere in the call (including inside array arguments), Date literals as arguments and as expected values
+ * (also inside expected arrays/objects). Every object still passes objectArgsReason; the length bound is the M20 one.
+ */
+export const ARGS_PLAIN_DATA_V3 = "plain-data-v3";
+/** M88 gap 1: internal too (v2 only): the bounded object grammar for objects nested inside array arguments, no Dates. */
+export const ARGS_NESTED_OBJECTS = "nested-object-literal";
 const slug = (s: string) => {
   const full = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const cut = full.length <= 32 ? full : full.slice(0, 33).replace(/-[^-]*$/, "") || full.slice(0, 32);
@@ -193,19 +202,20 @@ export function buildTestEdit(
   if (params.args === "date-literal" && !task.checks.some((c) => { const x = parseExpr(c.expr); let has = false; const v = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some((a) => isDateLiteral(a) || (ts.isArrayLiteralExpression(a) && a.elements.some(isDateLiteral)))) has = true; ts.forEachChild(n, v); }; if (x) v(x); return has; })) return null;
   const roots = new Set<string>([task.symbol]);
   const body: string[] = [];
+  const v3 = params.args === ARGS_PLAIN_DATA_V3;
   for (const c of task.checks) {
-    const objectArgs = params.args === "object-literal";
+    const objectArgs = params.args === "object-literal" || params.args === ARGS_NESTED_OBJECTS || v3;
     if (c.expr.length > (objectArgs ? MAX_OBJECT_EXPR_CHARS : MAX_EXPR_CHARS)) return null;
     const e = parseExpr(c.expr);
     // M20 (Auditor): every object in a check must be plain bounded data (objectArgsReason), under every test
     // spec: the plain specs no longer accept __proto__/constructor/prototype or repeated keys, or deep objects.
     if (e && objectArgsReason(e) !== null) return null;
-    const root = e ? checkRoot(e, params.args === "date-literal") : null;
+    const root = e ? checkRoot(e, params.args === "date-literal" || v3) : null;
     if (!e || !root || !exports.has(root)) return null;
     roots.add(root);
     const expr = e.getText();
     if (c.kind === "equal" || c.kind === "deepEqual") {
-      const v = renderValue(c.value ?? "", c.kind === "deepEqual" && params.expected === "date-literal");
+      const v = renderValue(c.value ?? "", c.kind === "deepEqual" && (params.expected === "date-literal" || v3), v3);
       if (v === null) return null;
       if (c.kind === "deepEqual" && !/^(?:[[{]|new Date\(")/.test(v)) return null;
       body.push(`  assert.${c.kind}(${expr}, ${v});`);
