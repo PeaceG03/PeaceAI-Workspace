@@ -66,3 +66,10 @@ seq 96 is a PeaceAI landing with its own row; 2f1ff83 is the merge of PeaceSTOCK
 Seq 221-225 record Peace's self-zone tasks #399-#403 (public-test-case-existing-v1), landed by PeaceAI through bot verdict PRs #406-#410
 (merge commits 4eb6818, 4d187f8, 9af05b4, 4a69bef, c2c10e1). The Workspace verdict reply names no PR URL, so trace.ts reports them as
 GRANDFATHERED T_NO_PATCH_COMMENT (like seq 124). coverage.ts counts PeaceSTOCKS landings only, so they do not change the figure (39/170).
+
+## Batch v7 PeaceSTOCKS landings (2026-10-21)
+
+Seq 226-236 record Peace's tasks #415-#425 (TEST_CASE_EXISTING; #415-#417 and #425 ranked on public-test-case-existing-v3, the rest on
+v2), each `/verdict A right`, landed by PeaceAI through bot verdict PRs PeaceSTOCKS#18-#28 (squash merges e9cbc92, d473c08, de1eea2,
+b4b019e, 8088763, 387d094, 2edd3e3, afb8054, ddefb95, d3d012b, 663e31e; rows in merge order). trace.ts traces them on the M87 PR route
+with no GRANDFATHERED entry. Coverage becomes 50/181 (27.6%) from 2026-10-21.
