@@ -1,0 +1,14 @@
+X1 SOLVED nl=['canonical', None] cands=1 accepted=1   32.0s
+X2 FALSE_REFUSAL nl=['canonical', None] cands=0 accepted=0 refusals=public-complex-calls-v1=task_unparsed; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-  2.0s
+X3 SOLVED nl=['canonical', None] cands=1 accepted=1   30.9s
+X4 SOLVED nl=['canonical', None] cands=1 accepted=1   30.7s
+X5 SOLVED nl=['canonical', None] cands=1 accepted=1   30.8s
+X6 FALSE_REFUSAL nl=['canonical', None] cands=0 accepted=0 refusals=public-test-case-existing-v1=denied_path; public-test-case-existing-v2=denied_path; public-test-case-existing-v3=denied_path; public-complex-calls-v1=task_unpar  2.1s
+X7 FALSE_REFUSAL nl=['canonical', None] cands=1 accepted=0   7.4s
+X8 SOLVED nl=['canonical', None] cands=1 accepted=1   30.1s
+X9 SOLVED nl=['canonical', None] cands=1 accepted=1   29.9s
+X10 SOLVED nl=['canonical', None] cands=1 accepted=1   29.9s
+X11 SOLVED nl=['canonical', None] cands=1 accepted=1   30.2s
+X12 SOLVED nl=['canonical', None] cands=1 accepted=1   30.4s
+X2 SOLVED nl=['canonical', None] cands=1 accepted=1   29.4s
+X13 SOLVED nl=['canonical', None] cands=1 accepted=1   28.4s

@@ -1,0 +1,14 @@
+diff --git a/src/daily-reply-dust.daily-file-keys-0e44b78.test.ts b/src/daily-reply-dust.daily-file-keys-0e44b78.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..98024733bda5015a9ed3bf425a9600601055437a
+--- /dev/null
++++ b/src/daily-reply-dust.daily-file-keys-0e44b78.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { dailyReplyDustFileKey } from "./daily-reply-dust";
++
++test("daily file keys", () => {
++  assert.equal(dailyReplyDustFileKey("2026-10-13"), "permanent/daily-reply-dust/2026-10-13/grouped-daily.rdust");
++  assert.throws(() => dailyReplyDustFileKey("2026-10-1"), /INVALID_SESSION_DATE/);
++});

@@ -1,0 +1,2 @@
+batch-v8 prepared 2026-10-21 (not filed). PeaceSTOCKS base 663e31e, Workspace main 129a084.
+Each task: exactly one candidate, Job B grading=COUNTS, independent grade pass; final bodies re-run (runs-final) give byte-identical diffs.

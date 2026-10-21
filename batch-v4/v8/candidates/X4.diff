@@ -1,0 +1,16 @@
+diff --git a/src/ticker-reference-dated.date-prefixes-c3e3e16.test.ts b/src/ticker-reference-dated.date-prefixes-c3e3e16.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b554d85dd768a7a9987132ddbbfc849383f12df
+--- /dev/null
++++ b/src/ticker-reference-dated.date-prefixes-c3e3e16.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { datedTickerDatePrefix } from "./ticker-reference-dated";
++
++test("date prefixes", () => {
++  assert.equal(datedTickerDatePrefix("2024-02-29"), "permanent/ticker-reference-dated/2024-02-29");
++  assert.equal(datedTickerDatePrefix("2026-06-30"), "permanent/ticker-reference-dated/2026-06-30");
++  assert.throws(() => datedTickerDatePrefix("2026-04-31"), /INVALID_CALENDAR_DATE/);
++  assert.throws(() => datedTickerDatePrefix("2026-1-05"), /INVALID_SESSION_DATE/);
++});

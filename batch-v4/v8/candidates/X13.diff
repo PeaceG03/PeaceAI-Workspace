@@ -1,0 +1,16 @@
+diff --git a/src/num-utils.band-edges-c1e8cd9.test.ts b/src/num-utils.band-edges-c1e8cd9.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ec534c9c0d4b15068b79e5e22d9c64e3ce467ff
+--- /dev/null
++++ b/src/num-utils.band-edges-c1e8cd9.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { bandOf } from "./num-utils";
++
++test("band edges", () => {
++  assert.equal(bandOf(0, 0, 10), "inside");
++  assert.equal(bandOf(10, 0, 10), "inside");
++  assert.equal(bandOf(10.5, 0, 10), "above");
++  assert.equal(bandOf(-0.5, 0, 10), "below");
++});

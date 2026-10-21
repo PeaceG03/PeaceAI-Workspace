@@ -1,0 +1,11 @@
+[tenmin-redispatch] maxChainOf: characterization test for numeric and out-of-range chain caps
+[tenmin-range-reply-dust] isTenMinRangeAbortError: characterization test for the range abort error classes
+[tenmin-range-reply-dust] tenMinRangeGapReason: characterization test for gap reason code extraction edges
+[ticker-reference-dated] datedTickerDatePrefix: characterization test for valid dated ticker prefixes
+[tenmin-history] isTransientHistoryError: characterization test for more transient and permanent history errors
+[daily-reply-dust] dailyReplyDustFileKey: characterization test for the daily grouped file key
+[tenmin-history] addCalendarYears: characterization test for forward and zero calendar year shifts
+[oct2024-tenmin-oneoff] parseChainIndex: characterization test for chain index defaults and digit limits
+[tenmin-history] estimateTenMinRangeRemaining: characterization test for clamped counts and a zero-request budget hit
+[oct2024-tenmin-oneoff] readbackVerdict: characterization test for a read-back short of the listed count
+[num-utils] bandOf: characterization test for values on and just past the band edges

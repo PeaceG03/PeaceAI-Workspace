@@ -1,0 +1,17 @@
+diff --git a/src/tenmin-history.calendar-years-3923df9.test.ts b/src/tenmin-history.calendar-years-3923df9.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..386a3363ef935567b9df78f749e844a2e1459ffc
+--- /dev/null
++++ b/src/tenmin-history.calendar-years-3923df9.test.ts
+@@ -0,0 +1,11 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { addCalendarYears } from "./tenmin-history";
++
++test("calendar years", () => {
++  assert.equal(addCalendarYears("2024-02-29", 4), "2028-02-29");
++  assert.equal(addCalendarYears("2023-03-31", 1), "2024-03-31");
++  assert.equal(addCalendarYears("2025-02-28", -1), "2024-02-28");
++  assert.equal(addCalendarYears("2026-10-13", 0), "2026-10-13");
++  assert.throws(() => addCalendarYears("2026-1-05", 1), /INVALID_SESSION_DATE/);
++});

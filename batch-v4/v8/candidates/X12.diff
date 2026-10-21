@@ -1,0 +1,15 @@
+diff --git a/src/oct2024-tenmin-oneoff.short-read-back-9ea4a3c.test.ts b/src/oct2024-tenmin-oneoff.short-read-back-9ea4a3c.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9a9b74e704b7ab9665e4c21ed653fef70bcbef9
+--- /dev/null
++++ b/src/oct2024-tenmin-oneoff.short-read-back-9ea4a3c.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { readbackVerdict } from "./oct2024-tenmin-oneoff";
++
++test("short read-back", () => {
++  assert.equal(readbackVerdict({ listed: 5, verifiedOk: 4, failed: 0, sealed: true }), "FAIL");
++  assert.equal(readbackVerdict({ listed: 5, verifiedOk: 6, failed: 0, sealed: true }), "FAIL");
++  assert.equal(readbackVerdict({ listed: 1, verifiedOk: 1, failed: 0, sealed: true }), "PASS");
++});
