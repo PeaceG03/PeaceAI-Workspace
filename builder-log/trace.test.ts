@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NOREPLY_FROM, patchCommentBody, sha256 } from "../peaceai/lib/patch.ts";
 import type { Entry } from "./check.ts";
-import { GRANDFATHERED, RIGHT_REPLY, issueOf, makeGhDeps, traceAll, traceErrors, traceLine, type ResultsView, type TraceDeps } from "./trace.ts";
+import { GRANDFATHERED, RIGHT_REPLY, issueOf, makeGhDeps, traceAll, traceErrors, traceLine, type PullView, type ResultsView, type TraceDeps } from "./trace.ts";
 
 const DIFF = "diff --git a/x.ts b/x.ts\nindex 0000000..1111111 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1,2 @@\n a\n+b\n";
 const PATCH = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\n${NOREPLY_FROM}\nSubject: [PATCH] t\n\n---\n${DIFF}`;
@@ -192,8 +192,8 @@ test("PR route: a patch comment, when present, still takes the patch route", asy
 // ---- M89: Workspace self-landing found by its verdict branch (reply has no PR URL) ----
 const WS_REPLY = "Verdict recorded: A right. Opening a PR for A.";
 const WS_SHA = "4eb6818";
-const WS_PR = { merged: true, mergeCommit: WS_SHA + "0".repeat(33), headRef: "peace-task/issue-500-candidate-1-0123abcd", diff: DIFF };
-function wsDeps(o: { comments?: string[]; pulls?: Record<number, Partial<typeof WS_PR>>; list?: number[] | (() => never); view?: ResultsView | null; trees?: { applied: string | null; landing: string } } = {}): TraceDeps {
+const WS_PR: PullView = { merged: true, mergeCommit: WS_SHA + "0".repeat(33), headRef: "peace-task/issue-500-candidate-1-0123abcd", diff: DIFF };
+function wsDeps(o: { comments?: string[]; pulls?: Record<number, Partial<PullView>>; list?: number[] | (() => never); view?: ResultsView | null; trees?: { applied: string | null; landing: string } } = {}): TraceDeps {
   const pulls = o.pulls ?? { 406: {} };
   return {
     botComments: async (n) => (n === 500 ? (o.comments ?? [WS_REPLY]) : []),
