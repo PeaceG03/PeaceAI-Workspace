@@ -44,3 +44,11 @@ branch must be this issue's `peace-task/issue-<N>-<candidate>-<hex>`; and its di
 the landing tree. In Results mode the branch candidate must be the effective `right` pick and the Results candidate diff must give
 the same tree (`T_PR_MISMATCH` / `T_HASH_MISMATCH H_RESULTS_PR`, codes and hashes only). First landings: seq 139-145 (#390-#396 via
 PeaceSTOCKS#11-#17).
+
+## Builder catch-up (M88, 2026-10-21)
+
+Seq 146-212 log the 67 Builder PRs merged on PeaceAI-Workspace main after seq 96 (2026-10-15 19:35 MT) through #398, dated by merge
+time (MT): engine, grading, training-gate, workflow and builder-log code changes, all `PEACEAI_SELF_CHANGE` (`missing skill`, PeaceAI's
+own protected tooling). Not logged as separate rows: PRs that only recorded existing rows (#216, #231, #235, #250, #252, #254, #264,
+#313, #322, #324, #330, #360, #376), the bot's approval and verdict PRs, and #302 (architect branch). Coverage becomes 39/162 (24.1%)
+from 2026-10-21; the secondary figure excluding PEACEAI_SELF_CHANGE is 39/70 (55.7%).
