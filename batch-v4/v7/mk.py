@@ -1,0 +1,81 @@
+import json, re
+B = "8b1f413"
+NOTE = ("(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-{rule}): Peace's task (source: peace). {why} "
+ "Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. "
+ "The running scanner chain is unchanged. {dry} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)")
+D = lambda s: f'new Date("{s}")'
+T = [
+ ("W1","v3","scan-backstop","dueSlot","src/scan-backstop.ts","due backstop slots","characterization test for the backstop slot due on a tick",
+  [f'dueSlot({D("2026-10-13T06:00:00Z")}) is {D("2026-10-13T05:30:00Z")}',
+   f'dueSlot({D("2026-10-13T10:00:00Z")}) is {D("2026-10-13T09:30:00Z")}',
+   f'dueSlot({D("2026-10-13T05:59:00Z")}) is null',
+   f'dueSlot({D("2026-10-13T07:00:00Z")}) is null',
+   f'dueSlot({D("2026-10-11T06:00:00Z")}) is null'],
+  "dueSlot (which slot a :47 backstop tick is responsible for: 30-89 min after 05:30Z or 09:30Z, Tue-Sat only) has no direct test, and its slot branch is never reached by the suite; this pins the window edges and the weekday rule."),
+ ("W2","v3","scan-backstop","lastScanSlot","src/scan-backstop.ts","last scan slots","characterization test for the most recent scheduled scan slot",
+  [f'lastScanSlot({D("2026-10-13T05:30:00Z")}) is {D("2026-10-13T05:30:00Z")}',
+   f'lastScanSlot({D("2026-10-13T12:00:00Z")}) is {D("2026-10-13T09:30:00Z")}',
+   f'lastScanSlot({D("2026-10-13T05:29:00Z")}) is {D("2026-10-10T09:30:00Z")}',
+   f'lastScanSlot({D("2026-10-18T03:00:00Z")}) is {D("2026-10-17T09:30:00Z")}'],
+  "lastScanSlot (the slot the open-ended backstop backs up) is only reached through planOpenScanAt and never asserted directly; this pins the at-slot case and the look-back over Sunday and Monday to Saturday 09:30Z."),
+ ("W3","v3","gap-refill","inRefillGuard","src/gap-refill.ts","refill guard edges","characterization test for the refill guard window edges",
+  [f'inRefillGuard({D("2026-10-13T09:12:00Z")}) is true',
+   f'inRefillGuard({D("2026-10-13T09:11:00Z")}) is false',
+   f'inRefillGuard({D("2026-10-13T06:14:00Z")}) is true',
+   f'inRefillGuard({D("2026-10-13T06:15:00Z")}) is false',
+   f'inRefillGuard({D("2026-10-13T10:14:00Z")}) is true'],
+  "The existing gap-refill test checks only 05:12, 05:11 and 10:15; the 09:12 start of the second window and the 06:14/06:15 end of the first are untested; this pins them."),
+ ("W4","v2","massive-plan-probe","classifyPlanProbe","src/massive-plan-probe.ts","unparsable probes","characterization test for unparsable plan probe replies",
+  ['classifyPlanProbe(200, "not json", null, "2024-08-28") is { olderReachable: undefined, ratePerMin: undefined, probedFrom: "2024-08-28", status: 200 }',
+   'classifyPlanProbe(403, "", "0", "2024-08-28") is { olderReachable: false, ratePerMin: undefined, probedFrom: "2024-08-28", status: 403 }',
+   'classifyPlanProbe(429, "", "abc", "2024-08-28") is { olderReachable: undefined, ratePerMin: undefined, probedFrom: "2024-08-28", status: 429 }'],
+  "The existing probe test never sends a 200 with an unparsable body (the catch branch) or a zero / non-numeric rate header, and never checks probedFrom and status pass through; this pins them."),
+ ("W5","v2","tenmin-mode","lastOutcomeFromRecord","src/tenmin-mode.ts","refused outcomes","characterization test for refused and reason-less run outcomes",
+  ['lastOutcomeFromRecord("STOP_REFUSAL:TENMIN_UNIVERSE_EMPTY", "success") is "refused"',
+   'lastOutcomeFromRecord("STOP_BOUNDED_MANUAL_RUN", "success") is "refused"',
+   'lastOutcomeFromRecord("HTTP 429", "failure") is "rate_limited"',
+   'lastOutcomeFromRecord(undefined, "failure") is "failed"',
+   'lastOutcomeFromRecord("CONTINUE", undefined) is "ok"'],
+  "The refused branch (STOP_REFUSAL / STOP_BOUNDED_MANUAL) of the shadow-mode outcome map is untested, as are a bare 429 reason and a missing reason or job result; this pins them."),
+ ("W6","v2","universe","eligibilityForBarCount","src/universe.ts","eligibility levels","characterization test for the history eligibility levels",
+  ['eligibilityForBarCount(0) is "LEVEL_0"',
+   'eligibilityForBarCount(19) is "LEVEL_1"',
+   'eligibilityForBarCount(251) is "LEVEL_2"',
+   'eligibilityForBarCount(252) is "LEVEL_3"',
+   'eligibilityForBarCount(1.5) throws INVALID_BAR_COUNT'],
+  "Only -1 (throws) and 20 (LEVEL_2) are tested; LEVEL_0, LEVEL_1, LEVEL_3, the 19/251/252 boundaries and a fractional count are not; this pins them."),
+ ("W7","v2","tenmin-range-reply-dust","resolveTenMinDelistedCoverageForSeal","src/tenmin-range-reply-dust.ts","requested coverage","characterization test for the requested delisted coverage at seal",
+  ['resolveTenMinDelistedCoverageForSeal(undefined, []) is "MISSING"',
+   'resolveTenMinDelistedCoverageForSeal("MISSING", []) is "MISSING"',
+   'resolveTenMinDelistedCoverageForSeal("COMPLETE", []) is "COMPLETE"'],
+  "The seal coverage rule is tested only with COMPLETE requested; an unset or MISSING request with no open gaps is untested; this pins that only an explicit COMPLETE seals as COMPLETE."),
+ ("W8","v2","tenmin-range-entries","tenMinRangeEntriesObjectKey","src/tenmin-range-entries.ts","entries keys","characterization test for the range entries object key",
+  ['tenMinRangeEntriesObjectKey("2024-09-01", "2024-10-31", "' + "a" * 64 + '") is "permanent/tenmin-reply-dust/2024-09-01_2024-10-31/entries-' + "a" * 64 + '.bin.zst"',
+   'tenMinRangeEntriesObjectKey("2024-09-01", "2024-10-31", "ABC") throws INVALID_ENTRIES_SHA256',
+   'tenMinRangeEntriesObjectKey("2024-10-31", "2024-09-01", "' + "a" * 64 + '") throws INVALID_RANGE'],
+  "The entries key is only compared with itself through the manifest; its literal layout and both guards (a non-hex sha256, a reversed range) are untested; this pins them."),
+ ("W9","v2","tenmin-daily-liquid","tenMinDailyIndexKey","src/tenmin-daily-liquid.ts","daily index keys","characterization test for daily index keys in other pairs",
+  ['tenMinDailyIndexKey("2024-01-15") is "permanent/tenmin-reply-dust/2024-01-01_2024-02-29/daily/2024-01-15.json"',
+   'tenMinDailyIndexKey("2024-1-15") throws INVALID_SESSION_DATE'],
+  "The daily index key is tested for one October 2026 date only; another two-month pair (a leap-year February end) and the INVALID_SESSION_DATE guard are untested; this pins them."),
+ ("W10","v2","tenmin-redispatch","isTransientFailure","src/tenmin-redispatch.ts","transient reasons","characterization test for transient and non-transient stop reasons",
+  ['isTransientFailure("success", "STOP_ERROR:HTTP 503") is true',
+   'isTransientFailure("success", "STOP_ERROR:ETIMEDOUT") is true',
+   'isTransientFailure("success", "STOP_ERROR:HTTP 404") is false',
+   'isTransientFailure("failure", "SCAN_CANCELLED") is false',
+   'isTransientFailure("failure", "KILL_SWITCH off") is false'],
+  "The retry rule is tested for fetch failed and STOP_REFUSAL only; a 5xx or ETIMEDOUT stop, a 404 stop and the SCAN_CANCELLED / KILL_SWITCH exclusions on a failed job are untested; this pins them."),
+ ("W11","v3","tenmin-redispatch","guardWindowState","src/tenmin-redispatch.ts","guard window state","characterization test for the guard window state after and inside a window",
+  [f'guardWindowState({D("2026-10-13T06:14:00Z")}) is {{ inside: true, minutesUntilNext: 181 }}',
+   f'guardWindowState({D("2026-10-13T06:15:00Z")}) is {{ inside: false, minutesUntilNext: 180 }}',
+   f'guardWindowState({D("2026-10-13T09:30:00Z")}) is {{ inside: true, minutesUntilNext: 1185 }}',
+   f'guardWindowState({D("2026-10-13T10:15:00Z")}) is {{ inside: false, minutesUntilNext: 1140 }}'],
+  "guardWindowState is tested only at 05:15 and 23:00; the first window's end (06:14/06:15), the second window and the wrap to the next day's 05:15 are untested; this pins them."),
+]
+tasks = []
+for (i, rule, mod, fn, f, short, tl, bul, why) in T:
+    body = f"Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for {fn} in {f}: {short}\n" + "".join(f"- {b}\n" for b in bul) + "\n" + NOTE.format(rule=rule, why=why, dry="{DRY}")
+    assert "\\u" not in body and not re.search(r"[\x00-\x08\x0b-\x1f\x7f]", body)
+    tasks.append({"id": i, "rule": rule, "category": "test-existing", "skill": "TEST_CASE_EXISTING", "expect": "solve", "title": f"[{mod}] {fn}: {tl}", "body": body, "accept": {"mutate": {"file": f, "fn": fn}}})
+json.dump({"schema": "peaceai-stress-suite:v1", "target": "PeaceG03/PeaceSTOCKS", "base": "8b1f413bd1d2f2b26ce0e24e7fd27f558a95e79b", "tasks": tasks}, open("tasks.json", "w"), indent=1)
+print(len(tasks))

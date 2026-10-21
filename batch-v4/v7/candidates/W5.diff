@@ -1,0 +1,17 @@
+diff --git a/src/tenmin-mode.refused-outcomes-512cac6.test.ts b/src/tenmin-mode.refused-outcomes-512cac6.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4872601ba2fe4c90d67726cd124c43aa8b46b363
+--- /dev/null
++++ b/src/tenmin-mode.refused-outcomes-512cac6.test.ts
+@@ -0,0 +1,11 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { lastOutcomeFromRecord } from "./tenmin-mode";
++
++test("refused outcomes", () => {
++  assert.equal(lastOutcomeFromRecord("STOP_REFUSAL:TENMIN_UNIVERSE_EMPTY", "success"), "refused");
++  assert.equal(lastOutcomeFromRecord("STOP_BOUNDED_MANUAL_RUN", "success"), "refused");
++  assert.equal(lastOutcomeFromRecord("HTTP 429", "failure"), "rate_limited");
++  assert.equal(lastOutcomeFromRecord(undefined, "failure"), "failed");
++  assert.equal(lastOutcomeFromRecord("CONTINUE", undefined), "ok");
++});

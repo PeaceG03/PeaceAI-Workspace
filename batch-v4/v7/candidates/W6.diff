@@ -1,0 +1,17 @@
+diff --git a/src/universe.eligibility-levels-89c3567.test.ts b/src/universe.eligibility-levels-89c3567.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb556bc2e4df94c5e75afb256fc13a27d9d6b926
+--- /dev/null
++++ b/src/universe.eligibility-levels-89c3567.test.ts
+@@ -0,0 +1,11 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { eligibilityForBarCount } from "./universe";
++
++test("eligibility levels", () => {
++  assert.equal(eligibilityForBarCount(0), "LEVEL_0");
++  assert.equal(eligibilityForBarCount(19), "LEVEL_1");
++  assert.equal(eligibilityForBarCount(251), "LEVEL_2");
++  assert.equal(eligibilityForBarCount(252), "LEVEL_3");
++  assert.throws(() => eligibilityForBarCount(1.5), /INVALID_BAR_COUNT/);
++});

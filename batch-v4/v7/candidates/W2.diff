@@ -1,0 +1,16 @@
+diff --git a/src/scan-backstop.last-scan-slots-33f4012.test.ts b/src/scan-backstop.last-scan-slots-33f4012.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5e8191b0896c910d8aaa4baefb8f0072a4f9c88
+--- /dev/null
++++ b/src/scan-backstop.last-scan-slots-33f4012.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { lastScanSlot } from "./scan-backstop";
++
++test("last scan slots", () => {
++  assert.deepEqual(lastScanSlot(new Date("2026-10-13T05:30:00Z")), new Date("2026-10-13T05:30:00Z"));
++  assert.deepEqual(lastScanSlot(new Date("2026-10-13T12:00:00Z")), new Date("2026-10-13T09:30:00Z"));
++  assert.deepEqual(lastScanSlot(new Date("2026-10-13T05:29:00Z")), new Date("2026-10-10T09:30:00Z"));
++  assert.deepEqual(lastScanSlot(new Date("2026-10-18T03:00:00Z")), new Date("2026-10-17T09:30:00Z"));
++});
