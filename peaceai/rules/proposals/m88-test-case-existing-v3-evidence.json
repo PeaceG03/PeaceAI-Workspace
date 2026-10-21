@@ -1,0 +1,317 @@
+{
+ "schema": "peaceai-m88-test-case-existing-v3-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "TEST_EXISTING v3 target (public-test-case-existing-v3): 10 exported functions from 6 permissive repos outside lm-corpus (repo and module sha checked against ext-manifest 8458eac6 + ext-corpus.json), each called by an existing test file at the pinned commit (HEAD of the clone) that builds new Date(...) values, where v1 and v2 refuse the function (test_target_signature: Date in the signature or in a followed sibling type) and v3 accepts it on the pinned module text, following relative imports only through the pinned sibling fixtures (4 examples need a sibling). Method: a commit-history scan of the 411 permissive TypeScript repos used for M85 found no test-only commit that fits; the HEAD scan of those 411 repos plus 326 permissive non-fork TypeScript repos found by GitHub repository search (date, calendar, scheduling, timezone and similar topics; MIT/Apache-2.0/BSD-3-Clause/ISC; over 20 stars; not in the corpus) found 16 candidates (at most 3 per repo). Dropped: facioquo/stock-charts toFinancialDataPoint and loadStaticQuotes (the pre-push core-text check matched shingles in their fixtures), CALLE-AI/awesome-phone-call-agents isQuietHour and Kesin11/actions-timeline parseLogBlocks (no Date in the signature itself), callumalpass/tasknotes isEventInRange (license not classified as permissive), pedrofuentes/stream-deck-ical sortEventsByStartTime (an email address in the module). Peace's public repos were checked first (see peace): both have fitting functions (the scan stops at 3 per repo), but both repos are in the corpus manifest, so they are recorded and not counted.",
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "8b1f413bd1d2f2b26ce0e24e7fd27f558a95e79b",
+   "fits": [
+    "inRefillGuard",
+    "utcDateKey",
+    "utcMinuteOfDay"
+   ],
+   "counted": 0
+  },
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "checkedAt": "b121f4704697be1e43701c74e80cb59dc069da6e",
+   "fits": [
+    "minutesOfUtcDay",
+    "utcDayKey"
+   ],
+   "counted": 0
+  }
+ ],
+ "pins": [
+  {
+   "name": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "f-tuma/musubi",
+   "commit": "b85a57500ad81b47603a705290e215270a642a95",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "TGYD-helige/pi",
+   "commit": "804cb3b54727a0c235676a12ebfd40aa42cd827a",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "ai-ecoverse/slicc",
+   "commit": "b278cea30c9ac6d3262c2a09da9134fa133a3e12",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dam-agents/dam",
+   "commit": "2f25e840c17168b09031d8ca60a6a09b67c7c283",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dam-agents/dam",
+   "commit": "2f25e840c17168b09031d8ca60a6a09b67c7c283",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dam-agents/dam",
+   "commit": "2f25e840c17168b09031d8ca60a6a09b67c7c283",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "recal-dev/scheduling-sdk",
+   "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "recal-dev/scheduling-sdk",
+   "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "recal-dev/scheduling-sdk",
+   "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  }
+ ],
+ "examples": [
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "test": "server/test/file-grant/expiry-pure-clock.test.ts",
+   "module": "server/src/file-grant/lifecycle.ts",
+   "fn": "computeExpiresAt",
+   "line": 74,
+   "signature": "(number | null, Date): string | null",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "025692581f8eb96ad83de8c8c7b16c429547cc5f2a2b0b42492cba3589c7978b",
+   "fileBlob": "1faa51d9e2ff927a148ecfb1f6fbed082fe86caf",
+   "fixture": "peaceai/test/fixtures/m88-te3/eriknewton__sanctuary-framework-1faa51d9e2ff.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "f-tuma/musubi",
+   "commit": "b85a57500ad81b47603a705290e215270a642a95",
+   "test": "packages/calendar/src/recurrence.test.ts",
+   "module": "packages/calendar/src/recurrence.ts",
+   "fn": "excludeOccurrence",
+   "line": 57,
+   "signature": "(string, Date): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "other",
+   "sha256": "e24667e1585595e8e3a8371685e5b519e05213566821998ef155961e79dff456",
+   "fileBlob": "26c1c8a7de7addad4f376ba8404177120578e2d5",
+   "fixture": "peaceai/test/fixtures/m88-te3/f-tuma__musubi-26c1c8a7de7a.txt",
+   "siblings": [
+    {
+     "repo": "f-tuma/musubi",
+     "commit": "b85a57500ad81b47603a705290e215270a642a95",
+     "path": "packages/calendar/src/rrule-editor.ts",
+     "fileBlob": "0ce5d244f5c10d6f7cbffcc2fad89dec728fe5e8",
+     "sha256": "8ef1dcce6fd87c15bcfc497c2a344ee4fabcac6c8d2a1dae96aad2890a8336f4",
+     "fixture": "peaceai/test/fixtures/m88-te3/f-tuma__musubi-0ce5d244f5c1.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "0cf01a61cf80bfc171a3a3bad90fe87c073a5ca4956bb73005cc03d4be2f75cd"
+  },
+  {
+   "repo": "TGYD-helige/pi",
+   "commit": "804cb3b54727a0c235676a12ebfd40aa42cd827a",
+   "test": "packages/pi-memory-mem0/src/__tests__/mem0.test.ts",
+   "module": "packages/pi-memory-mem0/src/provider.ts",
+   "fn": "formatObservedAt",
+   "line": 79,
+   "signature": "(Date | string): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "5eec9a1daf88eb6476086f0d7cda57377108a7a13f15bc57bc60dbfa30637a45",
+   "fileBlob": "64fb2c91d96a387a5e2909330cc49091b399b5c2",
+   "fixture": "peaceai/test/fixtures/m88-te3/TGYD-helige__pi-64fb2c91d96a.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "ai-ecoverse/slicc",
+   "commit": "b278cea30c9ac6d3262c2a09da9134fa133a3e12",
+   "test": "packages/webapp/tests/shell/supplemental-commands/playwright/state.test.ts",
+   "module": "packages/webapp/src/shell/supplemental-commands/playwright/state.ts",
+   "fn": "filenameSafeTimestamp",
+   "line": 155,
+   "signature": "(Date): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "b1f9ed373e520e7da8437f5d1f3817d91611063ef7133ae1c9d7c1c7998c2be1",
+   "fileBlob": "18ff9c02d64d1587a0a6cc9f8ac37bcda736335c",
+   "fixture": "peaceai/test/fixtures/m88-te3/ai-ecoverse__slicc-18ff9c02d64d.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "2fb893de1ed77ad1e8de1915d0f58ff1debcf3164d83fac8c80c19b71300fccf"
+  },
+  {
+   "repo": "dam-agents/dam",
+   "commit": "2f25e840c17168b09031d8ca60a6a09b67c7c283",
+   "test": "packages/agent-runtime/src/__tests__/unit/branch-timestamp.test.ts",
+   "module": "packages/agent-runtime/src/modules/skills/domain/branch-timestamp.ts",
+   "fn": "branchTimestamp",
+   "line": 2,
+   "signature": "(Date): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "9c4dd23f5e856d6690cb35b81aba61dc0303045bba880ba45944c5d77a20990c",
+   "fileBlob": "89f602aa782e4023f7564886d06561abde0b8bae",
+   "fixture": "peaceai/test/fixtures/m88-te3/dam-agents__dam-89f602aa782e.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "dam-agents/dam",
+   "commit": "2f25e840c17168b09031d8ca60a6a09b67c7c283",
+   "test": "packages/api-server/src/__tests__/unit/environments.test.ts",
+   "module": "packages/api-server/src/modules/environments/domain/environment.ts",
+   "fn": "clampExpiry",
+   "line": 53,
+   "signature": "(Date, Date, number): Date | { error: string }",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "19fdbcb451083fc76f42bc59006269d1724eb8d89b04bfdc0a3885627a533b66",
+   "fileBlob": "67faef3a3a923e5a3ba4548b274c78e871df3c9c",
+   "fixture": "peaceai/test/fixtures/m88-te3/dam-agents__dam-67faef3a3a92.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "dam-agents/dam",
+   "commit": "2f25e840c17168b09031d8ca60a6a09b67c7c283",
+   "test": "packages/api-server/src/__tests__/unit/resource-alert-policy.test.ts",
+   "module": "packages/api-server/src/modules/resource-alerts/domain/alert-policy.ts",
+   "fn": "nextOom",
+   "line": 65,
+   "signature": "(AlertMark, number, Date): AlertStep",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "230a4e67c2ac529763a8d32128610d675fabb432d9254d36512bbca8122bf52d",
+   "fileBlob": "3fa69627a4991d58b2ad6179cf8cc2d3d6e4dfd5",
+   "fixture": "peaceai/test/fixtures/m88-te3/dam-agents__dam-3fa69627a499.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "recal-dev/scheduling-sdk",
+   "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+   "test": "tests/helpers/busy-time/free-intervals.test.ts",
+   "module": "src/helpers/busy-time/free-intervals.ts",
+   "fn": "busyTimesToIntervals",
+   "line": 129,
+   "signature": "(BusyTime[]): Interval[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "03be8178d4f37a9a096914807b127b36c2d89aa1ccccaeab56454ebe64b16bbc",
+   "fileBlob": "e76e31fdc2df1a44809927bc396bccca5ed3c1a0",
+   "fixture": "peaceai/test/fixtures/m88-te3/recal-dev__scheduling-sdk-e76e31fdc2df.txt",
+   "siblings": [
+    {
+     "repo": "recal-dev/scheduling-sdk",
+     "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+     "path": "src/types/scheduling.types.ts",
+     "fileBlob": "081561b6322ca635eecb1ad6661b425015492efe",
+     "sha256": "37b8015368869df429b3a5403733d26e52dd2993db7a7f3d948c9de475ba69b3",
+     "fixture": "peaceai/test/fixtures/m88-te3/recal-dev__scheduling-sdk-081561b6322c.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "57315b6c44b2ec533d381ac5f22824ff116fbddd6aadddd148698d5a3d86780b"
+  },
+  {
+   "repo": "recal-dev/scheduling-sdk",
+   "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+   "test": "tests/helpers/busy-time/free-intervals.test.ts",
+   "module": "src/helpers/busy-time/free-intervals.ts",
+   "fn": "intervalsToTimeSlots",
+   "line": 139,
+   "signature": "(Interval[]): TimeSlot[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "03be8178d4f37a9a096914807b127b36c2d89aa1ccccaeab56454ebe64b16bbc",
+   "fileBlob": "e76e31fdc2df1a44809927bc396bccca5ed3c1a0",
+   "fixture": "peaceai/test/fixtures/m88-te3/recal-dev__scheduling-sdk-e76e31fdc2df.txt",
+   "siblings": [
+    {
+     "repo": "recal-dev/scheduling-sdk",
+     "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+     "path": "src/types/scheduling.types.ts",
+     "fileBlob": "081561b6322ca635eecb1ad6661b425015492efe",
+     "sha256": "37b8015368869df429b3a5403733d26e52dd2993db7a7f3d948c9de475ba69b3",
+     "fixture": "peaceai/test/fixtures/m88-te3/recal-dev__scheduling-sdk-081561b6322c.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "57315b6c44b2ec533d381ac5f22824ff116fbddd6aadddd148698d5a3d86780b"
+  },
+  {
+   "repo": "recal-dev/scheduling-sdk",
+   "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+   "test": "tests/helpers/busy-time/merge.test.ts",
+   "module": "src/helpers/busy-time/merge.ts",
+   "fn": "isOverlapping",
+   "line": 32,
+   "signature": "(BusyTime, BusyTime): boolean",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "c325977e5c6944da71188617cec650ea47f851f7725278ef47a6769302ddf768",
+   "fileBlob": "cca6bc649d7c61b73d8e84d3b194151c2befbddf",
+   "fixture": "peaceai/test/fixtures/m88-te3/recal-dev__scheduling-sdk-cca6bc649d7c.txt",
+   "siblings": [
+    {
+     "repo": "recal-dev/scheduling-sdk",
+     "commit": "1ba95869e3fdddf4915fa77c3f061589f0fba2ed",
+     "path": "src/types/scheduling.types.ts",
+     "fileBlob": "081561b6322ca635eecb1ad6661b425015492efe",
+     "sha256": "37b8015368869df429b3a5403733d26e52dd2993db7a7f3d948c9de475ba69b3",
+     "fixture": "peaceai/test/fixtures/m88-te3/recal-dev__scheduling-sdk-081561b6322c.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "57315b6c44b2ec533d381ac5f22824ff116fbddd6aadddd148698d5a3d86780b"
+  }
+ ]
+}

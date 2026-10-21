@@ -10,7 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import ts from "typescript";
-import { buildTestEdit, parseTestTask, type TestTask } from "./learned-test.ts";
+import { buildTestEdit, isDateLiteral, parseTestTask, type TestTask } from "./learned-test.ts";
 
 export const FUNCTION_PARAM_KEYS = ["body", "grading", "params", "placement", "returns", "test"] as const;
 export const FUNCTION_VOCAB: Record<(typeof FUNCTION_PARAM_KEYS)[number], readonly string[]> = {
@@ -512,7 +512,12 @@ function isReference(n: ts.Identifier): boolean {
  * only node:test, node:assert/strict and the modules in `allowed`; no dynamic import, import.meta, file/env/process
  * access, eval/Function, no `PEACEAI_STUB_BODY` text. Otherwise the reason (fail closed).
  */
-export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[], dataKeys: readonly string[] = []): string | null {
+/**
+ * M88 (`dateLiterals`, public-test-case-existing-v3 grading only): the identifier `Date` is allowed exactly as the
+ * callee of a `new Date("<ISO literal>")` that passes isDateLiteral (one plain string literal, a real calendar value,
+ * at most 32 chars): a fixed value, no clock read. Every other use of `Date` stays forbidden.
+ */
+export function gradedTestSourceProblem(src: string, allowed: readonly string[], functions?: readonly string[], dataKeys: readonly string[] = [], dateLiterals = false): string | null {
   if (src.includes(STUB_BODY_CODE) || src.includes("__peaceaiStub")) return "names the stub";
   const sf = ts.createSourceFile("t.ts", src, ts.ScriptTarget.Latest, true);
   let problem: string | null = null;
@@ -560,7 +565,8 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
     if (problem) return;
     // Round 3 (Auditor #129): allow-list grammar first (node kinds, free identifiers, Object members).
     if (!ALLOWED_KINDS.has(n.kind) && !isPunctuation(n.kind)) { problem = `syntax ${ts.SyntaxKind[n.kind]}`; return; }
-    if (ts.isIdentifier(n) && isReference(n) && !declared.has(n.text) && !ALLOWED_GLOBALS.has(n.text)) { problem = `global ${n.text}`; return; }
+    const fixedDate = dateLiterals && ts.isIdentifier(n) && n.text === "Date" && !declared.has("Date") && ts.isNewExpression(n.parent) && n.parent.expression === n && isDateLiteral(n.parent);
+    if (ts.isIdentifier(n) && isReference(n) && !declared.has(n.text) && !ALLOWED_GLOBALS.has(n.text) && !fixedDate) { problem = `global ${n.text}`; return; }
     if (ts.isIdentifier(n) && n.text === "Object" && isReference(n) && !declared.has("Object")
       && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && OBJECT_MEMBERS.has(n.parent.name.text) && ts.isCallExpression(n.parent.parent) && n.parent.parent.expression === n.parent)) { problem = "Object other than Object.keys/fromEntries/freeze calls"; return; }
     if (ts.isImportDeclaration(n)) {
@@ -571,7 +577,7 @@ export function gradedTestSourceProblem(src: string, allowed: readonly string[],
     if (ts.isImportEqualsDeclaration(n) || ts.isExportDeclaration(n)) { problem = "import=/export"; return; }
     if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { problem = "dynamic import"; return; }
     if (ts.isMetaProperty(n)) { problem = "import.meta/new.target"; return; }
-    if (ts.isIdentifier(n) && FORBIDDEN_NAMES.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) { problem = `uses ${n.text}`; return; }
+    if (ts.isIdentifier(n) && FORBIDDEN_NAMES.has(n.text) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n) && !fixedDate) { problem = `uses ${n.text}`; return; }
     if (ts.isElementAccessExpression(n) && !ts.isNumericLiteral(n.argumentExpression)) { problem = "computed member access"; return; }
     // Round 4 (Auditor #129 B1): property-name allow-list.
     if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) {

@@ -1,0 +1,25 @@
+{
+ "id": "public-test-case-existing-v3",
+ "kind": "TEST_EXISTING",
+ "shape": "TEST_CASE_EXISTING",
+ "status": "proposal-off-wired",
+ "flag": "none for the v3 target; Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-test-existing.ts (target exported-pure-function-v3) and learned-test.ts (internal plain-data-v3 args mode); Job B: gradeExisting with the v3 re-check (v2 plus the global Date), fixed new Date(\"<ISO>\") literals allowed in the graded test, and the v2 object-aware stub",
+ "scope": "the v1/v2 characterization test (one new test file, no source edit) for an existing exported function whose signature uses the global Date anywhere a v2 plain-data type may appear; checks may pass new Date(\"<ISO literal>\") values and bounded object literals (also inside arrays) and expect Date values (deepEqual). Gap 1 (objects nested inside array arguments) is also fixed for v2 through the internal nested-object-literal args mode",
+ "refusals": "the v1/v2 refusals by name (clock, local time and Date setters stay test_target_date_local / test_target_impure); not_needed when the v1 or v2 target already accepts the function (one candidate per task)",
+ "evidence": {
+  "examples": 10,
+  "repos": 6,
+  "file": "peaceai/rules/proposals/m88-test-case-existing-v3-evidence.json",
+  "method": "HEAD scan of 411 + 326 cloned permissive TypeScript repos (the 326 found by GitHub repository search on date/calendar/scheduling topics): an existing test that builds new Date(...) values calls an exported function that v1 and v2 refuse and v3 accepts on the pinned module (siblings pinned as fixtures; no training-corpus overlap). A commit-history scan of the 411 repos found none",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: PeaceSTOCKS (inRefillGuard, utcDateKey, utcMinuteOfDay, scan capped at 3) and PeaceAI-Workspace (minutesOfUtcDay, utcDayKey) fit; both are in the corpus manifest, so they are recorded and not counted. 4 of the 10 examples need a followed sibling type that holds a Date. Two stock-charts examples were dropped because the pre-push core-text check matched their fixtures"
+ },
+ "learned": "peaceai/rules/learned/public-test-case-existing-v3.json",
+ "tests": [
+  "peaceai/test/m88-test-case-existing-v3.test.ts"
+ ],
+ "untouched": "public-test-case-existing-v1 and public-test-case-existing-v2 (same params and hashes); M20 object-literal and M35 date-literal test specs"
+}

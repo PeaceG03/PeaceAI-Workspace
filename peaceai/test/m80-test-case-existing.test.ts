@@ -340,7 +340,8 @@ test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three r
   assert.match(g, /PERMISSION_NODE_MAJOR\) return ungradable\("not-confined"\)/);
   assert.match(g, /gradedTestSourceProblem\(test,/);
   // M85: the v2 candidate is re-checked under the v2 target; any other under v1 (opts undefined).
-  assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \} : undefined\) !== null/);
+  // M88: v3 candidates arrive with v2 set and add the global Date (`dates: v3`).
+  assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, dates: v3 \} : undefined\) !== null/);
   assert.match(g, /moduleReadClosure\(modPath, regular\)/);
   assert.match(g, /i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runExistingTests\(tree, newTests, reads\)\.ok\)/);
   assert.match(g, /run = runExistingTests\(tree, newTests, reads, true\);/);
