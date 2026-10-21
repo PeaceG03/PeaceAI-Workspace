@@ -323,7 +323,8 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   const file = join(tree, modPath);
   try { if (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile() || relative(tree, realpathSync(file)).startsWith("..")) return ungradable("not-applied"); } catch { return ungradable("not-applied"); }
   const real = readFileSync(file, "utf8");
-  if (gradedTestSourceProblem(test, [spec, `${spec}.ts`], declaredFunctions(real), moduleDataKeys(real))) return ungradable("not-test-only");
+  // M88: v3 candidates may build fixed `new Date("<ISO literal>")` values (isDateLiteral); nothing else changes.
+  if (gradedTestSourceProblem(test, [spec, `${spec}.ts`], declaredFunctions(real), moduleDataKeys(real), v3)) return ungradable("not-test-only");
   const a = importedBindings(test, spec);
   const b = importedBindings(test, `${spec}.ts`);
   if (!a || !b) return ungradable("not-test-only");

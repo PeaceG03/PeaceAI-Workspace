@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { stubAll } from "../lib/learned-function.ts";
+import { gradedTestSourceProblem, stubAll } from "../lib/learned-function.ts";
 import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, buildTestEdit } from "../lib/learned-test.ts";
 import { existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
@@ -176,4 +176,21 @@ test("stub and Job B wiring: v3 candidates are re-checked with Date and stubbed 
   assert.match(tc, /candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\)\);/);
   assert.match(tc, /dates: v3 \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
+});
+
+test("graded test source: fixed Date literals only, and only for v3 grading", () => {
+  const src = (body: string) => `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { dayKey } from "./a";\n\ntest("t", () => {\n  ${body}\n});\n`;
+  const ok = src('assert.equal(dayKey(new Date("2026-10-17T05:59:00Z")), "2026-10-17");');
+  assert.equal(gradedTestSourceProblem(ok, ["./a", "./a.ts"], ["dayKey"], [], true), null);
+  assert.notEqual(gradedTestSourceProblem(ok, ["./a", "./a.ts"], ["dayKey"], []), null, "v1/v2 grading still forbids Date");
+  for (const body of [
+    'assert.equal(dayKey(new Date()), "x");',
+    'assert.equal(dayKey(new Date(0)), "x");',
+    'assert.equal(dayKey(new Date("2026-02-30")), "x");',
+    'assert.equal(dayKey(new Date(`2026-10-17`)), "x");',
+    'assert.equal(String(Date.now()), "x");',
+    'const D = Date; assert.equal(dayKey(new D("2026-10-17")), "x");',
+    'assert.equal(dayKey(new Date("2026-10-17", "x")), "x");',
+  ]) assert.notEqual(gradedTestSourceProblem(src(body), ["./a", "./a.ts"], ["dayKey"], [], true), null, body);
+  assert.match(read("peaceai/bin/test-candidates.ts"), /gradedTestSourceProblem\(test, \[spec, `\$\{spec\}\.ts`\], declaredFunctions\(real\), moduleDataKeys\(real\), v3\)/);
 });
