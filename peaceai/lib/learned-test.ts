@@ -33,6 +33,9 @@ const CHECK_LINE: { kind: TestCheckKind; re: RegExp }[] = [
   { kind: "deepEqual", re: /^[-*] (?<expr>.+) is \x60?(?<value>[[{].*[\]}])\x60?\.?$/ },
   // M85 (stress D2): a Date result is written `is new Date("ISO")`; read as deepEqual (Dates compare by time value).
   { kind: "deepEqual", re: /^[-*] (?<expr>.+) is \x60?(?<value>new Date\("[^"\n]{1,32}"\))\x60?\.?$/ },
+  // M97 (public-test-case-existing-v7): a Map / Set result is written `is new Map([..])` / `is new Set([..])`; read as
+  // deepEqual. Only the internal plain-data-v7 args mode renders it (every other spec refuses the value: test_refused).
+  { kind: "deepEqual", re: /^[-*] (?<expr>.+) is \x60?(?<value>new (?:Map|Set)\(.*\))\x60?\.?$/ },
   { kind: "equal", re: new RegExp(String.raw`^[-*] (?<expr>.+) is \x60?(?<value>${LIT})\x60?\.?$`) },
 ];
 
@@ -99,17 +102,61 @@ export function isDateLiteral(n: ts.Node): boolean {
   return raw.length <= MAX_DATE_LITERAL_CHARS && raw === a[0]!.text && ISO_DATE_TEXT.test(raw) && validCalendar(raw);
 }
 
+/** M97: entries of one Map / members of one Set literal, and how deep Map / Set literals may nest. */
+export const MAX_COLLECTION_ENTRIES = 32;
+export const MAX_COLLECTION_DEPTH = 3;
+/** M97: a Map key or Set member: a string or (negative) number literal only (never an object, array, function or Date). */
+function primitiveKey(n: ts.Node): string | null {
+  if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return `s:${n.text}`;
+  if (ts.isNumericLiteral(n)) return `n:${Number(n.text)}`;
+  if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)) return `n:${-Number(n.operand.text)}`;
+  return null;
+}
+/**
+ * M97 (v7 only): `new Map([[K, V], ...])` / `new Set([K, ...])` with the global names (checks name only the tested
+ * export, so they cannot be shadowed), no type arguments, no argument or one array literal of at most
+ * MAX_COLLECTION_ENTRIES entries, no spread or holes; keys / members are string or number literals, never repeated
+ * (so a literal never silently drops an entry); Map values are literal values (Dates, plain objects, nested Map / Set
+ * literals up to MAX_COLLECTION_DEPTH).
+ */
+export function isMapSetLiteral(n: ts.Node, depth = 0): boolean {
+  if (!ts.isNewExpression(n) || n.typeArguments || !ts.isIdentifier(n.expression) || (n.expression.text !== "Map" && n.expression.text !== "Set")) return false;
+  if (depth >= MAX_COLLECTION_DEPTH) return false;
+  if (!n.arguments) return false;
+  const a = n.arguments;
+  if (a.length === 0) return true;
+  if (a.length !== 1 || !ts.isArrayLiteralExpression(a[0]!)) return false;
+  const els = a[0]!.elements;
+  if (els.length > MAX_COLLECTION_ENTRIES) return false;
+  const seen = new Set<string>();
+  for (const el of els) {
+    let key: string | null;
+    if (n.expression.text === "Set") key = primitiveKey(el);
+    else {
+      if (!ts.isArrayLiteralExpression(el) || el.elements.length !== 2) return false;
+      key = primitiveKey(el.elements[0]!);
+      const v = el.elements[1]!;
+      if (!(isMapSetLiteral(v, depth + 1) || isLiteralValue(v, true, depth + 1))) return false;
+    }
+    if (key === null || seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
+}
+
 /** A literal value: string, number, -number, true/false/null/undefined, arrays and plain objects of those.
- *  M35: with `dates`, also a `new Date("...")` (isDateLiteral), directly or inside arrays/objects. */
-function isLiteralValue(n: ts.Node, dates = false): boolean {
+ *  M35: with `dates`, also a `new Date("...")` (isDateLiteral), directly or inside arrays/objects.
+ *  M97: with `mapSet` (the v7 args mode; a nesting depth), also isMapSetLiteral, directly or inside arrays/objects. */
+function isLiteralValue(n: ts.Node, dates = false, mapSet: number | false = false): boolean {
   if (dates && isDateLiteral(n)) return true;
+  if (mapSet !== false && isMapSetLiteral(n, mapSet)) return true;
   if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isNumericLiteral(n)) return true;
   if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword || n.kind === ts.SyntaxKind.NullKeyword) return true;
   if (ts.isIdentifier(n) && (n.text === "undefined" || n.text === "NaN" || n.text === "Infinity")) return true;
   if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && (ts.isNumericLiteral(n.operand) || (ts.isIdentifier(n.operand) && n.operand.text === "Infinity"))) return true;
-  if (ts.isArrayLiteralExpression(n)) return n.elements.every((x) => isLiteralValue(x, dates));
+  if (ts.isArrayLiteralExpression(n)) return n.elements.every((x) => isLiteralValue(x, dates, mapSet));
   if (ts.isObjectLiteralExpression(n))
-    return n.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && isLiteralValue(p.initializer, dates));
+    return n.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && isLiteralValue(p.initializer, dates, mapSet));
   return false;
 }
 
@@ -118,12 +165,13 @@ function isLiteralValue(n: ts.Node, dates = false): boolean {
  * reads, literal index reads, and calls (or `new`) whose arguments are literal values. Nothing else: no
  * other identifiers, operators, functions or templates, so no code beyond names the task and target give.
  */
-export function checkRoot(e: ts.Expression, dates = false): string | null {
+export function checkRoot(e: ts.Expression, dates = false, mapSet = false): string | null {
   if (ts.isIdentifier(e)) return e.text === "undefined" ? null : e.text;
-  if (ts.isPropertyAccessExpression(e)) return e.questionDotToken ? null : checkRoot(e.expression, dates);
-  if (ts.isElementAccessExpression(e)) return isLiteralValue(e.argumentExpression) && !ts.isObjectLiteralExpression(e.argumentExpression) ? checkRoot(e.expression, dates) : null;
+  if (ts.isPropertyAccessExpression(e)) return e.questionDotToken ? null : checkRoot(e.expression, dates, mapSet);
+  if (ts.isElementAccessExpression(e)) return isLiteralValue(e.argumentExpression) && !ts.isObjectLiteralExpression(e.argumentExpression) ? checkRoot(e.expression, dates, mapSet) : null;
   // M35: Date arguments only as call arguments (never as an index, a `new` argument or an expected value).
-  if (ts.isCallExpression(e)) return !e.typeArguments && e.arguments.every((a) => isLiteralValue(a, dates)) ? checkRoot(e.expression, dates) : null;
+  // M97: likewise Map / Set literals (v7 args mode only): call arguments, never an index or a `new` argument.
+  if (ts.isCallExpression(e)) return !e.typeArguments && e.arguments.every((a) => isLiteralValue(a, dates, mapSet ? 0 : false)) ? checkRoot(e.expression, dates, mapSet) : null;
   if (ts.isNewExpression(e)) return !e.typeArguments && ts.isIdentifier(e.expression) && (e.arguments ?? []).every((a) => isLiteralValue(a)) ? e.expression.text : null;
   return null;
 }
@@ -156,9 +204,9 @@ export function importStyle(files: readonly { path: string; content: string }[],
   return ts_ > none ? "ts" : "none";
 }
 
-const renderValue = (text: string, date = false, nestedDates = false) => {
+const renderValue = (text: string, date = false, nestedDates = false, mapSet = false) => {
   const e = parseExpr(text);
-  return e && (isLiteralValue(e, nestedDates) || (date && isDateLiteral(e))) ? e.getText() : null;
+  return e && (isLiteralValue(e, nestedDates, mapSet ? 0 : false) || (date && isDateLiteral(e))) ? e.getText() : null;
 };
 /**
  * M88: the args mode only buildExistingTestEdit passes for `public-test-case-existing-v3` (no spec's params can name
@@ -169,6 +217,8 @@ const renderValue = (text: string, date = false, nestedDates = false) => {
 export const ARGS_PLAIN_DATA_V3 = "plain-data-v3";
 /** M88 gap 1: internal too (v2 only): the bounded object grammar for objects nested inside array arguments, no Dates. */
 export const ARGS_NESTED_OBJECTS = "nested-object-literal";
+/** M97: internal too (v7 only): the plain-data-v3 mode plus Map / Set literals (isMapSetLiteral) as arguments and expected values. */
+export const ARGS_PLAIN_DATA_V7 = "plain-data-v7";
 const slug = (s: string) => {
   const full = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const cut = full.length <= 32 ? full : full.slice(0, 33).replace(/-[^-]*$/, "") || full.slice(0, 32);
@@ -202,7 +252,8 @@ export function buildTestEdit(
   if (params.args === "date-literal" && !task.checks.some((c) => { const x = parseExpr(c.expr); let has = false; const v = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some((a) => isDateLiteral(a) || (ts.isArrayLiteralExpression(a) && a.elements.some(isDateLiteral)))) has = true; ts.forEachChild(n, v); }; if (x) v(x); return has; })) return null;
   const roots = new Set<string>([task.symbol]);
   const body: string[] = [];
-  const v3 = params.args === ARGS_PLAIN_DATA_V3;
+  const v7 = params.args === ARGS_PLAIN_DATA_V7;
+  const v3 = params.args === ARGS_PLAIN_DATA_V3 || v7;
   for (const c of task.checks) {
     const objectArgs = params.args === "object-literal" || params.args === ARGS_NESTED_OBJECTS || v3;
     if (c.expr.length > (objectArgs ? MAX_OBJECT_EXPR_CHARS : MAX_EXPR_CHARS)) return null;
@@ -210,14 +261,14 @@ export function buildTestEdit(
     // M20 (Auditor): every object in a check must be plain bounded data (objectArgsReason), under every test
     // spec: the plain specs no longer accept __proto__/constructor/prototype or repeated keys, or deep objects.
     if (e && objectArgsReason(e) !== null) return null;
-    const root = e ? checkRoot(e, params.args === "date-literal" || v3) : null;
+    const root = e ? checkRoot(e, params.args === "date-literal" || v3, v7) : null;
     if (!e || !root || !exports.has(root)) return null;
     roots.add(root);
     const expr = e.getText();
     if (c.kind === "equal" || c.kind === "deepEqual") {
-      const v = renderValue(c.value ?? "", c.kind === "deepEqual" && (params.expected === "date-literal" || v3), v3);
+      const v = renderValue(c.value ?? "", c.kind === "deepEqual" && (params.expected === "date-literal" || v3), v3, v7);
       if (v === null) return null;
-      if (c.kind === "deepEqual" && !/^(?:[[{]|new Date\(")/.test(v)) return null;
+      if (c.kind === "deepEqual" && !(v7 ? /^(?:[[{]|new Date\("|new (?:Map|Set)\()/ : /^(?:[[{]|new Date\(")/).test(v)) return null;
       body.push(`  assert.${c.kind}(${expr}, ${v});`);
     } else if (c.kind === "throws") body.push(`  assert.throws(() => ${expr}, /${c.code}/);`);
     else body.push(`  await assert.rejects(async () => ${expr}, /${c.code}/);`);

@@ -11,7 +11,7 @@ import ts from "typescript";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
-import { callsPassEnv, envArgProblem, envDefaultParams, existingTargetRefusal, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IO, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
+import { callsPassEnv, envArgProblem, envDefaultParams, existingTargetAnalysisForEvidence, existingTargetRefusal, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IO, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -67,8 +67,9 @@ test("spec: valid, hash pinned, v5 params except the target, the v1 trigger; any
   assert.deepEqual(SPEC.params, { ...V1.params, target: "exported-pure-function-v6" });
   assert.deepEqual(V5.params, { ...V1.params, target: "exported-pure-function-v5" }, "v5 is unchanged");
   assert.equal(specHash(V5), "ad677b3667432177ebdc221fe74160bb590e074c5d7768d840119505c9fe5bab", "the v5 hash is unchanged");
-  assert.deepEqual([...TEST_EXISTING_VOCAB.target], ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5", "exported-pure-function-v6"]);
-  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "exported-pure-function-v7" } }));
+  // M97: v7 appends one more target; the v1-v6 entries and their order are unchanged.
+  assert.deepEqual([...TEST_EXISTING_VOCAB.target].slice(0, 6), ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5", "exported-pure-function-v6"]);
+  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "exported-pure-function-v8" } }));
   // Lesson (M85/M87/M88/M90/M91): never assert the rule is absent from approved.json; any listed entry must pin this exact hash.
   const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
   for (const r of onMain.rules.filter((x) => x.id === SPEC.id)) assert.equal(r.sha256, SHA, "a listed entry pins the exact spec hash");
@@ -203,7 +204,8 @@ test("Auditor #460: a process.env default reachable from anything but the test i
   for (const [k, c] of Object.entries(ENV_REACH)) {
     const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
     // A namespace import is already refused by the purity walk (test_target_impure); every other case is the new check.
-    const want = k === "namespaceBack" ? "test_target_impure" : TEST_TARGET_IO;
+    // Auditor #466 (3rd review): a top-level call (direct or via a load-time caller) is refused first by the fail-closed load allowlist (test_target_impure).
+    const want = ["namespaceBack", "topLevelCall", "loadTimeCaller", "loadTimeIndirect"].includes(k) ? "test_target_impure" : TEST_TARGET_IO;
     assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), want, `re-check ${k}`);
     const r = run(c.fn, c.check, SPEC, c.files);
     assert.equal(r.e, null, `Job A ${k}`);
@@ -211,6 +213,8 @@ test("Auditor #460: a process.env default reachable from anything but the test i
   }
   for (const [k, c] of Object.entries(ENV_SAFE)) {
     const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
+    // Auditor #466 (3rd review) refused every load-time user call; the #466 load-call allowance re-admits `READY = h()`
+    // because h passes the full purity analysis, takes no arguments and returns a primitive (see loadCallInert).
     assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), null, `re-check ${k}`);
     assert.ok(run(c.fn, c.check, SPEC, c.files).e, `Job A ${k}`);
   }
@@ -223,9 +227,9 @@ test("stub and Job B wiring: v6 candidates are re-checked under v6 (with v2-v5 s
   const st = stubAll(A, ["flagOn"], true);
   assert.ok(st && !st.throws && /export function flagOn\(env: NodeJS\.ProcessEnv = process\.env\): boolean \{ __peaceaiStubRan\(\);/.test(st.content));
   const tc = read("peaceai/bin/test-candidates.ts");
-  assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false, v6 = false\): TestGrading/);
-  assert.match(tc, /existing-v5@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)\), typeof candidate\.operationId === "string" && candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)\);/);
-  assert.match(tc, /dates: v3, v4, v5, v6 \} : undefined\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);/);
+  assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false, v6 = false(?:, v7 = false)?\): TestGrading/);
+  assert.match(tc, /existing-v5@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\), typeof candidate\.operationId === "string" && \(?candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)/);
+  assert.match(tc, /dates: v3, v4, v5, v6(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 
@@ -252,13 +256,13 @@ test("evidence: bar met; every module and sibling blob-pinned; v1-v5 refuse and 
     const text = pinned(e);
     const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
     const rd = { read: (rel: string) => sibs.get(rel) ?? null };
-    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v4: true }), e.v4Refusal, `${e.repo} ${e.fn} v4`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v5: true }), e.v5Refusal, `${e.repo} ${e.fn} v5`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v4: true }), e.v4Refusal, `${e.repo} ${e.fn} v4`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v5: true }), e.v5Refusal, `${e.repo} ${e.fn} v5`);
     for (const r of [e.v1Refusal, e.v2Refusal, e.v3Refusal, e.v4Refusal, e.v5Refusal]) assert.notEqual(r, null);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v6: true }), null, `${e.repo} ${e.fn} v6`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v6: true }), null, `${e.repo} ${e.fn} v6`);
     // v6 differs from v5 only by top-level unknown / NodeJS.ProcessEnv parameters: the signature shows one.
     assert.match(e.signature, /\bunknown\b|NodeJS\.ProcessEnv/, e.fn);
     if (/NodeJS\.ProcessEnv/.test(e.signature)) env++; else unk++;

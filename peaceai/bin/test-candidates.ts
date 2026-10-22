@@ -14,7 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
-import { envArgProblem, existingTargetRefusal, moduleReadClosure } from "../lib/learned-test-existing.ts";
+import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -136,7 +136,9 @@ const REAL_RUNS_REQUIRED = 3;
  * no fs write, no child_process, worker threads only for tsx's loader, tsx cache off, one process per test file, the
  * stub's notes on a parent-only write-only channel. Node < 22 never reaches this (the caller is not-confined first).
  */
-function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
+/** Auditor #466 (4th review): the zones every TEST_CASE_EXISTING test is run in after pass 2 (gradeExisting). */
+export const EXISTING_TZ_RUNS = ["UTC", "America/Denver", "Asia/Tokyo"] as const;
+function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false, tz?: string): { ok: boolean; out: string; confined: boolean; notes: number } {
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
   const realTree = realpathSync(tree);
@@ -152,7 +154,7 @@ function runExistingTests(tree: string, tests: readonly string[], reads: readonl
       fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
     }
     try {
-      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1" }, fd);
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1", ...(tz ? { TZ: tz } : {}) }, fd);
       ok &&= r.ok;
       outs.push(r.out);
       if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
@@ -305,7 +307,7 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
  * as for the stub route); the target analysis is re-run on the real tree. Reads are narrowed to the test, the
  * module's relative import closure and node_modules.
  */
-function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, v2 = false, v3 = false, v4 = false, v5 = false, v6 = false): TestGrading {
+function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, v2 = false, v3 = false, v4 = false, v5 = false, v6 = false, v7 = false): TestGrading {
   // M88: callers set v2 for v3 (public-test-case-existing-v3) candidates too; v3 only adds the global Date.
   // M90: and v2 + v3 for v4 (public-test-case-existing-v4) candidates; v4 only widens the target re-check.
   const base = summary.baseSha;
@@ -344,11 +346,22 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   // params), and its test must pass an object literal for every `= process.env` default in every call (envArgProblem).
   // M90: a public-test-case-existing-v4 candidate under the v4 target (v3 plus optional / literal-default params,
   // the V4_GENERICS references and the v4 type bounds).
-  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6 } : undefined) !== null) return ungradable("not-test-only");
+  // M97: a public-test-case-existing-v7 candidate under the v7 target (v6 plus Map / Set types and a void return, with
+  // the v7 hardening for targets v6 refuses); its test is re-checked on the graded source, never only on the task text:
+  // a void target only in `assert.throws(() => f(..), ..)` (at least once) or `assert.equal(f(..), undefined)`, and every
+  // `new Map(..)` / `new Set(..)` a bounded literal.
+  // Auditor #466 (3rd review): v1 gets the tree for the load-closure check only (`load`); v1's analysis still reads no sibling.
+  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6, v7 } : { load: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) } }) !== null) return ungradable("not-test-only");
   if (v6 && envArgProblem(real, fn, test) !== null) return ungradable("not-test-only");
+  if (v7 && (voidTestProblem(real, fn, test) !== null || mapSetTestProblem(test) !== null)) return ungradable("not-test-only");
+  // Auditor #466 (4th review), every version: the test side of the fail-closed Date check (dateTestProblem).
+  if (dateTestProblem(real, fn, test, called[0]!.local) !== null) return ungradable("not-test-only");
   const reads = moduleReadClosure(modPath, regular);
   if (!reads) return ungradable("module-imports-repo-files");
-  if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runExistingTests(tree, newTests, reads).ok) return ungradable("real-not-stable");
+  // Auditor #466 (4th review), the zone BACKSTOP, every version: the further real runs are one per EXISTING_TZ_RUNS
+  // zone (UTC, America/Denver, Asia/Tokyo; more than the REAL_RUNS_REQUIRED - 1 runs this replaces); a test whose
+  // result depends on the process zone fails one of them (real-not-stable).
+  if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, reads, false, tz).ok) return ungradable("real-not-stable");
   // M88: `v2` is also set for v3 candidates, so a Date return stubs to `{}` as an object return does under v2;
   // deepEqual against a Date literal then fails by assertion (ERR_ASSERTION), the only credited failure.
   const stub = stubAll(real, [fn], v2);
@@ -663,7 +676,7 @@ for (const candidate of selected) {
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
-    if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v6@"));
+    if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v7@"));
     else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {

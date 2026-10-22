@@ -1,0 +1,4522 @@
+{
+"auditor": [
+"c9:x_arrJoin",
+"c9:x_arrToString",
+"c9:x_arrTmpl",
+"c9:x_concat",
+"c9:x_newString",
+"c9:x_objPlus",
+"c9:x_encode",
+"c9:x_protoToString",
+"c9:x_reflectGet",
+"c9:x_getYear",
+"c9:x_setYear",
+"c9:x_arrLocale",
+"c9:x_strRaw",
+"c9:x_memberTmpl",
+"c9:x_parseIntD",
+"c9:x_setFromArr",
+"c9:x_mapStr",
+"c9:x_strCtorCall",
+"c9:x_replace",
+"c9:x_padEnd",
+"c9:x_regexTest",
+"c9:x_strSplit",
+"c9:x_toGMT",
+"c9:x_utcStr",
+"c9:x_iso",
+"c9:x_jsonObj",
+"c9:x_setUTCplusLocal",
+"c9:n_arrJoin",
+"c9:n_concat",
+"c9:n_bracketSet",
+"c9:n_bracketGet",
+"c9:n_arrMap",
+"c9:y_bracketV7",
+"c9:y_bracketGetV7",
+"c8:d_bracket",
+"c8:d_bracketVar",
+"c8:d_arrJoin",
+"c8:d_concat",
+"c8:d_json",
+"c8:d_argDateParam"
+],
+"cases": {
+"c8:d_String": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d); }"
+},
+"f"
+],
+"c8:d_alias": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const d2 = d; d2.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_alias2": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const d2 = d; d.setUTCDate(1); return d2.getTime(); }"
+},
+"f"
+],
+"c8:d_argCall": [
+{
+"src/a.ts": "let n = 0;\nfunction g(): number { return n++; }\nexport function f(s: string): number { const d = new Date(g()); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_argCallRand": [
+{
+"src/a.ts": "function g(): number { return Math.random(); }\nexport function f(s: string): number { const d = new Date(g()); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_argDateParam": [
+{
+"src/a.ts": "export function f(p: Date): number { const d = new Date(p); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_arrJoin": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].join(); }"
+},
+"f"
+],
+"c8:d_arrowCap": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const g = () => d.getTime(); d.setUTCDate(1); return g(); }"
+},
+"f"
+],
+"c8:d_arrowMut": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const g = () => d.setUTCDate(1); g(); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_bracket": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d['setDate'](1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_bracketVar": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const k = 'setDate' as const; d[k](1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_callMeth": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate.call(d, 1); d.setDate.call(d, 1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_callProto": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); Date.prototype.setDate.call(d, 1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_concat": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.concat(d as any); }"
+},
+"f"
+],
+"c8:d_ctorAlias": [
+{
+"src/a.ts": "export function f(s: string): number { const D = Date; const d = new D(s); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_ctorAliasMod": [
+{
+"src/a.ts": "const D = Date;\nexport function f(s: string): number { const d = new D(s); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_destr": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const { setUTCDate } = d; d.setUTCDate(1); return d.getTime() + (setUTCDate ? 0 : 1); }"
+},
+"f"
+],
+"c8:d_getDate": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getDate(); }"
+},
+"f"
+],
+"c8:d_getDay": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getDay(); }"
+},
+"f"
+],
+"c8:d_getHours": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getHours(); }"
+},
+"f"
+],
+"c8:d_getTzo": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getTimezoneOffset(); }"
+},
+"f"
+],
+"c8:d_helperMut": [
+{
+"src/a.ts": "function h(x: Date): void { x.setUTCDate(1); }\nexport function f(s: string): number { const d = new Date(s); h(d); d.setUTCDate(2); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_helperMut2": [
+{
+"src/a.ts": "function h(x: Date): void { x.setDate(1); }\nexport function f(s: string): number { const d = new Date(s); d.setUTCDate(2); h(d); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_intl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return new Intl.DateTimeFormat().format(d); }"
+},
+"f"
+],
+"c8:d_join": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d.getTime()].join() + [String(s)].join(); }"
+},
+"f"
+],
+"c8:d_json": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify(d); }"
+},
+"f"
+],
+"c8:d_loop": [
+{
+"src/a.ts": "export function f(s: string): number { let t = 0; for (let i = 0; i < 3; i++) { const d = new Date(s); d.setUTCDate(i + 1); t += d.getTime(); } return t; }"
+},
+"f"
+],
+"c8:d_loopOuter": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); for (let i = 0; i < 3; i++) { d.setUTCDate(d.getUTCDate() + 1); } return d.getTime(); }"
+},
+"f"
+],
+"c8:d_modDate": [
+{
+"src/a.ts": "const M = new Date(0);\nexport function f(s: string): number { M.setUTCDate(M.getUTCDate() + 1); return M.getTime(); }"
+},
+"f"
+],
+"c8:d_modLet": [
+{
+"src/a.ts": "let X = 0;\nexport function bump(): void { X++; }\nexport function f(s: string): number { const d = new Date(X); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_modObj": [
+{
+"src/a.ts": "const S = { t: 0 };\nexport function bump(): void { S.t++; }\nexport function f(s: string): number { const d = new Date(S.t); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_mutAfterReturnCap": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); const r = d.getTime(); d.setUTCDate(2); return r + d.getTime(); }"
+},
+"f"
+],
+"c8:d_nan": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(NaN); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_newParen": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new (Date)(s); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_noarg": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_now": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(Date.now()); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_ok": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_paramMut": [
+{
+"src/a.ts": "export function f(p: Date): number { p.setUTCDate(1); return p.getTime(); }"
+},
+"f"
+],
+"c8:d_perf": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(performance.now()); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_plus": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d + ''; }"
+},
+"f"
+],
+"c8:d_plusNum": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any) + 1; }"
+},
+"f"
+],
+"c8:d_protoPatchAlias": [
+{
+"src/a.ts": "const P = Date.prototype;\nlet k = 0;\n(P as any).getTime = function () { return k++; };\nexport function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_protoPatchSame": [
+{
+"src/a.ts": "Date.prototype.setUTCDate = function (this: Date, _x: number) { return Math.random(); };\nexport function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_protoPatchSib": [
+{
+"src/a.ts": "import \"./b\";\nexport function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getTime(); }",
+"src/b.ts": "let k = 0;\nif (true) { (Date.prototype as any).getTime = function () { return k++; }; }\nexport const B = 1;\n"
+},
+"f"
+],
+"c8:d_protoPatchSib2": [
+{
+"src/a.ts": "import { B } from \"./b\";\nexport function f(s: string): number { const d = new Date(s); d.setUTCDate(B); return d.getTime(); }",
+"src/b.ts": "let k = 0;\nfunction install(o: any) { o.getTime = function () { return k++; }; }\ninstall(Date.prototype);\nexport const B = 1;\n"
+},
+"f"
+],
+"c8:d_push": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const a = [d]; d.setUTCDate(1); return a[0]!.getTime(); }"
+},
+"f"
+],
+"c8:d_reassign": [
+{
+"src/a.ts": "export function f(s: string): number { let d = new Date(s); d = new Date(Date.now()); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_reassignAlias": [
+{
+"src/a.ts": "export function f(s: string): number { let d = new Date(s); const e = d; d = new Date(s); e.setUTCDate(1); return e.getTime(); }"
+},
+"f"
+],
+"c8:d_reflect": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); Reflect.apply(Date.prototype.setDate, d, [1]); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_retDate": [
+{
+"src/a.ts": "export function f(s: string): Date { const d = new Date(s); d.setUTCDate(1); return d; }"
+},
+"f"
+],
+"c8:d_setDate": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setDate(2); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_setHours": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setHours(0); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_setTime": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setTime(d.getTime() + 1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_shadowDate": [
+{
+"src/a.ts": "class Date { constructor(_s: string) {} static n = 0; setUTCDate(_x: number) { Date.n++; } getTime() { return Date.n; } }\nexport function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_store": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); const o = { d }; d.setUTCDate(1); return o.d.getTime(); }"
+},
+"f"
+],
+"c8:d_storeMod": [
+{
+"src/a.ts": "const M: Date[] = [];\nexport function f(s: string): number { const d = new Date(s); M.push(d); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_symPrim": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any)[Symbol.toPrimitive]('string'); }"
+},
+"f"
+],
+"c8:d_tmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${d}`; }"
+},
+"f"
+],
+"c8:d_toDateString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d.toDateString(); }"
+},
+"f"
+],
+"c8:d_toLocale": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d.toLocaleDateString(); }"
+},
+"f"
+],
+"c8:d_toString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d.toString(); }"
+},
+"f"
+],
+"c8:d_utc": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(Date.UTC(2020, 0, 1)); d.setUTCDate(d.getUTCDate() + Number(s)); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_v6only_getHours": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(s).getHours(); }"
+},
+"f"
+],
+"c8:d_v6only_tmpl": [
+{
+"src/a.ts": "export function f(s: string): string { return `${new Date(s)}`; }"
+},
+"f"
+],
+"c8:d_v6only_toString": [
+{
+"src/a.ts": "export function f(s: string): string { return String(new Date(s)); }"
+},
+"f"
+],
+"c8:d_valueOf": [
+{
+"src/a.ts": "let C = 0;\nconst V = { valueOf: () => C++ };\nexport function f(s: string): number { const d = new Date(V as any); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:d_valueOfRand": [
+{
+"src/a.ts": "const V = { valueOf: () => Math.random() * 1e12 };\nexport function f(s: string): number { const d = new Date(V as any); d.setUTCDate(1); return d.getTime(); }"
+},
+"f"
+],
+"c8:l_argGetter": [
+{
+"src/a.ts": "const O = { get v() { return Math.random(); } };\nfunction mk(o: { v: number }): number[] { return [o.v]; }\nconst A = mk(O);\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_argMut": [
+{
+"src/a.ts": "const S = { n: 0 };\nfunction mk(o: { n: number }): number { o.n++; return 1; }\nconst A = mk(S);\nexport function f(): number { return S.n + A; }"
+},
+"f"
+],
+"c8:l_arguments": [
+{
+"src/a.ts": "function mk(..._a: unknown[]): number { return arguments.length; }\nconst A = mk(1, 2);\nexport function f(): number { return A; }"
+},
+"f"
+],
+"c8:l_arrObj": [
+{
+"src/a.ts": "function mk(): { n: number }[] { return [{ n: 0 }]; }\nconst A = mk();\nexport function f(): number { A[0]!.n++; return A[0]!.n; }"
+},
+"f"
+],
+"c8:l_arrPush": [
+{
+"src/a.ts": "function mk(): number[] { return [1]; }\nconst A = mk();\nexport function f(): number { A.push(1); return A.length; }"
+},
+"f"
+],
+"c8:l_arrSort": [
+{
+"src/a.ts": "function mk(): number[] { return [3, 1, 2]; }\nconst A = mk();\nexport function f(): number { A.reverse(); return A[0]!; }"
+},
+"f"
+],
+"c8:l_async": [
+{
+"src/a.ts": "async function mk(): Promise<number> { return 1; }\nconst P = mk();\nexport function f(): number { return typeof P === 'object' ? 1 : 0; }"
+},
+"f"
+],
+"c8:l_class": [
+{
+"src/a.ts": "class K { static n = 0; v: number; constructor() { this.v = ++K.n; } }\nconst A = new K();\nexport function f(): number { return A.v; }"
+},
+"f"
+],
+"c8:l_closure": [
+{
+"src/a.ts": "function mk(): () => number { let c = 0; return () => ++c; }\nconst NEXT = mk();\nexport function f(): number { return NEXT(); }"
+},
+"f"
+],
+"c8:l_dateHours": [
+{
+"src/a.ts": "function mk(): number[] { return [new Date(0).getHours()]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_dateRes": [
+{
+"src/a.ts": "function mk(): Date[] { return [new Date(0)]; }\nconst A = mk();\nexport function f(): number { A[0]!.setUTCDate(A[0]!.getUTCDate() + 1); return A[0]!.getTime(); }"
+},
+"f"
+],
+"c8:l_defParam": [
+{
+"src/a.ts": "function mk(a = Math.random()): number[] { return [a]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_env": [
+{
+"src/a.ts": "function mk(): string[] { return [process.env.HOME ?? ''] }\nconst A = mk();\nexport function f(): string { return A[0]!; }"
+},
+"f"
+],
+"c8:l_envPrim": [
+{
+"src/a.ts": "function mk(): string { return process.env.HOME ?? ''; }\nconst A = mk();\nexport function f(): string { return A; }"
+},
+"f"
+],
+"c8:l_exported": [
+{
+"src/a.ts": "function mk(): number[] { return [Math.random()]; }\nexport const A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_exportedOk": [
+{
+"src/a.ts": "function mk(): number[] { return [1]; }\nexport const A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_gen": [
+{
+"src/a.ts": "function* g(): Generator<number> { yield 1; yield 2; }\nconst IT = g();\nexport function f(): number { return IT.next().value ?? 0; }"
+},
+"f"
+],
+"c8:l_genSpread": [
+{
+"src/a.ts": "function* g(): Generator<number> { yield 1; yield 2; }\nconst A = [...g()];\nexport function f(): number { return A.length; }"
+},
+"f"
+],
+"c8:l_globalThis": [
+{
+"src/a.ts": "function mk(): number { return (globalThis as any).process.pid; }\nconst A = mk();\nexport function f(): number { return A; }"
+},
+"f"
+],
+"c8:l_helperCallsImpure": [
+{
+"src/a.ts": "function r(): number { return Math.random(); }\nfunction mk(): number[] { return [r()]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_intl": [
+{
+"src/a.ts": "function mk(): string { return Intl.DateTimeFormat().resolvedOptions().timeZone; }\nconst A = mk();\nexport function f(): string { return A; }"
+},
+"f"
+],
+"c8:l_iterArr": [
+{
+"src/a.ts": "function mk(): IterableIterator<number>[] { return [[1, 2].values()]; }\nconst A = mk();\nexport function f(): number { return A[0]!.next().value ?? 0; }"
+},
+"f"
+],
+"c8:l_locale": [
+{
+"src/a.ts": "function mk(): string { return (1234.5).toLocaleString(); }\nconst A = mk();\nexport function f(): string { return A; }"
+},
+"f"
+],
+"c8:l_mapRes": [
+{
+"src/a.ts": "function mk(): Map<string, number> { return new Map([['a', 1]]); }\nconst A = mk();\nexport function f(): number { A.set('a', A.get('a')! + 1); return A.get('a')!; }"
+},
+"f"
+],
+"c8:l_mutLet": [
+{
+"src/a.ts": "let C = 0;\nfunction mk(): number[] { C++; return [C]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_mutState": [
+{
+"src/a.ts": "const O = { n: 0 };\nfunction mk(): number[] { O.n++; return [1]; }\nconst A = mk();\nexport function f(): number { return O.n + A[0]!; }"
+},
+"f"
+],
+"c8:l_newDate": [
+{
+"src/a.ts": "function mk(): number[] { return [new Date().getTime()]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_now": [
+{
+"src/a.ts": "function mk(): number[] { return [Date.now()]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_ok": [
+{
+"src/a.ts": "function mk(): number[] { return [1, 2, 3]; }\nconst A = mk();\nexport function f(): number { return A.length; }"
+},
+"f"
+],
+"c8:l_random": [
+{
+"src/a.ts": "function mk(): number[] { return [Math.random()]; }\nconst A = mk();\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_recur": [
+{
+"src/a.ts": "function mk(n: number): number[] { return n > 0 ? mk(n - 1) : [Math.random()]; }\nconst A = mk(3);\nexport function f(): number { return A[0]!; }"
+},
+"f"
+],
+"c8:l_recurOk": [
+{
+"src/a.ts": "function mk(n: number): number[] { return n > 0 ? [n, ...mk(n - 1)] : []; }\nconst A = mk(3);\nexport function f(): number { return A.length; }"
+},
+"f"
+],
+"c8:l_retModArr": [
+{
+"src/a.ts": "const B: number[] = [];\nfunction mk(): number[] { return B; }\nconst A = mk();\nexport function f(): number { return A.length; }"
+},
+"f"
+],
+"c8:l_retModArrMut": [
+{
+"src/a.ts": "const B: number[] = [];\nfunction mk(): number[] { return B; }\nconst A = mk();\nexport function g(): void { B.push(1); }\nexport function f(): number { return A.length; }"
+},
+"f"
+],
+"c8:l_rx": [
+{
+"src/a.ts": "function mk(): RegExp[] { return [/a/g]; }\nconst A = mk();\nexport function f(): number { return A[0]!.test('a') ? 1 : 0; }"
+},
+"f"
+],
+"c8:l_sharedRef": [
+{
+"src/a.ts": "const B = [1];\nfunction mk(): number[][] { return [B]; }\nconst A = mk();\nexport function f(): number { B.push(1); return A[0]!.length; }"
+},
+"f"
+],
+"c8:l_sibling": [
+{
+"src/a.ts": "import { A } from \"./b\";\nexport function f(): number { return A[0]!; }",
+"src/b.ts": "function mk(): number[] { return [Math.random()]; }\nexport const A = mk();\n"
+},
+"f"
+],
+"c8:l_siblingImportedCallee": [
+{
+"src/a.ts": "import { mk } from \"./b\";\nconst A = mk();\nexport function f(): number { return A[0]!; }",
+"src/b.ts": "export function mk(): number[] { return [Math.random()]; }\n"
+},
+"f"
+],
+"c8:l_this": [
+{
+"src/a.ts": "function mk(this: any): number { return typeof this === 'undefined' ? 0 : 1; }\nconst A = (mk as any)();\nexport function f(): number { return A; }"
+},
+"f"
+],
+"c9:n_arrJoin": [
+{
+"src/a.ts": "export function f(s: string): string { return [new Date(s)].join(); }"
+},
+"f"
+],
+"c9:n_arrMap": [
+{
+"src/a.ts": "export function f(s: string): string { return [new Date(s)].map(String)[0]!; }"
+},
+"f"
+],
+"c9:n_bracketGet": [
+{
+"src/a.ts": "export function f(s: string): string { return String(new Date(s)['getHours']()); }"
+},
+"f"
+],
+"c9:n_bracketSet": [
+{
+"src/a.ts": "export function f(s: string): string { return String((() => { const d = new Date(s); d['setDate'](1); return d.getTime(); })()); }"
+},
+"f"
+],
+"c9:n_concat": [
+{
+"src/a.ts": "export function f(s: string): string { return ''.concat(new Date(s) as any); }"
+},
+"f"
+],
+"c9:p_DateParse": [
+{
+"src/a.ts": "export function f(s: string): number { return Date.parse(s); }"
+},
+"f"
+],
+"c9:p_localParse": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); }"
+},
+"f"
+],
+"c9:p_localParse_v3": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(s).getTime(); }"
+},
+"f"
+],
+"c9:p_multiArg": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(2024, 0, Number(s)); d.setUTCDate(2); return d.getTime(); }"
+},
+"f"
+],
+"c9:p_multiArg_v3": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(2024, 0, Number(s)).getTime(); }"
+},
+"f"
+],
+"c9:x_arrJoin": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].join(); }"
+},
+"f"
+],
+"c9:x_arrLocale": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].toLocaleString(); }"
+},
+"f"
+],
+"c9:x_arrTmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${[d]}`; }"
+},
+"f"
+],
+"c9:x_arrToString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].toString(); }"
+},
+"f"
+],
+"c9:x_concat": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.concat(d as any); }"
+},
+"f"
+],
+"c9:x_encode": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return encodeURIComponent(d as any); }"
+},
+"f"
+],
+"c9:x_getYear": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String((d as any).getYear()); }"
+},
+"f"
+],
+"c9:x_iso": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d.toISOString(); }"
+},
+"f"
+],
+"c9:x_jsonObj": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify({ d }); }"
+},
+"f"
+],
+"c9:x_mapStr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].map(String)[0]!; }"
+},
+"f"
+],
+"c9:x_memberTmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${({ d }).d}`; }"
+},
+"f"
+],
+"c9:x_newString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return new String(d).valueOf(); }"
+},
+"f"
+],
+"c9:x_objPlus": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (Object(d) as any) + ''; }"
+},
+"f"
+],
+"c9:x_padEnd": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.padEnd(40, d as any); }"
+},
+"f"
+],
+"c9:x_parseIntD": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(parseInt(d as any)); }"
+},
+"f"
+],
+"c9:x_protoToString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.call(d); }"
+},
+"f"
+],
+"c9:x_reflectGet": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(Reflect.get(d, 'getHours').call(d)); }"
+},
+"f"
+],
+"c9:x_regexTest": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(/Mon/.test(d as any)); }"
+},
+"f"
+],
+"c9:x_replace": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return 'x'.replace('x', d as any); }"
+},
+"f"
+],
+"c9:x_setFromArr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Array.from([d], String)[0]!; }"
+},
+"f"
+],
+"c9:x_setUTCplusLocal": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d.setUTCHours(0), String(d.getTime())); }"
+},
+"f"
+],
+"c9:x_setYear": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ((d as any).setYear(2020), String(d.getTime())); }"
+},
+"f"
+],
+"c9:x_strCtorCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String.call(null, d); }"
+},
+"f"
+],
+"c9:x_strRaw": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String.raw`${d}`; }"
+},
+"f"
+],
+"c9:x_strSplit": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(('' + 'a').split(d as any).length); }"
+},
+"f"
+],
+"c9:x_toGMT": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any).toGMTString(); }"
+},
+"f"
+],
+"c9:x_utcStr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d.toUTCString(); }"
+},
+"f"
+],
+"c9:y_bracketGetV7": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); return d[\"getHours\"](); }"
+},
+"f"
+],
+"c9:y_bracketV7": [
+{
+"src/a.ts": "export function f(s: string): number { const d = new Date(s); d.setUTCDate(1); d[\"setDate\"](2); return d.getTime(); }"
+},
+"f"
+],
+"var:L_classStatic": [
+{
+"src/a.ts": "class K { static g(s: string) { return new Date(s).getTime(); } }\nexport function f(s: string): number { return K.g(s); }"
+},
+"f"
+],
+"var:L_constArrowCalled": [
+{
+"src/a.ts": "const h = (ms: string) => String(new Date(ms));\nexport function f(s: string): string { return h(s); }"
+},
+"f"
+],
+"var:L_constArrowNum": [
+{
+"src/a.ts": "const h = (ms: number) => new Date(ms).toISOString();\nexport function f(t: number): string { return h(t); }"
+},
+"f"
+],
+"var:L_ctrl_unused": [
+{
+"src/a.ts": "const h = (s: string) => String(new Date(s));\nexport function f(xs: readonly string[]): string { return xs.join(\",\"); }"
+},
+"f"
+],
+"var:L_getter": [
+{
+"src/a.ts": "const C = { get g() { return String(new Date(\"2024-03-04T00:00\")); } };\nexport function f(): string { return C.g; }"
+},
+"f"
+],
+"var:L_iife": [
+{
+"src/a.ts": "const Y = ((s: string) => new Date(s).getTime())(\"2024-03-04T00:00\");\nexport function f(): number { return Y; }"
+},
+"f"
+],
+"var:L_loadCall": [
+{
+"src/a.ts": "const h = (s: string) => String(new Date(s));\nconst Y = h(\"2024-03-04T00:00\");\nexport function f(): string { return Y; }"
+},
+"f"
+],
+"var:L_loadCallNum": [
+{
+"src/a.ts": "const h = (s: string) => new Date(s).getTime();\nconst Y = h(\"2024-03-04T00:00\");\nexport function f(): number { return Y; }"
+},
+"f"
+],
+"var:L_objMethodCalled": [
+{
+"src/a.ts": "const C = { g(s: string) { return String(new Date(s)); } };\nexport function f(s: string): string { return C.g(s); }"
+},
+"f"
+],
+"var:L_objMethodCalled2": [
+{
+"src/a.ts": "const C = { g(s: string) { return new Date(s).getTime(); } };\nexport function f(s: string): number { return C.g(s); }"
+},
+"f"
+],
+"var:L_passCallback": [
+{
+"src/a.ts": "const h = (s: string) => String(new Date(s));\nexport function f(xs: string[]): string[] { return xs.map(h); }"
+},
+"f"
+],
+"var:e1_helperAnyParam": [
+{
+"src/a.ts": "function h(d: any): string { return `${d}`; }\nexport function f(s: string): string { return h(new Date(s)); }"
+},
+"f"
+],
+"var:e1_helperHours": [
+{
+"src/a.ts": "function h(d: Date): number { return d.getHours(); }\nexport function f(s: string): number { return h(new Date(s)); }"
+},
+"f"
+],
+"var:e1_helperJoin": [
+{
+"src/a.ts": "const h = (d: Date): string => [d].join();\nexport function f(s: string): string { return h(new Date(s)); }"
+},
+"f"
+],
+"var:e1_helperRest": [
+{
+"src/a.ts": "function h(...d: Date[]): string { return d.join(); }\nexport function f(s: string): string { return h(new Date(s)); }"
+},
+"f"
+],
+"var:e1_helperSpread": [
+{
+"src/a.ts": "function h(d: Date): number { return d.getTime(); }\nexport function f(s: string): number { return h(...[new Date(s)] as [Date]); }"
+},
+"f"
+],
+"var:e1_helperStore": [
+{
+"src/a.ts": "let keep: Date | null = null;\nfunction h(d: Date): number { keep = d; return 1; }\nexport function f(s: string): string { h(new Date(s)); return String(keep); }"
+},
+"f"
+],
+"var:e1_helperString": [
+{
+"src/a.ts": "function h(d: Date): string { return String(d); }\nexport function f(s: string): string { return h(new Date(s)); }"
+},
+"f"
+],
+"var:e1_ok_helperIso": [
+{
+"src/a.ts": "function h(d: Date): string { return d.toISOString(); }\nexport function f(s: string): string { return h(new Date(s)); }"
+},
+"f"
+],
+"var:e2_helperRetObj": [
+{
+"src/a.ts": "function g(s: string) { return { a: new Date(s) }; }\nexport function f(s: string): string { return `${g(s).a}`; }"
+},
+"f"
+],
+"var:e2_objSpreadCall": [
+{
+"src/a.ts": "export function f(s: string): string { return JSON.stringify({ a: new Date(s) }); }"
+},
+"f"
+],
+"var:e2_ok_retObj": [
+{
+"src/a.ts": "export function f(s: string) { return { at: new Date(s), n: 1 }; }"
+},
+"f"
+],
+"var:e2_retArrLocal": [
+{
+"src/a.ts": "export function f(s: string): number { const x = [new Date(s)]; return x[0].getHours(); }"
+},
+"f"
+],
+"var:e2_retObjJoin": [
+{
+"src/a.ts": "export function f(s: string): string { return { a: [new Date(s)].join() }.a; }"
+},
+"f"
+],
+"var:e2_retObjRef": [
+{
+"src/a.ts": "export function f(s: string) { return { a: new Date(s) }; }\nexport function k(s: string): string { return String(f(s).a); }"
+},
+"f"
+],
+"var:n_alias": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return (() => { const D = Date; return String(new D(s)); })(); }"
+},
+"f"
+],
+"var:n_arrFrom": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Array.from([d], String)[0]!; }"
+},
+"f"
+],
+"var:n_arrTmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return `${[d]}`; }"
+},
+"f"
+],
+"var:n_arrToStr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return [d].toString(); }"
+},
+"f"
+],
+"var:n_asAny": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d as any); }"
+},
+"f"
+],
+"var:n_assign": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return JSON.stringify(Object.assign({}, { d })); }"
+},
+"f"
+],
+"var:n_bracketKey": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return (d as any)[\"get\" + \"Hours\"]().toString(); }"
+},
+"f"
+],
+"var:n_bracketToString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return d[\"toString\"](); }"
+},
+"f"
+],
+"var:n_comma": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String((0, d)); }"
+},
+"f"
+],
+"var:n_concat": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return ''.concat(d as any); }"
+},
+"f"
+],
+"var:n_cond": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(s ? d : 0); }"
+},
+"f"
+],
+"var:n_construct": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(Reflect.construct(Date, [s])); }"
+},
+"f"
+],
+"var:n_copy": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return new Date(d).toISOString(); }"
+},
+"f"
+],
+"var:n_ctor": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d.constructor); }"
+},
+"f"
+],
+"var:n_dateCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date(); }"
+},
+"f"
+],
+"var:n_encode": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return encodeURIComponent(d as any); }"
+},
+"f"
+],
+"var:n_join": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return [d].join(); }"
+},
+"f"
+],
+"var:n_json": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return JSON.stringify(d); }"
+},
+"f"
+],
+"var:n_jsonObj": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return JSON.stringify({ d }); }"
+},
+"f"
+],
+"var:n_lt": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d < new Date(0)); }"
+},
+"f"
+],
+"var:n_mapStr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return [d].map(String)[0]!; }"
+},
+"f"
+],
+"var:n_methodRef": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d.getTime.call(new Date(2024, 0, 1))); }"
+},
+"f"
+],
+"var:n_minus": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String((d as any) - 0); }"
+},
+"f"
+],
+"var:n_nullish": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return `${d ?? 0}`; }"
+},
+"f"
+],
+"var:n_objTmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return `${({ d }).d}`; }"
+},
+"f"
+],
+"var:n_optChain": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d?.getHours()); }"
+},
+"f"
+],
+"var:n_padEnd": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return ''.padEnd(40, d as any); }"
+},
+"f"
+],
+"var:n_plus": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return '' + d; }"
+},
+"f"
+],
+"var:n_protoApply": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date.prototype.toString.apply(d); }"
+},
+"f"
+],
+"var:n_protoBind": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date.prototype.toString.bind(d)(); }"
+},
+"f"
+],
+"var:n_protoCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date.prototype.toString.call(d); }"
+},
+"f"
+],
+"var:n_reflectApply": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Reflect.apply(Date.prototype.toString, d, []); }"
+},
+"f"
+],
+"var:n_reflectApply2": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(Reflect.apply(Object.prototype.valueOf, d, [])); }"
+},
+"f"
+],
+"var:n_replace": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return 'x'.replace('x', d as any); }"
+},
+"f"
+],
+"var:n_spread": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String([...[d]]); }"
+},
+"f"
+],
+"var:n_strCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return String.call(null, d); }"
+},
+"f"
+],
+"var:n_symPrim": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return (d as any)[Symbol.toPrimitive](\"string\"); }"
+},
+"f"
+],
+"var:n_toStringTag": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); return Object.prototype.toString.call(d); }"
+},
+"f"
+],
+"var:o_eqLoose": [
+{
+"src/a.ts": "export function f(s: string): boolean { return new Date(s) == (\"x\" as any); }"
+},
+"f"
+],
+"var:o_minus": [
+{
+"src/a.ts": "export function f(s: string, t: string): number { return (new Date(s) as any) - (new Date(t) as any); }"
+},
+"f"
+],
+"var:o_plus": [
+{
+"src/a.ts": "export function f(s: string): string { return (new Date(s) as any) + 1; }"
+},
+"f"
+],
+"var:o_plusEq": [
+{
+"src/a.ts": "export function f(s: string): string { let x: any = \"\"; x += new Date(s); return x; }"
+},
+"f"
+],
+"var:o_relStr": [
+{
+"src/a.ts": "export function f(s: string): boolean { return new Date(s) < (\"2024\" as any); }"
+},
+"f"
+],
+"var:ok_getTime": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(s).getTime(); }"
+},
+"f"
+],
+"var:ok_iso": [
+{
+"src/a.ts": "export function f(): string { return new Date(\"2024-03-04T03:00:00Z\").toISOString(); }"
+},
+"f"
+],
+"var:ok_localHelper": [
+{
+"src/a.ts": "function mk(n: number): Date { return new Date(n); }\nexport function f(n: number): number { return mk(n).getTime(); }"
+},
+"f"
+],
+"var:ok_ms": [
+{
+"src/a.ts": "export function f(ms: number): string { return new Date(ms * 1000).toISOString(); }"
+},
+"f"
+],
+"var:ok_retDate": [
+{
+"src/a.ts": "export function f(s: string): Date { return new Date(s); }"
+},
+"f"
+],
+"var:ok_utc": [
+{
+"src/a.ts": "export function f(y: number): number { return new Date(Date.UTC(y, 0, 1)).getUTCDay(); }"
+},
+"f"
+],
+"var:r_alias": [
+{
+"src/a.ts": "const g = f;\nexport function f(s: string): number { return new Date(s).getTime(); }\nexport const k = (): number => g(\"2024-03-04T00:00\");"
+},
+"f"
+],
+"var:r_crossModule": [
+{
+"src/a.ts": "import { h } from \"./b\";\nexport function f(s: string, n: number): number { if (n > 0) return h(n); return new Date(s).getTime(); }",
+"src/b.ts": "import { f } from \"./a\";\nexport function h(n: number): number { return f(\"2024-03-04T00:00\", n - 1); }"
+},
+"f"
+],
+"var:r_crossModuleTpl": [
+{
+"src/a.ts": "import { h } from \"./b\";\nexport function f(s: string, n: number): number { if (n > 0) return h(n); return new Date(`${s}T00:00:00Z`).getTime(); }",
+"src/b.ts": "import { f } from \"./a\";\nexport function h(n: number): number { return f(\"x\", n - 1); }"
+},
+"f"
+],
+"var:r_mutual": [
+{
+"src/a.ts": "function g(n: number): number { return f(\"2024-03-04T00:00\", n - 1); }\nexport function f(s: string, n: number): number { if (n > 0) return g(n); return new Date(s).getTime(); }"
+},
+"f"
+],
+"var:r_mutualConst": [
+{
+"src/a.ts": "const g = (n: number): number => f(\"2024-03-04T00:00\", n - 1);\nexport function f(s: string, n: number): number { if (n > 0) return g(n); return new Date(s).getTime(); }"
+},
+"f"
+],
+"var:r_okOtherCaller": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(s).getTime(); }\nexport function k(): number { return f(\"2024-03-04T00:00\"); }"
+},
+"f"
+],
+"var:r_recurse": [
+{
+"src/a.ts": "export function f(s: string, n: number): number { if (n > 0) return f(s + \"T00:00\", n - 1); return new Date(s).getTime(); }"
+},
+"f"
+],
+"var:r_recurseTpl": [
+{
+"src/a.ts": "export function f(s: string, n: number): number { if (n > 0) return f(\"2024-03-04T00:00\", n - 1); return new Date(`${s}T00:00:00Z`).getTime(); }"
+},
+"f"
+],
+"var:r_tplHead": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(`x${s}T00:00:00Z`).getTime(); }"
+},
+"f"
+],
+"var:r_tplHelper": [
+{
+"src/a.ts": "function h(s: string): number { return new Date(`${s}T00:00:00Z`).getTime(); }\nexport function f(s: string): number { return h(s); }"
+},
+"f"
+],
+"var:r_tplNoZ": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(`${s}T00:00:00`).getTime(); }"
+},
+"f"
+],
+"var:r_tplOk": [
+{
+"src/a.ts": "export function f(s: string, n: number): string { const d = new Date(`${s}T00:00:00Z`); return new Date(d.getTime() + n * 86400000).toISOString().slice(0, 10); }"
+},
+"f"
+],
+"var:r_tplTwo": [
+{
+"src/a.ts": "export function f(s: string, t: string): number { return new Date(`${s}T${t}Z`).getTime(); }"
+},
+"f"
+],
+"var:s_dateParamCopy": [
+{
+"src/a.ts": "export function f(d: Date): number { return new Date(d).getUTCHours(); }"
+},
+"f"
+],
+"var:s_dateParamStr": [
+{
+"src/a.ts": "export function f(d: Date): string { return String(d); }"
+},
+"f"
+],
+"var:s_dateUnionStr": [
+{
+"src/a.ts": "export function f(d: Date | null): string { return `${d}`; }"
+},
+"f"
+],
+"var:s_helperParam": [
+{
+"src/a.ts": "function mk(x: string): number { return new Date(x).getTime(); }\nexport function f(s: string): number { return mk(s); }"
+},
+"f"
+],
+"var:s_helperRet": [
+{
+"src/a.ts": "function mk(s: string): Date { return new Date(s); }\nexport function f(s: string): string { return String(mk(s)); }"
+},
+"f"
+],
+"var:s_helperRetValue": [
+{
+"src/a.ts": "const mk = (n: number) => new Date(n);\nexport function f(n: number): string { return [1].map(mk).join(); }"
+},
+"f"
+],
+"var:s_localConst": [
+{
+"src/a.ts": "const T = \"2024-03-04T00:00\";\nexport function f(): number { return new Date(T).getTime(); }"
+},
+"f"
+],
+"var:s_localLit": [
+{
+"src/a.ts": "export function f(): number { return new Date(\"2024-03-04T00:00\").getTime(); }"
+},
+"f"
+],
+"var:s_moduleDateExport": [
+{
+"src/a.ts": "export const D = new Date(\"2024-03-04T03:00:00Z\");\nexport function f(): number { return D.getTime(); }"
+},
+"f"
+],
+"var:s_moduleDateStr": [
+{
+"src/a.ts": "const D = new Date(\"2024-03-04T03:00:00Z\");\nexport function f(): string { return String(D); }"
+},
+"f"
+],
+"var:s_parseIntStr": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(parseInt(s) + s as any).getTime(); }"
+},
+"f"
+],
+"var:s_plusZ": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(s + \"T00:00\").getTime(); }"
+},
+"f"
+],
+"var:s_prop": [
+{
+"src/a.ts": "export function f(o: { s: string }): number { return new Date(o.s).getTime(); }"
+},
+"f"
+],
+"var:s_reassigned": [
+{
+"src/a.ts": "export function f(s: string): number { s = s.slice(0, 16); return new Date(s).getTime(); }"
+},
+"f"
+],
+"var:s_strCall": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(String(s)).getTime(); }"
+},
+"f"
+],
+"var:s_testedRefValue": [
+{
+"src/a.ts": "export function f(s: string): Date { return new Date(s); }\nexport const g = [\"2024-03-04T00:00\"].map(f);"
+},
+"f"
+],
+"var:s_tmpl": [
+{
+"src/a.ts": "export function f(s: string): number { return new Date(`${s}`).getTime(); }"
+},
+"f"
+],
+"var:s_unknownParam": [
+{
+"src/a.ts": "export function f(x: unknown): number { return new Date(x as string).getTime(); }"
+},
+"f"
+],
+"var:v_alias": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (() => { const D = Date; return String(new D(s)); })(); }"
+},
+"f"
+],
+"var:v_arrFrom": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Array.from([d], String)[0]!; }"
+},
+"f"
+],
+"var:v_arrTmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${[d]}`; }"
+},
+"f"
+],
+"var:v_arrToStr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].toString(); }"
+},
+"f"
+],
+"var:v_asAny": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d as any); }"
+},
+"f"
+],
+"var:v_assign": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify(Object.assign({}, { d })); }"
+},
+"f"
+],
+"var:v_bracketKey": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any)[\"get\" + \"Hours\"]().toString(); }"
+},
+"f"
+],
+"var:v_bracketToString": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d[\"toString\"](); }"
+},
+"f"
+],
+"var:v_comma": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String((0, d)); }"
+},
+"f"
+],
+"var:v_concat": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.concat(d as any); }"
+},
+"f"
+],
+"var:v_cond": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(s ? d : 0); }"
+},
+"f"
+],
+"var:v_construct": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(Reflect.construct(Date, [s])); }"
+},
+"f"
+],
+"var:v_copy": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return new Date(d).toISOString(); }"
+},
+"f"
+],
+"var:v_ctor": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d.constructor); }"
+},
+"f"
+],
+"var:v_dateCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date(); }"
+},
+"f"
+],
+"var:v_encode": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return encodeURIComponent(d as any); }"
+},
+"f"
+],
+"var:v_join": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].join(); }"
+},
+"f"
+],
+"var:v_json": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify(d); }"
+},
+"f"
+],
+"var:v_jsonObj": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify({ d }); }"
+},
+"f"
+],
+"var:v_lt": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d < new Date(0)); }"
+},
+"f"
+],
+"var:v_mapStr": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].map(String)[0]!; }"
+},
+"f"
+],
+"var:v_methodRef": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d.getTime.call(new Date(2024, 0, 1))); }"
+},
+"f"
+],
+"var:v_minus": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String((d as any) - 0); }"
+},
+"f"
+],
+"var:v_nullish": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${d ?? 0}`; }"
+},
+"f"
+],
+"var:v_objTmpl": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${({ d }).d}`; }"
+},
+"f"
+],
+"var:v_optChain": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d?.getHours()); }"
+},
+"f"
+],
+"var:v_padEnd": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.padEnd(40, d as any); }"
+},
+"f"
+],
+"var:v_plus": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return '' + d; }"
+},
+"f"
+],
+"var:v_protoApply": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.apply(d); }"
+},
+"f"
+],
+"var:v_protoBind": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.bind(d)(); }"
+},
+"f"
+],
+"var:v_protoCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.call(d); }"
+},
+"f"
+],
+"var:v_reflectApply": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Reflect.apply(Date.prototype.toString, d, []); }"
+},
+"f"
+],
+"var:v_reflectApply2": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(Reflect.apply(Object.prototype.valueOf, d, [])); }"
+},
+"f"
+],
+"var:v_replace": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return 'x'.replace('x', d as any); }"
+},
+"f"
+],
+"var:v_spread": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String([...[d]]); }"
+},
+"f"
+],
+"var:v_strCall": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String.call(null, d); }"
+},
+"f"
+],
+"var:v_symPrim": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any)[Symbol.toPrimitive](\"string\"); }"
+},
+"f"
+],
+"var:v_toStringTag": [
+{
+"src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Object.prototype.toString.call(d); }"
+},
+"f"
+]
+},
+"newlyRefused": [
+"c8:d_bracket",
+"c8:d_bracketVar",
+"c8:d_v6only_tmpl",
+"c8:d_v6only_toString",
+"c8:l_closure",
+"c8:l_exportedOk",
+"c8:l_iterArr",
+"c8:l_recurOk",
+"c8:l_retModArr",
+"c8:l_rx",
+"c9:n_arrJoin",
+"c9:n_arrMap",
+"c9:n_bracketGet",
+"c9:n_bracketSet",
+"c9:n_concat"
+],
+"note": "Auditor #466 (4th review): fail-closed Date use. c8 / c9 are Auditor's probe files; var: are the engine author's variants. want: the verdict per version at the PR head. var:n_lt / var:v_lt (a relation of two Dates, valueOf) are zone-free and accepted. var:L_* (module-level function initializers: their bodies are checked when reached as callees, never skipped).",
+"variants": [
+"var:v_concat",
+"var:v_strCall",
+"var:v_mapStr",
+"var:v_arrFrom",
+"var:v_objTmpl",
+"var:v_replace",
+"var:v_padEnd",
+"var:v_encode",
+"var:v_arrToStr",
+"var:v_arrTmpl",
+"var:v_join",
+"var:v_reflectApply",
+"var:v_reflectApply2",
+"var:v_optChain",
+"var:v_protoCall",
+"var:v_protoApply",
+"var:v_protoBind",
+"var:v_methodRef",
+"var:v_assign",
+"var:v_json",
+"var:v_jsonObj",
+"var:v_dateCall",
+"var:v_alias",
+"var:v_construct",
+"var:v_bracketToString",
+"var:v_bracketKey",
+"var:v_symPrim",
+"var:v_plus",
+"var:v_minus",
+"var:v_copy",
+"var:v_spread",
+"var:v_ctor",
+"var:v_asAny",
+"var:v_cond",
+"var:v_nullish",
+"var:v_comma",
+"var:v_toStringTag",
+"var:s_helperParam",
+"var:s_tmpl",
+"var:s_plusZ",
+"var:s_prop",
+"var:s_strCall",
+"var:s_reassigned",
+"var:s_localLit",
+"var:s_localConst",
+"var:s_unknownParam",
+"var:s_moduleDateStr",
+"var:s_moduleDateExport",
+"var:s_helperRet",
+"var:s_helperRetValue",
+"var:s_dateParamStr",
+"var:s_dateUnionStr",
+"var:s_dateParamCopy",
+"var:s_parseIntStr",
+"var:s_testedRefValue",
+"var:n_concat",
+"var:n_strCall",
+"var:n_mapStr",
+"var:n_arrFrom",
+"var:n_objTmpl",
+"var:n_replace",
+"var:n_padEnd",
+"var:n_encode",
+"var:n_arrToStr",
+"var:n_arrTmpl",
+"var:n_join",
+"var:n_reflectApply",
+"var:n_reflectApply2",
+"var:n_optChain",
+"var:n_protoCall",
+"var:n_protoApply",
+"var:n_protoBind",
+"var:n_methodRef",
+"var:n_assign",
+"var:n_json",
+"var:n_jsonObj",
+"var:n_dateCall",
+"var:n_alias",
+"var:n_construct",
+"var:n_bracketToString",
+"var:n_bracketKey",
+"var:n_symPrim",
+"var:n_plus",
+"var:n_minus",
+"var:n_copy",
+"var:n_spread",
+"var:n_ctor",
+"var:n_asAny",
+"var:n_cond",
+"var:n_nullish",
+"var:n_comma",
+"var:n_toStringTag",
+"var:e1_helperHours",
+"var:e1_helperString",
+"var:e1_helperJoin",
+"var:e1_helperAnyParam",
+"var:e1_helperRest",
+"var:e1_helperSpread",
+"var:e1_helperStore",
+"var:e2_retObjJoin",
+"var:e2_helperRetObj",
+"var:e2_retObjRef",
+"var:e2_retArrLocal",
+"var:e2_objSpreadCall",
+"var:r_recurse",
+"var:r_recurseTpl",
+"var:r_tplNoZ",
+"var:r_tplHead",
+"var:r_tplTwo",
+"var:r_tplHelper",
+"var:r_mutual",
+"var:r_mutualConst",
+"var:r_crossModule",
+"var:r_crossModuleTpl",
+"var:o_eqLoose",
+"var:o_plus",
+"var:o_plusEq",
+"var:o_minus",
+"var:L_constArrowCalled",
+"var:L_constArrowNum",
+"var:L_objMethodCalled",
+"var:L_objMethodCalled2",
+"var:L_loadCall",
+"var:L_loadCallNum",
+"var:L_iife",
+"var:L_classStatic",
+"var:L_passCallback",
+"var:L_getter"
+],
+"want": {
+"c8:d_String": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_alias": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_alias2": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_argCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_argCallRand": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_argDateParam": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_arrJoin": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_arrowCap": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_arrowMut": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_bracket": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_bracketVar": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_callMeth": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_callProto": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_concat": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_ctorAlias": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_ctorAliasMod": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_destr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_getDate": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_getDay": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_getHours": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_getTzo": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_helperMut": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_helperMut2": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_intl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_join": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_json": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_loop": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_loopOuter": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_modDate": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_modLet": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_modObj": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_mutAfterReturnCap": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_nan": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_newParen": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_noarg": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_now": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_ok": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_paramMut": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_perf": {
+"v1": "test_target_io",
+"v2": "test_target_io",
+"v3": "test_target_io",
+"v4": "test_target_io",
+"v5": "test_target_io",
+"v6": "test_target_io",
+"v7": "test_target_io"
+},
+"c8:d_plus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_plusNum": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_protoPatchAlias": {
+"v1": "test_target_impure",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_protoPatchSame": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_protoPatchSib": {
+"v1": "test_target_io",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_protoPatchSib2": {
+"v1": "test_target_impure",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_push": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_reassign": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_reassignAlias": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:d_reflect": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_retDate": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_setDate": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_setHours": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_setTime": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_shadowDate": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_store": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_storeMod": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_symPrim": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_tmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_toDateString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_toLocale": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_toString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_utc": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c8:d_v6only_getHours": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_v6only_tmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_v6only_toString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_valueOf": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:d_valueOfRand": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_argGetter": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_argMut": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_arguments": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_arrObj": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_arrPush": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_arrSort": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_async": {
+"v1": "test_target_async",
+"v2": "test_target_async",
+"v3": "test_target_async",
+"v4": "test_target_async",
+"v5": "test_target_async",
+"v6": "test_target_async",
+"v7": "test_target_async"
+},
+"c8:l_class": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_closure": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_dateHours": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_dateRes": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_defParam": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_env": {
+"v1": "test_target_io",
+"v2": "test_target_io",
+"v3": "test_target_io",
+"v4": "test_target_io",
+"v5": "test_target_io",
+"v6": "test_target_io",
+"v7": "test_target_io"
+},
+"c8:l_envPrim": {
+"v1": "test_target_io",
+"v2": "test_target_io",
+"v3": "test_target_io",
+"v4": "test_target_io",
+"v5": "test_target_io",
+"v6": "test_target_io",
+"v7": "test_target_io"
+},
+"c8:l_exported": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_exportedOk": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_gen": {
+"v1": "test_target_async",
+"v2": "test_target_async",
+"v3": "test_target_async",
+"v4": "test_target_async",
+"v5": "test_target_async",
+"v6": "test_target_async",
+"v7": "test_target_async"
+},
+"c8:l_genSpread": {
+"v1": "test_target_async",
+"v2": "test_target_async",
+"v3": "test_target_async",
+"v4": "test_target_async",
+"v5": "test_target_async",
+"v6": "test_target_async",
+"v7": "test_target_async"
+},
+"c8:l_globalThis": {
+"v1": "test_target_io",
+"v2": "test_target_io",
+"v3": "test_target_io",
+"v4": "test_target_io",
+"v5": "test_target_io",
+"v6": "test_target_io",
+"v7": "test_target_io"
+},
+"c8:l_helperCallsImpure": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_intl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_iterArr": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_locale": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_mapRes": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_mutLet": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_mutState": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_newDate": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_now": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c8:l_ok": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"c8:l_random": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_recur": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_recurOk": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_retModArr": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_retModArrMut": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_rx": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_sharedRef": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_sibling": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_siblingImportedCallee": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c8:l_this": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"c9:n_arrJoin": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:n_arrMap": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:n_bracketGet": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:n_bracketSet": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:n_concat": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:p_DateParse": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:p_localParse": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c9:p_localParse_v3": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"c9:p_multiArg": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:p_multiArg_v3": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_arrJoin": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_arrLocale": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_arrTmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_arrToString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_concat": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_encode": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_getYear": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_iso": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c9:x_jsonObj": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_mapStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_memberTmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_newString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_objPlus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_padEnd": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_parseIntD": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_protoToString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_reflectGet": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_regexTest": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_replace": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_setFromArr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_setUTCplusLocal": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"c9:x_setYear": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_strCtorCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_strRaw": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_strSplit": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_toGMT": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:x_utcStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:y_bracketGetV7": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"c9:y_bracketV7": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_classStatic": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"var:L_constArrowCalled": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_constArrowNum": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_ctrl_unused": {
+"v1": "ok",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_getter": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_iife": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_loadCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_loadCallNum": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_objMethodCalled": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_objMethodCalled2": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_passCallback": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperAnyParam": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperHours": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperJoin": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperRest": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperSpread": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperStore": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_helperString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e1_ok_helperIso": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:e2_helperRetObj": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e2_objSpreadCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e2_ok_retObj": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_signature",
+"v4": "test_target_signature",
+"v5": "test_target_signature",
+"v6": "test_target_signature",
+"v7": "test_target_signature"
+},
+"var:e2_retArrLocal": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e2_retObjJoin": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:e2_retObjRef": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_signature",
+"v4": "test_target_signature",
+"v5": "test_target_signature",
+"v6": "test_target_signature",
+"v7": "test_target_signature"
+},
+"var:n_alias": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_arrFrom": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_arrTmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_arrToStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_asAny": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_assign": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_bracketKey": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_bracketToString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_comma": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_concat": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_cond": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_construct": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_copy": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_ctor": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_dateCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_encode": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_join": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_json": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_jsonObj": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_lt": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:n_mapStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_methodRef": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_minus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_nullish": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_objTmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_optChain": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_padEnd": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_plus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_protoApply": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_protoBind": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_protoCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_reflectApply": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_reflectApply2": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_replace": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_spread": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_strCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_symPrim": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:n_toStringTag": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:o_eqLoose": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:o_minus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:o_plus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:o_plusEq": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:o_relStr": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:ok_getTime": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:ok_iso": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:ok_localHelper": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:ok_ms": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:ok_retDate": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:ok_utc": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:r_alias": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:r_crossModule": {
+"v1": "test_target_impure",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_crossModuleTpl": {
+"v1": "test_target_impure",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_mutual": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_mutualConst": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_okOtherCaller": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:r_recurse": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_recurseTpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_tplHead": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_tplHelper": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_tplNoZ": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:r_tplOk": {
+"v1": "ok",
+"v2": "ok",
+"v3": "ok",
+"v4": "ok",
+"v5": "ok",
+"v6": "ok",
+"v7": "ok"
+},
+"var:r_tplTwo": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_dateParamCopy": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_dateParamStr": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_dateUnionStr": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_helperParam": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_helperRet": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_helperRetValue": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_localConst": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_localLit": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_moduleDateExport": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_moduleDateStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_parseIntStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_plusZ": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_prop": {
+"v1": "test_target_signature",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_reassigned": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_strCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_testedRefValue": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_tmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:s_unknownParam": {
+"v1": "test_target_signature",
+"v2": "test_target_signature",
+"v3": "test_target_signature",
+"v4": "test_target_signature",
+"v5": "test_target_signature",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_alias": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_arrFrom": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_arrTmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_arrToStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_asAny": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_assign": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_bracketKey": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_bracketToString": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_comma": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_concat": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_cond": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_construct": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_copy": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_ctor": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_dateCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_encode": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_join": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_json": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_jsonObj": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_lt": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "ok"
+},
+"var:v_mapStr": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_methodRef": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_minus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_nullish": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_objTmpl": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_optChain": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_padEnd": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_plus": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_protoApply": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_protoBind": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_protoCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_reflectApply": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_reflectApply2": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_replace": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_spread": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_strCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_symPrim": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:v_toStringTag": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+}
+}
+}
