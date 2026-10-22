@@ -245,3 +245,10 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Census e9ea32d: 34/72/83/95/102/111/123. Landed: v7-only gains, 0 losses. v10 15/16 (Z4). Evidence v6 11/14, v7 14/16. Box /tmp/bx466d green (m48 box-only). CI green. PR body updated.
 - v8 notes: batch-v4/TE/NEXT-SKILL-v8.md (f1ee302), estimate v7 123→136.
 - Stress running since 11:35 MDT: runs-m97f (GRADE grade-m97f, WS /tmp/st466d), runs-m97f-sim (GRADE grade-m97f-sim, WS /tmp/s97sim3). Score with python3 /workspace/stress/score.py when done.
+
+## 2026-10-22 12:10 MDT — #466 4th review NOT PASS at e9ea32d (3 Date TZ leaks) → fail-closed Date fix in progress
+- Executor plan (worktree /workspace/te10, branch m97/test-case-existing-v7): (A) dateRefusal also on ElementAccess literal keys (learned-complex.ts);
+  (B) TE Date-use allowlist all versions (Date-valued expr only as receiver of dotted call setTime/setUTC*/getUTC*/getTime/valueOf/toISOString, bare return of an eligible fn, local binding init/assign);
+  (C) `Date` ident only as `new Date` callee / `Date.UTC`; (D) new Date(1 arg) only numeric / ISO-Z literal / tested-fn string param;
+  (E) test-side dateArgProblem Job A + Job B (ISO literal for date-string params; Date literals only top-level to Date params); (F) TZ backstop UTC/Denver/Tokyo in gradeExisting.
+- Auditor repros /tmp/probe466 (c8, c9, ja3.mts, e2e/). Subset tooling: /tmp/probe466/census2.mts, /tmp/w466/landed.mts, /tmp/pvall.mts, /tmp/evcount.mts, /tmp/w466/v10.mts.
