@@ -213,3 +213,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - #463 head 6ab6b41: m12 9de5d832; m95 test fails on main 0/2, passes on head. Trial merge be31c6e+6ab6b41 m12 = 1a5e5531db0c5cee2d64593198317aa75d554350cf6795e6d6028ab89107b469 (only conflict m12 line).
 - Box (Node 22, disposable clones): both typecheck OK, test 17/17, self 5/5, builder-log 61/61, approved PASS 28, leak PASS; tools #460 1125/1126, #463 1117/1118 (m48 box-only). CI green on both heads.
 - NEXT: Auditor on #460 be31c6e and #463 6ab6b41; second to merge merges main + re-pins m12 (1a5e5531 expected).
+
+## 2026-10-22 ~11:45Z v6 proposal, #463 main merge, M96
+- #460 merged 8567c50 (Auditor PASS). v6 rule-proposal issue #464 opened (generator /workspace/te8/prop/gen.mts on a clone of 8567c50; marker/spec sha 256f7b32... verified on the live body; leak clean). Waiting for Peace's /approve-rule (never post it).
+- #463 head 9ceaf60 = merge of main 8567c50, m12 1a5e5531 (= Auditor trial). Box 1127/1128 (m48). CI green. Not merged.
+- #465 M96 (m96/protect-tool-closure, from 8567c50, head d13255f): 23 lib modules + kernel-guard.ts protected; m96 test (closure of every protected .ts + .sh-named .ts closed; authorIsNoreply negative proof); m72/m76 accept protected_path. m12 52a861ff (main+M96); after #463 merges: merge main + re-pin to ac61e5c62463a832482c1aa0829b7bbe1fb058811874bbfd8964fdcddcbc4caa (trial). Box 1128/1129 (m48).
