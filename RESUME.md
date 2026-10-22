@@ -26,3 +26,8 @@
   self 5/5, tools 1106/1111 with 1 fail = m48 snapshot rebuild (box-only, fails identically on main 3670cd8; 4 skipped).
 - Running: stress-v1 baseline -> /workspace/stress/runs-m91 (log runs-m91.log). Next: sim run -> runs-m91-sim with
   WS=/workspace/te5/sim, score with /workspace/stress/score.py, then open the PR.
+
+## v5 checkpoint 3 (PR opened)
+
+- Stress v1 done: baseline runs-m91 59/66 (29/36, 30/30, 0 wrong, 0 crash); sim v5 runs-m91-sim 59/66, 0 wrong; both identical to M90 task by task.
+- PR #442 opened from m91/test-existing-v5 at 32b8cca. NOT merged, NO rule-proposal issue. Next: Auditor review.
