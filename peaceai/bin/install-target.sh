@@ -4,7 +4,9 @@
 # runner (30s). The install is retried up to 3 times with backoff (15s, 45s). Each attempt runs the same pinned,
 # lockfile-frozen, script-free command; a partial node_modules is removed first so no attempt reuses a half-written tree.
 set -euo pipefail
-dir="$1"; kind="$2"
+dir="${1:-}"; kind="${2:-}"
+# M94: an empty or missing <dir> would make `cd ""` a no-op and the retry's `rm -rf node_modules` run in the caller's cwd.
+[ -n "$dir" ] || { echo "missing target dir" >&2; exit 1; }
 cd "$dir"
 case "$kind" in
   npm|pnpm) ;;
