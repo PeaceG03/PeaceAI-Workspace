@@ -1,0 +1,2447 @@
+{
+ "cases": {
+  "c1:asyncVoid": [
+   {
+    "src/a.ts": "export async function f(x: number): Promise<void> { if (x) throw new Error(\"E\"); }"
+   },
+   "f"
+  ],
+  "c1:captureStack": [
+   {
+    "src/a.ts": "export function f(x: string): void { const o = {}; Error.captureStackTrace(o); throw new Error(x); }"
+   },
+   "f"
+  ],
+  "c1:condInit": [
+   {
+    "src/a.ts": "const ARR: number[] = true ? [] : [];\nconst H = { slice: (): number[] => ARR };\nexport function f(m: ReadonlySet<number>): number { const c = H.slice(); c.push(1); return c.length + m.size; }"
+   },
+   "f"
+  ],
+  "c1:dateInVoid": [
+   {
+    "src/a.ts": "export function f(x: string): void { if (new Date(x).getTime() > 0) throw new Error(\"E\"); }"
+   },
+   "f"
+  ],
+  "c1:dateLocalVoid": [
+   {
+    "src/a.ts": "export function f(x: string): void { if (new Date(x).getHours() > 0) throw new Error(\"E\"); }"
+   },
+   "f"
+  ],
+  "c1:destructMutate": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, { n: number }>): number { const [[, v]] = [...m]; v.n = 3; return m.size; }"
+   },
+   "f"
+  ],
+  "c1:errorStackVoid": [
+   {
+    "src/a.ts": "export function f(x: string): void { const e = new Error(x); if (e.stack!.length > 5) throw e; }"
+   },
+   "f"
+  ],
+  "c1:fillParam": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, number[]>): number { for (const v of m.values()) v.fill(0); return 1; }"
+   },
+   "f"
+  ],
+  "c1:forEachMutateParamVal": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, { n: number }>): number { m.forEach((v) => { v.n++; }); return m.size; }"
+   },
+   "f"
+  ],
+  "c1:forOfMutateParamVal": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, { n: number }>): number { for (const [, v] of m) v.n = 2; return m.size; }"
+   },
+   "f"
+  ],
+  "c1:gen": [
+   {
+    "src/a.ts": "export function* f(x: number): Generator<number> { yield x; }"
+   },
+   "f"
+  ],
+  "c1:getterArgsRead": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, { readonly n: number }>): number { let s = 0; for (const v of m.values()) s += v.n; return s; }"
+   },
+   "f"
+  ],
+  "c1:literalKeys": [
+   {
+    "src/a.ts": "export function f(m: Map<\"a\" | \"b\", number>): number { return m.size; }"
+   },
+   "f"
+  ],
+  "c1:mapDefaultEnv": [
+   {
+    "src/a.ts": "export function f(m: Map<string, string> = new Map(Object.entries(process.env) as [string,string][])): number { return m.size; }"
+   },
+   "f"
+  ],
+  "c1:mapDefaultLit": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, string> = new Map([[\"a\",\"b\"]])): number { return m.size; }"
+   },
+   "f"
+  ],
+  "c1:mapGetMethodAlias": [
+   {
+    "src/a.ts": "const T = { a: [] as number[] };\nconst H = { values: () => T.a };\nexport function f(s: ReadonlySet<string>): number { const c = H.values(); return s.size; }"
+   },
+   "f"
+  ],
+  "c1:mapGroupBy": [
+   {
+    "src/a.ts": "export function f(xs: readonly string[]): Map<number, string[]> { return Map.groupBy(xs, (x) => x.length); }"
+   },
+   "f"
+  ],
+  "c1:mapSubclassRet": [
+   {
+    "src/a.ts": "class M2 extends Map<string, number> {}\nexport function f(s: ReadonlySet<string>): Map<string, number> { return new M2(); }"
+   },
+   "f"
+  ],
+  "c1:mapValuesFresh": [
+   {
+    "src/a.ts": "const T = new Map<string, number[]>([[\"a\", []]]);\nexport function f(m: ReadonlyMap<string, number>): number { const c = T.get(\"a\")!.map((x) => x); return c.length; }"
+   },
+   "f"
+  ],
+  "c1:memoMap": [
+   {
+    "src/a.ts": "const CACHE = new Map<string, number>();\nexport function f(m: ReadonlyMap<string, number>, k: string): number { const v = CACHE.get(k); if (v !== undefined) return v; const r = m.size; CACHE.set(k, r); return r; }"
+   },
+   "f"
+  ],
+  "c1:nanKey": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<number>): boolean { return s.has(NaN); }"
+   },
+   "f"
+  ],
+  "c1:objKeyViaAlias": [
+   {
+    "src/a.ts": "type K = { a: number };\nexport function f(m: Map<K, number>): number { return m.size; }"
+   },
+   "f"
+  ],
+  "c1:objectAssignFresh": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, { n: number }>): number { const c = [...m.values()]; const o = c[0]!; o.n = 1; return 1; }"
+   },
+   "f"
+  ],
+  "c1:prepareStackTrace": [
+   {
+    "src/a.ts": "export function f(x: string): void { Error.stackTraceLimit = 0; throw new Error(x); }"
+   },
+   "f"
+  ],
+  "c1:regexLastIndex": [
+   {
+    "src/a.ts": "const R = /a/g;\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (R.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c1:regexLastIndexInFn": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<string>): number { return s.size; }\nconst R2 = new RegExp(\"a\", \"g\");\nexport function g(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (R2.test(x)) n++; return n; }"
+   },
+   "g"
+  ],
+  "c1:regexLiteralInFnPassed": [
+   {
+    "src/a.ts": "const RX = { r: /a/g };\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.r.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c1:retModuleMap": [
+   {
+    "src/a.ts": "const T = new Map<string, number>([[\"a\", 1]]);\nexport function f(s: ReadonlySet<string>): ReadonlyMap<string, number> { return T; }"
+   },
+   "f"
+  ],
+  "c1:retModuleMapInner": [
+   {
+    "src/a.ts": "const T = { m: new Map<string, number>([[\"a\", 1]]) };\nexport function f(s: ReadonlySet<string>): ReadonlyMap<string, number> { return T.m; }"
+   },
+   "f"
+  ],
+  "c1:setIterOrderDep": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<string>): string { return [...s].join(\",\"); }"
+   },
+   "f"
+  ],
+  "c1:sortInPlaceParamCopy": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<string>): string[] { const a = [...s]; a.sort(); return a; }"
+   },
+   "f"
+  ],
+  "c1:spreadAliasMut": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, number[]>): number { const c = [...m.values()]; const [first] = c; first!.push(1); return 1; }"
+   },
+   "f"
+  ],
+  "c1:storeItemsAlias": [
+   {
+    "src/a.ts": "const STORE = { items: [] as number[] };\nconst H = { slice: (): number[] => STORE.items };\nexport function f(m: ReadonlyMap<string, number>): number { const c = H.slice(); c.push(1); return c.length + m.size; }"
+   },
+   "f"
+  ],
+  "c1:storeItemsAliasArr": [
+   {
+    "src/a.ts": "const STORE = { items: [] as number[] };\nconst H = { slice: (): number[] => STORE.items };\nexport function f(m: readonly number[]): number { const c = H.slice(); c.push(1); return c.length + m.length; }"
+   },
+   "f"
+  ],
+  "c1:structuredClone": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, number>): Map<string, number> { return structuredClone(m) as Map<string,number>; }"
+   },
+   "f"
+  ],
+  "c1:symbolKey": [
+   {
+    "src/a.ts": "export function f(m: Map<symbol, number>): number { return m.size; }"
+   },
+   "f"
+  ],
+  "c1:voidConsole": [
+   {
+    "src/a.ts": "export function f(x: string): void { if (!x) throw new Error(\"E\"); console.log(x); }"
+   },
+   "f"
+  ],
+  "c1:voidGlobalThis": [
+   {
+    "src/a.ts": "export function f(x: string): void { (globalThis as any).y = x; if (!x) throw new Error(\"E\"); }"
+   },
+   "f"
+  ],
+  "c1:voidMutatesArg": [
+   {
+    "src/a.ts": "export function f(m: Map<string, number>): void { if (m.size > 2) throw new Error(\"BIG\"); m.set(\"x\", 1); }"
+   },
+   "f"
+  ],
+  "c1:voidNeverThrows": [
+   {
+    "src/a.ts": "export function f(x: number): void { const y = x + 1; }"
+   },
+   "f"
+  ],
+  "c1:voidRandom": [
+   {
+    "src/a.ts": "export function f(x: number): void { if (x > Math.random()) throw new Error(\"E\"); }"
+   },
+   "f"
+  ],
+  "c1:voidStore": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nconst H = { concat: (): string[] => STORE.items };\nexport function f(x: string): void { const c = H.concat(); c.push(x); if (c.length > 2) throw new Error(\"FULL\"); }"
+   },
+   "f"
+  ],
+  "c1:weakMapMemo": [
+   {
+    "src/a.ts": "const CACHE = new WeakMap<object, number>();\nexport function f(m: ReadonlyMap<string, number>): number { return m.size; }"
+   },
+   "f"
+  ],
+  "c2:regexNewG": [
+   {
+    "src/a.ts": "const R2 = new RegExp(\"a\", \"g\");\nexport function f(x: string): boolean { return R2.test(x); }"
+   },
+   "f"
+  ],
+  "c2:storeAliasArrStr": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nconst H = { slice: (): string[] => STORE.items };\nexport function f(x: string): number { const c = H.slice(); c.push(x); return c.length; }"
+   },
+   "f"
+  ],
+  "c2:storeFnMethod": [
+   {
+    "src/a.ts": "const ITEMS: string[] = [];\nfunction slice(): string[] { return ITEMS; }\nconst H = { slice };\nexport function f(x: string): number { const c = H.slice(); c.push(x); return c.length; }"
+   },
+   "f"
+  ],
+  "c3:envMapOk": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, number>, env: NodeJS.ProcessEnv = process.env): number { return env.A ? m.size : 0; }"
+   },
+   "f"
+  ],
+  "c3:envRecMap": [
+   {
+    "src/a.ts": "export function f(m: ReadonlyMap<string, number>, env: NodeJS.ProcessEnv = process.env): number { return m.size > 0 ? f(new Map(), undefined) : (env.A ? 1 : 0); }"
+   },
+   "f"
+  ],
+  "c3:envVoidRec": [
+   {
+    "src/a.ts": "export function f(n: number, env: NodeJS.ProcessEnv = process.env): void { if (n > 0) f(n - 1); if (env.A) throw new Error(\"A\"); }"
+   },
+   "f"
+  ],
+  "c3:importBackMap": [
+   {
+    "src/a.ts": "import { g } from \"./b.ts\";\nexport function f(s: ReadonlySet<string>): number { return g(s.size); }",
+    "src/b.ts": "import { f } from \"./a.ts\";\nexport function g(n: number): number { return n; }"
+   },
+   "f"
+  ],
+  "c3:mjsImport": [
+   {
+    "src/a.ts": "import { g } from \"./b.mjs\";\nexport function f(s: ReadonlySet<string>): number { return s.size; }",
+    "src/b.mjs": "globalThis.Map = class {};"
+   },
+   "f"
+  ],
+  "c3:nsImportSlice": [
+   {
+    "src/a.ts": "import * as lib from \"./b.ts\";\nexport function f(s: ReadonlySet<string>): number { const c = lib.slice(); c.push(\"x\"); return c.length; }",
+    "src/b.ts": "const ITEMS: string[] = [];\nexport function slice(): string[] { return ITEMS; }"
+   },
+   "f"
+  ],
+  "c3:patchViaAlias": [
+   {
+    "src/a.ts": "const P = Set.prototype as any;\nP.has = () => true;\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c3:patchViaObjAlias": [
+   {
+    "src/a.ts": "const O = Object;\nO.defineProperty(Set.prototype, \"has\", { value: () => true });\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c3:patchViaReflectAlias": [
+   {
+    "src/a.ts": "const R = Reflect;\nR.set(Map.prototype, \"get\", () => 1);\nexport function f(s: ReadonlyMap<string, number>): number { return s.get(\"q\") ?? 0; }"
+   },
+   "f"
+  ],
+  "c3:sharedMapSibling": [
+   {
+    "src/a.ts": "import { T } from \"./b.ts\";\nexport function f(s: ReadonlySet<string>): number { return T.get(\"a\") ?? s.size; }",
+    "src/b.ts": "export const T = new Map<string, number>();\nexport function put(k: string): void { T.set(k, 1); }"
+   },
+   "f"
+  ],
+  "c3:sharedMapSiblingNoMut": [
+   {
+    "src/a.ts": "import { T } from \"./b.ts\";\nexport function f(s: ReadonlySet<string>): number { return T.get(\"a\") ?? s.size; }",
+    "src/b.ts": "export const T = new Map<string, number>([[\"a\", 1]]);"
+   },
+   "f"
+  ],
+  "c3:siblingStoreItems": [
+   {
+    "src/a.ts": "import { H } from \"./b.ts\";\nexport function f(s: ReadonlySet<string>): number { const c = H.slice(); c.push(\"x\"); return c.length; }",
+    "src/b.ts": "const S = { items: [] as string[] };\nexport const H = { slice: (): string[] => S.items };"
+   },
+   "f"
+  ],
+  "c3:sideEffDefineGlobal": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }",
+    "src/b.ts": "const P = Set.prototype; P.has = () => true;"
+   },
+   "f"
+  ],
+  "c3:sideEffImport": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(s: ReadonlySet<string>): number { return s.size; }",
+    "src/b.ts": "Set.prototype.has = () => true;"
+   },
+   "f"
+  ],
+  "c4:arrLitProto": [
+   {
+    "src/a.ts": "if (true) { ([] as any).__proto__.includes = () => true; }\nexport function f(s: ReadonlySet<string>): boolean { return [...s].includes(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:blkDefHelper1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction def(o: object): void { Object.defineProperty(o, \"trim\", { value: () => String(C.n++) }); }\ntry { def(String.prototype); } finally {}\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkDefHelper7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction def(o: object): void { Object.defineProperty(o, \"trim\", { value: () => String(C.n++) }); }\ntry { def(String.prototype); } finally {}\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkDirect1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nif (true) { String.prototype.trim = function () { return String(C.n++); }; }\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkDirect7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nif (true) { String.prototype.trim = function () { return String(C.n++); }; }\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkForEach1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nif (true) [String.prototype].forEach((p: any) => { p.trim = () => String(C.n++); });\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkForEach7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nif (true) [String.prototype].forEach((p: any) => { p.trim = () => String(C.n++); });\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkHelper1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\nif (true) { install(String.prototype as any); }\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkHelper7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\nif (true) { install(String.prototype as any); }\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkHelperCall1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction install(this: any): void { this.trim = function () { return String(C.n++); }; }\nif (true) { install.call(String.prototype); }\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:blkHelperCall7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction install(this: any): void { this.trim = function () { return String(C.n++); }; }\nif (true) { install.call(String.prototype); }\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:destrProto": [
+   {
+    "src/a.ts": "const { prototype: P } = Set;\nif (true) { P.has = () => true; }\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:exprHelper1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\ninstall(String.prototype as any);\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:exprHelper7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\ninstall(String.prototype as any);\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:forDirect1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfor (const p of [String.prototype]) { p.trim = function () { return String(C.n++); }; }\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:forDirect7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\nfor (const p of [String.prototype]) { p.trim = function () { return String(C.n++); }; }\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c4:getProtoOfInst": [
+   {
+    "src/a.ts": "const s0 = new Set<string>();\nif (true) { Object.getPrototypeOf(s0).has = () => true; }\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:globalThisSet": [
+   {
+    "src/a.ts": "if (true) { globalThis.Set.prototype.has = () => true; }\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:instConstructor": [
+   {
+    "src/a.ts": "const s0 = new Set<string>();\nif (true) { (s0 as any).constructor.prototype.has = () => true; }\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:instProtoAccess": [
+   {
+    "src/a.ts": "const s0 = new Set<string>();\nif (true) { (s0 as any).__proto__.has = () => true; }\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:objAssignProto": [
+   {
+    "src/a.ts": "if (true) Object.assign(Set.prototype, { has: () => true });\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:reflectSet": [
+   {
+    "src/a.ts": "Reflect.set(Set.prototype, \"has\", () => true);\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:setProtoOf": [
+   {
+    "src/a.ts": "if (true) { Object.setPrototypeOf(Set.prototype, { has: () => true }); }\nexport function f(s: ReadonlySet<string>): boolean { return s.has(\"q\"); }"
+   },
+   "f"
+  ],
+  "c4:sibBlkDirect1": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(x: string): string { return x.trim(); }",
+    "src/b.ts": "const C = { n: 0 };\nif (true) { String.prototype.trim = function () { return String(C.n++); }; }\nexport {};"
+   },
+   "f"
+  ],
+  "c4:sibBlkDirect7": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }",
+    "src/b.ts": "const C = { n: 0 };\nif (true) { String.prototype.trim = function () { return String(C.n++); }; }\nexport {};"
+   },
+   "f"
+  ],
+  "c4:sibBlkHelper1": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(x: string): string { return x.trim(); }",
+    "src/b.ts": "const C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\nif (true) { install(String.prototype as any); }\nexport {};"
+   },
+   "f"
+  ],
+  "c4:sibBlkHelper7": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }",
+    "src/b.ts": "const C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\nif (true) { install(String.prototype as any); }\nexport {};"
+   },
+   "f"
+  ],
+  "c4:sibNamedBlkHelper1": [
+   {
+    "src/a.ts": "import { K } from \"./b.ts\";\nexport function f(x: string): string { return K +  x.trim(); }",
+    "src/b.ts": "export const K = \"k\";\nconst C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\nif (true) { install(String.prototype as any); }"
+   },
+   "f"
+  ],
+  "c4:sibNamedBlkHelper7": [
+   {
+    "src/a.ts": "import { K } from \"./b.ts\";\nexport function f(s: ReadonlySet<string>): string { return K +  [...s].join(\",\").trim(); }",
+    "src/b.ts": "export const K = \"k\";\nconst C = { n: 0 };\nfunction install(p: { trim: () => string }): void { p.trim = function () { return String(C.n++); }; }\nif (true) { install(String.prototype as any); }"
+   },
+   "f"
+  ],
+  "c4:strLitCtor": [
+   {
+    "src/a.ts": "if (true) { (\"\" as any).constructor.prototype.trim = () => \"X\"; }\nexport function f(s: ReadonlySet<string>): string { return [...s].join().trim(); }"
+   },
+   "f"
+  ],
+  "c4:tryDirect1": [
+   {
+    "src/a.ts": "const C = { n: 0 };\ntry { String.prototype.trim = function () { return String(C.n++); }; } catch {}\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "c4:tryDirect7": [
+   {
+    "src/a.ts": "const C = { n: 0 };\ntry { String.prototype.trim = function () { return String(C.n++); }; } catch {}\nexport function f(s: ReadonlySet<string>): string { return [...s].join(\",\").trim(); }"
+   },
+   "f"
+  ],
+  "c5:arrSlotAlias": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = [STORE.items]; c[0]!.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:arrayFromOk": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = Array.from(STORE.items); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:assignThroughFresh": [
+   {
+    "src/a.ts": "const T = { n: 0 };\nexport function f(s: ReadonlySet<string>): number { const c = [T]; c[0]!.n++; return T.n; }"
+   },
+   "f"
+  ],
+  "c5:concatTwoLevel": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nconst H = { list: (): string[] => STORE.items };\nexport function f(s: ReadonlySet<string>): number { const c = H.list().concat([]); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:destructItems": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const { items } = STORE; items.push(\"x\"); return items.length; }"
+   },
+   "f"
+  ],
+  "c5:destructItemsSlice": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const { items } = STORE; const c = items.slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:entriesFor": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { for (const [, v] of Object.entries(STORE)) v.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:fnRetMapCall": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nfunction get(): { map: (g: (x: string) => string) => string[] } { return { map: () => STORE.items }; }\nexport function f(s: ReadonlySet<string>): number { const c = get().map((x) => x); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:fnReturnChain": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nfunction get(): string[] { return STORE.items; }\nexport function f(s: ReadonlySet<string>): number { const c = get().slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:fnReturnDirect": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nfunction get(): string[] { return STORE.items; }\nexport function f(s: ReadonlySet<string>): number { const c = get(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:forOfAlias": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nconst ALL = [STORE.items];\nexport function f(s: ReadonlySet<string>): number { for (const c of ALL) c.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:genModule": [
+   {
+    "src/a.ts": "function* g(): Generator<number> { yield 1; yield 2; }\nconst IT = g();\nexport function f(s: ReadonlySet<string>): number { return (IT.next().value ?? 0) + s.size; }"
+   },
+   "f"
+  ],
+  "c5:getterSliceName": [
+   {
+    "src/a.ts": "const BACK: string[] = [];\nconst H = { get slice() { return () => BACK; } };\nexport function f(s: ReadonlySet<string>): number { const c = H.slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:getterSpread": [
+   {
+    "src/a.ts": "const STORE = { get items(): string[] { return BACK; } };\nconst BACK: string[] = [];\nexport function f(s: ReadonlySet<string>): number { const c = STORE.items.slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:hSlice": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nconst H = { slice: (): string[] => STORE.items };\nexport function f(s: ReadonlySet<string>): number { const c = H.slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:itemsSliceOk": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = STORE.items.slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:iterModule": [
+   {
+    "src/a.ts": "const IT = [1, 2, 3][Symbol.iterator]();\nexport function f(s: ReadonlySet<string>): number { return (IT.next().value ?? 0) + s.size; }"
+   },
+   "f"
+  ],
+  "c5:iterViaFn": [
+   {
+    "src/a.ts": "function mk(): Iterator<number> { return [1, 2, 3].values(); }\nconst IT = mk();\nexport function f(s: ReadonlySet<string>): number { return (IT.next().value ?? 0) + s.size; }"
+   },
+   "f"
+  ],
+  "c5:letReassign": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { let c: string[] = []; if (s.size) c = STORE.items; c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:letReassignCond": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { let c: string[] = []; c = s.size ? STORE.items : c; c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:mapGetBind": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const m = new Map([[\"k\", STORE.items]]); const c = m.get(\"k\")!; c.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:mapSetAlias": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const m = new Map([[\"k\", STORE.items]]); m.get(\"k\")!.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:objSlotAlias": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = { a: STORE.items }; c.a.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:objectValuesAlias": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = Object.values(STORE); c[0]!.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:objectValuesBind": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const [c] = Object.values(STORE); c!.push(\"x\"); return 1; }"
+   },
+   "f"
+  ],
+  "c5:orRecv": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = STORE.items || []; c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:paramMethodSlice": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<string>, o: { slice: () => string[] } = { slice: () => [] }): number { const c = o.slice(); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:rxAliasCtor": [
+   {
+    "src/a.ts": "const R = RegExp;\nconst RX = new R(\"a\", \"g\");\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxArr": [
+   {
+    "src/a.ts": "const RS = [/a/g];\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RS[0]!.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxCompile": [
+   {
+    "src/a.ts": "const RX = /a/;\nexport function f(s: ReadonlySet<string>): number { RX.compile(\"a\", \"g\"); return s.size; }"
+   },
+   "f"
+  ],
+  "c5:rxCompileLoad": [
+   {
+    "src/a.ts": "const RX = /a/;\nif (true) { RX.compile(\"a\", \"g\"); }\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxFlagsConst": [
+   {
+    "src/a.ts": "const FLAGS = \"g\";\nconst RX = new RegExp(\"a\", FLAGS);\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxFromFn": [
+   {
+    "src/a.ts": "function mk(): RegExp { return /a/g; }\nconst RX = mk();\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxFromFnFlag": [
+   {
+    "src/a.ts": "function mk(fl: string): RegExp { return new RegExp(\"a\", fl); }\nconst RX = mk(\"g\");\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxFromRx": [
+   {
+    "src/a.ts": "const RX = new RegExp(/a/g);\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxFromRxFlags": [
+   {
+    "src/a.ts": "const RX = new RegExp(/a/, \"y\");\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxInFnLocalOk": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<string>): number { const r = /a/g; let n = 0; for (const x of s) if (r.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxInObj": [
+   {
+    "src/a.ts": "const O = { r: new RegExp(\"a\", \"gi\".slice(0, 1)) };\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (O.r.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxLastIndexWrite": [
+   {
+    "src/a.ts": "const RX = /a/;\nexport function f(s: ReadonlySet<string>): number { RX.lastIndex = 3; return s.size; }"
+   },
+   "f"
+  ],
+  "c5:rxNewLitOk": [
+   {
+    "src/a.ts": "const RX = new RegExp(\"a\", \"i\");\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxPlainOk": [
+   {
+    "src/a.ts": "const RX = /a/i;\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:rxReplaceG": [
+   {
+    "src/a.ts": "const RX = /a/g;\nexport function f(s: ReadonlySet<string>): string { return [...s].join().replace(RX, \"b\"); }"
+   },
+   "f"
+  ],
+  "c5:rxSymbolMatch": [
+   {
+    "src/a.ts": "const RX = /a/;\nexport function f(s: ReadonlySet<string>): number { return [...s].filter((x) => RX[Symbol.match](x)).length; }"
+   },
+   "f"
+  ],
+  "c5:rxTemplateFlags": [
+   {
+    "src/a.ts": "const RX = new RegExp(\"a\", `g`);\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c5:spreadInto": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = [...STORE.items]; c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c5:ternaryRecv": [
+   {
+    "src/a.ts": "const STORE = { items: [] as string[] };\nexport function f(s: ReadonlySet<string>): number { const c = (s.size ? STORE.items : []); c.push(\"x\"); return c.length; }"
+   },
+   "f"
+  ],
+  "c6:iterViaFn": [
+   {
+    "src/a.ts": "function mk(): Iterator<number> { return [1, 2, 3].values(); }\nconst IT = mk();\nexport function f(s: ReadonlySet<string>): number { return (IT.next().value ?? 0) + s.size; }"
+   },
+   "f"
+  ],
+  "c6:iterViaFnStr": [
+   {
+    "src/a.ts": "function mk(): Iterator<number> { return [1, 2, 3].values(); }\nconst IT = mk();\nexport function f(x: number): number { return (IT.next().value ?? 0) + x; }"
+   },
+   "f"
+  ],
+  "c6:rxFromFn": [
+   {
+    "src/a.ts": "function mk(): RegExp { return /a/g; }\nconst RX = mk();\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c6:rxFromFnFlag": [
+   {
+    "src/a.ts": "function mk(fl: string): RegExp { return new RegExp(\"a\", fl); }\nconst RX = mk(\"g\");\nexport function f(s: ReadonlySet<string>): number { let n = 0; for (const x of s) if (RX.test(x)) n++; return n; }"
+   },
+   "f"
+  ],
+  "c6:rxFromFnFlagStr": [
+   {
+    "src/a.ts": "function mk(fl: string): RegExp { return new RegExp(\"a\", fl); }\nconst RX = mk(\"g\");\nexport function f(x: string): boolean { return RX.test(x); }"
+   },
+   "f"
+  ],
+  "c6:rxFromFnStr": [
+   {
+    "src/a.ts": "function mk(): RegExp { return /a/g; }\nconst RX = mk();\nexport function f(x: string): boolean { return RX.test(x); }"
+   },
+   "f"
+  ],
+  "c7:rxLastMatch": [
+   {
+    "src/a.ts": "export function f(x: string): string { if (x) /(a+)/.test(x); return RegExp.lastMatch; }"
+   },
+   "f"
+  ],
+  "c7:rxStatic1": [
+   {
+    "src/a.ts": "export function f(x: string): string { if (x) /(a+)/.test(x); return RegExp.$1; }"
+   },
+   "f"
+  ],
+  "c7:rxStatic7": [
+   {
+    "src/a.ts": "export function f(s: ReadonlySet<string>): string { for (const x of s) /(a+)/.test(x); return RegExp.$1; }"
+   },
+   "f"
+  ],
+  "c7:rxStaticEl": [
+   {
+    "src/a.ts": "export function f(x: string): string { if (x) /(a+)/.test(x); return RegExp[\"$_\"]; }"
+   },
+   "f"
+  ],
+  "extra:mapStoreStr": [
+   {
+    "src/a.ts": "const M = new Map<string, string[]>([[\"k\", []]]);\nconst H = { slice: (): string[] => M.get(\"k\")! };\nexport function f(x: string): number { const c = H.slice(); c.push(x); return c.length; }"
+   },
+   "f"
+  ],
+  "extra:patchAliasSameMod": [
+   {
+    "src/a.ts": "const P = String.prototype; P.trim = function () { return \"X\"; };\nexport function f(x: string): string { return x.trim(); }"
+   },
+   "f"
+  ],
+  "extra:patchAliasStr": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(x: string): boolean { return new Set<string>().has(x); }",
+    "src/b.ts": "const P = Set.prototype; P.has = () => true;\nexport {};"
+   },
+   "f"
+  ],
+  "extra:patchNamedImport": [
+   {
+    "src/a.ts": "import { K } from \"./b.ts\";\nexport function f(x: string): string { return x.trim() + K; }",
+    "src/b.ts": "const O = Object; O.defineProperty(String.prototype, \"trim\", { value: () => \"X\" });\nexport const K = \"k\";"
+   },
+   "f"
+  ],
+  "extra:patchObjAliasStr": [
+   {
+    "src/a.ts": "import \"./b.ts\";\nexport function f(x: string): boolean { return new Set<string>().has(x); }",
+    "src/b.ts": "const O = Object; O.defineProperty(Set.prototype, \"has\", { value: () => true });\nexport {};"
+   },
+   "f"
+  ],
+  "extra:pureStr": [
+   {
+    "src/a.ts": "export function f(x: string): string { return [x].concat([\"y\"]).slice(0).join(\",\"); }"
+   },
+   "f"
+  ],
+  "extra:regexLitG": [
+   {
+    "src/a.ts": "const R = /a/g;\nexport function f(x: string): boolean { return R.test(x); }"
+   },
+   "f"
+  ],
+  "extra:regexNewNoFlag": [
+   {
+    "src/a.ts": "const R = new RegExp(\"a\");\nexport function f(x: string): boolean { return R.test(x); }"
+   },
+   "f"
+  ],
+  "extra:regexNewY": [
+   {
+    "src/a.ts": "const R = new RegExp(\"a\", \"y\");\nexport function f(x: string): boolean { return R.test(x); }"
+   },
+   "f"
+  ],
+  "extra:setStoreStr": [
+   {
+    "src/a.ts": "const S = new Set<string>();\nconst H = { values: () => S };\nexport function f(x: string): number { const c = H.values(); c.add(x); return c.size; }"
+   },
+   "f"
+  ],
+  "extra:siblingStoreStr": [
+   {
+    "src/a.ts": "import { H } from \"./b.ts\";\nexport function f(x: string): number { const c = H.concat(); c.push(x); return c.length; }",
+    "src/b.ts": "const STORE = { items: [] as string[] };\nexport const H = { concat: (): string[] => STORE.items };"
+   },
+   "f"
+  ]
+ },
+ "newlyRefused": [
+  "c4:arrLitProto",
+  "c4:blkDefHelper1",
+  "c4:blkDefHelper7",
+  "c4:blkDirect1",
+  "c4:blkForEach1",
+  "c4:blkForEach7",
+  "c4:blkHelper1",
+  "c4:blkHelper7",
+  "c4:blkHelperCall1",
+  "c4:blkHelperCall7",
+  "c4:forDirect1",
+  "c4:forDirect7",
+  "c4:getProtoOfInst",
+  "c4:instConstructor",
+  "c4:instProtoAccess",
+  "c4:sibBlkDirect1",
+  "c4:sibBlkHelper1",
+  "c4:sibBlkHelper7",
+  "c4:sibNamedBlkHelper1",
+  "c4:sibNamedBlkHelper7",
+  "c4:strLitCtor",
+  "c4:tryDirect1",
+  "c5:iterViaFn",
+  "c5:rxFromFn",
+  "c5:rxFromFnFlag",
+  "c6:iterViaFn",
+  "c6:iterViaFnStr",
+  "c6:rxFromFn",
+  "c6:rxFromFnFlag",
+  "c6:rxFromFnFlagStr",
+  "c6:rxFromFnStr",
+  "c7:rxLastMatch",
+  "c7:rxStatic1",
+  "c7:rxStatic7",
+  "c7:rxStaticEl"
+ ],
+ "note": "Auditor #466 probes c1-c7 and the variants (synthetic code). want = the verdict per version under the fail-closed allowlists; at 71ef75d the keys in newlyRefused were accepted under at least one version.",
+ "want": {
+  "c1:asyncVoid": {
+   "v1": "test_target_async",
+   "v2": "test_target_async",
+   "v3": "test_target_async",
+   "v4": "test_target_async",
+   "v5": "test_target_async",
+   "v6": "test_target_async",
+   "v7": "test_target_async"
+  },
+  "c1:captureStack": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:condInit": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:dateInVoid": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:dateLocalVoid": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_date_local"
+  },
+  "c1:destructMutate": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:errorStackVoid": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:fillParam": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:forEachMutateParamVal": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:forOfMutateParamVal": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:gen": {
+   "v1": "test_target_async",
+   "v2": "test_target_async",
+   "v3": "test_target_async",
+   "v4": "test_target_async",
+   "v5": "test_target_async",
+   "v6": "test_target_async",
+   "v7": "test_target_async"
+  },
+  "c1:getterArgsRead": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:literalKeys": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:mapDefaultEnv": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_io"
+  },
+  "c1:mapDefaultLit": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:mapGetMethodAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:mapGroupBy": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:mapSubclassRet": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:mapValuesFresh": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:memoMap": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:nanKey": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:objKeyViaAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_signature"
+  },
+  "c1:objectAssignFresh": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:prepareStackTrace": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:regexLastIndex": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:regexLastIndexInFn": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:regexLiteralInFnPassed": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:retModuleMap": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:retModuleMapInner": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:setIterOrderDep": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:sortInPlaceParamCopy": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:spreadAliasMut": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:storeItemsAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:storeItemsAliasArr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c1:structuredClone": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:symbolKey": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_signature"
+  },
+  "c1:voidConsole": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_io"
+  },
+  "c1:voidGlobalThis": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_io"
+  },
+  "c1:voidMutatesArg": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:voidNeverThrows": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c1:voidRandom": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:voidStore": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c1:weakMapMemo": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c2:regexNewG": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c2:storeAliasArrStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c2:storeFnMethod": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c3:envMapOk": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c3:envRecMap": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_io"
+  },
+  "c3:envVoidRec": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_io"
+  },
+  "c3:importBackMap": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:mjsImport": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_io"
+  },
+  "c3:nsImportSlice": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:patchViaAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:patchViaObjAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:patchViaReflectAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:sharedMapSibling": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:sharedMapSiblingNoMut": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c3:siblingStoreItems": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:sideEffDefineGlobal": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c3:sideEffImport": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:arrLitProto": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:blkDefHelper1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:blkDefHelper7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:blkDirect1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:blkDirect7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:blkForEach1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:blkForEach7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:blkHelper1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:blkHelper7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:blkHelperCall1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:blkHelperCall7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:destrProto": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:exprHelper1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:exprHelper7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:forDirect1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:forDirect7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:getProtoOfInst": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:globalThisSet": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:instConstructor": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:instProtoAccess": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:objAssignProto": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:reflectSet": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:setProtoOf": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:sibBlkDirect1": {
+   "v1": "test_target_io",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:sibBlkDirect7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:sibBlkHelper1": {
+   "v1": "test_target_io",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:sibBlkHelper7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:sibNamedBlkHelper1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:sibNamedBlkHelper7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:strLitCtor": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c4:tryDirect1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c4:tryDirect7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:arrSlotAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:arrayFromOk": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:assignThroughFresh": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:concatTwoLevel": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:destructItems": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:destructItemsSlice": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:entriesFor": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:fnRetMapCall": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:fnReturnChain": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:fnReturnDirect": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:forOfAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:genModule": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_async"
+  },
+  "c5:getterSliceName": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:getterSpread": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:hSlice": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:itemsSliceOk": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c5:iterModule": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:iterViaFn": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:letReassign": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:letReassignCond": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:mapGetBind": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:mapSetAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:objSlotAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:objectValuesAlias": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:objectValuesBind": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:orRecv": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:paramMethodSlice": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_signature"
+  },
+  "c5:rxAliasCtor": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxArr": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxCompile": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxCompileLoad": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxFlagsConst": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxFromFn": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxFromFnFlag": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxFromRx": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxFromRxFlags": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxInFnLocalOk": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c5:rxInObj": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxLastIndexWrite": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxNewLitOk": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c5:rxPlainOk": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c5:rxReplaceG": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxSymbolMatch": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:rxTemplateFlags": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c5:spreadInto": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "ok"
+  },
+  "c5:ternaryRecv": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c6:iterViaFn": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c6:iterViaFnStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c6:rxFromFn": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c6:rxFromFnFlag": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c6:rxFromFnFlagStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c6:rxFromFnStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c7:rxLastMatch": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c7:rxStatic1": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "c7:rxStatic7": {
+   "v1": "test_target_signature",
+   "v2": "test_target_signature",
+   "v3": "test_target_signature",
+   "v4": "test_target_signature",
+   "v5": "test_target_signature",
+   "v6": "test_target_signature",
+   "v7": "test_target_impure"
+  },
+  "c7:rxStaticEl": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:mapStoreStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:patchAliasSameMod": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:patchAliasStr": {
+   "v1": "test_target_io",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:patchNamedImport": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:patchObjAliasStr": {
+   "v1": "test_target_io",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:pureStr": {
+   "v1": "ok",
+   "v2": "ok",
+   "v3": "ok",
+   "v4": "ok",
+   "v5": "ok",
+   "v6": "ok",
+   "v7": "ok"
+  },
+  "extra:regexLitG": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:regexNewNoFlag": {
+   "v1": "ok",
+   "v2": "ok",
+   "v3": "ok",
+   "v4": "ok",
+   "v5": "ok",
+   "v6": "ok",
+   "v7": "ok"
+  },
+  "extra:regexNewY": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:setStoreStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  },
+  "extra:siblingStoreStr": {
+   "v1": "test_target_impure",
+   "v2": "test_target_impure",
+   "v3": "test_target_impure",
+   "v4": "test_target_impure",
+   "v5": "test_target_impure",
+   "v6": "test_target_impure",
+   "v7": "test_target_impure"
+  }
+ }
+}
