@@ -15,8 +15,9 @@ fix-free grading as v4. Only `params.target` differs: `exported-pure-function-v5
 - `typeof N`: accepted only when N names a top-level `const` binding of the module (or a named import from a
   relative sibling followed under the v2 import rules), never reassigned or mutated, that is not also a function,
   type or enum name, and whose initializer is a string, number (incl. `-n`) or boolean literal, optionally
-  parenthesized or `as const`; or whose type annotation is itself plain data under v4. A `typeof` naming one of the
-  function's own parameters is that parameter's type and is refused.
+  parenthesized or `as const`. A type annotation alone never qualifies (M92: `const N: number = Date.now()` is
+  refused); an annotation next to a literal initializer must itself be plain data under v4. A `typeof` naming one of
+  the function's own parameters is that parameter's type and is refused.
 - `T["k"]`: accepted only when k is a single string literal and T is a type literal, or a non-generic interface
   without heritage clauses, or an alias of a type literal (local or a followed sibling), that v4 accepts as plain
   data, and k names one of its required property signatures; the property type must be plain data.

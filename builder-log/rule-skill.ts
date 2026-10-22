@@ -32,6 +32,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-test-case-existing-v3": "TEST_CASE_EXISTING", // M88: v3 target (the global Date in signatures, Date literals, objects nested in arrays); same kind
   "public-test-case-existing-v4": "TEST_CASE_EXISTING", // M90: v4 target (optional / literal-default params, Array/ReadonlyArray/Readonly/Partial/Record/Pick/Omit, wider type bounds); same kind
   "public-test-case-existing-v5": "TEST_CASE_EXISTING", // M91: v5 target (typeof of literal consts, string-literal property lookups); same kind
+  "public-test-case-existing-v6": "TEST_CASE_EXISTING", // M93: v6 target (top-level unknown params, NodeJS.ProcessEnv params with an overridden process.env default); same kind
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */
