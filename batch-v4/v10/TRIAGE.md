@@ -53,8 +53,9 @@ Projected coverage (official now 74/205 = 36.1%):
 ## Dropped / notes
 - Z16 reconstructFeatures (src/features.ts, v5): one candidate, typecheck / suite / new test ok, but Job B grades it UNGRADABLE
   (not-test-only, before_fix=null): the stubbed copy could not be graded. Would not count; dropped (calls kept in dropped.json).
-- Z15 aggregateIntradayBars: the single VALID_TRADED bar check was removed: v5 refuses check literals that set optional members
-  (open/high/low/close/volume), test_refused; bisected on the box, not a length bound. The 4 kept checks (interval guards 25 and 5,
+- Z15 aggregateIntradayBars: the single VALID_TRADED bar check was removed: v5 refuses it (test_refused) because the bar literal
+  has 17 keys, over MAX_OBJECT_KEYS = 16 (corrected: an earlier draft blamed optional members; the halted bar omits them and so
+  also stays under 16 keys). The 4 kept checks (interval guards 25 and 5,
   empty list, a halted bar) solve. See NEXT-SKILL.md.
 - Z4 errorClass: the call errorClass({ code: 5 }) returns "[object" (String(value) cut at the first space); not pinned (SKIP in mk.py),
   it looks unintended and should not be locked in by a characterization test.
