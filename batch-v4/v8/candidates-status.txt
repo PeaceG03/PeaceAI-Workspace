@@ -1,2 +1,15 @@
-batch-v8 prepared 2026-10-21 (not filed). PeaceSTOCKS base 663e31e, Workspace main 129a084.
-Each task: exactly one candidate, Job B grading=COUNTS, independent grade pass; final bodies re-run (runs-final) give byte-identical diffs.
+batch-v8 filed 2026-10-21 19:03 MDT (01:04Z Oct 22) with Peace's OK (19:03 MDT). PeaceSTOCKS base 663e31e, Workspace main 129a084.
+Each issue: exactly one candidate (A), Job B grading=COUNTS, review diff byte-identical to candidates/X*.diff, rule as in the dry-run.
+Peace /verdict A right on all 11; peacestocks-write runs approved by Builder at Peace's request after Auditor PASS; bot PRs PeaceSTOCKS#29-#39
+(Auditor PASS on heads) squash-merged 2026-10-21 22:02 MDT; PeaceSTOCKS main ef9778e CI Tests 585/585. builder-log seq 237-247: Workspace PR #438.
+X1   #427 maxChainOf                    A COUNTS (run 39703510703, public-test-case-existing-v2@2baeab3b) review matches local diff; PeaceSTOCKS#31 -> 6f87c78
+X2   #428 isTenMinRangeAbortError       A COUNTS (run 39703804932, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#39 -> ef9778e
+X3   #429 tenMinRangeGapReason          A COUNTS (run 39704121660, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#34 -> aebe643
+X4   #430 datedTickerDatePrefix         A COUNTS (run 39704451827, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#33 -> 67ce5cb
+X5   #431 isTransientHistoryError       A COUNTS (run 39704768326, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#29 -> 625acbf
+X8   #432 dailyReplyDustFileKey         A COUNTS (run 39705108041, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#37 -> 3bde245
+X9   #433 addCalendarYears              A COUNTS (run 39705485615, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#32 -> da05efb
+X10  #434 parseChainIndex               A COUNTS (run 39705824934, public-test-case-existing-v2@2baeab3b) review matches local diff; PeaceSTOCKS#35 -> 4184452
+X11  #435 estimateTenMinRangeRemaining  A COUNTS (run 39706391516, public-test-case-existing-v2@2baeab3b) review matches local diff; PeaceSTOCKS#30 -> 0c91b97
+X12  #436 readbackVerdict               A COUNTS (run 39706706715, public-test-case-existing-v2@2baeab3b) review matches local diff; PeaceSTOCKS#38 -> 1a07238
+X13  #437 bandOf                        A COUNTS (run 39707055306, public-test-case-existing-v1@81aba1e3) review matches local diff; PeaceSTOCKS#36 -> 88932ea
