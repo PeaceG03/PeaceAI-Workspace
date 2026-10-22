@@ -47,3 +47,10 @@
 - Census PeaceSTOCKS ef9778e: v5 112 -> v6 122 (+10, 0 lost) (/workspace/te7/census6.mts).
 - Evidence 19 examples / 17 repos (11 ProcessEnv, 8 unknown); mining scripts /workspace/te7/mine (mine6, build-te6, ev6, notices6, corecheck).
 - Box checks green (tools 1116/1121, only m48 box-only fail). Next: sim (/workspace/te7/sim) + stress v1 baseline runs-m93 and sim runs-m93-sim, then PR.
+
+## #466 Date-setter ruling checkpoint (11:10 MDT 2026-10-22)
+- e938b8c pushed on m97/test-case-existing-v7: freshDateSetters + dateRefusalTE (TE-only), Date-to-string refusal, m97-te7-datesetter test. TE suites 180/180.
+- Census head (0ab37c8): v1 35 v2 76 v3 87 v4 102 v5 109 v6 118 v7 123; gains vs 035d215 = addCalendarDays chain (7 fns). /tmp/w466y/cen.json, main /tmp/w466y/cen-main.json.
+- ONEOFF 12 NOT recovered: us-calendar nyseClosedDates mutates goodFriday = easterSunday(year) (Date returned then mutated by caller = required refusal). Experiment /tmp/oo (copy patched) -> /tmp/w466y/cen-oo.json.
+- Head-not-main: the 7 addCalendarDays-chain fns (fresh new Date(`${date}T00:00:00Z`).setUTCDate) — conflicts with the subset requirement; reporting.
+- Next: subset probes, landed, v10, ev, box, CI, PR body, stress.
