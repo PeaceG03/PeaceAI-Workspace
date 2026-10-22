@@ -1,0 +1,16 @@
+diff --git a/src/ticker-reference-dated.full-flag-f0ced92.test.ts b/src/ticker-reference-dated.full-flag-f0ced92.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..aec38e536f5b6dcfc1b15640308a23503d5248a7
+--- /dev/null
++++ b/src/ticker-reference-dated.full-flag-f0ced92.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { tickerIndexDatedFullEnabled } from "./ticker-reference-dated";
++
++test("full flag", () => {
++  assert.equal(tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED_FULL: "true", TICKER_INDEX_DATED: "true" }), true);
++  assert.equal(tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED: "true" }), false);
++  assert.equal(tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED_FULL: "1" }), false);
++  assert.equal(tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED_FULL: "True" }), false);
++});

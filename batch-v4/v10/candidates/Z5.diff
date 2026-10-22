@@ -1,0 +1,19 @@
+diff --git a/src/tenmin-range-reply-dust.request-counts-8b95343.test.ts b/src/tenmin-range-reply-dust.request-counts-8b95343.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..55b24f7df02a0b7b9f394ae9aa20f16eff37ea02
+--- /dev/null
++++ b/src/tenmin-range-reply-dust.request-counts-8b95343.test.ts
+@@ -0,0 +1,13 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { tenMinMassiveRequestsOf } from "./tenmin-range-reply-dust";
++
++test("request counts", () => {
++  assert.equal(tenMinMassiveRequestsOf({ tenMinMassiveRequests: 3 }), 3);
++  assert.equal(tenMinMassiveRequestsOf({ tenMinMassiveRequests: 0 }), 0);
++  assert.equal(tenMinMassiveRequestsOf({ tenMinMassiveRequests: -2 }), 0);
++  assert.equal(tenMinMassiveRequestsOf({ tenMinMassiveRequests: 1.5 }), 0);
++  assert.equal(tenMinMassiveRequestsOf({ tenMinMassiveRequests: "4" }), 0);
++  assert.equal(tenMinMassiveRequestsOf(null), 0);
++  assert.equal(tenMinMassiveRequestsOf("boom"), 0);
++});

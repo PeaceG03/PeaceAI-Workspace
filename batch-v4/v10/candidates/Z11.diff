@@ -1,0 +1,14 @@
+diff --git a/src/corporate-action-coverage.session-dedupe-and-counts-765ca1d.test.ts b/src/corporate-action-coverage.session-dedupe-and-counts-765ca1d.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a593d4ba265ed0c66ca03e96e2cfe76edbb501ac
+--- /dev/null
++++ b/src/corporate-action-coverage.session-dedupe-and-counts-765ca1d.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { corporateActionCoverageRecords } from "./corporate-action-coverage";
++
++test("session dedupe and counts", () => {
++  assert.deepEqual(corporateActionCoverageRecords(["2025-10-15", "2025-10-14", "2025-10-15"], [{ effectiveDate: "2025-10-15" }, { effectiveDate: "2025-10-15" }, { effectiveDate: "2025-10-01" }], { provider: "p", source: "s", recordedAt: "t", datasets: ["stocks-splits"] }), [{ schemaVersion: "corporate-action-coverage-v1", sessionDate: "2025-10-14", provider: "p", datasets: ["stocks-splits"], actions: 0, recordedAt: "t", source: "s" }, { schemaVersion: "corporate-action-coverage-v1", sessionDate: "2025-10-15", provider: "p", datasets: ["stocks-splits"], actions: 2, recordedAt: "t", source: "s" }]);
++  assert.deepEqual(corporateActionCoverageRecords([], [{ effectiveDate: "2025-10-15" }], { provider: "p", source: "s", recordedAt: "t" }), []);
++});

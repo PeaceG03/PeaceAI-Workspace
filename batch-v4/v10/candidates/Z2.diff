@@ -1,0 +1,18 @@
+diff --git a/src/identity.key-order-and-nesting-f878d28.test.ts b/src/identity.key-order-and-nesting-f878d28.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..60c1948468deec6b45193f2e624f721bed9c2da0
+--- /dev/null
++++ b/src/identity.key-order-and-nesting-f878d28.test.ts
+@@ -0,0 +1,12 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { stableJson } from "./identity";
++
++test("key order and nesting", () => {
++  assert.equal(stableJson({ symbol: "AAA", id: 7, tags: ["b", "a"] }), '{"id":7,"symbol":"AAA","tags":["b","a"]}');
++  assert.equal(stableJson([1, [2, { k: false }]]), '[1,[2,{"k":false}]]');
++  assert.equal(stableJson(3.5), "3.5");
++  assert.equal(stableJson({ nested: { y: null, x: "" } }), '{"nested":{"x":"","y":null}}');
++  assert.equal(stableJson(true), "true");
++  assert.equal(stableJson({ "b-key": 2, "a key": 1 }), '{"a key":1,"b-key":2}');
++});

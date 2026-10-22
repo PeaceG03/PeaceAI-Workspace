@@ -1,0 +1,16 @@
+diff --git a/src/tenmin-daily-liquid.redispatch-hold-values-6e3a9ab.test.ts b/src/tenmin-daily-liquid.redispatch-hold-values-6e3a9ab.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cf7c624e1546d0a36e14b1cdf1e6aa4e6ca142b
+--- /dev/null
++++ b/src/tenmin-daily-liquid.redispatch-hold-values-6e3a9ab.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { tenMinDailyRedispatchHold } from "./tenmin-daily-liquid";
++
++test("redispatch hold values", () => {
++  assert.equal(tenMinDailyRedispatchHold({ TENMIN_AUTO_REDISPATCH: "" }), 'SKIP_REDISPATCH_PAUSED:TENMIN_AUTO_REDISPATCH=""');
++  assert.equal(tenMinDailyRedispatchHold({ TENMIN_AUTO_REDISPATCH: "TRUE" }), 'SKIP_REDISPATCH_PAUSED:TENMIN_AUTO_REDISPATCH="TRUE"');
++  assert.equal(tenMinDailyRedispatchHold({ TENMIN_AUTO_REDISPATCH: "true", TENMIN_DAILY_ENABLED: "false" }), undefined);
++  assert.equal(tenMinDailyRedispatchHold({ TENMIN_DAILY_ENABLED: "true" }), "SKIP_REDISPATCH_PAUSED:TENMIN_AUTO_REDISPATCH=unset");
++});
