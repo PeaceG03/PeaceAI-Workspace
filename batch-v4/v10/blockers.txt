@@ -1,0 +1,25 @@
+refusals {"test_target_signature":98,"test_target_io":16,"test_target_date_local":24,"test_target_impure":23,"test_target_async":3}
+signature blockers: any / sole blocker / sole blocker and body passes
+  18    6    4 Map/Set    massive-provider.ts#groupedDailySymbolIndex oct2024-tenmin-oneoff.ts#dollarVolumeBySecurity oct2024-tenmin-oneoff.ts#storedByFetchFrom tenmin-range-reply-dust.ts#compatibleStoredFetches
+   8    7    3 void    daily-bar-sessions.ts#requireMonth object-store.ts#assertObjectMetadata tenmin-redispatch.ts#assertCancelRunAccepted
+  27   15    2 method-member    intraday.ts#intradaySessionSpec scan-yield.ts#rateLimitInfo
+   6    2    2 callback    daily-bars-sidecar.ts#securitySymbols reply-dust-pin.ts#assertPinnedZstdForWriting
+  32    7    1 bytes    intraday-reply-dust.ts#sameBytes
+   6    1    1 indexed-access    tenmin-redispatch.ts#tenMinDatedIndexMadeProgress
+   3    1    1 interface-extends    ticker-reference-index.ts#tickerReferenceEntry
+   2    1    1 untyped-nonliteral-default    oct2024-tenmin-oneoff.ts#decideOneOffNext
+  24    1    0 typeof    
+   8    1    0 unknown/any    
+   6    4    0 params>4    
+   5    0    0 depth>6    
+   3    1    0 global    
+   3    1    0 tuple    
+   2    1    0 no-return-annotation    
+   2    0    0 record-key    
+   1    0    0 intersection    
+   1    0    0 class    
+   1    0    0 NodeJS.ProcessEnv    
+   1    0    0 generic-fn    
+   1    0    0 kind    
+   1    1    0 generic    
+body refusals 66 {"test_target_io":16,"test_target_date_local":24,"test_target_impure":23,"test_target_async":3}
