@@ -199,3 +199,7 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - 13 tasks Y1-Y13 ready (11 v4, 1 v3, 1 v1), each one COUNTS candidate (runs-final identical to dry run); all 13 applied: suite 598/598, 4 typechecks ok; proposal-gate PASS. NOT filed (needs Peace's OK). Projected coverage 74/205 = 36.1%.
 - Box: /workspace/batch-v9 (ws = Workspace 3670cd8 worktree, stocks/grade = PeaceSTOCKS ef9778e, runs, runs-final, v9 scripts, b = Part B census).
 - Part B: batch-v4/v9/NEXT-SKILL.md recommends v5 = typeof of literal consts + T["key"] lookups (~+9). Not started.
+
+## 2026-10-22 ~09:00Z pnpm retry + M93 v6 skill (both open, NOT merged)
+- PR #459 fix/pnpm-download-retry head b805d0a: install-target.sh 3 attempts (15s/45s backoff), 4 tests. CI green. Awaiting Auditor.
+- PR #460 m93/test-existing-v6 head b94b68f: spec public-test-case-existing-v6 sha 358edf11b157db360c801406a4be102f2d6258f06287dfc165dc8a2e8a55e51a. Census PeaceSTOCKS ef9778e: v5 112 -> v6 122 (+10, 0 lost). Stress v1 baseline and sim both 59/66, 0 wrong (runs-m93, runs-m93-sim). CI green. Awaiting Auditor; then rule-proposal issue; Peace /approve-rule.
