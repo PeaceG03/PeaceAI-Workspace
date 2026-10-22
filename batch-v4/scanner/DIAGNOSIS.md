@@ -124,3 +124,15 @@ thing filling bars.
 
 ## Open checks (need approval)
 - A read-only R2 count of objects/bytes in the bucket would confirm root-cause 2's scale. It needs the R2 credential, so not done.
+
+## Drafted tasks (NOT filed; filing needs Peace's OK): issues/S1..S3 (.md body, .json title+body)
+Box dry-run: PeaceSTOCKS 0ab37c8, Workspace 1e8448a, kernel /workspace/stress/kernel.cjs, Node 20.
+Each produced exactly one candidate (public-add-function-v2). Job B graded COUNTS, suite 599/599, 4 typechecks ok,
+and the new test fails with the body stubbed. (The v10 harness prints WRONG only because it expects test-only, one-file
+tasks; these add a module plus a test.)
+- S1 isRetryableR2Status(status) in src/r2-retry-status.ts (fix C core)
+- S2 r2RetryDelayMs(attempt, baseMs) in src/r2-retry-delay.ts (fix C core)
+- S3 hostFailureLine(message, causeCode) in src/host-failure-line.ts (fix A core). A template-literal phrasing was
+  refused (task_unparsed), so the body uses `+` concatenation.
+Wiring tasks for A-F are not drafted as issues: no approved rule can build them (G1-G4). They are specced above
+for when the skills exist.
