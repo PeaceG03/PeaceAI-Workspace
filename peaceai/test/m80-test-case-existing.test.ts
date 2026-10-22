@@ -193,7 +193,7 @@ test("refusals: impurity (test_target_impure)", () => {
   assert.equal(refusal("export function f(s: string): string { return Buffer.from(s).toString(\"hex\"); }\n"), TEST_TARGET_IMPURE, "unlisted global");
   // #466: the fresh-local-Date setter allowance is v7 only; v1 (like v2-v6) refuses every Date setter, as at main.
   assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setUTCDate(1); return d.getTime(); }\n"), TEST_TARGET_IMPURE, "date setter");
-  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setDate(1); return d.getTime(); }\n"), TEST_TARGET_IMPURE, "local-time date setter");
+  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setDate(1); return d.getTime(); }\n"), TEST_TARGET_DATE_LOCAL, "local-time date setter (#466 4th review: the fail-closed Date check names it first)");
   assert.notEqual(refusal("export function f(d: Date): number { d.setUTCDate(1); return d.getTime(); }\n"), null, "setter on a parameter Date (v1: a Date parameter is already a signature refusal)");
   assert.equal(refusal("export function f(o: string[]): number { Object.assign(o, [1]); return o.length; }\n"), TEST_TARGET_IMPURE);
   assert.equal(refusal("export function f(xs: number[]): number[] { const out: number[] = []; for (const x of xs) out.push(x * 2); return out; }\n"), null, "local array is fine");
@@ -336,6 +336,7 @@ test("Job B: passes today + fails on the stub COUNTS; a stub-satisfied test is r
     rmSync(fx.dir, { recursive: true, force: true });
   }
 });
+const r0 = (tc: string): string => tc.slice(tc.indexOf("function runExistingTests("), tc.indexOf("function gradeExisting("));
 test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three real runs, credited stub only", () => {
   const tc = read("peaceai/bin/test-candidates.ts");
   const g = tc.slice(tc.indexOf("function gradeExisting("), tc.indexOf("/**\n * M13: grading of a learned guard"));
@@ -346,7 +347,12 @@ test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three r
   // M88: v3 candidates arrive with v2 set and add the global Date (`dates: v3`); M90: v4 adds `v4`.
   assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null/);
   assert.match(g, /moduleReadClosure\(modPath, regular\)/);
-  assert.match(g, /i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runExistingTests\(tree, newTests, reads\)\.ok\)/);
+  // #466 4th review: the further real runs are one per zone (UTC, America/Denver, Asia/Tokyo), so with the first run
+  // they are at least REAL_RUNS_REQUIRED, and a result that depends on the process zone is real-not-stable.
+  assert.match(g, /if \(afterFix\) for \(const tz of EXISTING_TZ_RUNS\) if \(!runExistingTests\(tree, newTests, reads, false, tz\)\.ok\) return ungradable\("real-not-stable"\);/);
+  assert.match(tc, /export const EXISTING_TZ_RUNS = \["UTC", "America\/Denver", "Asia\/Tokyo"\] as const;/);
+  assert.match(r0(tc), /TSX_DISABLE_CACHE: "1", \.\.\.\(tz \? \{ TZ: tz \} : \{\}\)/);
+  assert.match(g, /if \(dateTestProblem\(real, fn, test, called\[0\]!\.local\) !== null\) return ungradable\("not-test-only"\);/);
   assert.match(g, /run = runExistingTests\(tree, newTests, reads, true\);/);
   const r = tc.slice(tc.indexOf("function runExistingTests("), tc.indexOf("function gradeExisting("));
   assert.match(r, /const args = \["--permission", /);

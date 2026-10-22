@@ -14,7 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
-import { envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
+import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
@@ -136,7 +136,9 @@ const REAL_RUNS_REQUIRED = 3;
  * no fs write, no child_process, worker threads only for tsx's loader, tsx cache off, one process per test file, the
  * stub's notes on a parent-only write-only channel. Node < 22 never reaches this (the caller is not-confined first).
  */
-function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
+/** Auditor #466 (4th review): the zones every TEST_CASE_EXISTING test is run in after pass 2 (gradeExisting). */
+export const EXISTING_TZ_RUNS = ["UTC", "America/Denver", "Asia/Tokyo"] as const;
+function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false, tz?: string): { ok: boolean; out: string; confined: boolean; notes: number } {
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
   const realTree = realpathSync(tree);
@@ -152,7 +154,7 @@ function runExistingTests(tree: string, tests: readonly string[], reads: readonl
       fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
     }
     try {
-      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1" }, fd);
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1", ...(tz ? { TZ: tz } : {}) }, fd);
       ok &&= r.ok;
       outs.push(r.out);
       if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
@@ -352,9 +354,14 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6, v7 } : { load: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) } }) !== null) return ungradable("not-test-only");
   if (v6 && envArgProblem(real, fn, test) !== null) return ungradable("not-test-only");
   if (v7 && (voidTestProblem(real, fn, test) !== null || mapSetTestProblem(test) !== null)) return ungradable("not-test-only");
+  // Auditor #466 (4th review), every version: the test side of the fail-closed Date check (dateTestProblem).
+  if (dateTestProblem(real, fn, test, called[0]!.local) !== null) return ungradable("not-test-only");
   const reads = moduleReadClosure(modPath, regular);
   if (!reads) return ungradable("module-imports-repo-files");
-  if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runExistingTests(tree, newTests, reads).ok) return ungradable("real-not-stable");
+  // Auditor #466 (4th review), the zone BACKSTOP, every version: the further real runs are one per EXISTING_TZ_RUNS
+  // zone (UTC, America/Denver, Asia/Tokyo; more than the REAL_RUNS_REQUIRED - 1 runs this replaces); a test whose
+  // result depends on the process zone fails one of them (real-not-stable).
+  if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, reads, false, tz).ok) return ungradable("real-not-stable");
   // M88: `v2` is also set for v3 candidates, so a Date return stubs to `{}` as an object return does under v2;
   // deepEqual against a Date literal then fails by assertion (ERR_ASSERTION), the only credited failure.
   const stub = stubAll(real, [fn], v2);

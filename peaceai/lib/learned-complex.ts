@@ -79,6 +79,15 @@ export function dateRefusal(body: ts.Node): string | null {
       else if (LOCAL_DATE_READS.test(n.name.text)) set(DATE_LOCAL_TIME);
       else if (DATE_SETTERS.test(n.name.text)) set(DATE_SETTER);
     }
+    // Auditor #466 (4th review), every caller: the same names reached by a literal key (`d["getHours"]()`,
+    // `d["setDate"](2)`, `Date["now"]()`) are the same reads and writes.
+    if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression)) {
+      const k = n.argumentExpression.text;
+      if (isDate(n.expression) && k === "now") set(DATE_NOW);
+      else if (isDate(n.expression) && k === "parse") set(DATE_LOCAL_TIME);
+      else if (LOCAL_DATE_READS.test(k)) set(DATE_LOCAL_TIME);
+      else if (DATE_SETTERS.test(k)) set(DATE_SETTER);
+    }
     ts.forEachChild(n, v);
   };
   v(body);

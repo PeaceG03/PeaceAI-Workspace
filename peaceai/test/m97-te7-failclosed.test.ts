@@ -127,11 +127,12 @@ test("Auditor #466 Job A repros (e2e: a test that passed twice): no candidate un
 // The pinned public evidence fixtures pin the target module and the siblings the analysis follows, not every module
 // in their load closure, so the fail-closed load allowlist refuses some of them (an unpinned relative import or a
 // package import is unseen code). The evidence tests replay existingTargetAnalysisForEvidence; the full-engine counts
-// are pinned here so any drift is visible. Bar is 10 for every version.
+// are pinned here so any drift is visible. Bar is 10 for every version. #466 4th review: v3 5 -> 4 (intervalsToTimeSlots:
+// `new Date(interval.start)` of a field, unproven provenance; fail-closed Date use).
 test("full-engine evidence replay counts (reported, not a gate)", () => {
   const V: [string, string, Record<string, unknown> | null, number][] = [
     ["v1", "m80-test-case-existing-evidence.json", null, 7], ["v2", "m85-test-case-existing-v2-evidence.json", {}, 6],
-    ["v3", "m88-test-case-existing-v3-evidence.json", { dates: true }, 5], ["v4", "m90-test-case-existing-v4-evidence.json", { v4: true }, 7],
+    ["v3", "m88-test-case-existing-v3-evidence.json", { dates: true }, 4], ["v4", "m90-test-case-existing-v4-evidence.json", { v4: true }, 7],
     ["v5", "m91-test-case-existing-v5-evidence.json", { v5: true }, 4], ["v6", "m93-test-case-existing-v6-evidence.json", { v6: true }, 11],
     ["v7", "m97-test-case-existing-v7-evidence.json", { v7: true }, 14],
   ];

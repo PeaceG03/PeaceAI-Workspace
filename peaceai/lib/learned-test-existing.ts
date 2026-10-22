@@ -12,7 +12,7 @@
 //   outside the vocabulary (test_target_signature). No model.
 import ts from "typescript";
 import { createHash } from "node:crypto";
-import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isMapSetLiteral, parseTestTask, type TestTask } from "./learned-test.ts";
+import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isDateLiteral, isMapSetLiteral, ISO_DATE_TEXT, parseTestTask, type TestTask } from "./learned-test.ts";
 import { DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, dateRefusal, plainPath } from "./learned-complex.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
@@ -387,10 +387,12 @@ function teDateToString(node: ts.Node): boolean {
   return hit;
 }
 /** dateRefusal, plus Date-to-string conversions (teDateToString, every version); with `freshSetters` (v7 only), setter calls proven to act on a fresh local Date (freshDateSetters) are not refused. */
-function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters: boolean): string | null {
+function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters: boolean, tested?: ts.Node): string | null {
   const r = dateRefusal(node);
   if (r === DATE_NOW || r === DATE_LOCAL_TIME) return r;
   if (teDateToString(node)) return DATE_LOCAL_TIME;
+  // Auditor #466 (4th review), every version: the fail-closed Date-use allowlist (teDateUseProblem).
+  if (teDateUseProblem(node, tested)) return DATE_LOCAL_TIME;
   // Decision #466: the fresh-Date setter allowance is v7 only; v1-v6 refuse every Date setter, as at main.
   if (r !== DATE_SETTER || !freshSetters) return r;
   const ok = freshDateSetters(node, scopeFn);
@@ -412,6 +414,503 @@ function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters
   return local ? DATE_LOCAL_TIME : setter ? DATE_SETTER : null;
 }
 
+/**
+ * Auditor #466 (4th review), FAIL-CLOSED DATE USE, every version (v1-v7; only adds refusals). A Date object is
+ * zone-free only through its UTC surface. Instead of naming the conversions that read the zone (toString, String(),
+ * templates, `+`, join, concat, replace, padEnd, encodeURIComponent, `d["getHours"]`, Reflect.apply, ...), a
+ * Date-VALUED expression may appear only
+ * - as the receiver of a dotted call of setTime / setUTC* / getUTC* / getTime / valueOf / toISOString
+ *   (`d.getTime()`, `d?.getTime()`; the setters stay refused by dateRefusal below v7 and outside a proven-fresh local);
+ * - as the bare value of `return` (or an arrow's expression body) of the tested function, or of a non-exported
+ *   named function / const arrow of the same file every reference of which is a direct call (`g(..)`);
+ * - as the initializer of a simple local or non-exported module binding (`const d = new Date(x)`) or the right side
+ *   of a plain `=` to such a name (the binding is then Date-valued, its uses held to the same rule);
+ * - through parentheses, `!` (non-null), `as` / `satisfies` a Date type, a `?:` branch, `??` / `||` / `&&` operands,
+ *   the right side of a comma, and as an expression statement (value discarded).
+ * Everything else refuses (date_local_time): element access, array / object literals, call or `new` arguments
+ * (including `new Date(d)`, `String(d)`, `JSON.stringify(d)`, `Object.assign(d, ..)`, `Reflect.apply(.., d, ..)`),
+ * spread, templates, every operator (`+`, `<`, `-`, `==`, `!`), `as` another type, property stores, `.call` / `.bind`.
+ * Date-VALUED (syntax only, no type checker): `new Date(..)`; a name whose innermost declaration is annotated with a
+ * type mentioning Date, initialized or `=`-assigned a Date-valued expression; a call of a same-file function
+ * annotated to return a type mentioning Date or returning a Date-valued expression; the wrappers above.
+ * The `Date` global itself may only be the callee of `new Date(..)` or the receiver of `Date.UTC(..)`
+ * (Date.now / Date.parse stay refused by dateRefusal): `Date()` (a local-time string), `Date.prototype.getHours.call`,
+ * `const D = Date`, `Reflect.construct(Date, ..)` refuse. A file declaring its own `Date` refuses any Date use.
+ * DATE STRINGS (blocker 3): `new Date(x)` with one argument only when x is provably not a zoneless date string: a
+ * number expression (numeric literal, arithmetic, unary +/-, Date.UTC, getTime / valueOf / getUTC*, Math.*, Number,
+ * parseInt / parseFloat, `.length`, a const / never-reassigned let initialized so), an ISO literal with an explicit Z
+ * or offset or a date-only YYYY-MM-DD (ISO_DATE_TEXT, real calendar values), a const naming one; or - tested function
+ * only, never a load-time callee - one of the tested function's own never-reassigned plain parameters, which the
+ * test-side check (dateArgProblem, Job A and Job B) then holds to such a literal in every call of the test.
+ * Anything else (a helper's parameter, a template, a property, a call result) refuses. `new Date(a, b, ..)` (local
+ * fields) and `new Date()` (the clock) stay refused by dateRefusal.
+ */
+const TE_DATE_USE_CALL = /^(?:setTime|setUTC(?:FullYear|Month|Date|Hours|Minutes|Seconds|Milliseconds)|getTime|valueOf|toISOString|getUTC(?:FullYear|Month|Date|Day|Hours|Minutes|Seconds|Milliseconds))$/;
+const TE_DATE_NUM_READ = /^(?:getTime|valueOf|getUTC(?:FullYear|Month|Date|Day|Hours|Minutes|Seconds|Milliseconds))$/;
+const TE_ARITH = new Set([ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken, ts.SyntaxKind.AmpersandToken, ts.SyntaxKind.BarToken, ts.SyntaxKind.CaretToken, ts.SyntaxKind.LessThanLessThanToken, ts.SyntaxKind.GreaterThanGreaterThanToken, ts.SyntaxKind.GreaterThanGreaterThanGreaterThanToken]);
+const TE_BIND_ASSIGN = new Set([ts.SyntaxKind.EqualsToken, ts.SyntaxKind.QuestionQuestionEqualsToken, ts.SyntaxKind.BarBarEqualsToken, ts.SyntaxKind.AmpersandAmpersandEqualsToken]);
+interface TeDateIdx {
+  sf: ts.SourceFile;
+  decls: Map<string, { d: ts.Node; h: ts.Node; s: number; e: number }[]>;
+  refs: Map<string, ts.Identifier[]>;
+  assigns: Map<string, ts.BinaryExpression[]>;
+  exported: Set<string>;
+  dateDeclared: boolean;
+  dv: Map<ts.Node, boolean>;
+  res: Map<ts.Identifier, ts.Node | null>;
+  /** tested functions found returning a Date inside a literal (checked by dateImportedBack like a Date return) */
+  containerReturn: Set<ts.Node>;
+}
+const teDateIdxCache = new WeakMap<ts.SourceFile, TeDateIdx>();
+function teDateIdx(sf: ts.SourceFile): TeDateIdx {
+  const hit = teDateIdxCache.get(sf);
+  if (hit) return hit;
+  const X: TeDateIdx = { sf, decls: new Map(), refs: new Map(), assigns: new Map(), exported: new Set(), dateDeclared: teFileDeclares(sf, "Date"), dv: new Map(), res: new Map(), containerReturn: new Set() };
+  const push = <T>(m: Map<string, T[]>, k: string, v: T) => { const l = m.get(k); if (l) l.push(v); else m.set(k, [v]); };
+  const blockHolder = (n: ts.Node): ts.Node => {
+    let p: ts.Node = n.parent;
+    while (!(ts.isBlock(p) || ts.isSourceFile(p) || ts.isModuleBlock(p) || ts.isCaseBlock(p) || ts.isForStatement(p) || ts.isForOfStatement(p) || ts.isForInStatement(p) || ts.isCatchClause(p) || teFnLike(p))) p = p.parent;
+    return p;
+  };
+  const holder = (n: ts.Node): ts.Node => {
+    if (ts.isParameter(n)) return n.parent;
+    if (ts.isVariableDeclaration(n) && ts.isVariableDeclarationList(n.parent) && !(n.parent.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) && !ts.isCatchClause(n.parent)) return teScopeOf(n) ?? sf;
+    if (ts.isBindingElement(n)) { let p: ts.Node = n; while (ts.isBindingElement(p) || ts.isObjectBindingPattern(p) || ts.isArrayBindingPattern(p)) p = p.parent; return holder(p); }
+    if (ts.isImportSpecifier(n) || ts.isImportClause(n) || ts.isNamespaceImport(n) || ts.isImportEqualsDeclaration(n)) return sf;
+    if ((ts.isFunctionExpression(n) || ts.isClassExpression(n))) return n;
+    return blockHolder(n);
+  };
+  const v = (n: ts.Node): void => {
+    const nm = (n as { name?: ts.Node }).name;
+    if (nm && ts.isIdentifier(nm) && (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n) || ts.isImportSpecifier(n) || ts.isImportClause(n) || ts.isNamespaceImport(n) || ts.isEnumDeclaration(n) || ts.isModuleDeclaration(n) || ts.isImportEqualsDeclaration(n))) {
+      const h = holder(n);
+      push(X.decls, nm.text, { d: n, h, s: h.getStart(sf), e: h.end });
+    }
+    if (ts.isIdentifier(n) && isValueReference(n)) push(X.refs, n.text, n);
+    if (ts.isBinaryExpression(n) && TE_BIND_ASSIGN.has(n.operatorToken.kind)) { const l = teUnwrap(n.left); if (ts.isIdentifier(l)) push(X.assigns, l.text, n); }
+    if (ts.isExportSpecifier(n)) X.exported.add((n.propertyName ?? n.name).text);
+    if (ts.isExportAssignment(n) && ts.isIdentifier(n.expression)) X.exported.add(n.expression.text);
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  teDateIdxCache.set(sf, X);
+  return X;
+}
+function teUnwrap(e: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+  return e;
+}
+/** The innermost lexically enclosing declaration of a referenced name (null: a global or unknown name). */
+function teResolve(X: TeDateIdx, id: ts.Identifier): ts.Node | null {
+  if (X.res.has(id)) return X.res.get(id)!;
+  const at = id.getStart(X.sf);
+  let best: ts.Node | null = null, span = Infinity;
+  for (const c of X.decls.get(id.text) ?? []) if (c.s <= at && at < c.e && c.e - c.s < span) { best = c.d; span = c.e - c.s; }
+  X.res.set(id, best);
+  return best;
+}
+const teDateType = (t: ts.TypeNode | undefined): boolean => {
+  let hit = false;
+  const v = (n: ts.Node): void => { if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && n.typeName.text === "Date") hit = true; if (!hit) ts.forEachChild(n, v); };
+  if (t) v(t);
+  return hit;
+};
+/** A whole-type Date: `Date`, or a union of Date with other members (`Date | null`, `Date | string`). */
+function teTopDateType(t: ts.TypeNode | undefined): boolean {
+  if (!t) return false;
+  while (ts.isParenthesizedTypeNode(t)) t = t.type;
+  if (ts.isTypeReferenceNode(t)) return ts.isIdentifier(t.typeName) && t.typeName.text === "Date" && !t.typeArguments;
+  return ts.isUnionTypeNode(t) && t.types.some((m) => teTopDateType(m));
+}
+/** A reference in a write position: `x = ..`, `x += ..`, `x++`, `[x] = ..`, `({ x } = ..)`, `for (x of ..)`. */
+function teWriteRef(id: ts.Identifier): boolean {
+  let c: ts.Node = id;
+  for (;;) {
+    const p = c.parent;
+    if (!p) return false;
+    if (ts.isParenthesizedExpression(p) || ts.isNonNullExpression(p) || ((ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isTypeAssertionExpression(p)) && p.expression === c)) { c = p; continue; }
+    if (ts.isArrayLiteralExpression(p) || ts.isSpreadElement(p) || ts.isSpreadAssignment(p) || ts.isObjectLiteralExpression(p) || (ts.isShorthandPropertyAssignment(p) && p.name === c) || (ts.isPropertyAssignment(p) && p.initializer === c)) { c = p; continue; }
+    if (ts.isBinaryExpression(p) && p.left === c && p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return true;
+    if ((ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === c) return true;
+    if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && (p.operator === ts.SyntaxKind.PlusPlusToken || p.operator === ts.SyntaxKind.MinusMinusToken)) return true;
+    return false;
+  }
+}
+function teRefsOf(X: TeDateIdx, d: ts.Node, name: string): ts.Identifier[] {
+  return (X.refs.get(name) ?? []).filter((r) => teResolve(X, r) === d);
+}
+function teAssignsOf(X: TeDateIdx, d: ts.Node, name: string): ts.BinaryExpression[] {
+  return (X.assigns.get(name) ?? []).filter((b) => teResolve(X, teUnwrap(b.left) as ts.Identifier) === d);
+}
+function teNewDate(X: TeDateIdx, e: ts.Node): e is ts.NewExpression {
+  if (!ts.isNewExpression(e)) return false;
+  const c = teUnwrap(e.expression);
+  return ts.isIdentifier(c) && c.text === "Date" && !teResolve(X, c);
+}
+/** The function a callee name resolves to in this file (a declaration, or a const / let initialized with one). */
+function teCalleeFn(X: TeDateIdx, callee: ts.Expression): ts.FunctionLikeDeclaration | null {
+  const c = teUnwrap(callee);
+  if (!ts.isIdentifier(c)) return null;
+  const d = teResolve(X, c);
+  if (d && ts.isFunctionDeclaration(d)) return d;
+  if (d && ts.isVariableDeclaration(d) && d.initializer) { const i = teUnwrap(d.initializer); if (ts.isArrowFunction(i) || ts.isFunctionExpression(i)) return i; }
+  return null;
+}
+function teReturnsDate(X: TeDateIdx, f: ts.FunctionLikeDeclaration): boolean {
+  if (teDateType(f.type)) return true;
+  if (!f.body) return false;
+  if (!ts.isBlock(f.body)) return teDateValued(X, f.body);
+  let hit = false;
+  const v = (n: ts.Node): void => { if (hit) return; if (ts.isReturnStatement(n) && n.expression && teScopeOf(n) === f && teDateValued(X, n.expression)) hit = true; ts.forEachChild(n, v); };
+  v(f.body);
+  return hit;
+}
+/** Date-VALUED as far as the syntax shows (see the block comment). A cycle counts as not Date-valued: a Date always starts at a `new Date(..)` or a Date-annotated name, both found directly. */
+function teDateValued(X: TeDateIdx, e0: ts.Expression): boolean {
+  const memo = X.dv.get(e0);
+  if (memo !== undefined) return memo;
+  X.dv.set(e0, false);
+  const e = e0;
+  let r = false;
+  if (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) r = teDateValued(X, e.expression);
+  else if (ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isTypeAssertionExpression(e)) r = teDateType(e.type) || teDateValued(X, e.expression);
+  else if (ts.isNewExpression(e)) r = teNewDate(X, e);
+  else if (ts.isConditionalExpression(e)) r = teDateValued(X, e.whenTrue) || teDateValued(X, e.whenFalse);
+  else if (ts.isBinaryExpression(e)) {
+    const k = e.operatorToken.kind;
+    if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) r = teDateValued(X, e.left) || teDateValued(X, e.right);
+    else if (k === ts.SyntaxKind.CommaToken) r = teDateValued(X, e.right);
+    else if (TE_BIND_ASSIGN.has(k)) r = teDateValued(X, e.right) || (k !== ts.SyntaxKind.EqualsToken && teDateValued(X, e.left));
+  } else if (ts.isCallExpression(e)) {
+    const f = teCalleeFn(X, e.expression);
+    r = !!f && teReturnsDate(X, f);
+  } else if (ts.isIdentifier(e)) {
+    const d = teResolve(X, e);
+    if (d && (ts.isVariableDeclaration(d) || ts.isParameter(d)) && ts.isIdentifier(d.name)) {
+      r = teDateType(d.type) || (!!d.initializer && teDateValued(X, d.initializer)) || teAssignsOf(X, d, e.text).some((b) => teDateValued(X, b.right))
+        // the element of a for-of over a Date-holding value is held as a Date itself
+        || (ts.isVariableDeclaration(d) && ts.isVariableDeclarationList(d.parent) && ts.isForOfStatement(d.parent.parent) && teDateValued(X, d.parent.parent.expression));
+    }
+  }
+  X.dv.set(e0, r);
+  return r;
+}
+function teExportedBinding(X: TeDateIdx, d: ts.VariableDeclaration | ts.FunctionDeclaration): boolean {
+  if (ts.isFunctionDeclaration(d)) return hasMod(d, ts.SyntaxKind.ExportKeyword) || hasMod(d, ts.SyntaxKind.DefaultKeyword) || (!!d.name && X.exported.has(d.name.text));
+  const st = d.parent?.parent;
+  if (st && ts.isVariableStatement(st) && hasMod(st, ts.SyntaxKind.ExportKeyword)) return true;
+  return ts.isIdentifier(d.name) && ts.isSourceFile(st?.parent ?? d) && X.exported.has(d.name.text);
+}
+/** Every reference of the function's name resolving to it is the direct callee of a call (`g(..)`). */
+function teOnlyCalled(X: TeDateIdx, d: ts.Node, name: string): boolean {
+  return teRefsOf(X, d, name).every((r) => ts.isCallExpression(r.parent) && r.parent.expression === r);
+}
+/** May function f hand a Date to its caller (`return d`)? `contained`: inside an array / object literal it returns. */
+function teMayReturnDate(X: TeDateIdx, f: ts.Node | undefined, tested: ts.Node | undefined, contained = false): boolean {
+  if (!f) return false;
+  // A Date inside a returned literal: the tested function only, never referenced in its own file (the test alone
+  // receives the literal; dateImportedBack keeps every other module the analysis read from importing it).
+  if (contained) { if (f === tested) X.containerReturn.add(f); return f === tested && ts.isFunctionDeclaration(f) && !!f.name && teRefsOf(X, f, f.name.text).length === 0; }
+  if (ts.isFunctionDeclaration(f) && f.name) {
+    if (f === tested) return teOnlyCalled(X, f, f.name.text);
+    return !teExportedBinding(X, f) && teOnlyCalled(X, f, f.name.text);
+  }
+  if ((ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isVariableDeclaration(f.parent) && f.parent.initializer === f && ts.isIdentifier(f.parent.name) && ts.isVariableDeclarationList(f.parent.parent) && f.parent.parent.flags & ts.NodeFlags.Const) {
+    return !teExportedBinding(X, f.parent) && teOnlyCalled(X, f.parent, f.parent.name.text);
+  }
+  return false;
+}
+/** Is this Date-valued expression used only as the allowlist permits? */
+function teDateUseOk(X: TeDateIdx, n: ts.Expression, tested: ts.Node | undefined): boolean {
+  let c: ts.Node = n;
+  let contained = false;
+  for (;;) {
+    const p = c.parent;
+    if (!p) return false;
+    if (ts.isParenthesizedExpression(p) || ts.isNonNullExpression(p)) { c = p; continue; }
+    // An element / property value of an array or object literal: allowed only when the literal (through the same
+    // wrappers) is what the tested function returns (teMayReturnDate, contained).
+    if (ts.isArrayLiteralExpression(p) || (ts.isPropertyAssignment(p) && p.initializer === c) || ts.isShorthandPropertyAssignment(p)) { contained = true; c = ts.isArrayLiteralExpression(p) ? p : p.parent; continue; }
+    if (contained && !(ts.isConditionalExpression(p) || ts.isBinaryExpression(p) || ts.isReturnStatement(p) || ts.isArrowFunction(p) || ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isTypeAssertionExpression(p))) return false;
+    if (contained && (ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isTypeAssertionExpression(p))) { c = p; continue; }
+    if (contained && ts.isBinaryExpression(p) && !(p.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || p.operatorToken.kind === ts.SyntaxKind.BarBarToken || p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)) return false;
+    if (contained && ts.isReturnStatement(p)) return p.expression === c && teMayReturnDate(X, teScopeOf(p), tested, true);
+    if (contained && ts.isArrowFunction(p)) return p.body === c && teMayReturnDate(X, p, tested, true);
+    // A whole argument of a direct call of a function of this file, at a parameter whose whole type is Date: the
+    // parameter is then a Date-valued name, its uses held to this same allowlist where that function is analyzed.
+    if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.expression !== c && ts.isCallExpression(p)) {
+      const f = teCalleeFn(X, p.expression);
+      const i = p.arguments.indexOf(c as ts.Expression);
+      const prm = f && i >= 0 ? f.parameters[i] : undefined;
+      return !!prm && ts.isIdentifier(prm.name) && !prm.dotDotDotToken && teTopDateType(prm.type) && !p.arguments.some(ts.isSpreadElement);
+    }
+    if ((ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isTypeAssertionExpression(p)) && p.expression === c) { if (teTopDateType(p.type)) { c = p; continue; } return false; }
+    if (ts.isConditionalExpression(p) && (p.whenTrue === c || p.whenFalse === c)) { c = p; continue; }
+    if (ts.isBinaryExpression(p)) {
+      const k = p.operatorToken.kind;
+      if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) { c = p; continue; }
+      if (k === ts.SyntaxKind.CommaToken) { if (p.left === c) return true; c = p; continue; }
+      // `d - e`, `d < e`, `d === e`: a numeric operator or relation reads a Date through valueOf (hint number), and
+      // strict equality is identity - never `+`, `==` / `!=` (hint default: the zoned text) or compound assignment.
+      if (TE_ARITH.has(k) || k === ts.SyntaxKind.LessThanToken || k === ts.SyntaxKind.LessThanEqualsToken || k === ts.SyntaxKind.GreaterThanToken || k === ts.SyntaxKind.GreaterThanEqualsToken || k === ts.SyntaxKind.EqualsEqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsEqualsToken) return true;
+      // the target of `=` / `??=` / `||=` / `&&=` (never `+=`): written, not read as text (the right side is checked itself)
+      if (TE_BIND_ASSIGN.has(k) && p.left === c) return true;
+      if (TE_BIND_ASSIGN.has(k) && p.right === c) {
+        const l = teUnwrap(p.left);
+        const d = ts.isIdentifier(l) ? teResolve(X, l) : null;
+        if (d && ((ts.isVariableDeclaration(d) && !teExportedBinding(X, d)) || ts.isParameter(d))) { c = p; continue; }
+      }
+      return false;
+    }
+    // `for (const d of ds)`: each element is a Date-valued name (teDateValued), its uses held to this allowlist
+    if (ts.isForOfStatement(p) && p.expression === c) return ts.isVariableDeclarationList(p.initializer) && p.initializer.declarations.length === 1 && ts.isIdentifier(p.initializer.declarations[0]!.name);
+    if (ts.isExpressionStatement(p)) return true;
+    // `!d`: a Date object is always truthy, so the boolean never reads the time zone
+    if (ts.isPrefixUnaryExpression(p) && p.operator === ts.SyntaxKind.ExclamationToken) return true;
+    if (ts.isPropertyAccessExpression(p) && p.expression === c) return TE_DATE_USE_CALL.test(p.name.text) && ts.isCallExpression(p.parent) && p.parent.expression === p;
+    if (ts.isReturnStatement(p) && p.expression === c) return teMayReturnDate(X, teScopeOf(p), tested);
+    if (ts.isArrowFunction(p) && p.body === c) return teMayReturnDate(X, p, tested);
+    if (ts.isVariableDeclaration(p) && p.initializer === c) return ts.isIdentifier(p.name) && !teExportedBinding(X, p);
+    return false;
+  }
+}
+/** A number however the program runs (never a string `new Date(x)` would parse in local time). */
+function teNumeric(X: TeDateIdx, e: ts.Expression, seen = new Set<ts.Node>()): boolean {
+  e = teUnwrap(e);
+  if (seen.has(e)) return false;
+  seen.add(e);
+  if (ts.isNumericLiteral(e) || ts.isBigIntLiteral(e)) return true;
+  if (ts.isPrefixUnaryExpression(e)) return e.operator === ts.SyntaxKind.PlusToken || e.operator === ts.SyntaxKind.MinusToken || e.operator === ts.SyntaxKind.TildeToken;
+  if (ts.isBinaryExpression(e)) {
+    const k = e.operatorToken.kind;
+    if (TE_ARITH.has(k)) return true;
+    if (k === ts.SyntaxKind.PlusToken || k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) return teNumeric(X, e.left, seen) && teNumeric(X, e.right, seen);
+    if (k === ts.SyntaxKind.CommaToken) return teNumeric(X, e.right, seen);
+    return false;
+  }
+  if (ts.isConditionalExpression(e)) return teNumeric(X, e.whenTrue, seen) && teNumeric(X, e.whenFalse, seen);
+  if (ts.isPropertyAccessExpression(e) && e.name.text === "length" && !e.questionDotToken) return true;
+  if (ts.isCallExpression(e)) {
+    const c = teUnwrap(e.expression);
+    const global = (id: ts.Expression, ...names: string[]) => ts.isIdentifier(id) && names.includes(id.text) && !teResolve(X, id);
+    if (ts.isPropertyAccessExpression(c)) {
+      if (global(c.expression, "Math")) return true;
+      if (global(c.expression, "Date") && c.name.text === "UTC") return true;
+      if (global(c.expression, "Number") && (c.name.text === "parseInt" || c.name.text === "parseFloat")) return true;
+      return TE_DATE_NUM_READ.test(c.name.text) && teDateValued(X, c.expression);
+    }
+    return global(c, "Number", "parseInt", "parseFloat");
+  }
+  if (ts.isIdentifier(e)) {
+    const d = teResolve(X, e);
+    return !!d && ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && ts.isVariableDeclarationList(d.parent) && !!(d.parent.flags & ts.NodeFlags.Const) && !!d.initializer && teNumeric(X, d.initializer, seen);
+  }
+  return false;
+}
+function teValidCalendar(raw: string): boolean {
+  const [y, mo, d] = raw.slice(0, 10).split("-").map(Number) as [number, number, number];
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1] ?? 0;
+  if (mo < 1 || mo > 12 || d < 1 || d > days) return false;
+  const t = /T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
+  if (t && (Number(t[1]) > 23 || Number(t[2]) > 59 || Number(t[3] ?? 0) > 59)) return false;
+  const z = /([+-])(\d{2}):(\d{2})$/.exec(raw.slice(10));
+  return !z || (Number(z[2]) <= 14 && Number(z[3]) <= 59);
+}
+/** An ISO date text `new Date` reads the same in every zone: date-only, or a time with Z / an explicit offset. */
+export function teIsoText(raw: string): boolean {
+  return raw.length <= 40 && ISO_DATE_TEXT.test(raw) && teValidCalendar(raw);
+}
+function teIsoLiteral(X: TeDateIdx, e: ts.Expression): boolean {
+  e = teUnwrap(e);
+  if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return e.getText(X.sf).slice(1, -1) === e.text && teIsoText(e.text);
+  if (ts.isIdentifier(e)) {
+    const d = teResolve(X, e);
+    return !!d && ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && ts.isVariableDeclarationList(d.parent) && !!(d.parent.flags & ts.NodeFlags.Const) && !!d.initializer && !ts.isIdentifier(teUnwrap(d.initializer)) && teIsoLiteral(X, d.initializer);
+  }
+  return false;
+}
+/** Does a parameter of f feed `new Date(..)` (teTestedParam / teIsoTemplateParam)? With a module that imports f back,
+ *  f may be re-entered with a value that module built: the caller refuses (targetRefusal, dateImportedBack). */
+function teParamFeedsDate(X: TeDateIdx, f: ts.Node): boolean {
+  let hit = false;
+  const v = (n: ts.Node): void => {
+    if (hit) return;
+    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1 && (teTestedParam(X, n.arguments[0]!, f) >= 0 || teIsoTemplateParam(X, n.arguments[0]!, f) >= 0)) hit = true;
+    ts.forEachChild(n, v);
+  };
+  const b = (f as ts.FunctionLikeDeclaration).body;
+  if (b) v(b);
+  return hit;
+}
+/** Can the tested function call itself again (directly, or through any function of its file it names, transitively)?
+ *  Then its parameter may carry a value the function built itself, not the test's literal: no parameter provenance. */
+const teReentrant = new WeakMap<ts.Node, boolean>();
+function teSelfReached(X: TeDateIdx, tested: ts.Node): boolean {
+  const memo = teReentrant.get(tested);
+  if (memo !== undefined) return memo;
+  const seen = new Set<ts.Node>([tested]);
+  const todo: ts.Node[] = [tested];
+  let hit = false;
+  while (todo.length && !hit) {
+    const v = (n: ts.Node): void => {
+      if (hit) return;
+      if (ts.isIdentifier(n)) {
+        const d = teResolve(X, n);
+        if (d === tested) { hit = true; return; }
+        const fn = d && ts.isVariableDeclaration(d) && d.initializer ? teUnwrap(d.initializer) : d;
+        if (d && fn && (ts.isFunctionDeclaration(fn) || ts.isFunctionExpression(fn) || ts.isArrowFunction(fn) || ts.isClassDeclaration(fn) || ts.isMethodDeclaration(fn)) && !seen.has(fn)) { seen.add(fn); todo.push(fn); }
+        if (d && ts.isVariableDeclaration(d) && d.initializer && !seen.has(d.initializer)) { seen.add(d.initializer); todo.push(d.initializer); }
+      }
+      ts.forEachChild(n, v);
+    };
+    const n = todo.pop()!;
+    if (n === tested) { const b = (tested as ts.FunctionLikeDeclaration).body; if (b) v(b); } else v(n);
+  }
+  teReentrant.set(tested, hit);
+  return hit;
+}
+/** The index of the tested function's own plain, never-reassigned parameter `e` names, or -1. */
+function teTestedParam(X: TeDateIdx, e: ts.Expression, tested: ts.Node | undefined): number {
+  e = teUnwrap(e);
+  if (!tested || !ts.isIdentifier(e)) return -1;
+  const d = teResolve(X, e);
+  if (!d || !ts.isParameter(d) || d.parent !== tested || !ts.isIdentifier(d.name) || d.initializer || d.dotDotDotToken) return -1;
+  if (teSelfReached(X, tested)) return -1;
+  const t = d.type;
+  const prim = (x: ts.TypeNode): boolean => x.kind === ts.SyntaxKind.StringKeyword || x.kind === ts.SyntaxKind.NumberKeyword || (ts.isUnionTypeNode(x) && x.types.every(prim)) || (ts.isParenthesizedTypeNode(x) && prim(x.type));
+  if (t && !prim(t)) return -1;
+  if (teRefsOf(X, d, e.text).some(teWriteRef)) return -1;
+  return (tested as ts.FunctionLikeDeclaration).parameters.indexOf(d);
+}
+/** `\`${p}T00:00:00Z\``: the tested function's own parameter (teTestedParam) followed by a literal time with Z or an
+ *  offset, nothing before it - an ISO text in every zone exactly when p is a date-only text, which dateArgProblem then
+ *  requires of every test argument at that index. The parameter's index, or -1. */
+function teIsoTemplateParam(X: TeDateIdx, e: ts.Expression, tested: ts.Node | undefined): number {
+  e = teUnwrap(e);
+  if (!ts.isTemplateExpression(e) || e.head.text !== "" || e.templateSpans.length !== 1) return -1;
+  const sp = e.templateSpans[0]!;
+  const tail = sp.literal.text;
+  if (sp.literal.rawText !== tail || !/^T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(tail) || !teIsoText(`2000-01-01${tail}`)) return -1;
+  return teTestedParam(X, sp.expression, tested);
+}
+const TE_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * The fail-closed Date-use check (block comment above): null, or DATE_LOCAL_TIME. `tested` is the tested function
+ * (never a load-time callee): only its own parameters may feed `new Date(x)` (then held by dateArgProblem) and only
+ * it may return a Date to its caller outside the file.
+ */
+function teDateUseProblem(node: ts.Node, tested: ts.Node | undefined): string | null {
+  const X = teDateIdx(node.getSourceFile());
+  let bad = false;
+  const v = (n: ts.Node): void => {
+    if (bad) return;
+    if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return;
+    if (ts.isIdentifier(n) && n.text === "Date" && isValueReference(n)) {
+      if (X.dateDeclared) { bad = true; return; }
+      const p = n.parent;
+      const ok = (ts.isNewExpression(p) && p.expression === n) || (ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text === "UTC" && ts.isCallExpression(p.parent) && p.parent.expression === p);
+      if (!ok) { bad = true; return; }
+    }
+    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1) {
+      const x = n.arguments[0]!;
+      if (ts.isSpreadElement(x) || !(teNumeric(X, x) || teIsoLiteral(X, x) || teTestedParam(X, x, tested) >= 0 || teIsoTemplateParam(X, x, tested) >= 0)) { bad = true; return; }
+    }
+    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.some(ts.isSpreadElement)) { bad = true; return; }
+    if (ts.isExpression(n) && !ts.isIdentifier(n) || ts.isIdentifier(n) && isValueReference(n)) {
+      if (teDateValued(X, n as ts.Expression) && !teDateUseOk(X, n as ts.Expression, tested)) { bad = true; return; }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(node);
+  return bad ? DATE_LOCAL_TIME : null;
+}
+/** An array of the global Date as a whole type: `Date[]`, `readonly Date[]`, `Array<Date>`, `ReadonlyArray<Date>` (its
+ *  elements reach the target only through `for (const d of ds)`, a Date-valued name; teDateUseOk). */
+function teDateArrayType(t: ts.TypeNode | undefined): boolean {
+  if (!t) return false;
+  while (ts.isParenthesizedTypeNode(t)) t = t.type;
+  if (ts.isTypeOperatorNode(t) && t.operator === ts.SyntaxKind.ReadonlyKeyword) t = t.type;
+  const isDate = (x: ts.TypeNode): boolean => ts.isTypeReferenceNode(x) && ts.isIdentifier(x.typeName) && x.typeName.text === "Date" && !x.typeArguments;
+  if (ts.isArrayTypeNode(t)) return isDate(t.elementType);
+  return ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && (t.typeName.text === "Array" || t.typeName.text === "ReadonlyArray") && t.typeArguments?.length === 1 && isDate(t.typeArguments[0]!);
+}
+/** The tested function's parameters that feed `new Date(x)` (teTestedParam), and those whose whole type is Date. */
+export function dateParamInfo(moduleContent: string, fn: string): { strings: number[]; dateOnly: number[]; dates: number[]; arrays: number[] } | null {
+  const sf = ts.createSourceFile("m.ts", moduleContent, ts.ScriptTarget.Latest, true);
+  const decls = indexModule(sf).fns.get(fn) ?? [];
+  if (decls.length !== 1 || !decls[0]!.body) return null;
+  const f = decls[0]!;
+  const X = teDateIdx(sf);
+  const strings = new Set<number>();
+  const dateOnly = new Set<number>();
+  const v = (n: ts.Node): void => {
+    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1) {
+      const i = teTestedParam(X, n.arguments[0]!, f); if (i >= 0) strings.add(i);
+      const j = teIsoTemplateParam(X, n.arguments[0]!, f); if (j >= 0) dateOnly.add(j);
+    }
+    ts.forEachChild(n, v);
+  };
+  v(f.body!);
+  return {
+    strings: [...strings].sort(),
+    dateOnly: [...dateOnly].sort(),
+    dates: f.parameters.flatMap((p, i) => (teTopDateType(p.type) ? [i] : [])),
+    arrays: f.parameters.flatMap((p, i) => (!p.dotDotDotToken && teDateArrayType(p.type) ? [i] : [])),
+  };
+}
+/**
+ * Auditor #466 (4th review), Job A and Job B, every version: the test side of the fail-closed Date check, on the
+ * test (Job B: the graded file; Job A: each check expression). Every call of `local` (the tested function) passes,
+ * at each parameter feeding `new Date(x)`, a string literal of ISO text with Z / an offset or a date-only date
+ * (teIsoText), or a number literal; and passes a Date literal (`new Date("<ISO>")`, isDateLiteral) only as a whole
+ * argument at a parameter whose whole type is Date. Every other `new Date(..)` in the test is a Date literal outside
+ * every call of the tested function (an expected value), never bound to a name. The function is never referenced
+ * other than as a direct callee. null when it holds.
+ */
+export function dateArgProblem(moduleContent: string, fn: string, test: ts.Node, local: string): string | null {
+  const info = dateParamInfo(moduleContent, fn);
+  if (!info) return null; // the target analysis refuses an unreadable target
+  let bad: string | null = null;
+  const lit = (x: ts.Expression): boolean => {
+    if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) return x.getText().slice(1, -1) === x.text && teIsoText(x.text);
+    return ts.isNumericLiteral(x) || (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(x.operand));
+  };
+  const insideCallOf = (n: ts.Node): boolean => { for (let p = n.parent; p; p = p.parent) if (ts.isCallExpression(p) && ts.isIdentifier(p.expression) && p.expression.text === local && p.arguments.some((a) => a.pos <= n.pos && n.end <= a.end)) return true; return false; };
+  const v = (n: ts.Node): void => {
+    if (bad) return;
+    if (ts.isIdentifier(n) && n.text === local && isValueReference(n)) {
+      const p = n.parent;
+      if (!(ts.isCallExpression(p) && p.expression === n)) { bad = "date-target-not-called"; return; }
+      if (p.arguments.some(ts.isSpreadElement)) { bad = "date-arg-spread"; return; }
+      for (const i of info.strings) { const x = p.arguments[i]; if (!x || !lit(x)) { bad = "date-string-arg-not-iso"; return; } }
+      for (const i of info.dateOnly) {
+        const x = p.arguments[i];
+        if (!x || !(ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) || x.getText().slice(1, -1) !== x.text || !TE_DATE_ONLY.test(x.text) || !teValidCalendar(x.text)) { bad = "date-template-arg-not-date-only"; return; }
+      }
+      p.arguments.forEach((x, i) => {
+        let hasDate = false;
+        const w = (k: ts.Node): void => { if (ts.isIdentifier(k) && k.text === "Date") hasDate = true; ts.forEachChild(k, w); };
+        w(x);
+        const dateArray = info.arrays.includes(i) && ts.isArrayLiteralExpression(x) && x.elements.every((el) => isDateLiteral(el));
+        if (hasDate && !(isDateLiteral(x) && info.dates.includes(i)) && !dateArray) bad = "date-literal-not-date-param";
+      });
+    }
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Date" && !insideCallOf(n)) {
+      if (!isDateLiteral(n)) { bad = "date-not-literal"; return; }
+      for (let p: ts.Node = n.parent; p && !ts.isCallExpression(p); p = p.parent) if (ts.isVariableDeclaration(p) || ts.isBinaryExpression(p) || ts.isReturnStatement(p) || ts.isArrowFunction(p)) { bad = "date-literal-bound"; return; }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(test);
+  return bad;
+}
+/** Job B: dateArgProblem on the graded test file (`local`: the name the test imports the tested function as). */
+export function dateTestProblem(moduleContent: string, fn: string, testContent: string, local: string): string | null {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  return dateArgProblem(moduleContent, fn, sf, local);
+}
+
 function isValueReference(n: ts.Identifier): boolean {
   const p = n.parent;
   if (!p) return false;
@@ -425,7 +924,7 @@ function isValueReference(n: ts.Identifier): boolean {
   return true;
 }
 
-interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile; v2?: V2Ctx; lc?: LoadCallCheck }
+interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile; v2?: V2Ctx; lc?: LoadCallCheck; /** a load-time callee analysis (CalleeMode): its parameters are load-time arguments, never the test's */ callee?: boolean }
 interface V2Ctx {
   path: string;
   /** The target module. Counted in `modules` so it is parsed once, never as one of the 4 siblings. */
@@ -827,7 +1326,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
   const add = (r: string) => a.reasons.add(r);
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) add(TEST_TARGET_ASYNC);
   if (!f.body) { add(TEST_TARGET_IMPURE); return; }
-  const dr = dateRefusalTE(f.body, f, a.v2?.v7 === true);
+  const dr = dateRefusalTE(f.body, f, a.v2?.v7 === true, tested && !a.callee ? f : undefined);
   if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
   else if (dr === DATE_SETTER) add(TEST_TARGET_IMPURE);
   // Names declared anywhere inside the function (its params, locals, nested params): resolved locally.
@@ -1270,6 +1769,24 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
 export function existingTargetAnalysisForEvidence(path: string, content: string, fn: string, opts?: TargetOpts): string | null {
   return targetRefusal(path, content, fn, opts, true);
 }
+/** Some other module the v2+ analysis read imports `fn` (or the whole module) from a specifier naming the target module. */
+function dateImportedBack(v2: V2Ctx, path: string, fn: string): boolean {
+  const stem = (s: string) => (s.split("/").pop() ?? "").replace(/\.(?:[cm]?[jt]s|tsx)$/, "");
+  const want = stem(path);
+  for (const [p, m] of v2.modules) {
+    if (!m || p === path) continue;
+    for (const st of m.sf.statements) {
+      if (!ts.isImportDeclaration(st) && !ts.isExportDeclaration(st)) continue;
+      const spec = st.moduleSpecifier;
+      if (!spec || !ts.isStringLiteral(spec) || stem(spec.text) !== want) continue;
+      if (ts.isExportDeclaration(st)) return true;
+      const b = st.importClause?.namedBindings;
+      if (!b || ts.isNamespaceImport(b) || st.importClause?.name) return true;
+      if (b.elements.some((e) => (e.propertyName ?? e.name).text === fn)) return true;
+    }
+  }
+  return false;
+}
 function targetRefusal(path: string, content: string, fn: string, opts: TargetOpts | undefined, skipLoad: boolean, inner?: CalleeMode): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
@@ -1318,7 +1835,7 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   const lc = inner?.lc ?? makeLoadCallCheck(path, content, opts);
   if (v2) v2.lc = lc;
   const cached = v2?.modules.get(path);
-  const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2, lc };
+  const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2, lc, callee: !!inner };
   if (v2) analyzeLoadedModule(v2, idx, sf);
   else analyzeLoadTime(a, sf);
   analyzeFunction(a, f, envDefaults, true);
@@ -1333,6 +1850,9 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   // target module imports. Without it a relative or package value import is code the check cannot see (refused).
   const lp = skipLoad ? null : loadAllowlistProblem(path, sf, idx, v2 ? v2.read : opts?.load ? (rel) => (rel === path ? content : opts.load!.read(rel)) : null, undefined, lc);
   if (lp) a.reasons.add(lp.reason);
+  // Auditor #466 (4th review): a tested function that returns a Date hands it only to the test - never to another
+  // module the analysis read (one importing it back, by name or as a namespace).
+  if (!inner && v2 && (teReturnsDate(teDateIdx(sf), f) || teDateIdx(sf).containerReturn.has(f) || teParamFeedsDate(teDateIdx(sf), f)) && dateImportedBack(v2, path, fn)) a.reasons.add(TEST_TARGET_DATE_LOCAL);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
   if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
@@ -2461,6 +2981,9 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const test = buildTestEdit(testParams, { ...task, title, fixSha: task.id }, files, isTest);
   if (!test) return no("test_refused");
   if (!plainPath(test.path)) return no("path_not_plain");
+  // Auditor #466 (4th review), every version: a parameter feeding `new Date(x)` gets ISO text with Z / an offset or a
+  // date-only date in every call; a Date literal only as a whole argument for a parameter typed Date (dateArgProblem).
+  if (dateTestProblem(target.content, task.symbol, test.content, task.symbol) !== null) return no(TEST_CHECK_REFUSED);
   return { path: test.path, content: test.content, create: true, selfGrade: true };
 }
 

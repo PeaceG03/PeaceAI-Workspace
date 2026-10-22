@@ -50,9 +50,9 @@ const F: Record<string, string> = {
  "bad_toStringParam": "export function f(n: number): string { const d: Date = new Date(n); const e: Date = d; return e.toString(); }\n",
  "ok_basic": "export function f(s: string, n: number): string { const d = new Date(`${s}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }\n",
  "ok_loop": "export function f(a: string, b: string): string[] { const out: string[] = []; const end = new Date(`${b}T00:00:00Z`); for (const c = new Date(`${a}T00:00:00Z`); c <= end; c.setUTCDate(c.getUTCDate() + 1)) out.push(c.toISOString().slice(0, 10)); return out; }\n",
- "ok_perIter": "export function f(xs: string[]): number[] { const out: Date[] = []; for (const x of xs) { const d = new Date(x); d.setUTCDate(1); out.push(d); } return out.map((y) => y.getTime()); }\n",
+ "pv_perIter": "export function f(xs: string[]): number[] { const out: Date[] = []; for (const x of xs) { const d = new Date(x); d.setUTCDate(1); out.push(d); } return out.map((y) => y.getTime()); }\n",
  "ok_return": "export function f(s: string): number { const d = new Date(s); d.setUTCFullYear(2000); return g(d); }\nfunction g(x: Date): number { return x.getTime(); }\n",
- "ok_returnd": "function mk(s: string): Date { const d = new Date(s); d.setUTCMonth(0); return d; }\nexport function f(s: string): string { return mk(s).toISOString(); }\n",
+ "pv_returnd": "function mk(s: string): Date { const d = new Date(s); d.setUTCMonth(0); return d; }\nexport function f(s: string): string { return mk(s).toISOString(); }\n",
  "ok_settime": "export function f(t: number): number { const d = new Date(0); d.setTime(t); d.setUTCHours(0, 0, 0, 0); return d.getTime(); }\n",
  "ok_utc": "export function f(y: number): string { const d = new Date(Date.UTC(y, 0, 1)); d.setUTCDate(1 + ((1 - d.getUTCDay() + 7) % 7)); return d.toISOString(); }\n"
 };
@@ -119,6 +119,12 @@ test("fresh-Date setters: controls are accepted under v7 only; v1-v6 refuse ever
   }
 });
 
+test("#466 4th review: a Date built from a value whose provenance is unproven is refused in every version", () => {
+  // `new Date(x)` of a for-of element and of a helper's parameter: never provably ISO with Z / an offset or date-only
+  // (teDateUseProblem), so refused (date_local) under v1-v7 alike, setters or not.
+  for (const k of ["pv_perIter", "pv_returnd"]) { const v = verdicts(F[k]!); for (const ver of VERS) assert.equal(v[ver], "test_target_date_local", `${k} ${ver}`); }
+});
+
 test("setDate depends on the runner's time zone (America/Denver vs UTC), so local-time setters stay refused", () => {
   const prog = 'const d = new Date("2024-03-10T05:30:00Z"); d.setDate(d.getDate() + 1); process.stdout.write(d.toISOString());';
   const run = (tz: string) => spawnSync(process.execPath, ["-e", prog], { env: { ...process.env, TZ: tz }, encoding: "utf8" }).stdout;
@@ -135,15 +141,16 @@ test("setDate depends on the runner's time zone (America/Denver vs UTC), so loca
 
 test("fresh-Date setters through an imported pure helper and through the load-call allowance (v7 only)", () => {
   const helper = 'export function addDays(date: string, days: number): string { const c = new Date(`${date}T00:00:00Z`); c.setUTCDate(c.getUTCDate() + days); return c.toISOString().slice(0, 10); }\n';
-  const R = "test_target_impure";
-  const sixRefused = { v1: R, v2: R, v3: R, v4: R, v5: R, v6: R };
-  // A target calling the imported helper: v7 follows it with the same allowance; v1-v6 refuse the setter, as at main.
+  const R = "test_target_impure", L = "test_target_date_local";
+  // #466 4th review: the helper builds `new Date(`${date}T00:00:00Z`)` from ITS OWN parameter, whose provenance only
+  // the tested function's own parameters can have (dateArgProblem holds those): v2-v7 refuse it as date_local (v1
+  // refuses the import as impure first). Was: v7 accepted `direct`.
   const direct = 'import { addDays } from "./h";\nexport function f(s: string): string { return addDays(s, 1); }\n';
-  assert.deepEqual(verdicts(direct, { "src/h.ts": helper }), { ...sixRefused, v7: "ok" });
-  // A load-time `const NEXT = addDays(..)`: v1-v6 refuse the callee's setter; v7 admits the callee (load-call check)
-  // but its module-container hardening counts a call-initialized const as a container (conservative): refused.
+  assert.deepEqual(verdicts(direct, { "src/h.ts": helper }), { v1: R, v2: L, v3: L, v4: L, v5: L, v6: L, v7: L });
   const atLoad = 'import { addDays } from "./h";\nconst NEXT = addDays("2024-10-11", 1);\nexport function f(s: string): boolean { return s === NEXT; }\n';
-  assert.deepEqual(verdicts(atLoad, { "src/h.ts": helper }), { ...sixRefused, v7: R });
+  assert.deepEqual(verdicts(atLoad, { "src/h.ts": helper }), { v1: R, v2: L, v3: L, v4: L, v5: L, v6: L, v7: L });
+  // The same helper as the tested function itself: accepted under v7 (its own parameter, a zoned literal time).
+  assert.equal(verdicts(helper.replace("addDays", "f"))["v7"], "ok");
   // A callee that writes module state is refused everywhere.
   const leaky = 'const SHARED = new Date(0);\nexport function addDays(date: string, days: number): string { SHARED.setUTCDate(days); return date; }\n';
   assert.ok(VERS.every((v) => verdicts(direct, { "src/h.ts": leaky })[v] !== "ok"));
