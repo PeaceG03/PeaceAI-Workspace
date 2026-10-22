@@ -1,5 +1,6 @@
 // #466 (Auditor ruling): Date setters on a FRESH LOCAL Date are sound under exact conditions (freshDateSetters in
-// learned-test-existing.ts): (a) the Date is `new Date(arg, ...)` with >= 1 argument declared in the same function, not fed
+// learned-test-existing.ts). Decision #466: the allowance is v7 ONLY - v1-v6 refuse every Date setter, as at main.
+// Conditions: (a) the Date is `new Date(arg, ...)` with >= 1 argument declared in the same function, not fed
 // by the clock; (b) only setTime / setUTC* (local-time setters, local getters, toString / toLocale* stay refused);
 // (c) no mutation after any escape (call argument, container / property store, closure capture, alias, destructuring);
 // returning after the mutations is fine; (d) Date.prototype patches stay refused by the global-patch check.
@@ -108,10 +109,14 @@ test("fresh-Date setters: every attack is refused under v1-v7", () => {
   assert.deepEqual(Object.keys(F).filter((k) => k.startsWith("bad_")).sort(), Object.keys(ATTACKS).sort());
 });
 
-test("fresh-Date setters: controls are accepted under v1-v7", () => {
+test("fresh-Date setters: controls are accepted under v7 only; v1-v6 refuse every Date setter (main's behavior)", () => {
   // UTC setters on a fresh Date (string, Date.UTC, setTime), a for-loop cursor read only in place, a Date passed on or
   // returned after its mutations, and a per-iteration fresh Date pushed after its mutation.
-  for (const k of Object.keys(F).filter((x) => x.startsWith("ok_"))) assert.ok(VERS.every((v) => verdicts(F[k]!)[v] === "ok"), `${k} ${JSON.stringify(verdicts(F[k]!))}`);
+  for (const k of Object.keys(F).filter((x) => x.startsWith("ok_"))) {
+    const v = verdicts(F[k]!);
+    assert.equal(v.v7, "ok", `${k} ${JSON.stringify(v)}`);
+    for (const ver of VERS.filter((x) => x !== "v7")) assert.equal(v[ver], "test_target_impure", `${k} ${ver}`);
+  }
 });
 
 test("setDate depends on the runner's time zone (America/Denver vs UTC), so local-time setters stay refused", () => {
@@ -128,10 +133,19 @@ test("setDate depends on the runner's time zone (America/Denver vs UTC), so loca
   assert.ok(VERS.every((v) => verdicts('export function f(s: string): string { const d = new Date(s); d.setDate(1); return d.toISOString(); }\n')[v] !== "ok"));
 });
 
-test("fresh-Date setters compose with the load-call allowance only through pure callees", () => {
+test("fresh-Date setters through an imported pure helper and through the load-call allowance (v7 only)", () => {
   const helper = 'export function addDays(date: string, days: number): string { const c = new Date(`${date}T00:00:00Z`); c.setUTCDate(c.getUTCDate() + days); return c.toISOString().slice(0, 10); }\n';
-  const ok = 'import { addDays } from "./h";\nconst NEXT = addDays("2024-10-11", 1);\nexport function f(s: string): boolean { return s === NEXT; }\n';
-  assert.deepEqual(verdicts(ok, { "src/h.ts": helper }), { v1: "test_target_impure", v2: "ok", v3: "ok", v4: "ok", v5: "ok", v6: "ok", v7: "ok" });
+  const R = "test_target_impure";
+  const sixRefused = { v1: R, v2: R, v3: R, v4: R, v5: R, v6: R };
+  // A target calling the imported helper: v7 follows it with the same allowance; v1-v6 refuse the setter, as at main.
+  const direct = 'import { addDays } from "./h";\nexport function f(s: string): string { return addDays(s, 1); }\n';
+  assert.deepEqual(verdicts(direct, { "src/h.ts": helper }), { ...sixRefused, v7: "ok" });
+  // A load-time `const NEXT = addDays(..)`: v1-v6 refuse the callee's setter; v7 admits the callee (load-call check)
+  // but its module-container hardening counts a call-initialized const as a container (conservative): refused.
+  const atLoad = 'import { addDays } from "./h";\nconst NEXT = addDays("2024-10-11", 1);\nexport function f(s: string): boolean { return s === NEXT; }\n';
+  assert.deepEqual(verdicts(atLoad, { "src/h.ts": helper }), { ...sixRefused, v7: R });
+  // A callee that writes module state is refused everywhere.
   const leaky = 'const SHARED = new Date(0);\nexport function addDays(date: string, days: number): string { SHARED.setUTCDate(days); return date; }\n';
-  assert.ok(VERS.every((v) => verdicts(ok, { "src/h.ts": leaky })[v] !== "ok"));
+  assert.ok(VERS.every((v) => verdicts(direct, { "src/h.ts": leaky })[v] !== "ok"));
+  assert.ok(VERS.every((v) => verdicts(atLoad, { "src/h.ts": leaky })[v] !== "ok"));
 });

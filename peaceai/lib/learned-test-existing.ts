@@ -200,7 +200,8 @@ function indexModule(sf: ts.SourceFile): ModuleIndex {
 /** Is `n` an identifier in an expression (value) position, i.e. a reference the analysis must resolve? */
 /**
  * #466 (Auditor ruling on Date setters): a setter on a FRESH LOCAL Date is sound under exact conditions, so the
- * TEST_EXISTING walk (every version) no longer refuses it by name. `dateRefusal` (learned-complex.ts, shared with the
+ * TEST_EXISTING walk no longer refuses it by name - in v7 ONLY (decision #466: approved / pending versions never widen
+ * beyond main, so v1-v6 keep refusing every Date setter; the Date-to-string refusal below applies to every version). `dateRefusal` (learned-complex.ts, shared with the
  * DATE function spec) is unchanged; this layer only removes the setter refusal for call sites proven fresh:
  * (a) the receiver is a `const` / `let` declared in the same function as `new Date(arg, ...)` with at least one argument
  *     (no `new Date()`, nothing fed by Date.now / performance - those keep their own refusals), `Date` is the global
@@ -385,12 +386,13 @@ function teDateToString(node: ts.Node): boolean {
   v(node);
   return hit;
 }
-/** dateRefusal, plus Date-to-string conversions (teDateToString); setter calls proven to act on a fresh local Date (freshDateSetters) are not refused. */
-function dateRefusalTE(node: ts.Node, scopeFn?: ts.Node): string | null {
+/** dateRefusal, plus Date-to-string conversions (teDateToString, every version); with `freshSetters` (v7 only), setter calls proven to act on a fresh local Date (freshDateSetters) are not refused. */
+function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters: boolean): string | null {
   const r = dateRefusal(node);
   if (r === DATE_NOW || r === DATE_LOCAL_TIME) return r;
   if (teDateToString(node)) return DATE_LOCAL_TIME;
-  if (r !== DATE_SETTER) return r;
+  // Decision #466: the fresh-Date setter allowance is v7 only; v1-v6 refuse every Date setter, as at main.
+  if (r !== DATE_SETTER || !freshSetters) return r;
   const ok = freshDateSetters(node, scopeFn);
   if (ok.size === 0) return r;
   // r === DATE_SETTER means no clock read; re-scan for a local-time read or a setter that is not proven fresh.
@@ -591,7 +593,7 @@ function analyzeLoadTime(a: Analysis, sf: ts.SourceFile): void {
     } else if (ts.isVariableStatement(s) && a.v2) {
       for (const d of s.declarationList.declarations) {
         if (!d.initializer) continue;
-        const dr = dateRefusalTE(d.initializer);
+        const dr = dateRefusalTE(d.initializer, undefined, a.v2?.v7 === true);
         if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) a.reasons.add(TEST_TARGET_DATE_LOCAL);
         else if (dr === DATE_SETTER) a.reasons.add(TEST_TARGET_IMPURE);
       }
@@ -825,7 +827,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
   const add = (r: string) => a.reasons.add(r);
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) add(TEST_TARGET_ASYNC);
   if (!f.body) { add(TEST_TARGET_IMPURE); return; }
-  const dr = dateRefusalTE(f.body, f);
+  const dr = dateRefusalTE(f.body, f, a.v2?.v7 === true);
   if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
   else if (dr === DATE_SETTER) add(TEST_TARGET_IMPURE);
   // Names declared anywhere inside the function (its params, locals, nested params): resolved locally.
@@ -972,7 +974,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
     if (!p.initializer) continue;
     // M93 (v6, tested function only): a `= process.env` default every check overrides (enforced by the callers).
     if (envDefaults.has(p)) continue;
-    const pr = dateRefusalTE(p.initializer);
+    const pr = dateRefusalTE(p.initializer, undefined, a.v2?.v7 === true);
     if (pr === DATE_NOW || pr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
     else if (pr === DATE_SETTER) add(TEST_TARGET_IMPURE);
     walk(a, p.initializer, resolve, () => false, fresh);
@@ -982,7 +984,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
 /** A module const's initializer: the same rules with no locals (it runs once, at import). */
 function analyzeExpression(a: Analysis, e: ts.Expression): void {
   const add = (r: string) => a.reasons.add(r);
-  const dr = dateRefusalTE(e);
+  const dr = dateRefusalTE(e, undefined, a.v2?.v7 === true);
   if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
   else if (dr === DATE_SETTER) add(TEST_TARGET_IMPURE);
   // Arrow/function initializers: analyzed as functions (a const helper).
