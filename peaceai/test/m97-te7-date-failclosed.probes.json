@@ -916,6 +916,72 @@
 },
 "f"
 ],
+"var:L_classStatic": [
+{
+"src/a.ts": "class K { static g(s: string) { return new Date(s).getTime(); } }\nexport function f(s: string): number { return K.g(s); }"
+},
+"f"
+],
+"var:L_constArrowCalled": [
+{
+"src/a.ts": "const h = (ms: string) => String(new Date(ms));\nexport function f(s: string): string { return h(s); }"
+},
+"f"
+],
+"var:L_constArrowNum": [
+{
+"src/a.ts": "const h = (ms: number) => new Date(ms).toISOString();\nexport function f(t: number): string { return h(t); }"
+},
+"f"
+],
+"var:L_ctrl_unused": [
+{
+"src/a.ts": "const h = (s: string) => String(new Date(s));\nexport function f(xs: readonly string[]): string { return xs.join(\",\"); }"
+},
+"f"
+],
+"var:L_getter": [
+{
+"src/a.ts": "const C = { get g() { return String(new Date(\"2024-03-04T00:00\")); } };\nexport function f(): string { return C.g; }"
+},
+"f"
+],
+"var:L_iife": [
+{
+"src/a.ts": "const Y = ((s: string) => new Date(s).getTime())(\"2024-03-04T00:00\");\nexport function f(): number { return Y; }"
+},
+"f"
+],
+"var:L_loadCall": [
+{
+"src/a.ts": "const h = (s: string) => String(new Date(s));\nconst Y = h(\"2024-03-04T00:00\");\nexport function f(): string { return Y; }"
+},
+"f"
+],
+"var:L_loadCallNum": [
+{
+"src/a.ts": "const h = (s: string) => new Date(s).getTime();\nconst Y = h(\"2024-03-04T00:00\");\nexport function f(): number { return Y; }"
+},
+"f"
+],
+"var:L_objMethodCalled": [
+{
+"src/a.ts": "const C = { g(s: string) { return String(new Date(s)); } };\nexport function f(s: string): string { return C.g(s); }"
+},
+"f"
+],
+"var:L_objMethodCalled2": [
+{
+"src/a.ts": "const C = { g(s: string) { return new Date(s).getTime(); } };\nexport function f(s: string): number { return C.g(s); }"
+},
+"f"
+],
+"var:L_passCallback": [
+{
+"src/a.ts": "const h = (s: string) => String(new Date(s));\nexport function f(xs: string[]): string[] { return xs.map(h); }"
+},
+"f"
+],
 "var:e1_helperAnyParam": [
 {
 "src/a.ts": "function h(d: any): string { return `${d}`; }\nexport function f(s: string): string { return h(new Date(s)); }"
@@ -1728,7 +1794,7 @@
 "c9:n_bracketSet",
 "c9:n_concat"
 ],
-"note": "Auditor #466 (4th review): fail-closed Date use. c8 / c9 are Auditor's probe files; var: are the engine author's variants. want: the verdict per version at the PR head. var:n_lt / var:v_lt (a relation of two Dates, valueOf) are zone-free and accepted.",
+"note": "Auditor #466 (4th review): fail-closed Date use. c8 / c9 are Auditor's probe files; var: are the engine author's variants. want: the verdict per version at the PR head. var:n_lt / var:v_lt (a relation of two Dates, valueOf) are zone-free and accepted. var:L_* (module-level function initializers: their bodies are checked when reached as callees, never skipped).",
 "variants": [
 "var:v_concat",
 "var:v_strCall",
@@ -1847,7 +1913,17 @@
 "var:o_eqLoose",
 "var:o_plus",
 "var:o_plusEq",
-"var:o_minus"
+"var:o_minus",
+"var:L_constArrowCalled",
+"var:L_constArrowNum",
+"var:L_objMethodCalled",
+"var:L_objMethodCalled2",
+"var:L_loadCall",
+"var:L_loadCallNum",
+"var:L_iife",
+"var:L_classStatic",
+"var:L_passCallback",
+"var:L_getter"
 ],
 "want": {
 "c8:d_String": {
@@ -3147,6 +3223,105 @@
 "v7": "test_target_date_local"
 },
 "c9:y_bracketV7": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_classStatic": {
+"v1": "test_target_impure",
+"v2": "test_target_impure",
+"v3": "test_target_impure",
+"v4": "test_target_impure",
+"v5": "test_target_impure",
+"v6": "test_target_impure",
+"v7": "test_target_impure"
+},
+"var:L_constArrowCalled": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_constArrowNum": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_ctrl_unused": {
+"v1": "ok",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_getter": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_iife": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_loadCall": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_loadCallNum": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_objMethodCalled": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_objMethodCalled2": {
+"v1": "test_target_date_local",
+"v2": "test_target_date_local",
+"v3": "test_target_date_local",
+"v4": "test_target_date_local",
+"v5": "test_target_date_local",
+"v6": "test_target_date_local",
+"v7": "test_target_date_local"
+},
+"var:L_passCallback": {
 "v1": "test_target_date_local",
 "v2": "test_target_date_local",
 "v3": "test_target_date_local",

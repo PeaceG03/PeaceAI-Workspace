@@ -387,12 +387,12 @@ function teDateToString(node: ts.Node): boolean {
   return hit;
 }
 /** dateRefusal, plus Date-to-string conversions (teDateToString, every version); with `freshSetters` (v7 only), setter calls proven to act on a fresh local Date (freshDateSetters) are not refused. */
-function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters: boolean, tested?: ts.Node): string | null {
+function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters: boolean, tested?: ts.Node, loadOnly = false): string | null {
   const r = dateRefusal(node);
   if (r === DATE_NOW || r === DATE_LOCAL_TIME) return r;
   if (teDateToString(node)) return DATE_LOCAL_TIME;
   // Auditor #466 (4th review), every version: the fail-closed Date-use allowlist (teDateUseProblem).
-  if (teDateUseProblem(node, tested)) return DATE_LOCAL_TIME;
+  if (teDateUseProblem(node, tested, loadOnly)) return DATE_LOCAL_TIME;
   // Decision #466: the fresh-Date setter allowance is v7 only; v1-v6 refuse every Date setter, as at main.
   if (r !== DATE_SETTER || !freshSetters) return r;
   const ok = freshDateSetters(node, scopeFn);
@@ -800,11 +800,14 @@ const TE_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  * (never a load-time callee): only its own parameters may feed `new Date(x)` (then held by dateArgProblem) and only
  * it may return a Date to its caller outside the file.
  */
-function teDateUseProblem(node: ts.Node, tested: ts.Node | undefined): string | null {
+function teDateUseProblem(node: ts.Node, tested: ts.Node | undefined, loadOnly = false): string | null {
   const X = teDateIdx(node.getSourceFile());
   let bad = false;
   const v = (n: ts.Node): void => {
     if (bad) return;
+    // loadOnly (a module-level initializer, checked for what runs on load): a function body there does not run on
+    // load; it is held to this same check, in full, when and if the walk reaches it as a callee (analyzeFunction).
+    if (loadOnly && ts.isFunctionLike(n)) return;
     if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return;
     if (ts.isIdentifier(n) && n.text === "Date" && isValueReference(n)) {
       if (X.dateDeclared) { bad = true; return; }
@@ -1092,7 +1095,7 @@ function analyzeLoadTime(a: Analysis, sf: ts.SourceFile): void {
     } else if (ts.isVariableStatement(s) && a.v2) {
       for (const d of s.declarationList.declarations) {
         if (!d.initializer) continue;
-        const dr = dateRefusalTE(d.initializer, undefined, a.v2?.v7 === true);
+        const dr = dateRefusalTE(d.initializer, undefined, a.v2?.v7 === true, undefined, true);
         if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) a.reasons.add(TEST_TARGET_DATE_LOCAL);
         else if (dr === DATE_SETTER) a.reasons.add(TEST_TARGET_IMPURE);
       }

@@ -36,7 +36,7 @@ const allRefused = (r: Record<string, string>) => VERS.every((v) => r[v] !== "ok
 const CONTROLS = new Set(["c9:x_iso", "c9:x_setUTCplusLocal", "c9:p_localParse_v3", "c9:p_localParse"]);
 
 test("Auditor #466 4th-review repros and the author's variants: verdicts pinned; every repro and variant refused under v1-v7", () => {
-  assert.equal(Object.keys(P.cases).length, 277);
+  assert.equal(Object.keys(P.cases).length, 288);
   for (const [k, [files, fn]] of Object.entries(P.cases)) assert.deepEqual(verdicts(files, fn), P.want[k], k);
   for (const k of P.auditor.filter((x) => !CONTROLS.has(x))) assert.ok(allRefused(P.want[k]!), k);
   for (const k of P.variants) assert.ok(allRefused(P.want[k]!), k);
