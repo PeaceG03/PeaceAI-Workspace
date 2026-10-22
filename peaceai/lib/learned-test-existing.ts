@@ -623,6 +623,15 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
       // (`c[0].push(x)`, `c.get(k).add(x)`), and never on the global Map / Set (`Map.prototype.set(...)`).
       if (a.v2?.v7 && (isMap || accessDepth(recv) > 0)) add(TEST_TARGET_IMPURE);
     }
+    // M97 (v7 hardening): a mutator is reached only as the direct callee `x.set(..)` checked above. Its other forms
+    // (`Map.prototype.clear.call(m)`, `const f = m.set`, `m["clear"]()`, `m[k]()`, `const { add } = s`) are refused.
+    if (a.v2?.v7) {
+      const callee = (x: ts.Node) => ts.isCallExpression(x.parent) && x.parent.expression === x;
+      if (ts.isPropertyAccessExpression(n) && MUTATORS.has(n.name.text) && !callee(n)) add(TEST_TARGET_IMPURE);
+      if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) && MUTATORS.has(n.argumentExpression.text)) add(TEST_TARGET_IMPURE);
+      if (ts.isCallExpression(n) && ts.isElementAccessExpression(n.expression) && !ts.isStringLiteralLike(n.expression.argumentExpression)) add(TEST_TARGET_IMPURE);
+      if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent) && MUTATORS.has(((n.propertyName ?? n.name) as ts.Node & { text?: string }).text ?? "")) add(TEST_TARGET_IMPURE);
+    }
     if (ts.isNewExpression(n) && !(ts.isIdentifier(n.expression) && PURE_NEW.has(n.expression.text))) add(TEST_TARGET_IMPURE);
     if (ts.isTaggedTemplateExpression(n) && !(ts.isPropertyAccessExpression(n.tag) && ts.isIdentifier(n.tag.expression) && n.tag.expression.text === "String" && n.tag.name.text === "raw")) add(TEST_TARGET_IMPURE);
     if (ts.isIdentifier(n) && isValueReference(n)) resolve(n.text);
@@ -1082,7 +1091,19 @@ export function voidTestProblem(moduleContent: string, fn: string, testContent: 
   v(sf);
   return bad || throwsN === 0 ? "void-check-not-throws-or-undefined" : null;
 }
-/** M97 (v7, Job B): every `new Map(..)` / `new Set(..)` in the graded test is a bounded literal (isMapSetLiteral). */
+/** M97: `n` sits, through array / object literals and parentheses only, in a call argument (`f(new Map(..))`,
+ * `assert.deepEqual(r, new Map(..))`), never bound to a name the test could mutate (`const m = new Map(); m.set(..)`). */
+function inCallArgument(n: ts.Node): boolean {
+  let x = n;
+  for (;;) {
+    const p = x.parent;
+    if (!p) return false;
+    if (ts.isCallExpression(p)) return p.arguments.includes(x as ts.Expression);
+    if (ts.isArrayLiteralExpression(p) || ts.isParenthesizedExpression(p) || ts.isObjectLiteralExpression(p) || (ts.isPropertyAssignment(p) && p.initializer === x)) { x = p; continue; }
+    return false;
+  }
+}
+/** M97 (v7, Job B): every `new Map(..)` / `new Set(..)` in the graded test is a bounded literal (isMapSetLiteral) in a call argument. */
 export function mapSetTestProblem(testContent: string): string | null {
   const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
   let bad = false;
@@ -1091,7 +1112,7 @@ export function mapSetTestProblem(testContent: string): string | null {
     // `new Map(..)` / `new Set(..)` return below before their callee is visited, so any other Map / Set / WeakMap /
     // WeakSet reference (`Map.groupBy`, `new WeakMap()`, an alias) lands here.
     if (ts.isIdentifier(n) && ["Map", "Set", "WeakMap", "WeakSet"].includes(n.text) && isValueReference(n)) { bad = true; return; }
-    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && (n.expression.text === "Map" || n.expression.text === "Set")) { if (!isMapSetLiteral(n)) bad = true; return; }
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && (n.expression.text === "Map" || n.expression.text === "Set")) { if (!isMapSetLiteral(n) || !inCallArgument(n)) bad = true; return; }
     ts.forEachChild(n, v);
   };
   v(sf);
