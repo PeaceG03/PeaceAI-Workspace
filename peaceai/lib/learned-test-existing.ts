@@ -647,6 +647,17 @@ function envTargetReferenced(v: V2Ctx, fn: string, decl: ts.FunctionDeclaration,
   if (!root) return true;
   const { idx, sf, fns, consts } = root;
   const own = new Set(at.flatMap((i) => { const p = decl.parameters[i]; return p && ts.isIdentifier(p.name) && !idx.mutated.has(p.name.text) ? [p.name.text] : []; }));
+  // A name re-declared anywhere inside the target (a nested parameter, variable, function, class or catch binding) may
+  // not be the env parameter at a call site, so it is never trusted as one.
+  const redeclared = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && own.has(n.text) && !decl.parameters.some((p) => p.name === n)) {
+      const q = n.parent as ts.Node & { name?: ts.Node };
+      if ((ts.isVariableDeclaration(q) || ts.isParameter(q) || ts.isBindingElement(q) || ts.isFunctionDeclaration(q) || ts.isFunctionExpression(q) || ts.isClassDeclaration(q) || ts.isClassExpression(q)) && q.name === n) own.delete(n.text);
+      if (ts.isBindingElement(q) && q.propertyName === n && !q.name) own.delete(n.text);
+    }
+    ts.forEachChild(n, redeclared);
+  };
+  redeclared(decl);
   let bad = false;
   const okArg = (g: ts.Expression | undefined, inTarget: boolean) => !!g && (ts.isObjectLiteralExpression(g) || (inTarget && ts.isIdentifier(g) && own.has(g.text)));
   const walk = (n: ts.Node, inTarget: boolean): void => {

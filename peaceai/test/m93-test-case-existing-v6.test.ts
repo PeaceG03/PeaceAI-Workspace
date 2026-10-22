@@ -170,6 +170,7 @@ const ENV_REACH: Record<string, { fn: string; check: string; files: { path: stri
     { path: "src/a.ts", content: 'import { g } from "./b";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n) : env.PEACE_PROBE === "1"; }\n' },
     { path: "src/b.ts", content: 'import { k } from "./c";\nexport function g(n: number): boolean { return n > 1; }\nexport function unused(): boolean { return k(); }\n' },
     { path: "src/c.ts", content: 'import "./a";\nexport function k(): boolean { return true; }\n' }] },
+  shadowedEnv: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { const g = (env?: NodeJS.ProcessEnv): boolean => f(0, env); return n > 0 ? g() : env.PEACE_PROBE === "1"; }\n' }] },
   reassignedParam: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { if (n > 5) env = {}; return n > 0 ? f(n - 1, env) : env.PEACE_PROBE === "1"; }\n' }] },
 };
 const ENV_SAFE: Record<string, { fn: string; check: string; files: { path: string; content: string }[] }> = {

@@ -29,7 +29,7 @@ fix-free grading as v5. Only `params.target` differs: `exported-pure-function-v6
     test may reach the default. The target is refused (`test_target_io`) when code of its module that runs with it
     (its own body, every followed function or const, every top-level statement other than a function declaration)
     references it except as a direct call passing, at each `= process.env` position, an object literal or (in its own
-    body only) its own env parameter that is never assigned in the module; when the module has a dynamic `import()`;
+    body only) its own env parameter that is never assigned in the module nor re-declared inside it; when the module has a dynamic `import()`;
     or when any module of the relative value-import closure imports or re-exports the target module (or the closure
     has more than 64 modules). So `f(n - 1)`, `f(n - 1, undefined)`, `const g = f`, `export const X = f(0)`, a followed
     function calling `f(0)` and a sibling importing `f` back are refused; `f(n - 1, env)` and `f(n - 1, {})` are kept.
