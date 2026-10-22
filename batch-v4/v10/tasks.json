@@ -1,0 +1,247 @@
+{
+ "schema": "peaceai-stress-suite:v1",
+ "target": "PeaceG03/PeaceSTOCKS",
+ "base": "0ab37c85f9d28791cfb7eaedbe56906885b74fab",
+ "tasks": [
+  {
+   "id": "Z1",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[daily-bars-pack-decode] canonicalJson: characterization test for sorted keys, nesting and scalars",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for canonicalJson in src/daily-bars-pack-decode.ts: key order and nesting\n- canonicalJson({ b: 1, a: [true, null, \"x\"] }) is '{\"a\":[true,null,\"x\"],\"b\":1}'\n- canonicalJson([{ z: 0, y: { d: 2, c: 1 } }]) is '[{\"y\":{\"c\":1,\"d\":2},\"z\":0}]'\n- canonicalJson(\"s\") is '\"s\"'\n- canonicalJson(null) is \"null\"\n- canonicalJson({}) is \"{}\"\n- canonicalJson([]) is \"[]\"\n- canonicalJson(-0.5) is \"-0.5\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). canonicalJson is only compared with stableJson on decoded bars; its own output for nested objects in arrays, sorted keys at every depth, empty object / array, null, a string and a negative fraction is untested; this pins it. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with canonicalJson stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/daily-bars-pack-decode.ts",
+     "fn": "canonicalJson"
+    }
+   }
+  },
+  {
+   "id": "Z2",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[identity] stableJson: characterization test for sorted keys, nested arrays and scalars",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for stableJson in src/identity.ts: key order and nesting\n- stableJson({ symbol: \"AAA\", id: 7, tags: [\"b\", \"a\"] }) is '{\"id\":7,\"symbol\":\"AAA\",\"tags\":[\"b\",\"a\"]}'\n- stableJson([1, [2, { k: false }]]) is '[1,[2,{\"k\":false}]]'\n- stableJson(3.5) is \"3.5\"\n- stableJson({ nested: { y: null, x: \"\" } }) is '{\"nested\":{\"x\":\"\",\"y\":null}}'\n- stableJson(true) is \"true\"\n- stableJson({ \"b-key\": 2, \"a key\": 1 }) is '{\"a key\":1,\"b-key\":2}'\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). stableJson is used to build expected rows but its own output is never asserted; sorted keys, array order kept, nested arrays, quoted keys with spaces or dashes and scalars are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with stableJson stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/identity.ts",
+     "fn": "stableJson"
+    }
+   }
+  },
+  {
+   "id": "Z3",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[daily-bars-sidecar] errorCode: characterization test for leading-code extraction and the UNKNOWN fallback",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for errorCode in src/daily-bars-sidecar.ts: error codes\n- errorCode(\"DAILY_SIDECAR_MISSING: x\") is \"DAILY_SIDECAR_MISSING\"\n- errorCode(\"A1_B2 tail\") is \"A1_B2\"\n- errorCode(\"lowercase message\") is \"UNKNOWN\"\n- errorCode(\"\") is \"UNKNOWN\"\n- errorCode(42) is \"UNKNOWN\"\n- errorCode({ message: \"BAD_CODE\" }) is \"UNKNOWN\"\n- errorCode(\"9LIVES\") is \"UNKNOWN\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). errorCode has no direct test; the leading upper-case code, digits and underscores in the code, and the UNKNOWN fallback for lower-case, empty, numeric, digit-first and non-Error object values are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with errorCode stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/daily-bars-sidecar.ts",
+     "fn": "errorCode"
+    }
+   }
+  },
+  {
+   "id": "Z4",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[oct2024-tenmin-oneoff] errorClass: characterization test for plain values, separators and the 60-character cap",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for errorClass in src/oct2024-tenmin-oneoff.ts: error classes\n- errorClass(\"TIMEOUT after 30s\") is \"TIMEOUT\"\n- errorClass({ message: \"MASSIVE_HTTP_429:retry\" }) is \"MASSIVE_HTTP_429\"\n- errorClass(\":leading colon\") is \"ERROR\"\n- errorClass(\"\") is \"ERROR\"\n- errorClass(null) is \"null\"\n- errorClass(\"ABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJ tail\") is \"ABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJABCDEFGHIJ\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). errorClass is tested with two Error messages only; a plain string, a plain object with a message, a leading separator or empty message (ERROR), null and the 60-character cap are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with errorClass stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/oct2024-tenmin-oneoff.ts",
+     "fn": "errorClass"
+    }
+   }
+  },
+  {
+   "id": "Z5",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-range-reply-dust] tenMinMassiveRequestsOf: characterization test for valid, invalid and missing request counts",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinMassiveRequestsOf in src/tenmin-range-reply-dust.ts: request counts\n- tenMinMassiveRequestsOf({ tenMinMassiveRequests: 3 }) is 3\n- tenMinMassiveRequestsOf({ tenMinMassiveRequests: 0 }) is 0\n- tenMinMassiveRequestsOf({ tenMinMassiveRequests: -2 }) is 0\n- tenMinMassiveRequestsOf({ tenMinMassiveRequests: 1.5 }) is 0\n- tenMinMassiveRequestsOf({ tenMinMassiveRequests: \"4\" }) is 0\n- tenMinMassiveRequestsOf(null) is 0\n- tenMinMassiveRequestsOf(\"boom\") is 0\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). tenMinMassiveRequestsOf has no test; a positive count, and zero for 0, negative, fractional, string, null and non-object values are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tenMinMassiveRequestsOf stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-range-reply-dust.ts",
+     "fn": "tenMinMassiveRequestsOf"
+    }
+   }
+  },
+  {
+   "id": "Z6",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-daily-liquid] tenMinDailyEnabled: characterization test for the TENMIN_DAILY_ENABLED flag",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinDailyEnabled in src/tenmin-daily-liquid.ts: enable flag\n- tenMinDailyEnabled({ TENMIN_DAILY_ENABLED: \"true\" }) is true\n- tenMinDailyEnabled({ TENMIN_DAILY_ENABLED: \"TRUE\" }) is false\n- tenMinDailyEnabled({ TENMIN_DAILY_ENABLED: \"1\" }) is false\n- tenMinDailyEnabled({}) is false\n- tenMinDailyEnabled({ TENMIN_AUTO_REDISPATCH: \"true\" }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). tenMinDailyEnabled has no direct test; only exactly \"true\" enables, and \"TRUE\", \"1\", unset and an unrelated true flag do not; this pins it. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tenMinDailyEnabled stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-daily-liquid.ts",
+     "fn": "tenMinDailyEnabled"
+    }
+   }
+  },
+  {
+   "id": "Z7",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-daily-liquid] tenMinDailyRedispatchHold: characterization test for empty, upper-case and unrelated values",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinDailyRedispatchHold in src/tenmin-daily-liquid.ts: redispatch hold values\n- tenMinDailyRedispatchHold({ TENMIN_AUTO_REDISPATCH: \"\" }) is 'SKIP_REDISPATCH_PAUSED:TENMIN_AUTO_REDISPATCH=\"\"'\n- tenMinDailyRedispatchHold({ TENMIN_AUTO_REDISPATCH: \"TRUE\" }) is 'SKIP_REDISPATCH_PAUSED:TENMIN_AUTO_REDISPATCH=\"TRUE\"'\n- tenMinDailyRedispatchHold({ TENMIN_AUTO_REDISPATCH: \"true\", TENMIN_DAILY_ENABLED: \"false\" }) is undefined\n- tenMinDailyRedispatchHold({ TENMIN_DAILY_ENABLED: \"true\" }) is \"SKIP_REDISPATCH_PAUSED:TENMIN_AUTO_REDISPATCH=unset\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). tenMinDailyRedispatchHold is tested with unset, \"false\" and \"true\"; an empty value, \"TRUE\", and other env keys next to or without TENMIN_AUTO_REDISPATCH are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tenMinDailyRedispatchHold stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-daily-liquid.ts",
+     "fn": "tenMinDailyRedispatchHold"
+    }
+   }
+  },
+  {
+   "id": "Z8",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[scan-grouped-reply-dust] scanGroupedReplyDustEnabled: characterization test for padded values and unrelated keys",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for scanGroupedReplyDustEnabled in src/scan-grouped-reply-dust.ts: flag whitespace\n- scanGroupedReplyDustEnabled({ SCAN_GROUPED_REPLY_DUST: \"true\", TICKER_INDEX_DATED: \"false\" }) is true\n- scanGroupedReplyDustEnabled({ SCAN_GROUPED_REPLY_DUST: \" true\" }) is false\n- scanGroupedReplyDustEnabled({ SCAN_GROUPED_REPLY_DUST: \"true \" }) is false\n- scanGroupedReplyDustEnabled({ TICKER_INDEX_DATED: \"true\" }) is false\n- scanGroupedReplyDustEnabled({}) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). scanGroupedReplyDustEnabled is tested with single-key env objects; padded values (\" true\", \"true \"), an unrelated true flag, an empty env and \"true\" next to another key are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with scanGroupedReplyDustEnabled stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/scan-grouped-reply-dust.ts",
+     "fn": "scanGroupedReplyDustEnabled"
+    }
+   }
+  },
+  {
+   "id": "Z9",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[ticker-reference-dated] tickerIndexDatedEnabled: characterization test for case, false and the FULL flag alone",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tickerIndexDatedEnabled in src/ticker-reference-dated.ts: dated flag\n- tickerIndexDatedEnabled({ TICKER_INDEX_DATED: \"true\", TICKER_INDEX_DATED_FULL: \"false\" }) is true\n- tickerIndexDatedEnabled({ TICKER_INDEX_DATED: \"TRUE\" }) is false\n- tickerIndexDatedEnabled({ TICKER_INDEX_DATED: \"false\" }) is false\n- tickerIndexDatedEnabled({ TICKER_INDEX_DATED_FULL: \"true\" }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). tickerIndexDatedEnabled is tested with {}, \"1\" and \"true\"; \"TRUE\", \"false\", TICKER_INDEX_DATED_FULL alone (does not enable) and true with FULL false are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tickerIndexDatedEnabled stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/ticker-reference-dated.ts",
+     "fn": "tickerIndexDatedEnabled"
+    }
+   }
+  },
+  {
+   "id": "Z10",
+   "rule": "v6",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[ticker-reference-dated] tickerIndexDatedFullEnabled: characterization test for the FULL flag against the dated flag",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tickerIndexDatedFullEnabled in src/ticker-reference-dated.ts: full flag\n- tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED_FULL: \"true\", TICKER_INDEX_DATED: \"true\" }) is true\n- tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED: \"true\" }) is false\n- tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED_FULL: \"1\" }) is false\n- tickerIndexDatedFullEnabled({ TICKER_INDEX_DATED_FULL: \"True\" }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6): Peace's task (source: peace). tickerIndexDatedFullEnabled is tested with {} and \"true\"; TICKER_INDEX_DATED alone (does not enable FULL), \"1\", \"True\" and both flags true are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. File only after public-test-case-existing-v6 is approved (#464). A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917 with a local-only simulated v6 approval, Node 22) built exactly one candidate (public-test-case-existing-v6); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tickerIndexDatedFullEnabled stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/ticker-reference-dated.ts",
+     "fn": "tickerIndexDatedFullEnabled"
+    }
+   }
+  },
+  {
+   "id": "Z11",
+   "rule": "v5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[corporate-action-coverage] corporateActionCoverageRecords: characterization test for deduped sorted sessions, action counts and datasets",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for corporateActionCoverageRecords in src/corporate-action-coverage.ts: session dedupe and counts\n- corporateActionCoverageRecords([\"2025-10-15\", \"2025-10-14\", \"2025-10-15\"], [{ effectiveDate: \"2025-10-15\" }, { effectiveDate: \"2025-10-15\" }, { effectiveDate: \"2025-10-01\" }], { provider: \"p\", source: \"s\", recordedAt: \"t\", datasets: [\"stocks-splits\"] }) is [{ schemaVersion: \"corporate-action-coverage-v1\", sessionDate: \"2025-10-14\", provider: \"p\", datasets: [\"stocks-splits\"], actions: 0, recordedAt: \"t\", source: \"s\" }, { schemaVersion: \"corporate-action-coverage-v1\", sessionDate: \"2025-10-15\", provider: \"p\", datasets: [\"stocks-splits\"], actions: 2, recordedAt: \"t\", source: \"s\" }]\n- corporateActionCoverageRecords([], [{ effectiveDate: \"2025-10-15\" }], { provider: \"p\", source: \"s\", recordedAt: \"t\" }) is []\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v5): Peace's task (source: peace). corporateActionCoverageRecords is tested with one session and no actions; duplicate and unsorted sessions, per-session action counts (actions on other dates ignored), a datasets override and no sessions are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917, live 28-rule approved list, Node 22) built exactly one candidate (public-test-case-existing-v5); a local Job B run graded it COUNTS (the new test passes on the current code and fails with corporateActionCoverageRecords stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/corporate-action-coverage.ts",
+     "fn": "corporateActionCoverageRecords"
+    }
+   }
+  },
+  {
+   "id": "Z12",
+   "rule": "v5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] tenMinScanCheckStops: characterization test for prior counts and the reason prefix",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinScanCheckStops in src/tenmin-redispatch.ts: prior stop counts\n- tenMinScanCheckStops({ schemaVersion: \"tenmin-history-outcome-v1\", runId: \"r1\", nextAction: \"stop\", reason: \"STOP_SCAN_CHECK_FAILED:http-403\", rangesPlanned: 0, rangesSealed: 0, rangesRemaining: 0, madeProgress: false }, 4) is 5\n- tenMinScanCheckStops({ schemaVersion: \"tenmin-history-outcome-v1\", runId: \"r1\", nextAction: \"stop\", reason: \"STOP_SCAN_CHECK_FAILED:http-403\", rangesPlanned: 0, rangesSealed: 0, rangesRemaining: 0, madeProgress: false }, -3) is 1\n- tenMinScanCheckStops({ schemaVersion: \"tenmin-history-outcome-v1\", runId: \"r1\", nextAction: \"stop\", reason: \"STOP_SCAN_CHECK_FAILED:http-403\", rangesPlanned: 0, rangesSealed: 0, rangesRemaining: 0, madeProgress: false }, 2.5) is 1\n- tenMinScanCheckStops({ schemaVersion: \"tenmin-history-outcome-v1\", runId: \"r1\", nextAction: \"stop\", reason: \"STOP_SCAN_CHECK_FAILED\", rangesPlanned: 0, rangesSealed: 0, rangesRemaining: 0, madeProgress: false }, 2) is 0\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v5): Peace's task (source: peace). tenMinScanCheckStops is tested with prior 0 and 1; a larger prior, a negative or fractional prior (treated as 0) and a bare STOP_SCAN_CHECK_FAILED reason without the colon (0) are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917, live 28-rule approved list, Node 22) built exactly one candidate (public-test-case-existing-v5); a local Job B run graded it COUNTS (the new test passes on the current code and fails with tenMinScanCheckStops stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "tenMinScanCheckStops"
+    }
+   }
+  },
+  {
+   "id": "Z13",
+   "rule": "v5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] stopRecordForScanCancelled: characterization test for a record without an outcome or run id",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for stopRecordForScanCancelled in src/tenmin-redispatch.ts: no outcome record\n- stopRecordForScanCancelled({ outcome: undefined, jobResult: \"failure\", chain: 3, githubRunId: \"\", finishedAt: \"2026-10-06T10:00:00.000Z\", decision: { dispatch: true, nextAction: \"continue\", reason: \"CONTINUE\", nextChain: 4 } }, \"991\", \"2026-10-06T10:00:20.000Z\") is { outcome: { schemaVersion: \"tenmin-history-outcome-v1\", runId: \"unknown\", nextAction: \"stop\", reason: \"STOP_SCAN_CANCELLED:run=991\", rangesPlanned: 0, rangesSealed: 0, rangesRemaining: 0, madeProgress: false }, jobResult: \"failure\", chain: 3, githubRunId: \"\", finishedAt: \"2026-10-06T10:00:20.000Z\", decision: { dispatch: false, nextAction: \"stop\", reason: \"STOP_SCAN_CANCELLED:run=991\", nextChain: 4 } }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v5): Peace's task (source: peace). stopRecordForScanCancelled is tested with records that have an outcome and a run id; a record with no outcome and an empty githubRunId (built outcome, runId unknown) and a string scan run id are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917, live 28-rule approved list, Node 22) built exactly one candidate (public-test-case-existing-v5); a local Job B run graded it COUNTS (the new test passes on the current code and fails with stopRecordForScanCancelled stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "stopRecordForScanCancelled"
+    }
+   }
+  },
+  {
+   "id": "Z14",
+   "rule": "v5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-range-reply-dust] isEmptyTenMinRangeManifest: characterization test for empty and non-empty manifests",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for isEmptyTenMinRangeManifest in src/tenmin-range-reply-dust.ts: empty manifests\n- isEmptyTenMinRangeManifest({ schemaVersion: \"tenmin-range-reply-dust-manifest-v2\", format: \"REPLY_DUST_V1_ZSTD19_DICT4K\", provider: \"p\", rangeFrom: \"2024-11-01\", rangeTo: \"2024-12-31\", securityCount: 0, fileCount: 0, fallbackFileCount: 0, securities: [], days: [], gaps: [], checksum: \"c\" }) is true\n- isEmptyTenMinRangeManifest({ schemaVersion: \"tenmin-range-reply-dust-manifest-v2\", format: \"REPLY_DUST_V1_ZSTD19_DICT4K\", provider: \"p\", rangeFrom: \"2024-11-01\", rangeTo: \"2024-12-31\", securityCount: 2, fileCount: 0, fallbackFileCount: 0, securities: [], days: [], gaps: [], checksum: \"c\" }) is true\n- isEmptyTenMinRangeManifest({ schemaVersion: \"tenmin-range-reply-dust-manifest-v2\", format: \"REPLY_DUST_V1_ZSTD19_DICT4K\", provider: \"p\", rangeFrom: \"2024-11-01\", rangeTo: \"2024-12-31\", securityCount: 1, fileCount: 0, fallbackFileCount: 0, securities: [{ securityId: \"s\", dataset: \"stocks-aggregates-10m\", fetches: [], sessionDates: [] }], days: [], gaps: [], checksum: \"c\" }) is false\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v5): Peace's task (source: peace). isEmptyTenMinRangeManifest has no test; a zero securityCount, a non-zero count with no securities, and one listed security are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917, live 28-rule approved list, Node 22) built exactly one candidate (public-test-case-existing-v5); a local Job B run graded it COUNTS (the new test passes on the current code and fails with isEmptyTenMinRangeManifest stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-range-reply-dust.ts",
+     "fn": "isEmptyTenMinRangeManifest"
+    }
+   }
+  },
+  {
+   "id": "Z15",
+   "rule": "v5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[intraday] aggregateIntradayBars: characterization test for interval guards, an empty list and a halted bar",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for aggregateIntradayBars in src/intraday.ts: interval guards and halted bars\n- aggregateIntradayBars([], 25) throws INVALID_AGGREGATION_INTERVAL\n- aggregateIntradayBars([], 5) throws INVALID_AGGREGATION_INTERVAL\n- aggregateIntradayBars([], 20) is []\n- aggregateIntradayBars([{ securityId: \"sec_a\", sessionDate: \"2026-10-13\", intervalIndex: 3, state: \"HALTED\", observedAt: \"t\", ingestedAt: \"t\", dataQuality: \"GOOD\", corporateActionIds: [], flags: [], schemaVersion: \"foundation-d.1-10m-v1\", revision: 1, provenance: { provider: \"p\", dataset: \"d\", retrievalId: \"r\", ingestionVersion: \"i\", normalizerVersion: \"n\" } }], 30) is [{ securityId: \"sec_a\", sessionDate: \"2026-10-13\", intervalIndex: 1, sourceIntervalMinutes: 10, targetIntervalMinutes: 30, state: \"HALTED\" }]\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v5): Peace's task (source: peace). aggregateIntradayBars is tested with 60-minute aggregation of full sessions; the INVALID_AGGREGATION_INTERVAL guard (25, 5), an empty list, and a single halted bar (HALTED group, bucket index) are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917, live 28-rule approved list, Node 22) built exactly one candidate (public-test-case-existing-v5); a local Job B run graded it COUNTS (the new test passes on the current code and fails with aggregateIntradayBars stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/intraday.ts",
+     "fn": "aggregateIntradayBars"
+    }
+   }
+  },
+  {
+   "id": "Z17",
+   "rule": "v5",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-alert] planTenMinAlert: characterization test for paused job failures and failed or skipped steps",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for planTenMinAlert in src/tenmin-alert.ts: pause and step failures\n- planTenMinAlert({ trigger: \"chain\", record: undefined, historyStep: \"failure\", redispatchStep: \"success\", killSwitch: undefined }) is { action: \"alert\", reason: \"STOP_JOB_FAILURE\", key: \"none:STOP_JOB_FAILURE\" }\n- planTenMinAlert({ trigger: \"chain\", record: undefined, historyStep: \"success\", redispatchStep: \"success\", killSwitch: \"false\" }) is { action: \"none\", why: \"manual pause (TENMIN_AUTO_REDISPATCH not true)\" }\n- planTenMinAlert({ trigger: \"chain\", record: undefined, historyStep: \"success\", redispatchStep: \"cancelled\", killSwitch: \"true\" }) is { action: \"alert\", reason: \"STOP_REDISPATCH_STEP_CANCELLED\", key: \"none:STOP_REDISPATCH_STEP_CANCELLED\" }\n- planTenMinAlert({ trigger: \"chain\", record: undefined, historyStep: \"success\", redispatchStep: \"\", killSwitch: \"true\" }) is { action: \"alert\", reason: \"STOP_REDISPATCH_STEP_UNKNOWN\", key: \"none:STOP_REDISPATCH_STEP_UNKNOWN\" }\n- planTenMinAlert({ trigger: \"fallback\", record: undefined, redispatchStep: \"skipped\", killSwitch: \"true\" }) is { action: \"alert\", reason: \"STOP_FALLBACK_STEP_SKIPPED\", key: \"fallback:none:skipped\" }\n- planTenMinAlert({ trigger: \"fallback\", record: undefined, redispatchStep: \"success\", nextAction: \"wait\", reason: \"WAIT_GUARD_WINDOW\", killSwitch: \"true\" }) is { action: \"none\", why: \"planned wait (WAIT_GUARD_WINDOW)\" }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v5): Peace's task (source: peace). planTenMinAlert is tested for planned waits, stops and the fallback step failure; a paused chain whose history step failed (STOP_JOB_FAILURE), a cancelled or empty redispatch step, a skipped fallback step key and a fallback planned wait are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. A box dry-run on PeaceSTOCKS 0ab37c8 (Workspace main 1fbe917, live 28-rule approved list, Node 22) built exactly one candidate (public-test-case-existing-v5); a local Job B run graded it COUNTS (the new test passes on the current code and fails with planTenMinAlert stubbed); suite 614/614 with all sixteen new tests of this batch, all 4 typechecks ok. Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-alert.ts",
+     "fn": "planTenMinAlert"
+    }
+   }
+  }
+ ]
+}

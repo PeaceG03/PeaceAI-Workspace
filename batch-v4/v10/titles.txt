@@ -1,0 +1,16 @@
+Z1	v6	[daily-bars-pack-decode] canonicalJson: characterization test for sorted keys, nesting and scalars
+Z2	v6	[identity] stableJson: characterization test for sorted keys, nested arrays and scalars
+Z3	v6	[daily-bars-sidecar] errorCode: characterization test for leading-code extraction and the UNKNOWN fallback
+Z4	v6	[oct2024-tenmin-oneoff] errorClass: characterization test for plain values, separators and the 60-character cap
+Z5	v6	[tenmin-range-reply-dust] tenMinMassiveRequestsOf: characterization test for valid, invalid and missing request counts
+Z6	v6	[tenmin-daily-liquid] tenMinDailyEnabled: characterization test for the TENMIN_DAILY_ENABLED flag
+Z7	v6	[tenmin-daily-liquid] tenMinDailyRedispatchHold: characterization test for empty, upper-case and unrelated values
+Z8	v6	[scan-grouped-reply-dust] scanGroupedReplyDustEnabled: characterization test for padded values and unrelated keys
+Z9	v6	[ticker-reference-dated] tickerIndexDatedEnabled: characterization test for case, false and the FULL flag alone
+Z10	v6	[ticker-reference-dated] tickerIndexDatedFullEnabled: characterization test for the FULL flag against the dated flag
+Z11	v5	[corporate-action-coverage] corporateActionCoverageRecords: characterization test for deduped sorted sessions, action counts and datasets
+Z12	v5	[tenmin-redispatch] tenMinScanCheckStops: characterization test for prior counts and the reason prefix
+Z13	v5	[tenmin-redispatch] stopRecordForScanCancelled: characterization test for a record without an outcome or run id
+Z14	v5	[tenmin-range-reply-dust] isEmptyTenMinRangeManifest: characterization test for empty and non-empty manifests
+Z15	v5	[intraday] aggregateIntradayBars: characterization test for interval guards, an empty list and a halted bar
+Z17	v5	[tenmin-alert] planTenMinAlert: characterization test for paused job failures and failed or skipped steps

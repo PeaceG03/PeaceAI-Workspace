@@ -34,8 +34,14 @@ META = {
         "stopRecordForScanCancelled is tested with records that have an outcome and a run id; a record with no outcome and an empty githubRunId (built outcome, runId unknown) and a string scan run id are untested; this pins them."),
  "Z14": ("tenmin-range-reply-dust", "empty manifests", "characterization test for empty and non-empty manifests",
         "isEmptyTenMinRangeManifest has no test; a zero securityCount, a non-zero count with no securities, and one listed security are untested; this pins them."),
+ "Z15": ("intraday", "interval guards and halted bars", "characterization test for interval guards, an empty list and a halted bar",
+        "aggregateIntradayBars is tested with 60-minute aggregation of full sessions; the INVALID_AGGREGATION_INTERVAL guard (25, 5), an empty list, and a single halted bar (HALTED group, bucket index) are untested; this pins them."),
+ "Z16": ("features", "short history", "characterization test for short histories and recipe versions",
+        "reconstructFeatures is tested inside the scanner with long histories; the all-null feature values for an empty or one-bar history and the recipeVersions map are untested; this pins them."),
+ "Z17": ("tenmin-alert", "pause and step failures", "characterization test for paused job failures and failed or skipped steps",
+        "planTenMinAlert is tested for planned waits, stops and the fallback step failure; a paused chain whose history step failed (STOP_JOB_FAILURE), a cancelled or empty redispatch step, a skipped fallback step key and a fallback planned wait are untested; this pins them."),
 }
-SKIP = {"errorClass({ code: 5 })"}
+SKIP = {"errorClass({ code: 5 })", "aggregateIntradayBars([{ securityId: \"sec_a\", sessionDate: \"2026-10-13\", intervalIndex: 7, state: \"VALID_TRADED\", open: 10, high: 12, low: 9, close: 11, volume: 100, observedAt: \"t\", ingestedAt: \"t\", dataQuality: \"GOOD\", corporateActionIds: [], flags: [], schemaVersion: \"foundation-d.1-10m-v1\", revision: 1, provenance: { provider: \"p\", dataset: \"d\", retrievalId: \"r\", ingestionVersion: \"i\", normalizerVersion: \"n\" } }], 30)"}  # Z15 traded bar: v5 refuses optional-member literals (test_refused)
 ident = re.compile(r"^[A-Za-z_$][\w$]*$")
 def lit(v):
     if v == "__undef": return "undefined"

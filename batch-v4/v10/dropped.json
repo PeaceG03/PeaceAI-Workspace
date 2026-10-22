@@ -1,0 +1,12 @@
+[
+ {
+  "id": "Z16",
+  "file": "src/features.ts",
+  "fn": "reconstructFeatures",
+  "rule": "v5",
+  "calls": [
+   "reconstructFeatures(\"sec_a\", \"2026-01-05\", [])",
+   "reconstructFeatures(\"sec_b\", \"2026-01-05\", [{ securityId: \"sec_a\", sessionDate: \"2026-01-06\", open: 10, high: 11, low: 9, close: 10, volume: 5, observedAt: \"t\", ingestedAt: \"t\", dataQuality: \"GOOD\", corporateActionIds: [], flags: [], schemaVersion: \"foundation-d-v0\", revision: 1, provenance: { provider: \"p\", dataset: \"d\", retrievalId: \"r\", ingestionVersion: \"i\", normalizerVersion: \"n\" } }])"
+  ]
+ }
+]
