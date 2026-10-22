@@ -106,8 +106,12 @@ const LOCAL_TIME_GLOBALS = new Set(["Intl"]);
 const PURE_GLOBALS = new Set(["undefined", "NaN", "Infinity", "Number", "String", "Boolean", "Array", "Object", "JSON", "Math", "Error", "TypeError", "RangeError", "SyntaxError", "RegExp", "Map", "Set", "Date", "BigInt", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent"]);
 const PURE_NEW = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "Map", "Set", "Array", "RegExp", "Date"]);
 const OBJECT_OK = new Set(["keys", "values", "entries", "fromEntries", "is", "hasOwn"]);
-const MUTATORS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "add", "delete", "clear"]);
+const MUTATORS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "add", "delete", "clear", "compile"]);
 const FRESH_METHODS = new Set(["slice", "map", "filter", "concat", "split", "flat", "flatMap", "toSorted", "toReversed", "toSpliced", "with", "keys", "values", "entries", "match", "matchAll"]);
+/** Auditor #466: built-in string-producing methods (a built-in receiver gives a primitive, so a fresh-method chain stays built-in). */
+const STRING_RESULT = new Set(["trim", "trimStart", "trimEnd", "toLowerCase", "toUpperCase", "padStart", "padEnd", "replace", "replaceAll", "repeat", "join", "toString", "toFixed", "toPrecision", "normalize", "substring", "substr", "charAt", "toISOString"]);
+/** Auditor #466: stack text depends on file paths and line numbers of the checkout, not on the arguments. */
+const STACK_NAMES = new Set(["stack", "captureStackTrace", "stackTraceLimit", "prepareStackTrace"]);
 const NODE_BUILTINS = /^(?:node:.*|assert|async_hooks|buffer|child_process|cluster|console|constants|crypto|dgram|diagnostics_channel|dns|domain|events|fs|fs\/promises|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|stream\/promises|string_decoder|sys|timers|tls|trace_events|tty|url|util|v8|vm|wasi|worker_threads|zlib)$/;
 
 const isProtected = (path: string) => PROTECTED_SELF.some((x) => x.pattern.test(path));
@@ -340,7 +344,10 @@ function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): vo
   const key = `mod\0${v2.path}`;
   if (v2.scanned.has(key)) return;
   v2.scanned.add(key);
-  const a = analysisFor(v2, idx, sf);
+  analyzeLoadTime(analysisFor(v2, idx, sf), sf);
+}
+/** The load-time statements of one module (see analyzeLoadedModule); v1 runs it on the target module (Auditor #466). */
+function analyzeLoadTime(a: Analysis, sf: ts.SourceFile): void {
   for (const s of sf.statements) {
     if (ts.isExpressionStatement(s)) {
       analyzeExpression(a, s.expression);
@@ -473,18 +480,69 @@ function propertyOf(t: ts.TypeNode, k: string, idx: ModuleIndex, sf: ts.SourceFi
   return ts.isTypeLiteralNode(d.type) ? find(d.type.members, m.idx, m.sf, m.v2) : null;
 }
 
+const unwrapExpr = (e: ts.Expression): ts.Expression => {
+  let x = e;
+  while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x) || ts.isNonNullExpression(x) || ts.isTypeAssertionExpression(x)) x = x.expression;
+  return x;
+};
+/**
+ * Names whose value is known to be a built-in instance, for one analyzed function (Auditor #466):
+ * `plain` = the tested function's own parameters (plain data the check literals build; never re-assigned), so any
+ * property / element path from one is plain data too; `builtin` = locals initialized with a builtinValue (never
+ * re-pointed at anything else).
+ */
+interface BuiltinNames { plain: ReadonlySet<string>; builtin: ReadonlySet<string>; deps?: Map<string, Set<string>>; used?: (name: string) => void }
+const NO_BUILTINS: BuiltinNames = { plain: new Set(), builtin: new Set() };
+/**
+ * Auditor #466: bookkeeping markers in the reasons set (never reported: PRIORITY and the refusal set list none).
+ * FRESH_BY_NAME + m: a `x.m(..)` result was taken as fresh only by its method name (x not known built-in).
+ * USER_MEMBER + m: analyzed code defines a member named m on some object (`{ m: .. }`, `{ m }`, `{ m() {} }`, `o.m = ..`);
+ * USER_MEMBER + "*": a member whose name the walk cannot read (computed key, `o[k] = ..`, `Object.fromEntries`).
+ * Both for one name (or "*") means `x.m(..)` may be user code returning shared state: test_target_impure.
+ */
+const FRESH_BY_NAME = "\0fresh-by-name:";
+const USER_MEMBER = "\0user-member:";
+function freshByNameConflict(reasons: ReadonlySet<string>): boolean {
+  const any = reasons.has(`${USER_MEMBER}*`);
+  for (const r of reasons) if (r.startsWith(FRESH_BY_NAME) && (any || reasons.has(USER_MEMBER + r.slice(FRESH_BY_NAME.length)))) return true;
+  return false;
+}
+/**
+ * Auditor #466: `e` is a built-in value (string, number, array, Map, Set, RegExp, Date, Error), so the methods called
+ * on it are the built-in ones. Only then does a FRESH_METHODS call return a new value: `H.slice()` on a module object
+ * `const H = { slice: () => STORE.items }` returns the module's own array.
+ */
+function builtinValue(e: ts.Expression, b: BuiltinNames, depth = 0): boolean {
+  if (depth > 32) return false;
+  const x = unwrapExpr(e);
+  if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || ts.isTemplateExpression(x) || ts.isNumericLiteral(x) || ts.isArrayLiteralExpression(x) || ts.isRegularExpressionLiteral(x)) return true;
+  if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && PURE_NEW.has(x.expression.text)) return true;
+  if (ts.isIdentifier(x)) return b.builtin.has(x.text) || b.plain.has(x.text);
+  if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x)) { const r = rootName(x); return ts.isIdentifier(r) && b.plain.has(r.text) && !x.questionDotToken; }
+  if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "String") return true;
+  if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression)) {
+    const m = x.expression.name.text; const recv = x.expression.expression;
+    if (ts.isIdentifier(recv) && recv.text === "Array" && (m === "from" || m === "of")) return true;
+    if (ts.isIdentifier(recv) && recv.text === "Object" && (m === "keys" || m === "values" || m === "entries")) return true;
+    if (FRESH_METHODS.has(m) || STRING_RESULT.has(m)) return builtinValue(recv, b, depth + 1);
+  }
+  return false;
+}
 /** Fresh: a value created inside the function (so mutating it touches nothing outside). */
-function isFresh(e: ts.Expression | undefined, fresh: ReadonlySet<string>): boolean {
+function isFresh(e: ts.Expression | undefined, fresh: ReadonlySet<string>, b: BuiltinNames = NO_BUILTINS, by?: Set<string>): boolean {
   if (!e) return false;
   const x = ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isNonNullExpression(e) ? e.expression : e;
   if (ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isRegularExpressionLiteral(x)) return true;
   if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && PURE_NEW.has(x.expression.text)) return true;
-  if (ts.isIdentifier(x)) return fresh.has(x.text);
+  if (ts.isIdentifier(x)) { if (fresh.has(x.text)) for (const d of b.deps?.get(x.text) ?? []) by?.add(d); return fresh.has(x.text); }
   if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression)) {
     const m = x.expression.name.text; const recv = x.expression.expression;
     if (ts.isIdentifier(recv) && (recv.text === "Array" && (m === "from" || m === "of"))) return true;
     if (ts.isIdentifier(recv) && recv.text === "Object" && (m === "keys" || m === "values" || m === "entries" || m === "fromEntries")) return true;
-    if (FRESH_METHODS.has(m)) return true;
+    // Auditor #466: a fresh-method name is fresh only on a receiver known to be a built-in value (never a module
+    // object, an import, a helper's parameter or a call result the walk cannot type).
+    // `by` collects those names (FRESH_BY_NAME), checked when the freshness is used to allow a write.
+    if (FRESH_METHODS.has(m)) { if (!builtinValue(recv, b)) by?.add(m); return true; }
   }
   return false;
 }
@@ -526,7 +584,7 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
   add(TEST_TARGET_IMPURE);
 }
 
-function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults: ReadonlySet<ts.ParameterDeclaration> = new Set()): void {
+function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults: ReadonlySet<ts.ParameterDeclaration> = new Set(), tested = false): void {
   const add = (r: string) => a.reasons.add(r);
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) add(TEST_TARGET_ASYNC);
   if (!f.body) { add(TEST_TARGET_IMPURE); return; }
@@ -536,20 +594,58 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
   // Names declared anywhere inside the function (its params, locals, nested params): resolved locally.
   const locals = new Set<string>();
   const fresh = new Set<string>();
+  // Auditor #466: built-in-valued names (see BuiltinNames). Only the tested function's parameters are plain data
+  // (the check literals); a helper's parameters can be anything its caller passes.
+  const plain = new Set<string>(tested ? f.parameters.flatMap((p) => (ts.isIdentifier(p.name) ? [p.name.text] : [])) : []);
+  const builtin = new Set<string>();
+  const deps = new Map<string, Set<string>>();
+  // A write allowed because `x` is fresh: x's freshness by method name only is recorded (FRESH_BY_NAME).
+  const usedFresh = (x: string) => { for (const d of deps.get(x) ?? []) a.reasons.add(FRESH_BY_NAME + d); };
+  const bn: BuiltinNames = { plain, builtin, deps, used: usedFresh };
+  // Every name written anywhere in the function after its declaration (`x = ..`, `x += ..`, `x++`, a destructuring
+  // assignment target) is never a built-in name: it may hold anything by the time a method is called on it.
+  const written = new Set<string>();
+  const lhs = (x: ts.Node): void => { if (ts.isIdentifier(x)) written.add(x.text); else if (ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isSpreadElement(x) || ts.isShorthandPropertyAssignment(x) || ts.isPropertyAssignment(x) || ts.isParenthesizedExpression(x) || ts.isNonNullExpression(x) || ts.isAsExpression(x)) ts.forEachChild(x, lhs); };
+  const writes = (n: ts.Node): void => {
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) lhs(n.left);
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) lhs(n.operand);
+    if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer)) lhs(n.initializer);
+    ts.forEachChild(n, writes);
+  };
+  writes(f.body);
+  for (const w of written) plain.delete(w);
   const collect = (b: ts.BindingName) => { if (ts.isIdentifier(b)) locals.add(b.text); else for (const el of b.elements) if (!ts.isOmittedExpression(el)) collect(el.name); };
   const declare = (n: ts.Node): void => {
     if (ts.isParameter(n) || ts.isBindingElement(n)) collect(n.name);
-    if (ts.isVariableDeclaration(n)) { collect(n.name); if (ts.isIdentifier(n.name) && isFresh(n.initializer, fresh)) fresh.add(n.name.text); }
+    if (ts.isVariableDeclaration(n)) {
+      collect(n.name);
+      const by = new Set<string>();
+      if (ts.isIdentifier(n.name) && isFresh(n.initializer, fresh, bn, by)) { fresh.add(n.name.text); deps.set(n.name.text, new Set([...(deps.get(n.name.text) ?? []), ...by])); }
+      if (ts.isIdentifier(n.name) && n.initializer && !written.has(n.name.text) && builtinValue(n.initializer, bn)) builtin.add(n.name.text);
+    }
+    // A nested declaration reusing a parameter's name is not that parameter.
+    if ((ts.isParameter(n) || ts.isBindingElement(n) || ts.isVariableDeclaration(n)) && ts.isIdentifier(n.name) && !f.parameters.includes(n as ts.ParameterDeclaration)) plain.delete(n.name.text);
     if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name && n !== f) locals.add(n.name.text);
     if (ts.isCatchClause(n) && n.variableDeclaration) collect(n.variableDeclaration.name);
     if (ts.isClassDeclaration(n) || ts.isClassExpression(n)) add(TEST_TARGET_IMPURE);
     ts.forEachChild(n, declare);
   };
   f.parameters.forEach((p) => collect(p.name));
+  // A defaulted parameter may hold its default (module data, not a check literal) when a check omits it.
+  for (const p of f.parameters) if (p.initializer && ts.isIdentifier(p.name) && !literalDefault(p.initializer) && !builtinValue(p.initializer, NO_BUILTINS)) plain.delete(p.name.text);
+  const declCount = new Map<string, number>();
+  const countDecl = (n: ts.Node): void => { if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n)) && n.name && ts.isIdentifier(n.name)) declCount.set(n.name.text, (declCount.get(n.name.text) ?? 0) + 1); ts.forEachChild(n, countDecl); };
+  countDecl(f.body);
   declare(f.body);
+  // A name declared twice (shadowing in a nested scope) is ambiguous: never a built-in name.
+  for (const [k, c] of declCount) if (c > 1) builtin.delete(k);
   // A `let` that is ever re-pointed at a non-fresh value is not fresh.
   const unfresh = (n: ts.Node): void => {
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && fresh.has(n.left.text) && !isFresh(n.right, fresh)) fresh.delete(n.left.text);
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && fresh.has(n.left.text)) {
+      const by = new Set<string>();
+      if (!isFresh(n.right, fresh, bn, by)) fresh.delete(n.left.text);
+      else deps.set(n.left.text, new Set([...(deps.get(n.left.text) ?? []), ...by]));
+    }
     ts.forEachChild(n, unfresh);
   };
   unfresh(f.body);
@@ -559,11 +655,12 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
     const r = rootName(target);
     // M97 (v7 hardening): a fresh copy (`[...m.values()]`, `new Map(m)`, `xs.slice()`) still holds the caller's objects,
     // so only the copy itself may be written (`c[k] = v`), never through it (`c[0].n = 1`).
-    if (a.v2?.v7 && accessDepth(target) > 1) return false;
-    return ts.isIdentifier(r) && fresh.has(r.text);
+    if (accessDepth(target) > 1) return false;
+    if (ts.isIdentifier(r) && fresh.has(r.text)) { usedFresh(r.text); return true; }
+    return false;
   };
   const resolve = (name: string): void => resolveName(a, name, locals);
-  walk(a, f.body, resolve, mutableTarget, fresh);
+  walk(a, f.body, resolve, mutableTarget, fresh, bn);
   // M90: parameter defaults run at call time, so they get the body's rules (clock / local time / setters by name,
   // then the purity walk; nothing in a default may assign). Only adds refusals: v1-v3 accept no defaults on the
   // target, and a followed helper's default was previously not walked.
@@ -590,11 +687,31 @@ function analyzeExpression(a: Analysis, e: ts.Expression): void {
   // A stateful regex (g/y flags keep lastIndex between calls) is module state.
   const v = (n: ts.Node): void => { if (ts.isRegularExpressionLiteral(n) && /\/[a-z]*[gy][a-z]*$/.test(n.text)) add(TEST_TARGET_IMPURE); ts.forEachChild(n, v); };
   v(e);
+  // Auditor #466: built-in instances that keep state between calls, created once at import (outside any function):
+  // a RegExp built by `new RegExp(..)` / `RegExp(..)` unless its flags are a literal without g / y (`new RegExp("a")`,
+  // `new RegExp("a", "i")`; a non-literal pattern may carry its own flags), and an iterator (`xs.values()`,
+  // `.keys()`, `.entries()`, `.matchAll(..)`, `[Symbol.iterator]()`), which a call consumes.
+  const lit = (x: ts.Expression | undefined) => !!x && ts.isStringLiteralLike(x);
+  const statefulAtLoad = (n: ts.Node): void => {
+    if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isMethodDeclaration(n) || ts.isGetAccessor(n) || ts.isSetAccessor(n)) return;
+    if ((ts.isNewExpression(n) || ts.isCallExpression(n)) && ts.isIdentifier(n.expression) && n.expression.text === "RegExp") {
+      const g = n.arguments ?? ts.factory.createNodeArray();
+      const flags = g[1];
+      if (!lit(g[0]) || g.length > 2 || (flags && (!lit(flags) || /[gy]/.test((flags as ts.StringLiteralLike).text)))) add(TEST_TARGET_IMPURE);
+    }
+    if (ts.isCallExpression(n)) {
+      const c = n.expression;
+      if (ts.isPropertyAccessExpression(c) && ["values", "keys", "entries", "matchAll"].includes(c.name.text) && !(ts.isIdentifier(c.expression) && c.expression.text === "Object")) add(TEST_TARGET_IMPURE);
+      if (ts.isElementAccessExpression(c) && !ts.isStringLiteralLike(c.argumentExpression) && !ts.isNumericLiteral(c.argumentExpression)) add(TEST_TARGET_IMPURE);
+    }
+    ts.forEachChild(n, statefulAtLoad);
+  };
+  statefulAtLoad(e);
   const resolve = (name: string): void => resolveName(a, name, new Set());
   walk(a, e, resolve, () => false, new Set());
 }
 
-function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutableTarget: (t: ts.Expression) => boolean, fresh: ReadonlySet<string>): void {
+function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutableTarget: (t: ts.Expression) => boolean, fresh: ReadonlySet<string>, bn: BuiltinNames = NO_BUILTINS): void {
   const add = (r: string) => a.reasons.add(r);
   const v = (n: ts.Node): void => {
     if (ts.isTypeNode(n) || ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n)) return; // types never run
@@ -618,10 +735,12 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
       const recv = n.expression.expression;
       const r = rootName(recv);
       const isMap = ts.isIdentifier(r) && (r.text === "Map" || r.text === "Set");
-      if (!isMap && !(ts.isIdentifier(r) ? fresh.has(r.text) : isFresh(recv, fresh))) add(TEST_TARGET_IMPURE);
+      const by = new Set<string>();
+      if (!isMap && !(ts.isIdentifier(r) ? fresh.has(r.text) : isFresh(recv, fresh, bn, by))) add(TEST_TARGET_IMPURE);
+      else if (ts.isIdentifier(r)) bn.used?.(r.text); else for (const d of by) add(FRESH_BY_NAME + d);
       // M97 (v7 hardening): a mutating call only on the fresh value itself (`c.push(x)`), never on what it holds
       // (`c[0].push(x)`, `c.get(k).add(x)`), and never on the global Map / Set (`Map.prototype.set(...)`).
-      if (a.v2?.v7 && (isMap || accessDepth(recv) > 0)) add(TEST_TARGET_IMPURE);
+      if (isMap || accessDepth(recv) > 0) add(TEST_TARGET_IMPURE);
     }
     // M97 (v7 hardening): a mutator is reached only as the direct callee `x.set(..)` checked above. Its other forms
     // (`Map.prototype.clear.call(m)`, `const f = m.set`, `m["clear"]()`, `m[k]()`, `const { add } = s`) are refused.
@@ -633,6 +752,26 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
       if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent) && MUTATORS.has(((n.propertyName ?? n.name) as ts.Node & { text?: string }).text ?? "")) add(TEST_TARGET_IMPURE);
     }
     if (ts.isNewExpression(n) && !(ts.isIdentifier(n.expression) && PURE_NEW.has(n.expression.text))) add(TEST_TARGET_IMPURE);
+    // Auditor #466: members analyzed code defines on objects (see FRESH_BY_NAME / USER_MEMBER).
+    if (ts.isObjectLiteralExpression(n)) for (const pr of n.properties) {
+      if (ts.isSpreadAssignment(pr)) continue;
+      const nm = pr.name;
+      if (!nm || ts.isPrivateIdentifier(nm)) add(`${USER_MEMBER}*`);
+      else if (ts.isComputedPropertyName(nm)) { if (!(ts.isPropertyAssignment(pr) && neverCallable(pr.initializer))) add(`${USER_MEMBER}*`); }
+      else add(USER_MEMBER + nm.text);
+    }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      const t = unwrapExpr(n.left);
+      if (ts.isPropertyAccessExpression(t)) add(USER_MEMBER + t.name.text);
+      else if (ts.isElementAccessExpression(t)) { if (ts.isStringLiteralLike(t.argumentExpression) || ts.isNumericLiteral(t.argumentExpression)) add(USER_MEMBER + t.argumentExpression.text); else if (!neverCallable(n.right)) add(`${USER_MEMBER}*`); }
+    }
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === "Object" && n.expression.name.text === "fromEntries") add(`${USER_MEMBER}*`);
+    // Auditor #466: prototypes and stack text (paths / line numbers of the checkout) are never plain data.
+    if (ts.isPropertyAccessExpression(n) && (n.name.text === "prototype" || n.name.text === "__proto__" || STACK_NAMES.has(n.name.text))) add(TEST_TARGET_IMPURE);
+    if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) && (n.argumentExpression.text === "prototype" || n.argumentExpression.text === "__proto__" || STACK_NAMES.has(n.argumentExpression.text))) add(TEST_TARGET_IMPURE);
+    // Auditor #466: `Object` only as `Object.<allowed>(..)`: an alias (`const O = Object`), an argument or
+    // `Object[k]` could reach defineProperty / assign / setPrototypeOf.
+    if (ts.isIdentifier(n) && n.text === "Object" && isValueReference(n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n)) add(TEST_TARGET_IMPURE);
     if (ts.isTaggedTemplateExpression(n) && !(ts.isPropertyAccessExpression(n.tag) && ts.isIdentifier(n.tag.expression) && n.tag.expression.text === "String" && n.tag.name.text === "raw")) add(TEST_TARGET_IMPURE);
     if (ts.isIdentifier(n) && isValueReference(n)) resolve(n.text);
     if (ts.isShorthandPropertyAssignment(n)) resolve(n.name.text);
@@ -833,10 +972,21 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const cached = v2?.modules.get(path);
   const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2 };
   if (v2) analyzeLoadedModule(v2, idx, sf);
-  analyzeFunction(a, f, envDefaults);
+  else analyzeLoadTime(a, sf);
+  analyzeFunction(a, f, envDefaults, true);
+  // Auditor #466: what loading the target module runs. No module of its relative import closure may patch a global
+  // (aliases included), every relative value or side-effect import is exactly one readable .ts module, and no non-Node
+  // package is imported for its value or side effects (code the walk cannot see). v1 reads no sibling, so its target
+  // module may import (for values or side effects) only Node built-ins. The member names every closure module
+  // defines anywhere join the walked ones for the FRESH_BY_NAME check.
+  const members = new Set<string>();
+  const lp = loadClosureProblem(path, sf, v2, members);
+  for (const m of members) a.reasons.add(USER_MEMBER + m);
+  if (freshByNameConflict(a.reasons)) a.reasons.add(TEST_TARGET_IMPURE);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
   if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
+  if (lp) return lp;
   // M97 (v7 hardening, targets v6 refuses only): no module container the analysis reads may escape, and the relative
   // import closure must be code the walk can see, never import the target module back, never patch a global.
   if (v2?.v7) {
@@ -847,6 +997,96 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   return null;
 }
 
+/** Auditor #466: the import declarations of `sf` that load a module at run time (value or side-effect imports and
+ * value re-exports; `import type` / `export type` and all-type named imports are erased). */
+function loadingImports(sf: ts.SourceFile): string[] {
+  const out: string[] = [];
+  for (const s of sf.statements) {
+    if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+    if (ts.isImportDeclaration(s)) {
+      const c = s.importClause;
+      if (c?.isTypeOnly) continue;
+      const nb = c?.namedBindings;
+      if (c && !c.name && nb && ts.isNamedImports(nb) && nb.elements.length > 0 && nb.elements.every((el) => el.isTypeOnly)) continue;
+    } else if (s.isTypeOnly || (s.exportClause && ts.isNamedExports(s.exportClause) && s.exportClause.elements.length > 0 && s.exportClause.elements.every((el) => el.isTypeOnly))) continue;
+    out.push(s.moduleSpecifier.text);
+  }
+  return out;
+}
+/** Auditor #466: `e` can never evaluate to a function (so storing it under an unknown key adds no callable member). */
+function neverCallable(e: ts.Expression | undefined, depth = 0): boolean {
+  if (!e || depth > 16) return false;
+  const x = unwrapExpr(e);
+  if (builtinValue(x, NO_BUILTINS) || ts.isObjectLiteralExpression(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword || ts.isPrefixUnaryExpression(x) || ts.isPostfixUnaryExpression(x) || ts.isTypeOfExpression(x) || ts.isVoidExpression(x) || ts.isDeleteExpression(x)) return true;
+  if (ts.isIdentifier(x)) return x.text === "undefined" || x.text === "NaN" || x.text === "Infinity";
+  if (ts.isConditionalExpression(x)) return neverCallable(x.whenTrue, depth + 1) && neverCallable(x.whenFalse, depth + 1);
+  if (ts.isBinaryExpression(x)) {
+    const k = x.operatorToken.kind;
+    if (k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.AmpersandAmpersandToken) return neverCallable(x.left, depth + 1) && neverCallable(x.right, depth + 1);
+    if (k === ts.SyntaxKind.CommaToken || k === ts.SyntaxKind.EqualsToken || k === ts.SyntaxKind.BarBarEqualsToken || k === ts.SyntaxKind.QuestionQuestionEqualsToken || k === ts.SyntaxKind.AmpersandAmpersandEqualsToken) return neverCallable(x.right, depth + 1);
+    return true; // arithmetic, comparison, bitwise, `in`, `instanceof`, compound arithmetic assignment: a primitive
+  }
+  if (ts.isCallExpression(x)) {
+    const c = x.expression;
+    if (ts.isIdentifier(c) && ["String", "Number", "Boolean", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent"].includes(c.text)) return true;
+    if (ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) && (c.expression.text === "Math" || (c.expression.text === "JSON" && c.name.text === "stringify") || (c.expression.text === "Number" && c.name.text !== "constructor"))) return true;
+    // `[..].sort()` / `.reverse()` / `.fill(v)` return their (built-in) receiver
+    if (ts.isPropertyAccessExpression(c) && ["sort", "reverse", "fill", "copyWithin"].includes(c.name.text)) return builtinValue(c.expression, NO_BUILTINS);
+  }
+  return false;
+}
+/** Auditor #466: every member name `sf` defines on some object anywhere (reached or not; see USER_MEMBER). */
+function memberNames(sf: ts.SourceFile, out: Set<string>): void {
+  const v = (n: ts.Node): void => {
+    if (ts.isObjectLiteralExpression(n)) for (const pr of n.properties) {
+      if (ts.isSpreadAssignment(pr)) continue;
+      const nm = pr.name;
+      if (!nm || ts.isPrivateIdentifier(nm)) out.add("*");
+      else if (ts.isComputedPropertyName(nm)) { if (!(ts.isPropertyAssignment(pr) && neverCallable(pr.initializer))) out.add("*"); }
+      else out.add(nm.text);
+    }
+    if (ts.isClassLike(n)) for (const mem of n.members) { const nm = mem.name; out.add(!nm || ts.isComputedPropertyName(nm) || ts.isPrivateIdentifier(nm) ? "*" : nm.text); }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      const t = unwrapExpr(n.left);
+      if (ts.isPropertyAccessExpression(t)) out.add(t.name.text);
+      else if (ts.isElementAccessExpression(t)) { if (ts.isStringLiteralLike(t.argumentExpression) || ts.isNumericLiteral(t.argumentExpression)) out.add(t.argumentExpression.text); else if (!neverCallable(n.right)) out.add("*"); }
+    }
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ["fromEntries", "assign", "defineProperty", "defineProperties", "create", "setPrototypeOf"].includes(n.expression.name.text)) out.add("*");
+    // a module function named like a fresh method is a member of the module namespace
+    if (ts.isFunctionDeclaration(n) && n.name && n.parent === sf) out.add(n.name.text);
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+}
+/** Auditor #466: bound on the modules of the load-closure walk (more is refused, test_target_too_large). */
+const MAX_LOAD_CLOSURE = 64;
+function loadClosureProblem(path: string, sf: ts.SourceFile, v: V2Ctx | undefined, members: Set<string>): string | null {
+  if (!v) {
+    memberNames(sf, members);
+    if (patchesGlobal(sf)) return TEST_TARGET_IMPURE;
+    for (const spec of loadingImports(sf)) if (!NODE_BUILTINS.test(spec)) return TEST_TARGET_IMPURE;
+    return null;
+  }
+  const seen = new Set<string>([path]);
+  const queue = [path];
+  while (queue.length) {
+    const p = queue.shift()!;
+    const text = p === path ? sf.text : v.read(p);
+    if (text === null) return TEST_TARGET_IO;
+    const m = p === path ? sf : ts.createSourceFile(p, text, ts.ScriptTarget.Latest, true);
+    memberNames(m, members);
+    if (patchesGlobal(m)) return TEST_TARGET_IMPURE;
+    for (const spec of loadingImports(m)) {
+      if (NODE_BUILTINS.test(spec)) continue;
+      if (!/^\.\.?\//.test(spec)) return TEST_TARGET_IMPURE;
+      const hits = (siblingCandidates(p, spec) ?? []).filter((c) => c === path || v.read(c) !== null);
+      if (hits.length !== 1) return TEST_TARGET_IO;
+      const c = hits[0]!;
+      if (!seen.has(c)) { seen.add(c); if (seen.size > MAX_LOAD_CLOSURE) return TEST_TARGET_TOO_LARGE; queue.push(c); }
+    }
+  }
+  return null;
+}
 /** M97: a module const whose value is a container (array / object literal, `new ...`), not a primitive literal. */
 function containerInit(e: ts.Expression | undefined): boolean {
   let x = e;
@@ -870,6 +1110,33 @@ function containerEscapes(v: V2Ctx): boolean {
       if (ts.isShorthandPropertyAssignment(n) && names.has(n.name.text)) { bad = true; return; }
       if (ts.isExportSpecifier(n) && names.has((n.propertyName ?? n.name).text)) { bad = true; return; }
       if (ts.isIdentifier(n) && names.has(n.text) && isValueReference(n)) {
+        // Auditor #466: a value read out of the container (`T.m`, `STORE.items`, `T[k].list`) may be a container
+        // too: the whole access path is held to the in-place rule, so `return T.m` or `() => STORE.items` escapes.
+        let top: ts.Expression = n;
+        let steps = 0;
+        for (;;) {
+          const q = top.parent;
+          if ((ts.isPropertyAccessExpression(q) || ts.isElementAccessExpression(q)) && q.expression === top) { top = q; steps++; }
+          else if ((ts.isNonNullExpression(q) || ts.isParenthesizedExpression(q) || ts.isAsExpression(q) || ts.isSatisfiesExpression(q)) && q.expression === top) top = q;
+          else break;
+        }
+        if (steps > 0) {
+          const q = top.parent;
+          const last = unwrapExpr(top);
+          const primitiveProp = ts.isPropertyAccessExpression(last) && (last.name.text === "length" || last.name.text === "size");
+          const used = primitiveProp
+            || (ts.isCallExpression(q) && q.expression === top)
+            || (ts.isBinaryExpression(q) && ![ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.CommaToken].includes(q.operatorToken.kind) && !(q.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && q.operatorToken.kind <= ts.SyntaxKind.LastAssignment))
+            || ts.isPrefixUnaryExpression(q) || ts.isTypeOfExpression(q) || ts.isVoidExpression(q) || ts.isTemplateSpan(q)
+            || (ts.isConditionalExpression(q) && q.condition === top)
+            || ((ts.isIfStatement(q) || ts.isWhileStatement(q) || ts.isDoStatement(q) || ts.isSwitchStatement(q)) && q.expression === top) || ts.isCaseClause(q)
+            || (ts.isElementAccessExpression(q) && q.argumentExpression === top)
+            || (ts.isSpreadElement(q) && ts.isArrayLiteralExpression(q.parent))
+            || (ts.isForOfStatement(q) && q.expression === top);
+          if (!used) { bad = true; return; }
+          ts.forEachChild(n, see);
+          return;
+        }
         const p = n.parent;
         const inPlace = ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n)
           || (ts.isSpreadElement(p) && ts.isArrayLiteralExpression(p.parent))
@@ -896,17 +1163,76 @@ function containerEscapes(v: V2Ctx): boolean {
  */
 const PATCHABLE = new Set([...PURE_GLOBALS, ...LOCAL_TIME_GLOBALS, "globalThis", "global", "window", "self", "Reflect", "Proxy", "Symbol", "Promise", "WeakMap", "WeakSet", "WeakRef", "Function", "ArrayBuffer", "DataView", "Uint8Array", "Buffer", "TextEncoder", "TextDecoder", "URL", "URLSearchParams", "structuredClone"]);
 const PATCH_CALLS = new Set(["defineProperty", "defineProperties", "setPrototypeOf", "assign", "freeze", "seal", "preventExtensions", "set", "deleteProperty"]);
-/** M97: in this module, a write to a global (`Map.prototype.get = ...`, `Object.defineProperty(Set.prototype, ...)`). */
+/**
+ * M97: in this module, a write to a global (`Map.prototype.get = ...`, `Object.defineProperty(Set.prototype, ...)`).
+ * Auditor #466: through aliases too. A name bound anywhere in the module (variable, destructuring, assignment) to a
+ * value rooted in a patchable global (`const P = Set.prototype`, `const O = Object`, `const { defineProperty } =
+ * Object`, `const G = globalThis`), transitively, is that global; and a call of a PATCH_CALLS function reached through
+ * any such name (`O.defineProperty(..)`, `R.set(..)`, `defineProperty(..)`, `Object["assign"](..)`,
+ * `Object.defineProperty.call(..)`) with a global or alias argument is a patch.
+ */
 function patchesGlobal(sf: ts.SourceFile): boolean {
   const idx = indexModule(sf);
-  const isGlobal = (e: ts.Expression) => { const r = rootName(e); return ts.isIdentifier(r) && PATCHABLE.has(r.text) && unshadowed(idx, r.text); };
+  const aliases = new Set<string>();
+  const rootOf = (e: ts.Expression): ts.Expression => {
+    let x = e;
+    for (;;) {
+      x = unwrapExpr(x);
+      if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x)) x = x.expression;
+      else if (ts.isBinaryExpression(x) && (x.operatorToken.kind === ts.SyntaxKind.BarBarToken || x.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || x.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || x.operatorToken.kind === ts.SyntaxKind.CommaToken)) return x;
+      else return x;
+    }
+  };
+  const globalRooted = (e: ts.Expression | undefined): boolean => {
+    if (!e) return false;
+    const x = unwrapExpr(e);
+    if (ts.isConditionalExpression(x)) return globalRooted(x.whenTrue) || globalRooted(x.whenFalse);
+    if (ts.isBinaryExpression(x) && (x.operatorToken.kind === ts.SyntaxKind.BarBarToken || x.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || x.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || x.operatorToken.kind === ts.SyntaxKind.CommaToken || x.operatorToken.kind === ts.SyntaxKind.EqualsToken)) return globalRooted(x.left) || globalRooted(x.right);
+    if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && ["getPrototypeOf", "getOwnPropertyDescriptor", "bind"].includes(x.expression.name.text)) return true;
+    const r = rootOf(x);
+    return ts.isIdentifier(r) && ((PATCHABLE.has(r.text) && unshadowed(idx, r.text)) || aliases.has(r.text));
+  };
+  const isGlobal = (e: ts.Expression) => globalRooted(e);
+  // Fixpoint over every binding in the module (scopes are not tracked: a same-named local counts too, conservatively).
+  for (let changed = true; changed;) {
+    changed = false;
+    const bind = (name: ts.BindingName, init: ts.Expression | undefined, whole: boolean): void => {
+      if (ts.isIdentifier(name)) { if ((whole && globalRooted(init)) && !aliases.has(name.text)) { aliases.add(name.text); changed = true; } return; }
+      for (const el of name.elements) if (!ts.isOmittedExpression(el)) bind(el.name, init, true);
+    };
+    const v = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isPropertyDeclaration(n)) {
+        const init = (n as { initializer?: ts.Expression }).initializer;
+        if (n.name && !ts.isComputedPropertyName(n.name) && !ts.isStringLiteral(n.name) && !ts.isNumericLiteral(n.name) && !ts.isPrivateIdentifier(n.name) && !ts.isNoSubstitutionTemplateLiteral(n.name) && !ts.isBigIntLiteral(n.name)) bind(n.name, init, true);
+      }
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && globalRooted(n.right)) {
+        const l = unwrapExpr(n.left);
+        if (ts.isIdentifier(l) && !aliases.has(l.text)) { aliases.add(l.text); changed = true; }
+        if (ts.isObjectLiteralExpression(l) || ts.isArrayLiteralExpression(l)) { const names: string[] = []; const c = (x: ts.Node): void => { if (ts.isIdentifier(x)) names.push(x.text); else ts.forEachChild(x, c); }; c(l); for (const k of names) if (!aliases.has(k)) { aliases.add(k); changed = true; } }
+      }
+      ts.forEachChild(n, v);
+    };
+    v(sf);
+  }
+  const patchCallee = (e: ts.Expression): boolean => {
+    const x = unwrapExpr(e);
+    if (ts.isIdentifier(x)) return aliases.has(x.text) || (PATCHABLE.has(x.text) && unshadowed(idx, x.text) && false);
+    if (ts.isPropertyAccessExpression(x)) {
+      const m = x.name.text;
+      if ((m === "call" || m === "apply") && patchCallee(x.expression)) return true;
+      return PATCH_CALLS.has(m) && globalRooted(x.expression);
+    }
+    if (ts.isElementAccessExpression(x)) return globalRooted(x.expression);
+    return false;
+  };
   let bad = false;
   const v = (n: ts.Node): void => {
     if (bad) return;
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && !ts.isIdentifier(n.left) && isGlobal(n.left)) bad = true;
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && !ts.isIdentifier(unwrapExpr(n.left)) && isGlobal(n.left)) bad = true;
+    else if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && ts.isIdentifier(unwrapExpr(n.left)) && PATCHABLE.has((unwrapExpr(n.left) as ts.Identifier).text) && unshadowed(idx, (unwrapExpr(n.left) as ts.Identifier).text)) bad = true;
     else if (ts.isDeleteExpression(n) && isGlobal(n.expression)) bad = true;
-    else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) && !ts.isIdentifier(n.operand) && isGlobal(n.operand)) bad = true;
-    else if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && (n.expression.expression.text === "Object" || n.expression.expression.text === "Reflect") && PATCH_CALLS.has(n.expression.name.text) && n.arguments[0] && isGlobal(n.arguments[0])) bad = true;
+    else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) && !ts.isIdentifier(unwrapExpr(n.operand)) && isGlobal(n.operand)) bad = true;
+    else if (ts.isCallExpression(n) && patchCallee(n.expression) && n.arguments.some((g) => isGlobal(g))) bad = true;
     else ts.forEachChild(n, v);
   };
   v(sf);
