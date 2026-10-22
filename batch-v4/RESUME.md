@@ -218,3 +218,10 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - #460 merged 8567c50 (Auditor PASS). v6 rule-proposal issue #464 opened (generator /workspace/te8/prop/gen.mts on a clone of 8567c50; marker/spec sha 256f7b32... verified on the live body; leak clean). Waiting for Peace's /approve-rule (never post it).
 - #463 head 9ceaf60 = merge of main 8567c50, m12 1a5e5531 (= Auditor trial). Box 1127/1128 (m48). CI green. Not merged.
 - #465 M96 (m96/protect-tool-closure, from 8567c50, head d13255f): 23 lib modules + kernel-guard.ts protected; m96 test (closure of every protected .ts + .sh-named .ts closed; authorIsNoreply negative proof); m72/m76 accept protected_path. m12 52a861ff (main+M96); after #463 merges: merge main + re-pin to ac61e5c62463a832482c1aa0829b7bbe1fb058811874bbfd8964fdcddcbc4caa (trial). Box 1128/1129 (m48).
+
+## 2026-10-22 ~13:05Z M97 v7 skill (branch m97/test-case-existing-v7 head 26d5677, on main d668ffa; NO PR yet)
+- Engine + evidence (16 ex / 15 repos) + spec doc + proposal + PROTECTED_SELF M97 + m12 re-pin 558a48ca... + proofs all pushed. Spec public-test-case-existing-v7 sha 719f792af9fd16a0cea96218ddac9c43727e5c0c4a64e485e9dd07e5d2b66410. Box dir /workspace/te9 (ws, census, mine, pr-body.md).
+- Census re-run on head (fresh clone /tmp/c97/stocks @ 0ab37c8, engine /tmp/d497 = 26d5677): v1 34 v2 78 v3 92 v4 105 v5 112 v6 122 v7 129 (+7, 0 lost) = the 7 planned (4 Map/Set + 3 void).
+- Box checks on /tmp/d497: approved PASS 28, leak PASS, builder-log 61/61, typecheck OK, test 17/17, self 5/5, tools 1142/1143 (m48 box-only), m97 12/12.
+- Stress running: baseline WS=/tmp/d497 RUNS=/workspace/stress/runs-m97; sim WS=/tmp/s97sim (local-only approved.json, fake issue 999999, NEVER commit) STOCKS=/tmp/stocks97sim GRADE=/tmp/grade97sim RUNS=/workspace/stress/runs-m97-sim. Score with python3 /workspace/stress/score.py <runs>.
+- NEXT: stress scores into pr-body.md (STRESS_PLACEHOLDER), open PR (don't merge), Auditor.
