@@ -11,7 +11,7 @@ const F: Record<string, string> = {
  "back2.ts": "import { K } from \"./bad_back\";\nexport function viaBack(n: number): number { return n + K; }\n",
  "bad_alias.ts": "function days(n: number): number { return n * 2; }\nconst g = days;\nconst D = g(3);\nexport function f(x: number): number { return x + D; }\n",
  "bad_back.ts": "import { viaBack } from \"./back2\";\nconst D = viaBack(1);\nexport function f(x: number): number { return x + D; }\nexport const K = 3;\n",
- "bad_date.ts": "function d(n: number): string { const c = new Date(Date.UTC(2024, 0, 1)); c.setUTCDate(n); return c.toISOString(); }\nconst D = d(3);\nexport function f(x: string): string { return x + D; }\n",
+ "bad_date.ts": "function d(n: number): string { const c = new Date(Date.UTC(2024, 0, 1)); c.setDate(n); return c.toISOString(); }\nconst D = d(3);\nexport function f(x: string): string { return x + D; }\n",
  "bad_env.ts": "function flag(n: number, env: NodeJS.ProcessEnv = process.env): number { return env.PEACE_PROBE === \"1\" ? 1 : n; }\nconst D = flag(2);\nexport function f(x: number): number { return x + D; }\n",
  "bad_env2.ts": "function flag(n: number): number { return process.env.PEACE_PROBE === \"1\" ? 1 : n; }\nconst D = flag(2);\nexport function f(x: number): number { return x + D; }\n",
  "bad_export.ts": "function mk(n: number): string[] { return [\"a\"]; }\nexport const L = mk(1);\nexport function f(x: string): number { return L.indexOf(x); }\n",
@@ -61,7 +61,7 @@ const ATTACKS: Record<string, string> = {
   bad_env: "omitted parameter with a process.env default", bad_env2: "callee reads process.env", bad_alias: "callee reached through a const alias", bad_back: "callee imported from a module that imports the caller back",
   bad_rx: "callee returns a /g regex", bad_iter: "callee returns an iterator", bad_gen: "callee is a generator", bad_set: "callee returns a Set", bad_obj: "callee returns an object",
   bad_nonlit: "non-inert argument (clock)", bad_patch: "callee patches a global", bad_rec: "self-recursive callee", bad_rec2: "mutually recursive callees", bad_rec3: "callee passes itself as a callback",
-  bad_member: "callee is an object method", bad_let: "call result bound to let", bad_rxstatic: "callee reads RegExp statics", bad_date: "callee uses a Date setter", bad_unrelated: "impure top-level call unrelated to the target",
+  bad_member: "callee is an object method", bad_let: "call result bound to let", bad_rxstatic: "callee reads RegExp statics", bad_date: "callee uses a local-time Date setter", bad_unrelated: "impure top-level call unrelated to the target",
 };
 
 test("load-call allowance: every attack stays refused under v1-v7", () => {

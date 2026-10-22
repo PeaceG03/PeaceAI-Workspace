@@ -191,7 +191,11 @@ test("refusals: impurity (test_target_impure)", () => {
   assert.equal(refusal("class C {}\nexport function f(): number { return new C() ? 1 : 0; }\n"), TEST_TARGET_IMPURE);
   assert.equal(refusal("export function f(s: string): number { return new Uint8Array(s.length).length; }\n"), TEST_TARGET_IMPURE, "other new");
   assert.equal(refusal("export function f(s: string): string { return Buffer.from(s).toString(\"hex\"); }\n"), TEST_TARGET_IMPURE, "unlisted global");
-  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setUTCDate(1); return d.getTime(); }\n"), TEST_TARGET_IMPURE, "date setter");
+  // #466 (Auditor ruling): a UTC setter on a fresh local `new Date(arg)` that never escapes is sound and accepted;
+  // local-time setters and setters on any other Date stay refused.
+  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setUTCDate(1); return d.getTime(); }\n"), null, "UTC setter on a fresh local Date");
+  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setDate(1); return d.getTime(); }\n"), TEST_TARGET_IMPURE, "local-time date setter");
+  assert.notEqual(refusal("export function f(d: Date): number { d.setUTCDate(1); return d.getTime(); }\n"), null, "setter on a parameter Date (v1: a Date parameter is already a signature refusal)");
   assert.equal(refusal("export function f(o: string[]): number { Object.assign(o, [1]); return o.length; }\n"), TEST_TARGET_IMPURE);
   assert.equal(refusal("export function f(xs: number[]): number[] { const out: number[] = []; for (const x of xs) out.push(x * 2); return out; }\n"), null, "local array is fine");
 });

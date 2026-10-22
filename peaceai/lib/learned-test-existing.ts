@@ -198,6 +198,218 @@ function indexModule(sf: ts.SourceFile): ModuleIndex {
 }
 
 /** Is `n` an identifier in an expression (value) position, i.e. a reference the analysis must resolve? */
+/**
+ * #466 (Auditor ruling on Date setters): a setter on a FRESH LOCAL Date is sound under exact conditions, so the
+ * TEST_EXISTING walk (every version) no longer refuses it by name. `dateRefusal` (learned-complex.ts, shared with the
+ * DATE function spec) is unchanged; this layer only removes the setter refusal for call sites proven fresh:
+ * (a) the receiver is a `const` / `let` declared in the same function as `new Date(arg, ...)` with at least one argument
+ *     (no `new Date()`, nothing fed by Date.now / performance - those keep their own refusals), `Date` is the global
+ *     (no declaration named Date anywhere in the file), and no other declaration of the name exists in that function;
+ * (b) the setter is `setTime` or `setUTC*` only - local-time setters (setDate, setHours, ...), local getters and
+ *     toString / toLocale* keep their refusals;
+ * (c) the Date never escapes before a setter runs: any use other than a called UTC read (getTime / valueOf /
+ *     toISOString / getUTC*), a comparison or subtraction operand, a `new Date(d)` copy argument, or `return d` is an
+ *     escape (call argument, container / property store, alias, destructuring, spread, template, reassignment). A
+ *     reference from a nested function (closure capture) disables every setter on that Date. A setter is kept only if
+ *     it ends before every escape in source order and no loop repeats both without re-creating the Date; returning
+ *     after the mutations is fine;
+ * (d) `Date.prototype` patches stay refused by the global-patch check of the walk.
+ */
+const TE_LOCAL_DATE_READS = /^(?:getFullYear|getYear|getMonth|getDate|getDay|getHours|getMinutes|getSeconds|getMilliseconds|getTimezoneOffset|toLocaleString|toLocaleDateString|toLocaleTimeString|toDateString|toTimeString|toUTCString|toJSON)$/;
+const TE_DATE_SETTERS = /^set(?:UTC)?(?:FullYear|Year|Month|Date|Hours|Minutes|Seconds|Milliseconds|Time)$/;
+const TE_UTC_SETTER = /^(?:setTime|setUTC(?:FullYear|Month|Date|Hours|Minutes|Seconds|Milliseconds))$/;
+const TE_DATE_SAFE_READ = /^(?:getTime|valueOf|toISOString|getUTC(?:FullYear|Month|Date|Day|Hours|Minutes|Seconds|Milliseconds))$/;
+const TE_DATE_SAFE_OP = new Set([ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken]);
+const teFnLike = (n: ts.Node): n is ts.FunctionLikeDeclaration => ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n) || ts.isGetAccessor(n) || ts.isSetAccessor(n) || ts.isConstructorDeclaration(n);
+function teScopeOf(n: ts.Node): ts.Node | undefined {
+  for (let p = n.parent; p; p = p.parent) if (teFnLike(p)) return p;
+  return undefined;
+}
+const teDeclaresDate = new WeakMap<ts.SourceFile, boolean>();
+function teFileDeclares(sf: ts.SourceFile, name: string): boolean {
+  if (name === "Date" && teDeclaresDate.has(sf)) return teDeclaresDate.get(sf)!;
+  let hit = false;
+  const v = (n: ts.Node): void => {
+    if (hit) return;
+    const nm = (n as { name?: ts.Node }).name;
+    if (nm && ts.isIdentifier(nm) && nm.text === name && (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n) || ts.isImportSpecifier(n) || ts.isImportClause(n) || ts.isNamespaceImport(n) || ts.isEnumDeclaration(n) || ts.isModuleDeclaration(n) || ts.isImportEqualsDeclaration(n))) hit = true;
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  if (name === "Date") teDeclaresDate.set(sf, hit);
+  return hit;
+}
+/** Loops whose repeated part (condition / incrementor / body; not a for-initializer) contains n, up to scope. */
+function teLoops(n: ts.Node, scope: ts.Node): ts.Node[] {
+  const out: ts.Node[] = [];
+  let c: ts.Node = n;
+  for (let p = n.parent; p && c !== scope; c = p, p = p.parent) {
+    if (ts.isForStatement(p)) { if (c !== p.initializer) out.push(p); }
+    else if (ts.isForOfStatement(p) || ts.isForInStatement(p)) { if (c === p.statement) out.push(p); }
+    else if (ts.isWhileStatement(p) || ts.isDoStatement(p)) out.push(p);
+    if (p === scope) break;
+  }
+  return out;
+}
+/** The setter property-access nodes (`d.setUTCDate`) inside root that act on a fresh local Date (see above). */
+export function freshDateSetters(root: ts.Node, scopeFn?: ts.Node): Set<ts.Node> {
+  const ok = new Set<ts.Node>();
+  const sf = root.getSourceFile();
+  if (teFileDeclares(sf, "Date")) return ok;
+  const scopes: ts.Node[] = scopeFn ? [scopeFn] : [];
+  const coll = (n: ts.Node): void => { if (teFnLike(n)) scopes.push(n); ts.forEachChild(n, coll); };
+  coll(root);
+  for (const S of scopes) {
+    const body = (S as ts.FunctionLikeDeclaration).body;
+    if (!body) continue;
+    const decls: ts.VariableDeclaration[] = [];
+    const findDecls = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && teScopeOf(n) === S) decls.push(n);
+      ts.forEachChild(n, findDecls);
+    };
+    findDecls(body);
+    for (const V of decls) {
+      const init = V.initializer!;
+      if (!ts.isNewExpression(init) || !ts.isIdentifier(init.expression) || init.expression.text !== "Date") continue;
+      const args = init.arguments ?? ts.factory.createNodeArray();
+      if (args.length < 1) continue;
+      const fedByClock = (n: ts.Node): boolean => (ts.isIdentifier(n) && (n.text === "performance" || (n.text === "Date" && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n && n.parent.name.text === "UTC")))) || !!ts.forEachChild(n, (k) => fedByClock(k) || undefined);
+      if (args.some((x) => fedByClock(x) || dateRefusal(x) !== null)) continue;
+      const list = V.parent;
+      if (!ts.isVariableDeclarationList(list) || !(list.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let))) continue;
+      const name = (V.name as ts.Identifier).text;
+      let shadow = false;
+      const refs: ts.Identifier[] = [];
+      const scan = (n: ts.Node): void => {
+        const nm = (n as { name?: ts.Node }).name;
+        if (n !== V && nm && ts.isIdentifier(nm) && nm.text === name && (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n))) shadow = true;
+        if (ts.isCatchClause(n) && n.variableDeclaration && ts.isIdentifier(n.variableDeclaration.name) && n.variableDeclaration.name.text === name) shadow = true;
+        if (ts.isIdentifier(n) && n.text === name && n !== V.name && isValueReference(n)) refs.push(n);
+        ts.forEachChild(n, scan);
+      };
+      scan(S);
+      if (shadow) continue;
+      const setters: ts.PropertyAccessExpression[] = [];
+      const escapes: ts.Node[] = [];
+      let captured = false;
+      for (const r of refs) {
+        if (teScopeOf(r) !== S) { captured = true; break; }
+        const p = r.parent;
+        if (ts.isPropertyAccessExpression(p) && p.expression === r && ts.isIdentifier(p.name) && ts.isCallExpression(p.parent) && p.parent.expression === p) {
+          if (TE_UTC_SETTER.test(p.name.text)) { setters.push(p); continue; }
+          if (TE_DATE_SAFE_READ.test(p.name.text)) continue;
+        } else if (ts.isBinaryExpression(p) && TE_DATE_SAFE_OP.has(p.operatorToken.kind)) continue;
+        else if (ts.isNewExpression(p) && ts.isIdentifier(p.expression) && p.expression.text === "Date" && (p.arguments ?? ts.factory.createNodeArray<ts.Expression>()).includes(r)) continue;
+        else if (ts.isReturnStatement(p) && p.expression === r) continue;
+        escapes.push(r);
+      }
+      if (captured) continue;
+      const vLoops = new Set(teLoops(V, S));
+      for (const st of setters) {
+        const sLoops = teLoops(st, S);
+        const safe = escapes.every((e) => st.parent.end <= e.getStart(sf) && !teLoops(e, S).some((l) => sLoops.includes(l) && !vLoops.has(l)));
+        if (safe) ok.add(st);
+      }
+    }
+  }
+  return ok;
+}
+/**
+ * #466 (Auditor ruling, item b): a Date converted to a string by toString is local-time (zone-dependent) like
+ * toLocale* / toDateString. Refused (date_local_time) when the value is Date-valued as far as the syntax shows: a
+ * `new Date(..)`, a call of a function of the file annotated to return Date, or a name some declaration of which in
+ * the file is annotated Date or initialized Date-valued; and it is converted by `.toString()`, `String(x)`, a
+ * template span or `+` / `+=` (for the implicit conversions only an exact `Date` - a `new Date(..)`, a name annotated
+ * exactly `Date` or initialized with one - counts; a `Date | string` union converted implicitly is left as at main).
+ * Name-based (no type checker), so it may over-refuse; a Date reached through a property or a container is not
+ * followed (see the PR body).
+ */
+function teDateish(e: ts.Expression, sf: ts.SourceFile, depth = 0, exact = false): boolean {
+  while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression;
+  if (depth > 4) return false;
+  const dateType = (t: ts.TypeNode | undefined): boolean => {
+    let hit = false;
+    const v = (n: ts.Node): void => { if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && n.typeName.text === "Date") hit = true; ts.forEachChild(n, v); };
+    if (t) { if (exact) return ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === "Date"; v(t); }
+    return hit;
+  };
+  if (ts.isNewExpression(e)) return ts.isIdentifier(e.expression) && e.expression.text === "Date";
+  const named = (name: string, pick: (n: ts.Node) => boolean): boolean => {
+    let hit = false;
+    const v = (n: ts.Node): void => { const d = (n as { name?: ts.Node }).name; if (!hit && d && ts.isIdentifier(d) && d.text === name && pick(n)) hit = true; if (!hit) ts.forEachChild(n, v); };
+    v(sf);
+    return hit;
+  };
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
+    const fn = e.expression.text;
+    return named(fn, (n) => (ts.isFunctionDeclaration(n) && dateType(n.type)) || (ts.isVariableDeclaration(n) && !!n.initializer && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer)) && (dateType(n.initializer.type) || (!n.initializer.type && ts.isArrowFunction(n.initializer) && !ts.isBlock(n.initializer.body) && teDateish(n.initializer.body, sf, depth + 1, exact)))));
+  }
+  if (ts.isIdentifier(e)) {
+    // Resolve to the innermost lexically enclosing declaration of the name (not any same-named declaration in the file).
+    const nm = e.text, at = e.getStart(sf);
+    let best: ts.VariableDeclaration | ts.ParameterDeclaration | undefined, span = Infinity;
+    const holder = (n: ts.Node): ts.Node => {
+      let p: ts.Node = n.parent;
+      if (ts.isParameter(n)) return p;
+      while (!(ts.isBlock(p) || ts.isSourceFile(p) || ts.isForStatement(p) || ts.isForOfStatement(p) || ts.isForInStatement(p) || ts.isCatchClause(p) || teFnLike(p))) p = p.parent;
+      return p;
+    };
+    const v = (n: ts.Node): void => {
+      if ((ts.isVariableDeclaration(n) || ts.isParameter(n)) && ts.isIdentifier(n.name) && n.name.text === nm) {
+        const h = holder(n);
+        if (h.getStart(sf) <= at && at < h.end && h.end - h.getStart(sf) < span) { best = n; span = h.end - h.getStart(sf); }
+      }
+      ts.forEachChild(n, v);
+    };
+    v(sf);
+    const b = best as ts.VariableDeclaration | ts.ParameterDeclaration | undefined;
+    return !!b && (dateType(b.type) || (!!b.initializer && teDateish(b.initializer, sf, depth + 1, exact)));
+  }
+  return false;
+}
+function teDateToString(node: ts.Node): boolean {
+  const sf = node.getSourceFile();
+  let hit = false;
+  const v = (n: ts.Node): void => {
+    if (hit) return;
+    if (ts.isCallExpression(n)) {
+      const c = n.expression;
+      if ((ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.name) && c.name.text === "toString" && teDateish(c.expression, sf)) ||
+        (ts.isElementAccessExpression(c) && ts.isStringLiteralLike(c.argumentExpression) && c.argumentExpression.text === "toString" && teDateish(c.expression, sf)) ||
+        (ts.isIdentifier(c) && c.text === "String" && n.arguments.some((x) => teDateish(x, sf, 0, true)))) hit = true;
+    }
+    if (ts.isTemplateSpan(n) && teDateish(n.expression, sf, 0, true)) hit = true;
+    if (ts.isBinaryExpression(n) && (n.operatorToken.kind === ts.SyntaxKind.PlusToken || n.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken) && (teDateish(n.left, sf, 0, true) || teDateish(n.right, sf, 0, true))) hit = true;
+    ts.forEachChild(n, v);
+  };
+  v(node);
+  return hit;
+}
+/** dateRefusal, plus Date-to-string conversions (teDateToString); setter calls proven to act on a fresh local Date (freshDateSetters) are not refused. */
+function dateRefusalTE(node: ts.Node, scopeFn?: ts.Node): string | null {
+  const r = dateRefusal(node);
+  if (r === DATE_NOW || r === DATE_LOCAL_TIME) return r;
+  if (teDateToString(node)) return DATE_LOCAL_TIME;
+  if (r !== DATE_SETTER) return r;
+  const ok = freshDateSetters(node, scopeFn);
+  if (ok.size === 0) return r;
+  // r === DATE_SETTER means no clock read; re-scan for a local-time read or a setter that is not proven fresh.
+  let local = false, setter = false;
+  const isDate = (e: ts.Expression) => ts.isIdentifier(e) && e.text === "Date";
+  const v = (n: ts.Node): void => {
+    if (ts.isNewExpression(n) && isDate(n.expression) && (n.arguments?.length ?? 0) > 1) local = true;
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.name)) {
+      if (isDate(n.expression) && n.name.text === "parse") local = true;
+      else if (isDate(n.expression) && n.name.text === "now") local = true;
+      else if (TE_LOCAL_DATE_READS.test(n.name.text)) local = true;
+      else if (TE_DATE_SETTERS.test(n.name.text) && !ok.has(n)) setter = true;
+    }
+    ts.forEachChild(n, v);
+  };
+  v(node);
+  return local ? DATE_LOCAL_TIME : setter ? DATE_SETTER : null;
+}
+
 function isValueReference(n: ts.Identifier): boolean {
   const p = n.parent;
   if (!p) return false;
@@ -379,7 +591,7 @@ function analyzeLoadTime(a: Analysis, sf: ts.SourceFile): void {
     } else if (ts.isVariableStatement(s) && a.v2) {
       for (const d of s.declarationList.declarations) {
         if (!d.initializer) continue;
-        const dr = dateRefusal(d.initializer);
+        const dr = dateRefusalTE(d.initializer);
         if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) a.reasons.add(TEST_TARGET_DATE_LOCAL);
         else if (dr === DATE_SETTER) a.reasons.add(TEST_TARGET_IMPURE);
       }
@@ -613,7 +825,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
   const add = (r: string) => a.reasons.add(r);
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) add(TEST_TARGET_ASYNC);
   if (!f.body) { add(TEST_TARGET_IMPURE); return; }
-  const dr = dateRefusal(f.body);
+  const dr = dateRefusalTE(f.body, f);
   if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
   else if (dr === DATE_SETTER) add(TEST_TARGET_IMPURE);
   // Names declared anywhere inside the function (its params, locals, nested params): resolved locally.
@@ -760,7 +972,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
     if (!p.initializer) continue;
     // M93 (v6, tested function only): a `= process.env` default every check overrides (enforced by the callers).
     if (envDefaults.has(p)) continue;
-    const pr = dateRefusal(p.initializer);
+    const pr = dateRefusalTE(p.initializer);
     if (pr === DATE_NOW || pr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
     else if (pr === DATE_SETTER) add(TEST_TARGET_IMPURE);
     walk(a, p.initializer, resolve, () => false, fresh);
@@ -770,7 +982,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
 /** A module const's initializer: the same rules with no locals (it runs once, at import). */
 function analyzeExpression(a: Analysis, e: ts.Expression): void {
   const add = (r: string) => a.reasons.add(r);
-  const dr = dateRefusal(e);
+  const dr = dateRefusalTE(e);
   if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
   else if (dr === DATE_SETTER) add(TEST_TARGET_IMPURE);
   // Arrow/function initializers: analyzed as functions (a const helper).
