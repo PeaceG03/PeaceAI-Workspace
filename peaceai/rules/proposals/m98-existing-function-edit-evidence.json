@@ -33,62 +33,62 @@
    "licenseSha256": "639d5d0a62d6c4eb4f43648c07a2f6ee8a3614d6ebf1f6a483bcf83be7d5abaa"
   },
   {
-   "repo": "golevelup/nestjs",
-   "commit": "d9b9d147ab4c083c40bc284566d0f655110417d5",
-   "parent": "74ce4ae4b2f62d91d01468368421692b53fe59ec",
-   "path": "packages/rabbitmq/src/amqp/connection.ts",
-   "target": "AmqpConnection.createRpc",
+   "repo": "ZackMcColgan/local-agentic-sandbox",
+   "commit": "c5e00ee62fdfb839503ec9ff6083010cd5b3488c",
+   "parent": "118a4c7a9000c259c0463ffbfca548fe94626fd0",
+   "path": "web-ui/lib/subagents/scheduler.ts",
+   "target": "UnattendedScheduler.executeScheduledRun",
    "kind": "method",
    "isAsync": true,
-   "old": "const { queue } = await this.channel.assertQueue(rpcOptions.queue || '');",
-   "new": "const { queue } = await this.channel.assertQueue( rpcOptions.queue || '', rpcOptions.queueOptions || undefined );",
+   "old": "manifest.status = \"failed\";",
+   "new": "manifest.status = \"parked\";",
    "before": {
-    "repo": "golevelup/nestjs",
-    "commit": "74ce4ae4b2f62d91d01468368421692b53fe59ec",
-    "path": "packages/rabbitmq/src/amqp/connection.ts",
-    "fileBlob": "c765c645d8fb2cc7d690a50fbcb523d9cf75c1ac",
-    "sha256": "11deef516eb0474ae929263a51b5ceec62732a2563e7df37a06955ad55c38e7d",
-    "fixture": "peaceai/test/fixtures/m98-ee/golevelup__nestjs-c765c645d8fb.txt"
+    "repo": "ZackMcColgan/local-agentic-sandbox",
+    "commit": "118a4c7a9000c259c0463ffbfca548fe94626fd0",
+    "path": "web-ui/lib/subagents/scheduler.ts",
+    "fileBlob": "aa7b844a8b28613035260552f31275ceb8d5ec08",
+    "sha256": "0f05371389b5b52618f865e7358094f9100c96f37cfb590d378ec22581c976af",
+    "fixture": "peaceai/test/fixtures/m98-ee/ZackMcColgan__local-agentic-sandbox-aa7b844a8b28.txt"
    },
    "after": {
-    "repo": "golevelup/nestjs",
-    "commit": "d9b9d147ab4c083c40bc284566d0f655110417d5",
-    "path": "packages/rabbitmq/src/amqp/connection.ts",
-    "fileBlob": "9c7d1223ba10011bbf34cca5added3172106246c",
-    "sha256": "a6294ad827a6878a444a330716c4489dcd763dc2846f684bca9e145a2cc10aba",
-    "fixture": "peaceai/test/fixtures/m98-ee/golevelup__nestjs-9c7d1223ba10.txt"
+    "repo": "ZackMcColgan/local-agentic-sandbox",
+    "commit": "c5e00ee62fdfb839503ec9ff6083010cd5b3488c",
+    "path": "web-ui/lib/subagents/scheduler.ts",
+    "fileBlob": "b25b7115115b8ae5653787f848f643924bb00310",
+    "sha256": "965da6e5ca564b62312df503c6099cb4b41dfcd91f2a9ad20701e5209ada652e",
+    "fixture": "peaceai/test/fixtures/m98-ee/ZackMcColgan__local-agentic-sandbox-b25b7115115b.txt"
    },
    "license": "MIT",
-   "licenseSha256": "31a3b07c7471afbb576b550f9866ff2901c145602215a9dd05254ab6413defd4"
+   "licenseSha256": "052b411b5b24e6f838587d59907782b3348cac6db3624da568c9c53902a26faf"
   },
   {
-   "repo": "matt-pharr/physics-data-viewer",
-   "commit": "1e30a6423cc4294149495469ef8163cf9f6c2b50",
-   "parent": "fd5228992d25a750f0e180115246c3412003a48e",
-   "path": "electron/main/project-manager.ts",
-   "target": "ProjectManager.load",
+   "repo": "anchan828/typeorm-helpers",
+   "commit": "5385432f92ceb82755d4b7d4881da4aaee4d7849",
+   "parent": "64fc4eb2a458f5e6a28bb9d9470f6c1081f7af17",
+   "path": "packages/history/src/history-subscriber.ts",
+   "target": "HistoryEntitySubscriber.createHistory",
    "kind": "method",
    "isAsync": true,
-   "old": "const response = await this.commRouter.request( PDVMessageType.PROJECT_LOAD, payload, { keepAlivePushType: PDVMessageType.PROGRESS }, );",
-   "new": "const response = await this.commRouter.request( PDVMessageType.PROJECT_LOAD, payload as unknown as Record<string, unknown>, { keepAlivePushType: PDVMessageType.PROGRESS }, );",
+   "old": "if (historyMetadata.propertiesMap[\"originalID\"]) { originalIdPropertyName = \"originalID\"; }",
+   "new": "if (historyMetadata?.propertiesMap[\"originalID\"]) { originalIdPropertyName = \"originalID\"; }",
    "before": {
-    "repo": "matt-pharr/physics-data-viewer",
-    "commit": "fd5228992d25a750f0e180115246c3412003a48e",
-    "path": "electron/main/project-manager.ts",
-    "fileBlob": "94f3cca9e4981c8754a5043cbbe07c49edeb54a5",
-    "sha256": "4ee2bbcff385fb176815f5a84d9e49b18e2c0fea67e5ca3377aaabf97b1a4088",
-    "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-94f3cca9e498.txt"
+    "repo": "anchan828/typeorm-helpers",
+    "commit": "64fc4eb2a458f5e6a28bb9d9470f6c1081f7af17",
+    "path": "packages/history/src/history-subscriber.ts",
+    "fileBlob": "f8fc71a10b9f7698349a2b49c15e3e415b1710fc",
+    "sha256": "80c4ea6e1aa19a43ce48f270633993056e071d2f96d6c9f1df7cd4ff39bcda08",
+    "fixture": "peaceai/test/fixtures/m98-ee/anchan828__typeorm-helpers-f8fc71a10b9f.txt"
    },
    "after": {
-    "repo": "matt-pharr/physics-data-viewer",
-    "commit": "1e30a6423cc4294149495469ef8163cf9f6c2b50",
-    "path": "electron/main/project-manager.ts",
-    "fileBlob": "6a9f31af6ecd355daaa0e3d78866f2e459ca3fab",
-    "sha256": "ec69f3c56e8a4717697f03a9f06b3052210bc5f0422658461ab1cc45c43dc351",
-    "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-6a9f31af6ecd.txt"
+    "repo": "anchan828/typeorm-helpers",
+    "commit": "5385432f92ceb82755d4b7d4881da4aaee4d7849",
+    "path": "packages/history/src/history-subscriber.ts",
+    "fileBlob": "8fdef2ae2e8bbfeee2e3973724cebf92f4d9fe67",
+    "sha256": "07e25011537d1a07e9718a040f7ef368c18b18ddfbf50b9db3ee2c6b2182d234",
+    "fixture": "peaceai/test/fixtures/m98-ee/anchan828__typeorm-helpers-8fdef2ae2e8b.txt"
    },
    "license": "MIT",
-   "licenseSha256": "074a6efe1001e7c0cf182cbd6c754f837ba3f1273212c6550dda099a0757a2d5"
+   "licenseSha256": "20fa21addc321101f17cfbc9154156eb40924fc1f3f8311eb02c0664135760ca"
   },
   {
    "repo": "WalletConnect/walletconnect-utils",
@@ -794,46 +794,44 @@
    "licenseSha256": "579c8e032843dd95a3e2d6817deafcc656473d6df06528c5083b0baa4de26d2e"
   },
   {
-   "repo": "matt-pharr/physics-data-viewer",
-   "commit": "e0158761d36099723969bc2e7007c3a4d00ee8f8",
-   "module": "electron/main/server/invoke-registry.ts",
-   "target": "dispatchInvoke",
+   "repo": "flyingrobots/graft",
+   "commit": "1958a97762940f0b3dbc6d1807ae63a1bc2e51bb",
+   "module": "src/mcp/daemon-scheduler-config.ts",
+   "target": "resolveDaemonSchedulerConfig",
    "entry": {
     "kind": "call",
-    "fn": "dispatchInvoke",
+    "fn": "resolveDaemonSchedulerConfig",
     "args": [
-     "data",
      {
       "keys": [
-       "push"
+       "availableParallelism"
       ]
-     },
-     "data"
+     }
     ]
    },
-   "isAsync": true,
+   "isAsync": false,
    "test": {
-    "repo": "matt-pharr/physics-data-viewer",
-    "commit": "e0158761d36099723969bc2e7007c3a4d00ee8f8",
-    "path": "electron/main/ipc-register-file-browse.test.ts",
-    "fileBlob": "1f0a1f3526598598d8b38a46665c4ee8ad689727",
-    "sha256": "4a271022bc824e6313f1d4b821b02b57edf5fb7aa557f77583c695306e846ebd",
-    "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-1f0a1f352659.txt"
+    "repo": "flyingrobots/graft",
+    "commit": "1958a97762940f0b3dbc6d1807ae63a1bc2e51bb",
+    "path": "test/unit/mcp/daemon-scheduler-config.test.ts",
+    "fileBlob": "d209f2eaaec23f6742259df081e4f550c79e627c",
+    "sha256": "b0b1c31c47481d950f7cafcc1ba4545999af4cf62e0e0a241db9d596a4d04f37",
+    "fixture": "peaceai/test/fixtures/m98-ee/flyingrobots__graft-d209f2eaaec2.txt"
    },
-   "testLine": 23,
-   "snippet": "dispatchInvoke(\n    IPC.files.listDir,\n    { push: () => undefined } as never,\n    [dirPath],\n  )",
+   "testLine": 39,
+   "snippet": "resolveDaemonSchedulerConfig({ availableParallelism: () => 10 })",
    "closure": [
     {
-     "repo": "matt-pharr/physics-data-viewer",
-     "commit": "e0158761d36099723969bc2e7007c3a4d00ee8f8",
-     "path": "electron/main/server/invoke-registry.ts",
-     "fileBlob": "3bc7f183cc16543f2c5e41199310b23800ff32f0",
-     "sha256": "f97bac2e068da1333cfaaf54c7ebf2672fc12e00f086143473f310016942bbc4",
-     "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-3bc7f183cc16.txt"
+     "repo": "flyingrobots/graft",
+     "commit": "1958a97762940f0b3dbc6d1807ae63a1bc2e51bb",
+     "path": "src/mcp/daemon-scheduler-config.ts",
+     "fileBlob": "1ec42190c1a865fca102674b5b6dd5cd14295e02",
+     "sha256": "9c3854b961cb6c05c6051a9bfa31a05b7561f106163e13c180e2e80d37d82180",
+     "fixture": "peaceai/test/fixtures/m98-ee/flyingrobots__graft-1ec42190c1a8.txt"
     }
    ],
-   "license": "MIT",
-   "licenseSha256": "074a6efe1001e7c0cf182cbd6c754f837ba3f1273212c6550dda099a0757a2d5"
+   "license": "Apache-2.0",
+   "licenseSha256": "fea9fca54e11b52ddd49455ba03003309954537a2210b68d4b0575b733362d64"
   },
   {
    "repo": "f-tuma/musubi",

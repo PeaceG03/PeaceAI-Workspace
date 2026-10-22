@@ -22,7 +22,7 @@ import { PROTECTED_SELF } from "../lib/selfchange.ts";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-existing-function-edit-v1.json")) as RuleSpec;
-const SHA = "741d75e3e3f7252a6603843ae63a84a58ed6e66c31cc7a1102c5ce3d0e0fac13";
+const SHA = "8c7483ccd04dc9ab10b2946c15df0617493253cd3e3542b54c1ac289fc7dc815";
 
 const STORAGE = [
   "export interface Client { list(prefix: string): Promise<string[]>; get(key: string): Promise<Uint8Array | null>; head(key: string): Promise<{ size: number } | null> }",

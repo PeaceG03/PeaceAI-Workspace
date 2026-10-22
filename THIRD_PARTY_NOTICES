@@ -1980,6 +1980,8 @@ fixtures (commit path):
   bf43d91f2ca3fb00e9b2f891daf337e6cfe7b36b peaceai/test/fixtures/m85-te2/flyingrobots__graft-59442a9ed99e.txt
   bee0dcb5fe8f8af75a580e01bba863c8c2a61cc8 peaceai/test/fixtures/m85-te2/flyingrobots__graft-13d1004a6861.txt
   1958a97762940f0b3dbc6d1807ae63a1bc2e51bb peaceai/test/fixtures/m97-te7/flyingrobots__graft-3a075f5de129.txt
+  1958a97762940f0b3dbc6d1807ae63a1bc2e51bb peaceai/test/fixtures/m98-ee/flyingrobots__graft-1ec42190c1a8.txt
+  1958a97762940f0b3dbc6d1807ae63a1bc2e51bb peaceai/test/fixtures/m98-ee/flyingrobots__graft-d209f2eaaec2.txt
 license URL: https://github.com/flyingrobots/graft/blob/b39908ff9cf0d1491a6dde4cdfc899e23b5a3def/LICENSE
 ---- license text ----
 Apache License
@@ -5284,55 +5286,64 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
 ==============================================================================
-repo: golevelup/nestjs
-license: MIT (LICENSE, sha256 of trimmed text 31a3b07c7471afbb576b550f9866ff2901c145602215a9dd05254ab6413defd4)
+repo: ZackMcColgan/local-agentic-sandbox
+license: MIT (LICENSE, sha256 of trimmed text 052b411b5b24e6f838587d59907782b3348cac6db3624da568c9c53902a26faf)
 fixtures (commit path):
-  74ce4ae4b2f62d91d01468368421692b53fe59ec peaceai/test/fixtures/m98-ee/golevelup__nestjs-c765c645d8fb.txt
-  d9b9d147ab4c083c40bc284566d0f655110417d5 peaceai/test/fixtures/m98-ee/golevelup__nestjs-9c7d1223ba10.txt
-license URL: https://github.com/golevelup/nestjs/blob/74ce4ae4b2f62d91d01468368421692b53fe59ec/LICENSE
----- license text ----
-(The MIT License)
-
-Copyright (c) 2019 Jesse Carter
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-'Software'), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
----- end ----
-==============================================================================
-repo: matt-pharr/physics-data-viewer
-license: MIT (LICENSE.md, sha256 of trimmed text 074a6efe1001e7c0cf182cbd6c754f837ba3f1273212c6550dda099a0757a2d5)
-fixtures (commit path):
-  fd5228992d25a750f0e180115246c3412003a48e peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-94f3cca9e498.txt
-  1e30a6423cc4294149495469ef8163cf9f6c2b50 peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-6a9f31af6ecd.txt
-  e0158761d36099723969bc2e7007c3a4d00ee8f8 peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-3bc7f183cc16.txt
-  e0158761d36099723969bc2e7007c3a4d00ee8f8 peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-1f0a1f352659.txt
-license URL: https://github.com/matt-pharr/physics-data-viewer/blob/fd5228992d25a750f0e180115246c3412003a48e/LICENSE.md
+  118a4c7a9000c259c0463ffbfca548fe94626fd0 peaceai/test/fixtures/m98-ee/ZackMcColgan__local-agentic-sandbox-aa7b844a8b28.txt
+  c5e00ee62fdfb839503ec9ff6083010cd5b3488c peaceai/test/fixtures/m98-ee/ZackMcColgan__local-agentic-sandbox-b25b7115115b.txt
+license URL: https://github.com/ZackMcColgan/local-agentic-sandbox/blob/118a4c7a9000c259c0463ffbfca548fe94626fd0/LICENSE
 ---- license text ----
 MIT License
 
-Copyright (c) 2026 Matthew Pharr
+Copyright (c) 2026 Zack McColgan
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: anchan828/typeorm-helpers
+license: MIT (LICENSE, sha256 of trimmed text 20fa21addc321101f17cfbc9154156eb40924fc1f3f8311eb02c0664135760ca)
+fixtures (commit path):
+  64fc4eb2a458f5e6a28bb9d9470f6c1081f7af17 peaceai/test/fixtures/m98-ee/anchan828__typeorm-helpers-f8fc71a10b9f.txt
+  5385432f92ceb82755d4b7d4881da4aaee4d7849 peaceai/test/fixtures/m98-ee/anchan828__typeorm-helpers-8fdef2ae2e8b.txt
+license URL: https://github.com/anchan828/typeorm-helpers/blob/64fc4eb2a458f5e6a28bb9d9470f6c1081f7af17/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2019 anchan828
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ---- end ----
 ==============================================================================
 repo: WalletConnect/walletconnect-utils

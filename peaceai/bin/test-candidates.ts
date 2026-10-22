@@ -139,7 +139,7 @@ const REAL_RUNS_REQUIRED = 3;
  */
 /** Auditor #466 (4th review): the zones every TEST_CASE_EXISTING test is run in after pass 2 (gradeExisting). */
 export const EXISTING_TZ_RUNS = ["UTC", "America/Denver", "Asia/Tokyo"] as const;
-function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false, tz?: string | Readonly<Record<string, string>>): { ok: boolean; out: string; confined: boolean; notes: number } {
+function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false, tz?: string, env?: Readonly<Record<string, string>>): { ok: boolean; out: string; confined: boolean; notes: number } {
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
   const realTree = realpathSync(tree);
@@ -155,7 +155,7 @@ function runExistingTests(tree: string, tests: readonly string[], reads: readonl
       fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
     }
     try {
-      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1", ...(typeof tz === "string" ? { TZ: tz } : tz ?? {}) }, fd);
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1", ...(tz ? { TZ: tz } : {}), ...(env ?? {}) }, fd);
       ok &&= r.ok;
       outs.push(r.out);
       if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
@@ -407,9 +407,9 @@ function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, ne
   if (gradeExistingEditProblem(modPath, baseText, real, testPath, test, read) !== null) return ungradable("not-test-only");
   const reads = existingEditReads(modPath, read);
   if (!reads) return ungradable("module-imports-repo-files");
-  if (afterFix) for (const env of EXISTING_EDIT_ENV_RUNS) if (!runExistingTests(tree, newTests, reads, false, env).ok) return ungradable("real-not-stable");
+  if (afterFix) for (const env of EXISTING_EDIT_ENV_RUNS) if (!runExistingTests(tree, newTests, reads, false, undefined, env).ok) return ungradable("real-not-stable");
   if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", modPath])) return ungradable("revert-failed");
-  const run = runExistingTests(tree, newTests, reads, false, EXISTING_EDIT_ENV_RUNS[0]);
+  const run = runExistingTests(tree, newTests, reads, false, undefined, EXISTING_EDIT_ENV_RUNS[0]);
   console.log(`grading: existing-edit (module ${modPath}; ${reads.length} load-closure files; before-run ok: ${run.ok})`);
   if (!run.ok && !assertionFailuresOnly(run.out)) return ungradable("before-not-assertion");
   return { fixSha: base, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok), reason: null };
