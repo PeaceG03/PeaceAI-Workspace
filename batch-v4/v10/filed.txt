@@ -1,16 +1,16 @@
-Z1 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z2 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z3 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z4 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z5 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z6 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z7 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z8 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z9 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z10 not-filed ready rule=v6 candidates=1 diff=match (wait: #464 /approve-rule)
-Z11 not-filed ready rule=v5 candidates=1 diff=match
-Z12 not-filed ready rule=v5 candidates=1 diff=match
-Z13 not-filed ready rule=v5 candidates=1 diff=match
-Z14 not-filed ready rule=v5 candidates=1 diff=match
-Z15 not-filed ready rule=v5 candidates=1 diff=match
-Z17 not-filed ready rule=v5 candidates=1 diff=match
+Z4 not-filed DROPPED (refused at Workspace 1e8448a: test_target_signature under v1-v7)
+Z11 https://github.com/PeaceG03/PeaceAI-Workspace/issues/471 filed 2026-10-22 20:46Z rule=v5 dry-run=1 candidate COUNTS diff=match (review pending)
+Z12 https://github.com/PeaceG03/PeaceAI-Workspace/issues/472 filed 2026-10-22 20:46Z rule=v5 dry-run=1 candidate COUNTS diff=match (review pending)
+Z13 https://github.com/PeaceG03/PeaceAI-Workspace/issues/473 filed 2026-10-22 20:46Z rule=v5 dry-run=1 candidate COUNTS diff=match (review pending)
+Z14 https://github.com/PeaceG03/PeaceAI-Workspace/issues/474 filed 2026-10-22 20:46Z rule=v5 dry-run=1 candidate COUNTS diff=match (review pending)
+Z15 https://github.com/PeaceG03/PeaceAI-Workspace/issues/475 filed 2026-10-22 20:46Z rule=v5 dry-run=1 candidate COUNTS diff=match (review pending)
+Z17 https://github.com/PeaceG03/PeaceAI-Workspace/issues/476 filed 2026-10-22 20:46Z rule=v5 dry-run=1 candidate COUNTS diff=match (review pending)
+Z1 https://github.com/PeaceG03/PeaceAI-Workspace/issues/477 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z2 https://github.com/PeaceG03/PeaceAI-Workspace/issues/478 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z3 https://github.com/PeaceG03/PeaceAI-Workspace/issues/479 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z5 https://github.com/PeaceG03/PeaceAI-Workspace/issues/480 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z6 https://github.com/PeaceG03/PeaceAI-Workspace/issues/481 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z7 https://github.com/PeaceG03/PeaceAI-Workspace/issues/482 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z8 https://github.com/PeaceG03/PeaceAI-Workspace/issues/483 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z9 https://github.com/PeaceG03/PeaceAI-Workspace/issues/484 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
+Z10 https://github.com/PeaceG03/PeaceAI-Workspace/issues/485 filed 2026-10-22 20:46Z rule=v6 dry-run=1 candidate COUNTS diff=match (review pending)
