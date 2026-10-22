@@ -81,3 +81,11 @@ Seq 237-247 record Peace's tasks #427-#437 (TEST_CASE_EXISTING; #428-#433 and #4
 after Auditor PASS; PeaceAI landed them through bot verdict PRs PeaceSTOCKS#29-#39 (squash merges 625acbf, 0c91b97, 6f87c78, da05efb,
 67ce5cb, aebe643, 4184452, 88932ea, 3bde245, 1a07238, ef9778e; rows in merge order). trace.ts traces them on the M87 PR route with no
 GRANDFATHERED entry. Coverage becomes 61/192 (31.8%) from 2026-10-21.
+
+## Batch v9 PeaceSTOCKS landings (2026-10-22)
+
+Seq 248-260 record Peace's tasks #443-#455 (TEST_CASE_EXISTING; #453 on public-test-case-existing-v1, #454 on v3 and the other 11 on
+v4, per Results ranking), each `/verdict A right`. The peacestocks-write runs were approved by Builder at Peace's request after Auditor
+PASS; PeaceAI landed them through bot verdict PRs PeaceSTOCKS#40-#52 (squash merges 3ed589e, 2734b82, f206f1d, f76b89b, 686a3b9,
+d87d400, ce912aa, 5b76256, 9cfacfd, c361ad5, b8e9ea8, ef228e7, 0ab37c8; rows in merge order). trace.ts traces them on the M87 PR route
+with no GRANDFATHERED entry. Coverage becomes 74/205 (36.1%) from 2026-10-22.
