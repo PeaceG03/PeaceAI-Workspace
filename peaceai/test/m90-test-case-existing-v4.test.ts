@@ -85,9 +85,9 @@ test("spec: valid, hash pinned, v3 params except the target, the v1 trigger; any
   assert.deepEqual(SPEC.params, { ...V1.params, target: "exported-pure-function-v4" });
   assert.deepEqual(V3.params, { ...V1.params, target: "exported-pure-function-v3" }, "v3 is unchanged");
   assert.equal(specHash(V3), "b31df045b2de0fe7ce970f556de3c16fe14afce10a689905b172a053c68d3557", "the v3 hash is unchanged");
-  // M91/M93: v5 and v6 append targets; the v1-v4 entries and their order are unchanged.
+  // M91/M93/M97: v5, v6 and v7 append targets; the v1-v4 entries and their order are unchanged.
   assert.deepEqual([...TEST_EXISTING_VOCAB.target].slice(0, 4), ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4"]);
-  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "exported-pure-function-v7" } }));
+  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "exported-pure-function-v8" } }));
   // Lesson (M85/M87/M88): never assert the rule is absent from approved.json; any listed entry must pin this exact hash.
   const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
   for (const r of onMain.rules.filter((x) => x.id === SPEC.id)) assert.equal(r.sha256, SHA, "a listed entry pins the exact spec hash");
@@ -175,10 +175,10 @@ test("stub and Job B wiring: v4 candidates are re-checked under v4 (with v2 and 
   const st = stubAll(A, ["fill"], true);
   assert.ok(st && !st.throws && /export function fill\(p: Partial<Cfg>\): Cfg \{ __peaceaiStubRan\(\); return \(\{\} as never\); \}/.test(st.content));
   const tc = read("peaceai/bin/test-candidates.ts");
-  assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false(?:, v5 = false)?(?:, v6 = false)?\): TestGrading/);
+  assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false(?:, v5 = false)?(?:, v6 = false)?(?:, v7 = false)?\): TestGrading/);
   // M91: v5 candidates set v4 too.
-  assert.match(tc, /typeof candidate\.operationId === "string" && \(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?\),/);
-  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)? \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /typeof candidate\.operationId === "string" && \(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\),/);
+  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
   assert.match(tc, /gradedTestSourceProblem\(test, \[spec, `\$\{spec\}\.ts`\], declaredFunctions\(real\), moduleDataKeys\(real\), v3\)/);
 });

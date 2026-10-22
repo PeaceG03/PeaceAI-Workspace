@@ -91,9 +91,9 @@ test("spec: valid, hash pinned, v4 params except the target, the v1 trigger; any
   assert.deepEqual(SPEC.params, { ...V1.params, target: "exported-pure-function-v5" });
   assert.deepEqual(V4.params, { ...V1.params, target: "exported-pure-function-v4" }, "v4 is unchanged");
   assert.equal(specHash(V4), "7829c9803cdab076e821f0400216bb5f7791c521a251ce6b97d32695dac37ddc", "the v4 hash is unchanged");
-  // M93: v6 appends one more target; the v1-v5 entries and their order are unchanged.
+  // M93/M97: v6 and v7 append targets; the v1-v5 entries and their order are unchanged.
   assert.deepEqual([...TEST_EXISTING_VOCAB.target].slice(0, 5), ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5"]);
-  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "exported-pure-function-v7" } }));
+  assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "exported-pure-function-v8" } }));
   // Lesson (M85/M87/M88/M90): never assert the rule is absent from approved.json; any listed entry must pin this exact hash.
   const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
   for (const r of onMain.rules.filter((x) => x.id === SPEC.id)) assert.equal(r.sha256, SHA, "a listed entry pins the exact spec hash");
@@ -167,10 +167,10 @@ test("stub and Job B wiring: v5 candidates are re-checked under v5 (with v2, v3 
   const st = stubAll(A, ["modeOf"], true);
   assert.ok(st && !st.throws && /export function modeOf\(q: Q\): Q\["mode"\] \{ __peaceaiStubRan\(\);/.test(st.content));
   const tc = read("peaceai/bin/test-candidates.ts");
-  assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false(?:, v6 = false)?\): TestGrading/);
+  assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false(?:, v6 = false)?(?:, v7 = false)?\): TestGrading/);
   // M93: v6 candidates set v5 too (the v6 prefix follows the v5 prefix in every disjunction).
-  assert.match(tc, /existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?\), typeof candidate\.operationId === "string" && (?:\()?candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)/);
-  assert.match(tc, /dates: v3, v4, v5(?:, v6)? \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\), typeof candidate\.operationId === "string" && (?:\()?candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)/);
+  assert.match(tc, /dates: v3, v4, v5(?:, v6)?(?:, v7)? \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 

@@ -12,7 +12,7 @@
 //   outside the vocabulary (test_target_signature). No model.
 import ts from "typescript";
 import { createHash } from "node:crypto";
-import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, buildTestEdit, checkRoot, FIX_LINE, parseTestTask, type TestTask } from "./learned-test.ts";
+import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isMapSetLiteral, parseTestTask, type TestTask } from "./learned-test.ts";
 import { DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, dateRefusal, plainPath } from "./learned-complex.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
@@ -56,7 +56,14 @@ export const TEST_EXISTING_VOCAB = {
   // Record<string, string | undefined>), optionally with the default `= process.env` (exactly that expression, on the
   // tested function only) when every call of the function in every check passes an object literal for that
   // parameter, so the default never runs (Job A on the task, Job B on the graded test source).
-  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5", "exported-pure-function-v6"],
+  // M97 (public-test-case-existing-v7): "exported-pure-function-v7" = the v6 target plus (a) the global
+  // `Map<K, V>` / `ReadonlyMap<K, V>` / `Set<K>` / `ReadonlySet<K>` in the signature (K a string / number / string- or
+  // number-literal union key, never an object or function; V plain data or a nested collection), with `new Map([..])` /
+  // `new Set([..])` literals in checks, and (b) a `void` return type when every check is `throws CODE` or `is undefined`
+  // and at least one is `throws` (Job A on the task, Job B on the graded test). A target v6 accepts is v6's; a target
+  // only v7 accepts gets the v7 hardening (no write deeper than one step into a fresh copy, no escaping module
+  // container, and the v6 closure rules plus no global or prototype patch anywhere in the relative import closure).
+  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5", "exported-pure-function-v6", "exported-pure-function-v7"],
 } as const;
 /** M85 bounds for the v2 target: sibling modules followed, import depth, structural type nesting. */
 export const MAX_IMPORT_MODULES = 4;
@@ -68,6 +75,8 @@ export const MAX_TYPE_DEPTH_V4 = 6;
 export const MAX_TYPE_MEMBERS_V4 = 32;
 /** M90 (v4 target only): the built-in generic plain-data references. */
 export const V4_GENERICS: ReadonlySet<string> = new Set(["Array", "ReadonlyArray", "Readonly", "Partial", "Record", "Pick", "Omit"]);
+/** M97 (v7 target only): the built-in keyed collections (global names only). */
+export const V7_COLLECTIONS: ReadonlySet<string> = new Set(["Map", "ReadonlyMap", "Set", "ReadonlySet"]);
 
 // Named refusals (each one is a distinct, stable reason string in Job A's refusal lines).
 export const TEST_TARGET_NOT_FOUND = "test_target_not_found";
@@ -124,6 +133,17 @@ function rootName(e: ts.Expression): ts.Expression {
   for (;;) {
     if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x) || ts.isNonNullExpression(x) || ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
     else return x;
+  }
+}
+
+/** M97: property / element steps from `e` down to its root (parentheses, `!`, `as`, `satisfies` do not count). */
+function accessDepth(e: ts.Expression): number {
+  let x = e;
+  let n = 0;
+  for (;;) {
+    if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x)) { n += 1; x = x.expression; }
+    else if (ts.isNonNullExpression(x) || ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+    else return n;
   }
 }
 
@@ -208,6 +228,8 @@ interface V2Ctx {
   v5?: boolean;
   /** M93 (v6 only): top-level `unknown` and `NodeJS.ProcessEnv` parameters (see TEST_EXISTING_VOCAB). */
   v6?: boolean;
+  /** M97 (v7 only, set only for a target v6 refuses): Map / Set types, a void return and the v7 hardening. */
+  v7?: boolean;
 }
 /** M90: a global (never shadowed in `idx`) name. */
 const unshadowed = (idx: ModuleIndex, n: string): boolean => !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n);
@@ -364,6 +386,13 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
     const n = t.typeName.text;
     // M90 (v4 only): Array<T> / ReadonlyArray<T> as T[], Readonly<O> for a plain object O, Record<K, V>; global names only.
     if (t.typeArguments?.length) {
+      // M97 (v7 only): Map<K, V> / ReadonlyMap<K, V> / Set<K> / ReadonlySet<K>; K a Record key (string, number or a
+      // string / number literal union: never an object, array or function key), V plain data (nested collections too).
+      if (v2?.v7 && V7_COLLECTIONS.has(n) && unshadowed(idx, n)) {
+        if ((n === "Map" || n === "ReadonlyMap") && t.typeArguments.length === 2) return recordKey(t.typeArguments[0]!) && rec(t.typeArguments[1]!);
+        if ((n === "Set" || n === "ReadonlySet") && t.typeArguments.length === 1) return recordKey(t.typeArguments[0]!);
+        return false;
+      }
       if (!v2?.v4 || !V4_GENERICS.has(n) || !unshadowed(idx, n)) return false;
       const ta = t.typeArguments;
       if ((n === "Array" || n === "ReadonlyArray") && ta.length === 1) return rec(ta[0]!);
@@ -528,6 +557,9 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
     if (ts.isIdentifier(target)) return locals.has(target.text);
     if (ts.isArrayLiteralExpression(target) || ts.isObjectLiteralExpression(target)) return true; // destructuring: identifiers checked as references
     const r = rootName(target);
+    // M97 (v7 hardening): a fresh copy (`[...m.values()]`, `new Map(m)`, `xs.slice()`) still holds the caller's objects,
+    // so only the copy itself may be written (`c[k] = v`), never through it (`c[0].n = 1`).
+    if (a.v2?.v7 && accessDepth(target) > 1) return false;
     return ts.isIdentifier(r) && fresh.has(r.text);
   };
   const resolve = (name: string): void => resolveName(a, name, locals);
@@ -587,6 +619,9 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
       const r = rootName(recv);
       const isMap = ts.isIdentifier(r) && (r.text === "Map" || r.text === "Set");
       if (!isMap && !(ts.isIdentifier(r) ? fresh.has(r.text) : isFresh(recv, fresh))) add(TEST_TARGET_IMPURE);
+      // M97 (v7 hardening): a mutating call only on the fresh value itself (`c.push(x)`), never on what it holds
+      // (`c[0].push(x)`, `c.get(k).add(x)`), and never on the global Map / Set (`Map.prototype.set(...)`).
+      if (a.v2?.v7 && (isMap || accessDepth(recv) > 0)) add(TEST_TARGET_IMPURE);
     }
     if (ts.isNewExpression(n) && !(ts.isIdentifier(n.expression) && PURE_NEW.has(n.expression.text))) add(TEST_TARGET_IMPURE);
     if (ts.isTaggedTemplateExpression(n) && !(ts.isPropertyAccessExpression(n.tag) && ts.isIdentifier(n.tag.expression) && n.tag.expression.text === "String" && n.tag.name.text === "raw")) add(TEST_TARGET_IMPURE);
@@ -744,9 +779,15 @@ export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: stri
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean }): string | null {
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean; v7?: boolean }): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
+  // M97: v7 takes every target v6 takes, unchanged (Job A then answers not_needed). Only a target v6 refuses is
+  // analyzed with the v7 widenings and the v7 hardening, so v7 never loses a v6 target and never weakens one.
+  if (opts?.v7 && opts.v2) {
+    const r6 = existingTargetRefusal(path, content, fn, { v2: opts.v2, v6: true });
+    if (r6 === null) return null;
+  } else if (opts?.v7) return existingTargetRefusal(path, content, fn, { ...opts, v7: false });
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return "edit_refused";
   const idx = indexModule(sf);
@@ -759,7 +800,7 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
   const reasons = new Set<string>();
-  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true || opts.v5 === true || opts.v6 === true, v4: opts.v4 === true || opts.v5 === true || opts.v6 === true, v5: opts.v5 === true || opts.v6 === true, v6: opts.v6 === true } : undefined;
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true || opts.v5 === true || opts.v6 === true || opts.v7 === true, v4: opts.v4 === true || opts.v5 === true || opts.v6 === true || opts.v7 === true, v5: opts.v5 === true || opts.v6 === true || opts.v7 === true, v6: opts.v6 === true || opts.v7 === true, v7: opts.v7 === true } : undefined;
   if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
   const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
   // M91: `typeof p` naming one of the function's own parameters is that parameter's type, not a module const: refused.
@@ -772,7 +813,10 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   // a NodeJS.ProcessEnv parameter (its default is then skipped by the purity walk; every check must override it).
   const v6Param = (p: ts.ParameterDeclaration): boolean => !!v2?.v6 && !!p.type && (p.type.kind === ts.SyntaxKind.UnknownKeyword || processEnvType(p.type, idx));
   const envDefaults = new Set(v2?.v6 ? f.parameters.filter((p) => processEnvType(p.type, idx) && processEnvDefault(p.initializer, idx)) : []);
-  const sigBad = paramTypeof || !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !(v6Param(p) || typeOk(p.type)) : !(v2?.v4 && literalDefault(p.initializer))));
+  // M97 (v7 only): a `void` return (never `undefined`, `never` or an `asserts` predicate); checks are then held to
+  // `throws` / `is undefined` with at least one `throws` (voidTarget, Job A; voidTestProblem, Job B).
+  const voidRet = !!v2?.v7 && f.type?.kind === ts.SyntaxKind.VoidKeyword;
+  const sigBad = paramTypeof || !!f.typeParameters?.length || !(voidRet || typeOk(f.type)) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !(v6Param(p) || typeOk(p.type)) : !(v2?.v4 && literalDefault(p.initializer))));
   if (sigBad) {
     if (v2) for (const r of PRIORITY) if (v2.reasons.has(r)) return r;
     return TEST_TARGET_SIGNATURE;
@@ -784,7 +828,274 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
   if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
+  // M97 (v7 hardening, targets v6 refuses only): no module container the analysis reads may escape, and the relative
+  // import closure must be code the walk can see, never import the target module back, never patch a global.
+  if (v2?.v7) {
+    if (containerEscapes(v2)) return TEST_TARGET_IMPURE;
+    const c = v7ClosureProblem(v2);
+    if (c) return c;
+  }
   return null;
+}
+
+/** M97: a module const whose value is a container (array / object literal, `new ...`), not a primitive literal. */
+function containerInit(e: ts.Expression | undefined): boolean {
+  let x = e;
+  while (x && (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x))) x = x.expression;
+  return !!x && (ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isNewExpression(x) || ts.isCallExpression(x));
+}
+/**
+ * M97 (v7 hardening): a module container the analysis followed (`const TABLE = new Map(...)`) is shared by every call,
+ * so it may only be read in place: `TABLE.get(k)`, `TABLE.size`, `TABLE[k]`, `[...TABLE]`, `for (const x of TABLE)`.
+ * Anywhere in its module, an alias (`const t = TABLE`), a return, an argument, a shorthand property or an export
+ * specifier could let other code write it (which the module-wide mutation index cannot see): refused.
+ */
+function containerEscapes(v: V2Ctx): boolean {
+  for (const m of v.modules.values()) {
+    if (!m) continue;
+    const names = new Set([...m.consts].filter((n) => containerInit(m.idx.consts.get(n)?.initializer)));
+    if (!names.size) continue;
+    let bad = false;
+    const see = (n: ts.Node): void => {
+      if (bad) return;
+      if (ts.isShorthandPropertyAssignment(n) && names.has(n.name.text)) { bad = true; return; }
+      if (ts.isExportSpecifier(n) && names.has((n.propertyName ?? n.name).text)) { bad = true; return; }
+      if (ts.isIdentifier(n) && names.has(n.text) && isValueReference(n)) {
+        const p = n.parent;
+        const inPlace = ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n)
+          || (ts.isSpreadElement(p) && ts.isArrayLiteralExpression(p.parent))
+          || (ts.isForOfStatement(p) && p.expression === n)
+          || (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.InKeyword && p.right === n)
+          || ts.isTypeQueryNode(p);
+        if (!inPlace) { bad = true; return; }
+      }
+      ts.forEachChild(n, see);
+    };
+    for (const st of m.sf.statements) {
+      // the declaration itself (`const TABLE = new Map(...)`) is not a use; its initializer is walked
+      if (ts.isVariableStatement(st)) { for (const d of st.declarationList.declarations) if (d.initializer) see(d.initializer); continue; }
+      see(st);
+    }
+    if (bad) return true;
+  }
+  return false;
+}
+/**
+ * M97: the built-ins pure code relies on (and the global object itself): a write to one of them (`Map.prototype.get =
+ * ...`, `globalThis.Set = ...`) changes what every module computes. Host state such as `process.exitCode = 1` in a CLI
+ * entry point is not a patch (and the target cannot read `process` at all: test_target_io).
+ */
+const PATCHABLE = new Set([...PURE_GLOBALS, ...LOCAL_TIME_GLOBALS, "globalThis", "global", "window", "self", "Reflect", "Proxy", "Symbol", "Promise", "WeakMap", "WeakSet", "WeakRef", "Function", "ArrayBuffer", "DataView", "Uint8Array", "Buffer", "TextEncoder", "TextDecoder", "URL", "URLSearchParams", "structuredClone"]);
+const PATCH_CALLS = new Set(["defineProperty", "defineProperties", "setPrototypeOf", "assign", "freeze", "seal", "preventExtensions", "set", "deleteProperty"]);
+/** M97: in this module, a write to a global (`Map.prototype.get = ...`, `Object.defineProperty(Set.prototype, ...)`). */
+function patchesGlobal(sf: ts.SourceFile): boolean {
+  const idx = indexModule(sf);
+  const isGlobal = (e: ts.Expression) => { const r = rootName(e); return ts.isIdentifier(r) && PATCHABLE.has(r.text) && unshadowed(idx, r.text); };
+  let bad = false;
+  const v = (n: ts.Node): void => {
+    if (bad) return;
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && !ts.isIdentifier(n.left) && isGlobal(n.left)) bad = true;
+    else if (ts.isDeleteExpression(n) && isGlobal(n.expression)) bad = true;
+    else if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) && !ts.isIdentifier(n.operand) && isGlobal(n.operand)) bad = true;
+    else if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && (n.expression.expression.text === "Object" || n.expression.expression.text === "Reflect") && PATCH_CALLS.has(n.expression.name.text) && n.arguments[0] && isGlobal(n.arguments[0])) bad = true;
+    else ts.forEachChild(n, v);
+  };
+  v(sf);
+  return bad;
+}
+/**
+ * M97: `if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) { ... }` (no else): an `&&`
+ * chain where one conjunct compares (=== / ==) a side naming `import.meta.url` (and no `process`) with a side naming
+ * `process.argv[1]` (and no `import.meta`), every other conjunct reads only `process.argv`, and every other identifier
+ * in the condition is a named import from a Node builtin module (`pathToFileURL`, `fileURLToPath`, `resolve`, ...).
+ * Nothing module-defined can make it true for a module the test imports.
+ */
+function isMainGuard(st: ts.Statement, idx: ModuleIndex): boolean {
+  if (!ts.isIfStatement(st) || st.elseStatement) return false;
+  const conj: ts.Expression[] = [];
+  const split = (e: ts.Expression): void => { if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) { split(e.left); split(e.right); } else if (ts.isParenthesizedExpression(e)) split(e.expression); else conj.push(e); };
+  split(st.expression);
+  let metaNames = 0, argvNames = 0, other = false;
+  const scan = (n: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(n) && ts.isMetaProperty(n.expression) && n.expression.keywordToken === ts.SyntaxKind.ImportKeyword && n.expression.name.text === "meta" && n.name.text === "url") { metaNames++; return; }
+    if (ts.isMetaProperty(n)) { other = true; return; }
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "process" && n.name.text === "argv" && unshadowed(idx, "process")) { argvNames++; return; }
+    if (ts.isIdentifier(n) && isValueReference(n)) { const imp = idx.imports.get(n.text); if (!imp || imp.typeOnly || !NODE_BUILTINS.test(imp.spec)) other = true; }
+    ts.forEachChild(n, scan);
+  };
+  const count = (e: ts.Node) => { metaNames = 0; argvNames = 0; other = false; scan(e); return { meta: metaNames, argv: argvNames, other }; };
+  let cmp = 0;
+  for (const c of conj) {
+    if (ts.isBinaryExpression(c) && (c.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || c.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken)) {
+      const l = count(c.left), r = count(c.right);
+      if (l.other || r.other) return false;
+      if ((l.meta > 0 && l.argv === 0 && r.argv > 0 && r.meta === 0) || (r.meta > 0 && r.argv === 0 && l.argv > 0 && l.meta === 0)) { cmp++; continue; }
+      return false;
+    }
+    const x = count(c);
+    if (x.other || x.meta || !x.argv) return false;
+  }
+  return cmp === 1;
+}
+/** M97: bound on the modules of the v7 closure walk (more is refused, test_target_too_large). */
+const MAX_V7_CLOSURE = 64;
+/**
+ * M97 (v7 hardening, the v6 lessons carried over to every target only v7 accepts): walk the relative value and
+ * side-effect import closure of the target module (type-only imports skipped, at most MAX_V7_CLOSURE modules).
+ * - `test_target_impure` when any module but the target imports or re-exports the target module back (the v6
+ *   import-back guard), or when any module of the closure (the target's included) writes a global anywhere
+ *   (`Map.prototype.get = ...`, `Object.defineProperty(Set.prototype, ...)`, `globalThis.Map = ...`);
+ * - `test_target_io` when a module has a relative import that is not exactly one readable `.ts` module (`./c.mjs`,
+ *   `./c.js` with no c.ts, `./data.json`: code the walk cannot see), `import x = require(...)` anywhere, or `require(...)`
+ *   / dynamic `import(...)` in load-time code. Load-time code (the v6 load-time reach walk, across modules): every
+ *   top-level statement other than a function declaration of every closure module, plus every top-level function such
+ *   code names, transitively, following named imports into the closure module that declares them (a namespace or
+ *   default import reaches its whole module). The target and what it calls are the purity walk's (import() and
+ *   require are test_target_io there already). A dynamic import in a function nothing loads stays unreached.
+ */
+function v7ClosureProblem(v: V2Ctx): string | null {
+  const root = v.modules.get(v.root);
+  if (!root) return TEST_TARGET_IMPURE;
+  const mods = new Map<string, { sf: ts.SourceFile; idx: ModuleIndex; deps: Map<string, string> }>();
+  const seen = new Set<string>([v.root]);
+  const queue = [v.root];
+  while (queue.length) {
+    const p = queue.shift()!;
+    const text = p === v.root ? root.sf.text : v.read(p);
+    if (text === null) return TEST_TARGET_IO;
+    const m = p === v.root ? root.sf : ts.createSourceFile(p, text, ts.ScriptTarget.Latest, true);
+    const idx = p === v.root ? root.idx : indexModule(m);
+    let eq = false;
+    const seeEq = (n: ts.Node): void => { if (eq) return; if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference)) eq = true; else ts.forEachChild(n, seeEq); };
+    seeEq(m);
+    if (eq) return TEST_TARGET_IO;
+    if (patchesGlobal(m)) return TEST_TARGET_IMPURE;
+    const deps = new Map<string, string>();
+    for (const s of m.statements) {
+      if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+      const spec = s.moduleSpecifier.text;
+      if (!/^\.\.?\//.test(spec)) continue;
+      const typeOnly = ts.isImportDeclaration(s) ? !!s.importClause?.isTypeOnly : s.isTypeOnly;
+      const hits = (siblingCandidates(p, spec) ?? []).filter((c) => c === v.root || v.read(c) !== null);
+      if (p !== v.root && hits.includes(v.root)) return TEST_TARGET_IMPURE;
+      if (typeOnly) continue;
+      if (hits.length !== 1) return TEST_TARGET_IO;
+      deps.set(spec, hits[0]!);
+      for (const c of hits) if (!seen.has(c)) { seen.add(c); if (seen.size > MAX_V7_CLOSURE) return TEST_TARGET_TOO_LARGE; queue.push(c); }
+    }
+    mods.set(p, { sf: m, idx, deps });
+  }
+  // Load-time reach across the closure: work items are (module, top-level function name) or (module, "*" = all of it).
+  const done = new Set<string>();
+  const work: [string, string][] = [];
+  let loads = false;
+  // Per module: top-level classes and `const` function-valued declarations, walked only when named.
+  const lazy = new Map<string, Map<string, ts.Node>>();
+  const lazyOf = (p: string): Map<string, ts.Node> => {
+    let l = lazy.get(p);
+    if (l) return l;
+    l = new Map();
+    for (const st of mods.get(p)?.sf.statements ?? []) {
+      if (ts.isClassDeclaration(st) && st.name) l.set(st.name.text, st);
+      if (ts.isVariableStatement(st) && (st.declarationList.flags & ts.NodeFlags.Const) !== 0)
+        for (const d of st.declarationList.declarations) { const x = d.initializer && ts.isParenthesizedExpression(d.initializer) ? d.initializer.expression : d.initializer; if (ts.isIdentifier(d.name) && x && (ts.isArrowFunction(x) || ts.isFunctionExpression(x))) l.set(d.name.text, d); }
+    }
+    lazy.set(p, l);
+    return l;
+  };
+  const reachName = (p: string, name: string) => { const k = `${p}\0${name}`; if (!done.has(k)) { done.add(k); work.push([p, name]); } };
+  const visit = (p: string, n: ts.Node): void => {
+    if (loads) return;
+    if (ts.isTypeNode(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n)) return; // types never run
+    const m = mods.get(p)!;
+    if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) { loads = true; return; }
+    if (ts.isIdentifier(n) && isValueReference(n)) {
+      if (m.idx.fns.has(n.text) || lazyOf(p).has(n.text)) reachName(p, n.text);
+      const imp = m.idx.imports.get(n.text);
+      const dep = imp && !imp.typeOnly ? m.deps.get(imp.spec) : undefined;
+      if (imp && dep) reachName(dep, imp.imported && imp.imported !== "default" ? imp.imported : "*");
+    }
+    ts.forEachChild(n, (c) => visit(p, c));
+  };
+  for (const [p, m] of mods) for (const st of m.sf.statements) {
+    if (ts.isFunctionDeclaration(st) || ts.isImportDeclaration(st)) continue;
+    // A class body runs at load only in its heritage clause, decorators, computed names and static parts; its
+    // constructor, instance initializers and methods run when reached code names the class (then all of it is walked).
+    if (ts.isClassDeclaration(st)) {
+      for (const h of st.heritageClauses ?? []) visit(p, h);
+      for (const d of ts.getDecorators(st) ?? []) visit(p, d);
+      for (const mem of st.members) {
+        if (mem.name && ts.isComputedPropertyName(mem.name)) visit(p, mem.name);
+        if (ts.isClassStaticBlockDeclaration(mem) || (ts.isPropertyDeclaration(mem) && hasMod(mem, ts.SyntaxKind.StaticKeyword))) visit(p, mem);
+      }
+      continue;
+    }
+    // `const f = (..) => ..` / `function (..) {..}`: walked when named, like a function declaration.
+    if (ts.isVariableStatement(st) && st.declarationList.declarations.every((d) => ts.isIdentifier(d.name) && lazyOf(p).has(d.name.text))) continue;
+    // The ESM entry-point guard runs its block only when the module is the process's entry script, never under
+    // the test runner (the test file is the entry): its condition is walked, its block is not load-time code.
+    if (isMainGuard(st, m.idx)) visit(p, (st as ts.IfStatement).expression);
+    else visit(p, st);
+  }
+  while (work.length && !loads) {
+    const [p, name] = work.shift()!;
+    const m = mods.get(p);
+    if (!m) continue;
+    if (name === "*") { for (const st of m.sf.statements) if (ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st) || ts.isVariableStatement(st)) visit(p, st); continue; }
+    for (const d of m.idx.fns.get(name) ?? []) visit(p, d);
+    const lz = lazyOf(p).get(name);
+    if (lz) visit(p, lz);
+  }
+  return loads ? TEST_TARGET_IO : null;
+}
+/** M97 (v7): the tested function returns `void` (a single declaration with that exact return type). */
+export function voidTarget(content: string, fn: string): boolean {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const decls = indexModule(sf).fns.get(fn) ?? [];
+  return decls.length === 1 && decls[0]!.type?.kind === ts.SyntaxKind.VoidKeyword;
+}
+/**
+ * M97 (v7, Job B): for a void target the graded test itself is held to the Job A rule: every reference to the function
+ * is a call that is either the whole body of an arrow passed first to `assert.throws(..)`, or the first of exactly two
+ * arguments of `assert.equal(.., undefined)`; at least one is the throws form. Null when fine.
+ */
+export function voidTestProblem(moduleContent: string, fn: string, testContent: string): string | null {
+  if (!voidTarget(moduleContent, fn)) return null;
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  let throwsN = 0;
+  let bad = false;
+  const isAssert = (e: ts.Expression, m: string) => ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "assert" && e.name.text === m;
+  const v = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && n.text === fn && !ts.isImportSpecifier(n.parent)) {
+      const call = n.parent;
+      if (!ts.isCallExpression(call) || call.expression !== n) bad = true;
+      else {
+        const arrow = call.parent;
+        const outer = arrow.parent;
+        if (ts.isArrowFunction(arrow) && arrow.body === call && arrow.parameters.length === 0 && ts.isCallExpression(outer) && outer.arguments[0] === arrow && isAssert(outer.expression, "throws")) throwsN += 1;
+        else if (ts.isCallExpression(arrow) && arrow.arguments.length === 2 && arrow.arguments[0] === call && isAssert(arrow.expression, "equal") && ts.isIdentifier(arrow.arguments[1]!) && arrow.arguments[1]!.text === "undefined") { /* is undefined */ }
+        else bad = true;
+      }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return bad || throwsN === 0 ? "void-check-not-throws-or-undefined" : null;
+}
+/** M97 (v7, Job B): every `new Map(..)` / `new Set(..)` in the graded test is a bounded literal (isMapSetLiteral). */
+export function mapSetTestProblem(testContent: string): string | null {
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  let bad = false;
+  const v = (n: ts.Node): void => {
+    if (bad) return;
+    // `new Map(..)` / `new Set(..)` return below before their callee is visited, so any other Map / Set / WeakMap /
+    // WeakSet reference (`Map.groupBy`, `new WeakMap()`, an alias) lands here.
+    if (ts.isIdentifier(n) && ["Map", "Set", "WeakMap", "WeakSet"].includes(n.text) && isValueReference(n)) { bad = true; return; }
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && (n.expression.text === "Map" || n.expression.text === "Set")) { if (!isMapSetLiteral(n)) bad = true; return; }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return bad ? "map-set-not-literal" : null;
 }
 
 export interface ExistingTestTask extends TestTask { id: string }
@@ -835,13 +1146,15 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
   // M90: v4 is the v3 target widened (below), with v3's checks and args mode. M91: v5 is v4 widened likewise.
-  const v6 = params.target === "exported-pure-function-v6";
+  // M97: v7 is v6 widened (Map / Set, void) with its own args mode (plain-data-v7: v3 plus Map / Set literals).
+  const v7 = params.target === "exported-pure-function-v7";
+  const v6 = params.target === "exported-pure-function-v6" || v7;
   const v5 = params.target === "exported-pure-function-v5" || v6;
   const v4 = params.target === "exported-pure-function-v4" || v5;
   const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6 } : undefined);
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7 } : undefined);
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
   if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
@@ -853,13 +1166,18 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true }) === null) return no("not_needed");
   // M93: and v6 leaves a target v5 already takes to v5.
   if (v6 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, v5: true }) === null) return no("not_needed");
+  // M97: and v7 leaves a target v6 already takes to v6.
+  if (v7 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, v6: true }) === null) return no("not_needed");
+  // M97 (v7): a void target's checks are `throws CODE` or `is undefined`, at least one `throws` (the stub returns a
+  // value, so a test with no `throws` would be graded on that artifact alone).
+  if (v7 && voidTarget(target.content, task.symbol) && (!task.checks.every((c) => c.kind === "throws" || (c.kind === "equal" && c.value === "undefined")) || !task.checks.some((c) => c.kind === "throws"))) return no(TEST_CHECK_REFUSED);
   // M93 (v6): a `= process.env` default must never run: every call in every check passes an object literal there.
   const envAt = v6 ? envDefaultParams(target.content, task.symbol) ?? [] : [];
   // Every check calls the target itself (the only name the test imports), with literal arguments.
   for (const c of task.checks) {
     if (!(params.checks as string[]).includes(c.kind)) return no(TEST_CHECK_REFUSED);
     const e = parseCheck(c.expr);
-    if (!e || checkRoot(e, v3) !== task.symbol) return no(TEST_CHECK_REFUSED);
+    if (!e || checkRoot(e, v3, v7) !== task.symbol) return no(TEST_CHECK_REFUSED);
     let calls = false;
     const v = (n: ts.Node): void => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === task.symbol) calls = true; ts.forEachChild(n, v); };
     v(e);
@@ -873,7 +1191,7 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const nestedObjects = !v3 && v2 && !objectArgs && task.checks.some((c) => { const x = parseCheck(c.expr); let has = false; const w = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some((g) => ts.isArrayLiteralExpression(g) && g.elements.some(ts.isObjectLiteralExpression))) has = true; ts.forEachChild(n, w); }; if (x) w(x); return has; });
   // M88 (v3): one internal args mode (never selectable by a spec's params): bounded plain-data objects, including
   // objects nested inside array arguments, and Date literals as arguments and expected values.
-  const testParams = { assert: params.assert as string, checks: params.checks as string[], framework: params.framework as string, grading: "fail-before-pass-after", matcher: params.matcher as string, maxLines: params.maxLines as string, placement: "new-file", ...(v3 ? { args: ARGS_PLAIN_DATA_V3 } : objectArgs ? { args: "object-literal" } : nestedObjects ? { args: ARGS_NESTED_OBJECTS } : {}) };
+  const testParams = { assert: params.assert as string, checks: params.checks as string[], framework: params.framework as string, grading: "fail-before-pass-after", matcher: params.matcher as string, maxLines: params.maxLines as string, placement: "new-file", ...(v7 ? { args: ARGS_PLAIN_DATA_V7 } : v3 ? { args: ARGS_PLAIN_DATA_V3 } : objectArgs ? { args: "object-literal" } : nestedObjects ? { args: ARGS_NESTED_OBJECTS } : {}) };
   const title = task.title ?? `${task.symbol} characterization`;
   const test = buildTestEdit(testParams, { ...task, title, fixSha: task.id }, files, isTest);
   if (!test) return no("test_refused");
