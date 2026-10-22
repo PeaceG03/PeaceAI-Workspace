@@ -348,7 +348,8 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   // the v7 hardening for targets v6 refuses); its test is re-checked on the graded source, never only on the task text:
   // a void target only in `assert.throws(() => f(..), ..)` (at least once) or `assert.equal(f(..), undefined)`, and every
   // `new Map(..)` / `new Set(..)` a bounded literal.
-  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6, v7 } : undefined) !== null) return ungradable("not-test-only");
+  // Auditor #466 (3rd review): v1 gets the tree for the load-closure check only (`load`); v1's analysis still reads no sibling.
+  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6, v7 } : { load: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) } }) !== null) return ungradable("not-test-only");
   if (v6 && envArgProblem(real, fn, test) !== null) return ungradable("not-test-only");
   if (v7 && (voidTestProblem(real, fn, test) !== null || mapSetTestProblem(test) !== null)) return ungradable("not-test-only");
   const reads = moduleReadClosure(modPath, regular);

@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
-import { existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_IO, TEST_TARGET_SIGNATURE, TEST_TARGET_TOO_LARGE } from "../lib/learned-test-existing.ts";
+import { existingTargetAnalysisForEvidence, existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_IO, TEST_TARGET_SIGNATURE, TEST_TARGET_TOO_LARGE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -76,7 +76,10 @@ test("target: plain-data signatures and pure sibling imports pass under v2 only;
   }
   assert.equal(existingTargetRefusal("src/a.ts", A, "scaled"), TEST_TARGET_IMPURE, "v1 does not follow imports");
   assert.equal(existingTargetRefusal("src/a.ts", A, "scaled", sib(FILES)), null);
-  assert.equal(existingTargetRefusal("src/a.ts", A, "plain"), null);
+  // Auditor #466 (3rd review): v1 without the tree cannot see A's load closure (it imports ./b), so it fails closed;
+  // with the tree for the load check only (`load`, as Job A and Job B pass it) the closure is visible and inert.
+  assert.equal(existingTargetRefusal("src/a.ts", A, "plain"), TEST_TARGET_IMPURE, "v1 without the tree fails closed");
+  assert.equal(existingTargetRefusal("src/a.ts", A, "plain", { load: sib(FILES).v2 }), null, "v1 with the load tree");
   assert.equal(existingTargetRefusal("src/a.ts", A, "plain", sib(FILES)), null);
 });
 
@@ -147,7 +150,8 @@ test("v2 purity: enum initializers and sibling top-level statements run on load;
   const enumImp = 'import type { E } from "./b";\nexport function f(x: E): number { return 1; }\n';
   assert.equal(existingTargetRefusal("src/a.ts", enumImp, "f", sib([{ path: "src/b.ts", content: enumSib }])), TEST_TARGET_DATE_LOCAL, "a followed enum's initializer is not skipped");
   const clockConst = "const opened = Date.now();\nexport function f(n: number): number { return n; }\n";
-  assert.equal(existingTargetRefusal("src/a.ts", clockConst, "f"), null, "v1 does not scan an unused const");
+  // Auditor #466 (3rd review): fail-closed load allowlist - a call at load (Date.now()) is refused even when unused.
+  assert.equal(existingTargetRefusal("src/a.ts", clockConst, "f"), TEST_TARGET_IMPURE, "v1 refuses a load-time call outside the allowlist");
   assert.equal(existingTargetRefusal("src/a.ts", clockConst, "f", sib([])), TEST_TARGET_DATE_LOCAL);
   const weak = "const sessions = new WeakMap<object, number>();\nexport function f(n: number): number { return n; }\n";
   assert.equal(existingTargetRefusal("src/a.ts", weak, "f", sib([])), null, "an unused WeakMap is not a v2 refusal");
@@ -191,9 +195,9 @@ test("evidence: bar met; every module and sibling blob-pinned; v1 refuses and v2
   for (const e of EV.examples) {
     const text = pinned(e);
     const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
-    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: { read: (rel) => sibs.get(rel) ?? null } }), null, `${e.repo} ${e.fn} v2`);
-    if (e.siblings.length) assert.notEqual(existingTargetRefusal(e.module, text, e.fn, { v2: { read: () => null } }), null, `${e.fn} needs its siblings`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: { read: (rel) => sibs.get(rel) ?? null } }), null, `${e.repo} ${e.fn} v2`);
+    if (e.siblings.length) assert.notEqual(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: { read: () => null } }), null, `${e.fn} needs its siblings`);
   }
 });
 test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {

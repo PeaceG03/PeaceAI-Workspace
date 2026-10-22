@@ -14,7 +14,7 @@ import { applyRule, RULE_KINDS, specHash, TRIGGERS, validateSpec, type RuleSpec 
 import { TEST_TRIGGER } from "../lib/learned-test.ts";
 import { stubAll } from "../lib/learned-function.ts";
 import {
-  applyExistingTestRule, existingTargetRefusal, moduleReadClosure, parseExistingTestTask, SELF_PROTECTED_PATH, TEST_CHECK_REFUSED, TEST_EXISTING_FLAG,
+  applyExistingTestRule, existingTargetAnalysisForEvidence, existingTargetRefusal, moduleReadClosure, parseExistingTestTask, SELF_PROTECTED_PATH, TEST_CHECK_REFUSED, TEST_EXISTING_FLAG,
   TEST_EXISTING_REFUSALS, TEST_EXISTING_TRIGGER, TEST_TARGET_ASYNC, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_IO, TEST_TARGET_NOT_EXPORTED,
   TEST_TARGET_NOT_FOUND, TEST_TARGET_SIGNATURE, TEST_TARGET_TOO_LARGE,
 } from "../lib/learned-test-existing.ts";
@@ -341,7 +341,7 @@ test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three r
   assert.match(g, /gradedTestSourceProblem\(test,/);
   // M85: the v2 candidate is re-checked under the v2 target; any other under v1 (opts undefined).
   // M88: v3 candidates arrive with v2 set and add the global Date (`dates: v3`); M90: v4 adds `v4`.
-  assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : undefined\) !== null/);
+  assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null/);
   assert.match(g, /moduleReadClosure\(modPath, regular\)/);
   assert.match(g, /i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runExistingTests\(tree, newTests, reads\)\.ok\)/);
   assert.match(g, /run = runExistingTests\(tree, newTests, reads, true\);/);
@@ -398,7 +398,7 @@ test("evidence: bar met; every target module blob-pinned at the parent; the targ
     assert.ok(e.fixture.endsWith(`${e.repo.replace("/", "__")}-${e.fileBlob.slice(0, 12)}.txt`));
     assert.match(e.commit, /^[0-9a-f]{40}$/); assert.match(e.parent, /^[0-9a-f]{40}$/);
     assert.match(e.test, /\.(?:test|spec)\.ts$/);
-    assert.equal(existingTargetRefusal(e.module, b.toString("utf8"), e.fn), null, `${e.repo} ${e.fn}`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, b.toString("utf8"), e.fn), null, `${e.repo} ${e.fn}`);
     assert.match(e.signature, /^\(.*\): .+$/);
   }
 });

@@ -587,6 +587,8 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
     if (a.consts.has(name)) return;
     a.consts.add(name);
     if (a.consts.size > MAX_CONSTS) { add(TEST_TARGET_TOO_LARGE); return; }
+    // Auditor #466 (3rd review): a module const the walk reaches must hold no state between calls (fail-closed).
+    if (!statelessInit(a.idx.consts.get(name)!.initializer!, { idx: a.idx, sf: a.sf, seen: new Set(), path: a.v2?.path, read: a.v2?.read ?? null, cache: new Map() }, name)) add(TEST_TARGET_IMPURE);
     analyzeExpression(a, a.idx.consts.get(name)!.initializer!);
     return;
   }
@@ -799,9 +801,34 @@ function analyzeExpression(a: Analysis, e: ts.Expression): void {
   walk(a, e, resolve, () => false, new Set());
 }
 
+/** Auditor #466 (3rd review): names bound anywhere in `sf` to a regex (a literal, `new RegExp(..)` / `RegExp(..)`). */
+const REGEX_NAMES = new WeakMap<ts.SourceFile, Set<string>>();
+function regexNames(sf: ts.SourceFile): Set<string> {
+  let out = REGEX_NAMES.get(sf);
+  if (out) return out;
+  out = new Set();
+  const o = out;
+  const v = (n: ts.Node): void => { if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && regexValue(n.initializer, null)) o.add(n.name.text); ts.forEachChild(n, v); };
+  v(sf);
+  REGEX_NAMES.set(sf, out);
+  return out;
+}
+function regexValue(e: ts.Expression, names: ReadonlySet<string> | null): boolean {
+  const x = unwrapExpr(e);
+  if (ts.isRegularExpressionLiteral(x)) return true;
+  if ((ts.isNewExpression(x) || ts.isCallExpression(x)) && ts.isIdentifier(x.expression) && x.expression.text === "RegExp") return true;
+  return !!names && ts.isIdentifier(x) && names.has(x.text);
+}
 function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutableTarget: (t: ts.Expression) => boolean, fresh: ReadonlySet<string>, bn: BuiltinNames = NO_BUILTINS, nestRecv?: (recv: ts.Expression) => boolean): void {
   const add = (r: string) => a.reasons.add(r);
   const v = (n: ts.Node): void => {
+    // Auditor #466 (3rd review), RegExp, every version: the RegExp global is only ever called (`new RegExp(..)`,
+    // `RegExp(..)`). Any other use (`RegExp.$1`, `RegExp.lastMatch`, `RegExp["$_"]`, `const R = RegExp`, an argument)
+    // reaches its legacy statics, shared state the last match anywhere wrote. `.constructor` (`/a/.constructor.$1`,
+    // `"".constructor.prototype`) and a computed key on a regex value (`rx[k]`) reach the same: refused.
+    if (ts.isIdentifier(n) && n.text === "RegExp" && isValueReference(n) && !((ts.isNewExpression(n.parent) || ts.isCallExpression(n.parent)) && n.parent.expression === n)) add(TEST_TARGET_IMPURE);
+    if ((ts.isPropertyAccessExpression(n) && n.name.text === "constructor") || (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) && n.argumentExpression.text === "constructor")) add(TEST_TARGET_IMPURE);
+    if (ts.isElementAccessExpression(n) && !ts.isStringLiteralLike(n.argumentExpression) && !ts.isNumericLiteral(n.argumentExpression) && regexValue(n.expression, regexNames(n.getSourceFile()))) add(TEST_TARGET_IMPURE);
     if (ts.isTypeNode(n) || ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n)) return; // types never run
     if (ts.isAwaitExpression(n) || ts.isForOfStatement(n) && n.awaitModifier) add(TEST_TARGET_ASYNC);
     if (ts.isYieldExpression(n)) add(TEST_TARGET_ASYNC);
@@ -1015,15 +1042,27 @@ export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: stri
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean; v7?: boolean }): string | null {
+type TargetOpts = { v2?: { read: (rel: string) => string | null }; load?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean; v7?: boolean };
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: TargetOpts): string | null {
+  return targetRefusal(path, content, fn, opts, false);
+}
+/** EVIDENCE REPLAY ONLY - never a gate. The same analysis as existingTargetRefusal without the closure-wide fail-closed
+ *  load allowlist (Auditor #466, 3rd review): the pinned public examples blob-pin only the target module and the
+ *  siblings the analysis follows, not every module their load closure reaches, so the evidence tests replay the
+ *  per-function analysis with this and report the full-engine count separately. Job A and Job B call
+ *  existingTargetRefusal only (asserted by the wiring tests). */
+export function existingTargetAnalysisForEvidence(path: string, content: string, fn: string, opts?: TargetOpts): string | null {
+  return targetRefusal(path, content, fn, opts, true);
+}
+function targetRefusal(path: string, content: string, fn: string, opts: TargetOpts | undefined, skipLoad: boolean): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   // M97: v7 takes every target v6 takes, unchanged (Job A then answers not_needed). Only a target v6 refuses is
   // analyzed with the v7 widenings and the v7 hardening, so v7 never loses a v6 target and never weakens one.
   if (opts?.v7 && opts.v2) {
-    const r6 = existingTargetRefusal(path, content, fn, { v2: opts.v2, v6: true });
+    const r6 = targetRefusal(path, content, fn, { v2: opts.v2, v6: true }, skipLoad);
     if (r6 === null) return null;
-  } else if (opts?.v7) return existingTargetRefusal(path, content, fn, { ...opts, v7: false });
+  } else if (opts?.v7) return targetRefusal(path, content, fn, { ...opts, v7: false }, skipLoad);
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return "edit_refused";
   const idx = indexModule(sf);
@@ -1068,6 +1107,11 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   readModuleMembers(path, sf, v2, members);
   for (const m of members) a.reasons.add(USER_MEMBER + m);
   if (freshByNameConflict(a.reasons)) a.reasons.add(TEST_TARGET_IMPURE);
+  // Auditor #466 (3rd review): the fail-closed load-time allowlist over the target's load closure (every version).
+  // v1 reads no sibling for its analysis; `load` (Job A / Job B pass the tree) lets the load check see what v1's
+  // target module imports. Without it a relative or package value import is code the check cannot see (refused).
+  const lp = skipLoad ? null : loadAllowlistProblem(path, sf, idx, v2 ? v2.read : opts?.load ? (rel) => (rel === path ? content : opts.load!.read(rel)) : null);
+  if (lp) a.reasons.add(lp.reason);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
   if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
@@ -1081,6 +1125,396 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   return null;
 }
 
+/**
+ * Auditor #466 (3rd review): FAIL-CLOSED load-time allowlist, every version. Instead of looking for bad load-time
+ * code (a denylist the reviews kept finding holes in), every top-level statement of every module that loads with the
+ * target must be one of a short list of shapes that run no code at import:
+ * - imports (a Node built-in, a type-only import, or a relative `.ts` module that joins the closure and is checked
+ *   the same way; a package import or anything that does not resolve to exactly one readable `.ts` module is code
+ *   the walk cannot see: test_target_io), re-exports (the same), `export { local }`;
+ * - function, interface, type alias and ambient (`declare`) declarations, and namespaces holding only types;
+ * - enums whose initializers are primitive constants (literals, operators on them, members of enums);
+ * - classes with no decorators, an `extends` that is a plain name, no static blocks and only inert static
+ *   initializers and primitive-constant computed names;
+ * - `const` / `let` / `var` declarations (and `export default`) whose initializer is SAFE (loadSafe: no user code runs);
+ * - the ESM entry-point guard (isMainGuard; its block never runs under the test runner), and the "use strict" prologue.
+ * Anything else (an expression statement, a call or `new` outside the allowlist, `if` / `for` / `try` / blocks /
+ * labels / `throw` / `switch` / loops, `export =`, `import x = ..`) refuses the target: test_target_impure.
+ * The closure is the target module alone for v1 (it reads no sibling, so a relative or package value import is code
+ * it cannot see: test_target_io), and the whole relative import closure for v2+ (value, side-effect and re-export
+ * edges; type-only imports skipped; at most MAX_LOAD_CLOSURE modules, else test_target_too_large).
+ */
+export const MAX_LOAD_CLOSURE = 64;
+/** Data properties of the built-in namespaces a module constant may name (never functions, never writable state). */
+const CONST_MEMBERS: Readonly<Record<string, ReadonlySet<string>>> = {
+  Number: new Set(["MAX_SAFE_INTEGER", "MIN_SAFE_INTEGER", "MAX_VALUE", "MIN_VALUE", "EPSILON", "POSITIVE_INFINITY", "NEGATIVE_INFINITY", "NaN"]),
+  Math: new Set(["PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2"]),
+};
+const ERROR_BASES = new Set(["Error", "TypeError", "RangeError", "SyntaxError"]);
+export interface LoadProblem { reason: string; module: string; detail: string }
+interface LoadCtx { idx: ModuleIndex; sf: ts.SourceFile; seen: Set<string>; path?: string; read?: ((rel: string) => string | null) | null; cache?: Map<string, { idx: ModuleIndex; sf: ts.SourceFile } | null> }
+/** A named import from a relative `.ts` module, as that module's own load context and exported const name. */
+function importedConst(c: LoadCtx, name: string): { c: LoadCtx; name: string } | null {
+  const imp = c.idx.imports.get(name);
+  if (!imp || imp.typeOnly || !imp.imported || imp.imported === "default" || !c.read || !c.path || !c.cache) return null;
+  const hits = (siblingCandidates(c.path, imp.spec) ?? []).filter((x) => c.read!(x) !== null);
+  if (hits.length !== 1) return null;
+  const t = hits[0]!;
+  if (!c.cache.has(t)) {
+    const text = c.read(t);
+    const sf = text === null ? null : ts.createSourceFile(t, text, ts.ScriptTarget.Latest, true);
+    c.cache.set(t, sf && !(sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length ? { sf, idx: indexModule(sf) } : null);
+  }
+  const m = c.cache.get(t);
+  if (!m || !m.idx.exportNames.has(imp.imported)) return null;
+  return { c: { idx: m.idx, sf: m.sf, seen: c.seen, path: t, read: c.read, cache: c.cache }, name: imp.imported };
+}
+const propName = (n: ts.PropertyName | undefined): string | null => (n && (ts.isIdentifier(n) || ts.isStringLiteral(n) || ts.isNumericLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null);
+/** A module const's own initializer (one declaration, a plain name, `const`). */
+function moduleConstInit(c: LoadCtx, name: string): ts.Expression | null {
+  const d = c.idx.consts.get(name);
+  return d && d.initializer && !c.idx.mutated.has(name) && unshadowedExceptConst(c.idx, name) ? d.initializer : null;
+}
+const unshadowedExceptConst = (idx: ModuleIndex, n: string): boolean => !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n);
+/** A primitive constant: evaluating it runs no user code and yields a string / number / bigint / boolean / null / undefined. */
+function primInert(e: ts.Expression, c: LoadCtx, depth = 0): boolean {
+  if (depth > 24) return false;
+  const x = unwrapExpr(e);
+  if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || ts.isNumericLiteral(x) || ts.isBigIntLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword) return true;
+  const r = (y: ts.Expression) => primInert(y, c, depth + 1);
+  if (ts.isTemplateExpression(x)) return x.templateSpans.every((s) => r(s.expression));
+  if (ts.isPrefixUnaryExpression(x)) return [ts.SyntaxKind.MinusToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.ExclamationToken, ts.SyntaxKind.TildeToken].includes(x.operator) && r(x.operand);
+  if (ts.isVoidExpression(x)) return r(x.expression);
+  if (ts.isTypeOfExpression(x)) return r(x.expression);
+  if (ts.isConditionalExpression(x)) return r(x.condition) && r(x.whenTrue) && r(x.whenFalse);
+  if (ts.isBinaryExpression(x)) {
+    const k = x.operatorToken.kind;
+    if ((k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment) || k === ts.SyntaxKind.InKeyword || k === ts.SyntaxKind.InstanceOfKeyword) return false;
+    return r(x.left) && r(x.right);
+  }
+  if (ts.isIdentifier(x)) {
+    if (VALUE_GLOBALS.has(x.text)) return unshadowed(c.idx, x.text);
+    const key = `${c.path ?? ""}\0${x.text}`;
+    if (c.seen.has(key)) return false;
+    const init = moduleConstInit(c, x.text);
+    // a named import of a primitive constant from a relative module (read for this check only)
+    const ic = init ? null : importedConst(c, x.text);
+    const ii = ic ? moduleConstInit(ic.c, ic.name) : null;
+    if (!init && !ii) return false;
+    c.seen.add(key);
+    try { return init ? r(init) : primInert(ii!, ic!.c, depth + 1); } finally { c.seen.delete(key); }
+  }
+  if (ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression) && !x.questionDotToken) {
+    const o = x.expression.text;
+    if (c.idx.enums.has(o)) return true;
+    if (CONST_MEMBERS[o]?.has(x.name.text) && unshadowed(c.idx, o)) return true;
+  }
+  return false;
+}
+/**
+ * Only these uses of a module `new Map(..)` / `new Set(..)` in module `c` (never written, never handed out): reads in
+ * place. An `export` of it is allowed: every module of the load closure that imports it is held to the same rule
+ * (loadAllowlistProblem), and a re-export, namespace or default import of a module exporting one is refused there.
+ */
+function collectionReadOnly(c: LoadCtx, name: string): boolean {
+  if (c.idx.mutated.has(name)) return false;
+  let ok = true;
+  const v = (n: ts.Node): void => {
+    if (!ok) return;
+    if (ts.isExportSpecifier(n) && (n.propertyName ?? n.name).text === name && (n.propertyName || n.parent.parent.moduleSpecifier)) { ok = false; return; }
+    if (ts.isExportAssignment(n) && ts.isIdentifier(unwrapExpr(n.expression)) && (unwrapExpr(n.expression) as ts.Identifier).text === name) { ok = false; return; }
+    if (ts.isShorthandPropertyAssignment(n) && n.name.text === name) { ok = false; return; }
+    if (ts.isIdentifier(n) && n.text === name && isValueReference(n) && !(ts.isVariableDeclaration(n.parent) && n.parent.name === n)) {
+      let top: ts.Node = n;
+      while ((ts.isNonNullExpression(top.parent) || ts.isParenthesizedExpression(top.parent) || ts.isAsExpression(top.parent)) && top.parent.expression === top) top = top.parent;
+      const q = top.parent;
+      const read = (ts.isPropertyAccessExpression(q) && q.expression === top && (q.name.text === "size" || (["get", "has", "keys", "values", "entries"].includes(q.name.text) && ts.isCallExpression(q.parent) && q.parent.expression === q)))
+        || (ts.isSpreadElement(q) && ts.isArrayLiteralExpression(q.parent))
+        || (ts.isForOfStatement(q) && q.expression === top);
+      if (!read) { ok = false; return; }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(c.sf);
+  return ok;
+}
+/** Built-in data constructors / factories a load-time initializer may call (receiver global, never shadowed). They run
+ * no user code when every argument is DATA (no function, accessor or method anywhere in it), and touch no global. */
+const LOAD_NEW = new Set(["Set", "Map", "WeakMap", "WeakSet", "Uint8Array", "ArrayBuffer", "DataView", "TextEncoder", "TextDecoder"]);
+const LOAD_STATIC: Readonly<Record<string, ReadonlySet<string>>> = {
+  Object: new Set(["freeze", "fromEntries", "entries", "keys", "values"]),
+  Uint8Array: new Set(["from", "of"]),
+  Buffer: new Set(["from"]),
+  Date: new Set(["UTC"]),
+  Array: new Set(["from", "of"]),
+};
+/** Built-in methods on a DATA receiver that build new data (callbacks: an arrow whose expression body is DATA). */
+const LOAD_METHODS = new Set(["join", "repeat", "map", "filter", "flatMap", "slice", "concat", "padStart", "padEnd", "toUpperCase", "toLowerCase", "trim"]);
+const LOAD_CALLBACK = new Set(["map", "filter", "flatMap"]);
+/**
+ * DATA at load: evaluating `e` runs no user code and its value holds no function. Primitive constants, regex literals,
+ * array / object literals of data (no accessor, method, spread of non-data, `__proto__` or non-constant computed key),
+ * names of module consts whose initializer is data (and `names`, a load-time callback's parameters), data properties of
+ * those, the LOAD_NEW / LOAD_STATIC built-ins on data arguments, LOAD_METHODS on a data receiver.
+ */
+function loadData(e: ts.Expression, c: LoadCtx, names: ReadonlySet<string>, depth = 0): boolean {
+  if (depth > 24) return false;
+  const x = unwrapExpr(e);
+  const r = (y: ts.Expression) => loadData(y, c, names, depth + 1);
+  if (primInert(x, c)) return true;
+  if (ts.isRegularExpressionLiteral(x)) return true;
+  if (ts.isTemplateExpression(x)) return x.templateSpans.every((s) => r(s.expression));
+  if (ts.isPrefixUnaryExpression(x)) return [ts.SyntaxKind.MinusToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.ExclamationToken, ts.SyntaxKind.TildeToken].includes(x.operator) && r(x.operand);
+  if (ts.isConditionalExpression(x)) return r(x.condition) && r(x.whenTrue) && r(x.whenFalse);
+  if (ts.isBinaryExpression(x)) {
+    const k = x.operatorToken.kind;
+    if ((k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment) || k === ts.SyntaxKind.InKeyword || k === ts.SyntaxKind.InstanceOfKeyword) return false;
+    return r(x.left) && r(x.right);
+  }
+  if (ts.isArrayLiteralExpression(x)) return x.elements.every((el) => ts.isOmittedExpression(el) || (ts.isSpreadElement(el) ? r(el.expression) : r(el)));
+  if (ts.isObjectLiteralExpression(x)) return x.properties.every((p) => {
+    if (p.name && ts.isComputedPropertyName(p.name) && !primInert(p.name.expression, c)) return false;
+    if (p.name && propName(p.name) === "__proto__") return false;
+    if (ts.isPropertyAssignment(p)) return r(p.initializer);
+    if (ts.isShorthandPropertyAssignment(p)) return !p.objectAssignmentInitializer && r(p.name);
+    return false;
+  });
+  if (ts.isIdentifier(x)) {
+    if (names.has(x.text)) return true;
+    const init = moduleConstInit(c, x.text);
+    if (!init || c.seen.has(x.text)) return false;
+    c.seen.add(x.text);
+    try { return r(init); } finally { c.seen.delete(x.text); }
+  }
+  if (ts.isPropertyAccessExpression(x) && !x.questionDotToken) {
+    if (primInert(x, c)) return true;
+    if (x.name.text === "length" && r(x.expression)) return true;
+    const o = unwrapExpr(x.expression);
+    if (ts.isIdentifier(o) && names.has(o.text)) return true; // a property of data is data (no accessor anywhere in data)
+    if (ts.isIdentifier(o)) {
+      const init = moduleConstInit(c, o.text);
+      const lit = init && unwrapExpr(init);
+      if (lit && ts.isObjectLiteralExpression(lit)) { const p = lit.properties.find((q) => ts.isPropertyAssignment(q) && propName(q.name) === x.name.text) as ts.PropertyAssignment | undefined; return !!p && r(p.initializer); }
+    }
+    return false;
+  }
+  if (ts.isElementAccessExpression(x) && !x.questionDotToken) {
+    const o = unwrapExpr(x.expression);
+    return ts.isIdentifier(o) && names.has(o.text) && primInert(x.argumentExpression, c);
+  }
+  if (ts.isNewExpression(x) || ts.isCallExpression(x)) {
+    const g = x.arguments ?? ts.factory.createNodeArray<ts.Expression>();
+    const callee = x.expression;
+    if (ts.isNewExpression(x)) {
+      if (ts.isIdentifier(callee) && LOAD_NEW.has(callee.text) && unshadowed(c.idx, callee.text)) return g.every(r);
+      if (ts.isIdentifier(callee) && callee.text === "RegExp" && unshadowed(c.idx, "RegExp")) return g.length >= 1 && g.length <= 2 && g.every((y) => ts.isStringLiteralLike(y));
+      // Intl.DateTimeFormat construction reads locale data only (any use of it is test_target_date_local in the walk)
+      if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "Intl" && callee.name.text === "DateTimeFormat" && unshadowed(c.idx, "Intl")) return g.every(r);
+      return false;
+    }
+    if (ts.isIdentifier(callee) && callee.text === "RegExp" && unshadowed(c.idx, "RegExp")) return g.length >= 1 && g.length <= 2 && g.every((y) => ts.isStringLiteralLike(y));
+    if (!ts.isPropertyAccessExpression(callee) || callee.questionDotToken) return false;
+    const m = callee.name.text;
+    const recv = unwrapExpr(callee.expression);
+    if (ts.isIdentifier(recv) && LOAD_STATIC[recv.text] && unshadowed(c.idx, recv.text) && !names.has(recv.text)) return LOAD_STATIC[recv.text]!.has(m) && g.every(r);
+    if (!LOAD_METHODS.has(m) || !r(recv)) return false;
+    if (LOAD_CALLBACK.has(m)) {
+      if (g.length !== 1) return false;
+      const cb = unwrapExpr(g[0]!);
+      if (!ts.isArrowFunction(cb) || hasMod(cb, ts.SyntaxKind.AsyncKeyword) || !ts.isExpression(cb.body)) return false;
+      const inner = new Set(names);
+      const bind = (b: ts.BindingName): boolean => { if (ts.isIdentifier(b)) { inner.add(b.text); return true; } return b.elements.every((el) => ts.isOmittedExpression(el) || (!el.dotDotDotToken && !el.initializer && bind(el.name))); };
+      if (!cb.parameters.every((p) => !p.initializer && !p.dotDotDotToken && bind(p.name))) return false;
+      return loadData(cb.body, c, inner, depth + 1);
+    }
+    return g.every(r);
+  }
+  return false;
+}
+/** SAFE at load: DATA, or a value holding functions that do not run at load (function expressions, methods,
+ * accessors, references to module bindings and pure globals). Never a call of user code. */
+function loadSafe(e: ts.Expression, c: LoadCtx, depth = 0): boolean {
+  if (depth > 24) return false;
+  if (loadData(e, c, new Set())) return true;
+  const x = unwrapExpr(e);
+  const r = (y: ts.Expression) => loadSafe(y, c, depth + 1);
+  if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) return true;
+  if (ts.isArrayLiteralExpression(x)) return x.elements.every((el) => ts.isOmittedExpression(el) || (!ts.isSpreadElement(el) && r(el)));
+  if (ts.isObjectLiteralExpression(x)) return x.properties.every((p) => {
+    if (ts.isSpreadAssignment(p)) return false;
+    if (p.name && ts.isComputedPropertyName(p.name) && !primInert(p.name.expression, c)) return false;
+    if (p.name && propName(p.name) === "__proto__") return false;
+    if (ts.isPropertyAssignment(p)) return r(p.initializer);
+    if (ts.isShorthandPropertyAssignment(p)) return !p.objectAssignmentInitializer && r(p.name);
+    return ts.isMethodDeclaration(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p);
+  });
+  if (ts.isIdentifier(x)) {
+    const n = x.text;
+    if (c.idx.fns.has(n) || c.idx.consts.has(n) || c.idx.enums.has(n) || c.idx.mutable.has(n) || (c.idx.imports.has(n) && !c.idx.imports.get(n)!.typeOnly)) return true;
+    return PURE_GLOBALS.has(n) && n !== "RegExp" && n !== "Object" && unshadowed(c.idx, n);
+  }
+  if (ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression) && !x.questionDotToken) {
+    const imp = c.idx.imports.get(x.expression.text);
+    return !!imp && !imp.imported && !imp.typeOnly && imp.spec.startsWith("."); // a namespace import's member: a module binding
+  }
+  if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && ts.isIdentifier(x.expression.expression) && x.expression.expression.text === "Object" && x.expression.name.text === "freeze" && unshadowed(c.idx, "Object")) return x.arguments.length === 1 && r(x.arguments[0]!);
+  return false;
+}
+/**
+ * Auditor #466 (3rd review), module STATE, every version: a module const the walk reaches is shared by every call, so
+ * its initializer must build a value that keeps no state between calls (fail-closed allowlist): primitive constants;
+ * regex literals and `new RegExp("lit", "flags")` without g / y; array / object literals of such values (functions
+ * included: the walk analyzes them); `Object.freeze(..)` of one; `Object.fromEntries` / `entries` / `keys` / `values`,
+ * `Array.from` / `of`, `Date.UTC`, and data-building methods on data (a new plain value); `new Set(..)` / `new Map(..)`
+ * of data bound to a name only read in place (collectionReadOnly). Anything else (a call of user code, an iterator, a
+ * typed array, DataView, TextEncoder / TextDecoder, Intl, Buffer, a class instance) is state: test_target_impure.
+ */
+function statelessInit(e: ts.Expression, c: LoadCtx, binding: string | null, depth = 0): boolean {
+  if (depth > 24) return false;
+  const x = unwrapExpr(e);
+  const r = (y: ts.Expression) => statelessInit(y, c, null, depth + 1);
+  if (primInert(x, c)) return true;
+  if (ts.isRegularExpressionLiteral(x)) return !/\/[a-z]*[gy][a-z]*$/.test(x.text);
+  if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) return true;
+  if (ts.isIdentifier(x) || ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x)) return loadSafe(x, c) && !(ts.isIdentifier(x) && x.text === "RegExp");
+  if (ts.isTemplateExpression(x) || ts.isBinaryExpression(x) || ts.isConditionalExpression(x) || ts.isPrefixUnaryExpression(x)) return loadData(x, c, new Set());
+  if (ts.isArrayLiteralExpression(x)) return x.elements.every((el) => ts.isOmittedExpression(el) || (ts.isSpreadElement(el) ? loadData(el.expression, c, new Set()) : r(el)));
+  if (ts.isObjectLiteralExpression(x)) return x.properties.every((p) => {
+    if (ts.isSpreadAssignment(p)) return false;
+    if (p.name && ts.isComputedPropertyName(p.name) && !primInert(p.name.expression, c)) return false;
+    if (p.name && propName(p.name) === "__proto__") return false;
+    if (ts.isPropertyAssignment(p)) return r(p.initializer);
+    if (ts.isShorthandPropertyAssignment(p)) return !p.objectAssignmentInitializer;
+    return ts.isMethodDeclaration(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p);
+  });
+  if (ts.isNewExpression(x) || ts.isCallExpression(x)) {
+    const callee = x.expression;
+    const g = x.arguments ?? ts.factory.createNodeArray<ts.Expression>();
+    if (ts.isIdentifier(callee) && callee.text === "RegExp" && unshadowed(c.idx, "RegExp")) return g.length >= 1 && g.length <= 2 && ts.isStringLiteralLike(g[0]!) && (!g[1] || (ts.isStringLiteralLike(g[1]) && !/[gy]/.test(g[1].text)));
+    if (ts.isNewExpression(x)) return ts.isIdentifier(callee) && (callee.text === "Set" || callee.text === "Map") && unshadowed(c.idx, callee.text) && !!binding && collectionReadOnly(c, binding) && g.every((y) => loadData(y, c, new Set()));
+    if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "Object" && callee.name.text === "freeze" && unshadowed(c.idx, "Object")) return g.length === 1 && r(g[0]!);
+    if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && ["Object", "Array", "Date"].includes(callee.expression.text) && unshadowed(c.idx, callee.expression.text) && !["Uint8Array", "Buffer"].includes(callee.expression.text)) return loadData(x, c, new Set());
+    if (ts.isPropertyAccessExpression(callee) && LOAD_METHODS.has(callee.name.text)) return loadData(x, c, new Set());
+    return false;
+  }
+  return false;
+}
+/** A class declaration that runs no code at load (see the allowlist above). */
+function classInert(s: ts.ClassDeclaration, c: LoadCtx): boolean {
+  if (ts.getDecorators(s)?.length) return false;
+  for (const h of s.heritageClauses ?? []) {
+    if (h.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+    for (const t of h.types) {
+      const e = unwrapExpr(t.expression);
+      if (!ts.isIdentifier(e)) return false;
+      if (!(c.idx.mutable.has(e.text) || (c.idx.imports.has(e.text) && c.idx.imports.get(e.text)!.spec.startsWith(".")) || (ERROR_BASES.has(e.text) && unshadowed(c.idx, e.text)))) return false;
+    }
+  }
+  for (const m of s.members) {
+    if (ts.canHaveDecorators(m) && ts.getDecorators(m)?.length) return false;
+    if (ts.isClassStaticBlockDeclaration(m)) return false;
+    if (m.name && ts.isComputedPropertyName(m.name) && !primInert(m.name.expression, c)) return false;
+    if (ts.isPropertyDeclaration(m) && hasMod(m, ts.SyntaxKind.StaticKeyword) && m.initializer && !loadSafe(m.initializer, c)) return false;
+  }
+  return true;
+}
+const typesOnly = (b: ts.ModuleBody | undefined): boolean => !b || (ts.isModuleBlock(b) ? b.statements.every((s) => ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || (ts.isModuleDeclaration(s) && typesOnly(s.body))) : ts.isModuleDeclaration(b) && typesOnly(b.body));
+/** One top-level statement: null when it runs no code at load (relative imports are handled by the closure walk). */
+function loadStatementProblem(s: ts.Statement, c: LoadCtx, first: boolean): string | null {
+  if (hasMod(s, ts.SyntaxKind.DeclareKeyword)) return null;
+  if (ts.isImportDeclaration(s) || ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || ts.isEmptyStatement(s)) return null;
+  if (ts.isExportDeclaration(s)) return null;
+  if (ts.isFunctionDeclaration(s)) return null;
+  if (ts.isModuleDeclaration(s)) return typesOnly(s.body) ? null : "namespace with code";
+  if (ts.isEnumDeclaration(s)) return s.members.every((m) => !m.initializer || primInert(m.initializer, c)) ? null : "enum initializer";
+  if (ts.isClassDeclaration(s)) return classInert(s, c) ? null : "class runs code at load";
+  if (ts.isVariableStatement(s)) {
+    for (const d of s.declarationList.declarations) {
+      if (!d.initializer) continue;
+      if (!ts.isIdentifier(d.name)) return "destructuring at load";
+      if (!loadSafe(d.initializer, c)) return `initializer of ${d.name.text}`;
+    }
+    return null;
+  }
+  if (ts.isExportAssignment(s)) return !s.isExportEquals && loadSafe(s.expression, c) && !isCollectionNew(s.expression) ? null : "export default value";
+  if (first && ts.isExpressionStatement(s) && ts.isStringLiteral(s.expression)) return null; // "use strict"
+  if (isMainGuard(s, c.idx)) return null;
+  return ts.SyntaxKind[s.kind];
+}
+const isCollectionNew = (e: ts.Expression | undefined): boolean => { const x = e && unwrapExpr(e); return !!x && ts.isNewExpression(x) && ts.isIdentifier(x.expression) && (x.expression.text === "Map" || x.expression.text === "Set"); };
+/** The module consts `m` exports whose value is a `new Map(..)` / `new Set(..)`. */
+function exportedCollections(m: { idx: ModuleIndex }): Set<string> {
+  return new Set([...m.idx.exportNames].filter((n) => isCollectionNew(m.idx.consts.get(n)?.initializer)));
+}
+/** The fail-closed load check for one target (see the allowlist above): null, or the reason and where. */
+/** A refused load-time statement that itself loads code (`import()`, `require`, `import =`) keeps the
+ *  test_target_io reason the denylist gave it; every other refused statement is test_target_impure. */
+function loadsCode(s: ts.Statement): boolean {
+  if (ts.isImportEqualsDeclaration(s)) return true;
+  let hit = false;
+  const visit = (n: ts.Node): void => {
+    if (hit) return;
+    if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) { hit = true; return; }
+    ts.forEachChild(n, visit);
+  };
+  visit(s);
+  return hit;
+}
+export function loadAllowlistProblem(path: string, sf: ts.SourceFile, idx: ModuleIndex, read: ((rel: string) => string | null) | null, all?: LoadProblem[]): LoadProblem | null {
+  const fail = (x: LoadProblem): LoadProblem | null => { if (all) { all.push(x); return null; } return x; };
+  const mods = new Map<string, { sf: ts.SourceFile; idx: ModuleIndex }>([[path, { sf, idx }]]);
+  const cache = new Map<string, { idx: ModuleIndex; sf: ts.SourceFile } | null>();
+  const queue = [path];
+  while (queue.length) {
+    const p = queue.shift()!;
+    const m = mods.get(p)!;
+    const c: LoadCtx = { idx: m.idx, sf: m.sf, seen: new Set(), path: p, read, cache };
+    let first = true;
+    for (const s of m.sf.statements) {
+      const why = loadStatementProblem(s, c, first);
+      first = false;
+      if (why) { const x = fail({ reason: loadsCode(s) ? TEST_TARGET_IO : TEST_TARGET_IMPURE, module: p, detail: `${why}: ${s.getText(m.sf).slice(0, 80)}` }); if (x) return x; }
+      // edges: imports and re-exports that load a module
+      if (ts.isImportEqualsDeclaration(s)) return { reason: TEST_TARGET_IO, module: p, detail: "import =" };
+      if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+      if (ts.isImportDeclaration(s) ? !!s.importClause?.isTypeOnly : s.isTypeOnly) continue;
+      const spec = s.moduleSpecifier.text;
+      if (NODE_BUILTINS.test(spec)) continue;
+      // v1 without the tree: a relative import is a value v1 cannot follow (its long-standing test_target_impure)
+      if (!read && /^\.\.?\//.test(spec)) return { reason: TEST_TARGET_IMPURE, module: p, detail: `loads ${spec} (no tree)` };
+      if (!read || !/^\.\.?\//.test(spec)) return { reason: TEST_TARGET_IO, module: p, detail: `loads ${spec}` };
+      const hits = (siblingCandidates(p, spec) ?? []).filter((x) => read(x) !== null);
+      if (hits.length !== 1) return { reason: TEST_TARGET_IO, module: p, detail: `unresolved ${spec}` };
+      const t = hits[0]!;
+      if (mods.has(t)) continue;
+      if (mods.size >= MAX_LOAD_CLOSURE) return { reason: TEST_TARGET_TOO_LARGE, module: p, detail: "closure" };
+      const text = read(t)!;
+      const tsf = ts.createSourceFile(t, text, ts.ScriptTarget.Latest, true);
+      if ((tsf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return { reason: TEST_TARGET_IMPURE, module: t, detail: "parse" };
+      mods.set(t, { sf: tsf, idx: indexModule(tsf) });
+      queue.push(t);
+    }
+  }
+  // A module Map / Set another closure module imports: read in place there too; never re-exported, never reached
+  // through a namespace or default import.
+  for (const [p, m] of mods) for (const s of m.sf.statements) {
+    if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier) || !read) continue;
+    const hits = (siblingCandidates(p, s.moduleSpecifier.text) ?? []).filter((x) => mods.has(x));
+    const t = hits.length === 1 ? mods.get(hits[0]!)! : null;
+    const cols = t ? exportedCollections(t) : new Set<string>();
+    if (!cols.size) continue;
+    const bad = (why: string) => fail({ reason: TEST_TARGET_IMPURE, module: p, detail: `${why} of ${hits[0]}` });
+    if (ts.isExportDeclaration(s)) { const x = bad("re-export"); if (x) return x; continue; }
+    const cl = s.importClause;
+    if (!cl || cl.isTypeOnly) continue;
+    if (cl.name || (cl.namedBindings && ts.isNamespaceImport(cl.namedBindings))) { const x = bad("namespace / default import"); if (x) return x; continue; }
+    if (cl.namedBindings && ts.isNamedImports(cl.namedBindings)) for (const el of cl.namedBindings.elements) {
+      if (el.isTypeOnly || !cols.has((el.propertyName ?? el.name).text)) continue;
+      if (!collectionReadOnly({ idx: m.idx, sf: m.sf, seen: new Set() }, el.name.text)) { const x = bad(`${el.name.text} written or handed out`); if (x) return x; }
+    }
+  }
+  return null;
+}
 /** Auditor #466: `e` can never evaluate to a function (so storing it under an unknown key adds no callable member). */
 function neverCallable(e: ts.Expression | undefined, depth = 0): boolean {
   if (!e || depth > 16) return false;
@@ -1577,10 +2011,10 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7 } : undefined);
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7 } : { load: sib });
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
-  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
+  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol, { load: sib }) === null) return no("not_needed");
   // M88: likewise v3 leaves a target v2 already takes to v2.
   if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib }) === null) return no("not_needed");
   // M90: and v4 leaves a target v3 already takes to v3.
@@ -1682,4 +2116,9 @@ export function moduleReadClosure(start: string, read: (rel: string) => string |
     }
   }
   return [...seen].sort();
+}
+/** Auditor #466 (3rd review): the load allowlist verdict for a module (diagnostics, proofs and census tooling). */
+export function loadAllowlistDetail(path: string, content: string, read: ((rel: string) => string | null) | null, all?: LoadProblem[]): LoadProblem | null {
+  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
+  return loadAllowlistProblem(path, sf, indexModule(sf), read ? (rel) => (rel === path ? content : read(rel)) : null, all);
 }

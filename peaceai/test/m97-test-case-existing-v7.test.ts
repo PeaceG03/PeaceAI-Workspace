@@ -14,7 +14,7 @@ import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
 import { isMapSetLiteral, MAX_COLLECTION_ENTRIES } from "../lib/learned-test.ts";
-import { existingTargetRefusal, mapSetTestProblem, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IMPURE, TEST_TARGET_IO, TEST_TARGET_SIGNATURE, V7_COLLECTIONS, voidTarget, voidTestProblem } from "../lib/learned-test-existing.ts";
+import { existingTargetAnalysisForEvidence, existingTargetRefusal, mapSetTestProblem, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IMPURE, TEST_TARGET_IO, TEST_TARGET_SIGNATURE, V7_COLLECTIONS, voidTarget, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -151,8 +151,10 @@ const HARD: Record<string, { fn: string; want: string; files: Record<string, str
   mjsSideEffect: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import "./c.mjs";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size; }\n', "src/c.mjs": "Map.prototype.get = () => 1;\n" } },
   jsNoTs: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import "./c.js";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size; }\n', "src/c.js": "Map.prototype.get = () => 1;\n" } },
   requireAtLoad: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import { k } from "./b";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size + k; }\n', "src/b.ts": 'declare const require: (s: string) => unknown;\nexport const k = 1;\nexport const LATE = require("./c.cjs");\n' } },
-  dynamicImportAtLoad: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import { k } from "./b";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size + k; }\n', "src/b.ts": 'function boot(): unknown { return import("./c"); }\nexport const k = 1;\nexport const READY = boot();\n', "src/c.ts": "export const z = 1;\n" } },
-  dynamicImportViaImportedFn: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import { k } from "./b";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size + k; }\n', "src/b.ts": 'import { loader } from "./c";\nexport const k = 1;\nexport const READY = loader();\n', "src/c.ts": 'export function loader(): unknown { return import("./d"); }\n', "src/d.ts": "export const z = 1;\n" } },
+  // Auditor #466 (3rd review): the load-time call of a user function is refused first by the fail-closed load allowlist.
+  dynamicImportAtLoad: { fn: "pages", want: TEST_TARGET_IMPURE, files: { "src/a.ts": 'import { k } from "./b";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size + k; }\n', "src/b.ts": 'function boot(): unknown { return import("./c"); }\nexport const k = 1;\nexport const READY = boot();\n', "src/c.ts": "export const z = 1;\n" } },
+  // Auditor #466 (3rd review): the load-time call of a user function is refused first by the fail-closed load allowlist.
+  dynamicImportViaImportedFn: { fn: "pages", want: TEST_TARGET_IMPURE, files: { "src/a.ts": 'import { k } from "./b";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size + k; }\n', "src/b.ts": 'import { loader } from "./c";\nexport const k = 1;\nexport const READY = loader();\n', "src/c.ts": 'export function loader(): unknown { return import("./d"); }\n', "src/d.ts": "export const z = 1;\n" } },
   importEquals: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import { k } from "./b";\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size + k; }\n', "src/b.ts": 'import fs = require("fs");\nexport const k = 1;\nexport function f(): unknown { return fs; }\n' } },
   fakeMainGuard: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'function here(): string { return import.meta.url; }\nif (import.meta.url === here()) { void import("./cli"); }\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size; }\n', "src/cli.ts": "export const z = 1;\n" } },
   orMainGuard: { fn: "pages", want: TEST_TARGET_IO, files: { "src/a.ts": 'import { pathToFileURL } from "node:url";\nif (process.argv[1] || import.meta.url === pathToFileURL(process.argv[1]!).href) { void import("./cli"); }\nexport function pages(m: ReadonlyMap<string, number>): number { return m.size; }\n', "src/cli.ts": "export const z = 1;\n" } },
@@ -251,7 +253,7 @@ test("Job B: the graded test source is re-checked (void call forms, Map / Set li
   const tc = read("peaceai/bin/test-candidates.ts");
   assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false, v6 = false, v7 = false\): TestGrading/);
   assert.match(tc, /existing-v6@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\)\), typeof candidate\.operationId === "string" && candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\)\);/);
-  assert.match(tc, /dates: v3, v4, v5, v6, v7 \} : undefined\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);\n  if \(v7 && \(voidTestProblem\(real, fn, test\) !== null \|\| mapSetTestProblem\(test\) !== null\)\) return ungradable\("not-test-only"\);/);
+  assert.match(tc, /dates: v3, v4, v5, v6, v7 \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);\n  if \(v7 && \(voidTestProblem\(real, fn, test\) !== null \|\| mapSetTestProblem\(test\) !== null\)\) return ungradable\("not-test-only"\);/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 
@@ -300,14 +302,14 @@ test("evidence: bar met; every module and sibling blob-pinned; v1-v6 refuse and 
     const text = pinned(e);
     const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
     const rd = { read: (rel: string) => sibs.get(rel) ?? null };
-    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v4: true }), e.v4Refusal, `${e.repo} ${e.fn} v4`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v5: true }), e.v5Refusal, `${e.repo} ${e.fn} v5`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v6: true }), e.v6Refusal, `${e.repo} ${e.fn} v6`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v4: true }), e.v4Refusal, `${e.repo} ${e.fn} v4`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v5: true }), e.v5Refusal, `${e.repo} ${e.fn} v5`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v6: true }), e.v6Refusal, `${e.repo} ${e.fn} v6`);
     for (const r of [e.v1Refusal, e.v2Refusal, e.v3Refusal, e.v4Refusal, e.v5Refusal, e.v6Refusal]) assert.notEqual(r, null);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v7: true }), null, `${e.repo} ${e.fn} v7`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v7: true }), null, `${e.repo} ${e.fn} v7`);
     // v7 differs from v6 only by Map / Set types and a void return: the signature shows one.
     assert.match(e.signature, /\b(?:Readonly)?(?:Map|Set)<|\): void$/, e.fn);
     if (/\b(?:Readonly)?(?:Map|Set)</.test(e.signature)) coll++; else voids++;

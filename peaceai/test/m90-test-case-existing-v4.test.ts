@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
-import { existingTargetRefusal, MAX_TYPE_DEPTH_V4, MAX_TYPE_MEMBERS_V4, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_SIGNATURE, V4_GENERICS } from "../lib/learned-test-existing.ts";
+import { existingTargetAnalysisForEvidence, existingTargetRefusal, MAX_TYPE_DEPTH_V4, MAX_TYPE_MEMBERS_V4, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_SIGNATURE, V4_GENERICS } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -178,7 +178,7 @@ test("stub and Job B wiring: v4 candidates are re-checked under v4 (with v2 and 
   assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false(?:, v5 = false)?(?:, v6 = false)?(?:, v7 = false)?\): TestGrading/);
   // M91: v5 candidates set v4 too.
   assert.match(tc, /typeof candidate\.operationId === "string" && \(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\),/);
-  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
   assert.match(tc, /gradedTestSourceProblem\(test, \[spec, `\$\{spec\}\.ts`\], declaredFunctions\(real\), moduleDataKeys\(real\), v3\)/);
 });
@@ -201,18 +201,28 @@ test("evidence: bar met; every module and sibling blob-pinned; v1-v3 refuse and 
   const perRepo = new Map<string, number>();
   for (const e of EV.examples) perRepo.set(e.repo, (perRepo.get(e.repo) ?? 0) + 1);
   assert.ok([...perRepo.values()].every((n) => n <= 3), "at most 3 per repo");
+  let kept = 0;
   for (const e of EV.examples) {
     const text = pinned(e);
     const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
     const rd = { read: (rel: string) => sibs.get(rel) ?? null };
-    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
     assert.notEqual(e.v3Refusal, null);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true, v4: true }), null, `${e.repo} ${e.fn} v4`);
+    // Auditor #466 (3rd review, item 2): supabase createChunks reads MAX_CHUNK_REGEXP = createChunkRegExp(...), a /g RegExp
+    // built by a helper at load - module RegExp state now refused by the module-state allowlist. It is the only v4
+    // example lost; the rest still meet the bar.
+    if (`${e.repo} ${e.fn}` === "supabase/auth-helpers createChunks") {
+      assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true, v4: true }), TEST_TARGET_IMPURE, "createChunks: helper-built /g RegExp");
+      continue;
+    }
+    kept++;
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true, v4: true }), null, `${e.repo} ${e.fn} v4`);
     // v4 differs from v3 only by optional / default parameters, the V4_GENERICS and the wider bounds.
     assert.ok(/\?|=|\b(?:Array|ReadonlyArray|Readonly|Partial|Record|Pick|Omit)</.test(e.signature) || e.siblings.length > 0 || /\{/.test(e.signature), `${e.fn}: a v4 widening in the signature or a followed type`);
   }
+  assert.ok(kept >= EV.bar, `v4 evidence kept ${kept} >= bar ${EV.bar}`);
 });
 test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {
   const notices = read("THIRD_PARTY_NOTICES");

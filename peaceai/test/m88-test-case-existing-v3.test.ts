@@ -11,7 +11,7 @@ import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { gradedTestSourceProblem, stubAll } from "../lib/learned-function.ts";
 import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, buildTestEdit } from "../lib/learned-test.ts";
-import { existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
+import { existingTargetAnalysisForEvidence, existingTargetRefusal, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_DATE_LOCAL, TEST_TARGET_IMPURE, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -176,7 +176,7 @@ test("stub and Job B wiring: v3 candidates are re-checked with Date and stubbed 
   // M90: v4 candidates also set v2 and v3 (the v4 prefix follows the v3 prefix in both disjunctions).
   assert.match(tc, /candidate\.operationId\.startsWith\("learned:public-test-case-existing-v2@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\)/);
   assert.match(tc, /\(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\),/);
-  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 
@@ -219,10 +219,10 @@ test("evidence: bar met; every module and sibling blob-pinned; v1 and v2 refuse 
     const text = pinned(e);
     const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
     const rd = { read: (rel: string) => sibs.get(rel) ?? null };
-    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
     assert.notEqual(e.v2Refusal, null);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true }), null, `${e.repo} ${e.fn} v3`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true }), null, `${e.repo} ${e.fn} v3`);
     // v3 differs from v2 only by the global Date, so a v2 refusal that v3 lifts is a Date in the signature's types.
     assert.ok(/\bDate\b/.test(e.signature) || /\bDate\b/.test(text) || [...sibs.values()].some((t) => /\bDate\b/.test(t)), `${e.fn}: Date in the signature or a followed type`);
   }

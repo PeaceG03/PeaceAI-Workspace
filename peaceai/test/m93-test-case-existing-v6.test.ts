@@ -11,7 +11,7 @@ import ts from "typescript";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
-import { callsPassEnv, envArgProblem, envDefaultParams, existingTargetRefusal, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IO, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
+import { callsPassEnv, envArgProblem, envDefaultParams, existingTargetAnalysisForEvidence, existingTargetRefusal, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IO, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -204,7 +204,8 @@ test("Auditor #460: a process.env default reachable from anything but the test i
   for (const [k, c] of Object.entries(ENV_REACH)) {
     const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
     // A namespace import is already refused by the purity walk (test_target_impure); every other case is the new check.
-    const want = k === "namespaceBack" ? "test_target_impure" : TEST_TARGET_IO;
+    // Auditor #466 (3rd review): a top-level call (direct or via a load-time caller) is refused first by the fail-closed load allowlist (test_target_impure).
+    const want = ["namespaceBack", "topLevelCall", "loadTimeCaller", "loadTimeIndirect"].includes(k) ? "test_target_impure" : TEST_TARGET_IO;
     assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), want, `re-check ${k}`);
     const r = run(c.fn, c.check, SPEC, c.files);
     assert.equal(r.e, null, `Job A ${k}`);
@@ -212,6 +213,13 @@ test("Auditor #460: a process.env default reachable from anything but the test i
   }
   for (const [k, c] of Object.entries(ENV_SAFE)) {
     const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
+    // Auditor #466 (3rd review): a load-time call of any user function (here `READY = h()`) is outside the fail-closed
+    // load allowlist, so loadTimeUnrelated is now refused (test_target_impure) rather than kept.
+    if (k === "loadTimeUnrelated") {
+      assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), "test_target_impure", `re-check ${k}`);
+      assert.equal(run(c.fn, c.check, SPEC, c.files).e, null, `Job A ${k}`);
+      continue;
+    }
     assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), null, `re-check ${k}`);
     assert.ok(run(c.fn, c.check, SPEC, c.files).e, `Job A ${k}`);
   }
@@ -226,7 +234,7 @@ test("stub and Job B wiring: v6 candidates are re-checked under v6 (with v2-v5 s
   const tc = read("peaceai/bin/test-candidates.ts");
   assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false, v6 = false(?:, v7 = false)?\): TestGrading/);
   assert.match(tc, /existing-v5@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\), typeof candidate\.operationId === "string" && \(?candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)/);
-  assert.match(tc, /dates: v3, v4, v5, v6(?:, v7)? \} : undefined\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);/);
+  assert.match(tc, /dates: v3, v4, v5, v6(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 
@@ -253,13 +261,13 @@ test("evidence: bar met; every module and sibling blob-pinned; v1-v5 refuse and 
     const text = pinned(e);
     const sibs = new Map(e.siblings.map((s) => [s.path, pinned(s)]));
     const rd = { read: (rel: string) => sibs.get(rel) ?? null };
-    assert.equal(existingTargetRefusal(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v4: true }), e.v4Refusal, `${e.repo} ${e.fn} v4`);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v5: true }), e.v5Refusal, `${e.repo} ${e.fn} v5`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true }), e.v3Refusal, `${e.repo} ${e.fn} v3`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v4: true }), e.v4Refusal, `${e.repo} ${e.fn} v4`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v5: true }), e.v5Refusal, `${e.repo} ${e.fn} v5`);
     for (const r of [e.v1Refusal, e.v2Refusal, e.v3Refusal, e.v4Refusal, e.v5Refusal]) assert.notEqual(r, null);
-    assert.equal(existingTargetRefusal(e.module, text, e.fn, { v2: rd, v6: true }), null, `${e.repo} ${e.fn} v6`);
+    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, v6: true }), null, `${e.repo} ${e.fn} v6`);
     // v6 differs from v5 only by top-level unknown / NodeJS.ProcessEnv parameters: the signature shows one.
     assert.match(e.signature, /\bunknown\b|NodeJS\.ProcessEnv/, e.fn);
     if (/NodeJS\.ProcessEnv/.test(e.signature)) env++; else unk++;
