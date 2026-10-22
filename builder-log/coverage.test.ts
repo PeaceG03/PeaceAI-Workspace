@@ -106,7 +106,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20 and 50/181 from 2026-10-21 with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20 and 61/192 from 2026-10-21 with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -179,9 +179,11 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
   // name no PeaceSTOCKS@sha, so isPeaceRealTask leaves them out (39/170 before batch v7).
   // Batch v7 (seq 226-236, #415-#425 on public-test-case-existing-v2/v3, landed 2026-10-21 through verdict PRs
   // PeaceSTOCKS#18-#28 as PeaceSTOCKS@e9cbc92..663e31e): +11 PeaceAI real tasks -> 50/181.
-  assert.equal(today.allTime.peaceaiAble, 50);
-  assert.equal(today.allTime.builderTasks, 181);
-  assert.equal(today.allTime.percent, 27.6);
+  // Batch v8 (seq 237-247, #427-#437 on public-test-case-existing-v1/v2, landed 2026-10-21 22:02 MT through verdict PRs
+  // PeaceSTOCKS#29-#39 as merge commits 625acbf to ef9778e): +11 PeaceAI real tasks -> 61/192.
+  assert.equal(today.allTime.peaceaiAble, 61);
+  assert.equal(today.allTime.builderTasks, 192);
+  assert.equal(today.allTime.percent, 31.8);
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/133.
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
   assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 133);
