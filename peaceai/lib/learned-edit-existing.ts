@@ -48,7 +48,7 @@ export type Read = (rel: string) => string | null;
 
 /** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
 export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  return minedFrom === "public" && Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && EXISTING_EDIT_VOCAB[k].includes(p[k] as string));
+  return minedFrom === "public" && okParams(p as Record<string, string | string[]>);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

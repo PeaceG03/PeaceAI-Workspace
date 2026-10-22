@@ -1,0 +1,1175 @@
+{
+ "schema": "peaceai-m98-existing-function-edit-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "g1": [
+  {
+   "repo": "iongion/container-desktop",
+   "commit": "4e088552415da112ca24374bf9e9ed70d2594b2c",
+   "parent": "1d2bfdf676d12f783fb70ce6c92957434d704687",
+   "path": "src/container-client/runtimes/abstract/base.ts",
+   "target": "AbstractClientEngine.isApiRunning",
+   "kind": "method",
+   "isAsync": true,
+   "old": "const response = await driver.request({ method: \"GET\", url: \"/_ping\" });",
+   "new": "const response = await driver.request({ method: \"GET\", url: \"/_ping\", timeout: 1500 });",
+   "before": {
+    "repo": "iongion/container-desktop",
+    "commit": "1d2bfdf676d12f783fb70ce6c92957434d704687",
+    "path": "src/container-client/runtimes/abstract/base.ts",
+    "fileBlob": "602cd3f66b6438f24ba8edda687dd772755a95df",
+    "sha256": "959215aea491fc305e8c85e516cfe5c24157f44f5079e77a6355c7d078d96fe1",
+    "fixture": "peaceai/test/fixtures/m98-ee/iongion__container-desktop-602cd3f66b64.txt"
+   },
+   "after": {
+    "repo": "iongion/container-desktop",
+    "commit": "4e088552415da112ca24374bf9e9ed70d2594b2c",
+    "path": "src/container-client/runtimes/abstract/base.ts",
+    "fileBlob": "3e940578dff4ed76bd8a7cd96f3fcf2ed603d653",
+    "sha256": "37e146ec54e70b680e4bdbc5f7816ca936e00c059763122674692d6bb2a158c1",
+    "fixture": "peaceai/test/fixtures/m98-ee/iongion__container-desktop-3e940578dff4.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "639d5d0a62d6c4eb4f43648c07a2f6ee8a3614d6ebf1f6a483bcf83be7d5abaa"
+  },
+  {
+   "repo": "golevelup/nestjs",
+   "commit": "d9b9d147ab4c083c40bc284566d0f655110417d5",
+   "parent": "74ce4ae4b2f62d91d01468368421692b53fe59ec",
+   "path": "packages/rabbitmq/src/amqp/connection.ts",
+   "target": "AmqpConnection.createRpc",
+   "kind": "method",
+   "isAsync": true,
+   "old": "const { queue } = await this.channel.assertQueue(rpcOptions.queue || '');",
+   "new": "const { queue } = await this.channel.assertQueue( rpcOptions.queue || '', rpcOptions.queueOptions || undefined );",
+   "before": {
+    "repo": "golevelup/nestjs",
+    "commit": "74ce4ae4b2f62d91d01468368421692b53fe59ec",
+    "path": "packages/rabbitmq/src/amqp/connection.ts",
+    "fileBlob": "c765c645d8fb2cc7d690a50fbcb523d9cf75c1ac",
+    "sha256": "11deef516eb0474ae929263a51b5ceec62732a2563e7df37a06955ad55c38e7d",
+    "fixture": "peaceai/test/fixtures/m98-ee/golevelup__nestjs-c765c645d8fb.txt"
+   },
+   "after": {
+    "repo": "golevelup/nestjs",
+    "commit": "d9b9d147ab4c083c40bc284566d0f655110417d5",
+    "path": "packages/rabbitmq/src/amqp/connection.ts",
+    "fileBlob": "9c7d1223ba10011bbf34cca5added3172106246c",
+    "sha256": "a6294ad827a6878a444a330716c4489dcd763dc2846f684bca9e145a2cc10aba",
+    "fixture": "peaceai/test/fixtures/m98-ee/golevelup__nestjs-9c7d1223ba10.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "31a3b07c7471afbb576b550f9866ff2901c145602215a9dd05254ab6413defd4"
+  },
+  {
+   "repo": "matt-pharr/physics-data-viewer",
+   "commit": "1e30a6423cc4294149495469ef8163cf9f6c2b50",
+   "parent": "fd5228992d25a750f0e180115246c3412003a48e",
+   "path": "electron/main/project-manager.ts",
+   "target": "ProjectManager.load",
+   "kind": "method",
+   "isAsync": true,
+   "old": "const response = await this.commRouter.request( PDVMessageType.PROJECT_LOAD, payload, { keepAlivePushType: PDVMessageType.PROGRESS }, );",
+   "new": "const response = await this.commRouter.request( PDVMessageType.PROJECT_LOAD, payload as unknown as Record<string, unknown>, { keepAlivePushType: PDVMessageType.PROGRESS }, );",
+   "before": {
+    "repo": "matt-pharr/physics-data-viewer",
+    "commit": "fd5228992d25a750f0e180115246c3412003a48e",
+    "path": "electron/main/project-manager.ts",
+    "fileBlob": "94f3cca9e4981c8754a5043cbbe07c49edeb54a5",
+    "sha256": "4ee2bbcff385fb176815f5a84d9e49b18e2c0fea67e5ca3377aaabf97b1a4088",
+    "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-94f3cca9e498.txt"
+   },
+   "after": {
+    "repo": "matt-pharr/physics-data-viewer",
+    "commit": "1e30a6423cc4294149495469ef8163cf9f6c2b50",
+    "path": "electron/main/project-manager.ts",
+    "fileBlob": "6a9f31af6ecd355daaa0e3d78866f2e459ca3fab",
+    "sha256": "ec69f3c56e8a4717697f03a9f06b3052210bc5f0422658461ab1cc45c43dc351",
+    "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-6a9f31af6ecd.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "074a6efe1001e7c0cf182cbd6c754f837ba3f1273212c6550dda099a0757a2d5"
+  },
+  {
+   "repo": "WalletConnect/walletconnect-utils",
+   "commit": "35c3152cab1c9bdc669ad755aa4a11c265f72524",
+   "parent": "0376ead55b9e3b7993ade92ad1937b61a27f7223",
+   "path": "misc/keyvaluestorage/src/node-js/index.ts",
+   "target": "KeyValueStorage.getEntries",
+   "kind": "method",
+   "isAsync": true,
+   "old": "const entries = (await this.database.iterator().all()).map(([key, value]) => [key, safeJsonParse(value)] as [string, any]);",
+   "new": "const entries = (await this.database.iterator().all()).map(([key, value]) => [key, safeJsonParse(value)] as [string, T]);",
+   "before": {
+    "repo": "WalletConnect/walletconnect-utils",
+    "commit": "0376ead55b9e3b7993ade92ad1937b61a27f7223",
+    "path": "misc/keyvaluestorage/src/node-js/index.ts",
+    "fileBlob": "c9cbec33a0e37eb3b66198d5d4f26f13474baa88",
+    "sha256": "680a7dc22cbde9b881b2cc8a663e413a811418be0854338881d789adbe2cdfb3",
+    "fixture": "peaceai/test/fixtures/m98-ee/WalletConnect__walletconnect-utils-c9cbec33a0e3.txt"
+   },
+   "after": {
+    "repo": "WalletConnect/walletconnect-utils",
+    "commit": "35c3152cab1c9bdc669ad755aa4a11c265f72524",
+    "path": "misc/keyvaluestorage/src/node-js/index.ts",
+    "fileBlob": "413309b3da6771e532e07e253abbc1fc65ca6a37",
+    "sha256": "359f897ab09c830849abe29f6d7215a0aa3acec5aec6849b76f2dafbcd38f0d0",
+    "fixture": "peaceai/test/fixtures/m98-ee/WalletConnect__walletconnect-utils-413309b3da67.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "dce86f5486175b06b249b62ab47c95ab9704331fb0e93f2327078ceba74e0c30"
+  },
+  {
+   "repo": "honojs/middleware",
+   "commit": "a213ed9af0ecfaac82d9c5654d6d89b09787c60c",
+   "parent": "d14f1de6681e37ee9ed7c3f459813a7fb4db03b1",
+   "path": "packages/mcp/src/streamable-http.ts",
+   "target": "StreamableHTTPTransport.handlePostRequest",
+   "kind": "method",
+   "isAsync": true,
+   "old": "return ctx.body(null, 202)",
+   "new": "return ctx.json(null, { status: 202 })",
+   "before": {
+    "repo": "honojs/middleware",
+    "commit": "d14f1de6681e37ee9ed7c3f459813a7fb4db03b1",
+    "path": "packages/mcp/src/streamable-http.ts",
+    "fileBlob": "294c415b1e23fb416ece8ed9c72bec3c20520d28",
+    "sha256": "72b5bb505ba0464cf09c149510a2167833dccaf5c503ec2427ee764b5825bdec",
+    "fixture": "peaceai/test/fixtures/m98-ee/honojs__middleware-294c415b1e23.txt"
+   },
+   "after": {
+    "repo": "honojs/middleware",
+    "commit": "a213ed9af0ecfaac82d9c5654d6d89b09787c60c",
+    "path": "packages/mcp/src/streamable-http.ts",
+    "fileBlob": "5938af9b130675826ff18beacf7804364ad3f90f",
+    "sha256": "617e736b5262a78822b94c9069e096303b45c6be6c1444878325f55566dac105",
+    "fixture": "peaceai/test/fixtures/m98-ee/honojs__middleware-5938af9b1306.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574"
+  },
+  {
+   "repo": "Azure/azure-openapi-validator",
+   "commit": "3198455eab3d5fe30962abea0e739583d14548f9",
+   "parent": "3ba7c82ea78576682b987a44ecf3b53de6653666",
+   "path": "packages/azure-openapi-validator/core/src/swaggerInventory.ts",
+   "target": "SwaggerInventory.cacheDocument",
+   "kind": "method",
+   "isAsync": true,
+   "old": "this.inventory.addDependency(specPath, ref)",
+   "new": "if (specPath != ref) { this.inventory.addDependency(specPath, ref) }",
+   "before": {
+    "repo": "Azure/azure-openapi-validator",
+    "commit": "3ba7c82ea78576682b987a44ecf3b53de6653666",
+    "path": "packages/azure-openapi-validator/core/src/swaggerInventory.ts",
+    "fileBlob": "f61df9655aa94bb7cb460869a90c0f12f95b8b56",
+    "sha256": "03a64be0f5b09ed11aa458a6bc04642a645a1bb5a05e452054423c67b374e1f8",
+    "fixture": "peaceai/test/fixtures/m98-ee/Azure__azure-openapi-validator-f61df9655aa9.txt"
+   },
+   "after": {
+    "repo": "Azure/azure-openapi-validator",
+    "commit": "3198455eab3d5fe30962abea0e739583d14548f9",
+    "path": "packages/azure-openapi-validator/core/src/swaggerInventory.ts",
+    "fileBlob": "9c514cf74a2a2aba4bf69f58d57df31e53b0e7e4",
+    "sha256": "cf493f8c562e4ed2acce81ee0e7c17dd0e155e7e91d3acd420fc5234a785de06",
+    "fixture": "peaceai/test/fixtures/m98-ee/Azure__azure-openapi-validator-9c514cf74a2a.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "8e1c6bd583a7e67bed34af44dcd17bf4bc1a8c4a551ae16a59d2f6545044f901"
+  },
+  {
+   "repo": "cloudflare/chanfana",
+   "commit": "deb4a5d8538e811dfdcf07d0b1ad3bbc993df91c",
+   "parent": "be72a60e70ecca00f38b8e659caafb0e3929ecea",
+   "path": "src/endpoints/update.ts",
+   "target": "UpdateEndpoint.getUpdatedData",
+   "kind": "method",
+   "isAsync": true,
+   "old": "const updatedData = _oldObj;",
+   "new": "const updatedData = { ..._oldObj };",
+   "before": {
+    "repo": "cloudflare/chanfana",
+    "commit": "be72a60e70ecca00f38b8e659caafb0e3929ecea",
+    "path": "src/endpoints/update.ts",
+    "fileBlob": "e72774dcbc179bdcaa6dace9b30977fd39d6b8e2",
+    "sha256": "961059a8c85151ab40532ca8a471904180418c22dadb58c08d940d5b48f551cf",
+    "fixture": "peaceai/test/fixtures/m98-ee/cloudflare__chanfana-e72774dcbc17.txt"
+   },
+   "after": {
+    "repo": "cloudflare/chanfana",
+    "commit": "deb4a5d8538e811dfdcf07d0b1ad3bbc993df91c",
+    "path": "src/endpoints/update.ts",
+    "fileBlob": "d0eed14ccd727cad5f5ead6e67d499128a98e84f",
+    "sha256": "bad24b8421fb7ab99e5cd4e025041f6925acb6e681681f841d9a4e2d258157da",
+    "fixture": "peaceai/test/fixtures/m98-ee/cloudflare__chanfana-d0eed14ccd72.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "87398ffdb0faa9451e29466ddc25bc9a1c6d21373b05ce92839c71600f1c8d82"
+  },
+  {
+   "repo": "open-gsd/gsd-pi",
+   "commit": "eb3f7edd94b78d96b94146040aa0f5f3a9538593",
+   "parent": "dcce2cecc76c847dc024a9459e6fdbcb5762d179",
+   "path": "src/resources/extensions/github-sync/sync.ts",
+   "target": "syncSliceComplete",
+   "kind": "function",
+   "isAsync": true,
+   "old": "ghMergePR(basePath, mapping.repo, sliceRecord.prNumber, \"squash\");",
+   "new": "const gitPrefs = loadEffectiveGSDPreferences(basePath)?.preferences?.git ?? {}; const effectiveStrategy = gitPrefs.merge_strategy === \"merge\" ? \"merge\" : \"squash\"; ghMergePR(basePath, mapping.repo, sliceRecord.prNumber, effectiveStrategy);",
+   "before": {
+    "repo": "open-gsd/gsd-pi",
+    "commit": "dcce2cecc76c847dc024a9459e6fdbcb5762d179",
+    "path": "src/resources/extensions/github-sync/sync.ts",
+    "fileBlob": "412de411b7a7a55fe2d09a40f888703e33bf8d3f",
+    "sha256": "9ad471fa9c536a3eda9e2a157d765210a7fe323a476a2e0ed3843dab131a3a98",
+    "fixture": "peaceai/test/fixtures/m98-ee/open-gsd__gsd-pi-412de411b7a7.txt"
+   },
+   "after": {
+    "repo": "open-gsd/gsd-pi",
+    "commit": "eb3f7edd94b78d96b94146040aa0f5f3a9538593",
+    "path": "src/resources/extensions/github-sync/sync.ts",
+    "fileBlob": "3f9a93d112a1fb072a8c4e0c8006bfdc28f5a228",
+    "sha256": "20bd0fb59dac87e22256af4f4cfcc45b35f4b80b618d11ee8762e31f2623b8d3",
+    "fixture": "peaceai/test/fixtures/m98-ee/open-gsd__gsd-pi-3f9a93d112a1.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "bf8ef5028c5653a745881fb7c5e88887b0bd7d4ed4c5f16f5fb6a0ddab7f7918"
+  },
+  {
+   "repo": "Choaterboater/casper",
+   "commit": "30aa48b90860def9db3dbd655d01e874cc1216a7",
+   "parent": "1d2f0721dc88bdab915546ead08e0086fa14d9ea",
+   "path": "src/verify/repair-loop.ts",
+   "target": "changedFiles",
+   "kind": "function",
+   "isAsync": true,
+   "old": "const { stdout } = await execFileAsync(\"git\", safeGitArgs([\"status\", \"--short\", \"--untracked-files=normal\"]), { cwd, timeout: 2000, maxBuffer: 16_384, signal });",
+   "new": "const limit = AbortSignal.timeout(2000); const { stdout } = await execFileAsync(\"git\", safeGitArgs([\"status\", \"--short\", \"--untracked-files=normal\"]), { cwd, maxBuffer: 16_384, killSignal: \"SIGKILL\", signal: signal ? AbortSignal.any([signal, limit]) : limit });",
+   "before": {
+    "repo": "Choaterboater/casper",
+    "commit": "1d2f0721dc88bdab915546ead08e0086fa14d9ea",
+    "path": "src/verify/repair-loop.ts",
+    "fileBlob": "559358f92993c5d732f210e086f39cdec0dc87ac",
+    "sha256": "ad6557246f99f357aa9f2a71eb64d270d9ea961c6db03dcff70dd6b73a5ac1e9",
+    "fixture": "peaceai/test/fixtures/m98-ee/Choaterboater__casper-559358f92993.txt"
+   },
+   "after": {
+    "repo": "Choaterboater/casper",
+    "commit": "30aa48b90860def9db3dbd655d01e874cc1216a7",
+    "path": "src/verify/repair-loop.ts",
+    "fileBlob": "8c025f89187533ad9bd91627ec989c85d3f423b9",
+    "sha256": "62f09d7f2f099d32f5234d6f8add8658484d4ab2cdf73a562842a2eedf0b479e",
+    "fixture": "peaceai/test/fixtures/m98-ee/Choaterboater__casper-8c025f891875.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "0eed620d64ee8721baac715e5eba03ec79000ea1147bfd8191044166975f995a"
+  },
+  {
+   "repo": "openapistack/openapi-backend",
+   "commit": "9ab72b4c924414b131c45d1ec2e4fd90b43bb0ca",
+   "parent": "a444cab6df1a59c46885ffd7ec47c8439d2c1b6a",
+   "path": "src/router.ts",
+   "target": "OpenAPIRouter.parseRequest",
+   "kind": "method",
+   "isAsync": false,
+   "old": "query[queryParam] = JSON.parse(query[queryParam]);",
+   "new": "const rawValue = query[queryParam]; if (typeof rawValue === 'string') { query[queryParam] = JSON.parse(rawValue); }",
+   "before": {
+    "repo": "openapistack/openapi-backend",
+    "commit": "a444cab6df1a59c46885ffd7ec47c8439d2c1b6a",
+    "path": "src/router.ts",
+    "fileBlob": "00c26a2b83fc0256b731715d2d8c6d2673fdf4d0",
+    "sha256": "64cb556000c61ee929760516f2d06be2c59781b1e60c4d59538e10b28af78c22",
+    "fixture": "peaceai/test/fixtures/m98-ee/openapistack__openapi-backend-00c26a2b83fc.txt"
+   },
+   "after": {
+    "repo": "openapistack/openapi-backend",
+    "commit": "9ab72b4c924414b131c45d1ec2e4fd90b43bb0ca",
+    "path": "src/router.ts",
+    "fileBlob": "f54c6937ac7cefe991564cc434d566fcde0c0f02",
+    "sha256": "0fd3adb3c60c94a3ec2a08b19eb768204bf20a3def2206a1fdfa5ad845683f78",
+    "fixture": "peaceai/test/fixtures/m98-ee/openapistack__openapi-backend-f54c6937ac7c.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "4618ee8cd9b223f61f937db8ce06743e6abeb8e3a756e389737b913951956776"
+  },
+  {
+   "repo": "jmerle/competitive-companion",
+   "commit": "695609ba6c68d550136d093e76d0b94c1ad65669",
+   "parent": "4bf4fa04f51dc9ae6868534b1dabd5b3bfc300b7",
+   "path": "src/parsers/problem/LuoguProblemParser.ts",
+   "target": "LuoguProblemParser.parseFromPage",
+   "kind": "method",
+   "isAsync": false,
+   "old": "task.setTimeLimit(parseFloat(timeLimitStr) * 1000);",
+   "new": "const timeAmount = parseFloat(timeLimitStr); const timeMultiplier = timeLimitStr.endsWith('ms') ? 1 : 1000; task.setTimeLimit(timeAmount * timeMultiplier);",
+   "before": {
+    "repo": "jmerle/competitive-companion",
+    "commit": "4bf4fa04f51dc9ae6868534b1dabd5b3bfc300b7",
+    "path": "src/parsers/problem/LuoguProblemParser.ts",
+    "fileBlob": "5a0bbbd631705dec0e844245fb49f7bbdb5ec303",
+    "sha256": "e87783b9b59122a5b6bc791d367392e18203dd30302f2f14edb11a94df35c11c",
+    "fixture": "peaceai/test/fixtures/m98-ee/jmerle__competitive-companion-5a0bbbd63170.txt"
+   },
+   "after": {
+    "repo": "jmerle/competitive-companion",
+    "commit": "695609ba6c68d550136d093e76d0b94c1ad65669",
+    "path": "src/parsers/problem/LuoguProblemParser.ts",
+    "fileBlob": "b9a30d13c7eb2d1b471a0527294c96b3f5e9b7ea",
+    "sha256": "9e99e04c187a84515a0a67be8fd257635277d39c06ec3136c246bdc5f055ac87",
+    "fixture": "peaceai/test/fixtures/m98-ee/jmerle__competitive-companion-b9a30d13c7eb.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "da87c1634da76dd244cdda1d9a2f9d8988e88f7677655be4e2480d0b3b633e65"
+  },
+  {
+   "repo": "unjs/ufo",
+   "commit": "62199a0cc84727b7b4666aaca8ff04cca2f68f3a",
+   "parent": "1954caebf751d22f04fff059fc09412de3c6b86d",
+   "path": "src/utils.ts",
+   "target": "withProtocol",
+   "kind": "function",
+   "isAsync": false,
+   "old": "const match = input.match(PROTOCOL_REGEX);",
+   "new": "let match = input.match(PROTOCOL_REGEX); if (!match) { match = input.match(/^\\/{2,}/); }",
+   "before": {
+    "repo": "unjs/ufo",
+    "commit": "1954caebf751d22f04fff059fc09412de3c6b86d",
+    "path": "src/utils.ts",
+    "fileBlob": "ae60d2beb25399410e57dea7cab6cdf887cc8847",
+    "sha256": "b9b3449c1ac59733c66bb8c15a6727bf1e676b7f38b18adfd661afec866c07be",
+    "fixture": "peaceai/test/fixtures/m98-ee/unjs__ufo-ae60d2beb253.txt"
+   },
+   "after": {
+    "repo": "unjs/ufo",
+    "commit": "62199a0cc84727b7b4666aaca8ff04cca2f68f3a",
+    "path": "src/utils.ts",
+    "fileBlob": "7ea72b9f6c65dbfc039026a210dbd454ba96b6ac",
+    "sha256": "f9194d3d269bf72bf7c522eb6dae886b968364c4cfd240e13bcacec5efec5d21",
+    "fixture": "peaceai/test/fixtures/m98-ee/unjs__ufo-7ea72b9f6c65.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94"
+  },
+  {
+   "repo": "supostat/dev-workflow",
+   "commit": "65f6b573146f49b52ca87164463f7235301ee1ec",
+   "parent": "01c4b65be2f35ae35a606c3660c6af6b946a5aa7",
+   "path": "src/cli/engram-stats.ts",
+   "target": "parseRunCount",
+   "kind": "function",
+   "isAsync": false,
+   "old": "const value = Number(args[idx + 1]);",
+   "new": "const rawValue = args[idx + 1]; if (rawValue === \"all\") return Infinity; const value = Number(rawValue);",
+   "before": {
+    "repo": "supostat/dev-workflow",
+    "commit": "01c4b65be2f35ae35a606c3660c6af6b946a5aa7",
+    "path": "src/cli/engram-stats.ts",
+    "fileBlob": "073c21be44be696071fc89973530c98c0941dac3",
+    "sha256": "e3722e1ab29fde175dab786c89abc0fb080a05910854e76072dec9169eae0504",
+    "fixture": "peaceai/test/fixtures/m98-ee/supostat__dev-workflow-073c21be44be.txt"
+   },
+   "after": {
+    "repo": "supostat/dev-workflow",
+    "commit": "65f6b573146f49b52ca87164463f7235301ee1ec",
+    "path": "src/cli/engram-stats.ts",
+    "fileBlob": "ef221f87dae33ad99f066c2487e19c7091bca232",
+    "sha256": "e11d6d61e3774c4dee27fadd7b5f739e60deb5431814b0f342bbff9018f1f886",
+    "fixture": "peaceai/test/fixtures/m98-ee/supostat__dev-workflow-ef221f87dae3.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "0e2b5ba522928eb57b41a3157423cb71bc12e65420783c992353af940e2e5bf3"
+  },
+  {
+   "repo": "antaalt/shader-validator",
+   "commit": "67ced20730a45dd8a9c1f2262fbfbf073d7ab522",
+   "parent": "45ffd1f831e6041e395ba836d662c09f58d9bf3e",
+   "path": "src/shaderVariant.ts",
+   "target": "ShaderVariantTreeDataProvider.add",
+   "kind": "method",
+   "isAsync": true,
+   "old": "let entryPoint = await vscode.window.showInputBox({ title: \"Entry point\", value: \"main\", prompt: \"Select an entry point for your variant.\", placeHolder: \"main\" });",
+   "new": "let entryPoint = await vscode.window.showInputBox({ title: \"Entry point\", value: \"main\", prompt: \"Select an entry point for your variant. Note that specifying this along the stage might improve performances.\", placeHolder: \"main\" });",
+   "before": {
+    "repo": "antaalt/shader-validator",
+    "commit": "45ffd1f831e6041e395ba836d662c09f58d9bf3e",
+    "path": "src/shaderVariant.ts",
+    "fileBlob": "15b45ba90d4833d4470841fef4bcd26b5352c466",
+    "sha256": "9b15f2083abf33a1c99fb9df7e3fc6e957763094d67aca709f5d99e03d72a646",
+    "fixture": "peaceai/test/fixtures/m98-ee/antaalt__shader-validator-15b45ba90d48.txt"
+   },
+   "after": {
+    "repo": "antaalt/shader-validator",
+    "commit": "67ced20730a45dd8a9c1f2262fbfbf073d7ab522",
+    "path": "src/shaderVariant.ts",
+    "fileBlob": "7b73d868383077db740601a035a33ffed9a6e507",
+    "sha256": "a8d564516213e17997684e5f87c9ee338073a68d2b61e0a3382e311819ce0b4a",
+    "fixture": "peaceai/test/fixtures/m98-ee/antaalt__shader-validator-7b73d8683830.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "f79c2dce0bc2b71165782df47ce62af68534aaf5b90c1d0e3d0057c8066526cd"
+  },
+  {
+   "repo": "benjamn/ast-types",
+   "commit": "d96bdbd51413116ed11acd809bf42f5583f2e5de",
+   "parent": "56b67487ceae9c9f93e2a6e8d76ec25abdd07198",
+   "path": "src/types.ts",
+   "target": "OrType.check",
+   "kind": "method",
+   "isAsync": false,
+   "old": "return this.types.some(type => { return type.check(value, deep); });",
+   "new": "if (this.types.some(type => type.check(value, !!deep))) { return true; } if (typeof deep === \"function\") { deep(this, value); } return false;",
+   "before": {
+    "repo": "benjamn/ast-types",
+    "commit": "56b67487ceae9c9f93e2a6e8d76ec25abdd07198",
+    "path": "src/types.ts",
+    "fileBlob": "146bb249073f17142caf0875905295b2745efc8e",
+    "sha256": "7dd37cd76b9e110fa29f54ebc7159179d983e535c883fd209acd08a5e4d0724c",
+    "fixture": "peaceai/test/fixtures/m98-ee/benjamn__ast-types-146bb249073f.txt"
+   },
+   "after": {
+    "repo": "benjamn/ast-types",
+    "commit": "d96bdbd51413116ed11acd809bf42f5583f2e5de",
+    "path": "src/types.ts",
+    "fileBlob": "67ab14454660e481657fbffd72ee82194d9e3e7c",
+    "sha256": "cf6cb477b32c1858737360734623009d3ce766cae2a6fd6a196b8d6560c8a1c7",
+    "fixture": "peaceai/test/fixtures/m98-ee/benjamn__ast-types-67ab14454660.txt"
+   },
+   "license": "MIT",
+   "licenseSha256": "1d8ce38662b90ac204f17b4cf7f5bfbb71cbd27db5de2f22386bd858353ec84a"
+  }
+ ],
+ "g2": [
+  {
+   "repo": "AetherAI3/aether-agent",
+   "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+   "module": "src/core/device_runtime/publisher.ts",
+   "target": "Publisher.drain",
+   "entry": {
+    "kind": "new",
+    "cls": "Publisher",
+    "method": "drain",
+    "args": [
+     "data"
+    ],
+    "ctorArgs": [
+     {
+      "keys": [
+       "random"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "AetherAI3/aether-agent",
+    "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+    "path": "test/device_publisher.test.ts",
+    "fileBlob": "cc9d549994a46ce2bc0671d4bd87024619ea212a",
+    "sha256": "2e367a4d5d18e357857546455f2064dd523478eb51f84f8e8c95b41c04b169c3",
+    "fixture": "peaceai/test/fixtures/m98-ee/AetherAI3__aether-agent-cc9d549994a4.txt"
+   },
+   "testLine": 69,
+   "snippet": "p.drain(t.send)",
+   "closure": [
+    {
+     "repo": "AetherAI3/aether-agent",
+     "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+     "path": "src/core/device_runtime/publisher.ts",
+     "fileBlob": "6b2d944044e42804a0203a16f1b53aa3ca9721a9",
+     "sha256": "b85605f7c9dee7919086fb47b18043b9c56701c3555e857c112c9f300d85fa62",
+     "fixture": "peaceai/test/fixtures/m98-ee/AetherAI3__aether-agent-6b2d944044e4.txt"
+    },
+    {
+     "repo": "AetherAI3/aether-agent",
+     "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+     "path": "src/core/device_runtime/contract.ts",
+     "fileBlob": "38975f5f592ecd13aa7942d6782be9bfb97f7c85",
+     "sha256": "8d5d60bda6bf3772040eb74e037df381c2682bd1ec251c6cf1472231d758ec38",
+     "fixture": "peaceai/test/fixtures/m98-ee/AetherAI3__aether-agent-38975f5f592e.txt"
+    }
+   ],
+   "license": "Apache-2.0",
+   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2"
+  },
+  {
+   "repo": "Choaterboater/casper",
+   "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+   "module": "evals/fixtures/rate-limiter/src/limiter.ts",
+   "target": "RateLimiter.take",
+   "entry": {
+    "kind": "new",
+    "cls": "RateLimiter",
+    "method": "take",
+    "args": [
+     "data"
+    ],
+    "ctorArgs": [
+     {
+      "keys": [
+       "capacity",
+       "now",
+       "refillPerSecond"
+      ]
+     }
+    ]
+   },
+   "isAsync": false,
+   "test": {
+    "repo": "Choaterboater/casper",
+    "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+    "path": "evals/fixtures/rate-limiter/acceptance/limiter.test.ts",
+    "fileBlob": "b275d35580a2179348e3a47eeb7e80685c5bd8d9",
+    "sha256": "54bd583288b37d9b4e2671e1f5940c4bd1d654174435c572966d686f410d5ae4",
+    "fixture": "peaceai/test/fixtures/m98-ee/Choaterboater__casper-b275d35580a2.txt"
+   },
+   "testLine": 85,
+   "snippet": "limiter.take(\"a\")",
+   "closure": [
+    {
+     "repo": "Choaterboater/casper",
+     "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+     "path": "evals/fixtures/rate-limiter/src/limiter.ts",
+     "fileBlob": "267f239ad8f64b487b75451fdf28850b1426660b",
+     "sha256": "e6c813d30262d6f08675c4a7893b7875367b6e0b16b0008e5acad93fd02f374e",
+     "fixture": "peaceai/test/fixtures/m98-ee/Choaterboater__casper-267f239ad8f6.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "0eed620d64ee8721baac715e5eba03ec79000ea1147bfd8191044166975f995a"
+  },
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "module": "server/src/castle-wall/audit/emission-liveness.ts",
+   "target": "EmissionLivenessWatchdog.evaluate",
+   "entry": {
+    "kind": "new",
+    "cls": "EmissionLivenessWatchdog",
+    "method": "evaluate",
+    "args": [],
+    "ctorArgs": [
+     {
+      "keys": [
+       "graceMs",
+       "minDecisions",
+       "now",
+       "onRecovery",
+       "onStall"
+      ]
+     }
+    ]
+   },
+   "isAsync": false,
+   "test": {
+    "repo": "eriknewton/sanctuary-framework",
+    "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+    "path": "server/test/castle-wall/audit/emission-liveness.test.ts",
+    "fileBlob": "800afd83d337c5015be1f8a79e10e10b42b80a00",
+    "sha256": "0d7942a23fbe3e40372cfe55642c34ba2e8f9031233e9bd540a06d1a73c92ca2",
+    "fixture": "peaceai/test/fixtures/m98-ee/eriknewton__sanctuary-framework-800afd83d337.txt"
+   },
+   "testLine": 286,
+   "snippet": "wd.evaluate()",
+   "closure": [
+    {
+     "repo": "eriknewton/sanctuary-framework",
+     "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+     "path": "server/src/castle-wall/audit/emission-liveness.ts",
+     "fileBlob": "bdd3b7d23a5fe28cfe905299da5a93f3b0ed38cb",
+     "sha256": "925b597a480cb3033efb325383df43430e4b5b3d6a02b5ab3cd135d92ce82430",
+     "fixture": "peaceai/test/fixtures/m98-ee/eriknewton__sanctuary-framework-bdd3b7d23a5f.txt"
+    }
+   ],
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "1210350468/devpilot",
+   "commit": "3a05d55145c0649de5fdb42ab65a12db7d4ac41d",
+   "module": "src/server-shutdown.ts",
+   "target": "shutdownHttpServer",
+   "entry": {
+    "kind": "call",
+    "fn": "shutdownHttpServer",
+    "args": [
+     {
+      "keys": [
+       "close"
+      ]
+     },
+     "data"
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "1210350468/devpilot",
+    "commit": "3a05d55145c0649de5fdb42ab65a12db7d4ac41d",
+    "path": "src/server-shutdown.test.ts",
+    "fileBlob": "7dca2eeaafc500e8a9cfde974ad7ab081a5239fe",
+    "sha256": "b9953d9747abb92a94bf0d4ea384c524756c767fb3999d432f50c37e51ea3e78",
+    "fixture": "peaceai/test/fixtures/m98-ee/1210350468__devpilot-7dca2eeaafc5.txt"
+   },
+   "testLine": 13,
+   "snippet": "shutdownHttpServer(drainingHttpServer, async () => {\n  applicationCloseStarted = true;\n  assert.ok(\n    finishHttpClose,\n    \"HTTP draining must start before application cleanup\",\n  );\n  finishHttpClo",
+   "closure": [
+    {
+     "repo": "1210350468/devpilot",
+     "commit": "3a05d55145c0649de5fdb42ab65a12db7d4ac41d",
+     "path": "src/server-shutdown.ts",
+     "fileBlob": "b9e6f4f0c8def0436fac4ccf7f52aa3b86bd6935",
+     "sha256": "505521f64ec8023504cbfe00b99bc082d56b5c5c10efca3de46e4eee94e95557",
+     "fixture": "peaceai/test/fixtures/m98-ee/1210350468__devpilot-b9e6f4f0c8de.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "85fe8ea6f1f2fb5801a3e14a3ce61047aee54065579038a66e23e2df8284fc68"
+  },
+  {
+   "repo": "ParthibanRajasekaran/delivery-intel",
+   "commit": "823750f33ad881263cad79e8a0ad875861e9468b",
+   "module": "src/jittest/assessors.ts",
+   "target": "assessCatchingTests",
+   "entry": {
+    "kind": "call",
+    "fn": "assessCatchingTests",
+    "args": [
+     "data",
+     {
+      "keys": [
+       "assess"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "ParthibanRajasekaran/delivery-intel",
+    "commit": "823750f33ad881263cad79e8a0ad875861e9468b",
+    "path": "src/__tests__/jittest/assessors.test.ts",
+    "fileBlob": "d8b9ad9f5ae9fbec693a5f773eb3e452a80fa298",
+    "sha256": "6a43e9a7cf038e29bd523a8271834f436b057c9715aed3fbdfbb0d983dbebca1",
+    "fixture": "peaceai/test/fixtures/m98-ee/ParthibanRajasekaran__delivery-intel-d8b9ad9f5ae9.txt"
+   },
+   "testLine": 199,
+   "snippet": "assessCatchingTests([makeCatchingTest()], customLLM)",
+   "closure": [
+    {
+     "repo": "ParthibanRajasekaran/delivery-intel",
+     "commit": "823750f33ad881263cad79e8a0ad875861e9468b",
+     "path": "src/jittest/assessors.ts",
+     "fileBlob": "830e84736874bf6e17e16a5f94bb82e6da09567e",
+     "sha256": "a31fe7008704015dc638c3626e8431fcbbb47a884f846553607268b51d69ac32",
+     "fixture": "peaceai/test/fixtures/m98-ee/ParthibanRajasekaran__delivery-intel-830e84736874.txt"
+    },
+    {
+     "repo": "ParthibanRajasekaran/delivery-intel",
+     "commit": "823750f33ad881263cad79e8a0ad875861e9468b",
+     "path": "src/jittest/catchingTestGenerator.ts",
+     "fileBlob": "b7720c0593a252cff23ed2150457f82467c21409",
+     "sha256": "01be4d1498fac23d4461f73f2b13849cfbaefd3bb1f64d3d34afe8080964a562",
+     "fixture": "peaceai/test/fixtures/m98-ee/ParthibanRajasekaran__delivery-intel-b7720c0593a2.txt"
+    },
+    {
+     "repo": "ParthibanRajasekaran/delivery-intel",
+     "commit": "823750f33ad881263cad79e8a0ad875861e9468b",
+     "path": "src/jittest/diffAnalyzer.ts",
+     "fileBlob": "240a38c6aced6a8e937b0d1d1be885ec543bf8db",
+     "sha256": "7419d6c4c907d5092dcd6c419b48f19473d6089f5a47595bcc8bc36c346ec581",
+     "fixture": "peaceai/test/fixtures/m98-ee/ParthibanRajasekaran__delivery-intel-240a38c6aced.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "d23b7e83ae66f9a4c89eb24f2658a7c2d7f33eba39ec2dcbc11793c8367bcb9e"
+  },
+  {
+   "repo": "alexngai/openswarm",
+   "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
+   "module": "legacy/src/providers/codex-responses/websocket.ts",
+   "target": "parseCodexWs",
+   "entry": {
+    "kind": "call",
+    "fn": "parseCodexWs",
+    "args": [
+     {
+      "keys": [
+       "addEventListener",
+       "close",
+       "readyState",
+       "removeEventListener",
+       "send"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "alexngai/openswarm",
+    "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
+    "path": "legacy/src/providers/codex-responses/websocket.test.ts",
+    "fileBlob": "b2d80474da267ef15a7f106089490bed0a130b2b",
+    "sha256": "6a1b87fd9996ff4dd1fe87c85abc5eae9eb1639fa4b999335acd350d732ca0f3",
+    "fixture": "peaceai/test/fixtures/m98-ee/alexngai__openswarm-b2d80474da26.txt"
+   },
+   "testLine": 119,
+   "snippet": "parseCodexWs(socket as never)",
+   "closure": [
+    {
+     "repo": "alexngai/openswarm",
+     "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
+     "path": "legacy/src/providers/codex-responses/websocket.ts",
+     "fileBlob": "9f2c8a3281e895923a3ea2a00ad3edd754529ebb",
+     "sha256": "e9d1d5261d1fa16eaafa01714754f5938efcaa8cf4df480cd3d65917aab01839",
+     "fixture": "peaceai/test/fixtures/m98-ee/alexngai__openswarm-9f2c8a3281e8.txt"
+    },
+    {
+     "repo": "alexngai/openswarm",
+     "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
+     "path": "legacy/src/providers/codex-responses/types.ts",
+     "fileBlob": "08821c0ac5c3dbe518460b62ad094d94aa633e7e",
+     "sha256": "64fa6681ccfd8f9df0d511238930e336acf472cbeee21c161454d20862fec5db",
+     "fixture": "peaceai/test/fixtures/m98-ee/alexngai__openswarm-08821c0ac5c3.txt"
+    },
+    {
+     "repo": "alexngai/openswarm",
+     "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
+     "path": "legacy/src/providers/codex-responses/headers.ts",
+     "fileBlob": "5a4802bb1123d7f5607dcfbfc7ced9f2fa0c868e",
+     "sha256": "ac9f031982c662ed3f0b61b2ff4b1e9c8e173c867449694efc7f1049a3283a17",
+     "fixture": "peaceai/test/fixtures/m98-ee/alexngai__openswarm-5a4802bb1123.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "6bdea6d09b205ce2ac345d099d13c141f9af2a01046e27fef54b16656cdd2aed"
+  },
+  {
+   "repo": "amitkumardubey/praana",
+   "commit": "8a17bac8d7ce5c8ee6bf0430d57da2f318e9cf7c",
+   "module": "src/context-engine/embedding-cache.ts",
+   "target": "precomputeVectors",
+   "entry": {
+    "kind": "call",
+    "fn": "precomputeVectors",
+    "args": [
+     "data",
+     {
+      "keys": [
+       "dim",
+       "embed"
+      ]
+     },
+     "data"
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "amitkumardubey/praana",
+    "commit": "8a17bac8d7ce5c8ee6bf0430d57da2f318e9cf7c",
+    "path": "tests/embedding-cache.test.ts",
+    "fileBlob": "ad5a10ad4ea6172e6ba5ce124668bfdd777cbc0c",
+    "sha256": "0167f0ae28b7c2885428b382c58c094c1c9b74f1d7688171883717c0253edf52",
+    "fixture": "peaceai/test/fixtures/m98-ee/amitkumardubey__praana-ad5a10ad4ea6.txt"
+   },
+   "testLine": 42,
+   "snippet": "precomputeVectors([\" one \", \"one\", \"two\"], embedder, cache)",
+   "closure": [
+    {
+     "repo": "amitkumardubey/praana",
+     "commit": "8a17bac8d7ce5c8ee6bf0430d57da2f318e9cf7c",
+     "path": "src/context-engine/embedding-cache.ts",
+     "fileBlob": "dd451e536393f444724c22eb0e0f0a25407dee43",
+     "sha256": "c2cba57ff0414ae2ad5ea1d0172dd94089ef6807dd54230c95c93b12ddc0680b",
+     "fixture": "peaceai/test/fixtures/m98-ee/amitkumardubey__praana-dd451e536393.txt"
+    },
+    {
+     "repo": "amitkumardubey/praana",
+     "commit": "8a17bac8d7ce5c8ee6bf0430d57da2f318e9cf7c",
+     "path": "src/memory/types.ts",
+     "fileBlob": "78f4f0b74513a7d80f301be3b5355cfddaca9d95",
+     "sha256": "30a0862f1a073f6bba4da53c112bcedff877dd587e3307f157e83c74ba25ff78",
+     "fixture": "peaceai/test/fixtures/m98-ee/amitkumardubey__praana-78f4f0b74513.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "579c8e032843dd95a3e2d6817deafcc656473d6df06528c5083b0baa4de26d2e"
+  },
+  {
+   "repo": "matt-pharr/physics-data-viewer",
+   "commit": "e0158761d36099723969bc2e7007c3a4d00ee8f8",
+   "module": "electron/main/server/invoke-registry.ts",
+   "target": "dispatchInvoke",
+   "entry": {
+    "kind": "call",
+    "fn": "dispatchInvoke",
+    "args": [
+     "data",
+     {
+      "keys": [
+       "push"
+      ]
+     },
+     "data"
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "matt-pharr/physics-data-viewer",
+    "commit": "e0158761d36099723969bc2e7007c3a4d00ee8f8",
+    "path": "electron/main/ipc-register-file-browse.test.ts",
+    "fileBlob": "1f0a1f3526598598d8b38a46665c4ee8ad689727",
+    "sha256": "4a271022bc824e6313f1d4b821b02b57edf5fb7aa557f77583c695306e846ebd",
+    "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-1f0a1f352659.txt"
+   },
+   "testLine": 23,
+   "snippet": "dispatchInvoke(\n    IPC.files.listDir,\n    { push: () => undefined } as never,\n    [dirPath],\n  )",
+   "closure": [
+    {
+     "repo": "matt-pharr/physics-data-viewer",
+     "commit": "e0158761d36099723969bc2e7007c3a4d00ee8f8",
+     "path": "electron/main/server/invoke-registry.ts",
+     "fileBlob": "3bc7f183cc16543f2c5e41199310b23800ff32f0",
+     "sha256": "f97bac2e068da1333cfaaf54c7ebf2672fc12e00f086143473f310016942bbc4",
+     "fixture": "peaceai/test/fixtures/m98-ee/matt-pharr__physics-data-viewer-3bc7f183cc16.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "074a6efe1001e7c0cf182cbd6c754f837ba3f1273212c6550dda099a0757a2d5"
+  },
+  {
+   "repo": "f-tuma/musubi",
+   "commit": "b85a57500ad81b47603a705290e215270a642a95",
+   "module": "apps/api/src/sync/orchestrator.ts",
+   "target": "runProviderSyncs",
+   "entry": {
+    "kind": "call",
+    "fn": "runProviderSyncs",
+    "args": [
+     "data",
+     "data",
+     "data",
+     {
+      "keys": [
+       "onFailure",
+       "syncAccount"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "f-tuma/musubi",
+    "commit": "b85a57500ad81b47603a705290e215270a642a95",
+    "path": "apps/api/src/sync/orchestrator.test.ts",
+    "fileBlob": "cc93dc64fa5ed02ff224f2de45cd550d8c0a5737",
+    "sha256": "7239faee7b730a33d979b076f4ce824a227c44ec6fcb06eb01a33c0f829672f4",
+    "fixture": "peaceai/test/fixtures/m98-ee/f-tuma__musubi-cc93dc64fa5e.txt"
+   },
+   "testLine": 40,
+   "snippet": "runProviderSyncs(adapters, \"user-1\", {}, {\n    syncAccount,\n    onFailure: (failure) => failures.push(failure),\n  })",
+   "closure": [
+    {
+     "repo": "f-tuma/musubi",
+     "commit": "b85a57500ad81b47603a705290e215270a642a95",
+     "path": "apps/api/src/sync/orchestrator.ts",
+     "fileBlob": "3465ed64bf8f585113e8b6418a908d48d03f0f9b",
+     "sha256": "49e8aa113d175cf8e7578173f38b2e0bf89d3ae9b7175ce01ae25c7cc517b43a",
+     "fixture": "peaceai/test/fixtures/m98-ee/f-tuma__musubi-3465ed64bf8f.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "0cf01a61cf80bfc171a3a3bad90fe87c073a5ca4956bb73005cc03d4be2f75cd"
+  },
+  {
+   "repo": "greyhaven-ai/autocontext",
+   "commit": "f72c154152397f54d55407508b153d28861888a5",
+   "module": "ts/src/cli/benchmark-command-workflow.ts",
+   "target": "executeBenchmarkCommandWorkflow",
+   "entry": {
+    "kind": "call",
+    "fn": "executeBenchmarkCommandWorkflow",
+    "args": [
+     {
+      "keys": [
+       "ScenarioClass",
+       "assertFamilyContract",
+       "createRunner",
+       "createStore",
+       "dbPath",
+       "knowledgeRoot",
+       "migrationsDir",
+       "now",
+       "plan",
+       "providerBundle",
+       "runsRoot"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "greyhaven-ai/autocontext",
+    "commit": "f72c154152397f54d55407508b153d28861888a5",
+    "path": "ts/tests/benchmark-command-workflow.test.ts",
+    "fileBlob": "60ab54c1a2c21b9a4adc19d584b4cfbae0c26857",
+    "sha256": "24ce08ba6bbf3e31d07d4660da7aa885a7448f07f9d9639f3f2084f80b671eee",
+    "fixture": "peaceai/test/fixtures/m98-ee/greyhaven-ai__autocontext-60ab54c1a2c2.txt"
+   },
+   "testLine": 52,
+   "snippet": "executeBenchmarkCommandWorkflow({\n      dbPath: \"/tmp/autocontext.db\",\n      migrationsDir: \"/tmp/migrations\",\n      runsRoot: \"/tmp/runs\",\n      knowledgeRoot: \"/tmp/knowledge\",\n      plan: {\n       ",
+   "closure": [
+    {
+     "repo": "greyhaven-ai/autocontext",
+     "commit": "f72c154152397f54d55407508b153d28861888a5",
+     "path": "ts/src/cli/benchmark-command-workflow.ts",
+     "fileBlob": "5033a5a8fedcf824d24a57e776ebc85df5190610",
+     "sha256": "27f782a0fb34080c62efba6d9c4e8975997f0eabd24b4845c10f5f56ed3495b3",
+     "fixture": "peaceai/test/fixtures/m98-ee/greyhaven-ai__autocontext-5033a5a8fedc.txt"
+    },
+    {
+     "repo": "greyhaven-ai/autocontext",
+     "commit": "f72c154152397f54d55407508b153d28861888a5",
+     "path": "ts/src/domain/ids.ts",
+     "fileBlob": "b4d7c9351615866cd5d31c7a347d0b4ebf576904",
+     "sha256": "ada6a4449ca9c32336344c9866d5189a26576b8da687d5a549b1770231552c11",
+     "fixture": "peaceai/test/fixtures/m98-ee/greyhaven-ai__autocontext-b4d7c9351615.txt"
+    }
+   ],
+   "license": "Apache-2.0",
+   "licenseSha256": "060de278acde80cefba9cd13cd1d36c077de3fa16bee067c393e6b0adc6bdf0c"
+  },
+  {
+   "repo": "pete-mc/dataverse-powertools",
+   "commit": "92f6bea8fced9a2ff04a218fae28fc567e332843",
+   "module": "src/general/dataverse/webApi.ts",
+   "target": "logDataverseHttpError",
+   "entry": {
+    "kind": "call",
+    "fn": "logDataverseHttpError",
+    "args": [
+     "data",
+     "data",
+     {
+      "keys": [
+       "status",
+       "statusText",
+       "text"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "pete-mc/dataverse-powertools",
+    "commit": "92f6bea8fced9a2ff04a218fae28fc567e332843",
+    "path": "src/general/dataverse/webApi.spec.ts",
+    "fileBlob": "dc933e3886b80b9fc3e92f235d27b07948ff4d9c",
+    "sha256": "d63c337265319f67771ede3d2365b5b4fbf6d84b4028b0883e710e2f5ed57124",
+    "fixture": "peaceai/test/fixtures/m98-ee/pete-mc__dataverse-powertools-dc933e3886b8.txt"
+   },
+   "testLine": 31,
+   "snippet": "logDataverseHttpError(channel, \"load tables\", {\n      status: 401,\n      statusText: \"Unauthorized\",\n      text: async () => \"token expired\",\n    })",
+   "closure": [
+    {
+     "repo": "pete-mc/dataverse-powertools",
+     "commit": "92f6bea8fced9a2ff04a218fae28fc567e332843",
+     "path": "src/general/dataverse/webApi.ts",
+     "fileBlob": "f930a5bd802fa30be371713db407666c61123e4a",
+     "sha256": "908eeb42c93055e4d61610dbdd77ce8e4469034cbe5dd2b599fd9162bcb93385",
+     "fixture": "peaceai/test/fixtures/m98-ee/pete-mc__dataverse-powertools-f930a5bd802f.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "76ad09705a95546704a682d086b102c67d3e26524bdf89e90698c5f83edf5208"
+  },
+  {
+   "repo": "smartfrog/opencode-froggy",
+   "commit": "87f2f9f334bb65767903e70946a10b0959d0d306",
+   "module": "src/tools/blockchain/event-decoder.ts",
+   "target": "decodeEvent",
+   "entry": {
+    "kind": "call",
+    "fn": "decodeEvent",
+    "args": [
+     "data",
+     {
+      "keys": [
+       "resolve"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "smartfrog/opencode-froggy",
+    "commit": "87f2f9f334bb65767903e70946a10b0959d0d306",
+    "path": "src/tools/blockchain/event-decoder.test.ts",
+    "fileBlob": "753649960c5641fe876227d4e2f4f7d4c5966239",
+    "sha256": "ceb5e9e6f6cc7f87de5f6a227ec14d7c50aab9823864fab7af0a66be87d8b372",
+    "fixture": "peaceai/test/fixtures/m98-ee/smartfrog__opencode-froggy-753649960c56.txt"
+   },
+   "testLine": 75,
+   "snippet": "decodeEvent(log, mockResolver)",
+   "closure": [
+    {
+     "repo": "smartfrog/opencode-froggy",
+     "commit": "87f2f9f334bb65767903e70946a10b0959d0d306",
+     "path": "src/tools/blockchain/event-decoder.ts",
+     "fileBlob": "0f88a50e347bdc4ecc5e0cac28733a4e5d8bb383",
+     "sha256": "36a4ae1ba2501fb190300b1750e5aac2f649b3eff139a1ea734d2a3ff8e5af17",
+     "fixture": "peaceai/test/fixtures/m98-ee/smartfrog__opencode-froggy-0f88a50e347b.txt"
+    },
+    {
+     "repo": "smartfrog/opencode-froggy",
+     "commit": "87f2f9f334bb65767903e70946a10b0959d0d306",
+     "path": "src/tools/blockchain/types.ts",
+     "fileBlob": "538fb544c2a1a025dd70bb85d81e7f8c08f17fa0",
+     "sha256": "831be117431f97ffd5377c1771af1a41702da9afc7fb402f6f676d5e6cc63203",
+     "fixture": "peaceai/test/fixtures/m98-ee/smartfrog__opencode-froggy-538fb544c2a1.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "56680f480d9cdfd5bd8c1f3efd2f2d322c4beb84ece88c66c16a14b67a3e2921"
+  },
+  {
+   "repo": "ershiyidian/QuayMesh",
+   "commit": "d452b51ae1c80838221ca41f6ed7a01e2665d9c2",
+   "module": "src/ui/session-card/file-import.ts",
+   "target": "selectAuthorizedFiles",
+   "entry": {
+    "kind": "call",
+    "fn": "selectAuthorizedFiles",
+    "args": [
+     {
+      "keys": [
+       "getFileDownloadUrl",
+       "selectFiles"
+      ]
+     },
+     "data"
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "ershiyidian/QuayMesh",
+    "commit": "d452b51ae1c80838221ca41f6ed7a01e2665d9c2",
+    "path": "src/ui/session-card/file-import.test.ts",
+    "fileBlob": "03e0e121d88337274438f2dcf529b63ff5e1d72e",
+    "sha256": "991abb81aa9c9cf4531d5bb26a011d1e7c51d2fa6a10b7f83ce13cc51a87d34f",
+    "fixture": "peaceai/test/fixtures/m98-ee/ershiyidian__QuayMesh-03e0e121d883.txt"
+   },
+   "testLine": 23,
+   "snippet": "selectAuthorizedFiles(host,\"qm:desktop:ws_game\")",
+   "closure": [
+    {
+     "repo": "ershiyidian/QuayMesh",
+     "commit": "d452b51ae1c80838221ca41f6ed7a01e2665d9c2",
+     "path": "src/ui/session-card/file-import.ts",
+     "fileBlob": "f772f7f0c3b89ac50d359613970edc6f32231446",
+     "sha256": "629b81381cdf3229946177bd7a0dc33851bb2d5bd8918b2b64827069ec27b6b2",
+     "fixture": "peaceai/test/fixtures/m98-ee/ershiyidian__QuayMesh-f772f7f0c3b8.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "ebd5ef065061b9563ae5ef33c6ba1e9be36eb4550e2135be4a45cd19297ec727"
+  },
+  {
+   "repo": "starroyhq/agentkib",
+   "commit": "514fe3f2d729624460f662d9202c410de1aa9743",
+   "module": "apps/desktop/src/features/workspace/manifest-draft.ts",
+   "target": "resolveRefreshedManifest",
+   "entry": {
+    "kind": "call",
+    "fn": "resolveRefreshedManifest",
+    "args": [
+     {
+      "keys": [
+       "confirmDiskVersion",
+       "diskManifest",
+       "getCurrentManifest",
+       "initialBaseline",
+       "initialManifest"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "starroyhq/agentkib",
+    "commit": "514fe3f2d729624460f662d9202c410de1aa9743",
+    "path": "apps/desktop/src/features/workspace/workspace-store.test.ts",
+    "fileBlob": "434422bc7e2769d18585c5d582f8304660c46b03",
+    "sha256": "c046b88cf5761c4302180028050ce7856625c5bb7468a7d6ea83f28a437ac04a",
+    "fixture": "peaceai/test/fixtures/m98-ee/starroyhq__agentkib-434422bc7e27.txt"
+   },
+   "testLine": 489,
+   "snippet": "resolveRefreshedManifest({\n      initialManifest: baseline,\n      initialBaseline: JSON.stringify(baseline),\n      diskManifest: disk,\n      getCurrentManifest: () => baseline,\n      confirmDiskVersio",
+   "closure": [
+    {
+     "repo": "starroyhq/agentkib",
+     "commit": "514fe3f2d729624460f662d9202c410de1aa9743",
+     "path": "apps/desktop/src/features/workspace/manifest-draft.ts",
+     "fileBlob": "30b58886674800f677f67abeef679c0ed5303e46",
+     "sha256": "56fb8ced181ca19afb0e4a54ce0100a6f430f67dd28286cf25be9f37d972250f",
+     "fixture": "peaceai/test/fixtures/m98-ee/starroyhq__agentkib-30b588866748.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "4e41230c59c35fcf78cfd656a57e0a28f9d9d2fd0987567807a0fb7f35f61e6a"
+  },
+  {
+   "repo": "zhiyingzzhou/renewlet",
+   "commit": "8f19af3e6fc43ffdf7c65564571ce4cc299a36a3",
+   "module": "scripts/cloudflare-derived-backfill-state.ts",
+   "target": "executeDerivedBackfillState",
+   "entry": {
+    "kind": "call",
+    "fn": "executeDerivedBackfillState",
+    "args": [
+     "data",
+     {
+      "keys": [
+       "markComplete",
+       "rebuild",
+       "verify"
+      ]
+     }
+    ]
+   },
+   "isAsync": true,
+   "test": {
+    "repo": "zhiyingzzhou/renewlet",
+    "commit": "8f19af3e6fc43ffdf7c65564571ce4cc299a36a3",
+    "path": "scripts/cloudflare-derived-backfill-state.test.ts",
+    "fileBlob": "b3a556995304529a205b5a1a7397ccbca5e09d37",
+    "sha256": "fa12c31d5a60813abb9fb6a7bd36f2b07502d5c205593d04e8a459a1eec6e61e",
+    "fixture": "peaceai/test/fixtures/m98-ee/zhiyingzzhou__renewlet-b3a556995304.txt"
+   },
+   "testLine": 109,
+   "snippet": "executeDerivedBackfillState(\"v4-pending-backfill\", actions)",
+   "closure": [
+    {
+     "repo": "zhiyingzzhou/renewlet",
+     "commit": "8f19af3e6fc43ffdf7c65564571ce4cc299a36a3",
+     "path": "scripts/cloudflare-derived-backfill-state.ts",
+     "fileBlob": "86b822b683ec20a7b074d5ab394094b5e6cb4776",
+     "sha256": "8c0ddb2dd3198f4345fc514b08843396d2f22c68b40b07256608ff84457bdde6",
+     "fixture": "peaceai/test/fixtures/m98-ee/zhiyingzzhou__renewlet-86b822b683ec.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "16f82dc90bbfd24ea286a0708fec9c6f584f242fcd9dd6343b2be55640f843b5"
+  }
+ ],
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "663e31e7d8f930cd9c7cc3c66b555a1c14817756",
+   "counted": 0
+  },
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "checkedAt": "b121f4704697be1e43701c74e80cb59dc069da6e",
+   "counted": 0
+  }
+ ]
+}
