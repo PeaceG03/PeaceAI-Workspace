@@ -54,3 +54,5 @@
 - ONEOFF 12 NOT recovered: us-calendar nyseClosedDates mutates goodFriday = easterSunday(year) (Date returned then mutated by caller = required refusal). Experiment /tmp/oo (copy patched) -> /tmp/w466y/cen-oo.json.
 - Head-not-main: the 7 addCalendarDays-chain fns (fresh new Date(`${date}T00:00:00Z`).setUTCDate) — conflicts with the subset requirement; reporting.
 - Next: subset probes, landed, v10, ev, box, CI, PR body, stress.
+- 11:35 MDT: subset done (probes: v1-v6 none head-only; v7 extras = 18 v7 features; census head-only = addCalendarDays chain 7 fns, by design). Landed: 5 gap-refill/oneoff tests still refused (ONEOFF load chain); gains addCalendarDays/planBackfillRanges/backfillEndDate. v10 unchanged (Z4 impure). ev v6 11 v7 14. Box /tmp/bx466c OK. CI green e938b8c. PR body updated. m97d/m97d-sim: 59/66 both.
+- Stress on e938b8c running: runs-m97e (WS /tmp/st466c, stocks-m97e, grade-m97e), runs-m97e-sim (WS /tmp/s97sim2, stocks-m97e-sim, grade-m97e-sim). Score: python3 /workspace/stress/score.py <runs>; then fill PR body "Stress v1 on e938b8c".
