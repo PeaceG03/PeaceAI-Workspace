@@ -68,7 +68,7 @@ index c853dde..3d4276b 100644
    };
    v(body);
 diff --git a/peaceai/lib/learned-test-existing.ts b/peaceai/lib/learned-test-existing.ts
-index 3428909..a8032ec 100644
+index 3428909..87f9ddd 100644
 --- a/peaceai/lib/learned-test-existing.ts
 +++ b/peaceai/lib/learned-test-existing.ts
 @@ -12,7 +12,7 @@
@@ -94,7 +94,7 @@ index 3428909..a8032ec 100644
    // Decision #466: the fresh-Date setter allowance is v7 only; v1-v6 refuse every Date setter, as at main.
    if (r !== DATE_SETTER || !freshSetters) return r;
    const ok = freshDateSetters(node, scopeFn);
-@@ -412,6 +414,415 @@ function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters
+@@ -412,6 +414,500 @@ function dateRefusalTE(node: ts.Node, scopeFn: ts.Node | undefined, freshSetters
    return local ? DATE_LOCAL_TIME : setter ? DATE_SETTER : null;
  }
  
@@ -271,7 +271,9 @@ index 3428909..a8032ec 100644
 +  } else if (ts.isIdentifier(e)) {
 +    const d = teResolve(X, e);
 +    if (d && (ts.isVariableDeclaration(d) || ts.isParameter(d)) && ts.isIdentifier(d.name)) {
-+      r = teDateType(d.type) || (!!d.initializer && teDateValued(X, d.initializer)) || teAssignsOf(X, d, e.text).some((b) => teDateValued(X, b.right));
++      r = teDateType(d.type) || (!!d.initializer && teDateValued(X, d.initializer)) || teAssignsOf(X, d, e.text).some((b) => teDateValued(X, b.right))
++        // the element of a for-of over a Date-holding value is held as a Date itself
++        || (ts.isVariableDeclaration(d) && ts.isVariableDeclarationList(d.parent) && ts.isForOfStatement(d.parent.parent) && teDateValued(X, d.parent.parent.expression));
 +    }
 +  }
 +  X.dv.set(e0, r);
@@ -332,6 +334,8 @@ index 3428909..a8032ec 100644
 +      const k = p.operatorToken.kind;
 +      if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) { c = p; continue; }
 +      if (k === ts.SyntaxKind.CommaToken) { if (p.left === c) return true; c = p; continue; }
++      // the target of `=` / `??=` / `||=` / `&&=` (never `+=`): written, not read as text (the right side is checked itself)
++      if (TE_BIND_ASSIGN.has(k) && p.left === c) return true;
 +      if (TE_BIND_ASSIGN.has(k) && p.right === c) {
 +        const l = teUnwrap(p.left);
 +        const d = ts.isIdentifier(l) ? teResolve(X, l) : null;
@@ -339,7 +343,11 @@ index 3428909..a8032ec 100644
 +      }
 +      return false;
 +    }
++    // `for (const d of ds)`: each element is a Date-valued name (teDateValued), its uses held to this allowlist
++    if (ts.isForOfStatement(p) && p.expression === c) return ts.isVariableDeclarationList(p.initializer) && p.initializer.declarations.length === 1 && ts.isIdentifier(p.initializer.declarations[0]!.name);
 +    if (ts.isExpressionStatement(p)) return true;
++    // `!d`: a Date object is always truthy, so the boolean never reads the time zone
++    if (ts.isPrefixUnaryExpression(p) && p.operator === ts.SyntaxKind.ExclamationToken) return true;
 +    if (ts.isPropertyAccessExpression(p) && p.expression === c) return TE_DATE_USE_CALL.test(p.name.text) && ts.isCallExpression(p.parent) && p.parent.expression === p;
 +    if (ts.isReturnStatement(p) && p.expression === c) return teMayReturnDate(X, teScopeOf(p), tested);
 +    if (ts.isArrowFunction(p) && p.body === c) return teMayReturnDate(X, p, tested);
@@ -403,18 +411,71 @@ index 3428909..a8032ec 100644
 +  }
 +  return false;
 +}
++/** Does a parameter of f feed `new Date(..)` (teTestedParam / teIsoTemplateParam)? With a module that imports f back,
++ *  f may be re-entered with a value that module built: the caller refuses (targetRefusal, dateImportedBack). */
++function teParamFeedsDate(X: TeDateIdx, f: ts.Node): boolean {
++  let hit = false;
++  const v = (n: ts.Node): void => {
++    if (hit) return;
++    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1 && (teTestedParam(X, n.arguments[0]!, f) >= 0 || teIsoTemplateParam(X, n.arguments[0]!, f) >= 0)) hit = true;
++    ts.forEachChild(n, v);
++  };
++  const b = (f as ts.FunctionLikeDeclaration).body;
++  if (b) v(b);
++  return hit;
++}
++/** Can the tested function call itself again (directly, or through any function of its file it names, transitively)?
++ *  Then its parameter may carry a value the function built itself, not the test's literal: no parameter provenance. */
++const teReentrant = new WeakMap<ts.Node, boolean>();
++function teSelfReached(X: TeDateIdx, tested: ts.Node): boolean {
++  const memo = teReentrant.get(tested);
++  if (memo !== undefined) return memo;
++  const seen = new Set<ts.Node>([tested]);
++  const todo: ts.Node[] = [tested];
++  let hit = false;
++  while (todo.length && !hit) {
++    const v = (n: ts.Node): void => {
++      if (hit) return;
++      if (ts.isIdentifier(n)) {
++        const d = teResolve(X, n);
++        if (d === tested) { hit = true; return; }
++        const fn = d && ts.isVariableDeclaration(d) && d.initializer ? teUnwrap(d.initializer) : d;
++        if (d && fn && (ts.isFunctionDeclaration(fn) || ts.isFunctionExpression(fn) || ts.isArrowFunction(fn) || ts.isClassDeclaration(fn) || ts.isMethodDeclaration(fn)) && !seen.has(fn)) { seen.add(fn); todo.push(fn); }
++        if (d && ts.isVariableDeclaration(d) && d.initializer && !seen.has(d.initializer)) { seen.add(d.initializer); todo.push(d.initializer); }
++      }
++      ts.forEachChild(n, v);
++    };
++    const n = todo.pop()!;
++    if (n === tested) { const b = (tested as ts.FunctionLikeDeclaration).body; if (b) v(b); } else v(n);
++  }
++  teReentrant.set(tested, hit);
++  return hit;
++}
 +/** The index of the tested function's own plain, never-reassigned parameter `e` names, or -1. */
 +function teTestedParam(X: TeDateIdx, e: ts.Expression, tested: ts.Node | undefined): number {
 +  e = teUnwrap(e);
 +  if (!tested || !ts.isIdentifier(e)) return -1;
 +  const d = teResolve(X, e);
 +  if (!d || !ts.isParameter(d) || d.parent !== tested || !ts.isIdentifier(d.name) || d.initializer || d.dotDotDotToken) return -1;
++  if (teSelfReached(X, tested)) return -1;
 +  const t = d.type;
 +  const prim = (x: ts.TypeNode): boolean => x.kind === ts.SyntaxKind.StringKeyword || x.kind === ts.SyntaxKind.NumberKeyword || (ts.isUnionTypeNode(x) && x.types.every(prim)) || (ts.isParenthesizedTypeNode(x) && prim(x.type));
 +  if (t && !prim(t)) return -1;
 +  if (teRefsOf(X, d, e.text).some(teWriteRef)) return -1;
 +  return (tested as ts.FunctionLikeDeclaration).parameters.indexOf(d);
 +}
++/** `\`${p}T00:00:00Z\``: the tested function's own parameter (teTestedParam) followed by a literal time with Z or an
++ *  offset, nothing before it - an ISO text in every zone exactly when p is a date-only text, which dateArgProblem then
++ *  requires of every test argument at that index. The parameter's index, or -1. */
++function teIsoTemplateParam(X: TeDateIdx, e: ts.Expression, tested: ts.Node | undefined): number {
++  e = teUnwrap(e);
++  if (!ts.isTemplateExpression(e) || e.head.text !== "" || e.templateSpans.length !== 1) return -1;
++  const sp = e.templateSpans[0]!;
++  const tail = sp.literal.text;
++  if (sp.literal.rawText !== tail || !/^T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(tail) || !teIsoText(`2000-01-01${tail}`)) return -1;
++  return teTestedParam(X, sp.expression, tested);
++}
++const TE_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 +/**
 + * The fail-closed Date-use check (block comment above): null, or DATE_LOCAL_TIME. `tested` is the tested function
 + * (never a load-time callee): only its own parameters may feed `new Date(x)` (then held by dateArgProblem) and only
@@ -434,7 +495,7 @@ index 3428909..a8032ec 100644
 +    }
 +    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1) {
 +      const x = n.arguments[0]!;
-+      if (ts.isSpreadElement(x) || !(teNumeric(X, x) || teIsoLiteral(X, x) || teTestedParam(X, x, tested) >= 0)) { bad = true; return; }
++      if (ts.isSpreadElement(x) || !(teNumeric(X, x) || teIsoLiteral(X, x) || teTestedParam(X, x, tested) >= 0 || teIsoTemplateParam(X, x, tested) >= 0)) { bad = true; return; }
 +    }
 +    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.some(ts.isSpreadElement)) { bad = true; return; }
 +    if (ts.isExpression(n) && !ts.isIdentifier(n) || ts.isIdentifier(n) && isValueReference(n)) {
@@ -445,20 +506,39 @@ index 3428909..a8032ec 100644
 +  v(node);
 +  return bad ? DATE_LOCAL_TIME : null;
 +}
++/** An array of the global Date as a whole type: `Date[]`, `readonly Date[]`, `Array<Date>`, `ReadonlyArray<Date>` (its
++ *  elements reach the target only through `for (const d of ds)`, a Date-valued name; teDateUseOk). */
++function teDateArrayType(t: ts.TypeNode | undefined): boolean {
++  if (!t) return false;
++  while (ts.isParenthesizedTypeNode(t)) t = t.type;
++  if (ts.isTypeOperatorNode(t) && t.operator === ts.SyntaxKind.ReadonlyKeyword) t = t.type;
++  const isDate = (x: ts.TypeNode): boolean => ts.isTypeReferenceNode(x) && ts.isIdentifier(x.typeName) && x.typeName.text === "Date" && !x.typeArguments;
++  if (ts.isArrayTypeNode(t)) return isDate(t.elementType);
++  return ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && (t.typeName.text === "Array" || t.typeName.text === "ReadonlyArray") && t.typeArguments?.length === 1 && isDate(t.typeArguments[0]!);
++}
 +/** The tested function's parameters that feed `new Date(x)` (teTestedParam), and those whose whole type is Date. */
-+export function dateParamInfo(moduleContent: string, fn: string): { strings: number[]; dates: number[] } | null {
++export function dateParamInfo(moduleContent: string, fn: string): { strings: number[]; dateOnly: number[]; dates: number[]; arrays: number[] } | null {
 +  const sf = ts.createSourceFile("m.ts", moduleContent, ts.ScriptTarget.Latest, true);
 +  const decls = indexModule(sf).fns.get(fn) ?? [];
 +  if (decls.length !== 1 || !decls[0]!.body) return null;
 +  const f = decls[0]!;
 +  const X = teDateIdx(sf);
 +  const strings = new Set<number>();
++  const dateOnly = new Set<number>();
 +  const v = (n: ts.Node): void => {
-+    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1) { const i = teTestedParam(X, n.arguments[0]!, f); if (i >= 0) strings.add(i); }
++    if (ts.isNewExpression(n) && teNewDate(X, n) && n.arguments?.length === 1) {
++      const i = teTestedParam(X, n.arguments[0]!, f); if (i >= 0) strings.add(i);
++      const j = teIsoTemplateParam(X, n.arguments[0]!, f); if (j >= 0) dateOnly.add(j);
++    }
 +    ts.forEachChild(n, v);
 +  };
 +  v(f.body!);
-+  return { strings: [...strings].sort(), dates: f.parameters.flatMap((p, i) => (teTopDateType(p.type) ? [i] : [])) };
++  return {
++    strings: [...strings].sort(),
++    dateOnly: [...dateOnly].sort(),
++    dates: f.parameters.flatMap((p, i) => (teTopDateType(p.type) ? [i] : [])),
++    arrays: f.parameters.flatMap((p, i) => (!p.dotDotDotToken && teDateArrayType(p.type) ? [i] : [])),
++  };
 +}
 +/**
 + * Auditor #466 (4th review), Job A and Job B, every version: the test side of the fail-closed Date check, on the
@@ -485,11 +565,16 @@ index 3428909..a8032ec 100644
 +      if (!(ts.isCallExpression(p) && p.expression === n)) { bad = "date-target-not-called"; return; }
 +      if (p.arguments.some(ts.isSpreadElement)) { bad = "date-arg-spread"; return; }
 +      for (const i of info.strings) { const x = p.arguments[i]; if (!x || !lit(x)) { bad = "date-string-arg-not-iso"; return; } }
++      for (const i of info.dateOnly) {
++        const x = p.arguments[i];
++        if (!x || !(ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) || x.getText().slice(1, -1) !== x.text || !TE_DATE_ONLY.test(x.text) || !teValidCalendar(x.text)) { bad = "date-template-arg-not-date-only"; return; }
++      }
 +      p.arguments.forEach((x, i) => {
 +        let hasDate = false;
 +        const w = (k: ts.Node): void => { if (ts.isIdentifier(k) && k.text === "Date") hasDate = true; ts.forEachChild(k, w); };
 +        w(x);
-+        if (hasDate && !(isDateLiteral(x) && info.dates.includes(i))) bad = "date-literal-not-date-param";
++        const dateArray = info.arrays.includes(i) && ts.isArrayLiteralExpression(x) && x.elements.every((el) => isDateLiteral(el));
++        if (hasDate && !(isDateLiteral(x) && info.dates.includes(i)) && !dateArray) bad = "date-literal-not-date-param";
 +      });
 +    }
 +    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Date" && !insideCallOf(n)) {
@@ -510,7 +595,7 @@ index 3428909..a8032ec 100644
  function isValueReference(n: ts.Identifier): boolean {
    const p = n.parent;
    if (!p) return false;
-@@ -425,7 +836,7 @@ function isValueReference(n: ts.Identifier): boolean {
+@@ -425,7 +921,7 @@ function isValueReference(n: ts.Identifier): boolean {
    return true;
  }
  
@@ -519,7 +604,7 @@ index 3428909..a8032ec 100644
  interface V2Ctx {
    path: string;
    /** The target module. Counted in `modules` so it is parsed once, never as one of the 4 siblings. */
-@@ -827,7 +1238,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
+@@ -827,7 +1323,7 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
    const add = (r: string) => a.reasons.add(r);
    if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) add(TEST_TARGET_ASYNC);
    if (!f.body) { add(TEST_TARGET_IMPURE); return; }
@@ -528,7 +613,7 @@ index 3428909..a8032ec 100644
    if (dr === DATE_NOW || dr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
    else if (dr === DATE_SETTER) add(TEST_TARGET_IMPURE);
    // Names declared anywhere inside the function (its params, locals, nested params): resolved locally.
-@@ -1270,6 +1681,24 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
+@@ -1270,6 +1766,24 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
  export function existingTargetAnalysisForEvidence(path: string, content: string, fn: string, opts?: TargetOpts): string | null {
    return targetRefusal(path, content, fn, opts, true);
  }
@@ -553,7 +638,7 @@ index 3428909..a8032ec 100644
  function targetRefusal(path: string, content: string, fn: string, opts: TargetOpts | undefined, skipLoad: boolean, inner?: CalleeMode): string | null {
    if (!plainPath(path)) return "path_not_plain";
    if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
-@@ -1318,7 +1747,7 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
+@@ -1318,7 +1832,7 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
    const lc = inner?.lc ?? makeLoadCallCheck(path, content, opts);
    if (v2) v2.lc = lc;
    const cached = v2?.modules.get(path);
@@ -562,17 +647,17 @@ index 3428909..a8032ec 100644
    if (v2) analyzeLoadedModule(v2, idx, sf);
    else analyzeLoadTime(a, sf);
    analyzeFunction(a, f, envDefaults, true);
-@@ -1333,6 +1762,9 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
+@@ -1333,6 +1847,9 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
    // target module imports. Without it a relative or package value import is code the check cannot see (refused).
    const lp = skipLoad ? null : loadAllowlistProblem(path, sf, idx, v2 ? v2.read : opts?.load ? (rel) => (rel === path ? content : opts.load!.read(rel)) : null, undefined, lc);
    if (lp) a.reasons.add(lp.reason);
 +  // Auditor #466 (4th review): a tested function that returns a Date hands it only to the test - never to another
 +  // module the analysis read (one importing it back, by name or as a namespace).
-+  if (!inner && v2 && (teReturnsDate(teDateIdx(sf), f) || teDateIdx(sf).containerReturn.has(f)) && dateImportedBack(v2, path, fn)) a.reasons.add(TEST_TARGET_DATE_LOCAL);
++  if (!inner && v2 && (teReturnsDate(teDateIdx(sf), f) || teDateIdx(sf).containerReturn.has(f) || teParamFeedsDate(teDateIdx(sf), f)) && dateImportedBack(v2, path, fn)) a.reasons.add(TEST_TARGET_DATE_LOCAL);
    for (const r of PRIORITY) if (a.reasons.has(r)) return r;
    // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
    if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
-@@ -2461,6 +2893,9 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
+@@ -2461,6 +2978,9 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
    const test = buildTestEdit(testParams, { ...task, title, fixSha: task.id }, files, isTest);
    if (!test) return no("test_refused");
    if (!plainPath(test.path)) return no("path_not_plain");
@@ -582,3 +667,64 @@ index 3428909..a8032ec 100644
    return { path: test.path, content: test.content, create: true, selfGrade: true };
  }
  
+diff --git a/peaceai/test/m80-test-case-existing.test.ts b/peaceai/test/m80-test-case-existing.test.ts
+index cb64751..a310270 100644
+--- a/peaceai/test/m80-test-case-existing.test.ts
++++ b/peaceai/test/m80-test-case-existing.test.ts
+@@ -193,7 +193,7 @@ test("refusals: impurity (test_target_impure)", () => {
+   assert.equal(refusal("export function f(s: string): string { return Buffer.from(s).toString(\"hex\"); }\n"), TEST_TARGET_IMPURE, "unlisted global");
+   // #466: the fresh-local-Date setter allowance is v7 only; v1 (like v2-v6) refuses every Date setter, as at main.
+   assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setUTCDate(1); return d.getTime(); }\n"), TEST_TARGET_IMPURE, "date setter");
+-  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setDate(1); return d.getTime(); }\n"), TEST_TARGET_IMPURE, "local-time date setter");
++  assert.equal(refusal("export function f(t: number): number { const d = new Date(t); d.setDate(1); return d.getTime(); }\n"), TEST_TARGET_DATE_LOCAL, "local-time date setter (#466 4th review: the fail-closed Date check names it first)");
+   assert.notEqual(refusal("export function f(d: Date): number { d.setUTCDate(1); return d.getTime(); }\n"), null, "setter on a parameter Date (v1: a Date parameter is already a signature refusal)");
+   assert.equal(refusal("export function f(o: string[]): number { Object.assign(o, [1]); return o.length; }\n"), TEST_TARGET_IMPURE);
+   assert.equal(refusal("export function f(xs: number[]): number[] { const out: number[] = []; for (const x of xs) out.push(x * 2); return out; }\n"), null, "local array is fine");
+@@ -336,6 +336,7 @@ test("Job B: passes today + fails on the stub COUNTS; a stub-satisfied test is r
+     rmSync(fx.dir, { recursive: true, force: true });
+   }
+ });
++const r0 = (tc: string): string => tc.slice(tc.indexOf("function runExistingTests("), tc.indexOf("function gradeExisting("));
+ test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three real runs, credited stub only", () => {
+   const tc = read("peaceai/bin/test-candidates.ts");
+   const g = tc.slice(tc.indexOf("function gradeExisting("), tc.indexOf("/**\n * M13: grading of a learned guard"));
+@@ -346,7 +347,12 @@ test("Job B code: the TEST_EXISTING route is confined, closure-narrowed, three r
+   // M88: v3 candidates arrive with v2 set and add the global Date (`dates: v3`); M90: v4 adds `v4`.
+   assert.match(g, /existingTargetRefusal\(modPath, real, fn, v2 \? \{ v2: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null/);
+   assert.match(g, /moduleReadClosure\(modPath, regular\)/);
+-  assert.match(g, /i < REAL_RUNS_REQUIRED; i\+\+\) if \(!runExistingTests\(tree, newTests, reads\)\.ok\)/);
++  // #466 4th review: the further real runs are one per zone (UTC, America/Denver, Asia/Tokyo), so with the first run
++  // they are at least REAL_RUNS_REQUIRED, and a result that depends on the process zone is real-not-stable.
++  assert.match(g, /if \(afterFix\) for \(const tz of EXISTING_TZ_RUNS\) if \(!runExistingTests\(tree, newTests, reads, false, tz\)\.ok\) return ungradable\("real-not-stable"\);/);
++  assert.match(tc, /export const EXISTING_TZ_RUNS = \["UTC", "America\/Denver", "Asia\/Tokyo"\] as const;/);
++  assert.match(r0(tc), /TSX_DISABLE_CACHE: "1", \.\.\.\(tz \? \{ TZ: tz \} : \{\}\)/);
++  assert.match(g, /if \(dateTestProblem\(real, fn, test, called\[0\]!\.local\) !== null\) return ungradable\("not-test-only"\);/);
+   assert.match(g, /run = runExistingTests\(tree, newTests, reads, true\);/);
+   const r = tc.slice(tc.indexOf("function runExistingTests("), tc.indexOf("function gradeExisting("));
+   assert.match(r, /const args = \["--permission", /);
+diff --git a/peaceai/test/m88-test-case-existing-v3.test.ts b/peaceai/test/m88-test-case-existing-v3.test.ts
+index ffa6d92..88f7f46 100644
+--- a/peaceai/test/m88-test-case-existing-v3.test.ts
++++ b/peaceai/test/m88-test-case-existing-v3.test.ts
+@@ -209,6 +209,7 @@ const pinned = (p: { fixture: string; fileBlob: string; sha256: string }) => {
+   assert.equal(createHash("sha256").update(b).digest("hex"), p.sha256, p.fixture);
+   return b.toString("utf8");
+ };
++const V3_NOW_DATE_LOCAL = new Set(["formatObservedAt", "intervalsToTimeSlots"]);
+ test("evidence: bar met; every module and sibling blob-pinned; v1 and v2 refuse and v3 accepts each on the pinned text", () => {
+   assert.ok(EV.examples.length >= EV.bar && EV.bar >= 10);
+   assert.equal(new Set(EV.examples.map((e) => `${e.repo}\0${e.module}\0${e.fn}`)).size, EV.examples.length);
+@@ -222,7 +223,12 @@ test("evidence: bar met; every module and sibling blob-pinned; v1 and v2 refuse
+     assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn), e.v1Refusal, `${e.repo} ${e.fn} v1`);
+     assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd }), e.v2Refusal, `${e.repo} ${e.fn} v2`);
+     assert.notEqual(e.v2Refusal, null);
+-    assert.equal(existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true }), null, `${e.repo} ${e.fn} v3`);
++    // #466 4th review (fail-closed Date use, every version): two of the ten pinned examples parse a value of unproven
++    // provenance in local time (`new Date(v)` of a `Date | string` parameter; `new Date(interval.start)` of a field), so
++    // v3 now refuses them; the engine only shrank (no spec changed) and they are pinned here as refusals.
++    const v3r = existingTargetAnalysisForEvidence(e.module, text, e.fn, { v2: rd, dates: true });
++    if (V3_NOW_DATE_LOCAL.has(e.fn)) assert.equal(v3r, TEST_TARGET_DATE_LOCAL, `${e.repo} ${e.fn} v3 (now refused)`);
++    else assert.equal(v3r, null, `${e.repo} ${e.fn} v3`);
+     // v3 differs from v2 only by the global Date, so a v2 refusal that v3 lifts is a Date in the signature's types.
+     assert.ok(/\bDate\b/.test(e.signature) || /\bDate\b/.test(text) || [...sibs.values()].some((t) => /\bDate\b/.test(t)), `${e.fn}: Date in the signature or a followed type`);
+   }
