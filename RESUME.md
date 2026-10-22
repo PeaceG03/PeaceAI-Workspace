@@ -31,3 +31,11 @@
 
 - Stress v1 done: baseline runs-m91 59/66 (29/36, 30/30, 0 wrong, 0 crash); sim v5 runs-m91-sim 59/66, 0 wrong; both identical to M90 task by task.
 - PR #442 opened from m91/test-existing-v5 at 32b8cca. NOT merged, NO rule-proposal issue. Next: Auditor review.
+## 2026-10-22 ~02:15 MDT: pnpm retry PR + v6 (M93) started
+
+- Job 1 DONE: PR #459 (branch fix/pnpm-download-retry, worktree /workspace/pr1, head b805d0a): install-target.sh retries 3x
+  (15s/45s), test peaceai/test/install-target-retry.test.ts. Not merged.
+- Job 2 v6 (public-test-case-existing-v6): branch m93/test-existing-v6, worktree /workspace/te7/ws from main 4adef5a.
+  Plan: `unknown` as a top-level param type; `NodeJS.ProcessEnv` param (Record<string,string|undefined>), default
+  exactly `process.env` only on the target and only if every check call passes an object literal for it (Job A + Job B
+  test-source check). Not pushed yet.
