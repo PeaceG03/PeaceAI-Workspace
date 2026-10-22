@@ -45,11 +45,18 @@ export const TEST_EXISTING_VOCAB = {
   // and (c) plain-data types nested up to MAX_TYPE_DEPTH_V4 with up to MAX_TYPE_MEMBERS_V4 members per object.
   // Classes, functions, Map/Set, bytes, unknown/any, typeof, intersections and other generics stay refused.
   // M91 (public-test-case-existing-v5): "exported-pure-function-v5" = the v4 target plus (a) `typeof N` where N is a
-  // top-level `const` (module-local or a named import from a followed relative sibling) with a string / number /
-  // boolean literal initializer (optionally `as const`) or a type annotation that is itself plain data, and (b)
+  // top-level `const` (module-local or a named import from a followed relative sibling) whose initializer is a
+  // string / number / boolean literal (optionally `as const`; M92: a type annotation alone never qualifies, and one
+  // present must itself be plain data), and (b)
   // `T["k"]` property lookups where T is a plain object type v4 accepts and k a string literal naming one of its
   // property signatures. Every other typeof (functions, `let`, values of non-literal type) and indexed access stays refused.
-  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5"],
+  // M93 (public-test-case-existing-v6): "exported-pure-function-v6" = the v5 target plus (a) a parameter whose whole
+  // type is `unknown` (checks still pass only plain-data literals; `any`, and `unknown` nested anywhere or as the
+  // return type, stay refused), and (b) a parameter typed `NodeJS.ProcessEnv` (the global name, read as
+  // Record<string, string | undefined>), optionally with the default `= process.env` (exactly that expression, on the
+  // tested function only) when every call of the function in every check passes an object literal for that
+  // parameter, so the default never runs (Job A on the task, Job B on the graded test source).
+  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5", "exported-pure-function-v6"],
 } as const;
 /** M85 bounds for the v2 target: sibling modules followed, import depth, structural type nesting. */
 export const MAX_IMPORT_MODULES = 4;
@@ -199,6 +206,8 @@ interface V2Ctx {
   v4?: boolean;
   /** M91 (v5 only): `typeof` of literal consts and `T["k"]` property lookups. */
   v5?: boolean;
+  /** M93 (v6 only): top-level `unknown` and `NodeJS.ProcessEnv` parameters (see TEST_EXISTING_VOCAB). */
+  v6?: boolean;
 }
 /** M90: a global (never shadowed in `idx`) name. */
 const unshadowed = (idx: ModuleIndex, n: string): boolean => !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n);
@@ -488,7 +497,7 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
   add(TEST_TARGET_IMPURE);
 }
 
-function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration): void {
+function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults: ReadonlySet<ts.ParameterDeclaration> = new Set()): void {
   const add = (r: string) => a.reasons.add(r);
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) add(TEST_TARGET_ASYNC);
   if (!f.body) { add(TEST_TARGET_IMPURE); return; }
@@ -528,6 +537,8 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration): void {
   // target, and a followed helper's default was previously not walked.
   for (const p of f.parameters) {
     if (!p.initializer) continue;
+    // M93 (v6, tested function only): a `= process.env` default every check overrides (enforced by the callers).
+    if (envDefaults.has(p)) continue;
     const pr = dateRefusal(p.initializer);
     if (pr === DATE_NOW || pr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
     else if (pr === DATE_SETTER) add(TEST_TARGET_IMPURE);
@@ -586,6 +597,47 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
   v(root);
 }
 
+/** M93 (v6): the global `NodeJS.ProcessEnv` type reference (no type arguments; `NodeJS` not declared or imported in the module). */
+function processEnvType(t: ts.TypeNode | undefined, idx: ModuleIndex): boolean {
+  return !!t && ts.isTypeReferenceNode(t) && !t.typeArguments?.length && ts.isQualifiedName(t.typeName) && ts.isIdentifier(t.typeName.left) && t.typeName.left.text === "NodeJS" && t.typeName.right.text === "ProcessEnv" && unshadowed(idx, "NodeJS");
+}
+/** M93 (v6): exactly `process.env` (the global `process`, never shadowed in the module). */
+function processEnvDefault(e: ts.Expression | undefined, idx: ModuleIndex): boolean {
+  return !!e && ts.isPropertyAccessExpression(e) && !e.questionDotToken && ts.isIdentifier(e.expression) && e.expression.text === "process" && e.name.text === "env" && unshadowed(idx, "process");
+}
+/**
+ * M93 (v6): positions of the tested function's `p: NodeJS.ProcessEnv = process.env` parameters (every call in every
+ * check must pass an object literal there). Null when the function is not a single exported declaration.
+ */
+export function envDefaultParams(content: string, fn: string): number[] | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  const idx = indexModule(sf);
+  const decls = idx.fns.get(fn) ?? [];
+  if (decls.length !== 1) return null;
+  return decls[0]!.parameters.flatMap((p, i) => (processEnvType(p.type, idx) && processEnvDefault(p.initializer, idx) ? [i] : []));
+}
+/** M93 (v6): every call of `fn` under `root` passes an object literal at each position in `at` (so a default there never runs). */
+export function callsPassEnv(root: ts.Node, fn: string, at: readonly number[]): boolean {
+  let ok = true;
+  let calls = 0;
+  const v = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === fn) { calls++; for (const i of at) { const g = n.arguments[i]; if (!g || !ts.isObjectLiteralExpression(g)) ok = false; } }
+    // The function passed or aliased as a value (not called) could be called without the argument.
+    else if (ts.isIdentifier(n) && n.text === fn && !(ts.isCallExpression(n.parent) && n.parent.expression === n) && !ts.isImportSpecifier(n.parent)) ok = false;
+    ts.forEachChild(n, v);
+  };
+  v(root);
+  return ok && (at.length === 0 || calls > 0);
+}
+/** M93: Job B, on the graded test file: null when every call of `fn` passes an object literal for its env-default parameters. */
+export function envArgProblem(moduleContent: string, fn: string, testContent: string): string | null {
+  const at = envDefaultParams(moduleContent, fn);
+  if (at === null) return "env-target-unreadable";
+  if (!at.length) return null;
+  const sf = ts.createSourceFile("t.ts", testContent, ts.ScriptTarget.Latest, true);
+  return callsPassEnv(sf, fn, at) ? null : "env-default-not-overridden";
+}
+
 /** M90 (v4): an untyped parameter is accepted only with a string / number / boolean literal default (its type is that primitive). */
 function literalDefault(e: ts.Expression | undefined): boolean {
   if (!e) return false;
@@ -599,7 +651,7 @@ export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: stri
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean }): string | null {
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean }): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
@@ -614,7 +666,7 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
   const reasons = new Set<string>();
-  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true || opts.v5 === true, v4: opts.v4 === true || opts.v5 === true, v5: opts.v5 === true } : undefined;
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true || opts.v5 === true || opts.v6 === true, v4: opts.v4 === true || opts.v5 === true || opts.v6 === true, v5: opts.v5 === true || opts.v6 === true, v6: opts.v6 === true } : undefined;
   if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
   const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
   // M91: `typeof p` naming one of the function's own parameters is that parameter's type, not a module const: refused.
@@ -623,7 +675,11 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const seeTypeof = (n: ts.Node): void => { if (ts.isTypeQueryNode(n) && ts.isIdentifier(n.exprName) && paramNames.has(n.exprName.text)) paramTypeof = true; ts.forEachChild(n, seeTypeof); };
   for (const p of f.parameters) if (p.type) seeTypeof(p.type);
   if (f.type) seeTypeof(f.type);
-  const sigBad = paramTypeof || !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !typeOk(p.type) : !(v2?.v4 && literalDefault(p.initializer))));
+  // M93 (v6 only): a parameter whose whole type is `unknown` or `NodeJS.ProcessEnv`; a `= process.env` default only on
+  // a NodeJS.ProcessEnv parameter (its default is then skipped by the purity walk; every check must override it).
+  const v6Param = (p: ts.ParameterDeclaration): boolean => !!v2?.v6 && !!p.type && (p.type.kind === ts.SyntaxKind.UnknownKeyword || processEnvType(p.type, idx));
+  const envDefaults = new Set(v2?.v6 ? f.parameters.filter((p) => processEnvType(p.type, idx) && processEnvDefault(p.initializer, idx)) : []);
+  const sigBad = paramTypeof || !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !(v6Param(p) || typeOk(p.type)) : !(v2?.v4 && literalDefault(p.initializer))));
   if (sigBad) {
     if (v2) for (const r of PRIORITY) if (v2.reasons.has(r)) return r;
     return TEST_TARGET_SIGNATURE;
@@ -631,7 +687,7 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const cached = v2?.modules.get(path);
   const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2 };
   if (v2) analyzeLoadedModule(v2, idx, sf);
-  analyzeFunction(a, f);
+  analyzeFunction(a, f, envDefaults);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   return null;
 }
@@ -684,12 +740,13 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
   // M90: v4 is the v3 target widened (below), with v3's checks and args mode. M91: v5 is v4 widened likewise.
-  const v5 = params.target === "exported-pure-function-v5";
+  const v6 = params.target === "exported-pure-function-v6";
+  const v5 = params.target === "exported-pure-function-v5" || v6;
   const v4 = params.target === "exported-pure-function-v4" || v5;
   const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5 } : undefined);
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6 } : undefined);
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
   if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
@@ -699,6 +756,10 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true }) === null) return no("not_needed");
   // M91: and v5 leaves a target v4 already takes to v4.
   if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true }) === null) return no("not_needed");
+  // M93: and v6 leaves a target v5 already takes to v5.
+  if (v6 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, v5: true }) === null) return no("not_needed");
+  // M93 (v6): a `= process.env` default must never run: every call in every check passes an object literal there.
+  const envAt = v6 ? envDefaultParams(target.content, task.symbol) ?? [] : [];
   // Every check calls the target itself (the only name the test imports), with literal arguments.
   for (const c of task.checks) {
     if (!(params.checks as string[]).includes(c.kind)) return no(TEST_CHECK_REFUSED);
@@ -708,6 +769,7 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
     const v = (n: ts.Node): void => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === task.symbol) calls = true; ts.forEachChild(n, v); };
     v(e);
     if (!calls) return no(TEST_CHECK_REFUSED);
+    if (envAt.length && !callsPassEnv(e, task.symbol, envAt)) return no(TEST_CHECK_REFUSED);
   }
   // M85 (v2): a check passing an object literal is written under the M20 object-argument grammar (plain bounded data).
   const objectArgs = !v3 && v2 && task.checks.some((c) => { const x = parseCheck(c.expr); let has = false; const w = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments.some(ts.isObjectLiteralExpression)) has = true; ts.forEachChild(n, w); }; if (x) w(x); return has; });
