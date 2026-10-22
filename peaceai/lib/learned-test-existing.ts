@@ -346,14 +346,35 @@ function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): vo
   v2.scanned.add(key);
   analyzeLoadTime(analysisFor(v2, idx, sf), sf);
 }
-/** The load-time statements of one module (see analyzeLoadedModule); v1 runs it on the target module (Auditor #466). */
+/**
+ * The load-time statements of one module (see analyzeLoadedModule). Auditor #466: v1 runs it on the target module
+ * too (its expression statements and side-effect imports: `String.prototype.trim = ..` at load), but not the v2
+ * load-time date check on unused consts.
+ */
 function analyzeLoadTime(a: Analysis, sf: ts.SourceFile): void {
   for (const s of sf.statements) {
+    // Auditor #466: a side-effect import (`import "./polyfill.ts"`) runs that module's load-time code: a relative
+    // .ts sibling gets the same load-time walk (v2+, which read siblings); anything else but a Node built-in is
+    // code the walk cannot see (test_target_io, as for v6 / v7 non-.ts imports).
+    if (ts.isImportDeclaration(s) && !s.importClause && ts.isStringLiteral(s.moduleSpecifier)) {
+      const spec = s.moduleSpecifier.text;
+      if (NODE_BUILTINS.test(spec)) continue;
+      const v = a.v2;
+      const rel = spec.startsWith("./") || spec.startsWith("../");
+      const target = v && rel ? pickSibling(v, spec) : null;
+      const m = v && target ? siblingModule(v, target) : null;
+      if (!v || !target || !m) { a.reasons.add(v?.reasons.has(TEST_TARGET_TOO_LARGE) ? TEST_TARGET_TOO_LARGE : TEST_TARGET_IO); continue; }
+      // What it does on load (a global write, a clock read, a patch) is an impurity of the importer.
+      const seen = new Set<string>();
+      analyzeLoadedModule({ ...v, path: target, depth: v.depth + 1, reasons: seen }, m.idx, m.sf);
+      for (const r of seen) a.reasons.add(r.startsWith("\0") || r === TEST_TARGET_TOO_LARGE ? r : TEST_TARGET_IMPURE);
+      continue;
+    }
     if (ts.isExpressionStatement(s)) {
       analyzeExpression(a, s.expression);
     } else if (ts.isEnumDeclaration(s)) {
       for (const mem of s.members) if (mem.initializer) analyzeExpression(a, mem.initializer);
-    } else if (ts.isVariableStatement(s)) {
+    } else if (ts.isVariableStatement(s) && a.v2) {
       for (const d of s.declarationList.declarations) {
         if (!d.initializer) continue;
         const dr = dateRefusal(d.initializer);
@@ -602,43 +623,67 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
   // A write allowed because `x` is fresh: x's freshness by method name only is recorded (FRESH_BY_NAME).
   const usedFresh = (x: string) => { for (const d of deps.get(x) ?? []) a.reasons.add(FRESH_BY_NAME + d); };
   const bn: BuiltinNames = { plain, builtin, deps, used: usedFresh };
-  // Every name written anywhere in the function after its declaration (`x = ..`, `x += ..`, `x++`, a destructuring
-  // assignment target) is never a built-in name: it may hold anything by the time a method is called on it.
-  const written = new Set<string>();
-  const lhs = (x: ts.Node): void => { if (ts.isIdentifier(x)) written.add(x.text); else if (ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isSpreadElement(x) || ts.isShorthandPropertyAssignment(x) || ts.isPropertyAssignment(x) || ts.isParenthesizedExpression(x) || ts.isNonNullExpression(x) || ts.isAsExpression(x)) ts.forEachChild(x, lhs); };
+  // Every write to a name after its declaration: the right side of a plain `=`, or null (`x += ..`, `x++`, a
+  // destructuring or for-of / for-in target): a built-in name must stay built-in through all of them.
+  const writeRhs = new Map<string, (ts.Expression | null)[]>();
+  const wrote = (k: string, rhs: ts.Expression | null) => { const l = writeRhs.get(k) ?? []; l.push(rhs); writeRhs.set(k, l); };
+  const lhs = (x: ts.Node): void => { if (ts.isIdentifier(x)) wrote(x.text, null); else if (ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isSpreadElement(x) || ts.isShorthandPropertyAssignment(x) || ts.isPropertyAssignment(x) || ts.isParenthesizedExpression(x) || ts.isNonNullExpression(x) || ts.isAsExpression(x)) ts.forEachChild(x, lhs); };
   const writes = (n: ts.Node): void => {
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) lhs(n.left);
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      const l = unwrapExpr(n.left);
+      if (ts.isIdentifier(l) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) wrote(l.text, n.right); else lhs(n.left);
+    }
     if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) lhs(n.operand);
     if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer)) lhs(n.initializer);
     ts.forEachChild(n, writes);
   };
   writes(f.body);
-  for (const w of written) plain.delete(w);
+  for (const p of f.parameters) if (p.initializer) writes(p.initializer);
   const collect = (b: ts.BindingName) => { if (ts.isIdentifier(b)) locals.add(b.text); else for (const el of b.elements) if (!ts.isOmittedExpression(el)) collect(el.name); };
+  f.parameters.forEach((p) => collect(p.name));
+  // A defaulted parameter may hold its default (module data, not a check literal) when a check omits it.
+  for (const p of f.parameters) if (p.initializer && ts.isIdentifier(p.name) && !literalDefault(p.initializer) && !builtinValue(p.initializer, NO_BUILTINS)) plain.delete(p.name.text);
+  const declCount = new Map<string, number>();
+  const countDecl = (n: ts.Node): void => { if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n)) && n.name && ts.isIdentifier(n.name)) declCount.set(n.name.text, (declCount.get(n.name.text) ?? 0) + 1); ts.forEachChild(n, countDecl); };
+  countDecl(f.body);
+  for (const p of f.parameters) if (ts.isIdentifier(p.name)) declCount.set(p.name.text, (declCount.get(p.name.text) ?? 0) + 1);
+  // A name declared twice (shadowing in a nested scope) is ambiguous: never plain or built-in.
+  for (const [k, c] of declCount) if (c > 1) plain.delete(k);
+  // A re-pointed parameter keeps no path trust: it is a built-in candidate like a local.
+  for (const k of [...plain]) if (writeRhs.has(k)) { plain.delete(k); builtin.add(k); }
+  // Pass 1: locals and built-in candidates (a single declaration whose initializer is a built-in value).
+  const inits = new Map<string, ts.Expression>();
   const declare = (n: ts.Node): void => {
     if (ts.isParameter(n) || ts.isBindingElement(n)) collect(n.name);
     if (ts.isVariableDeclaration(n)) {
       collect(n.name);
-      const by = new Set<string>();
-      if (ts.isIdentifier(n.name) && isFresh(n.initializer, fresh, bn, by)) { fresh.add(n.name.text); deps.set(n.name.text, new Set([...(deps.get(n.name.text) ?? []), ...by])); }
-      if (ts.isIdentifier(n.name) && n.initializer && !written.has(n.name.text) && builtinValue(n.initializer, bn)) builtin.add(n.name.text);
+      if (ts.isIdentifier(n.name) && n.initializer && declCount.get(n.name.text) === 1) inits.set(n.name.text, n.initializer);
     }
-    // A nested declaration reusing a parameter's name is not that parameter.
-    if ((ts.isParameter(n) || ts.isBindingElement(n) || ts.isVariableDeclaration(n)) && ts.isIdentifier(n.name) && !f.parameters.includes(n as ts.ParameterDeclaration)) plain.delete(n.name.text);
     if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name && n !== f) locals.add(n.name.text);
     if (ts.isCatchClause(n) && n.variableDeclaration) collect(n.variableDeclaration.name);
     if (ts.isClassDeclaration(n) || ts.isClassExpression(n)) add(TEST_TARGET_IMPURE);
     ts.forEachChild(n, declare);
   };
-  f.parameters.forEach((p) => collect(p.name));
-  // A defaulted parameter may hold its default (module data, not a check literal) when a check omits it.
-  for (const p of f.parameters) if (p.initializer && ts.isIdentifier(p.name) && !literalDefault(p.initializer) && !builtinValue(p.initializer, NO_BUILTINS)) plain.delete(p.name.text);
-  const declCount = new Map<string, number>();
-  const countDecl = (n: ts.Node): void => { if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n)) && n.name && ts.isIdentifier(n.name)) declCount.set(n.name.text, (declCount.get(n.name.text) ?? 0) + 1); ts.forEachChild(n, countDecl); };
-  countDecl(f.body);
   declare(f.body);
-  // A name declared twice (shadowing in a nested scope) is ambiguous: never a built-in name.
-  for (const [k, c] of declCount) if (c > 1) builtin.delete(k);
+  for (const k of inits.keys()) builtin.add(k);
+  // Greatest fixpoint: drop a candidate whose initializer or any write is not a built-in value given the others.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const k of [...builtin]) {
+      const init = inits.get(k);
+      const okInit = init ? builtinValue(init, bn) : f.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === k) && tested;
+      if (!okInit || (writeRhs.get(k) ?? []).some((r) => !r || !builtinValue(r, bn))) { builtin.delete(k); changed = true; }
+    }
+  }
+  // Pass 2: fresh locals, with the final built-in names.
+  const markFresh = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) {
+      const by = new Set<string>();
+      if (isFresh(n.initializer, fresh, bn, by)) { fresh.add(n.name.text); deps.set(n.name.text, new Set([...(deps.get(n.name.text) ?? []), ...by])); }
+    }
+    ts.forEachChild(n, markFresh);
+  };
+  markFresh(f.body);
   // A `let` that is ever re-pointed at a non-fresh value is not fresh.
   const unfresh = (n: ts.Node): void => {
     if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && fresh.has(n.left.text)) {
@@ -649,18 +694,61 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration, envDefaults
     ts.forEachChild(n, unfresh);
   };
   unfresh(f.body);
+  // Auditor #466 (all versions): a write through a fresh value (`c[0].n = 1`, `c[0].push(x)`) mutates what it holds,
+  // which a copy (`xs.slice()`, `[...m.values()]`) shares with the caller or the module. Only a nest the function
+  // builds itself is written two deep: a single-declaration local initialized with an array / object literal whose
+  // slots are literals, every slot store a new literal (`matrix[i] = [i]`), and otherwise only read.
+  const nest = new Set<string>();
+  const slotNew = (e: ts.Expression | undefined): boolean => {
+    const x = e && unwrapExpr(e);
+    return !!x && (ts.isArrayLiteralExpression(x) || (ts.isObjectLiteralExpression(x) && x.properties.every((q) => !q.name || !ts.isIdentifier(q.name) || q.name.text !== "__proto__")));
+  };
+  for (const [k, init] of inits) {
+    const x = unwrapExpr(init);
+    const ok = fresh.has(k) && !f.parameters.some((q) => ts.isIdentifier(q.name) && q.name.text === k)
+      && ((ts.isArrayLiteralExpression(x) && x.elements.every((el) => !ts.isSpreadElement(el) && slotNew(el)))
+        || (ts.isObjectLiteralExpression(x) && x.properties.every((q) => ts.isPropertyAssignment(q) && slotNew(q.initializer))));
+    if (ok) nest.add(k);
+  }
+  const SLOT_SAFE = new Set(["pop", "shift", "sort", "reverse"]);
+  const inLhs = (n: ts.Node): boolean => {
+    for (let c = n, q = n.parent; q && q !== f; c = q, q = q.parent) {
+      if (ts.isBinaryExpression(q) && q.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && q.operatorToken.kind <= ts.SyntaxKind.LastAssignment && q.left === c) return true;
+      if ((ts.isForOfStatement(q) || ts.isForInStatement(q)) && q.initializer === c) return true;
+    }
+    return false;
+  };
+  const nestUse = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && nest.has(n.text) && isValueReference(n) && !(ts.isVariableDeclaration(n.parent) && n.parent.name === n)) {
+      const k = n.text;
+      const p = n.parent;
+      let ok = false;
+      if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n) {
+        const q = p.parent;
+        const name = ts.isPropertyAccessExpression(p) ? p.name.text : "";
+        if (ts.isBinaryExpression(q) && q.left === p) ok = q.operatorToken.kind === ts.SyntaxKind.EqualsToken && slotNew(q.right);
+        else if (ts.isCallExpression(q) && q.expression === p && MUTATORS.has(name)) ok = SLOT_SAFE.has(name) || ((name === "push" || name === "unshift") && q.arguments.every(slotNew)) || (name === "splice" && q.arguments.slice(2).every(slotNew));
+        else ok = !inLhs(p) || ((ts.isPropertyAccessExpression(q) || ts.isElementAccessExpression(q)) && q.expression === p);
+        if (ok && inLhs(p) && !(ts.isBinaryExpression(q) && q.left === p) && !((ts.isPropertyAccessExpression(q) || ts.isElementAccessExpression(q)) && q.expression === p)) ok = false;
+      } else if (ts.isForOfStatement(p) && p.expression === n) ok = true;
+      if (!ok) nest.delete(k);
+    }
+    ts.forEachChild(n, nestUse);
+  };
+  nestUse(f.body);
+  const nested = (e: ts.Expression, depth: number): boolean => { const r = rootName(e); return accessDepth(e) === depth && ts.isIdentifier(r) && nest.has(r.text); };
   const mutableTarget = (target: ts.Expression): boolean => {
     if (ts.isIdentifier(target)) return locals.has(target.text);
     if (ts.isArrayLiteralExpression(target) || ts.isObjectLiteralExpression(target)) return true; // destructuring: identifiers checked as references
     const r = rootName(target);
     // M97 (v7 hardening): a fresh copy (`[...m.values()]`, `new Map(m)`, `xs.slice()`) still holds the caller's objects,
     // so only the copy itself may be written (`c[k] = v`), never through it (`c[0].n = 1`).
-    if (accessDepth(target) > 1) return false;
+    if (accessDepth(target) > 1 && (a.v2?.v7 || !nested(target, 2))) return false;
     if (ts.isIdentifier(r) && fresh.has(r.text)) { usedFresh(r.text); return true; }
     return false;
   };
   const resolve = (name: string): void => resolveName(a, name, locals);
-  walk(a, f.body, resolve, mutableTarget, fresh, bn);
+  walk(a, f.body, resolve, mutableTarget, fresh, bn, (recv) => !a.v2?.v7 && nested(recv, 1));
   // M90: parameter defaults run at call time, so they get the body's rules (clock / local time / setters by name,
   // then the purity walk; nothing in a default may assign). Only adds refusals: v1-v3 accept no defaults on the
   // target, and a followed helper's default was previously not walked.
@@ -711,7 +799,7 @@ function analyzeExpression(a: Analysis, e: ts.Expression): void {
   walk(a, e, resolve, () => false, new Set());
 }
 
-function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutableTarget: (t: ts.Expression) => boolean, fresh: ReadonlySet<string>, bn: BuiltinNames = NO_BUILTINS): void {
+function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutableTarget: (t: ts.Expression) => boolean, fresh: ReadonlySet<string>, bn: BuiltinNames = NO_BUILTINS, nestRecv?: (recv: ts.Expression) => boolean): void {
   const add = (r: string) => a.reasons.add(r);
   const v = (n: ts.Node): void => {
     if (ts.isTypeNode(n) || ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n)) return; // types never run
@@ -740,7 +828,7 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
       else if (ts.isIdentifier(r)) bn.used?.(r.text); else for (const d of by) add(FRESH_BY_NAME + d);
       // M97 (v7 hardening): a mutating call only on the fresh value itself (`c.push(x)`), never on what it holds
       // (`c[0].push(x)`, `c.get(k).add(x)`), and never on the global Map / Set (`Map.prototype.set(...)`).
-      if (isMap || accessDepth(recv) > 0) add(TEST_TARGET_IMPURE);
+      if (isMap || (accessDepth(recv) > 0 && !nestRecv?.(recv))) add(TEST_TARGET_IMPURE);
     }
     // M97 (v7 hardening): a mutator is reached only as the direct callee `x.set(..)` checked above. Its other forms
     // (`Map.prototype.clear.call(m)`, `const f = m.set`, `m["clear"]()`, `m[k]()`, `const { add } = s`) are refused.
@@ -974,19 +1062,15 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   if (v2) analyzeLoadedModule(v2, idx, sf);
   else analyzeLoadTime(a, sf);
   analyzeFunction(a, f, envDefaults, true);
-  // Auditor #466: what loading the target module runs. No module of its relative import closure may patch a global
-  // (aliases included), every relative value or side-effect import is exactly one readable .ts module, and no non-Node
-  // package is imported for its value or side effects (code the walk cannot see). v1 reads no sibling, so its target
-  // module may import (for values or side effects) only Node built-ins. The member names every closure module
-  // defines anywhere join the walked ones for the FRESH_BY_NAME check.
+  // Auditor #466: a fresh-by-name result used for a write, with a member of that name defined anywhere in a module
+  // the analysis read (or one the walk cannot name), is refused.
   const members = new Set<string>();
-  const lp = loadClosureProblem(path, sf, v2, members);
+  readModuleMembers(path, sf, v2, members);
   for (const m of members) a.reasons.add(USER_MEMBER + m);
   if (freshByNameConflict(a.reasons)) a.reasons.add(TEST_TARGET_IMPURE);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
   if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
-  if (lp) return lp;
   // M97 (v7 hardening, targets v6 refuses only): no module container the analysis reads may escape, and the relative
   // import closure must be code the walk can see, never import the target module back, never patch a global.
   if (v2?.v7) {
@@ -997,22 +1081,6 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   return null;
 }
 
-/** Auditor #466: the import declarations of `sf` that load a module at run time (value or side-effect imports and
- * value re-exports; `import type` / `export type` and all-type named imports are erased). */
-function loadingImports(sf: ts.SourceFile): string[] {
-  const out: string[] = [];
-  for (const s of sf.statements) {
-    if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
-    if (ts.isImportDeclaration(s)) {
-      const c = s.importClause;
-      if (c?.isTypeOnly) continue;
-      const nb = c?.namedBindings;
-      if (c && !c.name && nb && ts.isNamedImports(nb) && nb.elements.length > 0 && nb.elements.every((el) => el.isTypeOnly)) continue;
-    } else if (s.isTypeOnly || (s.exportClause && ts.isNamedExports(s.exportClause) && s.exportClause.elements.length > 0 && s.exportClause.elements.every((el) => el.isTypeOnly))) continue;
-    out.push(s.moduleSpecifier.text);
-  }
-  return out;
-}
 /** Auditor #466: `e` can never evaluate to a function (so storing it under an unknown key adds no callable member). */
 function neverCallable(e: ts.Expression | undefined, depth = 0): boolean {
   if (!e || depth > 16) return false;
@@ -1058,34 +1126,14 @@ function memberNames(sf: ts.SourceFile, out: Set<string>): void {
   };
   v(sf);
 }
-/** Auditor #466: bound on the modules of the load-closure walk (more is refused, test_target_too_large). */
-const MAX_LOAD_CLOSURE = 64;
-function loadClosureProblem(path: string, sf: ts.SourceFile, v: V2Ctx | undefined, members: Set<string>): string | null {
-  if (!v) {
-    memberNames(sf, members);
-    if (patchesGlobal(sf)) return TEST_TARGET_IMPURE;
-    for (const spec of loadingImports(sf)) if (!NODE_BUILTINS.test(spec)) return TEST_TARGET_IMPURE;
-    return null;
-  }
-  const seen = new Set<string>([path]);
-  const queue = [path];
-  while (queue.length) {
-    const p = queue.shift()!;
-    const text = p === path ? sf.text : v.read(p);
-    if (text === null) return TEST_TARGET_IO;
-    const m = p === path ? sf : ts.createSourceFile(p, text, ts.ScriptTarget.Latest, true);
-    memberNames(m, members);
-    if (patchesGlobal(m)) return TEST_TARGET_IMPURE;
-    for (const spec of loadingImports(m)) {
-      if (NODE_BUILTINS.test(spec)) continue;
-      if (!/^\.\.?\//.test(spec)) return TEST_TARGET_IMPURE;
-      const hits = (siblingCandidates(p, spec) ?? []).filter((c) => c === path || v.read(c) !== null);
-      if (hits.length !== 1) return TEST_TARGET_IO;
-      const c = hits[0]!;
-      if (!seen.has(c)) { seen.add(c); if (seen.size > MAX_LOAD_CLOSURE) return TEST_TARGET_TOO_LARGE; queue.push(c); }
-    }
-  }
-  return null;
+/**
+ * Auditor #466: the member names every module the analysis read defines anywhere (reached or not) join the walked
+ * ones for the FRESH_BY_NAME check. Global patches: load-time code and reached code get the purity walk (v1 too); the
+ * whole relative import closure, aliases included, is the v7 walk's (v7ClosureProblem, patchesGlobal).
+ */
+function readModuleMembers(path: string, sf: ts.SourceFile, v: V2Ctx | undefined, members: Set<string>): void {
+  memberNames(sf, members);
+  if (v) for (const [p, m] of v.modules) if (m && p !== path) memberNames(m.sf, members);
 }
 /** M97: a module const whose value is a container (array / object literal, `new ...`), not a primitive literal. */
 function containerInit(e: ts.Expression | undefined): boolean {
@@ -1104,36 +1152,65 @@ function containerEscapes(v: V2Ctx): boolean {
     if (!m) continue;
     const names = new Set([...m.consts].filter((n) => containerInit(m.idx.consts.get(n)?.initializer)));
     if (!names.size) continue;
+    // Auditor #466: a value read out of a container (`T.m`, `STORE.items`, `T[k]`, a for-of element) may be a
+    // container too. A name bound to one (`const p = T[k]`, `for (const r of T)`) is a derived name, and every read
+    // value (an access path from a container, or a derived name) must be consumed in place: called as a method,
+    // compared, combined into a primitive, tested, used as a key, spread into an array or iterated. A return, an
+    // argument, a property value, an array element or an `||` / `??` operand lets it escape: `return T.m`.
+    const derived = new Set<string>();
+    const climb = (n: ts.Expression): { top: ts.Expression; steps: number } => {
+      let top: ts.Expression = n;
+      let steps = 0;
+      for (;;) {
+        const q = top.parent;
+        if ((ts.isPropertyAccessExpression(q) || ts.isElementAccessExpression(q)) && q.expression === top) { top = q; steps++; }
+        else if ((ts.isNonNullExpression(q) || ts.isParenthesizedExpression(q) || ts.isAsExpression(q) || ts.isSatisfiesExpression(q)) && q.expression === top) top = q;
+        else return { top, steps };
+      }
+    };
+    const bindNames = (b: ts.BindingName, out: string[]): void => { if (ts.isIdentifier(b)) out.push(b.text); else for (const el of b.elements) if (!ts.isOmittedExpression(el)) bindNames(el.name, out); };
+    /** Names bound by the read value `top` (a const / let initializer or a for-of over it), else null. */
+    const binds = (top: ts.Expression): string[] | null => {
+      const q = top.parent;
+      const out: string[] = [];
+      if (ts.isVariableDeclaration(q) && q.initializer === top) { bindNames(q.name, out); return out; }
+      if (ts.isForOfStatement(q) && q.expression === top && ts.isVariableDeclarationList(q.initializer)) { for (const d of q.initializer.declarations) bindNames(d.name, out); return out; }
+      return null;
+    };
+    const consumed = (top: ts.Expression): boolean => {
+      const q = top.parent;
+      const last = unwrapExpr(top);
+      return (ts.isPropertyAccessExpression(last) && (last.name.text === "length" || last.name.text === "size"))
+        || (ts.isCallExpression(q) && q.expression === top)
+        || (ts.isBinaryExpression(q) && ![ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.CommaToken].includes(q.operatorToken.kind) && !(q.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && q.operatorToken.kind <= ts.SyntaxKind.LastAssignment))
+        || ts.isPrefixUnaryExpression(q) || ts.isTypeOfExpression(q) || ts.isVoidExpression(q) || ts.isTemplateSpan(q)
+        || (ts.isConditionalExpression(q) && q.condition === top)
+        || ((ts.isIfStatement(q) || ts.isWhileStatement(q) || ts.isDoStatement(q) || ts.isSwitchStatement(q)) && q.expression === top) || ts.isCaseClause(q)
+        || (ts.isElementAccessExpression(q) && q.argumentExpression === top)
+        || (ts.isSpreadElement(q) && ts.isArrayLiteralExpression(q.parent));
+    };
+    const roots = (): ts.Node[] => m.sf.statements.flatMap((st): ts.Node[] => (ts.isVariableStatement(st) ? st.declarationList.declarations.flatMap((d) => (d.initializer ? [d.initializer] : [])) : [st]));
+    // Pass 1: derived names, to a fixpoint.
+    for (let grew = true; grew;) {
+      grew = false;
+      const collect = (n: ts.Node): void => {
+        if (ts.isIdentifier(n) && isValueReference(n) && (names.has(n.text) || derived.has(n.text))) {
+          const { top, steps } = climb(n);
+          if (steps > 0 || derived.has(n.text) || ts.isForOfStatement(top.parent)) for (const k of binds(top) ?? []) if (!derived.has(k) && !names.has(k)) { derived.add(k); grew = true; }
+        }
+        ts.forEachChild(n, collect);
+      };
+      for (const r of roots()) collect(r);
+    }
     let bad = false;
     const see = (n: ts.Node): void => {
       if (bad) return;
-      if (ts.isShorthandPropertyAssignment(n) && names.has(n.name.text)) { bad = true; return; }
+      if (ts.isShorthandPropertyAssignment(n) && (names.has(n.name.text) || derived.has(n.name.text))) { bad = true; return; }
       if (ts.isExportSpecifier(n) && names.has((n.propertyName ?? n.name).text)) { bad = true; return; }
-      if (ts.isIdentifier(n) && names.has(n.text) && isValueReference(n)) {
-        // Auditor #466: a value read out of the container (`T.m`, `STORE.items`, `T[k].list`) may be a container
-        // too: the whole access path is held to the in-place rule, so `return T.m` or `() => STORE.items` escapes.
-        let top: ts.Expression = n;
-        let steps = 0;
-        for (;;) {
-          const q = top.parent;
-          if ((ts.isPropertyAccessExpression(q) || ts.isElementAccessExpression(q)) && q.expression === top) { top = q; steps++; }
-          else if ((ts.isNonNullExpression(q) || ts.isParenthesizedExpression(q) || ts.isAsExpression(q) || ts.isSatisfiesExpression(q)) && q.expression === top) top = q;
-          else break;
-        }
-        if (steps > 0) {
-          const q = top.parent;
-          const last = unwrapExpr(top);
-          const primitiveProp = ts.isPropertyAccessExpression(last) && (last.name.text === "length" || last.name.text === "size");
-          const used = primitiveProp
-            || (ts.isCallExpression(q) && q.expression === top)
-            || (ts.isBinaryExpression(q) && ![ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.CommaToken].includes(q.operatorToken.kind) && !(q.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && q.operatorToken.kind <= ts.SyntaxKind.LastAssignment))
-            || ts.isPrefixUnaryExpression(q) || ts.isTypeOfExpression(q) || ts.isVoidExpression(q) || ts.isTemplateSpan(q)
-            || (ts.isConditionalExpression(q) && q.condition === top)
-            || ((ts.isIfStatement(q) || ts.isWhileStatement(q) || ts.isDoStatement(q) || ts.isSwitchStatement(q)) && q.expression === top) || ts.isCaseClause(q)
-            || (ts.isElementAccessExpression(q) && q.argumentExpression === top)
-            || (ts.isSpreadElement(q) && ts.isArrayLiteralExpression(q.parent))
-            || (ts.isForOfStatement(q) && q.expression === top);
-          if (!used) { bad = true; return; }
+      if (ts.isIdentifier(n) && isValueReference(n) && (names.has(n.text) || derived.has(n.text))) {
+        const { top, steps } = climb(n);
+        if (steps > 0 || derived.has(n.text)) {
+          if (!binds(top) && !consumed(top) && !(ts.isForOfStatement(top.parent) && top.parent.expression === top)) { bad = true; return; }
           ts.forEachChild(n, see);
           return;
         }
@@ -1147,11 +1224,8 @@ function containerEscapes(v: V2Ctx): boolean {
       }
       ts.forEachChild(n, see);
     };
-    for (const st of m.sf.statements) {
-      // the declaration itself (`const TABLE = new Map(...)`) is not a use; its initializer is walked
-      if (ts.isVariableStatement(st)) { for (const d of st.declarationList.declarations) if (d.initializer) see(d.initializer); continue; }
-      see(st);
-    }
+    // the declaration itself (`const TABLE = new Map(...)`) is not a use; its initializer is walked
+    for (const r of roots()) see(r);
     if (bad) return true;
   }
   return false;
@@ -1162,6 +1236,7 @@ function containerEscapes(v: V2Ctx): boolean {
  * entry point is not a patch (and the target cannot read `process` at all: test_target_io).
  */
 const PATCHABLE = new Set([...PURE_GLOBALS, ...LOCAL_TIME_GLOBALS, "globalThis", "global", "window", "self", "Reflect", "Proxy", "Symbol", "Promise", "WeakMap", "WeakSet", "WeakRef", "Function", "ArrayBuffer", "DataView", "Uint8Array", "Buffer", "TextEncoder", "TextDecoder", "URL", "URLSearchParams", "structuredClone"]);
+const VALUE_GLOBALS = new Set(["undefined", "NaN", "Infinity"]);
 const PATCH_CALLS = new Set(["defineProperty", "defineProperties", "setPrototypeOf", "assign", "freeze", "seal", "preventExtensions", "set", "deleteProperty"]);
 /**
  * M97: in this module, a write to a global (`Map.prototype.get = ...`, `Object.defineProperty(Set.prototype, ...)`).
@@ -1190,7 +1265,8 @@ function patchesGlobal(sf: ts.SourceFile): boolean {
     if (ts.isBinaryExpression(x) && (x.operatorToken.kind === ts.SyntaxKind.BarBarToken || x.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || x.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || x.operatorToken.kind === ts.SyntaxKind.CommaToken || x.operatorToken.kind === ts.SyntaxKind.EqualsToken)) return globalRooted(x.left) || globalRooted(x.right);
     if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && ["getPrototypeOf", "getOwnPropertyDescriptor", "bind"].includes(x.expression.name.text)) return true;
     const r = rootOf(x);
-    return ts.isIdentifier(r) && ((PATCHABLE.has(r.text) && unshadowed(idx, r.text)) || aliases.has(r.text));
+    // `undefined` / `NaN` / `Infinity` are primitive values, not objects anything could be written on.
+    return ts.isIdentifier(r) && ((PATCHABLE.has(r.text) && !VALUE_GLOBALS.has(r.text) && unshadowed(idx, r.text)) || aliases.has(r.text));
   };
   const isGlobal = (e: ts.Expression) => globalRooted(e);
   // Fixpoint over every binding in the module (scopes are not tracked: a same-named local counts too, conservatively).

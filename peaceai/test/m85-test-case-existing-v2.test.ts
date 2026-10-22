@@ -126,7 +126,7 @@ test("v2 bounds: 4 sibling modules and import depth 2, refused before a further 
   assert.equal(existingTargetRefusal("src/a.ts", 'import type { A } from "./s";\nexport function f(x: A): number { return x.n; }\n', "f", { v2: { read: (rel) => pure.get(rel) ?? null } }), null, "a pure enum at depth 2");
 });
 
-test("v2 purity: enum initializers and sibling top-level statements run on load; v1 is unchanged", () => {
+test("v2 purity: enum initializers and sibling top-level statements run on load; v1 walks only its own top-level statements", () => {
   const execEnum = 'import { execFileSync } from "node:child_process";\nexport enum E { A = execFileSync("id").length }\nexport function f(x: E): number { return 1; }\n';
   const clockEnum = 'export enum E { A = Date.now() }\nexport function f(x: E): number { return 1; }\n';
   const hoursEnum = 'export enum E { A = new Date().getHours() }\nexport function f(x: E): number { return 1; }\n';
@@ -135,7 +135,9 @@ test("v2 purity: enum initializers and sibling top-level statements run on load;
   assert.equal(existingTargetRefusal("src/a.ts", clockEnum, "f", sib([])), TEST_TARGET_DATE_LOCAL);
   assert.equal(existingTargetRefusal("src/a.ts", hoursEnum, "f", sib([])), TEST_TARGET_DATE_LOCAL);
   const top = 'Date.now();\nexport function f(n: number): number { return n; }\n';
-  assert.equal(existingTargetRefusal("src/a.ts", top, "f"), null, "v1 does not gain a new top-level scan");
+  // Auditor #466: v1 walks the target module's top-level expression statements too (a load-time patch is not
+  // invisible to v1); it still does not read siblings or scan unused consts.
+  assert.equal(existingTargetRefusal("src/a.ts", top, "f"), TEST_TARGET_DATE_LOCAL, "v1 walks top-level statements (Auditor #466)");
   assert.equal(existingTargetRefusal("src/a.ts", top, "f", sib([])), TEST_TARGET_DATE_LOCAL);
   const sibTop = 'Date.now();\nexport function g(n: number): number { return n; }\n';
   const importer = 'import { g } from "./b";\nexport function f(n: number): number { return g(n); }\n';
