@@ -53,8 +53,6 @@ test("load-time allowlist: statement kinds", () => {
     ["try", "try { (globalThis as any).x = 1; } catch {}\n"],
     ["for", "for (const p of [String.prototype]) (p as any).trim = () => \"X\";\n"],
     ["block", "{ const q = 1; }\n"],
-    ["expression call", "function h(): number { return 1; }\nh();\n"],
-    ["const = user call", "function h(): number { return 1; }\nexport const READY = h();\n"],
     ["const = clock", "const t = Date.now();\n"],
     ["export default call", "function h(): number { return 1; }\nexport default h();\n"],
     ["label", "x: for (;;) break x;\n"],
@@ -66,6 +64,9 @@ test("load-time allowlist: statement kinds", () => {
     ["data consts", 'const A = [1, 2] as const;\nconst O = Object.freeze({ a: "x" });\nconst S = ["a", "b"].join(",");\nconst R = /a+/i;\n'],
     ["inert class", "export class K { constructor(readonly n: number) {} get m(): number { return this.n; } }\n"],
     ["export default data", 'export default { a: 1 };\n'],
+    // #466 load-call allowance: a call of a pure same-closure function with inert arguments and a primitive result
+    ["expression call (pure, prim)", "function h(): number { return 1; }\nh();\n"],
+    ["const = pure user call (prim)", "function h(): number { return 1; }\nexport const READY = h();\n"],
   ] as const) assert.equal(one(pre + body).v2, "ok", why);
 });
 

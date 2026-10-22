@@ -213,13 +213,8 @@ test("Auditor #460: a process.env default reachable from anything but the test i
   }
   for (const [k, c] of Object.entries(ENV_SAFE)) {
     const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
-    // Auditor #466 (3rd review): a load-time call of any user function (here `READY = h()`) is outside the fail-closed
-    // load allowlist, so loadTimeUnrelated is now refused (test_target_impure) rather than kept.
-    if (k === "loadTimeUnrelated") {
-      assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), "test_target_impure", `re-check ${k}`);
-      assert.equal(run(c.fn, c.check, SPEC, c.files).e, null, `Job A ${k}`);
-      continue;
-    }
+    // Auditor #466 (3rd review) refused every load-time user call; the #466 load-call allowance re-admits `READY = h()`
+    // because h passes the full purity analysis, takes no arguments and returns a primitive (see loadCallInert).
     assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), null, `re-check ${k}`);
     assert.ok(run(c.fn, c.check, SPEC, c.files).e, `Job A ${k}`);
   }

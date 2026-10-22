@@ -211,7 +211,7 @@ function isValueReference(n: ts.Identifier): boolean {
   return true;
 }
 
-interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile; v2?: V2Ctx }
+interface Analysis { reasons: Set<string>; fns: Set<string>; consts: Set<string>; idx: ModuleIndex; sf: ts.SourceFile; v2?: V2Ctx; lc?: LoadCallCheck }
 interface V2Ctx {
   path: string;
   /** The target module. Counted in `modules` so it is parsed once, never as one of the 4 siblings. */
@@ -234,6 +234,8 @@ interface V2Ctx {
   v6?: boolean;
   /** M97 (v7 only, set only for a target v6 refuses): Map / Set types, a void return and the v7 hardening. */
   v7?: boolean;
+  /** Auditor #466 (4th pass): the load-time call allowance's callee check (loadCallInert), same version as the target. */
+  lc?: LoadCallCheck;
 }
 /** M90: a global (never shadowed in `idx`) name. */
 const unshadowed = (idx: ModuleIndex, n: string): boolean => !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n);
@@ -588,7 +590,7 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
     a.consts.add(name);
     if (a.consts.size > MAX_CONSTS) { add(TEST_TARGET_TOO_LARGE); return; }
     // Auditor #466 (3rd review): a module const the walk reaches must hold no state between calls (fail-closed).
-    if (!statelessInit(a.idx.consts.get(name)!.initializer!, { idx: a.idx, sf: a.sf, seen: new Set(), path: a.v2?.path, read: a.v2?.read ?? null, cache: new Map() }, name)) add(TEST_TARGET_IMPURE);
+    if (!statelessInit(a.idx.consts.get(name)!.initializer!, { idx: a.idx, sf: a.sf, seen: new Set(), path: a.v2?.path ?? a.sf.fileName, read: a.v2?.read ?? null, cache: new Map(), lc: a.lc ?? a.v2?.lc }, name)) add(TEST_TARGET_IMPURE);
     analyzeExpression(a, a.idx.consts.get(name)!.initializer!);
     return;
   }
@@ -1054,15 +1056,15 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
 export function existingTargetAnalysisForEvidence(path: string, content: string, fn: string, opts?: TargetOpts): string | null {
   return targetRefusal(path, content, fn, opts, true);
 }
-function targetRefusal(path: string, content: string, fn: string, opts: TargetOpts | undefined, skipLoad: boolean): string | null {
+function targetRefusal(path: string, content: string, fn: string, opts: TargetOpts | undefined, skipLoad: boolean, inner?: CalleeMode): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   // M97: v7 takes every target v6 takes, unchanged (Job A then answers not_needed). Only a target v6 refuses is
   // analyzed with the v7 widenings and the v7 hardening, so v7 never loses a v6 target and never weakens one.
   if (opts?.v7 && opts.v2) {
-    const r6 = targetRefusal(path, content, fn, { v2: opts.v2, v6: true }, skipLoad);
+    const r6 = targetRefusal(path, content, fn, { v2: opts.v2, v6: true }, skipLoad, inner);
     if (r6 === null) return null;
-  } else if (opts?.v7) return targetRefusal(path, content, fn, { ...opts, v7: false }, skipLoad);
+  } else if (opts?.v7) return targetRefusal(path, content, fn, { ...opts, v7: false }, skipLoad, inner);
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return "edit_refused";
   const idx = indexModule(sf);
@@ -1070,7 +1072,7 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   if (decls.length === 0) return idx.consts.has(fn) || idx.mutable.has(fn) ? TEST_TARGET_SIGNATURE : TEST_TARGET_NOT_FOUND;
   if (decls.length !== 1 || !decls[0]!.body) return TEST_TARGET_SIGNATURE; // overloads
   const f = decls[0]!;
-  if (!idx.exportNames.has(fn)) return TEST_TARGET_NOT_EXPORTED;
+  if (!inner && !idx.exportNames.has(fn)) return TEST_TARGET_NOT_EXPORTED;
   if (hasMod(f, ts.SyntaxKind.AsyncKeyword) || f.asteriskToken) return TEST_TARGET_ASYNC;
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
@@ -1096,8 +1098,13 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
     if (v2) for (const r of PRIORITY) if (v2.reasons.has(r)) return r;
     return TEST_TARGET_SIGNATURE;
   }
+  // Auditor #466 (4th pass): a load-time callee must return a primitive or an array of primitives (LOAD_CALL_RETURN).
+  const retKind = inner ? loadCallReturnKind(f.type, idx) : null;
+  if (inner && !retKind) return TEST_TARGET_IMPURE;
+  const lc = inner?.lc ?? makeLoadCallCheck(path, content, opts);
+  if (v2) v2.lc = lc;
   const cached = v2?.modules.get(path);
-  const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2 };
+  const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2, lc };
   if (v2) analyzeLoadedModule(v2, idx, sf);
   else analyzeLoadTime(a, sf);
   analyzeFunction(a, f, envDefaults, true);
@@ -1110,7 +1117,7 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   // Auditor #466 (3rd review): the fail-closed load-time allowlist over the target's load closure (every version).
   // v1 reads no sibling for its analysis; `load` (Job A / Job B pass the tree) lets the load check see what v1's
   // target module imports. Without it a relative or package value import is code the check cannot see (refused).
-  const lp = skipLoad ? null : loadAllowlistProblem(path, sf, idx, v2 ? v2.read : opts?.load ? (rel) => (rel === path ? content : opts.load!.read(rel)) : null);
+  const lp = skipLoad ? null : loadAllowlistProblem(path, sf, idx, v2 ? v2.read : opts?.load ? (rel) => (rel === path ? content : opts.load!.read(rel)) : null, undefined, lc);
   if (lp) a.reasons.add(lp.reason);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
@@ -1122,7 +1129,193 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
     const c = v7ClosureProblem(v2);
     if (c) return c;
   }
+  if (inner) {
+    // recursion-safe: a load-time callee whose reached functions reference one another in a cycle is refused
+    if (reachedCycle(a, v2)) return TEST_TARGET_IMPURE;
+    inner.verdict = { kind: retKind!, aliasFree: readsOnlyInertConsts(a, v2) };
+  }
   return null;
+}
+
+/**
+ * Auditor #466 (4th pass): the LOAD-TIME CALL allowance, every version. The fail-closed load allowlist refuses any
+ * call of user code at import. This is the one narrow exception: a top-level `const X = g(args)` (or a top-level
+ * statement `g(args);`) where
+ * - `g` is a plain name for a function DECLARATION of the same module, or a named import of an exported function
+ *   declaration from a relative `.ts` module of the closure (never an alias, a member, `.call`, a default or namespace
+ *   import, a dynamic callee) whose own import closure never reaches the calling module back (no cycle, no TDZ order);
+ * - every argument is a primitive constant (primInert: literals, inert module consts, enum members), no spread, and
+ *   every omitted parameter is optional or has a primitive-constant default (so an `= process.env` default never fires);
+ * - `g` itself passes the FULL target purity analysis of the same version as the target (targetRefusal in callee mode,
+ *   export not required): no module-state reads beyond inert consts, no env / IO / clock / random, no global patching,
+ *   no RegExp statics, no Date setters, recursion through the same walk, and its declared return type is a primitive
+ *   (string / number / boolean / bigint / literal, unions of these) or an array of primitives (T[], readonly T[],
+ *   Array<T>, ReadonlyArray<T>); RegExp, iterators, generators, Map / Set, Date, objects, void: refused;
+ * - an ARRAY result additionally needs (a) a callee whose analysis read no module const other than primitive constants
+ *   and function values (so the result cannot alias module state), and (b) a binding that is not exported, never
+ *   written and only read in place in its module (length, element reads, non-mutating methods, callbacks that cannot
+ *   reach the array, spread into an array literal, for-of): never handed out, so nothing can mutate it.
+ * A callee check that re-enters itself or nests deeper than MAX_LOAD_CALL_DEPTH is refused.
+ */
+interface LoadCallVerdict { kind: "prim" | "array"; aliasFree: boolean }
+type LoadCallCheck = (path: string, fn: string) => LoadCallVerdict | null;
+interface CalleeMode { lc: LoadCallCheck; verdict?: LoadCallVerdict }
+const MAX_LOAD_CALL_DEPTH = 4;
+function makeLoadCallCheck(rootPath: string, rootContent: string, opts: TargetOpts | undefined): LoadCallCheck {
+  const rd = opts?.v2?.read ?? opts?.load?.read ?? null;
+  const readAny = (rel: string): string | null => (rel === rootPath ? rootContent : rd ? rd(rel) : null);
+  const stack = new Set<string>();
+  const check: LoadCallCheck = (p, name) => {
+    const key = `${p}\0${name}`;
+    if (stack.has(key) || stack.size >= MAX_LOAD_CALL_DEPTH) return null;
+    const text = readAny(p);
+    if (text === null) return null;
+    stack.add(key);
+    try {
+      const mode: CalleeMode = { lc: check };
+      return targetRefusal(p, text, name, opts, true, mode) === null && mode.verdict ? mode.verdict : null;
+    } finally { stack.delete(key); }
+  };
+  return check;
+}
+function primTypeNode(t: ts.TypeNode): boolean {
+  if (ts.isParenthesizedTypeNode(t)) return primTypeNode(t.type);
+  if (ts.isUnionTypeNode(t)) return t.types.every(primTypeNode);
+  if (ts.isLiteralTypeNode(t)) return true;
+  return [ts.SyntaxKind.StringKeyword, ts.SyntaxKind.NumberKeyword, ts.SyntaxKind.BooleanKeyword, ts.SyntaxKind.BigIntKeyword].includes(t.kind);
+}
+function loadCallReturnKind(t: ts.TypeNode | undefined, idx: ModuleIndex): "prim" | "array" | null {
+  if (!t) return null;
+  if (primTypeNode(t)) return "prim";
+  let x = t;
+  if (ts.isTypeOperatorNode(x) && x.operator === ts.SyntaxKind.ReadonlyKeyword) x = x.type;
+  if (ts.isArrayTypeNode(x)) return primTypeNode(x.elementType) ? "array" : null;
+  if (ts.isTypeReferenceNode(x) && ts.isIdentifier(x.typeName) && (x.typeName.text === "Array" || x.typeName.text === "ReadonlyArray") && unshadowed(idx, x.typeName.text) && x.typeArguments?.length === 1) return primTypeNode(x.typeArguments[0]!) ? "array" : null;
+  return null;
+}
+/** Every module const the callee's analysis read is a primitive constant or a function value (no shared object). */
+function readsOnlyInertConsts(a: Analysis, v2: V2Ctx | undefined): boolean {
+  const mods: { idx: ModuleIndex; sf: ts.SourceFile; consts: Set<string>; path: string }[] = [{ idx: a.idx, sf: a.sf, consts: a.consts, path: a.sf.fileName }];
+  if (v2) for (const [p, m] of v2.modules) if (m) mods.push({ idx: m.idx, sf: m.sf, consts: m.consts, path: p });
+  for (const m of mods) for (const n of m.consts) {
+    const init = m.idx.consts.get(n)?.initializer;
+    const x = init && unwrapExpr(init);
+    if (!x) return false;
+    if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) continue;
+    if (!primInert(x, { idx: m.idx, sf: m.sf, seen: new Set(), path: m.path })) return false;
+  }
+  return true;
+}
+/** A cycle among the functions the analysis reached (any value reference, same module or a named relative import). */
+function reachedCycle(a: Analysis, v2: V2Ctx | undefined): boolean {
+  const mods = new Map<string, { idx: ModuleIndex; fns: Set<string> }>([[a.sf.fileName, { idx: a.idx, fns: a.fns }]]);
+  if (v2) for (const [p, m] of v2.modules) if (m) mods.set(p, { idx: m.idx, fns: m.fns });
+  const edges = new Map<string, Set<string>>();
+  for (const [p, m] of mods) for (const name of m.fns) {
+    const out = new Set<string>();
+    for (const d of m.idx.fns.get(name) ?? []) {
+      const v = (n: ts.Node): void => {
+        if (ts.isIdentifier(n) && isValueReference(n)) {
+          if (m.idx.fns.has(n.text) && m.fns.has(n.text)) out.add(`${p}\0${n.text}`);
+          const imp = m.idx.imports.get(n.text);
+          if (imp && !imp.typeOnly && imp.imported && v2) for (const t of (siblingCandidates(p, imp.spec) ?? []).filter((x) => mods.has(x))) out.add(`${t}\0${imp.imported}`);
+        }
+        ts.forEachChild(n, v);
+      };
+      if (d.body) v(d.body);
+      for (const q of d.parameters) if (q.initializer) v(q.initializer);
+    }
+    edges.set(`${p}\0${name}`, out);
+  }
+  const state = new Map<string, number>();
+  const dfs = (k: string): boolean => {
+    const st = state.get(k);
+    if (st === 1) return true;
+    if (st === 2) return false;
+    state.set(k, 1);
+    for (const n of edges.get(k) ?? []) if (dfs(n)) return true;
+    state.set(k, 2);
+    return false;
+  };
+  for (const k of edges.keys()) if (dfs(k)) return true;
+  return false;
+}
+const ARRAY_READ = new Set(["indexOf", "lastIndexOf", "includes", "at", "slice", "join", "concat"]);
+const ARRAY_CALLBACK = new Set(["map", "filter", "some", "every", "find", "findIndex", "findLast", "findLastIndex", "forEach", "reduce"]);
+/** An array binding (module `c`) that is not exported, never written and only read in place (see loadCallInert). */
+function localArrayReadOnly(c: LoadCtx, name: string): boolean {
+  if (c.idx.mutated.has(name) || c.idx.exportNames.has(name)) return false;
+  let ok = true;
+  const v = (n: ts.Node): void => {
+    if (!ok) return;
+    if (ts.isExportSpecifier(n) && (n.propertyName ?? n.name).text === name) { ok = false; return; }
+    if (ts.isShorthandPropertyAssignment(n) && n.name.text === name) { ok = false; return; }
+    if (ts.isIdentifier(n) && n.text === name && isValueReference(n) && !(ts.isVariableDeclaration(n.parent) && n.parent.name === n)) {
+      let top: ts.Node = n;
+      while ((ts.isNonNullExpression(top.parent) || ts.isParenthesizedExpression(top.parent) || ts.isAsExpression(top.parent) || ts.isSatisfiesExpression(top.parent)) && top.parent.expression === top) top = top.parent;
+      const q = top.parent;
+      const writeTarget = (e: ts.Node): boolean => {
+        const pp = e.parent;
+        return (ts.isBinaryExpression(pp) && pp.left === e && pp.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && pp.operatorToken.kind <= ts.SyntaxKind.LastAssignment)
+          || ((ts.isPrefixUnaryExpression(pp) || ts.isPostfixUnaryExpression(pp)) && (pp.operator === ts.SyntaxKind.PlusPlusToken || pp.operator === ts.SyntaxKind.MinusMinusToken))
+          || ts.isDeleteExpression(pp);
+      };
+      const cbOk = (call: ts.CallExpression, m: string): boolean => {
+        if (call.arguments.length !== 1 && !(m === "reduce" && call.arguments.length === 2)) return false;
+        const cb = unwrapExpr(call.arguments[0]!);
+        return (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) && cb.parameters.length <= (m === "reduce" ? 3 : 2) && cb.parameters.every((p) => !p.dotDotDotToken);
+      };
+      let read = false;
+      if (ts.isPropertyAccessExpression(q) && q.expression === top && !q.questionDotToken) {
+        const m = q.name.text;
+        if (m === "length") read = !writeTarget(q);
+        else if (ts.isCallExpression(q.parent) && q.parent.expression === q) read = ARRAY_READ.has(m) || (ARRAY_CALLBACK.has(m) && cbOk(q.parent, m));
+      } else if (ts.isElementAccessExpression(q) && q.expression === top) read = !writeTarget(q);
+      else if (ts.isSpreadElement(q) && ts.isArrayLiteralExpression(q.parent)) read = true;
+      else if (ts.isForOfStatement(q) && q.expression === top) read = true;
+      if (!read) { ok = false; return; }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(c.sf);
+  return ok;
+}
+function loadCallInert(x: ts.CallExpression, c: LoadCtx, binding: string | null): boolean {
+  if (!c.lc || x.questionDotToken || !ts.isIdentifier(x.expression)) return false;
+  const name = x.expression.text;
+  const here = c.path ?? c.sf.fileName;
+  let tgt: { path: string; idx: ModuleIndex; sf: ts.SourceFile; name: string } | null = null;
+  if (c.idx.fns.has(name) && !c.idx.consts.has(name) && !c.idx.imports.has(name) && !c.idx.mutable.has(name) && !c.idx.enums.has(name)) tgt = { path: here, idx: c.idx, sf: c.sf, name };
+  else {
+    const imp = c.idx.imports.get(name);
+    if (!imp || imp.typeOnly || !imp.imported || imp.imported === "default" || !/^\.\.?\//.test(imp.spec) || !c.read || !c.path) return false;
+    const hits = (siblingCandidates(c.path, imp.spec) ?? []).filter((y) => c.read!(y) !== null);
+    if (hits.length !== 1) return false;
+    const t = hits[0]!;
+    const text = c.read(t)!;
+    const sf = ts.createSourceFile(t, text, ts.ScriptTarget.Latest, true);
+    if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return false;
+    const idx = indexModule(sf);
+    if (!idx.exportNames.has(imp.imported) || !idx.fns.has(imp.imported)) return false;
+    // import-back: the callee's module must never load the calling module (no cycle, no TDZ-order dependence)
+    const clo = moduleReadClosure(t, c.read);
+    if (!clo || clo.includes(here)) return false;
+    tgt = { path: t, idx, sf, name: imp.imported };
+  }
+  const decls = tgt.idx.fns.get(tgt.name) ?? [];
+  if (decls.length !== 1 || !decls[0]!.body || !ts.isFunctionDeclaration(decls[0]!)) return false;
+  const f = decls[0]!;
+  if (x.arguments.length > f.parameters.length) return false;
+  if (!x.arguments.every((y) => !ts.isSpreadElement(y) && primInert(y, c))) return false;
+  const tc: LoadCtx = { idx: tgt.idx, sf: tgt.sf, seen: new Set(), path: tgt.path, read: c.read, cache: c.cache };
+  for (let i = x.arguments.length; i < f.parameters.length; i++) {
+    const p = f.parameters[i]!;
+    if (p.initializer ? !primInert(p.initializer, tc) : !p.questionToken) return false;
+  }
+  const v = c.lc(tgt.path, tgt.name);
+  if (!v) return false;
+  if (v.kind === "prim") return true;
+  return v.aliasFree && binding !== null && localArrayReadOnly(c, binding);
 }
 
 /**
@@ -1152,7 +1345,7 @@ const CONST_MEMBERS: Readonly<Record<string, ReadonlySet<string>>> = {
 };
 const ERROR_BASES = new Set(["Error", "TypeError", "RangeError", "SyntaxError"]);
 export interface LoadProblem { reason: string; module: string; detail: string }
-interface LoadCtx { idx: ModuleIndex; sf: ts.SourceFile; seen: Set<string>; path?: string; read?: ((rel: string) => string | null) | null; cache?: Map<string, { idx: ModuleIndex; sf: ts.SourceFile } | null> }
+interface LoadCtx { idx: ModuleIndex; sf: ts.SourceFile; seen: Set<string>; path?: string; read?: ((rel: string) => string | null) | null; cache?: Map<string, { idx: ModuleIndex; sf: ts.SourceFile } | null>; lc?: LoadCallCheck }
 /** A named import from a relative `.ts` module, as that module's own load context and exported const name. */
 function importedConst(c: LoadCtx, name: string): { c: LoadCtx; name: string } | null {
   const imp = c.idx.imports.get(name);
@@ -1167,7 +1360,7 @@ function importedConst(c: LoadCtx, name: string): { c: LoadCtx; name: string } |
   }
   const m = c.cache.get(t);
   if (!m || !m.idx.exportNames.has(imp.imported)) return null;
-  return { c: { idx: m.idx, sf: m.sf, seen: c.seen, path: t, read: c.read, cache: c.cache }, name: imp.imported };
+  return { c: { idx: m.idx, sf: m.sf, seen: c.seen, path: t, read: c.read, cache: c.cache, lc: c.lc }, name: imp.imported };
 }
 const propName = (n: ts.PropertyName | undefined): string | null => (n && (ts.isIdentifier(n) || ts.isStringLiteral(n) || ts.isNumericLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null);
 /** A module const's own initializer (one declaration, a plain name, `const`). */
@@ -1395,7 +1588,7 @@ function statelessInit(e: ts.Expression, c: LoadCtx, binding: string | null, dep
     if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "Object" && callee.name.text === "freeze" && unshadowed(c.idx, "Object")) return g.length === 1 && r(g[0]!);
     if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && ["Object", "Array", "Date"].includes(callee.expression.text) && unshadowed(c.idx, callee.expression.text) && !["Uint8Array", "Buffer"].includes(callee.expression.text)) return loadData(x, c, new Set());
     if (ts.isPropertyAccessExpression(callee) && LOAD_METHODS.has(callee.name.text)) return loadData(x, c, new Set());
-    return false;
+    return ts.isCallExpression(x) && loadCallInert(x, c, binding);
   }
   return false;
 }
@@ -1432,12 +1625,13 @@ function loadStatementProblem(s: ts.Statement, c: LoadCtx, first: boolean): stri
     for (const d of s.declarationList.declarations) {
       if (!d.initializer) continue;
       if (!ts.isIdentifier(d.name)) return "destructuring at load";
-      if (!loadSafe(d.initializer, c)) return `initializer of ${d.name.text}`;
+      if (!loadSafe(d.initializer, c) && !(s.declarationList.flags & ts.NodeFlags.Const && ts.isCallExpression(unwrapExpr(d.initializer)) && loadCallInert(unwrapExpr(d.initializer) as ts.CallExpression, c, d.name.text))) return `initializer of ${d.name.text}`;
     }
     return null;
   }
   if (ts.isExportAssignment(s)) return !s.isExportEquals && loadSafe(s.expression, c) && !isCollectionNew(s.expression) ? null : "export default value";
   if (first && ts.isExpressionStatement(s) && ts.isStringLiteral(s.expression)) return null; // "use strict"
+  if (ts.isExpressionStatement(s) && ts.isCallExpression(s.expression) && loadCallInert(s.expression, c, null)) return null;
   if (isMainGuard(s, c.idx)) return null;
   return ts.SyntaxKind[s.kind];
 }
@@ -1460,7 +1654,7 @@ function loadsCode(s: ts.Statement): boolean {
   visit(s);
   return hit;
 }
-export function loadAllowlistProblem(path: string, sf: ts.SourceFile, idx: ModuleIndex, read: ((rel: string) => string | null) | null, all?: LoadProblem[]): LoadProblem | null {
+export function loadAllowlistProblem(path: string, sf: ts.SourceFile, idx: ModuleIndex, read: ((rel: string) => string | null) | null, all?: LoadProblem[], lc?: LoadCallCheck): LoadProblem | null {
   const fail = (x: LoadProblem): LoadProblem | null => { if (all) { all.push(x); return null; } return x; };
   const mods = new Map<string, { sf: ts.SourceFile; idx: ModuleIndex }>([[path, { sf, idx }]]);
   const cache = new Map<string, { idx: ModuleIndex; sf: ts.SourceFile } | null>();
@@ -1468,7 +1662,7 @@ export function loadAllowlistProblem(path: string, sf: ts.SourceFile, idx: Modul
   while (queue.length) {
     const p = queue.shift()!;
     const m = mods.get(p)!;
-    const c: LoadCtx = { idx: m.idx, sf: m.sf, seen: new Set(), path: p, read, cache };
+    const c: LoadCtx = { idx: m.idx, sf: m.sf, seen: new Set(), path: p, read, cache, lc };
     let first = true;
     for (const s of m.sf.statements) {
       const why = loadStatementProblem(s, c, first);
