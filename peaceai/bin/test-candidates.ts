@@ -16,6 +16,7 @@ import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
+import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem } from "../lib/learned-edit-existing.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
@@ -138,7 +139,7 @@ const REAL_RUNS_REQUIRED = 3;
  */
 /** Auditor #466 (4th review): the zones every TEST_CASE_EXISTING test is run in after pass 2 (gradeExisting). */
 export const EXISTING_TZ_RUNS = ["UTC", "America/Denver", "Asia/Tokyo"] as const;
-function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false, tz?: string): { ok: boolean; out: string; confined: boolean; notes: number } {
+function runExistingTests(tree: string, tests: readonly string[], reads: readonly string[], notes = false, tz?: string | Readonly<Record<string, string>>): { ok: boolean; out: string; confined: boolean; notes: number } {
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
   const realTree = realpathSync(tree);
@@ -154,7 +155,7 @@ function runExistingTests(tree: string, tests: readonly string[], reads: readonl
       fd = openSync(join(dir, "channel"), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_EXCL, 0o600);
     }
     try {
-      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1", ...(tz ? { TZ: tz } : {}) }, fd);
+      const r = runCandidateCapture(tree, process.execPath, args, STEP_TIMEOUT_MS, { TSX_DISABLE_CACHE: "1", ...(typeof tz === "string" ? { TZ: tz } : tz ?? {}) }, fd);
       ok &&= r.ok;
       outs.push(r.out);
       if (dir) { closeSync(fd!); fd = undefined; seen += countStubNotes(readFileSync(join(dir, "channel"), "utf8")); }
@@ -377,6 +378,41 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   console.log(`grading: test-existing stub (tested ${fn} in ${modPath}; failure credited: ${credited}; stub notes: ${run.notes}; permission model: ${run.confined}; reads: ${reads.length} module files)`);
   if (!run.ok && !credited) return { ...ungradable("stub-not-reached"), stubbed: [fn] };
   return { fixSha: base, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok, !run.ok), reason: null, stubFails: !run.ok, stubbed: [fn] };
+}
+
+/**
+ * M98: grading of an EXISTING_EDIT candidate (public-existing-function-edit-v1). Exactly one edited existing source
+ * module and one new test. On the graded tree (never the task text): the edit is confined to ONE function or class
+ * method (every other top-level statement and member byte-identical to the base), the test is the fixed M98 harness
+ * plus emitted fakes and assertions only, and the module is hermetic for the test's calls on the graded AND the base
+ * source (gradeExistingEditProblem). The after-tree then passes under the permission model in every
+ * EXISTING_EDIT_ENV_RUNS zone + locale pair (else real-not-stable); the source goes back to the base and the same
+ * confined run must fail by assertions only (ERR_ASSERTION), never by a crash, load error or other throw.
+ */
+function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean): TestGrading {
+  const base = summary.baseSha;
+  const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
+  const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
+  const tests = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && scope.isTest(f.newPath)).map((f) => f.newPath!);
+  if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return ungradable("not-test-only");
+  const regular = (rel: string): string | null => {
+    try { const p = join(tree, rel); if (!lstatSync(p).isFile() || relative(tree, realpathSync(p)).startsWith("..")) return null; return readFileSync(p, "utf8"); } catch { return null; }
+  };
+  const modPath = source[0]!, testPath = tests[0]!;
+  const real = regular(modPath), test = regular(testPath);
+  let baseText: string;
+  try { baseText = git(repo, "show", `${base}:${modPath}`); } catch { return ungradable("revert-failed"); }
+  if (real === null || test === null) return ungradable("not-applied");
+  const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null);
+  if (gradeExistingEditProblem(modPath, baseText, real, testPath, test, read) !== null) return ungradable("not-test-only");
+  const reads = existingEditReads(modPath, read);
+  if (!reads) return ungradable("module-imports-repo-files");
+  if (afterFix) for (const env of EXISTING_EDIT_ENV_RUNS) if (!runExistingTests(tree, newTests, reads, false, env).ok) return ungradable("real-not-stable");
+  if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", modPath])) return ungradable("revert-failed");
+  const run = runExistingTests(tree, newTests, reads, false, EXISTING_EDIT_ENV_RUNS[0]);
+  console.log(`grading: existing-edit (module ${modPath}; ${reads.length} load-closure files; before-run ok: ${run.ok})`);
+  if (!run.ok && !assertionFailuresOnly(run.out)) return ungradable("before-not-assertion");
+  return { fixSha: base, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok), reason: null };
 }
 
 /**
@@ -677,6 +713,9 @@ for (const candidate of selected) {
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
     if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v7@"));
+    // M98 (public-existing-function-edit-v1): a statement edit inside an existing function / method, graded by its
+    // fake-driven test (gradeExistingEdit: confined edit, hermetic re-check on the graded tree, zone + locale runs).
+    else if (candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT")) result.testGrading = gradeExistingEdit(tree, files, newTests, result.newTestsPassed);
     else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {

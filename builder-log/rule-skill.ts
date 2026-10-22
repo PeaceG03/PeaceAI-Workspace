@@ -34,6 +34,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-test-case-existing-v5": "TEST_CASE_EXISTING", // M91: v5 target (typeof of literal consts, string-literal property lookups); same kind
   "public-test-case-existing-v6": "TEST_CASE_EXISTING", // M93: v6 target (top-level unknown params, NodeJS.ProcessEnv params with an overridden process.env default); same kind
   "public-test-case-existing-v7": "TEST_CASE_EXISTING", // M97: v7 target (Map / Set signatures and literals, void returns with throws checks); same kind
+  "public-existing-function-edit-v1": "EXISTING_FUNCTION_EDIT", // M98: kind EXISTING_EDIT (G1 statement edit + G2 fake-driven test)
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */

@@ -46,6 +46,11 @@ export const MAX_UNITS = 800;
 export interface ExistingEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 export type Read = (rel: string) => string | null;
 
+/** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
+export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  return minedFrom === "public" && Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && EXISTING_EDIT_VOCAB[k].includes(p[k] as string));
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // shared parsing helpers
 // ---------------------------------------------------------------------------------------------------------------
@@ -437,7 +442,7 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
   const reached = new Set<ts.Node>();
   const wholeClasses = new Set<ts.ClassDeclaration>();
   const queue: Unit[] = [];
-  const ctx = new Map<ts.Node, { params: Map<ts.Symbol, Injection["args"][number]> }>();
+  const ctx = new Map<ts.Node, { params: Map<ts.Symbol, Injection["args"][number]>; args: Injection["args"] }>();
   let problem: string | null = null;
   let current: ts.Node | null = null;
   const fail = (code: string): void => { if (problem === null && current) problemAt = `${current.getSourceFile().fileName}:${current.getSourceFile().getLineAndCharacterOfPosition(current.getStart()).line + 1}`; problem ??= code; };
@@ -462,8 +467,12 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
   const bindCtx = (u: ts.FunctionLikeDeclaration | undefined, args: Injection["args"]): void => {
     if (!u) { if (args.some((a) => a !== null)) { /* no ctor: args ignored */ } return; }
     const params = new Map<ts.Symbol, Injection["args"][number]>();
-    u.parameters.forEach((p, i) => { if (ts.isIdentifier(p.name)) { const s = checker.getSymbolAtLocation(p.name); if (s) params.set(s, args[i] ?? null); } });
-    ctx.set(u, { params });
+    u.parameters.forEach((p, i) => {
+      if (!ts.isIdentifier(p.name)) return;
+      const syms = ts.isParameterPropertyDeclaration(p, p.parent) ? checker.getSymbolsOfParameterPropertyDeclaration(p, p.name.text) : [checker.getSymbolAtLocation(p.name)];
+      for (const s of syms) if (s) params.set(s, args[i] ?? null);
+    });
+    ctx.set(u, { params, args });
   };
   const shallow = new Set<ts.Node>();
   const loadRef = { current: false };
@@ -578,7 +587,7 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
     if (ts.isInterfaceDeclaration(decl) || ts.isTypeAliasDeclaration(decl)) return;
     fail("edit_unresolved_reference");
   };
-  const ctxOf = (n: ts.Node): { params: Map<ts.Symbol, Injection["args"][number]> } | undefined => {
+  const ctxOf = (n: ts.Node): { params: Map<ts.Symbol, Injection["args"][number]>; args: Injection["args"] } | undefined => {
     for (let a: ts.Node | undefined = n; a; a = a.parent) { const c0 = ctx.get(a); if (c0) return c0; if (ts.isSourceFile(a)) return undefined; }
     return undefined;
   };
@@ -627,8 +636,8 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
       // parameter defaults of an entry unit: skipped only when the test passes that argument
       if (ts.isParameter(n) && n.initializer) {
         const c0 = ctx.get(n.parent);
-        const s = ts.isIdentifier(n.name) ? checker.getSymbolAtLocation(n.name) : undefined;
-        const inj = c0 && s ? c0.params.get(s) : null;
+        const idx = (n.parent as ts.FunctionLikeDeclaration).parameters.indexOf(n);
+        const inj = c0 ? [...c0.params.entries()].find(([s]) => declOf(s) === n)?.[1] ?? c0.args[idx] ?? null : null;
         if (!(c0 && inj)) visit(n.initializer);
         return;
       }
@@ -1068,4 +1077,194 @@ export function existingEditDetail(trigger: string, params: Record<string, strin
   if (files.some((f) => f.path === testPath)) return no("new_test_path_exists");
   const content = emitFakeTest(file.path, testPath, `PeaceAI M98: ${g.target} in ${file.path} (statement edit, injected fakes)`, fakeTest, importStyle(files, isTest));
   return { edit: { path: file.path, content: edited.content, extra: [{ path: testPath, content, create: true }], selfGrade: true }, reason: null };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Job B re-checks (on the graded tree, never on the task text)
+// ---------------------------------------------------------------------------------------------------------------
+/** The time zone + locale backstop: the after-tree must pass in every pair (a zone- or locale-dependent result fails one). */
+export const EXISTING_EDIT_ENV_RUNS = [
+  { TZ: "UTC", LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
+  { TZ: "America/Denver", LANG: "tr_TR.UTF-8", LC_ALL: "tr_TR.UTF-8" },
+  { TZ: "Asia/Tokyo", LANG: "ja_JP.UTF-8", LC_ALL: "ja_JP.UTF-8" },
+] as const;
+
+const topUnits = (sf: ts.SourceFile): Map<string, string> => {
+  const out = new Map<string, string>();
+  sf.statements.forEach((st, i) => {
+    if (ts.isFunctionDeclaration(st) && st.name && st.body) out.set(`fn:${st.name.text}:${i}`, st.getText(sf));
+    else if (ts.isClassDeclaration(st) && st.name) {
+      st.members.forEach((m, j) => { out.set(`member:${st.name!.text}:${j}`, m.getText(sf)); });
+      out.set(`class:${st.name.text}:${i}`, `${st.members.length}`);
+    } else out.set(`stmt:${i}`, st.getText(sf));
+  });
+  return out;
+};
+
+/**
+ * The single target the graded edit changed: exactly one module function or class method differs between the base
+ * and the graded source, and every other top-level statement and class member is byte-identical. Null otherwise.
+ */
+export function editConfinedTarget(path: string, baseText: string, realText: string): string | null {
+  const a = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true), b = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  if (diag(a) || diag(b) || a.statements.length !== b.statements.length) return null;
+  const ua = topUnits(a), ub = topUnits(b);
+  if (ua.size !== ub.size || [...ua.keys()].some((k) => !ub.has(k))) return null;
+  const changed = [...ua.keys()].filter((k) => ua.get(k) !== ub.get(k));
+  if (changed.length !== 1) return null;
+  const [kind, owner, idx] = changed[0]!.split(":");
+  if (kind === "fn") return findTarget(b, owner!) ? owner! : null;
+  if (kind !== "member") return null;
+  const cls = b.statements.find((s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && s.name?.text === owner)!;
+  const m = cls.members[Number(idx)]!;
+  if (!ts.isMethodDeclaration(m) || !ts.isIdentifier(m.name)) return null;
+  const t = `${owner}.${m.name.text}`;
+  return findTarget(b, t) ? t : null;
+}
+
+const HARNESS_HEAD = (spec: string, names: string): string => `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { ${names} } from ${JSON.stringify(spec)};\n\n${FAKE_HARNESS}`;
+
+/** Data as emitted (emitData's output language), checked on the graded test. */
+function emittedDataOk(e: ts.Expression, decls: ReadonlySet<string>): boolean {
+  const x = e;
+  if (ts.isStringLiteral(x)) return x.text.length <= MAX_STRING_CHARS && !REFLECTION.has(x.text);
+  if (ts.isNumericLiteral(x)) return true;
+  if (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(x.operand)) return true;
+  if (x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword) return true;
+  if (ts.isIdentifier(x)) return x.text === "undefined" || decls.has(x.text);
+  if (ts.isArrayLiteralExpression(x)) return x.elements.length <= MAX_ARRAY_ITEMS && x.elements.every((y) => !ts.isSpreadElement(y) && !ts.isOmittedExpression(y) && emittedDataOk(y, decls));
+  if (ts.isObjectLiteralExpression(x)) return x.properties.length <= MAX_ARRAY_ITEMS && x.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && !REFLECTION.has(p.name.text) && (emittedDataOk(p.initializer, decls) || emittedFakeFn(p.initializer, decls)));
+  if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "encode" && ts.isNewExpression(x.expression.expression) && ts.isIdentifier(x.expression.expression.expression) && x.expression.expression.expression.text === "TextEncoder" && !(x.expression.expression.arguments?.length) && x.arguments.length === 1 && ts.isStringLiteral(x.arguments[0]!)) return true;
+  if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "Date") return x.arguments?.length === 1 && ts.isStringLiteral(x.arguments[0]!) && ISO_Z.test(x.arguments[0].text);
+  if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "Response") {
+    const a = x.arguments ?? [];
+    if (a.length !== 2 || !(ts.isStringLiteral(a[0]!) || a[0]!.kind === ts.SyntaxKind.NullKeyword) || !ts.isObjectLiteralExpression(a[1]!)) return false;
+    return a[1].properties.every((p) => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && ((p.name.text === "status" && ts.isNumericLiteral(p.initializer)) || (p.name.text === "headers" && ts.isObjectLiteralExpression(p.initializer) && p.initializer.properties.every((h) => ts.isPropertyAssignment(h) && ts.isStringLiteral(h.initializer)))));
+  }
+  return false;
+}
+function emittedFakeFn(e: ts.Expression, decls: ReadonlySet<string>): boolean {
+  if (!ts.isCallExpression(e) || !ts.isIdentifier(e.expression) || e.expression.text !== "fakeFn" || e.arguments.length !== 1 || !ts.isArrayLiteralExpression(e.arguments[0]!)) return false;
+  const os = e.arguments[0].elements;
+  return os.length >= 1 && os.length <= 8 && os.every((o) => {
+    if (!ts.isObjectLiteralExpression(o) || o.properties.length !== 2) return false;
+    const [k, v] = o.properties;
+    if (!k || !v || !ts.isPropertyAssignment(k) || !ts.isPropertyAssignment(v) || !ts.isIdentifier(k.name) || k.name.text !== "kind" || !ts.isStringLiteral(k.initializer) || !OUTCOMES.has(k.initializer.text)) return false;
+    if (!ts.isIdentifier(v.name) || v.name.text !== "value" || !ts.isArrowFunction(v.initializer) || v.initializer.parameters.length || !ts.isParenthesizedExpression(v.initializer.body)) return false;
+    return emittedDataOk(v.initializer.body.expression, decls);
+  });
+}
+
+/**
+ * Re-read a graded M98 test: the fixed import lines and harness, then ONE `test(..)` whose body is only fake
+ * declarations (in the emitted language) and the emitted assertions. Returns the calls with their injections.
+ */
+export function gradedTestCalls(testPath: string, content: string, modPath: string): CallShape[] | null {
+  const dir = testPath.slice(0, testPath.lastIndexOf("/") + 1);
+  if (!modPath.startsWith(dir)) return null;
+  const sf = ts.createSourceFile(testPath, content, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const imp = sf.statements[2];
+  if (!imp || !ts.isImportDeclaration(imp) || !ts.isStringLiteral(imp.moduleSpecifier) || !imp.importClause?.namedBindings || !ts.isNamedImports(imp.importClause.namedBindings) || imp.importClause.name) return null;
+  const spec = imp.moduleSpecifier.text;
+  const rel = `./${modPath.slice(dir.length)}`;
+  if (spec !== rel && spec !== rel.replace(/\.ts$/, "")) return null;
+  const names = imp.importClause.namedBindings.elements.map((e) => (e.propertyName ? "" : e.name.text));
+  if (names.some((n) => !n)) return null;
+  const head = HARNESS_HEAD(spec, names.join(", "));
+  if (!content.startsWith(head)) return null;
+  const restSf = ts.createSourceFile(testPath, content.slice(head.length), ts.ScriptTarget.Latest, true);
+  if (diag(restSf) || restSf.statements.length !== 1) return null;
+  const st = restSf.statements[0]!;
+  if (!ts.isExpressionStatement(st) || !ts.isCallExpression(st.expression) || !ts.isIdentifier(st.expression.expression) || st.expression.expression.text !== "test" || st.expression.arguments.length !== 2) return null;
+  const [title, body] = st.expression.arguments;
+  if (!title || !ts.isStringLiteral(title) || !body || !ts.isArrowFunction(body) || body.parameters.length || !ts.isBlock(body.body)) return null;
+  const decls = new Set<string>();
+  const keysOf = new Map<string, Set<string> | null>();
+  const calls: CallShape[] = [];
+  const injOf = (a: ts.Expression): Injection["args"][number] => {
+    if (a.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(a) && a.text === "undefined")) return null;
+    if (ts.isIdentifier(a) && keysOf.has(a.text)) { const k = keysOf.get(a.text); return k ? { keys: k } : "data"; }
+    if (ts.isObjectLiteralExpression(a)) return { keys: new Set(a.properties.filter((p) => ts.isPropertyAssignment(p) && p.initializer.kind !== ts.SyntaxKind.NullKeyword && !(ts.isIdentifier(p.initializer) && p.initializer.text === "undefined")).map((p) => ((p as ts.PropertyAssignment).name as ts.Identifier).text)) };
+    return "data";
+  };
+  const argsOf = (xs: readonly ts.Expression[]): Injection["args"] | null => {
+    const out: Injection["args"] = [];
+    for (const x of xs) {
+      if (!ts.isAsExpression(x) || x.type.kind !== ts.SyntaxKind.NeverKeyword || !emittedDataOk(x.expression, decls)) return null;
+      out.push(injOf(x.expression));
+    }
+    return out;
+  };
+  for (const s of body.body.statements) {
+    if (ts.isVariableStatement(s)) {
+      if (!(s.declarationList.flags & ts.NodeFlags.Const) || s.declarationList.declarations.length !== 1) return null;
+      const d = s.declarationList.declarations[0]!;
+      if (!ts.isIdentifier(d.name) || !d.initializer || d.type || decls.has(d.name.text) || names.includes(d.name.text)) return null;
+      const init = d.initializer;
+      if (!(emittedFakeFn(init, decls) || emittedDataOk(init, decls))) return null;
+      keysOf.set(d.name.text, ts.isObjectLiteralExpression(init) ? new Set(init.properties.filter((p) => ts.isPropertyAssignment(p) && p.initializer.kind !== ts.SyntaxKind.NullKeyword).map((p) => ((p as ts.PropertyAssignment).name as ts.Identifier).text)) : null);
+      decls.add(d.name.text);
+      continue;
+    }
+    if (!ts.isExpressionStatement(s) || !ts.isCallExpression(s.expression)) return null;
+    const c = s.expression;
+    const callee = c.expression;
+    if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression) || callee.expression.text !== "assert") return null;
+    if (callee.name.text === "equal") {
+      // NAME(.k).calls.length, N
+      const [l, r] = c.arguments;
+      if (c.arguments.length !== 2 || !l || !r || !ts.isNumericLiteral(r) || !ts.isPropertyAccessExpression(l) || l.name.text !== "length" || !ts.isPropertyAccessExpression(l.expression) || l.expression.name.text !== "calls") return null;
+      const owner = l.expression.expression;
+      const root = ts.isPropertyAccessExpression(owner) ? owner.expression : owner;
+      if (!ts.isIdentifier(root) || !decls.has(root.text)) return null;
+      continue;
+    }
+    if (callee.name.text !== "deepEqual" || c.arguments.length !== 2) return null;
+    const [l, r] = c.arguments;
+    const run = l && ts.isAwaitExpression(l) ? l.expression : l;
+    if (!run || !ts.isCallExpression(run) || !ts.isIdentifier(run.expression) || !(run.expression.text === "settle" ? l !== run : run.expression.text === "settleSync" && l === run) || run.arguments.length !== 1) return null;
+    const thunk = run.arguments[0]!;
+    if (!ts.isArrowFunction(thunk) || thunk.parameters.length || ts.isBlock(thunk.body)) return null;
+    if (!r || !ts.isObjectLiteralExpression(r) || !r.properties.every((p) => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && ((p.name.text === "ok" && (p.initializer.kind === ts.SyntaxKind.TrueKeyword || p.initializer.kind === ts.SyntaxKind.FalseKeyword)) || (p.name.text === "value" && emittedDataOk(p.initializer, new Set())) || (p.name.text === "message" && ts.isStringLiteral(p.initializer))))) return null;
+    const ce = thunk.body;
+    if (!ts.isCallExpression(ce) || ce.questionDotToken) return null;
+    const args = argsOf(ce.arguments);
+    if (!args) return null;
+    if (ts.isIdentifier(ce.expression) && names.includes(ce.expression.text)) { calls.push({ entry: { kind: "call", fn: ce.expression.text, args }, code: "", names: [ce.expression.text] }); continue; }
+    if (ts.isPropertyAccessExpression(ce.expression) && ts.isIdentifier(ce.expression.name) && ts.isNewExpression(ce.expression.expression) && ts.isIdentifier(ce.expression.expression.expression) && names.includes(ce.expression.expression.expression.text)) {
+      const ctorArgs = argsOf(ce.expression.expression.arguments ?? []);
+      if (!ctorArgs) return null;
+      calls.push({ entry: { kind: "new", cls: ce.expression.expression.expression.text, method: ce.expression.name.text, args, ctorArgs }, code: "", names: [ce.expression.expression.expression.text] });
+      continue;
+    }
+    return null;
+  }
+  if (!calls.length) return null;
+  // every imported name is called
+  if (names.some((n) => !calls.some((c) => c.names.includes(n)))) return null;
+  return calls;
+}
+
+/**
+ * Job B: the graded tree's edit is confined to one function / method, the new test is an M98 test of that module,
+ * and the module stays hermetic for the test's calls on the base AND the graded source, the target reached.
+ * Returns null when gradable, else a refusal code. `read` reads repo-relative non-test source files of the graded tree.
+ */
+export function gradeExistingEditProblem(modPath: string, baseText: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
+  const target = editConfinedTarget(modPath, baseText, realText);
+  if (!target) return "edit_not_confined";
+  const calls = gradedTestCalls(testPath, testContent, modPath);
+  if (!calls) return "edit_test_shape";
+  const after = hermeticProblem(modPath, read, calls, target, { path: modPath, content: realText });
+  if (typeof after === "string") return after;
+  const before = hermeticProblem(modPath, read, calls, target, { path: modPath, content: baseText });
+  if (typeof before === "string") return before;
+  return after.targetReached && before.targetReached ? null : "edit_test_unreached";
+}
+
+/** The repo-relative files the graded test may read at load (the module-load closure), for the permission-model runs. */
+export function existingEditReads(modPath: string, read: Read): string[] | null {
+  const c = loadClosure(modPath, read);
+  return typeof c === "string" ? null : [...c.files.keys()].sort();
 }
