@@ -39,3 +39,11 @@
   Plan: `unknown` as a top-level param type; `NodeJS.ProcessEnv` param (Record<string,string|undefined>), default
   exactly `process.env` only on the target and only if every check call passes an object literal for it (Job A + Job B
   test-source check). Not pushed yet.
+
+## v6 checkpoint 1 (M93, branch m93/test-existing-v6, worktree /workspace/te7/ws)
+
+- Pushed: engine d88751f, spec/evidence e0e1753, record/doc/proofs/selfchange on top. No PR yet.
+- Spec public-test-case-existing-v6 sha 358edf11b157db360c801406a4be102f2d6258f06287dfc165dc8a2e8a55e51a.
+- Census PeaceSTOCKS ef9778e: v5 112 -> v6 122 (+10, 0 lost) (/workspace/te7/census6.mts).
+- Evidence 19 examples / 17 repos (11 ProcessEnv, 8 unknown); mining scripts /workspace/te7/mine (mine6, build-te6, ev6, notices6, corecheck).
+- Box checks green (tools 1116/1121, only m48 box-only fail). Next: sim (/workspace/te7/sim) + stress v1 baseline runs-m93 and sim runs-m93-sim, then PR.
