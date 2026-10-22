@@ -204,3 +204,12 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - PR #459 fix/pnpm-download-retry head b805d0a: install-target.sh 3 attempts (15s/45s backoff), 4 tests. CI green. Awaiting Auditor.
 - PR #460 m93/test-existing-v6 head b94b68f: spec public-test-case-existing-v6 sha 358edf11b157db360c801406a4be102f2d6258f06287dfc165dc8a2e8a55e51a. Census PeaceSTOCKS ef9778e: v5 112 -> v6 122 (+10, 0 lost). Stress v1 baseline and sim both 59/66, 0 wrong (runs-m93, runs-m93-sim). CI green. Awaiting Auditor; then rule-proposal issue; Peace /approve-rule.
 - ~09:55Z: #459 PASS + merged (17bde39). #460 NOT PASS -> fixed (envTargetReferenced, Auditor #460 hole): head 34fc2a6, spec sha unchanged 358edf11, census on PeaceSTOCKS 0ab37c8 v6 122 (+10, 0 lost), stress 59/66 both (runs-m93b, runs-m93b-sim). New PR #462 m94/protect-job-scripts head f1dbfd7 (every peaceai/bin/*.sh protected, TARGET_PR_TOKEN in CONTENT_BANNED, clone-target -u TARGET_PR_TOKEN, install-target empty-dir guard, m12 eaf5670a). #460 and #462 both re-pin m12: second to merge needs a main merge + combined re-pin.
+
+## 2026-10-22 ~11:20Z verify #460 (2nd review) + #463 (M95), both open, NOT merged
+- #460 head be31c6e (cc3b666 2nd-review fix + merge of main fd8697d). Spec public-test-case-existing-v6 sha 256f7b3260433df204c8498773e40c7e0986192c096940dcd44787dc19b0c195 (evidence rebuilt 14 ex / 13 repos). m12 704d8252 = Auditor's trial. PR body updated (2nd-review section, v1-v5 .mjs follow-up unfiled, stress m93c, m12 order vs #463).
+- Fails-before/passes-after: 6 new negatives accepted with 34fc2a6 engine, refused with be31c6e; 16/16 negatives refused, 5/5 positives kept.
+- Census PeaceSTOCKS 0ab37c8 (fresh clone /tmp/v6chk/stocks): v1 34 v2 78 v3 92 v4 105 v5 112 v6 122 (+10, 0 lost).
+- Stress be31c6e: baseline runs-m93c 59/66 0 wrong; sim runs-m93c-sim had M2 timing flake (403 s), M2 rerun alone SOLVED -> runs-m93d-sim 59/66 0 wrong.
+- #463 head 6ab6b41: m12 9de5d832; m95 test fails on main 0/2, passes on head. Trial merge be31c6e+6ab6b41 m12 = 1a5e5531db0c5cee2d64593198317aa75d554350cf6795e6d6028ab89107b469 (only conflict m12 line).
+- Box (Node 22, disposable clones): both typecheck OK, test 17/17, self 5/5, builder-log 61/61, approved PASS 28, leak PASS; tools #460 1125/1126, #463 1117/1118 (m48 box-only). CI green on both heads.
+- NEXT: Auditor on #460 be31c6e and #463 6ab6b41; second to merge merges main + re-pins m12 (1a5e5531 expected).
