@@ -397,8 +397,10 @@ export function deniedEditPath(repo: string, paths: readonly string[]): boolean 
 
 /** M98: an engine refusal as a run-log reason: the code, plus the refused name only when it is a plain identifier. */
 function whyReason(code: string): string {
-  const [head, name] = code.split(":", 2);
-  return name && /^[A-Za-z_$][\w$]{0,63}$/.test(name) ? `${head}: ${name}` : head!;
+  const i = code.indexOf(":");
+  if (i < 0) return code;
+  const head = code.slice(0, i), name = code.slice(i + 1);
+  return /^[A-Za-z_$][\w$]{0,63}$/.test(name) ? `${head}: ${name}` : head;
 }
 
 function applyRuleInner(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {

@@ -1,0 +1,26 @@
+{
+ "id": "public-existing-function-edit-v1",
+ "kind": "EXISTING_EDIT",
+ "shape": "EXISTING_FUNCTION_EDIT",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list (Peace's /approve-rule)",
+ "engine": "peaceai/lib/learned-edit-existing.ts (G1 editStatement + G2 parseFakeTest / emitFakeTest + the hermetic walk loadClosure / loadProblem / reachProblem); Job B: gradeExistingEdit in peaceai/bin/test-candidates.ts (editConfinedTarget, gradedTestCalls, hermetic re-check on base and real tree, permission-model runs in EXISTING_EDIT_ENV_RUNS, assertion-only failure on the base)",
+ "scope": "ONE statement (variable, expression, return, throw or if statement; matched token for token exactly once among the target's own statements, never inside a nested function) of an existing named module function or non-static class method of a plain, unprotected, non-test src/**.ts module, replaced by 1-4 statements of the bounded grammar (const/let, expression statements, if/else, return, throw, blocks, try/catch/finally, for-of over a literal array or a name, break/continue in loops; no templates, delete, function/class declarations, while/for(;;)/switch/labels, arguments, yield, import.meta), plus ONE new test file that drives an exported function or a method of new C(..) of an exported class with injected, recorded object-literal fakes (resolves / returns / rejects / throws / sequence; data: literals, arrays, objects, bytes, date ISO-Z, response(status, body, headers)) and checks resolves / returns / rejects / throws / call counts",
+ "refusals": "edit_trigger, edit_path, edit_split, edit_new_grammar, edit_site, edit_test_grammar, edit_io_global (fetch, process, Date, timers, globalThis, Intl, Reflect, Symbol, Math.random, ... anything outside the fixed allow-list), edit_io_import (builtins other than node:crypto createHash / createHmac), edit_local_time, edit_global_write, edit_hidden_state (module let / var, mutable or /g module data), edit_package_import, edit_import_unresolved, edit_class_extends, edit_computed_call, edit_entry_not_exported, edit_test_unreached, new_test_path_exists, self_protected_path; Job B: edit_not_confined, edit_test_shape, real-not-stable, before-not-assertion",
+ "evidence": {
+  "g1": 15,
+  "g2": 15,
+  "repos": 28,
+  "file": "peaceai/rules/proposals/m98-existing-function-edit-evidence.json",
+  "method": "G1: git-log scan (up to 3000 non-merge commits, 150 tried per repo) of the 737 cloned permissive TypeScript repos (M88 411 + 326) for commits whose only non-test source change is one hunk in one .ts module; replay = the M98 editStatement on the parent text (OLD = the smallest own statement covering the token diff, NEW = the child's tokens there, one line) reproduces the child's code tokens exactly: 374 replays in 184 repos outside the corpus with a permissive license; kept 15 (one per repo, async methods with an awaited injected dependency first, multi-statement NEW second). G2: HEAD scan of the same repos for tests that call a method of new C(<object literal with function-valued fakes>) or a relative-imported function with such a literal; replay = the M98 hermetic walk accepts that call shape (the same injected keys) on the pinned module closure and reaches the target: 65 in 33 repos; kept 15 (async first). Fixtures that tripped the pre-push core-text / home-path / email scans were swapped for the next candidate.",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: PeaceSTOCKS has 2 G2 hits (R2ObjectClient.put / get with an injected fetchImpl) but is in the corpus manifest, so it is recorded and not counted."
+ },
+ "learned": "peaceai/rules/learned/public-existing-function-edit-v1.json",
+ "tests": [
+  "peaceai/test/m98-existing-function-edit.test.ts"
+ ],
+ "untouched": "every approved spec (same params and hashes); no existing engine's accept set changes: EXISTING_EDIT is a new kind whose branch runs only for its own spec"
+}

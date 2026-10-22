@@ -58,7 +58,7 @@ const diag = (sf: ts.SourceFile): number => (sf as unknown as { parseDiagnostics
 
 /** Statements of `text` parsed as the body of an async function (so `return` and `await` parse); null on any error. */
 export function parseStatements(text: string): ts.Statement[] | null {
-  if (text.includes("\n") || /\/\/|\/\*/.test(text)) return null;
+  if (text.includes("\n") || hasComment(text)) return null;
   const sf = ts.createSourceFile("s.ts", `async function __m98() {\n${text}\n}`, ts.ScriptTarget.Latest, true);
   if (diag(sf) || sf.statements.length !== 1) return null;
   const f = sf.statements[0]!;
@@ -68,13 +68,23 @@ export function parseStatements(text: string): ts.Statement[] | null {
 
 /** Code tokens of a text (trivia dropped, a trailing `;` dropped), for token-wise statement matching. */
 export function codeTokens(text: string): string[] {
-  const sc = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text);
+  return scanCode(text).tokens;
+}
+/** True when the text holds a comment (scanned with regex / template rescans, so `"https://x"` is not one). */
+export function hasComment(text: string): boolean {
+  return scanCode(text).comments > 0;
+}
+function scanCode(text: string): { tokens: string[]; comments: number } {
+  const sc = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, text);
+  let comments = 0;
   const out: string[] = [];
   const braces: number[] = []; // brace depth per open template substitution
   let depth = 0;
   let prev: ts.SyntaxKind = ts.SyntaxKind.Unknown;
   const valueEnd = (k: ts.SyntaxKind) => k === ts.SyntaxKind.Identifier || k === ts.SyntaxKind.NumericLiteral || k === ts.SyntaxKind.StringLiteral || k === ts.SyntaxKind.CloseParenToken || k === ts.SyntaxKind.CloseBracketToken || k === ts.SyntaxKind.CloseBraceToken || k === ts.SyntaxKind.ThisKeyword || k === ts.SyntaxKind.RegularExpressionLiteral || k === ts.SyntaxKind.NoSubstitutionTemplateLiteral || k === ts.SyntaxKind.TemplateTail || k === ts.SyntaxKind.PlusPlusToken || k === ts.SyntaxKind.MinusMinusToken;
   for (let k = sc.scan(); k !== ts.SyntaxKind.EndOfFileToken; k = sc.scan()) {
+    if (k === ts.SyntaxKind.WhitespaceTrivia || k === ts.SyntaxKind.NewLineTrivia || k === ts.SyntaxKind.ShebangTrivia || k === ts.SyntaxKind.ConflictMarkerTrivia) continue;
+    if (k === ts.SyntaxKind.SingleLineCommentTrivia || k === ts.SyntaxKind.MultiLineCommentTrivia) { comments += 1; continue; }
     if ((k === ts.SyntaxKind.SlashToken || k === ts.SyntaxKind.SlashEqualsToken) && !valueEnd(prev)) k = sc.reScanSlashToken();
     else if (k === ts.SyntaxKind.TemplateHead) { braces.push(depth); depth = 0; }
     else if (k === ts.SyntaxKind.OpenBraceToken) depth += 1;
@@ -88,7 +98,7 @@ export function codeTokens(text: string): string[] {
     prev = k;
   }
   while (out.length && out[out.length - 1] === ";") out.pop();
-  return out;
+  return { tokens: out, comments };
 }
 const sameCode = (a: string, b: string): boolean => { const x = codeTokens(a), y = codeTokens(b); return x.length === y.length && x.every((t, i) => t === y[i]); };
 
@@ -742,7 +752,7 @@ export const MAX_ARRAY_ITEMS = 50;
 export const MAX_STRING_CHARS = 400;
 
 function parseExpression(text: string): ts.Expression | null {
-  if (text.includes("\n") || /\/\/|\/\*/.test(text)) return null;
+  if (text.includes("\n") || hasComment(text)) return null;
   const sf = ts.createSourceFile("e.ts", `(${text});`, ts.ScriptTarget.Latest, true);
   if (diag(sf) || sf.statements.length !== 1 || !ts.isExpressionStatement(sf.statements[0]!)) return null;
   const e = (sf.statements[0] as ts.ExpressionStatement).expression;
@@ -1060,6 +1070,9 @@ export function existingEditDetail(trigger: string, params: Record<string, strin
   if (!file || isTest(file.path) || !/^src\/[\w./-]+\.ts$/.test(file.path) || file.path.endsWith(".d.ts") || PROTECTED_SELF.some((p) => p.pattern.test(file.path))) return no("edit_path");
   const split = splitBody(g.body ?? "");
   if (!split) return no("edit_split");
+  if (newGrammarProblem(parseStatements(split.newText) ?? [], true)) return no("edit_new_grammar");
+  // every bullet must be a fake or an expect bullet: a stray check is refused, never silently dropped
+  if (lines.some((l) => /^[-*+•] /.test(l) && !/^- (?:fake|expect) /.test(l))) return no("edit_test_grammar");
   const edited = editStatement(file.path, file.content, g.target!, split.oldText, split.newText);
   if (!edited) return no("edit_site");
   const fakeTest = parseFakeTest(lines);
