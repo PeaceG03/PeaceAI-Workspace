@@ -253,3 +253,4 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
   (E) test-side dateArgProblem Job A + Job B (ISO literal for date-string params; Date literals only top-level to Date params); (F) TZ backstop UTC/Denver/Tokyo in gradeExisting.
 - Auditor repros /tmp/probe466 (c8, c9, ja3.mts, e2e/). Subset tooling: /tmp/probe466/census2.mts, /tmp/w466/landed.mts, /tmp/pvall.mts, /tmp/evcount.mts, /tmp/w466/v10.mts.
 - 12:50 MDT WIP engine patch saved batch-v4/wip-m97g.patch (apply on e9ea32d); census new 34/71/82/93/100/108/113; v3 evidence analysis 8/10; tests still to update
+- 12:32 MDT pushed f85449f to m97/test-case-existing-v7 (4th-review fix). Remaining: full suites, landed audit, v10, PR body, stress m97g.
