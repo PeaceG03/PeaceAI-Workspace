@@ -409,14 +409,15 @@ function declaringModule(n: string, idx: ModuleIndex, sf: ts.SourceFile, v2: V2C
   if (sv.depth > MAX_IMPORT_DEPTH) { v2.reasons.add(TEST_TARGET_TOO_LARGE); return null; }
   return { name: imp.imported, idx: m.idx, sf: m.sf, v2: sv };
 }
-/** M91: `typeof n` is plain data: n is a top-level const, never mutated, with a literal initializer or a plain annotation. */
+/** M91: `typeof n` is plain data: n is a top-level const, never mutated, whose initializer is a literal (optionally `as const`).
+ * M92: an explicit annotation alone never qualifies (`const N: number = Date.now()` is refused); when present it must also be plain. */
 function literalConstType(n: string, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx, depth: number): boolean {
   const m = declaringModule(n, idx, sf, v2);
   if (!m) return false;
   const d = m.idx.consts.get(m.name);
   if (!d || m.idx.mutable.has(m.name) || m.idx.mutated.has(m.name) || m.idx.fns.has(m.name) || m.idx.types.has(m.name) || m.idx.enums.has(m.name)) return false;
-  if (d.type) return structuralType(d.type, m.idx, m.sf, m.v2, depth + 1);
-  return literalInit(d.initializer);
+  if (!literalInit(d.initializer)) return false;
+  return !d.type || structuralType(d.type, m.idx, m.sf, m.v2, depth + 1);
 }
 /** M91: the type of property `k` of the plain object type `t` (a type literal, or a non-generic interface / alias of one). */
 function propertyOf(t: ts.TypeNode, k: string, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx): { type: ts.TypeNode; idx: ModuleIndex; sf: ts.SourceFile; v2: V2Ctx } | null {

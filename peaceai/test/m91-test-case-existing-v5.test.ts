@@ -126,6 +126,25 @@ test("target negatives under v5: let / function / object / array / global typeof
   assert.equal(existingTargetRefusal("src/a.ts", "const C = { v: 1 };\nC.v = 2;\nexport function f(k: typeof C): number { return 1; }\n", "f", v5), TEST_TARGET_SIGNATURE);
 });
 
+test("M92 probe: an explicit type annotation alone never makes a const qualify for typeof; the initializer must be a literal", () => {
+  const refuse = [
+    "const N: number = Date.now();\nexport function f(n: typeof N): number { return n; }\n",
+    "const N: number = Math.random();\nexport function f(n: typeof N): number { return n; }\n",
+    "function h(): number { return 1; }\nconst N: number = h();\nexport function f(n: typeof N): number { return n; }\n",
+    "const M = 2;\nconst N: number = M * 2;\nexport function f(n: typeof N): number { return n; }\n",
+    'const N: string = `x${1}`;\nexport function f(n: typeof N): string { return n; }\n',
+  ];
+  for (const c of refuse) assert.equal(existingTargetRefusal("src/a.ts", c, "f", v5), TEST_TARGET_SIGNATURE, c);
+  const sib = "export const N: number = Date.now();\n";
+  const imp = 'import { N } from "./b";\nexport function f(n: typeof N): number { return n; }\n';
+  const rdb = { read: (rel: string) => (rel === "src/b.ts" ? sib : null) };
+  assert.equal(existingTargetRefusal("src/i.ts", imp, "f", { v2: rdb, dates: true, v4: true, v5: true }), TEST_TARGET_SIGNATURE, "a clock const in a sibling");
+  // A literal initializer still qualifies with or without a plain annotation; a non-plain annotation still refuses.
+  assert.equal(existingTargetRefusal("src/a.ts", "const N: number = 5;\nexport function f(n: typeof N): number { return n; }\n", "f", v5), null);
+  assert.equal(existingTargetRefusal("src/a.ts", "const N = 5;\nexport function f(n: typeof N): number { return n; }\n", "f", v5), null);
+  assert.equal(existingTargetRefusal("src/a.ts", "const N: any = 5;\nexport function f(n: typeof N): number { return n; }\n", "f", v5), TEST_TARGET_SIGNATURE);
+});
+
 test("Job A: v5 targets get one candidate; not_needed for v1-v4 targets; v4 refuses v5 targets by name", () => {
   const k = run("kindOf", '- kindOf("row") is "row"');
   assert.ok(k.e, k.r);
