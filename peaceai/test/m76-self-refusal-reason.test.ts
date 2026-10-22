@@ -28,7 +28,11 @@ test("#343 replay: a protected Workspace file is refused as self_protected_path 
   assert.ok(isSelfProtected("peaceai/lib/self-zone.ts"));
   assert.ok(!jobAFiles().some((f) => f.path === "peaceai/lib/self-zone.ts"), "Job A never offers the protected file to the rules");
   const { e, r } = run(COMPLEX, complexTask("peaceai/lib/self-zone.ts"), WORKSPACE_TARGET);
-  assert.equal(e, null); assert.equal(r, "self_protected_path");
+  // M96: self-zone.ts is now also on PROTECTED_SELF, so the engine's protected_path may answer first; never target_file_not_found.
+  assert.equal(e, null); assert.match(r ?? "", /^(?:self_)?protected_path$/);
+  // A file only the self-zone list protects still reads self_protected_path.
+  assert.ok(isSelfProtected("peaceai/proof/m96-x.ts"));
+  assert.equal(run(COMPLEX, complexTask("peaceai/proof/m96-x.ts"), WORKSPACE_TARGET).r, "self_protected_path");
 });
 
 test("other protected files and other rule kinds name the reason too", () => {
@@ -51,7 +55,8 @@ test("unprotected outside-the-zone paths read outside_safe_zone; a missing src/ 
 });
 
 test("only the Workspace target is affected; other repos and no-repo callers keep target_file_not_found", () => {
-  for (const repo of ["PeaceG03/PeaceSTOCKS", undefined]) assert.equal(run(COMPLEX, complexTask("peaceai/lib/self-zone.ts"), repo, []).r, "target_file_not_found", String(repo));
+  // M96: a file only the self-zone list protects (self-zone.ts itself is now on PROTECTED_SELF too, refused for every repo).
+  for (const repo of ["PeaceG03/PeaceSTOCKS", undefined]) assert.equal(run(COMPLEX, complexTask("peaceai/proof/m96-x.ts"), repo, []).r, "target_file_not_found", String(repo));
 });
 
 test("a real landing in the safe zone still builds (nothing else changes)", () => {

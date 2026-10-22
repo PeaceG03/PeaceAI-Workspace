@@ -80,7 +80,9 @@ test("applyRule refuses a Workspace candidate on a protected file or outside the
     return { edit: applyRule(spec, task, [{ path, content: "export const x = 1;\n" }], (p) => /\.test\.ts$/.test(p), WORKSPACE_TARGET, why), why: why.reason };
   };
   assert.ok(run("src/a.ts").edit);
-  for (const p of ["peaceai/lib/repair.ts", "peaceai/lib/repairloop.ts"]) assert.equal(run(p).why, "self_protected_path", p);
+  // M96: repair.ts / repairloop.ts are now also on PROTECTED_SELF (the protected tools' import closure), so the engine's own
+  // protected_path can answer first; either way the refusal names a protected path.
+  for (const p of ["peaceai/lib/repair.ts", "peaceai/lib/repairloop.ts"]) assert.match(run(p).why ?? "", /^(?:self_)?protected_path$/, p);
   assert.equal(run("peaceai/proof/x.ts").why, "self_protected_path");
   const helper = run("peaceai/self-tests/helpers/text.ts");
   if (loadTargets().targets[WORKSPACE_TARGET]!.selfZone === true) assert.deepEqual([helper.edit?.path, helper.edit?.extra?.[0]?.path.startsWith("peaceai/self-tests/helpers/text.")], ["peaceai/self-tests/helpers/text.ts", true], "zone on: a safe-zone landing is built");
