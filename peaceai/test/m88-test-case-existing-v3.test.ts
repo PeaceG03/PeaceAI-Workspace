@@ -67,7 +67,8 @@ test("spec: valid, hash pinned, v1 params except the target, the v1 trigger; any
   assert.equal(SPEC.trigger, TEST_EXISTING_TRIGGER);
   assert.deepEqual(SPEC.params, { ...V1.params, target: "exported-pure-function-v3" });
   assert.deepEqual(V2.params, { ...V1.params, target: "exported-pure-function-v2" }, "v2 is unchanged");
-  assert.deepEqual([...TEST_EXISTING_VOCAB.target], ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3"]);
+  // M90 appends exported-pure-function-v4; the first three stay in place.
+  assert.deepEqual([...TEST_EXISTING_VOCAB.target].slice(0, 3), ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3"]);
   assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, target: "any-function" } }));
   // Lesson (M85/M87): never assert the rule is absent from approved.json; any listed entry must pin this exact hash.
   const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
@@ -172,9 +173,10 @@ test("stub and Job B wiring: v3 candidates are re-checked with Date and stubbed 
   const st = stubAll(A, ["addDays"], true);
   assert.ok(st && !st.throws && /export function addDays\(d: Date, n: number\): Date \{ __peaceaiStubRan\(\); return \(\{\} as never\); \}/.test(st.content));
   const tc = read("peaceai/bin/test-candidates.ts");
-  assert.match(tc, /candidate\.operationId\.startsWith\("learned:public-test-case-existing-v2@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\)\)/);
-  assert.match(tc, /candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\)\);/);
-  assert.match(tc, /dates: v3 \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
+  // M90: v4 candidates also set v2 and v3 (the v4 prefix follows the v3 prefix in both disjunctions).
+  assert.match(tc, /candidate\.operationId\.startsWith\("learned:public-test-case-existing-v2@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\)\)/);
+  assert.match(tc, /\(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\)\),/);
+  assert.match(tc, /dates: v3, v4 \} : undefined\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 

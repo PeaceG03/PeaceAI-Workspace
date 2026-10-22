@@ -37,13 +37,25 @@ export const TEST_EXISTING_VOCAB = {
   // M88 (public-test-case-existing-v3): "exported-pure-function-v3" = the v2 target plus the built-in `Date` in the
   // signature (parameters, return, members), Date literal arguments and expected values, and object literals nested
   // inside array arguments (gap 1). Clock, local-time and setter use stay refused by the same Date rules as v1/v2.
-  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3"],
+  // M90 (public-test-case-existing-v4): "exported-pure-function-v4" = the v3 target plus (a) optional parameters
+  // (`p?: T`) and typed parameters with a default (`p: T = EXPR`, the initializer analyzed like the body, so a clock
+  // or impure default stays refused by name), (b) the built-in generic plain-data references `Array<T>`,
+  // `ReadonlyArray<T>`, `Readonly<T>`, `Partial<T>`, `Record<K, V>` (K string / number / a string-literal union, V plain
+  // data) and `Pick<T, K>` / `Omit<T, K>` (T plain data, K string / string-literal keys),
+  // and (c) plain-data types nested up to MAX_TYPE_DEPTH_V4 with up to MAX_TYPE_MEMBERS_V4 members per object.
+  // Classes, functions, Map/Set, bytes, unknown/any, typeof, intersections and other generics stay refused.
+  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4"],
 } as const;
 /** M85 bounds for the v2 target: sibling modules followed, import depth, structural type nesting. */
 export const MAX_IMPORT_MODULES = 4;
 export const MAX_IMPORT_DEPTH = 2;
 export const MAX_TYPE_DEPTH = 3;
 export const MAX_TYPE_MEMBERS = 16;
+/** M90 (v4 target only): wider structural bounds (v1-v3 keep 3 / 16). */
+export const MAX_TYPE_DEPTH_V4 = 6;
+export const MAX_TYPE_MEMBERS_V4 = 32;
+/** M90 (v4 target only): the built-in generic plain-data references. */
+export const V4_GENERICS: ReadonlySet<string> = new Set(["Array", "ReadonlyArray", "Readonly", "Partial", "Record", "Pick", "Omit"]);
 
 // Named refusals (each one is a distinct, stable reason string in Job A's refusal lines).
 export const TEST_TARGET_NOT_FOUND = "test_target_not_found";
@@ -178,6 +190,16 @@ interface V2Ctx {
   scanned: Set<string>;
   /** M88 (v3 only): the built-in `Date` is a plain-data type (never when the module declares or imports a `Date`). */
   dates?: boolean;
+  /** M90 (v4 only): optional / defaulted parameters, the V4_GENERICS references and the v4 type bounds. */
+  v4?: boolean;
+}
+/** M90: a global (never shadowed in `idx`) name. */
+const unshadowed = (idx: ModuleIndex, n: string): boolean => !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n);
+/** M90: a Record key type: string, number, or a union of string / number literals. */
+function recordKey(t: ts.TypeNode): boolean {
+  if (t.kind === ts.SyntaxKind.StringKeyword || t.kind === ts.SyntaxKind.NumberKeyword) return true;
+  if (ts.isLiteralTypeNode(t)) return ts.isStringLiteral(t.literal) || ts.isNumericLiteral(t.literal);
+  return ts.isUnionTypeNode(t) && t.types.length <= 12 && t.types.every((x) => ts.isLiteralTypeNode(x) && (ts.isStringLiteral(x.literal) || ts.isNumericLiteral(x.literal)));
 }
 
 const normRel = (p: string): string | null => {
@@ -304,7 +326,7 @@ function analyzeLoadedModule(v2: V2Ctx, idx: ModuleIndex, sf: ts.SourceFile): vo
  */
 function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx | undefined, depth = 0): boolean {
   if (TYPES.test(t.getText(sf).trim())) return true;
-  if (depth > MAX_TYPE_DEPTH) return false;
+  if (depth > (v2?.v4 ? MAX_TYPE_DEPTH_V4 : MAX_TYPE_DEPTH)) return false;
   const rec = (x: ts.TypeNode) => structuralType(x, idx, sf, v2, depth + 1);
   if (ts.isParenthesizedTypeNode(t)) return rec(t.type);
   if (ts.isArrayTypeNode(t)) return rec(t.elementType);
@@ -312,15 +334,27 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
   if (ts.isLiteralTypeNode(t)) return ts.isStringLiteral(t.literal) || ts.isNumericLiteral(t.literal) || t.literal.kind === ts.SyntaxKind.NullKeyword || t.literal.kind === ts.SyntaxKind.TrueKeyword || t.literal.kind === ts.SyntaxKind.FalseKeyword;
   if (t.kind === ts.SyntaxKind.UndefinedKeyword || t.kind === ts.SyntaxKind.StringKeyword || t.kind === ts.SyntaxKind.NumberKeyword || t.kind === ts.SyntaxKind.BooleanKeyword) return true;
   if (ts.isUnionTypeNode(t)) return t.types.length <= 12 && t.types.every(rec);
-  if (ts.isTypeLiteralNode(t)) return plainMembers(t.members, rec);
+  const members = v2?.v4 ? MAX_TYPE_MEMBERS_V4 : MAX_TYPE_MEMBERS;
+  if (ts.isTypeLiteralNode(t)) return plainMembers(t.members, rec, members);
   if (ts.isTypeReferenceNode(t)) {
-    if (!ts.isIdentifier(t.typeName) || t.typeArguments?.length) return false;
+    if (!ts.isIdentifier(t.typeName)) return false;
     const n = t.typeName.text;
+    // M90 (v4 only): Array<T> / ReadonlyArray<T> as T[], Readonly<O> for a plain object O, Record<K, V>; global names only.
+    if (t.typeArguments?.length) {
+      if (!v2?.v4 || !V4_GENERICS.has(n) || !unshadowed(idx, n)) return false;
+      const ta = t.typeArguments;
+      if ((n === "Array" || n === "ReadonlyArray") && ta.length === 1) return rec(ta[0]!);
+      if ((n === "Readonly" || n === "Partial") && ta.length === 1) return !ts.isArrayTypeNode(ta[0]!) && rec(ta[0]!);
+      if (n === "Record" && ta.length === 2) return recordKey(ta[0]!) && rec(ta[1]!);
+      // Pick / Omit of a plain object type: a subset of its (all plain) members; keys are string literals.
+      if ((n === "Pick" || n === "Omit") && ta.length === 2) return recordKey(ta[1]!) && ta[1]!.kind !== ts.SyntaxKind.NumberKeyword && rec(ta[0]!);
+      return false;
+    }
     // M88: the global Date only (a module-local or imported `Date` shadows it and is analyzed as any other name).
     if (n === "Date" && v2?.dates && !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n)) return true;
     if (idx.enums.has(n)) { if (v2) noteEnum(v2, idx, sf, n); return true; }
     const d = idx.types.get(n);
-    if (d) return ts.isInterfaceDeclaration(d) ? plainMembers(d.members, rec) : rec(d.type);
+    if (d) return ts.isInterfaceDeclaration(d) ? plainMembers(d.members, rec, members) : rec(d.type);
     if (d === null) return false;
     const imp = idx.imports.get(n);
     if (!imp || !v2 || !imp.imported || imp.imported === "default") return false;
@@ -334,12 +368,12 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
     const sv: V2Ctx = { ...v2, path: target, depth: v2.depth + 1 };
     if (sv.depth > MAX_IMPORT_DEPTH) { v2.reasons.add(TEST_TARGET_TOO_LARGE); return false; }
     const srec = (x: ts.TypeNode) => structuralType(x, m.idx, m.sf, sv, depth + 1);
-    return ts.isInterfaceDeclaration(sd) ? plainMembers(sd.members, srec) : srec(sd.type);
+    return ts.isInterfaceDeclaration(sd) ? plainMembers(sd.members, srec, members) : srec(sd.type);
   }
   return false;
 }
-function plainMembers(ms: ts.NodeArray<ts.TypeElement>, rec: (x: ts.TypeNode) => boolean): boolean {
-  return ms.length <= MAX_TYPE_MEMBERS && ms.every((m) => ts.isPropertySignature(m) && !!m.type && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && rec(m.type));
+function plainMembers(ms: ts.NodeArray<ts.TypeElement>, rec: (x: ts.TypeNode) => boolean, max: number = MAX_TYPE_MEMBERS): boolean {
+  return ms.length <= max && ms.every((m) => ts.isPropertySignature(m) && !!m.type && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && rec(m.type));
 }
 
 /** Fresh: a value created inside the function (so mutating it touches nothing outside). */
@@ -430,6 +464,16 @@ function analyzeFunction(a: Analysis, f: ts.FunctionLikeDeclaration): void {
   };
   const resolve = (name: string): void => resolveName(a, name, locals);
   walk(a, f.body, resolve, mutableTarget, fresh);
+  // M90: parameter defaults run at call time, so they get the body's rules (clock / local time / setters by name,
+  // then the purity walk; nothing in a default may assign). Only adds refusals: v1-v3 accept no defaults on the
+  // target, and a followed helper's default was previously not walked.
+  for (const p of f.parameters) {
+    if (!p.initializer) continue;
+    const pr = dateRefusal(p.initializer);
+    if (pr === DATE_NOW || pr === DATE_LOCAL_TIME) add(TEST_TARGET_DATE_LOCAL);
+    else if (pr === DATE_SETTER) add(TEST_TARGET_IMPURE);
+    walk(a, p.initializer, resolve, () => false, fresh);
+  }
 }
 
 /** A module const's initializer: the same rules with no locals (it runs once, at import). */
@@ -483,13 +527,20 @@ function walk(a: Analysis, root: ts.Node, resolve: (name: string) => void, mutab
   v(root);
 }
 
+/** M90 (v4): an untyped parameter is accepted only with a string / number / boolean literal default (its type is that primitive). */
+function literalDefault(e: ts.Expression | undefined): boolean {
+  if (!e) return false;
+  if (ts.isStringLiteral(e) || ts.isNumericLiteral(e) || e.kind === ts.SyntaxKind.TrueKeyword || e.kind === ts.SyntaxKind.FalseKeyword) return true;
+  return ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(e.operand);
+}
+
 export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: string; type: string }[]; ret: string }
 
 /**
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean }): string | null {
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean }): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
@@ -504,10 +555,10 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
   const reasons = new Set<string>();
-  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true } : undefined;
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true, v4: opts.v4 === true } : undefined;
   if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
   const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
-  const sigBad = !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || p.questionToken || p.initializer || !p.type || !typeOk(p.type));
+  const sigBad = !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !typeOk(p.type) : !(v2?.v4 && literalDefault(p.initializer))));
   if (sigBad) {
     if (v2) for (const r of PRIORITY) if (v2.reasons.has(r)) return r;
     return TEST_TARGET_SIGNATURE;
@@ -567,15 +618,19 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (isProtected(task.file)) return no(SELF_PROTECTED_PATH);
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
-  const v3 = params.target === "exported-pure-function-v3";
+  // M90: v4 is the v3 target widened (below), with v3's checks and args mode.
+  const v4 = params.target === "exported-pure-function-v4";
+  const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3 } : undefined);
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4 } : undefined);
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
   if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
   // M88: likewise v3 leaves a target v2 already takes to v2.
   if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib }) === null) return no("not_needed");
+  // M90: and v4 leaves a target v3 already takes to v3.
+  if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true }) === null) return no("not_needed");
   // Every check calls the target itself (the only name the test imports), with literal arguments.
   for (const c of task.checks) {
     if (!(params.checks as string[]).includes(c.kind)) return no(TEST_CHECK_REFUSED);
