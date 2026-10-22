@@ -307,6 +307,21 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
   assert.ok(isExcludedSource("src/a.test-helper.ts") && isExcludedSource("src/__mocks__/a.ts") && isExcludedSource("src/fixtures/a.ts") && !isExcludedSource("src/a.ts"));
 });
 
+test("Auditor #489 (G2): mutable static/module state and timers in reached code stay refused; the emitted test awaits every call", () => {
+  const d = (file: string, content: string, obj: string) => existingEditDetail(SPEC.trigger, SPEC.params, obj, [{ path: file, content }], isTest).reason;
+  // static mutable class state read + written by the tested method (shared across calls) is hidden state
+  const STAT = "export class Counter {\n  static n = 0;\n  bump(): number {\n    return 1;\n  }\n}\n";
+  assert.equal(d("src/s.ts", STAT, "in Counter.bump in src/s.ts: replace statement return 1; with Counter.n += 1; return Counter.n;\n- expect new Counter().bump() returns 1"), "edit_global_write");
+  // a timer introduced by the edit
+  const TMR = "export function f(n: number): number {\n  return n;\n}\n";
+  assert.equal(d("src/t.ts", TMR, "in f in src/t.ts: replace statement return n; with setInterval(() => 1, 1); return n;\n- expect f(1) returns 1"), "edit_new_capability:id:setInterval");
+  // the emitted G2 test wraps every call in settle/settleSync, so no promise is ever left unawaited
+  const { e } = run(B);
+  assert.ok(e);
+  const body = e.extra[0]!.content;
+  for (const line of body.split("\n").filter((l) => /new Storage\(|\bmeasure\(/.test(l))) assert.match(line, /(?:await settle|settleSync)\(\(\) =>/);
+});
+
 test("negatives: the closure is hermetic or nothing (package imports, builtins, load-time IO, extends)", () => {
   const head = "in Storage.measure in src/storage.ts: replace statement const size = (await this.client.get(key))?.byteLength ?? 0; with const size = (await this.client.head(key))?.size ?? 0;";
   const bul = B.split("\n").slice(1).join("\n");
