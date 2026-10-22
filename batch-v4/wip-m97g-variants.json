@@ -1,0 +1,602 @@
+{
+ "v_concat": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.concat(d as any); }"
+  },
+  "f"
+ ],
+ "v_strCall": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String.call(null, d); }"
+  },
+  "f"
+ ],
+ "v_mapStr": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].map(String)[0]!; }"
+  },
+  "f"
+ ],
+ "v_arrFrom": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Array.from([d], String)[0]!; }"
+  },
+  "f"
+ ],
+ "v_objTmpl": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${({ d }).d}`; }"
+  },
+  "f"
+ ],
+ "v_replace": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return 'x'.replace('x', d as any); }"
+  },
+  "f"
+ ],
+ "v_padEnd": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return ''.padEnd(40, d as any); }"
+  },
+  "f"
+ ],
+ "v_encode": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return encodeURIComponent(d as any); }"
+  },
+  "f"
+ ],
+ "v_arrToStr": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].toString(); }"
+  },
+  "f"
+ ],
+ "v_arrTmpl": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${[d]}`; }"
+  },
+  "f"
+ ],
+ "v_join": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return [d].join(); }"
+  },
+  "f"
+ ],
+ "v_reflectApply": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Reflect.apply(Date.prototype.toString, d, []); }"
+  },
+  "f"
+ ],
+ "v_reflectApply2": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(Reflect.apply(Object.prototype.valueOf, d, [])); }"
+  },
+  "f"
+ ],
+ "v_optChain": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d?.getHours()); }"
+  },
+  "f"
+ ],
+ "v_protoCall": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.call(d); }"
+  },
+  "f"
+ ],
+ "v_protoApply": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.apply(d); }"
+  },
+  "f"
+ ],
+ "v_protoBind": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date.prototype.toString.bind(d)(); }"
+  },
+  "f"
+ ],
+ "v_methodRef": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d.getTime.call(new Date(2024, 0, 1))); }"
+  },
+  "f"
+ ],
+ "v_assign": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify(Object.assign({}, { d })); }"
+  },
+  "f"
+ ],
+ "v_json": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify(d); }"
+  },
+  "f"
+ ],
+ "v_jsonObj": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return JSON.stringify({ d }); }"
+  },
+  "f"
+ ],
+ "v_dateCall": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Date(); }"
+  },
+  "f"
+ ],
+ "v_alias": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (() => { const D = Date; return String(new D(s)); })(); }"
+  },
+  "f"
+ ],
+ "v_construct": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(Reflect.construct(Date, [s])); }"
+  },
+  "f"
+ ],
+ "v_bracketToString": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return d[\"toString\"](); }"
+  },
+  "f"
+ ],
+ "v_bracketKey": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any)[\"get\" + \"Hours\"]().toString(); }"
+  },
+  "f"
+ ],
+ "v_symPrim": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return (d as any)[Symbol.toPrimitive](\"string\"); }"
+  },
+  "f"
+ ],
+ "v_plus": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return '' + d; }"
+  },
+  "f"
+ ],
+ "v_lt": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d < new Date(0)); }"
+  },
+  "f"
+ ],
+ "v_minus": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String((d as any) - 0); }"
+  },
+  "f"
+ ],
+ "v_copy": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return new Date(d).toISOString(); }"
+  },
+  "f"
+ ],
+ "v_spread": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String([...[d]]); }"
+  },
+  "f"
+ ],
+ "v_ctor": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d.constructor); }"
+  },
+  "f"
+ ],
+ "v_asAny": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(d as any); }"
+  },
+  "f"
+ ],
+ "v_cond": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String(s ? d : 0); }"
+  },
+  "f"
+ ],
+ "v_nullish": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return `${d ?? 0}`; }"
+  },
+  "f"
+ ],
+ "v_comma": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return String((0, d)); }"
+  },
+  "f"
+ ],
+ "v_toStringTag": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); d.setUTCDate(1); return Object.prototype.toString.call(d); }"
+  },
+  "f"
+ ],
+ "s_helperParam": [
+  {
+   "src/a.ts": "function mk(x: string): number { return new Date(x).getTime(); }\nexport function f(s: string): number { return mk(s); }"
+  },
+  "f"
+ ],
+ "s_tmpl": [
+  {
+   "src/a.ts": "export function f(s: string): number { return new Date(`${s}`).getTime(); }"
+  },
+  "f"
+ ],
+ "s_plusZ": [
+  {
+   "src/a.ts": "export function f(s: string): number { return new Date(s + \"T00:00\").getTime(); }"
+  },
+  "f"
+ ],
+ "s_prop": [
+  {
+   "src/a.ts": "export function f(o: { s: string }): number { return new Date(o.s).getTime(); }"
+  },
+  "f"
+ ],
+ "s_strCall": [
+  {
+   "src/a.ts": "export function f(s: string): number { return new Date(String(s)).getTime(); }"
+  },
+  "f"
+ ],
+ "s_reassigned": [
+  {
+   "src/a.ts": "export function f(s: string): number { s = s.slice(0, 16); return new Date(s).getTime(); }"
+  },
+  "f"
+ ],
+ "s_localLit": [
+  {
+   "src/a.ts": "export function f(): number { return new Date(\"2024-03-04T00:00\").getTime(); }"
+  },
+  "f"
+ ],
+ "s_localConst": [
+  {
+   "src/a.ts": "const T = \"2024-03-04T00:00\";\nexport function f(): number { return new Date(T).getTime(); }"
+  },
+  "f"
+ ],
+ "s_unknownParam": [
+  {
+   "src/a.ts": "export function f(x: unknown): number { return new Date(x as string).getTime(); }"
+  },
+  "f"
+ ],
+ "s_moduleDateStr": [
+  {
+   "src/a.ts": "const D = new Date(\"2024-03-04T03:00:00Z\");\nexport function f(): string { return String(D); }"
+  },
+  "f"
+ ],
+ "s_moduleDateExport": [
+  {
+   "src/a.ts": "export const D = new Date(\"2024-03-04T03:00:00Z\");\nexport function f(): number { return D.getTime(); }"
+  },
+  "f"
+ ],
+ "s_helperRet": [
+  {
+   "src/a.ts": "function mk(s: string): Date { return new Date(s); }\nexport function f(s: string): string { return String(mk(s)); }"
+  },
+  "f"
+ ],
+ "s_helperRetValue": [
+  {
+   "src/a.ts": "const mk = (n: number) => new Date(n);\nexport function f(n: number): string { return [1].map(mk).join(); }"
+  },
+  "f"
+ ],
+ "s_dateParamStr": [
+  {
+   "src/a.ts": "export function f(d: Date): string { return String(d); }"
+  },
+  "f"
+ ],
+ "s_dateUnionStr": [
+  {
+   "src/a.ts": "export function f(d: Date | null): string { return `${d}`; }"
+  },
+  "f"
+ ],
+ "s_dateParamCopy": [
+  {
+   "src/a.ts": "export function f(d: Date): number { return new Date(d).getUTCHours(); }"
+  },
+  "f"
+ ],
+ "s_parseIntStr": [
+  {
+   "src/a.ts": "export function f(s: string): number { return new Date(parseInt(s) + s as any).getTime(); }"
+  },
+  "f"
+ ],
+ "s_testedRefValue": [
+  {
+   "src/a.ts": "export function f(s: string): Date { return new Date(s); }\nexport const g = [\"2024-03-04T00:00\"].map(f);"
+  },
+  "f"
+ ],
+ "ok_getTime": [
+  {
+   "src/a.ts": "export function f(s: string): number { return new Date(s).getTime(); }"
+  },
+  "f"
+ ],
+ "ok_utc": [
+  {
+   "src/a.ts": "export function f(y: number): number { return new Date(Date.UTC(y, 0, 1)).getUTCDay(); }"
+  },
+  "f"
+ ],
+ "ok_iso": [
+  {
+   "src/a.ts": "export function f(): string { return new Date(\"2024-03-04T03:00:00Z\").toISOString(); }"
+  },
+  "f"
+ ],
+ "ok_ms": [
+  {
+   "src/a.ts": "export function f(ms: number): string { return new Date(ms * 1000).toISOString(); }"
+  },
+  "f"
+ ],
+ "ok_retDate": [
+  {
+   "src/a.ts": "export function f(s: string): Date { return new Date(s); }"
+  },
+  "f"
+ ],
+ "ok_localHelper": [
+  {
+   "src/a.ts": "function mk(n: number): Date { return new Date(n); }\nexport function f(n: number): number { return mk(n).getTime(); }"
+  },
+  "f"
+ ],
+ "n_concat": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return ''.concat(d as any); }"
+  },
+  "f"
+ ],
+ "n_strCall": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String.call(null, d); }"
+  },
+  "f"
+ ],
+ "n_mapStr": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return [d].map(String)[0]!; }"
+  },
+  "f"
+ ],
+ "n_arrFrom": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Array.from([d], String)[0]!; }"
+  },
+  "f"
+ ],
+ "n_objTmpl": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return `${({ d }).d}`; }"
+  },
+  "f"
+ ],
+ "n_replace": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return 'x'.replace('x', d as any); }"
+  },
+  "f"
+ ],
+ "n_padEnd": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return ''.padEnd(40, d as any); }"
+  },
+  "f"
+ ],
+ "n_encode": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return encodeURIComponent(d as any); }"
+  },
+  "f"
+ ],
+ "n_arrToStr": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return [d].toString(); }"
+  },
+  "f"
+ ],
+ "n_arrTmpl": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return `${[d]}`; }"
+  },
+  "f"
+ ],
+ "n_join": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return [d].join(); }"
+  },
+  "f"
+ ],
+ "n_reflectApply": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Reflect.apply(Date.prototype.toString, d, []); }"
+  },
+  "f"
+ ],
+ "n_reflectApply2": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(Reflect.apply(Object.prototype.valueOf, d, [])); }"
+  },
+  "f"
+ ],
+ "n_optChain": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d?.getHours()); }"
+  },
+  "f"
+ ],
+ "n_protoCall": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date.prototype.toString.call(d); }"
+  },
+  "f"
+ ],
+ "n_protoApply": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date.prototype.toString.apply(d); }"
+  },
+  "f"
+ ],
+ "n_protoBind": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date.prototype.toString.bind(d)(); }"
+  },
+  "f"
+ ],
+ "n_methodRef": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d.getTime.call(new Date(2024, 0, 1))); }"
+  },
+  "f"
+ ],
+ "n_assign": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return JSON.stringify(Object.assign({}, { d })); }"
+  },
+  "f"
+ ],
+ "n_json": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return JSON.stringify(d); }"
+  },
+  "f"
+ ],
+ "n_jsonObj": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return JSON.stringify({ d }); }"
+  },
+  "f"
+ ],
+ "n_dateCall": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Date(); }"
+  },
+  "f"
+ ],
+ "n_alias": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return (() => { const D = Date; return String(new D(s)); })(); }"
+  },
+  "f"
+ ],
+ "n_construct": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(Reflect.construct(Date, [s])); }"
+  },
+  "f"
+ ],
+ "n_bracketToString": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return d[\"toString\"](); }"
+  },
+  "f"
+ ],
+ "n_bracketKey": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return (d as any)[\"get\" + \"Hours\"]().toString(); }"
+  },
+  "f"
+ ],
+ "n_symPrim": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return (d as any)[Symbol.toPrimitive](\"string\"); }"
+  },
+  "f"
+ ],
+ "n_plus": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return '' + d; }"
+  },
+  "f"
+ ],
+ "n_lt": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d < new Date(0)); }"
+  },
+  "f"
+ ],
+ "n_minus": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String((d as any) - 0); }"
+  },
+  "f"
+ ],
+ "n_copy": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return new Date(d).toISOString(); }"
+  },
+  "f"
+ ],
+ "n_spread": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String([...[d]]); }"
+  },
+  "f"
+ ],
+ "n_ctor": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d.constructor); }"
+  },
+  "f"
+ ],
+ "n_asAny": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(d as any); }"
+  },
+  "f"
+ ],
+ "n_cond": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String(s ? d : 0); }"
+  },
+  "f"
+ ],
+ "n_nullish": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return `${d ?? 0}`; }"
+  },
+  "f"
+ ],
+ "n_comma": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return String((0, d)); }"
+  },
+  "f"
+ ],
+ "n_toStringTag": [
+  {
+   "src/a.ts": "export function f(s: string): string { const d = new Date(s); return Object.prototype.toString.call(d); }"
+  },
+  "f"
+ ]
+}
