@@ -1,0 +1,3 @@
+Z15 FALSE_REFUSAL nl=['canonical', None] cands=0 accepted=0 refusals=public-test-case-existing-v1=test_target_signature; public-test-case-existing-v2=test_target_signature; public-test-case-existing-v3=test_target_signature; publ  4.7s
+Z16 CRASH nl=['canonical', None] cands=1 accepted=0  jobB 6.5s
+Z17 SOLVED nl=['canonical', None] cands=1 accepted=1   37.1s

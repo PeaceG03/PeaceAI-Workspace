@@ -1,0 +1,4 @@
+Z1 FALSE_REFUSAL nl=['canonical', None] cands=0 accepted=0 refusals=public-complex-calls-v1=task_unparsed; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-  2.9s
+Z2 FALSE_REFUSAL nl=['canonical', None] cands=0 accepted=0 refusals=public-complex-calls-v1=task_unparsed; public-complex-function-v1=task_unparsed; public-date-function-v1=task_unparsed; public-env-fix-v1=task_unparsed; public-  2.2s
+Z3 SOLVED nl=['canonical', None] cands=1 accepted=1   43.1s
+Z4 SOLVED nl=['canonical', None] cands=1 accepted=1   36.5s

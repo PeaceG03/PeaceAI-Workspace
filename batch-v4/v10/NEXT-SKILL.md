@@ -34,3 +34,11 @@ Safety boundaries for Map/Set (follow the v4-v6 recipe: new spec public-test-cas
 - Results: compare with `deepEqual` against the same literal form. node:assert/strict deepEqual already compares
   Map/Set contents. The stub returns an empty Map/Set (or undefined), so a check with at least one entry kills it.
 - Map/Set inside nested plain types follows the v4 depth and member limits. WeakMap / WeakSet stay refused.
+
+## Seen while drafting batch-v10 (not census gains, test-side limits)
+- Check literals that set optional members: aggregateIntradayBars with a VALID_TRADED bar (`open?`, `high?`, `low?`, `close?`, `volume?` on
+  CanonicalTenMinuteBar / AggregatedIntradayBar) is refused by v5 (`test_refused`); the same call with a HALTED bar (no optional members)
+  is accepted. Bisected on the box (5 variants; not a length bound: a 620-character call without optional members passed). This is the
+  value-side twin of row 3 and would widen what accepted functions can pin; it does not change the census count.
+- Job B stub: reconstructFeatures (src/features.ts) builds one candidate that passes typecheck, suite and the new test, but the grader
+  returns UNGRADABLE (not-test-only, before_fix=null): the stubbed copy could not be graded. No census change; a grader issue, not a skill.
