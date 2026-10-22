@@ -1,0 +1,449 @@
+{
+ "schema": "peaceai-m90-test-case-existing-v4-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "TEST_EXISTING v4 target (public-test-case-existing-v4): 15 exported functions from 14 permissive repos outside lm-corpus (repo and module sha checked against ext-manifest 8458eac6 + ext-corpus.json), each called by an existing test file at the pinned commit (HEAD of the clone), where v1, v2 and v3 refuse the function (test_target_signature) and v4 accepts it on the pinned module text, following relative imports only through the pinned sibling fixtures (3 examples need a sibling). The examples cover the v4 widenings: optional parameters, literal and typed defaults, Record, Partial, Pick and Omit references and Array<...> returns. Method: the HEAD scan of the same 411 + 326 cloned permissive TypeScript repos used for M88 found 205 candidates (at most 3 per repo); 15 were picked by hand for spread over the widenings and repos, all 15 replayed and passed the license, size, email and corpus-sha checks. Peace's public repos were checked first (see peace): both have fitting functions, but both repos are in the corpus manifest, so they are recorded and not counted.",
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "663e31e7d8f930cd9c7cc3c66b555a1c14817756",
+   "fits": [
+    "countOtherActiveScannerRuns",
+    "oneOffPauseReason",
+    "resolveSessionPredictionStatus"
+   ],
+   "counted": 0
+  },
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "checkedAt": "b121f4704697be1e43701c74e80cb59dc069da6e",
+   "fits": [
+    "applyFill",
+    "errorFingerprint",
+    "sortErrors"
+   ],
+   "counted": 0
+  }
+ ],
+ "pins": [
+  {
+   "name": "0disoft/ohrisk",
+   "commit": "0a8ae0f7cda2532e06efb150dc3d0e65f4ec9cae",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "avranju/pi-conduct",
+   "commit": "c02237d3a0ad9c3b06bed37682073b99e2a67695",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "syavorsky/comment-parser",
+   "commit": "a9ba3bbe7d33ffed87b56f994f9a3156eb531f9a",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dahlia/optique",
+   "commit": "c7a6d04d94c5c067e02d0a58857a590533528fd3",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "dahlia/optique",
+   "commit": "c7a6d04d94c5c067e02d0a58857a590533528fd3",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "vercel-labs/scriptc",
+   "commit": "287119c4499827289895ac37ba18da620b5e4b3b",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "vite-hub/vitehub",
+   "commit": "1488234f798575d8e0fe71e1902b5b257bdf0748",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "supabase/auth-helpers",
+   "commit": "31cc178885895e3d8528fe44b623e6dc42ecce26",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "yogthos/Matryoshka",
+   "commit": "ccf3ca05855f69d273dba570861f0c8a3fbd03e0",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "zszz3/AgentRecall",
+   "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "supostat/dev-workflow",
+   "commit": "0041d6509609670f517bcef2056f7801abcbe019",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "warheadent/Githead",
+   "commit": "5a1ab6f8aa08b7e84b2990f22c09bae2c607aaf5",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "awslabs/aidlc-workflows",
+   "commit": "f2acb53d353c9658f7a80737ea96f05447bc60eb",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "tschmz/imp",
+   "commit": "5c55adc9bc538ca2feda7f1e3cc1ed32de1d472a",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  }
+ ],
+ "examples": [
+  {
+   "repo": "0disoft/ohrisk",
+   "commit": "0a8ae0f7cda2532e06efb150dc3d0e65f4ec9cae",
+   "test": "test/github-repository.test.ts",
+   "module": "src/repository/github-repository.ts",
+   "fn": "checkoutArguments",
+   "line": 267,
+   "signature": "(string, = \"checkout-pathspec\"): string[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "7988fa65c26e06d4fb5e1dc79f8fd50963e12d730362516144b62d78d5fdf2da",
+   "fileBlob": "767a2b157af70a6617b793de86e6234642080e81",
+   "fixture": "peaceai/test/fixtures/m90-te4/0disoft__ohrisk-767a2b157af7.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "c22e1efcd95b25bf22df80c5a4a9133ca601e54927c947cba289a3ce3005d328"
+  },
+  {
+   "repo": "avranju/pi-conduct",
+   "commit": "c02237d3a0ad9c3b06bed37682073b99e2a67695",
+   "test": "test/retry.test.ts",
+   "module": "src/utils.ts",
+   "fn": "retryDelayFor",
+   "line": 326,
+   "signature": "(number, Pick<RetryConfig, \"baseDelayMs\" | \"maxDelayMs\">): number",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "34af200339d40f7b1cdc2f7101ce8c8d3f582726835a63f3fbbd1192e1d2dca0",
+   "fileBlob": "8702053176ad2588d978fb2eb544728692a551fc",
+   "fixture": "peaceai/test/fixtures/m90-te4/avranju__pi-conduct-8702053176ad.txt",
+   "siblings": [
+    {
+     "repo": "avranju/pi-conduct",
+     "commit": "c02237d3a0ad9c3b06bed37682073b99e2a67695",
+     "path": "src/schemas.ts",
+     "fileBlob": "d0c8f0900ffbe1770ff83023623dd3b582ad9a2c",
+     "sha256": "a6994f7f43212859f37bdccdcf120cd3c1455c1517b561bf816baa5513ec3351",
+     "fixture": "peaceai/test/fixtures/m90-te4/avranju__pi-conduct-d0c8f0900ffb.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "e6c7532b3ab1525cb6c9343a139370a1f64136131450295058fe557354c7d32a"
+  },
+  {
+   "repo": "syavorsky/comment-parser",
+   "commit": "a9ba3bbe7d33ffed87b56f994f9a3156eb531f9a",
+   "test": "tests/unit/block-parser.spec.ts",
+   "module": "src/util.ts",
+   "fn": "seedTokens",
+   "line": 52,
+   "signature": "(Partial<Tokens> = {}): Tokens",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "other",
+   "sha256": "9abe3b2d362783c772bb7306f68af97b41390c6529557460f8aa06c599f91358",
+   "fileBlob": "35dbcab567085f3daad8b67d33f7ef73e452ce85",
+   "fixture": "peaceai/test/fixtures/m90-te4/syavorsky__comment-parser-35dbcab56708.txt",
+   "siblings": [
+    {
+     "repo": "syavorsky/comment-parser",
+     "commit": "a9ba3bbe7d33ffed87b56f994f9a3156eb531f9a",
+     "path": "src/primitives.ts",
+     "fileBlob": "f610d7b072b38faced1a9ac124386b433b58cb54",
+     "sha256": "1e0f9f26c772c7638e42e888d8d75f4c10fd0fb74f764bc98ff98bf8cef36fe5",
+     "fixture": "peaceai/test/fixtures/m90-te4/syavorsky__comment-parser-f610d7b072b3.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "1de040b1722b381660661a789563634a67b8abf9588c6a746f41158ad281d0f9"
+  },
+  {
+   "repo": "dahlia/optique",
+   "commit": "c7a6d04d94c5c067e02d0a58857a590533528fd3",
+   "test": "examples/gitique/src/utils/formatters.test.ts",
+   "module": "examples/gitique/src/utils/formatters.ts",
+   "fn": "formatDiffStat",
+   "line": 217,
+   "signature": "(string, number, number, number = 50): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "d3b322fdd8830c2148ef08933ed2a8593a9b36cf0a71623a61d979e8a2918b02",
+   "fileBlob": "3ab76e73477fd1f7a89f4af5af8632336672d335",
+   "fixture": "peaceai/test/fixtures/m90-te4/dahlia__optique-3ab76e73477f.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "4af8950193d3e837ae3e387daaa2d5f22d6437846d3b89f298b2c2e0b78bb0d8"
+  },
+  {
+   "repo": "dahlia/optique",
+   "commit": "c7a6d04d94c5c067e02d0a58857a590533528fd3",
+   "test": "examples/gitique/src/utils/formatters.test.ts",
+   "module": "examples/gitique/src/utils/formatters.ts",
+   "fn": "formatDiffNameStatus",
+   "line": 202,
+   "signature": "(string, string, ?string): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "d3b322fdd8830c2148ef08933ed2a8593a9b36cf0a71623a61d979e8a2918b02",
+   "fileBlob": "3ab76e73477fd1f7a89f4af5af8632336672d335",
+   "fixture": "peaceai/test/fixtures/m90-te4/dahlia__optique-3ab76e73477f.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "4af8950193d3e837ae3e387daaa2d5f22d6437846d3b89f298b2c2e0b78bb0d8"
+  },
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "test": "server/test/anomaly-detection/audit-event-class-distribution.test.ts",
+   "module": "server/src/anomaly-detection/detectors/audit-event-class-distribution-detector.ts",
+   "fn": "computeCategoricalPsi",
+   "line": 427,
+   "signature": "(Record<string, number>, Record<string, number>): number",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "24bae74d242d1e1bce2cd911c6ea951f7f11bde200dc8898aba5801fe7aa0d8f",
+   "fileBlob": "10678598d7087416441725397de99727ffbf2a0f",
+   "fixture": "peaceai/test/fixtures/m90-te4/eriknewton__sanctuary-framework-10678598d708.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "vercel-labs/scriptc",
+   "commit": "287119c4499827289895ac37ba18da620b5e4b3b",
+   "test": "tests/harness/self-hosting-llvm-emitter.test.ts",
+   "module": "tests/harness/self-hosting-llvm-emitter-cases.ts",
+   "fn": "llvmEmitterRequest",
+   "line": 16,
+   "signature": "(Partial<LlvmEmitterRequest> = {}): LlvmEmitterRequest",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "58f1dcea85a48822e202bf4ef648fb83f3cca31b949b971a62b373a3065f19cf",
+   "fileBlob": "e9adb6c6dbd0a2066ca252e5a514247f887ada59",
+   "fixture": "peaceai/test/fixtures/m90-te4/vercel-labs__scriptc-e9adb6c6dbd0.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "vite-hub/vitehub",
+   "commit": "1488234f798575d8e0fe71e1902b5b257bdf0748",
+   "test": "packages/agent/test/babysitter-admission.test.ts",
+   "module": "packages/agent/src/presets/babysitter/admission.ts",
+   "fn": "babysitterAdmissionDecision",
+   "line": 106,
+   "signature": "(BabysitterAdmissionState, BabysitterAdmissionLimits): Omit<BabysitterAdmissionResult, \"state\" | \"limits\" | \"accounting\">",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "e897dd4e0d7d632a466bec20d9fca1b89e9c14270264a3a86c93bd2ebecb9ecc",
+   "fileBlob": "4dc1327bd8ad7bdd489d9d5b38ed5202ff627438",
+   "fixture": "peaceai/test/fixtures/m90-te4/vite-hub__vitehub-4dc1327bd8ad.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "supabase/auth-helpers",
+   "commit": "31cc178885895e3d8528fe44b623e6dc42ecce26",
+   "test": "packages/shared/tests/chunker.spec.ts",
+   "module": "packages/shared/src/chunker.ts",
+   "fn": "createChunks",
+   "line": 16,
+   "signature": "(string, string, ?number): Chunk[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "0b865f65eb2522fd0bec6120f8b662ece91510bc924872b39cc8a8373b8a5681",
+   "fileBlob": "791a2972fe869fc1371b4943003102b2486eb191",
+   "fixture": "peaceai/test/fixtures/m90-te4/supabase__auth-helpers-791a2972fe86.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "77d2c573f53b8a9d00f4f2daa189caa41791091d975e80b9f7d1fe91e5b3641c"
+  },
+  {
+   "repo": "yogthos/Matryoshka",
+   "commit": "ccf3ca05855f69d273dba570861f0c8a3fbd03e0",
+   "test": "tests/feedback/error-analyzer.test.ts",
+   "module": "src/feedback/error-analyzer.ts",
+   "fn": "findSimilar",
+   "line": 43,
+   "signature": "(string, string[], number = 3, number = 5): Array<{ value: string; distance: number }>",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "e33f6864c45a0b16d9624fdaaf6b27daed68c002ff6bf3d3e54025d554928d3e",
+   "fileBlob": "02c95bdc5e05695596d467489349c8b15f05128b",
+   "fixture": "peaceai/test/fixtures/m90-te4/yogthos__Matryoshka-02c95bdc5e05.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "zszz3/AgentRecall",
+   "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+   "test": "apps/main-1.0/src/core/memories-sync.test.ts",
+   "module": "apps/main-1.0/src/core/memories-sync.ts",
+   "fn": "memoryIdentity",
+   "line": 219,
+   "signature": "(Pick<AgentMemory, \"agent\" | \"scope\" | \"name\" | \"projectPath\">): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "e95fa6ef878270fc3945263de81710313f735bc3c104de683cb2cddcf2ccc789",
+   "fileBlob": "5aa79a9908223d21f508852a516da17100627c31",
+   "fixture": "peaceai/test/fixtures/m90-te4/zszz3__AgentRecall-5aa79a990822.txt",
+   "siblings": [
+    {
+     "repo": "zszz3/AgentRecall",
+     "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+     "path": "apps/main-1.0/src/core/asset-identity.ts",
+     "fileBlob": "fc3d571be29c78f50a4b817606acf9f7992d37c5",
+     "sha256": "405402a59605daad38b5fb2b248601ca4cbe7d1bf53ab83ce3d0a6a79ad99d37",
+     "fixture": "peaceai/test/fixtures/m90-te4/zszz3__AgentRecall-fc3d571be29c.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "17b1084209b52b7d1fade85180754507939cc7af72ab4ee23306d3bf2c12f9f1"
+  },
+  {
+   "repo": "supostat/dev-workflow",
+   "commit": "0041d6509609670f517bcef2056f7801abcbe019",
+   "test": "tests/interpolate.test.ts",
+   "module": "src/lib/interpolate.ts",
+   "fn": "interpolate",
+   "line": 1,
+   "signature": "(string, Record<string, string>): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "b81d161b2b544f57148b4fabd5a280c06bdcb064372d8922239f7ed6bdb91774",
+   "fileBlob": "dc9eba0c12895715bc6dc1c9fe974205aa75787d",
+   "fixture": "peaceai/test/fixtures/m90-te4/supostat__dev-workflow-dc9eba0c1289.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "0e2b5ba522928eb57b41a3157423cb71bc12e65420783c992353af940e2e5bf3"
+  },
+  {
+   "repo": "warheadent/Githead",
+   "commit": "5a1ab6f8aa08b7e84b2990f22c09bae2c607aaf5",
+   "test": "src/renderer/analyticsFormat.test.ts",
+   "module": "src/renderer/analyticsFormat.ts",
+   "fn": "niceScale",
+   "line": 99,
+   "signature": "(number, = 4): { max: number; step: number }",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "other",
+   "sha256": "f32cf813d8f5093301fd4df8afbac7c25ce373809757e363b5592e0cab401037",
+   "fileBlob": "0c03f2c361f18b33fbfc4519b3c5f40c0bb3b146",
+   "fixture": "peaceai/test/fixtures/m90-te4/warheadent__Githead-0c03f2c361f1.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "5be89bd44bca669f1a5b9e2cb7edc368c74c8d80840c23c593ff77588b34ba0c"
+  },
+  {
+   "repo": "awslabs/aidlc-workflows",
+   "commit": "f2acb53d353c9658f7a80737ea96f05447bc60eb",
+   "test": "tests/e2e/t-exec-codex-compose-front.serial.test.ts",
+   "module": "tests/harness/codex-turn-evidence.ts",
+   "fn": "gateText",
+   "line": 44,
+   "signature": "(Pick<CodexTurn, \"agentMessages\">): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "2d5890885c8070eb6d534f05f9b39fd3eaf3db4ae8bfa4579cdbdb79e1d56f97",
+   "fileBlob": "7cdfcbcab3445a1cb85243dcf6a2c6d3b41b013d",
+   "fixture": "peaceai/test/fixtures/m90-te4/awslabs__aidlc-workflows-7cdfcbcab344.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "0beac60c03ba4648df37840205ea1abba594a08200e2665454ff26ab65e9021c"
+  },
+  {
+   "repo": "tschmz/imp",
+   "commit": "5c55adc9bc538ca2feda7f1e3cc1ed32de1d472a",
+   "test": "src/cli/completion.test.ts",
+   "module": "src/cli/completion.ts",
+   "fn": "createBashCompletionScript",
+   "line": 26,
+   "signature": "( = \"imp\"): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "3897c8039c8444ead7307b7f159d9c05b30ac83632c8491017bf7cc482edd917",
+   "fileBlob": "7e6acb038384586685bdb4bb75d8aafa02a322ed",
+   "fixture": "peaceai/test/fixtures/m90-te4/tschmz__imp-7e6acb038384.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "c712c1890b76f08c13b59f6ca1d985f5c9046843fcd939fa8fb583f4a6105c53"
+  }
+ ]
+}

@@ -1,0 +1,25 @@
+{
+ "id": "public-test-case-existing-v4",
+ "kind": "TEST_EXISTING",
+ "shape": "TEST_CASE_EXISTING",
+ "status": "proposal-off-wired",
+ "flag": "none for the v4 target; Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/learned-test-existing.ts (target exported-pure-function-v4) and learned-test.ts (the internal plain-data-v3 args mode, unchanged); Job B: gradeExisting with the v4 re-check (v3 plus optional / literal-default parameters, the V4_GENERICS references and the v4 type bounds), the v3 Date-literal allowance in the graded test, and the v2 object-aware stub",
+ "scope": "the v1-v3 characterization test (one new test file, no source edit) for an existing exported function whose signature v3 refuses only for: an optional parameter (p?: T) or a parameter with a default (p: T = EXPR, or an untyped p = <string / number / boolean literal>), never both on one parameter; the built-in Array<T>, ReadonlyArray<T>, Readonly<T>, Partial<T>, Record<K, V> (K string / number / literal union), Pick<T, K> and Omit<T, K> (string-literal K) over plain data, global names only; plain-data types nested up to depth 6 with up to 32 members per object (v1-v3: 3 / 16)",
+ "refusals": "the v1-v3 refusals by name; Map/Set, bytes (Uint8Array, Buffer), classes, functions and method members, unknown/any, typeof, intersections and every other generic stay test_target_signature; a clock / local-time default stays test_target_date_local and an impure default test_target_impure; not_needed when the v1, v2 or v3 target already accepts the function (one candidate per task)",
+ "evidence": {
+  "examples": 15,
+  "repos": 14,
+  "file": "peaceai/rules/proposals/m90-test-case-existing-v4-evidence.json",
+  "method": "HEAD scan of the M88 411 + 326 cloned permissive TypeScript repos: an existing test calls an exported function of a relative sibling module that v1, v2 and v3 refuse and v4 accepts on the pinned module (siblings pinned as fixtures; no training-corpus overlap); 205 candidates, 15 picked for spread over the widenings",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: PeaceSTOCKS (countOtherActiveScannerRuns, oneOffPauseReason, resolveSessionPredictionStatus, scan capped at 3) and PeaceAI-Workspace (applyFill, errorFingerprint, sortErrors) fit; both are in the corpus manifest, so they are recorded and not counted. 3 of the 15 examples need a followed sibling type"
+ },
+ "learned": "peaceai/rules/learned/public-test-case-existing-v4.json",
+ "tests": [
+  "peaceai/test/m90-test-case-existing-v4.test.ts"
+ ],
+ "untouched": "public-test-case-existing-v1, -v2 and -v3 (same params and hashes; their accept sets are unchanged, a parameter default in a followed helper is now walked for all targets, which only adds refusals); M20 object-literal and M35 date-literal test specs"
+}

@@ -305,8 +305,9 @@ function stubBefore(tree: string, fixSha: string, paths: readonly string[], newT
  * as for the stub route); the target analysis is re-run on the real tree. Reads are narrowed to the test, the
  * module's relative import closure and node_modules.
  */
-function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, v2 = false, v3 = false): TestGrading {
+function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, v2 = false, v3 = false, v4 = false): TestGrading {
   // M88: callers set v2 for v3 (public-test-case-existing-v3) candidates too; v3 only adds the global Date.
+  // M90: and v2 + v3 for v4 (public-test-case-existing-v4) candidates; v4 only widens the target re-check.
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   const f = files[0];
@@ -338,7 +339,9 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   // M85: a public-test-case-existing-v2 candidate is re-checked under the v2 target (plain-data types, followed
   // sibling imports, sibling reads from the real tree); every other candidate under v1 exactly as before.
   // M88: a public-test-case-existing-v3 candidate is re-checked under the v3 target (v2 plus the global Date).
-  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3 } : undefined) !== null) return ungradable("not-test-only");
+  // M90: a public-test-case-existing-v4 candidate under the v4 target (v3 plus optional / literal-default params,
+  // the V4_GENERICS references and the v4 type bounds).
+  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4 } : undefined) !== null) return ungradable("not-test-only");
   const reads = moduleReadClosure(modPath, regular);
   if (!reads) return ungradable("module-imports-repo-files");
   if (afterFix) for (let i = 1; i < REAL_RUNS_REQUIRED; i++) if (!runExistingTests(tree, newTests, reads).ok) return ungradable("real-not-stable");
@@ -656,7 +659,7 @@ for (const candidate of selected) {
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
-    if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v3@"));
+    if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v4@"));
     else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {
