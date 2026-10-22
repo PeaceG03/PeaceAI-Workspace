@@ -360,7 +360,8 @@ test("evidence G1: >= 10 upstream commits replay exactly: editStatement on the p
     const before = pinned(e.before), after = pinned(e.after);
     assert.equal(e.before.commit, e.parent);
     assert.equal(e.after.commit, e.commit);
-    assert.ok(splitBody(`${e.old} with ${e.new}`) !== null || true);
+    // the task phrasing "replace statement OLD with NEW" splits back into exactly this OLD and NEW
+    assert.deepEqual(splitBody(`${e.old} with ${e.new}`), { oldText: e.old, newText: e.new }, `${e.repo} ${e.target} split`);
     const r = editStatement(e.path, before, e.target, e.old, e.new);
     assert.ok(r, `${e.repo} ${e.target}`);
     assert.deepEqual(codeTokens(r.content), codeTokens(after), `${e.repo} ${e.target}`);
