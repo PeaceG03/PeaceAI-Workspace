@@ -11,7 +11,7 @@ import ts from "typescript";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { stubAll } from "../lib/learned-function.ts";
-import { callsPassEnv, envArgProblem, envDefaultParams, existingTargetRefusal, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
+import { callsPassEnv, envArgProblem, envDefaultParams, existingTargetRefusal, TEST_CHECK_REFUSED, TEST_EXISTING_TRIGGER, TEST_EXISTING_VOCAB, TEST_TARGET_IO, TEST_TARGET_SIGNATURE } from "../lib/learned-test-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
@@ -150,6 +150,51 @@ test("Job B: envArgProblem checks every call of the function in the graded test 
   const sf = ts.createSourceFile("t.ts", "f({ A: 1 }, 2); f({}, 3);", ts.ScriptTarget.Latest, true);
   assert.ok(callsPassEnv(sf, "f", [0]));
   assert.ok(!callsPassEnv(sf, "f", [1]));
+});
+
+// Auditor #460 (blocking): the exempted `= process.env` default must be unreachable except from the test. These were
+// accepted by Job A and the Job B re-check before the fix (envTargetReferenced).
+const ENV_REACH: Record<string, { fn: string; check: string; files: { path: string; content: string }[] }> = {
+  depthFlag: { fn: "depthFlag", check: "- depthFlag(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function depthFlag(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? depthFlag(n - 1) : env.PEACE_PROBE === "1"; }\n' }] },
+  recursesUndefined: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? f(n - 1, undefined) : env.PEACE_PROBE === "1"; }\n' }] },
+  siblingCallsBack: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import { g } from "./b";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n - 1) : env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/b.ts", content: 'import { f } from "./a";\nexport function g(n: number): boolean { return f(n); }\n' }] },
+  otherExportCalls: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function h(n: number): boolean { return f(0); }\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? h(n) : env.PEACE_PROBE === "1"; }\n' }] },
+  topLevelCall: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return env.PEACE_PROBE === "1"; }\nexport const AT_LOAD = f(0);\n' }] },
+  aliased: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { const g = f; return n > 0 ? g(n - 1) : env.PEACE_PROBE === "1"; }\n' }] },
+  namespaceBack: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import { g } from "./b";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n - 1) : env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/b.ts", content: 'import * as A from "./a";\nexport function g(n: number): boolean { return A.f(n); }\n' }] },
+  closureBack: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import { g } from "./b";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n) : env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/b.ts", content: 'import { k } from "./c";\nexport function g(n: number): boolean { return n > 1; }\nexport function unused(): boolean { return k(); }\n' },
+    { path: "src/c.ts", content: 'import "./a";\nexport function k(): boolean { return true; }\n' }] },
+  reassignedParam: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { if (n > 5) env = {}; return n > 0 ? f(n - 1, env) : env.PEACE_PROBE === "1"; }\n' }] },
+};
+const ENV_SAFE: Record<string, { fn: string; check: string; files: { path: string; content: string }[] }> = {
+  passesOwnEnv: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? f(n - 1, env) : env.PEACE_PROBE === "1"; }\n' }] },
+  passesLiteral: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? f(n - 1, {}) : env.PEACE_PROBE === "1"; }\n' }] },
+  unreachedCaller: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return env.PEACE_PROBE === "1"; }\nexport function report(env: NodeJS.ProcessEnv = process.env): string { return f(1, env) ? "on" : "off"; }\n' }] },
+};
+test("Auditor #460: a process.env default reachable from anything but the test is refused (Job A and the Job B re-check)", () => {
+  for (const [k, c] of Object.entries(ENV_REACH)) {
+    const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
+    // A namespace import is already refused by the purity walk (test_target_impure); every other case is the new check.
+    const want = k === "namespaceBack" ? "test_target_impure" : TEST_TARGET_IO;
+    assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), want, `re-check ${k}`);
+    const r = run(c.fn, c.check, SPEC, c.files);
+    assert.equal(r.e, null, `Job A ${k}`);
+    assert.equal(r.r, want, `Job A reason ${k}`);
+  }
+  for (const [k, c] of Object.entries(ENV_SAFE)) {
+    const sib = { read: (rel: string) => c.files.find((f) => f.path === rel)?.content ?? null };
+    assert.equal(existingTargetRefusal("src/a.ts", c.files[0]!.content, c.fn, { v2: sib, v6: true }), null, `re-check ${k}`);
+    assert.ok(run(c.fn, c.check, SPEC, c.files).e, `Job A ${k}`);
+  }
+  // A NodeJS.ProcessEnv parameter without a default is not exempted, so a recursive call without it is a plain call.
+  const plainEnv = 'export function f(n: number, env: NodeJS.ProcessEnv): boolean { return n > 0 ? f(n - 1, env) : env.PEACE_PROBE === "1"; }\n';
+  assert.equal(existingTargetRefusal("src/a.ts", plainEnv, "f", { v2: { read: (rel: string) => (rel === "src/a.ts" ? plainEnv : null) }, v6: true }), null);
 });
 
 test("stub and Job B wiring: v6 candidates are re-checked under v6 (with v2-v5 set), env-checked and stubbed by the v2 object-aware stub", () => {

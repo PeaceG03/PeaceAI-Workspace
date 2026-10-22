@@ -629,6 +629,64 @@ export function callsPassEnv(root: ts.Node, fn: string, at: readonly number[]): 
   v(root);
   return ok && (at.length === 0 || calls > 0);
 }
+/** M93 (Auditor #460): bound on the modules walked for imports of the target module (more is refused). */
+const MAX_ENV_CLOSURE = 64;
+/**
+ * M93 (v6, Auditor #460): the `= process.env` default is skipped by the purity walk only when nothing but the test can
+ * reach it. True (refused) when:
+ * - code of the target module that runs when the target or the module runs (the target's body, every function or const
+ *   the walk followed, every top-level statement other than a function declaration) references the target except as a
+ *   direct call passing, at every env-default position, an object literal or (in the target's own body only) the
+ *   target's own env parameter, never assigned anywhere in the module;
+ * - the module has a dynamic `import(...)`;
+ * - any module in the relative value-import closure of the target module imports or re-exports the target module
+ *   (named, namespace, default or side-effect), or the closure has more than MAX_ENV_CLOSURE modules.
+ */
+function envTargetReferenced(v: V2Ctx, fn: string, decl: ts.FunctionDeclaration, at: readonly number[]): boolean {
+  const root = v.modules.get(v.root);
+  if (!root) return true;
+  const { idx, sf, fns, consts } = root;
+  const own = new Set(at.flatMap((i) => { const p = decl.parameters[i]; return p && ts.isIdentifier(p.name) && !idx.mutated.has(p.name.text) ? [p.name.text] : []; }));
+  let bad = false;
+  const okArg = (g: ts.Expression | undefined, inTarget: boolean) => !!g && (ts.isObjectLiteralExpression(g) || (inTarget && ts.isIdentifier(g) && own.has(g.text)));
+  const walk = (n: ts.Node, inTarget: boolean): void => {
+    if (bad) return;
+    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { bad = true; return; }
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === fn) {
+      if (!at.every((i) => okArg(n.arguments[i], inTarget))) { bad = true; return; }
+      for (const g of n.arguments) walk(g, inTarget);
+      return;
+    }
+    if (ts.isIdentifier(n) && n.text === fn && n !== decl.name && !(ts.isExportSpecifier(n.parent) && !n.parent.propertyName && !n.parent.parent.parent.moduleSpecifier)) { bad = true; return; }
+    ts.forEachChild(n, (c) => walk(c, inTarget));
+  };
+  walk(decl, true);
+  for (const s of sf.statements) {
+    if (ts.isFunctionDeclaration(s)) { if (s !== decl && s.name && fns.has(s.name.text)) walk(s, false); continue; }
+    if (ts.isVariableStatement(s) || ts.isExpressionStatement(s) || ts.isEnumDeclaration(s) || ts.isExportAssignment(s) || ts.isExportDeclaration(s) || ts.isIfStatement(s) || ts.isBlock(s) || ts.isForStatement(s) || ts.isForOfStatement(s) || ts.isForInStatement(s) || ts.isWhileStatement(s) || ts.isDoStatement(s) || ts.isTryStatement(s) || ts.isSwitchStatement(s) || ts.isLabeledStatement(s) || ts.isClassDeclaration(s) || ts.isModuleDeclaration(s) || ts.isThrowStatement(s)) walk(s, false);
+    else if (!ts.isImportDeclaration(s) && !ts.isInterfaceDeclaration(s) && !ts.isTypeAliasDeclaration(s) && !ts.isEmptyStatement(s)) bad = true;
+  }
+  void consts; // followed consts are top-level variable statements, walked above
+  if (bad) return true;
+  // The relative value-import closure of the target module: none of it may import the target module back.
+  const seen = new Set<string>([v.root]);
+  const queue = [v.root];
+  while (queue.length) {
+    const p = queue.shift()!;
+    const text = p === v.root ? sf.text : v.read(p);
+    if (text === null) continue;
+    const m = p === v.root ? sf : ts.createSourceFile(p, text, ts.ScriptTarget.Latest, true);
+    for (const s of m.statements) {
+      if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+      const typeOnly = ts.isImportDeclaration(s) ? !!s.importClause?.isTypeOnly : s.isTypeOnly;
+      const hits = (siblingCandidates(p, s.moduleSpecifier.text) ?? []).filter((c) => c === v.root || v.read(c) !== null);
+      if (p !== v.root && hits.includes(v.root)) return true;
+      if (typeOnly) continue;
+      for (const c of hits) if (!seen.has(c)) { seen.add(c); if (seen.size > MAX_ENV_CLOSURE) return true; queue.push(c); }
+    }
+  }
+  return false;
+}
 /** M93: Job B, on the graded test file: null when every call of `fn` passes an object literal for its env-default parameters. */
 export function envArgProblem(moduleContent: string, fn: string, testContent: string): string | null {
   const at = envDefaultParams(moduleContent, fn);
@@ -689,6 +747,8 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   if (v2) analyzeLoadedModule(v2, idx, sf);
   analyzeFunction(a, f, envDefaults);
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
+  // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
+  if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
   return null;
 }
 

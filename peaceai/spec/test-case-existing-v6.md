@@ -25,6 +25,14 @@ fix-free grading as v5. Only `params.target` differs: `exported-pure-function-v6
   - Job B: the graded test file is re-checked the same way (`envArgProblem`): every call passes an object literal for
     each `= process.env` parameter, and the function is never referenced except as a callee or in its import.
     Otherwise the candidate is `UNGRADABLE` (`not-test-only`).
+  - Both jobs (Auditor #460, `envTargetReferenced`, re-run by the Job B re-check on the real tree): nothing but the
+    test may reach the default. The target is refused (`test_target_io`) when code of its module that runs with it
+    (its own body, every followed function or const, every top-level statement other than a function declaration)
+    references it except as a direct call passing, at each `= process.env` position, an object literal or (in its own
+    body only) its own env parameter that is never assigned in the module; when the module has a dynamic `import()`;
+    or when any module of the relative value-import closure imports or re-exports the target module (or the closure
+    has more than 64 modules). So `f(n - 1)`, `f(n - 1, undefined)`, `const g = f`, `export const X = f(0)`, a followed
+    function calling `f(0)` and a sibling importing `f` back are refused; `f(n - 1, env)` and `f(n - 1, {})` are kept.
 - `not_needed`: a target v1-v5 accepts is left to that spec, so two specs never both answer one task.
 
 ## Grading
