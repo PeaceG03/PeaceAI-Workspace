@@ -8,7 +8,7 @@ here="$(cd "$(dirname "$0")/../.." && pwd)"
 [[ "$target" =~ ^[A-Za-z0-9-]{1,39}/[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$ ]] || { echo "invalid target" >&2; exit 1; }
 [ -z "$sha" ] || [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid sha" >&2; exit 1; }
 case "$dest" in "$here"/*|"$here") echo "target must be cloned outside the workspace" >&2; exit 1 ;; esac
-anon=(env -u GH_TOKEN -u GITHUB_TOKEN -u DEPLOY_KEY -u GIT_SSH_COMMAND GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false
+anon=(env -u GH_TOKEN -u GITHUB_TOKEN -u DEPLOY_KEY -u TARGET_PR_TOKEN -u GIT_SSH_COMMAND GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false
   git -c credential.helper= -c core.askPass=/bin/false -c http.extraHeader=)
 if ! "${anon[@]}" clone --quiet --no-tags "https://github.com/$target.git" "$dest" >/dev/null 2>&1; then
   echo "target clone failed" >&2
