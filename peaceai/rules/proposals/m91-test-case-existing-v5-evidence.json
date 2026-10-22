@@ -1,0 +1,442 @@
+{
+ "schema": "peaceai-m91-test-case-existing-v5-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "TEST_EXISTING v5 target (public-test-case-existing-v5): 14 exported functions from 10 permissive repos outside lm-corpus (repo and module sha checked against ext-manifest 8458eac6 + ext-corpus.json), each called by an existing test file at the pinned commit (HEAD of the clone), where v1, v2, v3 and v4 refuse the function (test_target_signature) and v5 accepts it on the pinned module text, following relative imports only through the pinned sibling fixtures (6 examples need a sibling). The examples cover the v5 widenings: T[\"k\"] property lookups in parameters and returns, and typeof of literal consts (directly or inside a followed interface or alias). Method: the HEAD scan of the same 411 + 326 cloned permissive TypeScript repos used for M88 and M90 found 29 candidates (at most 3 per repo; 4 in Peace's repos); all 14 that replay and pass the license, size (64 KiB; one dropped), email, corpus-sha and pre-push core-text checks (10 dropped: a pinned module or sibling matched the core-text scan) are kept. Peace's public repos were checked first (see peace): both have fitting functions, but both repos are in the corpus manifest, so they are recorded and not counted.",
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "663e31e7d8f930cd9c7cc3c66b555a1c14817756",
+   "fits": [
+    "corporateActionCoverageRecords",
+    "aggregateIntradayBars",
+    "reconstructFeatures"
+   ],
+   "counted": 0
+  },
+  {
+   "repo": "PeaceG03/PeaceAI-Workspace",
+   "checkedAt": "b121f4704697be1e43701c74e80cb59dc069da6e",
+   "fits": [
+    "dominated"
+   ],
+   "counted": 0
+  }
+ ],
+ "pins": [
+  {
+   "name": "AetherAI3/aether-agent",
+   "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "Choaterboater/casper",
+   "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "Jiyuan-Tan/CausalSmith",
+   "commit": "a7085d88d2e4b30003db7097ca374f4718da0f01",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "OrangeproAI/orangepro-mcp",
+   "commit": "405209f3c533d3e7fd03854982a3c8f51272c6ae",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "anton-abyzov/vskill",
+   "commit": "d92eee849e93a77779a77d349f235224cb62408b",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "greyhaven-ai/autocontext",
+   "commit": "f72c154152397f54d55407508b153d28861888a5",
+   "spdx": "Apache-2.0",
+   "classified": "Apache-2.0",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "oomol-lab/oo-cli",
+   "commit": "144cec4e5d985be48c84ec53c8d13edff6128982",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "open-gsd/gsd-pi",
+   "commit": "5e2adf0ba01809cd939e7db2e3894057b2ebe34f",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "victorarias/shitty-reviewing-agent",
+   "commit": "06942b41c48eab89b8381a921ef8b3474a1d469c",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  },
+  {
+   "name": "zszz3/AgentRecall",
+   "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+   "spdx": "MIT",
+   "classified": "MIT",
+   "licenseFile": "LICENSE"
+  }
+ ],
+ "examples": [
+  {
+   "repo": "AetherAI3/aether-agent",
+   "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+   "test": "test/aether_code_host_contract.test.ts",
+   "module": "src/core/headless_protocol.ts",
+   "fn": "validateHeadlessFrames",
+   "line": 258,
+   "signature": "(readonly string[], HeadlessProtocol = HEADLESS_PROTOCOL): string[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "fd74cc82dff4e1d83291b4e5497ca963c4f0475a323402a1feee2f95efc98aff",
+   "fileBlob": "5687417f277bca7626701a14c300b7a31bf6eea7",
+   "fixture": "peaceai/test/fixtures/m91-te5/AetherAI3__aether-agent-5687417f277b.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2"
+  },
+  {
+   "repo": "Choaterboater/casper",
+   "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+   "test": "tests/change-proof.test.ts",
+   "module": "src/verify/proof.ts",
+   "fn": "withoutEnded",
+   "line": 38,
+   "signature": "(number, ?string): WithoutRun[\"ended\"]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "30772872aa118c1c2c896a3e306ce72d92ea383c8da55d5d4da640e35e4c3875",
+   "fileBlob": "796a82c4cf2ddc4e65b1df043c241344322d3a65",
+   "fixture": "peaceai/test/fixtures/m91-te5/Choaterboater__casper-796a82c4cf2d.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "0eed620d64ee8721baac715e5eba03ec79000ea1147bfd8191044166975f995a"
+  },
+  {
+   "repo": "Choaterboater/casper",
+   "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+   "test": "tests/clipboard-files.test.ts",
+   "module": "src/tui/clipboard-files.ts",
+   "fn": "clipboardFilesFromOutput",
+   "line": 71,
+   "signature": "(string, ClipboardFilesCommand[\"output\"]): string[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "0ed69f7efff3b45c201663c43290ec9c803d8ef4183baceb622decfe92a6935c",
+   "fileBlob": "a6cdc7d8cc32d33f954390c1dd68b047f848b38a",
+   "fixture": "peaceai/test/fixtures/m91-te5/Choaterboater__casper-a6cdc7d8cc32.txt",
+   "siblings": [
+    {
+     "repo": "Choaterboater/casper",
+     "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
+     "path": "src/tui/format.ts",
+     "fileBlob": "f0133eb92271ad7c9c5af5fa3ae9816bdb2e996f",
+     "sha256": "7fe7ac1873f642ef2f2ca189e29fab8f5b4602e4d31182c316e574bce27ddcd0",
+     "fixture": "peaceai/test/fixtures/m91-te5/Choaterboater__casper-f0133eb92271.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "0eed620d64ee8721baac715e5eba03ec79000ea1147bfd8191044166975f995a"
+  },
+  {
+   "repo": "Jiyuan-Tan/CausalSmith",
+   "commit": "a7085d88d2e4b30003db7097ca374f4718da0f01",
+   "test": "CausalSmith/tools/test/codex_sandbox.test.ts",
+   "module": "CausalSmith/tools/src/shared/codex.ts",
+   "fn": "effectiveSandboxMode",
+   "line": 179,
+   "signature": "(\"read-only\" | \"workspace-write\" | undefined, CodexSandboxMode): \"read-only\" | \"workspace-write\" | \"danger-full-access\"",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "557832b8683b36121ce9cfbf17297d260ba077edd3f77e48c22211e421123014",
+   "fileBlob": "d9bed2a9434dfcb5019fe11aea93896486f30b3a",
+   "fixture": "peaceai/test/fixtures/m91-te5/Jiyuan-Tan__CausalSmith-d9bed2a9434d.txt",
+   "siblings": [
+    {
+     "repo": "Jiyuan-Tan/CausalSmith",
+     "commit": "a7085d88d2e4b30003db7097ca374f4718da0f01",
+     "path": "CausalSmith/tools/src/local_config.ts",
+     "fileBlob": "d16613e0287c20f3be6f7f6f4e0bf1e3534b926a",
+     "sha256": "a2e3e233ac223cfe00dd27393f4e22f85c6a024160b3f9d63666a45a0e5349a2",
+     "fixture": "peaceai/test/fixtures/m91-te5/Jiyuan-Tan__CausalSmith-d16613e0287c.txt"
+    }
+   ],
+   "license": "Apache-2.0",
+   "licenseSha256": "2f4bdf47056d1c173627215d92472b5c3f3cd02a436a7f6b1ec9aa25176124aa"
+  },
+  {
+   "repo": "OrangeproAI/orangepro-mcp",
+   "commit": "405209f3c533d3e7fd03854982a3c8f51272c6ae",
+   "test": "tests/local/risk.test.ts",
+   "module": "src/local/score/rankEligibility.ts",
+   "fn": "builtInRankExclusion",
+   "line": 15,
+   "signature": "(string): BuiltInRankExclusion | undefined",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "22a36d4781ad345bf6214743d235727557575df7c401267e7afbdb20fca5248a",
+   "fileBlob": "8e9bb637ba2278aa5a0c299a80d0e8aefa239c9a",
+   "fixture": "peaceai/test/fixtures/m91-te5/OrangeproAI__orangepro-mcp-8e9bb637ba22.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "0e8de1df4a069f84b32f7373e36c2f2970b952845d7da99c632c4f03c4fd919a"
+  },
+  {
+   "repo": "anton-abyzov/vskill",
+   "commit": "d92eee849e93a77779a77d349f235224cb62408b",
+   "test": "src/lockfile/__tests__/scope.test.ts",
+   "module": "src/lockfile/scope.ts",
+   "fn": "mergedSkills",
+   "line": 135,
+   "signature": "(LockTarget[]): VskillLock[\"skills\"]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "451a29cd029dde838f2b1480d4ef43b457929212b86135a740eea08d521c0522",
+   "fileBlob": "9c9100b94a1e053563fb49deff9568eca1ec8c5e",
+   "fixture": "peaceai/test/fixtures/m91-te5/anton-abyzov__vskill-9c9100b94a1e.txt",
+   "siblings": [
+    {
+     "repo": "anton-abyzov/vskill",
+     "commit": "d92eee849e93a77779a77d349f235224cb62408b",
+     "path": "src/lockfile/types.ts",
+     "fileBlob": "86f8c5b940fc350e110bf9c0ac2fb29c424af184",
+     "sha256": "ebd08289920b337d237508a6f4d573796e7a99865002917558c8c1e48b8a220a",
+     "fixture": "peaceai/test/fixtures/m91-te5/anton-abyzov__vskill-86f8c5b940fc.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04"
+  },
+  {
+   "repo": "greyhaven-ai/autocontext",
+   "commit": "f72c154152397f54d55407508b153d28861888a5",
+   "test": "ts/tests/evidence-workspace.test.ts",
+   "module": "ts/src/evidence/workspace.ts",
+   "fn": "listByKind",
+   "line": 29,
+   "signature": "(EvidenceWorkspace, EvidenceArtifact[\"kind\"]): EvidenceArtifact[]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "52f629f9efc31a70d1f7ef184683e5e8f9dca7c08c6a08a1a0c77f14a6f970b5",
+   "fileBlob": "ad31a8b726b828bf5358ffbc4ac031b2b4d42512",
+   "fixture": "peaceai/test/fixtures/m91-te5/greyhaven-ai__autocontext-ad31a8b726b8.txt",
+   "siblings": [],
+   "license": "Apache-2.0",
+   "licenseSha256": "060de278acde80cefba9cd13cd1d36c077de3fa16bee067c393e6b0adc6bdf0c"
+  },
+  {
+   "repo": "greyhaven-ai/autocontext",
+   "commit": "f72c154152397f54d55407508b153d28861888a5",
+   "test": "ts/tests/harness-optimization/scoring.test.ts",
+   "module": "ts/src/harness-optimization/scoring.ts",
+   "fn": "harnessPromotionScore",
+   "line": 31,
+   "signature": "(Components, Weights): number",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "b1114f652393cd43acc5206dcccfe4bdb75f9002a89ae643a3a0a2e438b9d3b0",
+   "fileBlob": "1f6ed9db6e016b2394f6e99ac7571a74c5546431",
+   "fixture": "peaceai/test/fixtures/m91-te5/greyhaven-ai__autocontext-1f6ed9db6e01.txt",
+   "siblings": [
+    {
+     "repo": "greyhaven-ai/autocontext",
+     "commit": "f72c154152397f54d55407508b153d28861888a5",
+     "path": "ts/src/harness-optimization/contract/generated-types.ts",
+     "fileBlob": "9e18711ced6660fff7f64a246a84200cdd14c750",
+     "sha256": "f3aaa7c8c683243fb8f9ded29a3452be8a7383ce0022a0cc64b4c348febe23c4",
+     "fixture": "peaceai/test/fixtures/m91-te5/greyhaven-ai__autocontext-9e18711ced66.txt"
+    }
+   ],
+   "license": "Apache-2.0",
+   "licenseSha256": "060de278acde80cefba9cd13cd1d36c077de3fa16bee067c393e6b0adc6bdf0c"
+  },
+  {
+   "repo": "oomol-lab/oo-cli",
+   "commit": "144cec4e5d985be48c84ec53c8d13edff6128982",
+   "test": "src/application/commands/skills/adopt.test.ts",
+   "module": "src/application/commands/skills/skill-metadata.ts",
+   "fn": "createLocalSkillMetadata",
+   "line": 53,
+   "signature": "(): LocalSkillMetadata",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "e0d045042a5d180210407ff36856a98b6281d829b3a90b61f2579cda3bfb35b4",
+   "fileBlob": "d66831ea682b872cd49e396ea5799fe29e3713cc",
+   "fixture": "peaceai/test/fixtures/m91-te5/oomol-lab__oo-cli-d66831ea682b.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "f902f9fb7d6aff915f55c6bd7558fd9f95f8ffca7ab2dde50247d1133671f5df"
+  },
+  {
+   "repo": "oomol-lab/oo-cli",
+   "commit": "144cec4e5d985be48c84ec53c8d13edff6128982",
+   "test": "src/application/commands/skills/adopt.test.ts",
+   "module": "src/application/commands/skills/skill-metadata.ts",
+   "fn": "createRegistrySkillMetadata",
+   "line": 39,
+   "signature": "({ icon?: string; packageName: string; version: string; }): RegistrySkillMetadata",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "e0d045042a5d180210407ff36856a98b6281d829b3a90b61f2579cda3bfb35b4",
+   "fileBlob": "d66831ea682b872cd49e396ea5799fe29e3713cc",
+   "fixture": "peaceai/test/fixtures/m91-te5/oomol-lab__oo-cli-d66831ea682b.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "f902f9fb7d6aff915f55c6bd7558fd9f95f8ffca7ab2dde50247d1133671f5df"
+  },
+  {
+   "repo": "oomol-lab/oo-cli",
+   "commit": "144cec4e5d985be48c84ec53c8d13edff6128982",
+   "test": "src/application/commands/skills/bundled-skill-observation.test.ts",
+   "module": "src/application/commands/skills/skill-metadata.ts",
+   "fn": "createBundledSkillMetadata",
+   "line": 29,
+   "signature": "(string): BundledSkillMetadata",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "e0d045042a5d180210407ff36856a98b6281d829b3a90b61f2579cda3bfb35b4",
+   "fileBlob": "d66831ea682b872cd49e396ea5799fe29e3713cc",
+   "fixture": "peaceai/test/fixtures/m91-te5/oomol-lab__oo-cli-d66831ea682b.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "f902f9fb7d6aff915f55c6bd7558fd9f95f8ffca7ab2dde50247d1133671f5df"
+  },
+  {
+   "repo": "open-gsd/gsd-pi",
+   "commit": "5e2adf0ba01809cd939e7db2e3894057b2ebe34f",
+   "test": "src/resources/extensions/gsd/tests/merge-closeout-consistency-gate.test.ts",
+   "module": "src/resources/extensions/gsd/closeout-consistency-gate.ts",
+   "fn": "formatCloseoutConsistencyBlock",
+   "line": 339,
+   "signature": "(CloseoutConsistencyResult): string",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "node:test",
+   "sha256": "6288c0d637fc25a2d3f52220de319ea156f37f7eb2a6032cc36ad348deef3ad9",
+   "fileBlob": "6bb2bd987c0d7d0d711fe2b72b1ddc080604d523",
+   "fixture": "peaceai/test/fixtures/m91-te5/open-gsd__gsd-pi-6bb2bd987c0d.txt",
+   "siblings": [],
+   "license": "MIT",
+   "licenseSha256": "bf8ef5028c5653a745881fb7c5e88887b0bd7d4ed4c5f16f5fb6a0ddab7f7918"
+  },
+  {
+   "repo": "victorarias/shitty-reviewing-agent",
+   "commit": "06942b41c48eab89b8381a921ef8b3474a1d469c",
+   "test": "tests/config.test.ts",
+   "module": "src/app/config.ts",
+   "fn": "parseReasoning",
+   "line": 149,
+   "signature": "(string): ReviewConfig[\"reasoning\"]",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "bun:test",
+   "sha256": "c018a9074e4117b19e4fe3d3affdc88fe875d5cf4407fbd694d59d5149bc2af9",
+   "fileBlob": "c342ff701be41826a9c4e7a5c98ca86e8c115a50",
+   "fixture": "peaceai/test/fixtures/m91-te5/victorarias__shitty-reviewing-agent-c342ff701be4.txt",
+   "siblings": [
+    {
+     "repo": "victorarias/shitty-reviewing-agent",
+     "commit": "06942b41c48eab89b8381a921ef8b3474a1d469c",
+     "path": "src/types.ts",
+     "fileBlob": "5d45525432390081067d3057998fe218e4a0729d",
+     "sha256": "2fdca7be305e92bcbdfa3541c4c2baad7b106b19eae4f7a15c6b5f8171fc4133",
+     "fixture": "peaceai/test/fixtures/m91-te5/victorarias__shitty-reviewing-agent-5d4552543239.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "26e0d1929275b46d985c28ec5b4885f4e6fc207d0ad9277773d58c4c13df3bba"
+  },
+  {
+   "repo": "zszz3/AgentRecall",
+   "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+   "test": "apps/main-2.0/src/automation/engine/main/hub/runtime/executor/runtime-onboarding-contract.test.ts",
+   "module": "apps/main-2.0/src/automation/engine/main/hub/runtime/executor/agent-executor-capabilities.ts",
+   "fn": "support",
+   "line": 3,
+   "signature": "(RuntimeSurfaceSupport[\"surface\"], RuntimeSurfaceSupport[\"executionModes\"], RuntimeSurfaceSupport[\"continuationPolicies\"]): RuntimeSurfaceSupport",
+   "v1Refusal": "test_target_signature",
+   "v2Refusal": "test_target_signature",
+   "v3Refusal": "test_target_signature",
+   "v4Refusal": "test_target_signature",
+   "framework": "vitest",
+   "sha256": "24cadc1dddbf128d8bbb13597d4c6d8799946cabfffb854725bdb212ae122099",
+   "fileBlob": "8ec39f91fc328b3f93c13c2fcb8d0313761bd216",
+   "fixture": "peaceai/test/fixtures/m91-te5/zszz3__AgentRecall-8ec39f91fc32.txt",
+   "siblings": [
+    {
+     "repo": "zszz3/AgentRecall",
+     "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+     "path": "apps/main-2.0/src/automation/engine/main/agents/runtime/runtime-driver.ts",
+     "fileBlob": "373936d182b6c669c53c690385c630062045cc52",
+     "sha256": "4fcf5e756bd0f2eb9560e7f96cff08da909aa8f9232962b44059d7303a5d4d0f",
+     "fixture": "peaceai/test/fixtures/m91-te5/zszz3__AgentRecall-373936d182b6.txt"
+    },
+    {
+     "repo": "zszz3/AgentRecall",
+     "commit": "8726a1c52d3c401297715c1a97b0c734e35e50dd",
+     "path": "apps/main-2.0/src/automation/engine/shared/types.ts",
+     "fileBlob": "498436a3bd1d5f109af2c6544d4194d2c687c4c2",
+     "sha256": "5faf11958e22342b6d154bc5155939a6d58ec85e5916ce013c86e2b210b2fca2",
+     "fixture": "peaceai/test/fixtures/m91-te5/zszz3__AgentRecall-498436a3bd1d.txt"
+    }
+   ],
+   "license": "MIT",
+   "licenseSha256": "17b1084209b52b7d1fade85180754507939cc7af72ab4ee23306d3bf2c12f9f1"
+  }
+ ]
+}

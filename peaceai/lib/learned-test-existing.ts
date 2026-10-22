@@ -44,7 +44,12 @@ export const TEST_EXISTING_VOCAB = {
   // data) and `Pick<T, K>` / `Omit<T, K>` (T plain data, K string / string-literal keys),
   // and (c) plain-data types nested up to MAX_TYPE_DEPTH_V4 with up to MAX_TYPE_MEMBERS_V4 members per object.
   // Classes, functions, Map/Set, bytes, unknown/any, typeof, intersections and other generics stay refused.
-  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4"],
+  // M91 (public-test-case-existing-v5): "exported-pure-function-v5" = the v4 target plus (a) `typeof N` where N is a
+  // top-level `const` (module-local or a named import from a followed relative sibling) with a string / number /
+  // boolean literal initializer (optionally `as const`) or a type annotation that is itself plain data, and (b)
+  // `T["k"]` property lookups where T is a plain object type v4 accepts and k a string literal naming one of its
+  // property signatures. Every other typeof (functions, `let`, values of non-literal type) and indexed access stays refused.
+  target: ["exported-pure-function", "exported-pure-function-v2", "exported-pure-function-v3", "exported-pure-function-v4", "exported-pure-function-v5"],
 } as const;
 /** M85 bounds for the v2 target: sibling modules followed, import depth, structural type nesting. */
 export const MAX_IMPORT_MODULES = 4;
@@ -192,6 +197,8 @@ interface V2Ctx {
   dates?: boolean;
   /** M90 (v4 only): optional / defaulted parameters, the V4_GENERICS references and the v4 type bounds. */
   v4?: boolean;
+  /** M91 (v5 only): `typeof` of literal consts and `T["k"]` property lookups. */
+  v5?: boolean;
 }
 /** M90: a global (never shadowed in `idx`) name. */
 const unshadowed = (idx: ModuleIndex, n: string): boolean => !idx.types.has(n) && !idx.imports.has(n) && !idx.enums.has(n) && !idx.mutable.has(n) && !idx.fns.has(n) && !idx.consts.has(n);
@@ -336,6 +343,13 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
   if (ts.isUnionTypeNode(t)) return t.types.length <= 12 && t.types.every(rec);
   const members = v2?.v4 ? MAX_TYPE_MEMBERS_V4 : MAX_TYPE_MEMBERS;
   if (ts.isTypeLiteralNode(t)) return plainMembers(t.members, rec, members);
+  // M91 (v5 only): `typeof N` of a literal const, and `T["k"]` of a plain object type's property signature.
+  if (ts.isTypeQueryNode(t)) return !!v2?.v5 && !t.typeArguments?.length && ts.isIdentifier(t.exprName) && literalConstType(t.exprName.text, idx, sf, v2, depth);
+  if (ts.isIndexedAccessTypeNode(t)) {
+    if (!v2?.v5 || !ts.isLiteralTypeNode(t.indexType) || !ts.isStringLiteral(t.indexType.literal)) return false;
+    const m = propertyOf(t.objectType, t.indexType.literal.text, idx, sf, v2);
+    return !!m && structuralType(m.type, m.idx, m.sf, m.v2, depth + 1) && structuralType(t.objectType, idx, sf, v2, depth + 1);
+  }
   if (ts.isTypeReferenceNode(t)) {
     if (!ts.isIdentifier(t.typeName)) return false;
     const n = t.typeName.text;
@@ -374,6 +388,50 @@ function structuralType(t: ts.TypeNode, idx: ModuleIndex, sf: ts.SourceFile, v2:
 }
 function plainMembers(ms: ts.NodeArray<ts.TypeElement>, rec: (x: ts.TypeNode) => boolean, max: number = MAX_TYPE_MEMBERS): boolean {
   return ms.length <= max && ms.every((m) => ts.isPropertySignature(m) && !!m.type && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && rec(m.type));
+}
+/** M91: a string / number / boolean literal (or `-number`), optionally wrapped in parentheses and `as const`. */
+function literalInit(e: ts.Expression | undefined): boolean {
+  let x = e;
+  while (x && (ts.isParenthesizedExpression(x) || (ts.isAsExpression(x) && ts.isTypeReferenceNode(x.type) && ts.isIdentifier(x.type.typeName) && x.type.typeName.text === "const"))) x = x.expression;
+  if (!x) return false;
+  if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || ts.isNumericLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword) return true;
+  return ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(x.operand);
+}
+/** M91: the module (local or a followed relative sibling, v2 import rules) that declares name `n` as seen from `idx`. */
+function declaringModule(n: string, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx): { name: string; idx: ModuleIndex; sf: ts.SourceFile; v2: V2Ctx } | null {
+  if (!idx.imports.has(n)) return { name: n, idx, sf, v2 };
+  const imp = idx.imports.get(n)!;
+  if (!imp.imported || imp.imported === "default") return null;
+  const target = pickSibling(v2, imp.spec);
+  const m = target ? siblingModule(v2, target) : null;
+  if (!m || !target) return null;
+  const sv: V2Ctx = { ...v2, path: target, depth: v2.depth + 1 };
+  if (sv.depth > MAX_IMPORT_DEPTH) { v2.reasons.add(TEST_TARGET_TOO_LARGE); return null; }
+  return { name: imp.imported, idx: m.idx, sf: m.sf, v2: sv };
+}
+/** M91: `typeof n` is plain data: n is a top-level const, never mutated, with a literal initializer or a plain annotation. */
+function literalConstType(n: string, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx, depth: number): boolean {
+  const m = declaringModule(n, idx, sf, v2);
+  if (!m) return false;
+  const d = m.idx.consts.get(m.name);
+  if (!d || m.idx.mutable.has(m.name) || m.idx.mutated.has(m.name) || m.idx.fns.has(m.name) || m.idx.types.has(m.name) || m.idx.enums.has(m.name)) return false;
+  if (d.type) return structuralType(d.type, m.idx, m.sf, m.v2, depth + 1);
+  return literalInit(d.initializer);
+}
+/** M91: the type of property `k` of the plain object type `t` (a type literal, or a non-generic interface / alias of one). */
+function propertyOf(t: ts.TypeNode, k: string, idx: ModuleIndex, sf: ts.SourceFile, v2: V2Ctx): { type: ts.TypeNode; idx: ModuleIndex; sf: ts.SourceFile; v2: V2Ctx } | null {
+  const find = (ms: ts.NodeArray<ts.TypeElement>, mi: ModuleIndex, msf: ts.SourceFile, mv: V2Ctx) => {
+    const p = ms.find((x): x is ts.PropertySignature => ts.isPropertySignature(x) && !!x.type && (ts.isIdentifier(x.name) || ts.isStringLiteral(x.name)) && x.name.text === k);
+    return p && !p.questionToken ? { type: p.type!, idx: mi, sf: msf, v2: mv } : null;
+  };
+  if (ts.isParenthesizedTypeNode(t)) return propertyOf(t.type, k, idx, sf, v2);
+  if (ts.isTypeLiteralNode(t)) return find(t.members, idx, sf, v2);
+  if (!ts.isTypeReferenceNode(t) || !ts.isIdentifier(t.typeName) || t.typeArguments?.length) return null;
+  const m = declaringModule(t.typeName.text, idx, sf, v2);
+  const d = m ? m.idx.types.get(m.name) : null;
+  if (!m || !d) return null;
+  if (ts.isInterfaceDeclaration(d)) return d.heritageClauses?.length ? null : find(d.members, m.idx, m.sf, m.v2);
+  return ts.isTypeLiteralNode(d.type) ? find(d.type.members, m.idx, m.sf, m.v2) : null;
 }
 
 /** Fresh: a value created inside the function (so mutating it touches nothing outside). */
@@ -540,7 +598,7 @@ export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: stri
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean }): string | null {
+export function existingTargetRefusal(path: string, content: string, fn: string, opts?: { v2?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean }): string | null {
   if (!plainPath(path)) return "path_not_plain";
   if (isProtected(path) || /\.test\.ts$/.test(path) || /\.d\.ts$/.test(path)) return SELF_PROTECTED_PATH;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
@@ -555,10 +613,16 @@ export function existingTargetRefusal(path: string, content: string, fn: string,
   const ret = f.type?.getText(sf).trim() ?? "";
   if (/\b(?:Promise|PromiseLike|AsyncIterable|AsyncIterableIterator|AsyncGenerator)\b/.test(ret)) return TEST_TARGET_ASYNC;
   const reasons = new Set<string>();
-  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true, v4: opts.v4 === true } : undefined;
+  const v2: V2Ctx | undefined = opts?.v2 ? { path, root: path, depth: 0, read: (rel) => (rel === path ? content : opts.v2!.read(rel)), modules: new Map(), followed: new Set(), reasons, scanned: new Set(), dates: opts.dates === true || opts.v4 === true || opts.v5 === true, v4: opts.v4 === true || opts.v5 === true, v5: opts.v5 === true } : undefined;
   if (v2) v2.modules.set(path, { idx, sf, fns: new Set([fn]), consts: new Set() });
   const typeOk = (t: ts.TypeNode | undefined) => !!t && (v2 ? structuralType(t, idx, sf, v2) : TYPES.test(t.getText(sf).trim()));
-  const sigBad = !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !typeOk(p.type) : !(v2?.v4 && literalDefault(p.initializer))));
+  // M91: `typeof p` naming one of the function's own parameters is that parameter's type, not a module const: refused.
+  const paramNames = new Set(f.parameters.flatMap((p) => (ts.isIdentifier(p.name) ? [p.name.text] : [])));
+  let paramTypeof = false;
+  const seeTypeof = (n: ts.Node): void => { if (ts.isTypeQueryNode(n) && ts.isIdentifier(n.exprName) && paramNames.has(n.exprName.text)) paramTypeof = true; ts.forEachChild(n, seeTypeof); };
+  for (const p of f.parameters) if (p.type) seeTypeof(p.type);
+  if (f.type) seeTypeof(f.type);
+  const sigBad = paramTypeof || !!f.typeParameters?.length || !typeOk(f.type) || f.parameters.length > MAX_PARAMS || f.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken || (!v2?.v4 && (p.questionToken || p.initializer)) || (p.questionToken && p.initializer) || (p.type ? !typeOk(p.type) : !(v2?.v4 && literalDefault(p.initializer))));
   if (sigBad) {
     if (v2) for (const r of PRIORITY) if (v2.reasons.has(r)) return r;
     return TEST_TARGET_SIGNATURE;
@@ -618,12 +682,13 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (isProtected(task.file)) return no(SELF_PROTECTED_PATH);
   const target = files.find((f) => f.path === task.file);
   if (!target || isTest(target.path) || !/\.ts$/.test(target.path) || /\.d\.ts$/.test(target.path)) return no("target_file_not_found");
-  // M90: v4 is the v3 target widened (below), with v3's checks and args mode.
-  const v4 = params.target === "exported-pure-function-v4";
+  // M90: v4 is the v3 target widened (below), with v3's checks and args mode. M91: v5 is v4 widened likewise.
+  const v5 = params.target === "exported-pure-function-v5";
+  const v4 = params.target === "exported-pure-function-v4" || v5;
   const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4 } : undefined);
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5 } : undefined);
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
   if (v2 && existingTargetRefusal(target.path, target.content, task.symbol) === null) return no("not_needed");
@@ -631,6 +696,8 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib }) === null) return no("not_needed");
   // M90: and v4 leaves a target v3 already takes to v3.
   if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true }) === null) return no("not_needed");
+  // M91: and v5 leaves a target v4 already takes to v4.
+  if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true }) === null) return no("not_needed");
   // Every check calls the target itself (the only name the test imports), with literal arguments.
   for (const c of task.checks) {
     if (!(params.checks as string[]).includes(c.kind)) return no(TEST_CHECK_REFUSED);
