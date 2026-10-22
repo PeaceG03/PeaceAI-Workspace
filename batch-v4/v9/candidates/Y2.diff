@@ -1,0 +1,16 @@
+diff --git a/src/tenmin-gate.sealed-marker-edges-8604018.test.ts b/src/tenmin-gate.sealed-marker-edges-8604018.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..521edf89aaa6e5a2d7377e29a36e9af0d8a0a0a6
+--- /dev/null
++++ b/src/tenmin-gate.sealed-marker-edges-8604018.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { hasSealedMarker } from "./tenmin-gate";
++
++test("sealed marker edges", () => {
++  assert.equal(hasSealedMarker([]), false);
++  assert.equal(hasSealedMarker([{ id: 1, status: "completed", conclusion: "success", head_branch: "main", event: "schedule", display_title: "One-off ten-minute fetch: sealed (post-seal)" }]), false);
++  assert.equal(hasSealedMarker([{ id: 1, status: "completed", conclusion: "success", head_branch: "main", event: "workflow_dispatch" }]), false);
++  assert.equal(hasSealedMarker([{ id: 1, status: "completed", conclusion: "failure", head_branch: "main", event: "workflow_dispatch", display_title: "x" }, { id: 2, status: "completed", conclusion: "success", head_branch: "main", event: "workflow_dispatch", display_title: "One-off ten-minute fetch: sealed (post-seal)" }]), true);
++});

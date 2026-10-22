@@ -1,0 +1,16 @@
+diff --git a/src/tenmin-redispatch.failure-streak-edges-9b4e8e7.test.ts b/src/tenmin-redispatch.failure-streak-edges-9b4e8e7.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ba614b6053864b3bd59b16b166613868030dc8f
+--- /dev/null
++++ b/src/tenmin-redispatch.failure-streak-edges-9b4e8e7.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { priorConsecutiveFailures } from "./tenmin-redispatch";
++
++test("failure streak edges", () => {
++  assert.equal(priorConsecutiveFailures([]), 0);
++  assert.equal(priorConsecutiveFailures([{ id: 3, event: "workflow_dispatch", status: "completed", conclusion: "cancelled", display_title: "Scanner" }, { id: 2, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }]), 0);
++  assert.equal(priorConsecutiveFailures([{ id: 3, event: "schedule", status: "completed", conclusion: "success", display_title: "Scanner" }, { id: 2, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }]), 1);
++  assert.equal(priorConsecutiveFailures([{ id: 2, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }, { id: 1, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }]), 2);
++});

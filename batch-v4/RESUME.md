@@ -194,3 +194,8 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 - Stress v1: baseline (WS=/workspace/te4/ws, runs-m90) 59/66, 0 wrong, 0 crash; sim v4 approval (WS=/workspace/te4/sim, local-only approved.json with fake issue 999999, NOT a git repo, NEVER commit) 59/66, 0 wrong. Extra local sim on PeaceSTOCKS ef9778e (/workspace/te4/psim): P3 countOtherActiveScannerRuns and P4 holdActive SOLVED via v4 (COUNTS, stub killed).
 - Box fixes after reset: /workspace/stress/{stocks,grade,*-m88sim}/node_modules -> /workspace/stress/nm/node_modules (pnpm install --frozen-lockfile); apt zstd installed (PeaceSTOCKS suite needs it).
 - NEXT: Auditor review of #439; on PASS Peace decides on the rule-proposal issue / approval.
+
+## batch-v9 prep (2026-10-22 ~05:45Z) - notes batch-v4/v9
+- 13 tasks Y1-Y13 ready (11 v4, 1 v3, 1 v1), each one COUNTS candidate (runs-final identical to dry run); all 13 applied: suite 598/598, 4 typechecks ok; proposal-gate PASS. NOT filed (needs Peace's OK). Projected coverage 74/205 = 36.1%.
+- Box: /workspace/batch-v9 (ws = Workspace 3670cd8 worktree, stocks/grade = PeaceSTOCKS ef9778e, runs, runs-final, v9 scripts, b = Part B census).
+- Part B: batch-v4/v9/NEXT-SKILL.md recommends v5 = typeof of literal consts + T["key"] lookups (~+9). Not started.

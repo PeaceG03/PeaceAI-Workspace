@@ -1,0 +1,63 @@
+Y1|holdActive|src/tenmin-gate.ts
+holdActive([{ id: 1, status: "waiting", conclusion: null }])
+holdActive([{ id: 1, status: null, conclusion: null }])
+holdActive([{ id: 1, status: "completed", conclusion: "failure" }, { id: 2, status: "completed", conclusion: "cancelled" }])
+holdActive([{ id: 1, status: "completed", conclusion: "success" }, { id: 2, status: "pending", conclusion: null }])
+Y2|hasSealedMarker|src/tenmin-gate.ts
+hasSealedMarker([])
+hasSealedMarker([{ id: 1, status: "completed", conclusion: "success", head_branch: "main", event: "schedule", display_title: "One-off ten-minute fetch: sealed (post-seal)" }])
+hasSealedMarker([{ id: 1, status: "completed", conclusion: "success", head_branch: "main", event: "workflow_dispatch" }])
+hasSealedMarker([{ id: 1, status: "completed", conclusion: "failure", head_branch: "main", event: "workflow_dispatch", display_title: "x" }, { id: 2, status: "completed", conclusion: "success", head_branch: "main", event: "workflow_dispatch", display_title: "One-off ten-minute fetch: sealed (post-seal)" }])
+Y3|countOtherActiveScannerRuns|src/tenmin-redispatch.ts
+countOtherActiveScannerRuns([{ id: 1, status: "waiting" }, { id: 2, status: "pending" }, { id: 3, status: "requested" }])
+countOtherActiveScannerRuns([{ id: 1, status: "completed" }, { id: 2, status: "cancelled" }, { id: 3, status: "unknown" }])
+countOtherActiveScannerRuns([{ id: 1, status: "queued", display_title: null }], 2)
+countOtherActiveScannerRuns([{ id: 5, status: "in_progress" }, { id: 6, status: "queued" }], 5)
+Y4|priorConsecutiveFailures|src/tenmin-redispatch.ts
+priorConsecutiveFailures([])
+priorConsecutiveFailures([{ id: 3, event: "workflow_dispatch", status: "completed", conclusion: "cancelled", display_title: "Scanner" }, { id: 2, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }])
+priorConsecutiveFailures([{ id: 3, event: "schedule", status: "completed", conclusion: "success", display_title: "Scanner" }, { id: 2, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }])
+priorConsecutiveFailures([{ id: 2, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }, { id: 1, event: "workflow_dispatch", status: "completed", conclusion: "failure", display_title: "Scanner" }])
+Y5|oneOffPauseReason|src/oct2024-tenmin-oneoff.ts
+oneOffPauseReason(new Date("2026-10-13T05:14:00Z"), [])
+oneOffPauseReason(new Date("2026-10-13T05:15:00Z"), [])
+oneOffPauseReason(new Date("2026-10-13T06:15:00Z"), [])
+oneOffPauseReason(new Date("2026-10-13T10:14:00Z"), [])
+oneOffPauseReason(new Date("2026-10-13T09:20:00Z"), { error: "http-403" })
+oneOffPauseReason(new Date("2026-10-13T12:00:00Z"), [{ id: 3, status: "waiting", event: "schedule", display_title: "Scanner" }])
+Y6|pairRangeForDate|src/tenmin-history.ts
+pairRangeForDate("2025-01-10", "2024-02-01")
+pairRangeForDate("2025-02-10", "2024-02-01")
+pairRangeForDate("2025-12-31", "2024-01-01")
+pairRangeForDate("2025-1-10")
+pairRangeForDate("2025-01-10", "2024-2-01")
+Y7|datedTickerMonthStarts|src/ticker-reference-dated.ts
+datedTickerMonthStarts(new Date("2026-03-15T00:00:00Z"), { firstMonth: "2026-01-01" })
+datedTickerMonthStarts(new Date("2026-03-15T00:00:00Z"), { firstMonth: "2026-04-01" })
+datedTickerMonthStarts(new Date("2026-03-15T00:00:00Z"), { firstMonth: "2026-01-15" })
+datedTickerMonthStarts(new Date("2026-01-31T23:59:00Z"), { firstMonth: "2025-12-01" })
+Y8|replyDustObjectMetadata|src/intraday-reply-dust.ts
+replyDustObjectMetadata("massive-stocks", "2026-10-13", { securityId: "sec_a", symbol: "AAA", dataset: "stocks-aggregates-10m", request: "/v2/aggs/x", fetchedAt: "2026-10-13T21:00:00Z", observedAt: "2026-10-13T21:00:01Z", relativePath: "a.rdust", byteLength: 10, version: 1, replySha256: "ab", replyByteLength: 20, fileSha256: "cd" })
+Y9|disabledScanGroupedReplyDustReport|src/scan-grouped-reply-dust.ts
+disabledScanGroupedReplyDustReport("SCAN_GROUPED_REPLY_DUST_OFF")
+disabledScanGroupedReplyDustReport("")
+Y10|tenMinRangeObjectMetadata|src/tenmin-range-reply-dust.ts
+tenMinRangeObjectMetadata({ provider: "p", calendarFrom: "2024-11-01", calendarTo: "2024-12-31", securityId: "s", symbol: "S", fetchFrom: "2024-11-01", fetchTo: "2024-12-31", observedAt: "t", pageCount: 2, file: { page: 1, request: "/r", fetchedAt: "f", version: 1, replySha256: "h", replyByteLength: 9 }, link: "Bad" })
+tenMinRangeObjectMetadata({ provider: "p", calendarFrom: "2024-11-01", calendarTo: "2024-12-31", securityId: "s", symbol: "S", fetchFrom: "2024-11-01", fetchTo: "2024-12-31", observedAt: "t", pageCount: 2, file: { page: 1, request: "/r", fetchedAt: "f", version: 1, replySha256: "h", replyByteLength: 9 }, origin: "-x" })
+tenMinRangeObjectMetadata({ provider: "p", calendarFrom: "2024-11-01", calendarTo: "2024-12-31", securityId: "s", symbol: "S", fetchFrom: "2024-11-01", fetchTo: "2024-12-31", observedAt: "t", pageCount: 2, file: { page: 1, request: "/r", fetchedAt: "f", version: 1, replySha256: "h", replyByteLength: 9 }, link: "m-1", origin: "daily-close" })
+Y11|dailyReplyDustHashedFileKey|src/daily-reply-dust.ts
+dailyReplyDustHashedFileKey("2026-10-13", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+dailyReplyDustHashedFileKey("2026-10-13", "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef")
+dailyReplyDustHashedFileKey("2026-10-13", "abc")
+dailyReplyDustHashedFileKey("2026-10-1", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+Y12|minutesUntilGuardWindowEnd|src/tenmin-redispatch.ts
+minutesUntilGuardWindowEnd(new Date("2026-10-13T05:04:00Z"))
+minutesUntilGuardWindowEnd(new Date("2026-10-13T05:04:30Z"))
+minutesUntilGuardWindowEnd(new Date("2026-10-13T09:04:00Z"))
+minutesUntilGuardWindowEnd(new Date("2026-10-13T06:14:30Z"))
+Y13|resolveSessionPredictionStatus|src/prediction-status.ts
+resolveSessionPredictionStatus([])
+resolveSessionPredictionStatus([{ predictionStatusId: "b", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] }, { predictionStatusId: "a", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T14:00:00Z", supersedesPredictionIds: [] }])
+resolveSessionPredictionStatus([{ predictionStatusId: "b", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] }, { predictionStatusId: "a", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] }])
+Y14|monthFileFromLines|src/daily-bars-pack-decode.ts
+monthFileFromLines([])

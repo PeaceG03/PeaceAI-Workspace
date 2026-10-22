@@ -1,0 +1,16 @@
+diff --git a/src/daily-reply-dust.hashed-file-keys-9a32f0c.test.ts b/src/daily-reply-dust.hashed-file-keys-9a32f0c.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b319301c76b5e4ad3790a8b9cfdf2f5aee8b476b
+--- /dev/null
++++ b/src/daily-reply-dust.hashed-file-keys-9a32f0c.test.ts
+@@ -0,0 +1,10 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { dailyReplyDustHashedFileKey } from "./daily-reply-dust";
++
++test("hashed file keys", () => {
++  assert.equal(dailyReplyDustHashedFileKey("2026-10-13", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"), "permanent/daily-reply-dust/2026-10-13/grouped-daily-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.rdust");
++  assert.throws(() => dailyReplyDustHashedFileKey("2026-10-13", "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef"), /INVALID_REPLY_SHA256/);
++  assert.throws(() => dailyReplyDustHashedFileKey("2026-10-13", "abc"), /INVALID_REPLY_SHA256/);
++  assert.throws(() => dailyReplyDustHashedFileKey("2026-10-1", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"), /INVALID_SESSION_DATE/);
++});

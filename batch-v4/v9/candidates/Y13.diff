@@ -1,0 +1,15 @@
+diff --git a/src/prediction-status.frozen-tie-breaks-46a39d2.test.ts b/src/prediction-status.frozen-tie-breaks-46a39d2.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d95a0c942cbbf1543019700064868bdc9e5867df
+--- /dev/null
++++ b/src/prediction-status.frozen-tie-breaks-46a39d2.test.ts
+@@ -0,0 +1,9 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { resolveSessionPredictionStatus } from "./prediction-status";
++
++test("frozen tie-breaks", () => {
++  assert.equal(resolveSessionPredictionStatus([]), undefined);
++  assert.deepEqual(resolveSessionPredictionStatus([{ predictionStatusId: "b", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] }, { predictionStatusId: "a", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T14:00:00Z", supersedesPredictionIds: [] }]), { predictionStatusId: "a", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T14:00:00Z", supersedesPredictionIds: [] });
++  assert.deepEqual(resolveSessionPredictionStatus([{ predictionStatusId: "b", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] }, { predictionStatusId: "a", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] }]), { predictionStatusId: "a", sessionDate: "2026-10-13", status: "FROZEN", reason: "PREDICTIONS_FROZEN", scannerVersion: "v", configFingerprint: "c", recordedAt: "2026-10-13T13:00:00Z", supersedesPredictionIds: [] });
++});

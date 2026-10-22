@@ -1,0 +1,14 @@
+diff --git a/src/scan-grouped-reply-dust.disabled-report-0b72a37.test.ts b/src/scan-grouped-reply-dust.disabled-report-0b72a37.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ac8a0d1014f29f9b7c2e8f638a93459f35ababa
+--- /dev/null
++++ b/src/scan-grouped-reply-dust.disabled-report-0b72a37.test.ts
+@@ -0,0 +1,8 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { disabledScanGroupedReplyDustReport } from "./scan-grouped-reply-dust";
++
++test("disabled report", () => {
++  assert.deepEqual(disabledScanGroupedReplyDustReport("SCAN_GROUPED_REPLY_DUST_OFF"), { enabled: false, reason: "SCAN_GROUPED_REPLY_DUST_OFF", extraMassiveRequests: 0, copies: [], warnings: [] });
++  assert.deepEqual(disabledScanGroupedReplyDustReport(""), { enabled: false, reason: "", extraMassiveRequests: 0, copies: [], warnings: [] });
++});

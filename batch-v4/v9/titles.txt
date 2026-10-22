@@ -1,0 +1,13 @@
+Y1	[tenmin-gate] holdActive: characterization test for waiting, null and mixed run lists
+Y2	[tenmin-gate] hasSealedMarker: characterization test for empty, non-dispatch and mixed run lists
+Y3	[tenmin-redispatch] countOtherActiveScannerRuns: characterization test for every active and inactive run state
+Y4	[tenmin-redispatch] priorConsecutiveFailures: characterization test for empty lists, cancelled runs and non-dispatch runs
+Y5	[oct2024-tenmin-oneoff] oneOffPauseReason: characterization test for guard window boundaries and precedence
+Y6	[tenmin-history] pairRangeForDate: characterization test for custom anchors, year wrap and date guards
+Y7	[ticker-reference-dated] datedTickerMonthStarts: characterization test for the firstMonth option
+Y8	[intraday-reply-dust] replyDustObjectMetadata: characterization test for the reply dust object metadata keys
+Y9	[scan-grouped-reply-dust] disabledScanGroupedReplyDustReport: characterization test for the disabled grouped reply dust report
+Y10	[tenmin-range-reply-dust] tenMinRangeObjectMetadata: characterization test for link and origin metadata
+Y11	[daily-reply-dust] dailyReplyDustHashedFileKey: characterization test for hashed file key layout and guards
+Y12	[tenmin-redispatch] minutesUntilGuardWindowEnd: characterization test for times just before the dispatch lead
+Y13	[prediction-status] resolveSessionPredictionStatus: characterization test for frozen record tie-breaks

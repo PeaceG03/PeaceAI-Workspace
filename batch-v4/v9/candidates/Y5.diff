@@ -1,0 +1,18 @@
+diff --git a/src/oct2024-tenmin-oneoff.guard-window-edges-1ae882e.test.ts b/src/oct2024-tenmin-oneoff.guard-window-edges-1ae882e.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7838e8d2909d127b4e9477fd50cd3506003eb27
+--- /dev/null
++++ b/src/oct2024-tenmin-oneoff.guard-window-edges-1ae882e.test.ts
+@@ -0,0 +1,12 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { oneOffPauseReason } from "./oct2024-tenmin-oneoff";
++
++test("guard window edges", () => {
++  assert.equal(oneOffPauseReason(new Date("2026-10-13T05:14:00Z"), []), undefined);
++  assert.equal(oneOffPauseReason(new Date("2026-10-13T05:15:00Z"), []), "GUARD_WINDOW");
++  assert.equal(oneOffPauseReason(new Date("2026-10-13T06:15:00Z"), []), undefined);
++  assert.equal(oneOffPauseReason(new Date("2026-10-13T10:14:00Z"), []), "GUARD_WINDOW");
++  assert.equal(oneOffPauseReason(new Date("2026-10-13T09:20:00Z"), { error: "http-403" }), "GUARD_WINDOW");
++  assert.equal(oneOffPauseReason(new Date("2026-10-13T12:00:00Z"), [{ id: 3, status: "waiting", event: "schedule", display_title: "Scanner" }]), "ACTIVE_SCANNER_RUN");
++});

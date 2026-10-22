@@ -1,0 +1,217 @@
+{
+ "schema": "peaceai-stress-suite:v1",
+ "target": "PeaceG03/PeaceSTOCKS",
+ "base": "ef9778e611f4d4d62f37eeb52f7e0a739ac0cf36",
+ "tasks": [
+  {
+   "id": "Y1",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-gate] holdActive: characterization test for waiting, null and mixed run lists",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for holdActive in src/tenmin-gate.ts: holding run states\n- holdActive([{ id: 1, status: \"waiting\", conclusion: null }]) is true\n- holdActive([{ id: 1, status: null, conclusion: null }]) is true\n- holdActive([{ id: 1, status: \"completed\", conclusion: \"failure\" }, { id: 2, status: \"completed\", conclusion: \"cancelled\" }]) is false\n- holdActive([{ id: 1, status: \"completed\", conclusion: \"success\" }, { id: 2, status: \"pending\", conclusion: null }]) is true\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). holdActive is tested with in_progress, queued, one completed run and an empty list; a waiting run, a null status (fails closed: holds), several completed runs and a mixed list are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-gate.ts",
+     "fn": "holdActive"
+    }
+   }
+  },
+  {
+   "id": "Y2",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-gate] hasSealedMarker: characterization test for empty, non-dispatch and mixed run lists",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for hasSealedMarker in src/tenmin-gate.ts: sealed marker edges\n- hasSealedMarker([]) is false\n- hasSealedMarker([{ id: 1, status: \"completed\", conclusion: \"success\", head_branch: \"main\", event: \"schedule\", display_title: \"One-off ten-minute fetch: sealed (post-seal)\" }]) is false\n- hasSealedMarker([{ id: 1, status: \"completed\", conclusion: \"success\", head_branch: \"main\", event: \"workflow_dispatch\" }]) is false\n- hasSealedMarker([{ id: 1, status: \"completed\", conclusion: \"failure\", head_branch: \"main\", event: \"workflow_dispatch\", display_title: \"x\" }, { id: 2, status: \"completed\", conclusion: \"success\", head_branch: \"main\", event: \"workflow_dispatch\", display_title: \"One-off ten-minute fetch: sealed (post-seal)\" }]) is true\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). hasSealedMarker is tested by varying one field of a single sealed run (status, conclusion, branch, title); an empty list, a schedule event, a missing display title and a sealed run behind a failed one are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-gate.ts",
+     "fn": "hasSealedMarker"
+    }
+   }
+  },
+  {
+   "id": "Y3",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] countOtherActiveScannerRuns: characterization test for every active and inactive run state",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for countOtherActiveScannerRuns in src/tenmin-redispatch.ts: active run states\n- countOtherActiveScannerRuns([{ id: 1, status: \"waiting\" }, { id: 2, status: \"pending\" }, { id: 3, status: \"requested\" }]) is 3\n- countOtherActiveScannerRuns([{ id: 1, status: \"completed\" }, { id: 2, status: \"cancelled\" }, { id: 3, status: \"unknown\" }]) is 0\n- countOtherActiveScannerRuns([{ id: 1, status: \"queued\", display_title: null }], 2) is 1\n- countOtherActiveScannerRuns([{ id: 5, status: \"in_progress\" }, { id: 6, status: \"queued\" }], 5) is 1\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). countOtherActiveScannerRuns is tested with queued / in_progress runs and restarter titles; the waiting, pending and requested states, completed / cancelled / unknown states, a self id not in the list and a null title are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "countOtherActiveScannerRuns"
+    }
+   }
+  },
+  {
+   "id": "Y4",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] priorConsecutiveFailures: characterization test for empty lists, cancelled runs and non-dispatch runs",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for priorConsecutiveFailures in src/tenmin-redispatch.ts: failure streak edges\n- priorConsecutiveFailures([]) is 0\n- priorConsecutiveFailures([{ id: 3, event: \"workflow_dispatch\", status: \"completed\", conclusion: \"cancelled\", display_title: \"Scanner\" }, { id: 2, event: \"workflow_dispatch\", status: \"completed\", conclusion: \"failure\", display_title: \"Scanner\" }]) is 0\n- priorConsecutiveFailures([{ id: 3, event: \"schedule\", status: \"completed\", conclusion: \"success\", display_title: \"Scanner\" }, { id: 2, event: \"workflow_dispatch\", status: \"completed\", conclusion: \"failure\", display_title: \"Scanner\" }]) is 1\n- priorConsecutiveFailures([{ id: 2, event: \"workflow_dispatch\", status: \"completed\", conclusion: \"failure\", display_title: \"Scanner\" }, { id: 1, event: \"workflow_dispatch\", status: \"completed\", conclusion: \"failure\", display_title: \"Scanner\" }]) is 2\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). priorConsecutiveFailures is tested with a self id and restarter titles; an empty list, a cancelled run ending the streak, a schedule run being skipped and the count with no self id are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "priorConsecutiveFailures"
+    }
+   }
+  },
+  {
+   "id": "Y5",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[oct2024-tenmin-oneoff] oneOffPauseReason: characterization test for guard window boundaries and precedence",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for oneOffPauseReason in src/oct2024-tenmin-oneoff.ts: guard window edges\n- oneOffPauseReason(new Date(\"2026-10-13T05:14:00Z\"), []) is undefined\n- oneOffPauseReason(new Date(\"2026-10-13T05:15:00Z\"), []) is \"GUARD_WINDOW\"\n- oneOffPauseReason(new Date(\"2026-10-13T06:15:00Z\"), []) is undefined\n- oneOffPauseReason(new Date(\"2026-10-13T10:14:00Z\"), []) is \"GUARD_WINDOW\"\n- oneOffPauseReason(new Date(\"2026-10-13T09:20:00Z\"), { error: \"http-403\" }) is \"GUARD_WINDOW\"\n- oneOffPauseReason(new Date(\"2026-10-13T12:00:00Z\"), [{ id: 3, status: \"waiting\", event: \"schedule\", display_title: \"Scanner\" }]) is \"ACTIVE_SCANNER_RUN\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). oneOffPauseReason is tested at 05:30Z and 02:00Z only; the window edges (05:14 open, 05:15 guarded, 06:15 open, 10:14 guarded), the guard window winning over a failed run check and a waiting run are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/oct2024-tenmin-oneoff.ts",
+     "fn": "oneOffPauseReason"
+    }
+   }
+  },
+  {
+   "id": "Y6",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-history] pairRangeForDate: characterization test for custom anchors, year wrap and date guards",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for pairRangeForDate in src/tenmin-history.ts: custom anchors\n- pairRangeForDate(\"2025-01-10\", \"2024-02-01\") is { calendarFrom: \"2024-12-01\", calendarTo: \"2025-01-31\" }\n- pairRangeForDate(\"2025-02-10\", \"2024-02-01\") is { calendarFrom: \"2025-02-01\", calendarTo: \"2025-03-31\" }\n- pairRangeForDate(\"2025-12-31\", \"2024-01-01\") is { calendarFrom: \"2025-11-01\", calendarTo: \"2025-12-31\" }\n- pairRangeForDate(\"2025-1-10\") throws INVALID_SESSION_DATE\n- pairRangeForDate(\"2025-01-10\", \"2024-2-01\") throws INVALID_SESSION_DATE\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). pairRangeForDate is tested with the default anchor only (two dates); a custom firstRangeStart, the January to previous December wrap, an in-pair December and the INVALID_SESSION_DATE guards for both arguments are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-history.ts",
+     "fn": "pairRangeForDate"
+    }
+   }
+  },
+  {
+   "id": "Y7",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[ticker-reference-dated] datedTickerMonthStarts: characterization test for the firstMonth option",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for datedTickerMonthStarts in src/ticker-reference-dated.ts: first month option\n- datedTickerMonthStarts(new Date(\"2026-03-15T00:00:00Z\"), { firstMonth: \"2026-01-01\" }) is [\"2026-01-01\", \"2026-02-01\", \"2026-03-01\"]\n- datedTickerMonthStarts(new Date(\"2026-03-15T00:00:00Z\"), { firstMonth: \"2026-04-01\" }) is []\n- datedTickerMonthStarts(new Date(\"2026-03-15T00:00:00Z\"), { firstMonth: \"2026-01-15\" }) throws INVALID_FIRST_MONTH\n- datedTickerMonthStarts(new Date(\"2026-01-31T23:59:00Z\"), { firstMonth: \"2025-12-01\" }) is [\"2025-12-01\", \"2026-01-01\"]\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). datedTickerMonthStarts is tested with the default first month only; an explicit firstMonth, a firstMonth after now (empty), a year boundary and the INVALID_FIRST_MONTH guard are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/ticker-reference-dated.ts",
+     "fn": "datedTickerMonthStarts"
+    }
+   }
+  },
+  {
+   "id": "Y8",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[intraday-reply-dust] replyDustObjectMetadata: characterization test for the reply dust object metadata keys",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for replyDustObjectMetadata in src/intraday-reply-dust.ts: object metadata\n- replyDustObjectMetadata(\"massive-stocks\", \"2026-10-13\", { securityId: \"sec_a\", symbol: \"AAA\", dataset: \"stocks-aggregates-10m\", request: \"/v2/aggs/x\", fetchedAt: \"2026-10-13T21:00:00Z\", observedAt: \"2026-10-13T21:00:01Z\", relativePath: \"a.rdust\", byteLength: 10, version: 1, replySha256: \"ab\", replyByteLength: 20, fileSha256: \"cd\" }) is { \"rd-schema\": \"intraday-reply-dust-object-v1\", \"rd-provider\": \"massive-stocks\", \"rd-session-date\": \"2026-10-13\", \"rd-security-id\": \"sec_a\", \"rd-symbol\": \"AAA\", \"rd-request\": \"/v2/aggs/x\", \"rd-fetched-at\": \"2026-10-13T21:00:00Z\", \"rd-observed-at\": \"2026-10-13T21:00:01Z\", \"rd-version\": \"1\", \"rd-reply-sha256\": \"ab\", \"rd-reply-length\": \"20\" }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). replyDustObjectMetadata has no direct test; its exact key set (rd-* fields, numbers as strings, no file sha or path) is what rebuilds manifests from the store; this pins it. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/intraday-reply-dust.ts",
+     "fn": "replyDustObjectMetadata"
+    }
+   }
+  },
+  {
+   "id": "Y9",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[scan-grouped-reply-dust] disabledScanGroupedReplyDustReport: characterization test for the disabled grouped reply dust report",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for disabledScanGroupedReplyDustReport in src/scan-grouped-reply-dust.ts: disabled report\n- disabledScanGroupedReplyDustReport(\"SCAN_GROUPED_REPLY_DUST_OFF\") is { enabled: false, reason: \"SCAN_GROUPED_REPLY_DUST_OFF\", extraMassiveRequests: 0, copies: [], warnings: [] }\n- disabledScanGroupedReplyDustReport(\"\") is { enabled: false, reason: \"\", extraMassiveRequests: 0, copies: [], warnings: [] }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). disabledScanGroupedReplyDustReport has no direct test; its shape (enabled false, the reason, zero extra requests, no copies or warnings) is untested; this pins it. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/scan-grouped-reply-dust.ts",
+     "fn": "disabledScanGroupedReplyDustReport"
+    }
+   }
+  },
+  {
+   "id": "Y10",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-range-reply-dust] tenMinRangeObjectMetadata: characterization test for link and origin metadata",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for tenMinRangeObjectMetadata in src/tenmin-range-reply-dust.ts: link and origin\n- tenMinRangeObjectMetadata({ provider: \"p\", calendarFrom: \"2024-11-01\", calendarTo: \"2024-12-31\", securityId: \"s\", symbol: \"S\", fetchFrom: \"2024-11-01\", fetchTo: \"2024-12-31\", observedAt: \"t\", pageCount: 2, file: { page: 1, request: \"/r\", fetchedAt: \"f\", version: 1, replySha256: \"h\", replyByteLength: 9 }, link: \"Bad\" }) throws TENMIN_RANGE_LINK_INVALID\n- tenMinRangeObjectMetadata({ provider: \"p\", calendarFrom: \"2024-11-01\", calendarTo: \"2024-12-31\", securityId: \"s\", symbol: \"S\", fetchFrom: \"2024-11-01\", fetchTo: \"2024-12-31\", observedAt: \"t\", pageCount: 2, file: { page: 1, request: \"/r\", fetchedAt: \"f\", version: 1, replySha256: \"h\", replyByteLength: 9 }, origin: \"-x\" }) throws TENMIN_RANGE_ORIGIN_INVALID\n- tenMinRangeObjectMetadata({ provider: \"p\", calendarFrom: \"2024-11-01\", calendarTo: \"2024-12-31\", securityId: \"s\", symbol: \"S\", fetchFrom: \"2024-11-01\", fetchTo: \"2024-12-31\", observedAt: \"t\", pageCount: 2, file: { page: 1, request: \"/r\", fetchedAt: \"f\", version: 1, replySha256: \"h\", replyByteLength: 9 }, link: \"m-1\", origin: \"daily-close\" }) is { \"rd-schema\": \"tenmin-range-reply-dust-object-v2\", \"rd-provider\": \"p\", \"rd-security-id\": \"s\", \"rd-symbol\": \"S\", \"rd-request\": \"/r\", \"rd-fetched-at\": \"f\", \"rd-observed-at\": \"t\", \"rd-version\": \"1\", \"rd-reply-length\": \"9\", \"rd-reply-sha256\": \"h\", \"rd-range-from\": \"2024-11-01\", \"rd-range-to\": \"2024-12-31\", \"rd-fetch-from\": \"2024-11-01\", \"rd-fetch-to\": \"2024-12-31\", \"rd-page\": \"1\", \"rd-page-count\": \"2\", \"rd-link\": \"m-1\", \"rd-origin\": \"daily-close\" }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). tenMinRangeObjectMetadata is tested without link / origin; the TENMIN_RANGE_LINK_INVALID and TENMIN_RANGE_ORIGIN_INVALID guards and the rd-link / rd-origin keys are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-range-reply-dust.ts",
+     "fn": "tenMinRangeObjectMetadata"
+    }
+   }
+  },
+  {
+   "id": "Y11",
+   "rule": "v1",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[daily-reply-dust] dailyReplyDustHashedFileKey: characterization test for hashed file key layout and guards",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for dailyReplyDustHashedFileKey in src/daily-reply-dust.ts: hashed file keys\n- dailyReplyDustHashedFileKey(\"2026-10-13\", \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\") is \"permanent/daily-reply-dust/2026-10-13/grouped-daily-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.rdust\"\n- dailyReplyDustHashedFileKey(\"2026-10-13\", \"0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef\") throws INVALID_REPLY_SHA256\n- dailyReplyDustHashedFileKey(\"2026-10-13\", \"abc\") throws INVALID_REPLY_SHA256\n- dailyReplyDustHashedFileKey(\"2026-10-1\", \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\") throws INVALID_SESSION_DATE\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). dailyReplyDustHashedFileKey is only used round-trip through a store; its literal layout, the INVALID_REPLY_SHA256 guard (uppercase or short hex) and INVALID_SESSION_DATE are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/daily-reply-dust.ts",
+     "fn": "dailyReplyDustHashedFileKey"
+    }
+   }
+  },
+  {
+   "id": "Y12",
+   "rule": "v3",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[tenmin-redispatch] minutesUntilGuardWindowEnd: characterization test for times just before the dispatch lead",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for minutesUntilGuardWindowEnd in src/tenmin-redispatch.ts: lead edges\n- minutesUntilGuardWindowEnd(new Date(\"2026-10-13T05:04:00Z\")) is undefined\n- minutesUntilGuardWindowEnd(new Date(\"2026-10-13T05:04:30Z\")) is undefined\n- minutesUntilGuardWindowEnd(new Date(\"2026-10-13T09:04:00Z\")) is undefined\n- minutesUntilGuardWindowEnd(new Date(\"2026-10-13T05:10:00Z\")) is 65\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v3): Peace's task (source: peace). minutesUntilGuardWindowEnd is tested from 05:05Z / 09:05Z (inside the 10-minute lead) onward; times just before the lead (05:04Z, 05:04:30Z, 09:04Z) and a mid-lead time are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/tenmin-redispatch.ts",
+     "fn": "minutesUntilGuardWindowEnd"
+    }
+   }
+  },
+  {
+   "id": "Y13",
+   "rule": "v4",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[prediction-status] resolveSessionPredictionStatus: characterization test for frozen record tie-breaks",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for resolveSessionPredictionStatus in src/prediction-status.ts: frozen tie-breaks\n- resolveSessionPredictionStatus([]) is undefined\n- resolveSessionPredictionStatus([{ predictionStatusId: \"b\", sessionDate: \"2026-10-13\", status: \"FROZEN\", reason: \"PREDICTIONS_FROZEN\", scannerVersion: \"v\", configFingerprint: \"c\", recordedAt: \"2026-10-13T13:00:00Z\", supersedesPredictionIds: [] }, { predictionStatusId: \"a\", sessionDate: \"2026-10-13\", status: \"FROZEN\", reason: \"PREDICTIONS_FROZEN\", scannerVersion: \"v\", configFingerprint: \"c\", recordedAt: \"2026-10-13T14:00:00Z\", supersedesPredictionIds: [] }]) is { predictionStatusId: \"a\", sessionDate: \"2026-10-13\", status: \"FROZEN\", reason: \"PREDICTIONS_FROZEN\", scannerVersion: \"v\", configFingerprint: \"c\", recordedAt: \"2026-10-13T14:00:00Z\", supersedesPredictionIds: [] }\n- resolveSessionPredictionStatus([{ predictionStatusId: \"b\", sessionDate: \"2026-10-13\", status: \"FROZEN\", reason: \"PREDICTIONS_FROZEN\", scannerVersion: \"v\", configFingerprint: \"c\", recordedAt: \"2026-10-13T13:00:00Z\", supersedesPredictionIds: [] }, { predictionStatusId: \"a\", sessionDate: \"2026-10-13\", status: \"FROZEN\", reason: \"PREDICTIONS_FROZEN\", scannerVersion: \"v\", configFingerprint: \"c\", recordedAt: \"2026-10-13T13:00:00Z\", supersedesPredictionIds: [] }]) is { predictionStatusId: \"a\", sessionDate: \"2026-10-13\", status: \"FROZEN\", reason: \"PREDICTIONS_FROZEN\", scannerVersion: \"v\", configFingerprint: \"c\", recordedAt: \"2026-10-13T13:00:00Z\", supersedesPredictionIds: [] }\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v4): Peace's task (source: peace). resolveSessionPredictionStatus is tested with attemptedAt ordering and legacy ids; an empty list and the FROZEN-only tie-breaks without attemptedAt (newest recordedAt, then id ascending) are untested; this pins them. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/prediction-status.ts",
+     "fn": "resolveSessionPredictionStatus"
+    }
+   }
+  },
+  {
+   "id": "Y14",
+   "rule": "v1",
+   "category": "test-existing",
+   "skill": "TEST_CASE_EXISTING",
+   "expect": "solve",
+   "title": "[daily-bars-pack-decode] monthFileFromLines: characterization test for an empty month file",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nadd a characterization test for monthFileFromLines in src/daily-bars-pack-decode.ts: empty month\n- monthFileFromLines([]) is \"\"\n\n(Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v1): Peace's task (source: peace). monthFileFromLines is tested with three lines only; the empty month (no trailing newline, empty string) is untested; this pins it. Production safety: test-only: one new src/*.test.ts file only: no source edits, no fix commit. Job B grades it fix-free: the test passes on the current code and fails with the function body stubbed. The running scanner chain is unchanged. {DRY} Disjoint file: each task in this batch creates its own new test file. Expected COUNTS.)",
+   "accept": {
+    "mutate": {
+     "file": "src/daily-bars-pack-decode.ts",
+     "fn": "monthFileFromLines"
+    }
+   }
+  }
+ ]
+}
