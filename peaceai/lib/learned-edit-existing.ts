@@ -272,6 +272,8 @@ const GLOBAL_OK: Readonly<Record<string, { ctor: boolean }>> = {
 /** Members of allowed globals that are still refused (randomness, prototype / property-definition patching, clocks). */
 const GLOBAL_MEMBER_DENY = new Set(["Math.random", "Object.defineProperty", "Object.defineProperties", "Object.setPrototypeOf", "Object.getPrototypeOf", "Object.assign", "Promise.race", "Buffer.allocUnsafe", "Buffer.allocUnsafeSlow", "URL.createObjectURL", "URL.revokeObjectURL", "Response.redirect"]);
 const REFLECTION = new Set(["constructor", "__proto__", "prototype", "caller", "callee", "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__"]);
+/** Auditor #489: the engine itself never edits (or pulls into a closure) a test helper or a fixture / mock, no matter what targets.json denyPatterns say. */
+export const isExcludedSource = (p: string): boolean => /\.test-helper\.ts$/.test(p) || /(?:^|\/)(?:fixtures|__fixtures__|__mocks__|__tests__|testdata|test-helpers|mocks)\//.test(p);
 /** Local-time reads and Date setters (the learned-complex DATE lists), refused by member name on any receiver. */
 const LOCAL_TIME = /^(?:getFullYear|getYear|getMonth|getDate|getDay|getHours|getMinutes|getSeconds|getMilliseconds|getTimezoneOffset|toLocaleString|toLocaleDateString|toLocaleTimeString|toDateString|toTimeString|toUTCString|toJSON|set(?:UTC)?(?:FullYear|Year|Month|Date|Hours|Minutes|Seconds|Milliseconds|Time))$/;
 const CRYPTO_OK = new Set(["createHash", "createHmac"]);
@@ -1112,7 +1114,7 @@ export function existingEditDetail(trigger: string, params: Record<string, strin
   if (heads.length !== 1) return no("edit_trigger");
   const g = re.exec(heads[0]!)!.groups ?? {};
   const file = files.find((f) => f.path === g.file);
-  if (!file || isTest(file.path) || !/^src\/[\w./-]+\.ts$/.test(file.path) || file.path.endsWith(".d.ts") || PROTECTED_SELF.some((p) => p.pattern.test(file.path))) return no("edit_path");
+  if (!file || isTest(file.path) || isExcludedSource(file.path) || !/^src\/[\w./-]+\.ts$/.test(file.path) || file.path.endsWith(".d.ts") || PROTECTED_SELF.some((p) => p.pattern.test(file.path))) return no("edit_path");
   const split = splitBody(g.body ?? "");
   if (!split) return no("edit_split");
   if (newGrammarProblem(parseStatements(split.newText) ?? [], true)) return no("edit_new_grammar");
@@ -1125,7 +1127,7 @@ export function existingEditDetail(trigger: string, params: Record<string, strin
   if (baseTarget) { const cap = capabilityDelta(baseTarget.node, edited.target.node); if (cap) return no(cap); }
   const fakeTest = parseFakeTest(lines);
   if (!fakeTest) return no("edit_test_grammar");
-  const read: Read = (rel) => { const f = files.find((x) => x.path === rel); return f && !isTest(rel) ? f.content : null; };
+  const read: Read = (rel) => { const f = files.find((x) => x.path === rel); return f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null; };
   const before = hermeticProblem(file.path, read, fakeTest.calls, g.target!);
   if (typeof before === "string") return no(before);
   const after = hermeticProblem(file.path, read, fakeTest.calls, g.target!, { path: file.path, content: edited.content });

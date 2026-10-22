@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, RULE_KINDS, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { codeTokens, editConfinedTarget, editStatement, existingEditDetail, EXISTING_EDIT_ENV_RUNS, EXISTING_EDIT_TRIGGER, EXISTING_EDIT_VOCAB, existingEditReads, gradedTestCalls, gradeExistingEditProblem, hasComment, hermeticProblem, newGrammarProblem, parseStatements, splitBody, type CallShape } from "../lib/learned-edit-existing.ts";
+import { codeTokens, editConfinedTarget, editStatement, existingEditDetail, isExcludedSource, EXISTING_EDIT_ENV_RUNS, EXISTING_EDIT_TRIGGER, EXISTING_EDIT_VOCAB, existingEditReads, gradedTestCalls, gradeExistingEditProblem, hasComment, hermeticProblem, newGrammarProblem, parseStatements, splitBody, type CallShape } from "../lib/learned-edit-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
 import { phrasingFor } from "../lib/propose.ts";
@@ -300,6 +300,11 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
   assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, evilFetch, e.extra[0]!.path, e.extra[0]!.content, rd), "edit_new_capability:id:fetch");
   const evilCast = STORAGE.replace("return { total, count: keys.length };", "const z = (keys as any)[\"length\"]; return { total, count: keys.length };");
   assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, evilCast, e.extra[0]!.path, e.extra[0]!.content, rd), "edit_new_capability:cast:any");
+
+  // Engine excludes test helpers and fixtures as edit targets, no matter what targets.json denyPatterns say.
+  assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/x.test-helper.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/x.test-helper.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
+  assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/fixtures/x.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/fixtures/x.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
+  assert.ok(isExcludedSource("src/a.test-helper.ts") && isExcludedSource("src/__mocks__/a.ts") && isExcludedSource("src/fixtures/a.ts") && !isExcludedSource("src/a.ts"));
 });
 
 test("negatives: the closure is hermetic or nothing (package imports, builtins, load-time IO, extends)", () => {

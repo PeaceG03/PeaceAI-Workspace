@@ -16,7 +16,7 @@ import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
-import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem } from "../lib/learned-edit-existing.ts";
+import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
@@ -392,7 +392,7 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
 function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
-  const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath)).map((f) => f.newPath!);
+  const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && scope.isTest(f.newPath)).map((f) => f.newPath!);
   if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return ungradable("not-test-only");
   const regular = (rel: string): string | null => {
@@ -403,7 +403,7 @@ function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, ne
   let baseText: string;
   try { baseText = git(repo, "show", `${base}:${modPath}`); } catch { return ungradable("revert-failed"); }
   if (real === null || test === null) return ungradable("not-applied");
-  const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null);
+  const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
   if (gradeExistingEditProblem(modPath, baseText, real, testPath, test, read) !== null) return ungradable("not-test-only");
   const reads = existingEditReads(modPath, read);
   if (!reads) return ungradable("module-imports-repo-files");
@@ -708,7 +708,19 @@ for (const candidate of selected) {
     });
     rmSync(parked, { recursive: true, force: true });
     // Pass 2: only the new tests, in a separate process.
-    result.newTestsPassed = newTests.length === 0 ? true : runCandidate(tree, tsx, ["--test", ...newTests]);
+    // Auditor #489: an EXISTING_EDIT (M98) emitted test must never execute UNCONFINED anywhere in the pipeline — the
+    // original-suite / new-test steps ran with no permission flags, so a test that reached I/O would see `process`,
+    // `fetch`, &c. Run it under the Node permission model (its module load-closure reads only), as Job B does; fail
+    // closed if the closure can't be resolved (gradeExistingEdit would reject such a module anyway).
+    const m98Candidate = candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
+    if (newTests.length === 0) result.newTestsPassed = true;
+    else if (m98Candidate) {
+      const srcFiles = files.filter((f) => !f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
+      const regular = (rel: string): string | null => { try { const pth = join(tree, rel); if (!lstatSync(pth).isFile() || relative(tree, realpathSync(pth)).startsWith("..")) return null; return readFileSync(pth, "utf8"); } catch { return null; } };
+      const rd = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
+      const reads = srcFiles.length === 1 ? existingEditReads(srcFiles[0]!, rd) : null;
+      result.newTestsPassed = !!reads && runExistingTests(tree, newTests, reads, false, undefined, EXISTING_EDIT_ENV_RUNS[0]).ok;
+    } else result.newTestsPassed = runCandidate(tree, tsx, ["--test", ...newTests]);
     // Pass 3 (M12, learned tests only): the same new tests on the code before the fix.
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
