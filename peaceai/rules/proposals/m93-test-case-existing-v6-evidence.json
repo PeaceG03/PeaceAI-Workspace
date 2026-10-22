@@ -2,7 +2,7 @@
  "schema": "peaceai-m93-test-case-existing-v6-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "TEST_EXISTING v6 target (public-test-case-existing-v6): 19 exported functions from 17 permissive repos outside lm-corpus (repo and module sha checked against ext-manifest 8458eac6 + ext-corpus.json), each called by an existing test file at the pinned commit (HEAD of the clone), where v1-v5 refuse the function (test_target_signature) and v6 accepts it on the pinned module text, following relative imports only through the pinned sibling fixtures (1 example needs a sibling). The examples cover both v6 widenings: 8 take a parameter typed exactly `unknown`, and 11 take a `NodeJS.ProcessEnv` parameter (9 of them with the default `= process.env`, which v6 allows only when every check passes the env object). Method: the HEAD scan of the same 411 + 326 cloned permissive TypeScript repos used for M88-M91 found 123 candidates (at most 3 per repo; 3 in Peace's repos); 107 replay and pass the license and size (64 KiB) checks, 93 of those pass the pre-push core-text scan. Kept: every NodeJS.ProcessEnv example (11, 10 repos) plus the 8 smallest `unknown` examples from other repos (one per repo; a fork carrying a byte-identical module was skipped). Peace's public repos were checked first (see peace): PeaceSTOCKS has fitting functions, but it is in the corpus manifest, so they are recorded and not counted.",
+ "note": "TEST_EXISTING v6 target (public-test-case-existing-v6): 14 exported functions from 13 permissive repos outside lm-corpus (repo and module sha checked against ext-manifest 8458eac6 + ext-corpus.json), each called by an existing test file at the pinned commit (HEAD of the clone), where v1-v5 refuse the function (test_target_signature) and v6 accepts it on the pinned module text, following relative imports only through the pinned sibling fixtures (0 examples need a sibling). The examples cover both v6 widenings: 8 take a parameter typed exactly `unknown`, and 6 take a `NodeJS.ProcessEnv` parameter (4 of them with the default `= process.env`, which v6 allows only when every check passes the env object). Method: the HEAD scan of the same 411 + 326 cloned permissive TypeScript repos used for M88-M91 found 123 candidates (at most 3 per repo; 3 in Peace's repos); 107 replay and pass the license and size (64 KiB) checks, 93 of those pass the pre-push core-text scan. Kept: every NodeJS.ProcessEnv example (11, 10 repos) plus the 8 smallest `unknown` examples from other repos (one per repo; a fork carrying a byte-identical module was skipped). Auditor #460 (2nd review) rebuild: replayed on the full clone with the closure rules (load-time reach, non-.ts relative imports, require / dynamic import in the closure); 4 ProcessEnv examples are now correctly refused there (casper terminalPrompt, vskill resolveGitHubEnvToken, aidlc-workflows inNightly, scriptc resolvePlatformLinker: test_target_io) and openswarm resolveEscalationBudget was dropped because its newly needed closure fixtures fail the pre-push core-text scan, leaving 6 ProcessEnv examples. Peace's public repos were checked first (see peace): PeaceSTOCKS has fitting functions, but it is in the corpus manifest, so they are recorded and not counted.",
  "peace": [
   {
    "repo": "PeaceG03/PeaceSTOCKS",
@@ -45,13 +45,6 @@
    "licenseFile": "LICENSE"
   },
   {
-   "name": "Choaterboater/casper",
-   "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
-   "spdx": "MIT",
-   "classified": "MIT",
-   "licenseFile": "LICENSE"
-  },
-  {
    "name": "Nei-Xin/repomind",
    "commit": "5f289fbf39ae36c251ae47dcc5d9c95a9c5e3088",
    "spdx": "MIT",
@@ -75,20 +68,6 @@
   {
    "name": "alexngai/openswarm",
    "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
-   "spdx": "MIT",
-   "classified": "MIT",
-   "licenseFile": "LICENSE"
-  },
-  {
-   "name": "anton-abyzov/vskill",
-   "commit": "d92eee849e93a77779a77d349f235224cb62408b",
-   "spdx": "MIT",
-   "classified": "MIT",
-   "licenseFile": "LICENSE"
-  },
-  {
-   "name": "awslabs/aidlc-workflows",
-   "commit": "f2acb53d353c9658f7a80737ea96f05447bc60eb",
    "spdx": "MIT",
    "classified": "MIT",
    "licenseFile": "LICENSE"
@@ -119,13 +98,6 @@
    "commit": "633bcdb1ea383ea1f9817b45b97cbc37a0be32ab",
    "spdx": "MIT",
    "classified": "MIT",
-   "licenseFile": "LICENSE"
-  },
-  {
-   "name": "vercel-labs/scriptc",
-   "commit": "287119c4499827289895ac37ba18da620b5e4b3b",
-   "spdx": "Apache-2.0",
-   "classified": "Apache-2.0",
    "licenseFile": "LICENSE"
   },
   {
@@ -206,36 +178,6 @@
    "siblings": [],
    "license": "MIT",
    "licenseSha256": "85fe8ea6f1f2fb5801a3e14a3ce61047aee54065579038a66e23e2df8284fc68"
-  },
-  {
-   "repo": "Choaterboater/casper",
-   "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
-   "test": "tests/cli-prompt-session.test.ts",
-   "module": "src/cli-main.ts",
-   "fn": "terminalPrompt",
-   "line": 191,
-   "signature": "(CliOptions, boolean, boolean, NodeJS.ProcessEnv = process.env): boolean",
-   "v1Refusal": "test_target_signature",
-   "v2Refusal": "test_target_signature",
-   "v3Refusal": "test_target_signature",
-   "v4Refusal": "test_target_signature",
-   "v5Refusal": "test_target_signature",
-   "framework": "bun:test",
-   "sha256": "251d14ebe93db00c61436c09c3b09af989f4d0c7471b96ded78b9c2136804533",
-   "fileBlob": "ab3733ba330f1d620e63d639c4f9abdb736a67c3",
-   "fixture": "peaceai/test/fixtures/m93-te6/Choaterboater__casper-ab3733ba330f.txt",
-   "siblings": [
-    {
-     "repo": "Choaterboater/casper",
-     "commit": "ea7bc98ae9dd2a1d97952f1e564a8dd2f1070dde",
-     "path": "src/cli-args.ts",
-     "fileBlob": "c2fedabf85cb2b10f2299d52d33024696c0f33f1",
-     "sha256": "f8210c96c96d5548a119ca47a4e544b7d5f530a3fc80521617affa5c02da0e1f",
-     "fixture": "peaceai/test/fixtures/m93-te6/Choaterboater__casper-c2fedabf85cb.txt"
-    }
-   ],
-   "license": "MIT",
-   "licenseSha256": "0eed620d64ee8721baac715e5eba03ec79000ea1147bfd8191044166975f995a"
   },
   {
    "repo": "Nei-Xin/repomind",
@@ -343,69 +285,6 @@
    "licenseSha256": "6bdea6d09b205ce2ac345d099d13c141f9af2a01046e27fef54b16656cdd2aed"
   },
   {
-   "repo": "alexngai/openswarm",
-   "commit": "78044a79229beea89d0211d8b26d218d424d91aa",
-   "test": "legacy/src/engine/tool-call-recovery.test.ts",
-   "module": "legacy/src/engine/tool-call-recovery.ts",
-   "fn": "resolveEscalationBudget",
-   "line": 352,
-   "signature": "(NodeJS.ProcessEnv = process.env): number",
-   "v1Refusal": "test_target_signature",
-   "v2Refusal": "test_target_signature",
-   "v3Refusal": "test_target_signature",
-   "v4Refusal": "test_target_signature",
-   "v5Refusal": "test_target_signature",
-   "framework": "vitest",
-   "sha256": "5ad65cb0064a294c4d27cb1a35414110b81187c8b2653eb1e154bed425c6723b",
-   "fileBlob": "c2e64d6ad288cff1f356b7e445eb01d2676a5390",
-   "fixture": "peaceai/test/fixtures/m93-te6/alexngai__openswarm-c2e64d6ad288.txt",
-   "siblings": [],
-   "license": "MIT",
-   "licenseSha256": "6bdea6d09b205ce2ac345d099d13c141f9af2a01046e27fef54b16656cdd2aed"
-  },
-  {
-   "repo": "anton-abyzov/vskill",
-   "commit": "d92eee849e93a77779a77d349f235224cb62408b",
-   "test": "src/lib/__tests__/github-fetch.test.ts",
-   "module": "src/lib/github-fetch.ts",
-   "fn": "resolveGitHubEnvToken",
-   "line": 68,
-   "signature": "(NodeJS.ProcessEnv = process.env): string | null",
-   "v1Refusal": "test_target_signature",
-   "v2Refusal": "test_target_signature",
-   "v3Refusal": "test_target_signature",
-   "v4Refusal": "test_target_signature",
-   "v5Refusal": "test_target_signature",
-   "framework": "vitest",
-   "sha256": "cc821d3022426c78d3e42e267644787c922949fe7b12d658c79af824ffdb815d",
-   "fileBlob": "302517b012224b7b7fe04eb92ea58085e15c6743",
-   "fixture": "peaceai/test/fixtures/m93-te6/anton-abyzov__vskill-302517b01222.txt",
-   "siblings": [],
-   "license": "MIT",
-   "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04"
-  },
-  {
-   "repo": "awslabs/aidlc-workflows",
-   "commit": "f2acb53d353c9658f7a80737ea96f05447bc60eb",
-   "test": "tests/e2e/t-live-aidlc-answers-corpus.serial.test.ts",
-   "module": "tests/harness/live-corpus.ts",
-   "fn": "inNightly",
-   "line": 75,
-   "signature": "(NodeJS.ProcessEnv = process.env): boolean",
-   "v1Refusal": "test_target_signature",
-   "v2Refusal": "test_target_signature",
-   "v3Refusal": "test_target_signature",
-   "v4Refusal": "test_target_signature",
-   "v5Refusal": "test_target_signature",
-   "framework": "bun:test",
-   "sha256": "237746d9aafe9a48775f97d464ef3693ed00c6fa5d036406cedbb11ef1b564f1",
-   "fileBlob": "c58d210c4959c543e62bc3b4c631fc59155d9e44",
-   "fixture": "peaceai/test/fixtures/m93-te6/awslabs__aidlc-workflows-c58d210c4959.txt",
-   "siblings": [],
-   "license": "MIT",
-   "licenseSha256": "0beac60c03ba4648df37840205ea1abba594a08200e2665454ff26ab65e9021c"
-  },
-  {
    "repo": "creatornader/agent-bridge",
    "commit": "68cf8c72823967c00f11c260993d3fab65ab4f3c",
    "test": "test/contracts.test.ts",
@@ -488,27 +367,6 @@
    "siblings": [],
    "license": "MIT",
    "licenseSha256": "b054a7cf22500b2a317513f206d94cd40458c7bb87a8edd1183e2d7a26ea9693"
-  },
-  {
-   "repo": "vercel-labs/scriptc",
-   "commit": "287119c4499827289895ac37ba18da620b5e4b3b",
-   "test": "packages/compiler/src/backend/runtime-pack.test.ts",
-   "module": "packages/compiler/src/backend/linker.ts",
-   "fn": "resolvePlatformLinker",
-   "line": 35,
-   "signature": "(NodeJS.ProcessEnv = process.env, string = \"clang\"): string",
-   "v1Refusal": "test_target_signature",
-   "v2Refusal": "test_target_signature",
-   "v3Refusal": "test_target_signature",
-   "v4Refusal": "test_target_signature",
-   "v5Refusal": "test_target_signature",
-   "framework": "vitest",
-   "sha256": "4e217c6064aaf46bf1bcae4760e6ed36f9a51c314511ddf18813cab704de6cfe",
-   "fileBlob": "af53f74df4735a4d3454ce20046cb5fad288338d",
-   "fixture": "peaceai/test/fixtures/m93-te6/vercel-labs__scriptc-af53f74df473.txt",
-   "siblings": [],
-   "license": "Apache-2.0",
-   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
   },
   {
    "repo": "vite-hub/vitehub",

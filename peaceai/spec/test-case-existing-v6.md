@@ -33,6 +33,12 @@ fix-free grading as v5. Only `params.target` differs: `exported-pure-function-v6
     or when any module of the relative value-import closure imports or re-exports the target module (or the closure
     has more than 64 modules). So `f(n - 1)`, `f(n - 1, undefined)`, `const g = f`, `export const X = f(0)`, a followed
     function calling `f(0)` and a sibling importing `f` back are refused; `f(n - 1, env)` and `f(n - 1, {})` are kept.
+  - Auditor #460 (2nd review): the walk also covers every top-level function that load-time code (a top-level
+    statement other than a function declaration), the target or a followed function can name, transitively (so
+    `export const READY = h()` with `h` calling `f(0)` is refused). In the closure, a relative value or side-effect
+    import that is not exactly one readable `.ts` module (`./c.mjs`, `./c.js` with no `c.ts`, `./data.json`) is refused,
+    and so are `require(...)`, `import x = require(...)` and dynamic `import(...)` (in the target module, wherever the
+    walk reaches; in every other closure module, anywhere). All are `test_target_io`.
 - `not_needed`: a target v1-v5 accepts is left to that spec, so two specs never both answer one task.
 
 ## Grading

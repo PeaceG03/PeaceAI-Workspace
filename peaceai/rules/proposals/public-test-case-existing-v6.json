@@ -8,14 +8,14 @@
  "scope": "the v1-v5 characterization test (one new test file, no source edit) for an existing exported function whose signature v5 refuses only for: a parameter whose whole type is unknown (checks pass plain-data literals only), or a parameter typed exactly the global NodeJS.ProcessEnv (read as Record<string, string | undefined>), optionally with the default = process.env on the tested function only, when every call of the function in every check (Job A) and in the graded test (Job B) passes an object literal for that parameter",
  "refusals": "the v1-v5 refusals by name; any, unknown nested in another type or as the return type, NodeJS.ProcessEnv with type arguments or a shadowed NodeJS / process, a process.env default on any other parameter type or on a followed helper, any other non-literal default, and writes to the env object stay refused (test_target_signature / test_target_io / test_target_impure); a check that omits, passes undefined or passes a non-literal for a process.env parameter is test_check_refused; a target whose process.env default anything but the test could reach (a recursive or module call omitting the env argument or passing anything but an object literal or its own unassigned env parameter, any other reference to it in code that runs with it, a dynamic import, or a module of its relative import closure importing it back) is test_target_io (Auditor #460); not_needed when v1-v5 already accept the function (one candidate per task)",
  "evidence": {
-  "examples": 19,
-  "repos": 17,
+  "examples": 14,
+  "repos": 13,
   "file": "peaceai/rules/proposals/m93-test-case-existing-v6-evidence.json",
-  "method": "HEAD scan of the M88 411 + 326 cloned permissive TypeScript repos: an existing test calls an exported function of a relative sibling module that v1-v5 refuse and v6 accepts on the pinned module (siblings pinned as fixtures; no training-corpus overlap); 123 candidates (3 in Peace's repos), 107 replay and pass the license and size checks, 93 pass the pre-push core-text scan; kept all 11 NodeJS.ProcessEnv examples and the 8 smallest unknown examples from other repos",
+  "method": "HEAD scan of the M88 411 + 326 cloned permissive TypeScript repos: an existing test calls an exported function of a relative sibling module that v1-v5 refuse and v6 accepts on the pinned module (siblings pinned as fixtures; no training-corpus overlap); 123 candidates (3 in Peace's repos), 107 replay and pass the license and size checks, 93 pass the pre-push core-text scan; kept all 11 NodeJS.ProcessEnv examples and the 8 smallest unknown examples from other repos (then 5 ProcessEnv examples removed in the Auditor #460 rebuild, see note)",
   "origin": "external-licensed",
   "bar": 10,
   "qualifies": true,
-  "note": "Peace's repos checked first: PeaceSTOCKS (canonicalJson, stableJson, errorClass and 7 more) fits, but it is in the corpus manifest, so it is recorded and not counted. 1 of the 19 examples needs a followed sibling type"
+  "note": "Peace's repos checked first: PeaceSTOCKS (canonicalJson, stableJson, errorClass and 7 more) fits, but it is in the corpus manifest, so it is recorded and not counted. none of the 14 needs a sibling fixture. Rebuilt after Auditor #460 (2nd review): replayed on the full clones with the closure rules, 4 ProcessEnv examples are now correctly refused (test_target_io) and 1 was dropped because its newly needed closure fixtures fail the pre-push core-text scan (19 -> 14 examples, 17 -> 13 repos; 6 ProcessEnv, 4 with = process.env, 8 unknown)"
  },
  "learned": "peaceai/rules/learned/public-test-case-existing-v6.json",
  "tests": [

@@ -662,7 +662,8 @@ function envTargetReferenced(v: V2Ctx, fn: string, decl: ts.FunctionDeclaration,
   const okArg = (g: ts.Expression | undefined, inTarget: boolean) => !!g && (ts.isObjectLiteralExpression(g) || (inTarget && ts.isIdentifier(g) && own.has(g.text)));
   const walk = (n: ts.Node, inTarget: boolean): void => {
     if (bad) return;
-    if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { bad = true; return; }
+    if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) { bad = true; return; }
+    if (ts.isImportEqualsDeclaration(n)) { bad = true; return; }
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === fn) {
       if (!at.every((i) => okArg(n.arguments[i], inTarget))) { bad = true; return; }
       for (const g of n.arguments) walk(g, inTarget);
@@ -672,8 +673,21 @@ function envTargetReferenced(v: V2Ctx, fn: string, decl: ts.FunctionDeclaration,
     ts.forEachChild(n, (c) => walk(c, inTarget));
   };
   walk(decl, true);
+  // Auditor #460 (2nd review): every top-level function the target, a followed function or any load-time code (a
+  // top-level statement other than a function declaration) can name, transitively, is walked too; so a function only
+  // a top-level initializer calls (`export const READY = h()`) is checked. A function nothing can name stays unwalked.
+  const reach = new Set<string>([...fns]);
+  const nameRefs = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && idx.fns.has(n.text) && !reach.has(n.text)) {
+      reach.add(n.text);
+      for (const d of idx.fns.get(n.text)!) nameRefs(d);
+    }
+    ts.forEachChild(n, nameRefs);
+  };
+  nameRefs(decl);
+  for (const s of sf.statements) if (!ts.isFunctionDeclaration(s) || (s.name && fns.has(s.name.text))) nameRefs(s);
   for (const s of sf.statements) {
-    if (ts.isFunctionDeclaration(s)) { if (s !== decl && s.name && fns.has(s.name.text)) walk(s, false); continue; }
+    if (ts.isFunctionDeclaration(s)) { if (s !== decl && s.name && reach.has(s.name.text)) walk(s, false); continue; }
     if (ts.isVariableStatement(s) || ts.isExpressionStatement(s) || ts.isEnumDeclaration(s) || ts.isExportAssignment(s) || ts.isExportDeclaration(s) || ts.isIfStatement(s) || ts.isBlock(s) || ts.isForStatement(s) || ts.isForOfStatement(s) || ts.isForInStatement(s) || ts.isWhileStatement(s) || ts.isDoStatement(s) || ts.isTryStatement(s) || ts.isSwitchStatement(s) || ts.isLabeledStatement(s) || ts.isClassDeclaration(s) || ts.isModuleDeclaration(s) || ts.isThrowStatement(s)) walk(s, false);
     else if (!ts.isImportDeclaration(s) && !ts.isInterfaceDeclaration(s) && !ts.isTypeAliasDeclaration(s) && !ts.isEmptyStatement(s)) bad = true;
   }
@@ -687,12 +701,22 @@ function envTargetReferenced(v: V2Ctx, fn: string, decl: ts.FunctionDeclaration,
     const text = p === v.root ? sf.text : v.read(p);
     if (text === null) continue;
     const m = p === v.root ? sf : ts.createSourceFile(p, text, ts.ScriptTarget.Latest, true);
+    // Auditor #460 (2nd review): `require(...)`, `import x = require(...)` and dynamic `import(...)` anywhere in another
+    // module of the closure are refused (they load modules this walk does not see). In the target module the walk above
+    // refuses them in every function and statement that can run.
+    let loads = false;
+    const seeLoads = (n: ts.Node): void => { if (loads) return; if ((ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) || (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference))) loads = true; else ts.forEachChild(n, seeLoads); };
+    if (p !== v.root) seeLoads(m);
+    if (loads) return true;
     for (const s of m.statements) {
       if (!(ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) || !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
       const typeOnly = ts.isImportDeclaration(s) ? !!s.importClause?.isTypeOnly : s.isTypeOnly;
       const hits = (siblingCandidates(p, s.moduleSpecifier.text) ?? []).filter((c) => c === v.root || v.read(c) !== null);
       if (p !== v.root && hits.includes(v.root)) return true;
       if (typeOnly) continue;
+      // Auditor #460 (2nd review): a relative value or side-effect import that is not exactly one readable .ts module
+      // (`./c.mjs`, `./c.js` with no c.ts, `./data.json`) is code this walk cannot see: refused.
+      if (/^\.\.?\//.test(s.moduleSpecifier.text) && hits.length !== 1) return true;
       for (const c of hits) if (!seen.has(c)) { seen.add(c); if (seen.size > MAX_ENV_CLOSURE) return true; queue.push(c); }
     }
   }

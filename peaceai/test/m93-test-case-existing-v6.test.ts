@@ -21,7 +21,7 @@ const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v6.json")) as RuleSpec;
 const V1 = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v1.json")) as RuleSpec;
 const V5 = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v5.json")) as RuleSpec;
-const SHA = "358edf11b157db360c801406a4be102f2d6258f06287dfc165dc8a2e8a55e51a";
+const SHA = "256f7b3260433df204c8498773e40c7e0986192c096940dcd44787dc19b0c195";
 
 const A = [
   'export const FLAG_ENV = "FEATURE_X" as const;',
@@ -171,11 +171,32 @@ const ENV_REACH: Record<string, { fn: string; check: string; files: { path: stri
     { path: "src/b.ts", content: 'import { k } from "./c";\nexport function g(n: number): boolean { return n > 1; }\nexport function unused(): boolean { return k(); }\n' },
     { path: "src/c.ts", content: 'import "./a";\nexport function k(): boolean { return true; }\n' }] },
   shadowedEnv: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { const g = (env?: NodeJS.ProcessEnv): boolean => f(0, env); return n > 0 ? g() : env.PEACE_PROBE === "1"; }\n' }] },
+  // Auditor #460 2nd review, gap 1: a load-time caller the target never reaches.
+  loadTimeCaller: { fn: "flagOf", check: "- flagOf(2, {}) is 2", files: [{ path: "src/a.ts", content: 'function h(): number { if (flagOf(0) === 1) throw new Error("x"); return 1; }\nexport const READY = h();\nexport function flagOf(n: number, env: NodeJS.ProcessEnv = process.env): number { return env.PEACE_PROBE === "1" ? 1 : n; }\n' }] },
+  loadTimeIndirect: { fn: "flagOf", check: "- flagOf(2, {}) is 2", files: [{ path: "src/a.ts", content: 'function k(): number { return flagOf(0); }\nfunction h(): number { return k(); }\nexport const READY = h();\nexport function flagOf(n: number, env: NodeJS.ProcessEnv = process.env): number { return env.PEACE_PROBE === "1" ? 1 : n; }\n' }] },
+  // gap 2: relative imports that are not one readable .ts module (the walk cannot see them).
+  mjsImportBack: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import "./c.mjs";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/c.mjs", content: 'import { f } from "./a.ts";\nf(0);\n' }] },
+  mjsInSibling: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import { g } from "./b";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n) : env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/b.ts", content: 'import { k } from "./c.mjs";\nexport function g(n: number): boolean { return n > 1; }\n' },
+    { path: "src/c.mjs", content: 'import { f } from "./a.ts";\nexport const k = f(0);\n' }] },
+  jsNoTs: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import "./c.js";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/c.js", content: 'import { f } from "./a.ts";\nf(0);\n' }] },
+  requireInSibling: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import { g } from "./b";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n) : env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/b.ts", content: 'export function g(n: number): boolean { return n > 1; }\nexport function late(): unknown { return require("./c.cjs"); }\n' }] },
   reassignedParam: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { if (n > 5) env = {}; return n > 0 ? f(n - 1, env) : env.PEACE_PROBE === "1"; }\n' }] },
 };
 const ENV_SAFE: Record<string, { fn: string; check: string; files: { path: string; content: string }[] }> = {
   passesOwnEnv: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? f(n - 1, env) : env.PEACE_PROBE === "1"; }\n' }] },
   passesLiteral: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? f(n - 1, {}) : env.PEACE_PROBE === "1"; }\n' }] },
+  jsSpecifierToTs: { fn: "f", check: "- f(1, {}) is false", files: [
+    { path: "src/a.ts", content: 'import { g } from "./b.js";\nexport function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return n > 0 ? g(n) : env.PEACE_PROBE === "1"; }\n' },
+    { path: "src/b.ts", content: 'export function g(n: number): boolean { return n > 1; }\n' }] },
+  loadTimeUnrelated: { fn: "flagOf", check: "- flagOf(2, {}) is 2", files: [{ path: "src/a.ts", content: 'function h(): number { return 1; }\nexport const READY = h();\nexport function flagOf(n: number, env: NodeJS.ProcessEnv = process.env): number { return env.PEACE_PROBE === "1" ? 1 : n; }\n' }] },
   unreachedCaller: { fn: "f", check: "- f(1, {}) is false", files: [{ path: "src/a.ts", content: 'export function f(n: number, env: NodeJS.ProcessEnv = process.env): boolean { return env.PEACE_PROBE === "1"; }\nexport function report(env: NodeJS.ProcessEnv = process.env): string { return f(1, env) ? "on" : "off"; }\n' }] },
 };
 test("Auditor #460: a process.env default reachable from anything but the test is refused (Job A and the Job B re-check)", () => {
