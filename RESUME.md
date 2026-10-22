@@ -16,3 +16,13 @@
   1 candidate each, COUNTS.
 - Next: stress-v1 baseline (/workspace/stress/runs-m91) + sim (runs-m91-sim), full suite, then open the PR (do not
   merge, no proposal issue).
+
+## v5 checkpoint 2 (after interruption)
+
+- Branch m91/test-existing-v5 at 32b8cca (pushed). No PR yet.
+- Sim stress (/workspace/te5/stress, final hash ad677b36): Z1-Z3 v5 SOLVED/COUNTS; regression Y1 -> v4, Y11 -> v1,
+  Y12 -> v3 (one candidate each, COUNTS): not_needed chaining holds.
+- Box checks on 32b8cca: approved list PASS rules=27, leak PASS, builder-log 61/61, typecheck OK, test 17/17,
+  self 5/5, tools 1106/1111 with 1 fail = m48 snapshot rebuild (box-only, fails identically on main 3670cd8; 4 skipped).
+- Running: stress-v1 baseline -> /workspace/stress/runs-m91 (log runs-m91.log). Next: sim run -> runs-m91-sim with
+  WS=/workspace/te5/sim, score with /workspace/stress/score.py, then open the PR.
