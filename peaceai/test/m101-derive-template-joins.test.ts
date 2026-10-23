@@ -48,7 +48,7 @@ for (const t of CENSUS) {
   });
 }
 
-const NUMS = [0, 7, -3, 42, 123, 2026, 99999, -450];
+const NUMS = [0, 1, 7, -3, 42, 123, 2026, 99999, -450];
 const SEQ: DeriveNode = { op: "tmpl", parts: [{ op: "lit", v: "part-" }, { op: "param", i: 0 }, { op: "lit", v: "/" }, { op: "str", a: { op: "param", i: 1 } }, { op: "lit", v: ".json" }] };
 const seqEx = (ns: number[]) => RICH.map((s, i) => ({ args: [s, ns[i % ns.length]!] as DeriveValue[], out: `part-${s}/${ns[i % ns.length]!}.json` }));
 const seqIn = (ns: number[]) => ({ params: [str("name"), num("seq")], ret: "string" as const, examples: seqEx(ns), budget: 100_000 });
@@ -66,25 +66,28 @@ test("str(number): a number slot compiles as (\"\" + n); the alignment finds it 
   else assert.equal(r.ok, false, "under the bar a written number is refused");
 });
 
-test("digits gate: a written number needs 0, a negative, a 1-digit and a 4+-digit example; asks at 0 / -7 / 7 / 1234", () => {
+test("digits gate: a written number needs 0, a negative, 1 and a 4+-digit example; asks at 0 / -7 / 1 / 1234", () => {
   assert.equal(gateProblem(seqIn(NUMS), SEQ, 3), null);
   // only 3-digit numbers: a falsy-zero case, Math.abs, padStart(3) or a grouped text would look the same
   const three = gateProblem(seqIn([100, 123, 250, 999, 404]), SEQ, 3);
   assert.equal(three && `${three.gate}/${three.param}`, "chars/seq");
-  assert.deepEqual(three?.at?.map((a) => a[1]), [0, -7, 7, 1234]);
+  assert.deepEqual(three?.at?.map((a) => a[1]), [0, -7, 1, 1234]);
   // no 0 (upstream grid-js/gridjs px: `if (!width) return ""`): asks at 0
-  const zero = gateProblem(seqIn([7, -3, 42, 1234]), SEQ, 3);
+  const zero = gateProblem(seqIn([1, -3, 42, 1234]), SEQ, 3);
   assert.deepEqual(zero && [zero.gate, zero.at?.map((a) => a[1])], ["chars", [0]]);
   // no negative (Math.abs would look the same): asks at -7
-  const neg = gateProblem(seqIn([0, 7, 42, 1234]), SEQ, 3);
+  const neg = gateProblem(seqIn([0, 1, 42, 1234]), SEQ, 3);
   assert.deepEqual(neg && [neg.gate, neg.at?.map((a) => a[1])], ["chars", [-7]]);
+  // no 1 (upstream skalenetwork/clawbits memberCountLabel: `count === 1 ? "1 member" : `${count} members``): asks at 1
+  const one = gateProblem(seqIn([0, 7, -3, 42, 1234]), SEQ, 3);
+  assert.deepEqual(one && [one.gate, one.at?.map((a) => a[1])], ["chars", [1]]);
   // 1- to 3-digit numbers: a grouped text (toLocaleString) would look the same: asks at 1234
-  const small = gateProblem(seqIn([0, 7, -3, 42, 5, 11, 123, 999]), SEQ, 3);
+  const small = gateProblem(seqIn([0, 1, -3, 42, 5, 11, 123, 999]), SEQ, 3);
   assert.equal(small && `${small.gate}/${small.param}`, "chars/seq");
   assert.deepEqual(small?.at?.map((a) => a[1]), [1234]);
   const loc = (n: number) => n.toLocaleString("en-US");
   assert.notEqual(loc(1234), String(1234));
-  for (const n of [0, 7, -3, 42, 5, 11, 123, 999]) assert.equal(loc(n), String(n));
+  for (const n of [0, 1, -3, 42, 5, 11, 123, 999]) assert.equal(loc(n), String(n));
 });
 
 test("a padded number (padStart, outside the DSL) is never derived", () => {

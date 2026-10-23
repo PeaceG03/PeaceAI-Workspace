@@ -2562,6 +2562,164 @@
      "gate": null
     }
    }
+  },
+  {
+   "id": "m101-str-singular-one",
+   "source": "m101 template-joins miner (skalenetwork/clawbits memberCountLabel, engine fafdb28 with the forms on: far probe at 1)",
+   "params": [
+    "count"
+   ],
+   "types": [
+    "number"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     -1,
+     "-1 members"
+    ],
+    [
+     2,
+     "2 members"
+    ],
+    [
+     10,
+     "10 members"
+    ],
+    [
+     0,
+     "0 members"
+    ],
+    [
+     1234,
+     "1234 members"
+    ]
+   ],
+   "wrongProgram": "(\"\" + count) + \" members\"",
+   "disagreeAt": [
+    1
+   ],
+   "correct": "1 member",
+   "why": "no example was 1, so the singular case (count === 1 ? \"1 member\") was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_no_fit",
+    "gate": null,
+    "askAt": [
+     [
+      622
+     ],
+     [
+      6
+     ],
+     [
+      1
+     ]
+    ],
+    "answers": [
+     [
+      622,
+      "622 members"
+     ],
+     [
+      6,
+      "6 members"
+     ],
+     [
+      1,
+      "1 member"
+     ],
+     [
+      316,
+      "316 members"
+     ],
+     [
+      928,
+      "928 members"
+     ],
+     [
+      4,
+      "4 members"
+     ],
+     [
+      1081,
+      "1081 members"
+     ],
+     [
+      163,
+      "163 members"
+     ],
+     [
+      469,
+      "469 members"
+     ],
+     [
+      775,
+      "775 members"
+     ],
+     [
+      1004,
+      "1004 members"
+     ],
+     [
+      1157,
+      "1157 members"
+     ],
+     [
+      239,
+      "239 members"
+     ],
+     [
+      392,
+      "392 members"
+     ],
+     [
+      545,
+      "545 members"
+     ],
+     [
+      698,
+      "698 members"
+     ],
+     [
+      851,
+      "851 members"
+     ],
+     [
+      86,
+      "86 members"
+     ],
+     [
+      1042,
+      "1042 members"
+     ],
+     [
+      1195,
+      "1195 members"
+     ],
+     [
+      124,
+      "124 members"
+     ],
+     [
+      277,
+      "277 members"
+     ],
+     [
+      430,
+      "430 members"
+     ],
+     [
+      583,
+      "583 members"
+     ]
+    ],
+    "rounds": 8,
+    "after": {
+     "refused": "derive_no_fit",
+     "gate": null
+    }
+   }
   }
  ]
 }

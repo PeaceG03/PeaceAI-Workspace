@@ -63,6 +63,7 @@ cases.push({ id: "m101-str-grouped-digits", source: "m101 template-joins miner (
 // M101: the same miner (forms on, digits gate at 4 digits) derived ("" + width) + "px" for grid-js/gridjs
 // src/util/width.ts px, `if (!width) return ""; return `${Math.floor(width)}px``: wrong at 0. The gate now asks at 0.
 cases.push({ id: "m101-str-falsy-zero", source: "m101 template-joins miner (grid-js/gridjs px, engine ced7ce4 with the forms on)", names: ["width"], types: ["number"], ret: "string", rows: [[-1, "-1px"], [2, "2px"], [10, "10px"], [1234, "1234px"]], wrong: '("" + width) + "px"', at: [0], why: "no example was 0, so the falsy-zero case (if (!width) return \"\") was never seen", truth: ([w]) => (w ? `${Math.floor(w)}px` : ""), grid: g1(-3000, 3000) });
+cases.push({ id: "m101-str-singular-one", source: "m101 template-joins miner (skalenetwork/clawbits memberCountLabel, engine fafdb28 with the forms on: far probe at 1)", names: ["count"], types: ["number"], ret: "string", rows: [[-1, "-1 members"], [2, "2 members"], [10, "10 members"], [0, "0 members"], [1234, "1234 members"]], wrong: '("" + count) + " members"', at: [1], why: "no example was 1, so the singular case (count === 1 ? \"1 member\") was never seen", truth: ([c]) => (c === 1 ? "1 member" : `${c} members`), grid: g1(-3000, 3000) });
 
 const key = (v: V[]) => JSON.stringify(v);
 const out: any[] = [];

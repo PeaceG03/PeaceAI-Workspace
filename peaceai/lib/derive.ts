@@ -848,15 +848,15 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     const missing = DERIVE_STRING_CLASSES.filter(([, re]) => !vals.some((v) => re.test(v))).map(([d]) => d);
     if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i, vals.includes("") ? undefined : [examples[0]!.args.map((a, j) => (j === i ? "" : a))]);
   }
-  // chars, digits (M101): a number written as its decimal text, str(p), is shown at 0, at a negative value, at a 1-digit
-  // value and at a value of 4 or more digits (a falsy-zero case, `if (!n) return ""`, differs at 0; Math.abs at a
-  // negative; a padded text, padStart, at 1 digit; a grouped one, toLocaleString, at 4)
+  // chars, digits (M101): a number written as its decimal text, str(p), is shown at 0, at a negative value, at the 1-digit
+  // value, 1, and at a value of 4 or more digits (a falsy-zero case, `if (!n) return ""`, differs at 0; Math.abs at a
+  // negative; a padded text, padStart, and a singular, `n === 1 ? "1 member" : ...`, at 1; a grouped one, toLocaleString, at 4)
   const written = new Set<number>();
   walk(program, (n) => { if (n.op === "str" && n.a.op === "param") written.add(n.a.i); });
   for (const i of [...written].sort((x, y) => x - y)) {
     const raw = examples.map((e) => e.args[i] as number);
     const vals = raw.map((v) => Math.abs(v));
-    const need: [boolean, string, number][] = [[raw.includes(0), "0", 0], [raw.some((v) => v < 0), "a negative value", -7], [vals.some((v) => v > 0 && v <= 9), "a 1-digit value", 7], [vals.some((v) => v >= 1000), "a value of 4 or more digits", 1234]];
+    const need: [boolean, string, number][] = [[raw.includes(0), "0", 0], [raw.some((v) => v < 0), "a negative value", -7], [raw.includes(1), "1", 1], [vals.some((v) => v >= 1000), "a value of 4 or more digits", 1234]];
     const missing = need.filter(([ok]) => !ok);
     if (missing.length) return fail("chars", `${names[i]} is written as its decimal text by \`${expr}\`, but no example value of it is ${missing.map(([, d]) => d).join(" or ")}; add such examples`, i, missing.map(([, , at]) => ptAt(i, at)));
   }
