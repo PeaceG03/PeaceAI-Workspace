@@ -90,6 +90,13 @@ A unique smallest fit is still refused, `derive_under_specified` with the gate a
 - far: an example at least DERIVE_FAR = 100 past the last edge and one at least 100 before the first edge of every
   compared parameter (two compared parameters: p - q >= 100 and <= -100), so the result past every edge is shown,
   not assumed (S1 without `600 gives false` would otherwise derive `(status === 429) || (500 <= status)`);
+  a min / max cap at c is an edge on the value it caps: an example with that value >= c + 100 and one <= c - 100,
+  for each side some neighbour or far probe reaches (round 3, upstream scan: keen-slider `sign` from -1, 0, 2, 10, 99
+  was accepted as `min(x, 1)`, wrong at every x < -1);
+- region (Auditor #491 round 2, the hidden island): inside every region the program's constants cut a compared
+  parameter into, no example-free stretch longer than half the region (finite) or 100 (open);
+- span (round 2, the unwitnessed cap): every number parameter the result is computed from is shown over at least
+  100, and a number result is shown on every side of 0 the program reaches inside the examples' range;
 - branch / cap: each branch of every conditional and each side of every min / max cap is reached by at least
   DERIVE_MIN_REACH = 2 examples (the true branch of a one-parameter `p === c` or emptiness test holds for one input:
   one example);
@@ -112,6 +119,27 @@ literals, `true` / `false`, `!`, unary minus on a number, `+ - * === <= && ||`, 
 parameter read, is refused) and the ADD_FUNCTION `safeBody` check. So no globals, I/O, computed member access,
 constructor / eval / prototype paths or timers are reachable.
 
+## Asking, not only refusing (round 3, Peace)
+
+A witness-gate, rival or ambiguity refusal (and `derive_no_fit`) names up to DERIVE_MAX_QUESTIONS = 3 inputs where
+programs that fit every example disagree, with each one's output there: for a rival or an ambiguity the found
+programs' outputs (inside the examples for a near rival, past them for a far one, largest difference first); for a
+gate the input it names, with the derived program's output and that of a program built to fit every example but
+differ there (the other boolean; a cap / floor at the largest / smallest shown result; for a cap's far side, the cap
+lifted). Deterministic, inside the existing budgets, never at an example input, and never answered from the derived
+program: the issue author answers. The refusal record carries them (`fn(args)=a|b; ...`, safe integers and booleans
+only), and the no-candidate comment asks them in plain words ("What should f(27) give? One program that fits every
+example gives false, another gives true."), leak-scanned like the rest of the comment.
+
+## Mistakes ledger (round 3, Peace)
+
+peaceai/test/fixtures/derive-mistakes.json lists every wrong program a review found (and the upstream scan's): the
+examples, the wrong program, an input where it is wrong and the right output there, why in one plain line, and what
+happens now (refuse and ask at the recorded inputs, then the program derived once the answers are added; or a known
+limit the review note shows). peaceai/test/m99-derive-mistakes.test.ts replays the whole ledger on every change and
+fails if any entry is accepted wrong or its outcome changes. **Each future NOT PASS counterexample is added to the
+ledger in the same PR that fixes it** (regenerate with peaceai/proof/m99-derive-mistakes-gen.ts after adding the case).
+
 ## The edit and the test
 
 - `src/X.ts`: `export function NAME(TYPED PARAMS): R {\n  return DERIVED;\n}\n` (same path rules as the ADD_FUNCTION new
@@ -128,7 +156,7 @@ constructor / eval / prototype paths or timers are reachable.
 ## Refusals by name
 
 derive_behavior_code, derive_sections, derive_signature, derive_examples, derive_no_fit, derive_ambiguous,
-derive_budget, derive_under_specified_<unread|chars|edge|far|branch|cap|rival|rival_budget>[: param], derive_emit_size,
+derive_budget, derive_under_specified_<unread|chars|edge|far|region|span|branch|cap|rival|rival_budget>[: param], derive_emit_size,
 derive_expr_vocab, derive_expr_*, derive_path, derive_module_exists, new_test_path_exists, derive_params.
 
 ## Limits (v1)
