@@ -1,0 +1,92 @@
+/**
+ * Utility formatters for VibeHub
+ */
+
+/**
+ * Formats a date for display
+ */
+export function formatDate(date: Date): string {
+    return new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    }).format(date);
+}
+
+/**
+ * Formats a date as relative time (e.g., "2 hours ago")
+ */
+export function formatRelativeTime(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSecs < 60) {
+        return 'just now';
+    } else if (diffMins < 60) {
+        return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+    } else if (diffHours < 24) {
+        return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else if (diffDays < 7) {
+        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    } else {
+        return formatDate(date);
+    }
+}
+
+/**
+ * Truncates text with ellipsis
+ */
+export function truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Capitalizes first letter of each word
+ */
+export function capitalizeWords(text: string): string {
+    return text.replace(/\b\w/g, char => char.toUpperCase());
+}
+
+/**
+ * Parses comma-separated tags into an array
+ */
+export function parseTags(tagsString: string): string[] {
+    return tagsString
+        .split(',')
+        .map(tag => tag.trim().toLowerCase())
+        .filter(tag => tag.length > 0);
+}
+
+/**
+ * Formats tags array back to comma-separated string
+ */
+export function formatTags(tags: string[]): string {
+    return tags.join(', ');
+}
+
+/**
+ * Generates GitHub URLs
+ */
+export function getGitHubDevUrl(repoFullName: string): string {
+    return `https://github.dev/${repoFullName}`;
+}
+
+export function getCodespacesUrl(repoFullName: string): string {
+    return `https://github.com/codespaces/new?repo=${repoFullName}`;
+}
+
+export function getIssueUrl(repoFullName: string, issueNumber: number): string {
+    return `https://github.com/${repoFullName}/issues/${issueNumber}`;
+}
+
+/**
+ * Generates a unique ID for local storage
+ */
+export function generateLocalId(): string {
+    return `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
