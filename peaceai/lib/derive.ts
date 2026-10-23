@@ -1071,7 +1071,7 @@ export function unreadProblem(input: DeriveInput, program: DeriveNode, read: Rea
     if (!base) return { gate: "unread", param: names[i]!, searched: 0, detail };
     const have = new Map<string, DeriveValue>();
     for (const e of examples) if (keyOf(e.args.filter((_, j) => j !== i)) === keyOf(base.filter((_, j) => j !== i)) && shows(i, e.args[i])) have.set(keyOf([e.args[i]!]), e.args[i]!);
-    const pool: DeriveValue[] = [base[i]!, ...examples.map((e) => e.args[i]!), ...(params[i]!.type === "number" ? [2, 3, 7, 11, 13] : params[i]!.type === "string" ? ["Ab", "x y", "Qz-9"] : [true, false])].filter((v) => shows(i, v) && !degenerate(i, v));
+    const pool: DeriveValue[] = [base[i]!, ...examples.map((e) => e.args[i]!), ...(params[i]!.type === "number" ? [2, 3, 7, 11, 13] : params[i]!.type === "string" ? ["Ab", "x y", "Qz-9"] : [true, false])].filter((v) => shows(i, v));
     const at: DeriveValue[][] = [];
     for (const v of pool) {
       if (have.size + at.length >= need || at.length >= DERIVE_MAX_QUESTIONS) break;
