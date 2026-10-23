@@ -271,7 +271,7 @@
      "out": "file: pad :"
     }
    ],
-   "expr": "\"file:\" + (path + (\":\" + fallback))",
+   "expr": "\"file:\" + path + \":\" + fallback",
    "heldOut": {
     "right": 116,
     "wrong": 0
@@ -651,7 +651,7 @@
      "out": "anomaly__ pad __"
     }
    ],
-   "expr": "\"anomaly__\" + (detectorId + (\"__\" + classifierId))",
+   "expr": "\"anomaly__\" + detectorId + \"__\" + classifierId",
    "heldOut": {
     "right": 116,
     "wrong": 0
@@ -799,7 +799,7 @@
      "out": " pad __"
     }
    ],
-   "expr": "detectorId + (\"__\" + classifierId)",
+   "expr": "detectorId + \"__\" + classifierId",
    "heldOut": {
     "right": 116,
     "wrong": 0
@@ -1159,7 +1159,7 @@
      "out": "$ pad Controller"
     }
    ],
-   "expr": "\"$\" + (name + \"Controller\")",
+   "expr": "\"$\" + name + \"Controller\"",
    "heldOut": {
     "right": 6,
     "wrong": 0
@@ -1307,7 +1307,7 @@
      "out": "https://hub. pad /package/"
     }
    ],
-   "expr": "\"https://hub.\" + (endpoint + (\"/package/\" + packageName))",
+   "expr": "\"https://hub.\" + endpoint + \"/package/\" + packageName",
    "heldOut": {
     "right": 116,
     "wrong": 0
@@ -1455,7 +1455,7 @@
      "out": " pad :"
     }
    ],
-   "expr": "packId + (\":\" + ruleName)",
+   "expr": "packId + \":\" + ruleName",
    "heldOut": {
     "right": 116,
     "wrong": 0
@@ -1591,7 +1591,7 @@
      "out": "calc( pad )"
     }
    ],
-   "expr": "\"calc(\" + (exp + \")\")",
+   "expr": "\"calc(\" + exp + \")\"",
    "heldOut": {
     "right": 6,
     "wrong": 0

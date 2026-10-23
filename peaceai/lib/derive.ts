@@ -391,7 +391,7 @@ function stringPieces(examples: readonly DeriveExample[]): string[] {
  * test re-derives them and checks these numbers. Under the bar the form is never built, so it is never accepted.
  */
 export const DERIVE_FORM_BAR = 10;
-export const TEMPLATE_FORM_EVIDENCE: Readonly<Record<"tmpl" | "str", number>> = { tmpl: 0, str: 0 };
+export const TEMPLATE_FORM_EVIDENCE: Readonly<Record<"tmpl" | "str", number>> = { tmpl: 37, str: 20 };
 /** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
 const MAX_TEMPLATE_SPLITS = 2000;
 /**

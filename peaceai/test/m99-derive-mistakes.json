@@ -2291,20 +2291,36 @@
    "why": "no example had 4 or more digits, so the grouping separator (toLocaleString) was never seen",
    "expected": {
     "outcome": "refuse-and-ask",
-    "reason": "derive_no_fit",
-    "gate": null,
+    "reason": "derive_under_specified",
+    "gate": "chars",
     "askAt": [
      [
-      66
-     ],
-     [
-      6
-     ],
-     [
       0
+     ],
+     [
+      1
+     ],
+     [
+      1234
      ]
     ],
     "answers": [
+     [
+      0,
+      "0"
+     ],
+     [
+      1,
+      "1"
+     ],
+     [
+      1234,
+      "1,234"
+     ],
+     [
+      678,
+      "678"
+     ],
      [
       66,
       "66"
@@ -2314,92 +2330,76 @@
       "6"
      ],
      [
-      0,
-      "0"
+      956,
+      "956"
+     ],
+     [
+      400,
+      "400"
      ],
      [
       94,
       "94"
      ],
      [
-      38,
-      "38"
+      1095,
+      "1,095"
      ],
      [
-      4,
-      "4"
+      539,
+      "539"
      ],
      [
-      108,
-      "108"
+      817,
+      "817"
      ],
      [
-      24,
-      "24"
+      261,
+      "261"
      ],
      [
-      52,
-      "52"
+      1025,
+      "1,025"
      ],
      [
-      80,
-      "80"
+      1164,
+      "1,164"
      ],
      [
-      115,
-      "115"
+      330,
+      "330"
      ],
      [
-      101,
-      "101"
+      469,
+      "469"
      ],
      [
-      17,
-      "17"
+      608,
+      "608"
      ],
      [
-      31,
-      "31"
+      747,
+      "747"
      ],
      [
-      45,
-      "45"
+      886,
+      "886"
      ],
      [
-      59,
-      "59"
+      192,
+      "192"
      ],
      [
-      73,
-      "73"
+      1060,
+      "1,060"
      ],
      [
-      87,
-      "87"
+      1199,
+      "1,199"
      ],
      [
-      119,
-      "119"
-     ],
-     [
-      104,
-      "104"
-     ],
-     [
-      111,
-      "111"
-     ],
-     [
-      13,
-      "13"
-     ],
-     [
-      20,
-      "20"
-     ],
-     [
-      27,
-      "27"
+      365,
+      "365"
      ]
     ],
     "rounds": 8,
@@ -2445,20 +2445,25 @@
    "why": "no example was 0, so the falsy-zero case (if (!width) return \"\") was never seen",
    "expected": {
     "outcome": "refuse-and-ask",
-    "reason": "derive_no_fit",
-    "gate": null,
+    "reason": "derive_under_specified",
+    "gate": "chars",
     "askAt": [
      [
-      622
-     ],
-     [
-      6
-     ],
-     [
       0
+     ],
+     [
+      1
      ]
     ],
     "answers": [
+     [
+      0,
+      ""
+     ],
+     [
+      1,
+      "1px"
+     ],
      [
       622,
       "622px"
@@ -2466,10 +2471,6 @@
      [
       6,
       "6px"
-     ],
-     [
-      0,
-      ""
      ],
      [
       316,
@@ -2542,18 +2543,6 @@
      [
       124,
       "124px"
-     ],
-     [
-      277,
-      "277px"
-     ],
-     [
-      430,
-      "430px"
-     ],
-     [
-      583,
-      "583px"
      ]
     ],
     "rounds": 8,
@@ -2603,20 +2592,18 @@
    "why": "no example was 1, so the singular case (count === 1 ? \"1 member\") was never seen",
    "expected": {
     "outcome": "refuse-and-ask",
-    "reason": "derive_no_fit",
-    "gate": null,
+    "reason": "derive_under_specified",
+    "gate": "chars",
     "askAt": [
-     [
-      622
-     ],
-     [
-      6
-     ],
      [
       1
      ]
     ],
     "answers": [
+     [
+      1,
+      "1 member"
+     ],
      [
       622,
       "622 members"
@@ -2624,10 +2611,6 @@
      [
       6,
       "6 members"
-     ],
-     [
-      1,
-      "1 member"
      ],
      [
       316,
@@ -2700,18 +2683,6 @@
      [
       124,
       "124 members"
-     ],
-     [
-      277,
-      "277 members"
-     ],
-     [
-      430,
-      "430 members"
-     ],
-     [
-      583,
-      "583 members"
      ]
     ],
     "rounds": 8,
@@ -2719,6 +2690,157 @@
      "refused": "derive_no_fit",
      "gate": null
     }
+   }
+  },
+  {
+   "id": "m101-tmpl-hidden-char-replace",
+   "source": "m101 template-joins miner char probes (xpf0000/FlyEnv shellQuote: value.replace(/'/g, ...))",
+   "params": [
+    "value"
+   ],
+   "types": [
+    "string"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "",
+     "''"
+    ],
+    [
+     "abc",
+     "'abc'"
+    ],
+    [
+     "hello world",
+     "'hello world'"
+    ],
+    [
+     "123",
+     "'123'"
+    ],
+    [
+     " Ab 9. ",
+     "' Ab 9. '"
+    ]
+   ],
+   "wrongProgram": "\"'\" + value + \"'\"",
+   "disagreeAt": [
+    "a'b"
+   ],
+   "correct": "'a'\\''b'",
+   "why": "no example value had a quote, so its escape was never seen",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "\"'\" + value + \"'\"",
+    "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)"
+   }
+  },
+  {
+   "id": "m101-tmpl-hidden-char-branch",
+   "source": "m101 template-joins miner char probes (libredb/libredb-studio endpointText: host.includes(\":\") ? `[${host}]:${port}` : ...)",
+   "params": [
+    "host",
+    "port"
+   ],
+   "types": [
+    "string",
+    "number"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "",
+     -1,
+     ":-1"
+    ],
+    [
+     "",
+     2,
+     ":2"
+    ],
+    [
+     "",
+     10,
+     ":10"
+    ],
+    [
+     "a",
+     0,
+     "a:0"
+    ],
+    [
+     "a",
+     3,
+     "a:3"
+    ],
+    [
+     "a",
+     100,
+     "a:100"
+    ],
+    [
+     "ab",
+     1,
+     "ab:1"
+    ],
+    [
+     "ab",
+     5,
+     "ab:5"
+    ],
+    [
+     "abc",
+     -1,
+     "abc:-1"
+    ],
+    [
+     "abc",
+     2,
+     "abc:2"
+    ],
+    [
+     "abc",
+     10,
+     "abc:10"
+    ],
+    [
+     "Hello",
+     0,
+     "Hello:0"
+    ],
+    [
+     "Hello",
+     3,
+     "Hello:3"
+    ],
+    [
+     "Hello",
+     100,
+     "Hello:100"
+    ],
+    [
+     " Ab 9. ",
+     -1,
+     " Ab 9. :-1"
+    ],
+    [
+     "a",
+     1234,
+     "a:1234"
+    ]
+   ],
+   "wrongProgram": "host + \":\" + (\"\" + port)",
+   "disagreeAt": [
+    "a:b",
+    -1
+   ],
+   "correct": "[a:b]:-1",
+   "why": "no example host had a colon, so the bracketed branch was never seen",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "host + \":\" + (\"\" + port)",
+    "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)"
    }
   }
  ]
