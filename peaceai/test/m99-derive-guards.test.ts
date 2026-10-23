@@ -107,6 +107,12 @@ test("Job B derive: the new tests are re-run in UTC, America/Denver and Asia/Tok
     // Passes in the harness's own zone (UTC), fails only in Asia/Tokyo: only the zone re-runs catch it.
     const tz = grade(fx, fx.candidate({ test: (s) => s.replace(/\n\}\);\n$/, "\n  assert.notEqual(new Date(0).getTimezoneOffset(), -540);\n});\n") }));
     assert.deepEqual([tz.g.verdict, tz.g.reason], ["UNGRADABLE", "real-not-stable"], tz.stdout);
+    // Each zone run is its own run: a test that fails only when the zone is SET to America/Denver, or to UTC, passes
+    // the harness's own run (zone not set; the machine's default) and is caught only by that zone's re-run.
+    for (const zone of ["America/Denver", "UTC"]) {
+      const z = grade(fx, fx.candidate({ test: (s) => s.replace(/\n\}\);\n$/, `\n  assert.notEqual(process.env.TZ, ${JSON.stringify(zone)});\n});\n`) }));
+      assert.deepEqual([z.g.verdict, z.g.reason], ["UNGRADABLE", "real-not-stable"], `${zone}: ${z.stdout}`);
+    }
     // Reads a file outside the test, the module and node_modules: passes unconfined, fails under --permission.
     const fs = grade(fx, fx.candidate({ test: (s) => s.replace('import test from "node:test";', 'import test from "node:test";\nimport { readFileSync } from "node:fs";').replace(/\n\}\);\n$/, "\n  assert.ok(readFileSync(process.execPath).length > 0);\n});\n") }));
     assert.deepEqual([fs.g.verdict, fs.g.reason], ["UNGRADABLE", "real-not-stable"], fs.stdout);
