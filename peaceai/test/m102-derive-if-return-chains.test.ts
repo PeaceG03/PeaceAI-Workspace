@@ -1,9 +1,11 @@
 // M102 (if-return chains): the string-order form `s <= t` (op sle) and its order gate. The form is built only with
 // ORDER_FORM_EVIDENCE.sle >= DERIVE_FORM_BAR (the Auditor #491 ruling); the gate refuses a program with an order test
 // until the examples rule out every look-alike order (DERIVE_ORDER_LOOKALIKES), asking about each one not ruled out.
+// The gate and ask-loop tests call deriveCandidate (search + witness gates, no form gate), like m99-derive-gates; the
+// last test checks what deriveProgram emits under the round-3 form gate (ternary has no m99 evidence entries).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compileProgram, DERIVE_FORM_BAR, DERIVE_MIN_REACH, DERIVE_ORDER_LOOKALIKES, deriveProgram, evalProgram, gateProblem, ORDER_FORM_EVIDENCE, orderProblem, orderShownProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
+import { compileProgram, DERIVE_FORM_BAR, DERIVE_MIN_REACH, DERIVE_ORDER_LOOKALIKES, deriveCandidate, deriveProgram, evalProgram, gateProblem, ORDER_FORM_EVIDENCE, orderProblem, orderShownProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
 
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const P: DeriveParam[] = [{ name: "a", type: "string" }, { name: "b", type: "string" }];
@@ -57,7 +59,7 @@ test("order gate runs inside gateProblem (after chars, before edge)", () => {
 
 test("byCodeUnit (PeaceSTOCKS x3): refused under the bar; with the form at the bar the ask loop derives it", () => {
   let inp = input(BASE);
-  let r = deriveProgram(inp);
+  let r = deriveCandidate(inp);
   if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) {
     assert.equal(r.ok, false, "sle off: no order test can be built");
     return;
@@ -66,7 +68,7 @@ test("byCodeUnit (PeaceSTOCKS x3): refused under the bar; with the form at the b
     const qs = (r as { questions?: { at: unknown[] }[] }).questions ?? [];
     assert.ok(qs.length, JSON.stringify(r).slice(0, 300));
     inp = { ...inp, examples: [...inp.examples, ...qs.map((q) => ({ args: q.at as string[], out: byCodeUnit(q.at[0] as string, q.at[1] as string) }))] };
-    r = deriveProgram(inp);
+    r = deriveCandidate(inp);
   }
   assert.ok(r.ok);
   for (const [a, b] of FULL) assert.equal(evalProgram(r.fit.program, [a, b]), byCodeUnit(a, b));
@@ -89,7 +91,7 @@ test("order gate: a look-alike that cannot change the program on any input tried
 /** The ask loop: answer every question from the truth until the engine derives (or 8 rounds). */
 const askLoop = (params: DeriveParam[], ret: DeriveInput["ret"], examples: DeriveExample[], truth: (a: string[]) => string | number) => {
   let inp: DeriveInput = { params, ret, examples };
-  let r = deriveProgram(inp);
+  let r = deriveCandidate(inp);
   const firsts: string[] = [];
   for (let round = 0; round < 8 && !r.ok; round++) {
     const f = r as { gate?: string; questions?: { at: unknown[] }[] };
@@ -97,7 +99,7 @@ const askLoop = (params: DeriveParam[], ret: DeriveInput["ret"], examples: Deriv
     const qs = f.questions ?? [];
     assert.ok(qs.length, "a refusal with no question: " + JSON.stringify(r).slice(0, 300));
     inp = { ...inp, examples: [...inp.examples, ...qs.map((q) => ({ args: q.at as string[], out: truth(q.at as string[]) }))] };
-    r = deriveProgram(inp);
+    r = deriveCandidate(inp);
   }
   return { r, gates: firsts };
 };
@@ -129,4 +131,17 @@ test("order-shown + branch gate (practice seed 100 #1343, stuck with no question
   assert.ok(gates.includes("order") && gates.includes("branch"), gates.join());
   assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
   for (const [a, b] of FULL) assert.equal(evalProgram(r.fit.program, [a, b]), rev([a, b]));
+});
+
+test("form gate (main 5c66982, round 3): with sle on, a comparator or min / max uses the ternary form and is refused; an order test alone, or two joined by && (range), is emitted", () => {
+  const P2: DeriveParam[] = [{ name: "a", type: "string" }, { name: "b", type: "string" }];
+  const rows: [string, string][] = [...FULL, ["Zz 9", "a"], ["a", "a"], ["", ""], ["b", "b"]];
+  const mk = (f: (a: string, b: string) => string | number | boolean, ret: DeriveInput["ret"]): DeriveInput => ({ params: P2, ret, examples: rows.map(([a, b]) => ({ args: [a, b], out: f(a, b) })) });
+  const cmp = deriveCandidate(mk(byCodeUnit, "number"));
+  if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return;
+  assert.ok(cmp.ok, JSON.stringify(cmp).slice(0, 300));
+  const p = deriveProgram(mk(byCodeUnit, "number"));
+  assert.ok(!p.ok && p.reason === "derive_unevidenced_form" && (p as { forms?: string[] }).forms?.includes("ternary"), JSON.stringify(p).slice(0, 300));
+  const le = deriveProgram(mk((a, b) => a <= b, "boolean"));
+  assert.ok(le.ok && compileProgram(le.fit.program, ["a", "b"]) === "a <= b", JSON.stringify(le).slice(0, 300));
 });

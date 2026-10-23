@@ -1,0 +1,111 @@
+/**
+ * HTTP Status Code Categories
+ *
+ * Groups status codes by their category (1xx-5xx).
+ * All arrays are readonly for type safety.
+ */
+
+import type {
+  InformationalStatusCode,
+  SuccessfulStatusCode,
+  RedirectionStatusCode,
+  ClientErrorStatusCode,
+  ServerErrorStatusCode,
+} from './types.js';
+
+// Informational 1xx
+export const informational = [100, 101, 102, 103] satisfies InformationalStatusCode[];
+export const INFORMATIONAL = informational;
+
+// Successful 2xx
+export const successful = [200, 201, 202, 203, 204, 205, 206, 207, 208, 226] satisfies SuccessfulStatusCode[];
+export const SUCCESSFUL = successful;
+
+// Redirection 3xx
+export const redirection = [300, 301, 302, 303, 304, 305, 306, 307, 308] satisfies RedirectionStatusCode[];
+export const REDIRECTION = redirection;
+
+// Client Error 4xx
+export const clientError = [
+  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422,
+  423, 424, 425, 426, 428, 429, 431, 451,
+] satisfies ClientErrorStatusCode[];
+export const CLIENT_ERROR = clientError;
+
+// Server Error 5xx
+export const serverError = [500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511] satisfies ServerErrorStatusCode[];
+export const SERVER_ERROR = serverError;
+
+// All status codes
+export const all = [...informational, ...successful, ...redirection, ...clientError, ...serverError] as const;
+export const ALL = all;
+
+/**
+ * Get category name for a status code
+ * @param code - HTTP status code
+ * @returns Category name or 'Unknown'
+ */
+export function getCategory(code: number): string {
+  const firstDigit = Math.floor(code / 100) as 1 | 2 | 3 | 4 | 5;
+  return categories[firstDigit] ?? 'Unknown';
+}
+
+/**
+ * Category names by first digit
+ */
+export const categories = {
+  1: 'Informational',
+  2: 'Successful',
+  3: 'Redirection',
+  4: 'Client Error',
+  5: 'Server Error',
+} as const;
+
+/**
+ * Check if code is informational (1xx)
+ */
+export function isInformational(code: number): code is InformationalStatusCode {
+  return code >= 100 && code < 200;
+}
+
+/**
+ * Check if code is successful (2xx)
+ */
+export function isSuccessful(code: number): code is SuccessfulStatusCode {
+  return code >= 200 && code < 300;
+}
+
+/**
+ * Check if code is redirection (3xx)
+ */
+export function isRedirection(code: number): code is RedirectionStatusCode {
+  return code >= 300 && code < 400;
+}
+
+/**
+ * Check if code is client error (4xx)
+ */
+export function isClientError(code: number): code is ClientErrorStatusCode {
+  return code >= 400 && code < 500;
+}
+
+/**
+ * Check if code is server error (5xx)
+ */
+export function isServerError(code: number): code is ServerErrorStatusCode {
+  return code >= 500 && code < 600;
+}
+
+/**
+ * Check if code is an error (4xx or 5xx)
+ */
+export function isError(code: number): boolean {
+  return code >= 400 && code < 600;
+}
+
+/**
+ * Check if code is valid (100-599)
+ */
+export function isValid(code: number): boolean {
+  return code >= 100 && code < 600;
+}

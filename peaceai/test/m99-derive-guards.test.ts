@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
-import { DERIVE_BUDGET, deriveProgram, keptCellsLimit, MAX_KEPT_CELLS, rivalProblem, type DeriveInput, type DeriveNode, type DeriveResult } from "../lib/derive.ts";
+import { DERIVE_BUDGET, deriveCandidate, keptCellsLimit, MAX_KEPT_CELLS, rivalProblem, type DeriveInput, type DeriveNode, type DeriveResult } from "../lib/derive.ts";
 import { applyRule, specHash, type RuleSpec } from "../lib/learned.ts";
 import { buildDeriveEdit, DERIVE_VOCAB, parseDeriveTask, DERIVE_TRIGGER } from "../lib/learned-derive.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
@@ -35,6 +35,10 @@ Behavior: given the HTTP status code of a reply from R2, answer true when the re
 
 Examples:
 ${[[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
+// S1 itself needs the eq form (=== 429), which has fewer than 10 replaying upstream entries, so it is refused by the
+// form gate (Auditor round 3 ruling). The guards here need an EMITTED candidate: S1's range half (429 false; the range
+// form has >= 10 entries). The search-bound tests below are about the search, so they call deriveCandidate (no form gate).
+const S1R = S1.replace("- 429 gives true", "- 429 gives false").replace("Worth retrying: 429 and every server error", "Worth retrying: every server error");
 const entry = { id: SPEC.id, sha256: SHA, source: "workspace", approval: { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/40#issuecomment-123", commentId: 123, issue: 40, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-11T00:00:00Z" } };
 
 // ---- Job B (test-candidates.ts gradeSelf, derive branch)
@@ -51,10 +55,10 @@ function fixture() {
   symlinkSync(join(repo, "node_modules"), join(ws, "node_modules"));
   git(ws, "init", "-q", "-b", "main"); git(ws, "add", "-A"); git(ws, "commit", "-qm", "base");
   const baseSha = git(ws, "rev-parse", "HEAD").trim();
-  /** The S1 candidate, with its module and / or test text changed by `tamper`. */
+  /** The S1R candidate, with its module and / or test text changed by `tamper`. */
   const candidate = (tamper: { module?: (s: string) => string; test?: (s: string) => string } = {}) => {
-    const e = applyRule(SPEC, cleanIssueText({ title: "derive", body: S1 } as never), FILES, (p) => /\.test\.ts$/.test(p))!;
-    assert.ok(e, "S1 derives");
+    const e = applyRule(SPEC, cleanIssueText({ title: "derive", body: S1R } as never), FILES, (p) => /\.test\.ts$/.test(p))!;
+    assert.ok(e, "S1R derives");
     writeFileSync(join(ws, e.path), (tamper.module ?? ((s) => s))(e.content));
     const t = e.extra![0]!;
     writeFileSync(join(ws, t.path), (tamper.test ?? ((s) => s))(t.content));
@@ -167,7 +171,14 @@ function jobA(body: string) {
 }
 
 test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comments, indented code) refuses the derive rule; the clean issue makes a candidate", () => {
-  const clean = jobA(S1);
+  const clean = jobA(S1R);
+  // A general if (ternary: no upstream evidence entry): no candidate, refused by name (the form gate).
+  const TERNARY = `Add a new module \`src/four-flag.ts\` exporting \`fourFlag(n: number): number\`.\n\nBehavior: 1 for 4, otherwise 0.\n\nExamples:\n${[-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50].map((n) => `- ${n} gives ${n === 4 ? 1 : 0}`).join("\n")}`;
+  const tern = jobA(TERNARY);
+  assert.equal(tern.n, 0, tern.stdout);
+  assert.match(tern.stdout, new RegExp(`learned refusals: ${SPEC.id}=derive_unevidenced_form: ternary`));
+  // S1 itself (eq, ||, range: each >= 10 upstream entries since round 4): a candidate.
+  assert.equal(jobA(S1).n, 1);
   assert.equal(clean.n, 1, clean.stdout);
   for (const [label, extra] of [
     ["backtick fence", "\n\n```ts\nreturn status === 429 || (500 <= status && status <= 599);\n```\n"],
@@ -179,7 +190,7 @@ test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comment
     ["tilde fence, plain words", "\n\n~~~\nsee the retry table in the wiki\n~~~\n"],
     ["indented block, plain words", "\n\n    see the retry table in the wiki\n"],
   ] as const) {
-    const r = jobA(S1 + extra);
+    const r = jobA(S1R + extra);
     assert.equal(r.n, 0, `${label}: ${r.stdout}`);
     assert.match(r.stdout, new RegExp(`learned refusals: ${SPEC.id}=derive_behavior_code`), label);
   }
@@ -192,16 +203,16 @@ const parity = (ret: "number" | "boolean", k: number) => Array.from({ length: k 
 const why = (r: DeriveResult) => (r.ok ? `ok ${r.fit.expr}` : `${r.reason}${r.gate ? `/${r.gate}` : ""}`);
 
 test("budget: the search stops at the caller's budget, and a larger budget is clamped to DERIVE_BUDGET", () => {
-  const small = deriveProgram({ params: n1, ret: "number", examples: parity("number", 6), budget: 5000 });
+  const small = deriveCandidate({ params: n1, ret: "number", examples: parity("number", 6), budget: 5000 });
   assert.deepEqual([why(small), small.searched], ["derive_budget", 5001]);
-  const huge = deriveProgram({ params: n1, ret: "number", examples: parity("number", 6), budget: 1e12 });
+  const huge = deriveCandidate({ params: n1, ret: "number", examples: parity("number", 6), budget: 1e12 });
   assert.deepEqual([why(huge), huge.searched], ["derive_budget", DERIVE_BUDGET + 1]);
 });
 
 test("memory: a search over many points stops at MAX_KEPT_CELLS (derive_budget) long before DERIVE_BUDGET programs", () => {
   const p3 = ["a", "b", "c"].map((name) => ({ name, type: "number" as const }));
   const examples = Array.from({ length: 40 }, (_, i) => ({ args: [i % 7, (i * 3) % 11, (i * 5) % 13], out: (i * 7919) % 101 }));
-  const r = deriveProgram({ params: p3, ret: "number", examples });
+  const r = deriveCandidate({ params: p3, ret: "number", examples });
   assert.equal(why(r), "derive_budget");
   assert.ok(r.searched < DERIVE_BUDGET / 4, `${r.searched}`);
 });
@@ -211,9 +222,9 @@ test("memory: a search over many points stops at MAX_KEPT_CELLS (derive_budget) 
 test("memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS", () => {
   const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
-  const full = deriveProgram(input);
+  const full = deriveCandidate(input);
   assert.equal(why(full), "ok (status === 429) || (500 <= status && status <= 599)");
-  const capped = deriveProgram({ ...input, maxKeptCells: 20_000 });
+  const capped = deriveCandidate({ ...input, maxKeptCells: 20_000 });
   assert.equal(why(capped), "derive_budget");
   assert.ok(capped.searched < full.searched, `${capped.searched} vs ${full.searched}`);
   assert.equal(keptCellsLimit({}), MAX_KEPT_CELLS);
@@ -226,7 +237,7 @@ test("memory: the kept-values bound stops the search (derive_budget); a caller's
 test("memory: the rival search keeps the caller's kept-values bound (rival_budget under a small one)", () => {
   const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
-  const full = deriveProgram(input);
+  const full = deriveCandidate(input);
   assert.ok(full.ok);
   assert.equal(rivalProblem(input, full.fit.program, full.fit.size), null);
   assert.equal(rivalProblem({ ...input, maxKeptCells: 100_000 }, full.fit.program, full.fit.size)?.gate, "rival_budget");
@@ -238,13 +249,13 @@ test("memory: the rival search keeps the caller's kept-values bound (rival_budge
 test("budget: one budget for the main search and every rival pass (searched never past it)", () => {
   const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
-  const full = deriveProgram(input);
+  const full = deriveCandidate(input);
   assert.ok(full.ok, JSON.stringify(full).slice(0, 300));
   assert.ok(full.searched <= DERIVE_BUDGET);
   let rivalBudget = 0;
   for (const f of [0.2, 0.4, 0.6, 0.8]) {
     const budget = Math.floor(full.searched * f);
-    const r = deriveProgram({ ...input, budget });
+    const r = deriveCandidate({ ...input, budget });
     assert.ok(r.searched <= budget + 3, `budget ${budget}: searched ${r.searched}`);
     if (!r.ok && r.reason === "derive_under_specified" && r.gate === "rival_budget") rivalBudget++;
     else assert.ok(!r.ok && r.reason === "derive_budget", `budget ${budget}: ${r.ok ? "ok" : r.reason}`);
@@ -254,15 +265,15 @@ test("budget: one budget for the main search and every rival pass (searched neve
 
 test("size: maxSize above DERIVE_MAX_SIZE (13) searches exactly what 13 does", () => {
   const input: DeriveInput = { params: n1, ret: "boolean", examples: parity("boolean", 8), budget: 1_200_000 };
-  const at13 = deriveProgram({ ...input, maxSize: 13 });
-  const at99 = deriveProgram({ ...input, maxSize: 99 });
+  const at13 = deriveCandidate({ ...input, maxSize: 13 });
+  const at99 = deriveCandidate({ ...input, maxSize: 99 });
   assert.equal(why(at13), "derive_no_fit");
   assert.deepEqual([why(at99), at99.searched], [why(at13), at13.searched]);
 });
 
 // ---- buildDeriveEdit's emit-time checks: fed a program the search never produces, each layer refuses with its own code
 
-const task = (() => { const p = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1 } as never)); assert.ok("task" in p); return p.task; })();
+const task = (() => { const p = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1R } as never)); assert.ok("task" in p); return p.task; })();
 const PARAMS = Object.fromEntries(Object.entries(DERIVE_VOCAB).map(([k, v]) => [k, v[0]]));
 const fake = (program: DeriveNode) => (_: DeriveInput): DeriveResult => ({ ok: true, fit: { program, size: 1, expr: "" }, probes: [], searched: 0 });
 const emit = (program: DeriveNode) => { const b = buildDeriveEdit(PARAMS, task, FILES, undefined, fake(program)); return "reason" in b ? b.reason : "edit"; };
@@ -291,9 +302,9 @@ test("constant programs: the filtered search finishes S1 and S2 within the progr
   const s2 = [[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]] as const;
   const S1x: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
   const S2x: DeriveInput = { params: [{ name: "attempt", type: "number" }, { name: "baseMs", type: "number" }], ret: "number", examples: s2.map(([a, b, c]) => ({ args: [a, b], out: c })) };
-  assert.equal(why(deriveProgram(S1x)), "ok (status === 429) || (500 <= status && status <= 599)");
+  assert.equal(why(deriveCandidate(S1x)), "ok (status === 429) || (500 <= status && status <= 599)");
   for (const [input, need] of [[S1x, 20_405], [S2x, 193_649]] as const) {
-    assert.equal(why(deriveProgram({ ...input, budget: need })), "derive_under_specified/rival_budget");
-    assert.equal(why(deriveProgram({ ...input, budget: need - 1 })), "derive_budget");
+    assert.equal(why(deriveCandidate({ ...input, budget: need })), "derive_under_specified/rival_budget");
+    assert.equal(why(deriveCandidate({ ...input, budget: need - 1 })), "derive_budget");
   }
 });

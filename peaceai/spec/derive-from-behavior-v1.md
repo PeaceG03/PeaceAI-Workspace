@@ -122,6 +122,28 @@ literals, `true` / `false`, `!`, unary minus on a number, `+ - * === <= && ||`, 
 parameter read, is refused) and the ADD_FUNCTION `safeBody` check. So no globals, I/O, computed member access,
 constructor / eval / prototype paths or timers are reachable.
 
+## Form gate: only forms with upstream evidence are emitted (round 4, Auditor ruling on 6f1ea5e)
+
+After the search and the witness gates (`deriveCandidate`), `deriveProgram` refuses any fit that uses a DSL form
+fewer than DERIVE_FORM_BAR = 10 replaying upstream evidence entries show: `derive_unevidenced_form: <forms>`, with a
+detail naming each form and its count and asking whether the behavior can be written without it. The forms
+(`formsOf`): cap (min / max against a constant), ternary (a general `if`; caps count as cap), strcat (string `+`),
+eq (`===`, including "is empty"), or (`||`), range (`lo <= p && p <= hi` and any `&&`), square (`sq`, or `a * a` of one
+same subprogram). Parameters, constants, `+ - *` on numbers, `<=` and `!` are the ungated base.
+
+The counts come from one place: each entry of peaceai/rules/proposals/m99-derive-from-behavior-evidence.json records
+the forms of the program its examples replay to (`forms`); the runtime counts entries per form from that file, and
+fails closed (every form 0, so every gated form is refused) on an unreadable or malformed file or an unknown form
+name. The evidence test re-derives every entry with `deriveCandidate`, checks its recorded forms, checks the runtime
+counts equal the replayed ones, requires every emittable form to have at least 10 entries, and pins the emittable set.
+Only the evidence replay and the miners call `deriveCandidate`; nothing in peaceai/lib or peaceai/bin besides
+derive.ts names it (tested).
+
+Entries per form (111 entries, 89 repos): cap 13, ternary 0, strcat 12, eq 17, or 13, range 42, square 25. So cap,
+strcat, eq, or, range and square are emitted; ternary (a general `if`: no upstream entry) is refused. S1
+(`(status === 429) || (500 <= status && status <= 599)`) and S2 (a cap of a square) derive; S3 (an `if` on
+`causeCode === ""`) is `derive_unevidenced_form: ternary`.
+
 ## Asking, not only refusing (round 3, Peace)
 
 A witness-gate, rival or ambiguity refusal (and `derive_no_fit`) names up to DERIVE_MAX_QUESTIONS = 3 inputs where
@@ -143,6 +165,17 @@ limit the review note shows). peaceai/test/m99-derive-mistakes.test.ts replays t
 fails if any entry is accepted wrong or its outcome changes. **Each future NOT PASS counterexample is added to the
 ledger in the same PR that fixes it** (regenerate with peaceai/proof/m99-derive-mistakes-gen.ts after adding the case).
 
+Since round 4 the ledger is replayed through `deriveCandidate` and each accepted program pins `formGate` (the forms
+the form gate refuses, `[]` = emitted); the test checks `deriveProgram` emits exactly those and refuses the others by
+name. Known limits are marked `disclosed`; Auditor accepted these as disclosed in its round 3 ruling: caps above every
+example (m100-floor-clamp-past and the two m100-kind-floor-clamp entries), eq_or_ge/sparse, s1_shape/sparse, and S1
+with 429 dropped. Also disclosed: seed 101's t465 (`!(105 <= n && n <= 180)`, wrong at 140..144, a true band narrower
+than the gaps between the examples) and the round 4 upstream scan's isPowerOfTwo (`1 <= x && x <= 4`, wrong at 8, 16,
+..., the same hidden-island class).
+
+**The residual count of the practice generator (11 blocking at 6f1ea5e) describes seed 100 only.** Other seeds draw
+other example sets and find other wrong picks (seed 101 found t465 above); a seed's count is not a bound for any other.
+
 ## The edit and the test
 
 - `src/X.ts`: `export function NAME(TYPED PARAMS): R {\n  return DERIVED;\n}\n` (same path rules as the ADD_FUNCTION new
@@ -159,11 +192,14 @@ ledger in the same PR that fixes it** (regenerate with peaceai/proof/m99-derive-
 ## Refusals by name
 
 derive_behavior_code, derive_sections, derive_signature, derive_examples, derive_no_fit, derive_ambiguous,
-derive_budget, derive_under_specified_<unread|chars|edge|far|region|span|branch|cap|rival|rival_budget>[: param], derive_emit_size,
+derive_budget, derive_under_specified_<unread|chars|edge|far|region|span|branch|cap|rival|rival_budget>[: param],
+derive_unevidenced_form[: forms], derive_emit_size,
 derive_expr_vocab, derive_expr_*, derive_path, derive_module_exists, new_test_path_exists, derive_params.
 
 ## Limits (v1)
 
+- Only forms with at least 10 replaying upstream entries are emitted (form gate above): today no `===` and no general
+  `if`, so behaviors needing them are refused until more upstream evidence is found.
 - New module only; no edit of an existing function (PR #489 can call `deriveProgram` for that).
 - Integers only (no fractions), strings without `"` or `\`, no arrays or objects, at most 3 parameters.
 - Issue cleaning drops `#`, backticks, some `*` and `_` and collapses spaces, so an example string holding them

@@ -1,14 +1,16 @@
 // M102 (Auditor #491 ruling): a DSL form is used only with >= DERIVE_FORM_BAR replaying upstream evidence entries.
 // peaceai/rules/proposals/m102-if-return-chains-evidence.json holds the mined entries for the string-order form (sle:
 // `s <= t`, two string parameters in code-unit order). ORDER_FORM_EVIDENCE in peaceai/lib/derive.ts must equal the
-// count here. At the bar every entry replays fully: deriveProgram from the recorded examples alone gives the recorded
-// expression. Under the bar the form stays off: deriveProgram never builds it.
+// count here. At the bar every entry replays fully: deriveCandidate (search + witness gates) from the recorded examples
+// alone gives the recorded expression. Under the bar the form stays off: it is never built. deriveProgram then applies
+// the round-3 form gate (m99 evidence file, the single source): a replayed program using a form under DERIVE_FORM_BAR
+// there (ternary, for the comparators and min / max) is refused as derive_unevidenced_form, never emitted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { compileProgram, DERIVE_FORM_BAR, DERIVE_MAX_EXAMPLES, deriveProgram, derivedExprProblem, evalProgram, ORDER_FORM_EVIDENCE } from "../lib/derive.ts";
+import { compileProgram, DERIVE_FORM_BAR, DERIVE_MAX_EXAMPLES, deriveCandidate, deriveProgram, derivedExprProblem, evalProgram, ORDER_FORM_EVIDENCE, unevidencedForms } from "../lib/derive.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -55,7 +57,13 @@ test("if-return-chains evidence: modules blob-pinned and hold the upstream funct
     assert.deepEqual(e.forms, ["sle"]);
     const names = e.params.map((p) => p.name);
     assert.equal(derivedExprProblem(e.expr, names), null, `${e.repo} ${e.fn} whitelist`);
-    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
+    const r = deriveCandidate({ params: e.params, ret: e.ret, examples: e.examples });
+    if (r.ok) {
+      const p = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
+      const forms = unevidencedForms(r.fit.program);
+      if (forms.length) assert.ok(!p.ok && p.reason === "derive_unevidenced_form" && JSON.stringify((p as { forms?: unknown }).forms) === JSON.stringify(forms), `${e.repo} ${e.fn}: form gate`);
+      else assert.ok(p.ok && compileProgram(p.fit.program, names) === compileProgram(r.fit.program, names), `${e.repo} ${e.fn}: emitted`);
+    }
     if (on) {
       assert.ok(r.ok, `${e.repo} ${e.fn}: ${r.ok ? "" : r.reason}`);
       assert.equal(compileProgram(r.fit.program, names), e.expr, `${e.repo} ${e.fn}`);

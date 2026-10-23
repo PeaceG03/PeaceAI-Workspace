@@ -4,7 +4,7 @@
 // removed (peaceai/proof/m99-derive-mutation-proof.md), plus the far-probe review note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, evalProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam, type DeriveValue } from "../lib/derive.ts";
+import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveCandidate, deriveProgram, evalProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam, type DeriveValue } from "../lib/derive.ts";
 import { buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, deriveReviewNote, parseDeriveTask } from "../lib/learned-derive.ts";
 import { reviewBody } from "../lib/review.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
@@ -24,23 +24,26 @@ const gate = (params: DeriveParam[], ret: DeriveInput["ret"], program: DeriveNod
   return !g || g.gate === "rival" ? "" : `${g.gate}${g.param ? `:${g.param}` : ""}`;
 };
 
+// These tests are about the witness gates, so they call deriveCandidate (search + witness gates, no form gate). What
+// is emitted additionally passes the form gate (Auditor round 3 ruling; m99-derive-from-behavior.test.ts): S1 needs
+// the eq form, which has fewer than 10 replaying upstream entries, so deriveProgram refuses it by name.
 // S1 exactly as the PR head 235c99d had it (no 700).
 const S1_235 = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [600, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
 const status = [num("status")];
 
 test("B1 repro: S1 without \"600 gives false\" is refused (gate far), not derived as `(status === 429) || (500 <= status)`", () => {
-  const no600 = deriveProgram({ params: status, ret: "boolean", examples: ex(S1_235.filter(([a]) => a !== 600)) });
+  const no600 = deriveCandidate({ params: status, ret: "boolean", examples: ex(S1_235.filter(([a]) => a !== 600)) });
   assert.equal(no600.ok, false);
   assert.equal(!no600.ok && `${no600.reason}/${no600.gate}/${no600.param}`, "derive_under_specified/far/status");
   assert.match(!no600.ok ? no600.detail! : "", /`\(status === 429\) \|\| \(500 <= status\)` has its last edge at 500, but no example has status >= 600/);
   // The 235c99d S1 (with 600, no 700) is refused too: past 599 nothing is shown.
-  const s235 = deriveProgram({ params: status, ret: "boolean", examples: ex(S1_235) });
+  const s235 = deriveCandidate({ params: status, ret: "boolean", examples: ex(S1_235) });
   assert.equal(!s235.ok && `${s235.reason}/${s235.gate}`, "derive_under_specified/far");
   // "700 gives false" shows past 599; inside the false stretch 430 to 499 and below 428 the round-2 region gate
   // (Auditor #491) also wants 465 and 100, as the refile draft has them: derived.
-  const s700 = deriveProgram({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false]]) });
+  const s700 = deriveCandidate({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false]]) });
   assert.equal(!s700.ok && `${s700.reason}/${s700.gate}`, "derive_under_specified/region");
-  const s1 = deriveProgram({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false], [465, false], [100, false]]) });
+  const s1 = deriveCandidate({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false], [465, false], [100, false]]) });
   assert.equal(s1.ok && s1.fit.expr, "(status === 429) || (500 <= status && status <= 599)");
 });
 
@@ -56,7 +59,7 @@ test("gate chars: a string parameter that is read needs upper, lower, digit, inn
   const base = [["ab", "x:ab"], ["cd", "x:cd"]] as const;
   assert.equal(gate(s, "string", prog, base), "chars:s");
   assert.equal(gate(s, "string", prog, [...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]), "chars:s"); // round 3: no empty s
-  const noEmpty = deriveProgram({ params: s, ret: "string", examples: ex([...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]) });
+  const noEmpty = deriveCandidate({ params: s, ret: "string", examples: ex([...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]) });
   assert.ok(!noEmpty.ok && noEmpty.gate === "chars" && /the empty string/.test(noEmpty.detail ?? ""), JSON.stringify(noEmpty));
   assert.deepEqual(noEmpty.ok ? [] : noEmpty.questions?.map((q) => q.at), [[""]], "asks for s = \"\"");
   assert.equal(gate(s, "string", prog, [...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "], ["", "x:"]]), "");
@@ -187,7 +190,7 @@ test("gate span: a computed-from parameter shown over DERIVE_FAR; every result s
   assert.deepEqual(gateProblem({ params: ab, ret: "number", examples: ex([...neg, [-150, -102, 15300]]) }, mul, 3)!.at, [[-150, 94]]);
   assert.equal(gate(ab, "number", mul, [...neg, [-150, -102, 15300], [-150, 94, -14100]]), "");
   // round 3 (practice generator, cap_lin2 inside): min(916, a * b) shown up to 873 was derived as a * b, wrong at (-31, -30).
-  const capIn = deriveProgram({ params: ab, ret: "number", examples: ex([[-3, 70, -210], [2, 2, 4], [1, -90, -90], [7, 9, 63], [97, 9, 873], [-93, 70, -6510]]) });
+  const capIn = deriveCandidate({ params: ab, ret: "number", examples: ex([[-3, 70, -210], [2, 2, 4], [1, -90, -90], [7, 9, 63], [97, 9, 873], [-93, 70, -6510]]) });
   assert.ok(!capIn.ok && capIn.gate === "span" && /corner|inside the examples' range of every parameter/.test(capIn.detail ?? ""), JSON.stringify(capIn));
   // round 3, span sign (m100 practice floor_clamp): `n` for max(61, n) shown from 61 to 212 is refused, asking at n = 0;
   // shown negative only down to -43, it asks at -DERIVE_FAR; a floor already shown (flat there) is not asked about.
@@ -211,7 +214,7 @@ test("gate span: a computed-from parameter shown over DERIVE_FAR; every result s
 test("gate rival through deriveProgram: a far rival refuses and asks past the examples", () => {
   // (Scaled to the cap 10000 = 100 * 100 so n is shown down to -100, as the sign check asks.)
   const rows = [[-100, 10000], [-20, 400], [-3, 9], [-1, 1], [0, 0], [1, 1], [2, 4], [5, 25], [17, 289], [30, 900], [50, 2500], [100, 10000]] as const;
-  const r = deriveProgram({ params: [num("n")], ret: "number", examples: ex(rows) });
+  const r = deriveCandidate({ params: [num("n")], ret: "number", examples: ex(rows) });
   assert.equal(!r.ok && `${r.reason}/${r.gate}`, "derive_under_specified/rival", JSON.stringify(r).slice(0, 300));
   assert.ok(!r.ok && r.questions?.some((q) => (q.at[0] as number) < -100 || (q.at[0] as number) > 100), JSON.stringify(!r.ok && r.questions));
 });
@@ -221,7 +224,7 @@ test("gate rival (size + 2): near pass (every example value a constant, probes i
   const ab = [num("actual"), num("reference")];
   const rows = [[-1, -1, 0], [-1, 2, -3], [-1, 10, -11], [0, 0, 0], [0, 3, -3], [0, 100, -100], [1, 1, 0], [1, 5, -4], [2, -1, 3], [2, 2, 0], [2, 10, -8], [3, 0, 3], [3, 3, 0], [3, 100, -97]] as const;
   // (deriveProgram stops earlier on these rows, at gate span: actual is shown from -1 to 3 only.)
-  const viaDerive = deriveProgram({ params: ab, ret: "number", examples: ex(rows) });
+  const viaDerive = deriveCandidate({ params: ab, ret: "number", examples: ex(rows) });
   assert.equal(!viaDerive.ok && `${viaDerive.reason}/${viaDerive.gate}`, "derive_under_specified/span");
   const near = rivalProblem({ params: ab, ret: "number", examples: ex(rows) }, { op: "sub", a: P0, b: P1 }, 3);
   assert.equal(near?.gate, "rival");
@@ -241,7 +244,7 @@ test("gate rival (size + 2): near pass (every example value a constant, probes i
   const pos = { params: x, ret: "number" as const, examples: ex([[0, 0], [1, 1], [2, 4], [30, 900]]) };
   assert.equal(rivalProblem(pos, { op: "mul", a: P0, b: P0 }, 3), null);
   // S2 (attempt, baseMs >= 0 in every example) derives; with negative far probes it would be asked for negative waits.
-  const s2 = deriveProgram({ params: [num("attempt"), num("baseMs")], ret: "number", examples: ex([[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]]) });
+  const s2 = deriveCandidate({ params: [num("attempt"), num("baseMs")], ret: "number", examples: ex([[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]]) });
   assert.equal(s2.ok, true, s2.ok ? "" : `${s2.reason} ${s2.detail ?? ""}`);
 });
 
@@ -259,6 +262,9 @@ test("refusal through the rule names the gate and the parameter; the detail says
 
 // ---- The far-probe review note (Auditor #491 B1: the derived expression and a far-probe table for the reviewer)
 
+const S1_ROWS = [...S1_235, [700, false], [465, false], [100, false]] as const;
+// The range half of S1 alone (429 false): the range form has >= 10 upstream entries, so this one is emitted.
+const RANGE_BODY = `Add a new module \`src/r2-server-error.ts\` exporting \`isR2ServerError(status: number): boolean\`.\n\nBehavior: true for server errors 500 through 599.\n\nExamples:\n${S1_ROWS.map(([a, b]) => `- ${a} gives ${a === 429 ? false : b}`).join("\n")}`;
 const S1_BODY = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.\n\nBehavior: true for 429 and server errors 500 through 599.\n\nExamples:\n${[...S1_235, [700, false], [465, false], [100, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
 const asDiff = (files: { path: string; content: string }[]) => files.map((f) => {
   const lines = f.content.replace(/\n$/, "").split("\n");
@@ -268,32 +274,37 @@ const asDiff = (files: { path: string; content: string }[]) => files.map((f) => 
 test("review note: a DERIVE candidate shows its expression and far-probe outputs, rebuilt from its diff; anything else gets none", () => {
   const PARAMS = Object.fromEntries(Object.entries(DERIVE_VOCAB).map(([k, v]) => [k, v[0]]));
   const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }];
-  const p = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1_BODY } as never));
+  const p = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: RANGE_BODY } as never));
   assert.ok("task" in p);
   const b = buildDeriveEdit(PARAMS, p.task, FILES);
   assert.ok("edit" in b);
+  // S1 itself (eq, ||, range; every form >= 10 upstream entries since round 4) is emitted too.
+  const p1 = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1_BODY } as never));
+  assert.ok("task" in p1);
+  const b1 = buildDeriveEdit(PARAMS, p1.task, FILES);
+  assert.ok("edit" in b1 && b1.edit.content.includes("return (status === 429) || (500 <= status && status <= 599);"), JSON.stringify(b1));
   const files = [{ path: b.edit.path, content: b.edit.content }, ...b.edit.extra];
   const note = deriveReviewNote(asDiff(files));
   assert.ok(note);
   assert.match(note, /^Derived by PeaceAI from the 37 examples/);
-  assert.ok(note.includes("return (status === 429) || (500 <= status && status <= 599);"));
+  assert.ok(note.includes("return 500 <= status && status <= 599;"));
   // Far probes: past the outermost edges (+-10 / +-100) and 10x the largest example value.
-  for (const line of ["isRetryableR2Status(610) = false", "isRetryableR2Status(328) = false", "isRetryableR2Status(7000) = false", "isRetryableR2Status(-7000) = false"]) assert.ok(note.includes(line), line);
-  assert.match(note, /isRetryableR2Status\(5\d\d\) = true/); // a probe inside 500..599 (round 3: 590 is now an example)
+  for (const line of ["isR2ServerError(610) = false", "isR2ServerError(399) = false", "isR2ServerError(489) = false", "isR2ServerError(7000) = false", "isR2ServerError(-7000) = false"]) assert.ok(note.includes(line), line);
+  assert.match(note, /isR2ServerError\(5\d\d\) = true/); // a probe inside 500..599
   // Shown above the diff in the review comment, as written.
   const body = reviewBody([{ label: "A", id: "c1" }], new Map([["c1", "diff"]]), null, "pr", new Map([["c1", note]]));
   assert.ok(body.includes(`### Candidate A\n\n${note}\n\n<details>`));
   // A module whose expression is not what the examples derive, a test that is not literal assert.equal lines, or a
   // non-derive diff: no note.
   assert.equal(deriveReviewNote(asDiff([{ ...files[0]!, content: files[0]!.content.replace("599", "598") }, files[1]!])), null);
-  assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isRetryableR2Status\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }])), null);
+  assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isR2ServerError\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }])), null);
   assert.equal(deriveReviewNote(asDiff([files[0]!])), null);
   // Exactly one created module: a second new source file means it is not a DERIVE candidate.
   assert.equal(deriveReviewNote(asDiff([...files, { path: "src/extra.ts", content: "export const y = 2;\n" }])), null);
   // The literal-only check holds on its own (a search that would accept anything still gets no non-literal test).
   const anything: typeof deriveProgram = (input) => deriveProgram({ ...input, examples: input.examples.filter((e) => e.args.every((a) => a !== undefined)) });
   assert.ok(deriveReviewNote(asDiff(files), anything));
-  assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isRetryableR2Status\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }]), anything), null);
+  assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isR2ServerError\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }]), anything), null);
   assert.equal(deriveReviewNote("diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n"), null);
 });
 

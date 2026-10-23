@@ -298,11 +298,11 @@ test("branchProblem: approval branches change only the list (one commit); other 
   assert.equal(branchProblem("feature", ["src/a.ts"], 3), null);
 });
 
-function fakeGhCompare(dir: string, files: string[], aheadBy: number): string {
+function fakeGhCompare(dir: string, files: string[], aheadBy: number, patchBytes = 0): string {
   const f = join(dir, "gh");
   writeFileSync(f, `#!/usr/bin/env node
 const p = process.argv[3];
-if (p.includes("/compare/main...")) process.stdout.write(JSON.stringify({ ahead_by: ${aheadBy}, files: ${JSON.stringify(files.map((filename) => ({ filename })))} }));
+if (p.includes("/compare/main...")) process.stdout.write(JSON.stringify({ ahead_by: ${aheadBy}, files: ${JSON.stringify(files.map((filename) => ({ filename })))}.map((x) => ({ ...x, patch: "+".repeat(${patchBytes}) })) }));
 else process.exit(1);
 `);
   chmodSync(f, 0o755);
@@ -313,7 +313,7 @@ test("check-approved-list.ts: rejects a core entry without a valid attestation r
   const dir = scratch();
   try {
     const list = join(dir, "approved.json");
-    const run = (branch: string, files: string[] = [], ahead = 1) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, PEACEAI_APPROVED_LIST: list, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: branch, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", PEACEAI_GH: fakeGhCompare(dir, files, ahead) } });
+    const run = (branch: string, files: string[] = [], ahead = 1, patchBytes = 0) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, PEACEAI_APPROVED_LIST: list, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: branch, GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", PEACEAI_GH: fakeGhCompare(dir, files, ahead, patchBytes) } });
     writeFileSync(list, JSON.stringify({ schema: APPROVED_SCHEMA, rules: [coreEntry("c".repeat(40))] }));
     const ok = run("main");
     assert.equal(ok.status, 0, ok.stdout + ok.stderr);
@@ -334,6 +334,14 @@ test("check-approved-list.ts: rejects a core entry without a valid attestation r
     assert.equal(outside.status, 1);
     assert.match(outside.stdout, /approved list changed outside the approval workflow/);
     assert.equal(run("some-feature", ["src/a.ts"], 2).status, 0);
+    // #491 round 4: a compare response past 1 MiB (every file's patch) is read, not reported as "cannot compare";
+    // the list rule still holds on a big diff.
+    const big = run("some-feature", ["src/a.ts", "src/b.ts"], 2, 1_200_000);
+    assert.equal(big.status, 0, big.stdout);
+    const bigList = run("some-feature", ["peaceai/rules/approved.json", "src/a.ts"], 2, 1_200_000);
+    assert.equal(bigList.status, 1);
+    assert.match(bigList.stdout, /approved list changed outside the approval workflow/);
+    assert.doesNotMatch(bigList.stdout, /cannot compare/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

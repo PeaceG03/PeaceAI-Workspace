@@ -102,6 +102,20 @@ a plain edit) and reads the comment it writes.
 
 3 mutants, 3 killed.
 
+## Round 4: form gate (Auditor round-3 ruling; Node 22, from-behavior + mistakes + gates tests, 36 tests; re-run at 980b244, eq 17 so eq emitted, ternary refused)
+
+| # | mutant | file | result | killed by |
+|---|---|---|---|---|
+| F1 | gate skipped: `deriveProgram` returns every candidate | `peaceai/lib/derive.ts` | KILLED (3 fail) | S1-S3 (S3 no longer refused); form gate; mistakes ledger: replayed |
+| F2 | `formsOf` drops `eq` | `peaceai/lib/derive.ts` | KILLED (2 fail) | S1-S3 (forms of the candidates); evidence by form (recorded forms replay) |
+| F3 | bar `>=` becomes `>` (a form at exactly 10 refused) | `peaceai/lib/derive.ts` | KILLED (1 fail) | form gate: boundary at the bar |
+| F4 | fail open: a missing or bad evidence file counts every form at the bar | `peaceai/lib/derive.ts` | KILLED (1 fail) | form gate: fail closed on a bad evidence file |
+| F5 | counts ignore each entry's `forms` (every entry counts for every form) | `peaceai/lib/derive.ts` | KILLED (4 fail) | S1-S3; evidence by form; form gate; mistakes ledger: replayed |
+| F6 | `formsOf` drops `ternary` (a general if reads as evidenced) | `peaceai/lib/derive.ts` | KILLED (4 fail) | S1-S3 (S3 emitted); evidence by form; form gate; mistakes ledger: replayed |
+
+6 mutants, 6 killed. Each was a single `sed` on `peaceai/lib/derive.ts` in a copy of the tree; the tree was restored after each. The
+first run (at ff74bed, eq 9 refused) also killed F1-F5 (4, 5, 1, 1, 5 failing tests).
+
 ## M102: order atom, order gate, order-shown gate (if-return chains; Node 22, m102 + m101 template-joins + m99 gates tests)
 
 Each mutant applied to `peaceai/lib/derive.ts` on its own (heads 6e9ac26 for O1, O3-O6; 2e859c5 for O2, O7-O9), then `tsx --test peaceai/test/m102-*.test.ts peaceai/test/m101-derive-template-joins.test.ts peaceai/test/m99-derive-gates.test.ts`.

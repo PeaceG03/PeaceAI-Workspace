@@ -10,7 +10,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
-import { compileProgram, DERIVE_MAX_EXAMPLES, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_STRING, deriveProgram, derivedExprProblem, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
+import { compileProgram, DERIVE_FORM_BAR, DERIVE_FORMS, DERIVE_MAX_EXAMPLES, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_STRING, deriveCandidate, deriveProgram, derivedExprProblem, evidenceFormCounts, formsOf, unevidencedForms, type DeriveForm, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { behaviorCodeProblem, buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, derivedModuleProblem, parseDeriveTask, rawIssueProblem } from "../lib/learned-derive.ts";
 import { callsFunction, stubFunction } from "../lib/learned-function.ts";
@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "4ce35a6f64f9a6cb99c99430d3ade73c4a1de38f86b70277e1768daeed652cfa";
+const SHA = "799182d79506931e78a232b5729121a339c0aa584dd008479d5aacd9869f7cc1";
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -54,6 +54,8 @@ Examples (message, causeCode gives line):
 - " fetch failed ", "ECONNRESET" gives "MARKETS_SCHEDULER_HOST_FAILED: fetch failed :cause=ECONNRESET"
 - "R2_GET_500", " err 42 " gives "MARKETS_SCHEDULER_HOST_FAILED:R2_GET_500:cause= err 42 "`;
 const clean = (body: string, title = "derive task") => cleanIssueText({ title, body } as never);
+// The search and witness gates alone (no form gate): what the engine would fit, for refused tasks.
+const cand = (body: string) => { const p = parseDeriveTask(DERIVE_TRIGGER, clean(body)); assert.ok("task" in p); return deriveCandidate({ params: p.task.params, ret: p.task.ret, examples: p.task.examples }); };
 const run = (body: string) => { const why: { reason?: string } = {}; const e = applyRule(SPEC, clean(body), FILES, (p) => /\.test\.ts$/.test(p), undefined, why); return { e, why: why.reason }; };
 
 test("spec: valid, hash pinned, kind wired; any approved.json entry pins the exact hash; protected paths", () => {
@@ -75,21 +77,29 @@ test("spec: valid, hash pinned, kind wired; any approved.json entry pins the exa
   for (const p of ["peaceai/lib/derive.ts", "peaceai/lib/learned-derive.ts", "peaceai/spec/derive-from-behavior-v1.md", "peaceai/test/m99-derive-from-behavior.test.ts", "peaceai/test/fixtures/m99-dfb/x.txt", "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json", "peaceai/rules/learned/public-derive-from-behavior-v1.json", "peaceai/rules/proposals/public-derive-from-behavior-v1.json", "peaceai/bin/test-candidates.ts", "peaceai/lib/learned.ts", "peaceai/test/m99-derive-mistakes.json", "peaceai/test/m99-derive-mistakes.test.ts"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
 });
 
-test("S1-S3 (scanner refile): each derives one program; module and test are the expected text", () => {
-  const s1 = run(S1).e!;
-  assert.equal(s1.path, "src/r2-retry-status.ts");
-  assert.equal(s1.content, "export function isRetryableR2Status(status: number): boolean {\n  return (status === 429) || (500 <= status && status <= 599);\n}\n");
-  assert.match(s1.extra![0]!.path, /^src\/r2-retry-status\.is-retryable-r2-status-[0-9a-f]{7}\.test\.ts$/);
-  assert.match(s1.extra![0]!.content, /assert\.equal\(isRetryableR2Status\(429\), true\);/);
-  // The test is exactly the issue's examples: one assertion per example, nothing else.
-  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 37);
+test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (a form without 10 upstream examples, Auditor round 3)", () => {
+  // Auditor ruling on 6f1ea5e: no program using a form with fewer than DERIVE_FORM_BAR replaying upstream evidence
+  // entries is emitted. Round 4 mining brought eq to >= 10 entries, so S1 (eq, ||, range) derives; S3 needs a general
+  // if (ternary: no upstream entry) and is refused, by name.
+  const r1 = run(S1), r3 = run(S3);
+  assert.equal(r1.why ?? null, null);
+  assert.match(r1.e!.content, /return \(status === 429\) \|\| \(500 <= status && status <= 599\);/);
+  assert.equal(r3.e, null);
+  assert.equal(r3.why, "derive_unevidenced_form: ternary");
+  // The search and the witness gates alone still find the programs (so the refusal is the form gate, nothing else).
+  const c1 = cand(S1), c3 = cand(S3);
+  assert.ok(c1.ok && c3.ok);
+  assert.equal(c1.ok && c1.fit.expr, "(status === 429) || (500 <= status && status <= 599)");
+  assert.deepEqual(c1.ok && formsOf(c1.fit.program), ["eq", "or", "range"]);
+  assert.equal(c3.ok && c3.fit.expr, '"MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode))');
+  assert.deepEqual(c3.ok && formsOf(c3.fit.program), ["ternary", "strcat", "eq"]);
   const s2 = run(S2).e!;
+  assert.equal(s2.path, "src/r2-retry-delay.ts");
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
+  assert.match(s2.extra![0]!.path, /^src\/r2-retry-delay\.r2-retry-delay-ms-[0-9a-f]{7}\.test\.ts$/);
+  // The test is exactly the issue's examples: one assertion per example, nothing else.
   assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 14);
-  const s3 = run(S3).e!;
-  assert.equal(s3.content, 'export function hostFailureLine(message: string, causeCode: string): string {\n  return "MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode));\n}\n');
-  assert.equal((s3.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 8);
-  for (const e of [s1, s2, s3]) {
+  for (const e of [s2]) {
     assert.equal(e.create, true);
     assert.equal(e.selfGrade, true);
     assert.equal(e.extra!.length, 1);
@@ -103,7 +113,7 @@ test("S1-S3 (scanner refile): each derives one program; module and test are the 
 
 test("generated module + test pass under TZ=UTC, America/Denver and Asia/Tokyo with an empty env, and fail on a stub", () => {
   const tsx = resolve(root, "node_modules/tsx/dist/cli.mjs");
-  for (const body of [S1, S2, S3]) {
+  for (const body of [S2]) { // S1 and S3 refuse (form gate): no edit to run
     const e = run(body).e!;
     const dir = mkdtempSync(join(tmpdir(), "m99-"));
     try {
@@ -216,20 +226,22 @@ test("the examples alone determine the program: the behavior prose only has to b
     "An unrelated paragraph about weather, tides and the number 30000, mentioned only to show it is ignored.",
   ];
   for (const body of [S1, S2, S3]) {
-    const base = run(body).e!;
-    for (const b of proses) assert.deepEqual(run(withBehavior(body, b)).e, base, `${b} changed the edit`);
+    const base = run(body); // S2: the edit; S1, S3: the same named refusal (form gate) whatever the prose says
+    for (const b of proses) assert.deepEqual(run(withBehavior(body, b)), base, `${b} changed the result`);
+    for (const b of proses) assert.deepEqual(cand(withBehavior(body, b)), cand(body), `${b} changed the fit`);
     // The parsed behavior is carried for the guard only: the build ignores it entirely.
     const t = parseDeriveTask(DERIVE_TRIGGER, clean(body));
     assert.ok("task" in t);
     if ("task" in t) assert.deepEqual(buildDeriveEdit(SPEC.params, { ...t.task, behavior: "" }, FILES), buildDeriveEdit(SPEC.params, t.task, FILES));
   }
   // Change one example and the program follows the examples (not the prose, which still says 599).
-  const moved = run(S1.replace("- 599 gives true", "- 598 gives true").replace("- 600 gives false", "- 599 gives false\n- 600 gives false")).e!;
-  assert.equal(moved.content, "export function isRetryableR2Status(status: number): boolean {\n  return (status === 429) || (500 <= status && status <= 598);\n}\n");
+  // (S1 itself is refused by the form gate, so the fit is read from the search; the S2 variant goes through the rule.)
+  const moved = cand(S1.replace("- 599 gives true", "- 598 gives true").replace("- 600 gives false", "- 599 gives false\n- 600 gives false"));
+  assert.equal(moved.ok && moved.fit.expr, "(status === 429) || (500 <= status && status <= 598)");
   // The header picks the module, name and signature; renaming them renames only those.
-  const renamed = run(S1.replace("src/r2-retry-status.ts", "src/retry-ok.ts").replace("isRetryableR2Status(status: number)", "retryOk(code: number)")).e!;
-  assert.equal(renamed.path, "src/retry-ok.ts");
-  assert.equal(renamed.content, "export function retryOk(code: number): boolean {\n  return (code === 429) || (500 <= code && code <= 599);\n}\n");
+  const renamed = run(S2.replace("src/r2-retry-delay.ts", "src/delay-ok.ts").replace("r2RetryDelayMs(attempt: number, baseMs: number)", "delayOk(k: number, base: number)")).e!;
+  assert.equal(renamed.path, "src/delay-ok.ts");
+  assert.equal(renamed.content, "export function delayOk(k: number, base: number): number {\n  return (base * ((k + 1) * (k + 1))) <= 30000 ? (base * ((k + 1) * (k + 1))) : 30000;\n}\n");
 });
 
 test("no memorizing: strings are only tested for emptiness; an integer is compared only where the examples show an edge", () => {
@@ -350,7 +362,8 @@ test("strict allowlist: every compiled DSL program (over 10000: all small progra
     checked++;
   }
   assert.ok(checked > 10000, `checked ${checked}`);
-  for (const body of [S1, S2, S3]) { const e = run(body).e!; const m = /return (.*);\n\}\n$/s.exec(e.content)!; const names = [...e.content.matchAll(/(\w+): (?:number|string|boolean)[,)]/g)].map((x) => x[1]!); assert.equal(strictAllowlist(m[1]!, names), null, e.content); }
+  for (const body of [S2]) { const e = run(body).e!; const m = /return (.*);\n\}\n$/s.exec(e.content)!; const names = [...e.content.matchAll(/(\w+): (?:number|string|boolean)[,)]/g)].map((x) => x[1]!); assert.equal(strictAllowlist(m[1]!, names), null, e.content); }
+  for (const body of [S1, S3]) { const c = cand(body); const t = parseDeriveTask(DERIVE_TRIGGER, clean(body)); assert.ok(c.ok && "task" in t); assert.equal(strictAllowlist(c.fit.expr, t.task.params.map((q) => q.name)), null, c.fit.expr); }
   for (const e of EV.examples) assert.equal(strictAllowlist(e.expr, e.params.map((p) => p.name)), null, e.expr);
   // The strict check itself refuses what Auditor listed.
   for (const bad of ["Math.min(a, 1)", "Reflect.get(a, 1)", "/x/.test(s)", "s.repeat(a)", "s.padStart(a)", "Object.getOwnPropertyNames(s)", "s.constructor", "s['__proto__']", "(() => a)()", "a = 1", "`${s}`", "new Array(a)", "f.call(a)", "Error.captureStackTrace(s)", "b2 + 1", "a > 1", `"${"x".repeat(DERIVE_MAX_STRING + 1)}" + s`, "x".repeat(DERIVE_MAX_EXPR_CHARS + 1)]) assert.notEqual(strictAllowlist(bad, P), null, bad);
@@ -358,8 +371,18 @@ test("strict allowlist: every compiled DSL program (over 10000: all small progra
 
 // ---- mined evidence ----
 type DV = number | string | boolean;
-type Ex = { repo: string; commit: string; module: string; fn: string; params: { name: string; type: "number" | "string" | "boolean" }[]; ret: "number" | "string" | "boolean"; prose: string; examples: { args: DV[]; out: DV }[]; expr: string; heldOut: { right: number; wrong: number }; upstream: string; path: string; fileBlob: string; sha256: string; fixture: string; license: string; licenseSha256: string };
+type Ex = { repo: string; commit: string; module: string; fn: string; params: { name: string; type: "number" | "string" | "boolean" }[]; ret: "number" | "string" | "boolean"; prose: string; examples: { args: DV[]; out: DV }[]; expr: string; heldOut: { right: number; wrong: number }; upstream: string; forms: DeriveForm[]; path: string; fileBlob: string; sha256: string; fixture: string; license: string; licenseSha256: string };
 const EV = JSON.parse(read("peaceai/rules/proposals/m99-derive-from-behavior-evidence.json")) as { bar: number; manifestSha256: string; examples: Ex[]; peace: { repo: string; checkedAt: string; counted: number }[] };
+const REPLAYED = new Map<Ex, ReturnType<typeof deriveCandidate>>();
+// Evidence replays through the search and witness gates WITHOUT the form gate (deriveCandidate): the entries are what
+// the form gate counts, so they cannot depend on it.
+const replay = (e: Ex) => { let r = REPLAYED.get(e); if (!r) { r = deriveCandidate({ params: e.params, ret: e.ret, examples: e.examples }); REPLAYED.set(e, r); } return r; };
+const P0 = { op: "param", i: 0 } as const;
+const FORM_SAMPLE: Record<DeriveForm, DeriveNode> = {
+  cap: { op: "min", c: 3, a: P0 }, ternary: { op: "if", c: { op: "le", a: P0, b: { op: "lit", v: 3 } }, t: P0, e: { op: "int", v: 1 } }, strcat: { op: "cat", a: P0, b: { op: "lit", v: ":" } },
+  eq: { op: "eq", a: P0, b: { op: "lit", v: 4 } }, or: { op: "or", a: { op: "le", a: P0, b: { op: "lit", v: 1 } }, b: { op: "le", a: { op: "lit", v: 9 }, b: P0 } },
+  range: { op: "range", i: 0, lo: 1, hi: 9 }, square: { op: "sq", a: P0 },
+};
 const gitBlob = (b: Buffer) => createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
 const pinned = (p: { fixture: string; fileBlob: string; sha256: string }) => {
   const b = readFileSync(resolve(root, p.fixture));
@@ -381,7 +404,7 @@ test("evidence: bar met; modules blob-pinned and hold the upstream function; eac
     assert.ok(text.includes(e.upstream) && new RegExp(`\\b${e.fn}\\b`).test(e.upstream), `${e.repo} ${e.fn} upstream`);
     assert.ok(e.examples.length >= 4 && e.examples.length <= DERIVE_MAX_EXAMPLES);
     assert.ok(e.heldOut.right > 0 && e.heldOut.wrong === 0);
-    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
+    const r = replay(e);
     assert.ok(r.ok, `${e.repo} ${e.fn}: ${r.ok ? "" : r.reason}`);
     const expr = compileProgram(r.fit.program, e.params.map((p) => p.name));
     assert.equal(expr, e.expr, `${e.repo} ${e.fn}`);
@@ -391,19 +414,65 @@ test("evidence: bar met; modules blob-pinned and hold the upstream function; eac
   }
   assert.ok(nonString >= 3, "number and boolean results are evidenced too");
 });
-test("evidence by form (#491 round 3): at least 10 examples derive an if, cap (min / max), range or square program", () => {
-  const forms = new Map<string, number>();
+test("evidence by form (#491 round 3, Auditor ruling): the recorded forms replay; a form is emitted only with >= 10 entries", () => {
+  // Each entry records the forms of the program its examples replay to; the runtime gate counts those (the evidence
+  // file is the single source). Here every entry is re-derived and its recorded forms checked.
+  const counts = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;
   for (const e of EV.examples) {
-    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
+    const r = replay(e);
     assert.ok(r.ok, `${e.repo} ${e.fn}`);
-    const j = JSON.stringify(r.fit.program);
-    const has = ["if", "min", "max", "range"].filter((op) => j.includes(`"op":"${op}"`));
-    if (/"op":"mul","a":(\{"op":"param","i":\d+\}),"b":\1/.test(j)) has.push("square");
-    for (const f of has) forms.set(f, (forms.get(f) ?? 0) + 1);
-    if (has.length) forms.set("any", (forms.get("any") ?? 0) + 1);
+    assert.deepEqual(e.forms, formsOf(r.fit.program), `${e.repo} ${e.fn}: recorded forms`);
+    for (const f of e.forms) counts[f]++;
   }
-  assert.ok((forms.get("any") ?? 0) >= 10, JSON.stringify([...forms]));
-  assert.ok((forms.get("min") ?? 0) + (forms.get("max") ?? 0) >= 9, "cap forms");
+  assert.deepEqual(evidenceFormCounts(), counts, "the runtime reads the same counts");
+  assert.equal(EV.bar, DERIVE_FORM_BAR);
+  // Every form the engine may emit has at least DERIVE_FORM_BAR replaying entries; every other form is refused.
+  const allowed = DERIVE_FORMS.filter((f) => unevidencedForms(FORM_SAMPLE[f]).length === 0);
+  for (const f of DERIVE_FORMS) assert.deepEqual(formsOf(FORM_SAMPLE[f]), [f], f);
+  for (const f of allowed) assert.ok(counts[f] >= DERIVE_FORM_BAR, `${f}: ${counts[f]}`);
+  for (const f of DERIVE_FORMS) if (counts[f] < DERIVE_FORM_BAR) assert.deepEqual(unevidencedForms(FORM_SAMPLE[f]), [f], f);
+  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; no general if upstream).
+  assert.deepEqual(allowed, ["cap", "strcat", "eq", "or", "range", "square"], JSON.stringify(counts));
+});
+test("form gate: boundary at the bar, fail closed on a bad evidence file, refused by name through deriveProgram", () => {
+  const zero = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;
+  const or = FORM_SAMPLE.or; // (n <= 1) || (9 <= n)
+  assert.deepEqual(formsOf(or), ["or"], "the sample is a pure || of two <= tests");
+  assert.deepEqual(unevidencedForms(or, { ...zero, or: DERIVE_FORM_BAR }), []);
+  assert.deepEqual(unevidencedForms(or, { ...zero, or: DERIVE_FORM_BAR - 1 }), ["or"]);
+  assert.deepEqual(unevidencedForms({ op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } }, zero), [], "base vocabulary is not gated");
+  // Fail closed: unreadable JSON, no examples array, a form name outside the list -> nothing counted.
+  assert.deepEqual(evidenceFormCounts("{not json"), zero);
+  assert.deepEqual(evidenceFormCounts('{"examples": 3}'), zero);
+  const many = (forms: unknown) => JSON.stringify({ examples: Array.from({ length: DERIVE_FORM_BAR }, () => ({ forms })) });
+  assert.deepEqual(evidenceFormCounts(many(["or", "nope"])), zero);
+  assert.deepEqual(evidenceFormCounts(many("or")), zero);
+  assert.equal(evidenceFormCounts(many(["or", "or"])).or, DERIVE_FORM_BAR, "an entry counts once per form");
+  // A square of a subexpression and a square of a parameter are both the square form.
+  assert.deepEqual(formsOf({ op: "mul", a: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } }, b: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } } }), ["square"]);
+  // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted; a general if (ternary: no upstream
+  // entry) is refused by name, with the count in the detail.
+  const N = [{ name: "n", type: "number" as const }];
+  const grid = [-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50];
+  const eqEx = [-5, 0, 3, 4, 5, 9, 100, -100, 200, 6, 2].map((n) => ({ args: [n], out: n === 4 }));
+  const e = deriveProgram({ params: N, ret: "boolean", examples: eqEx });
+  assert.ok(e.ok && e.fit.expr === "n === 4", JSON.stringify(e));
+  const ex = grid.map((n) => ({ args: [n], out: n === 4 ? 1 : 0 }));
+  const c = deriveCandidate({ params: N, ret: "number", examples: ex });
+  assert.ok(c.ok && c.fit.expr === "(n === 4) ? 1 : 0", "the search alone fits (n === 4) ? 1 : 0");
+  const r = deriveProgram({ params: N, ret: "number", examples: ex });
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.reason, "derive_unevidenced_form");
+    assert.deepEqual(r.forms, ["ternary"]);
+    assert.match(r.detail!, new RegExp(`ternary form .*; ${evidenceFormCounts().ternary} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
+  }
+});
+test("form gate: nothing that emits code calls deriveCandidate (replay / mining only)", () => {
+  for (const dir of ["peaceai/lib", "peaceai/bin"]) for (const f of readdirSync(resolve(root, dir))) {
+    if (!/\.ts$/.test(f) || `${dir}/${f}` === "peaceai/lib/derive.ts") continue;
+    assert.doesNotMatch(read(`${dir}/${f}`), /deriveCandidate/, `${dir}/${f}`);
+  }
 });
 test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {
   const notices = read("THIRD_PARTY_NOTICES");
