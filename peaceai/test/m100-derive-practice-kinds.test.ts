@@ -6,11 +6,11 @@ import { readFileSync } from "node:fs";
 import { CATEGORIES, FAMILIES, FORMS, familyCategories, practiceTask } from "../lib/derive-practice.ts";
 import { kindsOf, ledgerEntriesForNew, shapeOf } from "../lib/derive-practice-kinds.ts";
 
-test("families: every form in exactly one family; family-1 and template-joins (M101) are active; staged forms build valid tasks", () => {
+test("families: every form in exactly one family; family-1, template-joins (M101) and if-return-chains (M102) are active; staged forms build valid tasks", () => {
   const all = FAMILIES.flatMap((f) => f.forms);
   assert.deepEqual([...all].sort(), FORMS.map((f) => f.name).sort());
   assert.equal(new Set(all).size, all.length);
-  assert.deepEqual(FAMILIES.filter((f) => f.status === "active").map((f) => f.name), ["family-1", "template-joins"]);
+  assert.deepEqual(FAMILIES.filter((f) => f.status === "active").map((f) => f.name), ["family-1", "template-joins", "if-return-chains"]);
   const active = familyCategories("active");
   const activeForms = FAMILIES.filter((f) => f.status === "active").flatMap((f) => f.forms);
   assert.ok(active.every((c) => activeForms.includes(c.form.name)) && active.length < CATEGORIES.length);

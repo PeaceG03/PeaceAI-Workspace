@@ -11,7 +11,7 @@
 // returned in the derive mistakes ledger's shape (peaceai-derive-mistakes:v1), so it can be added there.
 // No model and no training: labels are exact, computed on the CPU. The engine's own budgets bound every search.
 import { readFileSync } from "node:fs";
-import { deriveProgram, derivedExprProblem, DERIVE_MAX_EXAMPLES, DERIVE_MAX_STRING, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
+import { deriveProgram, derivedExprProblem, DERIVE_ORDER_LOOKALIKES, DERIVE_MAX_EXAMPLES, DERIVE_MAX_STRING, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
 
 export const PRACTICE_SCHEMA = "peaceai-derive-practice:v1";
 export type Truth = (args: readonly DeriveValue[]) => DeriveValue;
@@ -28,7 +28,9 @@ export type PracticeMode =
   | "missing_chars"         // the string parameters show only some character classes
   | "missing_empty"         // the empty-string branch never shown
   | "missing_digits"        // a number written as text shown only with 3-digit values (M101 template joins)
-  | "lookalike"             // string values that contain the template's own literal texts (M101 template joins)
+  | "lookalike"             // string values that contain the template's own literal texts (M101 template joins); M102: a look-alike string order as the truth
+  | "missing_equal"         // no example with equal string values (M102 if-return chains: < vs <=, the 0 branch)
+  | "missing_order"         // no example where a look-alike string order (case-insensitive, natural, shorter-first, first character) differs (M102)
   | "amb3"                  // Auditor's amb3 sets: 4-12 random values in -5..24, a third near k
   | "sparse";               // 4-8 examples drawn from the full set
 
@@ -542,6 +544,51 @@ export const FORMS: readonly Form[] = [
       return { params: kinds.map((t, i) => (t === "number" ? num(names[i]!) : str(names[i]!))), ret: "string", truth, truthText, inputs, why, grid };
     },
   },
+  // ---- M102 if-return chains (PeaceSTOCKS byCodeUnit: (a, b) => a < b ? -1 : a > b ? 1 : 0), over code-unit string order
+  {
+    name: "if_chain", modes: ["full", "missing_equal", "missing_order", "missing_chars", "lookalike", "sparse"],
+    build: (r, mode) => {
+      const v = r.pick(["cmp3", "cmp3", "cmp3", "lt", "le", "gt", "ge", "max", "min"] as const);
+      const [lo, hi, eq] = r.pick([[-1, 1, 0], [1, -1, 0], [-1, 1, 0], [-2, 2, 0], [0, 2, 1]] as const);
+      const names = r.pick([["a", "b"], ["left", "right"], ["x", "y"]] as const);
+      // the truth's order: code-unit (JS < on strings), or in lookalike mode an order that only looks like it
+      const look = mode === "lookalike" ? r.pick(DERIVE_ORDER_LOOKALIKES.slice(1)) : null;
+      const le = (x: string, y: string) => (look ? look.le(x, y) : x <= y);
+      const lt = (x: string, y: string) => !le(y, x);
+      const truth: Truth = (a) => {
+        const x = S(a, 0), y = S(a, 1);
+        switch (v) {
+          case "cmp3": return lt(x, y) ? lo : lt(y, x) ? hi : eq;
+          case "lt": return lt(x, y);
+          case "le": return le(x, y);
+          case "gt": return lt(y, x);
+          case "ge": return le(y, x);
+          case "max": return lt(x, y) ? y : x;
+          case "min": return lt(y, x) ? y : x;
+        }
+      };
+      const [A, B] = names;
+      const body = { cmp3: `${A} < ${B} ? ${lo} : ${A} > ${B} ? ${hi} : ${eq}`, lt: `${A} < ${B}`, le: `${A} <= ${B}`, gt: `${A} > ${B}`, ge: `${A} >= ${B}`, max: `${A} < ${B} ? ${B} : ${A}`, min: `${A} > ${B} ? ${B} : ${A}` }[v];
+      const truthText = look ? `${body} (with ${look.name} in place of code-unit order)` : body;
+      const rich = ["", "a", "B", "aa", "ab", "ac", "b", "10", "9", "Hello World", " lead", "trail ", "x.y", "MiXeD", "Zz 9", "2026-10-23", "2026-09-30"];
+      const lower = ["abc", "abd", "bcd", "xyz", "q", "word"];
+      const pool = mode === "missing_chars" ? lower : rich;
+      const witness: [string, string][] = [["a", "B"], ["B", "a"], ["10", "9"], ["9", "10"], ["b", "aa"], ["aa", "b"], ["ac", "ab"], ["ab", "ac"]];
+      const seen = new Set<string>();
+      let inputs: DeriveValue[][] = [];
+      const add = (x: string, y: string) => { const k0 = key([x, y]); if (!seen.has(k0)) { seen.add(k0); inputs.push([x, y]); } };
+      if (mode !== "missing_chars") for (const [x, y] of witness) add(x, y);
+      for (const x of pool.slice(0, 4)) add(x, x);
+      for (let t = 0; inputs.length < 30 && t < 400; t++) add(r.pick(pool), r.pick(pool));
+      const differs = (a: readonly DeriveValue[]) => DERIVE_ORDER_LOOKALIKES.slice(1).some((L) => L.le(S(a, 0), S(a, 1)) !== S(a, 0) <= S(a, 1));
+      let why = mode === "missing_chars" ? "the string values show only lower-case letters (no empty value)" : look ? `the truth uses ${look.name}, not code-unit order` : "equal values, every look-alike order's differing pairs and every character class shown";
+      if (mode === "missing_equal") { inputs = without(inputs, (a) => S(a, 0) === S(a, 1)); why = "no example had equal values, so < vs <= (the equal branch) was never seen"; }
+      else if (mode === "missing_order") { inputs = without(inputs, differs); why = "no example where a case-insensitive, natural, shorter-first or first-character order differs from code-unit order"; }
+      else if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+      const sg = [...new Set([...rich, "A", "Ab", "aB", "b ", "a a", "09", "100", "~", "-", "Ünï", "ERR_42"])];
+      return { params: [str(A), str(B)], ret: v === "max" || v === "min" ? "string" : v === "cmp3" ? "number" : "boolean", truth, truthText, inputs, why, grid: cross(sg, sg) };
+    },
+  },
 ];
 
 /** Shapes asked for in M100 that the derive DSL cannot express, so no practice form draws them. */
@@ -611,6 +658,7 @@ export function evalJs(n: DeriveNode, a: readonly DeriveValue[]): DeriveValue {
     case "le": return (e(n.a) as number) <= (e(n.b) as number);
     case "range": return n.lo <= (a[n.i] as number) && (a[n.i] as number) <= n.hi;
     case "empty": return a[n.i] === "";
+    case "sle": return (a[n.i] as string) <= (a[n.j] as string);
     case "and": return (e(n.a) as boolean) && (e(n.b) as boolean);
     case "or": return (e(n.a) as boolean) || (e(n.b) as boolean);
     case "not": return !(e(n.a) as boolean);
