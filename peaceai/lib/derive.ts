@@ -14,6 +14,8 @@
 // The DSL (typed; the size of a program is its node count, leaves count 1):
 //   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(K, a) | max(K, a) | if(G, x, y) (x, y may be K)
 //   string : parameter | L | a + b (concat) | if(G, x, y)
+//            | T1 + T2 + ... + Tk (M101 template join, size k + 1: k >= 3 parts, or a str part; each part a literal
+//              cut from the outputs, a string parameter, or str(p) = "" + p, a number parameter's decimal text)
 //   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty
 //            | a && b | a || b | !a
 //   if-guards G (conditional on emptiness or equality only): s is empty | p == C
@@ -58,12 +60,14 @@ export type DeriveNode =
   | { op: "int"; v: number }
   | { op: "lit"; v: number | string }
   | { op: "add" | "sub" | "mul" | "cat" | "and" | "or"; a: DeriveNode; b: DeriveNode }
-  | { op: "sq" | "not"; a: DeriveNode }
+  | { op: "sq" | "not" | "str"; a: DeriveNode }
   | { op: "min" | "max"; c: number; a: DeriveNode }
   | { op: "eq" | "le"; a: DeriveNode; b: DeriveNode }
   | { op: "range"; i: number; lo: number; hi: number }
   | { op: "empty"; i: number }
-  | { op: "if"; c: DeriveNode; t: DeriveNode; e: DeriveNode };
+  | { op: "if"; c: DeriveNode; t: DeriveNode; e: DeriveNode }
+  /** M101 template join: the parts' texts in order; a part is a string literal, a string parameter or str(number parameter). */
+  | { op: "tmpl"; parts: DeriveNode[] };
 export interface DeriveFit { program: DeriveNode; size: number; expr: string }
 export type DeriveResult =
   | { ok: true; fit: DeriveFit; probes: DeriveValue[][]; searched: number }
@@ -250,6 +254,12 @@ export function evalProgram(n: DeriveNode, args: readonly DeriveValue[], hook?: 
       const r = a + b;
       return r.length <= 4 * DERIVE_MAX_STRING ? r : undefined;
     }
+    case "str": { const a = num(n.a); return a === undefined ? undefined : String(a); }
+    case "tmpl": {
+      let r = "";
+      for (const p of n.parts) { const v = ev(p); if (typeof v !== "string") return undefined; r += v; }
+      return r.length <= 4 * DERIVE_MAX_STRING ? r : undefined;
+    }
     case "eq": { const a = ev(n.a), b = ev(n.b); return a === undefined || b === undefined ? undefined : a === b; }
     case "le": { const a = num(n.a), b = num(n.b); return a === undefined || b === undefined ? undefined : a <= b; }
     case "range": { const p = args[n.i] as number; return n.lo <= p && p <= n.hi; }
@@ -279,6 +289,9 @@ export function compileProgram(n: DeriveNode, names: readonly string[]): string 
       case "min": { const a = c(x.a); return `(${a} <= ${NUM(x.c)} ? ${a} : ${NUM(x.c)})`; }
       case "max": { const a = c(x.a); return `(${NUM(x.c)} <= ${a} ? ${a} : ${NUM(x.c)})`; }
       case "cat": return `(${c(x.a)} + ${c(x.b)})`;
+      // str(n): a number's decimal text, written `("" + n)` (no call, no global); a template: its parts joined by +
+      case "str": return `("" + ${c(x.a)})`;
+      case "tmpl": return `(${x.parts.map((q) => c(q)).join(" + ")})`;
       case "eq": return `(${c(x.a)} === ${c(x.b)})`;
       case "le": return `(${c(x.a)} <= ${c(x.b)})`;
       case "range": return `(${NUM(x.lo)} <= ${names[x.i]} && ${names[x.i]} <= ${NUM(x.hi)})`;
@@ -371,6 +384,56 @@ function stringPieces(examples: readonly DeriveExample[]): string[] {
   return ["", ...[...support].filter(([, n]) => n >= 2).map(([p]) => p)].sort();
 }
 
+/** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
+const MAX_TEMPLATE_SPLITS = 2000;
+/** The size of a template join: one node per part plus the join (str parts count 2). */
+export const templateSize = (n: Extract<DeriveNode, { op: "tmpl" }>): number => 1 + n.parts.reduce((t, q) => t + (q.op === "str" ? 2 : 1), 0);
+const UNSAFE_LITERAL = /[\\\u0000-\u001f\u007f]/;
+/**
+ * M101 template joins: every template L0 + s1 + L1 + ... + sk + Lk (slots s: distinct string parameters or str of
+ * number parameters, in any order; literals L possibly empty and then left out) that gives EVERY example's output.
+ * Found by alignment, not enumeration: the literals are cut from one example's output at every placement of its
+ * slot texts (in order, not overlapping), and each candidate is checked on every example. So every literal is a
+ * piece of every output (pinned by all the examples, at least 3) and every slot is a parameter the examples vary.
+ * Kept: templates of 3 or more parts, or with a str part (shorter string joins are the binary concat's).
+ * Deterministic; bounded by MAX_TEMPLATE_SPLITS placements per slot order.
+ */
+export function templateFits(params: readonly DeriveParam[], examples: readonly DeriveExample[]): DeriveNode[] {
+  if (!examples.length || examples.some((e) => typeof e.out !== "string")) return [];
+  const slots = params.flatMap((p, i): DeriveNode[] => (p.type === "string" ? [{ op: "param", i }] : p.type === "number" ? [{ op: "str", a: { op: "param", i } }] : []));
+  const text = (q: DeriveNode, a: readonly DeriveValue[]) => String(a[(q.op === "str" ? (q.a as { i: number }).i : (q as { i: number }).i)]!);
+  const orders: DeriveNode[][] = [];
+  const grow = (seq: DeriveNode[], left: DeriveNode[]) => { if (seq.length) orders.push(seq); left.forEach((q, k) => grow([...seq, q], left.filter((_, j) => j !== k))); };
+  grow([], slots);
+  const out: DeriveNode[] = [];
+  const seen = new Set<string>();
+  for (const order of orders) {
+    // the pivot: the example with the fewest placements of its slot texts (non-empty texts first)
+    const placements = (e: DeriveExample) => order.reduce((t, q) => { const v = text(q, e.args); if (!v) return t * ((e.out as string).length + 1); let c = 0; for (let k = (e.out as string).indexOf(v); k >= 0; k = (e.out as string).indexOf(v, k + 1)) c++; return t * c; }, 1);
+    const pivot = [...examples].sort((x, y) => placements(x) - placements(y))[0]!;
+    if (placements(pivot) === 0 || placements(pivot) > MAX_TEMPLATE_SPLITS) continue;
+    const o = pivot.out as string, vs = order.map((q) => text(q, pivot.args));
+    const place = (k: number, from: number, lits: string[]): void => {
+      if (k === order.length) {
+        const lt = [...lits, o.slice(from)];
+        if (lt.some((l) => l.length > DERIVE_MAX_STRING || UNSAFE_LITERAL.test(l))) return;
+        const parts: DeriveNode[] = [];
+        lt.forEach((l, j) => { if (l) parts.push({ op: "lit", v: l }); if (j < order.length) parts.push(order[j]!); });
+        if (parts.length < 3 && !parts.some((q) => q.op === "str")) return;
+        const node: DeriveNode = { op: "tmpl", parts };
+        if (!examples.every((e) => evalProgram(node, e.args) === e.out)) return;
+        const key = JSON.stringify(node);
+        if (!seen.has(key)) { seen.add(key); out.push(node); }
+        return;
+      }
+      const v = vs[k]!;
+      for (let at = o.indexOf(v, from); at >= 0; at = o.indexOf(v, at + 1)) place(k + 1, at + v.length, [...lits, o.slice(from, at)]);
+    };
+    place(0, 0, []);
+  }
+  return out.sort((a, b) => templateSize(a as Extract<DeriveNode, { op: "tmpl" }>) - templateSize(b as Extract<DeriveNode, { op: "tmpl" }>));
+}
+
 interface SearchSpec {
   params: readonly DeriveParam[];
   ret: DeriveType;
@@ -382,6 +445,8 @@ interface SearchSpec {
   consts: readonly (readonly number[])[];
   caps: readonly number[];
   pieces: readonly string[];
+  /** M101 template joins that fit every example (templateFits), pushed at their size. */
+  templates?: readonly DeriveNode[];
   maxSize: number;
   budget: number;
   /** Memory bound in kept values (keptCellsLimit). */
@@ -446,6 +511,8 @@ function runSearch(S: SearchSpec): SearchOut {
       for (const v of [1, 2]) { const n: DeriveNode = { op: "int", v }; push("number", 1, n, false, byNode(n)); }
       for (const v of S.pieces) { const n: DeriveNode = { op: "lit", v }; push("string", 1, n, false, byNode(n)); }
     }
+    // M101 template joins, at their size (found by alignment: templateFits).
+    for (const t of S.templates ?? []) if (templateSize(t as Extract<DeriveNode, { op: "tmpl" }>) === size) push("string", size, t, true, byNode(t));
     // Boolean atoms over parameters (constants per parameter).
     params.forEach((p, i) => {
       const par: DeriveNode = { op: "param", i };
@@ -552,7 +619,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   let first = 0;
   const r = runSearch({
     params, ret: input.ret, points, nEx, target: examples.map((e) => e.out),
-    consts: edgesByParam(params, examples), caps: repeatedResults(examples), pieces: stringPieces(examples), maxSize, budget, cells: keptCellsLimit(input),
+    consts: edgesByParam(params, examples), caps: repeatedResults(examples), pieces: stringPieces(examples), templates: templateFits(params, examples), maxSize, budget, cells: keptCellsLimit(input),
     stop: (size, fits) => { if (fits.length > 0 && first === 0) first = size; return first > 0 && size >= first + slack; },
   });
   const searched = r.searched;
@@ -702,8 +769,9 @@ const walk = (n: DeriveNode, f: (x: DeriveNode) => void): void => {
   f(n);
   switch (n.op) {
     case "add": case "sub": case "mul": case "cat": case "and": case "or": case "eq": case "le": walk(n.a, f); walk(n.b, f); break;
-    case "sq": case "not": case "min": case "max": walk(n.a, f); break;
+    case "sq": case "not": case "min": case "max": case "str": walk(n.a, f); break;
     case "if": walk(n.c, f); walk(n.t, f); walk(n.e, f); break;
+    case "tmpl": for (const q of n.parts) walk(q, f); break;
     default: break;
   }
 };
@@ -764,6 +832,15 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     const vals = examples.map((e) => e.args[i] as string);
     const missing = DERIVE_STRING_CLASSES.filter(([, re]) => !vals.some((v) => re.test(v))).map(([d]) => d);
     if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i, vals.includes("") ? undefined : [examples[0]!.args.map((a, j) => (j === i ? "" : a))]);
+  }
+  // chars, digits (M101): a number written as its decimal text, str(p), is shown with a 1-digit value and a value of 3
+  // or more digits (a padded or cut text, e.g. padStart, differs from "" + p on one of them)
+  const written = new Set<number>();
+  walk(program, (n) => { if (n.op === "str" && n.a.op === "param") written.add(n.a.i); });
+  for (const i of [...written].sort((x, y) => x - y)) {
+    const vals = examples.map((e) => Math.abs(e.args[i] as number));
+    const missing = [...(vals.some((v) => v <= 9) ? [] : ["a 1-digit value"]), ...(vals.some((v) => v >= 100) ? [] : ["a value of 3 or more digits"])];
+    if (missing.length) return fail("chars", `${names[i]} is written as its decimal text by \`${expr}\`, but no example value of it is ${missing.join(" or ")}; add such examples`, i, [...(vals.some((v) => v <= 9) ? [] : [ptAt(i, 7)]), ...(vals.some((v) => v >= 100) ? [] : [ptAt(i, 123)])]);
   }
   // edge (1)
   const byVal = (i: number, v: DeriveValue) => examples.filter((e) => e.args[i] === v);
@@ -949,6 +1026,9 @@ export function arithmeticParams(n: DeriveNode): Set<number> {
       case "eq": case "le": go(x.a, true); go(x.b, true); return;
       case "add": case "sub": case "mul": case "cat": case "and": case "or": go(x.a, false); go(x.b, false); return;
       case "sq": case "not": case "min": case "max": go(x.a, false); return;
+      // str(p) writes p's digits (the template's digits gate shows them); it computes no number from p
+      case "str": go(x.a, true); return;
+      case "tmpl": for (const q of x.parts) go(q, false); return;
       case "if": go(x.c, false); go(x.t, false); go(x.e, false); return;
     }
   };
@@ -1047,7 +1127,7 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
     const mine = points.map((a) => evalProgram(program, a) ?? null);
     let rival: Prog | null = null;
     const r = runSearch({
-      params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples),
+      params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples), templates: templateFits(params, examples),
       maxSize: size + DERIVE_RIVAL_EXTRA, budget: budget - searched, cells: keptCellsLimit(input),
       stop: () => false,
       onFit: (p) => { for (let k = examples.length; k < points.length; k++) if (p.vals[k] !== null && mine[k] !== null && p.vals[k] !== mine[k]) { rival = p; return true; } return false; },

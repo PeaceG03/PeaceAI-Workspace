@@ -564,6 +564,8 @@ export function evalJs(n: DeriveNode, a: readonly DeriveValue[]): DeriveValue {
     case "min": { const v = e(n.a) as number; return v <= n.c ? v : n.c; }
     case "max": { const v = e(n.a) as number; return n.c <= v ? v : n.c; }
     case "cat": return (e(n.a) as string) + (e(n.b) as string);
+    case "str": return "" + (e(n.a) as number);
+    case "tmpl": return n.parts.map((q) => e(q) as string).join("");
     case "eq": return e(n.a) === e(n.b);
     case "le": return (e(n.a) as number) <= (e(n.b) as number);
     case "range": return n.lo <= (a[n.i] as number) && (a[n.i] as number) <= n.hi;
