@@ -101,3 +101,15 @@ a plain edit) and reads the comment it writes.
 | S3 | sign: `beyond` always true (asks even where a shown floor keeps the result flat) | `peaceai/lib/derive.ts` | KILLED | unwitnessed cap: the span refusal asks past the shown stretch; gate span; mistakes ledger: replayed |
 
 3 mutants, 3 killed.
+
+## Round 4: form gate (Auditor round-3 ruling; Node 22, from-behavior + mistakes + gates tests, 36 tests)
+
+| # | mutant | file | result | killed by |
+|---|---|---|---|---|
+| F1 | gate skipped: `deriveProgram` returns every candidate | `peaceai/lib/derive.ts` | KILLED (4 fail) | S1-S3 (scanner refile); form gate; review note; mistakes ledger: replayed |
+| F2 | `formsOf` drops `eq` (an eq program reads as evidenced) | `peaceai/lib/derive.ts` | KILLED (5 fail) | S1-S3; evidence by form; form gate; review note; mistakes ledger: replayed |
+| F3 | bar `>=` becomes `>` (a form at exactly 10 refused) | `peaceai/lib/derive.ts` | KILLED (1 fail) | form gate: boundary at the bar |
+| F4 | fail open: a missing or bad evidence file counts every form at the bar | `peaceai/lib/derive.ts` | KILLED (1 fail) | form gate: fail closed on a bad evidence file |
+| F5 | counts ignore each entry's `forms` (every entry counts for every form) | `peaceai/lib/derive.ts` | KILLED (5 fail) | S1-S3; evidence by form; form gate; review note; mistakes ledger: replayed |
+
+5 mutants, 5 killed. Each was a single `sed` on `peaceai/lib/derive.ts` in a copy of the tree; the tree was restored after each.
