@@ -3398,6 +3398,56 @@
     "note": "known limit: the unread gate's witness pair (attempt 7 and 0 at baseMs 0, both 0) is a product by zero; every other example with attempt above 0 is past the cap",
     "formGate": []
    }
+  },
+  {
+   "id": "m102-kind-s1-shape-sparse-p0-k",
+   "practice": {
+    "category": "s1_shape/sparse"
+   },
+   "source": "m102 derive-practice CI run 39984609986 (seed 424845248, engine cd3fc08; the same pick at m101 3de4baa and 1506f6b), task 2791 (s1_shape/sparse | p0 <= K, 1 like it)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     293,
+     false
+    ],
+    [
+     125,
+     true
+    ],
+    [
+     242,
+     true
+    ],
+    [
+     343,
+     false
+    ],
+    [
+     219,
+     true
+    ],
+    [
+     243,
+     false
+    ]
+   ],
+   "wrongProgram": "status <= 242",
+   "disagreeAt": [
+    126
+   ],
+   "correct": false,
+   "why": "a random handful of the examples: nothing between the lone true point 125 and the band 148..242, so the gap was never seen",
+   "disclosed": "disclosed limit (m102 derive-practice CI seed 424845248; family 1, the same pick at m101 3de4baa and 1506f6b); awaiting Auditor review",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "status <= 242",
+    "note": "known limit: a hidden gap between true examples (125 and 219 are both true, nothing in between was given); like the hidden island, no example-only check can see it",
+    "formGate": []
+   }
   }
  ]
 }
