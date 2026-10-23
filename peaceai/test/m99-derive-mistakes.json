@@ -2570,6 +2570,11 @@
       900
      ],
      [
+      100,
+      0,
+      0
+     ],
+     [
       -93,
       100,
       10000
@@ -2653,12 +2658,43 @@
       7,
       -1,
       -64
+     ],
+     [
+      100,
+      0,
+      0
+     ],
+     [
+      -93,
+      0,
+      0
+     ],
+     [
+      100,
+      -1,
+      -10201
+     ],
+     [
+      -93,
+      20400,
+      10400
+     ],
+     [
+      -1000,
+      -204000,
+      -203592204000
+     ],
+     [
+      -93,
+      -1,
+      -8464
      ]
     ],
-    "rounds": 2,
+    "rounds": 5,
     "after": {
-     "refused": "derive_under_specified",
-     "gate": "span"
+     "program": "(baseMs * ((attempt + 1) * (attempt + 1))) <= 10400 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 10400",
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -2791,6 +2827,11 @@
       9,
       4,
       -200
+     ],
+     [
+      0,
+      4,
+      -200
      ]
     ],
     "answers": [
@@ -2805,12 +2846,84 @@
       4,
       -200,
       -164
+     ],
+     [
+      0,
+      4,
+      -200,
+      -200
+     ],
+     [
+      100,
+      0,
+      5,
+      5
+     ],
+     [
+      -91,
+      0,
+      -200,
+      -200
+     ],
+     [
+      0,
+      100,
+      7,
+      7
+     ],
+     [
+      0,
+      -92,
+      -200,
+      -200
+     ],
+     [
+      100,
+      100,
+      1000,
+      11000
+     ],
+     [
+      100,
+      -92,
+      -200,
+      -9400
+     ],
+     [
+      1,
+      -1000,
+      0,
+      -1000
+     ],
+     [
+      1,
+      -1000,
+      1,
+      -999
+     ],
+     [
+      1,
+      -1000,
+      -1,
+      -1001
+     ],
+     [
+      100,
+      -1000,
+      -200,
+      -100200
+     ],
+     [
+      -91,
+      -1000,
+      1000,
+      92000
      ]
     ],
-    "rounds": 1,
+    "rounds": 8,
     "after": {
      "refused": "derive_under_specified",
-     "gate": "span"
+     "gate": "rival"
     }
    }
   },
@@ -2943,6 +3056,11 @@
       -200,
       9,
       4
+     ],
+     [
+      -200,
+      0,
+      4
      ]
     ],
     "answers": [
@@ -2957,12 +3075,85 @@
       9,
       4,
       -164
+     ],
+     [
+      -200,
+      0,
+      4,
+      -200
+     ],
+     [
+      5,
+      100,
+      0,
+      5
+     ],
+     [
+      -200,
+      -91,
+      0,
+      -200
+     ],
+     [
+      7,
+      0,
+      100,
+      7
+     ],
+     [
+      -200,
+      0,
+      -92,
+      -200
+     ],
+     [
+      1000,
+      100,
+      100,
+      11000
+     ],
+     [
+      -200,
+      100,
+      -92,
+      -9400
+     ],
+     [
+      0,
+      1000,
+      -1000,
+      -1000000
+     ],
+     [
+      0,
+      -1000,
+      -1000,
+      1000000
+     ],
+     [
+      1,
+      1000,
+      -1000,
+      -999999
+     ],
+     [
+      1000,
+      -1000,
+      -1000,
+      1001000
+     ],
+     [
+      -200,
+      1000,
+      -1000,
+      -1000200
      ]
     ],
-    "rounds": 1,
+    "rounds": 8,
     "after": {
-     "refused": "derive_under_specified",
-     "gate": "span"
+     "program": "a + (b * c)",
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -3095,6 +3286,11 @@
       9,
       4,
       -200
+     ],
+     [
+      0,
+      4,
+      -200
      ]
     ],
     "answers": [
@@ -3109,12 +3305,66 @@
       4,
       -200,
       1096
+     ],
+     [
+      0,
+      4,
+      -200,
+      -200
+     ],
+     [
+      100,
+      0,
+      5,
+      5
+     ],
+     [
+      -91,
+      0,
+      -200,
+      -200
+     ],
+     [
+      0,
+      100,
+      7,
+      7
+     ],
+     [
+      0,
+      -92,
+      -200,
+      -200
+     ],
+     [
+      100,
+      100,
+      1000,
+      100001000
+     ],
+     [
+      0,
+      0,
+      -10000,
+      -10000
+     ],
+     [
+      0,
+      1,
+      -10000,
+      -10000
+     ],
+     [
+      0,
+      -1,
+      -10000,
+      -10000
      ]
     ],
-    "rounds": 1,
+    "rounds": 5,
     "after": {
      "refused": "derive_under_specified",
-     "gate": "span"
+     "gate": "rival_budget"
     }
    }
   },
@@ -3368,12 +3618,20 @@
       "a",
       "Zz",
       "aZz"
+     ],
+     [
+      "",
+      " Ab 9. ",
+      ""
      ]
     ],
-    "rounds": 1,
+    "rounds": 2,
     "after": {
-     "refused": "derive_under_specified",
-     "gate": "chars"
+     "program": "s + ((s === \"\") ? s : t)",
+     "rightOnGrid": true,
+     "formGate": [
+      "ternary"
+     ]
     }
    }
   },
@@ -3597,6 +3855,10 @@
      [
       2,
       -200
+     ],
+     [
+      -2,
+      -200
      ]
     ],
     "answers": [
@@ -3604,6 +3866,11 @@
       2,
       -200,
       -1800
+     ],
+     [
+      -2,
+      -200,
+      -200
      ],
      [
       98,
@@ -3621,22 +3888,47 @@
       9801000
      ],
      [
-      980,
+      -980,
       10000,
-      9623610000
+      9584410000
      ],
      [
-      980,
+      -980,
       -10000,
-      -9623610000
+      -9584410000
      ],
      [
-      980,
+      -980,
       103,
-      99123183
+      98719423
+     ],
+     [
+      9800,
+      103,
+      9894138903
+     ],
+     [
+      9800,
+      -101,
+      -9702019701
+     ],
+     [
+      9800,
+      99,
+      9509900499
+     ],
+     [
+      9800,
+      -10000,
+      -960596010000
+     ],
+     [
+      9800,
+      10000,
+      960596010000
      ]
     ],
-    "rounds": 4,
+    "rounds": 7,
     "after": {
      "program": "b * ((a + 1) * (a + 1))",
      "rightOnGrid": true,
@@ -4483,6 +4775,371 @@
     "outcome": "known-limit",
     "program": "host + \":\" + (\"\" + port)",
     "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m102-order-hidden-max",
+   "source": "m102 practice seed 100 #809 (if_chain/sparse, truth x < y ? y : x), engine 1097e56",
+   "params": [
+    "x",
+    "y"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "trail ",
+     "Zz 9",
+     "trail "
+    ],
+    [
+     "Zz 9",
+     "",
+     "Zz 9"
+    ],
+    [
+     "x.y",
+     "2026-10-23",
+     "x.y"
+    ],
+    [
+     "9",
+     "10",
+     "9"
+    ],
+    [
+     "",
+     "",
+     ""
+    ],
+    [
+     "ab",
+     "10",
+     "ab"
+    ],
+    [
+     "b",
+     "aa",
+     "b"
+    ],
+    [
+     "b",
+     "Hello World",
+     "b"
+    ]
+   ],
+   "wrongProgram": "x",
+   "disagreeAt": [
+    "",
+    "aa"
+   ],
+   "correct": "aa",
+   "why": "every example had y before x or equal (code-unit order), so the branch returning y was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      "trail ",
+      ""
+     ],
+     [
+      "trail ",
+      "2026-10-23"
+     ]
+    ],
+    "answers": [
+     [
+      "trail ",
+      "",
+      "trail "
+     ],
+     [
+      "trail ",
+      "2026-10-23",
+      "trail "
+     ],
+     [
+      "a",
+      "b",
+      "b"
+     ],
+     [
+      "trail ",
+      " Ab 9. ",
+      "trail "
+     ],
+     [
+      "ac",
+      "ab",
+      "ac"
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "(x <= y) ? y : x",
+     "rightOnGrid": true,
+     "formGate": [
+      "ternary"
+     ]
+    }
+   }
+  },
+  {
+   "id": "m102-order-hidden-less",
+   "source": "m102 practice seed 100 #1343 (if_chain/sparse, truth a < b ? 1 : a > b ? -1 : 0; the examples after the ask loop at 1097e56)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     "Zz 9",
+     "",
+     -1
+    ],
+    [
+     "aa",
+     "aa",
+     0
+    ],
+    [
+     "MiXeD",
+     "2026-09-30",
+     -1
+    ],
+    [
+     "9",
+     "10",
+     -1
+    ],
+    [
+     "ab",
+     "10",
+     -1
+    ],
+    [
+     "",
+     "",
+     0
+    ],
+    [
+     " Ab 9. ",
+     "",
+     -1
+    ],
+    [
+     "Zz 9",
+     " Ab 9. ",
+     -1
+    ],
+    [
+     "a",
+     "B",
+     -1
+    ],
+    [
+     "ac",
+     "ab",
+     -1
+    ]
+   ],
+   "wrongProgram": "(a <= b) ? 0 : (-1)",
+   "disagreeAt": [
+    "",
+    "B"
+   ],
+   "correct": 1,
+   "why": "no example had a before b, so the result 1 there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "order",
+    "askAt": [
+     [
+      "a",
+      "b"
+     ]
+    ],
+    "answers": [
+     [
+      "a",
+      "b",
+      1
+     ],
+     [
+      "",
+      "a",
+      1
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "program": "(a <= b) ? ((b <= a) ? 0 : 1) : (-1)",
+     "rightOnGrid": true,
+     "formGate": [
+      "ternary"
+     ]
+    }
+   }
+  },
+  {
+   "id": "m102-kind-range-sparse-p0-k",
+   "practice": {
+    "category": "range/sparse"
+   },
+   "source": "m102 derive-practice CI (seed 86888239, engine 1097e56; the same pick at m101 3de4baa), task 24760 (range/sparse | p0 <= K, 1 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     566,
+     false
+    ],
+    [
+     364,
+     true
+    ],
+    [
+     466,
+     false
+    ],
+    [
+     465,
+     true
+    ],
+    [
+     415,
+     true
+    ]
+   ],
+   "wrongProgram": "n <= 465",
+   "disagreeAt": [
+    63
+   ],
+   "correct": false,
+   "why": "a random handful of the examples: nothing below 364, so the band's lower end was never seen",
+   "disclosed": "disclosed limit, accepted by Auditor (#495 ruling on 159a632; m102 derive-practice CI seed 86888239, the same pick at m101 3de4baa)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "n <= 465",
+    "note": "known limit: a band edge past every example (the smallest example, 364, is true); like a cap past every example, no example-only check can see it, and the review note's far-probe table shows the derived value out there",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m102-kind-s1-shape-sparse-p0-k",
+   "practice": {
+    "category": "s1_shape/sparse"
+   },
+   "source": "m102 derive-practice CI run 39984609986 (seed 424845248, engine cd3fc08; the same pick at m101 3de4baa and 1506f6b), task 2791 (s1_shape/sparse | p0 <= K, 1 like it)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     293,
+     false
+    ],
+    [
+     125,
+     true
+    ],
+    [
+     242,
+     true
+    ],
+    [
+     343,
+     false
+    ],
+    [
+     219,
+     true
+    ],
+    [
+     243,
+     false
+    ]
+   ],
+   "wrongProgram": "status <= 242",
+   "disagreeAt": [
+    126
+   ],
+   "correct": false,
+   "why": "a random handful of the examples: the smallest example, 125, is a lone true point, so nothing below it and nothing between it and the band 148..242 was shown; status <= 242 is wrong on 347 points of [-200, 1000] (every n < 148 except 125)",
+   "disclosed": "disclosed limit, accepted by Auditor (#495 ruling on 159a632; m102 derive-practice CI seed 424845248, the same pick at m101 3de4baa and 1506f6b)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "status <= 242",
+    "note": "known limit: the band's lower end lies past every example (the smallest example, 125, is a lone true point, read as part of the band) and the gap 126..147 between true examples was never given; like a cap past every example and the hidden island, no example-only check can see it (Auditor #495 q2: one example at 42 or the pair 124 / 126 makes the engine refuse and ask)",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m102-kind-s1-shape-sparse-p0-eq-k",
+   "practice": {
+    "category": "s1_shape/sparse"
+   },
+   "source": "m102 derive-practice CI run 39995190745 (seed 752848777, engine 159a632; the same pick at m101 1506f6b, main and m103 0d619de), task 39841 (s1_shape/sparse | p0 === K, 1 like it)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     360,
+     false
+    ],
+    [
+     491,
+     false
+    ],
+    [
+     391,
+     false
+    ],
+    [
+     359,
+     true
+    ],
+    [
+     258,
+     false
+    ],
+    [
+     358,
+     false
+    ],
+    [
+     208,
+     false
+    ]
+   ],
+   "wrongProgram": "status === 359",
+   "disagreeAt": [
+    392
+   ],
+   "correct": true,
+   "why": "a random handful of the examples: the only true example is the lone point 359, and the true band 392..440 lies between the false examples 391 and 491, so it was never seen; status === 359 is wrong on the 49 inputs 392..440",
+   "disclosed": "disclosed limit (m102 derive-practice CI run 39995190745, seed 752848777; family 1, the same pick at m101 1506f6b, main and m103 0d619de); awaiting Auditor review",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "status === 359",
+    "note": "known limit: a band between two false examples (391 and 491) with no example in it (the hidden-island class); no example-only check can see it, and the review note shows the derived expression",
     "formGate": []
    }
   }

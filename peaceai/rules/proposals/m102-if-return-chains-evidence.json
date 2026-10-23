@@ -1,0 +1,1804 @@
+{
+ "schema": "peaceai-m102-if-return-chains-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "M102 if-return chains, the string-order form s <= t (Auditor #491 ruling: a DSL form is used only with >= 10 replaying upstream evidence entries). 11 exported pure functions from 8 permissive repos outside the corpus and the ext-manifest, mined the M99 way: the upstream function run in an empty vm on a fixed grid, every 3rd row (at most 14) as training, extended by the engine's own questions answered from upstream (addedForGates), the rest held out; far probes past the grid checked too, and char probes (each string parameter at \"a\" + c + \"b\" for every printable ASCII non-alphanumeric c). Excluded: any held/far/char-probe miss, number formatting outside the integer domain (toFixed, parseFloat, Math.*, toLocaleString, Intl), duplicates of an M99 or M101 entry or of another upstream, more than 3 per repo (M99 and M101 included), more than 2 per expression shape. Each expression is re-derived from the recorded examples alone by the engine with the form on and is right on every held-out and far row. forms counts the entries whose derived program uses the form; peaceai/lib/derive.ts ORDER_FORM_EVIDENCE must equal it. No third-party code is run by the test. Auditor #495 B2: two entries dropped (CALLE-AI/awesome-phone-call-agents isCurrentNav, ai-ecoverse/slicc hostnameMatches): upstream is a prefix / wildcard match, not string order, and differs from the derived equality off the grid (\"/docs/\" vs \"/docs\", \"a.okta.com\" vs \"*.okta.com\").",
+ "forms": {
+  "sle": 11
+ },
+ "examples": [
+  {
+   "repo": "AhaiMk01/tarkov-weapon-optimizer",
+   "commit": "ed7eba9a5fb85dd038cf0456b83628ba3c3c1ce9",
+   "module": "frontend/reference/oracle/order.ts",
+   "fn": "codeUnitCompare",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(a <= b) ? ((b <= a) ? 0 : (-1)) : 1",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function codeUnitCompare(a: string, b: string): number {\n  return a < b ? -1 : a > b ? 1 : 0;\n}",
+   "path": "frontend/reference/oracle/order.ts",
+   "fileBlob": "e3d53a1223acda52452ce798c39a4c2d98c90a6e",
+   "sha256": "02f50cb6d071a4b4d2393b30a1a60b52c7f8028d8696245323b402038cbc6545",
+   "fixture": "peaceai/test/fixtures/m102-irc/AhaiMk01__tarkov-weapon-optimizer-e3d53a1223ac.txt",
+   "license": "MIT",
+   "licenseSha256": "30c06decc0e745b2300dcfe76cf2c5c6ec160004b1be7a2ebc440efd94861ce9",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives 1",
+    "order: (\"10\", \"9\") gives -1",
+    "order: (\"ac\", \"ab\") gives 1"
+   ]
+  },
+  {
+   "repo": "BrowserOperator/browser-operator-core",
+   "commit": "85da86c2a9421c44d682af0e627243b76d3df0ef",
+   "module": "front_end/core/platform/StringUtilities.ts",
+   "fn": "compare",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(a <= b) ? ((b <= a) ? 0 : (-1)) : 1",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "const compare = (a: string, b: string): number => {\n  if (a > b) {\n    return 1;\n  }\n  if (a < b) {\n    return -1;\n  }\n  return 0;\n};",
+   "path": "front_end/core/platform/StringUtilities.ts",
+   "fileBlob": "f1e727432b64a2332373cc115d416ad95e49260e",
+   "sha256": "92097db2f050db231b77b9383ed295230a5e22012cfbd8ce2e4e16557675c891",
+   "fixture": "peaceai/test/fixtures/m102-irc/BrowserOperator__browser-operator-core-f1e727432b64.txt",
+   "license": "BSD-3-Clause",
+   "licenseSha256": "b7872e33b829b437ab12bc8a6c6b3296f4aeb3e5fe381f37f21977ea061d9347",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives 1",
+    "order: (\"10\", \"9\") gives -1",
+    "order: (\"ac\", \"ab\") gives 1"
+   ]
+  },
+  {
+   "repo": "ItsNothingPersonal/nt-inventar-frontend",
+   "commit": "80df456c8374fd8080f144abf66836c96e1fb358",
+   "module": "src/lib/util.ts",
+   "fn": "sortStringAsc",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "9",
+      "10"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "ac"
+     ],
+     "out": -1
+    }
+   ],
+   "expr": "(b <= a) ? 1 : (-1)",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function sortStringAsc(a: string, b: string): number {\n\treturn a < b ? -1 : 1;\n}",
+   "path": "src/lib/util.ts",
+   "fileBlob": "73ed48ff0d35f7fa0b50ac3951606fedc0dca542",
+   "sha256": "697a13aa68d59ce117d09b98122ca3a6ef808d4d23e2ab191c1388daad2a778b",
+   "fixture": "peaceai/test/fixtures/m102-irc/ItsNothingPersonal__nt-inventar-frontend-73ed48ff0d35.txt",
+   "license": "MIT",
+   "licenseSha256": "4fcabd96fdfb1678fbc9f2fad11b690fc15f03f795f6599340ce504d05fa0346",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives 1",
+    "order: (\"9\", \"10\") gives 1",
+    "order: (\"ab\", \"ac\") gives -1"
+   ]
+  },
+  {
+   "repo": "ItsNothingPersonal/nt-inventar-frontend",
+   "commit": "80df456c8374fd8080f144abf66836c96e1fb358",
+   "module": "src/lib/util.ts",
+   "fn": "sortStringDesc",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": -1
+    }
+   ],
+   "expr": "(a <= b) ? 1 : (-1)",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function sortStringDesc(a: string, b: string): number {\n\treturn a > b ? -1 : 1;\n}",
+   "path": "src/lib/util.ts",
+   "fileBlob": "73ed48ff0d35f7fa0b50ac3951606fedc0dca542",
+   "sha256": "697a13aa68d59ce117d09b98122ca3a6ef808d4d23e2ab191c1388daad2a778b",
+   "fixture": "peaceai/test/fixtures/m102-irc/ItsNothingPersonal__nt-inventar-frontend-73ed48ff0d35.txt",
+   "license": "MIT",
+   "licenseSha256": "4fcabd96fdfb1678fbc9f2fad11b690fc15f03f795f6599340ce504d05fa0346",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives -1",
+    "order: (\"10\", \"9\") gives 1",
+    "order: (\"ac\", \"ab\") gives -1"
+   ]
+  },
+  {
+   "repo": "appwrite/appwrite",
+   "commit": "30b0aa43e187a8adb360df86dc3c80c88c6e13a4",
+   "module": "apps/console/src/lib/table-filters/activity-filters.ts",
+   "fn": "maxIso",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": " Ab 9. "
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": "9"
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": "ac"
+    }
+   ],
+   "expr": "(a <= b) ? b : a",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function maxIso(a: string, b: string): string {\n  return a >= b ? a : b\n}",
+   "path": "apps/console/src/lib/table-filters/activity-filters.ts",
+   "fileBlob": "467e78cd19c954897251dbd5fbbfe98998fdc7cb",
+   "sha256": "4c03abab37e47372299ac635a43102f1242d0d5c29cca00da079c7b38ea752c8",
+   "fixture": "peaceai/test/fixtures/m102-irc/appwrite__appwrite-467e78cd19c9.txt",
+   "license": "BSD-3-Clause",
+   "licenseSha256": "afcf20b6b9c522527dea8dd87599136509a245e36a7e1eacd969e6a21a3f5510",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \" Ab 9. \"",
+    "order: (\"10\", \"9\") gives \"9\"",
+    "order: (\"ac\", \"ab\") gives \"ac\""
+   ]
+  },
+  {
+   "repo": "appwrite/appwrite",
+   "commit": "30b0aa43e187a8adb360df86dc3c80c88c6e13a4",
+   "module": "apps/console/src/lib/table-filters/activity-filters.ts",
+   "fn": "minIso",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": " pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": "10"
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": "ab"
+    }
+   ],
+   "expr": "(a <= b) ? a : b",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function minIso(a: string, b: string): string {\n  return a <= b ? a : b\n}",
+   "path": "apps/console/src/lib/table-filters/activity-filters.ts",
+   "fileBlob": "467e78cd19c954897251dbd5fbbfe98998fdc7cb",
+   "sha256": "4c03abab37e47372299ac635a43102f1242d0d5c29cca00da079c7b38ea752c8",
+   "fixture": "peaceai/test/fixtures/m102-irc/appwrite__appwrite-467e78cd19c9.txt",
+   "license": "BSD-3-Clause",
+   "licenseSha256": "afcf20b6b9c522527dea8dd87599136509a245e36a7e1eacd969e6a21a3f5510",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \"\"",
+    "order: (\"10\", \"9\") gives \"10\"",
+    "order: (\"ac\", \"ab\") gives \"ab\""
+   ]
+  },
+  {
+   "repo": "cebarobot/ham-award-tools",
+   "commit": "f28a04fa5a94368ac4099ce5cec97fcd93ce0849",
+   "module": "web/src/awards/jarl.ts",
+   "fn": "isOnOrAfterDate",
+   "params": [
+    {
+     "name": "qsoDate",
+     "type": "string"
+    },
+    {
+     "name": "entityDate",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "9",
+      "10"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "ab",
+      "ac"
+     ],
+     "out": false
+    }
+   ],
+   "expr": "(entityDate <= qsoDate) && !(entityDate === \"\")",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function isOnOrAfterDate(qsoDate: string, entityDate: string): boolean {\n  if (!entityDate) return false\n  return qsoDate >= entityDate\n}",
+   "path": "web/src/awards/jarl.ts",
+   "fileBlob": "9889d15dfff198e8a4ce204f4a9566339e39de24",
+   "sha256": "3f3e951920731a1dc6a49cd2c376a3fc94e2d03abe081c8676b18e56c4f2ab2e",
+   "fixture": "peaceai/test/fixtures/m102-irc/cebarobot__ham-award-tools-9889d15dfff1.txt",
+   "license": "MIT",
+   "licenseSha256": "df1e80e8067b6d5409898d863a279ea0f9ca15db5090a9a29139899da22f2247",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives false",
+    "order: (\"9\", \"10\") gives true",
+    "order: (\"ab\", \"ac\") gives false"
+   ]
+  },
+  {
+   "repo": "eg013ra1n/athenaeum",
+   "commit": "7331a2dd7855b0a62022e86e5de21c727e4800e0",
+   "module": "src/components/collab/project/table/model.ts",
+   "fn": "nightOrderDesc",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": -1
+    }
+   ],
+   "expr": "(a <= b) ? ((b <= a) ? 0 : 1) : (-1)",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "const nightOrderDesc = (a: string, b: string): number => {\n  if (a === b) return 0;\n  if (a === '') return 1;\n  if (b === '') return -1;\n  return a < b ? 1 : -1;\n};",
+   "path": "src/components/collab/project/table/model.ts",
+   "fileBlob": "31b62459c3dbe8ec9f536e221d042cac12eff14f",
+   "sha256": "004fd83204272c775614c6c6bcd3f21c4f0ce4470b186a23f94f5639f0e75542",
+   "fixture": "peaceai/test/fixtures/m102-irc/eg013ra1n__athenaeum-31b62459c3db.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "15c0ce667737636d480b7f7e8edfa7a8f915f2a2f36d220d18b31dc6a7541c75",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives -1",
+    "order: (\"10\", \"9\") gives 1",
+    "order: (\"ac\", \"ab\") gives -1"
+   ]
+  },
+  {
+   "repo": "iodigital-com/io-technology",
+   "commit": "7b05f2b6560562dd3c7e3761c54047db84d94ddb",
+   "module": "lib/mdx/mdx.ts",
+   "fn": "dateSortDesc",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": -1
+    }
+   ],
+   "expr": "(a <= b) ? ((b <= a) ? 0 : 1) : (-1)",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function dateSortDesc(a: string, b: string): number {\n  if (a > b) return -1\n  if (a < b) return 1\n  return 0\n}",
+   "path": "lib/mdx/mdx.ts",
+   "fileBlob": "c66380e9bd043dc688003c27edde239d5174544f",
+   "sha256": "491bfcc32e79ba2c7f91a5061fb964ed23de3baea28b947a56ea4ed5a708dc50",
+   "fixture": "peaceai/test/fixtures/m102-irc/iodigital-com__io-technology-c66380e9bd04.txt",
+   "license": "MIT",
+   "licenseSha256": "d9a90b85a1d5557daf52567b3d143f5f8a0fd3698e3cfae334c330cf02d2ba3b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives -1",
+    "order: (\"10\", \"9\") gives 1",
+    "order: (\"ac\", \"ab\") gives -1"
+   ]
+  },
+  {
+   "repo": "opencx-labs/catamorphic",
+   "commit": "7e9e26e92a7cc2deca112da0e2cf2f816ea652bc",
+   "module": "packages/app/src/ui/dates.ts",
+   "fn": "maxIso",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": " Ab 9. "
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": "9"
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": "ac"
+    }
+   ],
+   "expr": "(a <= b) ? b : a",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function maxIso(a: string, b: string): string {\n  return a >= b ? a : b;\n}",
+   "path": "packages/app/src/ui/dates.ts",
+   "fileBlob": "24d3143602f672d6e252f0dd791fa92a837b26b3",
+   "sha256": "2136b42b476c0ad02efa3b2f8c8c2953c7e05c9c8ad954564b1ca543a348519e",
+   "fixture": "peaceai/test/fixtures/m102-irc/opencx-labs__catamorphic-24d3143602f6.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \" Ab 9. \"",
+    "order: (\"10\", \"9\") gives \"9\"",
+    "order: (\"ac\", \"ab\") gives \"ac\""
+   ]
+  },
+  {
+   "repo": "opencx-labs/catamorphic",
+   "commit": "7e9e26e92a7cc2deca112da0e2cf2f816ea652bc",
+   "module": "packages/app/src/ui/dates.ts",
+   "fn": "minIso",
+   "params": [
+    {
+     "name": "a",
+     "type": "string"
+    },
+    {
+     "name": "b",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": " pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "10",
+      "9"
+     ],
+     "out": "10"
+    },
+    {
+     "args": [
+      "ac",
+      "ab"
+     ],
+     "out": "ab"
+    }
+   ],
+   "expr": "(a <= b) ? a : b",
+   "forms": [
+    "sle"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function minIso(a: string, b: string): string {\n  return a <= b ? a : b;\n}",
+   "path": "packages/app/src/ui/dates.ts",
+   "fileBlob": "24d3143602f672d6e252f0dd791fa92a837b26b3",
+   "sha256": "2136b42b476c0ad02efa3b2f8c8c2953c7e05c9c8ad954564b1ca543a348519e",
+   "fixture": "peaceai/test/fixtures/m102-irc/opencx-labs__catamorphic-24d3143602f6.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \"\"",
+    "order: (\"10\", \"9\") gives \"10\"",
+    "order: (\"ac\", \"ab\") gives \"ab\""
+   ]
+  }
+ ]
+}

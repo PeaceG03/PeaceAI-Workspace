@@ -17,8 +17,10 @@
 //            | T1 + T2 + ... + Tk (M101 template join, size 1 + slots: k >= 3 parts, or a str part; each part a literal
 //              cut from the outputs, a string parameter, or str(p) = "" + p, a number parameter's decimal text)
 //   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty
+//            | s <= t (M102: two string parameters in code-unit order, JS `<=` on strings; size 3)
 //            | a && b | a || b | !a
-//   if-guards G (conditional on emptiness or equality only): s is empty | p == C
+//   if-guards G (conditional on emptiness, equality or, M102, string order): s is empty | p == C | s <= t
+//   (an if-return chain `a < b ? -1 : a > b ? 1 : 0` is if(s <= t, if(t <= s, K, K), K), size 11)
 //   Every constant comes from the EXAMPLES; the behavior prose is never read here (it only names the module,
 //   function and signature, in learned-derive.ts):
 //   C (compared with a parameter): an edge the examples witness, i.e. an argument value v where two examples
@@ -67,6 +69,8 @@ export type DeriveNode =
   | { op: "eq" | "le"; a: DeriveNode; b: DeriveNode }
   | { op: "range"; i: number; lo: number; hi: number }
   | { op: "empty"; i: number }
+  /** M102: string parameters i and j in code-unit order (args[i] <= args[j], JS `<=` on strings). */
+  | { op: "sle"; i: number; j: number }
   | { op: "if"; c: DeriveNode; t: DeriveNode; e: DeriveNode }
   /** M101 template join: the parts' texts in order; a part is a string literal, a string parameter or str(number parameter). */
   | { op: "tmpl"; parts: DeriveNode[] };
@@ -230,8 +234,8 @@ export function farProbes(params: readonly DeriveParam[], examples: readonly Der
 }
 
 /** Evaluates a program on one argument list; undefined when a value leaves the integer range. */
-export function evalProgram(n: DeriveNode, args: readonly DeriveValue[], hook?: (n: DeriveNode, side: 0 | 1) => void): DeriveValue | undefined {
-  const ev = (x: DeriveNode) => evalProgram(x, args, hook);
+export function evalProgram(n: DeriveNode, args: readonly DeriveValue[], hook?: (n: DeriveNode, side: 0 | 1) => void, order?: (a: string, b: string) => boolean): DeriveValue | undefined {
+  const ev = (x: DeriveNode) => evalProgram(x, args, hook, order);
   const num = (x: DeriveNode) => ev(x) as number | undefined;
   switch (n.op) {
     case "param": return args[n.i];
@@ -266,6 +270,8 @@ export function evalProgram(n: DeriveNode, args: readonly DeriveValue[], hook?: 
     case "le": { const a = num(n.a), b = num(n.b); return a === undefined || b === undefined ? undefined : a <= b; }
     case "range": { const p = args[n.i] as number; return n.lo <= p && p <= n.hi; }
     case "empty": return args[n.i] === "";
+    // `order` (the order gate only): the same program with another string order in place of code-unit order
+    case "sle": { const a = args[n.i], b = args[n.j]; return typeof a === "string" && typeof b === "string" ? (order ? order(a, b) : a <= b) : undefined; }
     case "and": case "or": {
       const a = ev(n.a), b = ev(n.b);
       if (typeof a !== "boolean" || typeof b !== "boolean") return undefined;
@@ -298,6 +304,7 @@ export function compileProgram(n: DeriveNode, names: readonly string[]): string 
       case "le": return `(${c(x.a)} <= ${c(x.b)})`;
       case "range": return `(${NUM(x.lo)} <= ${names[x.i]} && ${names[x.i]} <= ${NUM(x.hi)})`;
       case "empty": return `(${names[x.i]} === "")`;
+      case "sle": return `(${names[x.i]} <= ${names[x.j]})`;
       case "and": return `(${c(x.a)} && ${c(x.b)})`;
       case "or": return `(${c(x.a)} || ${c(x.b)})`;
       case "not": return `!${c(x.a)}`;
@@ -393,6 +400,12 @@ function stringPieces(examples: readonly DeriveExample[]): string[] {
  * test re-derives them and checks these numbers. Under the bar the form is never built, so it is never accepted.
  */
 export const TEMPLATE_FORM_EVIDENCE: Readonly<Record<"tmpl" | "str", number>> = { tmpl: 36, str: 19 };
+/**
+ * M102 (same ruling): the string-order form `s <= t` (if-return chains) is built only with at least DERIVE_FORM_BAR
+ * replaying upstream entries in peaceai/rules/proposals/m102-if-return-chains-evidence.json whose derived program
+ * has it; the evidence test re-derives them and checks this number.
+ */
+export const ORDER_FORM_EVIDENCE: Readonly<Record<"sle", number>> = { sle: 11 };
 /** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
 const MAX_TEMPLATE_SPLITS = 2000;
 /**
@@ -463,6 +476,8 @@ interface SearchSpec {
   pieces: readonly string[];
   /** M101 template joins that fit every example (templateFits), pushed at their size. */
   templates?: readonly DeriveNode[];
+  /** M102: build the string-order atom `s <= t` (only with ORDER_FORM_EVIDENCE at the bar; default from it). */
+  order?: boolean;
   maxSize: number;
   budget: number;
   /** Memory bound in kept values (keptCellsLimit). */
@@ -554,6 +569,11 @@ function runSearch(S: SearchSpec): SearchOut {
         }
       } else if (p.type === "string") {
         if (size === 2) push("boolean", 2, { op: "empty", i }, true, map1((k) => points[k]![i] === ""), true);
+        // M102: s <= t over two string parameters (both orders), also an if-guard
+        if (size === 3 && (S.order ?? ORDER_FORM_EVIDENCE.sle >= DERIVE_FORM_BAR)) params.forEach((q, j) => {
+          if (q.type !== "string" || j === i) return;
+          push("boolean", 3, { op: "sle", i, j }, true, map1((k) => (points[k]![i] as string) <= (points[k]![j] as string)), true);
+        });
       }
     });
     // Unary nodes.
@@ -761,7 +781,7 @@ export function deriveCandidate(input: DeriveInput): DeriveResult {
 
 // ---- The witness gates (Auditor, #491 review): a fit is accepted only when the examples SHOW what it relies on.
 
-export type DeriveGate = "unread" | "chars" | "edge" | "far" | "region" | "span" | "branch" | "cap" | "rival" | "rival_budget";
+export type DeriveGate = "unread" | "chars" | "order" | "edge" | "far" | "region" | "span" | "branch" | "cap" | "rival" | "rival_budget";
 export interface DeriveGateProblem { gate: DeriveGate; param?: string; detail: string; searched: number; at?: DeriveValue[][]; rivals?: { at: DeriveValue[]; values: DeriveValue[] }[] }
 
 /**
@@ -782,7 +802,7 @@ const sortAnswers = (vs: readonly DeriveValue[]): DeriveValue[] => [...new Map(v
  * (`at`), with the derived program's result and the result of a program built to fit every example but differ there:
  * boolean results the other value (the program with that one input flipped fits every example, as the input is not
  * one); number results a cap or floor at the largest or smallest shown result (`min(largest, program)` fits every
- * example), else the nearest example's result at that one input. Inputs equal to an example are never asked.
+ * example), else the result of the nearest example (M102: with a result other than the program's) at that one input. Inputs equal to an example are never asked.
  */
 export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: readonly DeriveValue[][], rivals: readonly { at: DeriveValue[]; values: DeriveValue[] }[] = []): DeriveQuestion[] {
   const exKeys = new Set(input.examples.map((e) => keyOf(e.args)));
@@ -804,9 +824,10 @@ export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: rea
     let other: DeriveValue | null = null;
     if (typeof mine === "boolean") other = !mine;
     else if (typeof mine === "string") {
-      // A string result: the nearest example's result there (a program equal to the derived one except at this one
-      // input, which is not an example, fits every example as well).
-      const near = nearestExample(input, pt);
+      // A string result: the result of the nearest example whose result differs (a program equal to the derived one
+      // except at this one input, which is not an example, fits every example as well). M102: the nearest example
+      // with another result, not only the nearest example (whose result may be the derived one's, leaving no question).
+      const near = nearestExample(input, pt, mine);
       if (near && near.out !== mine) other = near.out;
     }
     else if (typeof mine === "number" && outs.length) {
@@ -814,7 +835,7 @@ export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: rea
       if (mine > hi) other = hi;
       else if (mine < lo) other = lo;
       else {
-        const near = nearestExample(input, pt);
+        const near = nearestExample(input, pt, mine);
         if (near && near.out !== mine) other = near.out;
       }
     }
@@ -851,9 +872,10 @@ export function edgeQuestions(input: DeriveInput): DeriveQuestion[] {
 }
 
 /** The example nearest a point (sum of distances over number arguments, mismatches of others count 1; first on a tie). */
-function nearestExample(input: DeriveInput, pt: readonly DeriveValue[]): DeriveExample | null {
+function nearestExample(input: DeriveInput, pt: readonly DeriveValue[], unlike?: DeriveValue): DeriveExample | null {
   let best: DeriveExample | null = null, bd = Infinity;
   for (const e of input.examples) {
+    if (unlike !== undefined && e.out === unlike) continue;
     let d = 0;
     e.args.forEach((v, j) => { d += typeof v === "number" && typeof pt[j] === "number" ? Math.abs(v - (pt[j] as number)) : keyOf([v]) === keyOf([pt[j]!]) ? 0 : 1; });
     if (d < bd) { bd = d; best = e; }
@@ -905,7 +927,7 @@ const walk = (n: DeriveNode, f: (x: DeriveNode) => void): void => {
 /** Parameter indices a program reads. */
 export function paramsRead(n: DeriveNode): Set<number> {
   const s = new Set<number>();
-  walk(n, (x) => { if (x.op === "param" || x.op === "range" || x.op === "empty") s.add(x.i); });
+  walk(n, (x) => { if (x.op === "param" || x.op === "range" || x.op === "empty") s.add(x.i); else if (x.op === "sle") { s.add(x.i); s.add(x.j); } });
   return s;
 }
 
@@ -1132,6 +1154,14 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     const missing = need.filter(([ok]) => !ok);
     if (missing.length) return fail("chars", `${names[i]} is written as its decimal text by \`${expr}\`, but no example value of it is ${missing.map(([, d]) => d).join(" or ")}; add such examples`, i, missing.map(([, , at]) => ptAt(i, at)));
   }
+  // order (M102): every string-order test `s <= t` is shown to be code-unit order, not a look-alike order
+  const orderFail = orderProblem(input, program, expr);
+  if (orderFail) return orderFail;
+  // order (M102, practice seed 100 if_chain/sparse): with the order atom buildable, both strict orders of a compared pair
+  // are shown (`a <= b ? 0 : -1` from examples that never had a < b); so are both orders of a passed-through string
+  // parameter and each other string parameter (`x` from examples that always had x >= y, the truth max(x, y))
+  const shownFail = orderShownProblem(input, program, expr);
+  if (shownFail) return shownFail;
   // edge (1)
   const byVal = (i: number, v: DeriveValue) => examples.filter((e) => e.args[i] === v);
   /** Two examples, same other arguments, argument i = x and = y, different results. */
@@ -1267,6 +1297,24 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   }
   // branch / cap (2)
   const hits = new Map<DeriveNode, [number, number]>();
+  /** M102 (practice seed 100 if_chain/sparse, stuck with no question): inputs that reach the short side of an if whose
+   * condition reads strings, from the first example with each pair of string parameters set from DERIVE_ORDER_POOL. */
+  const branchAsk = (n: DeriveNode, side: 0 | 1, need: number): DeriveValue[][] | undefined => {
+    const strs = params.map((p, i) => (p.type === "string" ? i : -1)).filter((i) => i >= 0);
+    if (!strs.length || !examples.length) return undefined;
+    const exKeys = new Set(examples.map((e) => keyOf(e.args))), at: DeriveValue[][] = [];
+    const pairs: [number, number][] = strs.length === 1 ? [[strs[0]!, strs[0]!]] : strs.flatMap((i) => strs.filter((j) => j > i).map((j) => [i, j] as [number, number]));
+    for (const [i, j] of pairs) for (const x of DERIVE_ORDER_POOL) for (const y of DERIVE_ORDER_POOL) {
+      if (at.length >= Math.min(need, DERIVE_MAX_QUESTIONS)) return at;
+      const pt = examples[0]!.args.map((v, m) => (m === i ? x : m === j ? y : v));
+      if (i === j && x !== y) continue;
+      if (exKeys.has(keyOf(pt)) || at.some((q) => keyOf(q) === keyOf(pt))) continue;
+      let hit = false;
+      if (evalProgram(program, pt, (m, sd) => { if (m === n && sd === side) hit = true; }) === undefined) continue;
+      if (hit) at.push(pt);
+    }
+    return at.length ? at : undefined;
+  };
   for (const e of examples) evalProgram(program, e.args, (n, side) => { const h = hits.get(n) ?? [0, 0]; h[side]++; hits.set(n, h); });
   let reachFail: DeriveGateProblem | null = null;
   walk(program, (n) => {
@@ -1279,12 +1327,113 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (s0 >= (point ? 1 : DERIVE_MIN_REACH) && s1 >= DERIVE_MIN_REACH) return;
     const sub = compileProgram(n, names);
     reachFail = n.op === "if"
-      ? fail("branch", `\`${sub}\`: its condition is true for ${s0} example(s) and false for ${s1}; each branch needs at least ${DERIVE_MIN_REACH} examples`)
+      ? fail("branch", `\`${sub}\`: its condition is true for ${s0} example(s) and false for ${s1}; each branch needs at least ${DERIVE_MIN_REACH} examples`, undefined, branchAsk(n, s0 < (point ? 1 : DERIVE_MIN_REACH) ? 0 : 1, (point ? 1 : DERIVE_MIN_REACH) - Math.min(s0, s1)))
       : fail("cap", `\`${sub}\`: ${s0} example(s) below the cap ${n.c} and ${s1} past it; each side needs at least ${DERIVE_MIN_REACH} examples`);
   });
   if (reachFail) return reachFail;
   // rival (3)
   return rivalProblem(input, program, size, budget, spent);
+}
+
+/** Natural order (digit runs compared as numbers), a look-alike of code-unit order the order gate rules out. */
+function naturalLe(a: string, b: string): boolean {
+  const ca = a.match(/\d+|\D+/g) ?? [], cb = b.match(/\d+|\D+/g) ?? [];
+  for (let k = 0; k < Math.min(ca.length, cb.length); k++) {
+    const x = ca[k]!, y = cb[k]!;
+    if (x === y) continue;
+    if (/^\d/.test(x) && /^\d/.test(y) && Number(x) !== Number(y)) return Number(x) < Number(y);
+    return x < y;
+  }
+  return ca.length <= cb.length;
+}
+/**
+ * The orders a string comparison could mean instead of code-unit order (JS `<` / `<=` on strings), each with the
+ * input (first, second operand) where it differs. A program using `s <= t` is accepted only when, for each, the
+ * examples show the result of code-unit order where that order would give another result (for `<` vs `<=`, the
+ * equal pair, DERIVE_MIN_REACH examples, so the equal branch of a three-way chain is reached twice).
+ */
+export const DERIVE_ORDER_LOOKALIKES: readonly { name: string; le: (a: string, b: string) => boolean; at: (v: readonly string[]) => [string, string][]; need: number }[] = [
+  { name: "strict order (<, not <=): equal values", le: (a, b) => a < b, at: (v) => v.slice(0, 2).map((x) => [x, x]), need: DERIVE_MIN_REACH },
+  { name: "case-insensitive order", le: (a, b) => a.toLowerCase() <= b.toLowerCase(), at: () => [["a", "B"], ["B", "a"]], need: 1 },
+  { name: "natural (numeric) order", le: naturalLe, at: () => [["10", "9"], ["9", "10"]], need: 1 },
+  { name: "shorter-first order", le: (a, b) => (a.length !== b.length ? a.length < b.length : a <= b), at: () => [["b", "aa"], ["aa", "b"]], need: 1 },
+  { name: "first-character order", le: (a, b) => a.slice(0, 1) <= b.slice(0, 1), at: () => [["ac", "ab"], ["ab", "ac"]], need: 1 },
+];
+/** Strings the order gate also tries (all ordered pairs) for a look-alike whose own inputs do not tell it apart. */
+export const DERIVE_ORDER_POOL: readonly string[] = ["", "a", "A", "b", "B", "aa", "ab", "ac", "1", "01", "9", "10", " a", "a "];
+/**
+ * The order gate (M102): see DERIVE_ORDER_LOOKALIKES. Null when every look-alike is ruled out by the examples.
+ * A look-alike is tried at its own inputs, then at every ordered pair of DERIVE_ORDER_POOL (in the first order test's
+ * two parameters, the other arguments the first example's); one that gives the program's result at all of them cannot
+ * change this program on any input tried (e.g. shorter-first order for an equality `(a <= b) && (b <= a)`, whose
+ * equal pairs are code-unit order's) and is not asked about. Every other look-alike the examples do not rule out is
+ * asked about at once (at most DERIVE_MAX_QUESTIONS inputs, each where it gives another result).
+ */
+export function orderProblem(input: DeriveInput, program: DeriveNode, expr = compileProgram(program, input.params.map((p) => p.name))): DeriveGateProblem | null {
+  const { params, examples } = input;
+  const tests: Extract<DeriveNode, { op: "sle" }>[] = [];
+  walk(program, (n) => { if (n.op === "sle") tests.push(n); });
+  if (!tests.length) return null;
+  const exKeys = new Set(examples.map((e) => keyOf(e.args)));
+  const t = tests[0]!;
+  const vals = [...new Set(examples.map((e) => e.args[t.i] as string))];
+  const poolPairs = DERIVE_ORDER_POOL.flatMap((x) => DERIVE_ORDER_POOL.map((y) => [x, y] as [string, string]));
+  let first: DeriveGateProblem | null = null;
+  const rivals: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
+  for (const L of DERIVE_ORDER_LOOKALIKES) {
+    const shown = examples.filter((e) => evalProgram(program, e.args, undefined, L.le) !== evalProgram(program, e.args)).length;
+    if (shown >= L.need) continue;
+    const differ: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
+    for (const [x, y] of [...L.at(vals), ...poolPairs]) {
+      const pt = examples[0]!.args.map((a, k) => (k === t.i ? x : k === t.j ? y : a));
+      const mine = evalProgram(program, pt), other = evalProgram(program, pt, undefined, L.le);
+      if (mine !== undefined && other !== undefined && mine !== other) differ.push({ at: pt, values: [mine, other] });
+    }
+    if (!differ.length) continue;
+    first ??= { gate: "order", param: params[t.i]!.name, searched: 0, detail: `\`${expr}\` compares strings in code-unit order, but ${shown ? "only " + shown + " example shows" : "no example shows"} where ${L.name} would give another result; add such examples` };
+    let got = 0;
+    for (const r of differ) {
+      if (got >= L.need - shown || rivals.length >= DERIVE_MAX_QUESTIONS) break;
+      if (exKeys.has(keyOf(r.at)) || rivals.some((q) => keyOf(q.at) === keyOf(r.at))) continue;
+      rivals.push(r); got++;
+    }
+  }
+  return first ? { ...first, ...(rivals.length ? { rivals, at: rivals.map((r) => r.at) } : {}) } : null;
+}
+
+/**
+ * The order-shown gate (M102): only with the order atom at the bar (ORDER_FORM_EVIDENCE). For each string pair an
+ * order test compares, and, when the program is a bare string parameter with a string result, for that parameter with
+ * each other string parameter: some example has the first before the second (code-unit order) and some the second
+ * before the first. Otherwise the examples cannot tell the program from an order test that branches on the unshown
+ * order. Asks at the first example with the pair set to ("a", "b") / ("b", "a").
+ */
+export function orderShownProblem(input: DeriveInput, program: DeriveNode, expr = compileProgram(program, input.params.map((p) => p.name))): DeriveGateProblem | null {
+  if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return null;
+  const { params, examples } = input;
+  if (!examples.length) return null;
+  const pairs: [number, number][] = [];
+  walk(program, (n) => { if (n.op === "sle") pairs.push([n.i, n.j]); });
+  if (program.op === "param" && params[program.i]!.type === "string" && input.ret === "string") params.forEach((p, j) => { if (j !== (program as { i: number }).i && p.type === "string") pairs.push([(program as { i: number }).i, j]); });
+  const exKeys = new Set(examples.map((e) => keyOf(e.args)));
+  const seen = new Set<string>();
+  for (const [i, j] of pairs) {
+    const k = i < j ? `${i},${j}` : `${j},${i}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const before = examples.some((e) => (e.args[i] as string) < (e.args[j] as string)), after = examples.some((e) => (e.args[j] as string) < (e.args[i] as string));
+    if (before && after) continue;
+    const at: DeriveValue[][] = [];
+    const tries: [string, string][][] = [before ? [] : [["a", "b"], ["a", "c"], ["A", "a"]], after ? [] : [["b", "a"], ["c", "a"], ["a", "A"]]];
+    for (const side of tries) {
+      const pt = side.map(([x, y]) => examples[0]!.args.map((v, m) => (m === i ? x : m === j ? y : v))).find((q) => !exKeys.has(keyOf(q)));
+      if (pt) at.push(pt);
+    }
+    const names = params.map((p) => p.name);
+    const miss = [before ? null : `${names[i]} before ${names[j]}`, after ? null : `${names[j]} before ${names[i]}`].filter(Boolean).join(" or ");
+    return { gate: "order", param: names[i]!, searched: 0, detail: `\`${expr}\` could branch on the order of ${names[i]} and ${names[j]}, but no example has ${miss} (code-unit order); add such examples`, ...(at.length ? { at } : {}) };
+  }
+  return null;
 }
 
 /** The program with one min / max node replaced by the value it caps (the cap lifted). */
@@ -1312,7 +1461,7 @@ export function arithmeticParams(n: DeriveNode): Set<number> {
   const go = (x: DeriveNode, cmp: boolean): void => {
     switch (x.op) {
       case "param": if (!cmp) s.add(x.i); return;
-      case "int": case "lit": case "range": case "empty": return;
+      case "int": case "lit": case "range": case "empty": case "sle": return;
       case "eq": case "le": go(x.a, true); go(x.b, true); return;
       case "add": case "sub": case "mul": case "cat": case "and": case "or": go(x.a, false); go(x.b, false); return;
       case "sq": case "not": case "min": case "max": go(x.a, false); return;
