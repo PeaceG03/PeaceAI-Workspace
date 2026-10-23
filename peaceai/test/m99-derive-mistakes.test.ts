@@ -42,7 +42,7 @@ test("mistakes ledger: shape, and every Auditor counterexample so far is in it",
   assert.match(LEDGER.note, /11 blocking\) describes seed 100 only/);
   const ids = LEDGER.entries.map((e) => e.id);
   assert.equal(new Set(ids).size, ids.length);
-  for (const id of ["r1-s1-without-600", "r1-s1-drop-429", "r2-hidden-island", "r2-unwitnessed-cap", "r2-amb3-backoff-k7-1", "seed101-island-hidden-island-t465", "m103-backoff-sparse-basems", "m103-backoff-sparse-capped-basems"]) assert.ok(ids.includes(id), id);
+  for (const id of ["r1-s1-without-600", "r1-s1-drop-429", "r2-hidden-island", "r2-unwitnessed-cap", "r2-amb3-backoff-k7-1", "seed101-island-hidden-island-t465", "m103-backoff-sparse-basems", "m103-backoff-sparse-capped-basems", "m103-unread-ab-plus-c", "m103-unread-a-plus-bc", "m103-unread-c-plus-ab-squared", "m103-unread-s-plus-t-repeat-n", "m103-unread-empty-s-or-s-plus-t", "m103-unread-b-pow-a", "m103-unread-b-times-a-plus-1-squared-symmetric", "m103-unread-and-short-circuit", "m103-unread-or-short-circuit"]) assert.ok(ids.includes(id), id);
   // Auditor round 3: the disclosed limits it accepted are marked; every known limit is disclosed.
   const accepted = LEDGER.entries.filter((e) => /accepted by Auditor/.test(e.disclosed ?? "")).map((e) => e.id);
   assert.deepEqual(accepted, ["r1-s1-drop-429", "m100-floor-clamp-past", "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k", "m100-kind-floor-clamp-sparse-k-p0-p0-k", "m100-kind-eq-or-ge-sparse-k-p0", "m100-kind-s1-shape-sparse-k-p0"]);

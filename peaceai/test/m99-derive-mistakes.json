@@ -2552,6 +2552,10 @@
      [
       7,
       100
+     ],
+     [
+      2,
+      100
      ]
     ],
     "answers": [
@@ -2559,6 +2563,11 @@
       7,
       100,
       6400
+     ],
+     [
+      2,
+      100,
+      900
      ],
      [
       -93,
@@ -2623,6 +2632,10 @@
      [
       7,
       500
+     ],
+     [
+      3,
+      500
      ]
     ],
     "answers": [
@@ -2630,6 +2643,11 @@
       7,
       500,
       10400
+     ],
+     [
+      3,
+      500,
+      8000
      ],
      [
       7,
@@ -2641,6 +2659,1248 @@
     "after": {
      "refused": "derive_under_specified",
      "gate": "span"
+    }
+   }
+  },
+  {
+   "id": "m103-unread-ab-plus-c",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "a",
+    "b",
+    "c"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     0,
+     0,
+     -200,
+     -200
+    ],
+    [
+     0,
+     0,
+     -100,
+     -100
+    ],
+    [
+     0,
+     0,
+     -1,
+     -1
+    ],
+    [
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     2,
+     2
+    ],
+    [
+     0,
+     0,
+     3,
+     3
+    ],
+    [
+     0,
+     0,
+     10,
+     10
+    ],
+    [
+     0,
+     0,
+     100,
+     100
+    ],
+    [
+     0,
+     0,
+     250,
+     250
+    ],
+    [
+     0,
+     0,
+     500,
+     500
+    ],
+    [
+     0,
+     0,
+     1000,
+     1000
+    ],
+    [
+     3,
+     0,
+     5,
+     5
+    ],
+    [
+     9,
+     0,
+     5,
+     5
+    ],
+    [
+     0,
+     4,
+     7,
+     7
+    ],
+    [
+     0,
+     8,
+     7,
+     7
+    ]
+   ],
+   "wrongProgram": "c",
+   "disagreeAt": [
+    -2,
+    -2,
+    -300
+   ],
+   "correct": -296,
+   "why": "a changed only where b was 0 and b only where a was 0, so the product a * b was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      3,
+      4,
+      -200
+     ],
+     [
+      9,
+      4,
+      -200
+     ]
+    ],
+    "answers": [
+     [
+      3,
+      4,
+      -200,
+      -188
+     ],
+     [
+      9,
+      4,
+      -200,
+      -164
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_under_specified",
+     "gate": "span"
+    }
+   }
+  },
+  {
+   "id": "m103-unread-a-plus-bc",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "a",
+    "b",
+    "c"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     -200,
+     0,
+     0,
+     -200
+    ],
+    [
+     -100,
+     0,
+     0,
+     -100
+    ],
+    [
+     -1,
+     0,
+     0,
+     -1
+    ],
+    [
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     1,
+     0,
+     0,
+     1
+    ],
+    [
+     2,
+     0,
+     0,
+     2
+    ],
+    [
+     3,
+     0,
+     0,
+     3
+    ],
+    [
+     10,
+     0,
+     0,
+     10
+    ],
+    [
+     100,
+     0,
+     0,
+     100
+    ],
+    [
+     250,
+     0,
+     0,
+     250
+    ],
+    [
+     500,
+     0,
+     0,
+     500
+    ],
+    [
+     1000,
+     0,
+     0,
+     1000
+    ],
+    [
+     5,
+     3,
+     0,
+     5
+    ],
+    [
+     5,
+     9,
+     0,
+     5
+    ],
+    [
+     7,
+     0,
+     4,
+     7
+    ],
+    [
+     7,
+     0,
+     8,
+     7
+    ]
+   ],
+   "wrongProgram": "a",
+   "disagreeAt": [
+    -300,
+    -2,
+    -2
+   ],
+   "correct": -296,
+   "why": "b changed only where c was 0 and c only where b was 0 (both unread), so b * c was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      -200,
+      3,
+      4
+     ],
+     [
+      -200,
+      9,
+      4
+     ]
+    ],
+    "answers": [
+     [
+      -200,
+      3,
+      4,
+      -188
+     ],
+     [
+      -200,
+      9,
+      4,
+      -164
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_under_specified",
+     "gate": "span"
+    }
+   }
+  },
+  {
+   "id": "m103-unread-c-plus-ab-squared",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "a",
+    "b",
+    "c"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     0,
+     0,
+     -200,
+     -200
+    ],
+    [
+     0,
+     0,
+     -100,
+     -100
+    ],
+    [
+     0,
+     0,
+     -1,
+     -1
+    ],
+    [
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     2,
+     2
+    ],
+    [
+     0,
+     0,
+     3,
+     3
+    ],
+    [
+     0,
+     0,
+     10,
+     10
+    ],
+    [
+     0,
+     0,
+     100,
+     100
+    ],
+    [
+     0,
+     0,
+     250,
+     250
+    ],
+    [
+     0,
+     0,
+     500,
+     500
+    ],
+    [
+     0,
+     0,
+     1000,
+     1000
+    ],
+    [
+     3,
+     0,
+     5,
+     5
+    ],
+    [
+     9,
+     0,
+     5,
+     5
+    ],
+    [
+     0,
+     4,
+     7,
+     7
+    ],
+    [
+     0,
+     8,
+     7,
+     7
+    ]
+   ],
+   "wrongProgram": "c",
+   "disagreeAt": [
+    -2,
+    -2,
+    -300
+   ],
+   "correct": -284,
+   "why": "the square of a product that was always 0",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      3,
+      4,
+      -200
+     ],
+     [
+      9,
+      4,
+      -200
+     ]
+    ],
+    "answers": [
+     [
+      3,
+      4,
+      -200,
+      -56
+     ],
+     [
+      9,
+      4,
+      -200,
+      1096
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_under_specified",
+     "gate": "span"
+    }
+   }
+  },
+  {
+   "id": "m103-unread-s-plus-t-repeat-n",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "s",
+    "t",
+    "n"
+   ],
+   "types": [
+    "string",
+    "string",
+    "number"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "",
+     "",
+     0,
+     ""
+    ],
+    [
+     "a",
+     "",
+     0,
+     "a"
+    ],
+    [
+     "B",
+     "",
+     0,
+     "B"
+    ],
+    [
+     "Hello World",
+     "",
+     0,
+     "Hello World"
+    ],
+    [
+     " lead",
+     "",
+     0,
+     " lead"
+    ],
+    [
+     "x.y",
+     "",
+     0,
+     "x.y"
+    ],
+    [
+     "Zz 9",
+     "",
+     0,
+     "Zz 9"
+    ],
+    [
+     "trail ",
+     "",
+     0,
+     "trail "
+    ],
+    [
+     "MiXeD-2",
+     "",
+     0,
+     "MiXeD-2"
+    ],
+    [
+     "ab",
+     "q",
+     0,
+     "ab"
+    ],
+    [
+     "ab",
+     "zz",
+     0,
+     "ab"
+    ],
+    [
+     "cd",
+     "",
+     3,
+     "cd"
+    ],
+    [
+     "cd",
+     "",
+     7,
+     "cd"
+    ]
+   ],
+   "wrongProgram": "s",
+   "disagreeAt": [
+    "",
+    "q",
+    1
+   ],
+   "correct": "q",
+   "why": "t changed only where n was 0 and n only where t was empty",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      "a",
+      "",
+      3
+     ],
+     [
+      "a",
+      "q",
+      3
+     ],
+     [
+      "a",
+      "zz",
+      3
+     ]
+    ],
+    "answers": [
+     [
+      "a",
+      "",
+      3,
+      "a"
+     ],
+     [
+      "a",
+      "q",
+      3,
+      "aqqq"
+     ],
+     [
+      "a",
+      "zz",
+      3,
+      "azzzzzz"
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "m103-unread-empty-s-or-s-plus-t",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "s",
+    "t"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "",
+     "",
+     ""
+    ],
+    [
+     "a",
+     "",
+     "a"
+    ],
+    [
+     "B",
+     "",
+     "B"
+    ],
+    [
+     "Hello World",
+     "",
+     "Hello World"
+    ],
+    [
+     " lead",
+     "",
+     " lead"
+    ],
+    [
+     "x.y",
+     "",
+     "x.y"
+    ],
+    [
+     "Zz 9",
+     "",
+     "Zz 9"
+    ],
+    [
+     "trail ",
+     "",
+     "trail "
+    ],
+    [
+     "MiXeD-2",
+     "",
+     "MiXeD-2"
+    ],
+    [
+     "",
+     "q",
+     ""
+    ],
+    [
+     "",
+     "Zz",
+     ""
+    ]
+   ],
+   "wrongProgram": "s",
+   "disagreeAt": [
+    "a",
+    "q"
+   ],
+   "correct": "aq",
+   "why": "t changed only where s was empty, where the join is skipped",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      "a",
+      "q"
+     ],
+     [
+      "a",
+      "Zz"
+     ]
+    ],
+    "answers": [
+     [
+      "a",
+      "q",
+      "aq"
+     ],
+     [
+      "a",
+      "Zz",
+      "aZz"
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_under_specified",
+     "gate": "chars"
+    }
+   }
+  },
+  {
+   "id": "m103-unread-b-pow-a",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     1,
+     -200,
+     -200
+    ],
+    [
+     1,
+     -100,
+     -100
+    ],
+    [
+     1,
+     -1,
+     -1
+    ],
+    [
+     1,
+     0,
+     0
+    ],
+    [
+     1,
+     1,
+     1
+    ],
+    [
+     1,
+     2,
+     2
+    ],
+    [
+     1,
+     3,
+     3
+    ],
+    [
+     1,
+     10,
+     10
+    ],
+    [
+     1,
+     100,
+     100
+    ],
+    [
+     1,
+     250,
+     250
+    ],
+    [
+     1,
+     500,
+     500
+    ],
+    [
+     1,
+     1000,
+     1000
+    ],
+    [
+     0,
+     1,
+     1
+    ],
+    [
+     5,
+     1,
+     1
+    ],
+    [
+     9,
+     1,
+     1
+    ]
+   ],
+   "wrongProgram": "b",
+   "disagreeAt": [
+    0,
+    -7
+   ],
+   "correct": 1,
+   "why": "a changed only where b was 1, and 1 ** a is 1",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      0,
+      -200
+     ],
+     [
+      5,
+      -200
+     ]
+    ],
+    "answers": [
+     [
+      0,
+      -200,
+      1
+     ],
+     [
+      5,
+      -200,
+      -320000000000
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "m103-unread-b-times-a-plus-1-squared-symmetric",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     0,
+     -200,
+     -200
+    ],
+    [
+     0,
+     -100,
+     -100
+    ],
+    [
+     0,
+     -1,
+     -1
+    ],
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     1,
+     1
+    ],
+    [
+     0,
+     2,
+     2
+    ],
+    [
+     0,
+     3,
+     3
+    ],
+    [
+     0,
+     10,
+     10
+    ],
+    [
+     0,
+     100,
+     100
+    ],
+    [
+     0,
+     250,
+     250
+    ],
+    [
+     0,
+     500,
+     500
+    ],
+    [
+     0,
+     1000,
+     1000
+    ],
+    [
+     -2,
+     100,
+     100
+    ],
+    [
+     -2,
+     7,
+     7
+    ]
+   ],
+   "wrongProgram": "b",
+   "disagreeAt": [
+    -3,
+    -300
+   ],
+   "correct": -1200,
+   "why": "a took only 0 and -2, where (a + 1) ** 2 is 1 on both (a symmetric pair)",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      2,
+      -200
+     ]
+    ],
+    "answers": [
+     [
+      2,
+      -200,
+      -1800
+     ],
+     [
+      98,
+      -200,
+      -1960200
+     ],
+     [
+      -98,
+      100,
+      940900
+     ],
+     [
+      98,
+      1000,
+      9801000
+     ],
+     [
+      980,
+      10000,
+      9623610000
+     ],
+     [
+      980,
+      -10000,
+      -9623610000
+     ],
+     [
+      980,
+      103,
+      99123183
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "b * ((a + 1) * (a + 1))",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "m103-unread-and-short-circuit",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it); refused, then derived wrong after asking",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -300,
+     10,
+     false
+    ],
+    [
+     -100,
+     10,
+     false
+    ],
+    [
+     -1,
+     10,
+     false
+    ],
+    [
+     0,
+     10,
+     false
+    ],
+    [
+     1,
+     10,
+     false
+    ],
+    [
+     4,
+     10,
+     false
+    ],
+    [
+     5,
+     10,
+     false
+    ],
+    [
+     6,
+     10,
+     true
+    ],
+    [
+     7,
+     10,
+     true
+    ],
+    [
+     105,
+     10,
+     true
+    ],
+    [
+     106,
+     10,
+     true
+    ],
+    [
+     300,
+     10,
+     true
+    ],
+    [
+     2,
+     0,
+     false
+    ],
+    [
+     2,
+     100,
+     false
+    ],
+    [
+     -50,
+     -9,
+     false
+    ]
+   ],
+   "wrongProgram": "6 <= a",
+   "disagreeAt": [
+    7,
+    -9
+   ],
+   "correct": false,
+   "why": "b changed only where a > 5 was false, so a > 5 && b > 3 was decided by a alone",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      -300,
+      0
+     ],
+     [
+      -300,
+      100
+     ]
+    ],
+    "answers": [
+     [
+      -300,
+      0,
+      false
+     ],
+     [
+      -300,
+      100,
+      false
+     ],
+     [
+      6,
+      0,
+      false
+     ],
+     [
+      6,
+      100,
+      true
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "m103-unread-or-short-circuit",
+   "source": "Auditor #497 review (/tmp/r497/adv.mts; main 5c66982 and 0d619de emit it); refused, then derived wrong after asking",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -300,
+     0,
+     false
+    ],
+    [
+     -100,
+     0,
+     false
+    ],
+    [
+     -1,
+     0,
+     false
+    ],
+    [
+     0,
+     0,
+     false
+    ],
+    [
+     1,
+     0,
+     false
+    ],
+    [
+     4,
+     0,
+     false
+    ],
+    [
+     5,
+     0,
+     false
+    ],
+    [
+     6,
+     0,
+     true
+    ],
+    [
+     7,
+     0,
+     true
+    ],
+    [
+     105,
+     0,
+     true
+    ],
+    [
+     106,
+     0,
+     true
+    ],
+    [
+     300,
+     0,
+     true
+    ],
+    [
+     9,
+     0,
+     true
+    ],
+    [
+     9,
+     100,
+     true
+    ],
+    [
+     200,
+     -9,
+     true
+    ]
+   ],
+   "wrongProgram": "6 <= a",
+   "disagreeAt": [
+    -300,
+    4
+   ],
+   "correct": true,
+   "why": "b changed only where a > 5 was true, so a > 5 || b > 3 was decided by a alone",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      -300,
+      100
+     ],
+     [
+      -300,
+      -9
+     ]
+    ],
+    "answers": [
+     [
+      -300,
+      100,
+      true
+     ],
+     [
+      -300,
+      -9,
+      false
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
     }
    }
   }
