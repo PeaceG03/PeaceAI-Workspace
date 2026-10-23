@@ -57,11 +57,17 @@ the points = examples + a deterministic probe set:
 Probe set: each example with every number argument moved by -1 and +1, each string argument replaced by `""` and by
 the other examples' values, each boolean flipped; examples themselves are dropped; at most 400.
 
-Result, at the first size where a program reading a parameter fits every example:
-- exactly one observational class: the program (`ok`);
-- two or more: `derive_ambiguous` (they disagree on at least one probe; the refusal names two programs and a probe);
-- none up to size 13: `derive_no_fit`; more than 4,000,000 programs built, or more than 64,000,000 characters of kept value vectors: `derive_budget`;
-- bad examples (count, arity, types, a contradiction): `derive_examples`.
+Result. Let s be the first size where a program reading a parameter fits every example; the search also builds
+size s + 1 (DERIVE_SLACK = 1). One program is kept per behavior on (examples + probes), so:
+- exactly one fitting behavior up to size s + 1: the program of size s (`ok`);
+- two or more: `derive_ambiguous` (they agree on every example, so they disagree on at least one probe; the
+  refusal names the programs and a probe). The slack catches a unique smallest fit that a slightly larger,
+  different program also explains (e.g. examples -2, -1, 0 giving 1, 0, 1: `(x + 1) * (x + 1)` and its square);
+- none up to size 13: `derive_no_fit`; more than 4,000,000 programs built, or more than 64,000,000 characters of
+  kept value vectors: `derive_budget` (also when the budget runs out while building the slack level);
+- bad examples (count 3-40, arity, types, a contradiction, or every example giving the same result):
+  `derive_examples`.
+A program whose value is the same at every point (`p && !p`, `x - x`) does not count as reading a parameter.
 
 Compilation: `min` / `max` become conditionals (no `Math`), `a * a` stays a product, ranges become
 `(lo <= p && p <= hi)`. The text is re-parsed and must pass `derivedExprProblem` (parameters, integer and plain string

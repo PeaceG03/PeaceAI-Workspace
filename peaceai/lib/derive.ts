@@ -4,7 +4,8 @@
 // examples plus deterministic boundary probes around each example). It returns the SMALLEST program that fits
 // every example, and refuses instead of guessing:
 //   - derive_no_fit      nothing up to the size limit fits every example (or the only fit reads no parameter);
-//   - derive_ambiguous   two programs of the minimal size fit every example but disagree on a probe;
+//   - derive_ambiguous   another program, at most DERIVE_SLACK nodes larger than the smallest fit, also fits every
+//                        example but disagrees with it on a probe;
 //   - derive_budget      the search budget (programs built, or kept-value memory) ran out before a fit was found;
 //   - derive_examples    contradictory, mistyped or out-of-range examples.
 // The DSL (typed; the size of a program is its node count, leaves count 1):
@@ -37,6 +38,8 @@ export interface DeriveInput {
   maxSize?: number;
   /** Most programs built before the search gives up (derive_budget). */
   budget?: number;
+  /** Extra sizes searched past the first fit for a competing behavior (at most DERIVE_SLACK; default it). */
+  slack?: number;
   /**
    * What the behavior description itself states. A program may only compare a parameter with an integer the
    * description writes: integer constants (p == C, p <= C, ranges, caps, constant branches) must be in `numbers`.
@@ -66,6 +69,8 @@ export const DERIVE_MAX_SIZE = 13;
 export const DERIVE_BUDGET = 4_000_000;
 export const DERIVE_MAX_EXAMPLES = 40;
 export const DERIVE_MAX_PARAMS = 3;
+/** A fit is accepted only if no other behavior fits within this many extra nodes. */
+export const DERIVE_SLACK = 1;
 export const DERIVE_MAX_STRING = 120;
 const MAX_POINTS = 400;
 /** Memory bound: total characters of kept value vectors; past it the search stops (derive_budget). */
@@ -92,6 +97,8 @@ export function examplesProblem(input: DeriveInput): string | null {
     if (seen.has(k) && seen.get(k) !== o) return "contradiction";
     seen.set(k, o);
   }
+  // Examples that all give the same result show no behavior to derive (any consistent test would be a guess).
+  if (new Set(examples.map((e) => keyOf([e.out]))).size < 2) return "one_result";
   return null;
 }
 
@@ -258,8 +265,9 @@ function stringPieces(input: DeriveInput): string[] {
 /**
  * The search. Bottom-up by size; level s of each type is built only from smaller levels; one program per value
  * vector over (examples + probes) is kept (the first, i.e. smallest, one built). At the first size where some
- * parameter-reading program matches every example, the level is finished and: exactly one such behavior ->
- * the fit; more than one -> derive_ambiguous (they agree on every example, so they disagree on a probe).
+ * parameter-reading program matches every example, DERIVE_SLACK more levels are built and: exactly one such
+ * behavior up to there -> the fit; more than one -> derive_ambiguous (they agree on every example, so they
+ * disagree on a probe). A program constant over every point never counts as reading a parameter.
  */
 export function deriveProgram(input: DeriveInput): DeriveResult {
   const problem = examplesProblem(input);
@@ -282,6 +290,18 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   let keptChars = 0;
   let overBudget = false;
   const fits: Prog[] = [];
+  const slack = Math.max(0, Math.min(input.slack ?? DERIVE_SLACK, DERIVE_SLACK));
+  let first = 0;
+  // Every fit is a distinct behavior on (examples + probes) (one program kept per value vector), so more than one
+  // fit up to the first fitting size + slack means the examples leave the behavior open: refuse.
+  const decide = (): DeriveResult => {
+    const best = fits[0]!;
+    if (fits.length === 1) return { ok: true, fit: { program: best.node, size: best.size, expr: compileProgram(best.node, names) }, probes, searched };
+    const b = fits[1]!;
+    let k = nEx;
+    while (k < points.length && best.vals[k] === b.vals[k]) k++;
+    return { ok: false, reason: "derive_ambiguous", alternatives: fits.slice(0, 4).map((f) => ({ program: f.node, size: f.size, expr: compileProgram(f.node, names) })), probe: points[k], searched };
+  };
 
   const P = points.length;
   const fitsExamples = (vals: readonly DeriveValue[]) => { for (let k = 0; k < nEx; k++) if (vals[k] !== target[k]) return false; return true; };
@@ -294,10 +314,13 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
     if (seen[ty].has(k)) return;
     seen[ty].add(k);
     if ((keptChars += k.length) > MAX_KEPT_CHARS) { overBudget = true; return; }
-    const p: Prog = { node, size, vals, usesParam };
+    // A program whose value is the same at every point reads a parameter only syntactically (p && !p): constant.
+    let varies = false;
+    for (let j = 1; j < vals.length && !varies; j++) if (vals[j] !== vals[0]) varies = true;
+    const p: Prog = { node, size, vals, usesParam: usesParam && varies };
     (levels[ty][size] ??= []).push(p);
     if (guard) guards.push(p);
-    if (ty === input.ret && usesParam && fitsExamples(vals)) fits.push(p);
+    if (ty === input.ret && p.usesParam && fitsExamples(vals)) fits.push(p);
   };
   const map1 = <T extends DeriveValue>(f: (k: number) => T | undefined): T[] | null => {
     const out: T[] = new Array(P);
@@ -393,14 +416,10 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
       }
     }
     if (overBudget) break;
-    const here = fits.filter((f) => f.size === size);
-    if (here.length === 1) return { ok: true, fit: { program: here[0]!.node, size, expr: compileProgram(here[0]!.node, names) }, probes, searched };
-    if (here.length > 1) {
-      const a = here[0]!, b = here[1]!;
-      let k = nEx;
-      while (k < points.length && a.vals[k] === b.vals[k]) k++;
-      return { ok: false, reason: "derive_ambiguous", alternatives: here.slice(0, 4).map((f) => ({ program: f.node, size, expr: compileProgram(f.node, names) })), probe: points[k], searched };
-    }
+    if (fits.length > 0 && first === 0) first = size;
+    // Decide once the slack levels above the first fitting size are built (or the size limit is reached).
+    if (first > 0 && (size >= first + slack || size === maxSize)) return decide();
   }
+  if (first > 0 && !overBudget) return decide();
   return { ok: false, reason: overBudget ? "derive_budget" : "derive_no_fit", searched };
 }

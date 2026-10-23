@@ -213,3 +213,25 @@ test("no memorizing: strings are only tested for emptiness; integers only when t
   assert.equal(ten.ok && ten.fit.expr, "10 <= n");
   assert.deepEqual(describedConstants("Worth retrying: 429 and 500 through 599. Not 1.5 or v2."), { numbers: [429, 500, 599] });
 });
+
+test("fail closed: a competing fit one node larger is AMBIGUOUS; constant programs never fit; one-result examples refused", () => {
+  const s1 = [{ name: "s", type: "string" as const }];
+  // Every example false: "s is empty" would fit, but the examples show no behavior.
+  const allFalse = deriveProgram({ params: s1, ret: "boolean", examples: [{ args: ["a"], out: false }, { args: ["b"], out: false }, { args: ["c"], out: false }] });
+  assert.equal(!allFalse.ok && allFalse.reason, "derive_examples");
+  assert.equal(!allFalse.ok && allFalse.detail, "one_result");
+  // p && !p reads p only syntactically: never a fit (it was the smallest "fit" of a constant-false column).
+  const n2 = [{ name: "a", type: "number" as const }, { name: "b", type: "number" as const }];
+  const r = deriveProgram({ params: n2, ret: "number", examples: [{ args: [1, 1], out: 2 }, { args: [2, 2], out: 4 }, { args: [3, 3], out: 6 }] });
+  // a + b (size 3) vs a + a / b + b / 2 * a ... all fit and differ on (1, 2): refused, not the first one built.
+  assert.equal(!r.ok && r.reason, "derive_ambiguous");
+  assert.ok(!r.ok && (r.alternatives?.length ?? 0) >= 2);
+  // Slack: (x + 1) squared is the only size-4 fit, but its square (size 5) also fits and differs on a probe.
+  const x1 = [{ name: "x", type: "number" as const }];
+  const ex = [{ args: [-2], out: 1 }, { args: [-1], out: 0 }, { args: [0], out: 1 }];
+  const tight = deriveProgram({ params: x1, ret: "number", examples: ex, slack: 0 });
+  assert.equal(tight.ok && tight.fit.expr, "(x + 1) * (x + 1)");
+  const dflt = deriveProgram({ params: x1, ret: "number", examples: ex });
+  assert.equal(!dflt.ok && dflt.reason, "derive_ambiguous");
+  assert.deepEqual(!dflt.ok && dflt.alternatives!.map((f) => f.size), [4, 5]);
+});
