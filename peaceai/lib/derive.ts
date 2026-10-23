@@ -392,7 +392,6 @@ function stringPieces(examples: readonly DeriveExample[]): string[] {
  * entries of peaceai/rules/proposals/m101-template-joins-evidence.json whose derived program has the form; the
  * test re-derives them and checks these numbers. Under the bar the form is never built, so it is never accepted.
  */
-export const DERIVE_FORM_BAR = 10;
 export const TEMPLATE_FORM_EVIDENCE: Readonly<Record<"tmpl" | "str", number>> = { tmpl: 36, str: 19 };
 /** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
 const MAX_TEMPLATE_SPLITS = 2000;
@@ -677,6 +676,9 @@ export function formsOf(n: DeriveNode): DeriveForm[] {
       case "mul": if (JSON.stringify(x.a) === JSON.stringify(x.b)) s.add("square"); walk(x.a); walk(x.b); return;
       case "add": case "sub": case "le": walk(x.a); walk(x.b); return;
       case "not": walk(x.a); return;
+      // M101 merge: a template join is string concatenation (compiled to +), so it also needs the strcat bar.
+      case "tmpl": s.add("strcat"); for (const q of x.parts) walk(q); return;
+      case "str": walk(x.a); return;
       case "param": case "int": case "lit": return;
     }
   };

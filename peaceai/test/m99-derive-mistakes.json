@@ -2982,10 +2982,12 @@
    ],
    "correct": "'a'\\''b'",
    "why": "no example value had a quote, so its escape was never seen",
+   "disclosed": "disclosed limit (m101 template-joins miner char probes); excluded from the evidence",
    "expected": {
     "outcome": "known-limit",
     "program": "\"'\" + value + \"'\"",
-    "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)"
+    "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)",
+    "formGate": []
    }
   },
   {
@@ -3089,10 +3091,12 @@
    ],
    "correct": "[a:b]:-1",
    "why": "no example host had a colon, so the bracketed branch was never seen",
+   "disclosed": "disclosed limit (m101 template-joins miner char probes); excluded from the evidence",
    "expected": {
     "outcome": "known-limit",
     "program": "host + \":\" + (\"\" + port)",
-    "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)"
+    "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)",
+    "formGate": []
    }
   }
  ]
