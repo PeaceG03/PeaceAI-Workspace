@@ -607,7 +607,8 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *  rival   (3) a search DERIVE_RIVAL_EXTRA sizes past the fit with EVERY example value as a constant finds no other
  *          program that fits every example but differs from the fit on a
  *          probe inside the examples' range (neighbour probes and far probes 0, +-1, edges +-10 / +-100, cross
- *          products); outside that range gate `far` applies. rival_budget: that search ran out of budget.
+ *          products); and a second search with the witnessed edges as constants finds none that differs on a far
+ *          probe past the examples (rivalProblem). rival_budget: a search ran out of budget.
  */
 export function gateProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET): DeriveGateProblem | null {
   const { params, examples } = input;
@@ -700,34 +701,52 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   return rivalProblem(input, program, size, budget);
 }
 
-/** Gate 3: the rival search (see gateProblem). */
+/**
+ * Gate 3: the rival search (see gateProblem), in two passes, both DERIVE_RIVAL_EXTRA sizes past the fit:
+ *  near  every example value as a constant; probes inside the examples' range (neighbour and far probes);
+ *  far   (Auditor #491 B1) the constants the main search may use (witnessed edges); the far probes OUTSIDE the
+ *        examples' range (past the outermost edges +10 / +100, 10x the largest value), no upper bound; negative
+ *        values only for a parameter some example gives a negative value. (With every example value as a constant
+ *        `p <= largest example` would rival every program that keeps going past the examples, so this pass uses
+ *        the constants a fit could have been built from.)
+ */
 export function rivalProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET): DeriveGateProblem | null {
   const { params, examples } = input;
   const names = params.map((p) => p.name);
   const span = params.map((p, i) => (p.type === "number" ? [Math.min(...examples.map((e) => e.args[i] as number)), Math.max(...examples.map((e) => e.args[i] as number))] : null));
   const inside = (a: readonly DeriveValue[]) => span.every((s, i) => !s || ((a[i] as number) >= s[0]! && (a[i] as number) <= s[1]!));
+  const shownSign = (a: readonly DeriveValue[]) => span.every((s, i) => !s || s[0]! < 0 || (a[i] as number) >= 0);
   const exKeys = new Set(examples.map((e) => keyOf(e.args)));
-  const probes = dedupePoints([...probeSet(params, examples), ...farProbes(params, examples)]).filter((a) => inside(a) && !exKeys.has(keyOf(a)));
-  const points = [...examples.map((e) => e.args), ...probes];
-  const mine = points.map((a) => evalProgram(program, a) ?? null);
   const edges = edgesByParam(params, examples);
-  const consts = params.map((p, i) => (p.type === "number" ? [...new Set([...edges[i]!, ...examples.map((e) => e.args[i] as number)])].sort((a, b) => a - b) : []));
   const caps = repeatedResults(examples);
-  let rival: Prog | null = null;
-  const r = runSearch({
-    params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples),
-    maxSize: size + DERIVE_RIVAL_EXTRA, budget,
-    stop: () => false,
-    onFit: (p) => { for (let k = examples.length; k < points.length; k++) if (p.vals[k] !== null && mine[k] !== null && p.vals[k] !== mine[k]) { rival = p; return true; } return false; },
-  });
-  if (rival) {
-    const rv = rival as Prog;
-    let k = examples.length;
-    while (!(rv.vals[k] !== null && mine[k] !== null && rv.vals[k] !== mine[k])) k++;
-    const pt = points[k]!;
-    return { gate: "rival", searched: r.searched, detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}; add an example there` };
+  const near = dedupePoints([...probeSet(params, examples), ...farProbes(params, examples)]).filter((a) => inside(a) && !exKeys.has(keyOf(a)));
+  const far = farProbes(params, examples).filter((a) => !inside(a) && shownSign(a) && !exKeys.has(keyOf(a)));
+  const passes: { pass: "near" | "far"; probes: DeriveValue[][]; consts: number[][] }[] = [
+    { pass: "near", probes: near, consts: params.map((p, i) => (p.type === "number" ? [...new Set([...edges[i]!, ...examples.map((e) => e.args[i] as number)])].sort((a, b) => a - b) : [])) },
+    { pass: "far", probes: far, consts: edges },
+  ];
+  let searched = 0;
+  for (const { pass, probes, consts } of passes) {
+    if (probes.length === 0) continue;
+    const points = [...examples.map((e) => e.args), ...probes];
+    const mine = points.map((a) => evalProgram(program, a) ?? null);
+    let rival: Prog | null = null;
+    const r = runSearch({
+      params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples),
+      maxSize: size + DERIVE_RIVAL_EXTRA, budget,
+      stop: () => false,
+      onFit: (p) => { for (let k = examples.length; k < points.length; k++) if (p.vals[k] !== null && mine[k] !== null && p.vals[k] !== mine[k]) { rival = p; return true; } return false; },
+    });
+    searched += r.searched;
+    if (rival) {
+      const rv = rival as Prog;
+      let k = examples.length;
+      while (!(rv.vals[k] !== null && mine[k] !== null && rv.vals[k] !== mine[k])) k++;
+      const pt = points[k]!;
+      return { gate: "rival", searched, detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}${pass === "far" ? " (a far probe, past the examples)" : ""}; add an example there` };
+    }
+    if (r.overBudget) return { gate: "rival_budget", searched, detail: `the ${pass} rival search (${pass === "near" ? "every example value" : "the witnessed edges"} as constants, up to size ${size + DERIVE_RIVAL_EXTRA}) ran out of budget after ${r.searched} programs` };
   }
-  if (r.overBudget) return { gate: "rival_budget", searched: r.searched, detail: `the rival search (every example value as a constant, up to size ${size + DERIVE_RIVAL_EXTRA}) ran out of budget after ${r.searched} programs` };
   return null;
 }
 

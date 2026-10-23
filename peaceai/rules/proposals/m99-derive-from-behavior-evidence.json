@@ -403,11 +403,18 @@
       100
      ],
      "out": 103
+    },
+    {
+     "args": [
+      30,
+      0
+     ],
+     "out": 30
     }
    ],
    "expr": "a + b",
    "heldOut": {
-    "right": 86,
+    "right": 90,
     "wrong": 0
    },
    "upstream": "function add(a: number, b: number): number {\n  return a + b;\n}",
@@ -417,7 +424,9 @@
    "fixture": "peaceai/test/fixtures/m99-dfb/anton-abyzov__vskill-491a16ec7de0.txt",
    "license": "MIT",
    "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04",
-   "addedForGates": []
+   "addedForGates": [
+    "rival: (30, 0) gives 30"
+   ]
   },
   {
    "repo": "awslabs/aidlc-workflows",

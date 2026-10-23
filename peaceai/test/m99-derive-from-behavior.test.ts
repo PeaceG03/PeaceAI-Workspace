@@ -126,7 +126,12 @@ test("generated module + test pass under TZ=UTC, America/Denver and Asia/Tokyo w
 test("AMBIGUOUS: two minimal programs that agree on the examples but not on a probe are refused", () => {
   // x * x and x + x agree on 0 and 2, not on 1 or 3.
   const sq = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }] });
-  assert.equal(sq.ok, true, "with -2 only x * x fits");
+  // With -2 only x * x is a smallest fit, but `x * min(x, 4)` (4 is a repeated result) also fits and differs at the
+  // far probe 20 (gate rival, far pass): one example past the others settles it.
+  assert.equal(!sq.ok && `${sq.reason}/${sq.gate}`, "derive_under_specified/rival");
+  assert.match(!sq.ok ? sq.detail ?? "" : "", /at \(20\): 16 vs 400 \(a far probe, past the examples\)/);
+  const sq20 = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }, { args: [20], out: 400 }] });
+  assert.equal(sq20.ok && sq20.fit.expr, "x * x", "with -2 and 20 only x * x fits");
   // w * w and h * h agree on squares (1,1) (2,2) (3,3), not on (1,2).
   const r = deriveProgram({ params: [{ name: "w", type: "number" }, { name: "h", type: "number" }], ret: "number", examples: [{ args: [1, 1], out: 1 }, { args: [2, 2], out: 4 }, { args: [3, 3], out: 9 }] });
   assert.equal(r.ok, false);
@@ -268,7 +273,10 @@ test("fail closed: a competing fit one node larger is AMBIGUOUS; constant progra
   const x1 = [{ name: "x", type: "number" as const }];
   const ex = [{ args: [-2], out: 1 }, { args: [-1], out: 0 }, { args: [0], out: 1 }];
   const tight = deriveProgram({ params: x1, ret: "number", examples: ex, slack: 0 });
-  assert.equal(tight.ok && tight.fit.expr, "(x + 1) * (x + 1)");
+  // Slack 0 keeps only the size-4 fit; the far rival pass still asks for what happens past the examples.
+  assert.equal(!tight.ok && `${tight.reason}/${tight.gate}`, "derive_under_specified/rival");
+  const tight2 = deriveProgram({ params: x1, ret: "number", examples: [...ex, { args: [1], out: 4 }, { args: [8], out: 81 }], slack: 0 });
+  assert.equal(tight2.ok && tight2.fit.expr, "(x + 1) * (x + 1)");
   const dflt = deriveProgram({ params: x1, ret: "number", examples: ex });
   assert.equal(!dflt.ok && dflt.reason, "derive_ambiguous");
   assert.deepEqual(!dflt.ok && dflt.alternatives!.map((f) => f.size), [4, 5]);
