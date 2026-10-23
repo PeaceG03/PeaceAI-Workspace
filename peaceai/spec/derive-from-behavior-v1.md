@@ -41,15 +41,17 @@ the points = examples + a deterministic probe set:
 - number: a parameter, 1, 2, `a + b`, `a - b`, `a * b`, `a * a`, `min(C, a)`, `max(C, a)`, `if (G) a else b`
 - string: a parameter, a literal L, `a + b`, `if (G) a else b`
 - boolean: a parameter, `p === C`, `p <= C`, `C <= p`, `lo <= p && p <= hi`, `p === q`, `p <= q`, `s === ""`,
-  `s === S`, `&&`, `||`, `!`
-- guards G: `s === ""`, `s === S`, `p === C`
+  `&&`, `||`, `!`
+- guards G: `s === ""`, `p === C`
 - C: the integers in the examples (arguments and outputs) that the behavior prose also writes; L: output pieces with
-  the string arguments cut out, plus `""`; S: the non-empty string arguments that are whole tokens of the behavior
-  prose (whitespace tokens, outer brackets and sentence punctuation stripped).
-- No memorizing: a constant the prose does not name is never compared against a parameter. Without this, the
-  smallest fit of a few string examples is a lookup table of the example inputs, which fits every example and
-  generalizes to nothing (seen on upstream evidence before the rule: e.g. `!(name === "read_file")` for a tool-name
-  check whose examples were 4 names). With it such tasks are `derive_no_fit`.
+  the string arguments cut out, plus `""`.
+- No memorizing: a string parameter is only tested for emptiness, never compared with a literal, and an integer the
+  prose does not write is never compared with a parameter. Without this, the smallest fit of a few examples is a
+  lookup table of the example inputs, which fits every example and generalizes to nothing. On the upstream evidence
+  scan an earlier draft (string equality allowed against example inputs) derived e.g. `!(name === "read_file")` for
+  a tool-name check from 4 names, wrong on unseen names; with the rule such tasks are `derive_no_fit`.
+  `derivedExprProblem` also refuses `===` with a non-empty string literal (`derive_expr_memorize`), so Job B
+  re-checks it.
 
 Probe set: each example with every number argument moved by -1 and +1, each string argument replaced by `""` and by
 the other examples' values, each boolean flipped; examples themselves are dropped; at most 400.

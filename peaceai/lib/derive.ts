@@ -10,14 +10,15 @@
 // The DSL (typed; the size of a program is its node count, leaves count 1):
 //   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(C, a) | max(C, a) | if(G, x, y)
 //   string : parameter | L | a + b (concat) | if(G, x, y)
-//   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty | s == S
+//   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty
 //            | a && b | a || b | !a
-//   if-guards G (conditional on emptiness or equality only): s is empty | s == S | p == C
+//   if-guards G (conditional on emptiness or equality only): s is empty | p == C
 //   C: integers taken from the examples that the behavior description also names (DeriveInput.described);
 //   L: string pieces of the example outputs (outputs with the example's non-empty string arguments cut out)
-//   plus ""; S: non-empty string arguments seen in the examples that are whole tokens of the description.
-//   No memorizing: a constant the description does not name can never be compared against a parameter, so a
-//   lookup table of example inputs is not in the search space (it is derive_no_fit instead of a wrong fit).
+//   plus "".
+//   No memorizing: a string parameter is only ever tested for emptiness (never against a literal), and an integer
+//   the description does not write is never compared with a parameter, so a lookup table of example inputs is not
+//   in the search space (such tasks are derive_no_fit instead of a wrong fit).
 // Compiled programs are plain TypeScript expressions over the parameters and literals only: no globals (min/max
 // compile to conditionals), no calls, no member or computed access, no I/O, no timers, no constructor / eval /
 // prototype paths. derivedExprProblem re-checks that on the TypeScript AST (used by Job A and Job B).
@@ -37,13 +38,13 @@ export interface DeriveInput {
   /** Most programs built before the search gives up (derive_budget). */
   budget?: number;
   /**
-   * What the behavior description itself states. A program may only test a parameter against a constant the
-   * description names: integer constants (p == C, p <= C, ranges, caps, constant branches) must be in `numbers`,
-   * and string equality tests (s == S) must name a whole token of `words`. Absent = nothing described, so no such
-   * constants at all. This is the anti-memorization rule: without it the smallest fit of a few string examples is a
-   * lookup table of the example inputs (fits every example, generalizes to nothing).
+   * What the behavior description itself states. A program may only compare a parameter with an integer the
+   * description writes: integer constants (p == C, p <= C, ranges, caps, constant branches) must be in `numbers`.
+   * Absent = nothing described, so no such constants at all. Together with "strings are only tested for emptiness"
+   * this is the anti-memorization rule: without it the smallest fit of a few examples is a lookup table of the
+   * example inputs (fits every example, generalizes to nothing).
    */
-  described?: { numbers: readonly number[]; words: readonly string[] };
+  described?: { numbers: readonly number[] };
 }
 export type DeriveNode =
   | { op: "param"; i: number }
@@ -214,7 +215,12 @@ export function derivedExprProblem(text: string, params: readonly string[]): str
       if (n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)) return visit(n.operand);
       bad = "derive_expr_node"; return;
     }
-    if (ts.isBinaryExpression(n)) { if (!ALLOWED_BINARY.has(n.operatorToken.kind)) { bad = "derive_expr_operator"; return; } visit(n.left); visit(n.right); return; }
+    if (ts.isBinaryExpression(n)) {
+      if (!ALLOWED_BINARY.has(n.operatorToken.kind)) { bad = "derive_expr_operator"; return; }
+      // No memorizing: === never compares with a non-empty string literal.
+      if (n.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken && [n.left, n.right].some((x) => { while (ts.isParenthesizedExpression(x)) x = x.expression; return ts.isStringLiteral(x) && x.text !== ""; })) { bad = "derive_expr_memorize"; return; }
+      visit(n.left); visit(n.right); return;
+    }
     if (ts.isConditionalExpression(n)) { visit(n.condition); visit(n.whenTrue); visit(n.whenFalse); return; }
     bad = "derive_expr_node";
   };
@@ -243,11 +249,6 @@ function stringPieces(input: DeriveInput): string[] {
   }
   return [...s].sort();
 }
-function inputStrings(input: DeriveInput): string[] {
-  const s = new Set<string>();
-  for (const ex of input.examples) for (const a of ex.args) if (typeof a === "string" && a.length > 0) s.add(a);
-  return [...s].sort();
-}
 
 /**
  * The search. Bottom-up by size; level s of each type is built only from smaller levels; one program per value
@@ -266,10 +267,8 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   const target = input.examples.map((e) => e.out);
   const names = input.params.map((p) => p.name);
   const descNums = new Set(input.described?.numbers ?? []);
-  const descWords = new Set(input.described?.words ?? []);
   const consts = intConstants(input).filter((c) => descNums.has(c));
   const pieces = stringPieces(input);
-  const strIn = inputStrings(input).filter((x) => descWords.has(x));
   const types: DeriveType[] = ["number", "string", "boolean"];
   const levels: Record<DeriveType, Prog[][]> = { number: [[]], string: [[]], boolean: [[]] };
   const guards: Prog[] = []; // if-guards: emptiness / equality atoms
@@ -335,7 +334,6 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
         }
       } else if (p.type === "string") {
         if (size === 2) push("boolean", 2, { op: "empty", i }, true, map1((k) => points[k]![i] === ""), true);
-        if (size === 3) for (const s of strIn) push("boolean", 3, { op: "eq", a: par, b: { op: "lit", v: s } }, true, map1((k) => points[k]![i] === s), true);
       }
     });
     // Unary nodes.

@@ -196,20 +196,20 @@ test("probes: deterministic; examples dropped; described probes only for one-num
   if ("task" in t2) assert.deepEqual(describedProbes(t2.task), []);
 });
 
-test("no memorizing: constants the description does not name are never compared against a parameter", () => {
+test("no memorizing: strings are only tested for emptiness; integers only when the description writes them", () => {
   const p = [{ name: "name", type: "string" as const }];
   const ex = [{ args: ["write_file"], out: true }, { args: ["edit"], out: true }, { args: ["patch"], out: true }, { args: ["read_file"], out: false }];
-  // Without a description the only fits are lookup tables of the example inputs: refused, never a guess.
-  const bare = deriveProgram({ params: p, ret: "boolean", examples: ex });
-  assert.equal(bare.ok, false);
-  // When the prose names the token, the equality test is allowed.
-  const named = deriveProgram({ params: p, ret: "boolean", examples: ex, described: describedConstants("Every tool except read_file can change files.") });
-  assert.equal(named.ok && named.fit.expr, '!(name === "read_file")');
-  // Numbers too: a threshold the prose does not state is not invented from the examples.
+  // The only fits are lookup tables of the example inputs: refused, never a guess, even when the prose names them.
+  assert.equal(deriveProgram({ params: p, ret: "boolean", examples: ex }).ok, false);
+  assert.equal(deriveProgram({ params: p, ret: "boolean", examples: ex, described: describedConstants("Every tool except read_file can change files.") }).ok, false);
+  assert.equal(derivedExprProblem('!(name === "read_file")', ["name"]), "derive_expr_memorize");
+  assert.equal(derivedExprProblem('(("read_file") === name)', ["name"]), "derive_expr_memorize");
+  assert.equal(derivedExprProblem('!(name === "")', ["name"]), null);
+  // Numbers: a threshold the prose does not write is not invented from the examples.
   const n = [{ name: "n", type: "number" as const }];
   const nx = [{ args: [10], out: true }, { args: [11], out: true }, { args: [3], out: false }];
   assert.equal(deriveProgram({ params: n, ret: "boolean", examples: nx }).ok, false);
   const ten = deriveProgram({ params: n, ret: "boolean", examples: nx, described: describedConstants("True from 10 upward.") });
   assert.equal(ten.ok && ten.fit.expr, "10 <= n");
-  assert.deepEqual(describedConstants("Worth retrying: 429 and 500 through 599. (read_file)."), { numbers: [429, 500, 599], words: ["429", "500", "599", "Worth", "and", "read_file", "retrying", "through"] });
+  assert.deepEqual(describedConstants("Worth retrying: 429 and 500 through 599. Not 1.5 or v2."), { numbers: [429, 500, 599] });
 });

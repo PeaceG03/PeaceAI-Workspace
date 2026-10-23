@@ -148,16 +148,11 @@ export function describedProbes(task: DeriveTask): number[] {
   return [...out].sort((a, b) => a - b).slice(0, 24);
 }
 
-/**
- * The constants the behavior prose itself names: every integer written in it, and every whitespace token (outer
- * brackets and sentence punctuation stripped). Only these may be compared against a parameter (see derive.ts).
- */
-export function describedConstants(behavior: string): { numbers: number[]; words: string[] } {
+/** The integers the behavior prose itself writes: only these may be compared with a parameter (see derive.ts). */
+export function describedConstants(behavior: string): { numbers: number[] } {
   const numbers = new Set<number>();
   for (const m of behavior.matchAll(/(?<![\w]|\d\.)\d{1,9}(?![\w]|\.\d)/g)) numbers.add(Number(m[0]));
-  const words = new Set<string>();
-  for (const t of behavior.split(/\s+/)) { const w = t.replace(/^[(]+/, "").replace(/[.,;:!?)]+$/, ""); if (w) words.add(w); }
-  return { numbers: [...numbers].sort((a, b) => a - b), words: [...words].sort() };
+  return { numbers: [...numbers].sort((a, b) => a - b) };
 }
 
 const slug = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40).replace(/-$/, "") || "fn";
