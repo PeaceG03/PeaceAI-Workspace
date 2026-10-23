@@ -168,7 +168,7 @@ test("refusal through the rule names the gate and the parameter; the detail says
 
 // ---- The far-probe review note (Auditor #491 B1: the derived expression and a far-probe table for the reviewer)
 
-const S1_BODY = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.\n\nBehavior: true for 429 and server errors 500 through 599.\n\nExamples:\n${[...S1_235, [700, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
+const S1_BODY = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.\n\nBehavior: true for 429 and server errors 500 through 599.\n\nExamples:\n${[...S1_235, [700, false], [465, false], [100, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
 const asDiff = (files: { path: string; content: string }[]) => files.map((f) => {
   const lines = f.content.replace(/\n$/, "").split("\n");
   return `diff --git a/${f.path} b/${f.path}\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/${f.path}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join("\n")}\n`;
@@ -184,7 +184,7 @@ test("review note: a DERIVE candidate shows its expression and far-probe outputs
   const files = [{ path: b.edit.path, content: b.edit.content }, ...b.edit.extra];
   const note = deriveReviewNote(asDiff(files));
   assert.ok(note);
-  assert.match(note, /^Derived by PeaceAI from the 19 examples/);
+  assert.match(note, /^Derived by PeaceAI from the 21 examples/);
   assert.ok(note.includes("return (status === 429) || (500 <= status && status <= 599);"));
   // Far probes: past the outermost edges (+-10 / +-100) and 10x the largest example value.
   for (const line of ["isRetryableR2Status(610) = false", "isRetryableR2Status(590) = true", "isRetryableR2Status(328) = false", "isRetryableR2Status(7000) = false", "isRetryableR2Status(-7000) = false"]) assert.ok(note.includes(line), line);

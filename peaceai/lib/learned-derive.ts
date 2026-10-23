@@ -318,3 +318,39 @@ export function deriveReviewNote(diff: string, derive: typeof deriveProgram = de
   const rows = farProbeTable(r.fit.program, params, examples, DERIVE_NOTE_ROWS).map((row) => `${fn}(${row.args.map(lit).join(", ")}) = ${row.out === undefined ? "(error)" : lit(row.out)}`);
   return [`Derived by PeaceAI from the ${examples.length} examples (DERIVE_FROM_BEHAVIOR). Expression and far probes (inputs past every edge the examples show):`, "", "```text", `return ${expr};`, "", ...rows, "```"].join("\n");
 }
+
+/** The transformation tag every DERIVE_FROM_BEHAVIOR candidate carries (`LEARNED_${kind}` in generate.ts). */
+export const DERIVE_TRANSFORMATION = "LEARNED_DERIVE_FROM_BEHAVIOR";
+
+/**
+ * Auditor #491 round 2 (B3): the review note is the backstop for /verdict, so the review job fails closed. Every
+ * DERIVE candidate gets its note, rebuilt from its diff; it is an error (the review comment is not built) when a
+ * DERIVE candidate already has another note (a placeholder repair would hide it) or its note cannot be rebuilt.
+ * Other candidates get no derive note. Returns the ids that carry one.
+ */
+export function attachDeriveNotes(
+  candidates: readonly { id: string; transformations: readonly string[] }[],
+  diffs: ReadonlyMap<string, string>,
+  notes: Map<string, string>,
+  note: (diff: string) => string | null = (d) => deriveReviewNote(d),
+): string[] {
+  const ids: string[] = [];
+  for (const c of candidates) {
+    if (!c.transformations.includes(DERIVE_TRANSFORMATION)) continue;
+    if (notes.has(c.id)) throw new Error(`${c.id}: a DERIVE candidate already has a note (${JSON.stringify(notes.get(c.id))}); its derive note would be left out, so the review is not built`);
+    const n = note(diffs.get(c.id) ?? "");
+    if (!n) throw new Error(`${c.id}: the DERIVE review note (expression and far probes) could not be rebuilt from the candidate's diff; the review is not built`);
+    notes.set(c.id, n);
+    ids.push(c.id);
+  }
+  return ids;
+}
+
+/** Every presented DERIVE candidate's note is in the built body, under its own heading, before its diff; else it throws. */
+export function assertDeriveNotesShown(body: string, presentation: readonly { label: string; id: string }[], notes: ReadonlyMap<string, string>, deriveIds: readonly string[]): void {
+  for (const p of presentation) {
+    if (!deriveIds.includes(p.id)) continue;
+    const want = `### Candidate ${p.label}\n\n${notes.get(p.id)}\n\n<details>`;
+    if (!notes.get(p.id) || !body.includes(want)) throw new Error(`${p.id}: the DERIVE review note is not shown on candidate ${p.label}; the review is not built`);
+  }
+}
