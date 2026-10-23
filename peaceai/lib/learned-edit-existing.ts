@@ -281,6 +281,45 @@ const BUILTINS = new Set(["assert", "buffer", "crypto", "events", "fs", "fs/prom
 const NONMUTATING = new Set(["has", "get", "includes", "indexOf", "lastIndexOf", "find", "findIndex", "findLast", "findLastIndex", "some", "every", "map", "filter", "reduce", "forEach", "slice", "concat", "join", "keys", "values", "entries", "at", "flat", "flatMap", "test", "exec", "size", "length"]);
 const STRING_REGEX_SINKS = new Set(["matchAll", "replaceAll", "replace", "match", "split", "search"]);
 
+// ---------------------------------------------------------------------------------------------------------------
+// Auditor #489 (review of 7508d20): the edit gate is an ALLOWLIST. A banned-word list was walked around with no banned
+// word and no computed key (X1: Object.getOwnPropertyDescriptors -> Object.prototype -> the __proto__ getter's
+// .get.call(() => 0) -> Function.prototype -> Function; X2: the same walk, then `V.x = ..` on Object.prototype).
+// Edited code (every reference the edited target unit makes MORE often than the base unit did; see allowTokens) may
+// only use: the target's own parameters and locals, fresh literals, `this`, member reads / method calls on those, and
+// the short list below. Each entry is a pure, total, side-effect-free function or constant of a primitive / plain
+// value: it can't reach I/O, a clock, randomness, a prototype, a property descriptor or a function constructor.
+// ---------------------------------------------------------------------------------------------------------------
+/** `Global.member` an edit may use. Justification per group:
+ *  - Math.min/max/floor/ceil/round/abs/trunc/sign: arithmetic on numbers; no state (Math.random is NOT listed).
+ *  - Number.isInteger/isFinite/isNaN/isSafeInteger: predicates (no coercion side effects); MAX/MIN_SAFE_INTEGER: constants.
+ *  - Array.isArray: a type predicate.
+ *  - Object.keys/values/entries: OWN ENUMERABLE data of a value already in hand (no descriptors, accessors, prototype,
+ *    symbols or non-enumerables; getOwnPropertyDescriptor(s)/getOwnPropertyNames/create/assign/fromEntries are NOT listed).
+ *  - Promise.all/allSettled: awaiting collaborator calls already allowed one by one (race is not listed). */
+export const EDIT_GLOBAL_MEMBERS: ReadonlySet<string> = new Set([
+  "Math.min", "Math.max", "Math.floor", "Math.ceil", "Math.round", "Math.abs", "Math.trunc", "Math.sign",
+  "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.MAX_SAFE_INTEGER", "Number.MIN_SAFE_INTEGER",
+  "Array.isArray",
+  "Object.keys", "Object.values", "Object.entries",
+  "Promise.all", "Promise.allSettled",
+]);
+/** Globals an edit may CALL directly: String/Number/Boolean (primitive conversion), parseInt/parseFloat (pure parsing). */
+export const EDIT_GLOBAL_CALLS: ReadonlySet<string> = new Set(["String", "Number", "Boolean", "parseInt", "parseFloat"]);
+/** Globals an edit may `new`: Error/TypeError/RangeError (a fresh error to throw), Map/Set (a fresh empty-or-copied container). */
+export const EDIT_GLOBAL_NEW: ReadonlySet<string> = new Set(["Error", "TypeError", "RangeError", "Map", "Set"]);
+/** Constant identifiers that are always fine. */
+const EDIT_GLOBAL_VALUES: ReadonlySet<string> = new Set(["undefined", "NaN", "Infinity"]);
+/** Member NAMES never allowed on any receiver: descriptor / prototype reflection, rebinding `this`, stack capture. */
+export const EDIT_BANNED_MEMBERS: ReadonlySet<string> = new Set([
+  ...REFLECTION, "call", "apply", "bind", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getOwnPropertyNames",
+  "getOwnPropertySymbols", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties", "captureStackTrace",
+  "prepareStackTrace", "stackTraceLimit",
+]);
+/** Size-taking string builders: allowed only with a small numeric literal (no huge repeat / pad). */
+const EDIT_SIZED = new Set(["repeat", "padStart", "padEnd"]);
+export const EDIT_MAX_SIZE = 256;
+
 export interface Injection { args: (null | "data" | { keys: Set<string> })[] }
 
 const isBuiltin = (spec: string): boolean => spec.startsWith("node:") || BUILTINS.has(spec);
@@ -499,6 +538,109 @@ function capabilityTokens(node: ts.Node): Map<string, number> {
   visit(node);
   return out;
 }
+/**
+ * Auditor #489 (review of 7508d20): the ALLOWLIST tokens of a target unit. Every reference that is not on the allowlist
+ * (see EDIT_GLOBAL_MEMBERS) is a token; capabilityDelta refuses an edit that has any token more often than the base
+ * unit, so every reference an edit ADDS must be allowlisted. Tokens (each its own guard, each covered by a test):
+ * - `ref:<name>`      an identifier that is not a parameter / local of the unit, `undefined` / `NaN` / `Infinity`, or an
+ *                     allowlisted global used in its allowlisted form (module bindings, imports, Date, Symbol, Object
+ *                     itself as a value, ...). Capability idents keep their own `id:` token.
+ * - `gm:<G>.<m>`      a member of a global that is not in EDIT_GLOBAL_MEMBERS (Object.getOwnPropertyDescriptors, Math.random)
+ * - `member:<m>`      a member name in EDIT_BANNED_MEMBERS on ANY receiver (.call/.apply/.bind, descriptors, prototypes)
+ * - `accessor:<m>`    `.get` / `.set` read as a value instead of called directly (an accessor function grab)
+ * - `call-local`      calling a local that is not a parameter (a function obtained at run time; also recursion)
+ * - `write-nonfresh`  a property write whose root is `this`, a parameter, or a local not initialised to a fresh literal
+ * - `shadow`          a local declared with the name of a global
+ * - `size`            repeat / padStart / padEnd without a small literal size, `Array(..)` / `new Array(..)` with arguments,
+ *                     self-doubling (`s += s`, `a = a.concat(a)`, `a.push(...a)`)
+ * - `regex`           any regex literal or RegExp (backtracking cost is data-dependent; fail closed)
+ * - `reflstr:<s>`     a reflection name as a string literal (e.g. a `["__proto__", v]` entry)
+ */
+function allowTokens(node: ts.Node): Map<string, number> {
+  const out = new Map<string, number>();
+  const add = (k: string): void => { out.set(k, (out.get(k) ?? 0) + 1); };
+  const params = new Set<string>(), locals = new Set<string>(), fresh = new Set<string>();
+  const bind = (nm: ts.BindingName, into: Set<string>): void => {
+    if (ts.isIdentifier(nm)) into.add(nm.text);
+    else for (const el of nm.elements) if (!ts.isOmittedExpression(el)) bind(el.name, into);
+  };
+  if (ts.isFunctionLike(node)) for (const p of node.parameters) bind(p.name, params);
+  const isFresh = (e: ts.Expression): boolean => {
+    const x = unwrap(e);
+    return ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isStringLiteral(x) || ts.isNumericLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
+  };
+  const collect = (n: ts.Node): void => {
+    if (n !== node && ts.isFunctionLike(n)) for (const p of n.parameters) bind(p.name, locals);
+    if (ts.isVariableDeclaration(n)) {
+      bind(n.name, locals);
+      // fresh only if it is never re-bound: a `const`, initialised to a literal the unit itself created
+      if (ts.isIdentifier(n.name) && n.initializer && isFresh(n.initializer) && ts.isVariableDeclarationList(n.parent) && (n.parent.flags & ts.NodeFlags.Const)) fresh.add(n.name.text);
+    }
+    if ((ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) && n !== node && n.name) locals.add(n.name.text);
+    if (ts.isCatchClause(n) && n.variableDeclaration) bind(n.variableDeclaration.name, locals);
+    ts.forEachChild(n, collect);
+  };
+  collect(node);
+  for (const p of params) locals.add(p);
+  for (const l of locals) if (Object.hasOwn(GLOBAL_OK, l) || CAPABILITY_IDENTS.has(l) || EDIT_GLOBAL_CALLS.has(l) || EDIT_GLOBAL_NEW.has(l)) add("shadow");
+  const directCallee = (n: ts.Node): boolean => ts.isCallExpression(n.parent) && n.parent.expression === n;
+  const literalString = (e: ts.Expression): string | null => { const x = unwrap(e); return ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) ? x.text : null; };
+  const smallSize = (e: ts.Expression | undefined): boolean => { const x = e ? unwrap(e) : undefined; return !!x && ts.isNumericLiteral(x) && Number(x.text) <= EDIT_MAX_SIZE; };
+  const mentions = (e: ts.Node, name: string): number => { let k = 0; const v = (x: ts.Node): void => { if (ts.isIdentifier(x) && x.text === name && !(ts.isPropertyAccessExpression(x.parent) && x.parent.name === x)) k++; ts.forEachChild(x, v); }; v(e); return k; };
+  const member = (recv: ts.Expression, name: string, at: ts.Node): void => {
+    if (EDIT_BANNED_MEMBERS.has(name)) add(`member:${name}`);
+    else if ((name === "get" || name === "set") && !directCallee(at)) add(`accessor:${name}`);
+    const r = unwrap(recv);
+    if (ts.isIdentifier(r) && !locals.has(r.text) && (Object.hasOwn(GLOBAL_OK, r.text) || EDIT_GLOBAL_CALLS.has(r.text) || EDIT_GLOBAL_NEW.has(r.text)) && !EDIT_GLOBAL_MEMBERS.has(`${r.text}.${name}`)) add(`gm:${r.text}.${name}`);
+    if (EDIT_SIZED.has(name) && directCallee(at) && !smallSize((at.parent as ts.CallExpression).arguments[0])) add("size");
+  };
+  const visit = (n: ts.Node): void => {
+    if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return;
+    if (ts.isPropertyAccessExpression(n)) member(n.expression, n.name.text, n);
+    if (ts.isElementAccessExpression(n)) { const k = literalString(n.argumentExpression); if (k !== null) member(n.expression, k, n); }
+    if (ts.isRegularExpressionLiteral(n)) add("regex");
+    if (ts.isStringLiteral(n) && REFLECTION.has(n.text)) add(`reflstr:${n.text}`);
+    if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && ts.isIdentifier(n.expression) && n.expression.text === "Array" && (n.arguments?.length ?? 0) > 0) add("size");
+    if (ts.isCallExpression(n)) {
+      const c = unwrap(n.expression);
+      if (ts.isIdentifier(c) && locals.has(c.text) && !params.has(c.text)) add("call-local");
+      // self-doubling growth: a.push(...a), a.concat(a)
+      if (ts.isPropertyAccessExpression(c) && (c.name.text === "push" || c.name.text === "unshift" || c.name.text === "concat")) {
+        const r = unwrap(c.expression);
+        if (ts.isIdentifier(r) && n.arguments.some((a) => mentions(a, r.text) > 0)) add("size");
+      }
+    }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      const l = unwrap(n.left);
+      if (ts.isIdentifier(l)) {
+        const self = mentions(n.right, l.text);
+        if ((n.operatorToken.kind !== ts.SyntaxKind.EqualsToken && self > 0) || self > 1) add("size");
+      }
+    }
+    // property writes: only through a const local the unit initialised to a fresh literal
+    const wt = ts.isBinaryExpression(n) ? (n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment ? unwrap(n.left) : null)
+      : ts.isDeleteExpression(n) ? unwrap(n.expression) : (ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) ? unwrap(n.operand) : null;
+    if (wt && (ts.isPropertyAccessExpression(wt) || ts.isElementAccessExpression(wt))) {
+      const owner = unwrap(wt.expression);
+      if (!(ts.isIdentifier(owner) && fresh.has(owner.text))) add("write-nonfresh");
+    }
+    if (ts.isIdentifier(n) && !isDeclName(n) && !inTypePosition(n) && !CAPABILITY_IDENTS.has(n.text)) {
+      const p = n.parent;
+      const t = n.text;
+      const shorthand = ts.isShorthandPropertyAssignment(p) && p.name === n;
+      if (locals.has(t) || EDIT_GLOBAL_VALUES.has(t)) { /* own parameter / local / constant */ }
+      else if (!shorthand && ts.isPropertyAccessExpression(p) && p.expression === n && EDIT_GLOBAL_MEMBERS.has(`${t}.${p.name.text}`)) { /* allowlisted member */ }
+      else if (!shorthand && ts.isElementAccessExpression(p) && p.expression === n && EDIT_GLOBAL_MEMBERS.has(`${t}.${literalString(p.argumentExpression) ?? ""}`)) { /* allowlisted member, literal key */ }
+      else if (!shorthand && ts.isCallExpression(p) && p.expression === n && EDIT_GLOBAL_CALLS.has(t)) { /* allowlisted call */ }
+      else if (!shorthand && ts.isNewExpression(p) && p.expression === n && EDIT_GLOBAL_NEW.has(t) && (p.arguments?.length ?? 0) <= 1) { /* allowlisted constructor */ }
+      else add(`ref:${t}`);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return out;
+}
+
 /** Null unless the edited target uses some capability token MORE often than the base target did (a multiset, so an edit
  *  can't hide a second `?? fetch` behind one the base already had); then the refusal code. */
 function capabilityDelta(base: ts.Node, real: ts.Node): string | null {
@@ -506,6 +648,9 @@ function capabilityDelta(base: ts.Node, real: ts.Node): string | null {
   for (const [tk, n] of capabilityTokens(real)) if (n > (b.get(tk) ?? 0)) return `edit_new_capability:${tk}`;
   const fb = floatTokens(base);
   for (const [tk, n] of floatTokens(real)) if (n > (fb.get(tk) ?? 0)) return `edit_unawaited:${tk}`;
+  // Auditor #489 (review of 7508d20): the allowlist — every reference the edit adds must be allowlisted.
+  const ab = allowTokens(base);
+  for (const [tk, n] of allowTokens(real)) if (n > (ab.get(tk) ?? 0)) return `edit_not_allowlisted:${tk}`;
   return null;
 }
 /**

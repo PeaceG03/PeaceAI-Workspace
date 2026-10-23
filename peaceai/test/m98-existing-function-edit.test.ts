@@ -247,12 +247,12 @@ test("G1+G2 really run: the emitted test passes on the edit in every zone + loca
 
 test("negatives: NEW reading the clock, env, timers, randomness or local time, writing globals, or using templates is refused", () => {
   const want: [string, string][] = [
-    ["if (Date.now() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_io_global: Date"],
+    ["if (Date.now() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_not_allowlisted"],
     ["if (process.env.X) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_new_capability"],
     ["setTimeout(() => 1, 1); return this.fetchImpl(url);", "edit_new_capability"],
     ["globalThis.x = 1; return this.fetchImpl(url);", "edit_new_capability"],
-    ["if (Math.random() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_io_global"],
-    ["if (new Date(0).getHours() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_local_time"],
+    ["if (Math.random() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_not_allowlisted"],
+    ["if (new Date(0).getHours() < 0) throw new Error(\"X\"); return this.fetchImpl(url);", "edit_not_allowlisted"],
     ["return this.fetchImpl(`${url}`);", "edit_new_grammar"],
     ["delete this.base; return this.fetchImpl(url);", "edit_new_grammar"],
     ["function f() { return 1; } return this.fetchImpl(url);", "edit_new_grammar"],
@@ -357,7 +357,7 @@ test("Auditor #489 (G2): mutable static/module state and timers in reached code 
   const d = (file: string, content: string, obj: string) => analyzeSuppliedEdit(SPEC.trigger, SPEC.params, obj, [{ path: file, content }], isTest).reason;
   // static mutable class state read + written by the tested method (shared across calls) is hidden state
   const STAT = "export class Counter {\n  static n = 0;\n  bump(): number {\n    return 1;\n  }\n}\n";
-  assert.equal(d("src/s.ts", STAT, "in Counter.bump in src/s.ts: replace statement return 1; with Counter.n += 1; return Counter.n;\n- expect new Counter().bump() returns 1"), "edit_global_write");
+  assert.equal(d("src/s.ts", STAT, "in Counter.bump in src/s.ts: replace statement return 1; with Counter.n += 1; return Counter.n;\n- expect new Counter().bump() returns 1"), "edit_not_allowlisted:write-nonfresh");
   // a timer introduced by the edit
   const TMR = "export function f(n: number): number {\n  return n;\n}\n";
   assert.equal(d("src/t.ts", TMR, "in f in src/t.ts: replace statement return n; with setInterval(() => 1, 1); return n;\n- expect f(1) returns 1"), "edit_new_capability:id:setInterval");
@@ -417,7 +417,7 @@ test("Job B shape: only the exact emitted header, harness and bullet language re
   assert.equal(editConfinedTarget("src/storage.ts", STORAGE, STORAGE.replace("export interface Client", "export interface Client2")), null);
   // the graded edit itself must stay hermetic on the real tree
   const leaky = e.content.replace("const size = (await this.client.head(key))?.size ?? 0;", "const size = Date.now();");
-  assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, leaky, p, t, rd), "edit_io_global: Date".replace(": ", ":"));
+  assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, leaky, p, t, rd), "edit_not_allowlisted:ref:Date");
 });
 
 test("Job B code: gradeExistingEdit runs before gradeSelf, needs 1 source + 1 test, re-checks, runs every env pair, needs assertion-only failure on the base", () => {
