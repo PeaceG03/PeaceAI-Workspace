@@ -579,6 +579,8 @@ export const FORMS: readonly Form[] = [
       const add = (x: string, y: string) => { const k0 = key([x, y]); if (!seen.has(k0)) { seen.add(k0); inputs.push([x, y]); } };
       if (mode !== "missing_chars") for (const [x, y] of witness) add(x, y);
       for (const x of pool.slice(0, 4)) add(x, x);
+      // every pool value in both positions (so a full example set shows every character class in each parameter)
+      pool.forEach((x, k) => add(x, pool[(k + 3) % pool.length]!));
       for (let t = 0; inputs.length < 30 && t < 400; t++) add(r.pick(pool), r.pick(pool));
       const differs = (a: readonly DeriveValue[]) => DERIVE_ORDER_LOOKALIKES.slice(1).some((L) => L.le(S(a, 0), S(a, 1)) !== S(a, 0) <= S(a, 1));
       let why = mode === "missing_chars" ? "the string values show only lower-case letters (no empty value)" : look ? `the truth uses ${look.name}, not code-unit order` : "equal values, every look-alike order's differing pairs and every character class shown";
