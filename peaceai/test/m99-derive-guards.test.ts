@@ -232,6 +232,26 @@ test("memory: the rival search keeps the caller's kept-values bound (rival_budge
   assert.equal(rivalProblem({ ...input, maxKeptCells: 100_000 }, full.fit.program, full.fit.size)?.gate, "rival_budget");
 });
 
+// Round 3 (m100 practice: one sparse task took ~258 s): the budget bounds the whole derivation, the main search and
+// both rival passes together, not each search on its own. Under a budget the main search fits in, the rival passes
+// get only what it left (rival_budget), and nothing counts past the budget (+1 per search for the program that trips it).
+test("budget: one budget for the main search and every rival pass (searched never past it)", () => {
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
+  const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
+  const full = deriveProgram(input);
+  assert.ok(full.ok, JSON.stringify(full).slice(0, 300));
+  assert.ok(full.searched <= DERIVE_BUDGET);
+  let rivalBudget = 0;
+  for (const f of [0.2, 0.4, 0.6, 0.8]) {
+    const budget = Math.floor(full.searched * f);
+    const r = deriveProgram({ ...input, budget });
+    assert.ok(r.searched <= budget + 3, `budget ${budget}: searched ${r.searched}`);
+    if (!r.ok && r.reason === "derive_under_specified" && r.gate === "rival_budget") rivalBudget++;
+    else assert.ok(!r.ok && r.reason === "derive_budget", `budget ${budget}: ${r.ok ? "ok" : r.reason}`);
+  }
+  assert.ok(rivalBudget >= 1, "some budget lets the main search finish and stops a rival pass");
+});
+
 test("size: maxSize above DERIVE_MAX_SIZE (13) searches exactly what 13 does", () => {
   const input: DeriveInput = { params: n1, ret: "boolean", examples: parity("boolean", 8), budget: 1_200_000 };
   const at13 = deriveProgram({ ...input, maxSize: 13 });

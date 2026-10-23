@@ -566,12 +566,15 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
     const questions = k < points.length ? deriveQuestions(input, best.node, [], [{ at: points[k]!, values: r.fits.slice(0, 4).map((f) => f.vals[k]!).filter((v) => v !== null) }]) : [];
     return { ok: false, reason: "derive_ambiguous", alternatives: r.fits.slice(0, 4).map((f) => ({ program: f.node, size: f.size, expr: compileProgram(f.node, names) })), probe: points[k], ...(questions.length ? { questions } : {}), searched };
   }
-  const gate = gateProblem(input, best.node, best.size, budget);
+  // One budget for the whole derivation (round 3, m100 practice: a sparse task took ~258 s when the main search and
+  // each rival pass had DERIVE_BUDGET programs of their own): the gates' rival passes get what the main search left.
+  const spent = { searched: 0 };
+  const gate = gateProblem(input, best.node, best.size, budget - searched, spent);
   if (gate) {
     const questions = deriveQuestions(input, best.node, gate.at ?? [], gate.rivals ?? []);
     return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, ...(questions.length ? { questions } : {}), searched: searched + gate.searched };
   }
-  return { ok: true, fit: { program: best.node, size: best.size, expr: compileProgram(best.node, names) }, probes, searched };
+  return { ok: true, fit: { program: best.node, size: best.size, expr: compileProgram(best.node, names) }, probes, searched: searched + spent.searched };
 }
 
 // ---- The witness gates (Auditor, #491 review): a fit is accepted only when the examples SHOW what it relies on.
@@ -740,7 +743,7 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *          products); and a second search with the witnessed edges as constants finds none that differs on a far
  *          probe past the examples (rivalProblem). rival_budget: a search ran out of budget.
  */
-export function gateProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET): DeriveGateProblem | null {
+export function gateProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET, spent?: { searched: number }): DeriveGateProblem | null {
   const { params, examples } = input;
   const names = params.map((p) => p.name);
   const expr = compileProgram(program, names);
@@ -899,7 +902,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   });
   if (reachFail) return reachFail;
   // rival (3)
-  return rivalProblem(input, program, size, budget);
+  return rivalProblem(input, program, size, budget, spent);
 }
 
 /** The program with one min / max node replaced by the value it caps (the cap lifted). */
@@ -1001,7 +1004,7 @@ export function regionProblem(program: DeriveNode, params: readonly DeriveParam[
  *        `p <= largest example` would rival every program that keeps going past the examples, so this pass uses
  *        the constants a fit could have been built from.)
  */
-export function rivalProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET): DeriveGateProblem | null {
+export function rivalProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET, spent?: { searched: number }): DeriveGateProblem | null {
   const { params, examples } = input;
   const names = params.map((p) => p.name);
   const span = params.map((p, i) => (p.type === "number" ? [Math.min(...examples.map((e) => e.args[i] as number)), Math.max(...examples.map((e) => e.args[i] as number))] : null));
@@ -1030,11 +1033,12 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
     let rival: Prog | null = null;
     const r = runSearch({
       params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples),
-      maxSize: size + DERIVE_RIVAL_EXTRA, budget, cells: keptCellsLimit(input),
+      maxSize: size + DERIVE_RIVAL_EXTRA, budget: budget - searched, cells: keptCellsLimit(input),
       stop: () => false,
       onFit: (p) => { for (let k = examples.length; k < points.length; k++) if (p.vals[k] !== null && mine[k] !== null && p.vals[k] !== mine[k]) { rival = p; return true; } return false; },
     });
     searched += r.searched;
+    if (spent) spent.searched = searched;
     if (rival) {
       const rv = rival as Prog;
       let k = examples.length;

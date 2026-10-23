@@ -97,6 +97,13 @@ test("gate edge: both sides of every threshold, and c - 1, c, c + 1 for an equal
   const chars = [["Ab 1-x", false], [" pad ", false]] as const;
   assert.equal(gate(s, "boolean", emp, [["abc", false], ...chars]), "chars:s"); // round 3: the chars gate asks for "" first
   assert.equal(gate(s, "boolean", emp, [["", true], ["abc", false], ...chars]), "");
+  // Round 3: "" shown (the chars gate passes) but never paired with a non-empty value under the same other arguments:
+  // the emptiness test is still not shown (edge), until such a pair is added.
+  const st = [str("s"), str("t")];
+  const ifEmp: DeriveNode = { op: "if", c: emp, t: P1, e: P0 };
+  const unpaired = [["", "Zq 9-z", "Zq 9-z"], ["", " t2 ", " t2 "], ["", "", ""], ["Ab 1-x", "k", "Ab 1-x"], [" pad ", "k", " pad "], ["abc", "k", "abc"]] as const;
+  assert.equal(gate(st, "string", ifEmp, unpaired), "edge:s");
+  assert.notEqual(gate(st, "string", ifEmp, [...unpaired, ["", "k", "k"]]), "edge:s");
 });
 
 test(`gate far: an example at least DERIVE_FAR (${DERIVE_FAR}) past the last edge and before the first`, () => {
@@ -186,6 +193,15 @@ test("gate span: a computed-from parameter shown over DERIVE_FAR; every result s
   assert.deepEqual([...arithmeticParams({ op: "le", a: P0, b: lit(5) })], []);
   assert.deepEqual([...arithmeticParams({ op: "if", c: { op: "le", a: P0, b: lit(5) }, t: P1, e: { op: "add", a: P0, b: { op: "int", v: 1 } } })].sort(), [0, 1]);
   assert.equal(gate([str("s")], "string", { op: "cat", a: lit("x:"), b: P0 }, [["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "], ["", "x:"]]), "");
+});
+
+// Round 3: through deriveProgram, the rival gate alone refuses this (m100 practice seed 100 task 96, cap_sq
+// unwitnessed cap): n * n passes every other gate, and `min(6724, n * n)` fits every example too but differs past them.
+test("gate rival through deriveProgram: a far rival refuses and asks past the examples", () => {
+  const rows = [[-82, 6724], [-20, 400], [-3, 9], [-1, 1], [0, 0], [1, 1], [2, 4], [5, 25], [17, 289], [30, 900], [50, 2500], [82, 6724]] as const;
+  const r = deriveProgram({ params: [num("n")], ret: "number", examples: ex(rows) });
+  assert.equal(!r.ok && `${r.reason}/${r.gate}`, "derive_under_specified/rival", JSON.stringify(r).slice(0, 300));
+  assert.ok(!r.ok && r.questions?.some((q) => (q.at[0] as number) < -82 || (q.at[0] as number) > 82), JSON.stringify(!r.ok && r.questions));
 });
 
 test("gate rival (size + 2): near pass (every example value a constant, probes inside the examples) and far pass (witnessed edges, far probes past them)", () => {
