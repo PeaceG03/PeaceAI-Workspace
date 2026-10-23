@@ -453,7 +453,19 @@ const CAPABILITY_IDENTS = new Set([
 function capabilityTokens(node: ts.Node): Map<string, number> {
   const out = new Map<string, number>();
   const add = (k: string): void => { out.set(k, (out.get(k) ?? 0) + 1); };
+  // Auditor #489: a computed member access is only "data from the tested function's own parameters" when BOTH the
+  // receiver's root and the key are bare parameters of the target. Any other dynamic key (string-built, local,
+  // template, fromCharCode, ...) is a capability token, so an edit can't add one (P2/P3 prototype paths without a cast).
+  const params = new Set<string>();
+  if (ts.isFunctionLike(node)) for (const p of node.parameters) if (ts.isIdentifier(p.name)) params.add(p.name.text);
+  const isParam = (e: ts.Expression): boolean => { const u = unwrap(e); return ts.isIdentifier(u) && params.has(u.text); };
   const visit = (n: ts.Node): void => {
+    if (ts.isElementAccessExpression(n)) {
+      const a = unwrap(n.argumentExpression);
+      const literalKey = ts.isNumericLiteral(a) || ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && !REFLECTION.has(a.text));
+      const r = rootOf(n.expression);
+      if (!literalKey && !(isParam(a) && ts.isIdentifier(r) && params.has(r.text))) add("computed");
+    }
     if (ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) {
       if (n.type.kind === ts.SyntaxKind.AnyKeyword) add("cast:any");
       else if (n.type.kind === ts.SyntaxKind.UnknownKeyword) add("cast:unknown");

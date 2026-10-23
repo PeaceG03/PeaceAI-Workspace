@@ -214,6 +214,10 @@ capability token the base unit lacked, the result is `edit_new_capability`:
 - a reflection-name member (`constructor`, `__proto__`, `prototype`, ...)
 - a reference to `fetch`, `process`, `require`, `globalThis`, `eval`, `Function`, `Reflect`, `Proxy`, timers, or a
   module global
+- a dynamic computed member access `x[k]`, unless both `x`'s root and `k` are the target's own parameters
+  (string-built keys like `["__pro", "to__"].join("")` on a local or parameter receiver are refused)
+
+Tokens are counted, not just checked for presence, so an edit can't add a second `?? fetch` beside one the base had.
 
 This refuses the following, however the name is spelled or built:
 
@@ -242,7 +246,7 @@ The mitigations:
 - Test strings equal to reflection names are refused.
 - Literal keys are checked against the reflection list.
 - Computed calls are refused.
-- Any new cast is refused by the capability delta.
+- Any new cast, and any new dynamic computed key that isn't `param[param]`, is refused by the capability delta.
 
 ## Evidence
 
