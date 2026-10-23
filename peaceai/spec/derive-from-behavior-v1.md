@@ -133,7 +133,7 @@ example gives false, another gives true."), leak-scanned like the rest of the co
 
 ## Mistakes ledger (round 3, Peace)
 
-peaceai/test/fixtures/derive-mistakes.json lists every wrong program a review found (and the upstream scan's): the
+peaceai/test/m99-derive-mistakes.json lists every wrong program a review found (and the upstream scan's): the
 examples, the wrong program, an input where it is wrong and the right output there, why in one plain line, and what
 happens now (refuse and ask at the recorded inputs, then the program derived once the answers are added; or a known
 limit the review note shows). peaceai/test/m99-derive-mistakes.test.ts replays the whole ledger on every change and
