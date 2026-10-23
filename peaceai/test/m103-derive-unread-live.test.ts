@@ -73,8 +73,8 @@ const bool3: Row[] = [...bool, [2, 10, false]];
 const bor3: Row[] = [...[-300, -100, -1, 0, 1, 4, 5, 6, 7, 105, 106, 300].map((a) => [a, 0, a > 5]), [9, 0, true], [9, 100, true], [9, -9, true]];
 // (c) on an && operand: c varied where 6 <= a && 4 <= b is true and where a <= 5, never where 4 <= b is false.
 const and3: Row[] = [];
-for (const a of [-100, 2, 5, 6, 7, 106]) for (const b of [-100, 2, 3, 4, 5, 104]) and3.push([a, b, -5, a > 5 && b > 3]);
-and3.push([7, 10, 5, true], [7, 10, 9, true], [2, 10, 5, false], [2, 10, 9, false]);
+for (const a of [-100, 2, 5, 6, 7, 106]) for (const b of [-100, 2, 3, 4, 104]) and3.push([a, b, -5, a > 5 && b > 3]);
+and3.push([7, 10, -5, true], [7, 10, 5, true], [7, 10, 9, true], [2, 10, -5, false], [2, 10, 5, false], [2, 10, 9, false]);
 const bor: Row[] = [-300, -100, -1, 0, 1, 4, 5, 6, 7, 105, 106, 300].map((a) => [a, 0, a > 5]);
 bor.push([9, 0, true], [9, 100, true], [200, -9, true]);
 const M103_ADV: Adv[] = [
