@@ -74,7 +74,8 @@ test("gate edge: both sides of every threshold, and c - 1, c, c + 1 for an equal
   // a range: both ends.
   const rng: DeriveNode = { op: "range", i: 0, lo: 500, hi: 599 };
   const rows = [[500, true], [599, true], [550, true], [499, false], [700, false], [0, false]] as const;
-  assert.equal(gate(n, "boolean", rng, rows), "edge:n");
+  assert.equal(gate(n, "boolean", rng, rows), "edge:n"); // no 600: the upper end is not shown
+  assert.equal(gate(n, "boolean", rng, [[500, true], [599, true], [550, true], [450, false], [600, false], [700, false], [0, false]]), "edge:n"); // no 499: the lower end
   assert.equal(gate(n, "boolean", rng, [...rows, [600, false]]), "");
   // p === q: the delta edges -1 / 0 / +1.
   const ab = [num("a"), num("b")];
@@ -103,6 +104,8 @@ test(`gate far: an example at least DERIVE_FAR (${DERIVE_FAR}) past the last edg
   const le: DeriveNode = { op: "le", a: P0, b: P1 };
   const rows = [[5, 5, true], [6, 5, false], [7, 9, true], [9, 2, false]] as const;
   assert.equal(gate(ab, "boolean", le, rows), "far:a");
+  assert.equal(gate(ab, "boolean", le, [...rows, [105, 5, false]]), "far:a"); // a - b >= 100 only
+  assert.equal(gate(ab, "boolean", le, [...rows, [5, 105, true]]), "far:a"); // a - b <= -100 only
   assert.equal(gate(ab, "boolean", le, [...rows, [105, 5, false], [5, 105, true]]), "");
 });
 
@@ -191,4 +194,16 @@ test("review note: a DERIVE candidate shows its expression and far-probe outputs
   assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isRetryableR2Status\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }])), null);
   assert.equal(deriveReviewNote(asDiff([files[0]!])), null);
   assert.equal(deriveReviewNote("diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n"), null);
+});
+
+// Auditor #491 (non-blocking): a parameter or function named `eval` (or another reserved / global name) is refused
+// cleanly at parse time, before any search or module text.
+test("reserved names: a parameter or function named eval, arguments or globalThis is derive_reserved_name", () => {
+  const body = (sig: string) => S1_BODY.replace("isRetryableR2Status(status: number): boolean", sig);
+  for (const sig of ["isRetryableR2Status(eval: number): boolean", "isRetryableR2Status(arguments: number): boolean", "isRetryableR2Status(globalThis: number): boolean", "eval(status: number): boolean"]) {
+    const p = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: body(sig) } as never));
+    assert.deepEqual(p, { reason: "derive_reserved_name" }, sig);
+  }
+  const ok = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1_BODY } as never));
+  assert.ok("task" in ok);
 });

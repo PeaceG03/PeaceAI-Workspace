@@ -70,11 +70,41 @@ size s + 1 (DERIVE_SLACK = 1). One program is kept per behavior on (examples + p
 - two or more: `derive_ambiguous` (they agree on every example, so they disagree on at least one probe; the
   refusal names the programs and a probe). The slack catches a unique smallest fit that a slightly larger,
   different program also explains (e.g. examples -2, -1, 0 giving 1, 0, 1: `(x + 1) * (x + 1)` and its square);
-- none up to size 13: `derive_no_fit`; more than 4,000,000 programs built, or more than 64,000,000 characters of
-  kept value vectors: `derive_budget` (also when the budget runs out while building the slack level);
+- none up to size 13: `derive_no_fit`; more than 4,000,000 programs built (DERIVE_BUDGET; a larger caller budget
+  is clamped to it), or more than 32,000,000 kept value cells (MAX_KEPT_CELLS): `derive_budget` (also when the budget runs out while building the slack level);
 - bad examples (count 3-40, arity, types, a contradiction, or every example giving the same result):
   `derive_examples`.
 A program whose value is the same at every point (`p && !p`, `x - x`) does not count as reading a parameter.
+
+## Witness gates (Auditor #491 B1): the examples must SHOW what the fit relies on
+
+A unique smallest fit is still refused, `derive_under_specified` with the gate and parameter (through the rule:
+`derive_under_specified_<gate>: <param>`; the detail names the example to add), unless every gate passes, in order:
+
+- unread: a parameter the program ignores has two examples differing only in it with the same result;
+- chars: a string parameter the program reads has example values with upper case, lower case, a digit, an inner
+  space, a leading or trailing space, and punctuation;
+- edge: both sides of every threshold (`p <= c`: c and c + 1; `c <= p`: c - 1 and c), c - 1, c, c + 1 for an
+  equality, both ends of a range, the delta edges of `p === q` / `p <= q`, and `""` against non-empty for an
+  emptiness test, each pair with the other arguments equal and different results;
+- far: an example at least DERIVE_FAR = 100 past the last edge and one at least 100 before the first edge of every
+  compared parameter (two compared parameters: p - q >= 100 and <= -100), so the result past every edge is shown,
+  not assumed (S1 without `600 gives false` would otherwise derive `(status === 429) || (500 <= status)`);
+- branch / cap: each branch of every conditional and each side of every min / max cap is reached by at least
+  DERIVE_MIN_REACH = 2 examples (the true branch of a one-parameter `p === c` or emptiness test holds for one input:
+  one example);
+- rival: a second search DERIVE_RIVAL_EXTRA = 2 sizes past the fit, in two passes, finds no other program that fits
+  every example but differs from the fit: near pass with every example value as a constant, on probes inside the
+  examples' range; far pass with the witnessed edges as constants, on the far probes past the examples (outermost
+  edges +-10 / +-100, 10x the largest value, 0, +-1, cross products; negative probes only for a parameter some example
+  makes negative). A spent rival budget is `rival_budget` (refused, never accepted).
+
+The far-probe table: a DERIVE candidate's review comment (peaceai/bin/review-comment.ts, `deriveReviewNote`) shows
+the derived expression and the program's output on up to 24 far probes, rebuilt from the candidate's diff only (the
+created module must pass `derivedModuleProblem`, the test must be literal `assert.equal` lines, and re-deriving from
+those examples must give the module's exact expression; otherwise no note). The verdict PR body is written by
+.github/workflows/peace-verdict.yml, which PeaceAI may not edit, so the table is in the review comment the verdict
+is given on.
 
 Compilation: `min` / `max` become conditionals (no `Math`), `a * a` stays a product, ranges become
 `(lo <= p && p <= hi)`. The text is re-parsed and must pass `derivedExprProblem` (parameters, integer and plain string
@@ -98,7 +128,8 @@ constructor / eval / prototype paths or timers are reachable.
 ## Refusals by name
 
 derive_behavior_code, derive_sections, derive_signature, derive_examples, derive_no_fit, derive_ambiguous,
-derive_budget, derive_expr_*, derive_path, derive_module_exists, new_test_path_exists, derive_params.
+derive_budget, derive_under_specified_<unread|chars|edge|far|branch|cap|rival|rival_budget>[: param], derive_emit_size,
+derive_expr_vocab, derive_expr_*, derive_path, derive_module_exists, new_test_path_exists, derive_params.
 
 ## Limits (v1)
 
@@ -109,4 +140,5 @@ derive_budget, derive_expr_*, derive_path, derive_module_exists, new_test_path_e
 - The DSL has no division, modulo, string length, slicing, case changes or loops; behavior needing them is
   `derive_no_fit`. Small DSL + minimal size can still pick a program the examples allow but the prose rules out
   (the prose is deliberately not read). More examples narrow the choice; a threshold needs an example on each side
-  of it at v and v + 1, or it is `derive_no_fit`.
+  of it at v and v + 1, or it is `derive_no_fit`; the witness gates then ask for the examples that show the rest
+  (edges, far regions, two per branch, no disagreeing rival), so issues need more examples than the bare fit.
