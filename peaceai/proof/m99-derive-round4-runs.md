@@ -26,8 +26,8 @@ wolfstar-project/wolfstar.rocks, wolfstar-project/code-zero).
 
 Restarted on 980b244's evidence (eq emitted), so earlier partial parts (eq refused) were discarded.
 
-Interim (13:16Z, shards 0 and 1 complete, 2 and 3 running): 3,696 of 5,000 tasks graded: right 605, refused 3,023,
-wrong 68 (59 known-limit, 9 blocking; all blocking are floor_clamp/unwitnessed_cap). The final table replaces this line when shards 2 and 3 finish.
+Interim (13:26Z, shards 0 and 1 complete, 2 and 3 running): 4,151 of 5,000 tasks graded: right 678, refused 3,395,
+wrong 78 (68 known-limit, 10 blocking; all blocking are floor_clamp/unwitnessed_cap). The final table replaces this line when shards 2 and 3 finish.
 
 ## Mutants at 980b244
 
