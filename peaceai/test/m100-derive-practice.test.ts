@@ -5,11 +5,13 @@
 // in the derive mistakes ledger's shape, ready to add there. The scale run: peaceai/bin/derive-practice.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CATEGORIES, coverLine, evalJs, gradeTask, judge, ledgerEntry, practiceTask, tally, taskSeed, type PracticeGrade } from "../lib/derive-practice.ts";
+import { CATEGORIES, coverLine, familyCategories, evalJs, gradeTask, judge, ledgerEntry, practiceTask, tally, taskSeed, type PracticeGrade } from "../lib/derive-practice.ts";
 import { compileProgram, deriveProgram, type DeriveNode } from "../lib/derive.ts";
 
 const SEED = 100100;
-const COUNT = 4 * CATEGORIES.length;
+// CI grades the active families only (peaceai/lib/derive-practice-families.json); staged ones are graded with --family.
+const ACTIVE = familyCategories("active");
+const COUNT = 4 * ACTIVE.length;
 const BUDGET = 100_000;
 
 test("practice tasks are deterministic per (seed, index), fit the engine's example limits, and every example is the truth's", () => {
@@ -49,13 +51,13 @@ test("the known limit: a wrong pick whose every disagreement is the unshown sing
 
 test(`practice run (seed ${SEED}, ${COUNT} tasks, budget ${BUDGET}): no wrong program accepted`, () => {
   const grades: PracticeGrade[] = [];
-  for (let i = 0; i < COUNT; i++) grades.push(gradeTask(practiceTask(SEED, i), { budget: BUDGET }));
+  for (let i = 0; i < COUNT; i++) grades.push(gradeTask(practiceTask(SEED, i, ACTIVE), { budget: BUDGET }));
   const table = tally(grades);
-  assert.equal(Object.keys(table).length, CATEGORIES.length);
+  assert.equal(Object.keys(table).length, ACTIVE.length);
   assert.ok(grades.some((g) => g.outcome === "right"), "some task is derived right");
   assert.ok(grades.every((g) => !g.unsafe), "every accepted expression passes derivedExprProblem");
   const wrong = grades.filter((g) => g.outcome === "wrong" && !g.knownLimit);
-  const entries = wrong.map((g) => ledgerEntry(practiceTask(SEED, g.index), g, "test", SEED));
+  const entries = wrong.map((g) => ledgerEntry(practiceTask(SEED, g.index, ACTIVE), g, "test", SEED));
   const LEDGER_KEYS = ["id", "source", "params", "ret", "examples", "wrongProgram", "disagreeAt", "correct", "why"];
   for (const e of entries) assert.deepEqual(Object.keys(e).filter((k) => LEDGER_KEYS.includes(k)), LEDGER_KEYS, "the derive mistakes ledger's entry keys (peaceai-derive-mistakes:v1)");
   assert.equal(wrong.length, 0, `wrong programs accepted (ledger shape):\n${entries.map((e) => JSON.stringify(e)).join("\n")}`);
