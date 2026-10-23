@@ -288,3 +288,9 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
   - NEXT: CI on a6c2115, census (census-v2 at head), stress normal+sim at head, PR body (/workspace/g12w/pr489-body-new.md), final report. Leave #489 unmerged, no proposal.
 - 18:40 MDT M98 #489 pushed 780d15b (spec doc: precise hole-4 SKILL-GAP report — locate/generate/select/disambiguate/types; smallest teachable G1-T = T-swap (interface-guided call substitution, covers B) + T-retry (bounded retry wrap, covers C); NOT built) and a46e235 (G2 pass: edit_unawaited:{call,void,then,new-promise,callback} counted delta, Job A+B; own probe /tmp/r489/probe5.mts — floating `d.save()` was ACCEPTED before) + doc commit. m98 18/18, m12 18/18, tsc OK.
   - Running: stress at a6c2115 runs-m98d (WS /tmp/st98, STOCKS stocks-m98, GRADE grade-m98) + runs-m98d-sim (WS /tmp/s98sim local approved.json NEVER commit, STOCKS stocks-m98-sim, GRADE grade-m98-sim); census-v2 at a6c2115 -> /workspace/g12w/chk/census-a6c2115-{0ab,main}.txt (main = fresh clone /tmp/ps-main @8ff15d3). B related tests (host-s2-targeting, intraday-backfill, intraday-reply-dust, markets-scanner) and C's (archive-sync, daily-bars-coverage, daily-bars-pack-decode) can't run confined on base -> B/C fail closed at grading now.
+
+## M99 DERIVE_FROM_BEHAVIOR (Builder, 2026-10-22 18:4x MDT)
+- Branch m99/derive-from-behavior (Workspace), from main 1e8448a. Do NOT touch m98/existing-function-edit (#489, other worker).
+- 1933790: engine peaceai/lib/derive.ts (typed DSL bottom-up search, AMBIGUOUS refusal, compile + AST whitelist). Reusable by #489.
+- 8e31438: rule peaceai/lib/learned-derive.ts + wiring (learned/propose/nlparse/generate/test-candidates/selfchange/rule-skill/m75).
+- Local: S1/S2/S3 derive uniquely (1-2.5 s each). Next: learned spec JSON, spec doc+sha, m99 test, evidence >=10, m12 re-pin, checks, dry run, stress, census, PR.
