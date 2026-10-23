@@ -630,3 +630,24 @@ test("Auditor #489 reach walk: computed call, computed access and a non-identifi
     assert.equal(gradeExistingEditProblem("src/m.ts", base, ed, clean.edit!.extra[0]!.path, clean.edit!.extra[0]!.content, (q) => (q === "src/m.ts" ? ed : null)), code, base);
   }
 });
+
+test("Auditor #489 reach walk: a write rooted at an undeclared name, an import binding or a namespace import is refused (Job A and Job B)", () => {
+  // `!s || !d`: an undeclared root has no symbol (removing that guard crashes the walk on `s.flags`); the import-alias
+  // guard is subsumed by the module-level-binding guard (an import is never inside a function), so it is pinned here
+  // together with it: with both removed these writes are no longer refused as global writes.
+  const B = "export const box = { v: 1 };\n";
+  const C: [string, string, Record<string, string>][] = [
+    ["undeclared", "export function f(n: number): number {\n  if (n < 0) zz9.x = 2;\n  return n + 1;\n}\n", {}],
+    ["import", "import { box } from \"./b.ts\";\nexport function f(n: number): number {\n  if (n < 0) box.v = 2;\n  return n + 1;\n}\n", { "src/b.ts": B }],
+    ["namespace import", "import * as b from \"./b.ts\";\nexport function f(n: number): number {\n  if (n < 0) b.box.v = 2;\n  return n + 1;\n}\n", { "src/b.ts": B }],
+  ];
+  const obj = "in f in src/m.ts: replace statement return n + 1; with return n + 2;\n- expect f(1) returns 3";
+  const clean = analyzeSuppliedEdit(SPEC.trigger, SPEC.params, obj, [{ path: "src/m.ts", content: "export function f(n: number): number {\n  return n + 1;\n}\n" }], isTest);
+  assert.ok(clean.edit, clean.reason ?? "");
+  for (const [k, base, extra] of C) {
+    const files = [{ path: "src/m.ts", content: base }, ...Object.entries(extra).map(([path, content]) => ({ path, content }))];
+    assert.equal(analyzeSuppliedEdit(SPEC.trigger, SPEC.params, obj, files, isTest).reason, "edit_global_write", k);
+    const ed = base.replace("return n + 1;", "return n + 2;");
+    assert.equal(gradeExistingEditProblem("src/m.ts", base, ed, clean.edit!.extra[0]!.path, clean.edit!.extra[0]!.content, (q) => (q === "src/m.ts" ? ed : extra[q] ?? null)), "edit_global_write", k);
+  }
+});
