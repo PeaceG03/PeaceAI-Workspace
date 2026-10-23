@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { validateSummary, loadSummaryContext } from "../lib/gate.ts";
+import { deriveReviewNote } from "../lib/learned-derive.ts";
 import { hasPlaceholder, validateRepairRecord } from "../lib/repairrecord.ts";
 import { PLACEHOLDER_NOTE, reviewBody, validatePresentation } from "../lib/review.ts";
 import { isRepoName, loadTargets } from "../lib/target.ts";
@@ -26,6 +27,12 @@ for (const c of summary.candidates) {
   const r = JSON.parse(readFileSync(p, "utf8"));
   if (!validateRepairRecord(r) || r.id !== c.id) throw new Error("repair record failed validation");
   if (hasPlaceholder(r)) notes.set(c.id, PLACEHOLDER_NOTE);
+}
+// M99 (Auditor #491 B1): a DERIVE candidate shows its derived expression and far-probe outputs, rebuilt from its diff.
+for (const c of summary.candidates) {
+  if (notes.has(c.id)) continue;
+  const note = deriveReviewNote(diffs.get(c.id) ?? "");
+  if (note) notes.set(c.id, note);
 }
 writeFileSync(resolve(process.env.PEACEAI_BODY_FILE ?? ""), reviewBody(presentation, diffs, shownTarget, route, notes));
 console.log(`review comment built for ${presentation.length} candidate(s)`);

@@ -18,7 +18,7 @@
 // The behavior prose only has to pass the anti-credit guard: it never reaches the search, the constants or the
 // test. The program is determined by the examples alone; the header line picks the module, name and signature.
 import { createHash } from "node:crypto";
-import { compileProgram, deriveProgram, derivedExprProblem, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
+import { compileProgram, deriveProgram, derivedExprProblem, farProbeTable, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
 import { allowedName } from "./refusal-reason.ts";
 import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./learned-function.ts";
 import { importStyle } from "./learned-test.ts";
@@ -252,4 +252,69 @@ export function rawIssueProblem(body: string): string | null {
   if (/<!--/.test(body)) return "derive_behavior_code";
   if (/^(?: {4}|\t)\S/m.test(body)) return "derive_behavior_code";
   return null;
+}
+
+/** Rows of the far-probe table shown in a DERIVE candidate's review note. */
+export const DERIVE_NOTE_ROWS = 24;
+
+/** The files a unified diff creates (`new file mode`), with their full content. */
+function createdFiles(diff: string): { path: string; content: string }[] {
+  const out: { path: string; content: string }[] = [];
+  for (const part of diff.split(/^diff --git /m).slice(1)) {
+    if (!/^new file mode /m.test(part)) continue;
+    const path = /^\+\+\+ b\/(.+)$/m.exec(part)?.[1];
+    const hunk = part.indexOf("\n@@ ");
+    if (!path || hunk < 0) continue;
+    const body = part.slice(part.indexOf("\n", hunk + 1) + 1).split("\n").filter((l) => l.startsWith("+")).map((l) => l.slice(1));
+    out.push({ path, content: `${body.join("\n")}\n` });
+  }
+  return out;
+}
+
+/** A literal argument or expected value as written by buildDeriveEdit (number, -number, string, boolean), else undefined. */
+function litValue(e: ts.Expression): DeriveValue | undefined {
+  if (ts.isNumericLiteral(e)) return Number(e.text);
+  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(e.operand)) return -Number(e.operand.text);
+  if (ts.isStringLiteral(e)) return e.text;
+  if (e.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (e.kind === ts.SyntaxKind.FalseKeyword) return false;
+  return undefined;
+}
+
+/**
+ * Auditor #491 (B1): the review note of a DERIVE candidate, rebuilt from its diff alone. The diff must create exactly
+ * one module that passes derivedModuleProblem and one test made only of literal `assert.equal(fn(...), value)` lines;
+ * PeaceAI derives again from those examples and shows the note only when it gets the module's exact expression. The
+ * note gives that expression and the program's output on the far probes (past every edge the examples show), so a
+ * reviewer sees what the candidate does where the issue gave no example. Null for anything else.
+ */
+export function deriveReviewNote(diff: string, derive: typeof deriveProgram = deriveProgram): string | null {
+  const files = createdFiles(diff);
+  const tests = files.filter((f) => /\.test\.ts$/.test(f.path));
+  const mods = files.filter((f) => !/\.test\.ts$/.test(f.path));
+  if (tests.length !== 1 || mods.length !== 1 || derivedModuleProblem(mods[0]!.content) !== null) return null;
+  const sf = ts.createSourceFile("m.ts", mods[0]!.content, ts.ScriptTarget.Latest, true);
+  const f = sf.statements[0] as ts.FunctionDeclaration;
+  const fn = f.name!.text;
+  const params: DeriveParam[] = f.parameters.map((p) => ({ name: (p.name as ts.Identifier).text, type: p.type!.getText(sf) as DeriveType }));
+  const ret = f.type!.getText(sf) as DeriveType;
+  const expr = ((f.body!.statements[0] as ts.ReturnStatement).expression!).getText(sf);
+  const examples: DeriveExample[] = [];
+  for (const line of tests[0]!.content.split("\n")) {
+    if (!/^\s*assert\.equal\(/.test(line)) continue;
+    const t = ts.createSourceFile("t.ts", line, ts.ScriptTarget.Latest, true);
+    const st = t.statements[0];
+    if (t.statements.length !== 1 || !st || !ts.isExpressionStatement(st) || !ts.isCallExpression(st.expression)) return null;
+    const [call, want, ...rest] = st.expression.arguments;
+    if (st.expression.expression.getText(t) !== "assert.equal" || !call || !want || rest.length || !ts.isCallExpression(call) || call.expression.getText(t) !== fn || call.arguments.length !== params.length) return null;
+    const args = call.arguments.map(litValue);
+    const out = litValue(want);
+    if (out === undefined || args.some((a, i) => a === undefined || typeof a !== params[i]!.type)) return null;
+    examples.push({ args: args as DeriveValue[], out });
+  }
+  if (!examples.length) return null;
+  const r = derive({ params, ret, examples });
+  if (!r.ok || compileProgram(r.fit.program, params.map((p) => p.name)) !== expr) return null;
+  const rows = farProbeTable(r.fit.program, params, examples, DERIVE_NOTE_ROWS).map((row) => `${fn}(${row.args.map(lit).join(", ")}) = ${row.out === undefined ? "(error)" : lit(row.out)}`);
+  return [`Derived by PeaceAI from the ${examples.length} examples (DERIVE_FROM_BEHAVIOR). Expression and far probes (inputs past every edge the examples show):`, "", "```text", `return ${expr};`, "", ...rows, "```"].join("\n");
 }
