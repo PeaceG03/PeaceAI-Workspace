@@ -31,7 +31,7 @@ const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR
 Behavior: given the HTTP status code of a reply from R2, answer true when the request is worth retrying and false when it is not. Worth retrying: 429 (too many requests) and every server error status from 500 through 599. Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.
 
 Examples:
-${[[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}
+${[[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [700, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}
 
 Context: this is the status check a future retry will use. PeaceAI has to work out the implementation itself.`;
 const S2 = `Add a new module \`src/r2-retry-delay.ts\` exporting \`r2RetryDelayMs(attempt: number, baseMs: number): number\`.
@@ -50,7 +50,9 @@ Examples (message, causeCode gives line):
 - "R2_GET_500", "" gives "MARKETS_SCHEDULER_HOST_FAILED:R2_GET_500"
 - "", "UND_ERR_SOCKET" gives "MARKETS_SCHEDULER_HOST_FAILED::cause=UND_ERR_SOCKET"
 - "", "" gives "MARKETS_SCHEDULER_HOST_FAILED:"
-- "R2_PUT_500", "ETIMEDOUT" gives "MARKETS_SCHEDULER_HOST_FAILED:R2_PUT_500:cause=ETIMEDOUT"`;
+- "R2_PUT_500", "ETIMEDOUT" gives "MARKETS_SCHEDULER_HOST_FAILED:R2_PUT_500:cause=ETIMEDOUT"
+- " fetch failed ", "ECONNRESET" gives "MARKETS_SCHEDULER_HOST_FAILED: fetch failed :cause=ECONNRESET"
+- "R2_GET_500", " err 42 " gives "MARKETS_SCHEDULER_HOST_FAILED:R2_GET_500:cause= err 42 "`;
 const clean = (body: string, title = "derive task") => cleanIssueText({ title, body } as never);
 const run = (body: string) => { const why: { reason?: string } = {}; const e = applyRule(SPEC, clean(body), FILES, (p) => /\.test\.ts$/.test(p), undefined, why); return { e, why: why.reason }; };
 
@@ -80,7 +82,7 @@ test("S1-S3 (scanner refile): each derives one program; module and test are the 
   assert.match(s1.extra![0]!.path, /^src\/r2-retry-status\.is-retryable-r2-status-[0-9a-f]{7}\.test\.ts$/);
   assert.match(s1.extra![0]!.content, /assert\.equal\(isRetryableR2Status\(429\), true\);/);
   // The test is exactly the issue's examples: one assertion per example, nothing else.
-  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 18);
+  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 19);
   const s2 = run(S2).e!;
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
   assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 13);
@@ -238,12 +240,16 @@ test("no memorizing: strings are only tested for emptiness; an integer is compar
   const n = [{ name: "n", type: "number" as const }];
   const nx = [{ args: [10], out: true }, { args: [11], out: true }, { args: [3], out: false }];
   assert.equal(deriveProgram({ params: n, ret: "boolean", examples: nx }).ok, false);
-  const ten = deriveProgram({ params: n, ret: "boolean", examples: [...nx, { args: [9], out: false }] });
+  // The edge alone is not enough: what happens far past it (gate far) must be shown too.
+  const near = deriveProgram({ params: n, ret: "boolean", examples: [...nx, { args: [9], out: false }] });
+  assert.equal(!near.ok && `${near.reason}/${near.gate}/${near.param}`, "derive_under_specified/far/n");
+  const ten = deriveProgram({ params: n, ret: "boolean", examples: [...nx, { args: [9], out: false }, { args: [110], out: true }, { args: [-90], out: false }] });
   assert.equal(ten.ok && ten.fit.expr, "10 <= n");
   // Through the rule, prose that names the threshold does not help: only the examples can.
   const body = (exs: string) => `Add a new module src/big.ts exporting isBig(n: number): boolean.\n\nBehavior: true from 10 upward, false below 10.\n\nExamples:\n${exs}`;
   assert.equal(run(body("- 10 gives true\n- 11 gives true\n- 3 gives false\n")).why, "derive_no_fit");
-  assert.match(run(body("- 10 gives true\n- 11 gives true\n- 3 gives false\n- 9 gives false\n")).e!.content, /return 10 <= n;/);
+  assert.equal(run(body("- 10 gives true\n- 11 gives true\n- 3 gives false\n- 9 gives false\n")).why, "derive_under_specified_far: n");
+  assert.match(run(body("- 10 gives true\n- 11 gives true\n- 3 gives false\n- 9 gives false\n- 110 gives true\n- -90 gives false\n")).e!.content, /return 10 <= n;/);
 });
 
 test("fail closed: a competing fit one node larger is AMBIGUOUS; constant programs never fit; one-result examples refused", () => {

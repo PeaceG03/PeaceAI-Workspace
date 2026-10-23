@@ -62,7 +62,7 @@ export type DeriveNode =
 export interface DeriveFit { program: DeriveNode; size: number; expr: string }
 export type DeriveResult =
   | { ok: true; fit: DeriveFit; probes: DeriveValue[][]; searched: number }
-  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples"; detail?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; searched: number };
+  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; searched: number };
 
 export const DERIVE_MAX_SIZE = 13;
 export const DERIVE_BUDGET = 4_000_000;
@@ -73,16 +73,54 @@ export const DERIVE_SLACK = 1;
 export const DERIVE_MAX_STRING = 120;
 /** Longest compiled expression (characters); longer is refused (derive_expr_size), so the module is bounded. */
 export const DERIVE_MAX_EXPR_CHARS = 400;
-const MAX_POINTS = 400;
-/** Memory bound: total characters of kept value vectors; past it the search stops (derive_budget). */
-const MAX_KEPT_CHARS = 64_000_000;
+/** Most points (examples + neighbour probes + far probes) a value vector covers. */
+const MAX_POINTS = 600;
+/**
+ * Memory bound: total values (kept programs x points) the search holds; past it the search stops (derive_budget,
+ * or rival_budget in the rival search). Kept vectors are deduplicated by a 106-bit hash of their JSON (vectorKey),
+ * so memory is the vectors themselves, not their text.
+ */
+export const MAX_KEPT_CELLS = 32_000_000;
 const MAX_INT = 1e12;
+/** Far-domain distance: an open true region needs an example at least this far past its edge (gate 1). */
+export const DERIVE_FAR = 100;
+/** The rival search (gate 3) runs this many sizes past the accepted program, over every example constant. */
+export const DERIVE_RIVAL_EXTRA = 2;
+/** Every branch and each side of a cap must be reached by at least this many examples (gate 2). */
+export const DERIVE_MIN_REACH = 2;
+const FAR_ABS = 1e9;
 
-interface Prog { node: DeriveNode; size: number; vals: DeriveValue[]; usesParam: boolean }
+type V = DeriveValue | null;
+interface Prog { node: DeriveNode; size: number; vals: V[]; usesParam: boolean }
 
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && Math.abs(v) <= MAX_INT;
 const typeOf = (v: DeriveValue): DeriveType => (typeof v === "number" ? "number" : typeof v === "string" ? "string" : "boolean");
-const keyOf = (vals: readonly DeriveValue[]): string => JSON.stringify(vals);
+const keyOf = (vals: readonly (V | undefined)[]): string => JSON.stringify(vals);
+/**
+ * The dedupe key of a value vector: two independent 53-bit hashes (cyrb53-style mixing, different seeds) over a
+ * typed walk of its values (tag, then the number's two 32-bit halves / the string's length and characters), plus
+ * the vector length. No JSON text is built; a collision (about n^2 / 2^107 for n kept vectors) can only merge two
+ * behaviors, never invent one.
+ */
+const vectorKey = (vals: readonly V[]): string => {
+  let a1 = 0xdeadbeef, a2 = 0x41c6ce57, b1 = 0x9e3779b9 ^ 0xdeadbeef, b2 = 0x9e3779b9 ^ 0x41c6ce57;
+  const mix = (c: number) => {
+    a1 = Math.imul(a1 ^ c, 2654435761); a2 = Math.imul(a2 ^ c, 1597334677);
+    b1 = Math.imul(b1 ^ c, 2246822519); b2 = Math.imul(b2 ^ c, 3266489917);
+  };
+  for (const v of vals) {
+    if (v === null) mix(0x6e756c6c);
+    else if (typeof v === "boolean") mix(v ? 0x74727565 : 0x66616c73);
+    else if (typeof v === "number") { mix(0x6e756d00); mix(v | 0); mix(Math.floor(v / 4294967296) | 0); }
+    else { mix(0x73747200); mix(v.length); for (let i = 0; i < v.length; i++) mix(v.charCodeAt(i)); }
+  }
+  const fin = (h1: number, h2: number) => {
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  };
+  return fin(a1, a2) + ":" + fin(b1, b2) + ":" + vals.length.toString(36);
+};
 
 /** Problems with the examples themselves (types, ranges, contradictions); null when they are usable. */
 export function examplesProblem(input: DeriveInput): string | null {
@@ -113,7 +151,7 @@ export function probeSet(params: readonly DeriveParam[], examples: readonly Deri
   const out: DeriveValue[][] = [];
   const add = (args: DeriveValue[]) => {
     const k = keyOf(args);
-    if (!seen.has(k) && out.length < MAX_POINTS) { seen.add(k); out.push(args); }
+    if (!seen.has(k) && out.length < MAX_POINTS / 2) { seen.add(k); out.push(args); }
   };
   for (const ex of examples) {
     for (const [i, p] of params.entries()) {
@@ -127,9 +165,55 @@ export function probeSet(params: readonly DeriveParam[], examples: readonly Deri
   return out;
 }
 
+/** Witnessed edges per parameter (see edgeConstants), sorted. */
+export function edgesByParam(params: readonly DeriveParam[], examples: readonly DeriveExample[]): number[][] {
+  return params.map((p, i) => {
+    const s = new Set<number>();
+    if (p.type !== "number") return [];
+    const byRest = new Map<string, Map<number, string>>();
+    for (const ex of examples) {
+      const rest = keyOf(ex.args.filter((_, j) => j !== i));
+      const m = byRest.get(rest) ?? new Map<number, string>();
+      m.set(ex.args[i] as number, keyOf([ex.out]));
+      byRest.set(rest, m);
+    }
+    for (const m of byRest.values()) for (const [v, o] of m) { const o1 = m.get(v + 1); if (o1 !== undefined && o1 !== o) { s.add(v); s.add(v + 1); } }
+    return [...s].sort((a, b) => a - b);
+  });
+}
+
+/** Most far probes (gate 3). */
+const MAX_FAR = 160;
+/**
+ * Far probes (gate 3): per number parameter the values 0, 1, -1, the outermost witnessed edges +-10 and +-100, and
+ * +-10x the largest example magnitude (clamped to +-1e9); per string parameter "" and the first two example values;
+ * per boolean both. One parameter: those values. Several: their cross product (multi-input functions). Points equal
+ * to an example are dropped; deterministic order; at most MAX_FAR.
+ */
+export function farProbes(params: readonly DeriveParam[], examples: readonly DeriveExample[]): DeriveValue[][] {
+  const edges = edgesByParam(params, examples);
+  const far: DeriveValue[][] = params.map((p, i) => {
+    if (p.type === "boolean") return [false, true];
+    const vals = examples.map((e) => e.args[i]!);
+    if (p.type === "string") return [...new Set(["", ...(vals as string[])])].slice(0, 3);
+    const big = Math.max(1, ...(vals as number[]).map(Math.abs)) * 10;
+    const es = edges[i]!;
+    const outer = es.length ? [es[0]!, es[es.length - 1]!] : [];
+    const xs = [0, 1, -1, ...outer.flatMap((c) => [c - 100, c - 10, c + 10, c + 100]), big, -big].map((x) => Math.max(-FAR_ABS, Math.min(FAR_ABS, x)));
+    return [...new Set(xs)];
+  });
+  const seen = new Set(examples.map((e) => keyOf(e.args)));
+  let prod: DeriveValue[][] = [[]];
+  for (const f of far) prod = prod.flatMap((g) => f.map((x) => [...g, x]));
+  const out: DeriveValue[][] = [];
+  for (const a of prod) { const k = keyOf(a); if (!seen.has(k) && out.length < MAX_FAR) { seen.add(k); out.push(a); } }
+  return out;
+}
+
 /** Evaluates a program on one argument list; undefined when a value leaves the integer range. */
-export function evalProgram(n: DeriveNode, args: readonly DeriveValue[]): DeriveValue | undefined {
-  const num = (x: DeriveNode) => evalProgram(x, args) as number | undefined;
+export function evalProgram(n: DeriveNode, args: readonly DeriveValue[], hook?: (n: DeriveNode, side: 0 | 1) => void): DeriveValue | undefined {
+  const ev = (x: DeriveNode) => evalProgram(x, args, hook);
+  const num = (x: DeriveNode) => ev(x) as number | undefined;
   switch (n.op) {
     case "param": return args[n.i];
     case "int": case "lit": return n.v;
@@ -140,24 +224,30 @@ export function evalProgram(n: DeriveNode, args: readonly DeriveValue[]): Derive
       return isInt(r) ? r : undefined;
     }
     case "sq": { const a = num(n.a); if (a === undefined) return undefined; const r = a * a; return isInt(r) ? r : undefined; }
-    case "min": case "max": { const a = num(n.a); return a === undefined ? undefined : n.op === "min" ? (a <= n.c ? a : n.c) : (n.c <= a ? a : n.c); }
+    case "min": case "max": {
+      const a = num(n.a);
+      if (a === undefined) return undefined;
+      // hook side 0: the value is kept (strictly inside the cap); side 1: capped (strictly past it).
+      if (hook && a !== n.c) hook(n, (n.op === "min" ? a < n.c : a > n.c) ? 0 : 1);
+      return n.op === "min" ? (a <= n.c ? a : n.c) : (n.c <= a ? a : n.c);
+    }
     case "cat": {
-      const a = evalProgram(n.a, args), b = evalProgram(n.b, args);
+      const a = ev(n.a), b = ev(n.b);
       if (typeof a !== "string" || typeof b !== "string") return undefined;
       const r = a + b;
       return r.length <= 4 * DERIVE_MAX_STRING ? r : undefined;
     }
-    case "eq": { const a = evalProgram(n.a, args), b = evalProgram(n.b, args); return a === undefined || b === undefined ? undefined : a === b; }
+    case "eq": { const a = ev(n.a), b = ev(n.b); return a === undefined || b === undefined ? undefined : a === b; }
     case "le": { const a = num(n.a), b = num(n.b); return a === undefined || b === undefined ? undefined : a <= b; }
     case "range": { const p = args[n.i] as number; return n.lo <= p && p <= n.hi; }
     case "empty": return args[n.i] === "";
     case "and": case "or": {
-      const a = evalProgram(n.a, args), b = evalProgram(n.b, args);
+      const a = ev(n.a), b = ev(n.b);
       if (typeof a !== "boolean" || typeof b !== "boolean") return undefined;
       return n.op === "and" ? a && b : a || b;
     }
-    case "not": { const a = evalProgram(n.a, args); return typeof a === "boolean" ? !a : undefined; }
-    case "if": { const c = evalProgram(n.c, args); if (typeof c !== "boolean") return undefined; return evalProgram(c ? n.t : n.e, args); }
+    case "not": { const a = ev(n.a); return typeof a === "boolean" ? !a : undefined; }
+    case "if": { const c = ev(n.c); if (typeof c !== "boolean") return undefined; hook?.(n, c ? 0 : 1); return ev(c ? n.t : n.e); }
   }
 }
 
@@ -244,19 +334,7 @@ export function derivedExprProblem(text: string, params: readonly string[]): str
  * are equal, whose i-th arguments are v and v + 1, and whose results differ, give v and v + 1. Sorted.
  */
 export function edgeConstants(params: readonly DeriveParam[], examples: readonly DeriveExample[]): number[] {
-  const s = new Set<number>();
-  params.forEach((p, i) => {
-    if (p.type !== "number") return;
-    const byRest = new Map<string, Map<number, string>>();
-    for (const ex of examples) {
-      const rest = keyOf(ex.args.filter((_, j) => j !== i));
-      const m = byRest.get(rest) ?? new Map<number, string>();
-      m.set(ex.args[i] as number, keyOf([ex.out]));
-      byRest.set(rest, m);
-    }
-    for (const m of byRest.values()) for (const [v, o] of m) { const o1 = m.get(v + 1); if (o1 !== undefined && o1 !== o) { s.add(v); s.add(v + 1); } }
-  });
-  return [...s].sort((a, b) => a - b);
+  return [...new Set(edgesByParam(params, examples).flat())].sort((x, y) => x - y);
 }
 /** Cap / constant-result constants K: integer results at least two examples produce. Sorted. */
 export function repeatedResults(examples: readonly DeriveExample[]): number[] {
@@ -268,9 +346,9 @@ export function repeatedResults(examples: readonly DeriveExample[]): number[] {
  * String pieces of the outputs: each output with the example's non-empty string arguments cut out; a piece is kept
  * only when at least two examples produce it (a piece seen in one output is that output memorized), plus "".
  */
-function stringPieces(input: DeriveInput): string[] {
+function stringPieces(examples: readonly DeriveExample[]): string[] {
   const support = new Map<string, number>();
-  for (const ex of input.examples) {
+  for (const ex of examples) {
     if (typeof ex.out !== "string") continue;
     const cuts = [...new Set(ex.args.filter((a): a is string => typeof a === "string" && a.length > 0))].sort((a, b) => b.length - a.length);
     let parts = [ex.out];
@@ -280,104 +358,100 @@ function stringPieces(input: DeriveInput): string[] {
   return ["", ...[...support].filter(([, n]) => n >= 2).map(([p]) => p)].sort();
 }
 
+interface SearchSpec {
+  params: readonly DeriveParam[];
+  ret: DeriveType;
+  /** Examples first (nEx of them), then probes. */
+  points: readonly DeriveValue[][];
+  nEx: number;
+  target: readonly DeriveValue[];
+  /** Comparison constants per parameter (number parameters only). */
+  consts: readonly (readonly number[])[];
+  caps: readonly number[];
+  pieces: readonly string[];
+  maxSize: number;
+  budget: number;
+  /** After each completed size: true ends the search. */
+  stop: (size: number, fits: readonly Prog[]) => boolean;
+  /** On each new fit: true ends the search at once. */
+  onFit?: (p: Prog) => boolean;
+}
+interface SearchOut { fits: Prog[]; searched: number; overBudget: boolean; stopped: boolean }
+
 /**
- * The search. Bottom-up by size; level s of each type is built only from smaller levels; one program per value
- * vector over (examples + probes) is kept (the first, i.e. smallest, one built). At the first size where some
- * parameter-reading program matches every example, DERIVE_SLACK more levels are built and: exactly one such
- * behavior up to there -> the fit; more than one -> derive_ambiguous (they agree on every example, so they
- * disagree on a probe). A program constant over every point never counts as reading a parameter.
+ * The search core. Bottom-up by size; level s of each type is built only from smaller levels; one program per value
+ * vector over the points is kept (the first, i.e. smallest, one built). A value that leaves the integer range at a
+ * probe is recorded as null there (at an example the program is dropped: it cannot fit). A program whose value is
+ * the same at every point never counts as reading a parameter (the constant-program filter).
  */
-export function deriveProgram(input: DeriveInput): DeriveResult {
-  const problem = examplesProblem(input);
-  if (problem) return { ok: false, reason: "derive_examples", detail: problem, searched: 0 };
-  const maxSize = Math.min(input.maxSize ?? DERIVE_MAX_SIZE, DERIVE_MAX_SIZE);
-  const budget = Math.min(input.budget ?? DERIVE_BUDGET, DERIVE_BUDGET);
-  const probes = probeSet(input.params, input.examples);
-  const points: DeriveValue[][] = [...input.examples.map((e) => e.args), ...probes];
-  const nEx = input.examples.length;
-  const target = input.examples.map((e) => e.out);
-  const names = input.params.map((p) => p.name);
-  const consts = edgeConstants(input.params, input.examples);
-  const caps = repeatedResults(input.examples);
-  const pieces = stringPieces(input);
+function runSearch(S: SearchSpec): SearchOut {
+  const { params, points, nEx, target } = S;
+  const P = points.length;
   const types: DeriveType[] = ["number", "string", "boolean"];
   const levels: Record<DeriveType, Prog[][]> = { number: [[]], string: [[]], boolean: [[]] };
   const guards: Prog[] = []; // if-guards: emptiness / equality atoms
   const seen: Record<DeriveType, Set<string>> = { number: new Set(), string: new Set(), boolean: new Set() };
-  let searched = 0;
-  let keptChars = 0;
-  let overBudget = false;
+  let searched = 0, keptCells = 0, overBudget = false, stopped = false;
   const fits: Prog[] = [];
-  const slack = Math.max(0, Math.min(input.slack ?? DERIVE_SLACK, DERIVE_SLACK));
-  let first = 0;
-  // Every fit is a distinct behavior on (examples + probes) (one program kept per value vector), so more than one
-  // fit up to the first fitting size + slack means the examples leave the behavior open: refuse.
-  const decide = (): DeriveResult => {
-    const best = fits[0]!;
-    if (fits.length === 1) return { ok: true, fit: { program: best.node, size: best.size, expr: compileProgram(best.node, names) }, probes, searched };
-    const b = fits[1]!;
-    let k = nEx;
-    while (k < points.length && best.vals[k] === b.vals[k]) k++;
-    return { ok: false, reason: "derive_ambiguous", alternatives: fits.slice(0, 4).map((f) => ({ program: f.node, size: f.size, expr: compileProgram(f.node, names) })), probe: points[k], searched };
-  };
-
-  const P = points.length;
-  const fitsExamples = (vals: readonly DeriveValue[]) => { for (let k = 0; k < nEx; k++) if (vals[k] !== target[k]) return false; return true; };
-  // `vals` is built from the children's vectors (same semantics as evalProgram; null when a value leaves the range).
-  const push = (ty: DeriveType, size: number, node: DeriveNode, usesParam: boolean, vals: DeriveValue[] | null, guard = false): void => {
-    if (overBudget) return;
-    if (++searched > budget) { overBudget = true; return; }
+  const fitsExamples = (vals: readonly V[]) => { for (let k = 0; k < nEx; k++) if (vals[k] !== target[k]) return false; return true; };
+  const push = (ty: DeriveType, size: number, node: DeriveNode, usesParam: boolean, vals: V[] | null, guard = false): void => {
+    if (overBudget || stopped) return;
+    if (++searched > S.budget) { overBudget = true; return; }
     if (!vals) return;
-    const k = keyOf(vals);
+    const k = vectorKey(vals);
     if (seen[ty].has(k)) return;
     seen[ty].add(k);
-    if ((keptChars += k.length) > MAX_KEPT_CHARS) { overBudget = true; return; }
-    // A program whose value is the same at every point reads a parameter only syntactically (p && !p): constant.
+    if ((keptCells += P) > MAX_KEPT_CELLS) { overBudget = true; return; }
     let varies = false;
     for (let j = 1; j < vals.length && !varies; j++) if (vals[j] !== vals[0]) varies = true;
     const p: Prog = { node, size, vals, usesParam: usesParam && varies };
     (levels[ty][size] ??= []).push(p);
     if (guard) guards.push(p);
-    if (ty === input.ret && p.usesParam && fitsExamples(vals)) fits.push(p);
+    if (ty === S.ret && p.usesParam && fitsExamples(vals)) { fits.push(p); if (S.onFit?.(p)) stopped = true; }
   };
-  const map1 = <T extends DeriveValue>(f: (k: number) => T | undefined): T[] | null => {
-    const out: T[] = new Array(P);
-    for (let k = 0; k < P; k++) { const v = f(k); if (v === undefined) return null; out[k] = v; }
+  const map1 = (f: (k: number) => V | undefined): V[] | null => {
+    const out: V[] = new Array(P);
+    for (let k = 0; k < P; k++) {
+      const v = f(k);
+      if (v === undefined || v === null) { if (k < nEx) return null; out[k] = null; } else out[k] = v;
+    }
     return out;
   };
   const intOk = (r: number) => (isInt(r) ? r : undefined);
-  const byNode = (node: DeriveNode): DeriveValue[] | null => map1((k) => evalProgram(node, points[k]!));
+  const byNode = (node: DeriveNode): V[] | null => map1((k) => evalProgram(node, points[k]!));
   const at = (ty: DeriveType, s: number): Prog[] => levels[ty][s] ?? [];
   const guardAt = (s: number) => guards.filter((g) => g.size === s);
+  type N = number | null;
+  const arith = (x: readonly V[], y: readonly V[], f: (a: number, b: number) => number) => map1((k) => { const a = x[k] as N, b = y[k] as N; return a === null || b === null ? null : intOk(f(a, b)); });
 
-  for (let size = 1; size <= maxSize && !overBudget; size++) {
+  for (let size = 1; size <= S.maxSize && !overBudget && !stopped; size++) {
     for (const ty of types) levels[ty][size] ??= [];
-    // Leaves.
     if (size === 1) {
-      input.params.forEach((p, i) => { const n: DeriveNode = { op: "param", i }; push(p.type, 1, n, true, byNode(n)); });
+      params.forEach((p, i) => { const n: DeriveNode = { op: "param", i }; push(p.type, 1, n, true, byNode(n)); });
       for (const v of [1, 2]) { const n: DeriveNode = { op: "int", v }; push("number", 1, n, false, byNode(n)); }
-      for (const v of pieces) { const n: DeriveNode = { op: "lit", v }; push("string", 1, n, false, byNode(n)); }
+      for (const v of S.pieces) { const n: DeriveNode = { op: "lit", v }; push("string", 1, n, false, byNode(n)); }
     }
-    // Boolean atoms over parameters.
-    input.params.forEach((p, i) => {
+    // Boolean atoms over parameters (constants per parameter).
+    params.forEach((p, i) => {
       const par: DeriveNode = { op: "param", i };
+      const cs = S.consts[i] ?? [];
       if (p.type === "number") {
         if (size === 3) {
-          for (const c of consts) {
+          for (const c of cs) {
             const lit: DeriveNode = { op: "lit", v: c };
             push("boolean", 3, { op: "eq", a: par, b: lit }, true, map1((k) => points[k]![i] === c), true);
             push("boolean", 3, { op: "le", a: par, b: lit }, true, map1((k) => (points[k]![i] as number) <= c));
             push("boolean", 3, { op: "le", a: lit, b: par }, true, map1((k) => c <= (points[k]![i] as number)));
           }
-          input.params.forEach((q, j) => {
+          params.forEach((q, j) => {
             if (q.type !== "number" || j === i) return;
             const pj: DeriveNode = { op: "param", i: j };
             if (i < j) push("boolean", 3, { op: "eq", a: par, b: pj }, true, map1((k) => points[k]![i] === points[k]![j]));
             push("boolean", 3, { op: "le", a: par, b: pj }, true, map1((k) => (points[k]![i] as number) <= (points[k]![j] as number)));
           });
         }
-        if (size === 4) for (let x = 0; x < consts.length; x++) for (let y = x + 1; y < consts.length; y++) {
-          const lo = consts[x]!, hi = consts[y]!;
+        if (size === 4) for (let x = 0; x < cs.length; x++) for (let y = x + 1; y < cs.length; y++) {
+          const lo = cs[x]!, hi = cs[y]!;
           push("boolean", 4, { op: "range", i, lo, hi }, true, map1((k) => lo <= (points[k]![i] as number) && (points[k]![i] as number) <= hi));
         }
       } else if (p.type === "string") {
@@ -385,59 +459,271 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
       }
     });
     // Unary nodes.
-    for (const a of at("number", size - 1)) if (a.usesParam) { const v = a.vals as number[]; push("number", size, { op: "sq", a: a.node }, true, map1((k) => intOk(v[k]! * v[k]!))); }
-    for (const a of at("boolean", size - 1)) { const v = a.vals as boolean[]; push("boolean", size, { op: "not", a: a.node }, a.usesParam, map1((k) => !v[k])); }
-    for (const a of at("number", size - 2)) if (a.usesParam) for (const c of caps) {
-      const v = a.vals as number[];
-      push("number", size, { op: "min", c, a: a.node }, true, map1((k) => (v[k]! <= c ? v[k]! : c)));
-      push("number", size, { op: "max", c, a: a.node }, true, map1((k) => (c <= v[k]! ? v[k]! : c)));
+    for (const a of at("number", size - 1)) if (a.usesParam) { const v = a.vals as N[]; push("number", size, { op: "sq", a: a.node }, true, map1((k) => (v[k] === null ? null : intOk(v[k]! * v[k]!)))); }
+    for (const a of at("boolean", size - 1)) { const v = a.vals as (boolean | null)[]; push("boolean", size, { op: "not", a: a.node }, a.usesParam, map1((k) => (v[k] === null ? null : !v[k]))); }
+    for (const a of at("number", size - 2)) if (a.usesParam) for (const c of S.caps) {
+      const v = a.vals as N[];
+      push("number", size, { op: "min", c, a: a.node }, true, map1((k) => (v[k] === null ? null : v[k]! <= c ? v[k]! : c)));
+      push("number", size, { op: "max", c, a: a.node }, true, map1((k) => (v[k] === null ? null : c <= v[k]! ? v[k]! : c)));
     }
     // Binary nodes: sizes la + lb = size - 1.
-    for (let la = 1; la <= size - 2 && !overBudget; la++) {
+    for (let la = 1; la <= size - 2 && !overBudget && !stopped; la++) {
       const lb = size - 1 - la;
       for (const a of at("number", la)) for (const b of at("number", lb)) {
         if (!a.usesParam && !b.usesParam) continue;
-        const x = a.vals as number[], y = b.vals as number[];
         if (la <= lb) {
-          push("number", size, { op: "add", a: a.node, b: b.node }, true, map1((k) => intOk(x[k]! + y[k]!)));
-          push("number", size, { op: "mul", a: a.node, b: b.node }, true, map1((k) => intOk(x[k]! * y[k]!)));
+          push("number", size, { op: "add", a: a.node, b: b.node }, true, arith(a.vals, b.vals, (x, y) => x + y));
+          push("number", size, { op: "mul", a: a.node, b: b.node }, true, arith(a.vals, b.vals, (x, y) => x * y));
         }
-        push("number", size, { op: "sub", a: a.node, b: b.node }, true, map1((k) => intOk(x[k]! - y[k]!)));
+        push("number", size, { op: "sub", a: a.node, b: b.node }, true, arith(a.vals, b.vals, (x, y) => x - y));
       }
       for (const a of at("string", la)) for (const b of at("string", lb)) {
         if (!a.usesParam && !b.usesParam) continue;
         if ((a.node.op === "lit" && a.node.v === "") || (b.node.op === "lit" && b.node.v === "")) continue;
-        const x = a.vals as string[], y = b.vals as string[];
-        push("string", size, { op: "cat", a: a.node, b: b.node }, true, map1((k) => { const r = x[k]! + y[k]!; return r.length <= 4 * DERIVE_MAX_STRING ? r : undefined; }));
+        const x = a.vals as (string | null)[], y = b.vals as (string | null)[];
+        push("string", size, { op: "cat", a: a.node, b: b.node }, true, map1((k) => { if (x[k] === null || y[k] === null) return null; const r = x[k]! + y[k]!; return r.length <= 4 * DERIVE_MAX_STRING ? r : undefined; }));
       }
       if (la <= lb) for (const a of at("boolean", la)) for (const b of at("boolean", lb)) {
-        const x = a.vals as boolean[], y = b.vals as boolean[];
-        push("boolean", size, { op: "and", a: a.node, b: b.node }, a.usesParam || b.usesParam, map1((k) => x[k]! && y[k]!));
-        push("boolean", size, { op: "or", a: a.node, b: b.node }, a.usesParam || b.usesParam, map1((k) => x[k]! || y[k]!));
+        const x = a.vals as (boolean | null)[], y = b.vals as (boolean | null)[];
+        push("boolean", size, { op: "and", a: a.node, b: b.node }, a.usesParam || b.usesParam, map1((k) => (x[k] === null || y[k] === null ? null : x[k]! && y[k]!)));
+        push("boolean", size, { op: "or", a: a.node, b: b.node }, a.usesParam || b.usesParam, map1((k) => (x[k] === null || y[k] === null ? null : x[k]! || y[k]!)));
       }
     }
     // Conditionals: if(G, x, y) with |G| + |x| + |y| = size - 1; number branches may also be K constants.
-    for (let lg = 2; lg <= Math.min(3, size - 3) && !overBudget; lg++) {
+    for (let lg = 2; lg <= Math.min(3, size - 3) && !overBudget && !stopped; lg++) {
       for (const g of guardAt(lg)) for (let lt = 1; lt <= size - 2 - lg; lt++) {
         const le = size - 1 - lg - lt;
         if (le < 1) continue;
-        const gv = g.vals as boolean[];
+        const gv = g.vals as (boolean | null)[];
         for (const ty of ["number", "string"] as const) {
-          const constLeaves = (n: number) => (ty === "number" && n === 1 ? caps.map((c) => ({ node: { op: "lit", v: c } as DeriveNode, vals: new Array<DeriveValue>(P).fill(c) })) : []);
+          const constLeaves = (n: number) => (ty === "number" && n === 1 ? S.caps.map((c) => ({ node: { op: "lit", v: c } as DeriveNode, vals: new Array<V>(P).fill(c) })) : []);
           const xs = [...at(ty, lt), ...constLeaves(lt)], ys = [...at(ty, le), ...constLeaves(le)];
           for (const x of xs) for (const y of ys) {
             if (x.node === y.node || (x.node.op === "lit" && y.node.op === "lit" && x.node.v === y.node.v)) continue;
             const xv = x.vals, yv = y.vals;
-            push(ty, size, { op: "if", c: g.node, t: x.node, e: y.node }, true, map1((k) => (gv[k] ? xv[k] : yv[k])));
+            push(ty, size, { op: "if", c: g.node, t: x.node, e: y.node }, true, map1((k) => (gv[k] === null ? null : gv[k] ? xv[k] : yv[k])));
           }
         }
       }
     }
-    if (overBudget) break;
-    if (fits.length > 0 && first === 0) first = size;
-    // Decide once the slack levels above the first fitting size are built (or the size limit is reached).
-    if (first > 0 && (size >= first + slack || size === maxSize)) return decide();
+    if (overBudget || stopped) break;
+    if (S.stop(size, fits)) break;
   }
-  if (first > 0 && !overBudget) return decide();
-  return { ok: false, reason: overBudget ? "derive_budget" : "derive_no_fit", searched };
+  return { fits, searched, overBudget, stopped };
+}
+
+const dedupePoints = (pts: readonly DeriveValue[][]): DeriveValue[][] => {
+  const seen = new Set<string>();
+  return pts.filter((a) => { const k = keyOf(a); if (seen.has(k)) return false; seen.add(k); return true; });
+};
+
+/**
+ * The search. At the first size where some parameter-reading program matches every example, DERIVE_SLACK more
+ * levels are built and: exactly one such behavior up to there (on examples + neighbour probes + far probes) -> the
+ * candidate; more than one -> derive_ambiguous. The candidate must then pass the witness gates (gateProblem):
+ * otherwise derive_under_specified, naming what the examples do not show.
+ */
+export function deriveProgram(input: DeriveInput): DeriveResult {
+  const problem = examplesProblem(input);
+  if (problem) return { ok: false, reason: "derive_examples", detail: problem, searched: 0 };
+  const maxSize = Math.min(input.maxSize ?? DERIVE_MAX_SIZE, DERIVE_MAX_SIZE);
+  const budget = Math.min(input.budget ?? DERIVE_BUDGET, DERIVE_BUDGET);
+  const { params, examples } = input;
+  const nEx = examples.length;
+  const probes = dedupePoints([...probeSet(params, examples), ...farProbes(params, examples)]).filter((a) => !examples.some((e) => keyOf(e.args) === keyOf(a)));
+  const points: DeriveValue[][] = [...examples.map((e) => e.args), ...probes];
+  const names = params.map((p) => p.name);
+  const slack = Math.max(0, Math.min(input.slack ?? DERIVE_SLACK, DERIVE_SLACK));
+  let first = 0;
+  const r = runSearch({
+    params, ret: input.ret, points, nEx, target: examples.map((e) => e.out),
+    consts: edgesByParam(params, examples), caps: repeatedResults(examples), pieces: stringPieces(examples), maxSize, budget,
+    stop: (size, fits) => { if (fits.length > 0 && first === 0) first = size; return first > 0 && size >= first + slack; },
+  });
+  const searched = r.searched;
+  if (r.overBudget) return { ok: false, reason: "derive_budget", searched };
+  if (r.fits.length === 0) return { ok: false, reason: "derive_no_fit", searched };
+  const best = r.fits[0]!;
+  if (r.fits.length > 1) {
+    const b = r.fits[1]!;
+    let k = nEx;
+    while (k < points.length && best.vals[k] === b.vals[k]) k++;
+    return { ok: false, reason: "derive_ambiguous", alternatives: r.fits.slice(0, 4).map((f) => ({ program: f.node, size: f.size, expr: compileProgram(f.node, names) })), probe: points[k], searched };
+  }
+  const gate = gateProblem(input, best.node, best.size, budget);
+  if (gate) return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, searched: searched + gate.searched };
+  return { ok: true, fit: { program: best.node, size: best.size, expr: compileProgram(best.node, names) }, probes, searched };
+}
+
+// ---- The witness gates (Auditor, #491 review): a fit is accepted only when the examples SHOW what it relies on.
+
+export type DeriveGate = "unread" | "chars" | "edge" | "far" | "branch" | "cap" | "rival" | "rival_budget";
+export interface DeriveGateProblem { gate: DeriveGate; param?: string; detail: string; searched: number }
+
+/** Character classes every string parameter the program reads must show in some example value (gate 0b). */
+export const DERIVE_STRING_CLASSES: readonly (readonly [string, RegExp])[] = [
+  ["an upper-case letter", /[A-Z]/],
+  ["a lower-case letter", /[a-z]/],
+  ["a digit", /[0-9]/],
+  ["a space between other characters", /\S \S/],
+  ["a leading or trailing space", /^ | $/],
+  ["punctuation", /[^A-Za-z0-9 ]/],
+];
+
+const walk = (n: DeriveNode, f: (x: DeriveNode) => void): void => {
+  f(n);
+  switch (n.op) {
+    case "add": case "sub": case "mul": case "cat": case "and": case "or": case "eq": case "le": walk(n.a, f); walk(n.b, f); break;
+    case "sq": case "not": case "min": case "max": walk(n.a, f); break;
+    case "if": walk(n.c, f); walk(n.t, f); walk(n.e, f); break;
+    default: break;
+  }
+};
+/** Parameter indices a program reads. */
+export function paramsRead(n: DeriveNode): Set<number> {
+  const s = new Set<number>();
+  walk(n, (x) => { if (x.op === "param" || x.op === "range" || x.op === "empty") s.add(x.i); });
+  return s;
+}
+
+/**
+ * The gates, in order (each names the parameter / edge the examples do not show):
+ *  unread  every parameter the program does not read: two examples that differ only in it give the same result;
+ *  chars   every string parameter it reads: the example values include an upper-case and a lower-case letter, a
+ *          digit, an inner space, a leading or trailing space and punctuation (a verbatim copy or an emptiness test
+ *          is only shown on the characters a case change, trim or escape would alter);
+ *  edge    (1) both sides of every threshold: p <= c needs examples at c and c + 1, c <= p at c - 1 and c, a range
+ *          at both of its ends, p == c at c - 1, c and c + 1 (and p == q / p <= q at the same offsets), each pair
+ *          with the other arguments equal and different results; an emptiness test needs "" and a non-empty value;
+ *  far     (1) every parameter compared with constants has an example at least DERIVE_FAR past its last constant
+ *          and one at least DERIVE_FAR before its first (the regions past the outermost edges, true or false, are
+ *          shown, not assumed); two compared parameters: examples with p - q >= DERIVE_FAR and <= -DERIVE_FAR;
+ *  branch / cap (2) each branch of every conditional, and each side of every min / max cap (kept and capped), is
+ *          reached by at least DERIVE_MIN_REACH examples;
+ *  rival   (3) a search DERIVE_RIVAL_EXTRA sizes past the fit with EVERY example value as a constant finds no other program that fits every example but differs from the fit on a
+ *          probe inside the examples' range (neighbour probes and far probes 0, +-1, edges +-10 / +-100, cross
+ *          products); outside that range gate `far` applies. rival_budget: that search ran out of budget.
+ */
+export function gateProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET): DeriveGateProblem | null {
+  const { params, examples } = input;
+  const names = params.map((p) => p.name);
+  const expr = compileProgram(program, names);
+  const rest = (a: readonly DeriveValue[], skip: readonly number[]) => keyOf(a.filter((_, j) => !skip.includes(j)));
+  const out = (e: DeriveExample) => keyOf([e.out]);
+  const fail = (gate: DeriveGate, detail: string, param?: number): DeriveGateProblem => ({ gate, detail, searched: 0, ...(param !== undefined ? { param: names[param]! } : {}) });
+  const read = paramsRead(program);
+  // unread
+  for (let i = 0; i < params.length; i++) {
+    if (read.has(i)) continue;
+    const shown = examples.some((e, x) => examples.some((f, y) => y > x && rest(e.args, [i]) === rest(f.args, [i]) && keyOf([e.args[i]!]) !== keyOf([f.args[i]!]) && out(e) === out(f)));
+    if (!shown) return fail("unread", `${names[i]} is not read by \`${expr}\`, but no two examples differ only in ${names[i]} and give the same result; add such a pair`, i);
+  }
+  // chars
+  for (const i of [...read].sort()) {
+    if (params[i]!.type !== "string") continue;
+    const vals = examples.map((e) => e.args[i] as string);
+    const missing = DERIVE_STRING_CLASSES.filter(([, re]) => !vals.some((v) => re.test(v))).map(([d]) => d);
+    if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i);
+  }
+  // edge (1)
+  const byVal = (i: number, v: DeriveValue) => examples.filter((e) => e.args[i] === v);
+  /** Two examples, same other arguments, argument i = x and = y, different results. */
+  const pairDiffers = (i: number, x: DeriveValue, y: DeriveValue) => byVal(i, x).some((e) => byVal(i, y).some((f) => rest(e.args, [i]) === rest(f.args, [i]) && out(e) !== out(f)));
+  /** Two examples differing by 1 in parameter i or j only (others equal), with p_i - p_j = d0 and d1, different results. */
+  const deltaDiffers = (i: number, j: number, d0: number, d1: number) => examples.some((e) => examples.some((f) => {
+    const de = (e.args[i] as number) - (e.args[j] as number), df = (f.args[i] as number) - (f.args[j] as number);
+    if (de !== d0 || df !== d1 || out(e) === out(f)) return false;
+    return (rest(e.args, [i]) === rest(f.args, [i])) || (rest(e.args, [j]) === rest(f.args, [j]));
+  }));
+  let edgeFail: DeriveGateProblem | null = null;
+  const needPair = (i: number, x: number, y: number) => { if (!edgeFail && !pairDiffers(i, x, y)) edgeFail = fail("edge", `${names[i]}: the edge between ${x} and ${y} in \`${expr}\` is not shown; add examples ${names[i]} = ${x} and ${names[i]} = ${y} (other arguments equal) with their different results`, i); };
+  const needDelta = (i: number, j: number, d0: number, d1: number) => { if (!edgeFail && !deltaDiffers(i, j, d0, d1)) edgeFail = fail("edge", `${names[i]} - ${names[j]}: the edge between ${d0} and ${d1} in \`${expr}\` is not shown; add two examples with ${names[i]} - ${names[j]} = ${d0} and ${d1} (one argument changed by 1) with different results`, i); };
+  walk(program, (n) => {
+    if (n.op === "eq" || n.op === "le") {
+      const a = n.a, b = n.b;
+      if (a.op === "param" && b.op === "lit" && typeof b.v === "number") { if (n.op === "eq") { needPair(a.i, b.v - 1, b.v); needPair(a.i, b.v, b.v + 1); } else needPair(a.i, b.v, b.v + 1); }
+      else if (a.op === "lit" && b.op === "param" && typeof a.v === "number") needPair(b.i, a.v - 1, a.v);
+      else if (a.op === "param" && b.op === "param") { if (n.op === "eq") { needDelta(a.i, b.i, -1, 0); needDelta(a.i, b.i, 0, 1); } else needDelta(a.i, b.i, 0, 1); }
+    } else if (n.op === "range") { needPair(n.i, n.lo - 1, n.lo); needPair(n.i, n.hi, n.hi + 1); }
+    else if (n.op === "empty") {
+      const i = n.i;
+      if (!edgeFail && !examples.some((e) => e.args[i] === "" && examples.some((f) => f.args[i] !== "" && rest(e.args, [i]) === rest(f.args, [i]) && out(e) !== out(f))))
+        edgeFail = fail("edge", `${names[i]}: the test for an empty ${names[i]} in \`${expr}\` is not shown; add an example with ${names[i]} empty and one with it non-empty (other arguments equal) giving different results`, i);
+    }
+  });
+  if (edgeFail) return edgeFail;
+  // far (1): what the program does past its outermost edges is shown, not assumed.
+  const lits = new Map<number, number[]>(), deltas = new Map<string, [number, number]>();
+  walk(program, (n) => {
+    const add = (i: number, ...cs: number[]) => lits.set(i, [...(lits.get(i) ?? []), ...cs]);
+    if ((n.op === "eq" || n.op === "le") && n.a.op === "param" && n.b.op === "lit" && typeof n.b.v === "number") add(n.a.i, n.b.v);
+    else if (n.op === "le" && n.a.op === "lit" && n.b.op === "param" && typeof n.a.v === "number") add(n.b.i, n.a.v);
+    else if (n.op === "range") add(n.i, n.lo, n.hi);
+    else if ((n.op === "eq" || n.op === "le") && n.a.op === "param" && n.b.op === "param") deltas.set(`${n.a.i},${n.b.i}`, [n.a.i, n.b.i]);
+  });
+  for (const [i, cs] of [...lits].sort((x, y) => x[0] - y[0])) {
+    const hi = Math.max(...cs) + DERIVE_FAR, lo = Math.min(...cs) - DERIVE_FAR;
+    if (!examples.some((e) => (e.args[i] as number) >= hi))
+      return fail("far", `${names[i]}: \`${expr}\` has its last edge at ${hi - DERIVE_FAR}, but no example has ${names[i]} >= ${hi}; add one so the result past every edge is shown, not assumed`, i);
+    if (!examples.some((e) => (e.args[i] as number) <= lo))
+      return fail("far", `${names[i]}: \`${expr}\` has its first edge at ${lo + DERIVE_FAR}, but no example has ${names[i]} <= ${lo}; add one so the result before every edge is shown, not assumed`, i);
+  }
+  for (const [i, j] of deltas.values()) {
+    const d = (e: DeriveExample) => (e.args[i] as number) - (e.args[j] as number);
+    if (!examples.some((e) => d(e) >= DERIVE_FAR) || !examples.some((e) => d(e) <= -DERIVE_FAR))
+      return fail("far", `${names[i]} - ${names[j]}: \`${expr}\` compares them, but no examples have ${names[i]} - ${names[j]} >= ${DERIVE_FAR} and <= -${DERIVE_FAR}; add them`, i);
+  }
+  // branch / cap (2)
+  const hits = new Map<DeriveNode, [number, number]>();
+  for (const e of examples) evalProgram(program, e.args, (n, side) => { const h = hits.get(n) ?? [0, 0]; h[side]++; hits.set(n, h); });
+  let reachFail: DeriveGateProblem | null = null;
+  walk(program, (n) => {
+    if (reachFail) return;
+    if (n.op !== "if" && n.op !== "min" && n.op !== "max") return;
+    const [s0, s1] = hits.get(n) ?? [0, 0];
+    if (s0 >= DERIVE_MIN_REACH && s1 >= DERIVE_MIN_REACH) return;
+    const sub = compileProgram(n, names);
+    reachFail = n.op === "if"
+      ? fail("branch", `\`${sub}\`: its condition is true for ${s0} example(s) and false for ${s1}; each branch needs at least ${DERIVE_MIN_REACH} examples`)
+      : fail("cap", `\`${sub}\`: ${s0} example(s) below the cap ${n.c} and ${s1} past it; each side needs at least ${DERIVE_MIN_REACH} examples`);
+  });
+  if (reachFail) return reachFail;
+  // rival (3)
+  return rivalProblem(input, program, size, budget);
+}
+
+/** Gate 3: the rival search (see gateProblem). */
+export function rivalProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET): DeriveGateProblem | null {
+  const { params, examples } = input;
+  const names = params.map((p) => p.name);
+  const span = params.map((p, i) => (p.type === "number" ? [Math.min(...examples.map((e) => e.args[i] as number)), Math.max(...examples.map((e) => e.args[i] as number))] : null));
+  const inside = (a: readonly DeriveValue[]) => span.every((s, i) => !s || ((a[i] as number) >= s[0]! && (a[i] as number) <= s[1]!));
+  const exKeys = new Set(examples.map((e) => keyOf(e.args)));
+  const probes = dedupePoints([...probeSet(params, examples), ...farProbes(params, examples)]).filter((a) => inside(a) && !exKeys.has(keyOf(a)));
+  const points = [...examples.map((e) => e.args), ...probes];
+  const mine = points.map((a) => evalProgram(program, a) ?? null);
+  const edges = edgesByParam(params, examples);
+  const consts = params.map((p, i) => (p.type === "number" ? [...new Set([...edges[i]!, ...examples.map((e) => e.args[i] as number)])].sort((a, b) => a - b) : []));
+  const caps = repeatedResults(examples);
+  let rival: Prog | null = null;
+  const r = runSearch({
+    params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples),
+    maxSize: size + DERIVE_RIVAL_EXTRA, budget,
+    stop: () => false,
+    onFit: (p) => { for (let k = examples.length; k < points.length; k++) if (p.vals[k] !== null && mine[k] !== null && p.vals[k] !== mine[k]) { rival = p; return true; } return false; },
+  });
+  if (rival) {
+    const rv = rival as Prog;
+    let k = examples.length;
+    while (!(rv.vals[k] !== null && mine[k] !== null && rv.vals[k] !== mine[k])) k++;
+    const pt = points[k]!;
+    return { gate: "rival", searched: r.searched, detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}; add an example there` };
+  }
+  if (r.overBudget) return { gate: "rival_budget", searched: r.searched, detail: `the rival search (every example value as a constant, up to size ${size + DERIVE_RIVAL_EXTRA}) ran out of budget after ${r.searched} programs` };
+  return null;
+}
+
+/** The far-probe output table of a program (for the candidate's review note): at most `limit` rows. */
+export function farProbeTable(program: DeriveNode, params: readonly DeriveParam[], examples: readonly DeriveExample[], limit = 24): { args: DeriveValue[]; out: DeriveValue | undefined }[] {
+  return farProbes(params, examples).slice(0, limit).map((args) => ({ args, out: evalProgram(program, args) }));
 }

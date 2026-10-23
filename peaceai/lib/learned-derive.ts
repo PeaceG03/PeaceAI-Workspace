@@ -19,6 +19,7 @@
 // test. The program is determined by the examples alone; the header line picks the module, name and signature.
 import { createHash } from "node:crypto";
 import { compileProgram, deriveProgram, derivedExprProblem, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
+import { allowedName } from "./refusal-reason.ts";
 import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./learned-function.ts";
 import { importStyle } from "./learned-test.ts";
 import ts from "typescript";
@@ -98,6 +99,19 @@ function lexValues(text: string): { values: DeriveValue[]; out: DeriveValue } | 
   return g % 2 === 1 ? { values, out } : null;
 }
 
+/**
+ * Names a parameter or the function may never take (refused as derive_reserved_name): JavaScript / TypeScript
+ * reserved and strict-mode words, `eval` and `arguments`, the literal names the derived body uses, and globals a
+ * body could reach. A clean refusal, not a module that fails to parse or shadows something.
+ */
+export const DERIVE_RESERVED_NAMES: ReadonlySet<string> = new Set(
+  ("break case catch class const continue debugger default delete do else enum export extends false finally for function " +
+    "if import in instanceof new null return super switch this throw true try typeof var void while with " +
+    "implements interface let package private protected public static yield await async of " +
+    "eval arguments undefined NaN Infinity globalThis window self process require module exports " +
+    "any boolean number string symbol bigint never unknown object type declare namespace abstract as is keyof readonly infer satisfies").split(" "),
+);
+
 export function parseDeriveTask(trigger: string, objective: string): DeriveParse {
   const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
   const re = new RegExp(trigger, "i");
@@ -109,9 +123,11 @@ export function parseDeriveTask(trigger: string, objective: string): DeriveParse
   for (const part of g.sig.split(",").map((p) => p.trim())) {
     const m = new RegExp(String.raw`^(${NAME}): ?(${TYPE})$`).exec(part);
     if (!m || params.some((p) => p.name === m[1]) || m[1] === g.fn || PROTECTED_NAMES.test(m[1]!)) return { reason: "derive_signature" };
+    if (DERIVE_RESERVED_NAMES.has(m[1]!)) return { reason: "derive_reserved_name" };
     params.push({ name: m[1]!, type: m[2] as DeriveType });
   }
   if (PROTECTED_NAMES.test(g.fn)) return { reason: "derive_signature" };
+  if (DERIVE_RESERVED_NAMES.has(g.fn)) return { reason: "derive_reserved_name" };
   const bIdx = lines.map((l, i) => (BEHAVIOR_HEAD.test(l) ? i : -1)).filter((i) => i >= 0);
   const eIdx = lines.map((l, i) => (EXAMPLES_HEAD.test(l) ? i : -1)).filter((i) => i >= 0);
   if (bIdx.length !== 1 || eIdx.length !== 1 || !(heads[0]! < bIdx[0]! && bIdx[0]! < eIdx[0]!)) return { reason: "derive_sections" };
@@ -153,7 +169,12 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   // PeaceAI's own search writes the body from the examples alone; nothing in the issue is copied into it and the
   // behavior prose is not an input.
   const r = deriveProgram({ params: task.params, ret: task.ret, examples: task.examples });
-  if (!r.ok) return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
+  if (!r.ok) {
+    // derive_under_specified names the gate and, when it passes the refusal-line allowlist, the parameter: e.g.
+    // `derive_under_specified_far: status` (the full sentence, with the edge to add, is in `detail`).
+    if (r.reason === "derive_under_specified") return { reason: `derive_under_specified_${r.gate}${r.param && allowedName(r.param) ? `: ${r.param}` : ""}`, detail: r.detail };
+    return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
+  }
   const names = task.params.map((p) => p.name);
   const expr = compileProgram(r.fit.program, names);
   if (expr.length > DERIVE_MAX_EXPR_CHARS) return { reason: "derive_expr_size" };
