@@ -36,6 +36,8 @@
 // short list of pure globals): it uses none of the globals. derivedExprProblem re-checks it on the TypeScript AST
 // (used by Job A and Job B).
 // Reusable: #489 (existing-function edit) can call deriveProgram for a behavior-only statement change.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 export type DeriveType = "number" | "string" | "boolean";
@@ -71,7 +73,7 @@ export type DeriveNode =
 export interface DeriveFit { program: DeriveNode; size: number; expr: string }
 export type DeriveResult =
   | { ok: true; fit: DeriveFit; probes: DeriveValue[][]; searched: number }
-  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; questions?: DeriveQuestion[]; searched: number };
+  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified" | "derive_unevidenced_form"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; questions?: DeriveQuestion[]; forms?: DeriveForm[]; searched: number };
 
 export const DERIVE_MAX_SIZE = 13;
 export const DERIVE_BUDGET = 4_000_000;
@@ -621,6 +623,102 @@ const dedupePoints = (pts: readonly DeriveValue[][]): DeriveValue[][] => {
  * otherwise derive_under_specified, naming what the examples do not show.
  */
 export function deriveProgram(input: DeriveInput): DeriveResult {
+  const r = deriveCandidate(input);
+  if (!r.ok) return r;
+  // Round 3 (Auditor ruling on 6f1ea5e): never emit a program that uses a form fewer than DERIVE_FORM_BAR replaying
+  // upstream evidence entries show (counts read from the evidence file, the single source; see evidenceFormCounts).
+  const forms = unevidencedForms(r.fit.program);
+  if (forms.length === 0) return r;
+  const counts = evidenceFormCounts();
+  return {
+    ok: false, reason: "derive_unevidenced_form", forms, searched: r.searched,
+    detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries)`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
+  };
+}
+
+// ---- Forms and their upstream evidence (#491 round 3, Auditor ruling: narrow the rule to evidenced forms) ----
+
+/**
+ * The gated DSL forms. A program uses a form when it contains one of the form's nodes:
+ *   cap     min(K, a) / max(K, a)                 (compiled to a conditional against a constant)
+ *   ternary if(G, x, y)                           (a general conditional; caps are counted as cap, not here)
+ *   strcat  a + b on strings
+ *   eq      p === C, p === q, s is empty          (compiled to ===)
+ *   or      a || b
+ *   range   lo <= p <= hi, a && b                 (compiled to &&)
+ *   square  sq(a), and a * a of one same subprogram
+ * The base vocabulary (parameters, the constants, + - * on numbers, <=, !) is not a gated form.
+ */
+export const DERIVE_FORMS = ["cap", "ternary", "strcat", "eq", "or", "range", "square"] as const;
+export type DeriveForm = (typeof DERIVE_FORMS)[number];
+/** Fewest replaying upstream evidence entries a form needs before PeaceAI emits a program using it. */
+export const DERIVE_FORM_BAR = 10;
+export const DERIVE_FORM_TEXT: Readonly<Record<DeriveForm, string>> = {
+  cap: "a value capped at a constant", ternary: "a general if / else", strcat: "string concatenation", eq: "an equality test",
+  or: "an || of two tests", range: "an && of two tests or a range check", square: "a value times itself",
+};
+/** The evidence file (peaceai/rules/proposals/m99-derive-from-behavior-evidence.json): the single source of form counts. */
+export const DERIVE_EVIDENCE_PATH = fileURLToPath(new URL("../rules/proposals/m99-derive-from-behavior-evidence.json", import.meta.url));
+
+/** The gated forms a program uses (sorted in DERIVE_FORMS order). */
+export function formsOf(n: DeriveNode): DeriveForm[] {
+  const s = new Set<DeriveForm>();
+  const walk = (x: DeriveNode): void => {
+    switch (x.op) {
+      case "min": case "max": s.add("cap"); walk(x.a); return;
+      case "if": s.add("ternary"); walk(x.c); walk(x.t); walk(x.e); return;
+      case "cat": s.add("strcat"); walk(x.a); walk(x.b); return;
+      case "eq": s.add("eq"); walk(x.a); walk(x.b); return;
+      case "empty": s.add("eq"); return;
+      case "or": s.add("or"); walk(x.a); walk(x.b); return;
+      case "and": s.add("range"); walk(x.a); walk(x.b); return;
+      case "range": s.add("range"); return;
+      case "sq": s.add("square"); walk(x.a); return;
+      case "mul": if (JSON.stringify(x.a) === JSON.stringify(x.b)) s.add("square"); walk(x.a); walk(x.b); return;
+      case "add": case "sub": case "le": walk(x.a); walk(x.b); return;
+      case "not": walk(x.a); return;
+      case "param": case "int": case "lit": return;
+    }
+  };
+  walk(n);
+  return DERIVE_FORMS.filter((f) => s.has(f));
+}
+
+/**
+ * Entries per form in the evidence file: each example records the forms of the program it replays to (`forms`; the
+ * evidence test re-derives every example and checks the recorded forms equal formsOf of the replayed program). Fail
+ * closed: an unreadable or malformed file, or an entry with a form name outside DERIVE_FORMS, counts nothing.
+ */
+export function evidenceFormCounts(text?: string): Record<DeriveForm, number> {
+  const counts = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;
+  if (text === undefined && cachedCounts) return { ...cachedCounts };
+  try {
+    const ev = JSON.parse(text ?? readFileSync(DERIVE_EVIDENCE_PATH, "utf8")) as { examples?: unknown };
+    if (!Array.isArray(ev.examples)) throw new Error("no examples");
+    for (const e of ev.examples as { forms?: unknown }[]) {
+      const fs = e && Array.isArray(e.forms) ? (e.forms as unknown[]) : null;
+      if (!fs || !fs.every((f) => typeof f === "string" && (DERIVE_FORMS as readonly string[]).includes(f))) continue;
+      for (const f of new Set(fs as DeriveForm[])) counts[f]++;
+    }
+  } catch {
+    for (const f of DERIVE_FORMS) counts[f] = 0;
+  }
+  if (text === undefined) cachedCounts = { ...counts };
+  return counts;
+}
+let cachedCounts: Record<DeriveForm, number> | undefined;
+
+/** The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted). */
+export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<DeriveForm, number>> = evidenceFormCounts()): DeriveForm[] {
+  return formsOf(program).filter((f) => !((counts[f] ?? 0) >= DERIVE_FORM_BAR));
+}
+
+/**
+ * The search and the witness gates WITHOUT the form gate: for replaying and mining upstream evidence only (the
+ * evidence test, the miners). Nothing that emits code calls it; Job A, the edit hook and the review note use
+ * deriveProgram (m99-derive-from-behavior.test.ts checks no lib / bin module names it).
+ */
+export function deriveCandidate(input: DeriveInput): DeriveResult {
   const problem = examplesProblem(input);
   if (problem) return { ok: false, reason: "derive_examples", detail: problem, searched: 0 };
   const maxSize = Math.min(input.maxSize ?? DERIVE_MAX_SIZE, DERIVE_MAX_SIZE);

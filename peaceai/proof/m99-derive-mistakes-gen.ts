@@ -3,11 +3,14 @@
 // narrow generator found at d5ac588, re-found with peaceai/proof/m99-derive-ambiguity.ts narrow on that head).
 // Builds peaceai/test/m99-derive-mistakes.json: each Auditor counterexample, replayed on the current engine,
 // with the ask loop answered from the hidden truth (here only, never stored as code in the ledger).
+// Round 4 (Auditor ruling on 6f1ea5e): replayed through deriveCandidate (the search and the witness gates); the form
+// gate (a form with fewer than 10 replaying upstream entries is never emitted) is recorded per accepted program as
+// formGate (the refused forms; [] = emitted). Known limits Auditor accepted as disclosed carry `disclosed`.
 import { writeFileSync } from "node:fs";
 const W = process.env.W ?? new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
-const { deriveProgram, evalProgram } = await import(`${W}/peaceai/lib/derive.ts`);
+const { deriveCandidate: deriveProgram, evalProgram, unevidencedForms } = await import(`${W}/peaceai/lib/derive.ts`);
 type V = number | boolean | string;
-type C = { id: string; source: string; names: string[]; types?: string[]; ret: "number" | "boolean" | "string"; rows: V[][]; wrong: string; at: V[]; why: string; truth?: (a: any[]) => V; grid?: V[][]; limit?: string };
+type C = { id: string; source: string; names: string[]; types?: string[]; ret: "number" | "boolean" | "string"; rows: V[][]; wrong: string; at: V[]; why: string; truth?: (a: any[]) => V; grid?: V[][]; limit?: string; disclosed?: string };
 const g1 = (lo = -1000, hi = 1000) => { const g: V[][] = []; for (let n = lo; n <= hi; n++) g.push([n]); return g; };
 const g2 = (k: number) => { const g: V[][] = []; for (let a = -60; a <= 60; a += 2) for (let b = -60; b <= 60; b += 2) g.push([a, b]); for (let b = -60; b <= 60; b++) g.push([k, b]); return g; };
 const S1 = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [600, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]];
@@ -55,6 +58,13 @@ cases.push({ id: "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k", source: `${C
 cases.push({ id: "m100-kind-floor-clamp-sparse-k-p0-p0-k", source: `${C9}, task 25685 (floor_clamp/sparse | K <= p0 ? p0 : K, 7 like it)`, names: ["n"], ret: "number", rows: [[335, 335], [191, 191], [-4, 46], [-54, 46]], wrong: "46 <= n ? n : 46", at: [336], why: "a random handful of the examples, none above the cap 335", truth: ([n]) => Math.max(46, Math.min(335, n)), grid: g1(-300, 600), limit: "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there" });
 cases.push({ id: "m100-kind-eq-or-ge-sparse-k-p0", source: `${C9}, task 14322 (eq_or_ge/sparse | K <= p0, 1 like it)`, names: ["n"], ret: "boolean", rows: [[537, true], [487, true], [339, false], [389, false], [390, true], [239, false], [437, true]], wrong: "390 <= n", at: [391], why: "a random handful of the examples: nothing between 390 and 437 was shown", truth: ([n]) => n === 390 || n >= 437, grid: g1(0, 800), limit: "known limit: the false band 391 to 436 lies past the program's last edge between examples under DERIVE_FAR (100) apart; holding open stretches to the bounded-region eighth refuses S1 and most fixtures (tried in round 3 and reverted), so the review note's table is the check here" });
 cases.push({ id: "m100-kind-s1-shape-sparse-k-p0", source: `${C9}, task 34225 (s1_shape/sparse | K <= p0, 1 like it)`, names: ["status"], ret: "boolean", rows: [[284, false], [359, false], [417, true], [389, true], [360, true], [474, true], [182, false], [282, false]], wrong: "360 <= status", at: [283], why: "a random handful of the examples: 283 and everything past 474 unshown", truth: ([s]) => s === 283 || (360 <= s && s <= 474), grid: g1(0, 800), limit: "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example" });
+// Round 4: seed 101 (Auditor, 6f1ea5e), task 465: the same hidden-island class as t24, past the region gate.
+cases.push({ id: "seed101-island-hidden-island-t465", source: "Auditor #491 round 3 (m100 derive-practice seed 101 vs m99 6f1ea5e), task 465 (island/hidden_island)", names: ["n"], ret: "boolean", rows: [[-46, true], [4, true], [54, true], [104, true], [105, false], [114, false], [122, false], [131, false], [139, false], [145, false], [154, false], [163, false], [171, false], [180, false], [181, true], [231, true], [281, true], [331, true]], wrong: "!(105 <= n && n <= 180)", at: [140], why: "the false examples step 8 or 9 apart and skip 140..144, so the true band there was never seen", truth: ([n]) => n <= 104 || (140 <= n && n <= 144) || n >= 181, grid: g1(-300, 600), limit: "known limit: a band narrower than the gaps between the examples (140..144 between 139 and 145) is invisible to them; no example-only check can see it, and the review note shows the derived expression", disclosed: "disclosed limit (Auditor #491 round 3: seed 101, t465); not counted against seed 100's residual" });
+// Round 4 upstream scan (horizon-games/three-text-renderer isPowerOfTwo, x > 0 && (x & (x - 1)) === 0; misode/deepslate's
+// variant gives 0 <= x && x <= 4): the same class, isolated true points past the examples' gaps. Not evidence.
+cases.push({ id: "scan-r4-is-power-of-two", source: "upstream scan, round 4 (horizon-games/three-text-renderer@3e51530 isPowerOfTwo, MIT; also misode/deepslate@c33b4a6)", names: ["x"], ret: "boolean", rows: [[-1, false], [0, false], [2, true], [10, false], [100, false], [1000, false], [1, true], [6, false], [4, true], [5, false], [-99, false], [550, false], [325, false], [775, false], [212, false], [437, false], [662, false], [887, false], [268, false], [493, false], [718, false], [943, false], [156, false], [381, false], [606, false], [831, false]], wrong: "1 <= x && x <= 4", at: [8], why: "the powers of two above 4 (8, 16, ..., 512) are isolated true points between the examples, none of them shown", truth: ([x]) => x > 0 && (x & (x - 1)) === 0, grid: g1(-300, 1200), limit: "known limit: isolated true points between the examples (the hidden-island class); wrong on 9 held-out inputs of the scan's grid; the review note shows the derived expression", disclosed: "disclosed limit (round 4 upstream scan); excluded from the evidence (held-out wrong)" });
+const ACCEPTED = "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)";
+for (const c of cases) if (["r1-s1-drop-429", "m100-floor-clamp-past", "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k", "m100-kind-floor-clamp-sparse-k-p0-p0-k", "m100-kind-eq-or-ge-sparse-k-p0", "m100-kind-s1-shape-sparse-k-p0"].includes(c.id)) c.disclosed = ACCEPTED;
 
 // M101: the template-joins miner (an engine copy with the tmpl/str forms on and the digits gate at 3 digits) derived
 // ("" + n) for OrangeproAI/orangepro-mcp src/local/viz/reportTheme.ts fmt, n.toLocaleString("en-US"): wrong at 1230.
@@ -78,15 +88,16 @@ for (const c of cases) {
   const t0 = Date.now();
   let r: any = deriveProgram(mk(c.rows));
   const e: any = { id: c.id, source: c.source, params: c.names, ...typed, ret: c.ret, examples: c.rows, wrongProgram: c.wrong, disagreeAt: c.at, correct: c.truth ? c.truth(c.at as number[]) : null, why: c.why };
-  if (c.limit && r.ok) { e.correct = c.truth ? c.truth(c.at as any[]) : true; e.expected = { outcome: "known-limit", program: r.ok ? r.fit.expr : null, note: c.limit }; out.push(e); console.log(c.id, "limit", r.ok && r.fit.expr); continue; }
-  if (r.ok) { const bad = c.grid!.find((a) => evalProgram(r.fit.program, a) !== c.truth!(a as any[])); e.expected = { outcome: "derive", program: r.fit.expr, rightOnGrid: !bad }; out.push(e); console.log(c.id, "DERIVED", r.fit.expr, bad ? `WRONG ${bad}` : "right"); continue; }
+  if (c.disclosed) e.disclosed = c.disclosed;
+  if (c.limit && r.ok) { e.correct = c.truth ? c.truth(c.at as any[]) : true; e.expected = { outcome: "known-limit", program: r.ok ? r.fit.expr : null, note: c.limit, formGate: unevidencedForms(r.fit.program) }; out.push(e); console.log(c.id, "limit", r.ok && r.fit.expr); continue; }
+  if (r.ok) { const bad = c.grid!.find((a) => evalProgram(r.fit.program, a) !== c.truth!(a as any[])); e.expected = { outcome: "derive", program: r.fit.expr, rightOnGrid: !bad, formGate: unevidencedForms(r.fit.program) }; out.push(e); console.log(c.id, "DERIVED", r.fit.expr, bad ? `WRONG ${bad}` : "right"); continue; }
   const first = { reason: r.reason, gate: r.gate ?? null, askAt: (r.questions ?? []).map((q: any) => q.at) };
   const rows = [...c.rows]; const answers: V[][] = []; let rounds = 0;
   while (!r.ok && r.questions?.length && rounds < 8) {
     for (const q of r.questions) { const row = [...q.at, c.truth!(q.at)]; rows.push(row); answers.push(row); }
     rounds++; r = deriveProgram(mk(rows));
   }
-  const after = r.ok ? { program: r.fit.expr, rightOnGrid: !c.grid!.find((a) => evalProgram(r.fit.program, a) !== c.truth!(a as any[])) } : { refused: r.reason, gate: r.gate ?? null };
+  const after = r.ok ? { program: r.fit.expr, rightOnGrid: !c.grid!.find((a) => evalProgram(r.fit.program, a) !== c.truth!(a as any[])), formGate: unevidencedForms(r.fit.program) } : { refused: r.reason, gate: r.gate ?? null };
   if ("rightOnGrid" in after && !after.rightOnGrid) {
     const bad = c.grid!.find((a) => evalProgram(r.fit.program, a) !== c.truth!(a as any[]))!;
     (after as any).wrongAt = bad; (after as any).correctThere = c.truth!(bad as number[]);
@@ -95,4 +106,4 @@ for (const c of cases) {
   e.expected = { outcome: "refuse-and-ask", ...first, answers, rounds, after };
   out.push(e); console.log(c.id, JSON.stringify(first), rounds, JSON.stringify(after), Date.now() - t0, "ms");
 }
-writeFileSync(process.env.OUT ?? `${W}/peaceai/test/m99-derive-mistakes.json`, JSON.stringify({ schema: "peaceai-derive-mistakes:v1", entries: out }, null, 1) + "\n");
+writeFileSync(process.env.OUT ?? `${W}/peaceai/test/m99-derive-mistakes.json`, JSON.stringify({ schema: "peaceai-derive-mistakes:v1", note: "The residual count of the practice generator reported at 6f1ea5e (11 blocking) describes seed 100 only; other seeds find other wrong picks (seed 101: seed101-island-hidden-island-t465).", entries: out }, null, 1) + "\n");

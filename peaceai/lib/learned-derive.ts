@@ -178,6 +178,9 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
     // `derive_under_specified_far: status` (the full sentence, with the edge to add, is in `detail`).
     // Round 3 (Peace): the refusal also asks, at the inputs where programs fitting every example disagree.
     const qs = r.questions?.length ? { questions: r.questions } : {};
+    // Round 3 (Auditor): a form with fewer than DERIVE_FORM_BAR replaying upstream examples names the form(s), e.g.
+    // `derive_unevidenced_form: eq,or` (form names are lowercase words, so they pass the refusal-line allowlist).
+    if (r.reason === "derive_unevidenced_form") return { reason: `derive_unevidenced_form${r.forms?.length && r.forms.every(allowedName) ? `: ${r.forms.join(",")}` : ""}`, ...(r.detail ? { detail: r.detail } : {}), ...qs };
     if (r.reason === "derive_under_specified") return { reason: `derive_under_specified_${r.gate}${r.param && allowedName(r.param) ? `: ${r.param}` : ""}`, detail: r.detail, ...qs };
     return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}), ...qs };
   }
