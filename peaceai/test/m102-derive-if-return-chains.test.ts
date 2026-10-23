@@ -51,6 +51,53 @@ test("order gate: the strict look-alike needs DERIVE_MIN_REACH equal pairs; each
   }
 });
 
+// Auditor #495 B1: one test per look-alike, each with its own copy of the order, so deleting (or weakening) any
+// DERIVE_ORDER_LOOKALIKES entry fails a test. Examples are the truth `a <= b` at every pair of W where the look-alike
+// agrees with code-unit order: the other look-alikes are each ruled out there, this one is not, so the engine must
+// refuse naming it and ask at a pair where it differs (natural order: asks at ["10", "9"]); with all of W it derives.
+const LOOKALIKE_COPIES: [string, (a: string, b: string) => boolean][] = [
+  ["strict order (<, not <=): equal values", (a, b) => a < b],
+  ["case-insensitive order", (a, b) => a.toLowerCase() <= b.toLowerCase()],
+  ["natural (numeric) order", (a, b) => {
+    const ca = a.match(/\d+|\D+/g) ?? [], cb = b.match(/\d+|\D+/g) ?? [];
+    for (let k = 0; k < Math.min(ca.length, cb.length); k++) {
+      const x = ca[k]!, y = cb[k]!;
+      if (x === y) continue;
+      if (/^\d/.test(x) && /^\d/.test(y) && Number(x) !== Number(y)) return Number(x) < Number(y);
+      return x < y;
+    }
+    return ca.length <= cb.length;
+  }],
+  ["shorter-first order", (a, b) => (a.length !== b.length ? a.length < b.length : a <= b)],
+  ["first-character order", (a, b) => a.slice(0, 1) <= b.slice(0, 1)],
+];
+const W: [string, string][] = [["a", "B"], ["B", "a"], ["Q", "q"], ["10", "9"], ["9", "10"], ["2", "10"], ["b", "aa"], ["aa", "b"], ["zz", "z"], ["ac", "ab"], ["ab", "ac"], ["x", "x"], ["m", "m"], ["ab", "ab"], ["a", "b"], ["b", "a"], ["", "a"], ["a", ""], [" Ab 9. ", "B"], ["B", " Ab 9. "], ["1", "2"], ["2", "1"], ["x.y", "x y"], ["2026-09-30", "2026-10-23"], [" Ab 9. ", "Zb 9. x"], ["Zb 9. x", " Ab 9. "], ["9a", "10"], ["10", "9a"]];
+const LE_INPUT = (pairs: [string, string][]): DeriveInput => ({ params: P, ret: "boolean", examples: pairs.map(([a, b]) => ({ args: [a, b], out: a <= b })) });
+
+test("order look-alikes: the list is exactly the five tested below, in order", () => {
+  assert.deepEqual(DERIVE_ORDER_LOOKALIKES.map((L) => L.name), LOOKALIKE_COPIES.map(([n]) => n));
+  assert.equal(DERIVE_ORDER_LOOKALIKES[0]!.need, DERIVE_MIN_REACH);
+  for (const L of DERIVE_ORDER_LOOKALIKES.slice(1)) assert.equal(L.need, 1, L.name);
+  const all = deriveCandidate(LE_INPUT(W));
+  assert.ok(all.ok, JSON.stringify(all).slice(0, 300));
+  assert.equal(compileProgram(all.fit.program, ["a", "b"]), "a <= b");
+});
+
+for (const [name, le] of LOOKALIKE_COPIES) {
+  test(`order look-alike "${name}": examples that agree with it are refused, asking where it differs`, () => {
+    const kept = W.filter(([a, b]) => le(a, b) === (a <= b));
+    assert.ok(kept.length < W.length, "W has a witness for it");
+    const p = orderProblem(LE_INPUT(kept), { op: "sle", i: 0, j: 1 });
+    assert.ok(p && p.gate === "order" && p.detail.includes(name), p?.detail);
+    assert.ok(p.rivals!.some((r) => le(r.at[0] as string, r.at[1] as string) !== ((r.at[0] as string) <= (r.at[1] as string))), "a question tells it apart");
+    const r = deriveCandidate(LE_INPUT(kept));
+    assert.equal(r.ok, false, `derived ${r.ok ? compileProgram(r.fit.program, ["a", "b"]) : ""} from examples that ${name} also fits`);
+    const qs = (r as { questions?: { at: unknown[] }[] }).questions ?? [];
+    assert.ok(qs.some((q) => le(q.at[0] as string, q.at[1] as string) !== ((q.at[0] as string) <= (q.at[1] as string))), JSON.stringify(qs));
+    if (name.startsWith("natural")) assert.deepEqual(qs.map((q) => q.at), [["10", "9"]]);
+  });
+}
+
 test("order gate runs inside gateProblem (after chars, before edge)", () => {
   const p = gateProblem(input(BASE.filter(([a, b]) => a !== b).concat([["", "a"], ["a", ""], [" Ab 9. ", "a"], ["a", " Ab 9. "]])), CMP, 11);
   assert.ok(p);
