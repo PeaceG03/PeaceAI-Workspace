@@ -548,3 +548,81 @@ test("evidence: no overlap with the training corpus or the ext-manifest; Peace's
   assert.ok(rec.evidence.qualifies && EV.g1.length >= rec.evidence.bar && EV.g2.length >= rec.evidence.bar);
   assert.deepEqual(SPEC.evidence.repos, all);
 });
+
+// Auditor #489 (review of 7508d20): the gates are an ALLOWLIST. X1 (descriptor-walk RCE, no banned word, no computed
+// key) and X2 (Object.prototype pollution) are refused by Job A and Job B; every allowlist token has an input that
+// trips it alone; the reach-walk guards (computed call, computed access, write root) each have an input that only that
+// guard refuses (each verified by removing the guard: the input is then ACCEPTED by both jobs).
+const AL_BASE = "export interface D { get?: number; a: number }\nexport function f(n: number, d: D): number {\n  return n + 1;\n}\n";
+const alJobs = (base: string, nw: string, expect = "- expect f(1, { a: 1 }) returns 3"): [string, string] => {
+  const a = analyzeSuppliedEdit(SPEC.trigger, SPEC.params, `in f in src/m.ts: replace statement return n + 1; with ${nw}\n${expect}`, [{ path: "src/m.ts", content: base }], isTest);
+  const ok = analyzeSuppliedEdit(SPEC.trigger, SPEC.params, `in f in src/m.ts: replace statement return n + 1; with return n + 2;\n${expect}`, [{ path: "src/m.ts", content: base }], isTest);
+  assert.ok(ok.edit, ok.reason ?? "");
+  const ed = base.replace("return n + 1;", nw);
+  const b = gradeExistingEditProblem("src/m.ts", base, ed, ok.edit.extra[0]!.path, ok.edit.extra[0]!.content, (q) => (q === "src/m.ts" ? ed : null));
+  return [a.edit ? "ACCEPTED" : a.reason ?? "", b ?? "JOBB-OK"];
+};
+
+test("Auditor #489 X1/X2: the descriptor walk to Function and Object.prototype pollution are refused by Job A and Job B", () => {
+  const X1 = "const V = Object.values(Object.getOwnPropertyDescriptors(Object)).map((d) => d.value).find((v) => typeof v === \"object\"); const A = Object.values(Object.getOwnPropertyDescriptors(V)).find((d) => d.get && d.set); const F = Object.values(Object.getOwnPropertyDescriptors(A.get.call(() => 0))).map((d) => d.value).find((v) => v && v.name === \"Function\"); return F(\"globalThis.__m98b = typeof process; return 1\")() ? n + 2 : n;";
+  const X2 = "const V = Object.values(Object.getOwnPropertyDescriptors(Object)).map((d) => d.value).find((v) => typeof v === \"object\"); V.m98polluted = \"yes\"; return n + 2;";
+  for (const x of [X1, X2]) assert.deepEqual(alJobs(AL_BASE, x), ["edit_not_allowlisted:member:getOwnPropertyDescriptors", "edit_not_allowlisted:member:getOwnPropertyDescriptors"]);
+  // the later steps of each are refused on their own too (no single guard carries them)
+  assert.deepEqual(alJobs(AL_BASE, "const V = d; V.a = 5; return n + 2;"), ["edit_not_allowlisted:write-nonfresh", "edit_not_allowlisted:write-nonfresh"]);
+  assert.deepEqual(alJobs(AL_BASE, "const g = (x: number) => x + 2; return g.call(null, n);"), ["edit_not_allowlisted:member:call", "edit_not_allowlisted:member:call"]);
+  assert.equal((globalThis as Record<string, unknown>).__m98b, undefined);
+  assert.equal(({} as Record<string, unknown>).m98polluted, undefined);
+});
+
+test("Auditor #489 allowlist: each token is tripped alone by Job A and Job B; allowlisted shapes stay accepted", () => {
+  const cases: [string, string][] = [
+    ["const k = Object.getOwnPropertyNames(d); return n + 2;", "member:getOwnPropertyNames"],
+    ["const k = Object.getOwnPropertyDescriptor(d, \"a\"); return n + 2;", "member:getOwnPropertyDescriptor"],
+    ["const g = (x: number) => x + 2; const h = g.bind(null); return h(n);", "member:bind"],
+    ["const e = {}; Error.captureStackTrace(e); return n + 2;", "member:captureStackTrace"],
+    ["const g = d.get; return n + 2;", "accessor:get"],
+    ["const e = Object.assign({}, d); return n + 2;", "gm:Object.assign"],
+    ["const e = Object.fromEntries([[\"__proto__\", { z: 1 }]]); return n + 2;", "gm:Object.fromEntries"],
+    ["const s = \"a\".repeat(n); return n + 2;", "size"],
+    ["const s = \"a\".repeat(1e9); return n + 2;", "size"],
+    ["const s = \"a\".padStart(1e9); return n + 2;", "size"],
+    ["const s = Array(1e9); return n + 2;", "size"],
+    ["const s = new Array(1e9).fill(0); return n + 2;", "size"],
+    ["const r = /a/; return n + 2;", "regex"],
+    ["if (/(a+)+$/.test(String(n))) return 0; return n + 2;", "regex"],
+    ["const r = new RegExp(\"a\"); return n + 2;", "ref:RegExp"],
+    ["const t = Date.now(); return n + 2;", "ref:Date"],
+    ["const g = (x: number) => x + 2; return g(n);", "call-local"],
+    ["const V = d; V.a = 5; return n + 2;", "write-nonfresh"],
+    ["const Math = 2; return n + Math;", "shadow"],
+    ["const k = \"constructor\"; return n + 2;", "reflstr:constructor"],
+  ];
+  for (const [nw, tk] of cases) assert.deepEqual(alJobs(AL_BASE, nw), [`edit_not_allowlisted:${tk}`, `edit_not_allowlisted:${tk}`], nw);
+  // growth loops: Job A refuses the loop grammar first; Job B (any edit grammar) refuses the self-growth itself
+  for (const nw of ["let s = \"a\"; for (let i = 0; i < n; i++) s = s + s; return n + 2;", "const a = [1]; for (let i = 0; i < n; i++) a.push(...a); return n + 2;"])
+    assert.deepEqual(alJobs(AL_BASE, nw), ["edit_new_grammar", "edit_not_allowlisted:size"], nw);
+  // refused earlier by the capability tokens (no allowlist needed for these, but they must stay refused)
+  for (const nw of ["const k = Reflect.ownKeys(d); return n + 2;", "const g = globalThis; return n + 2;", "const g = Function; return n + 2;", "const e = { __proto__: { z: 1 } }; return n + 2;"])
+    assert.match(alJobs(AL_BASE, nw)[0], /^edit_new_capability:/, nw);
+  for (const nw of ["return Math.max(n, 0) + 2;", "const r = { v: 0 }; r.v = n + 2; return r.v;", "const s = \"a\".repeat(3); return n + 2 + s.length - 3;", "return Number.isInteger(n) ? n + 2 : 0;", "const xs = [n, 2]; return xs.reduce((a, b) => a + b, 0);"])
+    assert.deepEqual(alJobs(AL_BASE, nw), ["ACCEPTED", "JOBB-OK"], nw);
+  // emitted tests: a __proto__ / reflection key in a fake or in data never parses
+  for (const b of ["- fake o = { __proto__: { a: 1 } }\n- expect f(1, o) returns 3", "- expect f(1, { __proto__: { a: 1 } }) returns 3", "- expect f(1, { \"__proto__\": { a: 1 } }) returns 3", "- expect f(1, { constructor: 1 }) returns 3"])
+    assert.equal(analyzeSuppliedEdit(SPEC.trigger, SPEC.params, `in f in src/m.ts: replace statement return n + 1; with return n + 2;\n${b}`, [{ path: "src/m.ts", content: AL_BASE }], isTest).reason, "edit_test_grammar", b);
+});
+
+test("Auditor #489 reach walk: computed call, computed access and a non-identifier write root are each refused alone (base code reached by a benign edit)", () => {
+  const C: [string, string][] = [
+    ["function h(o: Record<string, () => number>, k: string): number {\n  return o[k]();\n}\nexport function f(n: number): number {\n  h({ a: () => 1 }, \"a\");\n  return n + 1;\n}\n", "edit_computed_call"],
+    ["function make(): Record<string, number> {\n  return { a: 1 };\n}\nexport function f(n: number): number {\n  const k = String(n);\n  const v = make()[k];\n  return n + 1;\n}\n", "edit_computed_access"],
+    ["export function f(n: number): number {\n  ({ p: 1 }).p = 2;\n  return n + 1;\n}\n", "edit_global_write"],
+  ];
+  const clean = analyzeSuppliedEdit(SPEC.trigger, SPEC.params, "in f in src/m.ts: replace statement return n + 1; with return n + 2;\n- expect f(1) returns 3", [{ path: "src/m.ts", content: "export function f(n: number): number {\n  return n + 1;\n}\n" }], isTest);
+  assert.ok(clean.edit, clean.reason ?? "");
+  for (const [base, code] of C) {
+    const r = analyzeSuppliedEdit(SPEC.trigger, SPEC.params, "in f in src/m.ts: replace statement return n + 1; with return n + 2;\n- expect f(1) returns 3", [{ path: "src/m.ts", content: base }], isTest);
+    assert.equal(r.reason, code, base);
+    const ed = base.replace("return n + 1;", "return n + 2;");
+    assert.equal(gradeExistingEditProblem("src/m.ts", base, ed, clean.edit!.extra[0]!.path, clean.edit!.extra[0]!.content, (q) => (q === "src/m.ts" ? ed : null)), code, base);
+  }
+});
