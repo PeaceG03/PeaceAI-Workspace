@@ -4,7 +4,7 @@
 // removed (peaceai/proof/m99-derive-mutation-proof.md), plus the far-probe review note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, evalProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
+import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, evalProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam, type DeriveValue } from "../lib/derive.ts";
 import { buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, deriveReviewNote, parseDeriveTask } from "../lib/learned-derive.ts";
 import { reviewBody } from "../lib/review.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
@@ -294,5 +294,27 @@ test("gate far, caps: the capped value is shown DERIVE_FAR past the cap on each 
   const d = deriveProgram({ params: x, ret: "number", examples: ex });
   assert.ok(d.ok);
   if (d.ok) for (let v = -2000; v <= 2000; v++) assert.equal(evalProgram(d.fit.program, [v]), up(v) || 0, String(v));
+});
+
+test("gate far, caps: a clamp's floor hidden past its ceiling still asks (every cap lifted), and answering closes it", () => {
+  // tinycolor clamp01 / wavesurfer clampToUnit / recharts clampRatio: min(1, max(0, v)) from four rows. At the reaching
+  // input the outer ceiling hides lifting the floor alone (both give 1), so the other answer lifts every cap.
+  const x = [num("val")];
+  const up = (v: number) => Math.min(1, Math.max(0, v));
+  const ex = [-1, 2, 10, -2].map((v) => ({ args: [v] as DeriveValue[], out: up(v) as DeriveValue }));
+  const first = deriveProgram({ params: x, ret: "number", examples: ex });
+  assert.equal(first.ok, false);
+  if (!first.ok) { assert.equal(first.gate, "far"); assert.deepEqual(first.questions, [{ at: [100], answers: [1, 100] }]); }
+  let rounds = 0;
+  for (; rounds < 8; rounds++) {
+    const r = deriveProgram({ params: x, ret: "number", examples: ex });
+    if (r.ok) break;
+    const q = (r.questions ?? []).find((q) => !ex.some((e) => e.args[0] === q.at[0]));
+    assert.ok(q, `refusal ${r.reason}/${r.gate ?? ""} asks nothing`);
+    ex.push({ args: q!.at, out: up(q!.at[0] as number) }); // answered by the upstream function, never by the program
+  }
+  const d = deriveProgram({ params: x, ret: "number", examples: ex });
+  assert.ok(d.ok, `still refused after ${rounds} rounds`);
+  if (d.ok) for (let v = -2000; v <= 2000; v++) assert.equal(evalProgram(d.fit.program, [v]), up(v), String(v));
 });
 

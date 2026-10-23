@@ -810,7 +810,11 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
       capFar = fail("far", `\`${sub}\` is capped at ${n.c}, but no example has it ${side > 0 ? ">=" : "<="} ${target}; add one so the result ${side > 0 ? "past" : "before"} the cap is shown, not assumed`, undefined, [[...reach]]);
       // The other answer there: the cap lifted past the examples (a program that keeps the cap up to the last
       // example and then lets the value through fits every example as well).
-      const mine = evalProgram(program, reach), lifted = evalProgram(liftNode(program, n), reach);
+      // When an outer cap hides the lift there (a clamp's floor seen past its ceiling), every cap is lifted instead,
+      // so the refusal still asks rather than only naming the input.
+      const mine = evalProgram(program, reach);
+      let lifted = evalProgram(liftNode(program, n), reach);
+      if (lifted === mine) lifted = evalProgram(liftCaps(program), reach);
       if (typeof mine === "number" && typeof lifted === "number" && mine !== lifted) capFar.rivals = [{ at: [...reach], values: [mine, lifted] }];
       return;
     }
@@ -868,6 +872,14 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
 }
 
 /** The program with one min / max node replaced by the value it caps (the cap lifted). */
+/** The program with every min / max cap removed (each replaced by the value it caps). */
+function liftCaps(x: DeriveNode): DeriveNode {
+  if (x.op === "min" || x.op === "max") return liftCaps((x as { a: DeriveNode }).a);
+  const o: Record<string, unknown> = { ...x };
+  for (const k of ["a", "b", "c", "t", "e"]) { const v = o[k]; if (v && typeof v === "object") o[k] = liftCaps(v as DeriveNode); }
+  return o as DeriveNode;
+}
+
 function liftNode(x: DeriveNode, cap: DeriveNode): DeriveNode {
   if (x === cap) return (cap as { a: DeriveNode }).a;
   const o: Record<string, unknown> = { ...x };
