@@ -2506,6 +2506,143 @@
     "note": "known limit: isolated true points between the examples (the hidden-island class); wrong on 9 held-out inputs of the scan's grid; the review note shows the derived expression",
     "formGate": []
    }
+  },
+  {
+   "id": "m103-backoff-sparse-basems",
+   "source": "Auditor #494 review (/tmp/r494/backoff.mts): m100 derive-practice CI (seed 351406403, engine f4895bf740be; red on main 5c66982), task 16959 (backoff/sparse | p1)",
+   "params": [
+    "attempt",
+    "baseMs"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     0,
+     100,
+     100
+    ],
+    [
+     7,
+     0,
+     0
+    ],
+    [
+     0,
+     200,
+     200
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "wrongProgram": "baseMs",
+   "disagreeAt": [
+    1,
+    1
+   ],
+   "correct": 4,
+   "why": "attempt changed only where baseMs was 0, a product by zero, so its factor (attempt + 1) ** 2 was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      7,
+      100
+     ]
+    ],
+    "answers": [
+     [
+      7,
+      100,
+      6400
+     ],
+     [
+      -93,
+      100,
+      10000
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "m103-backoff-sparse-capped-basems",
+   "source": "m102 derive-practice CI (seed 86888239, engine 1097e56; the same pick at m101 3de4baa), task 53754 (backoff/sparse | p1 <= K ? p1 : K); m102 recorded it as the disclosed limit m102-kind-backoff-sparse-p1-k-p1-k, superseded by this fix",
+   "params": [
+    "attempt",
+    "baseMs"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     7,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     20400,
+     10400
+    ],
+    [
+     0,
+     500,
+     500
+    ],
+    [
+     3,
+     11400,
+     10400
+    ]
+   ],
+   "wrongProgram": "baseMs <= 10400 ? baseMs : 10400",
+   "disagreeAt": [
+    1,
+    1
+   ],
+   "correct": 4,
+   "why": "attempt changed only where baseMs was 0 or the cap held, so its factor (attempt + 1) ** 2 was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "unread",
+    "askAt": [
+     [
+      7,
+      500
+     ]
+    ],
+    "answers": [
+     [
+      7,
+      500,
+      10400
+     ],
+     [
+      7,
+      -1,
+      -64
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "refused": "derive_under_specified",
+     "gate": "span"
+    }
+   }
   }
  ]
 }

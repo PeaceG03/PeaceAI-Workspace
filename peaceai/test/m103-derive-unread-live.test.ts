@@ -30,6 +30,10 @@ test("m103 backoff/sparse, capped (m102's disclosed limit m102-kind-backoff-spar
   // A pair with baseMs non-zero but the result held at the cap (7 vs 0 at baseMs 20400, both 10400) shows nothing either.
   const held = deriveCandidate(mk(["attempt", "baseMs"], [...rows, [7, 20400, 10400]]));
   assert.ok(!held.ok && held.gate === "unread" && held.param === "attempt", JSON.stringify(held));
+  // Exactly AT the cap counts as held: the pair (0,10)/(7,10) has min(baseMs, 10) at 10 on both sides.
+  const exact = deriveCandidate(mk(["attempt", "baseMs"], [[0, 10, 10], [7, 10, 10], [0, 3, 3], [0, 20, 10]]));
+  assert.ok(!exact.ok && exact.gate === "unread" && exact.param === "attempt", JSON.stringify(exact));
+  assert.deepEqual(!exact.ok && exact.questions, [{ at: [7, 3], answers: [3, 24] }]);
 });
 
 test("m103 unread live pair: EVERY read number parameter is non-zero in the pair (one zero factor hides the parameter); a live pair passes", () => {
