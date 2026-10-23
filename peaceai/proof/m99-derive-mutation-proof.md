@@ -115,3 +115,25 @@ a plain edit) and reads the comment it writes.
 
 6 mutants, 6 killed. Each was a single `sed` on `peaceai/lib/derive.ts` in a copy of the tree; the tree was restored after each. The
 first run (at ff74bed, eq 9 refused) also killed F1-F5 (4, 5, 1, 1, 5 failing tests).
+
+## M102: order atom, order gate, order-shown gate (if-return chains; Node 22, m102 + m101 template-joins + m99 gates tests)
+
+Each mutant applied to `peaceai/lib/derive.ts` on its own (heads 6e9ac26 for O1, O3-O6; 2e859c5 for O2, O7-O9), then `tsx --test peaceai/test/m102-*.test.ts peaceai/test/m101-derive-template-joins.test.ts peaceai/test/m99-derive-gates.test.ts`.
+
+| # | mutant | file | result | killed by |
+|---|---|---|---|---|
+| O1 | order gate: orderProblem always null | `peaceai/lib/derive.ts` | KILLED | order gate: no examples where look-alikes differ -> refused, asking about each (at most 3 questions); order gate: the strict look-alike needs DERIVE_MIN_REACH equal pairs; each other look-alike one witness; order gate runs inside gateProblem (after chars, before edge); order gate: a look-alike that cannot change the program on any input tried is not asked (equality via two order tests) |
+| O2 | evidence claim above the replaying entries (sle 11 -> 12: the bar no longer checked against the evidence file) | `peaceai/lib/derive.ts` | KILLED | if-return-chains evidence: the count equals ORDER_FORM_EVIDENCE; the bar is the engine's |
+| O3 | strict order look-alike needs 1 example, not DERIVE_MIN_REACH | `peaceai/lib/derive.ts` | KILLED | order gate: the strict look-alike needs DERIVE_MIN_REACH equal pairs; each other look-alike one witness |
+| O4 | case-insensitive look-alike dropped | `peaceai/lib/derive.ts` | KILLED | sle: evaluates and compiles as JS <= on strings; a look-alike order replaces it only when passed; order gate: a look-alike that cannot change the program on any input tried is not asked (equality via two order tests) |
+| O5 | pool skip removed (a look-alike that cannot change the program still refuses) | `peaceai/lib/derive.ts` | KILLED | order gate: a look-alike that cannot change the program on any input tried is not asked (equality via two order tests); if-return-chains evidence: modules blob-pinned and hold the upstream function; each entry replays |
+| O6 | nearestExample ignores `unlike` (the chars gate may cite an example with the same result) | `peaceai/lib/derive.ts` | KILLED | byCodeUnit (PeaceSTOCKS x3): refused under the bar; with the form at the bar the ask loop derives it |
+| O7 | order-shown gate: orderShownProblem always null | `peaceai/lib/derive.ts` | KILLED | order-shown gate (practice seed 100 #809): a bare string parameter from examples that always had x >= y is refused, asking at y before x; the ask loop derives max; order-shown + branch gate (practice seed 100 #1343, stuck with no question): a comparator from examples with no a < b asks there, then on the short branch; the ask loop derives it |
+| O8 | order-shown gate: the passed-through string parameter rule removed | `peaceai/lib/derive.ts` | KILLED | order-shown gate (practice seed 100 #809): a bare string parameter from examples that always had x >= y is refused, asking at y before x; the ask loop derives max |
+| O9 | branch gate: no questions on string conditions (branchAsk always undefined) | `peaceai/lib/derive.ts` | KILLED | order-shown + branch gate (practice seed 100 #1343, stuck with no question): a comparator from examples with no a < b asks there, then on the short branch; the ask loop derives it |
+
+9 mutants, 9 killed.
+
+- A first O2 (`S.order ??` dropped, so the atom follows only the evidence bar) survived and was replaced: no caller sets
+  `S.order`, so it is an equivalent mutant (the same program in every case). The O2 above raises the claimed evidence
+  count past the replaying entries, which the evidence test catches.

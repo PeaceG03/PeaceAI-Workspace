@@ -9,6 +9,7 @@
   { "name": "piecewise", "status": "staged", "title": "piecewise linear, 2-3 pieces", "forms": ["piecewise"] },
   { "name": "bool-combos", "status": "staged", "title": "boolean combinations of 2-3 comparisons", "forms": ["bool_combo"] },
   { "name": "prefix-joins", "status": "staged", "title": "startsWith-like joins (prefix / separator only when non-empty)", "forms": ["prefix_join"] },
-  { "name": "template-joins", "status": "active", "title": "M101 template joins: literal + slot + ... (n-ary concat, str(number))", "forms": ["template_join"] }
+  { "name": "template-joins", "status": "active", "title": "M101 template joins: literal + slot + ... (n-ary concat, str(number))", "forms": ["template_join"] },
+  { "name": "if-return-chains", "status": "active", "title": "M102 if-return chains: if(s <= t, ...) over code-unit string order (comparators, string min / max, order tests)", "forms": ["if_chain"] }
  ]
 }
