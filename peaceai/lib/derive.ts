@@ -67,7 +67,7 @@ export type DeriveNode =
 export interface DeriveFit { program: DeriveNode; size: number; expr: string }
 export type DeriveResult =
   | { ok: true; fit: DeriveFit; probes: DeriveValue[][]; searched: number }
-  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; searched: number };
+  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; questions?: DeriveQuestion[]; searched: number };
 
 export const DERIVE_MAX_SIZE = 13;
 export const DERIVE_BUDGET = 4_000_000;
@@ -553,23 +553,125 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   });
   const searched = r.searched;
   if (r.overBudget) return { ok: false, reason: "derive_budget", searched };
-  if (r.fits.length === 0) return { ok: false, reason: "derive_no_fit", searched };
+  if (r.fits.length === 0) { const questions = edgeQuestions(input); return { ok: false, reason: "derive_no_fit", ...(questions.length ? { questions } : {}), searched }; }
   const best = r.fits[0]!;
   if (r.fits.length > 1) {
     const b = r.fits[1]!;
     let k = nEx;
     while (k < points.length && best.vals[k] === b.vals[k]) k++;
-    return { ok: false, reason: "derive_ambiguous", alternatives: r.fits.slice(0, 4).map((f) => ({ program: f.node, size: f.size, expr: compileProgram(f.node, names) })), probe: points[k], searched };
+    const questions = k < points.length ? deriveQuestions(input, best.node, [], [{ at: points[k]!, values: r.fits.slice(0, 4).map((f) => f.vals[k]!).filter((v) => v !== null) }]) : [];
+    return { ok: false, reason: "derive_ambiguous", alternatives: r.fits.slice(0, 4).map((f) => ({ program: f.node, size: f.size, expr: compileProgram(f.node, names) })), probe: points[k], ...(questions.length ? { questions } : {}), searched };
   }
   const gate = gateProblem(input, best.node, best.size, budget);
-  if (gate) return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, searched: searched + gate.searched };
+  if (gate) {
+    const questions = deriveQuestions(input, best.node, gate.at ?? [], gate.rivals ?? []);
+    return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, ...(questions.length ? { questions } : {}), searched: searched + gate.searched };
+  }
   return { ok: true, fit: { program: best.node, size: best.size, expr: compileProgram(best.node, names) }, probes, searched };
 }
 
 // ---- The witness gates (Auditor, #491 review): a fit is accepted only when the examples SHOW what it relies on.
 
 export type DeriveGate = "unread" | "chars" | "edge" | "far" | "region" | "span" | "branch" | "cap" | "rival" | "rival_budget";
-export interface DeriveGateProblem { gate: DeriveGate; param?: string; detail: string; searched: number }
+export interface DeriveGateProblem { gate: DeriveGate; param?: string; detail: string; searched: number; at?: DeriveValue[][]; rivals?: { at: DeriveValue[]; values: DeriveValue[] }[] }
+
+/**
+ * A question the refusal asks (Peace, #491 round 3: rule programs out by asking, not only refusing): an input the
+ * examples do not cover and two or more results that programs fitting EVERY example give there. `answers` is sorted
+ * (numbers ascending, false before true), so nothing marks which one the derived program gives: a question is never
+ * answered from the derived program; only the issue author's next example answers it.
+ */
+export interface DeriveQuestion { at: DeriveValue[]; answers: DeriveValue[] }
+/** Most questions one refusal asks. */
+export const DERIVE_MAX_QUESTIONS = 3;
+const sortAnswers = (vs: readonly DeriveValue[]): DeriveValue[] => [...new Map(vs.map((v) => [keyOf([v]), v])).values()]
+  .sort((x, y) => (typeof x === "number" && typeof y === "number" ? x - y : keyOf([x]) < keyOf([y]) ? -1 : keyOf([x]) > keyOf([y]) ? 1 : 0));
+
+/**
+ * The questions for a refusal (deterministic, no search beyond the one the refusal already ran). For a rival or an
+ * ambiguity, the found programs' results at the input where they disagree. For a witness gate, the input it names
+ * (`at`), with the derived program's result and the result of a program built to fit every example but differ there:
+ * boolean results the other value (the program with that one input flipped fits every example, as the input is not
+ * one); number results a cap or floor at the largest or smallest shown result (`min(largest, program)` fits every
+ * example), else the nearest example's result at that one input. Inputs equal to an example are never asked.
+ */
+export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: readonly DeriveValue[][], rivals: readonly { at: DeriveValue[]; values: DeriveValue[] }[] = []): DeriveQuestion[] {
+  const exKeys = new Set(input.examples.map((e) => keyOf(e.args)));
+  const outs = input.examples.map((e) => e.out).filter((v): v is number => typeof v === "number");
+  const qs: DeriveQuestion[] = [];
+  const seen = new Set<string>();
+  const push = (pt: readonly DeriveValue[], vals: readonly DeriveValue[]) => {
+    const k = keyOf(pt);
+    if (qs.length >= DERIVE_MAX_QUESTIONS || seen.has(k) || exKeys.has(k) || pt.length !== input.params.length) return;
+    const answers = sortAnswers(vals.filter((v) => v !== null && v !== undefined));
+    if (answers.length < 2) return;
+    seen.add(k);
+    qs.push({ at: [...pt], answers });
+  };
+  for (const r of rivals) push(r.at, r.values);
+  for (const pt of at) {
+    const mine = evalProgram(program, pt);
+    if (mine === null || mine === undefined) continue;
+    let other: DeriveValue | null = null;
+    if (typeof mine === "boolean") other = !mine;
+    else if (typeof mine === "number" && outs.length) {
+      const hi = Math.max(...outs), lo = Math.min(...outs);
+      if (mine > hi) other = hi;
+      else if (mine < lo) other = lo;
+      else {
+        const near = nearestExample(input, pt);
+        if (near && near.out !== mine) other = near.out;
+      }
+    }
+    if (other !== null) push(pt, [mine, other]);
+  }
+  return qs;
+}
+
+/**
+ * Questions when nothing fits (derive_no_fit): where the result changes between two examples that differ in one
+ * number parameter only (the others equal) by more than 1, the examples do not say where it changes; a function
+ * changing just after the first or just before the second fits them both. Asks the midpoint of the widest such gaps
+ * (at most DERIVE_MAX_QUESTIONS), with the two results there as the answers. Deterministic; no search.
+ */
+export function edgeQuestions(input: DeriveInput): DeriveQuestion[] {
+  const { params, examples } = input;
+  const gaps: { w: number; at: DeriveValue[]; values: DeriveValue[] }[] = [];
+  params.forEach((p, i) => {
+    if (p.type !== "number") return;
+    const groups = new Map<string, DeriveExample[]>();
+    for (const e of examples) { const k = keyOf(e.args.filter((_, j) => j !== i)); groups.set(k, [...(groups.get(k) ?? []), e]); }
+    for (const g of groups.values()) {
+      const sorted = [...g].sort((x, y) => (x.args[i] as number) - (y.args[i] as number));
+      for (let k = 1; k < sorted.length; k++) {
+        const a = sorted[k - 1]!, b = sorted[k]!, lo = a.args[i] as number, hi = b.args[i] as number;
+        if (hi - lo <= 1 || keyOf([a.out]) === keyOf([b.out])) continue;
+        const at = [...a.args]; at[i] = lo + Math.floor((hi - lo) / 2);
+        gaps.push({ w: hi - lo, at, values: [a.out, b.out] });
+      }
+    }
+  });
+  gaps.sort((x, y) => y.w - x.w || (keyOf(x.at) < keyOf(y.at) ? -1 : 1));
+  return deriveQuestions(input, { op: "int", v: 0 }, [], gaps);
+}
+
+/** The example nearest a point (sum of distances over number arguments, mismatches of others count 1; first on a tie). */
+function nearestExample(input: DeriveInput, pt: readonly DeriveValue[]): DeriveExample | null {
+  let best: DeriveExample | null = null, bd = Infinity;
+  for (const e of input.examples) {
+    let d = 0;
+    e.args.forEach((v, j) => { d += typeof v === "number" && typeof pt[j] === "number" ? Math.abs(v - (pt[j] as number)) : keyOf([v]) === keyOf([pt[j]!]) ? 0 : 1; });
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+
+/** A point: the example whose parameter i is nearest v, with parameter i set to v. */
+function pointAt(examples: readonly DeriveExample[], i: number, v: number): DeriveValue[] {
+  let best = examples[0]!, bd = Infinity;
+  for (const e of examples) { const d = Math.abs((e.args[i] as number) - v); if (d < bd) { bd = d; best = e; } }
+  const pt = [...best.args]; pt[i] = v; return pt;
+}
 
 /** Character classes every string parameter the program reads must show in some example value (gate 0b). */
 export const DERIVE_STRING_CLASSES: readonly (readonly [string, RegExp])[] = [
@@ -630,7 +732,8 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   const expr = compileProgram(program, names);
   const rest = (a: readonly DeriveValue[], skip: readonly number[]) => keyOf(a.filter((_, j) => !skip.includes(j)));
   const out = (e: DeriveExample) => keyOf([e.out]);
-  const fail = (gate: DeriveGate, detail: string, param?: number): DeriveGateProblem => ({ gate, detail, searched: 0, ...(param !== undefined ? { param: names[param]! } : {}) });
+  const fail = (gate: DeriveGate, detail: string, param?: number, at?: DeriveValue[][]): DeriveGateProblem => ({ gate, detail, searched: 0, ...(param !== undefined ? { param: names[param]! } : {}), ...(at ? { at } : {}) });
+  const ptAt = (i: number, v: number) => pointAt(examples, i, v);
   const read = paramsRead(program);
   // unread
   for (let i = 0; i < params.length; i++) {
@@ -656,7 +759,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     return (rest(e.args, [i]) === rest(f.args, [i])) || (rest(e.args, [j]) === rest(f.args, [j]));
   }));
   let edgeFail: DeriveGateProblem | null = null;
-  const needPair = (i: number, x: number, y: number) => { if (!edgeFail && !pairDiffers(i, x, y)) edgeFail = fail("edge", `${names[i]}: the edge between ${x} and ${y} in \`${expr}\` is not shown; add examples ${names[i]} = ${x} and ${names[i]} = ${y} (other arguments equal) with their different results`, i); };
+  const needPair = (i: number, x: number, y: number) => { if (!edgeFail && !pairDiffers(i, x, y)) edgeFail = fail("edge", `${names[i]}: the edge between ${x} and ${y} in \`${expr}\` is not shown; add examples ${names[i]} = ${x} and ${names[i]} = ${y} (other arguments equal) with their different results`, i, [ptAt(i, x), ptAt(i, y)]); };
   const needDelta = (i: number, j: number, d0: number, d1: number) => { if (!edgeFail && !deltaDiffers(i, j, d0, d1)) edgeFail = fail("edge", `${names[i]} - ${names[j]}: the edge between ${d0} and ${d1} in \`${expr}\` is not shown; add two examples with ${names[i]} - ${names[j]} = ${d0} and ${d1} (one argument changed by 1) with different results`, i); };
   walk(program, (n) => {
     if (n.op === "eq" || n.op === "le") {
@@ -684,9 +787,9 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   for (const [i, cs] of [...lits].sort((x, y) => x[0] - y[0])) {
     const hi = Math.max(...cs) + DERIVE_FAR, lo = Math.min(...cs) - DERIVE_FAR;
     if (!examples.some((e) => (e.args[i] as number) >= hi))
-      return fail("far", `${names[i]}: \`${expr}\` has its last edge at ${hi - DERIVE_FAR}, but no example has ${names[i]} >= ${hi}; add one so the result past every edge is shown, not assumed`, i);
+      return fail("far", `${names[i]}: \`${expr}\` has its last edge at ${hi - DERIVE_FAR}, but no example has ${names[i]} >= ${hi}; add one so the result past every edge is shown, not assumed`, i, [ptAt(i, hi)]);
     if (!examples.some((e) => (e.args[i] as number) <= lo))
-      return fail("far", `${names[i]}: \`${expr}\` has its first edge at ${lo + DERIVE_FAR}, but no example has ${names[i]} <= ${lo}; add one so the result before every edge is shown, not assumed`, i);
+      return fail("far", `${names[i]}: \`${expr}\` has its first edge at ${lo + DERIVE_FAR}, but no example has ${names[i]} <= ${lo}; add one so the result before every edge is shown, not assumed`, i, [ptAt(i, lo)]);
   }
   for (const [i, j] of deltas.values()) {
     const d = (e: DeriveExample) => (e.args[i] as number) - (e.args[j] as number);
@@ -695,7 +798,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   }
   // region (Auditor #491 round 2, the hidden island): an example inside every region the program distinguishes.
   const regionFail = regionProblem(program, params, examples);
-  if (regionFail) return fail("region", regionFail.detail, regionFail.i);
+  if (regionFail) return fail("region", regionFail.detail, regionFail.i, [ptAt(regionFail.i, regionFail.v)]);
   // span (Auditor #491 round 2, the unwitnessed cap): a value the program computes from a number parameter is shown
   // over a stretch at least DERIVE_FAR wide of that parameter, so a cap or clamp inside it would have been seen.
   for (const i of [...arithmeticParams(program)].sort((x, y) => x - y)) {
@@ -703,7 +806,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     const vs = examples.map((e) => e.args[i] as number);
     const lo = Math.min(...vs), hi = Math.max(...vs);
     if (hi - lo < DERIVE_FAR)
-      return fail("span", `${names[i]}: \`${expr}\` computes its result from ${names[i]}, but the examples only show ${names[i]} from ${lo} to ${hi}; add examples at least ${DERIVE_FAR} apart in ${names[i]} (e.g. ${names[i]} = ${lo + DERIVE_FAR}) so a cap or limit inside that stretch would show`, i);
+      return fail("span", `${names[i]}: \`${expr}\` computes its result from ${names[i]}, but the examples only show ${names[i]} from ${lo} to ${hi}; add examples at least ${DERIVE_FAR} apart in ${names[i]} (e.g. ${names[i]} = ${lo + DERIVE_FAR}) so a cap or limit inside that stretch would show`, i, [ptAt(i, lo + DERIVE_FAR), ptAt(i, hi - DERIVE_FAR)]);
   }
   // span, result side (Auditor #491 round 2, cap lin2): a number result is shown on every side of 0 the program
   // reaches at a probe inside the examples' range of every parameter; `a * b` shown only negative is refused, so a cap above every shown result cannot hide there.
@@ -714,7 +817,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
       if (!inside(pt)) continue;
       const v = evalProgram(program, pt);
       if (typeof v !== "number" || v === 0 || shown.has(Math.sign(v))) continue;
-      return fail("span", `the result: \`${expr}\` gives ${v} at (${pt.map((x) => JSON.stringify(x)).join(", ")}), but no example has a ${v > 0 ? "positive" : "negative"} result; add one there`);
+      return fail("span", `the result: \`${expr}\` gives ${v} at (${pt.map((x) => JSON.stringify(x)).join(", ")}), but no example has a ${v > 0 ? "positive" : "negative"} result; add one there`, undefined, [[...pt]]);
     }
   }
   // branch / cap (2)
@@ -768,7 +871,7 @@ export function arithmeticParams(n: DeriveNode): Set<number> {
  * example (the far gate puts one at least DERIVE_FAR past). A truth with a hidden band (an island the program does
  * not have) can then only hide in a stretch at most half its region wide; the refusal names the stretch.
  */
-export function regionProblem(program: DeriveNode, params: readonly DeriveParam[], examples: readonly DeriveExample[]): { i: number; detail: string } | null {
+export function regionProblem(program: DeriveNode, params: readonly DeriveParam[], examples: readonly DeriveExample[]): { i: number; detail: string; v: number } | null {
   const cuts = new Map<number, Set<number>>();
   const cut = (i: number, t: number) => { const s = cuts.get(i) ?? new Set<number>(); s.add(t); cuts.set(i, s); };
   walk(program, (n) => {
@@ -791,8 +894,8 @@ export function regionProblem(program: DeriveNode, params: readonly DeriveParam[
       const a = ts_[k - 1]! + 1, b = ts_[k]!, w = b - a + 1;
       const g = widest(a, b);
       const limit = Math.max(1, Math.floor(w / 2));
-      if (!g && w > 1) return { i, detail: `${name}: the region ${a} to ${b} of the program has fewer than two examples inside; add examples there (e.g. ${name} = ${a + Math.floor(w / 2)})` };
-      if (g && g[0] > limit) return { i, detail: `${name}: inside the region ${a} to ${b} no example has ${name} between ${g[1]} and ${g[2]} (more than half the region); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)}) so a band the examples hide is shown` };
+      if (!g && w > 1) return { i, v: a + Math.floor(w / 2), detail: `${name}: the region ${a} to ${b} of the program has fewer than two examples inside; add examples there (e.g. ${name} = ${a + Math.floor(w / 2)})` };
+      if (g && g[0] > limit) return { i, v: g[1] + Math.floor(g[0] / 2), detail: `${name}: inside the region ${a} to ${b} no example has ${name} between ${g[1]} and ${g[2]} (more than half the region); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)}) so a band the examples hide is shown` };
     }
     const first = ts_[0]!, last = ts_[ts_.length - 1]!;
     const below = vs.filter((v) => v <= first), above = vs.filter((v) => v > last);
@@ -801,7 +904,7 @@ export function regionProblem(program: DeriveNode, params: readonly DeriveParam[
     if (above.length) open.push([last + 1, above[above.length - 1]!]);
     for (const [a, b] of open) {
       const g = widest(a, b);
-      if (g && g[0] > DERIVE_FAR) return { i, detail: `${name}: past the program's ${a === last + 1 ? "last" : "first"} edge no example has ${name} between ${g[1]} and ${g[2]} (more than ${DERIVE_FAR} apart); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)})` };
+      if (g && g[0] > DERIVE_FAR) return { i, v: g[1] + Math.floor(g[0] / 2), detail: `${name}: past the program's ${a === last + 1 ? "last" : "first"} edge no example has ${name} between ${g[1]} and ${g[2]} (more than ${DERIVE_FAR} apart); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)})` };
     }
   }
   return null;
@@ -849,7 +952,7 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
       let k = examples.length;
       while (!(rv.vals[k] !== null && mine[k] !== null && rv.vals[k] !== mine[k])) k++;
       const pt = points[k]!;
-      return { gate: "rival", searched, detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}${pass === "far" ? " (a far probe, past the examples)" : ""}; add an example there` };
+      return { gate: "rival", searched, rivals: points.map((a, j) => ({ at: [...a], values: [rv.vals[j]!, mine[j]!] })).filter((q, j) => j >= examples.length && q.values[0] !== null && q.values[1] !== null && q.values[0] !== q.values[1]).slice(0, DERIVE_MAX_QUESTIONS), detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}${pass === "far" ? " (a far probe, past the examples)" : ""}; add an example there` };
     }
     if (r.overBudget) return { gate: "rival_budget", searched, detail: `the ${pass} rival search (${pass === "near" ? "every example value" : "the witnessed edges"} as constants, up to size ${size + DERIVE_RIVAL_EXTRA}) ran out of budget after ${r.searched} programs` };
   }

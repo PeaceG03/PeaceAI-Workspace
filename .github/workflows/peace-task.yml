@@ -159,6 +159,8 @@ jobs:
       nl_hint: ${{ steps.generate.outputs.nl_hint }}
       # M59: why each matching approved rule refused (rule ids and reason codes only; lib/refusal-reason.ts).
       rule_refusals: ${{ steps.generate.outputs.rule_refusals }}
+      # M99 round 3: a DERIVE refusal's questions (function name, integer / boolean inputs and answers only).
+      rule_questions: ${{ steps.generate.outputs.rule_questions }}
     env:
       ISSUE_NUMBER: ${{ needs.select.outputs.issue }}
       PEACEAI_TARGET: ${{ needs.select.outputs.target }}
@@ -595,6 +597,7 @@ jobs:
       NL_REASON: ${{ needs.generate.outputs.nl == 'unsure' && needs.generate.outputs.nl_reason || '' }}
       NL_HINT: ${{ needs.generate.outputs.nl_hint }}
       RULE_REFUSALS: ${{ needs.generate.outputs.rule_refusals }}
+      RULE_QUESTIONS: ${{ needs.generate.outputs.rule_questions }}
       FAILED_STAGE: >-
         ${{ needs.generate.result != 'success' && 'generation or the leak/scope gate' ||
             (needs.test.result == 'failure' || needs.test.result == 'cancelled') && 'testing' ||

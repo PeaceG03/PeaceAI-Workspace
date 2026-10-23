@@ -161,7 +161,8 @@ export function buildGuardEdit(
  * match leaves it unset). The reason is a fixed code, plus for `unsafe_condition` the free names in the
  * condition that are not parameters (identifiers only, never file contents).
  */
-export type Refusal = { reason?: string };
+/** `questions` (M99 round 3, DERIVE_FROM_BEHAVIOR only): the refusal's questions, as formatDeriveQuestions writes them. */
+export type Refusal = { reason?: string; questions?: string };
 const IDENT = /^[A-Za-z_$][\w$]{0,63}$/;
 /** Free identifiers in `e` that are not one of `params` (property names and the allowed call names excluded), max 5, sorted. */
 export function unknownNames(e: ts.Expression, params: ReadonlySet<string>): string[] {

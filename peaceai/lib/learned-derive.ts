@@ -18,8 +18,8 @@
 // The behavior prose only has to pass the anti-credit guard: it never reaches the search, the constants or the
 // test. The program is determined by the examples alone; the header line picks the module, name and signature.
 import { createHash } from "node:crypto";
-import { compileProgram, deriveProgram, derivedExprProblem, farProbeTable, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
-import { allowedName } from "./refusal-reason.ts";
+import { compileProgram, deriveProgram, derivedExprProblem, farProbeTable, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveQuestion, type DeriveType, type DeriveValue } from "./derive.ts";
+import { allowedName, formatDeriveQuestions } from "./refusal-reason.ts";
 import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./learned-function.ts";
 import { importStyle } from "./learned-test.ts";
 import ts from "typescript";
@@ -157,7 +157,7 @@ const slug = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase
 const lit = (v: DeriveValue) => (typeof v === "string" ? JSON.stringify(v) : String(v));
 
 export interface DeriveEdit { path: string; content: string; create: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
-export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number } | { reason: string; detail?: string };
+export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number } | { reason: string; detail?: string; questions?: DeriveQuestion[] };
 
 /**
  * `derive` is the search (deriveProgram); the parameter exists only so the emit-time checks below can be shown to
@@ -176,8 +176,10 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   if (!r.ok) {
     // derive_under_specified names the gate and, when it passes the refusal-line allowlist, the parameter: e.g.
     // `derive_under_specified_far: status` (the full sentence, with the edge to add, is in `detail`).
-    if (r.reason === "derive_under_specified") return { reason: `derive_under_specified_${r.gate}${r.param && allowedName(r.param) ? `: ${r.param}` : ""}`, detail: r.detail };
-    return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
+    // Round 3 (Peace): the refusal also asks, at the inputs where programs fitting every example disagree.
+    const qs = r.questions?.length ? { questions: r.questions } : {};
+    if (r.reason === "derive_under_specified") return { reason: `derive_under_specified_${r.gate}${r.param && allowedName(r.param) ? `: ${r.param}` : ""}`, detail: r.detail, ...qs };
+    return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}), ...qs };
   }
   const names = task.params.map((p) => p.name);
   const expr = compileProgram(r.fit.program, names);
@@ -215,11 +217,14 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
 }
 
 /** Job A entry: refusal code in `why.reason`; null when there is no candidate. */
-export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }): DeriveEdit | null {
+export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
   const parsed = parseDeriveTask(trigger, objective);
   if ("reason" in parsed) { if (why && parsed.reason !== "derive_trigger") why.reason = parsed.reason; return null; }
   const built = buildDeriveEdit(params, parsed.task, files, isTest);
-  if ("reason" in built) { if (why) why.reason = built.reason; return null; }
+  if ("reason" in built) {
+    if (why) { why.reason = built.reason; const q = formatDeriveQuestions(parsed.task.fn, built.questions ?? []); if (q) why.questions = q; }
+    return null;
+  }
   return built.edit;
 }
 
