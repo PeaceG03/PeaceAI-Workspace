@@ -149,6 +149,9 @@ test("gate rival (size + 2): near pass (every example value a constant, probes i
   // Negative far probes count only when some example is negative (S2 has none: no rival at (0, -1)).
   const pos = { params: x, ret: "number" as const, examples: ex([[0, 0], [1, 1], [2, 4], [30, 900]]) };
   assert.equal(rivalProblem(pos, { op: "mul", a: P0, b: P0 }, 3), null);
+  // S2 (attempt, baseMs >= 0 in every example) derives; with negative far probes it would be asked for negative waits.
+  const s2 = deriveProgram({ params: [num("attempt"), num("baseMs")], ret: "number", examples: ex([[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]]) });
+  assert.equal(s2.ok, true, s2.ok ? "" : `${s2.reason} ${s2.detail ?? ""}`);
 });
 
 test("refusal through the rule names the gate and the parameter; the detail says what to add", () => {
@@ -193,6 +196,12 @@ test("review note: a DERIVE candidate shows its expression and far-probe outputs
   assert.equal(deriveReviewNote(asDiff([{ ...files[0]!, content: files[0]!.content.replace("599", "598") }, files[1]!])), null);
   assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isRetryableR2Status\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }])), null);
   assert.equal(deriveReviewNote(asDiff([files[0]!])), null);
+  // Exactly one created module: a second new source file means it is not a DERIVE candidate.
+  assert.equal(deriveReviewNote(asDiff([...files, { path: "src/extra.ts", content: "export const y = 2;\n" }])), null);
+  // The literal-only check holds on its own (a search that would accept anything still gets no non-literal test).
+  const anything: typeof deriveProgram = (input) => deriveProgram({ ...input, examples: input.examples.filter((e) => e.args.every((a) => a !== undefined)) });
+  assert.ok(deriveReviewNote(asDiff(files), anything));
+  assert.equal(deriveReviewNote(asDiff([files[0]!, { ...files[1]!, content: files[1]!.content.replace(/assert\.equal\(isRetryableR2Status\(0\), false\);/, "assert.equal(isRetryableR2Status(Number(\"0\")), false);") }]), anything), null);
   assert.equal(deriveReviewNote("diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n"), null);
 });
 
