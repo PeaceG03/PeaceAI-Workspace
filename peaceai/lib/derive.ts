@@ -13,8 +13,11 @@
 //   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty | s == S
 //            | a && b | a || b | !a
 //   if-guards G (conditional on emptiness or equality only): s is empty | s == S | p == C
-//   C: integers taken from the examples; L: string pieces of the example outputs (outputs with the example's
-//   non-empty string arguments cut out) plus ""; S: non-empty string arguments seen in the examples.
+//   C: integers taken from the examples that the behavior description also names (DeriveInput.described);
+//   L: string pieces of the example outputs (outputs with the example's non-empty string arguments cut out)
+//   plus ""; S: non-empty string arguments seen in the examples that are whole tokens of the description.
+//   No memorizing: a constant the description does not name can never be compared against a parameter, so a
+//   lookup table of example inputs is not in the search space (it is derive_no_fit instead of a wrong fit).
 // Compiled programs are plain TypeScript expressions over the parameters and literals only: no globals (min/max
 // compile to conditionals), no calls, no member or computed access, no I/O, no timers, no constructor / eval /
 // prototype paths. derivedExprProblem re-checks that on the TypeScript AST (used by Job A and Job B).
@@ -33,6 +36,14 @@ export interface DeriveInput {
   maxSize?: number;
   /** Most programs built before the search gives up (derive_budget). */
   budget?: number;
+  /**
+   * What the behavior description itself states. A program may only test a parameter against a constant the
+   * description names: integer constants (p == C, p <= C, ranges, caps, constant branches) must be in `numbers`,
+   * and string equality tests (s == S) must name a whole token of `words`. Absent = nothing described, so no such
+   * constants at all. This is the anti-memorization rule: without it the smallest fit of a few string examples is a
+   * lookup table of the example inputs (fits every example, generalizes to nothing).
+   */
+  described?: { numbers: readonly number[]; words: readonly string[] };
 }
 export type DeriveNode =
   | { op: "param"; i: number }
@@ -254,9 +265,11 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   const nEx = input.examples.length;
   const target = input.examples.map((e) => e.out);
   const names = input.params.map((p) => p.name);
-  const consts = intConstants(input);
+  const descNums = new Set(input.described?.numbers ?? []);
+  const descWords = new Set(input.described?.words ?? []);
+  const consts = intConstants(input).filter((c) => descNums.has(c));
   const pieces = stringPieces(input);
-  const strIn = inputStrings(input);
+  const strIn = inputStrings(input).filter((x) => descWords.has(x));
   const types: DeriveType[] = ["number", "string", "boolean"];
   const levels: Record<DeriveType, Prog[][]> = { number: [[]], string: [[]], boolean: [[]] };
   const guards: Prog[] = []; // if-guards: emptiness / equality atoms

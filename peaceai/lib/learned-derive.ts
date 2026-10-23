@@ -148,6 +148,18 @@ export function describedProbes(task: DeriveTask): number[] {
   return [...out].sort((a, b) => a - b).slice(0, 24);
 }
 
+/**
+ * The constants the behavior prose itself names: every integer written in it, and every whitespace token (outer
+ * brackets and sentence punctuation stripped). Only these may be compared against a parameter (see derive.ts).
+ */
+export function describedConstants(behavior: string): { numbers: number[]; words: string[] } {
+  const numbers = new Set<number>();
+  for (const m of behavior.matchAll(/(?<![\w]|\d\.)\d{1,9}(?![\w]|\.\d)/g)) numbers.add(Number(m[0]));
+  const words = new Set<string>();
+  for (const t of behavior.split(/\s+/)) { const w = t.replace(/^[(]+/, "").replace(/[.,;:!?)]+$/, ""); if (w) words.add(w); }
+  return { numbers: [...numbers].sort((a, b) => a - b), words: [...words].sort() };
+}
+
 const slug = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40).replace(/-$/, "") || "fn";
 const lit = (v: DeriveValue) => (typeof v === "string" ? JSON.stringify(v) : String(v));
 
@@ -162,7 +174,7 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return { reason: "derive_path" };
   if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
   // PeaceAI's own search writes the body; nothing in the issue is copied into it.
-  const r = deriveProgram({ params: task.params, ret: task.ret, examples: task.examples });
+  const r = deriveProgram({ params: task.params, ret: task.ret, examples: task.examples, described: describedConstants(task.behavior) });
   if (!r.ok) return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
   const names = task.params.map((p) => p.name);
   const expr = compileProgram(r.fit.program, names);
