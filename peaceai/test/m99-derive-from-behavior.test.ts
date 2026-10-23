@@ -10,7 +10,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
-import { compileProgram, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_STRING, deriveProgram, derivedExprProblem, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
+import { compileProgram, DERIVE_MAX_EXAMPLES, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_STRING, deriveProgram, derivedExprProblem, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { behaviorCodeProblem, buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, derivedModuleProblem, parseDeriveTask, rawIssueProblem } from "../lib/learned-derive.ts";
 import { callsFunction, stubFunction } from "../lib/learned-function.ts";
@@ -372,7 +372,7 @@ test("evidence: bar met; modules blob-pinned and hold the upstream function; eac
     const text = pinned(e);
     assert.equal(e.path, e.module);
     assert.ok(text.includes(e.upstream) && new RegExp(`\\b${e.fn}\\b`).test(e.upstream), `${e.repo} ${e.fn} upstream`);
-    assert.ok(e.examples.length >= 4 && e.examples.length <= 14);
+    assert.ok(e.examples.length >= 4 && e.examples.length <= DERIVE_MAX_EXAMPLES);
     assert.ok(e.heldOut.right > 0 && e.heldOut.wrong === 0);
     const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
     assert.ok(r.ok, `${e.repo} ${e.fn}: ${r.ok ? "" : r.reason}`);

@@ -2,7 +2,7 @@
  "schema": "peaceai-m99-derive-from-behavior-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "DERIVE_FROM_BEHAVIOR v1: 16 exported pure functions (typed number / string / boolean params and result) from 15 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as training; the rest held out); the prose is the function's leading doc comment only (empty for 6), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test.",
+ "note": "DERIVE_FROM_BEHAVIOR v1: 16 exported pure functions (typed number / string / boolean params and result) from 15 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 6), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test.",
  "examples": [
   {
    "repo": "AetherAI3/aether-agent",
@@ -41,11 +41,23 @@
       "123"
      ],
      "out": "refs/heads/123:refs/heads/123"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "refs/heads/Ab 1-x:refs/heads/Ab 1-x"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": "refs/heads/ pad :refs/heads/ pad "
     }
    ],
    "expr": "\"refs/heads/\" + (branch + (\":refs/heads/\" + branch))",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "const publishRefspec = (branch: string): string => `refs/heads/${branch}:refs/heads/${branch}`;",
@@ -54,7 +66,11 @@
    "sha256": "feb3dae44896322dbb71e67e1ca639f968ab53da99bc53580592fb3d439e4540",
    "fixture": "peaceai/test/fixtures/m99-dfb/AetherAI3__aether-agent-14d43d89265c.txt",
    "license": "Apache-2.0",
-   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2"
+   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2",
+   "addedForGates": [
+    "chars branch: (\"Ab 1-x\") gives \"refs/heads/Ab 1-x:refs/heads/Ab 1-x\"",
+    "chars branch: (\" pad \") gives \"refs/heads/ pad :refs/heads/ pad \""
+   ]
   },
   {
    "repo": "OrangeproAI/orangepro-mcp",
@@ -93,11 +109,23 @@
       "123"
      ],
      "out": true
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": true
     }
    ],
    "expr": "!(id === \"\")",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function archiveOrder(id: string): boolean {\n  return id.length > 0;\n}",
@@ -106,7 +134,11 @@
    "sha256": "db31f35758a0e307a61f9029785d4757589238ff4d892d0ba1ec96ce5444bb30",
    "fixture": "peaceai/test/fixtures/m99-dfb/OrangeproAI__orangepro-mcp-59bed415639e.txt",
    "license": "MIT",
-   "licenseSha256": "0e8de1df4a069f84b32f7373e36c2f2970b952845d7da99c632c4f03c4fd919a"
+   "licenseSha256": "0e8de1df4a069f84b32f7373e36c2f2970b952845d7da99c632c4f03c4fd919a",
+   "addedForGates": [
+    "chars id: (\"Ab 1-x\") gives true",
+    "chars id: (\" pad \") gives true"
+   ]
   },
   {
    "repo": "Scl-Ywr/inkos",
@@ -223,11 +255,25 @@
       "hello world"
      ],
      "out": "file:abc:hello world"
+    },
+    {
+     "args": [
+      "Ab 1-x",
+      ""
+     ],
+     "out": "file:Ab 1-x:"
+    },
+    {
+     "args": [
+      " pad ",
+      ""
+     ],
+     "out": "file: pad :"
     }
    ],
    "expr": "\"file:\" + (path + (\":\" + fallback))",
    "heldOut": {
-    "right": 107,
+    "right": 116,
     "wrong": 0
    },
    "upstream": "function fileCacheKey(path: string, fallback: string): string {\n  return `file:${path}:${fallback}`;\n}",
@@ -236,7 +282,11 @@
    "sha256": "da230bf7e04bafeee62438747971818cf3a5de58479f3fafddd5a7ede9f5d82e",
    "fixture": "peaceai/test/fixtures/m99-dfb/Scl-Ywr__inkos-aad7c3f78350.txt",
    "license": "Apache-2.0",
-   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars path: (\"Ab 1-x\", \"\") gives \"file:Ab 1-x:\"",
+    "chars path: (\" pad \", \"\") gives \"file: pad :\""
+   ]
   },
   {
    "repo": "anton-abyzov/vskill",
@@ -357,7 +407,7 @@
    ],
    "expr": "a + b",
    "heldOut": {
-    "right": 50,
+    "right": 86,
     "wrong": 0
    },
    "upstream": "function add(a: number, b: number): number {\n  return a + b;\n}",
@@ -366,7 +416,8 @@
    "sha256": "10f02246a5891f34f21e5891ef08b179c01f8c330a4434639c4c110dba24743d",
    "fixture": "peaceai/test/fixtures/m99-dfb/anton-abyzov__vskill-491a16ec7de0.txt",
    "license": "MIT",
-   "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04"
+   "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04",
+   "addedForGates": []
   },
   {
    "repo": "awslabs/aidlc-workflows",
@@ -405,11 +456,23 @@
       "123"
      ],
      "out": "fix the error in 123"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "fix the error in Ab 1-x"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": "fix the error in  pad "
     }
    ],
    "expr": "\"fix the error in \" + settingsPath",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function kiroWorkflowsUnreadableFix(settingsPath: string): string {\n  return `fix the error in ${settingsPath}`;\n}",
@@ -418,7 +481,11 @@
    "sha256": "3bfe0c07e106dfe302b35e9064147579fd17cf7cd8cf1d2367240f567c806a4e",
    "fixture": "peaceai/test/fixtures/m99-dfb/awslabs__aidlc-workflows-a7ac74b92737.txt",
    "license": "MIT",
-   "licenseSha256": "0beac60c03ba4648df37840205ea1abba594a08200e2665454ff26ab65e9021c"
+   "licenseSha256": "0beac60c03ba4648df37840205ea1abba594a08200e2665454ff26ab65e9021c",
+   "addedForGates": [
+    "chars settingsPath: (\"Ab 1-x\") gives \"fix the error in Ab 1-x\"",
+    "chars settingsPath: (\" pad \") gives \"fix the error in  pad \""
+   ]
   },
   {
    "repo": "eriknewton/sanctuary-framework",
@@ -535,11 +602,25 @@
       "hello world"
      ],
      "out": "anomaly__abc__hello world"
+    },
+    {
+     "args": [
+      "Ab 1-x",
+      ""
+     ],
+     "out": "anomaly__Ab 1-x__"
+    },
+    {
+     "args": [
+      " pad ",
+      ""
+     ],
+     "out": "anomaly__ pad __"
     }
    ],
    "expr": "\"anomaly__\" + (detectorId + (\"__\" + classifierId))",
    "heldOut": {
-    "right": 107,
+    "right": 116,
     "wrong": 0
    },
    "upstream": "function anomalyRuleId(\n  detectorId: string,\n  classifierId: string,\n): string {\n  return `anomaly__${detectorId}__${classifierId}`;\n}",
@@ -548,7 +629,11 @@
    "sha256": "bec5e1e3b356485d87c3dbcffdb0e977bbcbb088e87ef39e18933be417674f71",
    "fixture": "peaceai/test/fixtures/m99-dfb/eriknewton__sanctuary-framework-2a42f78bc42d.txt",
    "license": "Apache-2.0",
-   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608",
+   "addedForGates": [
+    "chars detectorId: (\"Ab 1-x\", \"\") gives \"anomaly__Ab 1-x__\"",
+    "chars detectorId: (\" pad \", \"\") gives \"anomaly__ pad __\""
+   ]
   },
   {
    "repo": "eriknewton/sanctuary-framework",
@@ -665,11 +750,25 @@
       "hello world"
      ],
      "out": "abc__hello world"
+    },
+    {
+     "args": [
+      "Ab 1-x",
+      ""
+     ],
+     "out": "Ab 1-x__"
+    },
+    {
+     "args": [
+      " pad ",
+      ""
+     ],
+     "out": " pad __"
     }
    ],
    "expr": "detectorId + (\"__\" + classifierId)",
    "heldOut": {
-    "right": 107,
+    "right": 116,
     "wrong": 0
    },
    "upstream": "function catalogKey(\n  detectorId: string,\n  classifierId: string,\n): string {\n  return `${detectorId}__${classifierId}`;\n}",
@@ -678,7 +777,11 @@
    "sha256": "1ce25464748cb608322005dafc36a798feaab6a835ab53ee0d64d2a0aef3c5f1",
    "fixture": "peaceai/test/fixtures/m99-dfb/eriknewton__sanctuary-framework-d1efca6aaef7.txt",
    "license": "Apache-2.0",
-   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608",
+   "addedForGates": [
+    "chars detectorId: (\"Ab 1-x\", \"\") gives \"Ab 1-x__\"",
+    "chars detectorId: (\" pad \", \"\") gives \" pad __\""
+   ]
   },
   {
    "repo": "formsy/formsy-react",
@@ -717,11 +820,23 @@
       "123"
      ],
      "out": false
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": false
     }
    ],
    "expr": "value === \"\"",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function isValueStringEmpty(value: string): boolean {\n  return value === '';\n}",
@@ -730,7 +845,11 @@
    "sha256": "7b558d51e10a218b5cb3037e409705d38248e1c9a95e781f9e2e42e62a0b75ea",
    "fixture": "peaceai/test/fixtures/m99-dfb/formsy__formsy-react-cb4fabf0af3f.txt",
    "license": "MIT",
-   "licenseSha256": "7a4e8463e54d07bba35b503eed0843123143bdc12622d0a61aba31b3869177f9"
+   "licenseSha256": "7a4e8463e54d07bba35b503eed0843123143bdc12622d0a61aba31b3869177f9",
+   "addedForGates": [
+    "chars value: (\"Ab 1-x\") gives false",
+    "chars value: (\" pad \") gives false"
+   ]
   },
   {
    "repo": "inversify/inversify-express-utils",
@@ -769,11 +888,23 @@
       "123"
      ],
      "out": "Two controllers cannot have the same name: 123"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "Two controllers cannot have the same name: Ab 1-x"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": "Two controllers cannot have the same name:  pad "
     }
    ],
    "expr": "\"Two controllers cannot have the same name: \" + name",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "const DUPLICATED_CONTROLLER_NAME: (name: string) => string = (\n  name: string,\n): string => `Two controllers cannot have the same name: ${name}`;",
@@ -782,7 +913,11 @@
    "sha256": "2b984febe8808e776a3fb0bf5e27567ee657e118d02d8ca83be332108f451336",
    "fixture": "peaceai/test/fixtures/m99-dfb/inversify__inversify-express-utils-eee620934f0d.txt",
    "license": "MIT",
-   "licenseSha256": "5d657cf0f820b405de458d8bdc7195a9704f6791d9a58b4619614e4d58c08c2c"
+   "licenseSha256": "5d657cf0f820b405de458d8bdc7195a9704f6791d9a58b4619614e4d58c08c2c",
+   "addedForGates": [
+    "chars name: (\"Ab 1-x\") gives \"Two controllers cannot have the same name: Ab 1-x\"",
+    "chars name: (\" pad \") gives \"Two controllers cannot have the same name:  pad \""
+   ]
   },
   {
    "repo": "iongion/container-desktop",
@@ -899,11 +1034,32 @@
       100
      ],
      "out": true
+    },
+    {
+     "args": [
+      0,
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      99,
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      -101,
+      -1
+     ],
+     "out": true
     }
    ],
    "expr": "savedOffset <= contentHeight",
    "heldOut": {
-    "right": 50,
+    "right": 213,
     "wrong": 0
    },
    "upstream": "function canRestoreScrollOffset(savedOffset: number, contentHeight: number): boolean {\n  return savedOffset <= contentHeight;\n}",
@@ -912,7 +1068,12 @@
    "sha256": "941bfbfa65afb426edb25adb4559edaa7f49067694d40ec62375bbe009502d58",
    "fixture": "peaceai/test/fixtures/m99-dfb/iongion__container-desktop-30202470015d.txt",
    "license": "MIT",
-   "licenseSha256": "639d5d0a62d6c4eb4f43648c07a2f6ee8a3614d6ebf1f6a483bcf83be7d5abaa"
+   "licenseSha256": "639d5d0a62d6c4eb4f43648c07a2f6ee8a3614d6ebf1f6a483bcf83be7d5abaa",
+   "addedForGates": [
+    "edge savedOffset: (0, -1) gives false",
+    "far savedOffset: (99, -1) gives false",
+    "far savedOffset: (-101, -1) gives true"
+   ]
   },
   {
    "repo": "ngParty/ng-metadata",
@@ -951,11 +1112,23 @@
       "123"
      ],
      "out": "$123Controller"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "$Ab 1-xController"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": "$ pad Controller"
     }
    ],
    "expr": "\"$\" + (name + \"Controller\")",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function controllerKey( name: string ): string {\n  return '$' + name + 'Controller';\n}",
@@ -964,7 +1137,11 @@
    "sha256": "a55e8772d484d915139d26309a345a27e8d921dbbc2aea27aa9c29e4a4082d59",
    "fixture": "peaceai/test/fixtures/m99-dfb/ngParty__ng-metadata-d1b58ddcbeed.txt",
    "license": "MIT",
-   "licenseSha256": "322d4c3c636afc81a9c21b51baae681e37cddf10e94c4f491db3d6d83f99a08f"
+   "licenseSha256": "322d4c3c636afc81a9c21b51baae681e37cddf10e94c4f491db3d6d83f99a08f",
+   "addedForGates": [
+    "chars name: (\"Ab 1-x\") gives \"$Ab 1-xController\"",
+    "chars name: (\" pad \") gives \"$ pad Controller\""
+   ]
   },
   {
    "repo": "oomol-lab/oo-cli",
@@ -1081,11 +1258,25 @@
       "hello world"
      ],
      "out": "https://hub.abc/package/hello world"
+    },
+    {
+     "args": [
+      "Ab 1-x",
+      ""
+     ],
+     "out": "https://hub.Ab 1-x/package/"
+    },
+    {
+     "args": [
+      " pad ",
+      ""
+     ],
+     "out": "https://hub. pad /package/"
     }
    ],
    "expr": "\"https://hub.\" + (endpoint + (\"/package/\" + packageName))",
    "heldOut": {
-    "right": 107,
+    "right": 116,
     "wrong": 0
    },
    "upstream": "function createSkillPackageHubUrl(endpoint: string, packageName: string): string {\n    return `https://hub.${endpoint}/package/${packageName}`;\n}",
@@ -1094,7 +1285,11 @@
    "sha256": "1c35ffddaee2497d182f6670ccaf150648a4fd79a3ffd82e416c6f8fea7cfd88",
    "fixture": "peaceai/test/fixtures/m99-dfb/oomol-lab__oo-cli-d949b8e7081c.txt",
    "license": "MIT",
-   "licenseSha256": "f902f9fb7d6aff915f55c6bd7558fd9f95f8ffca7ab2dde50247d1133671f5df"
+   "licenseSha256": "f902f9fb7d6aff915f55c6bd7558fd9f95f8ffca7ab2dde50247d1133671f5df",
+   "addedForGates": [
+    "chars endpoint: (\"Ab 1-x\", \"\") gives \"https://hub.Ab 1-x/package/\"",
+    "chars endpoint: (\" pad \", \"\") gives \"https://hub. pad /package/\""
+   ]
   },
   {
    "repo": "ramarivera/pi-model-guardrails",
@@ -1211,11 +1406,25 @@
       "hello world"
      ],
      "out": "abc:hello world"
+    },
+    {
+     "args": [
+      "Ab 1-x",
+      ""
+     ],
+     "out": "Ab 1-x:"
+    },
+    {
+     "args": [
+      " pad ",
+      ""
+     ],
+     "out": " pad :"
     }
    ],
    "expr": "packId + (\":\" + ruleName)",
    "heldOut": {
-    "right": 107,
+    "right": 116,
     "wrong": 0
    },
    "upstream": "function ruleId(packId: string, ruleName: string): string {\n  return `${packId}:${ruleName}`;\n}",
@@ -1224,7 +1433,11 @@
    "sha256": "a7257cc9d9e79912f2f7c96194c8fce8a4e4d4fe66668caff2dc40ae4b26b712",
    "fixture": "peaceai/test/fixtures/m99-dfb/ramarivera__pi-model-guardrails-98225baf9e9a.txt",
    "license": "MIT",
-   "licenseSha256": "80085d1d679672b783715b744fa092460713f792f1b055abdfae2db5f49d9231"
+   "licenseSha256": "80085d1d679672b783715b744fa092460713f792f1b055abdfae2db5f49d9231",
+   "addedForGates": [
+    "chars packId: (\"Ab 1-x\", \"\") gives \"Ab 1-x:\"",
+    "chars packId: (\" pad \", \"\") gives \" pad :\""
+   ]
   },
   {
    "repo": "sbluemin/fleet-harness",
@@ -1263,11 +1476,23 @@
       "123"
      ],
      "out": "entry:123"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "entry:Ab 1-x"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": "entry: pad "
     }
    ],
    "expr": "\"entry:\" + entryId",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function conversationTabId(entryId: string): string {\n  return `entry:${entryId}`;\n}",
@@ -1276,7 +1501,11 @@
    "sha256": "d63c8b6c56b2ab979f4fa7340f2342be41fced6340c81b2aab1679a0b149a0c6",
    "fixture": "peaceai/test/fixtures/m99-dfb/sbluemin__fleet-harness-6d63e9323ce9.txt",
    "license": "MIT",
-   "licenseSha256": "55694b77e35e4e37984e6c698a07d64f3b7efb42eee940480912e384d4422faa"
+   "licenseSha256": "55694b77e35e4e37984e6c698a07d64f3b7efb42eee940480912e384d4422faa",
+   "addedForGates": [
+    "chars entryId: (\"Ab 1-x\") gives \"entry:Ab 1-x\"",
+    "chars entryId: (\" pad \") gives \"entry: pad \""
+   ]
   },
   {
    "repo": "typestyle/csx",
@@ -1315,11 +1544,23 @@
       "123"
      ],
      "out": "calc(123)"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "calc(Ab 1-x)"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": "calc( pad )"
     }
    ],
    "expr": "\"calc(\" + (exp + \")\")",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function calc(exp: string): string {\n  return `calc(${exp})`;\n}",
@@ -1328,7 +1569,11 @@
    "sha256": "b9321b6f43f12020d5474fdd8b9856341e6e264a27a132842323906f988f08fd",
    "fixture": "peaceai/test/fixtures/m99-dfb/typestyle__csx-cfa0cb884a83.txt",
    "license": "MIT",
-   "licenseSha256": "0d13a552ae132af753f57d9cd3363bc23aaf6fada369d767a2dc5b126447d875"
+   "licenseSha256": "0d13a552ae132af753f57d9cd3363bc23aaf6fada369d767a2dc5b126447d875",
+   "addedForGates": [
+    "chars exp: (\"Ab 1-x\") gives \"calc(Ab 1-x)\"",
+    "chars exp: (\" pad \") gives \"calc( pad )\""
+   ]
   },
   {
    "repo": "vercel-labs/scriptc",
@@ -1367,11 +1612,23 @@
       "123"
      ],
      "out": "123.sha256"
+    },
+    {
+     "args": [
+      "Ab 1-x"
+     ],
+     "out": "Ab 1-x.sha256"
+    },
+    {
+     "args": [
+      " pad "
+     ],
+     "out": " pad .sha256"
     }
    ],
    "expr": "path + \".sha256\"",
    "heldOut": {
-    "right": 7,
+    "right": 6,
     "wrong": 0
    },
    "upstream": "function cacheDigestPath(path: string): string {\n  return `${path}.sha256`;\n}",
@@ -1380,7 +1637,11 @@
    "sha256": "f4a3dfa56c1063cb1b5fd9642bd30af79e6727e51e6250b2de27b2a2448c33e2",
    "fixture": "peaceai/test/fixtures/m99-dfb/vercel-labs__scriptc-c75892b72788.txt",
    "license": "Apache-2.0",
-   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars path: (\"Ab 1-x\") gives \"Ab 1-x.sha256\"",
+    "chars path: (\" pad \") gives \" pad .sha256\""
+   ]
   }
  ],
  "peace": [
