@@ -568,7 +568,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
 
 // ---- The witness gates (Auditor, #491 review): a fit is accepted only when the examples SHOW what it relies on.
 
-export type DeriveGate = "unread" | "chars" | "edge" | "far" | "branch" | "cap" | "rival" | "rival_budget";
+export type DeriveGate = "unread" | "chars" | "edge" | "far" | "region" | "span" | "branch" | "cap" | "rival" | "rival_budget";
 export interface DeriveGateProblem { gate: DeriveGate; param?: string; detail: string; searched: number }
 
 /** Character classes every string parameter the program reads must show in some example value (gate 0b). */
@@ -609,6 +609,10 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *  far     (1) every parameter compared with constants has an example at least DERIVE_FAR past its last constant
  *          and one at least DERIVE_FAR before its first (the regions past the outermost edges, true or false, are
  *          shown, not assumed); two compared parameters: examples with p - q >= DERIVE_FAR and <= -DERIVE_FAR;
+ *  region  inside every region the program's constants cut a compared parameter into, no example-free stretch
+ *          longer than half the region (finite) or DERIVE_FAR (open, up to the farthest example): regionProblem;
+ *  span    every number parameter the result is computed from (not only compared) is shown over at least DERIVE_FAR
+ *          (largest minus smallest example value): an unwitnessed cap or clamp inside that stretch would show;
  *  branch / cap (2) each branch of every conditional, and each side of every min / max cap (kept and capped), is
  *          reached by at least DERIVE_MIN_REACH examples (the true branch of a one-parameter `p === c` or emptiness
  *          test holds for one input only: one example);
@@ -687,6 +691,17 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (!examples.some((e) => d(e) >= DERIVE_FAR) || !examples.some((e) => d(e) <= -DERIVE_FAR))
       return fail("far", `${names[i]} - ${names[j]}: \`${expr}\` compares them, but no examples have ${names[i]} - ${names[j]} >= ${DERIVE_FAR} and <= -${DERIVE_FAR}; add them`, i);
   }
+  // region (Auditor #491 round 2, the hidden island): an example inside every region the program distinguishes.
+  const regionFail = regionProblem(program, params, examples);
+  if (regionFail) return fail("region", regionFail.detail, regionFail.i);
+  // span (Auditor #491 round 2, the unwitnessed cap): a value the program computes from a number parameter is shown
+  // over a stretch at least DERIVE_FAR wide of that parameter, so a cap or clamp inside it would have been seen.
+  for (const i of [...arithmeticParams(program)].sort((x, y) => x - y)) {
+    const vs = examples.map((e) => e.args[i] as number);
+    const lo = Math.min(...vs), hi = Math.max(...vs);
+    if (hi - lo < DERIVE_FAR)
+      return fail("span", `${names[i]}: \`${expr}\` computes its result from ${names[i]}, but the examples only show ${names[i]} from ${lo} to ${hi}; add examples at least ${DERIVE_FAR} apart in ${names[i]} (e.g. ${names[i]} = ${lo + DERIVE_FAR}) so a cap or limit inside that stretch would show`, i);
+  }
   // branch / cap (2)
   const hits = new Map<DeriveNode, [number, number]>();
   for (const e of examples) evalProgram(program, e.args, (n, side) => { const h = hits.get(n) ?? [0, 0]; h[side]++; hits.set(n, h); });
@@ -707,6 +722,74 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   if (reachFail) return reachFail;
   // rival (3)
   return rivalProblem(input, program, size, budget);
+}
+
+/**
+ * Number parameters the program computes its result from (not only compares): a parameter leaf anywhere except as a
+ * direct operand of a comparison (`===` / `<=`); range and emptiness tests compare only.
+ */
+export function arithmeticParams(n: DeriveNode): Set<number> {
+  const s = new Set<number>();
+  const go = (x: DeriveNode, cmp: boolean): void => {
+    switch (x.op) {
+      case "param": if (!cmp) s.add(x.i); return;
+      case "int": case "lit": case "range": case "empty": return;
+      case "eq": case "le": go(x.a, true); go(x.b, true); return;
+      case "add": case "sub": case "mul": case "cat": case "and": case "or": go(x.a, false); go(x.b, false); return;
+      case "sq": case "not": case "min": case "max": go(x.a, false); return;
+      case "if": go(x.c, false); go(x.t, false); go(x.e, false); return;
+    }
+  };
+  go(n, false);
+  return s;
+}
+
+/**
+ * The region gate (Auditor #491 round 2). The constants a number parameter is compared with cut its line into
+ * regions (\`p <= c\` cuts between c and c + 1, \`c <= p\` between c - 1 and c, \`p === c\` on both sides of c, a range
+ * at both of its ends). Inside every region, no stretch is left without an example: in a finite region of width w
+ * the examples of that parameter there (the edge gate already puts one at each end) leave no gap longer than w / 2,
+ * and in the open region past the first or last cut no gap longer than DERIVE_FAR between the cut and the farthest
+ * example (the far gate puts one at least DERIVE_FAR past). A truth with a hidden band (an island the program does
+ * not have) can then only hide in a stretch at most half its region wide; the refusal names the stretch.
+ */
+export function regionProblem(program: DeriveNode, params: readonly DeriveParam[], examples: readonly DeriveExample[]): { i: number; detail: string } | null {
+  const cuts = new Map<number, Set<number>>();
+  const cut = (i: number, t: number) => { const s = cuts.get(i) ?? new Set<number>(); s.add(t); cuts.set(i, s); };
+  walk(program, (n) => {
+    if ((n.op === "eq" || n.op === "le") && n.a.op === "param" && n.b.op === "lit" && typeof n.b.v === "number") { if (n.op === "eq") cut(n.a.i, n.b.v - 1); cut(n.a.i, n.b.v); }
+    else if (n.op === "le" && n.a.op === "lit" && n.b.op === "param" && typeof n.a.v === "number") cut(n.b.i, n.a.v - 1);
+    else if (n.op === "range") { cut(n.i, n.lo - 1); cut(n.i, n.hi); }
+  });
+  for (const [i, set] of [...cuts].sort((x, y) => x[0] - y[0])) {
+    const name = params[i]!.name;
+    const ts_ = [...set].sort((x, y) => x - y);
+    const vs = [...new Set(examples.map((e) => e.args[i] as number))].sort((x, y) => x - y);
+    /** Largest gap between consecutive example values in [a, b] (inclusive), with its two ends. */
+    const widest = (a: number, b: number): [number, number, number] | null => {
+      const inside = vs.filter((v) => v >= a && v <= b);
+      let best: [number, number, number] | null = null;
+      for (let k = 1; k < inside.length; k++) { const g = inside[k]! - inside[k - 1]!; if (!best || g > best[0]) best = [g, inside[k - 1]!, inside[k]!]; }
+      return best;
+    };
+    for (let k = 1; k < ts_.length; k++) {
+      const a = ts_[k - 1]! + 1, b = ts_[k]!, w = b - a + 1;
+      const g = widest(a, b);
+      const limit = Math.max(1, Math.floor(w / 2));
+      if (!g && w > 1) return { i, detail: `${name}: the region ${a} to ${b} of the program has fewer than two examples inside; add examples there (e.g. ${name} = ${a + Math.floor(w / 2)})` };
+      if (g && g[0] > limit) return { i, detail: `${name}: inside the region ${a} to ${b} no example has ${name} between ${g[1]} and ${g[2]} (more than half the region); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)}) so a band the examples hide is shown` };
+    }
+    const first = ts_[0]!, last = ts_[ts_.length - 1]!;
+    const below = vs.filter((v) => v <= first), above = vs.filter((v) => v > last);
+    const open: [number, number][] = [];
+    if (below.length) open.push([below[0]!, first]);
+    if (above.length) open.push([last + 1, above[above.length - 1]!]);
+    for (const [a, b] of open) {
+      const g = widest(a, b);
+      if (g && g[0] > DERIVE_FAR) return { i, detail: `${name}: past the program's ${a === last + 1 ? "last" : "first"} edge no example has ${name} between ${g[1]} and ${g[2]} (more than ${DERIVE_FAR} apart); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)})` };
+    }
+  }
+  return null;
 }
 
 /**
