@@ -17,6 +17,15 @@ export function shapeOf(expr: string, params: readonly string[]): string {
   return s.replace(/\(K\)/g, "K").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The known limits: wrong picks no example-only gate can catch, reported (not failing) by the practice grader
+ * (derive-practice.ts judge) and listed here with the reason and the mitigation.
+ */
+export const KNOWN_LIMIT_KINDS: readonly { name: string; categories: readonly string[]; why: string; mitigation: string }[] = [
+  { name: "single-input special case", categories: ["s1_shape/missing_point", "eq_or_ge/missing_point", "if_eq/missing_point"], why: "no example shows the one input where the truth differs (Auditor, S1 without 429)", mitigation: "the review note lists the derived program's cases; the issue author adds the special case as an example" },
+  { name: "cap above every example", categories: ["floor_clamp/unwitnessed_cap"], why: "the truth caps n at a value no example reaches, so the uncapped program fits every example exactly; any gate that refused it would refuse every uncapped linear program too", mitigation: "the review note's far-probe table shows the derived program's results far past the examples, so the reviewer sees there is no cap" },
+];
+
 const size = (e: LedgerLike) => e.examples.length * 10000 + e.wrongProgram.length;
 
 /** Bunches report entries into kinds and marks the ones the ledger does not hold. */
