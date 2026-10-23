@@ -71,3 +71,17 @@ test("byCodeUnit (PeaceSTOCKS x3): refused under the bar; with the form at the b
   assert.ok(r.ok);
   for (const [a, b] of FULL) assert.equal(evalProgram(r.fit.program, [a, b]), byCodeUnit(a, b));
 });
+
+test("order gate: a look-alike that cannot change the program on any input tried is not asked (equality via two order tests)", () => {
+  // (a <= b) && (b <= a): code-unit equality; shorter-first order has the same equal pairs, so it is never asked
+  const EQ: DeriveNode = { op: "and", a: { op: "sle", i: 0, j: 1 }, b: { op: "sle", i: 1, j: 0 } };
+  const pairs: [string, string][] = [["a", "b"], ["x", "x"], ["m", "m"], ["", "a"], ["a", ""], [" Ab 9. ", "a"], ["a", " Ab 9. "]];
+  const inp = (ps: [string, string][]): DeriveInput => ({ params: P, ret: "boolean", examples: ps.map(([a, b]) => ({ args: [a, b], out: a === b })) });
+  const p = orderProblem(inp(pairs), EQ);
+  assert.ok(p && /case-insensitive/.test(p.detail), p?.detail);
+  const shorter = DERIVE_ORDER_LOOKALIKES.find((L) => L.name.startsWith("shorter-first"))!;
+  for (const r of p!.rivals!) assert.ok(r.values[0] !== r.values[1]);
+  assert.ok(!p!.rivals!.some((r) => evalProgram(EQ, r.at, undefined, shorter.le) !== evalProgram(EQ, r.at)));
+  // answered: case (a, A) and first character (ac, ab) -> accepted by the order gate
+  assert.equal(orderProblem(inp([...pairs, ["a", "A"], ["ac", "ab"]]), EQ), null);
+});

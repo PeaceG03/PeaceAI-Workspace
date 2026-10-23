@@ -702,7 +702,7 @@ const sortAnswers = (vs: readonly DeriveValue[]): DeriveValue[] => [...new Map(v
  * (`at`), with the derived program's result and the result of a program built to fit every example but differ there:
  * boolean results the other value (the program with that one input flipped fits every example, as the input is not
  * one); number results a cap or floor at the largest or smallest shown result (`min(largest, program)` fits every
- * example), else the nearest example's result at that one input. Inputs equal to an example are never asked.
+ * example), else the result of the nearest example (M102: with a result other than the program's) at that one input. Inputs equal to an example are never asked.
  */
 export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: readonly DeriveValue[][], rivals: readonly { at: DeriveValue[]; values: DeriveValue[] }[] = []): DeriveQuestion[] {
   const exKeys = new Set(input.examples.map((e) => keyOf(e.args)));
@@ -724,9 +724,10 @@ export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: rea
     let other: DeriveValue | null = null;
     if (typeof mine === "boolean") other = !mine;
     else if (typeof mine === "string") {
-      // A string result: the nearest example's result there (a program equal to the derived one except at this one
-      // input, which is not an example, fits every example as well).
-      const near = nearestExample(input, pt);
+      // A string result: the result of the nearest example whose result differs (a program equal to the derived one
+      // except at this one input, which is not an example, fits every example as well). M102: the nearest example
+      // with another result, not only the nearest example (whose result may be the derived one's, leaving no question).
+      const near = nearestExample(input, pt, mine);
       if (near && near.out !== mine) other = near.out;
     }
     else if (typeof mine === "number" && outs.length) {
@@ -734,7 +735,7 @@ export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: rea
       if (mine > hi) other = hi;
       else if (mine < lo) other = lo;
       else {
-        const near = nearestExample(input, pt);
+        const near = nearestExample(input, pt, mine);
         if (near && near.out !== mine) other = near.out;
       }
     }
@@ -771,9 +772,10 @@ export function edgeQuestions(input: DeriveInput): DeriveQuestion[] {
 }
 
 /** The example nearest a point (sum of distances over number arguments, mismatches of others count 1; first on a tie). */
-function nearestExample(input: DeriveInput, pt: readonly DeriveValue[]): DeriveExample | null {
+function nearestExample(input: DeriveInput, pt: readonly DeriveValue[], unlike?: DeriveValue): DeriveExample | null {
   let best: DeriveExample | null = null, bd = Infinity;
   for (const e of input.examples) {
+    if (unlike !== undefined && e.out === unlike) continue;
     let d = 0;
     e.args.forEach((v, j) => { d += typeof v === "number" && typeof pt[j] === "number" ? Math.abs(v - (pt[j] as number)) : keyOf([v]) === keyOf([pt[j]!]) ? 0 : 1; });
     if (d < bd) { bd = d; best = e; }
@@ -1074,29 +1076,43 @@ export const DERIVE_ORDER_LOOKALIKES: readonly { name: string; le: (a: string, b
   { name: "shorter-first order", le: (a, b) => (a.length !== b.length ? a.length < b.length : a <= b), at: () => [["b", "aa"], ["aa", "b"]], need: 1 },
   { name: "first-character order", le: (a, b) => a.slice(0, 1) <= b.slice(0, 1), at: () => [["ac", "ab"], ["ab", "ac"]], need: 1 },
 ];
-/** The order gate (M102): see DERIVE_ORDER_LOOKALIKES. Null when every look-alike is ruled out by the examples. */
+/** Strings the order gate also tries (all ordered pairs) for a look-alike whose own inputs do not tell it apart. */
+export const DERIVE_ORDER_POOL: readonly string[] = ["", "a", "A", "b", "B", "aa", "ab", "ac", "1", "01", "9", "10", " a", "a "];
+/**
+ * The order gate (M102): see DERIVE_ORDER_LOOKALIKES. Null when every look-alike is ruled out by the examples.
+ * A look-alike is tried at its own inputs, then at every ordered pair of DERIVE_ORDER_POOL (in the first order test's
+ * two parameters, the other arguments the first example's); one that gives the program's result at all of them cannot
+ * change this program on any input tried (e.g. shorter-first order for an equality `(a <= b) && (b <= a)`, whose
+ * equal pairs are code-unit order's) and is not asked about. Every other look-alike the examples do not rule out is
+ * asked about at once (at most DERIVE_MAX_QUESTIONS inputs, each where it gives another result).
+ */
 export function orderProblem(input: DeriveInput, program: DeriveNode, expr = compileProgram(program, input.params.map((p) => p.name))): DeriveGateProblem | null {
   const { params, examples } = input;
   const tests: Extract<DeriveNode, { op: "sle" }>[] = [];
   walk(program, (n) => { if (n.op === "sle") tests.push(n); });
   if (!tests.length) return null;
   const exKeys = new Set(examples.map((e) => keyOf(e.args)));
-  // Every look-alike the examples do not rule out is asked about at once (at most DERIVE_MAX_QUESTIONS inputs).
+  const t = tests[0]!;
+  const vals = [...new Set(examples.map((e) => e.args[t.i] as string))];
+  const poolPairs = DERIVE_ORDER_POOL.flatMap((x) => DERIVE_ORDER_POOL.map((y) => [x, y] as [string, string]));
   let first: DeriveGateProblem | null = null;
   const rivals: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
   for (const L of DERIVE_ORDER_LOOKALIKES) {
     const shown = examples.filter((e) => evalProgram(program, e.args, undefined, L.le) !== evalProgram(program, e.args)).length;
     if (shown >= L.need) continue;
-    const t = tests[0]!;
-    first ??= { gate: "order", param: params[t.i]!.name, searched: 0, detail: `\`${expr}\` compares strings in code-unit order, but ${shown ? "only " + shown + " example shows" : "no example shows"} where ${L.name} would give another result; add such examples` };
-    const vals = [...new Set(examples.map((e) => e.args[t.i] as string))];
-    let got = 0;
-    for (const [x, y] of L.at(vals)) {
-      if (got >= L.need - shown || rivals.length >= DERIVE_MAX_QUESTIONS) break;
+    const differ: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
+    for (const [x, y] of [...L.at(vals), ...poolPairs]) {
       const pt = examples[0]!.args.map((a, k) => (k === t.i ? x : k === t.j ? y : a));
-      if (exKeys.has(keyOf(pt)) || rivals.some((r) => keyOf(r.at) === keyOf(pt))) continue;
       const mine = evalProgram(program, pt), other = evalProgram(program, pt, undefined, L.le);
-      if (mine !== undefined && other !== undefined && mine !== other) { rivals.push({ at: pt, values: [mine, other] }); got++; }
+      if (mine !== undefined && other !== undefined && mine !== other) differ.push({ at: pt, values: [mine, other] });
+    }
+    if (!differ.length) continue;
+    first ??= { gate: "order", param: params[t.i]!.name, searched: 0, detail: `\`${expr}\` compares strings in code-unit order, but ${shown ? "only " + shown + " example shows" : "no example shows"} where ${L.name} would give another result; add such examples` };
+    let got = 0;
+    for (const r of differ) {
+      if (got >= L.need - shown || rivals.length >= DERIVE_MAX_QUESTIONS) break;
+      if (exKeys.has(keyOf(r.at)) || rivals.some((q) => keyOf(q.at) === keyOf(r.at))) continue;
+      rivals.push(r); got++;
     }
   }
   return first ? { ...first, ...(rivals.length ? { rivals, at: rivals.map((r) => r.at) } : {}) } : null;
