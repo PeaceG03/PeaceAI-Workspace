@@ -69,11 +69,17 @@ const ident = [-200, -100, -1, 0, 1, 2, 3, 10, 100, 250, 500, 1000];
 const S = ["", "a", "B", "Hello World", " lead", "x.y", "Zz 9", "trail ", "MiXeD-2"];
 const bool: Row[] = [-300, -100, -1, 0, 1, 4, 5, 6, 7, 105, 106, 300].map((a) => [a, 10, a > 5]);
 bool.push([2, 0, false], [2, 100, false], [-50, -9, false]);
+const bool3: Row[] = [...bool, [2, 10, false]];
+const bor3: Row[] = [...[-300, -100, -1, 0, 1, 4, 5, 6, 7, 105, 106, 300].map((a) => [a, 0, a > 5]), [9, 0, true], [9, 100, true], [9, -9, true]];
+// (c) on an && operand: c varied where 6 <= a && 4 <= b is true and where a <= 5, never where 4 <= b is false.
+const and3: Row[] = [];
+for (const a of [-100, 2, 5, 6, 7, 106]) for (const b of [-100, 2, 3, 4, 5, 104]) and3.push([a, b, -5, a > 5 && b > 3]);
+and3.push([7, 10, 5, true], [7, 10, 9, true], [2, 10, 5, false], [2, 10, 9, false]);
 const bor: Row[] = [-300, -100, -1, 0, 1, 4, 5, 6, 7, 105, 106, 300].map((a) => [a, 0, a > 5]);
 bor.push([9, 0, true], [9, 100, true], [200, -9, true]);
 const M103_ADV: Adv[] = [
-  { id: "a*b+c emits c (a varied at b=0, b at a=0)", names: ["a", "b", "c"], ret: "number", rows: [...ident.map((c) => [0, 0, c, c]), [3, 0, 5, 5], [9, 0, 5, 5], [0, 4, 7, 7], [0, 8, 7, 7]], truth: (a, b, c) => a * b + c, grid: g3([-2, 0, 1, 3], [-2, 0, 1, 4], R), param: "a", onMenu: true },
-  { id: "a+b*c emits a (zero in the other unread param)", names: ["a", "b", "c"], ret: "number", rows: [...ident.map((a) => [a, 0, 0, a]), [5, 3, 0, 5], [5, 9, 0, 5], [7, 0, 4, 7], [7, 0, 8, 7]], truth: (a, b, c) => a + b * c, grid: g3(R, [-2, 0, 1, 3], [-2, 0, 1, 4]), param: "b", onMenu: true },
+  { id: "a*b+c emits c (a varied at b=0, b at a=0)", names: ["a", "b", "c"], ret: "number", rows: [...ident.map((c) => [0, 0, c, c]), [3, 0, 5, 5], [9, 0, 5, 5], [-4, 0, 5, 5], [0, 4, 7, 7], [0, 8, 7, 7], [0, -3, 7, 7]], truth: (a, b, c) => a * b + c, grid: g3([-2, 0, 1, 3], [-2, 0, 1, 4], R), param: "a", onMenu: true },
+  { id: "a+b*c emits a (zero in the other unread param)", names: ["a", "b", "c"], ret: "number", rows: [...ident.map((a) => [a, 0, 0, a]), [5, 3, 0, 5], [5, 9, 0, 5], [5, -4, 0, 5], [7, 0, 4, 7], [7, 0, 8, 7], [7, 0, -3, 7]], truth: (a, b, c) => a + b * c, grid: g3(R, [-2, 0, 1, 3], [-2, 0, 1, 4]), param: "b", onMenu: true },
   { id: "c+(a*b)**2 emits c (square of a zero product)", names: ["a", "b", "c"], ret: "number", rows: [...ident.map((c) => [0, 0, c, c]), [3, 0, 5, 5], [9, 0, 5, 5], [0, 4, 7, 7], [0, 8, 7, 7]], truth: (a, b, c) => c + (a * b) ** 2, grid: g3([-2, 0, 1, 3], [-2, 0, 1, 4], R), param: "a", onMenu: true },
   { id: "s+t.repeat(n) emits s (t varied at n=0, n at t='')", names: ["s", "t", "n"], types: ["string", "string", "number"], ret: "string", rows: [...S.map((s) => [s, "", 0, s]), ["ab", "q", 0, "ab"], ["ab", "zz", 0, "ab"], ["cd", "", 3, "cd"], ["cd", "", 7, "cd"]], truth: (s, t, n) => s + t.repeat(Math.max(0, n)), grid: S.flatMap((s) => ["", "q", "Ab"].flatMap((t) => [0, 1, 2].map((n) => [s, t, n]))), param: "t" },
   { id: "s===''?'':s+t emits s (t varied only at s='')", names: ["s", "t"], types: ["string", "string"], ret: "string", rows: [...S.map((s) => [s, "", s]), ["", "q", ""], ["", "Zz", ""]], truth: (s, t) => (s === "" ? "" : s + t), grid: S.flatMap((s) => ["", "q", "Ab"].map((t) => [s, t])), param: "t", onMenu: true },
@@ -81,6 +87,9 @@ const M103_ADV: Adv[] = [
   { id: "b*(a+1)**2 emits b (symmetric pair a=0/-2)", names: ["a", "b"], ret: "number", rows: [...ident.map((b) => [0, b, b]), [-2, 100, 100], [-2, 7, 7]], truth: (a, b) => b * (a + 1) ** 2, grid: g2([-3, -2, -1, 0, 1, 2, 5], R), param: "a", onMenu: true },
   { id: "a>5 && b>3 emitted 6 <= a after asking (b varied only at a<=5)", names: ["a", "b"], ret: "boolean", rows: bool, truth: (a, b) => a > 5 && b > 3, grid: g2(R, [-9, 0, 3, 4, 10, 100]), param: "b" },
   { id: "a>5 || b>3 emitted 6 <= a after asking (b varied only at a>5)", names: ["a", "b"], ret: "boolean", rows: bor, truth: (a, b) => a > 5 || b > 3, grid: g2(R, [-9, 0, 3, 4, 10, 100]), param: "b" },
+  { id: "a>5 && b>3, b at 3 values only at a<=5 (boolean result shown only false)", names: ["a", "b"], ret: "boolean", rows: bool3, truth: (a, b) => a > 5 && b > 3, grid: g2(R, [-9, 0, 3, 4, 10, 100]), param: "b" },
+  { id: "a>5 || b>3, b at 3 values only at a>5 (boolean result shown only true)", names: ["a", "b"], ret: "boolean", rows: bor3, truth: (a, b) => a > 5 || b > 3, grid: g2(R, [-9, 0, 3, 4, 10, 100]), param: "b" },
+  { id: "a>5 && (b>3 || c>0): c varied only where the && operand 4 <= b is true", names: ["a", "b", "c"], ret: "boolean", rows: and3, truth: (a, b, c) => a > 5 && (b > 3 || c > 0), grid: g3([-7, 2, 6, 50], [-50, 2, 3, 4, 50], [-9, -5, 5, 9]), param: "c" },
   // G5 (Auditor #497 (4)): the max cap check. a varied only at b = -2000, where max(-1000, ...) holds.
   { id: "max(-1000, b*(a+1)): a varied only where the max cap holds", names: ["a", "b"], ret: "number", rows: [...[-5000, -2000, -1000, -999, -500, -1, 0, 1, 2, 100, 999, 5000].map((b) => [0, b, Math.max(-1000, b)]), [3, -2000, -1000], [8, -2000, -1000]], truth: (a, b) => Math.max(-1000, b * (a + 1)), grid: g2([0, 1, 2, 5], [-5000, -2000, -1000, -400, -1, 0, 1, 7, 400, 5000]), param: "a", onMenu: true },
 ];
