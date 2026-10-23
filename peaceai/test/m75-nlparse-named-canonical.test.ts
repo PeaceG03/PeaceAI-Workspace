@@ -17,6 +17,7 @@ import { METHOD_GUARD_TRIGGER } from "../lib/method-guard.ts";
 import { LEARNED_CANONICAL, parseTask, type LearnedTriggerName } from "../lib/nlparse.ts";
 import { TSCONFIG_SCRIPT_TRIGGER } from "../lib/tsconfig-script.ts";
 import { WORKFLOW_JOB_TRIGGER } from "../lib/workflow-job.ts";
+import { EXISTING_EDIT_TRIGGER } from "../lib/learned-edit-existing.ts";
 import { DERIVE_TRIGGER } from "../lib/learned-derive.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -25,13 +26,13 @@ const KINDS: Record<LearnedTriggerName, string> = {
   throwGuard: "ADD_THROW_GUARD", addFunction: "ADD_FUNCTION", workflowStep: "ADD_WORKFLOW_STEP", replaceExpression: "REPLACE_EXPRESSION",
   throwGuardTop: "ADD_THROW_GUARD", methodGuard: "METHOD_GUARD", complexFunction: "COMPLEX_FUNCTION", loopFunction: "COMPLEX_FUNCTION",
   importEditV2: "IMPORT_EDIT_V2", loopWhile: "COMPLEX_FUNCTION", workflowJob: "WORKFLOW_JOB", tsconfigScript: "TSCONFIG_SCRIPT",
-  envFix: "ENV_FIX", dateFunction: "COMPLEX_FUNCTION", testExisting: "TEST_EXISTING", deriveFromBehavior: "DERIVE_FROM_BEHAVIOR",
+  envFix: "ENV_FIX", dateFunction: "COMPLEX_FUNCTION", testExisting: "TEST_EXISTING", existingEdit: "EXISTING_EDIT", deriveFromBehavior: "DERIVE_FROM_BEHAVIOR",
 };
 const ENGINE: Partial<Record<LearnedTriggerName, string>> = {
   testCase: TEST_TRIGGER, throwGuard: GUARD_TRIGGER, addFunction: FUNCTION_TRIGGER, workflowStep: WORKFLOW_TRIGGER, replaceExpression: REPLACE_TRIGGER,
   throwGuardTop: GUARD_TOP_TRIGGER, methodGuard: METHOD_GUARD_TRIGGER, complexFunction: COMPLEX_TRIGGER, loopFunction: LOOP_TRIGGER,
   importEditV2: IMPORT_EDIT_V2_TRIGGER, loopWhile: WHILE_TRIGGER, workflowJob: WORKFLOW_JOB_TRIGGER, tsconfigScript: TSCONFIG_SCRIPT_TRIGGER,
-  envFix: ENV_FIX_TRIGGER, dateFunction: DATE_TRIGGER, testExisting: TEST_EXISTING_TRIGGER, deriveFromBehavior: DERIVE_TRIGGER,
+  envFix: ENV_FIX_TRIGGER, dateFunction: DATE_TRIGGER, testExisting: TEST_EXISTING_TRIGGER, existingEdit: EXISTING_EDIT_TRIGGER, deriveFromBehavior: DERIVE_TRIGGER,
 };
 
 test("every learned trigger is keyed by name with its pinned kind, and each name maps to its own engine trigger", () => {
