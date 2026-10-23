@@ -1,0 +1,14 @@
+{
+ "schema": "peaceai-derive-practice-families:v1",
+ "note": "Practice shapes are graded bunch by bunch. active: graded in CI (derive-practice.yml), a NEW blocking wrong kind fails the run. staged: written, runnable locally with --family, not run in CI. Activate the next family (one-line status change) in a later PR, once every active family is at 0 blocking wrong. Rank staged families: tsx peaceai/bin/derive-family-census.ts <PeaceSTOCKS checkout>.",
+ "families": [
+  { "name": "family-1", "status": "active", "title": "the M100 forms (S1-S3, Auditor #491 shapes)", "forms": ["identity", "threshold", "range", "s1_shape", "eq_or_ge", "island", "if_eq", "cap_sq", "cap_lin2", "floor_clamp", "square", "linear", "backoff", "join", "cond_suffix"] },
+  { "name": "thresholds2", "status": "staged", "title": "multi-parameter thresholds (a <= b; a >= k1 && b <= k2)", "forms": ["thresh2"] },
+  { "name": "outside-range", "status": "staged", "title": "two-sided ranges with open ends (n < lo || n > hi)", "forms": ["outside_range"] },
+  { "name": "nested-caps", "status": "staged", "title": "nested caps, min of max (Math.min(K2, Math.max(K1, a * b)))", "forms": ["nested_cap"] },
+  { "name": "piecewise", "status": "staged", "title": "piecewise linear, 2-3 pieces", "forms": ["piecewise"] },
+  { "name": "bool-combos", "status": "staged", "title": "boolean combinations of 2-3 comparisons", "forms": ["bool_combo"] },
+  { "name": "prefix-joins", "status": "staged", "title": "startsWith-like joins (prefix / separator only when non-empty)", "forms": ["prefix_join"] },
+  { "name": "template-joins", "status": "active", "title": "M101 template joins: literal + slot + ... (n-ary concat, str(number))", "forms": ["template_join"] }
+ ]
+}
