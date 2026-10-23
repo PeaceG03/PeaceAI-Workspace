@@ -5,7 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
@@ -14,6 +15,7 @@ import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned
 import { behaviorCodeProblem, DERIVE_TRIGGER, DERIVE_VOCAB, derivedModuleProblem, describedConstants, describedProbes, parseDeriveTask, rawIssueProblem } from "../lib/learned-derive.ts";
 import { callsFunction, stubFunction } from "../lib/learned-function.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
+import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
@@ -21,7 +23,7 @@ import { cleanIssueText } from "../lib/taskmap.ts";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "3c4a0abfc59c2f74a5a9e74b39f6d4e4b0bab98ed6b76d84c48e285a4394f0b1";
+const SHA = "aa95535b18352ec5d834817cf5f79c78d7f8ac5915fe52d2164009c847c438d6";
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -234,4 +236,70 @@ test("fail closed: a competing fit one node larger is AMBIGUOUS; constant progra
   const dflt = deriveProgram({ params: x1, ret: "number", examples: ex });
   assert.equal(!dflt.ok && dflt.reason, "derive_ambiguous");
   assert.deepEqual(!dflt.ok && dflt.alternatives!.map((f) => f.size), [4, 5]);
+});
+
+// ---- mined evidence ----
+type DV = number | string | boolean;
+type Ex = { repo: string; commit: string; module: string; fn: string; params: { name: string; type: "number" | "string" | "boolean" }[]; ret: "number" | "string" | "boolean"; prose: string; described: { numbers: number[] }; examples: { args: DV[]; out: DV }[]; expr: string; heldOut: { right: number; wrong: number }; upstream: string; path: string; fileBlob: string; sha256: string; fixture: string; license: string; licenseSha256: string };
+const EV = JSON.parse(read("peaceai/rules/proposals/m99-derive-from-behavior-evidence.json")) as { bar: number; manifestSha256: string; examples: Ex[]; peace: { repo: string; checkedAt: string; counted: number }[] };
+const gitBlob = (b: Buffer) => createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
+const pinned = (p: { fixture: string; fileBlob: string; sha256: string }) => {
+  const b = readFileSync(resolve(root, p.fixture));
+  assert.ok(b.length <= 65536, p.fixture);
+  assert.equal(gitBlob(b), p.fileBlob, p.fixture);
+  assert.equal(createHash("sha256").update(b).digest("hex"), p.sha256, p.fixture);
+  return b.toString("utf8");
+};
+test("evidence: bar met; modules blob-pinned and hold the upstream function; each expression re-derives from the recorded examples and prose numbers", () => {
+  assert.ok(EV.examples.length >= EV.bar && EV.bar >= 10);
+  assert.equal(new Set(EV.examples.map((e) => `${e.repo}\0${e.module}\0${e.fn}`)).size, EV.examples.length);
+  const perRepo = new Map<string, number>();
+  for (const e of EV.examples) perRepo.set(e.repo, (perRepo.get(e.repo) ?? 0) + 1);
+  assert.ok([...perRepo.values()].every((n) => n <= 3), "at most 3 per repo");
+  let nonString = 0;
+  for (const e of EV.examples) {
+    const text = pinned(e);
+    assert.equal(e.path, e.module);
+    assert.ok(text.includes(e.upstream) && new RegExp(`\\b${e.fn}\\b`).test(e.upstream), `${e.repo} ${e.fn} upstream`);
+    assert.deepEqual(describedConstants(e.prose), e.described, `${e.repo} ${e.fn} prose numbers`);
+    assert.ok(e.examples.length >= 4 && e.examples.length <= 14);
+    assert.ok(e.heldOut.right > 0 && e.heldOut.wrong === 0);
+    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples, described: describedConstants(e.prose) });
+    assert.ok(r.ok, `${e.repo} ${e.fn}: ${r.ok ? "" : r.reason}`);
+    const expr = compileProgram(r.fit.program, e.params.map((p) => p.name));
+    assert.equal(expr, e.expr, `${e.repo} ${e.fn}`);
+    assert.equal(derivedExprProblem(expr, e.params.map((p) => p.name)), null, `${e.repo} ${e.fn} whitelist`);
+    for (const x of e.examples) assert.equal(evalProgram(r.fit.program, x.args), x.out);
+    if (e.ret !== "string") nonString++;
+  }
+  assert.ok(nonString >= 3, "number and boolean results are evidenced too");
+});
+test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {
+  const notices = read("THIRD_PARTY_NOTICES");
+  const listed = new Set<string>();
+  for (const e of EV.examples) {
+    assert.ok(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"].includes(e.license), e.repo);
+    assert.ok(notices.includes(`repo: ${e.repo}\nlicense: ${e.license} (`) && notices.includes(`sha256 of trimmed text ${e.licenseSha256})`), e.repo);
+    assert.ok(notices.includes(` ${e.fixture}\n`), e.fixture);
+    listed.add(e.fixture.split("/").pop()!);
+  }
+  const have = readdirSync(resolve(root, "peaceai/test/fixtures/m99-dfb"));
+  for (const f of have) assert.ok(listed.has(f), f);
+  assert.equal(have.length, listed.size);
+});
+test("evidence: no overlap with the training corpus or the ext-manifest; Peace's repos checked first and not counted", () => {
+  const buf = readManifestBytes(resolve(root, "peaceai/model"), "ext-manifest");
+  assert.equal(createHash("sha256").update(buf).digest("hex"), EV.manifestSha256);
+  const repos = new Set<string>(); const shas = new Set<string>();
+  for (const l of buf.toString("utf8").split("\n")) if (l.trim()) { const r = JSON.parse(l) as { repo?: string; sha256?: string }; if (r.repo) repos.add(r.repo); if (r.sha256) shas.add(r.sha256); }
+  for (const r of (JSON.parse(read("peaceai/model/ext-corpus.json")) as { repos: { name: string }[] }).repos) repos.add(r.name);
+  for (const e of EV.examples) { assert.ok(!repos.has(e.repo), e.repo); assert.ok(!shas.has(e.sha256), e.fixture); assert.ok(!e.repo.startsWith("PeaceG03/")); }
+  for (const p of EV.peace) { assert.ok(repos.has(p.repo)); assert.equal(p.counted, 0); assert.match(p.checkedAt, /^[0-9a-f]{40}$/); }
+  const rec = JSON.parse(read("peaceai/rules/proposals/public-derive-from-behavior-v1.json")) as { status: string; evidence: { examples: number; repos: number; bar: number; qualifies: boolean } };
+  assert.match(rec.status, /^proposal-off/);
+  assert.equal(rec.evidence.examples, EV.examples.length);
+  assert.equal(rec.evidence.repos, new Set(EV.examples.map((e) => e.repo)).size);
+  assert.ok(rec.evidence.qualifies && rec.evidence.examples >= rec.evidence.bar);
+  assert.deepEqual(SPEC.evidence.repos, [...new Set(EV.examples.map((e) => e.repo))].sort());
+  assert.equal(SPEC.evidence.hunks, EV.examples.length);
 });

@@ -1,0 +1,25 @@
+{
+ "id": "public-derive-from-behavior-v1",
+ "kind": "DERIVE_FROM_BEHAVIOR",
+ "shape": "DERIVE_FROM_BEHAVIOR",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list",
+ "engine": "peaceai/lib/derive.ts (typed-DSL program search, ambiguity check, compile to whitelisted TS) and peaceai/lib/learned-derive.ts (issue parse, anti-credit guard, described constants and probes, module and test text); Job B: gradeSelf with the derived module re-checked (derivedModuleProblem) and the generated test run under TZ=UTC, America/Denver and Asia/Tokyo with an empty env",
+ "scope": "one new module src/<path>.ts exporting one pure function with 1-3 number / string / boolean parameters and a number / string / boolean result, plus one new test file; the issue gives only the header, a plain-prose Behavior paragraph and literal input -> output examples; the body is the smallest DSL program that fits every example, when no other program up to one node larger fits them too",
+ "refusals": "code or expressions in the Behavior section (anti-credit guard), a raw issue with escapes or control characters, a bad header, signature or path, non-literal or inconsistent examples, all examples with one result (derive_examples); no program within size 13 (derive_no_fit); search or memory budget spent (derive_budget); two fits within the slack that disagree on a boundary probe (derive_ambiguous); integer constants the prose does not write, string equality with a literal, and output pieces seen in fewer than two examples are never searched (no memorizing); any derived text outside the whitelist (globals, I/O, computed member access, constructor / eval / proto paths, timers) is refused before writing",
+ "evidence": {
+  "examples": 16,
+  "repos": 15,
+  "file": "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json",
+  "method": "HEAD scan of the M88 cloned permissive TypeScript repos (Peace's repos excluded): 2793 exported functions with typed number / string / boolean params and result; 1821 not pure or not integer / plain-string on the input grid, 283 constant on it; of the 689 left the engine refused 325 (267 no fit, 50 budget, 7 ambiguous, 1 examples) and accepted 364, 278 right on every held-out row and 86 wrong on at least one; kept 16 held-out-right examples (at most 2 per repo; candidates whose module holds an email address or a line of the private core were dropped) whose derived expression was reviewed equal to the upstream body on its whole typed domain",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "Peace's repos checked first: PeaceSTOCKS 0ab37c8 (47 typed exported functions, 2 derive) is in the corpus manifest, so recorded and not counted. 12 string, 3 boolean, 1 number result. Limitation measured by the same scan: 86 of 364 accepted programs (24%) differ from upstream on held-out inputs, because the examples under-determine the behavior (string transforms outside the DSL read as identity, wrap-around or fractional rules seen through a few integers)"
+ },
+ "learned": "peaceai/rules/learned/public-derive-from-behavior-v1.json",
+ "tests": [
+  "peaceai/test/m99-derive-from-behavior.test.ts"
+ ],
+ "untouched": "every other learned spec (same params and hashes); TEST_EXISTING, FUNCTION and the m98 existing-function-edit work"
+}

@@ -1,0 +1,1446 @@
+{
+ "schema": "peaceai-m99-derive-from-behavior-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "DERIVE_FROM_BEHAVIOR v1: 16 exported pure functions (typed number / string / boolean params and result) from 15 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as training; the rest held out); the prose is the function's leading doc comment only (empty for 6), never its body. PeaceAI derives the recorded expression from the training examples plus the integers the prose writes; it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test.",
+ "examples": [
+  {
+   "repo": "AetherAI3/aether-agent",
+   "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+   "module": "src/core/publish.ts",
+   "fn": "publishRefspec",
+   "params": [
+    {
+     "name": "branch",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "The refspec: `refs/heads/<branch>:refs/heads/<branch>`. The short form (`git push origin my-branch`) resolves the source through git's ref lookup, so a tag or a remote ref sharing the name can be what actually travels. Fully qualifying both sides removes the lookup entirely. /",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "refs/heads/:refs/heads/"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "refs/heads/abc:refs/heads/abc"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "refs/heads/hello world:refs/heads/hello world"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "refs/heads/123:refs/heads/123"
+    }
+   ],
+   "expr": "\"refs/heads/\" + (branch + (\":refs/heads/\" + branch))",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "const publishRefspec = (branch: string): string => `refs/heads/${branch}:refs/heads/${branch}`;",
+   "path": "src/core/publish.ts",
+   "fileBlob": "14d43d89265cf4ee801c21323537a4bd95aff7f0",
+   "sha256": "feb3dae44896322dbb71e67e1ca639f968ab53da99bc53580592fb3d439e4540",
+   "fixture": "peaceai/test/fixtures/m99-dfb/AetherAI3__aether-agent-14d43d89265c.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2"
+  },
+  {
+   "repo": "OrangeproAI/orangepro-mcp",
+   "commit": "405209f3c533d3e7fd03854982a3c8f51272c6ae",
+   "module": "src/local/analyze/__fixtures__/confirm-bundler/packages/orders/index.ts",
+   "fn": "archiveOrder",
+   "params": [
+    {
+     "name": "id",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "A \"workspace package\" subject, reached via the `@pkg/orders` path-alias that points at a packages/ entry (the monorepo/workspace-package idiom). Behavior = `archiveOrder`.",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": true
+    }
+   ],
+   "expr": "!(id === \"\")",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function archiveOrder(id: string): boolean {\n  return id.length > 0;\n}",
+   "path": "src/local/analyze/__fixtures__/confirm-bundler/packages/orders/index.ts",
+   "fileBlob": "59bed415639e321066cc03e0e195b0c4896037f3",
+   "sha256": "db31f35758a0e307a61f9029785d4757589238ff4d892d0ba1ec96ce5444bb30",
+   "fixture": "peaceai/test/fixtures/m99-dfb/OrangeproAI__orangepro-mcp-59bed415639e.txt",
+   "license": "MIT",
+   "licenseSha256": "0e8de1df4a069f84b32f7373e36c2f2970b952845d7da99c632c4f03c4fd919a"
+  },
+  {
+   "repo": "Scl-Ywr/inkos",
+   "commit": "50219a1d2bca05b3b956d8a8ba20ab1a2329266c",
+   "module": "packages/core/src/agents/truth-context-cache.ts",
+   "fn": "fileCacheKey",
+   "params": [
+    {
+     "name": "path",
+     "type": "string"
+    },
+    {
+     "name": "fallback",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "file::"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "file::abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "file::hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "file::123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "file:a:a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "file:a:Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "file:a:A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "file:a: pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "file:ab:ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "file:ab:x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "file:ab:foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "file:abc:"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "file:abc:abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "file:abc:hello world"
+    }
+   ],
+   "expr": "\"file:\" + (path + (\":\" + fallback))",
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "upstream": "function fileCacheKey(path: string, fallback: string): string {\n  return `file:${path}:${fallback}`;\n}",
+   "path": "packages/core/src/agents/truth-context-cache.ts",
+   "fileBlob": "aad7c3f78350b45bbde2a98b2daaab825e598950",
+   "sha256": "da230bf7e04bafeee62438747971818cf3a5de58479f3fafddd5a7ede9f5d82e",
+   "fixture": "peaceai/test/fixtures/m99-dfb/Scl-Ywr__inkos-aad7c3f78350.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  },
+  {
+   "repo": "anton-abyzov/vskill",
+   "commit": "d92eee849e93a77779a77d349f235224cb62408b",
+   "module": "src/audit/__fixtures__/clean-project/utils.ts",
+   "fn": "add",
+   "params": [
+    {
+     "name": "a",
+     "type": "number"
+    },
+    {
+     "name": "b",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "Clean utility module",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      -1,
+      -1
+     ],
+     "out": -2
+    },
+    {
+     "args": [
+      -1,
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1,
+      10
+     ],
+     "out": 9
+    },
+    {
+     "args": [
+      0,
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0,
+      3
+     ],
+     "out": 3
+    },
+    {
+     "args": [
+      0,
+      100
+     ],
+     "out": 100
+    },
+    {
+     "args": [
+      1,
+      1
+     ],
+     "out": 2
+    },
+    {
+     "args": [
+      1,
+      5
+     ],
+     "out": 6
+    },
+    {
+     "args": [
+      2,
+      -1
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      2,
+      2
+     ],
+     "out": 4
+    },
+    {
+     "args": [
+      2,
+      10
+     ],
+     "out": 12
+    },
+    {
+     "args": [
+      3,
+      0
+     ],
+     "out": 3
+    },
+    {
+     "args": [
+      3,
+      3
+     ],
+     "out": 6
+    },
+    {
+     "args": [
+      3,
+      100
+     ],
+     "out": 103
+    }
+   ],
+   "expr": "a + b",
+   "heldOut": {
+    "right": 50,
+    "wrong": 0
+   },
+   "upstream": "function add(a: number, b: number): number {\n  return a + b;\n}",
+   "path": "src/audit/__fixtures__/clean-project/utils.ts",
+   "fileBlob": "491a16ec7de001a0c00c30a7c193ba6272a7112b",
+   "sha256": "10f02246a5891f34f21e5891ef08b179c01f8c330a4434639c4c110dba24743d",
+   "fixture": "peaceai/test/fixtures/m99-dfb/anton-abyzov__vskill-491a16ec7de0.txt",
+   "license": "MIT",
+   "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04"
+  },
+  {
+   "repo": "awslabs/aidlc-workflows",
+   "commit": "f2acb53d353c9658f7a80737ea96f05447bc60eb",
+   "module": "core/tools/aidlc-kiro-ide-workflows.ts",
+   "fn": "kiroWorkflowsUnreadableFix",
+   "params": [
+    {
+     "name": "settingsPath",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "fix the error in "
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "fix the error in abc"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "fix the error in hello world"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "fix the error in 123"
+    }
+   ],
+   "expr": "\"fix the error in \" + settingsPath",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function kiroWorkflowsUnreadableFix(settingsPath: string): string {\n  return `fix the error in ${settingsPath}`;\n}",
+   "path": "core/tools/aidlc-kiro-ide-workflows.ts",
+   "fileBlob": "a7ac74b92737cf993c3d2e61a98743aa000664a0",
+   "sha256": "3bfe0c07e106dfe302b35e9064147579fd17cf7cd8cf1d2367240f567c806a4e",
+   "fixture": "peaceai/test/fixtures/m99-dfb/awslabs__aidlc-workflows-a7ac74b92737.txt",
+   "license": "MIT",
+   "licenseSha256": "0beac60c03ba4648df37840205ea1abba594a08200e2665454ff26ab65e9021c"
+  },
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "module": "server/src/auto-trigger/types.ts",
+   "fn": "anomalyRuleId",
+   "params": [
+    {
+     "name": "detectorId",
+     "type": "string"
+    },
+    {
+     "name": "classifierId",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "Construct the canonical rule_id for an anomaly finding. Mirrors Chi-3's catalog-key pattern (`{detector}__{classifier}`) so the auto-trigger ladder and the anomaly catalog stay aligned. /",
+   "described": {
+    "numbers": [
+     3
+    ]
+   },
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "anomaly____"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "anomaly____abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "anomaly____hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "anomaly____123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "anomaly__a__a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "anomaly__a__Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "anomaly__a__A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "anomaly__a__ pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "anomaly__ab__ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "anomaly__ab__x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "anomaly__ab__foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "anomaly__abc__"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "anomaly__abc__abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "anomaly__abc__hello world"
+    }
+   ],
+   "expr": "\"anomaly__\" + (detectorId + (\"__\" + classifierId))",
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "upstream": "function anomalyRuleId(\n  detectorId: string,\n  classifierId: string,\n): string {\n  return `anomaly__${detectorId}__${classifierId}`;\n}",
+   "path": "server/src/auto-trigger/types.ts",
+   "fileBlob": "2a42f78bc42d3e95d5ccd766ab8cd9839a1384e9",
+   "sha256": "bec5e1e3b356485d87c3dbcffdb0e977bbcbb088e87ef39e18933be417674f71",
+   "fixture": "peaceai/test/fixtures/m99-dfb/eriknewton__sanctuary-framework-2a42f78bc42d.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "eriknewton/sanctuary-framework",
+   "commit": "cc453025b38977886c79e1056f3b513ba19f8671",
+   "module": "server/src/anomaly-detection/anomaly-catalog.ts",
+   "fn": "catalogKey",
+   "params": [
+    {
+     "name": "detectorId",
+     "type": "string"
+    },
+    {
+     "name": "classifierId",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "Build a stable string key for a (detector, classifier) tuple. Used as the URL path segment for subscribe / unsubscribe routes and as the in-memory dispatcher registration key. The dispatcher's `registerDetector` keys by `detector.detectorId` alone; Chi-3 keeps things compatible by treating (detectorId, classifierId) as the OPERATOR-VISIBLE key but registering each tuple's factory output under its detectorId. A future dispatcher-side composite-key extension lights up multiple classifiers per detector; Chi-3 ships the URL surface ready for that without forcing it. /",
+   "described": {
+    "numbers": [
+     3
+    ]
+   },
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "__"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "__abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "__hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "__123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a__a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a__Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a__A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a__ pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab__ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab__x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab__foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc__"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc__abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc__hello world"
+    }
+   ],
+   "expr": "detectorId + (\"__\" + classifierId)",
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "upstream": "function catalogKey(\n  detectorId: string,\n  classifierId: string,\n): string {\n  return `${detectorId}__${classifierId}`;\n}",
+   "path": "server/src/anomaly-detection/anomaly-catalog.ts",
+   "fileBlob": "d1efca6aaef7a5a27c6007031911864e6fdb23aa",
+   "sha256": "1ce25464748cb608322005dafc36a798feaab6a835ab53ee0d64d2a0aef3c5f1",
+   "fixture": "peaceai/test/fixtures/m99-dfb/eriknewton__sanctuary-framework-d1efca6aaef7.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "71a800bd46b5d76641ffa5955a672db0aa9470502cd25f57240c44e65fd25608"
+  },
+  {
+   "repo": "formsy/formsy-react",
+   "commit": "d84eb0a38d6ba196aaa4a741747078a428a8935b",
+   "module": "src/utils.ts",
+   "fn": "isValueStringEmpty",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": false
+    }
+   ],
+   "expr": "value === \"\"",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function isValueStringEmpty(value: string): boolean {\n  return value === '';\n}",
+   "path": "src/utils.ts",
+   "fileBlob": "cb4fabf0af3ffe107e4d15b2943a57e93f6c7461",
+   "sha256": "7b558d51e10a218b5cb3037e409705d38248e1c9a95e781f9e2e42e62a0b75ea",
+   "fixture": "peaceai/test/fixtures/m99-dfb/formsy__formsy-react-cb4fabf0af3f.txt",
+   "license": "MIT",
+   "licenseSha256": "7a4e8463e54d07bba35b503eed0843123143bdc12622d0a61aba31b3869177f9"
+  },
+  {
+   "repo": "inversify/inversify-express-utils",
+   "commit": "cd5ae93289a8eac5771745279b761e80ad8294bc",
+   "module": "src/constants.ts",
+   "fn": "DUPLICATED_CONTROLLER_NAME",
+   "params": [
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "Two controllers cannot have the same name: "
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "Two controllers cannot have the same name: abc"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "Two controllers cannot have the same name: hello world"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "Two controllers cannot have the same name: 123"
+    }
+   ],
+   "expr": "\"Two controllers cannot have the same name: \" + name",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "const DUPLICATED_CONTROLLER_NAME: (name: string) => string = (\n  name: string,\n): string => `Two controllers cannot have the same name: ${name}`;",
+   "path": "src/constants.ts",
+   "fileBlob": "eee620934f0daeef3fc1cb5207c611041076eacc",
+   "sha256": "2b984febe8808e776a3fb0bf5e27567ee657e118d02d8ca83be332108f451336",
+   "fixture": "peaceai/test/fixtures/m99-dfb/inversify__inversify-express-utils-eee620934f0d.txt",
+   "license": "MIT",
+   "licenseSha256": "5d657cf0f820b405de458d8bdc7195a9704f6791d9a58b4619614e4d58c08c2c"
+  },
+  {
+   "repo": "iongion/container-desktop",
+   "commit": "96e41de5aaec1ad26e4ab2b62a8b9609d8f29ffc",
+   "module": "src/web-app/hooks/windowedScrollRestore.ts",
+   "fn": "canRestoreScrollOffset",
+   "params": [
+    {
+     "name": "savedOffset",
+     "type": "number"
+    },
+    {
+     "name": "contentHeight",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "A saved offset is safe to restore only if the current content is at least tall enough to reach it. Content height (not max-scroll = content − viewport) is a deliberately generous bound: an offset that sits within the content but past the last viewport clamps harmlessly to the bottom (still valid rows), whereas an offset BEYOND the content — the shrunk-list case — is the only one that strands every row above the viewport. So that is the single case we reject; everything else restores as before.",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      -1,
+      -1
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      -1,
+      2
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      -1,
+      10
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      0,
+      0
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      0,
+      3
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      0,
+      100
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      1,
+      1
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      1,
+      5
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      2,
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2,
+      2
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      2,
+      10
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      3,
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      3,
+      3
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      3,
+      100
+     ],
+     "out": true
+    }
+   ],
+   "expr": "savedOffset <= contentHeight",
+   "heldOut": {
+    "right": 50,
+    "wrong": 0
+   },
+   "upstream": "function canRestoreScrollOffset(savedOffset: number, contentHeight: number): boolean {\n  return savedOffset <= contentHeight;\n}",
+   "path": "src/web-app/hooks/windowedScrollRestore.ts",
+   "fileBlob": "30202470015d5b22c835386f73e2d15931ab333c",
+   "sha256": "941bfbfa65afb426edb25adb4559edaa7f49067694d40ec62375bbe009502d58",
+   "fixture": "peaceai/test/fixtures/m99-dfb/iongion__container-desktop-30202470015d.txt",
+   "license": "MIT",
+   "licenseSha256": "639d5d0a62d6c4eb4f43648c07a2f6ee8a3614d6ebf1f6a483bcf83be7d5abaa"
+  },
+  {
+   "repo": "ngParty/ng-metadata",
+   "commit": "677bf01f6a907bbdcf40e34e5accd760a2a4865b",
+   "module": "src/facade/lang.ts",
+   "fn": "controllerKey",
+   "params": [
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "controller instance of directive is exposed on jqLiteElement.data() under the name: `$` + Ctor + `Controller` @param name @returns {string} /",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "$Controller"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "$abcController"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "$hello worldController"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "$123Controller"
+    }
+   ],
+   "expr": "\"$\" + (name + \"Controller\")",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function controllerKey( name: string ): string {\n  return '$' + name + 'Controller';\n}",
+   "path": "src/facade/lang.ts",
+   "fileBlob": "d1b58ddcbeed1267e7e2d01a5138e642a27e6a03",
+   "sha256": "a55e8772d484d915139d26309a345a27e8d921dbbc2aea27aa9c29e4a4082d59",
+   "fixture": "peaceai/test/fixtures/m99-dfb/ngParty__ng-metadata-d1b58ddcbeed.txt",
+   "license": "MIT",
+   "licenseSha256": "322d4c3c636afc81a9c21b51baae681e37cddf10e94c4f491db3d6d83f99a08f"
+  },
+  {
+   "repo": "oomol-lab/oo-cli",
+   "commit": "144cec4e5d985be48c84ec53c8d13edff6128982",
+   "module": "src/application/commands/skills/publish.ts",
+   "fn": "createSkillPackageHubUrl",
+   "params": [
+    {
+     "name": "endpoint",
+     "type": "string"
+    },
+    {
+     "name": "packageName",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "https://hub./package/"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "https://hub./package/abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "https://hub./package/hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "https://hub./package/123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "https://hub.a/package/a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "https://hub.a/package/Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "https://hub.a/package/A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "https://hub.a/package/ pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "https://hub.ab/package/ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "https://hub.ab/package/x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "https://hub.ab/package/foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "https://hub.abc/package/"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "https://hub.abc/package/abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "https://hub.abc/package/hello world"
+    }
+   ],
+   "expr": "\"https://hub.\" + (endpoint + (\"/package/\" + packageName))",
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "upstream": "function createSkillPackageHubUrl(endpoint: string, packageName: string): string {\n    return `https://hub.${endpoint}/package/${packageName}`;\n}",
+   "path": "src/application/commands/skills/publish.ts",
+   "fileBlob": "d949b8e7081c32d33fef6d60c9a81d4bfbe5fd0c",
+   "sha256": "1c35ffddaee2497d182f6670ccaf150648a4fd79a3ffd82e416c6f8fea7cfd88",
+   "fixture": "peaceai/test/fixtures/m99-dfb/oomol-lab__oo-cli-d949b8e7081c.txt",
+   "license": "MIT",
+   "licenseSha256": "f902f9fb7d6aff915f55c6bd7558fd9f95f8ffca7ab2dde50247d1133671f5df"
+  },
+  {
+   "repo": "ramarivera/pi-model-guardrails",
+   "commit": "3ce7f8dc6a977d160beb9a20788940fa3901fdc2",
+   "module": "src/engine/types.ts",
+   "fn": "ruleId",
+   "params": [
+    {
+     "name": "packId",
+     "type": "string"
+    },
+    {
+     "name": "ruleName",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "Build a public rule id from pack + rule name.",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ":"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": ":abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": ":hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": ":123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a:a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a:Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a:A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a: pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab:ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab:x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab:foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc:"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc:abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc:hello world"
+    }
+   ],
+   "expr": "packId + (\":\" + ruleName)",
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "upstream": "function ruleId(packId: string, ruleName: string): string {\n  return `${packId}:${ruleName}`;\n}",
+   "path": "src/engine/types.ts",
+   "fileBlob": "98225baf9e9a87973222464e44d213c367360b04",
+   "sha256": "a7257cc9d9e79912f2f7c96194c8fce8a4e4d4fe66668caff2dc40ae4b26b712",
+   "fixture": "peaceai/test/fixtures/m99-dfb/ramarivera__pi-model-guardrails-98225baf9e9a.txt",
+   "license": "MIT",
+   "licenseSha256": "80085d1d679672b783715b744fa092460713f792f1b055abdfae2db5f49d9231"
+  },
+  {
+   "repo": "sbluemin/fleet-harness",
+   "commit": "57a51038a19688b43d04c8be0c016424a1659f18",
+   "module": "runtime/fleet-console/core/client/src/chrome/mobile/mobile-store.ts",
+   "fn": "conversationTabId",
+   "params": [
+    {
+     "name": "entryId",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "대화 정보 화면에서 엔트리(`mobile.conversationPane`)가 세우는 탭의 id — 착지 요청과 탭 목록이 같은 id를 쓴다.",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "entry:"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "entry:abc"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "entry:hello world"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "entry:123"
+    }
+   ],
+   "expr": "\"entry:\" + entryId",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function conversationTabId(entryId: string): string {\n  return `entry:${entryId}`;\n}",
+   "path": "runtime/fleet-console/core/client/src/chrome/mobile/mobile-store.ts",
+   "fileBlob": "6d63e9323ce995b1b1f8f5ae6e6e248f10773b1e",
+   "sha256": "d63c8b6c56b2ab979f4fa7340f2342be41fced6340c81b2aab1679a0b149a0c6",
+   "fixture": "peaceai/test/fixtures/m99-dfb/sbluemin__fleet-harness-6d63e9323ce9.txt",
+   "license": "MIT",
+   "licenseSha256": "55694b77e35e4e37984e6c698a07d64f3b7efb42eee940480912e384d4422faa"
+  },
+  {
+   "repo": "typestyle/csx",
+   "commit": "23dabf2e5260b371776d68e02c3c2f675bbde17f",
+   "module": "src/strings.ts",
+   "fn": "calc",
+   "params": [
+    {
+     "name": "exp",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "Returns the value with '' around it. Any 's will be escaped \\' in the output /",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "calc()"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "calc(abc)"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "calc(hello world)"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "calc(123)"
+    }
+   ],
+   "expr": "\"calc(\" + (exp + \")\")",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function calc(exp: string): string {\n  return `calc(${exp})`;\n}",
+   "path": "src/strings.ts",
+   "fileBlob": "cfa0cb884a83463a15474099c7baa87a5f8d8233",
+   "sha256": "b9321b6f43f12020d5474fdd8b9856341e6e264a27a132842323906f988f08fd",
+   "fixture": "peaceai/test/fixtures/m99-dfb/typestyle__csx-cfa0cb884a83.txt",
+   "license": "MIT",
+   "licenseSha256": "0d13a552ae132af753f57d9cd3363bc23aaf6fada369d767a2dc5b126447d875"
+  },
+  {
+   "repo": "vercel-labs/scriptc",
+   "commit": "287119c4499827289895ac37ba18da620b5e4b3b",
+   "module": "packages/compiler/src/backend/build-cache.ts",
+   "fn": "cacheDigestPath",
+   "params": [
+    {
+     "name": "path",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "described": {
+    "numbers": []
+   },
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": ".sha256"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "abc.sha256"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "hello world.sha256"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "123.sha256"
+    }
+   ],
+   "expr": "path + \".sha256\"",
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "upstream": "function cacheDigestPath(path: string): string {\n  return `${path}.sha256`;\n}",
+   "path": "packages/compiler/src/backend/build-cache.ts",
+   "fileBlob": "c75892b72788d65fba20c5cf40363c406fa5df90",
+   "sha256": "f4a3dfa56c1063cb1b5fd9642bd30af79e6727e51e6250b2de27b2a2448c33e2",
+   "fixture": "peaceai/test/fixtures/m99-dfb/vercel-labs__scriptc-c75892b72788.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b"
+  }
+ ],
+ "peace": [
+  {
+   "repo": "PeaceG03/PeaceSTOCKS",
+   "checkedAt": "0ab37c85f9d28791cfb7eaedbe56906885b74fab",
+   "counted": 0,
+   "note": "47 exported typed functions; 2 derive (encodeLikeR2, decodeRfc2047Value: identity on the sampled grid), not counted (in the corpus manifest)"
+  }
+ ]
+}
