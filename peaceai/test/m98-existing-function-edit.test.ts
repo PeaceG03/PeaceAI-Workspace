@@ -591,7 +591,7 @@ test("Auditor #489 allowlist: each token is tripped alone by Job A and Job B; al
     ["const s = \"a\".repeat(1e9); return n + 2;", "size"],
     ["const s = \"a\".padStart(1e9); return n + 2;", "size"],
     ["const s = Array(1e9); return n + 2;", "size"],
-    ["const s = new Array(1e9).fill(0); return n + 2;", "size"],
+    ["const s = new Array(1e9); return n + 2;", "size"],
     ["const r = /a/; return n + 2;", "regex"],
     ["if (/(a+)+$/.test(String(n))) return 0; return n + 2;", "regex"],
     ["const r = new RegExp(\"a\"); return n + 2;", "ref:RegExp"],
