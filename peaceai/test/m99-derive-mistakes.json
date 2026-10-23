@@ -174,7 +174,10 @@
     "rounds": 3,
     "after": {
      "program": "(status === 429) || (500 <= status && status <= 599)",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": [
+      "eq"
+     ]
     }
    }
   },
@@ -302,7 +305,8 @@
     "rounds": 7,
     "after": {
      "program": "!((11 <= n && n <= 19) || (31 <= n && n <= 49))",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -378,7 +382,8 @@
     "rounds": 1,
     "after": {
      "program": "(n * n) <= 1000 ? (n * n) : 1000",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -494,6 +499,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       15,
       -60
@@ -590,6 +596,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       14,
       -60
@@ -726,6 +733,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       5,
       -60
@@ -832,6 +840,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       14,
       -60
@@ -938,6 +947,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       12,
       -60
@@ -1049,6 +1059,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       15,
       -60
@@ -1160,6 +1171,7 @@
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
+     "formGate": [],
      "wrongAt": [
       10,
       -60
@@ -1410,7 +1422,8 @@
     "rounds": 4,
     "after": {
      "program": "(b * ((a + 1) * (a + 1))) <= 700 ? (b * ((a + 1) * (a + 1))) : 700",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -1573,10 +1586,12 @@
    ],
    "correct": true,
    "why": "no example says 429 is true, so no program built from the examples can know it",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
    "expected": {
     "outcome": "known-limit",
     "program": "500 <= status && status <= 599",
-    "note": "known limit: the examples alone fit; the review note shows the derived expression and its table, so the missing 429 is visible to the reviewer"
+    "note": "known limit: the examples alone fit; the review note shows the derived expression and its table, so the missing 429 is visible to the reviewer",
+    "formGate": []
    }
   },
   {
@@ -1640,7 +1655,8 @@
     "rounds": 3,
     "after": {
      "program": "((-1) <= x ? x : (-1)) <= 1 ? ((-1) <= x ? x : (-1)) : 1",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -1805,7 +1821,8 @@
     "rounds": 8,
     "after": {
      "program": "!((86 <= n && n <= 111) || (143 <= n && n <= 152))",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -1961,7 +1978,11 @@
     "rounds": 2,
     "after": {
      "program": "\"HOST_DOWN:\" + (message + (((causeCode === \"\") ? causeCode : \":cause=\") + causeCode))",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": [
+      "ternary",
+      "eq"
+     ]
     }
    }
   },
@@ -2000,10 +2021,12 @@
    ],
    "correct": 207,
    "why": "every example is below the cap at 207, so nothing shows it",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
    "expected": {
     "outcome": "known-limit",
     "program": "n",
-    "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there)"
+    "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there)",
+    "formGate": []
    }
   },
   {
@@ -2063,7 +2086,8 @@
     "rounds": 2,
     "after": {
      "program": "61 <= n ? n : 61",
-     "rightOnGrid": true
+     "rightOnGrid": true,
+     "formGate": []
     }
    }
   },
@@ -2110,10 +2134,12 @@
    ],
    "correct": 164,
    "why": "no example went above the cap 164",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
    "expected": {
     "outcome": "known-limit",
     "program": "4 <= n ? n : 4",
-    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there"
+    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there",
+    "formGate": []
    }
   },
   {
@@ -2147,10 +2173,12 @@
    ],
    "correct": 335,
    "why": "a random handful of the examples, none above the cap 335",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
    "expected": {
     "outcome": "known-limit",
     "program": "46 <= n ? n : 46",
-    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there"
+    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there",
+    "formGate": []
    }
   },
   {
@@ -2196,10 +2224,12 @@
    ],
    "correct": false,
    "why": "a random handful of the examples: nothing between 390 and 437 was shown",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
    "expected": {
     "outcome": "known-limit",
     "program": "390 <= n",
-    "note": "known limit: the false band 391 to 436 lies past the program's last edge between examples under DERIVE_FAR (100) apart; holding open stretches to the bounded-region eighth refuses S1 and most fixtures (tried in round 3 and reverted), so the review note's table is the check here"
+    "note": "known limit: the false band 391 to 436 lies past the program's last edge between examples under DERIVE_FAR (100) apart; holding open stretches to the bounded-region eighth refuses S1 and most fixtures (tried in round 3 and reverted), so the review note's table is the check here",
+    "formGate": []
    }
   },
   {
@@ -2249,10 +2279,234 @@
    ],
    "correct": true,
    "why": "a random handful of the examples: 283 and everything past 474 unshown",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
    "expected": {
     "outcome": "known-limit",
     "program": "360 <= status",
-    "note": "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example"
+    "note": "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example",
+    "formGate": []
+   }
+  },
+  {
+   "id": "seed101-island-hidden-island-t465",
+   "source": "Auditor #491 round 3 (m100 derive-practice seed 101 vs m99 6f1ea5e), task 465 (island/hidden_island)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -46,
+     true
+    ],
+    [
+     4,
+     true
+    ],
+    [
+     54,
+     true
+    ],
+    [
+     104,
+     true
+    ],
+    [
+     105,
+     false
+    ],
+    [
+     114,
+     false
+    ],
+    [
+     122,
+     false
+    ],
+    [
+     131,
+     false
+    ],
+    [
+     139,
+     false
+    ],
+    [
+     145,
+     false
+    ],
+    [
+     154,
+     false
+    ],
+    [
+     163,
+     false
+    ],
+    [
+     171,
+     false
+    ],
+    [
+     180,
+     false
+    ],
+    [
+     181,
+     true
+    ],
+    [
+     231,
+     true
+    ],
+    [
+     281,
+     true
+    ],
+    [
+     331,
+     true
+    ]
+   ],
+   "wrongProgram": "!(105 <= n && n <= 180)",
+   "disagreeAt": [
+    140
+   ],
+   "correct": true,
+   "why": "the false examples step 8 or 9 apart and skip 140..144, so the true band there was never seen",
+   "disclosed": "disclosed limit (Auditor #491 round 3: seed 101, t465); not counted against seed 100's residual",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "!(105 <= n && n <= 180)",
+    "note": "known limit: a band narrower than the gaps between the examples (140..144 between 139 and 145) is invisible to them; no example-only check can see it, and the review note shows the derived expression",
+    "formGate": []
+   }
+  },
+  {
+   "id": "scan-r4-is-power-of-two",
+   "source": "upstream scan, round 4 (horizon-games/three-text-renderer@3e51530 isPowerOfTwo, MIT; also misode/deepslate@c33b4a6)",
+   "params": [
+    "x"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -1,
+     false
+    ],
+    [
+     0,
+     false
+    ],
+    [
+     2,
+     true
+    ],
+    [
+     10,
+     false
+    ],
+    [
+     100,
+     false
+    ],
+    [
+     1000,
+     false
+    ],
+    [
+     1,
+     true
+    ],
+    [
+     6,
+     false
+    ],
+    [
+     4,
+     true
+    ],
+    [
+     5,
+     false
+    ],
+    [
+     -99,
+     false
+    ],
+    [
+     550,
+     false
+    ],
+    [
+     325,
+     false
+    ],
+    [
+     775,
+     false
+    ],
+    [
+     212,
+     false
+    ],
+    [
+     437,
+     false
+    ],
+    [
+     662,
+     false
+    ],
+    [
+     887,
+     false
+    ],
+    [
+     268,
+     false
+    ],
+    [
+     493,
+     false
+    ],
+    [
+     718,
+     false
+    ],
+    [
+     943,
+     false
+    ],
+    [
+     156,
+     false
+    ],
+    [
+     381,
+     false
+    ],
+    [
+     606,
+     false
+    ],
+    [
+     831,
+     false
+    ]
+   ],
+   "wrongProgram": "1 <= x && x <= 4",
+   "disagreeAt": [
+    8
+   ],
+   "correct": true,
+   "why": "the powers of two above 4 (8, 16, ..., 512) are isolated true points between the examples, none of them shown",
+   "disclosed": "disclosed limit (round 4 upstream scan); excluded from the evidence (held-out wrong)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "1 <= x && x <= 4",
+    "note": "known limit: isolated true points between the examples (the hidden-island class); wrong on 9 held-out inputs of the scan's grid; the review note shows the derived expression",
+    "formGate": []
    }
   }
  ]
