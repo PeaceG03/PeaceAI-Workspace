@@ -125,3 +125,15 @@ for (const c of M103_ADV) {
     }
   });
 }
+
+// Auditor #497 (afdd28a) mutant U7 (/tmp/r497b/u7.mts): a boolean unread f shown at both values only at a = 0 and
+// a = 1 (degenerate), with single f = false examples elsewhere. One boolean value per group is not enough: refused by
+// gate unread on f (with 1 value it emits `a`, wrong at [5, true] where the truth f ? a * a : a gives 25).
+test("m103 Auditor #497 U7: a boolean unread parameter needs both values at a non-degenerate setting", () => {
+  const AV = [-300, -150, -20, -7, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 13, 50, 100, 450, 900];
+  const rows: [number, boolean, number][] = AV.map((a) => [a, false, a]);
+  rows.push([0, true, 0], [1, true, 1]);
+  const input: DeriveInput = { params: [{ name: "a", type: "number" }, { name: "f", type: "boolean" }], ret: "number", examples: rows.map((x) => ({ args: [x[0], x[1]], out: x[2] })) };
+  const r = deriveProgram(input);
+  assert.ok(!r.ok && r.gate === "unread" && r.param === "f", JSON.stringify(r.ok ? r.fit.expr : r));
+});
