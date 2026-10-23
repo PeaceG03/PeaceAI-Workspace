@@ -5,8 +5,9 @@
 // in the derive mistakes ledger's shape, ready to add there. The scale run: peaceai/bin/derive-practice.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CATEGORIES, coverLine, familyCategories, evalJs, gradeTask, judge, ledgerEntry, practiceTask, tally, taskSeed, type PracticeGrade } from "../lib/derive-practice.ts";
+import { CATEGORIES, capAboveUnshown, coverLine, familyCategories, evalJs, gradeTask, judge, ledgerEntry, practiceTask, tally, taskSeed, type PracticeGrade } from "../lib/derive-practice.ts";
 import { compileProgram, deriveProgram, type DeriveNode } from "../lib/derive.ts";
+import { KNOWN_LIMIT_KINDS } from "../lib/derive-practice-kinds.ts";
 
 const SEED = 100100;
 // CI grades the active families only (peaceai/lib/derive-practice-families.json); staged ones are graded with --family.
@@ -68,4 +69,31 @@ test("deriveProgram never sees the truth: the same examples give the same result
   const a = deriveProgram({ params: t.params, ret: t.ret, examples: t.examples, budget: BUDGET });
   const b = deriveProgram({ params: t.params, ret: t.ret, examples: t.examples.map((e) => ({ ...e })), budget: BUDGET });
   assert.equal(JSON.stringify(a), JSON.stringify(b));
+});
+
+test("the known limit 'cap above every example': the uncapped pick is known-limit only while no example passes the cap and every disagreement is past it", () => {
+  const i = CATEGORIES.findIndex((c) => c.form.name === "floor_clamp" && c.mode === "unwitnessed_cap");
+  // m100z finding: truth Math.max(202, Math.min(440, n)), examples all at or below 381, pick `202 <= n ? n : 202`
+  const t = { ...practiceTask(SEED, i), truth: (a: readonly (number | string | boolean)[]) => Math.max(202, Math.min(440, a[0] as number)), capAbove: 440, point: undefined, grid: Array.from({ length: 801 }, (_, k) => [k - 100]) };
+  const ex = (xs: number[]) => xs.map((n) => ({ args: [n], out: Math.max(202, Math.min(440, n)) }));
+  const floorOnly: DeriveNode = { op: "max", a: { op: "param", i: 0 }, c: 202 };
+  const shown = ex([52, 152, 201, 202, 203, 300, 381]);
+  assert.ok(capAboveUnshown(440, shown));
+  const j = judge(floorOnly, t, shown);
+  assert.ok(j.wrong && j.where === "past" && j.knownLimit);
+  assert.deepEqual(j.wrongAt[0], [441]);
+  // an example past the cap: the same pick is blocking
+  const past = ex([52, 152, 201, 202, 203, 300, 381, 500]);
+  assert.ok(!capAboveUnshown(440, past) && !judge(floorOnly, t, past).knownLimit);
+  // a pick wrong below the cap too (inside the examples) stays blocking
+  const wrongFloor: DeriveNode = { op: "max", a: { op: "param", i: 0 }, c: 250 };
+  assert.ok(!judge(wrongFloor, t, shown).knownLimit);
+  // without a declared cap nothing is known-limit
+  assert.ok(!judge(floorOnly, { ...t, capAbove: undefined }, shown).knownLimit);
+  assert.ok(KNOWN_LIMIT_KINDS.some((k) => k.name === "cap above every example" && k.categories.includes("floor_clamp/unwitnessed_cap") && /far-probe/.test(k.mitigation)));
+  // the generator declares the cap on cap and clamp floor_clamp tasks, never on a floor
+  for (let k = 0; k < 40; k++) {
+    const u = practiceTask(SEED, i + k * CATEGORIES.length);
+    if (/^Math\.max\(-?\d+, n\)$/.test(u.truthText)) assert.equal(u.capAbove, undefined); else assert.equal(typeof u.capAbove, "number", u.truthText);
+  }
 });

@@ -40,6 +40,12 @@ export interface PracticeTask {
   knownLimit: boolean;
   /** The truth's single-input special case, if any (see knownLimit). */
   point?: (a: readonly DeriveValue[]) => boolean;
+  /**
+   * The known limit "cap above every example": the truth caps its one number parameter at this value and no example
+   * goes past it, so the uncapped program fits every example (undetectable from examples alone; the mitigation is the
+   * review note's far-probe table, which shows the picked program's results far past the examples for the reviewer).
+   */
+  capAbove?: number;
   params: DeriveParam[];
   ret: DeriveType;
   examples: DeriveExample[];
@@ -129,7 +135,7 @@ const N = (a: readonly DeriveValue[], i = 0) => a[i] as number;
 const S = (a: readonly DeriveValue[], i = 0) => a[i] as string;
 
 /** What a form builds for one mode: example inputs (outputs come from the truth), the why text, or null when the mode does not apply. */
-interface Built { params: DeriveParam[]; ret: DeriveType; truth: Truth; truthText: string; inputs: DeriveValue[][]; why: string; grid: DeriveValue[][]; knownLimit?: boolean; /** The truth's single-input special case (p === k), if it has one: unshown, it is the known limit. */ point?: (a: readonly DeriveValue[]) => boolean }
+interface Built { params: DeriveParam[]; ret: DeriveType; truth: Truth; truthText: string; inputs: DeriveValue[][]; why: string; grid: DeriveValue[][]; knownLimit?: boolean; /** An upper cap on parameter 0 (see PracticeTask.capAbove). */ capAbove?: number; /** The truth's single-input special case (p === k), if it has one: unshown, it is the known limit. */ point?: (a: readonly DeriveValue[]) => boolean }
 type Form = { name: string; modes: readonly PracticeMode[]; build: (r: R, mode: PracticeMode) => Built };
 
 /** Auditor's amb3 input sets: 4-12 distinct values, each in -5..24, a third of them k - 1..k + 1. */
@@ -297,7 +303,7 @@ export const FORMS: readonly Form[] = [
       let inputs = xs.map((x) => [x] as DeriveValue[]);
       if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
       if (mode === "amb3") { inputs = amb3(r, 1, lo); why = "Auditor's amb3 set: a few values in -5..24"; }
-      return { params: [num("n")], ret: "number", truth, truthText, inputs, why, grid: grid1([...inputs.map((a) => N(a)), lo, hi]).map((x) => [x]) };
+      return { params: [num("n")], ret: "number", truth, truthText, inputs, why, grid: grid1([...inputs.map((a) => N(a)), lo, hi]).map((x) => [x]), ...(kind !== "floor" ? { capAbove: hi } : {}) };
     },
   },
   {
@@ -535,8 +541,13 @@ export function practiceTask(seed: number, index: number, cats: readonly { form:
   }
   const shown = examples.slice(0, DERIVE_MAX_EXAMPLES);
   // The known limit (Auditor, S1 without 429): a single-input special case no example shows; any mode can draw it.
-  const knownLimit = !!b.knownLimit || (!!b.point && !shown.some((e) => b.point!(e.args)));
-  return { index, seed: s, form: form.name, mode, category: categoryName(form.name, mode), knownLimit, ...(b.point ? { point: b.point } : {}), params: b.params, ret: b.ret, examples: shown, truth: b.truth, truthText: b.truthText, why: b.why, grid: b.grid };
+  const knownLimit = !!b.knownLimit || (!!b.point && !shown.some((e) => b.point!(e.args))) || capAboveUnshown(b.capAbove, shown);
+  return { index, seed: s, form: form.name, mode, category: categoryName(form.name, mode), knownLimit, ...(b.point ? { point: b.point } : {}), ...(b.capAbove !== undefined ? { capAbove: b.capAbove } : {}), params: b.params, ret: b.ret, examples: shown, truth: b.truth, truthText: b.truthText, why: b.why, grid: b.grid };
+}
+
+/** The "cap above every example" known limit applies: the truth has an upper cap on parameter 0 and no example goes past it. */
+export function capAboveUnshown(cap: number | undefined, examples: readonly DeriveExample[]): boolean {
+  return cap !== undefined && examples.every((e) => typeof e.args[0] === "number" && (e.args[0] as number) <= cap);
 }
 
 // ---- grading
@@ -581,11 +592,13 @@ export function insideExamples(examples: readonly DeriveExample[], a: readonly D
  * A program's grade against the truth: right, or wrong with where (inside the examples' box, or only past it) and
  * whether it is the known limit (every disagreement at the truth's single-input special case, which no example shows).
  */
-export function judge(program: DeriveNode, task: PracticeTask, examples: readonly DeriveExample[] = task.examples): { wrong: boolean; wrongAt: DeriveValue[][]; where?: "inside" | "past"; knownLimit: boolean } {
+export function judge(program: DeriveNode, task: Pick<PracticeTask, "grid" | "truth" | "point" | "capAbove" | "examples">, examples: readonly DeriveExample[] = task.examples): { wrong: boolean; wrongAt: DeriveValue[][]; where?: "inside" | "past"; knownLimit: boolean } {
   const bad = disagreements(program, task);
   if (!bad.length) return { wrong: false, wrongAt: [], knownLimit: false };
   const unshownPoint = !!task.point && !examples.some((e) => task.point!(e.args));
-  const knownLimit = unshownPoint && bad.every((a) => task.point!(a));
+  // the known limit "cap above every example": every disagreement past the unshown cap (and past every example)
+  const pastCap = capAboveUnshown(task.capAbove, examples) && bad.every((a) => (a[0] as number) > task.capAbove! && !insideExamples(examples, a));
+  const knownLimit = (unshownPoint && bad.every((a) => task.point!(a))) || pastCap;
   const inside = bad.filter((a) => insideExamples(examples, a));
   return { wrong: true, wrongAt: [...inside, ...bad.filter((a) => !insideExamples(examples, a))].slice(0, 3), where: inside.length ? "inside" : "past", knownLimit };
 }
