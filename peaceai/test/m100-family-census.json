@@ -1,0 +1,158 @@
+{
+ "asOf": "2026-10-23",
+ "official": {
+  "covered": 89,
+  "total": 220,
+  "uncovered": 131,
+  "uncoveredBySkill": {
+   "OPS_ACTION": 13,
+   "PEACEAI_SELF_CHANGE": 92,
+   "IMPORT_EDIT": 1,
+   "ENV_FIX": 4,
+   "LOOP_FUNCTION": 5,
+   "WORKFLOW_STEP": 2,
+   "WORKFLOW_JOB": 6,
+   "CHECK_OBJECT_LITERAL_ARGS": 1,
+   "TSCONFIG_SCRIPT": 2,
+   "METHOD_GUARD": 2,
+   "THROW_GUARD": 1,
+   "MODIFY_LOGIC": 2
+  },
+  "functionNamingRows": []
+ },
+ "scanned": 111,
+ "credited": 26,
+ "outOfScope": 62,
+ "rank": [
+  {
+   "family": "NEW number-format",
+   "kind": "new",
+   "functions": 8,
+   "official": 0,
+   "dsl": "large",
+   "dslNeeded": "large: toFixed/Math.round/floor/abs, Number(), String(n) with float-exact grading",
+   "examples": [
+    "src/intraday.ts:scaledPrice",
+    "src/intraday.ts:scaledVolume",
+    "src/intraday.ts:scaledCount"
+   ]
+  },
+  {
+   "family": "NEW template-joins",
+   "kind": "new",
+   "functions": 6,
+   "official": 0,
+   "dsl": "small",
+   "dslNeeded": "small: n-ary `concat` + `str(num)` (String/template coercion)",
+   "examples": [
+    "src/daily-bars-sidecar.ts:dayPrefix",
+    "src/daily-reply-dust.ts:dayPrefix",
+    "src/intraday-reply-dust.ts:sessionPrefix"
+   ]
+  },
+  {
+   "family": "NEW if-return-chains",
+   "kind": "new",
+   "functions": 3,
+   "official": 0,
+   "dsl": "small",
+   "dslNeeded": "small: `ite` (if cond then a else b) over existing cmp/and/or, with literal leaves of the return type",
+   "examples": [
+    "src/tenmin-daily-liquid.ts:byCodeUnit",
+    "src/tenmin-history.ts:byCodeUnit",
+    "src/tenmin-range-reply-dust.ts:byCodeUnit"
+   ]
+  },
+  {
+   "family": "family-1",
+   "kind": "family-1",
+   "functions": 2,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (active)",
+   "examples": [
+    "src/num-utils.ts:clampPercent",
+    "src/object-storage.ts:safeObjectId"
+   ]
+  },
+  {
+   "family": "NEW string-methods",
+   "kind": "new",
+   "functions": 2,
+   "official": 0,
+   "dsl": "large",
+   "dslNeeded": "large: unary str ops (trim/toUpperCase/toLowerCase), predicates (startsWith/endsWith/includes), slice/padStart with literal args, plus a string example grammar",
+   "examples": [
+    "src/object-store.ts:xmlText",
+    "src/tenmin-backfill.ts:isIsoDateText"
+   ]
+  },
+  {
+   "family": "bool-combos",
+   "kind": "staged",
+   "functions": 1,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (staged forms exist)",
+   "examples": [
+    "src/tenmin-backfill.ts:isWeekendIndex"
+   ]
+  },
+  {
+   "family": "piecewise",
+   "kind": "staged",
+   "functions": 1,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (staged forms exist)",
+   "examples": [
+    "src/packed-dust.ts:zigzag"
+   ]
+  },
+  {
+   "family": "nested-caps",
+   "kind": "staged",
+   "functions": 0,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (staged forms exist)",
+   "examples": []
+  },
+  {
+   "family": "NEW lookup-switch",
+   "kind": "new",
+   "functions": 0,
+   "official": 0,
+   "dsl": "small",
+   "dslNeeded": "small: `case` (eq-chain on one param to literal outputs, default leaf)",
+   "examples": []
+  },
+  {
+   "family": "outside-range",
+   "kind": "staged",
+   "functions": 0,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (staged forms exist)",
+   "examples": []
+  },
+  {
+   "family": "prefix-joins",
+   "kind": "staged",
+   "functions": 0,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (staged forms exist)",
+   "examples": []
+  },
+  {
+   "family": "thresholds2",
+   "kind": "staged",
+   "functions": 0,
+   "official": 0,
+   "dsl": "none",
+   "dslNeeded": "none (staged forms exist)",
+   "examples": []
+  }
+ ]
+}
