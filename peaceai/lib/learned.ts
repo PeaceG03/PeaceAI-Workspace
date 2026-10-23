@@ -18,11 +18,12 @@ import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
 import { selfZoneEditRefusal, WORKSPACE_TARGET } from "./self-zone.ts";
 import { join } from "node:path";
+import { DERIVE_TRIGGER, runDeriveRule, validDeriveParams } from "./learned-derive.ts";
 import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCAB } from "./learned-function.ts";
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX", "TEST_EXISTING"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX", "TEST_EXISTING", "DERIVE_FROM_BEHAVIOR"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -73,6 +74,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "TEST_EXISTING" && !validTestExistingParams(s.params as Record<string, unknown>, s.minedFrom)) return false; // M80
   if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
+  if (s.kind === "DERIVE_FROM_BEHAVIOR" && !validDeriveParams(s.params as Record<string, unknown>, s.minedFrom)) return false; // M99
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "REPLACE_EXPRESSION" && !validBodyParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_WORKFLOW_STEP" && REVOKED_WORKFLOW_SPECS.has(s.id as string)) return false;
@@ -179,6 +181,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
   REPLACE_EXPRESSION: REPLACE_TRIGGER,
   TEST_EXISTING: TEST_EXISTING_TRIGGER,
+  DERIVE_FROM_BEHAVIOR: DERIVE_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -449,6 +452,14 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   if (spec.kind === "COMPLEX_FUNCTION") {
     try {
       return runComplexRule(spec.trigger, spec.params, objective, files, isTest, why); // #211 loops ["none"]: loop_unsupported; M65: public-loop-function-v1 runs its for/for-of grammar (while: loop_while_unsupported). Admitted only via the hash-pinned approved list; plain, unprotected paths only
+    } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  if (spec.kind === "DERIVE_FROM_BEHAVIOR") {
+    try {
+      return runDeriveRule(spec.trigger, spec.params, objective, files, isTest, why); // M99: PeaceAI derives the body from behavior + examples; admitted only via the hash-pinned approved list
     } catch {
       if (why) why.reason = "internal_error";
       return null;

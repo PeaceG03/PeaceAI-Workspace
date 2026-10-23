@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
+import { rawIssueProblem } from "../lib/learned-derive.ts";
 import { applyRule, pathExistsIn, specHash, type LearnedEdit } from "../lib/learned.ts";
 import { formatRefusals, type RuleRefusal } from "../lib/refusal-reason.ts";
 import { safeNewModuleOnDisk } from "../lib/learned-function.ts";
@@ -281,11 +282,13 @@ for (const a of planSteps ? [] : admissions) {
     ? [...tracked.filter((p) => scope.isWorkflow?.(p) || p === "package.json").map((p) => ({ path: p, content: readFileSync(join(repo, p), "utf8") })), ...tracked.filter((p) => p === "pnpm-lock.yaml" || p === "package-lock.json" || (/^(?:[\w-]+\/)*tsconfig[\w.-]*\.json$/.test(p) && !lstatSync(join(repo, p)).isSymbolicLink() && lstatSync(join(repo, p)).isFile())).map((p) => ({ path: p, content: "" }))]
     : [];
   const why: { reason?: string } = {};
+  // M99: DERIVE_FROM_BEHAVIOR also checks the raw body (fenced code / HTML comments are dropped by cleaning).
+  if (a.spec.kind === "DERIVE_FROM_BEHAVIOR") { const r = rawIssueProblem(task.body); if (r) { ruleRefusals.push({ id: a.spec.id, reason: r }); continue; } }
   const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists); // Auditor #135: full ls-files + disk
   if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
-  const newModule = !!(edit.create && edit.selfGrade && edit.extra && a.spec.kind === "ADD_FUNCTION" && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
+  const newModule = !!(edit.create && edit.selfGrade && edit.extra && (a.spec.kind === "ADD_FUNCTION" || a.spec.kind === "DERIVE_FROM_BEHAVIOR") && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
   // M80: TEST_CASE_EXISTING creates exactly ONE new test file (never an existing path) and nothing else: no source
   // edit, no extra file, no fix commit. Job B grades it fix-free (passes today, fails with the function stubbed).
   const existingTest = a.spec.kind === "TEST_EXISTING";

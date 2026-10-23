@@ -14,6 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
+import { derivedModuleProblem } from "../lib/learned-derive.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { relatedTests } from "../lib/sources.ts";
@@ -385,7 +386,7 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
  * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
  * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
  */
-function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, replaceExpression = false): TestGrading {
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, replaceExpression = false, derive = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   if (workflowStep) return gradeWorkflowStep(tree, files, ungradable);
@@ -407,6 +408,12 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (lstatSync(file).isSymbolicLink() || relative(tree, realpathSync(file)).startsWith("..")) return ungradable("not-applied");
     if (!newTests.every((t) => callsFunction(readFileSync(join(tree, t), "utf8"), fn))) return ungradable("not-test-only");
     const real = readFileSync(file, "utf8");
+    // M99, DERIVE_FROM_BEHAVIOR: the new module is exactly the derived function (re-checked against the DSL grammar),
+    // and the new tests pass in every zone of EXISTING_TZ_RUNS (the candidate's tests read no clock, but prove it).
+    if (derive) {
+      if (created.length !== 1 || source.length !== 0 || derivedModuleProblem(real)) return ungradable("not-test-only");
+      if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runCandidateCapture(tree, tsx, ["--test", ...newTests], STEP_TIMEOUT_MS, { TZ: tz }).ok) return ungradable("real-not-stable");
+    }
     const stub = stubFunction(real, fn);
     if (stub === null) return ungradable("not-test-only");
     writeFileSync(file, stub);
@@ -677,7 +684,7 @@ for (const candidate of selected) {
     if (candidate.fixSha) result.testGrading = gradeTest(tree, files, newTests, candidate.fixSha, result.newTestsPassed, tsx);
     // Pass 3 (M13, learned guards only): the same new tests without the candidate's own source edit.
     if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v7@"));
-    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
+    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION") || candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"), candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {
       console.log(`${candidate.id} protected_digest=changed stage=tests`);
