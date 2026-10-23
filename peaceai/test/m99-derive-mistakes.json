@@ -3338,7 +3338,7 @@
    ],
    "correct": false,
    "why": "a random handful of the examples: nothing below 364, so the band's lower end was never seen",
-   "disclosed": "disclosed limit (m102 derive-practice CI seed 86888239; family 1, the same pick at m101 3de4baa); awaiting Auditor review",
+   "disclosed": "disclosed limit, accepted by Auditor (#495 ruling on 159a632; m102 derive-practice CI seed 86888239, the same pick at m101 3de4baa)",
    "expected": {
     "outcome": "known-limit",
     "program": "n <= 465",
@@ -3440,12 +3440,66 @@
     126
    ],
    "correct": false,
-   "why": "a random handful of the examples: nothing between the lone true point 125 and the band 148..242, so the gap was never seen",
-   "disclosed": "disclosed limit (m102 derive-practice CI seed 424845248; family 1, the same pick at m101 3de4baa and 1506f6b); awaiting Auditor review",
+   "why": "a random handful of the examples: the smallest example, 125, is a lone true point, so nothing below it and nothing between it and the band 148..242 was shown; status <= 242 is wrong on 347 points of [-200, 1000] (every n < 148 except 125)",
+   "disclosed": "disclosed limit, accepted by Auditor (#495 ruling on 159a632; m102 derive-practice CI seed 424845248, the same pick at m101 3de4baa and 1506f6b)",
    "expected": {
     "outcome": "known-limit",
     "program": "status <= 242",
-    "note": "known limit: a hidden gap between true examples (125 and 219 are both true, nothing in between was given); like the hidden island, no example-only check can see it",
+    "note": "known limit: the band's lower end lies past every example (the smallest example, 125, is a lone true point, read as part of the band) and the gap 126..147 between true examples was never given; like a cap past every example and the hidden island, no example-only check can see it (Auditor #495 q2: one example at 42 or the pair 124 / 126 makes the engine refuse and ask)",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m102-kind-s1-shape-sparse-p0-eq-k",
+   "practice": {
+    "category": "s1_shape/sparse"
+   },
+   "source": "m102 derive-practice CI run 39995190745 (seed 752848777, engine 159a632; the same pick at m101 1506f6b, main and m103 0d619de), task 39841 (s1_shape/sparse | p0 === K, 1 like it)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     360,
+     false
+    ],
+    [
+     491,
+     false
+    ],
+    [
+     391,
+     false
+    ],
+    [
+     359,
+     true
+    ],
+    [
+     258,
+     false
+    ],
+    [
+     358,
+     false
+    ],
+    [
+     208,
+     false
+    ]
+   ],
+   "wrongProgram": "status === 359",
+   "disagreeAt": [
+    392
+   ],
+   "correct": true,
+   "why": "a random handful of the examples: the only true example is the lone point 359, and the true band 392..440 lies between the false examples 391 and 491, so it was never seen; status === 359 is wrong on the 49 inputs 392..440",
+   "disclosed": "disclosed limit (m102 derive-practice CI run 39995190745, seed 752848777; family 1, the same pick at m101 1506f6b, main and m103 0d619de); awaiting Auditor review",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "status === 359",
+    "note": "known limit: a band between two false examples (391 and 491) with no example in it (the hidden-island class); no example-only check can see it, and the review note shows the derived expression",
     "formGate": []
    }
   }
