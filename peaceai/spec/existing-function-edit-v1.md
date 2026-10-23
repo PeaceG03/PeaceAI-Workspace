@@ -22,8 +22,8 @@ is true of the S1-S3 evidence and the fix B / fix C dry runs.
 Auditor's fix: the issue states only the behavior change ("measureStorage should count `head()` sizes"), and PeaceAI
 derives the edit. That is program synthesis / automated repair: choosing the statement and generating code that
 makes a test pass. Today PeaceAI applies rules deterministically (parse a trigger, apply a bounded transform, grade).
-It has no candidate search over code, so it cannot derive a statement from a behavior description. As Peace
-instructed, that part stopped here, and it is reported as a **skill gap**. The splice design is not kept as a skill.
+It has no candidate search over code, so it cannot derive a statement from a behavior description. Per Auditor's
+direction, that part stopped here, and it is reported to Peace as a **skill gap**. The splice design is not kept as a skill.
 
 What stays on this branch, and why:
 
@@ -33,14 +33,42 @@ What stays on this branch, and why:
   family: PeaceAI turns the stated expectations into a test. In v1, G2 can't land alone, because Job B pairs it
   with a G1 edit.
 
-A possible next design (needs Peace's decision): derive edits from a small set of named edit templates, each a
-separate rule, with triggers that name only the behavior. Two examples:
+### Skill-gap report: deriving the edit (needs Peace's decision before any work)
 
-- Call substitution guided by the interface, such as `get` to `head` on the same receiver when the interface types
-  it.
-- Wrapping an awaited call in a bounded retry.
+**What the issue may contain under the redesign.** Only behavior: the target (`in T in FILE`) and G2 bullets
+(fakes with values, expected results, call counts). No code, no expressions, no statement text. The G2 grammar is
+already value-only, so this is the existing bullet language minus the `replace statement OLD with NEW` clause.
 
-PeaceAI would build candidates from a template and keep only those the G2 test grades as fail-before / pass-after.
+**What PeaceAI would have to do that it cannot do today.**
+
+1. *Locate*: pick which statement of T to change. Today the issue names it (OLD).
+2. *Generate*: produce candidate replacement statements. Today the issue supplies NEW verbatim.
+3. *Select*: run the G2 test against each candidate and keep the one that fails before / passes after. Today Job A
+   never executes code. Selection would need a confined execution step in Job A (or Job B grading N candidates),
+   with the same permission model and static gate as Job B, and a budget.
+4. *Disambiguate*: refuse when zero or more than one candidate survives, so PeaceAI never guesses.
+5. *Type knowledge*: candidates such as "call `head` instead of `get`" need the receiver's interface type, meaning a
+   TypeScript type-checker pass over the module closure. The engine is syntax-only today.
+
+**Smallest teachable version (G1-T, one rule per template, each its own spec and evidence).** A closed list of
+single-statement edit templates. PeaceAI enumerates every instance of a template over T's own statements, and the G2
+test chooses among them:
+
+- **T-swap (interface-guided call substitution):** on one `await this.X.m(args)` / `X.m(args)` call, replace method
+  `m` with another method `n` of the same receiver's declared interface that takes the same arguments, and remap the
+  one result property the statement reads to a property of `n`'s declared return type with the same type. This
+  covers scanner fix B (`get(key)?.byteLength` to `head(key)?.size`).
+- **T-retry (bounded retry wrap):** wrap the single awaited call in a returned statement in a fixed-shape loop of
+  K in {2, 3} attempts that retries on a rejection or a 5xx response. K is chosen by the test's call count, not by
+  the issue. This covers scanner fix C, immediate retry only (G3 backoff stays separate).
+
+Credit under G1-T: the issue writes no code. PeaceAI chooses the statement, the template instance and its parameters,
+and the test it emits checks them. Before G1-T could be approved, Auditor would need: evidence of 10 or more
+upstream single-statement fixes per template replaying exactly; the uniqueness refusal; the selection step's
+confinement; and a census of how many PeaceSTOCKS targets each template reaches.
+
+**Status on this branch.** None of G1-T is built. The splice (`replace statement OLD with NEW`) stays unapproved,
+with no proposal.
 
 ## Task phrasing
 
@@ -216,6 +244,9 @@ capability token the base unit lacked, the result is `edit_new_capability`:
   module global
 - a dynamic computed member access `x[k]`, unless both `x`'s root and `k` are the target's own parameters
   (string-built keys like `["__pro", "to__"].join("")` on a local or parameter receiver are refused)
+- the same paths without member access: a reflection name as a destructuring key or object-literal key
+  (`const { constructor: C } = f`, `const { constructor } = o`, `{ __proto__: o }`), or any non-literal computed
+  property name (`const { [k]: C } = o`, `{ [k]: v }`)
 
 Tokens are counted, not just checked for presence, so an edit can't add a second `?? fetch` beside one the base had.
 
@@ -237,6 +268,20 @@ Hardening in the walk itself:
   `denyPatterns` says.
 - The emitted test runs only under the Node permission model: in Job B, and in the new-test pass of
   `test-candidates.ts`. It is never run unconfined.
+
+Grading order and confinement in `test-candidates.ts` (Auditor #489, hole 1):
+
+- `existingEditStatic` (shape, capability delta, hermetic walk, load closure) runs on the applied tree before
+  ANY candidate code executes. A refused edit is never run, and every pass stays false.
+- The original-suite step (pass 1) imports the edited module, so for this kind it runs each test file in its own
+  process under `--permission`. Reads are limited to the tree's `src/`, the package.json chain, node_modules and a
+  scratch dir. Writes go only to the scratch dir, which is also TMPDIR/HOME. There is no child_process, addon or
+  wasi access, and workers are allowed only for tsx's loader.
+- In "related" mode, the related tests are judged by a confined run on the base. If any related test cannot pass
+  confined even on the base, the candidate's original suite FAILS (fail closed), because it can't be checked
+  without running the edit unconfined. In "full" mode, every base test must pass confined.
+- Node 22's permission model does not restrict the network. The static gate (no new `fetch`/`process`/... token)
+  and the hermetic walk are what stop network I/O.
 
 ## Known residual risk
 
