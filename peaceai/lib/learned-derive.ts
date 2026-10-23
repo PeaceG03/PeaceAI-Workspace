@@ -26,7 +26,7 @@ import ts from "typescript";
 
 export const DERIVE_PARAM_KEYS = ["ambiguity", "dsl", "examples", "grading", "placement", "test"] as const;
 export const DERIVE_VOCAB: Record<(typeof DERIVE_PARAM_KEYS)[number], readonly string[]> = {
-  ambiguity: ["refuse"],
+  ambiguity: ["refuse-unwitnessed"],
   dsl: ["typed-dsl-v1"],
   examples: ["literal-data-only"],
   grading: ["self-fail-before-pass-after"],

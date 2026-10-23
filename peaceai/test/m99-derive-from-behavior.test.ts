@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "aa95535b18352ec5d834817cf5f79c78d7f8ac5915fe52d2164009c847c438d6";
+const SHA = "d3d9a499af81608208fe22f7b523702e83c99a6c4fc20e8ab2642885144cfb71";
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -88,7 +88,7 @@ test("S1-S3 (scanner refile): each derives one program; module and test are the 
   assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 13);
   const s3 = run(S3).e!;
   assert.equal(s3.content, 'export function hostFailureLine(message: string, causeCode: string): string {\n  return "MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode));\n}\n');
-  assert.equal((s3.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 6);
+  assert.equal((s3.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 8);
   for (const e of [s1, s2, s3]) {
     assert.equal(e.create, true);
     assert.equal(e.selfGrade, true);

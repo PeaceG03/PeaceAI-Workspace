@@ -1,13 +1,16 @@
 // M99 (DERIVE_FROM_BEHAVIOR v1): PeaceAI's own program search. Given a new pure function's typed signature and
 // input -> output examples (data only, never code), it writes the function body itself: a bounded, enumerative,
 // bottom-up search over a small typed DSL, keeping one program per distinct behavior on a fixed point set (the
-// examples plus deterministic boundary probes around each example). It returns the SMALLEST program that fits
-// every example, and refuses instead of guessing:
-//   - derive_no_fit      nothing up to the size limit fits every example (or the only fit reads no parameter);
-//   - derive_ambiguous   another program, at most DERIVE_SLACK nodes larger than the smallest fit, also fits every
-//                        example but disagrees with it on a probe;
-//   - derive_budget      the search budget (programs built, or kept-value memory) ran out before a fit was found;
-//   - derive_examples    contradictory, mistyped or out-of-range examples.
+// examples, neighbour probes around each example and far probes: 0, +-1, the outermost edges +-10 / +-100, ten times
+// the largest value, cross products). It takes the SMALLEST program that fits every example and then accepts it only
+// when the examples SHOW what it relies on (gateProblem); otherwise it refuses instead of guessing:
+//   - derive_no_fit           nothing up to the size limit fits every example (or the only fit reads no parameter);
+//   - derive_ambiguous        another program, at most DERIVE_SLACK nodes larger than the smallest fit, also fits
+//                             every example but disagrees with it on a probe;
+//   - derive_under_specified  a witness gate fails (gate unread, chars, edge, far, branch, cap, rival, rival_budget),
+//                             with the parameter and the examples to add (Auditor #491: confidently wrong programs);
+//   - derive_budget           the search budget (DERIVE_BUDGET programs, or MAX_KEPT_CELLS kept values) ran out;
+//   - derive_examples         contradictory, mistyped or out-of-range examples.
 // The DSL (typed; the size of a program is its node count, leaves count 1):
 //   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(K, a) | max(K, a) | if(G, x, y) (x, y may be K)
 //   string : parameter | L | a + b (concat) | if(G, x, y)
@@ -599,8 +602,10 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *          and one at least DERIVE_FAR before its first (the regions past the outermost edges, true or false, are
  *          shown, not assumed); two compared parameters: examples with p - q >= DERIVE_FAR and <= -DERIVE_FAR;
  *  branch / cap (2) each branch of every conditional, and each side of every min / max cap (kept and capped), is
- *          reached by at least DERIVE_MIN_REACH examples;
- *  rival   (3) a search DERIVE_RIVAL_EXTRA sizes past the fit with EVERY example value as a constant finds no other program that fits every example but differs from the fit on a
+ *          reached by at least DERIVE_MIN_REACH examples (the true branch of a one-parameter `p === c` or emptiness
+ *          test holds for one input only: one example);
+ *  rival   (3) a search DERIVE_RIVAL_EXTRA sizes past the fit with EVERY example value as a constant finds no other
+ *          program that fits every example but differs from the fit on a
  *          probe inside the examples' range (neighbour probes and far probes 0, +-1, edges +-10 / +-100, cross
  *          products); outside that range gate `far` applies. rival_budget: that search ran out of budget.
  */
@@ -681,7 +686,10 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (reachFail) return;
     if (n.op !== "if" && n.op !== "min" && n.op !== "max") return;
     const [s0, s1] = hits.get(n) ?? [0, 0];
-    if (s0 >= DERIVE_MIN_REACH && s1 >= DERIVE_MIN_REACH) return;
+    // A condition that holds for ONE input only (`p === c` or an emptiness test of the only parameter) has a
+    // single-input true branch: one example is all there is to show (gate edge already asks for c - 1, c, c + 1).
+    const point = n.op === "if" && params.length === 1 && (n.c.op === "empty" || (n.c.op === "eq" && ((n.c.a.op === "param" && n.c.b.op === "lit") || (n.c.a.op === "lit" && n.c.b.op === "param"))));
+    if (s0 >= (point ? 1 : DERIVE_MIN_REACH) && s1 >= DERIVE_MIN_REACH) return;
     const sub = compileProgram(n, names);
     reachFail = n.op === "if"
       ? fail("branch", `\`${sub}\`: its condition is true for ${s0} example(s) and false for ${s1}; each branch needs at least ${DERIVE_MIN_REACH} examples`)
