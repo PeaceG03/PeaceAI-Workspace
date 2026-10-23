@@ -45,7 +45,7 @@ test("mistakes ledger: shape, and every Auditor counterexample so far is in it",
   for (const id of ["r1-s1-without-600", "r1-s1-drop-429", "r2-hidden-island", "r2-unwitnessed-cap", "r2-amb3-backoff-k7-1", "seed101-island-hidden-island-t465", "m102-order-hidden-max", "m102-order-hidden-less", "m102-kind-range-sparse-p0-k", "m102-kind-backoff-sparse-p1-k-p1-k", "m102-kind-s1-shape-sparse-p0-k", "m102-kind-s1-shape-sparse-p0-eq-k"]) assert.ok(ids.includes(id), id);
   // Auditor round 3: the disclosed limits it accepted are marked; every known limit is disclosed.
   const accepted = LEDGER.entries.filter((e) => /accepted by Auditor/.test(e.disclosed ?? "")).map((e) => e.id);
-  assert.deepEqual(accepted, ["r1-s1-drop-429", "m100-floor-clamp-past", "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k", "m100-kind-floor-clamp-sparse-k-p0-p0-k", "m100-kind-eq-or-ge-sparse-k-p0", "m100-kind-s1-shape-sparse-k-p0"]);
+  assert.deepEqual(accepted, ["r1-s1-drop-429", "m100-floor-clamp-past", "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k", "m100-kind-floor-clamp-sparse-k-p0-p0-k", "m100-kind-eq-or-ge-sparse-k-p0", "m100-kind-s1-shape-sparse-k-p0", "m102-kind-range-sparse-p0-k", "m102-kind-s1-shape-sparse-p0-k"]); // the last two: Auditor #495 ruling on 159a632
   for (const e of LEDGER.entries) if (e.expected.outcome === "known-limit") assert.match(e.disclosed ?? "", /^disclosed limit/, e.id);
   const t465 = LEDGER.entries.find((e) => e.id === "seed101-island-hidden-island-t465")!;
   assert.deepEqual([t465.wrongProgram, t465.disagreeAt, t465.correct, t465.expected.outcome], ["!(105 <= n && n <= 180)", [140], true, "known-limit"]);
