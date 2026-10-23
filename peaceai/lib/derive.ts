@@ -646,12 +646,17 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   if (!r.ok) return r;
   // Round 3 (Auditor ruling on 6f1ea5e): never emit a program that uses a form fewer than DERIVE_FORM_BAR replaying
   // upstream evidence entries show (counts read from the evidence file, the single source; see evidenceFormCounts).
-  const forms = unevidencedForms(r.fit.program);
+  const types = input.params.map((p) => p.type);
+  const forms = unevidencedForms(r.fit.program, undefined, types);
   if (forms.length === 0) return r;
   const counts = evidenceFormCounts();
+  // M104 (Auditor #498): a ternary whose own sub-shape is under the bar is refused even when the form count is not.
+  const shapeCounts = evidenceTernaryShapeCounts();
+  const short = ternaryShapesOf(r.fit.program, types).filter((k) => !((shapeCounts[k] ?? 0) >= DERIVE_FORM_BAR));
+  const shapeText = (f: DeriveForm) => (f === "ternary" && counts.ternary >= DERIVE_FORM_BAR ? `, but the sub-shape ${short.map((k) => `${k} has ${shapeCounts[k] ?? 0} distinct ones`).join(" and ")}` : "");
   return {
     ok: false, reason: "derive_unevidenced_form", forms, searched: r.searched,
-    detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries)`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
+    detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries${shapeText(f)})`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
   };
 }
 
@@ -730,10 +735,87 @@ export function evidenceFormCounts(text?: string): Record<DeriveForm, number> {
 }
 let cachedCounts: Record<DeriveForm, number> | undefined;
 
-/** The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted). */
-export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<DeriveForm, number>> = evidenceFormCounts()): DeriveForm[] {
-  return formsOf(program).filter((f) => !((counts[f] ?? 0) >= DERIVE_FORM_BAR));
+/**
+ * The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted).
+ * M104 (Auditor #498 ruling on 19d6100): the ternary form is also refused unless EVERY if node's sub-shape (its guard
+ * class and branch type, ternaryShapesOf) has at least DERIVE_FORM_BAR distinct evidence entries
+ * (evidenceTernaryShapeCounts: identical examples count once, at most 2 per expression shape). Parameter types
+ * (`types`) say what a parameter branch returns; without them such a branch is of unknown type and never covered.
+ */
+export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<DeriveForm, number>> = evidenceFormCounts(), types?: readonly DeriveType[], shapeCounts: Readonly<Record<string, number>> = evidenceTernaryShapeCounts()): DeriveForm[] {
+  return formsOf(program).filter((f) => {
+    if (!((counts[f] ?? 0) >= DERIVE_FORM_BAR)) return true;
+    if (f !== "ternary") return false;
+    return ternaryShapesOf(program, types).some((k) => !((shapeCounts[k] ?? 0) >= DERIVE_FORM_BAR));
+  });
 }
+
+/** The type a node evaluates to (`unknown` for a parameter whose type is not given). */
+function nodeType(n: DeriveNode, types?: readonly DeriveType[]): DeriveType | "unknown" {
+  switch (n.op) {
+    case "param": return types?.[n.i] ?? "unknown";
+    case "int": case "add": case "sub": case "mul": case "sq": case "min": case "max": return "number";
+    case "lit": return typeof n.v === "string" ? "string" : "number";
+    case "cat": case "str": case "tmpl": return "string";
+    case "and": case "or": case "not": case "eq": case "le": case "range": case "empty": case "sle": return "boolean";
+    case "if": { const t = nodeType(n.t, types); return t === "unknown" ? nodeType(n.e, types) : t; }
+  }
+}
+const isConst = (n: DeriveNode) => n.op === "lit" || n.op === "int";
+/**
+ * The guard class of an if node: `eq-const` (a parameter === a constant, or a string parameter is empty); otherwise the
+ * guard's own op (eq of two non-constants, le, sle, range, and, or, not, ...).
+ */
+function guardClass(c: DeriveNode): string {
+  if (c.op === "empty") return "eq-const";
+  if (c.op === "eq" && ((c.a.op === "param" && isConst(c.b)) || (c.b.op === "param" && isConst(c.a)))) return "eq-const";
+  return c.op;
+}
+/** M104: the sub-shapes `guard/branch type` of every if node in `program` (sorted, unique), e.g. `eq-const/string`. */
+export function ternaryShapesOf(program: DeriveNode, types?: readonly DeriveType[]): string[] {
+  const out = new Set<string>();
+  const walk = (x: DeriveNode): void => {
+    if (x.op === "if") out.add(`${guardClass(x.c)}/${nodeType(x, types)}`);
+    for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode); }
+    if (x.op === "tmpl") for (const q of x.parts) walk(q);
+  };
+  walk(program);
+  return [...out].sort();
+}
+/**
+ * Distinct evidence entries per ternary sub-shape (from each entry's recorded `ternaryShapes`). Two rules make the
+ * count a count of distinct problems, not of copies (Auditor #498): entries with identical examples count once, and at
+ * most 2 count per expression shape (the expression with its parameters renamed p0, p1, ..., as the M102 evidence
+ * cap). Fail closed like evidenceFormCounts.
+ */
+export function evidenceTernaryShapeCounts(text?: string): Record<string, number> {
+  if (text === undefined && cachedShapeCounts) return { ...cachedShapeCounts };
+  const counts: Record<string, number> = {};
+  try {
+    const ev = JSON.parse(text ?? readFileSync(DERIVE_EVIDENCE_PATH, "utf8")) as { examples?: unknown };
+    if (!Array.isArray(ev.examples)) throw new Error("no examples");
+    const perShape = new Map<string, number>(), seenExamples = new Set<string>();
+    for (const e of ev.examples as { ternaryShapes?: unknown; expr?: unknown; params?: unknown; examples?: unknown }[]) {
+      if (!e || !Array.isArray(e.ternaryShapes) || typeof e.expr !== "string" || !Array.isArray(e.params)) continue;
+      const names = (e.params as { name?: unknown }[]).map((p) => (typeof p?.name === "string" ? p.name : ""));
+      // Rename parameters outside string literals only.
+      const shape = e.expr.split(/("(?:[^"\\]|\\.)*")/).map((part, j) => (j % 2 ? part : part.replace(/[A-Za-z_$][\w$]*/g, (w) => (names.includes(w) ? `p${names.indexOf(w)}` : w)))).join("");
+      const exKey = JSON.stringify(e.examples);
+      for (const k of new Set(e.ternaryShapes as unknown[])) {
+        if (typeof k !== "string") continue;
+        const g = `${k}\0${shape}`;
+        if (seenExamples.has(`${k}\0${exKey}`) || (perShape.get(g) ?? 0) >= 2) continue;
+        seenExamples.add(`${k}\0${exKey}`); perShape.set(g, (perShape.get(g) ?? 0) + 1);
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+    }
+  } catch {
+    for (const k of Object.keys(counts)) delete counts[k];
+  }
+  if (text === undefined) cachedShapeCounts = { ...counts };
+  return counts;
+}
+let cachedShapeCounts: Record<string, number> | undefined;
 
 /**
  * The search and the witness gates WITHOUT the form gate: for replaying and mining upstream evidence only (the

@@ -16894,6 +16894,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -17082,6 +17085,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -17270,6 +17276,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -17458,6 +17467,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -17646,6 +17658,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -17835,6 +17850,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -18023,6 +18041,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -18211,6 +18232,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -18399,6 +18423,9 @@
    "forms": [
     "ternary",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -18482,6 +18509,9 @@
     "ternary",
     "strcat",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -18560,6 +18590,9 @@
     "ternary",
     "strcat",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   },
   {
@@ -18643,6 +18676,9 @@
     "ternary",
     "strcat",
     "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
    ]
   }
  ],
