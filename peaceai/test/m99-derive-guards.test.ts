@@ -162,6 +162,10 @@ test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comment
     ["tilde fence", "\n\n~~~ts\nreturn status === 429 || (500 <= status && status <= 599);\n~~~\n"],
     ["html comment", "\n\n<!-- return status === 429 || (500 <= status && status <= 599); -->\n"],
     ["indented code", "\n\n    return status === 429 || (500 <= status && status <= 599);\n"],
+    // The raw check on its own: blocks whose text the cleaned-issue guard would let through (cleaning keeps ~~~ blocks
+    // and collapses indentation, so only the raw body shows them as blocks).
+    ["tilde fence, plain words", "\n\n~~~\nsee the retry table in the wiki\n~~~\n"],
+    ["indented block, plain words", "\n\n    see the retry table in the wiki\n"],
   ] as const) {
     const r = jobA(S1 + extra);
     assert.equal(r.n, 0, `${label}: ${r.stdout}`);
