@@ -2,10 +2,10 @@
  "schema": "peaceai-m101-template-joins-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "M101 template joins (Auditor #491 ruling: a DSL form is used only with >= 10 replaying upstream evidence entries). 37 exported pure functions from 27 permissive repos outside the corpus and the ext-manifest, mined the M99 way: the upstream function run in an empty vm on a fixed grid, every 3rd row (at most 14) as training, extended by the engine's own questions answered from upstream (addedForGates), the rest held out; far probes past the grid checked too, and char probes (each string parameter at \"a\" + c + \"b\" for every printable ASCII non-alphanumeric c). Excluded: any held/far/char-probe miss, number formatting outside the integer domain (toFixed, parseFloat, Math.*, toLocaleString, Intl), duplicates of an M99 entry or of another upstream, more than 3 per repo (M99 included), more than 2 per expression shape. Each expression is re-derived from the recorded examples alone by the engine with the form on and is right on every held-out and far row. forms counts the entries whose derived program uses the form; peaceai/lib/derive.ts TEMPLATE_FORM_EVIDENCE must equal it. No third-party code is run by the test.",
+ "note": "M101 template joins (Auditor #491 ruling: a DSL form is used only with >= 10 replaying upstream evidence entries). 36 exported pure functions from 27 permissive repos outside the corpus and the ext-manifest, mined the M99 way: the upstream function run in an empty vm on a fixed grid, every 3rd row (at most 14) as training, extended by the engine's own questions answered from upstream (addedForGates), the rest held out; far probes past the grid checked too, and char probes (each string parameter at \"a\" + c + \"b\" for every printable ASCII non-alphanumeric c). Excluded: any held/far/char-probe miss, number formatting outside the integer domain (toFixed, parseFloat, Math.*, toLocaleString, Intl), duplicates of an M99 entry or of another upstream, more than 3 per repo (M99 included), more than 2 per expression shape. Each expression is re-derived from the recorded examples alone by the engine with the form on and is right on every held-out and far row. forms counts the entries whose derived program uses the form; peaceai/lib/derive.ts TEMPLATE_FORM_EVIDENCE must equal it. No third-party code is run by the test.",
  "forms": {
-  "tmpl": 37,
-  "str": 20
+  "tmpl": 36,
+  "str": 19
  },
  "examples": [
   {
@@ -2198,160 +2198,6 @@
    ]
   },
   {
-   "repo": "mwikstrom/scribing-react",
-   "commit": "7295b96a2f125fdb1f50c611034798b071628452",
-   "module": "src/internal/utils/css-values.ts",
-   "fn": "toPercent",
-   "params": [
-    {
-     "name": "value",
-     "type": "number"
-    }
-   ],
-   "ret": "string",
-   "prose": "",
-   "examples": [
-    {
-     "args": [
-      -1
-     ],
-     "out": "-1%"
-    },
-    {
-     "args": [
-      2
-     ],
-     "out": "2%"
-    },
-    {
-     "args": [
-      10
-     ],
-     "out": "10%"
-    },
-    {
-     "args": [
-      0
-     ],
-     "out": "0%"
-    },
-    {
-     "args": [
-      1
-     ],
-     "out": "1%"
-    },
-    {
-     "args": [
-      1234
-     ],
-     "out": "1234%"
-    }
-   ],
-   "expr": "(\"\" + value) + \"%\"",
-   "forms": [
-    "tmpl",
-    "str"
-   ],
-   "heldOut": {
-    "right": 3,
-    "wrong": 0
-   },
-   "farOut": {
-    "right": 10,
-    "wrong": 0
-   },
-   "upstream": "const toPercent = (value: number): string => `${value}%`;",
-   "path": "src/internal/utils/css-values.ts",
-   "fileBlob": "27d70688a101e7cab4f6c391106719411c820ba1",
-   "sha256": "0e138e077ab6be38044156577316cc6480ea840e8ba23d5eb4203004916fa3c6",
-   "fixture": "peaceai/test/fixtures/m101-tj/mwikstrom__scribing-react-27d70688a101.txt",
-   "license": "ISC",
-   "licenseSha256": "47ecfeec75e165fdb81e23ab2fc1ffea8887510b5d84a8224486e639ccc1a7fe",
-   "addedForGates": [
-    "chars: (0) gives \"0%\"",
-    "chars: (1) gives \"1%\"",
-    "chars: (1234) gives \"1234%\""
-   ]
-  },
-  {
-   "repo": "mwikstrom/scribing-react",
-   "commit": "7295b96a2f125fdb1f50c611034798b071628452",
-   "module": "src/internal/utils/css-values.ts",
-   "fn": "toRem",
-   "params": [
-    {
-     "name": "value",
-     "type": "number"
-    }
-   ],
-   "ret": "string",
-   "prose": "",
-   "examples": [
-    {
-     "args": [
-      -1
-     ],
-     "out": "-1rem"
-    },
-    {
-     "args": [
-      2
-     ],
-     "out": "2rem"
-    },
-    {
-     "args": [
-      10
-     ],
-     "out": "10rem"
-    },
-    {
-     "args": [
-      0
-     ],
-     "out": "0rem"
-    },
-    {
-     "args": [
-      1
-     ],
-     "out": "1rem"
-    },
-    {
-     "args": [
-      1234
-     ],
-     "out": "1234rem"
-    }
-   ],
-   "expr": "(\"\" + value) + \"rem\"",
-   "forms": [
-    "tmpl",
-    "str"
-   ],
-   "heldOut": {
-    "right": 3,
-    "wrong": 0
-   },
-   "farOut": {
-    "right": 10,
-    "wrong": 0
-   },
-   "upstream": "const toRem = (value: number): string => `${value}rem`;",
-   "path": "src/internal/utils/css-values.ts",
-   "fileBlob": "27d70688a101e7cab4f6c391106719411c820ba1",
-   "sha256": "0e138e077ab6be38044156577316cc6480ea840e8ba23d5eb4203004916fa3c6",
-   "fixture": "peaceai/test/fixtures/m101-tj/mwikstrom__scribing-react-27d70688a101.txt",
-   "license": "ISC",
-   "licenseSha256": "47ecfeec75e165fdb81e23ab2fc1ffea8887510b5d84a8224486e639ccc1a7fe",
-   "addedForGates": [
-    "chars: (0) gives \"0rem\"",
-    "chars: (1) gives \"1rem\"",
-    "chars: (1234) gives \"1234rem\""
-   ]
-  },
-  {
    "repo": "pmdroid/acpbot",
    "commit": "6f0059d1a10859ee4659efb1a6d44d0b48d40ff1",
    "module": "src/core/status.ts",
@@ -3501,6 +3347,83 @@
    "addedForGates": [
     "chars: (\" Ab 9. \", -1) gives \"preview-publish: run  Ab 9.  batch -1\"",
     "chars: (\"a\", 1234) gives \"preview-publish: run a batch 1234\""
+   ]
+  },
+  {
+   "repo": "stellar/freighter-mobile",
+   "commit": "706db48a5a8147514eff1054fd89b5d7cdfc82be",
+   "module": "__mocks__/dimensions.ts",
+   "fn": "toPercent",
+   "params": [
+    {
+     "name": "percentNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1%"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2%"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10%"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0%"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1%"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234%"
+    }
+   ],
+   "expr": "(\"\" + percentNumber) + \"%\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "const toPercent = (percentNumber: number): string => `${percentNumber}%`;",
+   "path": "__mocks__/dimensions.ts",
+   "fileBlob": "1c0fd1f884c1481c0bb4ec13c74b3103a304197a",
+   "sha256": "7666194fc6ce5706736d3ae2f3c7e02af1b4a043c99a731914dfff988bbdfd4d",
+   "fixture": "peaceai/test/fixtures/m101-tj/stellar__freighter-mobile-1c0fd1f884c1.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "bd5d98ec50fbf48be4af296d43f2f5bcefac32f81410c03ad9d88e3feca290fc",
+   "addedForGates": [
+    "chars: (0) gives \"0%\"",
+    "chars: (1) gives \"1%\"",
+    "chars: (1234) gives \"1234%\""
    ]
   },
   {
