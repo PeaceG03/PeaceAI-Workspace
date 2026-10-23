@@ -3037,6 +3037,101 @@
      "rightOnGrid": true
     }
    }
+  },
+  {
+   "id": "m102-kind-range-sparse-p0-k",
+   "practice": {
+    "category": "range/sparse"
+   },
+   "source": "m102 derive-practice CI (seed 86888239, engine 1097e56; the same pick at m101 3de4baa), task 24760 (range/sparse | p0 <= K, 1 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     566,
+     false
+    ],
+    [
+     364,
+     true
+    ],
+    [
+     466,
+     false
+    ],
+    [
+     465,
+     true
+    ],
+    [
+     415,
+     true
+    ]
+   ],
+   "wrongProgram": "n <= 465",
+   "disagreeAt": [
+    63
+   ],
+   "correct": false,
+   "why": "a random handful of the examples: nothing below 364, so the band's lower end was never seen",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "n <= 465",
+    "note": "known limit: a band edge past every example (the smallest example, 364, is true); like a cap past every example, no example-only check can see it, and the review note's far-probe table shows the derived value out there"
+   }
+  },
+  {
+   "id": "m102-kind-backoff-sparse-p1-k-p1-k",
+   "practice": {
+    "category": "backoff/sparse"
+   },
+   "source": "m102 derive-practice CI (seed 86888239, engine 1097e56; the same pick at m101 3de4baa), task 53754 (backoff/sparse | p1 <= K ? p1 : K, 1 like it)",
+   "params": [
+    "attempt",
+    "baseMs"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     7,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     20400,
+     10400
+    ],
+    [
+     0,
+     500,
+     500
+    ],
+    [
+     3,
+     11400,
+     10400
+    ]
+   ],
+   "wrongProgram": "baseMs <= 10400 ? baseMs : 10400",
+   "disagreeAt": [
+    1,
+    1
+   ],
+   "correct": 4,
+   "why": "attempt changed only where baseMs was 0 or the cap held, so its factor (attempt + 1) ** 2 was never seen",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "baseMs <= 10400 ? baseMs : 10400",
+    "note": "known limit: the unread gate's witness pair (attempt 7 and 0 at baseMs 0, both 0) is a product by zero; every other example with attempt above 0 is past the cap"
+   }
   }
  ]
 }

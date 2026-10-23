@@ -7,7 +7,7 @@ import { writeFileSync } from "node:fs";
 const W = process.env.W ?? new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const { deriveProgram, evalProgram } = await import(`${W}/peaceai/lib/derive.ts`);
 type V = number | boolean | string;
-type C = { id: string; source: string; names: string[]; types?: string[]; ret: "number" | "boolean" | "string"; rows: V[][]; wrong: string; at: V[]; why: string; truth?: (a: any[]) => V; grid?: V[][]; limit?: string };
+type C = { id: string; source: string; names: string[]; types?: string[]; ret: "number" | "boolean" | "string"; rows: V[][]; wrong: string; at: V[]; why: string; truth?: (a: any[]) => V; grid?: V[][]; limit?: string; category?: string };
 const g1 = (lo = -1000, hi = 1000) => { const g: V[][] = []; for (let n = lo; n <= hi; n++) g.push([n]); return g; };
 const g2 = (k: number) => { const g: V[][] = []; for (let a = -60; a <= 60; a += 2) for (let b = -60; b <= 60; b += 2) g.push([a, b]); for (let b = -60; b <= 60; b++) g.push([k, b]); return g; };
 const S1 = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [600, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]];
@@ -75,6 +75,12 @@ const SPOOL = ["", "a", "A", "b", "B", "aa", "ab", "ac", "1", "01", "9", "10", "
 const SGRID: V[][] = SPOOL.flatMap((x) => SPOOL.map((y) => [x, y]));
 cases.push({ id: "m102-order-hidden-max", source: "m102 practice seed 100 #809 (if_chain/sparse, truth x < y ? y : x), engine 1097e56", names: ["x", "y"], types: ["string", "string"], ret: "string", rows: [["trail ", "Zz 9", "trail "], ["Zz 9", "", "Zz 9"], ["x.y", "2026-10-23", "x.y"], ["9", "10", "9"], ["", "", ""], ["ab", "10", "ab"], ["b", "aa", "b"], ["b", "Hello World", "b"]], wrong: "x", at: ["", "aa"], why: "every example had y before x or equal (code-unit order), so the branch returning y was never seen", truth: ([x, y]) => (x < y ? y : x), grid: SGRID });
 cases.push({ id: "m102-order-hidden-less", source: "m102 practice seed 100 #1343 (if_chain/sparse, truth a < b ? 1 : a > b ? -1 : 0; the examples after the ask loop at 1097e56)", names: ["a", "b"], types: ["string", "string"], ret: "number", rows: [["Zz 9", "", -1], ["aa", "aa", 0], ["MiXeD", "2026-09-30", -1], ["9", "10", -1], ["ab", "10", -1], ["", "", 0], [" Ab 9. ", "", -1], ["Zz 9", " Ab 9. ", -1], ["a", "B", -1], ["ac", "ab", -1]], wrong: "(a <= b) ? 0 : (-1)", at: ["", "B"], why: "no example had a before b, so the result 1 there was never seen", truth: ([a, b]) => (a < b ? 1 : a > b ? -1 : 0), grid: SGRID });
+// CI derive-practice on m102 @ 1097e56 (all active families, 60,000 tasks, seed 86888239): two NEW blocking kinds in
+// family 1. Both are picked the same by m101 @ 3de4baa (the engine before M102), so they are family-1 limits that this
+// seed found, not M102 changes; recorded per category so the same shape in another category stays NEW.
+const C10 = "m102 derive-practice CI (seed 86888239, engine 1097e56; the same pick at m101 3de4baa)";
+cases.push({ id: "m102-kind-range-sparse-p0-k", category: "range/sparse", source: `${C10}, task 24760 (range/sparse | p0 <= K, 1 like it)`, names: ["n"], ret: "boolean", rows: [[566, false], [364, true], [466, false], [465, true], [415, true]], wrong: "n <= 465", at: [63], why: "a random handful of the examples: nothing below 364, so the band's lower end was never seen", truth: ([n]) => 364 <= n && n <= 465, grid: g1(0, 800), limit: "known limit: a band edge past every example (the smallest example, 364, is true); like a cap past every example, no example-only check can see it, and the review note's far-probe table shows the derived value out there" });
+cases.push({ id: "m102-kind-backoff-sparse-p1-k-p1-k", category: "backoff/sparse", source: `${C10}, task 53754 (backoff/sparse | p1 <= K ? p1 : K, 1 like it)`, names: ["attempt", "baseMs"], ret: "number", rows: [[7, 0, 0], [0, 0, 0], [0, 20400, 10400], [0, 500, 500], [3, 11400, 10400]], wrong: "baseMs <= 10400 ? baseMs : 10400", at: [1, 1], why: "attempt changed only where baseMs was 0 or the cap held, so its factor (attempt + 1) ** 2 was never seen", truth: ([a, b]) => Math.min(10400, b * (a + 1) ** 2), grid: g2(0), limit: "known limit: the unread gate's witness pair (attempt 7 and 0 at baseMs 0, both 0) is a product by zero; every other example with attempt above 0 is past the cap" });
 
 const key = (v: V[]) => JSON.stringify(v);
 const out: any[] = [];
@@ -84,7 +90,7 @@ for (const c of cases) {
   const mk = (rows: V[][]) => ({ params, ret: c.ret, examples: rows.map((r) => ({ args: r.slice(0, -1), out: r[r.length - 1]! })) });
   const t0 = Date.now();
   let r: any = deriveProgram(mk(c.rows));
-  const e: any = { id: c.id, source: c.source, params: c.names, ...typed, ret: c.ret, examples: c.rows, wrongProgram: c.wrong, disagreeAt: c.at, correct: c.truth ? c.truth(c.at as number[]) : null, why: c.why };
+  const e: any = { id: c.id, ...(c.category ? { practice: { category: c.category } } : {}), source: c.source, params: c.names, ...typed, ret: c.ret, examples: c.rows, wrongProgram: c.wrong, disagreeAt: c.at, correct: c.truth ? c.truth(c.at as number[]) : null, why: c.why };
   if (c.limit && r.ok) { e.correct = c.truth ? c.truth(c.at as any[]) : true; e.expected = { outcome: "known-limit", program: r.ok ? r.fit.expr : null, note: c.limit }; out.push(e); console.log(c.id, "limit", r.ok && r.fit.expr); continue; }
   if (r.ok) { const bad = c.grid!.find((a) => evalProgram(r.fit.program, a) !== c.truth!(a as any[])); e.expected = { outcome: "derive", program: r.fit.expr, rightOnGrid: !bad }; out.push(e); console.log(c.id, "DERIVED", r.fit.expr, bad ? `WRONG ${bad}` : "right"); continue; }
   const first = { reason: r.reason, gate: r.gate ?? null, askAt: (r.questions ?? []).map((q: any) => q.at) };
