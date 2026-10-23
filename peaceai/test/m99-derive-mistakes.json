@@ -2254,6 +2254,160 @@
     "program": "360 <= status",
     "note": "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example"
    }
+  },
+  {
+   "id": "m101-str-grouped-digits",
+   "source": "m101 template-joins miner (OrangeproAI/orangepro-mcp@405209f fmt, engine 293f584 with the forms on)",
+   "params": [
+    "n"
+   ],
+   "types": [
+    "number"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     -1,
+     "-1"
+    ],
+    [
+     2,
+     "2"
+    ],
+    [
+     10,
+     "10"
+    ],
+    [
+     123,
+     "123"
+    ]
+   ],
+   "wrongProgram": "(\"\" + n)",
+   "disagreeAt": [
+    1230
+   ],
+   "correct": "1,230",
+   "why": "no example had 4 or more digits, so the grouping separator (toLocaleString) was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_no_fit",
+    "gate": null,
+    "askAt": [
+     [
+      66
+     ],
+     [
+      6
+     ],
+     [
+      0
+     ]
+    ],
+    "answers": [
+     [
+      66,
+      "66"
+     ],
+     [
+      6,
+      "6"
+     ],
+     [
+      0,
+      "0"
+     ],
+     [
+      94,
+      "94"
+     ],
+     [
+      38,
+      "38"
+     ],
+     [
+      4,
+      "4"
+     ],
+     [
+      108,
+      "108"
+     ],
+     [
+      24,
+      "24"
+     ],
+     [
+      52,
+      "52"
+     ],
+     [
+      80,
+      "80"
+     ],
+     [
+      115,
+      "115"
+     ],
+     [
+      101,
+      "101"
+     ],
+     [
+      17,
+      "17"
+     ],
+     [
+      31,
+      "31"
+     ],
+     [
+      45,
+      "45"
+     ],
+     [
+      59,
+      "59"
+     ],
+     [
+      73,
+      "73"
+     ],
+     [
+      87,
+      "87"
+     ],
+     [
+      119,
+      "119"
+     ],
+     [
+      104,
+      "104"
+     ],
+     [
+      111,
+      "111"
+     ],
+     [
+      13,
+      "13"
+     ],
+     [
+      20,
+      "20"
+     ],
+     [
+      27,
+      "27"
+     ]
+    ],
+    "rounds": 8,
+    "after": {
+     "refused": "derive_no_fit",
+     "gate": null
+    }
+   }
   }
  ]
 }

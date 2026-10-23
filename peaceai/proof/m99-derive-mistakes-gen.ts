@@ -56,6 +56,11 @@ cases.push({ id: "m100-kind-floor-clamp-sparse-k-p0-p0-k", source: `${C9}, task 
 cases.push({ id: "m100-kind-eq-or-ge-sparse-k-p0", source: `${C9}, task 14322 (eq_or_ge/sparse | K <= p0, 1 like it)`, names: ["n"], ret: "boolean", rows: [[537, true], [487, true], [339, false], [389, false], [390, true], [239, false], [437, true]], wrong: "390 <= n", at: [391], why: "a random handful of the examples: nothing between 390 and 437 was shown", truth: ([n]) => n === 390 || n >= 437, grid: g1(0, 800), limit: "known limit: the false band 391 to 436 lies past the program's last edge between examples under DERIVE_FAR (100) apart; holding open stretches to the bounded-region eighth refuses S1 and most fixtures (tried in round 3 and reverted), so the review note's table is the check here" });
 cases.push({ id: "m100-kind-s1-shape-sparse-k-p0", source: `${C9}, task 34225 (s1_shape/sparse | K <= p0, 1 like it)`, names: ["status"], ret: "boolean", rows: [[284, false], [359, false], [417, true], [389, true], [360, true], [474, true], [182, false], [282, false]], wrong: "360 <= status", at: [283], why: "a random handful of the examples: 283 and everything past 474 unshown", truth: ([s]) => s === 283 || (360 <= s && s <= 474), grid: g1(0, 800), limit: "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example" });
 
+// M101: the template-joins miner (an engine copy with the tmpl/str forms on and the digits gate at 3 digits) derived
+// ("" + n) for OrangeproAI/orangepro-mcp src/local/viz/reportTheme.ts fmt, n.toLocaleString("en-US"): wrong at 1230.
+// The gate now needs a 4+-digit example (asks at 1234); the forms stay off under DERIVE_FORM_BAR evidence.
+cases.push({ id: "m101-str-grouped-digits", source: "m101 template-joins miner (OrangeproAI/orangepro-mcp@405209f fmt, engine 293f584 with the forms on)", names: ["n"], types: ["number"], ret: "string", rows: [[-1, "-1"], [2, "2"], [10, "10"], [123, "123"]], wrong: '("" + n)', at: [1230], why: "no example had 4 or more digits, so the grouping separator (toLocaleString) was never seen", truth: ([n]) => n.toLocaleString("en-US"), grid: g1(-3000, 3000) });
+
 const key = (v: V[]) => JSON.stringify(v);
 const out: any[] = [];
 for (const c of cases) {

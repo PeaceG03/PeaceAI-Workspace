@@ -384,6 +384,14 @@ function stringPieces(examples: readonly DeriveExample[]): string[] {
   return ["", ...[...support].filter(([, n]) => n >= 2).map(([p]) => p)].sort();
 }
 
+/**
+ * Auditor #491 ruling (M101): a DSL form is used only with at least DERIVE_FORM_BAR replaying upstream evidence
+ * entries (real permissive functions, mined the M99 way, re-derived by the evidence test). The counts below are the
+ * entries of peaceai/rules/proposals/m101-template-joins-evidence.json whose derived program has the form; the
+ * test re-derives them and checks these numbers. Under the bar the form is never built, so it is never accepted.
+ */
+export const DERIVE_FORM_BAR = 10;
+export const TEMPLATE_FORM_EVIDENCE: Readonly<Record<"tmpl" | "str", number>> = { tmpl: 0, str: 0 };
 /** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
 const MAX_TEMPLATE_SPLITS = 2000;
 /**
@@ -399,11 +407,14 @@ const UNSAFE_LITERAL = /[\\\u0000-\u001f\u007f]/;
  * slot texts (in order, not overlapping), and each candidate is checked on every example. So every literal is a
  * piece of every output (pinned by all the examples, at least 3) and every slot is a parameter the examples vary.
  * Kept: templates of 3 or more parts, or with a str part (shorter string joins are the binary concat's).
- * Deterministic; bounded by MAX_TEMPLATE_SPLITS placements per slot order.
+ * Deterministic; bounded by MAX_TEMPLATE_SPLITS placements per slot order. `evidence` (default: the recorded
+ * counts) gates the forms: no template under DERIVE_FORM_BAR entries, no str slot under it (deriveProgram never
+ * passes another value).
  */
-export function templateFits(params: readonly DeriveParam[], examples: readonly DeriveExample[]): DeriveNode[] {
-  if (!examples.length || examples.some((e) => typeof e.out !== "string")) return [];
-  const slots = params.flatMap((p, i): DeriveNode[] => (p.type === "string" ? [{ op: "param", i }] : p.type === "number" ? [{ op: "str", a: { op: "param", i } }] : []));
+export function templateFits(params: readonly DeriveParam[], examples: readonly DeriveExample[], evidence: Readonly<Record<"tmpl" | "str", number>> = TEMPLATE_FORM_EVIDENCE): DeriveNode[] {
+  if (evidence.tmpl < DERIVE_FORM_BAR || !examples.length || examples.some((e) => typeof e.out !== "string")) return [];
+  const strOk = evidence.str >= DERIVE_FORM_BAR;
+  const slots = params.flatMap((p, i): DeriveNode[] => (p.type === "string" ? [{ op: "param", i }] : p.type === "number" && strOk ? [{ op: "str", a: { op: "param", i } }] : []));
   const text = (q: DeriveNode, a: readonly DeriveValue[]) => String(a[(q.op === "str" ? (q.a as { i: number }).i : (q as { i: number }).i)]!);
   const orders: DeriveNode[][] = [];
   const grow = (seq: DeriveNode[], left: DeriveNode[]) => { if (seq.length) orders.push(seq); left.forEach((q, k) => grow([...seq, q], left.filter((_, j) => j !== k))); };
@@ -836,14 +847,14 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     const missing = DERIVE_STRING_CLASSES.filter(([, re]) => !vals.some((v) => re.test(v))).map(([d]) => d);
     if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i, vals.includes("") ? undefined : [examples[0]!.args.map((a, j) => (j === i ? "" : a))]);
   }
-  // chars, digits (M101): a number written as its decimal text, str(p), is shown with a 1-digit value and a value of 3
-  // or more digits (a padded or cut text, e.g. padStart, differs from "" + p on one of them)
+  // chars, digits (M101): a number written as its decimal text, str(p), is shown with a 1-digit value and a value of 4
+  // or more digits (a padded text, padStart, differs from "" + p at 1 digit; a grouped one, toLocaleString, at 4)
   const written = new Set<number>();
   walk(program, (n) => { if (n.op === "str" && n.a.op === "param") written.add(n.a.i); });
   for (const i of [...written].sort((x, y) => x - y)) {
     const vals = examples.map((e) => Math.abs(e.args[i] as number));
-    const missing = [...(vals.some((v) => v <= 9) ? [] : ["a 1-digit value"]), ...(vals.some((v) => v >= 100) ? [] : ["a value of 3 or more digits"])];
-    if (missing.length) return fail("chars", `${names[i]} is written as its decimal text by \`${expr}\`, but no example value of it is ${missing.join(" or ")}; add such examples`, i, [...(vals.some((v) => v <= 9) ? [] : [ptAt(i, 7)]), ...(vals.some((v) => v >= 100) ? [] : [ptAt(i, 123)])]);
+    const missing = [...(vals.some((v) => v <= 9) ? [] : ["a 1-digit value"]), ...(vals.some((v) => v >= 1000) ? [] : ["a value of 4 or more digits"])];
+    if (missing.length) return fail("chars", `${names[i]} is written as its decimal text by \`${expr}\`, but no example value of it is ${missing.join(" or ")}; add such examples`, i, [...(vals.some((v) => v <= 9) ? [] : [ptAt(i, 7)]), ...(vals.some((v) => v >= 1000) ? [] : [ptAt(i, 1234)])]);
   }
   // edge (1)
   const byVal = (i: number, v: DeriveValue) => examples.filter((e) => e.args[i] === v);
