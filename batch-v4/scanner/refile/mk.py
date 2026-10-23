@@ -15,7 +15,9 @@ T = [
   "Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.\n\n"
   "Examples:\n"
   "- 429 gives true\n- 500 gives true\n- 502 gives true\n- 503 gives true\n- 504 gives true\n- 550 gives true\n- 599 gives true\n"
-  "- 428 gives false\n- 430 gives false\n- 499 gives false\n- 465 gives false\n- 600 gives false\n- 700 gives false\n- 200 gives false\n- 204 gives false\n- 100 gives false\n"
+  "- 510 gives true\n- 520 gives true\n- 530 gives true\n- 540 gives true\n- 560 gives true\n- 570 gives true\n- 580 gives true\n- 590 gives true\n"
+  "- 428 gives false\n- 430 gives false\n- 499 gives false\n- 465 gives false\n"
+  "- 438 gives false\n- 446 gives false\n- 454 gives false\n- 462 gives false\n- 470 gives false\n- 478 gives false\n- 486 gives false\n- 494 gives false\n- 600 gives false\n- 700 gives false\n- 200 gives false\n- 204 gives false\n- 100 gives false\n"
   "- 301 gives false\n- 400 gives false\n- 403 gives false\n- 404 gives false\n- 0 gives false",
   "The ten-minute chain stopped on R2_PUT_500 (run 39451888891) and R2_GET_500 (run 39467160610) because R2ObjectClient.request never retries; this is the status check the future retry will use."),
  ("S2", 487, "src/r2-retry-delay.ts", "r2RetryDelayMs",
