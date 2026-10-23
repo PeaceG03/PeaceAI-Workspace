@@ -167,6 +167,34 @@ function runExistingTests(tree: string, tests: readonly string[], reads: readonl
   return { ok, out: outs.join("\n"), confined: true, notes: seen };
 }
 
+/**
+ * Auditor #489: the ORIGINAL-SUITE step for an EXISTING_EDIT (M98) candidate runs under the Node permission model too
+ * (it imports the edited module, so it would otherwise execute the splice unconfined). Each test file runs directly in
+ * its own confined process (not under `--test`, whose children would not inherit the flags): fs reads limited to the
+ * tree's `src/`, the package.json chain and node_modules; fs read+write only in a per-run scratch dir that is also
+ * TMPDIR/HOME; no child_process, no addons, no wasi; workers only for tsx's loader. A test that can't run confined
+ * fails (fail closed) — the caller decides which tests that applies to (see judgedConfined).
+ */
+function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP_TIMEOUT_MS): boolean {
+  if (tests.length === 0) return true;
+  const modules = realpathSync(join(tree, "node_modules"));
+  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
+  const realTree = realpathSync(tree);
+  const pkgs = new Set<string>([join(realTree, "package.json")]);
+  for (const t of tests) { let d = dirname(t); while (d !== "." && d !== "/" && d !== "") { pkgs.add(join(realTree, d, "package.json")); d = dirname(d); } }
+  // Unsandboxed (dev) runs get their own scratch dir; sandboxed runs reuse the sandbox user's private home.
+  const scratch = sandboxUser ? sandboxHome : mkdtempSync(join(tmpdir(), "peaceai-confined-"));
+  try {
+    for (const t of tests) {
+      const args = ["--permission", `--allow-fs-read=${join(realTree, "src")}`, ...[...pkgs].sort().map((p) => `--allow-fs-read=${p}`), `--allow-fs-read=${modules}`, `--allow-fs-read=${scratch}`, `--allow-fs-write=${scratch}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t];
+      if (!runCandidateCapture(tree, process.execPath, args, timeout, { TSX_DISABLE_CACHE: "1", TMPDIR: scratch, HOME: scratch }).ok) return false;
+    }
+    return true;
+  } finally {
+    if (!sandboxUser) rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 // M7 repair budget (Job B timeout is 25 minutes; up to five candidates run in parallel jobs).
 const REPAIR_ENABLED = process.env.PEACEAI_REPAIR !== "off";
 const REPAIR_BUDGET = {
@@ -389,24 +417,37 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
  * EXISTING_EDIT_ENV_RUNS zone + locale pair (else real-not-stable); the source goes back to the base and the same
  * confined run must fail by assertions only (ERR_ASSERTION), never by a crash, load error or other throw.
  */
-function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean): TestGrading {
+/**
+ * Auditor #489: the static half of gradeExistingEdit (shape, capability-delta gate, hermetic walk, load closure) on the
+ * applied tree. test-candidates runs it BEFORE any candidate code executes (typecheck aside), so an EXISTING_EDIT
+ * candidate that fails it is never run at all — not in the original suite, not as a new test.
+ */
+function existingEditStatic(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[]): { modPath: string; reads: string[] } | TestGrading["reason"] {
   const base = summary.baseSha;
-  const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && scope.isTest(f.newPath)).map((f) => f.newPath!);
-  if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return ungradable("not-test-only");
+  if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return "not-test-only";
   const regular = (rel: string): string | null => {
     try { const p = join(tree, rel); if (!lstatSync(p).isFile() || relative(tree, realpathSync(p)).startsWith("..")) return null; return readFileSync(p, "utf8"); } catch { return null; }
   };
   const modPath = source[0]!, testPath = tests[0]!;
   const real = regular(modPath), test = regular(testPath);
   let baseText: string;
-  try { baseText = git(repo, "show", `${base}:${modPath}`); } catch { return ungradable("revert-failed"); }
-  if (real === null || test === null) return ungradable("not-applied");
+  try { baseText = git(repo, "show", `${base}:${modPath}`); } catch { return "revert-failed"; }
+  if (real === null || test === null) return "not-applied";
   const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
-  if (gradeExistingEditProblem(modPath, baseText, real, testPath, test, read) !== null) return ungradable("not-test-only");
+  if (gradeExistingEditProblem(modPath, baseText, real, testPath, test, read) !== null) return "not-test-only";
   const reads = existingEditReads(modPath, read);
-  if (!reads) return ungradable("module-imports-repo-files");
+  if (!reads) return "module-imports-repo-files";
+  return { modPath, reads };
+}
+
+function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean): TestGrading {
+  const base = summary.baseSha;
+  const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
+  const st = existingEditStatic(tree, files, newTests);
+  if (typeof st !== "object" || st === null) return ungradable(st);
+  const { modPath, reads } = st;
   if (afterFix) for (const env of EXISTING_EDIT_ENV_RUNS) if (!runExistingTests(tree, newTests, reads, false, undefined, env).ok) return ungradable("real-not-stable");
   if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", modPath])) return ungradable("revert-failed");
   const run = runExistingTests(tree, newTests, reads, false, undefined, EXISTING_EDIT_ENV_RUNS[0]);
@@ -662,8 +703,15 @@ for (const candidate of selected) {
         : [];
     // "related" mode: each related existing test runs on the untouched base first; only those that pass
     // there are judged on the candidate (a regression fails it). Base failures are environment noise.
-    const judged = related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
-    if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${related.length} judged=${judged.length}`);
+    // Auditor #489: an EXISTING_EDIT candidate's original suite runs confined (runConfinedSuite), so its related tests
+    // are judged by a CONFINED run on the base. A related test that can't pass confined even on the base can't be run
+    // on the edit at all (never unconfined), so the candidate's original suite fails closed.
+    const m98 = !!candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
+    const judged = m98
+      ? related.filter((path) => runConfinedSuite(tree, [path], RELATED_TIMEOUT_MS))
+      : related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
+    const m98Unconfinable = m98 && targetConfig.originalSuite === "related" ? related.length - judged.length : 0;
+    if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${related.length} judged=${judged.length}${m98 ? ` confined=1 unconfinable=${m98Unconfinable}` : ""}`);
     const digestBefore = digestProtected ? protectedDigest(tree) : "";
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", diffPath])) continue;
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", diffPath])) continue;
@@ -691,14 +739,23 @@ for (const candidate of selected) {
       repairs.push({ id: candidate.id, ...repair.record, original: repair.original, originalNewTestFiles });
       if (repair.record.repairedDiffSha256) repairedDiffs.set(candidate.id, repair.finalDiff);
     }
+    // Auditor #489: the EXISTING_EDIT static gate (capability delta, hermetic walk, closure) runs on the applied tree
+    // BEFORE any candidate code executes; a refused edit is never run (every pass stays false, grading stays UNGRADABLE).
+    if (m98) {
+      const st = existingEditStatic(tree, files, newTests);
+      if (typeof st !== "object" || st === null) { console.log(`${candidate.id} existing_edit_static=${st}`); continue; }
+    }
     result.typecheckPassed = runCandidate(tree, tsc, ["-p", "tsconfig.json", "--noEmit"]);
     // Pass 1: the original suite, with every new test file moved out of the tree.
     const parked = mkdtempSync(join(tmpdir(), "peaceai-parked-"));
     newTests.forEach((path, i) => renameSync(join(tree, path), join(parked, String(i))));
     // An appended test file runs in pass 1 exactly as it is on the base (its new cases parked).
     for (const path of appended) writeFileSync(join(tree, path), git(repo, "show", `${summary.baseSha}:${path}`));
-    result.originalSuitePassed =
-      targetConfig.originalSuite === "full"
+    result.originalSuitePassed = m98
+      ? m98Unconfinable === 0 && (targetConfig.originalSuite === "full"
+        ? baseTests.length > 0 && runConfinedSuite(tree, baseTests)
+        : judged.every((path) => runConfinedSuite(tree, [path], RELATED_TIMEOUT_MS)))
+      : targetConfig.originalSuite === "full"
         ? baseTests.length > 0 && runCandidate(tree, tsx, ["--test", ...baseTests])
         : judged.every((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
     newTests.forEach((path, i) => {
@@ -712,9 +769,8 @@ for (const candidate of selected) {
     // original-suite / new-test steps ran with no permission flags, so a test that reached I/O would see `process`,
     // `fetch`, &c. Run it under the Node permission model (its module load-closure reads only), as Job B does; fail
     // closed if the closure can't be resolved (gradeExistingEdit would reject such a module anyway).
-    const m98Candidate = candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
     if (newTests.length === 0) result.newTestsPassed = true;
-    else if (m98Candidate) {
+    else if (m98) {
       const srcFiles = files.filter((f) => !f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
       const regular = (rel: string): string | null => { try { const pth = join(tree, rel); if (!lstatSync(pth).isFile() || relative(tree, realpathSync(pth)).startsWith("..")) return null; return readFileSync(pth, "utf8"); } catch { return null; } };
       const rd = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);

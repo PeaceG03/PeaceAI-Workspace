@@ -313,6 +313,12 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
   assert.equal(ed(`const k = ["__pro", "to__"].join(""); const p = o[k]; p.z = 1; return n + 2;`), "edit_new_capability:computed");
   assert.equal(ed(`const H = f["constr" + "uctor"]; return n + 2;`), "edit_new_capability:computed");
   assert.equal(ed(`const q = { a: n }; return q["a"] + 2;`), null);
+  // ... and through destructuring / object-literal keys (no member access at all)
+  assert.equal(ed(`const { constructor: C } = f; C("globalThis.x = 1")(); return n + 2;`), "edit_new_capability:refl:constructor");
+  assert.equal(ed(`const { constructor } = o; return n + 2;`), "edit_new_capability:refl:constructor");
+  assert.equal(ed(`const { ["constr" + "uctor"]: C } = o as never; return n + 2;`), "edit_new_capability:computed");
+  assert.equal(ed(`const z = { __proto__: o }; return n + 2;`), "edit_new_capability:refl:__proto__");
+  assert.equal(ed(`const { a } = o; return n + a + 1;`), null);
 
   // Engine excludes test helpers and fixtures as edit targets, no matter what targets.json denyPatterns say.
   assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/x.test-helper.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/x.test-helper.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
@@ -378,11 +384,31 @@ test("Job B code: gradeExistingEdit runs before gradeSelf, needs 1 source + 1 te
   const src = read("peaceai/bin/test-candidates.ts");
   const i = src.indexOf("candidate.transformations.includes(\"LEARNED_EXISTING_EDIT\")"), j = src.indexOf("else if (candidate.selfGrade)");
   assert.ok(i > 0 && j > i, "the EXISTING_EDIT branch precedes the generic self-grade branch");
-  const fn = src.slice(src.indexOf("function gradeExistingEdit("));
-  const body = fn.slice(0, fn.indexOf("\n}\n"));
-  for (const needle of ["gradeExistingEditProblem(", "EXISTING_EDIT_ENV_RUNS", "assertionFailuresOnly(", "existingEditReads("]) assert.ok(body.includes(needle), needle);
+  const fnBody = (name: string): string => { const fn = src.slice(src.indexOf(`function ${name}(`)); return fn.slice(0, fn.indexOf("\n}\n")); };
+  const body = fnBody("gradeExistingEdit"), stat = fnBody("existingEditStatic");
+  for (const needle of ["existingEditStatic(", "EXISTING_EDIT_ENV_RUNS", "assertionFailuresOnly("]) assert.ok(body.includes(needle), needle);
+  for (const needle of ["gradeExistingEditProblem(", "existingEditReads(", "isExcludedSource("]) assert.ok(stat.includes(needle), needle);
   assert.deepEqual(EXISTING_EDIT_ENV_RUNS.map((x) => x.TZ), ["UTC", "America/Denver", "Asia/Tokyo"]);
   assert.ok(EXISTING_EDIT_ENV_RUNS.every((x) => x.LANG === x.LC_ALL));
+});
+
+test("Auditor #489: grading never runs an EXISTING_EDIT splice unconfined — static gate before any run, original suite + new test under --permission", () => {
+  const src = read("peaceai/bin/test-candidates.ts");
+  const loop = src.slice(src.indexOf("for (const candidate of selected) {"));
+  const gate = loop.indexOf("existingEditStatic(tree, files, newTests)"), tc = loop.indexOf("result.typecheckPassed = runCandidate(");
+  const p1 = loop.indexOf("result.originalSuitePassed = m98"), p2 = loop.indexOf("else if (m98) {");
+  assert.ok(gate > 0 && gate < tc && tc < p1 && p1 < p2, "static gate precedes typecheck and every execution pass");
+  assert.match(loop.slice(gate, tc), /continue;/, "a refused edit is never run");
+  // pass 1 for M98: confined only, and an unconfinable related test fails the candidate (never falls back to unconfined)
+  const pass1 = loop.slice(p1, loop.indexOf(";\n", p1));
+  assert.match(pass1, /m98Unconfinable === 0 && /);
+  assert.ok(pass1.indexOf("runConfinedSuite(") > 0 && pass1.indexOf("runConfinedSuite(") < pass1.indexOf(": targetConfig.originalSuite"), "M98 branch uses runConfinedSuite");
+  assert.match(loop, /const judged = m98\s*\? related\.filter\(\(path\) => runConfinedSuite\(/);
+  const rc = src.slice(src.indexOf("function runConfinedSuite("));
+  const rcBody = rc.slice(0, rc.indexOf("\n}\n"));
+  assert.match(rcBody, /"--permission"/);
+  for (const banned of ["--allow-child-process", "--allow-addons", "--allow-wasi", "\"--test\""]) assert.ok(!rcBody.includes(banned), banned);
+  assert.ok(!/allow-fs-write=\$\{(?:realTree|tree|modules)/.test(rcBody), "no write grant on the tree or node_modules");
 });
 
 test("grammar units: statement parse, unique split, token match, nested-function exclusion", () => {

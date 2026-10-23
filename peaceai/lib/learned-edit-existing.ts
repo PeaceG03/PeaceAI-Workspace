@@ -476,6 +476,24 @@ function capabilityTokens(node: ts.Node): Map<string, number> {
       if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && REFLECTION.has(a.text)) add(`refl:${a.text}`);
     }
     if (ts.isIdentifier(n) && CAPABILITY_IDENTS.has(n.text) && !isDeclName(n) && !inTypePosition(n)) add(`id:${n.text}`);
+    // Auditor #489 (follow-up): the same reflection / dynamic-key paths through destructuring and object literals —
+    // `const { constructor: C } = f`, `const { constructor } = f`, `const { [k]: C } = o`, `{ __proto__: x }`,
+    // `{ [k]: v }`. A computed property name is a "computed" token unless it is a literal non-reflection key.
+    if (ts.isComputedPropertyName(n)) {
+      const a = unwrap(n.expression);
+      const lit = ts.isNumericLiteral(a) || ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && !REFLECTION.has(a.text));
+      if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && REFLECTION.has(a.text)) add(`refl:${a.text}`);
+      else if (!lit) add("computed");
+    }
+    const keyText = (k: ts.Node | undefined): string | null => (k && (ts.isIdentifier(k) || ts.isStringLiteral(k) || ts.isNoSubstitutionTemplateLiteral(k)) ? k.text : null);
+    if (ts.isBindingElement(n)) {
+      const k = keyText(n.propertyName) ?? (n.propertyName ? null : keyText(n.name));
+      if (k !== null && REFLECTION.has(k) && ts.isObjectBindingPattern(n.parent)) add(`refl:${k}`);
+    }
+    if ((ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n) || ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n)) && ts.isObjectLiteralExpression(n.parent)) {
+      const k = keyText(n.name);
+      if (k !== null && REFLECTION.has(k)) add(`refl:${k}`);
+    }
     ts.forEachChild(n, visit);
   };
   visit(node);
