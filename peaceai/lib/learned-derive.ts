@@ -18,7 +18,7 @@
 // The behavior prose only has to pass the anti-credit guard: it never reaches the search, the constants or the
 // test. The program is determined by the examples alone; the header line picks the module, name and signature.
 import { createHash } from "node:crypto";
-import { compileProgram, deriveProgram, derivedExprProblem, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
+import { compileProgram, deriveProgram, derivedExprProblem, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
 import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./learned-function.ts";
 import { importStyle } from "./learned-test.ts";
 import ts from "typescript";
@@ -42,7 +42,7 @@ const TYPE = String.raw`(?:number|string|boolean)`;
 const PARAM = String.raw`${NAME}: ?${TYPE}`;
 /** The header line (the rule's trigger): Add a new module src/x.ts exporting name(a: T, b: U): R */
 export const DERIVE_TRIGGER = String.raw`^add (?:a )?new module (?<file>src\/[\w./-]+\.ts) exporting (?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${DERIVE_MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE}) ?\.?$`;
-export const DERIVE_MAX_EXPR_CHARS = 400;
+export { DERIVE_MAX_EXPR_CHARS } from "./derive.ts";
 const EXAMPLES_HEAD = /^examples\b[^:\n]{0,80}:$/i;
 const BEHAVIOR_HEAD = /^behaviou?r:\s*/i;
 const BULLET = /^[-*] /;

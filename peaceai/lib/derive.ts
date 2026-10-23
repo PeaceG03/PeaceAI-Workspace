@@ -24,9 +24,12 @@
 //   No memorizing: a string parameter is only ever tested for emptiness (never against a literal), and an integer
 //   is only compared with a parameter where the examples show the result changing right there, so a lookup table
 //   of arbitrary example inputs is not in the search space (such tasks are derive_no_fit instead of a wrong fit).
-// Compiled programs are plain TypeScript expressions over the parameters and literals only: no globals (min/max
-// compile to conditionals), no calls, no member or computed access, no I/O, no timers, no constructor / eval /
-// prototype paths. derivedExprProblem re-checks that on the TypeScript AST (used by Job A and Job B).
+// Compiled programs are plain TypeScript expressions over the parameters and literals only: no globals at all (min /
+// max compile to conditionals, so not even Math), no calls, no member or computed access, no regex, no I/O, no
+// timers, no constructor / eval / prototype paths, at most DERIVE_MAX_EXPR_CHARS characters with string literals of
+// at most DERIVE_MAX_STRING. That is a strict subset of the #489 allowlist (parameters / locals, fresh literals, a
+// short list of pure globals): it uses none of the globals. derivedExprProblem re-checks it on the TypeScript AST
+// (used by Job A and Job B).
 // Reusable: #489 (existing-function edit) can call deriveProgram for a behavior-only statement change.
 import ts from "typescript";
 
@@ -68,6 +71,8 @@ export const DERIVE_MAX_PARAMS = 3;
 /** A fit is accepted only if no other behavior fits within this many extra nodes. */
 export const DERIVE_SLACK = 1;
 export const DERIVE_MAX_STRING = 120;
+/** Longest compiled expression (characters); longer is refused (derive_expr_size), so the module is bounded. */
+export const DERIVE_MAX_EXPR_CHARS = 400;
 const MAX_POINTS = 400;
 /** Memory bound: total characters of kept value vectors; past it the search stops (derive_budget). */
 const MAX_KEPT_CHARS = 64_000_000;
@@ -204,6 +209,7 @@ const ALLOWED_BINARY = new Set([ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToke
  * templates, assignment, or any other name. Null when clean, else a reason code.
  */
 export function derivedExprProblem(text: string, params: readonly string[]): string | null {
+  if (text.length > DERIVE_MAX_EXPR_CHARS) return "derive_expr_size";
   const sf = ts.createSourceFile("d.ts", `(${text});`, ts.ScriptTarget.Latest, true);
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || sf.statements.length !== 1 || !ts.isExpressionStatement(sf.statements[0]!)) return "derive_expr_parse";
   const names = new Set(params);
@@ -212,8 +218,8 @@ export function derivedExprProblem(text: string, params: readonly string[]): str
     if (bad) return;
     if (ts.isParenthesizedExpression(n)) return visit(n.expression);
     if (ts.isIdentifier(n)) { if (!names.has(n.text)) bad = "derive_expr_name"; else reads++; return; }
-    if (ts.isNumericLiteral(n)) { if (!/^\d+$/.test(n.text)) bad = "derive_expr_literal"; return; }
-    if (ts.isStringLiteral(n)) { if (/[\\\u0000-\u001f\u007f]/.test(n.getText(sf).slice(1, -1).replace(/\\"/g, ""))) bad = "derive_expr_literal"; return; }
+    if (ts.isNumericLiteral(n)) { if (!/^\d{1,13}$/.test(n.text)) bad = "derive_expr_literal"; return; }
+    if (ts.isStringLiteral(n)) { if (n.text.length > DERIVE_MAX_STRING || /[\\\u0000-\u001f\u007f]/.test(n.getText(sf).slice(1, -1).replace(/\\"/g, ""))) bad = "derive_expr_literal"; return; }
     if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword) return;
     if (ts.isPrefixUnaryExpression(n)) {
       if (n.operator === ts.SyntaxKind.ExclamationToken) return visit(n.operand);

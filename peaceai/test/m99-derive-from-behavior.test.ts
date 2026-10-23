@@ -10,7 +10,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
-import { compileProgram, deriveProgram, derivedExprProblem, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
+import { compileProgram, DERIVE_MAX_EXPR_CHARS, DERIVE_MAX_STRING, deriveProgram, derivedExprProblem, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { behaviorCodeProblem, buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, derivedModuleProblem, parseDeriveTask, rawIssueProblem } from "../lib/learned-derive.ts";
 import { callsFunction, stubFunction } from "../lib/learned-function.ts";
@@ -19,6 +19,7 @@ import { readManifestBytes } from "../lib/manifestparts.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
+import ts from "typescript";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -265,6 +266,81 @@ test("fail closed: a competing fit one node larger is AMBIGUOUS; constant progra
   const dflt = deriveProgram({ params: x1, ret: "number", examples: ex });
   assert.equal(!dflt.ok && dflt.reason, "derive_ambiguous");
   assert.deepEqual(!dflt.ok && dflt.alternatives!.map((f) => f.size), [4, 5]);
+});
+
+// Strict allowlist (Auditor, #489 review): an independent walk of EVERY AST node. Allowed: the function's own
+// parameters, fresh integer / bounded plain string / boolean literals, parentheses, ! and unary minus on a number,
+// + - * === <= && || and ?:. No global is used at all (so none of the #489 pure-global list is even needed), and no
+// regex, member / element access, call, new, template, assignment, spread, arrow or any other node; bounded size.
+const ALLOW_KINDS = new Set([ts.SyntaxKind.SourceFile, ts.SyntaxKind.ExpressionStatement, ts.SyntaxKind.EndOfFileToken, ts.SyntaxKind.ParenthesizedExpression, ts.SyntaxKind.Identifier, ts.SyntaxKind.NumericLiteral, ts.SyntaxKind.StringLiteral, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.PrefixUnaryExpression, ts.SyntaxKind.BinaryExpression, ts.SyntaxKind.ConditionalExpression, ts.SyntaxKind.QuestionToken, ts.SyntaxKind.ColonToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken]);
+function strictAllowlist(text: string, params: readonly string[]): string | null {
+  if (text.length > DERIVE_MAX_EXPR_CHARS) return "size";
+  const sf = ts.createSourceFile("s.ts", `(${text});`, ts.ScriptTarget.Latest, true);
+  if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || sf.statements.length !== 1) return "parse";
+  let bad: string | null = null;
+  const walk = (n: ts.Node): void => {
+    if (bad) return;
+    if (!ALLOW_KINDS.has(n.kind)) { bad = ts.SyntaxKind[n.kind]!; return; }
+    if (ts.isIdentifier(n) && !params.includes(n.text)) bad = `name:${n.text}`;
+    if (ts.isNumericLiteral(n) && !/^\d{1,13}$/.test(n.text)) bad = "number";
+    if (ts.isStringLiteral(n) && (n.text.length > DERIVE_MAX_STRING || /[\\\u0000-\u001f\u007f]/.test(n.text))) bad = "string";
+    if (ts.isPrefixUnaryExpression(n) && !(n.operator === ts.SyntaxKind.ExclamationToken || (n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)))) bad = "prefix";
+    ts.forEachChild(n, walk);
+  };
+  walk(sf);
+  return bad;
+}
+
+test("strict allowlist: every compiled DSL program (over 10000: all small programs, 3000 seeded random ones, S1-S3, evidence) passes it", () => {
+  const P = ["a", "b", "s", "t", "f"]; // number, number, string, string, boolean
+  const num: DeriveNode[][] = [[], [{ op: "param", i: 0 }, { op: "param", i: 1 }, { op: "int", v: 1 }, { op: "int", v: 2 }, { op: "lit", v: -7 }, { op: "lit", v: 30000 }]];
+  const str: DeriveNode[][] = [[], [{ op: "param", i: 2 }, { op: "param", i: 3 }, { op: "lit", v: "" }, { op: "lit", v: "x:" }, { op: "lit", v: "__proto__" }, { op: "lit", v: "constructor" }, { op: "lit", v: "/a+/g" }, { op: "lit", v: "x".repeat(DERIVE_MAX_STRING) }]];
+  const bool: DeriveNode[][] = [[], [{ op: "param", i: 4 }]];
+  for (let size = 2; size <= 5; size++) {
+    num[size] = []; str[size] = []; bool[size] = [];
+    if (size === 2) bool[2]!.push({ op: "empty", i: 2 }, { op: "empty", i: 3 });
+    if (size === 3) for (const c of [-1, 0, 599]) bool[3]!.push({ op: "eq", a: { op: "param", i: 0 }, b: { op: "lit", v: c } }, { op: "le", a: { op: "lit", v: c }, b: { op: "param", i: 1 } });
+    if (size === 4) bool[4]!.push({ op: "range", i: 0, lo: -5, hi: 599 });
+    for (const a of num[size - 1]!) num[size]!.push({ op: "sq", a });
+    for (const a of bool[size - 1]!) bool[size]!.push({ op: "not", a });
+    if (size >= 3) for (const a of num[size - 2]!) num[size]!.push({ op: "min", c: 30000, a }, { op: "max", c: -3, a });
+    for (let la = 1; la <= size - 2; la++) {
+      const lb = size - 1 - la;
+      for (const a of num[la]!) for (const b of num[lb]!) for (const op of ["add", "sub", "mul"] as const) num[size]!.push({ op, a, b });
+      for (const a of str[la]!) for (const b of str[lb]!) str[size]!.push({ op: "cat", a, b });
+      for (const a of bool[la]!) for (const b of bool[lb]!) for (const op of ["and", "or"] as const) bool[size]!.push({ op, a, b });
+    }
+    for (let lt = 1; lt <= size - 3; lt++) { const le = size - 2 - lt; if (le < 1) continue; for (const g of [{ op: "empty", i: 2 } as DeriveNode]) for (const [x, y] of [[num, num], [str, str]] as const) for (const t of x[lt]!) for (const e of y[le]!) (x === num ? num : str)[size]!.push({ op: "if", c: g, t, e }); }
+  }
+  let rnd = 99991;
+  const R = (n: number) => { rnd = (rnd * 48271) % 2147483647; return rnd % n; };
+  const gen = (ty: "n" | "s" | "b", budget: number): DeriveNode => {
+    const leaf = (): DeriveNode => (ty === "n" ? num[1]![R(num[1]!.length)]! : ty === "s" ? str[1]![R(str[1]!.length)]! : bool[1]![0]!);
+    if (budget <= 1) return leaf();
+    const k = R(4);
+    if (ty === "n") return k === 0 ? { op: "sq", a: gen("n", budget - 1) } : k === 1 ? { op: "min", c: R(2) ? 30000 : -1, a: gen("n", budget - 2) } : k === 2 ? { op: "if", c: { op: "empty", i: 2 }, t: gen("n", (budget - 3) >> 1), e: gen("n", (budget - 3) >> 1) } : { op: (["add", "sub", "mul"] as const)[R(3)]!, a: gen("n", (budget - 1) >> 1), b: gen("n", (budget - 1) >> 1) };
+    if (ty === "s") return k < 2 ? { op: "cat", a: gen("s", (budget - 1) >> 1), b: gen("s", (budget - 1) >> 1) } : k === 2 ? { op: "if", c: { op: "eq", a: { op: "param", i: 0 }, b: { op: "lit", v: 3 } }, t: gen("s", (budget - 3) >> 1), e: gen("s", (budget - 3) >> 1) } : leaf();
+    return k === 0 ? { op: "not", a: gen("b", budget - 1) } : k === 1 ? { op: "and", a: gen("b", (budget - 1) >> 1), b: gen("b", (budget - 1) >> 1) } : k === 2 ? { op: "le", a: gen("n", (budget - 1) >> 1), b: gen("n", (budget - 1) >> 1) } : { op: "range", i: 1, lo: 0, hi: 9 };
+  };
+  const all = [...num.flat(), ...str.flat(), ...bool.flat()];
+  for (let i = 0; i < 3000; i++) all.push(gen((["n", "s", "b"] as const)[i % 3]!, 2 + (i % 12)));
+  let checked = 0, refusedBySize = 0;
+  for (const n of all) {
+    const text = compileProgram(n, P);
+    const engine = derivedExprProblem(text, P);
+    // The engine gate refuses only oversize text or a program reading no parameter; everything it admits passes the
+    // strict allowlist (and so does every program short enough, whatever it reads).
+    assert.ok(engine === null || engine === "derive_expr_size" || engine === "derive_expr_constant", `${engine}: ${text}`);
+    if (engine === "derive_expr_size") { refusedBySize++; continue; }
+    assert.equal(strictAllowlist(text, P), null, text);
+    assert.doesNotMatch(text, /[[\]`{}]|=>|\bnew\b|\.\s*[A-Za-z_$]/, text);
+    checked++;
+  }
+  assert.ok(checked > 10000, `checked ${checked}`);
+  for (const body of [S1, S2, S3]) { const e = run(body).e!; const m = /return (.*);\n\}\n$/s.exec(e.content)!; const names = [...e.content.matchAll(/(\w+): (?:number|string|boolean)[,)]/g)].map((x) => x[1]!); assert.equal(strictAllowlist(m[1]!, names), null, e.content); }
+  for (const e of EV.examples) assert.equal(strictAllowlist(e.expr, e.params.map((p) => p.name)), null, e.expr);
+  // The strict check itself refuses what Auditor listed.
+  for (const bad of ["Math.min(a, 1)", "Reflect.get(a, 1)", "/x/.test(s)", "s.repeat(a)", "s.padStart(a)", "Object.getOwnPropertyNames(s)", "s.constructor", "s['__proto__']", "(() => a)()", "a = 1", "`${s}`", "new Array(a)", "f.call(a)", "Error.captureStackTrace(s)", "b2 + 1", "a > 1", `"${"x".repeat(DERIVE_MAX_STRING + 1)}" + s`, "x".repeat(DERIVE_MAX_EXPR_CHARS + 1)]) assert.notEqual(strictAllowlist(bad, P), null, bad);
 });
 
 // ---- mined evidence ----
