@@ -2,12 +2,12 @@
 
 Engine: 9ba5cb2 (derive behavior identical to 7662f61: both forms on there too). Snapshot of the resumable local runs (peaceai/bin/derive-practice.ts --family <f> --shard j/2); a partial table counts the tasks graded so far.
 
-## template-joins: 451 / 5000 tasks graded
+## template-joins: 1054 / 5000 tasks graded
 
 | category | n | right | refused | wrong-blocking | wrong-known-limit | right after asking | wrong after asking | still refused |
 |---|---|---|---|---|---|---|---|---|
-| template_join/full | 151 | 79 | 72 | 0 | 0 | 53 | 0 | 19 |
-| template_join/lookalike | 150 | 71 | 79 | 0 | 0 | 60 | 0 | 19 |
-| template_join/missing_empty | 150 | 0 | 150 | 0 | 0 | 121 | 0 | 29 |
-| **total** | **451** | **150** | **301** | **0** | **0** | **234** | **0** | **67** |
+| template_join/full | 352 | 182 | 170 | 0 | 0 | 118 | 0 | 52 |
+| template_join/lookalike | 351 | 169 | 182 | 0 | 0 | 125 | 0 | 57 |
+| template_join/missing_empty | 351 | 0 | 351 | 0 | 0 | 281 | 0 | 70 |
+| **total** | **1054** | **351** | **703** | **0** | **0** | **524** | **0** | **179** |
 
