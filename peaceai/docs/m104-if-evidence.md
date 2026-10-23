@@ -48,8 +48,9 @@ evidence file one ternary entry short). The learned spec hash was re-pinned (onl
 | family-1 | m102 d335cff | 725 | 4182 | 0 | 93 | 1425 | 97 (+219 known limit) |
 | family-1 | m104 0d0b89f | 725 | 4182 | 0 | 93 | 1425 | 97 (+219 known limit) |
 | template-joins | m102 d335cff | 1345 | 3655 | 0 | 0 | 2832 | 0 |
+| template-joins | m104 0d0b89f | 1345 | 3655 | 0 | 0 | 2832 | 0 |
 
 if-return-chains: 883 tasks change, all from a ternary-form refusal (836 such refusals at m102) to an answer; none
 becomes wrong (first pass +362 right; after asking +521 right, 0 wrong). family-1: all 5000 task records identical
 (no family-1 task reached the form gate at m102: 0 derive_unevidenced_form refusals). template-joins: 0 tasks reached
-the form gate at m102, so no change is expected; the m104 run is in progress.
+the form gate at m102, and all 5000 task records are identical at m104.
