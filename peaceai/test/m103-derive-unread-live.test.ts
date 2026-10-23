@@ -45,13 +45,14 @@ test("m103 unread live pair: EVERY read number parameter is non-zero in the pair
   const rows = [[2, 3, 0, 6], [5, 7, 0, 35], [-4, 6, 0, -24], [0, 5, 0, 0], [0, 5, 9, 0], [3, -2, 0, -6], [100, 1, 0, 100], [1, 100, 0, 100], [-100, 2, 0, -200], [2, -100, 0, -200], [1, 1, 0, 1], [-1, -1, 0, 1], [7, -3, 0, -21], [0, 0, 0, 0]];
   const r = deriveCandidate(mk(["a", "b", "c"], rows));
   assert.ok(!r.ok && r.gate === "unread" && r.param === "c", JSON.stringify(r));
-  // The same examples plus c at three values with a and b not 0 / 1 / -1: c is shown not to matter.
-  const ok = deriveCandidate(mk(["a", "b", "c"], [...rows, [2, 3, 9, 6], [2, 3, -5, 6]]));
+  // The same examples plus c at three values with a and b not 0 / 1 / -1: c is shown not to matter. m105 (Auditor #497
+  // G): and c not 0 on each side of every cut of a and of b (else a <= 2 ? a * b : a * b + c, or b <= 6 ? a * b : a * b + c, fits).
+  const ok = deriveCandidate(mk(["a", "b", "c"], [...rows, [2, 3, 9, 6], [2, 3, -5, 6], [7, -3, 4, -21], [-4, 6, 5, -24], [5, 7, 3, 35]]));
   assert.ok(ok.ok ? true : ok.gate !== "unread", JSON.stringify(ok));
 });
 
 test("m103 unread live pair: a parameter the program ignores, shown at a non-zero read value, still derives (no new refusal of a live pair)", () => {
-  const r = deriveCandidate(mk(["attempt", "baseMs"], [[0, 100, 100], [7, 100, 100], [0, 200, 200], [3, -150, -150], [0, -150, -150], [5, 1, 1], [0, 1, 1], [2, 37, 37], [9, -90, -90], [0, 0, 0], [11, 100, 100]]));
+  const r = deriveCandidate(mk(["attempt", "baseMs"], [[0, 100, 100], [7, 100, 100], [0, 200, 200], [3, -150, -150], [0, -150, -150], [5, 1, 1], [0, 1, 1], [2, 37, 37], [9, -90, -90], [0, 0, 0], [11, 100, 100], [-3, 100, 100]])); // m105 (Auditor #497 H): one negative attempt (else baseMs + min(0, attempt) fits)
   assert.ok(r.ok ? true : r.gate !== "unread", JSON.stringify(r));
 });
 
