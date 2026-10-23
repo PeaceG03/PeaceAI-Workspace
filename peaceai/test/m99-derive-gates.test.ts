@@ -47,7 +47,7 @@ test("B1 repro: S1 without \"600 gives false\" is refused (gate far), not derive
 test("gate unread: a parameter the program ignores needs two examples differing only in it with the same result", () => {
   const ab = [num("a"), num("b")];
   assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3]]), "unread:b");
-  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101]]), "");
+  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101], [0, 3, 0]]), ""); // round 3: a = 0 shown (gate span, sign)
 });
 
 test("gate chars: a string parameter that is read needs upper, lower, digit, inner space, edge space and punctuation", () => {
@@ -128,19 +128,19 @@ test(`gate branch / cap: each branch and each side of a cap is reached by at lea
   const ab = [num("a"), num("b")];
   // if (a === b) 1 else a: the true branch is reached by one example only.
   const prog: DeriveNode = { op: "if", c: { op: "eq", a: P0, b: P1 }, t: { op: "int", v: 1 }, e: P0 };
-  const rows = [[5, 5, 1], [4, 5, 4], [6, 5, 6], [105, 5, 105], [5, 105, 5]] as const;
+  const rows = [[5, 5, 1], [4, 5, 4], [6, 5, 6], [105, 5, 105], [5, 105, 5], [0, 5, 0]] as const; // a = 0: gate span, sign
   assert.equal(gate(ab, "number", prog, rows, 6), "branch");
   assert.equal(gate(ab, "number", prog, [...rows, [7, 7, 1]], 6) === "branch", false);
   // One parameter, `n === c`: its true branch holds for one input only, so one example is enough there.
   const n = [num("n")];
   const pt: DeriveNode = { op: "if", c: { op: "eq", a: P0, b: lit(5) }, t: { op: "int", v: 1 }, e: P0 };
   assert.equal(gate(n, "number", pt, [[5, 1], [4, 4], [6, 6], [105, 105], [-95, -95], [0, 0]], 6) === "branch", false);
-  // min(100, x): one example past the cap is not enough.
+  // min(100, x): one example past the cap is not enough. (x shown down to -105: the round-3 sign check.)
   const x = [num("x")];
   const cap: DeriveNode = { op: "min", c: 100, a: P0 };
-  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [-5, -5], [200, 100]], 2), "cap");
-  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [-5, -5], [200, 100], [300, 100]], 2) === "cap", false);
-  assert.equal(gate(x, "number", cap, [[-5, -5], [200, 100], [300, 100]], 2), "cap");
+  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [-105, -105], [200, 100]], 2), "cap");
+  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [-105, -105], [200, 100], [300, 100]], 2) === "cap", false);
+  assert.equal(gate(x, "number", cap, [[-105, -105], [200, 100], [300, 100]], 2), "cap");
 });
 
 // Auditor #491 round 2 (wrong programs passed the witness gates): the hidden island `!(11 <= n && n <= 49)` was
@@ -198,10 +198,11 @@ test("gate span: a computed-from parameter shown over DERIVE_FAR; every result s
 // Round 3: through deriveProgram, the rival gate alone refuses this (m100 practice seed 100 task 96, cap_sq
 // unwitnessed cap): n * n passes every other gate, and `min(6724, n * n)` fits every example too but differs past them.
 test("gate rival through deriveProgram: a far rival refuses and asks past the examples", () => {
-  const rows = [[-82, 6724], [-20, 400], [-3, 9], [-1, 1], [0, 0], [1, 1], [2, 4], [5, 25], [17, 289], [30, 900], [50, 2500], [82, 6724]] as const;
+  // (Scaled to the cap 10000 = 100 * 100 so n is shown down to -100, as the sign check asks.)
+  const rows = [[-100, 10000], [-20, 400], [-3, 9], [-1, 1], [0, 0], [1, 1], [2, 4], [5, 25], [17, 289], [30, 900], [50, 2500], [100, 10000]] as const;
   const r = deriveProgram({ params: [num("n")], ret: "number", examples: ex(rows) });
   assert.equal(!r.ok && `${r.reason}/${r.gate}`, "derive_under_specified/rival", JSON.stringify(r).slice(0, 300));
-  assert.ok(!r.ok && r.questions?.some((q) => (q.at[0] as number) < -82 || (q.at[0] as number) > 82), JSON.stringify(!r.ok && r.questions));
+  assert.ok(!r.ok && r.questions?.some((q) => (q.at[0] as number) < -100 || (q.at[0] as number) > 100), JSON.stringify(!r.ok && r.questions));
 });
 
 test("gate rival (size + 2): near pass (every example value a constant, probes inside the examples) and far pass (witnessed edges, far probes past them)", () => {

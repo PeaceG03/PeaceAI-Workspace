@@ -1986,8 +1986,8 @@
      157
     ],
     [
-     -43,
-     -43
+     -143,
+     -143
     ],
     [
      7,
@@ -2004,6 +2004,255 @@
     "outcome": "known-limit",
     "program": "n",
     "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there)"
+   }
+  },
+  {
+   "id": "m100-floor-unshown",
+   "source": "m100 derive-practice (seed 100) vs m99 8004623 (floor_clamp, 76 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     61,
+     61
+    ],
+    [
+     62,
+     62
+    ],
+    [
+     112,
+     112
+    ],
+    [
+     162,
+     162
+    ],
+    [
+     212,
+     212
+    ]
+   ],
+   "wrongProgram": "n",
+   "disagreeAt": [
+    0
+   ],
+   "correct": 61,
+   "why": "every example is at or above the floor at 61, so nothing shows it",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      0
+     ]
+    ],
+    "answers": [
+     [
+      0,
+      61
+     ],
+     [
+      -39,
+      61
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "program": "61 <= n ? n : 61",
+     "rightOnGrid": true
+    }
+   }
+  },
+  {
+   "id": "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 33936 (floor_clamp/unwitnessed_cap | K <= p0 ? p0 : K, 194 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     5,
+     5
+    ],
+    [
+     45,
+     45
+    ],
+    [
+     85,
+     85
+    ],
+    [
+     124,
+     124
+    ],
+    [
+     -46,
+     4
+    ],
+    [
+     -146,
+     4
+    ],
+    [
+     3,
+     4
+    ]
+   ],
+   "wrongProgram": "4 <= n ? n : 4",
+   "disagreeAt": [
+    165
+   ],
+   "correct": 164,
+   "why": "no example went above the cap 164",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "4 <= n ? n : 4",
+    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there"
+   }
+  },
+  {
+   "id": "m100-kind-floor-clamp-sparse-k-p0-p0-k",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 25685 (floor_clamp/sparse | K <= p0 ? p0 : K, 7 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     335,
+     335
+    ],
+    [
+     191,
+     191
+    ],
+    [
+     -4,
+     46
+    ],
+    [
+     -54,
+     46
+    ]
+   ],
+   "wrongProgram": "46 <= n ? n : 46",
+   "disagreeAt": [
+    336
+   ],
+   "correct": 335,
+   "why": "a random handful of the examples, none above the cap 335",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "46 <= n ? n : 46",
+    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there"
+   }
+  },
+  {
+   "id": "m100-kind-eq-or-ge-sparse-k-p0",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 14322 (eq_or_ge/sparse | K <= p0, 1 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     537,
+     true
+    ],
+    [
+     487,
+     true
+    ],
+    [
+     339,
+     false
+    ],
+    [
+     389,
+     false
+    ],
+    [
+     390,
+     true
+    ],
+    [
+     239,
+     false
+    ],
+    [
+     437,
+     true
+    ]
+   ],
+   "wrongProgram": "390 <= n",
+   "disagreeAt": [
+    391
+   ],
+   "correct": false,
+   "why": "a random handful of the examples: nothing between 390 and 437 was shown",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "390 <= n",
+    "note": "known limit: the false band 391 to 436 lies past the program's last edge between examples under DERIVE_FAR (100) apart; holding open stretches to the bounded-region eighth refuses S1 and most fixtures (tried in round 3 and reverted), so the review note's table is the check here"
+   }
+  },
+  {
+   "id": "m100-kind-s1-shape-sparse-k-p0",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 34225 (s1_shape/sparse | K <= p0, 1 like it)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     284,
+     false
+    ],
+    [
+     359,
+     false
+    ],
+    [
+     417,
+     true
+    ],
+    [
+     389,
+     true
+    ],
+    [
+     360,
+     true
+    ],
+    [
+     474,
+     true
+    ],
+    [
+     182,
+     false
+    ],
+    [
+     282,
+     false
+    ]
+   ],
+   "wrongProgram": "360 <= status",
+   "disagreeAt": [
+    283
+   ],
+   "correct": true,
+   "why": "a random handful of the examples: 283 and everything past 474 unshown",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "360 <= status",
+    "note": "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example"
    }
   }
  ]

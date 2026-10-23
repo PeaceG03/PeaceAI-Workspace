@@ -129,8 +129,8 @@ test("AMBIGUOUS: two minimal programs that agree on the examples but not on a pr
   // With -2 only, x * x is a smallest fit, but the examples show x over 4 values only (gate span, Auditor #491 round 2:
   // a cap inside that stretch would not show); one example 100 past the others settles it.
   assert.equal(!sq.ok && `${sq.reason}/${sq.gate}`, "derive_under_specified/span");
-  const sq20 = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }, { args: [100], out: 10000 }] });
-  assert.equal(sq20.ok && sq20.fit.expr, "x * x", "with -2 and 100 only x * x fits");
+  const sq20 = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }, { args: [100], out: 10000 }, { args: [-101], out: 10201 }] });
+  assert.equal(sq20.ok && sq20.fit.expr, "x * x", "with -2, 100 and -101 only x * x fits"); // round 3: x shown negative needs -100 or below (gate span, sign)
   // w * w and h * h agree on squares (1,1) (2,2) (3,3), not on (1,2).
   const r = deriveProgram({ params: [{ name: "w", type: "number" }, { name: "h", type: "number" }], ret: "number", examples: [{ args: [1, 1], out: 1 }, { args: [2, 2], out: 4 }, { args: [3, 3], out: 9 }] });
   assert.equal(r.ok, false);
@@ -274,7 +274,7 @@ test("fail closed: a competing fit one node larger is AMBIGUOUS; constant progra
   const tight = deriveProgram({ params: x1, ret: "number", examples: ex, slack: 0 });
   // Slack 0 keeps only the size-4 fit; the examples still have to show x over DERIVE_FAR (gate span).
   assert.equal(!tight.ok && `${tight.reason}/${tight.gate}`, "derive_under_specified/span");
-  const tight2 = deriveProgram({ params: x1, ret: "number", examples: [...ex, { args: [1], out: 4 }, { args: [98], out: 9801 }], slack: 0 });
+  const tight2 = deriveProgram({ params: x1, ret: "number", examples: [...ex, { args: [1], out: 4 }, { args: [98], out: 9801 }, { args: [-101], out: 10000 }], slack: 0 }); // round 3: -101 (gate span, sign)
   assert.equal(tight2.ok && tight2.fit.expr, "(x + 1) * (x + 1)");
   const dflt = deriveProgram({ params: x1, ret: "number", examples: ex });
   assert.equal(!dflt.ok && dflt.reason, "derive_ambiguous");

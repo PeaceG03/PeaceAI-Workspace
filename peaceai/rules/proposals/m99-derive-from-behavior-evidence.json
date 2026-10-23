@@ -424,6 +424,13 @@
       100
      ],
      "out": 199
+    },
+    {
+     "args": [
+      -100,
+      -1
+     ],
+     "out": -101
     }
    ],
    "expr": "a + b",
@@ -441,7 +448,8 @@
    "addedForGates": [
     "rival: (30, 0) gives 30",
     "span a: (99, 0) gives 99",
-    "span result (round 3): (99, 100) gives 199"
+    "span result (round 3): (99, 100) gives 199",
+    "span sign (round 3): (-100, -1) gives -101"
    ]
   },
   {

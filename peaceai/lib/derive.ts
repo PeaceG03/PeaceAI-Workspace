@@ -883,6 +883,21 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     }
     if (worst) return fail("span", `the result: \`${expr}\` gives ${worst.v} at (${worst.pt.map((x) => JSON.stringify(x)).join(", ")}), inside the examples' range of every parameter, but the examples' results only go from ${bottom} to ${top}; add that input so a cap or floor there is shown, not assumed`, undefined, [worst.pt]);
   }
+  // span, sign (m100 practice, round 3: floor_clamp, `n` picked for `Math.max(61, n)` from examples 61..212): a value
+  // the program computes from a number parameter is shown at that parameter's 0 or below, and, when the examples show
+  // it negative at all, at least DERIVE_FAR below 0, so a floor between the smallest example and 0 (or far below it)
+  // shows. A cap above every example is still not seen; the review note's far probes show the program's guess there.
+  // Only where the program's result there is past every shown result (a floor already shown keeps it flat there).
+  const outsN = input.ret === "number" ? examples.map((e) => e.out as number) : [];
+  const beyond = (pt: DeriveValue[]) => { const v = evalProgram(program, pt); return typeof v === "number" && outsN.length > 0 && (v > Math.max(...outsN) || v < Math.min(...outsN)); };
+  for (const i of [...arithmeticParams(program)].sort((x, y) => x - y)) {
+    if (params[i]!.type !== "number" || input.ret !== "number") continue;
+    const lo = Math.min(...examples.map((e) => e.args[i] as number));
+    if (lo > 0 && beyond(ptAt(i, 0)))
+      return fail("span", `${names[i]}: \`${expr}\` computes its result from ${names[i]}, but no example has ${names[i]} at 0 or below (smallest ${lo}); add ${names[i]} = 0 so a floor there would show`, i, [ptAt(i, 0)]);
+    if (lo < 0 && lo > -DERIVE_FAR && beyond(ptAt(i, -DERIVE_FAR)))
+      return fail("span", `${names[i]}: \`${expr}\` computes its result from ${names[i]} and the examples show it negative, but none at ${-DERIVE_FAR} or below (smallest ${lo}); add ${names[i]} = ${-DERIVE_FAR} so a floor there would show`, i, [ptAt(i, -DERIVE_FAR)]);
+  }
   // branch / cap (2)
   const hits = new Map<DeriveNode, [number, number]>();
   for (const e of examples) evalProgram(program, e.args, (n, side) => { const h = hits.get(n) ?? [0, 0]; h[side]++; hits.set(n, h); });

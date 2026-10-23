@@ -67,14 +67,15 @@ test("unwitnessed cap: the span refusal asks past the shown stretch (both sides)
 test("a cap inside the examples' box (the size + 2 rival min(3, a - b)): the corner refusal asks there first; the answers derive a - b", () => {
   // Passes every other witness gate (spans over 100, both result signs shown); `min(3, actual - reference)` also fits.
   // Round 3 (practice generator, cap_lin2 inside): the result-extremes check now refuses first, at the box corner
-  // (100, -1) where a - b gives 101, past every shown result (largest 3); the other answer is a cap at 3. (The near
+  // (100, -100) where a - b gives 200, past every shown result (largest 3); the other answer is a cap at 3. (Both
+  // parameters are shown down to -100, as the round-3 sign check asks.) (The near
   // rival pass that found (3, -1) before is covered in m99-derive-gates.test.ts, through rivalProblem.)
   const ab = [{ name: "actual", type: "number" }, { name: "reference", type: "number" }] as DeriveParam[];
-  const input: DeriveInput = { params: ab, ret: "number", examples: ex([[-1, -1, 0], [-1, 2, -3], [-1, 100, -101], [0, 0, 0], [0, 3, -3], [2, -1, 3], [3, 0, 3], [100, 100, 0], [100, 97, 3], [3, 100, -97], [50, 60, -10]]) };
+  const input: DeriveInput = { params: ab, ret: "number", examples: ex([[-100, -100, 0], [-1, 2, -3], [-100, 100, -200], [0, 0, 0], [0, 3, -3], [2, -1, 3], [3, 0, 3], [100, 100, 0], [100, 97, 3], [3, 100, -97], [50, 60, -10], [-1, -1, 0], [-100, -97, -3], [-97, -100, 3]]) };
   const r0 = deriveProgram(input);
   assert.ok(!r0.ok && r0.reason === "derive_under_specified" && r0.gate === "span", JSON.stringify(r0));
-  assert.match(r0.detail!, /gives 101 at \(100, -1\), inside the examples' range of every parameter/);
-  assert.deepEqual(r0.questions, [{ at: [100, -1], answers: [3, 101] }]);
+  assert.match(r0.detail!, /gives 200 at \(100, -100\), inside the examples' range of every parameter/);
+  assert.deepEqual(r0.questions, [{ at: [100, -100], answers: [3, 200] }]);
   const done = askLoop(input, ([a, b]) => (a as number) - (b as number), 8);
   assert.ok(done.r.ok && done.r.fit.expr === "actual - reference", done.r.ok ? done.r.fit.expr : "");
   assert.ok(done.round <= 8, done.asked.join(" ")); // the corner and far-rival answers widen the box a few rounds
