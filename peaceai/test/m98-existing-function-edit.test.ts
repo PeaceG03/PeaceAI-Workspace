@@ -591,7 +591,7 @@ test("Auditor #489 allowlist: each token is tripped alone by Job A and Job B; al
     ["const s = \"a\".repeat(1e9); return n + 2;", "size"],
     ["const s = \"a\".padStart(1e9); return n + 2;", "size"],
     ["const s = Array(1e9); return n + 2;", "size"],
-    ["const s = new Array(1e9).fill(0); return n + 2;", "size"],
+    ["const s = new Array(1e9); return n + 2;", "size"],
     ["const r = /a/; return n + 2;", "regex"],
     ["if (/(a+)+$/.test(String(n))) return 0; return n + 2;", "regex"],
     ["const r = new RegExp(\"a\"); return n + 2;", "ref:RegExp"],
@@ -650,4 +650,81 @@ test("Auditor #489 reach walk: a write rooted at an undeclared name, an import b
     const ed = base.replace("return n + 1;", "return n + 2;");
     assert.equal(gradeExistingEditProblem("src/m.ts", base, ed, clean.edit!.extra[0]!.path, clean.edit!.extra[0]!.content, (q) => (q === "src/m.ts" ? ed : extra[q] ?? null)), "edit_global_write", k);
   }
+});
+
+// m98b (Auditor #489, non-blocking notes on 44db16a, fixed before the deriver is wired to this gate): in-place mutators
+// on caller data, non-literal string patterns, and stack reads are allowlist tokens. Each case below trips its token
+// ALONE in Job A (analyzeSuppliedEdit) and Job B (gradeExistingEditProblem); each guard was verified by removing it
+// (the case is then accepted, or refused by a different token, so the test fails) and restoring it.
+const MB_BASE = "export interface D { xs: number[]; s: string; b: Uint8Array; t: Date; a: number }\nexport function f(n: number, d: D): number {\n  return n + 1;\n}\n";
+const MB_EXPECT = "- expect f(1, { xs: [1], s: \"a,b\", a: 1 }) returns 3";
+const mbJobs = (nw: string): [string, string] => alJobs(MB_BASE, nw, MB_EXPECT);
+
+test("m98b mutate: an in-place mutator on caller data is refused however written (comma, nested, ?., [\"m\"], reference, destructured, borrowed freshness)", () => {
+  const cases: [string, string][] = [
+    ["return (d.xs.push(1), n + 2);", "mutate:push"],
+    ["return (d.xs.pop(), n + 2);", "mutate:pop"],
+    ["return (d.xs.shift?.(), n + 2);", "mutate:shift"],
+    ["return (0, (d.xs.unshift(9), n + 2));", "mutate:unshift"],
+    ["const r = (d.xs?.splice(0, 1), n + 2); return r;", "mutate:splice"],
+    ["return (d.xs.sort(), n + 2);", "mutate:sort"],
+    ["return ((n, d.xs)[\"reverse\"](), n + 2);", "mutate:reverse"],
+    ["return (d.b.fill(0), n + 2);", "mutate:fill"],
+    ["return (d.xs.copyWithin(0, 1), n + 2);", "mutate:copyWithin"],
+    ["return (d.b.set([1]), n + 2);", "mutate:set"],
+    ["return (d.t.setTime(0), n + 2);", "mutate:setTime"],
+    ["const ys = d.xs; return (ys.push(1), n + 2);", "mutate:push"],
+    ["const w = [d.xs]; return (w[0]!.push(1), n + 2);", "mutate:push"],
+    ["return ([1].forEach(d.xs.push, d.xs), n + 2);", "mutate:push"],
+    ["const { push } = d.xs; return n + 2;", "mutate:push"],
+    // a callback parameter can't borrow the freshness of a same-named const literal local
+    ["[d.xs].map((a) => a.push(1)); const a = [1]; return n + 2;", "mutate:push"],
+    ["[d].map((a) => { a.a = 0; }); const a = { a: 1 }; return n + 2;", "write-nonfresh"],
+  ];
+  for (const [nw, tk] of cases) assert.deepEqual(mbJobs(nw), [`edit_not_allowlisted:${tk}`, `edit_not_allowlisted:${tk}`], nw);
+  // fresh containers the unit builds stay mutable; non-mutating copies stay allowed
+  for (const nw of ["const a = [1]; a.push(n); return a.length + n + 1;", "const xs = [n, 2]; xs.sort(); return xs[0]! + 2;", "const m = new Map<string, number>(); m.set(\"a\", n); return (m.get(\"a\") ?? 0) + 2;", "const s = new Set<number>([n]); return s.size + n + 1;", "const ys = [...d.xs]; ys.reverse(); return n + 2;", "return (d.xs.toSorted(), n + 2);"])
+    assert.deepEqual(mbJobs(nw), ["ACCEPTED", "JOBB-OK"], nw);
+});
+
+test("m98b pattern: match / matchAll / replace / replaceAll / split / search take only a literal pattern, called directly", () => {
+  const cases: [string, string][] = [
+    ["return d.s.split(d.s).length + n + 1;", "pattern:split"],
+    ["return d.s.replace(d.s, \"x\").length + n + 1;", "pattern:replace"],
+    ["return d.s.replaceAll(d.s, \"x\").length + n + 1;", "pattern:replaceAll"],
+    ["return d.s.search(d.s) + n + 2;", "pattern:search"],
+    ["return d.s.match(d.s) ? n + 2 : n;", "pattern:match"],
+    ["return (d.s.matchAll(d.s), n + 2);", "pattern:matchAll"],
+    ["const p = d.s + \"+\"; return (d.s?.split(p), n + 2);", "pattern:split"],
+    ["return (d.s[\"split\"](d.s), n + 2);", "pattern:split"],
+    ["return (d.s.split(), n + 2);", "pattern:split"],
+    // match / matchAll / search build a RegExp from a string: a literal with regex metacharacters is a regex
+    ["return d.s.match(\"(a+)+$\") ? n + 2 : n;", "pattern:match"],
+    ["return d.s.search(\"a.\") + n + 2;", "pattern:search"],
+    ["return (d.s.matchAll(\"a*\"), n + 2);", "pattern:matchAll"],
+    // a non-call reference (a callback with a thisArg, or destructured) never has a checked pattern
+    ["const sp = [d.s].map(d.s.split, \",\"); return n + 2;", "pattern:split"],
+    ["const { replace } = d.s; return n + 2;", "pattern:replace"],
+  ];
+  for (const [nw, tk] of cases) assert.deepEqual(mbJobs(nw), [`edit_not_allowlisted:${tk}`, `edit_not_allowlisted:${tk}`], nw);
+  for (const nw of ["return d.s.split(\",\").length + n + 1;", "return d.s.replace(\",\", \".*\").length + n + 1;", "return d.s.replaceAll(\"(a+)+$\", \"\").length + n + 1;", "return d.s.match(\"a\") ? n + 2 : n;", "return d.s.search(\"b\") + n + 3;"])
+    assert.deepEqual(mbJobs(nw), ["ACCEPTED", "JOBB-OK"], nw);
+  // a regex literal pattern stays the `regex` token
+  assert.deepEqual(mbJobs("return (d.s.split(/,/), n + 2);"), ["edit_not_allowlisted:regex", "edit_not_allowlisted:regex"]);
+});
+
+test("m98b stack: no stack read on any receiver, however written", () => {
+  const cases: [string, string][] = [
+    ["const t = new Error().stack; return n + 2;", "member:stack"],
+    ["try { throw new Error(\"x\"); } catch (e) { return e.stack ? n + 2 : n; }", "member:stack"],
+    ["const e = new Error(\"x\"); return e[\"stack\"] ? n + 2 : n;", "member:stack"],
+    ["const t = new Error()?.stack; return n + 2;", "member:stack"],
+    ["const { stack } = new Error(); return n + 2;", "member:stack"],
+    ["const { stack: t } = new Error(); return n + 2;", "member:stack"],
+    ["let t: string | undefined = \"\"; ({ stack: t } = new Error()); return n + 2;", "member:stack"],
+    ["let stack: string | undefined = \"\"; ({ stack } = new Error()); return n + 2;", "member:stack"],
+    ["let t: string | undefined = \"\"; [{ stack: t }] = [new Error()]; return n + 2;", "member:stack"],
+  ];
+  for (const [nw, tk] of cases) assert.deepEqual(mbJobs(nw), [`edit_not_allowlisted:${tk}`, `edit_not_allowlisted:${tk}`], nw);
+  assert.deepEqual(mbJobs("const e = new Error(\"x\"); return e.message.length + n + 1;"), ["ACCEPTED", "JOBB-OK"]);
 });
