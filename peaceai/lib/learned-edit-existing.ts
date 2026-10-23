@@ -315,7 +315,23 @@ export const EDIT_BANNED_MEMBERS: ReadonlySet<string> = new Set([
   ...REFLECTION, "call", "apply", "bind", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getOwnPropertyNames",
   "getOwnPropertySymbols", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties", "captureStackTrace",
   "prepareStackTrace", "stackTraceLimit",
+  // Auditor #489 (non-blocking, fixed in m98b): an error's `stack` leaks the host's paths, line numbers and call chain
+  "stack",
 ]);
+/**
+ * Auditor #489 (non-blocking, fixed in m98b): built-in methods that mutate their receiver in place (Array, TypedArray,
+ * Date). On a receiver that is not a fresh `const` literal local of the unit (a parameter, `this`, a non-fresh local,
+ * any deeper path, a call result) they would change caller-owned data, the same thing `write-nonfresh` refuses for
+ * property writes. Refused however written: a call, a comma / sequence operand, nested, `?.`, `["push"]`, or a
+ * non-call reference (`xs.forEach(d.xs.push, d.xs)`, a destructured `{ push }`). Token `mutate:<m>`.
+ */
+export const EDIT_MUTATING_MEMBERS: ReadonlySet<string> = new Set([
+  "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set",
+  "setTime", "setFullYear", "setYear", "setMonth", "setDate", "setHours", "setMinutes", "setSeconds", "setMilliseconds",
+  "setUTCFullYear", "setUTCMonth", "setUTCDate", "setUTCHours", "setUTCMinutes", "setUTCSeconds", "setUTCMilliseconds",
+]);
+/** Characters that make a string pattern a regex in match / matchAll / search (they build a RegExp from a string). */
+const REGEX_META = /[\\^$.|?*+()[\]{}]/;
 /** Size-taking string builders: allowed only with a small numeric literal (no huge repeat / pad). */
 const EDIT_SIZED = new Set(["repeat", "padStart", "padEnd"]);
 export const EDIT_MAX_SIZE = 256;
@@ -560,14 +576,20 @@ function allowTokens(node: ts.Node): Map<string, number> {
   const out = new Map<string, number>();
   const add = (k: string): void => { out.set(k, (out.get(k) ?? 0) + 1); };
   const params = new Set<string>(), locals = new Set<string>(), fresh = new Set<string>();
+  // m98b: how often each name is bound anywhere in the unit (parameters, nested callback parameters, catch variables,
+  // declarations). A fresh local must be bound exactly once, so a callback parameter of the same name can't borrow its
+  // freshness (`[d.xs].map((a) => a.push(1)); const a = [1];` or `... a.length = 0 ...`).
+  const bound = new Map<string, number>();
   const bind = (nm: ts.BindingName, into: Set<string>): void => {
-    if (ts.isIdentifier(nm)) into.add(nm.text);
+    if (ts.isIdentifier(nm)) { into.add(nm.text); bound.set(nm.text, (bound.get(nm.text) ?? 0) + 1); }
     else for (const el of nm.elements) if (!ts.isOmittedExpression(el)) bind(el.name, into);
   };
   if (ts.isFunctionLike(node)) for (const p of node.parameters) bind(p.name, params);
   const isFresh = (e: ts.Expression): boolean => {
     const x = unwrap(e);
-    return ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isStringLiteral(x) || ts.isNumericLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
+    return ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isStringLiteral(x) || ts.isNumericLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword
+      // m98b: a fresh container the unit itself constructs (`new Map()`, `new Set(xs)`): mutating it changes no caller data
+      || (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && (x.expression.text === "Map" || x.expression.text === "Set"));
   };
   const collect = (n: ts.Node): void => {
     if (n !== node && ts.isFunctionLike(n)) for (const p of n.parameters) bind(p.name, locals);
@@ -576,11 +598,12 @@ function allowTokens(node: ts.Node): Map<string, number> {
       // fresh only if it is never re-bound: a `const`, initialised to a literal the unit itself created
       if (ts.isIdentifier(n.name) && n.initializer && isFresh(n.initializer) && ts.isVariableDeclarationList(n.parent) && (n.parent.flags & ts.NodeFlags.Const)) fresh.add(n.name.text);
     }
-    if ((ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) && n !== node && n.name) locals.add(n.name.text);
+    if ((ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) && n !== node && n.name) { locals.add(n.name.text); bound.set(n.name.text, (bound.get(n.name.text) ?? 0) + 1); }
     if (ts.isCatchClause(n) && n.variableDeclaration) bind(n.variableDeclaration.name, locals);
     ts.forEachChild(n, collect);
   };
   collect(node);
+  for (const f of [...fresh]) if ((bound.get(f) ?? 0) !== 1) fresh.delete(f);
   for (const p of params) locals.add(p);
   for (const l of locals) if (Object.hasOwn(GLOBAL_OK, l) || CAPABILITY_IDENTS.has(l) || EDIT_GLOBAL_CALLS.has(l) || EDIT_GLOBAL_NEW.has(l)) add("shadow");
   const directCallee = (n: ts.Node): boolean => ts.isCallExpression(n.parent) && n.parent.expression === n;
@@ -593,12 +616,48 @@ function allowTokens(node: ts.Node): Map<string, number> {
     const r = unwrap(recv);
     if (ts.isIdentifier(r) && !locals.has(r.text) && (Object.hasOwn(GLOBAL_OK, r.text) || EDIT_GLOBAL_CALLS.has(r.text) || EDIT_GLOBAL_NEW.has(r.text)) && !EDIT_GLOBAL_MEMBERS.has(`${r.text}.${name}`)) add(`gm:${r.text}.${name}`);
     if (EDIT_SIZED.has(name) && directCallee(at) && !smallSize((at.parent as ts.CallExpression).arguments[0])) add("size");
+    // m98b (Auditor #489 non-blocking 1): an in-place mutator on anything but a fresh const literal local of the unit
+    if (EDIT_MUTATING_MEMBERS.has(name) && !(ts.isIdentifier(r) && fresh.has(r.text))) add(`mutate:${name}`);
+    // m98b (Auditor #489 non-blocking 2): string pattern sinks only as a direct call with a literal pattern
+    if (STRING_REGEX_SINKS.has(name) && !literalPattern(name, at)) add(`pattern:${name}`);
+  };
+  /** A direct call whose first argument is a string literal; for match / matchAll / search (which build a RegExp from a
+   *  string) the literal must also be free of regex metacharacters. A regex literal argument is the `regex` token. */
+  const literalPattern = (name: string, at: ts.Node): boolean => {
+    if (!directCallee(at)) return false;
+    const a = (at.parent as ts.CallExpression).arguments[0];
+    const lit = a ? literalString(a) : null;
+    if (lit === null) return !!a && ts.isRegularExpressionLiteral(unwrap(a));
+    return !(name === "match" || name === "matchAll" || name === "search") || !REGEX_META.test(lit);
+  };
+  /** A member name taken without a receiver expression (destructuring): checked as an un-called read of a non-fresh value. */
+  const destructuredName = (k: string, at: ts.Node): void => {
+    if (EDIT_BANNED_MEMBERS.has(k)) add(`member:${k}`);
+    else if (k === "get" || k === "set") add(`accessor:${k}`);
+    if (EDIT_MUTATING_MEMBERS.has(k)) add(`mutate:${k}`);
+    if (STRING_REGEX_SINKS.has(k)) add(`pattern:${k}`);
+    void at;
+  };
+  const keyText = (k: ts.Node | undefined): string | null => (k && (ts.isIdentifier(k) || ts.isStringLiteral(k) || ts.isNoSubstitutionTemplateLiteral(k) || ts.isNumericLiteral(k)) ? k.text : null);
+  /** An object literal used as a destructuring ASSIGNMENT target (`({ stack: t } = e)`, `for ({ push } of xs)`). */
+  const isDestructTarget = (o: ts.Node): boolean => {
+    let e: ts.Node = o;
+    for (;;) {
+      const p = e.parent;
+      if (ts.isParenthesizedExpression(p) || ts.isSpreadElement(p) || ts.isSpreadAssignment(p) || ts.isArrayLiteralExpression(p) || (ts.isPropertyAssignment(p) && p.initializer === e) || (ts.isShorthandPropertyAssignment(p))) { e = ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) ? p.parent : p; continue; }
+      if (ts.isBinaryExpression(p) && p.left === e && p.operatorToken.kind === ts.SyntaxKind.EqualsToken) return true;
+      if ((ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === e) return true;
+      return false;
+    }
   };
   const visit = (n: ts.Node): void => {
     if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return;
     if (ts.isPropertyAccessExpression(n)) member(n.expression, n.name.text, n);
     if (ts.isElementAccessExpression(n)) { const k = literalString(n.argumentExpression); if (k !== null) member(n.expression, k, n); }
     if (ts.isRegularExpressionLiteral(n)) add("regex");
+    // m98b: a member name read by destructuring (`const { stack } = e`, `({ push: p } = d.xs)`) is checked like `e.stack`
+    if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) { const k = keyText(n.propertyName) ?? (n.propertyName ? null : keyText(n.name)); if (k !== null) destructuredName(k, n); }
+    if (ts.isObjectLiteralExpression(n) && isDestructTarget(n)) for (const p of n.properties) { const k = ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) ? keyText(p.name) : null; if (k !== null) destructuredName(k, p); }
     if (ts.isStringLiteral(n) && REFLECTION.has(n.text)) add(`reflstr:${n.text}`);
     if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && ts.isIdentifier(n.expression) && n.expression.text === "Array" && (n.arguments?.length ?? 0) > 0) add("size");
     if (ts.isCallExpression(n)) {

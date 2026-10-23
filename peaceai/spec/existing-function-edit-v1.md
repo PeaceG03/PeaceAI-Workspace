@@ -328,8 +328,10 @@ Tokens (each one is refused by a test, and each test was verified by removing th
 
 | token | refuses |
 |---|---|
-| `member:<m>` | any receiver: `call`, `apply`, `bind`, `getOwnPropertyDescriptor(s)`, `getOwnPropertyNames/Symbols`, `get/setPrototypeOf`, `defineProperty/ies`, `captureStackTrace`, `prepareStackTrace`, `stackTraceLimit` and the reflection names |
-| `accessor:get\|set` | `.get` or `.set` read without being called directly (descriptor accessors) |
+| `member:<m>` | any receiver: `call`, `apply`, `bind`, `getOwnPropertyDescriptor(s)`, `getOwnPropertyNames/Symbols`, `get/setPrototypeOf`, `defineProperty/ies`, `captureStackTrace`, `prepareStackTrace`, `stackTraceLimit`, `stack` and the reflection names; also when read by destructuring (`const { stack } = e`, `({ stack: t } = e)`) |
+| `accessor:get\|set` | `.get` or `.set` read without being called directly (descriptor accessors), or destructured |
+| `mutate:<m>` | an in-place mutator (`push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`, `set`, the `Date` setters) referenced on anything but a fresh `const` local of the unit, however written: a call, a comma operand, nested, `?.`, `["push"]`, a non-call reference (`xs.forEach(d.xs.push, d.xs)`) or destructured |
+| `pattern:<m>` | `match`, `matchAll`, `replace`, `replaceAll`, `split` or `search` unless called directly with a string literal pattern (a regex literal is the `regex` token); for `match`, `matchAll` and `search`, which build a RegExp from a string, the literal must have no regex metacharacters. A non-call reference or a destructured name is refused |
 | `gm:<G>.<m>` | a member of a known global that isn't listed (`Object.assign`, `Object.fromEntries`, `Math.random`, ...) |
 | `ref:<name>` | any other non-local identifier (`Date`, `RegExp`, `Symbol`, `JSON`, ...) |
 | `size` | `repeat`/`padStart`/`padEnd` without a literal of at most 256; `Array(n)`/`new Array(n)`; `push`/`unshift`/`concat` of the receiver into itself; self-doubling assignment |
@@ -337,6 +339,9 @@ Tokens (each one is refused by a test, and each test was verified by removing th
 | `reflstr:<s>` | a reflection name as a string literal |
 | `call-local` | calling a local that isn't a parameter |
 | `write-nonfresh` | a property write, delete or `++`/`--` whose owner isn't a fresh `const` literal local |
+
+A fresh local is a `const` initialised to a literal (or to `new Map(..)` / `new Set(..)`) whose name is bound exactly
+once in the unit, so a callback parameter of the same name can't borrow its freshness (m98b).
 | `shadow` | a local named like an allowlisted or capability global |
 
 Emitted tests come from the fixed bullet grammar, so fakes and data are literals. A `__proto__` key, a reflection key
@@ -351,6 +356,10 @@ The mitigations:
 - Literal keys are checked against the reflection list.
 - Computed calls are refused.
 - Any new cast, and any new dynamic computed key that isn't `param[param]`, is refused by the capability delta.
+
+The m98b follow-up (Auditor #489's non-blocking notes on 44db16a) added `mutate:`, `pattern:` and `member:stack`
+before the deriver is wired to this gate. `Map` / `Set` `add`, `delete` and `clear` are not `mutate:` names: a `Map` or
+`Set` can't be injected as test data, and the same names on an injected fake are the recorded collaborator calls.
 
 Member names on parameters and locals are an open domain (`client.head`, `deps.load`), so they are checked against a
 denylist (`EDIT_BANNED_MEMBERS` plus the reflection names), not an allowlist. Every GLOBAL reference is allowlisted.
