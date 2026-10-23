@@ -27,6 +27,8 @@ export type PracticeMode =
   | "narrow_span"           // the computed-from parameter shown over less than DERIVE_FAR
   | "missing_chars"         // the string parameters show only some character classes
   | "missing_empty"         // the empty-string branch never shown
+  | "missing_digits"        // a number written as text shown only with 3-digit values (M101 template joins)
+  | "lookalike"             // string values that contain the template's own literal texts (M101 template joins)
   | "amb3"                  // Auditor's amb3 sets: 4-12 random values in -5..24, a third near k
   | "sparse";               // 4-8 examples drawn from the full set
 
@@ -499,6 +501,45 @@ export const FORMS: readonly Form[] = [
       else if (amb) { inputs = amb3(r, 2, k1); why = "Auditor's amb3 set: a few values in -5..24"; }
       const ax = axis(inputs.map((x) => N(x)), [k1, k3]), bx = axis(inputs.map((x) => N(x, 1)), [k2]);
       return { params: [num("a"), num("b")], ret: "boolean", truth, truthText, inputs, why, grid: cross(ax, bx), ...(v === "and_or_eq" ? { point: (x: readonly DeriveValue[]) => N(x) === k3 } : {}) };
+    },
+  },
+  // ---- M101 template joins (PeaceSTOCKS key builders: "permanent/…/base-" + asOf + "-" + sha + ".jsonl.zst")
+  {
+    name: "template_join", modes: ["full", "missing_chars", "missing_empty", "missing_digits", "lookalike", "sparse"],
+    build: (r, mode) => {
+      const k = r.int(1, 3);
+      const kinds = Array.from({ length: k }, () => (r.f() < 0.3 ? "number" : "string") as "number" | "string");
+      const names = kinds.map((t, i) => (t === "number" ? ["seq", "n", "count"][i]! : ["asOf", "sha", "month"][i]!));
+      const order = r.shuffle(kinds.map((_, i) => i));
+      const pad = kinds.includes("number") && r.f() < 0.2; // String(n).padStart(3, "0"): outside the DSL, must be refused
+      const lits = [r.pick(["permanent/ticker-reference-index/base-", "permanent/daily-reply-dust/", "id-", "", "v", "manifest-"]),
+        ...order.slice(1).map(() => r.pick(["-", "/", "_", ":", "-v", "", "/part-"])), r.pick(["", ".json", ".jsonl.zst", "/", "-x"])];
+      const text = (a: readonly DeriveValue[], i: number) => (kinds[i] === "number" ? (pad ? String(N(a, i)).padStart(3, "0") : String(N(a, i))) : S(a, i));
+      const truth: Truth = (a) => lits[0] + order.map((i, j) => text(a, i) + lits[j + 1]).join("");
+      const slotText = (i: number) => (kinds[i] === "number" ? (pad ? `String(${names[i]}).padStart(3, "0")` : `String(${names[i]})`) : names[i]!);
+      const truthText = [lits[0] ? JSON.stringify(lits[0]) : "", ...order.flatMap((i, j) => [slotText(i), lits[j + 1] ? JSON.stringify(lits[j + 1]) : ""])].filter(Boolean).join(" + ");
+      const rich = ["2026-10-23", "Hello World", "a", "x7", " lead", "trail ", "ERR_42", "MiXeD", "q.r", "", "Zz 9", "deadbeef"];
+      const look = [...rich.slice(0, 6), "", ...lits.filter(Boolean).map((l) => `${l}${l}`).slice(0, 3), "a-b", "x/y_z", "-", "v1.json"];
+      const lower = ["abc", "hello", "xyz", "q", "word", "lower"];
+      const spool = mode === "missing_chars" ? lower : mode === "lookalike" ? look : mode === "missing_empty" ? rich.filter((v) => v !== "") : rich;
+      const npool = mode === "missing_digits" ? [100, 123, 250, 999, 404] : [0, 7, -3, 42, 123, 2026, 99999, -450];
+      const pool = (i: number): DeriveValue[] => (kinds[i] === "number" ? npool : spool);
+      const seen = new Set<string>();
+      let inputs: DeriveValue[][] = [];
+      // every value of every parameter shown at least once, the rest random
+      const want = Math.max(...kinds.map((_, i) => pool(i).length)) + 4;
+      for (let t = 0; inputs.length < want && t < 400; t++) {
+        const a = kinds.map((_, i) => { const p = pool(i); return t < want ? p[(t + i * 3) % p.length]! : r.pick(p); });
+        const key0 = JSON.stringify(a);
+        if (!seen.has(key0)) { seen.add(key0); inputs.push(a); }
+      }
+      let why = mode === "missing_chars" ? "the string values show only lower-case letters (no empty value)" : mode === "missing_empty" ? "no example had an empty string value" : mode === "missing_digits" ? "the numbers were shown only with 3 digits" : mode === "lookalike" ? "string values containing the template's own literal texts" : "every character class, the empty string and 1- to 5-digit numbers shown";
+      if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+      const sg = k === 3 ? ["", "a", "Z", "-", "a b", " a", "x:y", "a1", "Hello World", "\"q\""] : STRING_GRID;
+      const ng = [-1000, -12, -1, 0, 1, 5, 9, 10, 99, 100, 101, 1234, 1000000];
+      const g = kinds.map((t) => (t === "number" ? ng : sg) as DeriveValue[]);
+      const grid = g.reduce<DeriveValue[][]>((acc, xs) => acc.flatMap((a) => xs.map((x) => [...a, x])), [[]]);
+      return { params: kinds.map((t, i) => (t === "number" ? num(names[i]!) : str(names[i]!))), ret: "string", truth, truthText, inputs, why, grid };
     },
   },
 ];

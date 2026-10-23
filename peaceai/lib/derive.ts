@@ -14,7 +14,7 @@
 // The DSL (typed; the size of a program is its node count, leaves count 1):
 //   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(K, a) | max(K, a) | if(G, x, y) (x, y may be K)
 //   string : parameter | L | a + b (concat) | if(G, x, y)
-//            | T1 + T2 + ... + Tk (M101 template join, size k + 1: k >= 3 parts, or a str part; each part a literal
+//            | T1 + T2 + ... + Tk (M101 template join, size 1 + slots: k >= 3 parts, or a str part; each part a literal
 //              cut from the outputs, a string parameter, or str(p) = "" + p, a number parameter's decimal text)
 //   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty
 //            | a && b | a || b | !a
@@ -386,8 +386,11 @@ function stringPieces(examples: readonly DeriveExample[]): string[] {
 
 /** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
 const MAX_TEMPLATE_SPLITS = 2000;
-/** The size of a template join: one node per part plus the join (str parts count 2). */
-export const templateSize = (n: Extract<DeriveNode, { op: "tmpl" }>): number => 1 + n.parts.reduce((t, q) => t + (q.op === "str" ? 2 : 1), 0);
+/**
+ * The size of a template join: 1 + one per slot (str slots 2). Its literals are not searched (alignment cuts them
+ * from the outputs and every example checks them), so they add no size: a 5-part key of 2 slots is size 3.
+ */
+export const templateSize = (n: Extract<DeriveNode, { op: "tmpl" }>): number => 1 + n.parts.reduce((t, q) => t + (q.op === "str" ? 2 : q.op === "param" ? 1 : 0), 0);
 const UNSAFE_LITERAL = /[\\\u0000-\u001f\u007f]/;
 /**
  * M101 template joins: every template L0 + s1 + L1 + ... + sk + Lk (slots s: distinct string parameters or str of
