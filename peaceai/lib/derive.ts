@@ -441,7 +441,8 @@ export function templateFits(params: readonly DeriveParam[], examples: readonly 
         return;
       }
       const v = vs[k]!;
-      for (let at = o.indexOf(v, from); at >= 0; at = o.indexOf(v, at + 1)) place(k + 1, at + v.length, [...lits, o.slice(from, at)]);
+      // (an empty text fits at every position once: indexOf("", i) clamps i to the length, so stop past the end)
+      for (let at = o.indexOf(v, from); at >= 0; at = at < o.length ? o.indexOf(v, at + 1) : -1) place(k + 1, at + v.length, [...lits, o.slice(from, at)]);
     };
     place(0, 0, []);
   }

@@ -134,3 +134,13 @@ test("template and str: evalProgram, evalJs and the compiled expression agree", 
     assert.equal(fn(s, n), `${n}/${s}${n}`);
   }
 });
+
+test("templateFits: an empty slot text in the pivot is placed once per position, never looped on (miner hang)", () => {
+  // every example has a = "": indexOf("", i) clamps i to the length, so the old loop never ended
+  const rows = [["", "", ""], ["", "", "abc"], ["", "a", "Hello"], ["", "ab", "x y"], ["", "abc", ""], ["", "abc", "hello world"]];
+  const ex = rows.map((a) => ({ args: a, out: `${a[0]}:${a[1]}@${a[2]}` }));
+  const t = Date.now();
+  const fits = templateFits([str("a"), str("b"), str("c")], ex, ON).map((f) => compileProgram(f, ["a", "b", "c"]));
+  assert.ok(Date.now() - t < 5000);
+  assert.ok(fits.includes(`a + ":" + b + "@" + c`) && fits.includes(`":" + b + "@" + c`), JSON.stringify(fits));
+});
