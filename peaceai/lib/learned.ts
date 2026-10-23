@@ -13,6 +13,7 @@ import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, validTestExistingParams } from "./learned-test-existing.ts";
+import { existingEditDetail, EXISTING_EDIT_TRIGGER, validExistingEditParams } from "./learned-edit-existing.ts";
 import { COMPLEX_OPTIONAL_VOCAB, COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
@@ -22,7 +23,7 @@ import { applyFunctionRule, FUNCTION_PARAM_KEYS, FUNCTION_TRIGGER, FUNCTION_VOCA
 import { applyWorkflowRule, REVOKED_WORKFLOW_SPECS, WORKFLOW_PARAM_KEYS, WORKFLOW_TRIGGER, WORKFLOW_VOCAB } from "./learned-workflow.ts";
 
 export const RULE_SCHEMA = "peaceai-learned-rule:v1" as const;
-export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX", "TEST_EXISTING"] as const;
+export const RULE_KINDS = ["SET_LITERAL", "ADD_SWITCH_CASE", "ADD_NULLISH_DEFAULT", "ADD_TEST_CASE", "ADD_THROW_GUARD", "ADD_FUNCTION", "ADD_WORKFLOW_STEP", "REPLACE_EXPRESSION", "METHOD_GUARD", "COMPLEX_FUNCTION", "IMPORT_EDIT_V2", "WORKFLOW_JOB", "TSCONFIG_SCRIPT", "ENV_FIX", "TEST_EXISTING", "EXISTING_EDIT"] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 export const RULE_ID = /^(public|core)-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+$/;
 
@@ -72,6 +73,7 @@ export function validateSpec(o: unknown): o is RuleSpec {
   if (s.kind === "ENV_FIX" && (s.minedFrom !== "public" || !validEnvFixParams(s.params as Record<string, unknown>))) return false; // v2: optional `int`
   if (s.kind === "METHOD_GUARD" && !validMethodGuardParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "TEST_EXISTING" && !validTestExistingParams(s.params as Record<string, unknown>, s.minedFrom)) return false; // M80
+  if (s.kind === "EXISTING_EDIT" && !validExistingEditParams(s.params as Record<string, unknown>, s.minedFrom)) return false; // M98
   if (s.kind === "COMPLEX_FUNCTION" && !validComplexParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "ADD_FUNCTION" && !validFunctionParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
   if (s.kind === "REPLACE_EXPRESSION" && !validBodyParams(s.params as Record<string, unknown>, s.minedFrom)) return false;
@@ -179,6 +181,7 @@ export const TRIGGERS: Record<RuleKind, string> = {
   ADD_WORKFLOW_STEP: WORKFLOW_TRIGGER,
   REPLACE_EXPRESSION: REPLACE_TRIGGER,
   TEST_EXISTING: TEST_EXISTING_TRIGGER,
+  EXISTING_EDIT: EXISTING_EDIT_TRIGGER,
 };
 
 /** ADD_NULLISH_DEFAULT trigger that accepts only the default kinds the rule allows ("array" -> [], "string", ...). */
@@ -392,6 +395,14 @@ export function deniedEditPath(repo: string, paths: readonly string[]): boolean 
   return paths.some((p) => !(!scope.isSource(p) && scope.isWorkflow(p)) && scope.isDenied(p));
 }
 
+/** M98: an engine refusal as a run-log reason: the code, plus the refused name only when it is a plain identifier. */
+function whyReason(code: string): string {
+  const i = code.indexOf(":");
+  if (i < 0) return code;
+  const head = code.slice(0, i), name = code.slice(i + 1);
+  return /^[A-Za-z_$][\w$]{0,63}$/.test(name) ? `${head}: ${name}` : head;
+}
+
 function applyRuleInner(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal): LearnedEdit | null {
   if (spec.kind === "ADD_TEST_CASE") {
     try {
@@ -422,6 +433,19 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   if (spec.kind === "IMPORT_EDIT_V2") {
     try {
       return runImportEditV2Rule(spec.trigger, spec.params, objective, files, why); // M66: one existing import; admitted only via the hash-pinned approved list; graded by the target's own checks
+    } catch {
+      if (why) why.reason = "internal_error";
+      return null;
+    }
+  }
+  if (spec.kind === "EXISTING_EDIT") {
+    // M98 (public-existing-function-edit-v1): one statement inside an existing function / class method, with a new
+    // fake-driven test; the engine refuses with a code (whyReason keeps only the code and a plain identifier).
+    try {
+      const r = existingEditDetail(spec.trigger, spec.params, objective, files, isTest);
+      if (!r.edit) { if (why) why.reason = whyReason(r.reason ?? "edit_refused"); return null; }
+      if (repo && deniedEditPath(repo, [r.edit.path])) { if (why) why.reason = "denied_path"; return null; }
+      return r.edit;
     } catch {
       if (why) why.reason = "internal_error";
       return null;

@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { cleanIssueText } from "./taskmap.ts";
 import { TEST_TRIGGER } from "./learned-test.ts";
 import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
+import { EXISTING_EDIT_TRIGGER } from "./learned-edit-existing.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
 import { IMPORT_EDIT_V2_TRIGGER } from "./import-edit-v2.ts";
@@ -99,6 +100,8 @@ export const LEARNED_CANONICAL = {
   dateFunction: { re: new RegExp(DATE_TRIGGER, "imu"), kind: "COMPLEX_FUNCTION", family: null },
   // M80: TEST_CASE_EXISTING header line ("add a characterization test for ..."), public-test-case-existing-v1 (kind TEST_EXISTING).
   testExisting: { re: new RegExp(TEST_EXISTING_TRIGGER, "imu"), kind: "TEST_EXISTING", family: null },
+  // M98: EXISTING_EDIT header line ("in T in src/f.ts: replace statement OLD with NEW"), public-existing-function-edit-v1.
+  existingEdit: { re: new RegExp(EXISTING_EDIT_TRIGGER, "imu"), kind: "EXISTING_EDIT", family: null },
 } as const satisfies Record<string, { re: RegExp; kind: string; family: Family | null }>;
 export type LearnedTriggerName = keyof typeof LEARNED_CANONICAL;
 const CANONICAL: readonly RegExp[] = [...PLAIN_CANONICAL, ...Object.values(LEARNED_CANONICAL).map((t) => t.re)];
