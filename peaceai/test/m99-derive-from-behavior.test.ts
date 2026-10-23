@@ -10,9 +10,9 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
-import { compileProgram, deriveProgram, derivedExprProblem, evalProgram, probeSet, type DeriveNode } from "../lib/derive.ts";
+import { compileProgram, deriveProgram, derivedExprProblem, edgeConstants, evalProgram, probeSet, repeatedResults, type DeriveNode } from "../lib/derive.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { behaviorCodeProblem, DERIVE_TRIGGER, DERIVE_VOCAB, derivedModuleProblem, describedConstants, describedProbes, parseDeriveTask, rawIssueProblem } from "../lib/learned-derive.ts";
+import { behaviorCodeProblem, buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, derivedModuleProblem, parseDeriveTask, rawIssueProblem } from "../lib/learned-derive.ts";
 import { callsFunction, stubFunction } from "../lib/learned-function.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
@@ -78,13 +78,14 @@ test("S1-S3 (scanner refile): each derives one program; module and test are the 
   assert.equal(s1.content, "export function isRetryableR2Status(status: number): boolean {\n  return (status === 429) || (500 <= status && status <= 599);\n}\n");
   assert.match(s1.extra![0]!.path, /^src\/r2-retry-status\.is-retryable-r2-status-[0-9a-f]{7}\.test\.ts$/);
   assert.match(s1.extra![0]!.content, /assert\.equal\(isRetryableR2Status\(429\), true\);/);
-  // The description names 429, 500 and 599: their neighbours that are not examples (501, 598) are written too.
-  assert.match(s1.extra![0]!.content, /the boundaries the description names[\s\S]*isRetryableR2Status\(501\), true\);\n  assert\.equal\(isRetryableR2Status\(598\), true\);/);
+  // The test is exactly the issue's examples: one assertion per example, nothing else.
+  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 18);
   const s2 = run(S2).e!;
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
-  assert.doesNotMatch(s2.extra![0]!.content, /boundaries/, "no derived probes for a two-number formula");
+  assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 13);
   const s3 = run(S3).e!;
-  assert.match(s3.content, /^export function hostFailureLine\(message: string, causeCode: string\): string \{\n  return "MARKETS_SCHEDULER_HOST_FAILED:" \+ /);
+  assert.equal(s3.content, 'export function hostFailureLine(message: string, causeCode: string): string {\n  return "MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode));\n}\n');
+  assert.equal((s3.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 6);
   for (const e of [s1, s2, s3]) {
     assert.equal(e.create, true);
     assert.equal(e.selfGrade, true);
@@ -186,34 +187,62 @@ test("derived expressions: compile to the whitelist only; derivedModuleProblem r
   for (const n of nodes) assert.equal(derivedExprProblem(compileProgram(n, P), P), null, compileProgram(n, P));
 });
 
-test("probes: deterministic; examples dropped; described probes only for one-number yes/no rules", () => {
+test("probes and constants: deterministic, from the examples only (edges and repeated results)", () => {
   const params = [{ name: "n", type: "number" as const }];
   const ex = [{ args: [5], out: true }, { args: [6], out: false }];
   assert.deepEqual(probeSet(params, ex), probeSet(params, ex));
   assert.ok(!probeSet(params, ex).some((p) => p[0] === 5 || p[0] === 6));
-  const t = parseDeriveTask(DERIVE_TRIGGER, clean(S1));
-  assert.ok("task" in t);
-  if ("task" in t) assert.deepEqual(describedProbes(t.task), [501, 598]);
-  const t2 = parseDeriveTask(DERIVE_TRIGGER, clean(S2));
-  if ("task" in t2) assert.deepEqual(describedProbes(t2.task), []);
+  const t1 = parseDeriveTask(DERIVE_TRIGGER, clean(S1)), t2 = parseDeriveTask(DERIVE_TRIGGER, clean(S2));
+  assert.ok("task" in t1 && "task" in t2);
+  if ("task" in t1) assert.deepEqual(edgeConstants(t1.task.params, t1.task.examples), [428, 429, 430, 499, 500, 599, 600]);
+  if ("task" in t2) {
+    assert.deepEqual(edgeConstants(t2.task.params, t2.task.examples), [0, 1, 2, 3, 4, 5]);
+    assert.deepEqual(repeatedResults(t2.task.examples), [0, 30000], "30000 is a cap because three examples hit it, not because the prose says it");
+  }
 });
 
-test("no memorizing: strings are only tested for emptiness; integers only when the description writes them", () => {
+test("the examples alone determine the program: the behavior prose only has to be prose (module, name and signature come from the header)", () => {
+  const withBehavior = (body: string, b: string) => body.replace(/Behavior: [^\n]*/, `Behavior: ${b}`);
+  const proses = [
+    "Follow the examples below, case by case, and nothing else.",
+    "True from 400 through 450 and for 777, false for 12 and 13, the wait is never more than 99 ms and the line starts with OTHER_MARKER.",
+    "An unrelated paragraph about weather, tides and the number 30000, mentioned only to show it is ignored.",
+  ];
+  for (const body of [S1, S2, S3]) {
+    const base = run(body).e!;
+    for (const b of proses) assert.deepEqual(run(withBehavior(body, b)).e, base, `${b} changed the edit`);
+    // The parsed behavior is carried for the guard only: the build ignores it entirely.
+    const t = parseDeriveTask(DERIVE_TRIGGER, clean(body));
+    assert.ok("task" in t);
+    if ("task" in t) assert.deepEqual(buildDeriveEdit(SPEC.params, { ...t.task, behavior: "" }, FILES), buildDeriveEdit(SPEC.params, t.task, FILES));
+  }
+  // Change one example and the program follows the examples (not the prose, which still says 599).
+  const moved = run(S1.replace("- 599 gives true", "- 598 gives true").replace("- 600 gives false", "- 599 gives false")).e!;
+  assert.equal(moved.content, "export function isRetryableR2Status(status: number): boolean {\n  return (status === 429) || (500 <= status && status <= 598);\n}\n");
+  // The header picks the module, name and signature; renaming them renames only those.
+  const renamed = run(S1.replace("src/r2-retry-status.ts", "src/retry-ok.ts").replace("isRetryableR2Status(status: number)", "retryOk(code: number)")).e!;
+  assert.equal(renamed.path, "src/retry-ok.ts");
+  assert.equal(renamed.content, "export function retryOk(code: number): boolean {\n  return (code === 429) || (500 <= code && code <= 599);\n}\n");
+});
+
+test("no memorizing: strings are only tested for emptiness; an integer is compared only where the examples show an edge", () => {
   const p = [{ name: "name", type: "string" as const }];
   const ex = [{ args: ["write_file"], out: true }, { args: ["edit"], out: true }, { args: ["patch"], out: true }, { args: ["read_file"], out: false }];
-  // The only fits are lookup tables of the example inputs: refused, never a guess, even when the prose names them.
+  // The only fits are lookup tables of the example inputs: refused, never a guess.
   assert.equal(deriveProgram({ params: p, ret: "boolean", examples: ex }).ok, false);
-  assert.equal(deriveProgram({ params: p, ret: "boolean", examples: ex, described: describedConstants("Every tool except read_file can change files.") }).ok, false);
   assert.equal(derivedExprProblem('!(name === "read_file")', ["name"]), "derive_expr_memorize");
   assert.equal(derivedExprProblem('(("read_file") === name)', ["name"]), "derive_expr_memorize");
   assert.equal(derivedExprProblem('!(name === "")', ["name"]), null);
-  // Numbers: a threshold the prose does not write is not invented from the examples.
+  // Numbers: a threshold with no witnessed edge (no v / v + 1 pair with different results) is not invented.
   const n = [{ name: "n", type: "number" as const }];
   const nx = [{ args: [10], out: true }, { args: [11], out: true }, { args: [3], out: false }];
   assert.equal(deriveProgram({ params: n, ret: "boolean", examples: nx }).ok, false);
-  const ten = deriveProgram({ params: n, ret: "boolean", examples: nx, described: describedConstants("True from 10 upward.") });
+  const ten = deriveProgram({ params: n, ret: "boolean", examples: [...nx, { args: [9], out: false }] });
   assert.equal(ten.ok && ten.fit.expr, "10 <= n");
-  assert.deepEqual(describedConstants("Worth retrying: 429 and 500 through 599. Not 1.5 or v2."), { numbers: [429, 500, 599] });
+  // Through the rule, prose that names the threshold does not help: only the examples can.
+  const body = (exs: string) => `Add a new module src/big.ts exporting isBig(n: number): boolean.\n\nBehavior: true from 10 upward, false below 10.\n\nExamples:\n${exs}`;
+  assert.equal(run(body("- 10 gives true\n- 11 gives true\n- 3 gives false\n")).why, "derive_no_fit");
+  assert.match(run(body("- 10 gives true\n- 11 gives true\n- 3 gives false\n- 9 gives false\n")).e!.content, /return 10 <= n;/);
 });
 
 test("fail closed: a competing fit one node larger is AMBIGUOUS; constant programs never fit; one-result examples refused", () => {
@@ -240,7 +269,7 @@ test("fail closed: a competing fit one node larger is AMBIGUOUS; constant progra
 
 // ---- mined evidence ----
 type DV = number | string | boolean;
-type Ex = { repo: string; commit: string; module: string; fn: string; params: { name: string; type: "number" | "string" | "boolean" }[]; ret: "number" | "string" | "boolean"; prose: string; described: { numbers: number[] }; examples: { args: DV[]; out: DV }[]; expr: string; heldOut: { right: number; wrong: number }; upstream: string; path: string; fileBlob: string; sha256: string; fixture: string; license: string; licenseSha256: string };
+type Ex = { repo: string; commit: string; module: string; fn: string; params: { name: string; type: "number" | "string" | "boolean" }[]; ret: "number" | "string" | "boolean"; prose: string; examples: { args: DV[]; out: DV }[]; expr: string; heldOut: { right: number; wrong: number }; upstream: string; path: string; fileBlob: string; sha256: string; fixture: string; license: string; licenseSha256: string };
 const EV = JSON.parse(read("peaceai/rules/proposals/m99-derive-from-behavior-evidence.json")) as { bar: number; manifestSha256: string; examples: Ex[]; peace: { repo: string; checkedAt: string; counted: number }[] };
 const gitBlob = (b: Buffer) => createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
 const pinned = (p: { fixture: string; fileBlob: string; sha256: string }) => {
@@ -250,7 +279,7 @@ const pinned = (p: { fixture: string; fileBlob: string; sha256: string }) => {
   assert.equal(createHash("sha256").update(b).digest("hex"), p.sha256, p.fixture);
   return b.toString("utf8");
 };
-test("evidence: bar met; modules blob-pinned and hold the upstream function; each expression re-derives from the recorded examples and prose numbers", () => {
+test("evidence: bar met; modules blob-pinned and hold the upstream function; each expression re-derives from the recorded examples alone", () => {
   assert.ok(EV.examples.length >= EV.bar && EV.bar >= 10);
   assert.equal(new Set(EV.examples.map((e) => `${e.repo}\0${e.module}\0${e.fn}`)).size, EV.examples.length);
   const perRepo = new Map<string, number>();
@@ -261,10 +290,9 @@ test("evidence: bar met; modules blob-pinned and hold the upstream function; eac
     const text = pinned(e);
     assert.equal(e.path, e.module);
     assert.ok(text.includes(e.upstream) && new RegExp(`\\b${e.fn}\\b`).test(e.upstream), `${e.repo} ${e.fn} upstream`);
-    assert.deepEqual(describedConstants(e.prose), e.described, `${e.repo} ${e.fn} prose numbers`);
     assert.ok(e.examples.length >= 4 && e.examples.length <= 14);
     assert.ok(e.heldOut.right > 0 && e.heldOut.wrong === 0);
-    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples, described: describedConstants(e.prose) });
+    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
     assert.ok(r.ok, `${e.repo} ${e.fn}: ${r.ok ? "" : r.reason}`);
     const expr = compileProgram(r.fit.program, e.params.map((p) => p.name));
     assert.equal(expr, e.expr, `${e.repo} ${e.fn}`);

@@ -9,17 +9,21 @@
 //   - derive_budget      the search budget (programs built, or kept-value memory) ran out before a fit was found;
 //   - derive_examples    contradictory, mistyped or out-of-range examples.
 // The DSL (typed; the size of a program is its node count, leaves count 1):
-//   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(C, a) | max(C, a) | if(G, x, y)
+//   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(K, a) | max(K, a) | if(G, x, y) (x, y may be K)
 //   string : parameter | L | a + b (concat) | if(G, x, y)
 //   boolean: parameter | p == C | p <= C | C <= p | lo <= p <= hi | p == q | p <= q | s is empty
 //            | a && b | a || b | !a
 //   if-guards G (conditional on emptiness or equality only): s is empty | p == C
-//   C: integers taken from the examples that the behavior description also names (DeriveInput.described);
+//   Every constant comes from the EXAMPLES; the behavior prose is never read here (it only names the module,
+//   function and signature, in learned-derive.ts):
+//   C (compared with a parameter): an edge the examples witness, i.e. an argument value v where two examples
+//     that differ only in that argument, by exactly 1 (v and v + 1), give different results; both v and v + 1;
+//   K (cap / constant result): an integer result that at least two examples produce;
 //   L: string pieces of the example outputs (outputs with the example's non-empty string arguments cut out)
 //   that at least two examples produce, plus "".
 //   No memorizing: a string parameter is only ever tested for emptiness (never against a literal), and an integer
-//   the description does not write is never compared with a parameter, so a lookup table of example inputs is not
-//   in the search space (such tasks are derive_no_fit instead of a wrong fit).
+//   is only compared with a parameter where the examples show the result changing right there, so a lookup table
+//   of arbitrary example inputs is not in the search space (such tasks are derive_no_fit instead of a wrong fit).
 // Compiled programs are plain TypeScript expressions over the parameters and literals only: no globals (min/max
 // compile to conditionals), no calls, no member or computed access, no I/O, no timers, no constructor / eval /
 // prototype paths. derivedExprProblem re-checks that on the TypeScript AST (used by Job A and Job B).
@@ -40,14 +44,6 @@ export interface DeriveInput {
   budget?: number;
   /** Extra sizes searched past the first fit for a competing behavior (at most DERIVE_SLACK; default it). */
   slack?: number;
-  /**
-   * What the behavior description itself states. A program may only compare a parameter with an integer the
-   * description writes: integer constants (p == C, p <= C, ranges, caps, constant branches) must be in `numbers`.
-   * Absent = nothing described, so no such constants at all. Together with "strings are only tested for emptiness"
-   * this is the anti-memorization rule: without it the smallest fit of a few examples is a lookup table of the
-   * example inputs (fits every example, generalizes to nothing).
-   */
-  described?: { numbers: readonly number[] };
 }
 export type DeriveNode =
   | { op: "param"; i: number }
@@ -237,14 +233,30 @@ export function derivedExprProblem(text: string, params: readonly string[]): str
   return bad ?? (reads === 0 ? "derive_expr_constant" : null);
 }
 
-/** Integer constants of the examples (arguments and, for number results, outputs), sorted. */
-function intConstants(input: DeriveInput): number[] {
+/**
+ * Comparison constants C: edges the examples witness. For a number parameter i, two examples whose other arguments
+ * are equal, whose i-th arguments are v and v + 1, and whose results differ, give v and v + 1. Sorted.
+ */
+export function edgeConstants(params: readonly DeriveParam[], examples: readonly DeriveExample[]): number[] {
   const s = new Set<number>();
-  for (const ex of input.examples) {
-    for (const a of ex.args) if (typeof a === "number") s.add(a);
-    if (typeof ex.out === "number") s.add(ex.out);
-  }
+  params.forEach((p, i) => {
+    if (p.type !== "number") return;
+    const byRest = new Map<string, Map<number, string>>();
+    for (const ex of examples) {
+      const rest = keyOf(ex.args.filter((_, j) => j !== i));
+      const m = byRest.get(rest) ?? new Map<number, string>();
+      m.set(ex.args[i] as number, keyOf([ex.out]));
+      byRest.set(rest, m);
+    }
+    for (const m of byRest.values()) for (const [v, o] of m) { const o1 = m.get(v + 1); if (o1 !== undefined && o1 !== o) { s.add(v); s.add(v + 1); } }
+  });
   return [...s].sort((a, b) => a - b);
+}
+/** Cap / constant-result constants K: integer results at least two examples produce. Sorted. */
+export function repeatedResults(examples: readonly DeriveExample[]): number[] {
+  const n = new Map<number, number>();
+  for (const ex of examples) if (typeof ex.out === "number") n.set(ex.out, (n.get(ex.out) ?? 0) + 1);
+  return [...n].filter(([, c]) => c >= 2).map(([v]) => v).sort((a, b) => a - b);
 }
 /**
  * String pieces of the outputs: each output with the example's non-empty string arguments cut out; a piece is kept
@@ -279,8 +291,8 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   const nEx = input.examples.length;
   const target = input.examples.map((e) => e.out);
   const names = input.params.map((p) => p.name);
-  const descNums = new Set(input.described?.numbers ?? []);
-  const consts = intConstants(input).filter((c) => descNums.has(c));
+  const consts = edgeConstants(input.params, input.examples);
+  const caps = repeatedResults(input.examples);
   const pieces = stringPieces(input);
   const types: DeriveType[] = ["number", "string", "boolean"];
   const levels: Record<DeriveType, Prog[][]> = { number: [[]], string: [[]], boolean: [[]] };
@@ -369,7 +381,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
     // Unary nodes.
     for (const a of at("number", size - 1)) if (a.usesParam) { const v = a.vals as number[]; push("number", size, { op: "sq", a: a.node }, true, map1((k) => intOk(v[k]! * v[k]!))); }
     for (const a of at("boolean", size - 1)) { const v = a.vals as boolean[]; push("boolean", size, { op: "not", a: a.node }, a.usesParam, map1((k) => !v[k])); }
-    for (const a of at("number", size - 2)) if (a.usesParam) for (const c of consts) {
+    for (const a of at("number", size - 2)) if (a.usesParam) for (const c of caps) {
       const v = a.vals as number[];
       push("number", size, { op: "min", c, a: a.node }, true, map1((k) => (v[k]! <= c ? v[k]! : c)));
       push("number", size, { op: "max", c, a: a.node }, true, map1((k) => (c <= v[k]! ? v[k]! : c)));
@@ -398,14 +410,14 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
         push("boolean", size, { op: "or", a: a.node, b: b.node }, a.usesParam || b.usesParam, map1((k) => x[k]! || y[k]!));
       }
     }
-    // Conditionals: if(G, x, y) with |G| + |x| + |y| = size - 1; number branches may also be example constants.
+    // Conditionals: if(G, x, y) with |G| + |x| + |y| = size - 1; number branches may also be K constants.
     for (let lg = 2; lg <= Math.min(3, size - 3) && !overBudget; lg++) {
       for (const g of guardAt(lg)) for (let lt = 1; lt <= size - 2 - lg; lt++) {
         const le = size - 1 - lg - lt;
         if (le < 1) continue;
         const gv = g.vals as boolean[];
         for (const ty of ["number", "string"] as const) {
-          const constLeaves = (n: number) => (ty === "number" && n === 1 ? consts.map((c) => ({ node: { op: "lit", v: c } as DeriveNode, vals: new Array<DeriveValue>(P).fill(c) })) : []);
+          const constLeaves = (n: number) => (ty === "number" && n === 1 ? caps.map((c) => ({ node: { op: "lit", v: c } as DeriveNode, vals: new Array<DeriveValue>(P).fill(c) })) : []);
           const xs = [...at(ty, lt), ...constLeaves(lt)], ys = [...at(ty, le), ...constLeaves(le)];
           for (const x of xs) for (const y of ys) {
             if (x.node === y.node || (x.node.op === "lit" && y.node.op === "lit" && x.node.v === y.node.v)) continue;

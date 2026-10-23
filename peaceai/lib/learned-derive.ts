@@ -13,11 +13,12 @@
 //   - 429 gives true
 //   - "fetch failed", "" gives "..."
 // The edit: ONE new module holding only `export function name(typed params): R { return <derived>; }` and ONE new
-// test file asserting the issue's examples (plus, for one-number-parameter yes/no rules only, the boundary values
-// the description itself names, d - 1 / d / d + 1 for each number d in it). Job B grades it like the ADD_FUNCTION
-// new module (self-fail-before-pass-after plus the type-default stub) and re-checks the derived body's grammar.
+// test file asserting exactly the issue's examples. Job B grades it like the ADD_FUNCTION new module
+// (self-fail-before-pass-after plus the type-default stub) and re-checks the derived body's grammar.
+// The behavior prose only has to pass the anti-credit guard: it never reaches the search, the constants or the
+// test. The program is determined by the examples alone; the header line picks the module, name and signature.
 import { createHash } from "node:crypto";
-import { compileProgram, deriveProgram, derivedExprProblem, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue, evalProgram } from "./derive.ts";
+import { compileProgram, deriveProgram, derivedExprProblem, DERIVE_MAX_PARAMS, type DeriveExample, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
 import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./learned-function.ts";
 import { importStyle } from "./learned-test.ts";
 import ts from "typescript";
@@ -136,30 +137,11 @@ export function parseDeriveTask(trigger: string, objective: string): DeriveParse
   return { task: { fn: g.fn, file: g.file, params, ret: g.ret as DeriveType, behavior, examples } };
 }
 
-/**
- * Boundary values the description itself fixes (one-number-parameter yes/no rules only): d - 1, d, d + 1 for each
- * integer d written in the behavior prose, minus the examples. Any other shape uses the issue's examples only.
- */
-export function describedProbes(task: DeriveTask): number[] {
-  if (task.params.length !== 1 || task.params[0]!.type !== "number" || task.ret !== "boolean") return [];
-  const ex = new Set(task.examples.map((e) => e.args[0]));
-  const out = new Set<number>();
-  for (const m of task.behavior.matchAll(/(?<![\w]|\d\.)\d{1,9}(?![\w]|\.\d)/g)) for (const d of [Number(m[0]) - 1, Number(m[0]), Number(m[0]) + 1]) if (!ex.has(d)) out.add(d);
-  return [...out].sort((a, b) => a - b).slice(0, 24);
-}
-
-/** The integers the behavior prose itself writes: only these may be compared with a parameter (see derive.ts). */
-export function describedConstants(behavior: string): { numbers: number[] } {
-  const numbers = new Set<number>();
-  for (const m of behavior.matchAll(/(?<![\w]|\d\.)\d{1,9}(?![\w]|\.\d)/g)) numbers.add(Number(m[0]));
-  return { numbers: [...numbers].sort((a, b) => a - b) };
-}
-
 const slug = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40).replace(/-$/, "") || "fn";
 const lit = (v: DeriveValue) => (typeof v === "string" ? JSON.stringify(v) : String(v));
 
 export interface DeriveEdit { path: string; content: string; create: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
-export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number; probes: number[] } | { reason: string; detail?: string };
+export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number } | { reason: string; detail?: string };
 
 export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): DeriveBuild {
   for (const k of DERIVE_PARAM_KEYS) if (typeof params[k] !== "string" || !DERIVE_VOCAB[k].includes(params[k] as string)) return { reason: "derive_params" };
@@ -168,8 +150,9 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   const dir = path.slice(0, path.lastIndexOf("/") + 1);
   if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return { reason: "derive_path" };
   if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
-  // PeaceAI's own search writes the body; nothing in the issue is copied into it.
-  const r = deriveProgram({ params: task.params, ret: task.ret, examples: task.examples, described: describedConstants(task.behavior) });
+  // PeaceAI's own search writes the body from the examples alone; nothing in the issue is copied into it and the
+  // behavior prose is not an input.
+  const r = deriveProgram({ params: task.params, ret: task.ret, examples: task.examples });
   if (!r.ok) return { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
   const names = task.params.map((p) => p.name);
   const expr = compileProgram(r.fit.program, names);
@@ -182,16 +165,9 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
   const content = `export function ${task.fn}(${sig}): ${task.ret} {\n  return ${expr};\n}\n`;
   if ((ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true) as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return { reason: "derive_expr_parse" };
-  // The test: the issue's examples, then the boundaries the description names (values from the derived program).
-  const probes = describedProbes(task);
+  // The test: the issue's examples, exactly.
   const call = (args: readonly DeriveValue[]) => `${task.fn}(${args.map(lit).join(", ")})`;
   const exampleLines = task.examples.map((ex) => `  assert.equal(${call(ex.args)}, ${lit(ex.out)});`);
-  const probeLines: string[] = [];
-  for (const d of probes) {
-    const v = evalProgram(r.fit.program, [d]);
-    if (typeof v !== "boolean") return { reason: "derive_probe" };
-    probeLines.push(`  assert.equal(${call([d])}, ${lit(v)});`);
-  }
   const stem = path.slice(dir.length).replace(/\.ts$/, "");
   const id7 = createHash("sha256").update(JSON.stringify([task.file, task.fn, sig, task.ret, task.examples])).digest("hex").slice(0, 7);
   const testPath = `${dir}${stem}.${slug(task.fn)}-${id7}.test.ts`;
@@ -205,10 +181,9 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
     `test(${JSON.stringify(`${task.fn}: the examples from the issue`)}, () => {`,
     ...exampleLines,
     "});",
-    ...(probeLines.length ? ["", `test(${JSON.stringify(`${task.fn}: the boundaries the description names`)}, () => {`, ...probeLines, "});"] : []),
     "",
   ].join("\n");
-  return { edit: { path, content, create: true, extra: [{ path: testPath, content: test, create: true }], selfGrade: true }, expr, size: r.fit.size, probes };
+  return { edit: { path, content, create: true, extra: [{ path: testPath, content: test, create: true }], selfGrade: true }, expr, size: r.fit.size };
 }
 
 /** Job A entry: refusal code in `why.reason`; null when there is no candidate. */

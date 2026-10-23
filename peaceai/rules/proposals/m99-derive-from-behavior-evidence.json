@@ -17,9 +17,6 @@
    ],
    "ret": "string",
    "prose": "The refspec: `refs/heads/<branch>:refs/heads/<branch>`. The short form (`git push origin my-branch`) resolves the source through git's ref lookup, so a tag or a remote ref sharing the name can be what actually travels. Fully qualifying both sides removes the lookup entirely. /",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -72,9 +69,6 @@
    ],
    "ret": "boolean",
    "prose": "A \"workspace package\" subject, reached via the `@pkg/orders` path-alias that points at a packages/ entry (the monorepo/workspace-package idiom). Behavior = `archiveOrder`.",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -131,9 +125,6 @@
    ],
    "ret": "string",
    "prose": "",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -264,9 +255,6 @@
    ],
    "ret": "number",
    "prose": "Clean utility module",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -393,9 +381,6 @@
    ],
    "ret": "string",
    "prose": "",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -452,11 +437,6 @@
    ],
    "ret": "string",
    "prose": "Construct the canonical rule_id for an anomaly finding. Mirrors Chi-3's catalog-key pattern (`{detector}__{classifier}`) so the auto-trigger ladder and the anomaly catalog stay aligned. /",
-   "described": {
-    "numbers": [
-     3
-    ]
-   },
    "examples": [
     {
      "args": [
@@ -587,11 +567,6 @@
    ],
    "ret": "string",
    "prose": "Build a stable string key for a (detector, classifier) tuple. Used as the URL path segment for subscribe / unsubscribe routes and as the in-memory dispatcher registration key. The dispatcher's `registerDetector` keys by `detector.detectorId` alone; Chi-3 keeps things compatible by treating (detectorId, classifierId) as the OPERATOR-VISIBLE key but registering each tuple's factory output under its detectorId. A future dispatcher-side composite-key extension lights up multiple classifiers per detector; Chi-3 ships the URL surface ready for that without forcing it. /",
-   "described": {
-    "numbers": [
-     3
-    ]
-   },
    "examples": [
     {
      "args": [
@@ -718,9 +693,6 @@
    ],
    "ret": "boolean",
    "prose": "",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -773,9 +745,6 @@
    ],
    "ret": "string",
    "prose": "",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -832,9 +801,6 @@
    ],
    "ret": "boolean",
    "prose": "A saved offset is safe to restore only if the current content is at least tall enough to reach it. Content height (not max-scroll = content − viewport) is a deliberately generous bound: an offset that sits within the content but past the last viewport clamps harmlessly to the bottom (still valid rows), whereas an offset BEYOND the content — the shrunk-list case — is the only one that strands every row above the viewport. So that is the single case we reject; everything else restores as before.",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -961,9 +927,6 @@
    ],
    "ret": "string",
    "prose": "controller instance of directive is exposed on jqLiteElement.data() under the name: `$` + Ctor + `Controller` @param name @returns {string} /",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -1020,9 +983,6 @@
    ],
    "ret": "string",
    "prose": "",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -1153,9 +1113,6 @@
    ],
    "ret": "string",
    "prose": "Build a public rule id from pack + rule name.",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -1282,9 +1239,6 @@
    ],
    "ret": "string",
    "prose": "대화 정보 화면에서 엔트리(`mobile.conversationPane`)가 세우는 탭의 id — 착지 요청과 탭 목록이 같은 id를 쓴다.",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -1337,9 +1291,6 @@
    ],
    "ret": "string",
    "prose": "Returns the value with '' around it. Any 's will be escaped \\' in the output /",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [
@@ -1392,9 +1343,6 @@
    ],
    "ret": "string",
    "prose": "",
-   "described": {
-    "numbers": []
-   },
    "examples": [
     {
      "args": [

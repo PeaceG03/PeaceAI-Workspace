@@ -38,17 +38,24 @@ fenced code block, an HTML comment or an indented code block (cleaning drops tho
 Bottom-up enumeration by program size (node count, at most 13) over a typed DSL, with observational equivalence on
 the points = examples + a deterministic probe set:
 
-- number: a parameter, 1, 2, `a + b`, `a - b`, `a * b`, `a * a`, `min(C, a)`, `max(C, a)`, `if (G) a else b`
+- number: a parameter, 1, 2, `a + b`, `a - b`, `a * b`, `a * a`, `min(K, a)`, `max(K, a)`, `if (G) a else b`
+  (a branch may also be a K constant)
 - string: a parameter, a literal L, `a + b`, `if (G) a else b`
 - boolean: a parameter, `p === C`, `p <= C`, `C <= p`, `lo <= p && p <= hi`, `p === q`, `p <= q`, `s === ""`,
   `&&`, `||`, `!`
 - guards G: `s === ""`, `p === C`
-- C: the integers in the examples (arguments and outputs) that the behavior prose also writes; L: output pieces with
-  the string arguments cut out that at least two examples produce (a piece of one output is that output
-  memorized), plus `""`.
-- No memorizing: a string parameter is only tested for emptiness, never compared with a literal, and an integer the
-  prose does not write is never compared with a parameter. Without this, the smallest fit of a few examples is a
-  lookup table of the example inputs, which fits every example and generalizes to nothing. On the upstream evidence
+- Every constant comes from the EXAMPLES. The behavior prose is never an input of the search, the constants or the
+  test: it only has to pass the anti-credit guard. The header line picks the module, name and signature.
+- C (compared with a parameter): an edge the examples witness: two examples that differ only in one number argument,
+  by exactly 1 (v and v + 1), and give different results contribute v and v + 1 (S1: 428/429, 429/430, 499/500,
+  599/600).
+- K (cap, constant result): an integer result that at least two examples produce (S2: 30000, three times; 0).
+- L: output pieces with the string arguments cut out that at least two examples produce (a piece of one output is
+  that output memorized), plus `""`.
+- No memorizing: a string parameter is only tested for emptiness, never compared with a literal, and an integer is
+  compared with a parameter only where the examples show the result changing at that value. Without this, the
+  smallest fit of a few examples is a lookup table of the example inputs, which fits every example and generalizes
+  to nothing. On the upstream evidence
   scan an earlier draft (string equality allowed against example inputs) derived e.g. `!(name === "read_file")` for
   a tool-name check from 4 names, wrong on unseen names; with the rule such tasks are `derive_no_fit`.
   `derivedExprProblem` also refuses `===` with a non-empty string literal (`derive_expr_memorize`), so Job B
@@ -79,10 +86,10 @@ constructor / eval / prototype paths or timers are reachable.
 
 - `src/X.ts`: `export function NAME(TYPED PARAMS): R {\n  return DERIVED;\n}\n` (same path rules as the ADD_FUNCTION new
   module: plain unprotected path, an existing `.ts` sibling in the same directory, no case-insensitive clash).
-- `src/X.SLUG-ID7.test.ts`: `node:test` + `node:assert/strict`, one `assert.equal` per issue example. Only for a
-  one-number-parameter yes/no function, a second test adds the boundaries the description itself names: for each
-  integer d written in the behavior prose, d - 1, d and d + 1 that are not examples, with the derived program's answer.
-  No other probes are written into the test (the issue fixes nothing else).
+- `src/X.SLUG-ID7.test.ts`: `node:test` + `node:assert/strict`, exactly one `assert.equal` per issue example and
+  nothing else (ID7 hashes the header and the examples, not the prose).
+- Shown in m99's "the examples alone determine the program" test: S1-S3 with their prose replaced by unrelated or
+  misleading prose (other numbers, another marker) give byte-identical edits; moving one example moves the program.
 - Job B grades it like the ADD_FUNCTION new module (the new test calls the function, fails with a type-default stub,
   fails with the module removed, passes with it) and re-checks the created module (`derivedModuleProblem`: exactly one
   exported function, typed number / string / boolean parameters and return, a single return passing
@@ -100,5 +107,6 @@ derive_budget, derive_expr_*, derive_path, derive_module_exists, new_test_path_e
 - Issue cleaning drops `#`, backticks, some `*` and `_` and collapses spaces, so an example string holding them
   arrives changed; such issues should avoid those characters in example strings.
 - The DSL has no division, modulo, string length, slicing, case changes or loops; behavior needing them is
-  `derive_no_fit`. Small DSL + minimal size can still pick a program the examples allow but the prose rules out; the
-  boundary probes in the test cover only the one-number yes/no case. More examples narrow the choice.
+  `derive_no_fit`. Small DSL + minimal size can still pick a program the examples allow but the prose rules out
+  (the prose is deliberately not read). More examples narrow the choice; a threshold needs an example on each side
+  of it at v and v + 1, or it is `derive_no_fit`.
