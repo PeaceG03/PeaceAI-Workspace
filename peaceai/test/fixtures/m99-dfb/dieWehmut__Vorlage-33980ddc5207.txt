@@ -1,0 +1,288 @@
+const DEFAULT_HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6'
+
+const HEADING_ENTITIES: Record<string, string> = {
+  amp: '&',
+  apos: "'",
+  colon: ':',
+  gt: '>',
+  lt: '<',
+  newline: '\n',
+  nbsp: '\u00a0',
+  quot: '"',
+  tab: '\t',
+}
+
+export type WaitForHeadingOptions = {
+  getRoot: () => ParentNode | null
+  hash: string
+  selector?: string
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+export function decodeHtmlEntities(value: string): string {
+  return value.replace(
+    /&(#x[\da-f]+|#\d+|amp|apos|colon|gt|lt|newline|nbsp|quot|tab);/giu,
+    (match, entity: string) => {
+      const normalized = entity.toLowerCase()
+      if (!normalized.startsWith('#')) return HEADING_ENTITIES[normalized] || match
+
+      const radix = normalized.startsWith('#x') ? 16 : 10
+      const digits = normalized.slice(radix === 16 ? 2 : 1)
+      const codePoint = Number.parseInt(digits, radix)
+      if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return match
+      return String.fromCodePoint(codePoint)
+    },
+  )
+}
+
+export function plainHeadingText(value: string): string {
+  return decodeHtmlEntities(value.replace(/<[^>]*>/g, ''))
+}
+
+export function normalizeHeadingText(value: string): string {
+  return plainHeadingText(value)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+export function slugifyHeadingText(value: string): string {
+  const plain = plainHeadingText(value)
+  const slug = plain
+    .replace(/\s+/gu, '-')
+    .replace(/[^\w\u4e00-\u9fff-]/gu, '')
+    .toLowerCase()
+  return slug || 'section'
+}
+
+export function decodeHeadingHash(hash: string): string {
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash
+  if (!raw) return ''
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+export function getUniqueHeadingId(base: string, registry: Map<string, number>): string {
+  const normalizedBase = base || 'section'
+  const next = (registry.get(normalizedBase) || 0) + 1
+  registry.set(normalizedBase, next)
+  return next === 1 ? normalizedBase : `${normalizedBase}-${next}`
+}
+
+function ownerDocumentFor(root: ParentNode | null): Document | null {
+  if (typeof document === 'undefined') return null
+  if (typeof Document !== 'undefined' && root instanceof Document) return root
+  return (root as Element | null)?.ownerDocument || document
+}
+
+function containsTarget(root: ParentNode, target: Element): boolean {
+  if (typeof Document !== 'undefined' && root instanceof Document) return true
+  return Boolean((root as Element).contains?.(target))
+}
+
+export function resolveHeading(
+  root: ParentNode,
+  hash: string,
+  selector = DEFAULT_HEADING_SELECTOR,
+): HTMLElement | null {
+  const decoded = decodeHeadingHash(hash)
+  if (!decoded) return null
+
+  let headings: HTMLElement[] = []
+  try {
+    headings = Array.from(root.querySelectorAll<HTMLElement>(selector))
+  } catch {
+    return null
+  }
+
+  const exactHeading = headings.find((heading) => heading.id === decoded)
+  if (exactHeading) return exactHeading
+
+  const documentRoot = ownerDocumentFor(root)
+  const exactElement = documentRoot?.getElementById(decoded)
+  if (exactElement && containsTarget(root, exactElement)) {
+    return exactElement as HTMLElement
+  }
+
+  const slug = slugifyHeadingText(decoded)
+  const slugHeading = headings.find((heading) => heading.id === slug)
+  if (slugHeading) return slugHeading
+
+  const normalized = normalizeHeadingText(decoded)
+  return headings.find((heading) => {
+    const title = heading.dataset.mdHeadingTitle
+      || heading.getAttribute('data-scroll-title')
+      || heading.textContent
+      || ''
+    return normalizeHeadingText(title) === normalized
+  }) || null
+}
+
+export function canonicalHeadingHash(id: string): string {
+  return id ? `#${id}` : ''
+}
+
+export function scrollHeadingIntoView(
+  element: HTMLElement,
+  offset: number,
+  behavior: ScrollBehavior = 'smooth',
+): void {
+  const view = element.ownerDocument?.defaultView
+  if (!view) return
+  const top = element.getBoundingClientRect().top + view.scrollY - offset
+  view.scrollTo({ top, behavior })
+}
+
+/**
+ * How far below the offset line a heading may still sit and count as reached.
+ *
+ * `scrollHeadingIntoView` above aims at exactly that line, and browsers round the
+ * scroll offset they end up at onto a sub-pixel grid, so the heading it just
+ * scrolled to can land a fraction of a pixel short of it. Read without any
+ * tolerance that heading never becomes the active one — and anything that steps
+ * from the active heading then keeps re-targeting the position the page is already
+ * parked at, which scrolls nowhere, fires no scroll event, and so never produces a
+ * new reading. The row stops answering for good rather than merely lagging.
+ *
+ * A pixel covers the rounding with room to spare while staying far below the gap
+ * between two headings, so it can never hand the reading to the wrong one.
+ */
+export const HEADING_ACTIVATION_TOLERANCE = 1
+
+/**
+ * Which heading the reader is under, given where each one sits in the document
+ * and where the page is scrolled to. The last heading at or above the offset line
+ * wins; before any of them reach it the first one stands in.
+ */
+export function activeHeadingIndex(tops: number[], scrollY: number, offset: number): number {
+  if (!tops.length) return -1
+
+  const line = scrollY + offset + HEADING_ACTIVATION_TOLERANCE
+  let index = 0
+  for (let i = 0; i < tops.length; i += 1) {
+    if (tops[i] > line) break
+    index = i
+  }
+  return index
+}
+
+/**
+ * Which heading a table of contents shows as selected.
+ *
+ * The scroll position decides, which is `activeHeadingIndex` above — except that
+ * it cannot always. A document's last screenful collapses into a single reading:
+ * once the page has scrolled as far as it goes, no further scrolling can bring a
+ * heading nearer the offset line, so the position has run out of room to say
+ * which of the headings down there is meant. Feed this the maximum the page can
+ * scroll to and it names the last heading the position can express.
+ *
+ * Being sent to a heading past that point is still a move the reader made, so a
+ * pinned index holds the selection where the position cannot follow. A pin the
+ * position *can* express needs no holding — the reading arrives at it on its own
+ * — so it is ignored, which keeps the pin from outliving its one purpose.
+ */
+export function selectedHeadingIndex(
+  tops: number[],
+  scrollY: number,
+  maxScrollY: number,
+  offset: number,
+  pinnedIndex: number,
+): number {
+  const lastReachable = activeHeadingIndex(tops, maxScrollY, offset)
+  if (pinnedIndex > lastReachable) return pinnedIndex
+  return activeHeadingIndex(tops, scrollY, offset)
+}
+
+export function waitForHeading({
+  getRoot,
+  hash,
+  selector = DEFAULT_HEADING_SELECTOR,
+  timeoutMs = 8000,
+  signal,
+}: WaitForHeadingOptions): Promise<HTMLElement | null> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return Promise.resolve(null)
+  }
+
+  return new Promise((resolve) => {
+    const startedAt = performance.now()
+    let observer: MutationObserver | null = null
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    let frameHandle = 0
+    let frameIsTimeout = false
+    let settled = false
+
+    const clearFrame = () => {
+      if (!frameHandle) return
+      if (frameIsTimeout) window.clearTimeout(frameHandle)
+      else window.cancelAnimationFrame(frameHandle)
+      frameHandle = 0
+    }
+
+    const finish = (target: HTMLElement | null) => {
+      if (settled) return
+      settled = true
+      observer?.disconnect()
+      observer = null
+      clearFrame()
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+      timeoutHandle = null
+      signal?.removeEventListener('abort', onAbort)
+      resolve(target)
+    }
+
+    const onAbort = () => finish(null)
+
+    const schedule = (callback: () => void) => {
+      if (window.requestAnimationFrame) {
+        frameIsTimeout = false
+        frameHandle = window.requestAnimationFrame(callback)
+      } else {
+        frameIsTimeout = true
+        frameHandle = window.setTimeout(callback, 16)
+      }
+    }
+
+    const observeRoot = () => {
+      if (observer) return
+      const root = getRoot() || document.body
+      if (!root || !window.MutationObserver) return
+      observer = new window.MutationObserver(() => attempt())
+      observer.observe(root, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['id', 'data-md-heading-title', 'data-scroll-title'],
+      })
+    }
+
+    const attempt = () => {
+      if (settled) return
+      if (signal?.aborted) {
+        finish(null)
+        return
+      }
+      const root = getRoot()
+      const target = root ? resolveHeading(root, hash, selector) : null
+      if (target) {
+        finish(target)
+        return
+      }
+      if (performance.now() - startedAt >= timeoutMs) {
+        finish(null)
+        return
+      }
+      observeRoot()
+      schedule(attempt)
+    }
+
+    timeoutHandle = setTimeout(() => finish(null), timeoutMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    attempt()
+  })
+}

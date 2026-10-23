@@ -18680,6 +18680,344 @@
    "ternaryShapes": [
     "eq-const/string"
    ]
+  },
+  {
+   "repo": "chetto1983/Aura",
+   "commit": "ea9c5969a72d3f5c7373bef8e6cbec18a213c609",
+   "module": "web/src/auth/authConfig.ts",
+   "fn": "valueOrFallback",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    },
+    {
+     "name": "fallback",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "ab"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "ab",
+      "Hello"
+     ],
+     "out": "ab"
+    },
+    {
+     "args": [
+      "Hello",
+      ""
+     ],
+     "out": "Hello"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      "a"
+     ],
+     "out": " Ab 9. "
+    },
+    {
+     "args": [
+      "",
+      " Ab 9. "
+     ],
+     "out": " Ab 9. "
+    }
+   ],
+   "expr": "(value === \"\") ? fallback : value",
+   "heldOut": {
+    "right": 35338,
+    "wrong": 0
+   },
+   "upstream": "function valueOrFallback(value: string, fallback: string): string {\n  return value === '' ? fallback : value;\n}",
+   "path": "web/src/auth/authConfig.ts",
+   "fileBlob": "d0cfcea5ee802cb10551c159e7118fbcbe28b314",
+   "sha256": "29d7ad95dfd377a317c2f3c1e9d7ce8bc99a20ab711304470d18e6ccf48d9e1e",
+   "fixture": "peaceai/test/fixtures/m99-dfb/chetto1983__Aura-d0cfcea5ee80.txt",
+   "license": "MIT",
+   "licenseSha256": "f7bb51bdcee81d19d4fb2080ea06ed2da54391ccf8f845e96b5cc1f9b0d90786",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"a\") gives \" Ab 9. \"",
+    "chars: (\"\", \" Ab 9. \") gives \" Ab 9. \""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
+   ]
+  },
+  {
+   "repo": "dieWehmut/Vorlage",
+   "commit": "83d62350293ade76f3398a5ec9467a2c7c54156f",
+   "module": "src/utils/headingNavigation.ts",
+   "fn": "canonicalHeadingHash",
+   "params": [
+    {
+     "name": "id",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "out": "#a"
+    },
+    {
+     "args": [
+      "ab"
+     ],
+     "out": "#ab"
+    },
+    {
+     "args": [
+      "Hello"
+     ],
+     "out": "#Hello"
+    },
+    {
+     "args": [
+      "x y"
+     ],
+     "out": "#x y"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "#123"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "# Ab 9. "
+    }
+   ],
+   "expr": "((id === \"\") ? id : \"#\") + id",
+   "heldOut": {
+    "right": 181,
+    "wrong": 0
+   },
+   "upstream": "function canonicalHeadingHash(id: string): string {\n  return id ? `#${id}` : ''\n}",
+   "path": "src/utils/headingNavigation.ts",
+   "fileBlob": "33980ddc5207bf89bfcc7f31f0781978507d73d8",
+   "sha256": "2e80c233023a60d14814bcb9191e4f94112fd54a7e7479cbaf55d2cb7726b9f9",
+   "fixture": "peaceai/test/fixtures/m99-dfb/dieWehmut__Vorlage-33980ddc5207.txt",
+   "license": "MIT",
+   "licenseSha256": "303e1b9a5b26bd0a1d6f6413c37d4161c27c52f078e8b70b2708a87674e1a70a",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"# Ab 9. \""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
+    "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
+   ]
+  },
+  {
+   "repo": "everx-labs/ever-q-server",
+   "commit": "723e89c00a5af4bf84571b3daed58ac29a6cacca",
+   "module": "src/server/config-param.ts",
+   "fn": "withPrefix",
+   "params": [
+    {
+     "name": "prefix",
+     "type": "string"
+    },
+    {
+     "name": "s",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "ab"
+     ],
+     "out": "a ab"
+    },
+    {
+     "args": [
+      "ab",
+      "Hello"
+     ],
+     "out": "ab Hello"
+    },
+    {
+     "args": [
+      "Hello",
+      ""
+     ],
+     "out": "Hello "
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      "a"
+     ],
+     "out": " Ab 9.  a"
+    },
+    {
+     "args": [
+      "",
+      " Ab 9. "
+     ],
+     "out": " Ab 9. "
+    }
+   ],
+   "expr": "prefix + (((prefix === \"\") ? prefix : \" \") + s)",
+   "heldOut": {
+    "right": 35338,
+    "wrong": 0
+   },
+   "upstream": "function withPrefix(prefix: string, s: string): string {\n    return prefix !== \"\" ? `${prefix} ${s}` : s\n}",
+   "path": "src/server/config-param.ts",
+   "fileBlob": "3fcb346e4437999ce2c1c08df945e2257fdd84e6",
+   "sha256": "95885515246e235a6914ae2d0becb3f1b257c4d3ecef7866644c115fcac6cc33",
+   "fixture": "peaceai/test/fixtures/m99-dfb/everx-labs__ever-q-server-3fcb346e4437.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"a\") gives \" Ab 9.  a\"",
+    "chars: (\"\", \" Ab 9. \") gives \" Ab 9. \""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
+    "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
+   ]
+  },
+  {
+   "repo": "w5s/project-config",
+   "commit": "1cb84b2abede8edd34d39998e0539cd2b0061488",
+   "module": "packages/dev/src/Project.ts",
+   "fn": "globAppendIfNotEmpty",
+   "params": [
+    {
+     "name": "base",
+     "type": "string"
+    },
+    {
+     "name": "append",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      "a"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "a",
+      "ab"
+     ],
+     "out": "aab"
+    },
+    {
+     "args": [
+      "ab",
+      "Hello"
+     ],
+     "out": "abHello"
+    },
+    {
+     "args": [
+      "Hello",
+      ""
+     ],
+     "out": "Hello"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      "a"
+     ],
+     "out": " Ab 9. a"
+    },
+    {
+     "args": [
+      "",
+      " Ab 9. "
+     ],
+     "out": ""
+    }
+   ],
+   "expr": "base + ((base === \"\") ? base : append)",
+   "heldOut": {
+    "right": 35338,
+    "wrong": 0
+   },
+   "upstream": "function globAppendIfNotEmpty(base: string, append: string): string {\n  return base.length === 0 ? base : `${base}${append}`;\n}",
+   "path": "packages/dev/src/Project.ts",
+   "fileBlob": "9ca8ffa70e3e70e7e6a93e35cb6cbd87b36c9b45",
+   "sha256": "3fa6bb7f60f763fae2633e137217d64ce698c5fca1b376ac5d9dce60bbf8f4dd",
+   "fixture": "peaceai/test/fixtures/m99-dfb/w5s__project-config-9ca8ffa70e3e.txt",
+   "license": "MIT",
+   "licenseSha256": "e50aa58f2be8c2839f91106c3c2df365fb2932ba4e1d2593bdbb7a1292baef0b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"a\") gives \" Ab 9. a\"",
+    "chars: (\"\", \" Ab 9. \") gives \"\""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
+    "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
+   ]
   }
  ],
  "peace": [
