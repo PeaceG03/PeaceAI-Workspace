@@ -389,7 +389,11 @@ test("Round 3 #129: allow-list grammar refuses syntax outside the list", () => {
 test("Round 3 #129 F2: on Node < 22 the stub-body route is ungradable, never graded unconfined", () => {
   const tc = readFileSync(join(repo, "peaceai/bin/test-candidates.ts"), "utf8");
   const g = tc.slice(tc.indexOf("function gradeTest("), tc.indexOf("function stubBefore("));
-  assert.match(g, /if \(Number\(process\.versions\.node\.split\("\."\)\[0\]\) < PERMISSION_NODE_MAJOR\) return ungradable\("not-confined"\);/);
+  assert.match(g, /if \(nodeMajor\(\) < PERMISSION_NODE_MAJOR\) return ungradable\("not-confined"\);/);
+  // nodeMajor (Auditor #491 round 2): the runtime's major; the test-only simulation can lower it, never raise it.
+  const nm = tc.slice(tc.indexOf("function nodeMajor("), tc.indexOf("function runGradedTests("));
+  assert.match(nm, /const real = Number\(process\.versions\.node\.split\("\."\)\[0\]\);/);
+  assert.match(nm, /return Number\.isInteger\(sim\) && sim > 0 \? Math\.min\(real, sim\) : real;/);
   assert.ok(g.indexOf('ungradable("not-confined")') < g.indexOf("runGradedTests("), "checked before any graded run");
   assert.ok(validTestGrading({ fixSha: "a".repeat(40), afterFix: true, beforeFix: null, verdict: "UNGRADABLE", reason: "not-confined" }));
 });

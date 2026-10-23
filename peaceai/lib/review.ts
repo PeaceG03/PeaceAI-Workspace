@@ -25,7 +25,7 @@ export function reviewBody(
   diffs: ReadonlyMap<string, string>,
   target: string | null = null,
   route: "pr" | "patch" = "pr",
-  /** M7.1: neutral per-candidate notes (only "placeholder value added by repair" today). */
+  /** M7.1: neutral per-candidate notes ("placeholder value added by repair"); M99: a multi-line DERIVE note is shown as written. */
   notes: ReadonlyMap<string, string> = new Map(),
 ): string {
   // M6: a patch-route target (no write token) gets a format-patch comment instead of a PR.
@@ -35,7 +35,7 @@ export function reviewBody(
     if (diff.length > MAX_DIFF_CHARS) diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n... (truncated)`;
     const fence = diff.includes("```") ? "~~~~" : "```";
     const note = notes.get(p.id);
-    return `### Candidate ${p.label}\n\n${note ? `Note: ${note}.\n\n` : ""}<details><summary>diff</summary>\n\n${fence}diff\n${diff}\n${fence}\n\n</details>`;
+    return `### Candidate ${p.label}\n\n${note ? (note.includes("\n") ? `${note}\n\n` : `Note: ${note}.\n\n`) : ""}<details><summary>diff</summary>\n\n${fence}diff\n${diff}\n${fence}\n\n</details>`;
   });
   return [
     "PeaceAI review. Each candidate below passed the original suite (run alone) and its new tests (run separately).",

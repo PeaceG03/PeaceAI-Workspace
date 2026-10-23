@@ -1,0 +1,2511 @@
+{
+ "schema": "peaceai-derive-mistakes:v1",
+ "note": "The residual count of the practice generator reported at 6f1ea5e (11 blocking) describes seed 100 only; other seeds find other wrong picks (seed 101: seed101-island-hidden-island-t465).",
+ "entries": [
+  {
+   "id": "r1-s1-without-600",
+   "source": "Auditor #491 round 1 (B1)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     429,
+     true
+    ],
+    [
+     500,
+     true
+    ],
+    [
+     502,
+     true
+    ],
+    [
+     503,
+     true
+    ],
+    [
+     504,
+     true
+    ],
+    [
+     550,
+     true
+    ],
+    [
+     510,
+     true
+    ],
+    [
+     520,
+     true
+    ],
+    [
+     530,
+     true
+    ],
+    [
+     540,
+     true
+    ],
+    [
+     560,
+     true
+    ],
+    [
+     570,
+     true
+    ],
+    [
+     580,
+     true
+    ],
+    [
+     590,
+     true
+    ],
+    [
+     438,
+     false
+    ],
+    [
+     446,
+     false
+    ],
+    [
+     454,
+     false
+    ],
+    [
+     462,
+     false
+    ],
+    [
+     470,
+     false
+    ],
+    [
+     478,
+     false
+    ],
+    [
+     486,
+     false
+    ],
+    [
+     494,
+     false
+    ],
+    [
+     599,
+     true
+    ],
+    [
+     428,
+     false
+    ],
+    [
+     430,
+     false
+    ],
+    [
+     499,
+     false
+    ],
+    [
+     200,
+     false
+    ],
+    [
+     204,
+     false
+    ],
+    [
+     301,
+     false
+    ],
+    [
+     400,
+     false
+    ],
+    [
+     403,
+     false
+    ],
+    [
+     404,
+     false
+    ],
+    [
+     0,
+     false
+    ]
+   ],
+   "wrongProgram": "(status === 429) || (500 <= status)",
+   "disagreeAt": [
+    600
+   ],
+   "correct": false,
+   "why": "nothing past 599 was shown, so the open end was assumed to stay true",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "far",
+    "askAt": [
+     [
+      600
+     ]
+    ],
+    "answers": [
+     [
+      600,
+      false
+     ],
+     [
+      699,
+      false
+     ],
+     [
+      100,
+      false
+     ]
+    ],
+    "rounds": 3,
+    "after": {
+     "program": "(status === 429) || (500 <= status && status <= 599)",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "r2-hidden-island",
+   "source": "Auditor #491 round 2",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     10,
+     true
+    ],
+    [
+     9,
+     true
+    ],
+    [
+     11,
+     false
+    ],
+    [
+     0,
+     true
+    ],
+    [
+     -100,
+     true
+    ],
+    [
+     15,
+     false
+    ],
+    [
+     40,
+     false
+    ],
+    [
+     49,
+     false
+    ],
+    [
+     50,
+     true
+    ],
+    [
+     51,
+     true
+    ],
+    [
+     150,
+     true
+    ]
+   ],
+   "wrongProgram": "!(11 <= n && n <= 49)",
+   "disagreeAt": [
+    20
+   ],
+   "correct": true,
+   "why": "only the ends of the false region were shown, so a true band inside it was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "region",
+    "askAt": [
+     [
+      27
+     ],
+     [
+      44
+     ]
+    ],
+    "answers": [
+     [
+      27,
+      true
+     ],
+     [
+      44,
+      false
+     ],
+     [
+      33,
+      false
+     ],
+     [
+      21,
+      true
+     ],
+     [
+      18,
+      false
+     ],
+     [
+      30,
+      true
+     ],
+     [
+      19,
+      false
+     ],
+     [
+      31,
+      false
+     ],
+     [
+      20,
+      true
+     ],
+     [
+      24,
+      true
+     ],
+     [
+      36,
+      false
+     ],
+     [
+      46,
+      false
+     ]
+    ],
+    "rounds": 7,
+    "after": {
+     "program": "!((11 <= n && n <= 19) || (31 <= n && n <= 49))",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "r2-unwitnessed-cap",
+   "source": "Auditor #491 round 2",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     -5,
+     25
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     3,
+     9
+    ],
+    [
+     24,
+     576
+    ],
+    [
+     -1,
+     1
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     4
+    ],
+    [
+     10,
+     100
+    ]
+   ],
+   "wrongProgram": "n * n",
+   "disagreeAt": [
+    -50
+   ],
+   "correct": 1000,
+   "why": "the inputs only went from -5 to 24, so a cap above 576 was never reached",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      95
+     ],
+     [
+      -76
+     ]
+    ],
+    "answers": [
+     [
+      95,
+      1000
+     ],
+     [
+      -76,
+      1000
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "program": "(n * n) <= 1000 ? (n * n) : 1000",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k15-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     14,
+     5,
+     19
+    ],
+    [
+     23,
+     17,
+     40
+    ],
+    [
+     14,
+     14,
+     28
+    ],
+    [
+     21,
+     1,
+     22
+    ],
+    [
+     16,
+     21,
+     37
+    ],
+    [
+     7,
+     13,
+     20
+    ],
+    [
+     16,
+     -5,
+     11
+    ],
+    [
+     16,
+     15,
+     31
+    ],
+    [
+     1,
+     14,
+     15
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    15,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 15, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      101,
+      17
+     ],
+     [
+      -77,
+      14
+     ]
+    ],
+    "answers": [
+     [
+      101,
+      17,
+      118
+     ],
+     [
+      -77,
+      14,
+      -63
+     ],
+     [
+      16,
+      95,
+      111
+     ],
+     [
+      16,
+      -79,
+      -63
+     ],
+     [
+      -77,
+      -79,
+      -156
+     ],
+     [
+      101,
+      95,
+      196
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      15,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k14-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     13,
+     13,
+     26
+    ],
+    [
+     15,
+     -5,
+     10
+    ],
+    [
+     7,
+     -3,
+     4
+    ],
+    [
+     17,
+     4,
+     21
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    14,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 14, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      107,
+      4
+     ],
+     [
+      -83,
+      -3
+     ]
+    ],
+    "answers": [
+     [
+      107,
+      4,
+      111
+     ],
+     [
+      -83,
+      -3,
+      -86
+     ],
+     [
+      13,
+      95,
+      108
+     ],
+     [
+      15,
+      -87,
+      -72
+     ],
+     [
+      107,
+      95,
+      202
+     ],
+     [
+      -83,
+      -87,
+      -170
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      14,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k5-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     23,
+     7,
+     30
+    ],
+    [
+     4,
+     -5,
+     -1
+    ],
+    [
+     1,
+     -5,
+     -4
+    ],
+    [
+     13,
+     9,
+     22
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    5,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 5, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      101,
+      7
+     ],
+     [
+      -77,
+      -5
+     ]
+    ],
+    "answers": [
+     [
+      101,
+      7,
+      108
+     ],
+     [
+      -77,
+      -5,
+      -82
+     ],
+     [
+      13,
+      95,
+      108
+     ],
+     [
+      4,
+      -91,
+      -87
+     ],
+     [
+      101,
+      95,
+      196
+     ],
+     [
+      -77,
+      -91,
+      -168
+     ],
+     [
+      0,
+      950,
+      950
+     ],
+     [
+      1,
+      950,
+      951
+     ],
+     [
+      -1,
+      950,
+      949
+     ],
+     [
+      101,
+      950,
+      1051
+     ],
+     [
+      1010,
+      0,
+      1010
+     ],
+     [
+      1010,
+      1,
+      1011
+     ],
+     [
+      1010,
+      -1,
+      1009
+     ],
+     [
+      1010,
+      950,
+      1960
+     ]
+    ],
+    "rounds": 8,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      5,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k14-2",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     5,
+     15,
+     20
+    ],
+    [
+     3,
+     -3,
+     0
+    ],
+    [
+     15,
+     -5,
+     10
+    ],
+    [
+     7,
+     23,
+     30
+    ],
+    [
+     -5,
+     7,
+     2
+    ],
+    [
+     19,
+     15,
+     34
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    14,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 14, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      95,
+      15
+     ],
+     [
+      -81,
+      7
+     ]
+    ],
+    "answers": [
+     [
+      95,
+      15,
+      110
+     ],
+     [
+      -81,
+      7,
+      -74
+     ],
+     [
+      7,
+      95,
+      102
+     ],
+     [
+      15,
+      -77,
+      -62
+     ],
+     [
+      -81,
+      -77,
+      -158
+     ],
+     [
+      95,
+      95,
+      190
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      14,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k12-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     19,
+     13,
+     32
+    ],
+    [
+     9,
+     17,
+     26
+    ],
+    [
+     1,
+     21,
+     22
+    ],
+    [
+     13,
+     12,
+     25
+    ],
+    [
+     13,
+     11,
+     24
+    ],
+    [
+     -3,
+     13,
+     10
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    12,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 12, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      97,
+      13
+     ],
+     [
+      -81,
+      13
+     ]
+    ],
+    "answers": [
+     [
+      97,
+      13,
+      110
+     ],
+     [
+      -81,
+      13,
+      -68
+     ],
+     [
+      1,
+      111,
+      112
+     ],
+     [
+      13,
+      -79,
+      -66
+     ],
+     [
+      97,
+      111,
+      208
+     ],
+     [
+      -81,
+      -79,
+      -160
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      12,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k15-2",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     3,
+     19,
+     22
+    ],
+    [
+     16,
+     3,
+     19
+    ],
+    [
+     9,
+     16,
+     25
+    ],
+    [
+     14,
+     21,
+     35
+    ],
+    [
+     16,
+     14,
+     30
+    ],
+    [
+     23,
+     -5,
+     18
+    ],
+    [
+     13,
+     15,
+     28
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    15,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 15, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      103,
+      -5
+     ],
+     [
+      -77,
+      19
+     ]
+    ],
+    "answers": [
+     [
+      103,
+      -5,
+      98
+     ],
+     [
+      -77,
+      19,
+      -58
+     ],
+     [
+      14,
+      95,
+      109
+     ],
+     [
+      23,
+      -79,
+      -56
+     ],
+     [
+      -77,
+      -79,
+      -156
+     ],
+     [
+      103,
+      95,
+      198
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      15,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-if-eq-k10-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     23,
+     21,
+     44
+    ],
+    [
+     9,
+     17,
+     26
+    ],
+    [
+     11,
+     -1,
+     10
+    ],
+    [
+     -1,
+     3,
+     2
+    ],
+    [
+     9,
+     9,
+     18
+    ],
+    [
+     5,
+     9,
+     14
+    ],
+    [
+     19,
+     23,
+     42
+    ]
+   ],
+   "wrongProgram": "a + b",
+   "disagreeAt": [
+    10,
+    -20
+   ],
+   "correct": 0,
+   "why": "no example had a = 10, so the special case there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      99,
+      21
+     ],
+     [
+      -77,
+      3
+     ]
+    ],
+    "answers": [
+     [
+      99,
+      21,
+      120
+     ],
+     [
+      -77,
+      3,
+      -74
+     ],
+     [
+      19,
+      99,
+      118
+     ],
+     [
+      11,
+      -77,
+      -66
+     ],
+     [
+      -77,
+      -77,
+      -154
+     ],
+     [
+      99,
+      99,
+      198
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "a + b",
+     "rightOnGrid": false,
+     "formGate": [],
+     "wrongAt": [
+      10,
+      -60
+     ],
+     "correctThere": 0,
+     "limit": "known limit: the answers never touch the one input line where the truth is special, so the simplest fit is derived again (a single-input exception no example or question shows)"
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-cap-lin2-k15-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     16,
+     9,
+     144
+    ],
+    [
+     -5,
+     16,
+     -80
+    ],
+    [
+     -5,
+     3,
+     -15
+    ],
+    [
+     -1,
+     13,
+     -13
+    ],
+    [
+     9,
+     11,
+     99
+    ],
+    [
+     -5,
+     -1,
+     5
+    ]
+   ],
+   "wrongProgram": "a * b",
+   "disagreeAt": [
+    -20,
+    -20
+   ],
+   "correct": 150,
+   "why": "no example had a product above 150, so the cap was never reached",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      95,
+      9
+     ],
+     [
+      -84,
+      16
+     ]
+    ],
+    "answers": [
+     [
+      95,
+      9,
+      150
+     ],
+     [
+      -84,
+      16,
+      -1344
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-cap-lin2-k10-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     -5,
+     9,
+     -45
+    ],
+    [
+     3,
+     13,
+     39
+    ],
+    [
+     3,
+     10,
+     30
+    ],
+    [
+     -1,
+     -1,
+     1
+    ]
+   ],
+   "wrongProgram": "a * b",
+   "disagreeAt": [
+    -20,
+    -20
+   ],
+   "correct": 100,
+   "why": "no example had a product above 100, so the cap was never reached",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      95,
+      13
+     ],
+     [
+      -97,
+      9
+     ]
+    ],
+    "answers": [
+     [
+      95,
+      13,
+      100
+     ],
+     [
+      -97,
+      9,
+      -873
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "r2-amb3-backoff-k7-1",
+   "source": "Auditor #491 round 2 (amb3, narrow generator, seed 99)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     7,
+     6,
+     384
+    ],
+    [
+     5,
+     5,
+     180
+    ],
+    [
+     8,
+     1,
+     81
+    ],
+    [
+     8,
+     8,
+     648
+    ]
+   ],
+   "wrongProgram": "b * ((a + 1) * (a + 1))",
+   "disagreeAt": [
+    -20,
+    2
+   ],
+   "correct": 700,
+   "why": "no example reached the cap of 700",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      105,
+      1
+     ],
+     [
+      -92,
+      5
+     ]
+    ],
+    "answers": [
+     [
+      105,
+      1,
+      700
+     ],
+     [
+      -92,
+      5,
+      700
+     ],
+     [
+      8,
+      101,
+      700
+     ],
+     [
+      8,
+      -92,
+      -7452
+     ],
+     [
+      105,
+      -92,
+      -1033712
+     ],
+     [
+      1050,
+      -1010,
+      -1115647010
+     ],
+     [
+      1050,
+      -1,
+      -1104601
+     ]
+    ],
+    "rounds": 4,
+    "after": {
+     "program": "(b * ((a + 1) * (a + 1))) <= 700 ? (b * ((a + 1) * (a + 1))) : 700",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "r1-s1-drop-429",
+   "source": "Auditor #491 round 1 (not blocking)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     500,
+     true
+    ],
+    [
+     502,
+     true
+    ],
+    [
+     503,
+     true
+    ],
+    [
+     504,
+     true
+    ],
+    [
+     550,
+     true
+    ],
+    [
+     510,
+     true
+    ],
+    [
+     520,
+     true
+    ],
+    [
+     530,
+     true
+    ],
+    [
+     540,
+     true
+    ],
+    [
+     560,
+     true
+    ],
+    [
+     570,
+     true
+    ],
+    [
+     580,
+     true
+    ],
+    [
+     590,
+     true
+    ],
+    [
+     438,
+     false
+    ],
+    [
+     446,
+     false
+    ],
+    [
+     454,
+     false
+    ],
+    [
+     462,
+     false
+    ],
+    [
+     470,
+     false
+    ],
+    [
+     478,
+     false
+    ],
+    [
+     486,
+     false
+    ],
+    [
+     494,
+     false
+    ],
+    [
+     599,
+     true
+    ],
+    [
+     428,
+     false
+    ],
+    [
+     430,
+     false
+    ],
+    [
+     465,
+     false
+    ],
+    [
+     499,
+     false
+    ],
+    [
+     600,
+     false
+    ],
+    [
+     700,
+     false
+    ],
+    [
+     100,
+     false
+    ],
+    [
+     200,
+     false
+    ],
+    [
+     204,
+     false
+    ],
+    [
+     301,
+     false
+    ],
+    [
+     400,
+     false
+    ],
+    [
+     403,
+     false
+    ],
+    [
+     404,
+     false
+    ],
+    [
+     0,
+     false
+    ]
+   ],
+   "wrongProgram": "500 <= status && status <= 599",
+   "disagreeAt": [
+    429
+   ],
+   "correct": true,
+   "why": "no example says 429 is true, so no program built from the examples can know it",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "500 <= status && status <= 599",
+    "note": "known limit: the examples alone fit; the review note shows the derived expression and its table, so the missing 429 is visible to the reviewer",
+    "formGate": []
+   }
+  },
+  {
+   "id": "scan-r3-sign",
+   "source": "upstream scan, round 3 (rcbyr/keen-slider sign)",
+   "params": [
+    "x"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     -1,
+     -1
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     10,
+     1
+    ],
+    [
+     99,
+     1
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "wrongProgram": "x <= 1 ? x : 1",
+   "disagreeAt": [
+    -101
+   ],
+   "correct": -1,
+   "why": "nothing below -1 was shown, so the floor at -1 was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "far",
+    "askAt": [
+     [
+      990
+     ]
+    ],
+    "answers": [
+     [
+      990,
+      1
+     ],
+     [
+      -100,
+      -1
+     ],
+     [
+      -101,
+      -1
+     ]
+    ],
+    "rounds": 3,
+    "after": {
+     "program": "((-1) <= x ? x : (-1)) <= 1 ? ((-1) <= x ? x : (-1)) : 1",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "m100-island-hidden-island-t24",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699, task 24 (island/hidden_island, 75 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -65,
+     true
+    ],
+    [
+     -15,
+     true
+    ],
+    [
+     35,
+     true
+    ],
+    [
+     85,
+     true
+    ],
+    [
+     86,
+     false
+    ],
+    [
+     92,
+     false
+    ],
+    [
+     99,
+     false
+    ],
+    [
+     105,
+     false
+    ],
+    [
+     111,
+     false
+    ],
+    [
+     143,
+     false
+    ],
+    [
+     145,
+     false
+    ],
+    [
+     148,
+     false
+    ],
+    [
+     150,
+     false
+    ],
+    [
+     152,
+     false
+    ],
+    [
+     153,
+     true
+    ],
+    [
+     203,
+     true
+    ],
+    [
+     253,
+     true
+    ],
+    [
+     303,
+     true
+    ]
+   ],
+   "wrongProgram": "!(86 <= n && n <= 152)",
+   "disagreeAt": [
+    112
+   ],
+   "correct": true,
+   "why": "no example inside 112..142, so the band there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "region",
+    "askAt": [
+     [
+      127
+     ]
+    ],
+    "answers": [
+     [
+      127,
+      true
+     ],
+     [
+      119,
+      true
+     ],
+     [
+      135,
+      true
+     ],
+     [
+      115,
+      true
+     ],
+     [
+      139,
+      true
+     ],
+     [
+      113,
+      true
+     ],
+     [
+      141,
+      true
+     ],
+     [
+      112,
+      true
+     ],
+     [
+      142,
+      true
+     ],
+     [
+      95,
+      false
+     ],
+     [
+      89,
+      false
+     ],
+     [
+      102,
+      false
+     ],
+     [
+      108,
+      false
+     ],
+     [
+      123,
+      true
+     ],
+     [
+      131,
+      true
+     ]
+    ],
+    "rounds": 8,
+    "after": {
+     "program": "!((86 <= n && n <= 111) || (143 <= n && n <= 152))",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "m100-cap-lin2-inside",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699 (cap_lin2/sparse after the asks, 7 like it)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     -3,
+     70,
+     -210
+    ],
+    [
+     2,
+     2,
+     4
+    ],
+    [
+     1,
+     -90,
+     -90
+    ],
+    [
+     7,
+     9,
+     63
+    ],
+    [
+     97,
+     9,
+     873
+    ],
+    [
+     -93,
+     70,
+     -6510
+    ]
+   ],
+   "wrongProgram": "a * b",
+   "disagreeAt": [
+    -31,
+    -30
+   ],
+   "correct": 916,
+   "why": "a product above 916 lies inside the examples' box, but no example shows one",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      -93,
+      -90
+     ]
+    ],
+    "answers": [
+     [
+      -93,
+      -90,
+      916
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "m100-cond-suffix-missing-empty",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699 (cond_suffix/missing_empty, 79 like it, and cond_suffix/sparse, 6)",
+   "params": [
+    "message",
+    "causeCode"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "",
+     "UND_ERR_SOCKET",
+     "HOST_DOWN::cause=UND_ERR_SOCKET"
+    ],
+    [
+     "",
+     " err 42 ",
+     "HOST_DOWN::cause= err 42 "
+    ],
+    [
+     "x9",
+     "UND_ERR_SOCKET",
+     "HOST_DOWN:x9:cause=UND_ERR_SOCKET"
+    ],
+    [
+     "R2_GET_500",
+     "ECONNRESET",
+     "HOST_DOWN:R2_GET_500:cause=ECONNRESET"
+    ],
+    [
+     " fetch failed ",
+     "ETIMEDOUT",
+     "HOST_DOWN: fetch failed :cause=ETIMEDOUT"
+    ],
+    [
+     "",
+     "ETIMEDOUT",
+     "HOST_DOWN::cause=ETIMEDOUT"
+    ],
+    [
+     "x9",
+     "ETIMEDOUT",
+     "HOST_DOWN:x9:cause=ETIMEDOUT"
+    ]
+   ],
+   "wrongProgram": "\"HOST_DOWN:\" + (message + (\":cause=\" + causeCode))",
+   "disagreeAt": [
+    "x9",
+    ""
+   ],
+   "correct": "HOST_DOWN:x9",
+   "why": "no example has an empty causeCode, so the suffix was assumed unconditional",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "chars",
+    "askAt": [
+     [
+      "",
+      ""
+     ]
+    ],
+    "answers": [
+     [
+      "",
+      "",
+      "HOST_DOWN:"
+     ],
+     [
+      "x9",
+      "",
+      "HOST_DOWN:x9"
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "program": "\"HOST_DOWN:\" + (message + (((causeCode === \"\") ? causeCode : \":cause=\") + causeCode))",
+     "rightOnGrid": true,
+     "formGate": [
+      "ternary"
+     ]
+    }
+   }
+  },
+  {
+   "id": "m100-floor-clamp-past",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699 (floor_clamp, cap_lin2 past the examples, and their amb3 after the asks: 79 + 87 + 38)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     57,
+     57
+    ],
+    [
+     107,
+     107
+    ],
+    [
+     157,
+     157
+    ],
+    [
+     -143,
+     -143
+    ],
+    [
+     7,
+     7
+    ]
+   ],
+   "wrongProgram": "n",
+   "disagreeAt": [
+    208
+   ],
+   "correct": 207,
+   "why": "every example is below the cap at 207, so nothing shows it",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "n",
+    "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there)",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m100-floor-unshown",
+   "source": "m100 derive-practice (seed 100) vs m99 8004623 (floor_clamp, 76 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     61,
+     61
+    ],
+    [
+     62,
+     62
+    ],
+    [
+     112,
+     112
+    ],
+    [
+     162,
+     162
+    ],
+    [
+     212,
+     212
+    ]
+   ],
+   "wrongProgram": "n",
+   "disagreeAt": [
+    0
+   ],
+   "correct": 61,
+   "why": "every example is at or above the floor at 61, so nothing shows it",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      0
+     ]
+    ],
+    "answers": [
+     [
+      0,
+      61
+     ],
+     [
+      -39,
+      61
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "program": "61 <= n ? n : 61",
+     "rightOnGrid": true,
+     "formGate": []
+    }
+   }
+  },
+  {
+   "id": "m100-kind-floor-clamp-unwitnessed-cap-k-p0-p0-k",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 33936 (floor_clamp/unwitnessed_cap | K <= p0 ? p0 : K, 194 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     5,
+     5
+    ],
+    [
+     45,
+     45
+    ],
+    [
+     85,
+     85
+    ],
+    [
+     124,
+     124
+    ],
+    [
+     -46,
+     4
+    ],
+    [
+     -146,
+     4
+    ],
+    [
+     3,
+     4
+    ]
+   ],
+   "wrongProgram": "4 <= n ? n : 4",
+   "disagreeAt": [
+    165
+   ],
+   "correct": 164,
+   "why": "no example went above the cap 164",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "4 <= n ? n : 4",
+    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m100-kind-floor-clamp-sparse-k-p0-p0-k",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 25685 (floor_clamp/sparse | K <= p0 ? p0 : K, 7 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     335,
+     335
+    ],
+    [
+     191,
+     191
+    ],
+    [
+     -4,
+     46
+    ],
+    [
+     -54,
+     46
+    ]
+   ],
+   "wrongProgram": "46 <= n ? n : 46",
+   "disagreeAt": [
+    336
+   ],
+   "correct": 335,
+   "why": "a random handful of the examples, none above the cap 335",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "46 <= n ? n : 46",
+    "note": "known limit: a cap past every example; no example-only check can see it, and the review note's far-probe table shows the derived value out there",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m100-kind-eq-or-ge-sparse-k-p0",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 14322 (eq_or_ge/sparse | K <= p0, 1 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     537,
+     true
+    ],
+    [
+     487,
+     true
+    ],
+    [
+     339,
+     false
+    ],
+    [
+     389,
+     false
+    ],
+    [
+     390,
+     true
+    ],
+    [
+     239,
+     false
+    ],
+    [
+     437,
+     true
+    ]
+   ],
+   "wrongProgram": "390 <= n",
+   "disagreeAt": [
+    391
+   ],
+   "correct": false,
+   "why": "a random handful of the examples: nothing between 390 and 437 was shown",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "390 <= n",
+    "note": "known limit: the false band 391 to 436 lies past the program's last edge between examples under DERIVE_FAR (100) apart; holding open stretches to the bounded-region eighth refuses S1 and most fixtures (tried in round 3 and reverted), so the review note's table is the check here",
+    "formGate": []
+   }
+  },
+  {
+   "id": "m100-kind-s1-shape-sparse-k-p0",
+   "source": "m100 derive-practice CI run 39927392501 (seed 798586860, engine 365cf3a), task 34225 (s1_shape/sparse | K <= p0, 1 like it)",
+   "params": [
+    "status"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     284,
+     false
+    ],
+    [
+     359,
+     false
+    ],
+    [
+     417,
+     true
+    ],
+    [
+     389,
+     true
+    ],
+    [
+     360,
+     true
+    ],
+    [
+     474,
+     true
+    ],
+    [
+     182,
+     false
+    ],
+    [
+     282,
+     false
+    ]
+   ],
+   "wrongProgram": "360 <= status",
+   "disagreeAt": [
+    283
+   ],
+   "correct": true,
+   "why": "a random handful of the examples: 283 and everything past 474 unshown",
+   "disclosed": "disclosed limit, accepted by Auditor (#491 round 3 ruling on 6f1ea5e)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "360 <= status",
+    "note": "known limit: 283 is a single-input exception between the examples 282 and 284 (like S1 without 429), and the true band ends at the largest example 474, a cap past every example",
+    "formGate": []
+   }
+  },
+  {
+   "id": "seed101-island-hidden-island-t465",
+   "source": "Auditor #491 round 3 (m100 derive-practice seed 101 vs m99 6f1ea5e), task 465 (island/hidden_island)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -46,
+     true
+    ],
+    [
+     4,
+     true
+    ],
+    [
+     54,
+     true
+    ],
+    [
+     104,
+     true
+    ],
+    [
+     105,
+     false
+    ],
+    [
+     114,
+     false
+    ],
+    [
+     122,
+     false
+    ],
+    [
+     131,
+     false
+    ],
+    [
+     139,
+     false
+    ],
+    [
+     145,
+     false
+    ],
+    [
+     154,
+     false
+    ],
+    [
+     163,
+     false
+    ],
+    [
+     171,
+     false
+    ],
+    [
+     180,
+     false
+    ],
+    [
+     181,
+     true
+    ],
+    [
+     231,
+     true
+    ],
+    [
+     281,
+     true
+    ],
+    [
+     331,
+     true
+    ]
+   ],
+   "wrongProgram": "!(105 <= n && n <= 180)",
+   "disagreeAt": [
+    140
+   ],
+   "correct": true,
+   "why": "the false examples step 8 or 9 apart and skip 140..144, so the true band there was never seen",
+   "disclosed": "disclosed limit (Auditor #491 round 3: seed 101, t465); not counted against seed 100's residual",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "!(105 <= n && n <= 180)",
+    "note": "known limit: a band narrower than the gaps between the examples (140..144 between 139 and 145) is invisible to them; no example-only check can see it, and the review note shows the derived expression",
+    "formGate": []
+   }
+  },
+  {
+   "id": "scan-r4-is-power-of-two",
+   "source": "upstream scan, round 4 (horizon-games/three-text-renderer@3e51530 isPowerOfTwo, MIT; also misode/deepslate@c33b4a6)",
+   "params": [
+    "x"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -1,
+     false
+    ],
+    [
+     0,
+     false
+    ],
+    [
+     2,
+     true
+    ],
+    [
+     10,
+     false
+    ],
+    [
+     100,
+     false
+    ],
+    [
+     1000,
+     false
+    ],
+    [
+     1,
+     true
+    ],
+    [
+     6,
+     false
+    ],
+    [
+     4,
+     true
+    ],
+    [
+     5,
+     false
+    ],
+    [
+     -99,
+     false
+    ],
+    [
+     550,
+     false
+    ],
+    [
+     325,
+     false
+    ],
+    [
+     775,
+     false
+    ],
+    [
+     212,
+     false
+    ],
+    [
+     437,
+     false
+    ],
+    [
+     662,
+     false
+    ],
+    [
+     887,
+     false
+    ],
+    [
+     268,
+     false
+    ],
+    [
+     493,
+     false
+    ],
+    [
+     718,
+     false
+    ],
+    [
+     943,
+     false
+    ],
+    [
+     156,
+     false
+    ],
+    [
+     381,
+     false
+    ],
+    [
+     606,
+     false
+    ],
+    [
+     831,
+     false
+    ]
+   ],
+   "wrongProgram": "1 <= x && x <= 4",
+   "disagreeAt": [
+    8
+   ],
+   "correct": true,
+   "why": "the powers of two above 4 (8, 16, ..., 512) are isolated true points between the examples, none of them shown",
+   "disclosed": "disclosed limit (round 4 upstream scan); excluded from the evidence (held-out wrong)",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "1 <= x && x <= 4",
+    "note": "known limit: isolated true points between the examples (the hidden-island class); wrong on 9 held-out inputs of the scan's grid; the review note shows the derived expression",
+    "formGate": []
+   }
+  }
+ ]
+}

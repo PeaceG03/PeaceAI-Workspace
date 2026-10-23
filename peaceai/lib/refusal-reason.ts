@@ -53,11 +53,58 @@ export function formatRefusals(list: readonly RuleRefusal[]): string {
   return cleanRefusals(list).map((r) => `${r.id}=${r.reason}`).join("; ");
 }
 
+/**
+ * M99 round 3 (Peace: rule programs out by asking, not only refusing). A DERIVE refusal's questions travel as ONE
+ * line, `fn(arg,arg)=answer|answer; ...`: the function name passes allowedName, every argument and answer is a safe
+ * integer or true / false (a question with a string in it is dropped: issue text is never echoed), at most 3
+ * questions, 2 to 4 answers each. Re-validated on the comment side; the comment words them in plain language.
+ */
+const Q_VALUE = "(?:-?(?:0|[1-9]\\d{0,14})|true|false)";
+const Q_ENTRY = new RegExp(`^([a-z][a-zA-Z]{0,23})\\((${Q_VALUE}(?:,${Q_VALUE}){0,4})\\)=(${Q_VALUE}(?:\\|${Q_VALUE}){1,3})$`);
+const MAX_QUESTIONS = 3;
+type QValue = number | string | boolean;
+const qValue = (v: QValue): string | null => (typeof v === "boolean" ? String(v) : typeof v === "number" && Number.isSafeInteger(v) && Math.abs(v) < 1e15 ? String(v) : null);
+export function formatDeriveQuestions(fn: string, questions: readonly { at: readonly QValue[]; answers: readonly QValue[] }[]): string {
+  if (!allowedName(fn)) return "";
+  const out: string[] = [];
+  for (const q of questions) {
+    const at = q.at.map(qValue), ans = q.answers.map(qValue);
+    if (at.some((v) => v === null) || ans.some((v) => v === null) || ans.length < 2 || ans.length > 4 || at.length === 0 || at.length > 5) continue;
+    const e = `${fn}(${at.join(",")})=${ans.join("|")}`;
+    if (Q_ENTRY.test(e) && !out.includes(e)) out.push(e);
+    if (out.length >= MAX_QUESTIONS) break;
+  }
+  return out.join("; ");
+}
+/** True when `line` is exactly what formatDeriveQuestions emits. */
+export function validQuestionLine(line: string): boolean {
+  if (!line || line.length > 400) return false;
+  const es = line.split("; ");
+  return es.length <= MAX_QUESTIONS && es.every((e) => Q_ENTRY.test(e) && allowedName(Q_ENTRY.exec(e)![1]!));
+}
+/** The questions in plain words (no code): "What should f(20) give? One program that fits every example gives true, another gives false." */
+export function questionWords(line: string): string {
+  if (!validQuestionLine(line)) return "";
+  const qs = line.split("; ").map((e) => {
+    const m = Q_ENTRY.exec(e)!;
+    const call = `${m[1]}(${m[2]!.split(",").join(", ")})`, ans = m[3]!.split("|");
+    const says = ans.length === 2 ? `one program that fits every example gives ${ans[0]}, another gives ${ans[1]}` : `programs that fit every example give ${ans.slice(0, -1).join(", ")} or ${ans[ans.length - 1]}`;
+    return `What should ${call} give? ${says[0]!.toUpperCase()}${says.slice(1)}.`;
+  });
+  return `The examples do not yet tell these programs apart; adding the right result for each input below as a new example tells PeaceAI which one you mean: ${qs.join(" ")}`;
+}
+
 /** The issue comment body when the approved rules produced no candidate. */
 export const NO_CANDIDATE_TEXT = "PeaceAI: no candidates generated for this task. The attempt was recorded. Rephrase the issue, then remove `peaceai:failed` to retry.";
-export function noCandidateComment(line: string): string {
+export function noCandidateComment(line: string, questions = ""): string {
   const safe = validLine(line) ? line : "";
   if (!safe) return NO_CANDIDATE_TEXT;
+  // M99 round 3: a DERIVE refusal's questions, in plain words, when they pass validation and the leak scan.
+  const asked = questionWords(questions);
+  if (asked) {
+    const withQ = `PeaceAI: no candidates generated for this task. Approved rules that matched the task refused it: \`${safe}\`. ${asked} The attempt was recorded. Add the examples (or rephrase the issue), then remove \`peaceai:failed\` to retry.`;
+    if (!scanText(withQ).length) return withQ;
+  }
   const body = `PeaceAI: no candidates generated for this task. Approved rules that matched the task refused it: \`${safe}\`. The attempt was recorded. Rephrase the issue, then remove \`peaceai:failed\` to retry.`;
   // The full body goes through the leak scanner; anything flagged posts the fixed text without the reason.
   return scanText(body).length ? NO_CANDIDATE_TEXT : body;
