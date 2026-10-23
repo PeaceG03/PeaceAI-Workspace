@@ -28,7 +28,7 @@ test("mistakes ledger: shape, and every Auditor counterexample so far is in it",
   assert.equal(LEDGER.schema, "peaceai-derive-mistakes:v1");
   const ids = LEDGER.entries.map((e) => e.id);
   assert.equal(new Set(ids).size, ids.length);
-  for (const id of ["r1-s1-without-600", "r1-s1-drop-429", "r2-hidden-island", "r2-unwitnessed-cap", "r2-amb3-backoff-k7-1"]) assert.ok(ids.includes(id), id);
+  for (const id of ["r1-s1-without-600", "r1-s1-drop-429", "r2-hidden-island", "r2-unwitnessed-cap", "r2-amb3-backoff-k7-1", "m102-order-hidden-max", "m102-order-hidden-less"]) assert.ok(ids.includes(id), id);
   assert.equal(ids.filter((i) => i.startsWith("r2-amb3-if-eq-")).length, 7); // Auditor: if-eq 40 / 7 accepted / 7 wrong
   assert.equal(ids.filter((i) => i.startsWith("r2-amb3-cap-lin2-")).length, 2); // cap-lin2 40 / 4 / 2
   assert.equal(ids.filter((i) => i.startsWith("r2-amb3-backoff-")).length, 1); // backoff 40 / 11 / 1

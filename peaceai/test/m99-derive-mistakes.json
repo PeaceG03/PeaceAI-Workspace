@@ -2842,6 +2842,201 @@
     "program": "host + \":\" + (\"\" + port)",
     "note": "known limit: a special case on one character (an escape or an includes test) that no example and no question shows; the chars gate asks for punctuation at one probe value, not at every character (the m101 miner's char probes keep such functions out of the evidence)"
    }
+  },
+  {
+   "id": "m102-order-hidden-max",
+   "source": "m102 practice seed 100 #809 (if_chain/sparse, truth x < y ? y : x), engine 1097e56",
+   "params": [
+    "x",
+    "y"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "trail ",
+     "Zz 9",
+     "trail "
+    ],
+    [
+     "Zz 9",
+     "",
+     "Zz 9"
+    ],
+    [
+     "x.y",
+     "2026-10-23",
+     "x.y"
+    ],
+    [
+     "9",
+     "10",
+     "9"
+    ],
+    [
+     "",
+     "",
+     ""
+    ],
+    [
+     "ab",
+     "10",
+     "ab"
+    ],
+    [
+     "b",
+     "aa",
+     "b"
+    ],
+    [
+     "b",
+     "Hello World",
+     "b"
+    ]
+   ],
+   "wrongProgram": "x",
+   "disagreeAt": [
+    "",
+    "aa"
+   ],
+   "correct": "aa",
+   "why": "every example had y before x or equal (code-unit order), so the branch returning y was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "order",
+    "askAt": [
+     [
+      "a",
+      "b"
+     ]
+    ],
+    "answers": [
+     [
+      "a",
+      "b",
+      "b"
+     ],
+     [
+      "trail ",
+      " Ab 9. ",
+      "trail "
+     ],
+     [
+      "ac",
+      "ab",
+      "ac"
+     ]
+    ],
+    "rounds": 3,
+    "after": {
+     "program": "(x <= y) ? y : x",
+     "rightOnGrid": true
+    }
+   }
+  },
+  {
+   "id": "m102-order-hidden-less",
+   "source": "m102 practice seed 100 #1343 (if_chain/sparse, truth a < b ? 1 : a > b ? -1 : 0; the examples after the ask loop at 1097e56)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     "Zz 9",
+     "",
+     -1
+    ],
+    [
+     "aa",
+     "aa",
+     0
+    ],
+    [
+     "MiXeD",
+     "2026-09-30",
+     -1
+    ],
+    [
+     "9",
+     "10",
+     -1
+    ],
+    [
+     "ab",
+     "10",
+     -1
+    ],
+    [
+     "",
+     "",
+     0
+    ],
+    [
+     " Ab 9. ",
+     "",
+     -1
+    ],
+    [
+     "Zz 9",
+     " Ab 9. ",
+     -1
+    ],
+    [
+     "a",
+     "B",
+     -1
+    ],
+    [
+     "ac",
+     "ab",
+     -1
+    ]
+   ],
+   "wrongProgram": "(a <= b) ? 0 : (-1)",
+   "disagreeAt": [
+    "",
+    "B"
+   ],
+   "correct": 1,
+   "why": "no example had a before b, so the result 1 there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "order",
+    "askAt": [
+     [
+      "a",
+      "b"
+     ]
+    ],
+    "answers": [
+     [
+      "a",
+      "b",
+      1
+     ],
+     [
+      "",
+      "a",
+      1
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "program": "(a <= b) ? ((b <= a) ? 0 : 1) : (-1)",
+     "rightOnGrid": true
+    }
+   }
   }
  ]
 }
