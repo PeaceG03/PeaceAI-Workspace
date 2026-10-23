@@ -19,7 +19,9 @@ import { parseMarker } from "../lib/propose.ts";
 const listPath = resolve(process.env.PEACEAI_APPROVED_LIST ?? "peaceai/rules/approved.json");
 const rulesDir = resolve(process.env.PEACEAI_RULES_DIR ?? "peaceai/rules/learned");
 const gh = process.env.PEACEAI_GH ?? "gh";
-const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+// maxBuffer: a branch compare carries every file's patch; past the 1 MiB default execFileSync throws (ENOBUFS) and
+// the branch check failed closed on a large but legitimate diff (#491 round 4: 1.1 MB). Still fails closed on any gh error.
+const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 }));
 
 let failures = 0;
 const fail = (id: string, why: string) => { failures += 1; console.log(`APPROVED LIST FAIL ${id}: ${why}`); };
