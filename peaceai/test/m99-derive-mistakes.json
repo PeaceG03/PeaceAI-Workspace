@@ -176,9 +176,7 @@
     "after": {
      "program": "(status === 429) || (500 <= status && status <= 599)",
      "rightOnGrid": true,
-     "formGate": [
-      "eq"
-     ]
+     "formGate": []
     }
    }
   },
@@ -1981,8 +1979,7 @@
      "program": "\"HOST_DOWN:\" + (message + (((causeCode === \"\") ? causeCode : \":cause=\") + causeCode))",
      "rightOnGrid": true,
      "formGate": [
-      "ternary",
-      "eq"
+      "ternary"
      ]
     }
    }

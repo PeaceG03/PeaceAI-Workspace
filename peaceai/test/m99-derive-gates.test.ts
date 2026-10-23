@@ -278,11 +278,11 @@ test("review note: a DERIVE candidate shows its expression and far-probe outputs
   assert.ok("task" in p);
   const b = buildDeriveEdit(PARAMS, p.task, FILES);
   assert.ok("edit" in b);
-  // S1 itself is refused by the form gate (eq): no edit, so no candidate to note.
+  // S1 itself (eq, ||, range; every form >= 10 upstream entries since round 4) is emitted too.
   const p1 = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1_BODY } as never));
   assert.ok("task" in p1);
   const b1 = buildDeriveEdit(PARAMS, p1.task, FILES);
-  assert.ok(!("edit" in b1) && b1.reason === "derive_unevidenced_form: eq", JSON.stringify(b1));
+  assert.ok("edit" in b1 && b1.edit.content.includes("return (status === 429) || (500 <= status && status <= 599);"), JSON.stringify(b1));
   const files = [{ path: b.edit.path, content: b.edit.content }, ...b.edit.extra];
   const note = deriveReviewNote(asDiff(files));
   assert.ok(note);

@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "ed11078f8470eab513a877da3b2acb107c1da7dc563adfd82387af62be3b7a6d";
+const SHA = "799182d79506931e78a232b5729121a339c0aa584dd008479d5aacd9869f7cc1";
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -77,14 +77,15 @@ test("spec: valid, hash pinned, kind wired; any approved.json entry pins the exa
   for (const p of ["peaceai/lib/derive.ts", "peaceai/lib/learned-derive.ts", "peaceai/spec/derive-from-behavior-v1.md", "peaceai/test/m99-derive-from-behavior.test.ts", "peaceai/test/fixtures/m99-dfb/x.txt", "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json", "peaceai/rules/learned/public-derive-from-behavior-v1.json", "peaceai/rules/proposals/public-derive-from-behavior-v1.json", "peaceai/bin/test-candidates.ts", "peaceai/lib/learned.ts", "peaceai/test/m99-derive-mistakes.json", "peaceai/test/m99-derive-mistakes.test.ts"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
 });
 
-test("S1-S3 (scanner refile): S2 derives; S1 and S3 refuse honestly (a form without 10 upstream examples, Auditor round 3)", () => {
+test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (a form without 10 upstream examples, Auditor round 3)", () => {
   // Auditor ruling on 6f1ea5e: no program using a form with fewer than DERIVE_FORM_BAR replaying upstream evidence
-  // entries is emitted. S1 needs eq (=== 429) and S3 needs a general if and eq (causeCode === ""): refused, by name.
+  // entries is emitted. Round 4 mining brought eq to >= 10 entries, so S1 (eq, ||, range) derives; S3 needs a general
+  // if (ternary: no upstream entry) and is refused, by name.
   const r1 = run(S1), r3 = run(S3);
-  assert.equal(r1.e, null);
-  assert.equal(r1.why, "derive_unevidenced_form: eq");
+  assert.equal(r1.why ?? null, null);
+  assert.match(r1.e!.content, /return \(status === 429\) \|\| \(500 <= status && status <= 599\);/);
   assert.equal(r3.e, null);
-  assert.equal(r3.why, "derive_unevidenced_form: ternary,eq");
+  assert.equal(r3.why, "derive_unevidenced_form: ternary");
   // The search and the witness gates alone still find the programs (so the refusal is the form gate, nothing else).
   const c1 = cand(S1), c3 = cand(S3);
   assert.ok(c1.ok && c3.ok);
@@ -430,8 +431,8 @@ test("evidence by form (#491 round 3, Auditor ruling): the recorded forms replay
   for (const f of DERIVE_FORMS) assert.deepEqual(formsOf(FORM_SAMPLE[f]), [f], f);
   for (const f of allowed) assert.ok(counts[f] >= DERIVE_FORM_BAR, `${f}: ${counts[f]}`);
   for (const f of DERIVE_FORMS) if (counts[f] < DERIVE_FORM_BAR) assert.deepEqual(unevidencedForms(FORM_SAMPLE[f]), [f], f);
-  // Pinned so a change in what PeaceAI may emit is a visible diff (round 3 mining: eq 9 < 10, no general if upstream).
-  assert.deepEqual(allowed, ["cap", "strcat", "or", "range", "square"], JSON.stringify(counts));
+  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; no general if upstream).
+  assert.deepEqual(allowed, ["cap", "strcat", "eq", "or", "range", "square"], JSON.stringify(counts));
 });
 test("form gate: boundary at the bar, fail closed on a bad evidence file, refused by name through deriveProgram", () => {
   const zero = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;
@@ -449,16 +450,22 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
   assert.equal(evidenceFormCounts(many(["or", "or"])).or, DERIVE_FORM_BAR, "an entry counts once per form");
   // A square of a subexpression and a square of a parameter are both the square form.
   assert.deepEqual(formsOf({ op: "mul", a: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } }, b: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } } }), ["square"]);
-  // Through deriveProgram: an equality-only behavior (eq: 9 entries) is refused by name, with the count in the detail.
-  const ex = [-5, 0, 3, 4, 5, 9, 100, -100, 200, 6, 2].map((n) => ({ args: [n], out: n === 4 }));
-  const c = deriveCandidate({ params: [{ name: "n", type: "number" }], ret: "boolean", examples: ex });
-  assert.ok(c.ok, "the search alone fits n === 4");
-  const r = deriveProgram({ params: [{ name: "n", type: "number" }], ret: "boolean", examples: ex });
+  // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted; a general if (ternary: no upstream
+  // entry) is refused by name, with the count in the detail.
+  const N = [{ name: "n", type: "number" as const }];
+  const grid = [-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50];
+  const eqEx = [-5, 0, 3, 4, 5, 9, 100, -100, 200, 6, 2].map((n) => ({ args: [n], out: n === 4 }));
+  const e = deriveProgram({ params: N, ret: "boolean", examples: eqEx });
+  assert.ok(e.ok && e.fit.expr === "n === 4", JSON.stringify(e));
+  const ex = grid.map((n) => ({ args: [n], out: n === 4 ? 1 : 0 }));
+  const c = deriveCandidate({ params: N, ret: "number", examples: ex });
+  assert.ok(c.ok && c.fit.expr === "(n === 4) ? 1 : 0", "the search alone fits (n === 4) ? 1 : 0");
+  const r = deriveProgram({ params: N, ret: "number", examples: ex });
   assert.equal(r.ok, false);
   if (!r.ok) {
     assert.equal(r.reason, "derive_unevidenced_form");
-    assert.deepEqual(r.forms, ["eq"]);
-    assert.match(r.detail!, new RegExp(`eq form .*; ${evidenceFormCounts().eq} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
+    assert.deepEqual(r.forms, ["ternary"]);
+    assert.match(r.detail!, new RegExp(`ternary form .*; ${evidenceFormCounts().ternary} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
   }
 });
 test("form gate: nothing that emits code calls deriveCandidate (replay / mining only)", () => {

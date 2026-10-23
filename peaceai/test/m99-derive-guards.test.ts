@@ -172,10 +172,13 @@ function jobA(body: string) {
 
 test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comments, indented code) refuses the derive rule; the clean issue makes a candidate", () => {
   const clean = jobA(S1R);
-  // S1 itself: no candidate, refused by name (the form gate).
-  const eq = jobA(S1);
-  assert.equal(eq.n, 0, eq.stdout);
-  assert.match(eq.stdout, new RegExp(`learned refusals: ${SPEC.id}=derive_unevidenced_form: eq`));
+  // A general if (ternary: no upstream evidence entry): no candidate, refused by name (the form gate).
+  const TERNARY = `Add a new module \`src/four-flag.ts\` exporting \`fourFlag(n: number): number\`.\n\nBehavior: 1 for 4, otherwise 0.\n\nExamples:\n${[-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50].map((n) => `- ${n} gives ${n === 4 ? 1 : 0}`).join("\n")}`;
+  const tern = jobA(TERNARY);
+  assert.equal(tern.n, 0, tern.stdout);
+  assert.match(tern.stdout, new RegExp(`learned refusals: ${SPEC.id}=derive_unevidenced_form: ternary`));
+  // S1 itself (eq, ||, range: each >= 10 upstream entries since round 4): a candidate.
+  assert.equal(jobA(S1).n, 1);
   assert.equal(clean.n, 1, clean.stdout);
   for (const [label, extra] of [
     ["backtick fence", "\n\n```ts\nreturn status === 429 || (500 <= status && status <= 599);\n```\n"],

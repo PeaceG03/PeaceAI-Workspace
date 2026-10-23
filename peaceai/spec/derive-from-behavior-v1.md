@@ -139,10 +139,10 @@ counts equal the replayed ones, requires every emittable form to have at least 1
 Only the evidence replay and the miners call `deriveCandidate`; nothing in peaceai/lib or peaceai/bin besides
 derive.ts names it (tested).
 
-Entries per form (103 entries, 82 repos): cap 13, ternary 0, strcat 12, eq 9, or 11, range 42, square 25. So cap,
-strcat, or, range and square are emitted; eq and ternary are refused. S1 (`(status === 429) || ...`) is
-`derive_unevidenced_form: eq`, S3 (an `if` on `causeCode === ""`) is `derive_unevidenced_form: ternary,eq`, and S2
-(a cap of a square) derives.
+Entries per form (111 entries, 89 repos): cap 13, ternary 0, strcat 12, eq 17, or 13, range 42, square 25. So cap,
+strcat, eq, or, range and square are emitted; ternary (a general `if`: no upstream entry) is refused. S1
+(`(status === 429) || (500 <= status && status <= 599)`) and S2 (a cap of a square) derive; S3 (an `if` on
+`causeCode === ""`) is `derive_unevidenced_form: ternary`.
 
 ## Asking, not only refusing (round 3, Peace)
 

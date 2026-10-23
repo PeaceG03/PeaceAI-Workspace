@@ -15294,6 +15294,1419 @@
    "forms": [
     "cap"
    ]
+  },
+  {
+   "repo": "easylogic/sapa",
+   "commit": "47e721a8015f8dda5cba79955450cdff23a7a5d8",
+   "module": "src/functions/func.ts",
+   "fn": "isZero",
+   "params": [
+    {
+     "name": "num",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      -100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": false
+    }
+   ],
+   "expr": "num === 0",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function isZero(num: number) {\n    return num === 0;\n}",
+   "path": "src/functions/func.ts",
+   "fileBlob": "dcd8ac691cd053896350b23e3d918e17b33ee84d",
+   "sha256": "9ba34d93535d8aa3da87b2f707b661681121b5e34951b002777a02e5d188c1a9",
+   "fixture": "peaceai/test/fixtures/m99-dfb/easylogic__sapa-dcd8ac691cd0.txt",
+   "license": "MIT",
+   "licenseSha256": "1b0ddd1ca9cd41f2eb07d5bed065c6c9883f83839fcc9dd65adc88dbd3efec6a",
+   "addedForGates": [
+    "edge: (1) gives false",
+    "far: (-100) gives false",
+    "region: (550) gives false",
+    "region: (325) gives false",
+    "region: (775) gives false",
+    "region: (212) gives false",
+    "region: (437) gives false",
+    "region: (662) gives false",
+    "region: (887) gives false",
+    "region: (268) gives false",
+    "region: (493) gives false",
+    "region: (718) gives false",
+    "region: (943) gives false",
+    "region: (156) gives false",
+    "region: (381) gives false",
+    "region: (606) gives false",
+    "region: (831) gives false"
+   ],
+   "forms": [
+    "eq"
+   ]
+  },
+  {
+   "repo": "jrmybtlr/usemods",
+   "commit": "6487b4172ecfe6c10ef15da8b1c154e262a0c8ac",
+   "module": "src/validators.ts",
+   "fn": "isZero",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      -100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": false
+    }
+   ],
+   "expr": "value === 0",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function isZero(value: number): boolean {\n  return value === 0\n}",
+   "path": "src/validators.ts",
+   "fileBlob": "a56ecfd03eeb3a51f85b101278c593e35d842059",
+   "sha256": "0fae20dbc34237f1b2d7a3fd532114663d56283a54ee1147e7f67035a2ec74c6",
+   "fixture": "peaceai/test/fixtures/m99-dfb/jrmybtlr__usemods-a56ecfd03eeb.txt",
+   "license": "MIT",
+   "licenseSha256": "ca7b5583c51da3d283623e4a2df42e1169524c70bead6ce1d97398eec23e73d7",
+   "addedForGates": [
+    "edge: (1) gives false",
+    "far: (-100) gives false",
+    "region: (550) gives false",
+    "region: (325) gives false",
+    "region: (775) gives false",
+    "region: (212) gives false",
+    "region: (437) gives false",
+    "region: (662) gives false",
+    "region: (887) gives false",
+    "region: (268) gives false",
+    "region: (493) gives false",
+    "region: (718) gives false",
+    "region: (943) gives false",
+    "region: (156) gives false",
+    "region: (381) gives false",
+    "region: (606) gives false",
+    "region: (831) gives false"
+   ],
+   "forms": [
+    "eq"
+   ]
+  },
+  {
+   "repo": "wuhonglei/chat-agent",
+   "commit": "03ad7d4a877260184f74285b12d83011a9d2f117",
+   "module": "frontend/src/utils/login.ts",
+   "fn": "isUnAuthorized",
+   "params": [
+    {
+     "name": "status",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      400
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      401
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      402
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      250
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      175
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      701
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      551
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      850
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      626
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      925
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      476
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": false
+    }
+   ],
+   "expr": "status === 401",
+   "heldOut": {
+    "right": 2382,
+    "wrong": 0
+   },
+   "upstream": "function isUnAuthorized(status: number): boolean {\n  return status === 401;\n}",
+   "path": "frontend/src/utils/login.ts",
+   "fileBlob": "a13e8e7e38a20760c3c9092a85b068e2a0b01620",
+   "sha256": "a35c4db61739101935a1a0d53c6fa3db043c8fad3db8d4c73d75b85f25126c87",
+   "fixture": "peaceai/test/fixtures/m99-dfb/wuhonglei__chat-agent-a13e8e7e38a2.txt",
+   "license": "MIT",
+   "licenseSha256": "cd887e0598d616afe01e7210f53ab473836a1cf7dfa56d7ed8625604dfa1bb38",
+   "addedForGates": [
+    "edge: (402) gives false",
+    "region: (250) gives false",
+    "region: (175) gives false",
+    "region: (325) gives false",
+    "region: (701) gives false",
+    "region: (551) gives false",
+    "region: (850) gives false",
+    "region: (626) gives false",
+    "region: (925) gives false",
+    "region: (476) gives false",
+    "region: (775) gives false"
+   ],
+   "forms": [
+    "eq"
+   ]
+  },
+  {
+   "repo": "moo-ahmad/FarmOS-Mobile",
+   "commit": "24a5bc39f2e227dfcf374359e12ae551820630fd",
+   "module": "src/lib/http/policy.ts",
+   "fn": "isUnauthorized",
+   "params": [
+    {
+     "name": "status",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      400
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      401
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      402
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      250
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      175
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      701
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      551
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      850
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      626
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      925
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      476
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": false
+    }
+   ],
+   "expr": "status === 401",
+   "heldOut": {
+    "right": 2382,
+    "wrong": 0
+   },
+   "upstream": "function isUnauthorized(status: number): boolean {\n  return status === 401;\n}",
+   "path": "src/lib/http/policy.ts",
+   "fileBlob": "5138732dae3f6439b5160e8830436bcaf821530c",
+   "sha256": "2ac03d42e908b199ccbb9bb66ab144135fa78e1cb6451a30c411f5dea6389848",
+   "fixture": "peaceai/test/fixtures/m99-dfb/moo-ahmad__FarmOS-Mobile-5138732dae3f.txt",
+   "license": "MIT",
+   "licenseSha256": "371567d5d8999eeffba61ddbcb60ffbe4f25c3f165f1772e2c66befd0251bffa",
+   "addedForGates": [
+    "edge: (402) gives false",
+    "region: (250) gives false",
+    "region: (175) gives false",
+    "region: (325) gives false",
+    "region: (701) gives false",
+    "region: (551) gives false",
+    "region: (850) gives false",
+    "region: (626) gives false",
+    "region: (925) gives false",
+    "region: (476) gives false",
+    "region: (775) gives false"
+   ],
+   "forms": [
+    "eq"
+   ]
+  },
+  {
+   "repo": "magrathean-uk/teslatlas-sdk-typescript",
+   "commit": "325522519b6bb86757ade88343c0ef3e90eb3cf9",
+   "module": "src/http/conditional.ts",
+   "fn": "isNotModified",
+   "params": [
+    {
+     "name": "status",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      303
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      304
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      305
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      201
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      252
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      150
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      652
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      826
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      478
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      565
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      739
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      913
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      391
+     ],
+     "out": false
+    }
+   ],
+   "expr": "status === 304",
+   "heldOut": {
+    "right": 2382,
+    "wrong": 0
+   },
+   "upstream": "function isNotModified(status: number): boolean {\n  return status === 304;\n}",
+   "path": "src/http/conditional.ts",
+   "fileBlob": "222db5bef53a7c8290e0fd5a5c68de0cc9e2648c",
+   "sha256": "cb9513d99babc583fdd6ee78fec044b6f0847fe76535ec3735410e2c940b8168",
+   "fixture": "peaceai/test/fixtures/m99-dfb/magrathean-uk__teslatlas-sdk-typescript-222db5bef53a.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "edge: (305) gives false",
+    "region: (201) gives false",
+    "region: (252) gives false",
+    "region: (150) gives false",
+    "region: (652) gives false",
+    "region: (826) gives false",
+    "region: (478) gives false",
+    "region: (565) gives false",
+    "region: (739) gives false",
+    "region: (913) gives false",
+    "region: (391) gives false"
+   ],
+   "forms": [
+    "eq"
+   ]
+  },
+  {
+   "repo": "tamb/emoji-renderer",
+   "commit": "85044f54b24401050f72140bc420fb9513649719",
+   "module": "src/fetchHttp.ts",
+   "fn": "isNotFoundStatus",
+   "params": [
+    {
+     "name": "status",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      403
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      404
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      409
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      410
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      405
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      411
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      251
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      327
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      175
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      705
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      852
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      558
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      926
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      484
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      631
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      778
+     ],
+     "out": false
+    }
+   ],
+   "expr": "(status === 404) || (status === 410)",
+   "heldOut": {
+    "right": 2379,
+    "wrong": 0
+   },
+   "upstream": "function isNotFoundStatus(status: number): boolean {\n  return status === 404 || status === 410;\n}",
+   "path": "src/fetchHttp.ts",
+   "fileBlob": "9be47802f5c1c2094cc791d4b5afc2d01eadb1ce",
+   "sha256": "4e02cea1f37a8da7735ecdd562f3a12c13cdcd4574a54d790eaa3c0a82fbac45",
+   "fixture": "peaceai/test/fixtures/m99-dfb/tamb__emoji-renderer-9be47802f5c1.txt",
+   "license": "MIT",
+   "licenseSha256": "53cf688b9789ebd23e1cfa61c6e1523ff929a6b3b25954d308856e15325a985e",
+   "addedForGates": [
+    "edge: (405) gives false",
+    "edge: (411) gives false",
+    "region: (251) gives false",
+    "region: (327) gives false",
+    "region: (175) gives false",
+    "region: (705) gives false",
+    "region: (852) gives false",
+    "region: (558) gives false",
+    "region: (926) gives false",
+    "region: (484) gives false",
+    "region: (631) gives false",
+    "region: (778) gives false"
+   ],
+   "forms": [
+    "eq",
+    "or"
+   ]
+  },
+  {
+   "repo": "SpIob/DepTend",
+   "commit": "b9e95e7c7e0fc443733dfb33a5c5b504ac624209",
+   "module": "packages/core/src/ingestor/github-org-meta.ts",
+   "fn": "isNotFoundStatus",
+   "params": [
+    {
+     "name": "status",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      403
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      404
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      405
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      251
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      327
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      175
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      702
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      851
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      553
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      627
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      776
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      925
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      479
+     ],
+     "out": false
+    }
+   ],
+   "expr": "status === 404",
+   "heldOut": {
+    "right": 2382,
+    "wrong": 0
+   },
+   "upstream": "function isNotFoundStatus(status: number): boolean {\n  return status === 404;\n}",
+   "path": "packages/core/src/ingestor/github-org-meta.ts",
+   "fileBlob": "fb2a98e444b1ed76d9193b56a035475dcdd2aa28",
+   "sha256": "534835937908dce064255c14f685e40666b716ff6c4f2ba4285d260ed1d3763d",
+   "fixture": "peaceai/test/fixtures/m99-dfb/SpIob__DepTend-fb2a98e444b1.txt",
+   "license": "MIT",
+   "licenseSha256": "ea979ef5f94c8cb63fced4283325b58277835edabca301b2f02588dd56fc8570",
+   "addedForGates": [
+    "edge: (405) gives false",
+    "region: (251) gives false",
+    "region: (327) gives false",
+    "region: (175) gives false",
+    "region: (702) gives false",
+    "region: (851) gives false",
+    "region: (553) gives false",
+    "region: (627) gives false",
+    "region: (776) gives false",
+    "region: (925) gives false",
+    "region: (479) gives false"
+   ],
+   "forms": [
+    "eq"
+   ]
+  },
+  {
+   "repo": "SpIob/DepTend",
+   "commit": "b9e95e7c7e0fc443733dfb33a5c5b504ac624209",
+   "module": "packages/core/src/ingestor/github-org-meta.ts",
+   "fn": "isRateLimitedStatus",
+   "params": [
+    {
+     "name": "status",
+     "type": "number"
+    }
+   ],
+   "ret": "boolean",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      402
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      403
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      428
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      429
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      404
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      430
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      416
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      410
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      422
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      407
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      413
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      419
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      425
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      251
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      175
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      326
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      715
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      572
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      857
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      643
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      928
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      501
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      786
+     ],
+     "out": false
+    }
+   ],
+   "expr": "(status === 403) || (status === 429)",
+   "heldOut": {
+    "right": 2372,
+    "wrong": 0
+   },
+   "upstream": "function isRateLimitedStatus(status: number): boolean {\n  return status === 403 || status === 429;\n}",
+   "path": "packages/core/src/ingestor/github-org-meta.ts",
+   "fileBlob": "fb2a98e444b1ed76d9193b56a035475dcdd2aa28",
+   "sha256": "534835937908dce064255c14f685e40666b716ff6c4f2ba4285d260ed1d3763d",
+   "fixture": "peaceai/test/fixtures/m99-dfb/SpIob__DepTend-fb2a98e444b1.txt",
+   "license": "MIT",
+   "licenseSha256": "ea979ef5f94c8cb63fced4283325b58277835edabca301b2f02588dd56fc8570",
+   "addedForGates": [
+    "edge: (404) gives false",
+    "edge: (430) gives false",
+    "region: (416) gives false",
+    "region: (410) gives false",
+    "region: (422) gives false",
+    "region: (407) gives false",
+    "region: (413) gives false",
+    "region: (419) gives false",
+    "region: (425) gives false",
+    "region: (251) gives false",
+    "region: (175) gives false",
+    "region: (326) gives false",
+    "region: (715) gives false",
+    "region: (572) gives false",
+    "region: (857) gives false",
+    "region: (643) gives false",
+    "region: (928) gives false",
+    "region: (501) gives false",
+    "region: (786) gives false"
+   ],
+   "forms": [
+    "eq",
+    "or"
+   ]
   }
  ],
  "peace": [

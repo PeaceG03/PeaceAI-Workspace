@@ -15,8 +15,7 @@ import { cleanIssueText } from "../lib/taskmap.ts";
 import { repo, tsx } from "./m7-fixtures.ts";
 
 const S1_ROWS = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [465, false], [499, false], [600, false], [700, false], [100, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
-// S1's range half (429 false): S1 itself needs the eq form, which the form gate refuses (fewer than 10 replaying
-// upstream entries, Auditor round 3 ruling), so it makes no candidate to note.
+// S1's range half (429 false): a range-only candidate (S1 itself, eq + || + range, is covered in the gates test).
 const S1_BODY = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.\n\nBehavior: true for server errors 500 through 599.\n\nExamples:\n${S1_ROWS.map(([a, b]) => `- ${a} gives ${a === 429 ? false : b}`).join("\n")}`;
 const asDiff = (files: { path: string; content: string }[]) => files.map((f) => {
   const lines = f.content.replace(/\n$/, "").split("\n");
@@ -83,13 +82,17 @@ test("review-comment.ts fails closed: a DERIVE candidate with a placeholder note
   assert.notEqual(bad.status, 0);
   assert.equal(bad.body, null);
   assert.match(bad.stderr, /candidate-1: the DERIVE review note .* could not be rebuilt/);
-  // A module in a form the gate refuses (S1's `(status === 429) || ...`, eq), with 429 gives true in its test: the
-  // note cannot be rebuilt either (the review rebuilds through the same form gate).
+  // S1 itself (`(status === 429) || ...`: eq, ||, range, each >= 10 upstream entries since round 4) with 429 gives true
+  // in its test: the review rebuilds through the same form gate, and the note shows S1's expression.
   const eq = runReview(d.replace("return 500 <= status && status <= 599;", "return (status === 429) || (500 <= status && status <= 599);").replace("assert.equal(isRetryableR2Status(429), false);", "assert.equal(isRetryableR2Status(429), true);"));
   assert.ok(d.includes("assert.equal(isRetryableR2Status(429), false);"));
-  assert.notEqual(eq.status, 0);
-  assert.equal(eq.body, null);
-  assert.match(eq.stderr, /candidate-1: the DERIVE review note .* could not be rebuilt/);
+  assert.equal(eq.status, 0, eq.stderr);
+  assert.ok(eq.body!.includes("return (status === 429) || (500 <= status && status <= 599);"), eq.body!);
+  // The same module with its 429 assertion flipped back no longer re-derives: no note, the job stops.
+  const eqBad = runReview(d.replace("return 500 <= status && status <= 599;", "return (status === 429) || (500 <= status && status <= 599);"));
+  assert.notEqual(eqBad.status, 0);
+  assert.equal(eqBad.body, null);
+  assert.match(eqBad.stderr, /candidate-1: the DERIVE review note .* could not be rebuilt/);
   // Not a DERIVE candidate (no tag): no derive note is attempted, the job succeeds.
   const plain = runReview(d.replace("status <= 599", "status <= 598"), { tag1: false });
   assert.equal(plain.status, 0, plain.stderr);
