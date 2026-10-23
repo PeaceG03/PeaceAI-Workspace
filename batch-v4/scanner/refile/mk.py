@@ -15,7 +15,7 @@ T = [
   "Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.\n\n"
   "Examples:\n"
   "- 429 gives true\n- 500 gives true\n- 502 gives true\n- 503 gives true\n- 504 gives true\n- 550 gives true\n- 599 gives true\n"
-  "- 428 gives false\n- 430 gives false\n- 499 gives false\n- 600 gives false\n- 200 gives false\n- 204 gives false\n"
+  "- 428 gives false\n- 430 gives false\n- 499 gives false\n- 600 gives false\n- 700 gives false\n- 200 gives false\n- 204 gives false\n"
   "- 301 gives false\n- 400 gives false\n- 403 gives false\n- 404 gives false\n- 0 gives false",
   "The ten-minute chain stopped on R2_PUT_500 (run 39451888891) and R2_GET_500 (run 39467160610) because R2ObjectClient.request never retries; this is the status check the future retry will use."),
  ("S2", 487, "src/r2-retry-delay.ts", "r2RetryDelayMs",
@@ -41,7 +41,9 @@ T = [
   "- \"R2_GET_500\", \"\" gives \"MARKETS_SCHEDULER_HOST_FAILED:R2_GET_500\"\n"
   "- \"\", \"UND_ERR_SOCKET\" gives \"MARKETS_SCHEDULER_HOST_FAILED::cause=UND_ERR_SOCKET\"\n"
   "- \"\", \"\" gives \"MARKETS_SCHEDULER_HOST_FAILED:\"\n"
-  "- \"R2_PUT_500\", \"ETIMEDOUT\" gives \"MARKETS_SCHEDULER_HOST_FAILED:R2_PUT_500:cause=ETIMEDOUT\"",
+  "- \"R2_PUT_500\", \"ETIMEDOUT\" gives \"MARKETS_SCHEDULER_HOST_FAILED:R2_PUT_500:cause=ETIMEDOUT\"\n"
+  "- \" fetch failed \", \"ECONNRESET\" gives \"MARKETS_SCHEDULER_HOST_FAILED: fetch failed :cause=ECONNRESET\"\n"
+  "- \"R2_GET_500\", \" err 42 \" gives \"MARKETS_SCHEDULER_HOST_FAILED:R2_GET_500:cause= err 42 \"",
   "Every scheduled scan since 2026-10-14 ends with only MARKETS_SCHEDULER_HOST_FAILED:fetch failed because src/host.ts drops the error cause; this is the line the host will print once wired, with the cause code (never a URL) appended when there is one."),
 ]
 # Lint: no backslash-u escapes, no control characters except newline, no code operators or keywords outside the

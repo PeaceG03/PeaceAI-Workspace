@@ -40,3 +40,13 @@ Approach that keeps the credit honest: a bounded, enumerative search over a smal
 the examples, parameters, comparisons, ranges, arithmetic, min/max, concatenation, one conditional on empty/zero), accepting the
 smallest expression that matches every example and refusing on zero or more than one distinct smallest fit (ambiguous). Mined from
 public commits like the other rules, Auditor-reviewed, and approved by Peace via /approve-rule before any of these are refiled.
+
+## Update for #491 round 2 (witness gates): examples added, still NOT filed
+The derive rule now accepts a fit only when the examples show every edge, the region past the outermost edges, both
+sides of every branch, and no rival program disagreeing on a far probe. Under those gates, against PR #491's rule:
+- S1 (old draft) refused `derive_under_specified_far: status` (last edge 599, no example >= 699). Added `700 gives false`.
+- S3 (old draft) refused `derive_under_specified_chars: message` (no value with a leading/trailing space). Added
+  `" fetch failed ", "ECONNRESET"` and `"R2_GET_500", " err 42 "` (the drafts already say values are copied as given).
+- S2 unchanged: derives as before.
+With the additions all three derive: S1 `(status === 429) || (500 <= status && status <= 599)`, S2 the capped
+`baseMs * (attempt + 1)^2` (cap 30000), S3 the marker line with `:cause=` only when the cause code is non-empty.
