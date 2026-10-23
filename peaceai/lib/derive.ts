@@ -612,7 +612,9 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *  region  inside every region the program's constants cut a compared parameter into, no example-free stretch
  *          longer than half the region (finite) or DERIVE_FAR (open, up to the farthest example): regionProblem;
  *  span    every number parameter the result is computed from (not only compared) is shown over at least DERIVE_FAR
- *          (largest minus smallest example value): an unwitnessed cap or clamp inside that stretch would show;
+ *          (largest minus smallest example value): an unwitnessed cap or clamp inside that stretch would show; and a
+ *          number result is shown positive (negative) whenever the program gives a positive (negative) result at a
+ *          neighbour or far probe inside the examples' range of every parameter;
  *  branch / cap (2) each branch of every conditional, and each side of every min / max cap (kept and capped), is
  *          reached by at least DERIVE_MIN_REACH examples (the true branch of a one-parameter `p === c` or emptiness
  *          test holds for one input only: one example);
@@ -701,6 +703,18 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     const lo = Math.min(...vs), hi = Math.max(...vs);
     if (hi - lo < DERIVE_FAR)
       return fail("span", `${names[i]}: \`${expr}\` computes its result from ${names[i]}, but the examples only show ${names[i]} from ${lo} to ${hi}; add examples at least ${DERIVE_FAR} apart in ${names[i]} (e.g. ${names[i]} = ${lo + DERIVE_FAR}) so a cap or limit inside that stretch would show`, i);
+  }
+  // span, result side (Auditor #491 round 2, cap lin2): a number result is shown on every side of 0 the program
+  // reaches at a probe inside the examples' range of every parameter; `a * b` shown only negative is refused, so a cap above every shown result cannot hide there.
+  if (input.ret === "number") {
+    const shown = new Set(examples.map((e) => Math.sign(e.out as number)));
+    const inside = (pt: readonly DeriveValue[]) => pt.every((x, j) => typeof x !== "number" || examples.some((e) => (e.args[j] as number) <= x) && examples.some((e) => x <= (e.args[j] as number)));
+    for (const pt of [...probeSet(params, examples), ...farProbes(params, examples)]) {
+      if (!inside(pt)) continue;
+      const v = evalProgram(program, pt);
+      if (typeof v !== "number" || v === 0 || shown.has(Math.sign(v))) continue;
+      return fail("span", `the result: \`${expr}\` gives ${v} at (${pt.map((x) => JSON.stringify(x)).join(", ")}), but no example has a ${v > 0 ? "positive" : "negative"} result; add one there`);
+    }
   }
   // branch / cap (2)
   const hits = new Map<DeriveNode, [number, number]>();
