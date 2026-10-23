@@ -815,7 +815,8 @@ export function paramsRead(n: DeriveNode): Set<number> {
 /**
  * The gates, in order (each names the parameter / edge the examples do not show):
  *  unread  every parameter the program does not read: two examples that differ only in it give the same result,
- *          with every number parameter the program reads non-zero in them (a pair at 0 hides a product);
+ *          with every number parameter the program reads non-zero in them (a pair at 0 hides a product) and no
+ *          min / max cap at or past its cap value (a held cap hides it too);
  *  chars   every string parameter it reads: the example values include an upper-case and a lower-case letter, a
  *          digit, an inner space, a leading or trailing space and punctuation (a verbatim copy or an emptiness test
  *          is only shown on the characters a case change, trim or escape would alter);
@@ -856,8 +857,13 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   // only pair differing in attempt alone had baseMs = 0): the pair must show the ignored parameter where it could
   // matter, so every number parameter the program reads is non-zero in it (0 annihilates a product, `p * f(q)`, so a
   // pair at p = 0 shows nothing about q).
+  // Likewise a cap the pair is at or past (m102's variant: attempt 3 only where min(10400, ...) held) hides it, so no
+  // min / max cap of the program is at or past its cap value in the pair.
   const readNums = [...read].filter((j) => params[j]!.type === "number");
-  const live = (e: DeriveExample) => readNums.every((j) => e.args[j] !== 0);
+  const caps: Extract<DeriveNode, { op: "min" | "max" }>[] = [];
+  walk(program, (n) => { if (n.op === "min" || n.op === "max") caps.push(n); });
+  const atCap = (e: DeriveExample) => caps.some((n) => { const a = evalProgram(n.a, e.args); return typeof a !== "number" || (n.op === "min" ? a >= n.c : a <= n.c); });
+  const live = (e: DeriveExample) => readNums.every((j) => e.args[j] !== 0) && !atCap(e);
   for (let i = 0; i < params.length; i++) {
     if (read.has(i)) continue;
     const pairs = (ok: (e: DeriveExample) => boolean) => examples.some((e, x) => ok(e) && examples.some((f, y) => y > x && rest(e.args, [i]) === rest(f.args, [i]) && keyOf([e.args[i]!]) !== keyOf([f.args[i]!]) && out(e) === out(f)));
@@ -865,7 +871,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (!pairs(live)) {
       const base = examples.find(live), other = examples.find((f) => base && keyOf([f.args[i]!]) !== keyOf([base.args[i]!]));
       const at = base && other ? [base.args.map((a, j) => (j === i ? other.args[i]! : a))] : undefined;
-      const problem = fail("unread", `${names[i]} is not read by \`${expr}\`, but the only examples that differ in ${names[i]} alone have ${readNums.map((j) => names[j]).join(" or ")} at 0, where a product hides ${names[i]}; add such a pair with ${readNums.map((j) => names[j]).join(" and ")} not 0`, i, at);
+      const problem = fail("unread", `${names[i]} is not read by \`${expr}\`, but the only examples that differ in ${names[i]} alone have ${readNums.map((j) => names[j]).join(" or ")} at 0 (a product by zero) or the result at a cap, where ${names[i]} cannot show; add such a pair with ${readNums.map((j) => names[j]).join(" and ")} not 0 and the result inside every cap`, i, at);
       // The other answer there: a program that fits every example as well but reads the parameter through the
       // product the zero hid (the program plus the read parameters' product times the change in it).
       const mine = at ? evalProgram(program, at[0]!) : undefined;

@@ -1,7 +1,8 @@
 // m103 (Auditor #494 review): derive-practice was red on main 5c66982 with a NEW blocking kind, backoff/sparse | p1:
 // from [[0,100,100],[7,0,0],[0,200,200],[0,0,0]] (attempt, baseMs -> delay; truth Math.min(10000, baseMs * (attempt + 1) ** 2))
 // the engine accepted `baseMs`. The unread gate took attempt 7 vs 0 at baseMs = 0 (both 0) as showing attempt does
-// not matter, but 0 annihilates the product. The pair must now have every number parameter the program reads non-zero.
+// not matter, but 0 annihilates the product. The pair must now have every number parameter the program reads non-zero,
+// and no min / max cap of the program at or past its cap value (m102's variant: a held cap hides the parameter too).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { deriveCandidate, deriveProgram, type DeriveInput } from "../lib/derive.ts";
@@ -21,8 +22,14 @@ test("m103 backoff/sparse (Auditor repro /tmp/r494/backoff.mts): `baseMs` is ref
 });
 
 test("m103 backoff/sparse, capped (m102's disclosed limit m102-kind-backoff-sparse-p1-k-p1-k, now fixed): refused by gate unread", () => {
-  const r = deriveCandidate(mk(["attempt", "baseMs"], [[7, 0, 0], [0, 0, 0], [0, 20400, 10400], [0, 500, 500], [3, 11400, 10400]]));
+  const rows = [[7, 0, 0], [0, 0, 0], [0, 20400, 10400], [0, 500, 500], [3, 11400, 10400]];
+  const r = deriveCandidate(mk(["attempt", "baseMs"], rows));
   assert.ok(!r.ok && r.gate === "unread" && r.param === "attempt", JSON.stringify(r));
+  // It asks inside the cap (baseMs 500), not where the cap holds.
+  assert.deepEqual(!r.ok && r.questions, [{ at: [7, 500], answers: [500, 4000] }]);
+  // A pair with baseMs non-zero but the result held at the cap (7 vs 0 at baseMs 20400, both 10400) shows nothing either.
+  const held = deriveCandidate(mk(["attempt", "baseMs"], [...rows, [7, 20400, 10400]]));
+  assert.ok(!held.ok && held.gate === "unread" && held.param === "attempt", JSON.stringify(held));
 });
 
 test("m103 unread live pair: EVERY read number parameter is non-zero in the pair (one zero factor hides the parameter); a live pair passes", () => {

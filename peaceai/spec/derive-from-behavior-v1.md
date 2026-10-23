@@ -83,7 +83,8 @@ A unique smallest fit is still refused, `derive_under_specified` with the gate a
 
 - unread: a parameter the program ignores has two examples differing only in it with the same result, and (m103,
   Auditor #494: backoff/sparse) every number parameter the program reads is non-zero in that pair (0 annihilates a
-  product, so a pair at 0 shows nothing; refused otherwise, asking at a non-zero example with the parameter changed);
+  product, so a pair at 0 shows nothing) and no min / max cap of the program is at or past its cap value in it (a held
+  cap hides it too); refused otherwise, asking at such an example with the parameter changed;
 - chars: a string parameter the program reads has example values with upper case, lower case, a digit, an inner
   space, a leading or trailing space, punctuation, and (round 3, the practice generator's conditional suffix) the empty
   string itself, asked for when no example has it;
