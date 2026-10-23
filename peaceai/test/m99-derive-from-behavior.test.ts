@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "d3d9a499af81608208fe22f7b523702e83c99a6c4fc20e8ab2642885144cfb71";
+const SHA = "4ce35a6f64f9a6cb99c99430d3ade73c4a1de38f86b70277e1768daeed652cfa";
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -390,6 +390,20 @@ test("evidence: bar met; modules blob-pinned and hold the upstream function; eac
     if (e.ret !== "string") nonString++;
   }
   assert.ok(nonString >= 3, "number and boolean results are evidenced too");
+});
+test("evidence by form (#491 round 3): at least 10 examples derive an if, cap (min / max), range or square program", () => {
+  const forms = new Map<string, number>();
+  for (const e of EV.examples) {
+    const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
+    assert.ok(r.ok, `${e.repo} ${e.fn}`);
+    const j = JSON.stringify(r.fit.program);
+    const has = ["if", "min", "max", "range"].filter((op) => j.includes(`"op":"${op}"`));
+    if (/"op":"mul","a":(\{"op":"param","i":\d+\}),"b":\1/.test(j)) has.push("square");
+    for (const f of has) forms.set(f, (forms.get(f) ?? 0) + 1);
+    if (has.length) forms.set("any", (forms.get("any") ?? 0) + 1);
+  }
+  assert.ok((forms.get("any") ?? 0) >= 10, JSON.stringify([...forms]));
+  assert.ok((forms.get("min") ?? 0) + (forms.get("max") ?? 0) >= 9, "cap forms");
 });
 test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {
   const notices = read("THIRD_PARTY_NOTICES");

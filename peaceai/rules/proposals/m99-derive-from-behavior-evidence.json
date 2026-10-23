@@ -2,7 +2,7 @@
  "schema": "peaceai-m99-derive-from-behavior-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "DERIVE_FROM_BEHAVIOR v1: 16 exported pure functions (typed number / string / boolean params and result) from 15 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 6), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test.",
+ "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200.",
  "examples": [
   {
    "repo": "AetherAI3/aether-agent",
@@ -1666,6 +1666,998 @@
    "addedForGates": [
     "chars path: (\"Ab 1-x\") gives \"Ab 1-x.sha256\"",
     "chars path: (\" pad \") gives \" pad .sha256\""
+   ]
+  },
+  {
+   "repo": "AetherAI3/aether-agent",
+   "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+   "module": "src/ui/model_picker.ts",
+   "fn": "modelPickerPageSize",
+   "params": [
+    {
+     "name": "height",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 4
+    },
+    {
+     "args": [
+      3
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": 994
+    }
+   ],
+   "expr": "1 <= (((height - 2) - 2) - 2) ? (((height - 2) - 2) - 2) : 1",
+   "heldOut": {
+    "right": 18,
+    "wrong": 0
+   },
+   "upstream": "function modelPickerPageSize(height: number): number {\n  // Border, title, search, selected-detail, and controls always stay visible.\n  return Math.max(1, height - 6);\n}",
+   "path": "src/ui/model_picker.ts",
+   "fileBlob": "716423f1baca321a3e24f2d31016d232dbbcde05",
+   "sha256": "73a40c825b1836fdaa974f336f6b834feb527278d6c9a28ad5edfc6d3c0ae80e",
+   "fixture": "peaceai/test/fixtures/m99-dfb/AetherAI3__aether-agent-716423f1baca.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2",
+   "addedForGates": [
+    "derive_ambiguous: (3) gives 1",
+    "far: (-100) gives 1",
+    "far: (1000) gives 994"
+   ]
+  },
+  {
+   "repo": "AetherAI3/aether-agent",
+   "commit": "775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f",
+   "module": "src/ui/session_picker.ts",
+   "fn": "pickerPageSize",
+   "params": [
+    {
+     "name": "height",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "Rows visible at once for a given terminal height: title, header, and the two footer lines are never scrolled away.",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 5
+    },
+    {
+     "args": [
+      -100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": 995
+    }
+   ],
+   "expr": "1 <= (((height - 1) - 2) - 2) ? (((height - 1) - 2) - 2) : 1",
+   "heldOut": {
+    "right": 19,
+    "wrong": 0
+   },
+   "upstream": "function pickerPageSize(height: number): number {\n  return Math.max(1, height - 5);\n}",
+   "path": "src/ui/session_picker.ts",
+   "fileBlob": "28ebaca8c683d52fe3e0ce380b73f202771ccd64",
+   "sha256": "fef5bc18f80fa4c11d64db79d20f664e89cb6570e0d51a3825c799a2c58f6ba8",
+   "fixture": "peaceai/test/fixtures/m99-dfb/AetherAI3__aether-agent-28ebaca8c683.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "0c739a39ece3822371101dbe5aed775ce8c2761212800c41d322b6cd1eb2e6f2",
+   "addedForGates": [
+    "far: (-100) gives 1",
+    "far: (1000) gives 995"
+   ]
+  },
+  {
+   "repo": "WeftCut/WeftCut",
+   "commit": "e3c184dc6e1285f446405a4049090ed5d13ecec1",
+   "module": "apps/desktop/src/shared/exportSettings.ts",
+   "fn": "gopFrames",
+   "params": [
+    {
+     "name": "keyframeIntervalSec",
+     "type": "number"
+    },
+    {
+     "name": "fps",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "/ Frames between forced keyframes for a keyframe interval in seconds at the / given fps. Shared by both encode paths (WebCodecs `keyFrame` cadence + the / ffmpeg `-g`) so they agree. Floored at 1.",
+   "examples": [
+    {
+     "args": [
+      -1,
+      -1
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1,
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1,
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      0,
+      0
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      0,
+      3
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      0,
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      1,
+      1
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      1,
+      5
+     ],
+     "out": 5
+    },
+    {
+     "args": [
+      2,
+      -1
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      2,
+      2
+     ],
+     "out": 4
+    },
+    {
+     "args": [
+      2,
+      10
+     ],
+     "out": 20
+    },
+    {
+     "args": [
+      3,
+      0
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      3,
+      3
+     ],
+     "out": 9
+    },
+    {
+     "args": [
+      3,
+      100
+     ],
+     "out": 300
+    },
+    {
+     "args": [
+      -1,
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -97,
+      -1
+     ],
+     "out": 97
+    }
+   ],
+   "expr": "1 <= (keyframeIntervalSec * fps) ? (keyframeIntervalSec * fps) : 1",
+   "heldOut": {
+    "right": 121,
+    "wrong": 0
+   },
+   "upstream": "function gopFrames(keyframeIntervalSec: number, fps: number): number {\n  return Math.max(1, Math.round(fps * keyframeIntervalSec));\n}",
+   "path": "apps/desktop/src/shared/exportSettings.ts",
+   "fileBlob": "2b3aa2c56c631ef378b97013db8b157e521a1ca3",
+   "sha256": "f24418854344f5dfd89cb144f32aa380a3e263b09a25ffbd7f9f4cff3da81510",
+   "fixture": "peaceai/test/fixtures/m99-dfb/WeftCut__WeftCut-2b3aa2c56c63.txt",
+   "license": "MIT",
+   "licenseSha256": "2a0b08ab7b682e7a89595628c7d5ed582d06675b35836c3cec57864d621df14c",
+   "addedForGates": [
+    "far: (-1, 100) gives 1",
+    "span: (-97, -1) gives 97"
+   ]
+  },
+  {
+   "repo": "rcbyr/keen-slider",
+   "commit": "520c757a80aa10ff224e9c89b0917edfa811adcf",
+   "module": "src/core/utils.ts",
+   "fn": "sign",
+   "params": [
+    {
+     "name": "x",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -100
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -101
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "((-1) <= x ? x : (-1)) <= 1 ? ((-1) <= x ? x : (-1)) : 1",
+   "heldOut": {
+    "right": 20,
+    "wrong": 0
+   },
+   "upstream": "function sign(x: number): number {\n  return (x > 0 ? 1 : 0) - (x < 0 ? 1 : 0) || +x\n}",
+   "path": "src/core/utils.ts",
+   "fileBlob": "809ad64d19c60ee93ce9b08bd455d3084fa40221",
+   "sha256": "72478158fa204955585aef134a387cfe88c91fb94a9e69c45748544ef2273b05",
+   "fixture": "peaceai/test/fixtures/m99-dfb/rcbyr__keen-slider-809ad64d19c6.txt",
+   "license": "MIT",
+   "licenseSha256": "4973dfefb35867c5040735222d2a3bb8319427b1d7f51e487e2def88354d1b7b",
+   "addedForGates": [
+    "far: (-100) gives -1",
+    "far: (1000) gives 1",
+    "far: (-101) gives -1",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "scttcper/tinycolor",
+   "commit": "37b3c32d95383b587b2ed7f38f006058741a29ec",
+   "module": "src/util.ts",
+   "fn": "clamp01",
+   "params": [
+    {
+     "name": "val",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "Force a number between 0 and 1 @hidden /",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= val ? val : 0) <= 1 ? (0 <= val ? val : 0) : 1",
+   "heldOut": {
+    "right": 17,
+    "wrong": 0
+   },
+   "upstream": "function clamp01(val: number): number {\n  return Math.min(1, Math.max(0, val));\n}",
+   "path": "src/util.ts",
+   "fileBlob": "716179297baf6b5974e8cafc6cb99d44dbd3205f",
+   "sha256": "6505cd58ee48b06888a406298a625d8ed954dad6a87066ed1427a90b762408e0",
+   "fixture": "peaceai/test/fixtures/m99-dfb/scttcper__tinycolor-716179297baf.txt",
+   "license": "MIT",
+   "licenseSha256": "eed2808fbe00db8412d1ae34e4ed1b2857a5dbb086e2ef81f6d61026d7608b5c",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "katspaugh/wavesurfer.js",
+   "commit": "af82b0782578c6dc0683f0f7f5950e012454aad0",
+   "module": "src/renderer-utils.ts",
+   "fn": "clampToUnit",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= value ? value : 0) <= 1 ? (0 <= value ? value : 0) : 1",
+   "heldOut": {
+    "right": 17,
+    "wrong": 0
+   },
+   "upstream": "function clampToUnit(value: number): number {\n  // NaN (e.g. from pointer math over a zero-size, hidden container) must not\n  // escape into seek positions -- treat it as 0.\n  if (Number.isNaN(value)) return 0\n  if (value < 0) return 0\n  if (value > 1) return 1\n  return value\n}",
+   "path": "src/renderer-utils.ts",
+   "fileBlob": "45788eb963c93b006fc2c0221260321da770da71",
+   "sha256": "bb139ef82223ae7811047b9a959523a12851d1634807df3b5b9c1834dcc41623",
+   "fixture": "peaceai/test/fixtures/m99-dfb/katspaugh__wavesurfer.js-45788eb963c9.txt",
+   "license": "BSD-3-Clause",
+   "licenseSha256": "d15f10ec9ef76a42b9b3e46c4aa6d25f4ce696bc025630664a962ebc12e0d00a",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "recharts/recharts",
+   "commit": "b17630f63ac8af27b9066edc5675b23b50ccfa65",
+   "module": "src/util/zoom/viewport.ts",
+   "fn": "clampRatio",
+   "params": [
+    {
+     "name": "ratio",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "Clamps a single ratio into the `[0, 1]` range. `NaN` collapses to `0`. /",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= ratio ? ratio : 0) <= 1 ? (0 <= ratio ? ratio : 0) : 1",
+   "heldOut": {
+    "right": 17,
+    "wrong": 0
+   },
+   "upstream": "function clampRatio(ratio: number): number {\n  if (Number.isNaN(ratio)) {\n    return 0;\n  }\n  if (ratio < 0) {\n    return 0;\n  }\n  if (ratio > 1) {\n    return 1;\n  }\n  return ratio;\n}",
+   "path": "src/util/zoom/viewport.ts",
+   "fileBlob": "697d1b4ca670d4d85c2f186ea298f7137f633184",
+   "sha256": "565217e9ee27d48913989339ae4cebe3d2a6083f5aec01fc348f4d0e97a9236f",
+   "fixture": "peaceai/test/fixtures/m99-dfb/recharts__recharts-697d1b4ca670.txt",
+   "license": "MIT",
+   "licenseSha256": "9b87046206ea4e66f50b3b092166f4c424f3f98897d91511b842e3bee020de3d",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "tusen-ai/naive-ui",
+   "commit": "8b249214f17328a47eeb57dd5c7b80a47c94d116",
+   "module": "src/color-picker/src/utils.ts",
+   "fn": "normalizeAlpha",
+   "params": [
+    {
+     "name": "alpha",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= alpha ? alpha : 0) <= 1 ? (0 <= alpha ? alpha : 0) : 1",
+   "heldOut": {
+    "right": 17,
+    "wrong": 0
+   },
+   "upstream": "function normalizeAlpha(alpha: number): number {\n  alpha = Math.round(alpha * 100) / 100\n  return alpha > 1 ? 1 : alpha < 0 ? 0 : alpha\n}",
+   "path": "src/color-picker/src/utils.ts",
+   "fileBlob": "18addfc02db405f6d3c7bdda409a4b752559f72c",
+   "sha256": "f06fa295c99279748ed8ba606031765f277acac622f4eb81d1b4876873963dda",
+   "fixture": "peaceai/test/fixtures/m99-dfb/tusen-ai__naive-ui-18addfc02db4.txt",
+   "license": "MIT",
+   "licenseSha256": "ac751e5aa595097cc8a1538cb91a37182a78ac1d65899c22ef8da2e35e9ece17",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "microsoft/vscode",
+   "commit": "f842f83fd99898bf85f5055d7fa9dc13f2ccc21b",
+   "module": "src/vs/workbench/contrib/chat/browser/attachments/chatImageTextures.ts",
+   "fn": "clamp01",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= value ? value : 0) <= 1 ? (0 <= value ? value : 0) : 1",
+   "heldOut": {
+    "right": 2392,
+    "wrong": 0
+   },
+   "upstream": "function clamp01(value: number): number {\n\treturn Math.min(1, Math.max(0, value));\n}",
+   "path": "src/vs/workbench/contrib/chat/browser/attachments/chatImageTextures.ts",
+   "fileBlob": "ac93b50a5d8ef24f43cc4bd16f1c02238ee8dfed",
+   "sha256": "819c8c1beaf52756808a2debb84487cc9c073dfc1b03f6ab6c396d10afb7d628",
+   "fixture": "peaceai/test/fixtures/m99-dfb/microsoft__vscode-ac93b50a5d8e.txt",
+   "license": "MIT",
+   "licenseSha256": "20535828272932407c2f5172aeb714ac7b374a34e5ecb1825af509f2902cde54",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "voxel51/fiftyone",
+   "commit": "aacfc8182fc5353296b5edd7475e63335fedb5cb",
+   "module": "app/packages/multimodal/src/visualization/scene-3d/utils.ts",
+   "fn": "clamp01",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= value ? value : 0) <= 1 ? (0 <= value ? value : 0) : 1",
+   "heldOut": {
+    "right": 2392,
+    "wrong": 0
+   },
+   "upstream": "function clamp01(value: number): number {\n  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;\n}",
+   "path": "app/packages/multimodal/src/visualization/scene-3d/utils.ts",
+   "fileBlob": "524a9827cd4e0cdaf40ad2e684d7699ed4c930e3",
+   "sha256": "225a194e7a4a0b10a3ec1eb43e8dfbbd0b535370402335627153278e925aba7f",
+   "fixture": "peaceai/test/fixtures/m99-dfb/voxel51__fiftyone-524a9827cd4e.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "e3885b1de39b0b1852afafa82e79bd57f188d78497fe7087eabd0bc919147ab8",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
+   ]
+  },
+  {
+   "repo": "jakearchibald/jakearchibald.com",
+   "commit": "4298bf81f74ed2e620af5b4b00ccbef3d8597cfb",
+   "module": "shared/demos/2021/compositing/PixelCalculator/utils.ts",
+   "fn": "clamp01",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "number",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -2
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      101
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      -1010
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": 1
+    }
+   ],
+   "expr": "(0 <= value ? value : 0) <= 1 ? (0 <= value ? value : 0) : 1",
+   "heldOut": {
+    "right": 2392,
+    "wrong": 0
+   },
+   "upstream": "function clamp01(value: number): number {\n  if (value < 0) return 0;\n  if (value > 1) return 1;\n  return value;\n}",
+   "path": "shared/demos/2021/compositing/PixelCalculator/utils.ts",
+   "fileBlob": "14e23dfced8c93fa6b9cd93862b999300ac2b58b",
+   "sha256": "a7d20a17ac1c57f8384d12d0579ab9d7411f9d7a4a7b65f13d6c17428e6cfd26",
+   "fixture": "peaceai/test/fixtures/m99-dfb/jakearchibald__jakearchibald.com-14e23dfced8c.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "derive_ambiguous: (-2) gives 0",
+    "far: (100) gives 1",
+    "far: (101) gives 1",
+    "far: (-1010) gives 0",
+    "rival: (0) gives 0",
+    "rival: (1) gives 1"
    ]
   }
  ],
