@@ -439,9 +439,10 @@ const declOf = (s: ts.Symbol | undefined): ts.Declaration | undefined => s?.valu
 /**
  * Auditor #489: capability tokens a function body references — bare global capabilities (fetch, process, require,
  * timers, eval, Function, Reflect, ...), reflection member names (constructor, __proto__, prototype, ...), and
- * `as any` / `as unknown` escapes. `capabilityDelta` refuses an edit that introduces ANY token the base target did
- * not already have, so a splice can neither add new I/O surface (even hidden behind an injected `?? default`) nor a
- * reflection / type-erasure path. Defaults already present in the base survive (they are stubbed by the fake).
+ * `as any` / `as unknown` escapes. `capabilityDelta` refuses an edit that uses ANY token more often than the base
+ * target did (counted, not just present), so a splice can neither add new I/O surface (even hidden behind an injected
+ * `?? default`, or a second one beside a default the base already had) nor a reflection / type-erasure path. Defaults
+ * already present in the base survive unchanged (they are stubbed by the fake).
  */
 const CAPABILITY_IDENTS = new Set([
   "fetch", "process", "require", "globalThis", "global", "self", "eval", "Function", "Reflect", "Proxy",
@@ -449,28 +450,30 @@ const CAPABILITY_IDENTS = new Set([
   "setTimeout", "setInterval", "setImmediate", "clearTimeout", "clearInterval", "clearImmediate", "queueMicrotask",
   "__dirname", "__filename", "module", "exports", "Deno", "Bun", "GLOBAL", "root",
 ]);
-function capabilityTokens(node: ts.Node): Set<string> {
-  const out = new Set<string>();
+function capabilityTokens(node: ts.Node): Map<string, number> {
+  const out = new Map<string, number>();
+  const add = (k: string): void => { out.set(k, (out.get(k) ?? 0) + 1); };
   const visit = (n: ts.Node): void => {
     if (ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) {
-      if (n.type.kind === ts.SyntaxKind.AnyKeyword) out.add("cast:any");
-      else if (n.type.kind === ts.SyntaxKind.UnknownKeyword) out.add("cast:unknown");
+      if (n.type.kind === ts.SyntaxKind.AnyKeyword) add("cast:any");
+      else if (n.type.kind === ts.SyntaxKind.UnknownKeyword) add("cast:unknown");
     }
-    if (ts.isPropertyAccessExpression(n) && REFLECTION.has(n.name.text)) out.add(`refl:${n.name.text}`);
+    if (ts.isPropertyAccessExpression(n) && REFLECTION.has(n.name.text)) add(`refl:${n.name.text}`);
     if (ts.isElementAccessExpression(n)) {
       const a = unwrap(n.argumentExpression);
-      if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && REFLECTION.has(a.text)) out.add(`refl:${a.text}`);
+      if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && REFLECTION.has(a.text)) add(`refl:${a.text}`);
     }
-    if (ts.isIdentifier(n) && CAPABILITY_IDENTS.has(n.text) && !isDeclName(n) && !inTypePosition(n)) out.add(`id:${n.text}`);
+    if (ts.isIdentifier(n) && CAPABILITY_IDENTS.has(n.text) && !isDeclName(n) && !inTypePosition(n)) add(`id:${n.text}`);
     ts.forEachChild(n, visit);
   };
   visit(node);
   return out;
 }
-/** Null unless the edited target references a capability token the base target did not; then the refusal code. */
+/** Null unless the edited target uses some capability token MORE often than the base target did (a multiset, so an edit
+ *  can't hide a second `?? fetch` behind one the base already had); then the refusal code. */
 function capabilityDelta(base: ts.Node, real: ts.Node): string | null {
   const b = capabilityTokens(base);
-  for (const tk of capabilityTokens(real)) if (!b.has(tk)) return `edit_new_capability:${tk}`;
+  for (const [tk, n] of capabilityTokens(real)) if (n > (b.get(tk) ?? 0)) return `edit_new_capability:${tk}`;
   return null;
 }
 const memberName = (m: ts.ClassElement): string | null => (m.name && (ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name) || ts.isStringLiteral(m.name)) ? m.name.text : null);

@@ -301,6 +301,10 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
   const evilCast = STORAGE.replace("return { total, count: keys.length };", "const z = (keys as any)[\"length\"]; return { total, count: keys.length };");
   assert.equal(gradeExistingEditProblem("src/storage.ts", STORAGE, evilCast, e.extra[0]!.path, e.extra[0]!.content, rd), "edit_new_capability:cast:any");
 
+  // Counted, not just present: a base that already has one `?? fetch` default can't gain a second (hidden exfil).
+  const HAS = "export interface D { load: (k: string) => Promise<string>; f?: typeof fetch }\nexport async function g(d: D): Promise<string> {\n  const s = d.f ?? fetch;\n  return await d.load(\"a\");\n}\n";
+  assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in g in src/h.ts: replace statement return await d.load(\"a\"); with const t = d.f ?? fetch; await t(\"https://example.invalid/x\"); return await d.load(\"b\");\n- fake d = { load: resolves(\"v\"), f: resolves(1) }\n- expect g(d) resolves to \"v\"", [{ path: "src/h.ts", content: HAS }], isTest).reason, "edit_new_capability:id:fetch");
+
   // Engine excludes test helpers and fixtures as edit targets, no matter what targets.json denyPatterns say.
   assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/x.test-helper.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/x.test-helper.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
   assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/fixtures/x.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/fixtures/x.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
