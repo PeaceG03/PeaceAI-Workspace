@@ -1,0 +1,116 @@
+export type RunListOrder = "asc" | "desc"
+
+export type { ListPage as RunListPage, ListWindow as RunListWindow } from "./pagination"
+export { paginate } from "./pagination"
+
+export interface StartedAtRunRecord<TStatus extends string = string> {
+  readonly id: string
+  readonly status: TStatus
+  readonly startedAt?: Date
+  readonly queuedAt?: Date
+}
+
+export function storageKey(projectId: string, id: string): string {
+  return `${projectId}:${id}`
+}
+
+export function cloneRecord<T>(record: T): T {
+  return structuredClone(record)
+}
+
+export function hasEmptyStatuses(input: { readonly statuses?: readonly unknown[] }): boolean {
+  return input.statuses !== undefined && input.statuses.length === 0
+}
+
+export function toStatusSet<TStatus extends string>(
+  statuses: readonly TStatus[] | undefined
+): ReadonlySet<TStatus> | null {
+  return statuses ? new Set(statuses) : null
+}
+
+export function matchesRunListDateFilters<TStatus extends string>(
+  record: StartedAtRunRecord<TStatus>,
+  filters: {
+    readonly statuses: ReadonlySet<TStatus> | null
+    readonly startedAfter?: Date
+    readonly startedBefore?: Date
+  }
+): boolean {
+  if (filters.statuses && !filters.statuses.has(record.status)) {
+    return false
+  }
+
+  const startedAt = effectiveStartedAt(record)
+
+  if (filters.startedAfter && startedAt < filters.startedAfter) {
+    return false
+  }
+
+  if (filters.startedBefore && startedAt > filters.startedBefore) {
+    return false
+  }
+
+  return true
+}
+
+export function compareStartedAt(
+  left: { readonly id: string; readonly startedAt?: Date; readonly queuedAt?: Date },
+  right: { readonly id: string; readonly startedAt?: Date; readonly queuedAt?: Date },
+  order: RunListOrder
+): number {
+  const delta = effectiveStartedAt(left).getTime() - effectiveStartedAt(right).getTime()
+  if (delta !== 0) {
+    return order === "asc" ? delta : -delta
+  }
+
+  if (left.id === right.id) {
+    return 0
+  }
+
+  return order === "asc" ? left.id.localeCompare(right.id) : right.id.localeCompare(left.id)
+}
+
+export function latestStartedAtByOwnerId<
+  TRecord extends { readonly id: string; readonly startedAt?: Date; readonly queuedAt?: Date },
+>(
+  records: readonly TRecord[],
+  ownerIds: readonly string[],
+  ownerIdFor: (record: TRecord) => string
+): readonly TRecord[] {
+  const uniqueOwnerIds = [...new Set(ownerIds)]
+  if (uniqueOwnerIds.length === 0) {
+    return []
+  }
+
+  const requested = new Set(uniqueOwnerIds)
+  const latestByOwnerId = new Map<string, TRecord>()
+
+  for (const record of records) {
+    const ownerId = ownerIdFor(record)
+    if (!requested.has(ownerId)) {
+      continue
+    }
+
+    const current = latestByOwnerId.get(ownerId)
+    if (!current || compareStartedAt(record, current, "desc") < 0) {
+      latestByOwnerId.set(ownerId, record)
+    }
+  }
+
+  return uniqueOwnerIds.flatMap((ownerId) => {
+    const record = latestByOwnerId.get(ownerId)
+    return record ? [record] : []
+  })
+}
+
+function effectiveStartedAt(record: {
+  readonly id: string
+  readonly startedAt?: Date
+  readonly queuedAt?: Date
+}): Date {
+  const value = record.startedAt ?? record.queuedAt
+  if (!value) {
+    throw new Error(`[Sixb] Run '${record.id}' has neither startedAt nor queuedAt.`)
+  }
+  return value
+}

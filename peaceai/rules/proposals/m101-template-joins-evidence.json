@@ -1,0 +1,3874 @@
+{
+ "schema": "peaceai-m101-template-joins-evidence:v1",
+ "bar": 10,
+ "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
+ "note": "M101 template joins (Auditor #491 ruling: a DSL form is used only with >= 10 replaying upstream evidence entries). 36 exported pure functions from 27 permissive repos outside the corpus and the ext-manifest, mined the M99 way: the upstream function run in an empty vm on a fixed grid, every 3rd row (at most 14) as training, extended by the engine's own questions answered from upstream (addedForGates), the rest held out; far probes past the grid checked too, and char probes (each string parameter at \"a\" + c + \"b\" for every printable ASCII non-alphanumeric c). Excluded: any held/far/char-probe miss, number formatting outside the integer domain (toFixed, parseFloat, Math.*, toLocaleString, Intl), duplicates of an M99 entry or of another upstream, more than 3 per repo (M99 included), more than 2 per expression shape. Each expression is re-derived from the recorded examples alone by the engine with the form on and is right on every held-out and far row. forms counts the entries whose derived program uses the form; peaceai/lib/derive.ts TEMPLATE_FORM_EVIDENCE must equal it. No third-party code is run by the test.",
+ "forms": {
+  "tmpl": 36,
+  "str": 19
+ },
+ "examples": [
+  {
+   "repo": "GauravKarakoti/SecureFlow",
+   "commit": "9ee964a579040c027ec9184f1f9df6b486266186",
+   "module": "src/lib/integrations/slack.ts",
+   "fn": "pullRequestUrl",
+   "params": [
+    {
+     "name": "repositoryFullName",
+     "type": "string"
+    },
+    {
+     "name": "prNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      -1
+     ],
+     "out": "https://github.com//pull/-1"
+    },
+    {
+     "args": [
+      "",
+      2
+     ],
+     "out": "https://github.com//pull/2"
+    },
+    {
+     "args": [
+      "",
+      10
+     ],
+     "out": "https://github.com//pull/10"
+    },
+    {
+     "args": [
+      "a",
+      0
+     ],
+     "out": "https://github.com/a/pull/0"
+    },
+    {
+     "args": [
+      "a",
+      3
+     ],
+     "out": "https://github.com/a/pull/3"
+    },
+    {
+     "args": [
+      "a",
+      100
+     ],
+     "out": "https://github.com/a/pull/100"
+    },
+    {
+     "args": [
+      "ab",
+      1
+     ],
+     "out": "https://github.com/ab/pull/1"
+    },
+    {
+     "args": [
+      "ab",
+      5
+     ],
+     "out": "https://github.com/ab/pull/5"
+    },
+    {
+     "args": [
+      "abc",
+      -1
+     ],
+     "out": "https://github.com/abc/pull/-1"
+    },
+    {
+     "args": [
+      "abc",
+      2
+     ],
+     "out": "https://github.com/abc/pull/2"
+    },
+    {
+     "args": [
+      "abc",
+      10
+     ],
+     "out": "https://github.com/abc/pull/10"
+    },
+    {
+     "args": [
+      "Hello",
+      0
+     ],
+     "out": "https://github.com/Hello/pull/0"
+    },
+    {
+     "args": [
+      "Hello",
+      3
+     ],
+     "out": "https://github.com/Hello/pull/3"
+    },
+    {
+     "args": [
+      "Hello",
+      100
+     ],
+     "out": "https://github.com/Hello/pull/100"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      -1
+     ],
+     "out": "https://github.com/ Ab 9. /pull/-1"
+    },
+    {
+     "args": [
+      "a",
+      1234
+     ],
+     "out": "https://github.com/a/pull/1234"
+    }
+   ],
+   "expr": "\"https://github.com/\" + repositoryFullName + \"/pull/\" + (\"\" + prNumber)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 74,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 12,
+    "wrong": 0
+   },
+   "upstream": "function pullRequestUrl(repositoryFullName: string, prNumber: number): string {\n  return `https://github.com/${repositoryFullName}/pull/${prNumber}`;\n}",
+   "path": "src/lib/integrations/slack.ts",
+   "fileBlob": "fa7f6b72bb2afd54ba8a2c76098675ea456320b1",
+   "sha256": "41ec67585e4d3a8ae1322455bc9ed8e58b8cef60ee9608792c644d26132fb4d9",
+   "fixture": "peaceai/test/fixtures/m101-tj/GauravKarakoti__SecureFlow-fa7f6b72bb2a.txt",
+   "license": "MIT",
+   "licenseSha256": "293e180bf705695828341511163ef6bddc0caf68315c690287dd9ccbed3a1b86",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", -1) gives \"https://github.com/ Ab 9. /pull/-1\"",
+    "chars: (\"a\", 1234) gives \"https://github.com/a/pull/1234\""
+   ]
+  },
+  {
+   "repo": "ShachiMistry/LeetShaders",
+   "commit": "5520f8e3d5b8b13bb19b603d26f423f1687ae5c2",
+   "module": "src/ai/cache.ts",
+   "fn": "cacheKey",
+   "params": [
+    {
+     "name": "challengeId",
+     "type": "string"
+    },
+    {
+     "name": "shaderHashHex",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ":"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": ":abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": ":hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": ":123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a:a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a:Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a:A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a: pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab:ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab:x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab:foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc:"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc:abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc:hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": " Ab 9. :"
+    }
+   ],
+   "expr": "challengeId + \":\" + shaderHashHex",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function cacheKey(challengeId: string, shaderHashHex: string): string {\n  return `${challengeId}:${shaderHashHex}`;\n}",
+   "path": "src/ai/cache.ts",
+   "fileBlob": "40b17e7dac6f3d0608ff18be721ece531738ef13",
+   "sha256": "99005a1800ae70cb4ca07e6691de7c9edd97e9bf7b2bb33068036e0cca5980ee",
+   "fixture": "peaceai/test/fixtures/m101-tj/ShachiMistry__LeetShaders-40b17e7dac6f.txt",
+   "license": "MIT",
+   "licenseSha256": "323ebf1dae6d3830b3e4827a58459ed91205ae7267deb76acf286147448c310d",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \" Ab 9. :\""
+   ]
+  },
+  {
+   "repo": "Vishnuvardhanvemula/FreeHour.dev",
+   "commit": "68cd504e0f4bda2bfa9586dc33795a436f8910c8",
+   "module": "src/utils/formatters.ts",
+   "fn": "getIssueUrl",
+   "params": [
+    {
+     "name": "repoFullName",
+     "type": "string"
+    },
+    {
+     "name": "issueNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      -1
+     ],
+     "out": "https://github.com//issues/-1"
+    },
+    {
+     "args": [
+      "",
+      2
+     ],
+     "out": "https://github.com//issues/2"
+    },
+    {
+     "args": [
+      "",
+      10
+     ],
+     "out": "https://github.com//issues/10"
+    },
+    {
+     "args": [
+      "a",
+      0
+     ],
+     "out": "https://github.com/a/issues/0"
+    },
+    {
+     "args": [
+      "a",
+      3
+     ],
+     "out": "https://github.com/a/issues/3"
+    },
+    {
+     "args": [
+      "a",
+      100
+     ],
+     "out": "https://github.com/a/issues/100"
+    },
+    {
+     "args": [
+      "ab",
+      1
+     ],
+     "out": "https://github.com/ab/issues/1"
+    },
+    {
+     "args": [
+      "ab",
+      5
+     ],
+     "out": "https://github.com/ab/issues/5"
+    },
+    {
+     "args": [
+      "abc",
+      -1
+     ],
+     "out": "https://github.com/abc/issues/-1"
+    },
+    {
+     "args": [
+      "abc",
+      2
+     ],
+     "out": "https://github.com/abc/issues/2"
+    },
+    {
+     "args": [
+      "abc",
+      10
+     ],
+     "out": "https://github.com/abc/issues/10"
+    },
+    {
+     "args": [
+      "Hello",
+      0
+     ],
+     "out": "https://github.com/Hello/issues/0"
+    },
+    {
+     "args": [
+      "Hello",
+      3
+     ],
+     "out": "https://github.com/Hello/issues/3"
+    },
+    {
+     "args": [
+      "Hello",
+      100
+     ],
+     "out": "https://github.com/Hello/issues/100"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      -1
+     ],
+     "out": "https://github.com/ Ab 9. /issues/-1"
+    },
+    {
+     "args": [
+      "a",
+      1234
+     ],
+     "out": "https://github.com/a/issues/1234"
+    }
+   ],
+   "expr": "\"https://github.com/\" + repoFullName + \"/issues/\" + (\"\" + issueNumber)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 74,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 12,
+    "wrong": 0
+   },
+   "upstream": "function getIssueUrl(repoFullName: string, issueNumber: number): string {\n    return `https://github.com/${repoFullName}/issues/${issueNumber}`;\n}",
+   "path": "src/utils/formatters.ts",
+   "fileBlob": "1e4b73cece3fd09de1f2b3367932b0feb1a59900",
+   "sha256": "8db0ffc6dbe9e4f1ad61500f6649a7d92c25b35ce4e02af9bfd3d3feb4087a75",
+   "fixture": "peaceai/test/fixtures/m101-tj/Vishnuvardhanvemula__FreeHour.dev-1e4b73cece3f.txt",
+   "license": "MIT",
+   "licenseSha256": "8ee31cc8e1a1d7f1f4abd6910b24c1985ab71a2d0e77a3b8bb623c1fc5f18ca3",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", -1) gives \"https://github.com/ Ab 9. /issues/-1\"",
+    "chars: (\"a\", 1234) gives \"https://github.com/a/issues/1234\""
+   ]
+  },
+  {
+   "repo": "aidan-walden/discord-bot",
+   "commit": "90885fa5e05450954ce3ece0b7898b0d68b6311f",
+   "module": "src/services/riot/constants.ts",
+   "fn": "profileIconUrl",
+   "params": [
+    {
+     "name": "profileIconId",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/-1.jpg"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/2.jpg"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/10.jpg"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/0.jpg"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/1.jpg"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/1234.jpg"
+    }
+   ],
+   "expr": "\"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/\" + (\"\" + profileIconId) + \".jpg\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function profileIconUrl(profileIconId: number): string {\n\treturn `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${profileIconId}.jpg`;\n}",
+   "path": "src/services/riot/constants.ts",
+   "fileBlob": "ea7dc2674b29b00bfef4f91631012f4ffe993ddb",
+   "sha256": "20d26c490307c9c1c7524b9420bfabe21352c26943f457aba26c1f900922c408",
+   "fixture": "peaceai/test/fixtures/m101-tj/aidan-walden__discord-bot-ea7dc2674b29.txt",
+   "license": "MIT",
+   "licenseSha256": "794806a86c5c5e6de32d61150971615424a048c35ab64637b7275b9e524044d8",
+   "addedForGates": [
+    "chars: (0) gives \"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/0.jpg\"",
+    "chars: (1) gives \"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/1.jpg\"",
+    "chars: (1234) gives \"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/1234.jpg\""
+   ]
+  },
+  {
+   "repo": "ajitjha393/daybrief",
+   "commit": "6fe628828584eb5b5609c164fdf3289544fa571f",
+   "module": "shared/normalize.ts",
+   "fn": "pullKey",
+   "params": [
+    {
+     "name": "repo",
+     "type": "string"
+    },
+    {
+     "name": "id",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      -1
+     ],
+     "out": "!-1"
+    },
+    {
+     "args": [
+      "",
+      2
+     ],
+     "out": "!2"
+    },
+    {
+     "args": [
+      "",
+      10
+     ],
+     "out": "!10"
+    },
+    {
+     "args": [
+      "a",
+      0
+     ],
+     "out": "a!0"
+    },
+    {
+     "args": [
+      "a",
+      3
+     ],
+     "out": "a!3"
+    },
+    {
+     "args": [
+      "a",
+      100
+     ],
+     "out": "a!100"
+    },
+    {
+     "args": [
+      "ab",
+      1
+     ],
+     "out": "ab!1"
+    },
+    {
+     "args": [
+      "ab",
+      5
+     ],
+     "out": "ab!5"
+    },
+    {
+     "args": [
+      "abc",
+      -1
+     ],
+     "out": "abc!-1"
+    },
+    {
+     "args": [
+      "abc",
+      2
+     ],
+     "out": "abc!2"
+    },
+    {
+     "args": [
+      "abc",
+      10
+     ],
+     "out": "abc!10"
+    },
+    {
+     "args": [
+      "Hello",
+      0
+     ],
+     "out": "Hello!0"
+    },
+    {
+     "args": [
+      "Hello",
+      3
+     ],
+     "out": "Hello!3"
+    },
+    {
+     "args": [
+      "Hello",
+      100
+     ],
+     "out": "Hello!100"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      -1
+     ],
+     "out": " Ab 9. !-1"
+    },
+    {
+     "args": [
+      "a",
+      1234
+     ],
+     "out": "a!1234"
+    }
+   ],
+   "expr": "repo + \"!\" + (\"\" + id)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 74,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 12,
+    "wrong": 0
+   },
+   "upstream": "function pullKey(repo: string, id: number): string {\n  return `${repo}!${id}`\n}",
+   "path": "shared/normalize.ts",
+   "fileBlob": "7e0a68a6a5840cdf95bb7415b3d70ecde7fa3b53",
+   "sha256": "707470a3b2377982f56651b884fa50514dde0c6fa0963db63b8558ab7c2c2b70",
+   "fixture": "peaceai/test/fixtures/m101-tj/ajitjha393__daybrief-7e0a68a6a584.txt",
+   "license": "MIT",
+   "licenseSha256": "55d2de4369ff867deacedebe36728e7d6ca34282810f7e2a8bddb1df12bb6b29",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", -1) gives \" Ab 9. !-1\"",
+    "chars: (\"a\", 1234) gives \"a!1234\""
+   ]
+  },
+  {
+   "repo": "emilianoschmid/dilock",
+   "commit": "4032b8a479d319c0ee12f8167d53898de59f1bb2",
+   "module": "sdk/typescript/packages/core/src/identity.ts",
+   "fn": "redisKey",
+   "params": [
+    {
+     "name": "resourceId",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "dilock:{}:lease"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "dilock:{abc}:lease"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "dilock:{hello world}:lease"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "dilock:{123}:lease"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "dilock:{ Ab 9. }:lease"
+    }
+   ],
+   "expr": "\"dilock:{\" + resourceId + \"}:lease\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function redisKey(resourceId: string): string { return `dilock:{${resourceId}}:lease`; }",
+   "path": "sdk/typescript/packages/core/src/identity.ts",
+   "fileBlob": "1fb0d153c0d2daf7e93b36670704dfb638553ea7",
+   "sha256": "d8b5713365c40cc1382f29dac12bd0ce89e4ef630574ff905487f6b3284c9312",
+   "fixture": "peaceai/test/fixtures/m101-tj/emilianoschmid__dilock-1fb0d153c0d2.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"dilock:{ Ab 9. }:lease\""
+   ]
+  },
+  {
+   "repo": "glyph-cat/swiss-army-knife",
+   "commit": "866993835899107fe5c8b8cbe5fbe1c54ca3828d",
+   "module": "packages/css-utils/src/utils/css-unit/index.ts",
+   "fn": "em",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1em"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2em"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10em"
+    },
+    {
+     "args": [
+      13
+     ],
+     "out": "13em"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0em"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1em"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234em"
+    }
+   ],
+   "expr": "(\"\" + value) + \"em\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 5,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function em(value: number): string {\n  return value + 'em'\n}",
+   "path": "packages/css-utils/src/utils/css-unit/index.ts",
+   "fileBlob": "c49edfdcbb832ecafc1955dfa49b989e1a8c3e06",
+   "sha256": "ce1117456a83829039c81faaab36893c137e859561c2a04e9fbaad1c3ec00057",
+   "fixture": "peaceai/test/fixtures/m101-tj/glyph-cat__swiss-army-knife-c49edfdcbb83.txt",
+   "license": "MIT",
+   "licenseSha256": "1b236bb05e34a53487e38fc4d306baa18fa173f9d75d327ff92007791734235c",
+   "addedForGates": [
+    "chars: (0) gives \"0em\"",
+    "chars: (1) gives \"1em\"",
+    "chars: (1234) gives \"1234em\""
+   ]
+  },
+  {
+   "repo": "glyph-cat/swiss-army-knife",
+   "commit": "866993835899107fe5c8b8cbe5fbe1c54ca3828d",
+   "module": "packages/css-utils/src/utils/css-unit/index.ts",
+   "fn": "fr",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1fr"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2fr"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10fr"
+    },
+    {
+     "args": [
+      13
+     ],
+     "out": "13fr"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0fr"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1fr"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234fr"
+    }
+   ],
+   "expr": "(\"\" + value) + \"fr\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 5,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function fr(value: number): string {\n  return value + 'fr'\n}",
+   "path": "packages/css-utils/src/utils/css-unit/index.ts",
+   "fileBlob": "c49edfdcbb832ecafc1955dfa49b989e1a8c3e06",
+   "sha256": "ce1117456a83829039c81faaab36893c137e859561c2a04e9fbaad1c3ec00057",
+   "fixture": "peaceai/test/fixtures/m101-tj/glyph-cat__swiss-army-knife-c49edfdcbb83.txt",
+   "license": "MIT",
+   "licenseSha256": "1b236bb05e34a53487e38fc4d306baa18fa173f9d75d327ff92007791734235c",
+   "addedForGates": [
+    "chars: (0) gives \"0fr\"",
+    "chars: (1) gives \"1fr\"",
+    "chars: (1234) gives \"1234fr\""
+   ]
+  },
+  {
+   "repo": "glyph-cat/swiss-army-knife",
+   "commit": "866993835899107fe5c8b8cbe5fbe1c54ca3828d",
+   "module": "packages/css-utils/src/utils/css-unit/index.ts",
+   "fn": "percent",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1%"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2%"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10%"
+    },
+    {
+     "args": [
+      13
+     ],
+     "out": "13%"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0%"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1%"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234%"
+    }
+   ],
+   "expr": "(\"\" + value) + \"%\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 5,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function percent(value: number): string {\n  return value + '%'\n}",
+   "path": "packages/css-utils/src/utils/css-unit/index.ts",
+   "fileBlob": "c49edfdcbb832ecafc1955dfa49b989e1a8c3e06",
+   "sha256": "ce1117456a83829039c81faaab36893c137e859561c2a04e9fbaad1c3ec00057",
+   "fixture": "peaceai/test/fixtures/m101-tj/glyph-cat__swiss-army-knife-c49edfdcbb83.txt",
+   "license": "MIT",
+   "licenseSha256": "1b236bb05e34a53487e38fc4d306baa18fa173f9d75d327ff92007791734235c",
+   "addedForGates": [
+    "chars: (0) gives \"0%\"",
+    "chars: (1) gives \"1%\"",
+    "chars: (1234) gives \"1234%\""
+   ]
+  },
+  {
+   "repo": "hellkite-eu/pipkin",
+   "commit": "1c44fb5a71e2568f00294f5f047e73675cbddde5",
+   "module": "src/lib/utils/toPx.ts",
+   "fn": "toPx",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1px"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2px"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10px"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0px"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1px"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234px"
+    }
+   ],
+   "expr": "(\"\" + value) + \"px\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "const toPx = (value: number): string => `${value}px`;",
+   "path": "src/lib/utils/toPx.ts",
+   "fileBlob": "e4e0f865700c5ee1bdd2c526f8f1ecbcc65a61b8",
+   "sha256": "48aa3c20651195c43e1981bedb28eaff69c8b7fed128caecc5b92ea9d72f470e",
+   "fixture": "peaceai/test/fixtures/m101-tj/hellkite-eu__pipkin-e4e0f865700c.txt",
+   "license": "MIT",
+   "licenseSha256": "6857ab5824fe781ad84df93e7b25a188cb119a4c2f27096e1f75a81cf5333365",
+   "addedForGates": [
+    "chars: (0) gives \"0px\"",
+    "chars: (1) gives \"1px\"",
+    "chars: (1234) gives \"1234px\""
+   ]
+  },
+  {
+   "repo": "home-screens/home-screens",
+   "commit": "82360e6aa4295363967f314f4aaeffba3c609db4",
+   "module": "website/src/lib/plugin-directory.ts",
+   "fn": "repoIssuesUrl",
+   "params": [
+    {
+     "name": "repo",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "https://github.com//issues"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "https://github.com/abc/issues"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "https://github.com/hello world/issues"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "https://github.com/123/issues"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "https://github.com/ Ab 9. /issues"
+    }
+   ],
+   "expr": "\"https://github.com/\" + repo + \"/issues\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function repoIssuesUrl(repo: string): string {\n  return `https://github.com/${repo}/issues`\n}",
+   "path": "website/src/lib/plugin-directory.ts",
+   "fileBlob": "3d1f93cd56bd76de31401074f3bfbf5bf9fe3352",
+   "sha256": "afbca6741cf1fe0d6dd189d123f195eb88c0c51434f880e02982adf3b915f4d0",
+   "fixture": "peaceai/test/fixtures/m101-tj/home-screens__home-screens-3d1f93cd56bd.txt",
+   "license": "MIT",
+   "licenseSha256": "08bf7d872ff29234b6dab5dcaabb527dc47d0573d3dc140da4ab2dbbf89def4b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"https://github.com/ Ab 9. /issues\""
+   ]
+  },
+  {
+   "repo": "hugs7/tiptap-extension-pagination",
+   "commit": "c69ef11ef0310406abf789ebfcea5141cfe6b48d",
+   "module": "src/utils/units.ts",
+   "fn": "mm",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1mm"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2mm"
+    },
+    {
+     "args": [
+      9
+     ],
+     "out": "9mm"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "100mm"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0mm"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1mm"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234mm"
+    }
+   ],
+   "expr": "(\"\" + value) + \"mm\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 4,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 9,
+    "wrong": 0
+   },
+   "upstream": "const mm = (value: number): string => {\n    return `${value}mm`;\n};",
+   "path": "src/utils/units.ts",
+   "fileBlob": "ef48d9dc4fc6ec477727a4bd52fe964a5c815ad9",
+   "sha256": "73709c6c6c99c50a7f95fb69592883b071d2976bbe7fcb22c503d383d35195da",
+   "fixture": "peaceai/test/fixtures/m101-tj/hugs7__tiptap-extension-pagination-ef48d9dc4fc6.txt",
+   "license": "MIT",
+   "licenseSha256": "a1d7b9dad8b47b4c24b45bf47b3a73482b52b5cd5e7fd26c87814ecf3de70d0d",
+   "addedForGates": [
+    "chars: (0) gives \"0mm\"",
+    "chars: (1) gives \"1mm\"",
+    "chars: (1234) gives \"1234mm\""
+   ]
+  },
+  {
+   "repo": "hugs7/tiptap-extension-pagination",
+   "commit": "c69ef11ef0310406abf789ebfcea5141cfe6b48d",
+   "module": "src/utils/units.ts",
+   "fn": "px",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1px"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2px"
+    },
+    {
+     "args": [
+      9
+     ],
+     "out": "9px"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "100px"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0px"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1px"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234px"
+    }
+   ],
+   "expr": "(\"\" + value) + \"px\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 4,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 9,
+    "wrong": 0
+   },
+   "upstream": "const px = (value: number): string => {\n    return `${value}px`;\n};",
+   "path": "src/utils/units.ts",
+   "fileBlob": "ef48d9dc4fc6ec477727a4bd52fe964a5c815ad9",
+   "sha256": "73709c6c6c99c50a7f95fb69592883b071d2976bbe7fcb22c503d383d35195da",
+   "fixture": "peaceai/test/fixtures/m101-tj/hugs7__tiptap-extension-pagination-ef48d9dc4fc6.txt",
+   "license": "MIT",
+   "licenseSha256": "a1d7b9dad8b47b4c24b45bf47b3a73482b52b5cd5e7fd26c87814ecf3de70d0d",
+   "addedForGates": [
+    "chars: (0) gives \"0px\"",
+    "chars: (1) gives \"1px\"",
+    "chars: (1234) gives \"1234px\""
+   ]
+  },
+  {
+   "repo": "libredb/libredb-studio",
+   "commit": "c9989a6b53f605f68b780b142e2eec705f2b3ddb",
+   "module": "src/lib/db/providers/stream/rabbitmq/errors.ts",
+   "fn": "countsLabel",
+   "params": [
+    {
+     "name": "sampledAt",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "Counts (sampled at )"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "Counts (sampled at abc)"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "Counts (sampled at hello world)"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "Counts (sampled at 123)"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "Counts (sampled at  Ab 9. )"
+    }
+   ],
+   "expr": "\"Counts (sampled at \" + sampledAt + \")\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function countsLabel(sampledAt: string): string {\n  return `Counts (sampled at ${sampledAt})`;\n}",
+   "path": "src/lib/db/providers/stream/rabbitmq/errors.ts",
+   "fileBlob": "c8e5637a89b74d15355891595121b9ef6ac44c68",
+   "sha256": "4b9b355a540a75a3a5ddffc9c548c32c7723d84d122615e5532a394ee9d2d360",
+   "fixture": "peaceai/test/fixtures/m101-tj/libredb__libredb-studio-c8e5637a89b7.txt",
+   "license": "MIT",
+   "licenseSha256": "0f110aa081453ae54163d8563fad757d993065117e98baf1effb7ca29ab98e77",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"Counts (sampled at  Ab 9. )\""
+   ]
+  },
+  {
+   "repo": "libredb/libredb-studio",
+   "commit": "c9989a6b53f605f68b780b142e2eec705f2b3ddb",
+   "module": "src/lib/db/providers/stream/rabbitmq/errors.ts",
+   "fn": "fieldWrongType",
+   "params": [
+    {
+     "name": "field",
+     "type": "string"
+    },
+    {
+     "name": "expected",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "The connection's  must be ; nothing was sent."
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "The connection's  must be abc; nothing was sent."
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "The connection's  must be hello world; nothing was sent."
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "The connection's  must be 123; nothing was sent."
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "The connection's a must be a; nothing was sent."
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "The connection's a must be Hello; nothing was sent."
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "The connection's a must be A-B; nothing was sent."
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "The connection's a must be  pad ; nothing was sent."
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "The connection's ab must be ab; nothing was sent."
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "The connection's ab must be x y; nothing was sent."
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "The connection's ab must be foo.bar; nothing was sent."
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "The connection's abc must be ; nothing was sent."
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "The connection's abc must be abc; nothing was sent."
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "The connection's abc must be hello world; nothing was sent."
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": "The connection's  Ab 9.  must be ; nothing was sent."
+    }
+   ],
+   "expr": "\"The connection's \" + field + \" must be \" + expected + \"; nothing was sent.\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function fieldWrongType(field: string, expected: string): string {\n  return `The connection's ${field} must be ${expected}; nothing was sent.`;\n}",
+   "path": "src/lib/db/providers/stream/rabbitmq/errors.ts",
+   "fileBlob": "c8e5637a89b74d15355891595121b9ef6ac44c68",
+   "sha256": "4b9b355a540a75a3a5ddffc9c548c32c7723d84d122615e5532a394ee9d2d360",
+   "fixture": "peaceai/test/fixtures/m101-tj/libredb__libredb-studio-c8e5637a89b7.txt",
+   "license": "MIT",
+   "licenseSha256": "0f110aa081453ae54163d8563fad757d993065117e98baf1effb7ca29ab98e77",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \"The connection's  Ab 9.  must be ; nothing was sent.\""
+   ]
+  },
+  {
+   "repo": "luiscarlospando/raycast-discord-extension",
+   "commit": "cd483478df359bdfef5b2535609802f7882d7c23",
+   "module": "src/utils.ts",
+   "fn": "getAvatarUrl",
+   "params": [
+    {
+     "name": "userId",
+     "type": "string"
+    },
+    {
+     "name": "avatarHash",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "https://cdn.discordapp.com/avatars//.png"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "https://cdn.discordapp.com/avatars//abc.png"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "https://cdn.discordapp.com/avatars//hello world.png"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "https://cdn.discordapp.com/avatars//123.png"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/a/a.png"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/a/Hello.png"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/a/A-B.png"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "https://cdn.discordapp.com/avatars/a/ pad .png"
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/ab/ab.png"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/ab/x y.png"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/ab/foo.bar.png"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "https://cdn.discordapp.com/avatars/abc/.png"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/abc/abc.png"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "https://cdn.discordapp.com/avatars/abc/hello world.png"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": "https://cdn.discordapp.com/avatars/ Ab 9. /.png"
+    }
+   ],
+   "expr": "\"https://cdn.discordapp.com/avatars/\" + userId + \"/\" + avatarHash + \".png\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function getAvatarUrl(userId: string, avatarHash: string): string {\n    return `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png`;\n}",
+   "path": "src/utils.ts",
+   "fileBlob": "6b0243bd3517c9e3e7c6791f7183f66a6e86cd0f",
+   "sha256": "21a6d90a6af24e2ce020f15417ae406f351607b7b384a5fe2f78ef7056d27c0c",
+   "fixture": "peaceai/test/fixtures/m101-tj/luiscarlospando__raycast-discord-extension-6b0243bd3517.txt",
+   "license": "MIT",
+   "licenseSha256": "af450f8a063c8a192cda859be503d2da7aa822c8a960746178b5d955e4d506c4",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \"https://cdn.discordapp.com/avatars/ Ab 9. /.png\""
+   ]
+  },
+  {
+   "repo": "luiscarlospando/raycast-discord-extension",
+   "commit": "cd483478df359bdfef5b2535609802f7882d7c23",
+   "module": "src/utils.ts",
+   "fn": "getServerIconUrl",
+   "params": [
+    {
+     "name": "serverId",
+     "type": "string"
+    },
+    {
+     "name": "iconHash",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "https://cdn.discordapp.com/icons//.png"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "https://cdn.discordapp.com/icons//abc.png"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "https://cdn.discordapp.com/icons//hello world.png"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "https://cdn.discordapp.com/icons//123.png"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "https://cdn.discordapp.com/icons/a/a.png"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "https://cdn.discordapp.com/icons/a/Hello.png"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "https://cdn.discordapp.com/icons/a/A-B.png"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "https://cdn.discordapp.com/icons/a/ pad .png"
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "https://cdn.discordapp.com/icons/ab/ab.png"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "https://cdn.discordapp.com/icons/ab/x y.png"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "https://cdn.discordapp.com/icons/ab/foo.bar.png"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "https://cdn.discordapp.com/icons/abc/.png"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "https://cdn.discordapp.com/icons/abc/abc.png"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "https://cdn.discordapp.com/icons/abc/hello world.png"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": "https://cdn.discordapp.com/icons/ Ab 9. /.png"
+    }
+   ],
+   "expr": "\"https://cdn.discordapp.com/icons/\" + serverId + \"/\" + iconHash + \".png\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function getServerIconUrl(serverId: string, iconHash: string): string {\n    return `https://cdn.discordapp.com/icons/${serverId}/${iconHash}.png`;\n}",
+   "path": "src/utils.ts",
+   "fileBlob": "6b0243bd3517c9e3e7c6791f7183f66a6e86cd0f",
+   "sha256": "21a6d90a6af24e2ce020f15417ae406f351607b7b384a5fe2f78ef7056d27c0c",
+   "fixture": "peaceai/test/fixtures/m101-tj/luiscarlospando__raycast-discord-extension-6b0243bd3517.txt",
+   "license": "MIT",
+   "licenseSha256": "af450f8a063c8a192cda859be503d2da7aa822c8a960746178b5d955e4d506c4",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \"https://cdn.discordapp.com/icons/ Ab 9. /.png\""
+   ]
+  },
+  {
+   "repo": "marcosdxt/uhura-nestjs",
+   "commit": "2a3b4c34dee4c09a2a024e74515cc2c8341f5aa4",
+   "module": "src/transport.ts",
+   "fn": "parkingExchange",
+   "params": [
+    {
+     "name": "domain",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "uhura..parking"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "uhura.abc.parking"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "uhura.hello world.parking"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "uhura.123.parking"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "uhura. Ab 9. .parking"
+    }
+   ],
+   "expr": "\"uhura.\" + domain + \".parking\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function parkingExchange(domain: string): string {\n  return `uhura.${domain}.parking`;\n}",
+   "path": "src/transport.ts",
+   "fileBlob": "98f49a1215ad575ead867030d6d67ef3c8ca4493",
+   "sha256": "08d9773eb22cd38d9fb6d9447f44f131413adb5ade4784dbd555afaa9a62d7bb",
+   "fixture": "peaceai/test/fixtures/m101-tj/marcosdxt__uhura-nestjs-98f49a1215ad.txt",
+   "license": "MIT",
+   "licenseSha256": "abfd5d0a288c1c2a329dc1d88da21a87a77f1bc755606d563ee7c9e6b095ffd8",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"uhura. Ab 9. .parking\""
+   ]
+  },
+  {
+   "repo": "marcosdxt/uhura-nestjs",
+   "commit": "2a3b4c34dee4c09a2a024e74515cc2c8341f5aa4",
+   "module": "src/transport.ts",
+   "fn": "parkingQueue",
+   "params": [
+    {
+     "name": "domain",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "uhura..parking.q"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "uhura.abc.parking.q"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "uhura.hello world.parking.q"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "uhura.123.parking.q"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "uhura. Ab 9. .parking.q"
+    }
+   ],
+   "expr": "\"uhura.\" + domain + \".parking.q\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function parkingQueue(domain: string): string {\n  return `uhura.${domain}.parking.q`;\n}",
+   "path": "src/transport.ts",
+   "fileBlob": "98f49a1215ad575ead867030d6d67ef3c8ca4493",
+   "sha256": "08d9773eb22cd38d9fb6d9447f44f131413adb5ade4784dbd555afaa9a62d7bb",
+   "fixture": "peaceai/test/fixtures/m101-tj/marcosdxt__uhura-nestjs-98f49a1215ad.txt",
+   "license": "MIT",
+   "licenseSha256": "abfd5d0a288c1c2a329dc1d88da21a87a77f1bc755606d563ee7c9e6b095ffd8",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"uhura. Ab 9. .parking.q\""
+   ]
+  },
+  {
+   "repo": "marcosdxt/uhura-nestjs",
+   "commit": "2a3b4c34dee4c09a2a024e74515cc2c8341f5aa4",
+   "module": "src/transport.ts",
+   "fn": "queueName",
+   "params": [
+    {
+     "name": "domain",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "uhura..q"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "uhura.abc.q"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "uhura.hello world.q"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "uhura.123.q"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "uhura. Ab 9. .q"
+    }
+   ],
+   "expr": "\"uhura.\" + domain + \".q\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function queueName(domain: string): string {\n  return `uhura.${domain}.q`;\n}",
+   "path": "src/transport.ts",
+   "fileBlob": "98f49a1215ad575ead867030d6d67ef3c8ca4493",
+   "sha256": "08d9773eb22cd38d9fb6d9447f44f131413adb5ade4784dbd555afaa9a62d7bb",
+   "fixture": "peaceai/test/fixtures/m101-tj/marcosdxt__uhura-nestjs-98f49a1215ad.txt",
+   "license": "MIT",
+   "licenseSha256": "abfd5d0a288c1c2a329dc1d88da21a87a77f1bc755606d563ee7c9e6b095ffd8",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"uhura. Ab 9. .q\""
+   ]
+  },
+  {
+   "repo": "mario-andreschak/FLUJO",
+   "commit": "03e6639812191f018e485f090761a0a6c3421fe8",
+   "module": "src/frontend/components/Waves/waveGraph.ts",
+   "fn": "makeKey",
+   "params": [
+    {
+     "name": "baseId",
+     "type": "string"
+    },
+    {
+     "name": "occ",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      -1
+     ],
+     "out": "#-1"
+    },
+    {
+     "args": [
+      "",
+      2
+     ],
+     "out": "#2"
+    },
+    {
+     "args": [
+      "",
+      10
+     ],
+     "out": "#10"
+    },
+    {
+     "args": [
+      "a",
+      0
+     ],
+     "out": "a#0"
+    },
+    {
+     "args": [
+      "a",
+      3
+     ],
+     "out": "a#3"
+    },
+    {
+     "args": [
+      "a",
+      100
+     ],
+     "out": "a#100"
+    },
+    {
+     "args": [
+      "ab",
+      1
+     ],
+     "out": "ab#1"
+    },
+    {
+     "args": [
+      "ab",
+      5
+     ],
+     "out": "ab#5"
+    },
+    {
+     "args": [
+      "abc",
+      -1
+     ],
+     "out": "abc#-1"
+    },
+    {
+     "args": [
+      "abc",
+      2
+     ],
+     "out": "abc#2"
+    },
+    {
+     "args": [
+      "abc",
+      10
+     ],
+     "out": "abc#10"
+    },
+    {
+     "args": [
+      "Hello",
+      0
+     ],
+     "out": "Hello#0"
+    },
+    {
+     "args": [
+      "Hello",
+      3
+     ],
+     "out": "Hello#3"
+    },
+    {
+     "args": [
+      "Hello",
+      100
+     ],
+     "out": "Hello#100"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      -1
+     ],
+     "out": " Ab 9. #-1"
+    },
+    {
+     "args": [
+      "a",
+      1234
+     ],
+     "out": "a#1234"
+    }
+   ],
+   "expr": "baseId + \"#\" + (\"\" + occ)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 74,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 12,
+    "wrong": 0
+   },
+   "upstream": "function makeKey(baseId: string, occ: number): string {\n  return `${baseId}#${occ}`;\n}",
+   "path": "src/frontend/components/Waves/waveGraph.ts",
+   "fileBlob": "9c7f85d110039d79a27323f71128bf53dc30b18a",
+   "sha256": "251fb76579d25fac6ab0680cd75e3ecb8b3819185868d78431a39ef1b568f467",
+   "fixture": "peaceai/test/fixtures/m101-tj/mario-andreschak__FLUJO-9c7f85d11003.txt",
+   "license": "MIT",
+   "licenseSha256": "6ddd2f5ff522edb0ebd21cc0d26eb1779515f8defa592da6a6fb4c8edeeb2a03",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", -1) gives \" Ab 9. #-1\"",
+    "chars: (\"a\", 1234) gives \"a#1234\""
+   ]
+  },
+  {
+   "repo": "pmdroid/acpbot",
+   "commit": "6f0059d1a10859ee4659efb1a6d44d0b48d40ff1",
+   "module": "src/core/status.ts",
+   "fn": "topicName",
+   "params": [
+    {
+     "name": "repo",
+     "type": "string"
+    },
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "/"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "/abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "/hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "/123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a/a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a/Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a/A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a/ pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab/ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab/x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab/foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc/"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc/abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc/hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": " Ab 9. /"
+    }
+   ],
+   "expr": "repo + \"/\" + name",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function topicName(repo: string, name: string): string {\n  return `${repo}/${name}`;\n}",
+   "path": "src/core/status.ts",
+   "fileBlob": "2b2c1bbd9122e45ded56464394894073cc229373",
+   "sha256": "093eb240b99c8ad16bd5aff758aa40f5c1012ebfac359f4195cab25a1ff74dfa",
+   "fixture": "peaceai/test/fixtures/m101-tj/pmdroid__acpbot-2b2c1bbd9122.txt",
+   "license": "MIT",
+   "licenseSha256": "34f596611b75ea630d385d875954c12955f03489a92b4e1d8e6afc17e9e2b40f",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \" Ab 9. /\""
+   ]
+  },
+  {
+   "repo": "sanity-io/sanity",
+   "commit": "a92664c79cd1617b0b2a2fec66050f13c23c0f8e",
+   "module": "scripts/trigger-triage/src/issue-channel.ts",
+   "fn": "channelNameFor",
+   "params": [
+    {
+     "name": "repo",
+     "type": "string"
+    },
+    {
+     "name": "issueNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      -1
+     ],
+     "out": "-issue--1"
+    },
+    {
+     "args": [
+      "",
+      2
+     ],
+     "out": "-issue-2"
+    },
+    {
+     "args": [
+      "",
+      10
+     ],
+     "out": "-issue-10"
+    },
+    {
+     "args": [
+      "a",
+      0
+     ],
+     "out": "a-issue-0"
+    },
+    {
+     "args": [
+      "a",
+      3
+     ],
+     "out": "a-issue-3"
+    },
+    {
+     "args": [
+      "a",
+      100
+     ],
+     "out": "a-issue-100"
+    },
+    {
+     "args": [
+      "ab",
+      1
+     ],
+     "out": "ab-issue-1"
+    },
+    {
+     "args": [
+      "ab",
+      5
+     ],
+     "out": "ab-issue-5"
+    },
+    {
+     "args": [
+      "abc",
+      -1
+     ],
+     "out": "abc-issue--1"
+    },
+    {
+     "args": [
+      "abc",
+      2
+     ],
+     "out": "abc-issue-2"
+    },
+    {
+     "args": [
+      "abc",
+      10
+     ],
+     "out": "abc-issue-10"
+    },
+    {
+     "args": [
+      "Hello",
+      0
+     ],
+     "out": "Hello-issue-0"
+    },
+    {
+     "args": [
+      "Hello",
+      3
+     ],
+     "out": "Hello-issue-3"
+    },
+    {
+     "args": [
+      "Hello",
+      100
+     ],
+     "out": "Hello-issue-100"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      -1
+     ],
+     "out": " Ab 9. -issue--1"
+    },
+    {
+     "args": [
+      "a",
+      1234
+     ],
+     "out": "a-issue-1234"
+    }
+   ],
+   "expr": "repo + \"-issue-\" + (\"\" + issueNumber)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 74,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 12,
+    "wrong": 0
+   },
+   "upstream": "function channelNameFor(repo: string, issueNumber: number): string {\n  return `${repo}-issue-${issueNumber}`\n}",
+   "path": "scripts/trigger-triage/src/issue-channel.ts",
+   "fileBlob": "8d09de44d1aa35301638bacb946cd71cad7c96db",
+   "sha256": "7406f756341efe6d4d20d4ad543ed5013c969617b08366392d7fc7529cbbbc74",
+   "fixture": "peaceai/test/fixtures/m101-tj/sanity-io__sanity-8d09de44d1aa.txt",
+   "license": "MIT",
+   "licenseSha256": "f67ca7a8039ec4293ea9910e4ddfac56f0a0cc8f5916e342873b4bfa192a316d",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", -1) gives \" Ab 9. -issue--1\"",
+    "chars: (\"a\", 1234) gives \"a-issue-1234\""
+   ]
+  },
+  {
+   "repo": "sanraith/aoc2021",
+   "commit": "cb2af833874cffa875ce478bbfad980efe3efc08",
+   "module": "src/web/calendar/calendarHelpers.ts",
+   "fn": "calendarCellId",
+   "params": [
+    {
+     "name": "dayNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "cd-1"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "cd2"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "cd10"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "cd0"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "cd1"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "cd1234"
+    }
+   ],
+   "expr": "\"cd\" + (\"\" + dayNumber)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function calendarCellId(dayNumber: number): string {\n    return `cd${dayNumber}`;\n}",
+   "path": "src/web/calendar/calendarHelpers.ts",
+   "fileBlob": "c5d696d65d7f6be65f1b23224fea0f6f1547ac25",
+   "sha256": "150d643a9ed3980a6d36e959b89f6218f180eed6640ecc4e7dbcab9f2b09e0cc",
+   "fixture": "peaceai/test/fixtures/m101-tj/sanraith__aoc2021-c5d696d65d7f.txt",
+   "license": "MIT",
+   "licenseSha256": "0c6737e6211bb83e73d12830ff23729710c7223f641ad03a009fb57308e87950",
+   "addedForGates": [
+    "chars: (0) gives \"cd0\"",
+    "chars: (1) gives \"cd1\"",
+    "chars: (1234) gives \"cd1234\""
+   ]
+  },
+  {
+   "repo": "schmayterling/comment-issues",
+   "commit": "7fbfa21e8edd2a420f8cdcc4bb5b558ef1a0d065",
+   "module": "src/extension.ts",
+   "fn": "getIssueUrl",
+   "params": [
+    {
+     "name": "repoUrl",
+     "type": "string"
+    },
+    {
+     "name": "issueNumber",
+     "type": "string"
+    },
+    {
+     "name": "providerName",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      "",
+      ""
+     ],
+     "out": "/issues/"
+    },
+    {
+     "args": [
+      "",
+      "",
+      "abc"
+     ],
+     "out": "/issues/"
+    },
+    {
+     "args": [
+      "",
+      "",
+      "hello world"
+     ],
+     "out": "/issues/"
+    },
+    {
+     "args": [
+      "",
+      "",
+      "123"
+     ],
+     "out": "/issues/"
+    },
+    {
+     "args": [
+      "",
+      "a",
+      "a"
+     ],
+     "out": "/issues/a"
+    },
+    {
+     "args": [
+      "",
+      "a",
+      "Hello"
+     ],
+     "out": "/issues/a"
+    },
+    {
+     "args": [
+      "",
+      "a",
+      "A-B"
+     ],
+     "out": "/issues/a"
+    },
+    {
+     "args": [
+      "",
+      "a",
+      " pad "
+     ],
+     "out": "/issues/a"
+    },
+    {
+     "args": [
+      "",
+      "ab",
+      "ab"
+     ],
+     "out": "/issues/ab"
+    },
+    {
+     "args": [
+      "",
+      "ab",
+      "x y"
+     ],
+     "out": "/issues/ab"
+    },
+    {
+     "args": [
+      "",
+      "ab",
+      "foo.bar"
+     ],
+     "out": "/issues/ab"
+    },
+    {
+     "args": [
+      "",
+      "abc",
+      ""
+     ],
+     "out": "/issues/abc"
+    },
+    {
+     "args": [
+      "",
+      "abc",
+      "abc"
+     ],
+     "out": "/issues/abc"
+    },
+    {
+     "args": [
+      "",
+      "abc",
+      "hello world"
+     ],
+     "out": "/issues/abc"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      "",
+      ""
+     ],
+     "out": " Ab 9. /issues/"
+    },
+    {
+     "args": [
+      "",
+      " Ab 9. ",
+      ""
+     ],
+     "out": "/issues/ Ab 9. "
+    }
+   ],
+   "expr": "repoUrl + \"/issues/\" + issueNumber",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 1317,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 14,
+    "wrong": 0
+   },
+   "upstream": "function getIssueUrl(\n    repoUrl: string,\n    issueNumber: string,\n    providerName: string\n): string {\n    switch (providerName) {\n        case \"GitHub\":\n            return `${repoUrl}/issues/${issueNumber}`;\n        case \"GitLab\":\n            return `${repoUrl}/-/issues/${issueNumber}`;\n        case \"Bitbucket\":\n            return `${repoUrl}/issues/${issueNumber}`;\n        default:\n            return `${repoUrl}/issues/${issueNumber}`;\n    }\n}",
+   "path": "src/extension.ts",
+   "fileBlob": "58b6fd093e3ab8ae30ac284357c3d16884673cb6",
+   "sha256": "8a0e1b68a9068c1002361e43df3a2cbe0f5bbfeec651a31b99eae88ae69d6f4a",
+   "fixture": "peaceai/test/fixtures/m101-tj/schmayterling__comment-issues-58b6fd093e3a.txt",
+   "license": "MIT",
+   "licenseSha256": "625e7c8d0ad497a2f62944464742263c26014b6015be53859f0e0b68f94b2c5d",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\", \"\") gives \" Ab 9. /issues/\"",
+    "chars: (\"\", \" Ab 9. \", \"\") gives \"/issues/ Ab 9. \""
+   ]
+  },
+  {
+   "repo": "shawnpetros/salazar",
+   "commit": "e16841146e2ef2d71aa99117334939037e9804ff",
+   "module": "dashboard/lib/keys.ts",
+   "fn": "buildKey",
+   "params": [
+    {
+     "name": "sessionId",
+     "type": "string"
+    },
+    {
+     "name": "type",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "session::"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "session::abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "session::hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "session::123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "session:a:a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "session:a:Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "session:a:A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "session:a: pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "session:ab:ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "session:ab:x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "session:ab:foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "session:abc:"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "session:abc:abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "session:abc:hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": "session: Ab 9. :"
+    }
+   ],
+   "expr": "\"session:\" + sessionId + \":\" + type",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function buildKey(sessionId: string, type: string): string {\n  return `session:${sessionId}:${type}`;\n}",
+   "path": "dashboard/lib/keys.ts",
+   "fileBlob": "a534309cde8d80a1dc8b9ffd51816e03b972d2a6",
+   "sha256": "d2708aee4a7ad08ad5c10ee22852abea59d4104516400fbfb5fda31931fd3c4a",
+   "fixture": "peaceai/test/fixtures/m101-tj/shawnpetros__salazar-a534309cde8d.txt",
+   "license": "MIT",
+   "licenseSha256": "238eaaf5a0b880671ec4c667c312b4296a68d9f5fce8d40f6e19f33c7b5829c2",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \"session: Ab 9. :\""
+   ]
+  },
+  {
+   "repo": "singi-labs/sifa-sdk",
+   "commit": "07d9b44d474534c9ac5bf444409348f994012832",
+   "module": "src/jsonld/url.ts",
+   "fn": "profileUrl",
+   "params": [
+    {
+     "name": "baseUrl",
+     "type": "string"
+    },
+    {
+     "name": "handle",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": "/p/"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": "/p/abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": "/p/hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": "/p/123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a/p/a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a/p/Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a/p/A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a/p/ pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab/p/ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab/p/x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab/p/foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc/p/"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc/p/abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc/p/hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": " Ab 9. /p/"
+    }
+   ],
+   "expr": "baseUrl + \"/p/\" + handle",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function profileUrl(baseUrl: string, handle: string): string {\n  return `${baseUrl}/p/${handle}`;\n}",
+   "path": "src/jsonld/url.ts",
+   "fileBlob": "10a39fd926a1a890d3c55c5b4210d4e6b8bbdd41",
+   "sha256": "cf7045957a85ce219fb1b83a9f67a895db0c366a590a642240aac5a9d7f8485b",
+   "fixture": "peaceai/test/fixtures/m101-tj/singi-labs__sifa-sdk-10a39fd926a1.txt",
+   "license": "MIT",
+   "licenseSha256": "344725303435ecb8067a8a4a5e01ff0635665f67775566c9c9b4ad0ec72c2c93",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \" Ab 9. /p/\""
+   ]
+  },
+  {
+   "repo": "sixb-ai/sixb",
+   "commit": "974494ecd55b35c6598d7ebdb020c65bf3ec1df7",
+   "module": "packages/core/src/storage/run-listing.ts",
+   "fn": "storageKey",
+   "params": [
+    {
+     "name": "projectId",
+     "type": "string"
+    },
+    {
+     "name": "id",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      ""
+     ],
+     "out": ":"
+    },
+    {
+     "args": [
+      "",
+      "abc"
+     ],
+     "out": ":abc"
+    },
+    {
+     "args": [
+      "",
+      "hello world"
+     ],
+     "out": ":hello world"
+    },
+    {
+     "args": [
+      "",
+      "123"
+     ],
+     "out": ":123"
+    },
+    {
+     "args": [
+      "a",
+      "a"
+     ],
+     "out": "a:a"
+    },
+    {
+     "args": [
+      "a",
+      "Hello"
+     ],
+     "out": "a:Hello"
+    },
+    {
+     "args": [
+      "a",
+      "A-B"
+     ],
+     "out": "a:A-B"
+    },
+    {
+     "args": [
+      "a",
+      " pad "
+     ],
+     "out": "a: pad "
+    },
+    {
+     "args": [
+      "ab",
+      "ab"
+     ],
+     "out": "ab:ab"
+    },
+    {
+     "args": [
+      "ab",
+      "x y"
+     ],
+     "out": "ab:x y"
+    },
+    {
+     "args": [
+      "ab",
+      "foo.bar"
+     ],
+     "out": "ab:foo.bar"
+    },
+    {
+     "args": [
+      "abc",
+      ""
+     ],
+     "out": "abc:"
+    },
+    {
+     "args": [
+      "abc",
+      "abc"
+     ],
+     "out": "abc:abc"
+    },
+    {
+     "args": [
+      "abc",
+      "hello world"
+     ],
+     "out": "abc:hello world"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      ""
+     ],
+     "out": " Ab 9. :"
+    }
+   ],
+   "expr": "projectId + \":\" + id",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 107,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 6,
+    "wrong": 0
+   },
+   "upstream": "function storageKey(projectId: string, id: string): string {\n  return `${projectId}:${id}`\n}",
+   "path": "packages/core/src/storage/run-listing.ts",
+   "fileBlob": "fe17f23dd9181caf41f32e3f06c993d7c57e7491",
+   "sha256": "20686e0c000f068f41d8c43c175d705a56c22d4ae588c504bdaae7a332e0b6de",
+   "fixture": "peaceai/test/fixtures/m101-tj/sixb-ai__sixb-fe17f23dd918.txt",
+   "license": "MIT",
+   "licenseSha256": "4f8c9858d7db503622ad2b09dfe8d7a814d7eb42fa260d71ed6f760743841982",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"\") gives \" Ab 9. :\""
+   ]
+  },
+  {
+   "repo": "sj817/shotium",
+   "commit": "73eb9f59f0b174384aad2cb594647c2e4fe415ca",
+   "module": "scripts/ci/publish-preview.ts",
+   "fn": "childRunName",
+   "params": [
+    {
+     "name": "parentRunId",
+     "type": "string"
+    },
+    {
+     "name": "batch",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      -1
+     ],
+     "out": "preview-publish: run  batch -1"
+    },
+    {
+     "args": [
+      "",
+      2
+     ],
+     "out": "preview-publish: run  batch 2"
+    },
+    {
+     "args": [
+      "",
+      10
+     ],
+     "out": "preview-publish: run  batch 10"
+    },
+    {
+     "args": [
+      "a",
+      0
+     ],
+     "out": "preview-publish: run a batch 0"
+    },
+    {
+     "args": [
+      "a",
+      3
+     ],
+     "out": "preview-publish: run a batch 3"
+    },
+    {
+     "args": [
+      "a",
+      100
+     ],
+     "out": "preview-publish: run a batch 100"
+    },
+    {
+     "args": [
+      "ab",
+      1
+     ],
+     "out": "preview-publish: run ab batch 1"
+    },
+    {
+     "args": [
+      "ab",
+      5
+     ],
+     "out": "preview-publish: run ab batch 5"
+    },
+    {
+     "args": [
+      "abc",
+      -1
+     ],
+     "out": "preview-publish: run abc batch -1"
+    },
+    {
+     "args": [
+      "abc",
+      2
+     ],
+     "out": "preview-publish: run abc batch 2"
+    },
+    {
+     "args": [
+      "abc",
+      10
+     ],
+     "out": "preview-publish: run abc batch 10"
+    },
+    {
+     "args": [
+      "Hello",
+      0
+     ],
+     "out": "preview-publish: run Hello batch 0"
+    },
+    {
+     "args": [
+      "Hello",
+      3
+     ],
+     "out": "preview-publish: run Hello batch 3"
+    },
+    {
+     "args": [
+      "Hello",
+      100
+     ],
+     "out": "preview-publish: run Hello batch 100"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      -1
+     ],
+     "out": "preview-publish: run  Ab 9.  batch -1"
+    },
+    {
+     "args": [
+      "a",
+      1234
+     ],
+     "out": "preview-publish: run a batch 1234"
+    }
+   ],
+   "expr": "\"preview-publish: run \" + parentRunId + \" batch \" + (\"\" + batch)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 74,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 12,
+    "wrong": 0
+   },
+   "upstream": "function childRunName(parentRunId: string, batch: number): string {\n  return `preview-publish: run ${parentRunId} batch ${batch}`;\n}",
+   "path": "scripts/ci/publish-preview.ts",
+   "fileBlob": "fcc269462d1833aa47a0050bd4001c6e5ea84426",
+   "sha256": "72da29e6934955b25d3b86e2ebd95202ef8b458b62e0d3fd2ae58297584ebc7a",
+   "fixture": "peaceai/test/fixtures/m101-tj/sj817__shotium-fcc269462d18.txt",
+   "license": "BSD-3-Clause",
+   "licenseSha256": "29f9cb338cf938718a1e534cb84d436eb5f82f165f6ea8f7b9f074de25d80cc8",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", -1) gives \"preview-publish: run  Ab 9.  batch -1\"",
+    "chars: (\"a\", 1234) gives \"preview-publish: run a batch 1234\""
+   ]
+  },
+  {
+   "repo": "stellar/freighter-mobile",
+   "commit": "706db48a5a8147514eff1054fd89b5d7cdfc82be",
+   "module": "__mocks__/dimensions.ts",
+   "fn": "toPercent",
+   "params": [
+    {
+     "name": "percentNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1%"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2%"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10%"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0%"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1%"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234%"
+    }
+   ],
+   "expr": "(\"\" + percentNumber) + \"%\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "const toPercent = (percentNumber: number): string => `${percentNumber}%`;",
+   "path": "__mocks__/dimensions.ts",
+   "fileBlob": "1c0fd1f884c1481c0bb4ec13c74b3103a304197a",
+   "sha256": "7666194fc6ce5706736d3ae2f3c7e02af1b4a043c99a731914dfff988bbdfd4d",
+   "fixture": "peaceai/test/fixtures/m101-tj/stellar__freighter-mobile-1c0fd1f884c1.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "bd5d98ec50fbf48be4af296d43f2f5bcefac32f81410c03ad9d88e3feca290fc",
+   "addedForGates": [
+    "chars: (0) gives \"0%\"",
+    "chars: (1) gives \"1%\"",
+    "chars: (1234) gives \"1234%\""
+   ]
+  },
+  {
+   "repo": "tu11aa/squadrant",
+   "commit": "d844d89af5b26028b0f0216211554d9cdecea36f",
+   "module": "packages/core/src/telegram/format.ts",
+   "fn": "mediaMarker",
+   "params": [
+    {
+     "name": "kind",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "[ attached - not forwarded]"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "[abc attached - not forwarded]"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "[hello world attached - not forwarded]"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "[123 attached - not forwarded]"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "[ Ab 9.  attached - not forwarded]"
+    }
+   ],
+   "expr": "\"[\" + kind + \" attached - not forwarded]\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function mediaMarker(kind: string): string {\n  return `[${kind} attached - not forwarded]`;\n}",
+   "path": "packages/core/src/telegram/format.ts",
+   "fileBlob": "6adb7e0ee1969e9dae1265be4926ba2d5a724ba8",
+   "sha256": "b5d23d1cd7572809fe7e4a8b02a3ef8314785580afe13f3c8bf4391ef27d0bbc",
+   "fixture": "peaceai/test/fixtures/m101-tj/tu11aa__squadrant-6adb7e0ee196.txt",
+   "license": "MIT",
+   "licenseSha256": "26e0d1929275b46d985c28ec5b4885f4e6fc207d0ad9277773d58c4c13df3bba",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"[ Ab 9.  attached - not forwarded]\""
+   ]
+  },
+  {
+   "repo": "vedanta/terragon",
+   "commit": "e3b4a430380aaf102da160be5539926ba1350eb6",
+   "module": "lib/board.ts",
+   "fn": "issueUrl",
+   "params": [
+    {
+     "name": "issueNumber",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "https://github.com/acme/platform/issues/-1"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "https://github.com/acme/platform/issues/2"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "https://github.com/acme/platform/issues/10"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "https://github.com/acme/platform/issues/0"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "https://github.com/acme/platform/issues/1"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "https://github.com/acme/platform/issues/1234"
+    }
+   ],
+   "expr": "\"https://github.com/acme/platform/issues/\" + (\"\" + issueNumber)",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function issueUrl(issueNumber: number): string {\n  return `https://github.com/acme/platform/issues/${issueNumber}`;\n}",
+   "path": "lib/board.ts",
+   "fileBlob": "55b55e3e41f924877905f61f88ad95fbb3d9eb33",
+   "sha256": "4fafa5291fd079209c8d6559270fdf6de28ed663fd75f0faa565e61099429a60",
+   "fixture": "peaceai/test/fixtures/m101-tj/vedanta__terragon-55b55e3e41f9.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "770d5998ff9344838106f1d57aeef58ab5c19279da61e09a444788b8ca927ea9",
+   "addedForGates": [
+    "chars: (0) gives \"https://github.com/acme/platform/issues/0\"",
+    "chars: (1) gives \"https://github.com/acme/platform/issues/1\"",
+    "chars: (1234) gives \"https://github.com/acme/platform/issues/1234\""
+   ]
+  },
+  {
+   "repo": "vixalie/simplism",
+   "commit": "e9985b9d588a7cfaed3563efb7cb00bf931b3ecd",
+   "module": "src/utils/unit.ts",
+   "fn": "em",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1em"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2em"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10em"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0em"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1em"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234em"
+    }
+   ],
+   "expr": "(\"\" + value) + \"em\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function em(value: number): string {\n  return `${value}em`;\n}",
+   "path": "src/utils/unit.ts",
+   "fileBlob": "0a16361a29068c7f62ca950395fac92558cdfdca",
+   "sha256": "f2192f80d431b253ce20f77e10b55adedd2a8718e15e60bc8fb81c18c441c00a",
+   "fixture": "peaceai/test/fixtures/m101-tj/vixalie__simplism-0a16361a2906.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (0) gives \"0em\"",
+    "chars: (1) gives \"1em\"",
+    "chars: (1234) gives \"1234em\""
+   ]
+  },
+  {
+   "repo": "vixalie/simplism",
+   "commit": "e9985b9d588a7cfaed3563efb7cb00bf931b3ecd",
+   "module": "src/utils/unit.ts",
+   "fn": "rem",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1rem"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2rem"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10rem"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0rem"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1rem"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234rem"
+    }
+   ],
+   "expr": "(\"\" + value) + \"rem\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function rem(value: number): string {\n  return `${value}rem`;\n}",
+   "path": "src/utils/unit.ts",
+   "fileBlob": "0a16361a29068c7f62ca950395fac92558cdfdca",
+   "sha256": "f2192f80d431b253ce20f77e10b55adedd2a8718e15e60bc8fb81c18c441c00a",
+   "fixture": "peaceai/test/fixtures/m101-tj/vixalie__simplism-0a16361a2906.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (0) gives \"0rem\"",
+    "chars: (1) gives \"1rem\"",
+    "chars: (1234) gives \"1234rem\""
+   ]
+  },
+  {
+   "repo": "vixalie/simplism",
+   "commit": "e9985b9d588a7cfaed3563efb7cb00bf931b3ecd",
+   "module": "src/utils/unit.ts",
+   "fn": "vh",
+   "params": [
+    {
+     "name": "value",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "-1vh"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "2vh"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "10vh"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "0vh"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": "1vh"
+    },
+    {
+     "args": [
+      1234
+     ],
+     "out": "1234vh"
+    }
+   ],
+   "expr": "(\"\" + value) + \"vh\"",
+   "forms": [
+    "tmpl",
+    "str"
+   ],
+   "heldOut": {
+    "right": 3,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 10,
+    "wrong": 0
+   },
+   "upstream": "function vh(value: number): string {\n  return `${value}vh`;\n}",
+   "path": "src/utils/unit.ts",
+   "fileBlob": "0a16361a29068c7f62ca950395fac92558cdfdca",
+   "sha256": "f2192f80d431b253ce20f77e10b55adedd2a8718e15e60bc8fb81c18c441c00a",
+   "fixture": "peaceai/test/fixtures/m101-tj/vixalie__simplism-0a16361a2906.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (0) gives \"0vh\"",
+    "chars: (1) gives \"1vh\"",
+    "chars: (1234) gives \"1234vh\""
+   ]
+  },
+  {
+   "repo": "wso2/integration-control-plane",
+   "commit": "b58b68270c65f76fd6cde7672c96ef15bfbd31bb",
+   "module": "frontend/src/paths.ts",
+   "fn": "editOrgUrl",
+   "params": [
+    {
+     "name": "orgId",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": "/organizations//edit"
+    },
+    {
+     "args": [
+      "abc"
+     ],
+     "out": "/organizations/abc/edit"
+    },
+    {
+     "args": [
+      "hello world"
+     ],
+     "out": "/organizations/hello world/edit"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "/organizations/123/edit"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "/organizations/ Ab 9. /edit"
+    }
+   ],
+   "expr": "\"/organizations/\" + orgId + \"/edit\"",
+   "forms": [
+    "tmpl"
+   ],
+   "heldOut": {
+    "right": 7,
+    "wrong": 0
+   },
+   "farOut": {
+    "right": 0,
+    "wrong": 0
+   },
+   "upstream": "function editOrgUrl(orgId: string): string {\n  return `/organizations/${orgId}/edit`;\n}",
+   "path": "frontend/src/paths.ts",
+   "fileBlob": "34ddae6780313d256def11f63cd5c00a63a60de8",
+   "sha256": "bf7a81824ce8cc2163bd3c653c241f75586205a6dda027f0134a863be0e28be4",
+   "fixture": "peaceai/test/fixtures/m101-tj/wso2__integration-control-plane-34ddae678031.txt",
+   "license": "Apache-2.0",
+   "licenseSha256": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"/organizations/ Ab 9. /edit\""
+   ]
+  }
+ ]
+}
