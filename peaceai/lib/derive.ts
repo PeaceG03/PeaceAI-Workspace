@@ -404,7 +404,7 @@ export const TEMPLATE_FORM_EVIDENCE: Readonly<Record<"tmpl" | "str", number>> = 
  * replaying upstream entries in peaceai/rules/proposals/m102-if-return-chains-evidence.json whose derived program
  * has it; the evidence test re-derives them and checks this number.
  */
-export const ORDER_FORM_EVIDENCE: Readonly<Record<"sle", number>> = { sle: 0 };
+export const ORDER_FORM_EVIDENCE: Readonly<Record<"sle", number>> = { sle: 13 };
 /** Most literal-placement candidates tried per slot order when aligning a template (templateFits). */
 const MAX_TEMPLATE_SPLITS = 2000;
 /**
