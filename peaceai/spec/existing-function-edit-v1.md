@@ -11,6 +11,37 @@ every collaborator, which is what G2 does. G2 lives in its own section of the en
 (`parseFakeTest` / `emitFakeTest` / `FAKE_HARNESS`), so a standalone characterization spec can reuse it later. That
 spec would need a different grading mode (fix-free), so it is out of scope for v1.
 
+## Credit: G1 is a splice, not a PeaceAI-authored skill (Auditor #489, hole 4)
+
+**Status: do not approve as a skill. This rule is not in `approved.json`, and no proposal will be filed.**
+
+In G1 the task text carries `replace statement OLD with NEW`, and NEW is the full replacement code. PeaceAI checks
+NEW against a grammar, splices it in, and grades it. It writes none of the code it would be credited with. The same
+is true of the S1-S3 evidence and the fix B / fix C dry runs.
+
+Auditor's fix: the issue states only the behavior change ("measureStorage should count `head()` sizes"), and PeaceAI
+derives the edit. That is program synthesis / automated repair: choosing the statement and generating code that
+makes a test pass. Today PeaceAI applies rules deterministically (parse a trigger, apply a bounded transform, grade).
+It has no candidate search over code, so it cannot derive a statement from a behavior description. As Peace
+instructed, that part stopped here, and it is reported as a **skill gap**. The splice design is not kept as a skill.
+
+What stays on this branch, and why:
+
+- The engine hardening for holes 1-3, the helper/fixture exclusion and the confined new-test run. These protect
+  any future `EXISTING_EDIT`-style kind and cost nothing while this rule is unapproved.
+- G2 (the fake-driven test grammar). Its credit model matches the already-approved `public-test-case-existing-*`
+  family: PeaceAI turns the stated expectations into a test. In v1, G2 can't land alone, because Job B pairs it
+  with a G1 edit.
+
+A possible next design (needs Peace's decision): derive edits from a small set of named edit templates, each a
+separate rule, with triggers that name only the behavior. Two examples:
+
+- Call substitution guided by the interface, such as `get` to `head` on the same receiver when the interface types
+  it.
+- Wrapping an awaited call in a bounded retry.
+
+PeaceAI would build candidates from a template and keep only those the G2 test grades as fail-before / pass-after.
+
 ## Task phrasing
 
 ```
@@ -174,13 +205,44 @@ There is no per-repo path allow-list (`paths: in-scope-source`). Safety comes fr
 The walk refuses every way the edit or its test could reach I/O, the clock, the environment, hidden state or a
 package. Job B re-derives all of it from the graded tree, never from the task text.
 
+## Capability delta (Auditor #489)
+
+Job A and Job B both compare the target unit on the base with the edited unit. If the edit introduces any
+capability token the base unit lacked, the result is `edit_new_capability`:
+
+- an `as any` / `as unknown` cast
+- a reflection-name member (`constructor`, `__proto__`, `prototype`, ...)
+- a reference to `fetch`, `process`, `require`, `globalThis`, `eval`, `Function`, `Reflect`, `Proxy`, timers, or a
+  module global
+
+This refuses the following, however the name is spelled or built:
+
+- the `Function` constructor reached through a cast
+- `__proto__` pollution through `({} as any)[k]`
+- a new real-I/O default hidden behind `??`
+
+A pre-existing `?? fetch` default in unchanged code still passes when the test injects that key. The public run-log
+reason is just `edit_new_capability`, so it never says which capability tripped.
+
+Hardening in the walk itself:
+
+- Computed member access is allowed only when the receiver's root is an identifier or `this`. Writes through any
+  other root are refused (`edit_global_write`).
+- `*.test-helper.ts` files and the `fixtures/`, `__fixtures__/`, `__mocks__/`, `__tests__/`, `testdata/`,
+  `test-helpers/` and `mocks/` directories are never edit targets or closure files. This holds whatever
+  `denyPatterns` says.
+- The emitted test runs only under the Node permission model: in Job B, and in the new-test pass of
+  `test-candidates.ts`. It is never run unconfined.
+
 ## Known residual risk
 
-A computed read `x[k]` with a key the test supplies is allowed on data. The mitigations:
+A computed read `x[k]` is allowed when the receiver is an identifier or `this`, and the key may come from the test.
+The mitigations:
 
 - Test strings equal to reflection names are refused.
 - Literal keys are checked against the reflection list.
 - Computed calls are refused.
+- Any new cast is refused by the capability delta.
 
 ## Evidence
 
