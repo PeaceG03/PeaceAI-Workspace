@@ -31,7 +31,7 @@ const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR
 Behavior: given the HTTP status code of a reply from R2, answer true when the request is worth retrying and false when it is not. Worth retrying: 429 (too many requests) and every server error status from 500 through 599. Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.
 
 Examples:
-${[[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [700, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}
+${[[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [200, false], [204, false], [100, false], [301, false], [400, false], [403, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}
 
 Context: this is the status check a future retry will use. PeaceAI has to work out the implementation itself.`;
 const S2 = `Add a new module \`src/r2-retry-delay.ts\` exporting \`r2RetryDelayMs(attempt: number, baseMs: number): number\`.
@@ -39,7 +39,7 @@ const S2 = `Add a new module \`src/r2-retry-delay.ts\` exporting \`r2RetryDelayM
 Behavior: how many milliseconds to wait before retry number \`attempt\` (counting from 0), given a base wait of \`baseMs\`. Attempt 0 waits exactly the base. Each later attempt waits longer than the one before, following the pattern in the examples. The wait is never more than 30000 ms, whatever the attempt or base. A base of 0 always gives 0.
 
 Examples (attempt, baseMs gives wait):
-${[[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]].map(([a, b, c]) => `- ${a}, ${b} gives ${c}`).join("\n")}`;
+${[[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]].map(([a, b, c]) => `- ${a}, ${b} gives ${c}`).join("\n")}`;
 const S3 = `Add a new module \`src/host-failure-line.ts\` exporting \`hostFailureLine(message: string, causeCode: string): string\`.
 
 Behavior: build the one-line failure report the scheduler host prints. The line always starts with the marker MARKETS_SCHEDULER_HOST_FAILED, then a colon, then the message exactly as given. When a cause code is given, the line ends with a colon, the word cause, an equals sign and the cause code. When the cause code is empty, nothing is added after the message.
@@ -82,10 +82,10 @@ test("S1-S3 (scanner refile): each derives one program; module and test are the 
   assert.match(s1.extra![0]!.path, /^src\/r2-retry-status\.is-retryable-r2-status-[0-9a-f]{7}\.test\.ts$/);
   assert.match(s1.extra![0]!.content, /assert\.equal\(isRetryableR2Status\(429\), true\);/);
   // The test is exactly the issue's examples: one assertion per example, nothing else.
-  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 19);
+  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 21);
   const s2 = run(S2).e!;
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
-  assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 13);
+  assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 14);
   const s3 = run(S3).e!;
   assert.equal(s3.content, 'export function hostFailureLine(message: string, causeCode: string): string {\n  return "MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode));\n}\n');
   assert.equal((s3.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 8);
@@ -126,12 +126,11 @@ test("generated module + test pass under TZ=UTC, America/Denver and Asia/Tokyo w
 test("AMBIGUOUS: two minimal programs that agree on the examples but not on a probe are refused", () => {
   // x * x and x + x agree on 0 and 2, not on 1 or 3.
   const sq = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }] });
-  // With -2 only x * x is a smallest fit, but `x * min(x, 4)` (4 is a repeated result) also fits and differs at the
-  // far probe 20 (gate rival, far pass): one example past the others settles it.
-  assert.equal(!sq.ok && `${sq.reason}/${sq.gate}`, "derive_under_specified/rival");
-  assert.match(!sq.ok ? sq.detail ?? "" : "", /at \(20\): 16 vs 400 \(a far probe, past the examples\)/);
-  const sq20 = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }, { args: [20], out: 400 }] });
-  assert.equal(sq20.ok && sq20.fit.expr, "x * x", "with -2 and 20 only x * x fits");
+  // With -2 only, x * x is a smallest fit, but the examples show x over 4 values only (gate span, Auditor #491 round 2:
+  // a cap inside that stretch would not show); one example 100 past the others settles it.
+  assert.equal(!sq.ok && `${sq.reason}/${sq.gate}`, "derive_under_specified/span");
+  const sq20 = deriveProgram({ params: [{ name: "x", type: "number" }], ret: "number", examples: [{ args: [0], out: 0 }, { args: [2], out: 4 }, { args: [-2], out: 4 }, { args: [100], out: 10000 }] });
+  assert.equal(sq20.ok && sq20.fit.expr, "x * x", "with -2 and 100 only x * x fits");
   // w * w and h * h agree on squares (1,1) (2,2) (3,3), not on (1,2).
   const r = deriveProgram({ params: [{ name: "w", type: "number" }, { name: "h", type: "number" }], ret: "number", examples: [{ args: [1, 1], out: 1 }, { args: [2, 2], out: 4 }, { args: [3, 3], out: 9 }] });
   assert.equal(r.ok, false);
@@ -225,7 +224,7 @@ test("the examples alone determine the program: the behavior prose only has to b
     if ("task" in t) assert.deepEqual(buildDeriveEdit(SPEC.params, { ...t.task, behavior: "" }, FILES), buildDeriveEdit(SPEC.params, t.task, FILES));
   }
   // Change one example and the program follows the examples (not the prose, which still says 599).
-  const moved = run(S1.replace("- 599 gives true", "- 598 gives true").replace("- 600 gives false", "- 599 gives false")).e!;
+  const moved = run(S1.replace("- 599 gives true", "- 598 gives true").replace("- 600 gives false", "- 599 gives false\n- 600 gives false")).e!;
   assert.equal(moved.content, "export function isRetryableR2Status(status: number): boolean {\n  return (status === 429) || (500 <= status && status <= 598);\n}\n");
   // The header picks the module, name and signature; renaming them renames only those.
   const renamed = run(S1.replace("src/r2-retry-status.ts", "src/retry-ok.ts").replace("isRetryableR2Status(status: number)", "retryOk(code: number)")).e!;
@@ -273,9 +272,9 @@ test("fail closed: a competing fit one node larger is AMBIGUOUS; constant progra
   const x1 = [{ name: "x", type: "number" as const }];
   const ex = [{ args: [-2], out: 1 }, { args: [-1], out: 0 }, { args: [0], out: 1 }];
   const tight = deriveProgram({ params: x1, ret: "number", examples: ex, slack: 0 });
-  // Slack 0 keeps only the size-4 fit; the far rival pass still asks for what happens past the examples.
-  assert.equal(!tight.ok && `${tight.reason}/${tight.gate}`, "derive_under_specified/rival");
-  const tight2 = deriveProgram({ params: x1, ret: "number", examples: [...ex, { args: [1], out: 4 }, { args: [8], out: 81 }], slack: 0 });
+  // Slack 0 keeps only the size-4 fit; the examples still have to show x over DERIVE_FAR (gate span).
+  assert.equal(!tight.ok && `${tight.reason}/${tight.gate}`, "derive_under_specified/span");
+  const tight2 = deriveProgram({ params: x1, ret: "number", examples: [...ex, { args: [1], out: 4 }, { args: [98], out: 9801 }], slack: 0 });
   assert.equal(tight2.ok && tight2.fit.expr, "(x + 1) * (x + 1)");
   const dflt = deriveProgram({ params: x1, ret: "number", examples: ex });
   assert.equal(!dflt.ok && dflt.reason, "derive_ambiguous");

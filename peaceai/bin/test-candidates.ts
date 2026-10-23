@@ -130,8 +130,17 @@ function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP
  * Older runtimes run the same direct command without the permission flags (`confined: false` is logged).
  */
 const PERMISSION_NODE_MAJOR = 22;
+/**
+ * The runtime's Node major version. PEACEAI_SIMULATE_NODE_MAJOR (tests only, Auditor #491 round 2) can lower it, never
+ * raise it, so a test can show the Node < 22 path (not-confined) on a Node 22 runner; it can only make grading refuse.
+ */
+function nodeMajor(): number {
+  const real = Number(process.versions.node.split(".")[0]);
+  const sim = Number(process.env.PEACEAI_SIMULATE_NODE_MAJOR);
+  return Number.isInteger(sim) && sim > 0 ? Math.min(real, sim) : real;
+}
 function runGradedTests(tree: string, tsx: string, tests: readonly string[], module: string, notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
-  const confined = Number(process.versions.node.split(".")[0]) >= PERMISSION_NODE_MAJOR;
+  const confined = nodeMajor() >= PERMISSION_NODE_MAJOR;
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
   const outs: string[] = [];
@@ -246,7 +255,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
       // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
       // Round 3 (Auditor #129 F2): never graded unconfined. Without the permission model (Node < 22) the
       // stub-body route is ungradable.
-      if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
       // Round 3 (Auditor #129): a module that imports other repo files cannot load under the narrowed reads.
       if (paths.length === 1 && existsSync(join(tree, paths[0]!)) && moduleImportsRepoFiles(readFileSync(join(tree, paths[0]!), "utf8"))) return ungradable("module-imports-repo-files");
       // Round 2 (Auditor #129): the real code must pass REAL_RUNS_REQUIRED times in all (pass 2 was the first),
@@ -344,7 +353,7 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   const f = files[0];
   if (files.length !== 1 || newTests.length !== 1 || !f || !f.isNew || !f.newPath || f.newPath !== newTests[0] || !scope.isTest(f.newPath) || baseFiles.has(f.newPath)) return ungradable("not-test-only");
-  if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+  if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
   const testPath = f.newPath;
   const test = readFileSync(join(tree, testPath), "utf8");
   const dir = dirname(testPath);
@@ -491,7 +500,7 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
       if (created.length !== 1 || source.length !== 0 || derivedModuleProblem(real)) return ungradable("not-test-only");
       // Auditor #491: those runs are confined (Node's permission model: reads = the test file, the new module and
       // node_modules; no write, no child process), as TEST_CASE_EXISTING's are. Never graded unconfined.
-      if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
       if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, created, false, tz).ok) return ungradable("real-not-stable");
     }
     const stub = stubFunction(real, fn);

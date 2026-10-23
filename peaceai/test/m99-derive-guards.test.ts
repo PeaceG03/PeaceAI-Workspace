@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
-import { DERIVE_BUDGET, deriveProgram, keptCellsLimit, MAX_KEPT_CELLS, type DeriveInput, type DeriveNode, type DeriveResult } from "../lib/derive.ts";
+import { DERIVE_BUDGET, deriveProgram, keptCellsLimit, MAX_KEPT_CELLS, rivalProblem, type DeriveInput, type DeriveNode, type DeriveResult } from "../lib/derive.ts";
 import { applyRule, specHash, type RuleSpec } from "../lib/learned.ts";
 import { buildDeriveEdit, DERIVE_VOCAB, parseDeriveTask, DERIVE_TRIGGER } from "../lib/learned-derive.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
@@ -34,7 +34,7 @@ const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR
 Behavior: given the HTTP status code of a reply from R2, answer true when the request is worth retrying and false when it is not. Worth retrying: 429 and every server error status from 500 through 599.
 
 Examples:
-${[[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [700, false], [200, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
+${[[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
 const entry = { id: SPEC.id, sha256: SHA, source: "workspace", approval: { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/40#issuecomment-123", commentId: 123, issue: 40, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-11T00:00:00Z" } };
 
 // ---- Job B (test-candidates.ts gradeSelf, derive branch)
@@ -66,7 +66,7 @@ function fixture() {
   return { dir, ws, baseSha, candidate };
 }
 
-function grade(fx: ReturnType<typeof fixture>, diff: string) {
+function grade(fx: ReturnType<typeof fixture>, diff: string, extraEnv: Record<string, string> = {}) {
   const inDir = join(fx.dir, "in");
   rmSync(inDir, { recursive: true, force: true });
   mkdirSync(join(inDir, "candidates"), { recursive: true });
@@ -81,7 +81,7 @@ function grade(fx: ReturnType<typeof fixture>, diff: string) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
   const r = spawnSync(tsx, [join(repo, "peaceai/bin/test-candidates.ts")], {
     cwd: repo, encoding: "utf8", timeout: 600_000,
-    env: { ...env, TZ: "UTC", PEACEAI_IN_DIR: inDir, PEACEAI_RESULTS_FILE: join(out, "results.json"), PEACEAI_WORKSPACE_DIR: fx.ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", PEACEAI_SANDBOX_USER: "", PEACEAI_REQUIRE_SANDBOX: "", PEACEAI_APPROVED_LIST: list },
+    env: { ...env, TZ: "UTC", PEACEAI_IN_DIR: inDir, PEACEAI_RESULTS_FILE: join(out, "results.json"), PEACEAI_WORKSPACE_DIR: fx.ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", PEACEAI_SANDBOX_USER: "", PEACEAI_REQUIRE_SANDBOX: "", PEACEAI_APPROVED_LIST: list, ...extraEnv },
   });
   assert.equal(r.status, 0, r.stderr);
   const results = JSON.parse(readFileSync(join(out, "results.json"), "utf8"));
@@ -98,6 +98,18 @@ test("Job B derive: the untouched candidate COUNTS; a module that is not exactly
     // Passes its tests, stub fails them, but reads the environment: only derivedModuleProblem stops it.
     const env = grade(fx, fx.candidate({ module: (s) => s.replace(/return (.*);/, 'return ($1) || process.env.PEACE_X === "1";') }));
     assert.deepEqual([env.g.verdict, env.g.reason], ["UNGRADABLE", "not-test-only"], env.stdout);
+  } finally { rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+// Auditor #491 round 2: a derive candidate is never graded unconfined. Node < 22 (no permission model) is simulated on
+// this runner by PEACEAI_SIMULATE_NODE_MAJOR (it can only lower the version): the untouched candidate is not-confined.
+test("Job B derive: on Node < 22 (simulated) the candidate is not-confined, never graded unconfined", () => {
+  const fx = fixture();
+  try {
+    const old = grade(fx, fx.candidate(), { PEACEAI_SIMULATE_NODE_MAJOR: "20" });
+    assert.deepEqual([old.g.verdict, old.g.reason], ["UNGRADABLE", "not-confined"], old.stdout);
+    // A simulated version above the real one changes nothing (it can only lower it).
+    if (CONFINED) assert.equal(grade(fx, fx.candidate(), { PEACEAI_SIMULATE_NODE_MAJOR: "99" }).g.verdict, "COUNTS");
   } finally { rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
@@ -197,7 +209,7 @@ test("memory: a search over many points stops at MAX_KEPT_CELLS (derive_budget) 
 // The memory bound by assertion (the test above can only crash when the bound is gone): S1 derives within the default
 // bound, and the same search under a smaller bound stops with derive_budget well before its program budget.
 test("memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS", () => {
-  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [700, false], [200, false], [404, false], [0, false]] as const;
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
   const full = deriveProgram(input);
   assert.equal(why(full), "ok (status === 429) || (500 <= status && status <= 599)");
@@ -207,6 +219,17 @@ test("memory: the kept-values bound stops the search (derive_budget); a caller's
   assert.equal(keptCellsLimit({}), MAX_KEPT_CELLS);
   assert.equal(keptCellsLimit({ maxKeptCells: 1000 }), 1000);
   assert.equal(keptCellsLimit({ maxKeptCells: MAX_KEPT_CELLS * 1000 }), MAX_KEPT_CELLS);
+});
+
+// Auditor #491 round 2: the rival search (gate rival) runs under the caller's memory bound too, not only the main
+// search: the same S1 fit whose rival search passes under the default bound stops with rival_budget under 100000.
+test("memory: the rival search keeps the caller's kept-values bound (rival_budget under a small one)", () => {
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
+  const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
+  const full = deriveProgram(input);
+  assert.ok(full.ok);
+  assert.equal(rivalProblem(input, full.fit.program, full.fit.size), null);
+  assert.equal(rivalProblem({ ...input, maxKeptCells: 100_000 }, full.fit.program, full.fit.size)?.gate, "rival_budget");
 });
 
 test("size: maxSize above DERIVE_MAX_SIZE (13) searches exactly what 13 does", () => {
@@ -244,12 +267,12 @@ test("emit checks: size cap (derive_emit_size), then body vocabulary (derive_exp
 // same budget runs out first (derive_budget).
 
 test("constant programs: the filtered search finishes S1 and S2 within the programs they need (unfiltered: derive_budget)", () => {
-  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [700, false], [200, false], [404, false], [0, false]] as const;
-  const s2 = [[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]] as const;
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
+  const s2 = [[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]] as const;
   const S1x: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
   const S2x: DeriveInput = { params: [{ name: "attempt", type: "number" }, { name: "baseMs", type: "number" }], ret: "number", examples: s2.map(([a, b, c]) => ({ args: [a, b], out: c })) };
   assert.equal(why(deriveProgram(S1x)), "ok (status === 429) || (500 <= status && status <= 599)");
-  for (const [input, need] of [[S1x, 20_405], [S2x, 191_447]] as const) {
+  for (const [input, need] of [[S1x, 20_405], [S2x, 193_649]] as const) {
     assert.equal(why(deriveProgram({ ...input, budget: need })), "derive_under_specified/rival_budget");
     assert.equal(why(deriveProgram({ ...input, budget: need - 1 })), "derive_budget");
   }

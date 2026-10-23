@@ -36,15 +36,18 @@ test("B1 repro: S1 without \"600 gives false\" is refused (gate far), not derive
   // The 235c99d S1 (with 600, no 700) is refused too: past 599 nothing is shown.
   const s235 = deriveProgram({ params: status, ret: "boolean", examples: ex(S1_235) });
   assert.equal(!s235.ok && `${s235.reason}/${s235.gate}`, "derive_under_specified/far");
-  // The refile draft adds "700 gives false": derived.
-  const s1 = deriveProgram({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false]]) });
+  // "700 gives false" shows past 599; inside the false stretch 430 to 499 and below 428 the round-2 region gate
+  // (Auditor #491) also wants 465 and 100, as the refile draft has them: derived.
+  const s700 = deriveProgram({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false]]) });
+  assert.equal(!s700.ok && `${s700.reason}/${s700.gate}`, "derive_under_specified/region");
+  const s1 = deriveProgram({ params: status, ret: "boolean", examples: ex([...S1_235, [700, false], [465, false], [100, false]]) });
   assert.equal(s1.ok && s1.fit.expr, "(status === 429) || (500 <= status && status <= 599)");
 });
 
 test("gate unread: a parameter the program ignores needs two examples differing only in it with the same result", () => {
   const ab = [num("a"), num("b")];
   assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3]]), "unread:b");
-  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1]]), "");
+  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101]]), "");
 });
 
 test("gate chars: a string parameter that is read needs upper, lower, digit, inner space, edge space and punctuation", () => {
@@ -73,7 +76,7 @@ test("gate edge: both sides of every threshold, and c - 1, c, c + 1 for an equal
   assert.equal(gate(n, "boolean", eq5, [[5, true], [4, false], [6, false], ...farEq]), "");
   // a range: both ends.
   const rng: DeriveNode = { op: "range", i: 0, lo: 500, hi: 599 };
-  const rows = [[500, true], [599, true], [550, true], [499, false], [700, false], [0, false]] as const;
+  const rows = [[500, true], [599, true], [550, true], [499, false], [700, false], [399, false]] as const;
   assert.equal(gate(n, "boolean", rng, rows), "edge:n"); // no 600: the upper end is not shown
   assert.equal(gate(n, "boolean", rng, [[500, true], [599, true], [550, true], [450, false], [600, false], [700, false], [0, false]]), "edge:n"); // no 499: the lower end
   assert.equal(gate(n, "boolean", rng, [...rows, [600, false]]), "");
@@ -132,10 +135,13 @@ test("gate rival (size + 2): near pass (every example value a constant, probes i
   // Near: `min(3, a - b)` fits all 14 rows and differs from `a - b` at (3, -1), inside the examples.
   const ab = [num("actual"), num("reference")];
   const rows = [[-1, -1, 0], [-1, 2, -3], [-1, 10, -11], [0, 0, 0], [0, 3, -3], [0, 100, -100], [1, 1, 0], [1, 5, -4], [2, -1, 3], [2, 2, 0], [2, 10, -8], [3, 0, 3], [3, 3, 0], [3, 100, -97]] as const;
-  const near = deriveProgram({ params: ab, ret: "number", examples: ex(rows) });
-  assert.equal(!near.ok && `${near.reason}/${near.gate}`, "derive_under_specified/rival");
-  assert.match(!near.ok ? near.detail! : "", /also fits every example but differs from `actual - reference` at \(3, -1\): 3 vs 4; add/);
-  assert.doesNotMatch(!near.ok ? near.detail! : "", /far probe/);
+  // (deriveProgram stops earlier on these rows, at gate span: actual is shown from -1 to 3 only.)
+  const viaDerive = deriveProgram({ params: ab, ret: "number", examples: ex(rows) });
+  assert.equal(!viaDerive.ok && `${viaDerive.reason}/${viaDerive.gate}`, "derive_under_specified/span");
+  const near = rivalProblem({ params: ab, ret: "number", examples: ex(rows) }, { op: "sub", a: P0, b: P1 }, 3);
+  assert.equal(near?.gate, "rival");
+  assert.match(near!.detail, /also fits every example but differs from `actual - reference` at \(3, -1\): 3 vs 4; add/);
+  assert.doesNotMatch(near!.detail, /far probe/);
   // Far: x * x on 0, 2, -2: `min(x, 4) * min(x, 4)` (4 a repeated result) differs at the far probe 20.
   const x = [num("x")];
   const sq = { params: x, ret: "number" as const, examples: ex([[0, 0], [2, 4], [-2, 4]]) };
@@ -150,7 +156,7 @@ test("gate rival (size + 2): near pass (every example value a constant, probes i
   const pos = { params: x, ret: "number" as const, examples: ex([[0, 0], [1, 1], [2, 4], [30, 900]]) };
   assert.equal(rivalProblem(pos, { op: "mul", a: P0, b: P0 }, 3), null);
   // S2 (attempt, baseMs >= 0 in every example) derives; with negative far probes it would be asked for negative waits.
-  const s2 = deriveProgram({ params: [num("attempt"), num("baseMs")], ret: "number", examples: ex([[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]]) });
+  const s2 = deriveProgram({ params: [num("attempt"), num("baseMs")], ret: "number", examples: ex([[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]]) });
   assert.equal(s2.ok, true, s2.ok ? "" : `${s2.reason} ${s2.detail ?? ""}`);
 });
 
