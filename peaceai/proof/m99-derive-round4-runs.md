@@ -25,3 +25,10 @@ wolfstar-project/wolfstar.rocks, wolfstar-project/code-zero).
 ## Generator: seed 100, 5,000 tasks (in progress; resumable shards of 4)
 
 Restarted on 980b244's evidence (eq emitted), so earlier partial parts (eq refused) were discarded.
+
+Interim (12:48Z, shards 0 and 1 complete, 2 and 3 started): 2,606 of 5,000 tasks graded: right 419, refused 2,140,
+wrong 47 (42 known-limit, 5 blocking). The final table replaces this line when shards 2 and 3 finish.
+
+## Mutants at 980b244
+
+6 mutants on the form gate (peaceai/proof/m99-derive-mutation-proof.md, round 4), 6 killed.

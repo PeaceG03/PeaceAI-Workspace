@@ -111,7 +111,7 @@ a plain edit) and reads the comment it writes.
 | F3 | bar `>=` becomes `>` (a form at exactly 10 refused) | `peaceai/lib/derive.ts` | KILLED (1 fail) | form gate: boundary at the bar |
 | F4 | fail open: a missing or bad evidence file counts every form at the bar | `peaceai/lib/derive.ts` | KILLED (1 fail) | form gate: fail closed on a bad evidence file |
 | F5 | counts ignore each entry's `forms` (every entry counts for every form) | `peaceai/lib/derive.ts` | KILLED (4 fail) | S1-S3; evidence by form; form gate; mistakes ledger: replayed |
-| F6 | `formsOf` drops `ternary` (a general if reads as evidenced) | `peaceai/lib/derive.ts` | (running) | |
+| F6 | `formsOf` drops `ternary` (a general if reads as evidenced) | `peaceai/lib/derive.ts` | KILLED (4 fail) | S1-S3 (S3 emitted); evidence by form; form gate; mistakes ledger: replayed |
 
-Each was a single `sed` on `peaceai/lib/derive.ts` in a copy of the tree; the tree was restored after each. The
+6 mutants, 6 killed. Each was a single `sed` on `peaceai/lib/derive.ts` in a copy of the tree; the tree was restored after each. The
 first run (at ff74bed, eq 9 refused) also killed F1-F5 (4, 5, 1, 1, 5 failing tests).
