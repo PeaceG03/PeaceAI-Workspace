@@ -315,3 +315,9 @@ Proofs drafted here (A = landing, B = refusal), filed only after approvals merge
 
 - 20:11 MDT M99 checkpoint 235c99d: strict allowlist test (10131 compiled programs + S1-S3 + evidence pass; refusals asserted), expr size cap 400, literal bounds. m99+m12 33/33. test:tools 1179/1180 (m48 fails locally only: missing /workspace/ext checkout).
 - 20:14 MDT M99 done: PR #491 head 235c99d CI 4/4 green; stress node22 normal 59/66 sim 59/66 wrong 0; PR body updated. Ready for Auditor.
+
+## 20:27 MDT M98 #489 rework 2 (Auditor NOT PASS at 7508d20: X1 descriptor-walk RCE, X2 proto pollution, untested guards)
+- 24ce630: ALLOWLIST gate (allowTokens in capabilityDelta, edit-scoped delta, Job A + Job B): EDIT_GLOBAL_MEMBERS/CALLS/NEW/VALUES, EDIT_BANNED_MEMBERS, size cap 256, regex/RegExp refused. X1/X2 refused both jobs.
+- 04113ca: peaceai/test/m98-confinement.test.ts behavioral (marker escape; full, related, related base-judge). Mutation: :756 -> full fails, :757 -> related fails, :710 -> base-judge fails.
+- 0a267f6: m98 22/22: X1/X2, per-token allowlist, walk guards. Mutation matrix /workspace/g12w/chk/mut-m98.log (every removal fails a test). Probes /tmp/r489c/{probe4,tok,walk}.mts.
+- NEXT: CI; R1-R3 (/tmp/r489/rep.mts) + 25 probes (g12w/proof/alias.mts, holes.mts); box suites; census-v2; stress normal+sim fresh dirs; PR body v5; report. No merge, no proposal.
