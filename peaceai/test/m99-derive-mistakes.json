@@ -34,6 +34,70 @@
      true
     ],
     [
+     510,
+     true
+    ],
+    [
+     520,
+     true
+    ],
+    [
+     530,
+     true
+    ],
+    [
+     540,
+     true
+    ],
+    [
+     560,
+     true
+    ],
+    [
+     570,
+     true
+    ],
+    [
+     580,
+     true
+    ],
+    [
+     590,
+     true
+    ],
+    [
+     438,
+     false
+    ],
+    [
+     446,
+     false
+    ],
+    [
+     454,
+     false
+    ],
+    [
+     462,
+     false
+    ],
+    [
+     470,
+     false
+    ],
+    [
+     478,
+     false
+    ],
+    [
+     486,
+     false
+    ],
+    [
+     494,
+     false
+    ],
+    [
      599,
      true
     ],
@@ -103,15 +167,11 @@
       false
      ],
      [
-      464,
-      false
-     ],
-     [
       100,
       false
      ]
     ],
-    "rounds": 4,
+    "rounds": 3,
     "after": {
      "program": "(status === 429) || (500 <= status && status <= 599)",
      "rightOnGrid": true
@@ -184,12 +244,19 @@
     "askAt": [
      [
       27
+     ],
+     [
+      44
      ]
     ],
     "answers": [
      [
       27,
       true
+     ],
+     [
+      44,
+      false
      ],
      [
       33,
@@ -222,9 +289,17 @@
      [
       24,
       true
+     ],
+     [
+      36,
+      false
+     ],
+     [
+      46,
+      false
      ]
     ],
-    "rounds": 6,
+    "rounds": 7,
     "after": {
      "program": "!((11 <= n && n <= 19) || (31 <= n && n <= 49))",
      "rightOnGrid": true
@@ -410,17 +485,12 @@
       -156
      ],
      [
-      -1010,
-      -950,
-      -1960
-     ],
-     [
-      -77,
-      13,
-      -64
+      101,
+      95,
+      196
      ]
     ],
-    "rounds": 3,
+    "rounds": 4,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -504,9 +574,19 @@
       15,
       -87,
       -72
+     ],
+     [
+      107,
+      95,
+      202
+     ],
+     [
+      -83,
+      -87,
+      -170
      ]
     ],
-    "rounds": 2,
+    "rounds": 4,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -597,17 +677,52 @@
       196
      ],
      [
-      1010,
+      -77,
+      -91,
+      -168
+     ],
+     [
+      0,
       950,
-      1960
+      950
+     ],
+     [
+      1,
+      950,
+      951
+     ],
+     [
+      -1,
+      950,
+      949
      ],
      [
       101,
-      8,
-      109
+      950,
+      1051
+     ],
+     [
+      1010,
+      0,
+      1010
+     ],
+     [
+      1010,
+      1,
+      1011
+     ],
+     [
+      1010,
+      -1,
+      1009
+     ],
+     [
+      1010,
+      950,
+      1960
      ]
     ],
-    "rounds": 3,
+    "rounds": 8,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -701,9 +816,19 @@
       15,
       -77,
       -62
+     ],
+     [
+      -81,
+      -77,
+      -158
+     ],
+     [
+      95,
+      95,
+      190
      ]
     ],
-    "rounds": 2,
+    "rounds": 4,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -797,9 +922,19 @@
       13,
       -79,
       -66
+     ],
+     [
+      97,
+      111,
+      208
+     ],
+     [
+      -81,
+      -79,
+      -160
      ]
     ],
-    "rounds": 2,
+    "rounds": 4,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -898,9 +1033,19 @@
       23,
       -79,
       -56
+     ],
+     [
+      -77,
+      -79,
+      -156
+     ],
+     [
+      103,
+      95,
+      198
      ]
     ],
-    "rounds": 2,
+    "rounds": 4,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -999,9 +1144,19 @@
       11,
       -77,
       -66
+     ],
+     [
+      -77,
+      -77,
+      -154
+     ],
+     [
+      99,
+      99,
+      198
      ]
     ],
-    "rounds": 2,
+    "rounds": 4,
     "after": {
      "program": "a + b",
      "rightOnGrid": false,
@@ -1237,6 +1392,11 @@
       -7452
      ],
      [
+      105,
+      -92,
+      -1033712
+     ],
+     [
       1050,
       -1010,
       -1115647010
@@ -1247,7 +1407,7 @@
       -1104601
      ]
     ],
-    "rounds": 3,
+    "rounds": 4,
     "after": {
      "program": "(b * ((a + 1) * (a + 1))) <= 700 ? (b * ((a + 1) * (a + 1))) : 700",
      "rightOnGrid": true
@@ -1281,6 +1441,70 @@
     [
      550,
      true
+    ],
+    [
+     510,
+     true
+    ],
+    [
+     520,
+     true
+    ],
+    [
+     530,
+     true
+    ],
+    [
+     540,
+     true
+    ],
+    [
+     560,
+     true
+    ],
+    [
+     570,
+     true
+    ],
+    [
+     580,
+     true
+    ],
+    [
+     590,
+     true
+    ],
+    [
+     438,
+     false
+    ],
+    [
+     446,
+     false
+    ],
+    [
+     454,
+     false
+    ],
+    [
+     462,
+     false
+    ],
+    [
+     470,
+     false
+    ],
+    [
+     478,
+     false
+    ],
+    [
+     486,
+     false
+    ],
+    [
+     494,
+     false
     ],
     [
      599,
@@ -1418,6 +1642,368 @@
      "program": "((-1) <= x ? x : (-1)) <= 1 ? ((-1) <= x ? x : (-1)) : 1",
      "rightOnGrid": true
     }
+   }
+  },
+  {
+   "id": "m100-island-hidden-island-t24",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699, task 24 (island/hidden_island, 75 like it)",
+   "params": [
+    "n"
+   ],
+   "ret": "boolean",
+   "examples": [
+    [
+     -65,
+     true
+    ],
+    [
+     -15,
+     true
+    ],
+    [
+     35,
+     true
+    ],
+    [
+     85,
+     true
+    ],
+    [
+     86,
+     false
+    ],
+    [
+     92,
+     false
+    ],
+    [
+     99,
+     false
+    ],
+    [
+     105,
+     false
+    ],
+    [
+     111,
+     false
+    ],
+    [
+     143,
+     false
+    ],
+    [
+     145,
+     false
+    ],
+    [
+     148,
+     false
+    ],
+    [
+     150,
+     false
+    ],
+    [
+     152,
+     false
+    ],
+    [
+     153,
+     true
+    ],
+    [
+     203,
+     true
+    ],
+    [
+     253,
+     true
+    ],
+    [
+     303,
+     true
+    ]
+   ],
+   "wrongProgram": "!(86 <= n && n <= 152)",
+   "disagreeAt": [
+    112
+   ],
+   "correct": true,
+   "why": "no example inside 112..142, so the band there was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "region",
+    "askAt": [
+     [
+      127
+     ]
+    ],
+    "answers": [
+     [
+      127,
+      true
+     ],
+     [
+      119,
+      true
+     ],
+     [
+      135,
+      true
+     ],
+     [
+      115,
+      true
+     ],
+     [
+      139,
+      true
+     ],
+     [
+      113,
+      true
+     ],
+     [
+      141,
+      true
+     ],
+     [
+      112,
+      true
+     ],
+     [
+      142,
+      true
+     ],
+     [
+      95,
+      false
+     ],
+     [
+      89,
+      false
+     ],
+     [
+      102,
+      false
+     ],
+     [
+      108,
+      false
+     ],
+     [
+      123,
+      true
+     ],
+     [
+      131,
+      true
+     ]
+    ],
+    "rounds": 8,
+    "after": {
+     "program": "!((86 <= n && n <= 111) || (143 <= n && n <= 152))",
+     "rightOnGrid": true
+    }
+   }
+  },
+  {
+   "id": "m100-cap-lin2-inside",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699 (cap_lin2/sparse after the asks, 7 like it)",
+   "params": [
+    "a",
+    "b"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     -3,
+     70,
+     -210
+    ],
+    [
+     2,
+     2,
+     4
+    ],
+    [
+     1,
+     -90,
+     -90
+    ],
+    [
+     7,
+     9,
+     63
+    ],
+    [
+     97,
+     9,
+     873
+    ],
+    [
+     -93,
+     70,
+     -6510
+    ]
+   ],
+   "wrongProgram": "a * b",
+   "disagreeAt": [
+    -31,
+    -30
+   ],
+   "correct": 916,
+   "why": "a product above 916 lies inside the examples' box, but no example shows one",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "span",
+    "askAt": [
+     [
+      -93,
+      -90
+     ]
+    ],
+    "answers": [
+     [
+      -93,
+      -90,
+      916
+     ]
+    ],
+    "rounds": 1,
+    "after": {
+     "refused": "derive_budget",
+     "gate": null
+    }
+   }
+  },
+  {
+   "id": "m100-cond-suffix-missing-empty",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699 (cond_suffix/missing_empty, 79 like it, and cond_suffix/sparse, 6)",
+   "params": [
+    "message",
+    "causeCode"
+   ],
+   "types": [
+    "string",
+    "string"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     "",
+     "UND_ERR_SOCKET",
+     "HOST_DOWN::cause=UND_ERR_SOCKET"
+    ],
+    [
+     "",
+     " err 42 ",
+     "HOST_DOWN::cause= err 42 "
+    ],
+    [
+     "x9",
+     "UND_ERR_SOCKET",
+     "HOST_DOWN:x9:cause=UND_ERR_SOCKET"
+    ],
+    [
+     "R2_GET_500",
+     "ECONNRESET",
+     "HOST_DOWN:R2_GET_500:cause=ECONNRESET"
+    ],
+    [
+     " fetch failed ",
+     "ETIMEDOUT",
+     "HOST_DOWN: fetch failed :cause=ETIMEDOUT"
+    ],
+    [
+     "",
+     "ETIMEDOUT",
+     "HOST_DOWN::cause=ETIMEDOUT"
+    ],
+    [
+     "x9",
+     "ETIMEDOUT",
+     "HOST_DOWN:x9:cause=ETIMEDOUT"
+    ]
+   ],
+   "wrongProgram": "\"HOST_DOWN:\" + (message + (\":cause=\" + causeCode))",
+   "disagreeAt": [
+    "x9",
+    ""
+   ],
+   "correct": "HOST_DOWN:x9",
+   "why": "no example has an empty causeCode, so the suffix was assumed unconditional",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_under_specified",
+    "gate": "chars",
+    "askAt": [
+     [
+      "",
+      ""
+     ]
+    ],
+    "answers": [
+     [
+      "",
+      "",
+      "HOST_DOWN:"
+     ],
+     [
+      "x9",
+      "",
+      "HOST_DOWN:x9"
+     ]
+    ],
+    "rounds": 2,
+    "after": {
+     "program": "\"HOST_DOWN:\" + (message + (((causeCode === \"\") ? causeCode : \":cause=\") + causeCode))",
+     "rightOnGrid": true
+    }
+   }
+  },
+  {
+   "id": "m100-floor-clamp-past",
+   "source": "m100 derive-practice (seed 100) vs m99 80cf699 (floor_clamp, cap_lin2 past the examples, and their amb3 after the asks: 79 + 87 + 38)",
+   "params": [
+    "n"
+   ],
+   "ret": "number",
+   "examples": [
+    [
+     57,
+     57
+    ],
+    [
+     107,
+     107
+    ],
+    [
+     157,
+     157
+    ],
+    [
+     -43,
+     -43
+    ],
+    [
+     7,
+     7
+    ]
+   ],
+   "wrongProgram": "n",
+   "disagreeAt": [
+    208
+   ],
+   "correct": 207,
+   "why": "every example is below the cap at 207, so nothing shows it",
+   "expected": {
+    "outcome": "known-limit",
+    "program": "n",
+    "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there)"
    }
   }
  ]

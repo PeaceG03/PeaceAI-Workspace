@@ -34,7 +34,7 @@ const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR
 Behavior: given the HTTP status code of a reply from R2, answer true when the request is worth retrying and false when it is not. Worth retrying: 429 and every server error status from 500 through 599.
 
 Examples:
-${[[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
+${[[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
 const entry = { id: SPEC.id, sha256: SHA, source: "workspace", approval: { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/40#issuecomment-123", commentId: 123, issue: 40, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-11T00:00:00Z" } };
 
 // ---- Job B (test-candidates.ts gradeSelf, derive branch)
@@ -209,7 +209,7 @@ test("memory: a search over many points stops at MAX_KEPT_CELLS (derive_budget) 
 // The memory bound by assertion (the test above can only crash when the bound is gone): S1 derives within the default
 // bound, and the same search under a smaller bound stops with derive_budget well before its program budget.
 test("memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS", () => {
-  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
   const full = deriveProgram(input);
   assert.equal(why(full), "ok (status === 429) || (500 <= status && status <= 599)");
@@ -224,7 +224,7 @@ test("memory: the kept-values bound stops the search (derive_budget); a caller's
 // Auditor #491 round 2: the rival search (gate rival) runs under the caller's memory bound too, not only the main
 // search: the same S1 fit whose rival search passes under the default bound stops with rival_budget under 100000.
 test("memory: the rival search keeps the caller's kept-values bound (rival_budget under a small one)", () => {
-  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
   const full = deriveProgram(input);
   assert.ok(full.ok);
@@ -267,7 +267,7 @@ test("emit checks: size cap (derive_emit_size), then body vocabulary (derive_exp
 // same budget runs out first (derive_budget).
 
 test("constant programs: the filtered search finishes S1 and S2 within the programs they need (unfiltered: derive_budget)", () => {
-  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [400, false], [300, false], [200, false], [100, false], [404, false], [0, false]] as const;
   const s2 = [[0, 1000, 1000], [1, 1000, 4000], [2, 1000, 9000], [3, 1000, 16000], [4, 1000, 25000], [5, 1000, 30000], [10, 1000, 30000], [100, 1000, 30000], [0, 500, 500], [1, 500, 2000], [2, 250, 2250], [0, 0, 0], [7, 0, 0], [0, 40000, 30000]] as const;
   const S1x: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
   const S2x: DeriveInput = { params: [{ name: "attempt", type: "number" }, { name: "baseMs", type: "number" }], ret: "number", examples: s2.map(([a, b, c]) => ({ args: [a, b], out: c })) };

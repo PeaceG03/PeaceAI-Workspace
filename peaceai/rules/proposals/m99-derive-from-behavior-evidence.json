@@ -417,6 +417,13 @@
       0
      ],
      "out": 99
+    },
+    {
+     "args": [
+      99,
+      100
+     ],
+     "out": 199
     }
    ],
    "expr": "a + b",
@@ -433,7 +440,8 @@
    "licenseSha256": "0c421278de1b22f07febad89fda6077c5a000771b9e63db9be41b86d0b714e04",
    "addedForGates": [
     "rival: (30, 0) gives 30",
-    "span a: (99, 0) gives 99"
+    "span a: (99, 0) gives 99",
+    "span result (round 3): (99, 100) gives 199"
    ]
   },
   {

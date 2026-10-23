@@ -14,7 +14,7 @@ import { assertDeriveNotesShown, attachDeriveNotes, buildDeriveEdit, DERIVE_TRIG
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { repo, tsx } from "./m7-fixtures.ts";
 
-const S1_ROWS = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [465, false], [499, false], [600, false], [700, false], [100, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
+const S1_ROWS = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [465, false], [499, false], [600, false], [700, false], [100, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
 const S1_BODY = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.\n\nBehavior: true for 429 and server errors 500 through 599.\n\nExamples:\n${S1_ROWS.map(([a, b]) => `- ${a} gives ${b}`).join("\n")}`;
 const asDiff = (files: { path: string; content: string }[]) => files.map((f) => {
   const lines = f.content.replace(/\n$/, "").split("\n");
@@ -61,12 +61,12 @@ test("review-comment.ts end to end: the DERIVE note (expression + far-probe tabl
   const text = r.body!;
   const b = text.slice(text.indexOf("### Candidate B"));
   const a = text.slice(text.indexOf("### Candidate A"), text.indexOf("### Candidate B"));
-  assert.match(b, /^### Candidate B\n\nDerived by PeaceAI from the 21 examples \(DERIVE_FROM_BEHAVIOR\)\./);
+  assert.match(b, /^### Candidate B\n\nDerived by PeaceAI from the 37 examples \(DERIVE_FROM_BEHAVIOR\)\./);
   const note = b.slice(0, b.indexOf("<details>"));
   assert.ok(note.includes("return (status === 429) || (500 <= status && status <= 599);"));
   const rows = note.split("\n").filter((l) => /^isRetryableR2Status\(-?\d+\) = (true|false)$/.test(l));
   assert.ok(rows.length >= 8, String(rows.length));
-  for (const line of ["isRetryableR2Status(610) = false", "isRetryableR2Status(590) = true", "isRetryableR2Status(7000) = false", "isRetryableR2Status(-7000) = false"]) assert.ok(rows.includes(line), line);
+  for (const line of ["isRetryableR2Status(610) = false", "isRetryableR2Status(7000) = false", "isRetryableR2Status(-7000) = false"]) assert.ok(rows.includes(line), line);
   assert.ok(!/Derived by PeaceAI|isRetryableR2Status\(/.test(a), "the plain candidate gets no derive note");
 });
 

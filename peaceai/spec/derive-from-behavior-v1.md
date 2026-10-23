@@ -83,7 +83,8 @@ A unique smallest fit is still refused, `derive_under_specified` with the gate a
 
 - unread: a parameter the program ignores has two examples differing only in it with the same result;
 - chars: a string parameter the program reads has example values with upper case, lower case, a digit, an inner
-  space, a leading or trailing space, and punctuation;
+  space, a leading or trailing space, punctuation, and (round 3, the practice generator's conditional suffix) the empty
+  string itself, asked for when no example has it;
 - edge: both sides of every threshold (`p <= c`: c and c + 1; `c <= p`: c - 1 and c), c - 1, c, c + 1 for an
   equality, both ends of a range, the delta edges of `p === q` / `p <= q`, and `""` against non-empty for an
   emptiness test, each pair with the other arguments equal and different results;
@@ -94,9 +95,11 @@ A unique smallest fit is still refused, `derive_under_specified` with the gate a
   for each side some neighbour or far probe reaches (round 3, upstream scan: keen-slider `sign` from -1, 0, 2, 10, 99
   was accepted as `min(x, 1)`, wrong at every x < -1);
 - region (Auditor #491 round 2, the hidden island): inside every region the program's constants cut a compared
-  parameter into, no example-free stretch longer than half the region (finite) or 100 (open);
+  parameter into, no example-free stretch longer than an eighth of the region or 4, whichever is larger (finite; round 3, from the practice generator's hidden islands) or 100 (open);
 - span (round 2, the unwitnessed cap): every number parameter the result is computed from is shown over at least
   100, and a number result is shown on every side of 0 the program reaches inside the examples' range;
+  (round 3, the practice generator's cap inside the examples' range) and a number result is shown at its largest
+  and smallest over the corners of the examples' box (a value past every shown result there asks at that corner);
 - branch / cap: each branch of every conditional and each side of every min / max cap is reached by at least
   DERIVE_MIN_REACH = 2 examples (the true branch of a one-parameter `p === c` or emptiness test holds for one input:
   one example);

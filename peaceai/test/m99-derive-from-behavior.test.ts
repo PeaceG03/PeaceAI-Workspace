@@ -31,7 +31,7 @@ const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR
 Behavior: given the HTTP status code of a reply from R2, answer true when the request is worth retrying and false when it is not. Worth retrying: 429 (too many requests) and every server error status from 500 through 599. Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.
 
 Examples:
-${[[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [200, false], [204, false], [100, false], [301, false], [400, false], [403, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}
+${[[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [465, false], [600, false], [700, false], [200, false], [204, false], [100, false], [301, false], [400, false], [403, false], [404, false], [0, false]].map(([a, b]) => `- ${a} gives ${b}`).join("\n")}
 
 Context: this is the status check a future retry will use. PeaceAI has to work out the implementation itself.`;
 const S2 = `Add a new module \`src/r2-retry-delay.ts\` exporting \`r2RetryDelayMs(attempt: number, baseMs: number): number\`.
@@ -82,7 +82,7 @@ test("S1-S3 (scanner refile): each derives one program; module and test are the 
   assert.match(s1.extra![0]!.path, /^src\/r2-retry-status\.is-retryable-r2-status-[0-9a-f]{7}\.test\.ts$/);
   assert.match(s1.extra![0]!.content, /assert\.equal\(isRetryableR2Status\(429\), true\);/);
   // The test is exactly the issue's examples: one assertion per example, nothing else.
-  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 21);
+  assert.equal((s1.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 37);
   const s2 = run(S2).e!;
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
   assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 14);

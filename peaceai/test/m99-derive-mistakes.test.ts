@@ -16,13 +16,13 @@ import { repo } from "./m7-fixtures.ts";
 
 type After = { program?: string; rightOnGrid?: boolean; wrongAt?: DeriveValue[]; correctThere?: DeriveValue; limit?: string; refused?: string; gate?: string | null };
 type Entry = {
-  id: string; source: string; params: string[]; ret: "number" | "boolean"; examples: DeriveValue[][]; wrongProgram: string; disagreeAt: DeriveValue[]; correct: DeriveValue; why: string;
+  id: string; source: string; params: string[]; types?: ("number" | "string")[]; ret: "number" | "boolean" | "string"; examples: DeriveValue[][]; wrongProgram: string; disagreeAt: DeriveValue[]; correct: DeriveValue; why: string;
   expected: { outcome: "refuse-and-ask"; reason: string; gate: string | null; askAt: DeriveValue[][]; answers: DeriveValue[][]; rounds: number; after: After }
     | { outcome: "derive"; program: string; rightOnGrid: boolean }
     | { outcome: "known-limit"; program: string; note: string };
 };
 const LEDGER = JSON.parse(readFileSync(join(repo, "peaceai/test/m99-derive-mistakes.json"), "utf8")) as { schema: string; entries: Entry[] };
-const input = (e: Entry, rows: readonly DeriveValue[][]): DeriveInput => ({ params: e.params.map((name) => ({ name, type: "number" as const })), ret: e.ret, examples: rows.map((r) => ({ args: r.slice(0, -1), out: r[r.length - 1]! })) });
+const input = (e: Entry, rows: readonly DeriveValue[][]): DeriveInput => ({ params: e.params.map((name, i) => ({ name, type: e.types?.[i] ?? "number" })), ret: e.ret, examples: rows.map((r) => ({ args: r.slice(0, -1), out: r[r.length - 1]! })) });
 
 test("mistakes ledger: shape, and every Auditor counterexample so far is in it", () => {
   assert.equal(LEDGER.schema, "peaceai-derive-mistakes:v1");

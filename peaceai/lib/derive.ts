@@ -92,6 +92,10 @@ export function keptCellsLimit(input: Pick<DeriveInput, "maxKeptCells">): number
 }
 const MAX_INT = 1e12;
 /** Far-domain distance: an open true region needs an example at least this far past its edge (gate 1). */
+/** A bounded region of the program is shown with no gap between consecutive examples wider than 1 / DERIVE_REGION_PARTS of it. */
+export const DERIVE_REGION_PARTS = 8;
+/** ...but a gap of up to DERIVE_REGION_MIN_GAP is always allowed (a region 9 wide is shown by 3 examples, not 9). */
+export const DERIVE_REGION_MIN_GAP = 4;
 export const DERIVE_FAR = 100;
 /** The rival search (gate 3) runs this many sizes past the accepted program, over every example constant. */
 export const DERIVE_RIVAL_EXTRA = 2;
@@ -614,6 +618,12 @@ export function deriveQuestions(input: DeriveInput, program: DeriveNode, at: rea
     if (mine === null || mine === undefined) continue;
     let other: DeriveValue | null = null;
     if (typeof mine === "boolean") other = !mine;
+    else if (typeof mine === "string") {
+      // A string result: the nearest example's result there (a program equal to the derived one except at this one
+      // input, which is not an example, fits every example as well).
+      const near = nearestExample(input, pt);
+      if (near && near.out !== mine) other = near.out;
+    }
     else if (typeof mine === "number" && outs.length) {
       const hi = Math.max(...outs), lo = Math.min(...outs);
       if (mine > hi) other = hi;
@@ -681,6 +691,8 @@ export const DERIVE_STRING_CLASSES: readonly (readonly [string, RegExp])[] = [
   ["a space between other characters", /\S \S/],
   ["a leading or trailing space", /^ | $/],
   ["punctuation", /[^A-Za-z0-9 ]/],
+  // m100 practice (round 3, cond_suffix): a join shown only with non-empty values hides a branch on the empty string.
+  ["the empty string", /^$/],
 ];
 
 const walk = (n: DeriveNode, f: (x: DeriveNode) => void): void => {
@@ -714,7 +726,7 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *          a min / max cap at c: an example whose capped value is >= c + DERIVE_FAR and one <= c - DERIVE_FAR, for
  *          each side some neighbour or far probe reaches;
  *  region  inside every region the program's constants cut a compared parameter into, no example-free stretch
- *          longer than half the region (finite) or DERIVE_FAR (open, up to the farthest example): regionProblem;
+ *          longer than 1 / DERIVE_REGION_PARTS (an eighth) of the region (finite) or DERIVE_FAR (open, up to the farthest example): regionProblem;
  *  span    every number parameter the result is computed from (not only compared) is shown over at least DERIVE_FAR
  *          (largest minus smallest example value): an unwitnessed cap or clamp inside that stretch would show; and a
  *          number result is shown positive (negative) whenever the program gives a positive (negative) result at a
@@ -748,7 +760,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (params[i]!.type !== "string") continue;
     const vals = examples.map((e) => e.args[i] as string);
     const missing = DERIVE_STRING_CLASSES.filter(([, re]) => !vals.some((v) => re.test(v))).map(([d]) => d);
-    if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i);
+    if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i, vals.includes("") ? undefined : [examples[0]!.args.map((a, j) => (j === i ? "" : a))]);
   }
   // edge (1)
   const byVal = (i: number, v: DeriveValue) => examples.filter((e) => e.args[i] === v);
@@ -827,7 +839,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   }
   // region (Auditor #491 round 2, the hidden island): an example inside every region the program distinguishes.
   const regionFail = regionProblem(program, params, examples);
-  if (regionFail) return fail("region", regionFail.detail, regionFail.i, [ptAt(regionFail.i, regionFail.v)]);
+  if (regionFail) return fail("region", regionFail.detail, regionFail.i, (regionFail.more?.length ? regionFail.more : [regionFail.v]).map((v) => ptAt(regionFail.i, v)));
   // span (Auditor #491 round 2, the unwitnessed cap): a value the program computes from a number parameter is shown
   // over a stretch at least DERIVE_FAR wide of that parameter, so a cap or clamp inside it would have been seen.
   for (const i of [...arithmeticParams(program)].sort((x, y) => x - y)) {
@@ -848,6 +860,25 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
       if (typeof v !== "number" || v === 0 || shown.has(Math.sign(v))) continue;
       return fail("span", `the result: \`${expr}\` gives ${v} at (${pt.map((x) => JSON.stringify(x)).join(", ")}), but no example has a ${v > 0 ? "positive" : "negative"} result; add one there`, undefined, [[...pt]]);
     }
+  }
+  // span, result extremes (m100 practice, round 3: cap lin2 with a cap inside the examples' range): a number result
+  // is shown at its largest and smallest over the examples' range of every number parameter (the corners of that
+  // box), so a cap or floor between the largest shown result and what the program gives inside the box cannot hide.
+  if (input.ret === "number" && arithmeticParams(program).size) {
+    const outs = examples.map((e) => e.out as number), top = Math.max(...outs), bottom = Math.min(...outs);
+    let corners: DeriveValue[][] = [[]];
+    params.forEach((p, j) => {
+      const vs = p.type === "number" ? [...new Set([Math.min(...examples.map((e) => e.args[j] as number)), Math.max(...examples.map((e) => e.args[j] as number))])] : [examples[0]!.args[j]!];
+      corners = corners.flatMap((c) => vs.map((v) => [...c, v]));
+    });
+    let worst: { pt: DeriveValue[]; v: number; by: number } | null = null;
+    for (const pt of corners) {
+      const v = evalProgram(program, pt);
+      if (typeof v !== "number") continue;
+      const by = v > top ? v - top : v < bottom ? bottom - v : 0;
+      if (by > 0 && (!worst || by > worst.by)) worst = { pt, v, by };
+    }
+    if (worst) return fail("span", `the result: \`${expr}\` gives ${worst.v} at (${worst.pt.map((x) => JSON.stringify(x)).join(", ")}), inside the examples' range of every parameter, but the examples' results only go from ${bottom} to ${top}; add that input so a cap or floor there is shown, not assumed`, undefined, [worst.pt]);
   }
   // branch / cap (2)
   const hits = new Map<DeriveNode, [number, number]>();
@@ -911,12 +942,12 @@ export function arithmeticParams(n: DeriveNode): Set<number> {
  * The region gate (Auditor #491 round 2). The constants a number parameter is compared with cut its line into
  * regions (\`p <= c\` cuts between c and c + 1, \`c <= p\` between c - 1 and c, \`p === c\` on both sides of c, a range
  * at both of its ends). Inside every region, no stretch is left without an example: in a finite region of width w
- * the examples of that parameter there (the edge gate already puts one at each end) leave no gap longer than w / 2,
+ * the examples of that parameter there (the edge gate already puts one at each end) leave no gap longer than w / DERIVE_REGION_PARTS (8),
  * and in the open region past the first or last cut no gap longer than DERIVE_FAR between the cut and the farthest
  * example (the far gate puts one at least DERIVE_FAR past). A truth with a hidden band (an island the program does
  * not have) can then only hide in a stretch at most half its region wide; the refusal names the stretch.
  */
-export function regionProblem(program: DeriveNode, params: readonly DeriveParam[], examples: readonly DeriveExample[]): { i: number; detail: string; v: number } | null {
+export function regionProblem(program: DeriveNode, params: readonly DeriveParam[], examples: readonly DeriveExample[]): { i: number; detail: string; v: number; more?: number[] } | null {
   const cuts = new Map<number, Set<number>>();
   const cut = (i: number, t: number) => { const s = cuts.get(i) ?? new Set<number>(); s.add(t); cuts.set(i, s); };
   walk(program, (n) => {
@@ -938,9 +969,15 @@ export function regionProblem(program: DeriveNode, params: readonly DeriveParam[
     for (let k = 1; k < ts_.length; k++) {
       const a = ts_[k - 1]! + 1, b = ts_[k]!, w = b - a + 1;
       const g = widest(a, b);
-      const limit = Math.max(1, Math.floor(w / 2));
+      // m100 practice (round 3, hidden island): an eighth of the region, not half; a band hidden between two
+      // examples of a bounded region is then at most an eighth of it wide, and the question asks in the gap.
+      const limit = Math.max(DERIVE_REGION_MIN_GAP, Math.floor(w / DERIVE_REGION_PARTS));
       if (!g && w > 1) return { i, v: a + Math.floor(w / 2), detail: `${name}: the region ${a} to ${b} of the program has fewer than two examples inside; add examples there (e.g. ${name} = ${a + Math.floor(w / 2)})` };
-      if (g && g[0] > limit) return { i, v: g[1] + Math.floor(g[0] / 2), detail: `${name}: inside the region ${a} to ${b} no example has ${name} between ${g[1]} and ${g[2]} (more than half the region); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)}) so a band the examples hide is shown` };
+      // Round 3: every bare stretch of the region is asked about (widest first, up to DERIVE_MAX_QUESTIONS), so the
+      // answers close the region in a few rounds rather than one stretch a round.
+      const inR = vs.filter((v) => v >= a && v <= b);
+      const more = inR.slice(1).map((v, k) => [v - inR[k]!, inR[k]!] as const).filter(([gap]) => gap > limit).sort((x, y) => y[0] - x[0] || x[1] - y[1]).slice(0, DERIVE_MAX_QUESTIONS).map(([gap, from]) => from + Math.floor(gap / 2));
+      if (g && g[0] > limit) return { i, v: g[1] + Math.floor(g[0] / 2), more, detail: `${name}: inside the region ${a} to ${b} no example has ${name} between ${g[1]} and ${g[2]} (more than an eighth of the region); add one there (e.g. ${name} = ${g[1] + Math.floor(g[0] / 2)}) so a band the examples hide is shown` };
     }
     const first = ts_[0]!, last = ts_[ts_.length - 1]!;
     const below = vs.filter((v) => v <= first), above = vs.filter((v) => v > last);
@@ -978,7 +1015,7 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
   /** The corners of the examples' box (number parameters at their smallest / largest example value; others as in the first example). */
   const corners = span.reduce<DeriveValue[][]>((acc, sp, i) => acc.flatMap((a) => (sp ? [sp[0]!, sp[1]!] : [examples[0]!.args[i]!]).map((v) => [...a, v])), [[]]).slice(0, 64);
   const passes: { pass: "near" | "far"; probes: DeriveValue[][]; consts: number[][] }[] = [
-    { pass: "near", probes: near, consts: params.map((p, i) => (p.type === "number" ? [...new Set([...edges[i]!, ...examples.map((e) => e.args[i] as number)])].sort((a, b) => a - b) : [])) },
+    { pass: "near", probes: near, consts: params.map((p, i) => (p.type === "number" ? [...new Set([...edges[i]!, ...transitionValues(examples, i)])].sort((a, b) => a - b) : [])) },
     { pass: "far", probes: far, consts: edges },
   ];
   let searched = 0;
@@ -1025,6 +1062,19 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
   const rivals: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
   for (let j = 0; rivals.length < DERIVE_MAX_QUESTIONS && asked.some((q) => j < q.length); j++) for (const q of asked) if (j < q.length && rivals.length < DERIVE_MAX_QUESTIONS) rivals.push(q[j]!);
   return { ...(found as DeriveGateProblem), searched, rivals };
+}
+
+/**
+ * The example values of number parameter i a near rival may use as constants (round 3): the smallest and largest, and
+ * each value whose result differs from the next or previous example's in that parameter's order. A constant inside a
+ * run of examples with one result moves a threshold within that run, which every fitting rival can do with the run's
+ * ends; leaving those out keeps a densely shown region (S1's 500..599 every 10) from multiplying the search.
+ */
+export function transitionValues(examples: readonly DeriveExample[], i: number): number[] {
+  const byV = new Map<number, string>();
+  for (const e of examples) { const v = e.args[i] as number, o = JSON.stringify(e.out); byV.set(v, byV.has(v) && byV.get(v) !== o ? "*" : o); }
+  const vs = [...byV.keys()].sort((a, b) => a - b);
+  return vs.filter((v, k) => k === 0 || k === vs.length - 1 || byV.get(v) === "*" || byV.get(v) !== byV.get(vs[k - 1]!) || byV.get(v) !== byV.get(vs[k + 1]!));
 }
 
 /** The far-probe output table of a program (for the candidate's review note): at most `limit` rows. */

@@ -25,7 +25,7 @@ const gate = (params: DeriveParam[], ret: DeriveInput["ret"], program: DeriveNod
 };
 
 // S1 exactly as the PR head 235c99d had it (no 700).
-const S1_235 = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
+const S1_235 = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [499, false], [600, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
 const status = [num("status")];
 
 test("B1 repro: S1 without \"600 gives false\" is refused (gate far), not derived as `(status === 429) || (500 <= status)`", () => {
@@ -55,7 +55,11 @@ test("gate chars: a string parameter that is read needs upper, lower, digit, inn
   const prog: DeriveNode = { op: "cat", a: lit("x:"), b: P0 };
   const base = [["ab", "x:ab"], ["cd", "x:cd"]] as const;
   assert.equal(gate(s, "string", prog, base), "chars:s");
-  assert.equal(gate(s, "string", prog, [...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]), "");
+  assert.equal(gate(s, "string", prog, [...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]), "chars:s"); // round 3: no empty s
+  const noEmpty = deriveProgram({ params: s, ret: "string", examples: ex([...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]) });
+  assert.ok(!noEmpty.ok && noEmpty.gate === "chars" && /the empty string/.test(noEmpty.detail ?? ""), JSON.stringify(noEmpty));
+  assert.deepEqual(noEmpty.ok ? [] : noEmpty.questions?.map((q) => q.at), [[""]], "asks for s = \"\"");
+  assert.equal(gate(s, "string", prog, [...base, ["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "], ["", "x:"]]), "");
 });
 
 test("gate edge: both sides of every threshold, and c - 1, c, c + 1 for an equality", () => {
@@ -79,7 +83,8 @@ test("gate edge: both sides of every threshold, and c - 1, c, c + 1 for an equal
   const rows = [[500, true], [599, true], [550, true], [499, false], [700, false], [399, false]] as const;
   assert.equal(gate(n, "boolean", rng, rows), "edge:n"); // no 600: the upper end is not shown
   assert.equal(gate(n, "boolean", rng, [[500, true], [599, true], [550, true], [450, false], [600, false], [700, false], [0, false]]), "edge:n"); // no 499: the lower end
-  assert.equal(gate(n, "boolean", rng, [...rows, [600, false]]), "");
+  assert.equal(gate(n, "boolean", rng, [...rows, [600, false]]), "region:n"); // round 3: 500..599 bare over an eighth
+  assert.equal(gate(n, "boolean", rng, [...rows, [600, false], ...[510, 520, 530, 540, 560, 570, 580, 590].map((v) => [v, true] as const)]), "");
   // p === q: the delta edges -1 / 0 / +1.
   const ab = [num("a"), num("b")];
   const eqab: DeriveNode = { op: "eq", a: P0, b: P1 };
@@ -90,7 +95,7 @@ test("gate edge: both sides of every threshold, and c - 1, c, c + 1 for an equal
   const s = [str("s")];
   const emp: DeriveNode = { op: "empty", i: 0 };
   const chars = [["Ab 1-x", false], [" pad ", false]] as const;
-  assert.equal(gate(s, "boolean", emp, [["abc", false], ...chars]), "edge:s");
+  assert.equal(gate(s, "boolean", emp, [["abc", false], ...chars]), "chars:s"); // round 3: the chars gate asks for "" first
   assert.equal(gate(s, "boolean", emp, [["", true], ["abc", false], ...chars]), "");
 });
 
@@ -142,8 +147,9 @@ test("gate region: no example-free stretch over half a finite region, or over DE
   const outside = [[10, true], [11, false], [49, false], [50, true], [150, true], [-90, true]] as const;
   assert.equal(gate(n, "boolean", island, outside, 5), "region:n");
   const r = regionProblem(island, n, ex(outside));
-  assert.match(r!.detail, /inside the region 11 to 49 no example has n between 11 and 49 \(more than half the region\); add one there \(e\.g\. n = 30\)/);
-  assert.equal(gate(n, "boolean", island, [...outside, [30, false]], 5), "");
+  assert.match(r!.detail, /inside the region 11 to 49 no example has n between 11 and 49 \(more than an eighth of the region\); add one there \(e\.g\. n = 30\)/);
+  assert.equal(gate(n, "boolean", island, [...outside, [30, false]], 5), "region:n"); // round 3: 30 leaves 19 bare, over 39 / 8
+  assert.equal(gate(n, "boolean", island, [...outside, ...[15, 19, 23, 27, 31, 35, 39, 43, 47].map((v) => [v, false] as const)], 5), "");
   // 21 inside leaves 21..49 (28 > 19) bare: still refused.
   assert.equal(gate(n, "boolean", island, [...outside, [21, false]], 5), "region:n");
   // Open region: past 10 <= n, 11 to 130 is bare for more than DERIVE_FAR.
@@ -170,11 +176,16 @@ test("gate span: a computed-from parameter shown over DERIVE_FAR; every result s
   const neg = [[16, -46, -736], [-90, 16, -1440], [-150, 38, -5700], [94, -102, -9588], [134, -74, -9916], [-30, 94, -2820]] as const;
   assert.equal(gate(ab, "number", mul, neg), "span");
   assert.match(gateProblem({ params: ab, ret: "number", examples: ex(neg) }, mul, 3)!.detail, /no example has a positive result/);
-  assert.equal(gate(ab, "number", mul, [...neg, [-150, -102, 15300]]), "");
+  assert.equal(gate(ab, "number", mul, [...neg, [-150, -102, 15300]]), "span"); // round 3: the corner (-150, 94) gives -14100, below every result
+  assert.deepEqual(gateProblem({ params: ab, ret: "number", examples: ex([...neg, [-150, -102, 15300]]) }, mul, 3)!.at, [[-150, 94]]);
+  assert.equal(gate(ab, "number", mul, [...neg, [-150, -102, 15300], [-150, 94, -14100]]), "");
+  // round 3 (practice generator, cap_lin2 inside): min(916, a * b) shown up to 873 was derived as a * b, wrong at (-31, -30).
+  const capIn = deriveProgram({ params: ab, ret: "number", examples: ex([[-3, 70, -210], [2, 2, 4], [1, -90, -90], [7, 9, 63], [97, 9, 873], [-93, 70, -6510]]) });
+  assert.ok(!capIn.ok && capIn.gate === "span" && /corner|inside the examples' range of every parameter/.test(capIn.detail ?? ""), JSON.stringify(capIn));
   // Compared-only parameters are not "computed from"; string parameters have no span.
   assert.deepEqual([...arithmeticParams({ op: "le", a: P0, b: lit(5) })], []);
   assert.deepEqual([...arithmeticParams({ op: "if", c: { op: "le", a: P0, b: lit(5) }, t: P1, e: { op: "add", a: P0, b: { op: "int", v: 1 } } })].sort(), [0, 1]);
-  assert.equal(gate([str("s")], "string", { op: "cat", a: lit("x:"), b: P0 }, [["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]), "");
+  assert.equal(gate([str("s")], "string", { op: "cat", a: lit("x:"), b: P0 }, [["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "], ["", "x:"]]), "");
 });
 
 test("gate rival (size + 2): near pass (every example value a constant, probes inside the examples) and far pass (witnessed edges, far probes past them)", () => {
@@ -236,10 +247,11 @@ test("review note: a DERIVE candidate shows its expression and far-probe outputs
   const files = [{ path: b.edit.path, content: b.edit.content }, ...b.edit.extra];
   const note = deriveReviewNote(asDiff(files));
   assert.ok(note);
-  assert.match(note, /^Derived by PeaceAI from the 21 examples/);
+  assert.match(note, /^Derived by PeaceAI from the 37 examples/);
   assert.ok(note.includes("return (status === 429) || (500 <= status && status <= 599);"));
   // Far probes: past the outermost edges (+-10 / +-100) and 10x the largest example value.
-  for (const line of ["isRetryableR2Status(610) = false", "isRetryableR2Status(590) = true", "isRetryableR2Status(328) = false", "isRetryableR2Status(7000) = false", "isRetryableR2Status(-7000) = false"]) assert.ok(note.includes(line), line);
+  for (const line of ["isRetryableR2Status(610) = false", "isRetryableR2Status(328) = false", "isRetryableR2Status(7000) = false", "isRetryableR2Status(-7000) = false"]) assert.ok(note.includes(line), line);
+  assert.match(note, /isRetryableR2Status\(5\d\d\) = true/); // a probe inside 500..599 (round 3: 590 is now an example)
   // Shown above the diff in the review comment, as written.
   const body = reviewBody([{ label: "A", id: "c1" }], new Map([["c1", "diff"]]), null, "pr", new Map([["c1", note]]));
   assert.ok(body.includes(`### Candidate A\n\n${note}\n\n<details>`));
