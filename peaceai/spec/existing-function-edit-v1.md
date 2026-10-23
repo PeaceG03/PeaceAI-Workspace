@@ -250,6 +250,17 @@ capability token the base unit lacked, the result is `edit_new_capability`:
 
 Tokens are counted, not just checked for presence, so an edit can't add a second `?? fetch` beside one the base had.
 
+The same counted delta covers un-awaited promises (G2 pass), giving `edit_unawaited:*`. An edit may not add:
+
+- a bare statement calling a collaborator (a method on a parameter or `this`, or a parameter itself) without `await`
+- `void <call>`
+- a `.then` / `.catch` / `.finally` chain
+- `new Promise(...)`
+- a non-async callback that calls a collaborator, unless it feeds an awaited `Promise.all` / `Promise.allSettled`
+
+Timers are capability tokens (above), and static or module mutable state reached by the tested code is refused by
+the hermetic walk (`edit_global_write` / `edit_hidden_state`).
+
 This refuses the following, however the name is spelled or built:
 
 - the `Function` constructor reached through a cast
