@@ -50,18 +50,20 @@ failed on the mutant (each passes on the unmutated tree). Harness: one replaceme
 | 42 | B2 raw issue: indented code | `peaceai/lib/learned-derive.ts` | KILLED | Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comments, indented code) refuses the derive rule; the clean issue makes a candidate |
 | 43 | B2 DERIVE_BUDGET stop | `peaceai/lib/derive.ts` | KILLED | budget: the search stops at the caller's budget, and a larger budget is clamped to DERIVE_BUDGET; constant programs: the filtered search finishes S1 and S2 within the programs they need (unfiltered: derive_budget) |
 | 44 | B2 DERIVE_BUDGET clamp | `peaceai/lib/derive.ts` | KILLED | budget: the search stops at the caller's budget, and a larger budget is clamped to DERIVE_BUDGET |
-| 45 | B2 MAX_KEPT_CELLS | `peaceai/lib/derive.ts` | KILLED | peaceai/test/m99-derive-guards.test.ts (the file crashes: without the cap the search exhausts the heap; no assertion is reached) |
+| 45 | B2 MAX_KEPT_CELLS check (`keptCells += P` with no bound) | `peaceai/lib/derive.ts` | KILLED | memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS (assertion: S1 under a 20 000-value bound derives instead of derive_budget); the older many-points memory test crashes on heap |
 | 46 | B2 size clamp 13 | `peaceai/lib/derive.ts` | KILLED | size: maxSize above DERIVE_MAX_SIZE (13) searches exactly what 13 does |
 | 47 | B2 emit: size cap | `peaceai/lib/learned-derive.ts` | KILLED | emit checks: size cap (derive_emit_size), then body vocabulary (derive_expr_vocab), then the strict allowlist |
 | 48 | B2 emit: body vocabulary | `peaceai/lib/learned-derive.ts` | KILLED | emit checks: size cap (derive_emit_size), then body vocabulary (derive_expr_vocab), then the strict allowlist |
 | 49 | B2 emit: strict allowlist | `peaceai/lib/learned-derive.ts` | KILLED | emit checks: size cap (derive_emit_size), then body vocabulary (derive_expr_vocab), then the strict allowlist |
 | 50 | B2 constant-program filter | `peaceai/lib/derive.ts` | KILLED | constant programs: the filtered search finishes S1 and S2 within the programs they need (unfiltered: derive_budget) |
+| 51 | B2 MAX_KEPT_CELLS clamp (`keptCellsLimit` returns the caller's value) | `peaceai/lib/derive.ts` | KILLED | memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS |
+| 52 | B2 main search ignores the bound it is given (`cells: MAX_KEPT_CELLS`) | `peaceai/lib/derive.ts` | KILLED | memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS |
 
-50 mutants, 50 killed, 0 survived.
+52 mutants, 52 killed, 0 survived.
 
 Notes:
 
 - One earlier p - q far mutant (`false && A || B`) left the gate in place, so it could not fail; it is replaced by the three p - q rows above (both sides, and each side alone).
-- B2 MAX_KEPT_CELLS is killed by the guards file running out of heap, not by an assertion. A cell-count assertion would need a hook into the search, which the engine does not expose.
+- B2 MAX_KEPT_CELLS: first killed only by the guards file running out of heap. The bound is now a clamped input (`maxKeptCells`, never above MAX_KEPT_CELLS, via keptCellsLimit), so removing the check, the clamp, or the main search's use of it each fails an assertion. Not covered on its own: the rival search ignoring the caller's bound (it then runs under MAX_KEPT_CELLS itself, still bounded).
 - The `not-confined` path in gradeSelf (Node below the permission-model major) cannot be reached on Node 22, the only Node version CI and the box run. It is guarded by the version check alone.
 - The wiring in peaceai/bin/review-comment.ts (it sets deriveReviewNote on a candidate that has no note) is not tested by its own test. Its two halves are tested: deriveReviewNote (rebuilt note, the 24-row far-probe table, null for anything else) and review.ts rendering a multi-line note as written.

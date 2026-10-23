@@ -50,6 +50,8 @@ export interface DeriveInput {
   budget?: number;
   /** Extra sizes searched past the first fit for a competing behavior (at most DERIVE_SLACK; default it). */
   slack?: number;
+  /** Memory bound in kept values (programs x points); clamped to MAX_KEPT_CELLS (default it). */
+  maxKeptCells?: number;
 }
 export type DeriveNode =
   | { op: "param"; i: number }
@@ -84,6 +86,10 @@ const MAX_POINTS = 600;
  * so memory is the vectors themselves, not their text.
  */
 export const MAX_KEPT_CELLS = 32_000_000;
+/** The memory bound a search runs under: the caller's value, never above MAX_KEPT_CELLS. */
+export function keptCellsLimit(input: Pick<DeriveInput, "maxKeptCells">): number {
+  return Math.min(input.maxKeptCells ?? MAX_KEPT_CELLS, MAX_KEPT_CELLS);
+}
 const MAX_INT = 1e12;
 /** Far-domain distance: an open true region needs an example at least this far past its edge (gate 1). */
 export const DERIVE_FAR = 100;
@@ -374,6 +380,8 @@ interface SearchSpec {
   pieces: readonly string[];
   maxSize: number;
   budget: number;
+  /** Memory bound in kept values (keptCellsLimit). */
+  cells: number;
   /** After each completed size: true ends the search. */
   stop: (size: number, fits: readonly Prog[]) => boolean;
   /** On each new fit: true ends the search at once. */
@@ -404,7 +412,7 @@ function runSearch(S: SearchSpec): SearchOut {
     const k = vectorKey(vals);
     if (seen[ty].has(k)) return;
     seen[ty].add(k);
-    if ((keptCells += P) > MAX_KEPT_CELLS) { overBudget = true; return; }
+    if ((keptCells += P) > S.cells) { overBudget = true; return; }
     let varies = false;
     for (let j = 1; j < vals.length && !varies; j++) if (vals[j] !== vals[0]) varies = true;
     const p: Prog = { node, size, vals, usesParam: usesParam && varies };
@@ -540,7 +548,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   let first = 0;
   const r = runSearch({
     params, ret: input.ret, points, nEx, target: examples.map((e) => e.out),
-    consts: edgesByParam(params, examples), caps: repeatedResults(examples), pieces: stringPieces(examples), maxSize, budget,
+    consts: edgesByParam(params, examples), caps: repeatedResults(examples), pieces: stringPieces(examples), maxSize, budget, cells: keptCellsLimit(input),
     stop: (size, fits) => { if (fits.length > 0 && first === 0) first = size; return first > 0 && size >= first + slack; },
   });
   const searched = r.searched;
@@ -733,7 +741,7 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
     let rival: Prog | null = null;
     const r = runSearch({
       params, ret: input.ret, points, nEx: examples.length, target: examples.map((e) => e.out), consts, caps, pieces: stringPieces(examples),
-      maxSize: size + DERIVE_RIVAL_EXTRA, budget,
+      maxSize: size + DERIVE_RIVAL_EXTRA, budget, cells: keptCellsLimit(input),
       stop: () => false,
       onFit: (p) => { for (let k = examples.length; k < points.length; k++) if (p.vals[k] !== null && mine[k] !== null && p.vals[k] !== mine[k]) { rival = p; return true; } return false; },
     });

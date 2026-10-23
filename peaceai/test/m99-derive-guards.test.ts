@@ -2,7 +2,7 @@
 // (the mutation proofs are recorded in peaceai/proof/m99-derive-mutation-proof.md):
 //   Job B's derived-module check, its 3-zone re-runs and their confinement (--permission);
 //   generate.ts's raw-issue check (``` and ~~~ fences, HTML comments, indented code);
-//   DERIVE_BUDGET (the search budget and its clamp), MAX_KEPT_CELLS (the memory bound), the DERIVE_MAX_SIZE clamp;
+//   DERIVE_BUDGET (the search budget and its clamp), MAX_KEPT_CELLS (the memory bound and its clamp, by assertion), the DERIVE_MAX_SIZE clamp;
 //   the emit-time checks of buildDeriveEdit (size cap, body vocabulary, strict allowlist);
 //   the constant-program filter.
 import { test } from "node:test";
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
-import { DERIVE_BUDGET, deriveProgram, type DeriveInput, type DeriveNode, type DeriveResult } from "../lib/derive.ts";
+import { DERIVE_BUDGET, deriveProgram, keptCellsLimit, MAX_KEPT_CELLS, type DeriveInput, type DeriveNode, type DeriveResult } from "../lib/derive.ts";
 import { applyRule, specHash, type RuleSpec } from "../lib/learned.ts";
 import { buildDeriveEdit, DERIVE_VOCAB, parseDeriveTask, DERIVE_TRIGGER } from "../lib/learned-derive.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
@@ -192,6 +192,21 @@ test("memory: a search over many points stops at MAX_KEPT_CELLS (derive_budget) 
   const r = deriveProgram({ params: p3, ret: "number", examples });
   assert.equal(why(r), "derive_budget");
   assert.ok(r.searched < DERIVE_BUDGET / 4, `${r.searched}`);
+});
+
+// The memory bound by assertion (the test above can only crash when the bound is gone): S1 derives within the default
+// bound, and the same search under a smaller bound stops with derive_budget well before its program budget.
+test("memory: the kept-values bound stops the search (derive_budget); a caller's bound is clamped to MAX_KEPT_CELLS", () => {
+  const s1 = [[429, true], [500, true], [502, true], [550, true], [599, true], [428, false], [430, false], [499, false], [600, false], [700, false], [200, false], [404, false], [0, false]] as const;
+  const input: DeriveInput = { params: [{ name: "status", type: "number" }], ret: "boolean", examples: s1.map(([a, b]) => ({ args: [a], out: b })) };
+  const full = deriveProgram(input);
+  assert.equal(why(full), "ok (status === 429) || (500 <= status && status <= 599)");
+  const capped = deriveProgram({ ...input, maxKeptCells: 20_000 });
+  assert.equal(why(capped), "derive_budget");
+  assert.ok(capped.searched < full.searched, `${capped.searched} vs ${full.searched}`);
+  assert.equal(keptCellsLimit({}), MAX_KEPT_CELLS);
+  assert.equal(keptCellsLimit({ maxKeptCells: 1000 }), 1000);
+  assert.equal(keptCellsLimit({ maxKeptCells: MAX_KEPT_CELLS * 1000 }), MAX_KEPT_CELLS);
 });
 
 test("size: maxSize above DERIVE_MAX_SIZE (13) searches exactly what 13 does", () => {
