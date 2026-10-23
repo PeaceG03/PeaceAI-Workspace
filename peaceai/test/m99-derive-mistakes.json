@@ -3332,7 +3332,7 @@
    ],
    "correct": false,
    "why": "a random handful of the examples: nothing below 364, so the band's lower end was never seen",
-   "disclosed": "disclosed limit, accepted by Auditor (#495 ruling on 159a632; m102 derive-practice CI seed 86888239, the same pick at m101 3de4baa)",
+   "disclosed": "disclosed known limit (analysed by Auditor in the #495 review of 159a632, not accepted; m102 derive-practice CI seed 86888239, the same pick at m101 3de4baa)",
    "expected": {
     "outcome": "known-limit",
     "program": "n <= 465",
@@ -3435,7 +3435,7 @@
    ],
    "correct": false,
    "why": "a random handful of the examples: the smallest example, 125, is a lone true point, so nothing below it and nothing between it and the band 148..242 was shown; status <= 242 is wrong on 347 points of [-200, 1000] (every n < 148 except 125)",
-   "disclosed": "disclosed limit, accepted by Auditor (#495 ruling on 159a632; m102 derive-practice CI seed 424845248, the same pick at m101 3de4baa and 1506f6b)",
+   "disclosed": "disclosed known limit (analysed by Auditor in the #495 review of 159a632, not accepted; m102 derive-practice CI seed 424845248, the same pick at m101 3de4baa and 1506f6b)",
    "expected": {
     "outcome": "known-limit",
     "program": "status <= 242",

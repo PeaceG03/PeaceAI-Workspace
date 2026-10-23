@@ -31,8 +31,10 @@ ministryofjustice/digital-prison-services `possessive` (an `endsWith('s')` branc
 | lukebward/speculate | indent | 8512b3910bd3 | `((line === "") ? line : "  ") + line` | 181 / 0 |
 | volfpe/obsidian-remember | logPath | 2911400156fb | `rootFolder + (((rootFolder === "") ? rootFolder : "/") + name)` | 35338 / 0 |
 
-Diversity note: 8 of 12 are the same shape (a pluralising / separator suffix on an equality test); 3 are
-"join with a separator unless empty"; 1 is an indent. Ternary is now 12 >= DERIVE_FORM_BAR (10), so the general if is
+Diversity note (corrected after the Auditor #498 review): 9 of 12 are an equality guard choosing a suffix (8 plural
+"s" with byte-identical 23-row examples, 1 hasComma ","); 2 are "join with a separator unless empty" (join and logPath
+share their examples); 1 is an indent. FairNotice and lickle-bin differ only in quote style. These are about 4 distinct
+problems, not 12. Ternary is now 12 >= DERIVE_FORM_BAR (10), so the general if is
 emitted. Form counts: cap 13, ternary 12, strcat 15, eq 29, or 13, range 42, square 25 (123 entries, 101 repos).
 
 What changed in tests: S3 (scanner refile) now derives; Job A makes a candidate for a general if; the m102 comparator
