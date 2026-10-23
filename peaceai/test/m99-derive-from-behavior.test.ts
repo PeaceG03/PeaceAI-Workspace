@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "d524d97867fce153daba37ab07dd58fa715abcb471c87a94f2f416b8dd8f06e0"; // M104: learned spec evidence counts re-pinned (if-form entries added); the spec's rule fields are unchanged
+const SHA = "317913d44290b8ebf635a212055157e8498545fd90a12ee1d48785d1f3a601e7"; // M104: learned spec evidence counts re-pinned (if-form entries added); the spec's rule fields are unchanged
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -77,15 +77,18 @@ test("spec: valid, hash pinned, kind wired; any approved.json entry pins the exa
   for (const p of ["peaceai/lib/derive.ts", "peaceai/lib/learned-derive.ts", "peaceai/spec/derive-from-behavior-v1.md", "peaceai/test/m99-derive-from-behavior.test.ts", "peaceai/test/fixtures/m99-dfb/x.txt", "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json", "peaceai/rules/learned/public-derive-from-behavior-v1.json", "peaceai/rules/proposals/public-derive-from-behavior-v1.json", "peaceai/bin/test-candidates.ts", "peaceai/lib/learned.ts", "peaceai/test/m99-derive-mistakes.json", "peaceai/test/m99-derive-mistakes.test.ts"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
 });
 
-test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (a form without 10 upstream examples, Auditor round 3)", () => {
+test("S1-S3 (scanner refile): S1, S2 and S3 derive; S3 needed the ternary form, emitted only once it reached 10 upstream entries (M104)", () => {
   // Auditor ruling on 6f1ea5e: no program using a form with fewer than DERIVE_FORM_BAR replaying upstream evidence
   // entries is emitted. Round 4 mining brought eq to >= 10 entries, so S1 (eq, ||, range) derives; S3 needs a general
-  // if (ternary: no upstream entry) and is refused, by name.
+  // if (ternary). Until M104 it had fewer than 10 entries and S3 was refused by name; M104 mined real upstream if / else
+  // returns (same round-4 method) to 12 entries, so S3 now derives. Below the bar it would still be refused (checked).
   const r1 = run(S1), r3 = run(S3);
   assert.equal(r1.why ?? null, null);
   assert.match(r1.e!.content, /return \(status === 429\) \|\| \(500 <= status && status <= 599\);/);
-  assert.equal(r3.e, null);
-  assert.equal(r3.why, "derive_unevidenced_form: ternary");
+  assert.equal(r3.why ?? null, null);
+  assert.equal(r3.e!.path, "src/host-failure-line.ts");
+  assert.match(r3.e!.content, /return "MARKETS_SCHEDULER_HOST_FAILED:" \+ \(message \+ \(\(\(causeCode === ""\) \? causeCode : ":cause="\) \+ causeCode\)\);/);
+  assert.equal((r3.e!.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 8);
   // The search and the witness gates alone still find the programs (so the refusal is the form gate, nothing else).
   const c1 = cand(S1), c3 = cand(S3);
   assert.ok(c1.ok && c3.ok);
@@ -93,13 +96,15 @@ test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (a form with
   assert.deepEqual(c1.ok && formsOf(c1.fit.program), ["eq", "or", "range"]);
   assert.equal(c3.ok && c3.fit.expr, '"MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode))');
   assert.deepEqual(c3.ok && formsOf(c3.fit.program), ["ternary", "strcat", "eq"]);
+  assert.ok(evidenceFormCounts().ternary >= DERIVE_FORM_BAR);
+  assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR - 1 }), ["ternary"], "one entry fewer: refused");
   const s2 = run(S2).e!;
   assert.equal(s2.path, "src/r2-retry-delay.ts");
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
   assert.match(s2.extra![0]!.path, /^src\/r2-retry-delay\.r2-retry-delay-ms-[0-9a-f]{7}\.test\.ts$/);
   // The test is exactly the issue's examples: one assertion per example, nothing else.
   assert.equal((s2.extra![0]!.content.match(/assert\.equal\(/g) ?? []).length, 14);
-  for (const e of [s2]) {
+  for (const e of [s2, run(S3).e!]) {
     assert.equal(e.create, true);
     assert.equal(e.selfGrade, true);
     assert.equal(e.extra!.length, 1);
@@ -113,7 +118,7 @@ test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (a form with
 
 test("generated module + test pass under TZ=UTC, America/Denver and Asia/Tokyo with an empty env, and fail on a stub", () => {
   const tsx = resolve(root, "node_modules/tsx/dist/cli.mjs");
-  for (const body of [S2]) { // S1 and S3 refuse (form gate): no edit to run
+  for (const body of [S2, S3]) {
     const e = run(body).e!;
     const dir = mkdtempSync(join(tmpdir(), "m99-"));
     try {
@@ -431,8 +436,9 @@ test("evidence by form (#491 round 3, Auditor ruling): the recorded forms replay
   for (const f of DERIVE_FORMS) assert.deepEqual(formsOf(FORM_SAMPLE[f]), [f], f);
   for (const f of allowed) assert.ok(counts[f] >= DERIVE_FORM_BAR, `${f}: ${counts[f]}`);
   for (const f of DERIVE_FORMS) if (counts[f] < DERIVE_FORM_BAR) assert.deepEqual(unevidencedForms(FORM_SAMPLE[f]), [f], f);
-  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; no general if upstream).
-  assert.deepEqual(allowed, ["cap", "strcat", "eq", "or", "range", "square"], JSON.stringify(counts));
+  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; M104 mining: ternary 12).
+  assert.deepEqual(allowed, ["cap", "ternary", "strcat", "eq", "or", "range", "square"], JSON.stringify(counts));
+  assert.equal(counts.ternary, 12, "M104: 12 replaying upstream if / else entries");
 });
 test("form gate: boundary at the bar, fail closed on a bad evidence file, refused by name through deriveProgram", () => {
   const zero = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;
@@ -450,8 +456,9 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
   assert.equal(evidenceFormCounts(many(["or", "or"])).or, DERIVE_FORM_BAR, "an entry counts once per form");
   // A square of a subexpression and a square of a parameter are both the square form.
   assert.deepEqual(formsOf({ op: "mul", a: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } }, b: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } } }), ["square"]);
-  // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted; a general if (ternary: no upstream
-  // entry) is refused by name, with the count in the detail.
+  // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted, and since M104 (ternary: 12 entries)
+  // so is a general if. With an evidence file one ternary entry short of the bar (a copy of derive.ts run in a child
+  // process), the same behavior is refused by name, with the count in the detail.
   const N = [{ name: "n", type: "number" as const }];
   const grid = [-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50];
   const eqEx = [-5, 0, 3, 4, 5, 9, 100, -100, 200, 6, 2].map((n) => ({ args: [n], out: n === 4 }));
@@ -460,12 +467,27 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
   const ex = grid.map((n) => ({ args: [n], out: n === 4 ? 1 : 0 }));
   const c = deriveCandidate({ params: N, ret: "number", examples: ex });
   assert.ok(c.ok && c.fit.expr === "(n === 4) ? 1 : 0", "the search alone fits (n === 4) ? 1 : 0");
-  const r = deriveProgram({ params: N, ret: "number", examples: ex });
-  assert.equal(r.ok, false);
-  if (!r.ok) {
+  const ok = deriveProgram({ params: N, ret: "number", examples: ex });
+  assert.ok(ok.ok && ok.fit.expr === "(n === 4) ? 1 : 0", JSON.stringify(ok).slice(0, 300));
+  const dir = mkdtempSync(join(tmpdir(), "m104-gate-"));
+  try {
+    mkdirSync(join(dir, "peaceai/lib"), { recursive: true });
+    mkdirSync(join(dir, "peaceai/rules/proposals"), { recursive: true });
+    symlinkSync(resolve(root, "node_modules"), join(dir, "node_modules"));
+    writeFileSync(join(dir, "peaceai/lib/derive.ts"), read("peaceai/lib/derive.ts"));
+    let drop = evidenceFormCounts().ternary - (DERIVE_FORM_BAR - 1);
+    const short = { ...EV, examples: EV.examples.filter((e) => !(e.forms.includes("ternary") && drop-- > 0)) };
+    writeFileSync(join(dir, "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json"), JSON.stringify(short));
+    writeFileSync(join(dir, "probe.ts"), `import { deriveProgram } from "./peaceai/lib/derive.ts";\nprocess.stdout.write(JSON.stringify(deriveProgram(${JSON.stringify({ params: N, ret: "number", examples: ex })})));\n`);
+    const out = spawnSync(process.execPath, [resolve(root, "node_modules/tsx/dist/cli.mjs"), "probe.ts"], { cwd: dir, encoding: "utf8" });
+    assert.equal(out.status, 0, out.stderr);
+    const r = JSON.parse(out.stdout) as { ok: boolean; reason?: string; forms?: string[]; detail?: string };
+    assert.equal(r.ok, false);
     assert.equal(r.reason, "derive_unevidenced_form");
     assert.deepEqual(r.forms, ["ternary"]);
-    assert.match(r.detail!, new RegExp(`ternary form .*; ${evidenceFormCounts().ternary} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
+    assert.match(r.detail!, new RegExp(`ternary form .*; ${DERIVE_FORM_BAR - 1} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 test("form gate: nothing that emits code calls deriveCandidate (replay / mining only)", () => {

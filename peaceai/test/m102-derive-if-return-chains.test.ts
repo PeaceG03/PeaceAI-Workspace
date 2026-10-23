@@ -5,7 +5,7 @@
 // last test checks what deriveProgram emits under the round-3 form gate (ternary has no m99 evidence entries).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compileProgram, DERIVE_FORM_BAR, DERIVE_MIN_REACH, DERIVE_ORDER_LOOKALIKES, deriveCandidate, deriveProgram, evalProgram, gateProblem, ORDER_FORM_EVIDENCE, orderProblem, orderShownProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
+import { compileProgram, DERIVE_FORM_BAR, DERIVE_MIN_REACH, DERIVE_ORDER_LOOKALIKES, deriveCandidate, deriveProgram, evalProgram, evidenceFormCounts, formsOf, unevidencedForms, gateProblem, ORDER_FORM_EVIDENCE, orderProblem, orderShownProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
 
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const P: DeriveParam[] = [{ name: "a", type: "string" }, { name: "b", type: "string" }];
@@ -180,15 +180,20 @@ test("order-shown + branch gate (practice seed 100 #1343, stuck with no question
   for (const [a, b] of FULL) assert.equal(evalProgram(r.fit.program, [a, b]), rev([a, b]));
 });
 
-test("form gate (main 5c66982, round 3): with sle on, a comparator or min / max uses the ternary form and is refused; an order test alone, or two joined by && (range), is emitted", () => {
+test("form gate (main 5c66982, round 3; M104): with sle on, a comparator or min / max uses the ternary form, emitted only with >= 10 ternary entries (M104: 12); an order test alone, or two joined by && (range), is emitted", () => {
   const P2: DeriveParam[] = [{ name: "a", type: "string" }, { name: "b", type: "string" }];
   const rows: [string, string][] = [...FULL, ["Zz 9", "a"], ["a", "a"], ["", ""], ["b", "b"]];
   const mk = (f: (a: string, b: string) => string | number | boolean, ret: DeriveInput["ret"]): DeriveInput => ({ params: P2, ret, examples: rows.map(([a, b]) => ({ args: [a, b], out: f(a, b) })) });
   const cmp = deriveCandidate(mk(byCodeUnit, "number"));
   if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return;
   assert.ok(cmp.ok, JSON.stringify(cmp).slice(0, 300));
+  assert.ok(cmp.ok && formsOf(cmp.fit.program).includes("ternary"));
+  // One ternary entry short of the bar, the comparator would be refused by name (the m99 test checks this end to end).
+  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR - 1 }).includes("ternary"));
+  assert.ok(evidenceFormCounts().ternary >= DERIVE_FORM_BAR);
   const p = deriveProgram(mk(byCodeUnit, "number"));
-  assert.ok(!p.ok && p.reason === "derive_unevidenced_form" && (p as { forms?: string[] }).forms?.includes("ternary"), JSON.stringify(p).slice(0, 300));
+  assert.ok(p.ok && cmp.ok && p.fit.expr === cmp.fit.expr, JSON.stringify(p).slice(0, 300));
+  for (const [a, b] of rows) assert.equal(p.ok && evalProgram(p.fit.program, [a, b]), byCodeUnit(a, b));
   const le = deriveProgram(mk((a, b) => a <= b, "boolean"));
   assert.ok(le.ok && compileProgram(le.fit.program, ["a", "b"]) === "a <= b", JSON.stringify(le).slice(0, 300));
 });

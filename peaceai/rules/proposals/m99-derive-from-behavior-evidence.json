@@ -2,7 +2,7 @@
  "schema": "peaceai-m99-derive-from-behavior-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200. M104 (if evidence): entries whose derived program uses the if form (ternary) added the round-4 way from GitHub code search (if/else-return and ternary functions over numbers and strings; the same license, replay, dedupe, email and private-core filters); none uses the M102 string order (sle), and the M102 comparator / min / max entries are not counted here.",
+ "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200. M104 (if evidence): entries whose derived program uses the if form (ternary) added the round-4 way from GitHub code search (if/else-return and ternary functions over numbers and strings; the same license, replay, dedupe, email and private-core filters); none uses the M102 string order (sle), and the M102 comparator / min / max entries are not counted here. Ternary: 12 entries from 12 repos, so the if form is emitted (bar 10). Two candidates that replayed on the probe grid were dropped on manual review because upstream differs off the grid (a startsWith('http') branch, an endsWith('s') branch).",
  "examples": [
   {
    "repo": "AetherAI3/aether-agent",
@@ -17457,6 +17457,1191 @@
    ],
    "forms": [
     "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "Cimera42/geotastic-map-maker",
+   "commit": "cdf41a45ead918da4edc94271e5a3645c14213c6",
+   "module": "src/lib/utils.ts",
+   "fn": "plural",
+   "params": [
+    {
+     "name": "count",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(count === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function plural(count: number): string {\r\n    return count === 1 ? '' : 's';\r\n}",
+   "path": "src/lib/utils.ts",
+   "fileBlob": "77fa22b2722bfafa59e6ad13312463aeaad6f0f2",
+   "sha256": "d1e878a9ee63ef08340afde26988902995aadfc542275bd3a00831a0851b1808",
+   "fixture": "peaceai/test/fixtures/m99-dfb/Cimera42__geotastic-map-maker-77fa22b2722b.txt",
+   "license": "MIT",
+   "licenseSha256": "35874b8a119a5e3ca70a096757d4169c994b329a500279523a27a4376e0afaf9",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "GalaxyPay/canonify",
+   "commit": "2d76296496cb81202e53c5ab7e58e013fdf9bfb6",
+   "module": "src/index.ts",
+   "fn": "hasComma",
+   "params": [
+    {
+     "name": "num",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      -100
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": ","
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": ","
+    }
+   ],
+   "expr": "(num === 0) ? \"\" : \",\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function hasComma(num: number): string {\n  return num === 0 ? '' : ','\n}",
+   "path": "src/index.ts",
+   "fileBlob": "a01df6dfcdf327fb8e0e7aba5d793bec68943ca3",
+   "sha256": "60e384f56e99a1e4ee9f53ca3eab262e795266f7dbf43e81ccc0a13a2aed9f9a",
+   "fixture": "peaceai/test/fixtures/m99-dfb/GalaxyPay__canonify-a01df6dfcdf3.txt",
+   "license": "MIT",
+   "licenseSha256": "8b817c294fcf2758f4e5eeb33610b5ee6e2a63f42274283880fd6b815a08d11a",
+   "addedForGates": [
+    "edge: (1) gives \",\"",
+    "far: (-100) gives \",\"",
+    "region: (550) gives \",\"",
+    "region: (325) gives \",\"",
+    "region: (775) gives \",\"",
+    "region: (212) gives \",\"",
+    "region: (437) gives \",\"",
+    "region: (662) gives \",\"",
+    "region: (887) gives \",\"",
+    "region: (268) gives \",\"",
+    "region: (493) gives \",\"",
+    "region: (718) gives \",\"",
+    "region: (943) gives \",\"",
+    "region: (156) gives \",\"",
+    "region: (381) gives \",\"",
+    "region: (606) gives \",\"",
+    "region: (831) gives \",\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "HspecialH/HspecialH",
+   "commit": "521ac7d91f1d1107fa100898969e7b902740414a",
+   "module": "src/common/util.ts",
+   "fn": "plural",
+   "params": [
+    {
+     "name": "count",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(count === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "const plural = (count: number): string => (count === 1 ? \"\" : \"s\")",
+   "path": "src/common/util.ts",
+   "fileBlob": "d9195b62387af1e95e4c4f691f87d5a3f57dc285",
+   "sha256": "d57e63f036920fc17c71c9ec1880f19a6ceb1d3e37672367690f03fa4151545c",
+   "fixture": "peaceai/test/fixtures/m99-dfb/HspecialH__HspecialH-d9195b62387a.txt",
+   "license": "MIT",
+   "licenseSha256": "80ef305c36ed9368e5ae120c7ad52605fef67a5d5f90e7111cfe07e9e633563e",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "crystian/skill-map",
+   "commit": "0cd3a5b011547cc8d51493941abe2f64d916b05e",
+   "module": "src/kernel/util/text.ts",
+   "fn": "pluralSuffix",
+   "params": [
+    {
+     "name": "count",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(count === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function pluralSuffix(count: number): string {\n  return count === 1 ? '' : 's';\n}",
+   "path": "src/kernel/util/text.ts",
+   "fileBlob": "ba3909881ef5c2c8c37de8b9fa46dd0f29faee87",
+   "sha256": "ffdbfae0955cc326d5e205e2e541e103bc60a557b42945d0b9c35b9a3e629bd3",
+   "fixture": "peaceai/test/fixtures/m99-dfb/crystian__skill-map-ba3909881ef5.txt",
+   "license": "MIT",
+   "licenseSha256": "bc2453d682bcf0132744a4002e548e00c0cf0342367b1b84269fe2689f0cfed4",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "jed1978/instrlint",
+   "commit": "9c2ed3bd9eac710ee4ab8d144439e83eff72644a",
+   "module": "src/i18n/index.ts",
+   "fn": "plural",
+   "params": [
+    {
+     "name": "count",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(count === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function plural(count: number): string {\n  return count === 1 ? \"\" : \"s\";\n}",
+   "path": "src/i18n/index.ts",
+   "fileBlob": "5b71c232e40047635d471fcd49b56ee03c1a8830",
+   "sha256": "39a9b1aea6c4c93c30be4b939299237e91eb2450a71c026029ad7e8a730e5582",
+   "fixture": "peaceai/test/fixtures/m99-dfb/jed1978__instrlint-5b71c232e400.txt",
+   "license": "MIT",
+   "licenseSha256": "e1f1fcfa5ef8e1f24038050094c6fa1d015098747a49b957d5a83a7108cdd994",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "kirchDev/coverage-report",
+   "commit": "445c5909244f6a9b7154087eb416e9b20d555d46",
+   "module": "src/paths.ts",
+   "fn": "join",
+   "params": [
+    {
+     "name": "base",
+     "type": "string"
+    },
+    {
+     "name": "path",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "ab"
+     ],
+     "out": "a/ab"
+    },
+    {
+     "args": [
+      "ab",
+      "Hello"
+     ],
+     "out": "ab/Hello"
+    },
+    {
+     "args": [
+      "Hello",
+      ""
+     ],
+     "out": "Hello/"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      "a"
+     ],
+     "out": " Ab 9. /a"
+    },
+    {
+     "args": [
+      "",
+      " Ab 9. "
+     ],
+     "out": " Ab 9. "
+    }
+   ],
+   "expr": "base + (((base === \"\") ? base : \"/\") + path)",
+   "heldOut": {
+    "right": 35338,
+    "wrong": 0
+   },
+   "upstream": "function join(base: string, path: string): string {\n  return base === '' ? path : `${base}/${path}`;\n}",
+   "path": "src/paths.ts",
+   "fileBlob": "3641a936d0e3b0708a869367895129ac0e2fe3b5",
+   "sha256": "f77877ec2b62a55873ac75af10c562f79084a103fc221f6c6df926e943b1f174",
+   "fixture": "peaceai/test/fixtures/m99-dfb/kirchDev__coverage-report-3641a936d0e3.txt",
+   "license": "MIT",
+   "licenseSha256": "d3dcb34d4d2ae123c9ebcbfada3925183f42c25a95dfbc0d53340f6e778a1638",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"a\") gives \" Ab 9. /a\"",
+    "chars: (\"\", \" Ab 9. \") gives \" Ab 9. \""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
+    "eq"
+   ]
+  },
+  {
+   "repo": "lukebward/speculate",
+   "commit": "8512b3910bd3c88524a93701979f41eb3fa9c219",
+   "module": "eval/eval.ts",
+   "fn": "indent",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "out": "  a"
+    },
+    {
+     "args": [
+      "ab"
+     ],
+     "out": "  ab"
+    },
+    {
+     "args": [
+      "Hello"
+     ],
+     "out": "  Hello"
+    },
+    {
+     "args": [
+      "x y"
+     ],
+     "out": "  x y"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": "  123"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": "   Ab 9. "
+    }
+   ],
+   "expr": "((line === \"\") ? line : \"  \") + line",
+   "heldOut": {
+    "right": 181,
+    "wrong": 0
+   },
+   "upstream": "function indent(line: string): string {\n  return line === '' ? '' : `  ${line}`;\n}",
+   "path": "eval/eval.ts",
+   "fileBlob": "c8e49beb59ca4509b3157718b38e81ff25851051",
+   "sha256": "6db161fb4ccd7813ace61208da6d0009a8e45c343dd97bcdc591ed6144502685",
+   "fixture": "peaceai/test/fixtures/m99-dfb/lukebward__speculate-c8e49beb59ca.txt",
+   "license": "MIT",
+   "licenseSha256": "5f106a9f0eee3d2deb192e00144535fbee74f33162934ecca2e641b74a762412",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \"   Ab 9. \""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
+    "eq"
+   ]
+  },
+  {
+   "repo": "volfpe/obsidian-remember",
+   "commit": "2911400156fb30248e4ee9c2f0a52b6a052da182",
+   "module": "src/log.ts",
+   "fn": "logPath",
+   "params": [
+    {
+     "name": "rootFolder",
+     "type": "string"
+    },
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      "",
+      "a"
+     ],
+     "out": "a"
+    },
+    {
+     "args": [
+      "a",
+      "ab"
+     ],
+     "out": "a/ab"
+    },
+    {
+     "args": [
+      "ab",
+      "Hello"
+     ],
+     "out": "ab/Hello"
+    },
+    {
+     "args": [
+      "Hello",
+      ""
+     ],
+     "out": "Hello/"
+    },
+    {
+     "args": [
+      " Ab 9. ",
+      "a"
+     ],
+     "out": " Ab 9. /a"
+    },
+    {
+     "args": [
+      "",
+      " Ab 9. "
+     ],
+     "out": " Ab 9. "
+    }
+   ],
+   "expr": "rootFolder + (((rootFolder === \"\") ? rootFolder : \"/\") + name)",
+   "heldOut": {
+    "right": 35338,
+    "wrong": 0
+   },
+   "upstream": "function logPath(rootFolder: string, name: string): string {\n\treturn rootFolder === '' ? name : `${rootFolder}/${name}`;\n}",
+   "path": "src/log.ts",
+   "fileBlob": "f638ae09a34488a2538cbd4c8a682117a53cd8c3",
+   "sha256": "680130c09a191c4471a4b1efc4ce87aaea0c68a7787bcf54634faf6f6564ea98",
+   "fixture": "peaceai/test/fixtures/m99-dfb/volfpe__obsidian-remember-f638ae09a344.txt",
+   "license": "MIT",
+   "licenseSha256": "fd76b714ee9c8bb4042d10d9ed67c6991a579db539813b4190821a6dec759c72",
+   "addedForGates": [
+    "chars: (\" Ab 9. \", \"a\") gives \" Ab 9. /a\"",
+    "chars: (\"\", \" Ab 9. \") gives \" Ab 9. \""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
     "eq"
    ]
   }

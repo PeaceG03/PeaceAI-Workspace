@@ -11808,3 +11808,234 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+==============================================================================
+repo: Cimera42/geotastic-map-maker
+license: MIT (LICENSE, sha256 of trimmed text 35874b8a119a5e3ca70a096757d4169c994b329a500279523a27a4376e0afaf9)
+fixtures (commit path):
+  cdf41a45ead918da4edc94271e5a3645c14213c6 peaceai/test/fixtures/m99-dfb/Cimera42__geotastic-map-maker-77fa22b2722b.txt
+license URL: https://github.com/Cimera42/geotastic-map-maker/blob/cdf41a45ead918da4edc94271e5a3645c14213c6/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2021 Tim Porritt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: GalaxyPay/canonify
+license: MIT (LICENSE, sha256 of trimmed text 8b817c294fcf2758f4e5eeb33610b5ee6e2a63f42274283880fd6b815a08d11a)
+fixtures (commit path):
+  2d76296496cb81202e53c5ab7e58e013fdf9bfb6 peaceai/test/fixtures/m99-dfb/GalaxyPay__canonify-a01df6dfcdf3.txt
+license URL: https://github.com/GalaxyPay/canonify/blob/2d76296496cb81202e53c5ab7e58e013fdf9bfb6/LICENSE
+---- license text ----
+MIT License
+
+Copyright © 2019-2023 Truestamp Inc. All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: HspecialH/HspecialH
+license: MIT (LICENSE.txt, sha256 of trimmed text 80ef305c36ed9368e5ae120c7ad52605fef67a5d5f90e7111cfe07e9e633563e)
+fixtures (commit path):
+  521ac7d91f1d1107fa100898969e7b902740414a peaceai/test/fixtures/m99-dfb/HspecialH__HspecialH-d9195b62387a.txt
+license URL: https://github.com/HspecialH/HspecialH/blob/521ac7d91f1d1107fa100898969e7b902740414a/LICENSE.txt
+---- license text ----
+The MIT License
+
+Copyright (c) 2019 Coder Technologies Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: crystian/skill-map
+license: MIT (LICENSE, sha256 of trimmed text bc2453d682bcf0132744a4002e548e00c0cf0342367b1b84269fe2689f0cfed4)
+fixtures (commit path):
+  0cd3a5b011547cc8d51493941abe2f64d916b05e peaceai/test/fixtures/m99-dfb/crystian__skill-map-ba3909881ef5.txt
+license URL: https://github.com/crystian/skill-map/blob/0cd3a5b011547cc8d51493941abe2f64d916b05e/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Crystian
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: jed1978/instrlint
+license: MIT (LICENSE, sha256 of trimmed text e1f1fcfa5ef8e1f24038050094c6fa1d015098747a49b957d5a83a7108cdd994)
+fixtures (commit path):
+  9c2ed3bd9eac710ee4ab8d144439e83eff72644a peaceai/test/fixtures/m99-dfb/jed1978__instrlint-5b71c232e400.txt
+license URL: https://github.com/jed1978/instrlint/blob/9c2ed3bd9eac710ee4ab8d144439e83eff72644a/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2025 Jed Lin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: kirchDev/coverage-report
+license: MIT (LICENSE, sha256 of trimmed text d3dcb34d4d2ae123c9ebcbfada3925183f42c25a95dfbc0d53340f6e778a1638)
+fixtures (commit path):
+  445c5909244f6a9b7154087eb416e9b20d555d46 peaceai/test/fixtures/m99-dfb/kirchDev__coverage-report-3641a936d0e3.txt
+license URL: https://github.com/kirchDev/coverage-report/blob/445c5909244f6a9b7154087eb416e9b20d555d46/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Titus Kirch
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: lukebward/speculate
+license: MIT (LICENSE, sha256 of trimmed text 5f106a9f0eee3d2deb192e00144535fbee74f33162934ecca2e641b74a762412)
+fixtures (commit path):
+  8512b3910bd3c88524a93701979f41eb3fa9c219 peaceai/test/fixtures/m99-dfb/lukebward__speculate-c8e49beb59ca.txt
+license URL: https://github.com/lukebward/speculate/blob/8512b3910bd3c88524a93701979f41eb3fa9c219/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Luke Ward
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: volfpe/obsidian-remember
+license: MIT (LICENSE, sha256 of trimmed text fd76b714ee9c8bb4042d10d9ed67c6991a579db539813b4190821a6dec759c72)
+fixtures (commit path):
+  2911400156fb30248e4ee9c2f0a52b6a052da182 peaceai/test/fixtures/m99-dfb/volfpe__obsidian-remember-f638ae09a344.txt
+license URL: https://github.com/volfpe/obsidian-remember/blob/2911400156fb30248e4ee9c2f0a52b6a052da182/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Petr Volf
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

@@ -1978,9 +1978,7 @@
     "after": {
      "program": "\"HOST_DOWN:\" + (message + (((causeCode === \"\") ? causeCode : \":cause=\") + causeCode))",
      "rightOnGrid": true,
-     "formGate": [
-      "ternary"
-     ]
+     "formGate": []
     }
    }
   },
@@ -3191,9 +3189,7 @@
     "after": {
      "program": "(x <= y) ? y : x",
      "rightOnGrid": true,
-     "formGate": [
-      "ternary"
-     ]
+     "formGate": []
     }
    }
   },
@@ -3294,9 +3290,7 @@
     "after": {
      "program": "(a <= b) ? ((b <= a) ? 0 : 1) : (-1)",
      "rightOnGrid": true,
-     "formGate": [
-      "ternary"
-     ]
+     "formGate": []
     }
    }
   },
