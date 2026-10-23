@@ -699,6 +699,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   // span (Auditor #491 round 2, the unwitnessed cap): a value the program computes from a number parameter is shown
   // over a stretch at least DERIVE_FAR wide of that parameter, so a cap or clamp inside it would have been seen.
   for (const i of [...arithmeticParams(program)].sort((x, y) => x - y)) {
+    if (params[i]!.type !== "number") continue;
     const vs = examples.map((e) => e.args[i] as number);
     const lo = Math.min(...vs), hi = Math.max(...vs);
     if (hi - lo < DERIVE_FAR)

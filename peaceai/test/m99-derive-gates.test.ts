@@ -4,7 +4,7 @@
 // removed (peaceai/proof/m99-derive-mutation-proof.md), plus the far-probe review note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, farProbes, gateProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
+import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
 import { buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, deriveReviewNote, parseDeriveTask } from "../lib/learned-derive.ts";
 import { reviewBody } from "../lib/review.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
@@ -129,6 +129,52 @@ test(`gate branch / cap: each branch and each side of a cap is reached by at lea
   assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [3, 3], [200, 100]], 2), "cap");
   assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [3, 3], [200, 100], [300, 100]], 2) === "cap", false);
   assert.equal(gate(x, "number", cap, [[1, 1], [200, 100], [300, 100]], 2), "cap");
+});
+
+// Auditor #491 round 2 (wrong programs passed the witness gates): the hidden island `!(11 <= n && n <= 49)` was
+// accepted with only the range's ends shown inside (wrong at 20), and `n * n` from inputs -5..24 (an unwitnessed cap,
+// wrong at -50). Gate region: an example inside every region the constants cut a compared parameter into; gate span:
+// a number parameter the result is computed from is shown over DERIVE_FAR, and every result sign the program reaches
+// inside the examples' range is shown.
+test("gate region: no example-free stretch over half a finite region, or over DERIVE_FAR in an open one", () => {
+  const n = [num("n")];
+  const island: DeriveNode = { op: "not", a: { op: "range", i: 0, lo: 11, hi: 49 } };
+  const outside = [[10, true], [11, false], [49, false], [50, true], [150, true], [-90, true]] as const;
+  assert.equal(gate(n, "boolean", island, outside, 5), "region:n");
+  const r = regionProblem(island, n, ex(outside));
+  assert.match(r!.detail, /inside the region 11 to 49 no example has n between 11 and 49 \(more than half the region\); add one there \(e\.g\. n = 30\)/);
+  assert.equal(gate(n, "boolean", island, [...outside, [30, false]], 5), "");
+  // 21 inside leaves 21..49 (28 > 19) bare: still refused.
+  assert.equal(gate(n, "boolean", island, [...outside, [21, false]], 5), "region:n");
+  // Open region: past 10 <= n, 11 to 130 is bare for more than DERIVE_FAR.
+  const ge10: DeriveNode = { op: "le", a: lit(10), b: P0 };
+  const open = [[10, true], [11, true], [3, false], [9, false], [130, true], [-90, false]] as const;
+  assert.equal(gate(n, "boolean", ge10, open), "region:n");
+  assert.match(regionProblem(ge10, n, ex(open))!.detail, /past the program's last edge no example has n between 11 and 130/);
+  assert.equal(gate(n, "boolean", ge10, [...open, [70, true]]), "");
+  // Before the first edge too.
+  const low = [[10, true], [11, true], [3, false], [9, false], [110, true], [-190, false]] as const;
+  assert.equal(gate(n, "boolean", ge10, low), "region:n");
+  assert.equal(gate(n, "boolean", ge10, [...low, [-90, false]]), "");
+});
+
+test("gate span: a computed-from parameter shown over DERIVE_FAR; every result sign the program reaches is shown", () => {
+  const n = [num("n")];
+  const sq: DeriveNode = { op: "sq", a: P0 };
+  const small = [[-5, 25], [0, 0], [3, 9], [24, 576]] as const;
+  assert.equal(gate(n, "number", sq, small), "span:n");
+  assert.equal(gate(n, "number", sq, [...small, [100, 10000]]), "");
+  // a * b shown only negative (Auditor's cap lin2: min(150, a * b) was derived as a * b, wrong at (-200, -200)).
+  const ab = [num("a"), num("b")];
+  const mul: DeriveNode = { op: "mul", a: P0, b: P1 };
+  const neg = [[16, -46, -736], [-90, 16, -1440], [-150, 38, -5700], [94, -102, -9588], [134, -74, -9916], [-30, 94, -2820]] as const;
+  assert.equal(gate(ab, "number", mul, neg), "span");
+  assert.match(gateProblem({ params: ab, ret: "number", examples: ex(neg) }, mul, 3)!.detail, /no example has a positive result/);
+  assert.equal(gate(ab, "number", mul, [...neg, [-150, -102, 15300]]), "");
+  // Compared-only parameters are not "computed from"; string parameters have no span.
+  assert.deepEqual([...arithmeticParams({ op: "le", a: P0, b: lit(5) })], []);
+  assert.deepEqual([...arithmeticParams({ op: "if", c: { op: "le", a: P0, b: lit(5) }, t: P1, e: { op: "add", a: P0, b: { op: "int", v: 1 } } })].sort(), [0, 1]);
+  assert.equal(gate([str("s")], "string", { op: "cat", a: lit("x:"), b: P0 }, [["Ab 1-x", "x:Ab 1-x"], [" pad ", "x: pad "]]), "");
 });
 
 test("gate rival (size + 2): near pass (every example value a constant, probes inside the examples) and far pass (witnessed edges, far probes past them)", () => {
