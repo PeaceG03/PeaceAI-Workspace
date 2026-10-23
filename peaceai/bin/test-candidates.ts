@@ -412,7 +412,10 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     // and the new tests pass in every zone of EXISTING_TZ_RUNS (the candidate's tests read no clock, but prove it).
     if (derive) {
       if (created.length !== 1 || source.length !== 0 || derivedModuleProblem(real)) return ungradable("not-test-only");
-      if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runCandidateCapture(tree, tsx, ["--test", ...newTests], STEP_TIMEOUT_MS, { TZ: tz }).ok) return ungradable("real-not-stable");
+      // Auditor #491: those runs are confined (Node's permission model: reads = the test file, the new module and
+      // node_modules; no write, no child process), as TEST_CASE_EXISTING's are. Never graded unconfined.
+      if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, created, false, tz).ok) return ungradable("real-not-stable");
     }
     const stub = stubFunction(real, fn);
     if (stub === null) return ungradable("not-test-only");

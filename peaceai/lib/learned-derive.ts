@@ -159,7 +159,11 @@ const lit = (v: DeriveValue) => (typeof v === "string" ? JSON.stringify(v) : Str
 export interface DeriveEdit { path: string; content: string; create: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number } | { reason: string; detail?: string };
 
-export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): DeriveBuild {
+/**
+ * `derive` is the search (deriveProgram); the parameter exists only so the emit-time checks below can be shown to
+ * fire on a program the search would never produce (m99-derive-guards.test.ts). Job A never passes it.
+ */
+export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), derive: typeof deriveProgram = deriveProgram): DeriveBuild {
   for (const k of DERIVE_PARAM_KEYS) if (typeof params[k] !== "string" || !DERIVE_VOCAB[k].includes(params[k] as string)) return { reason: "derive_params" };
   const path = task.file;
   if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return { reason: "derive_path" };
@@ -168,7 +172,7 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
   // PeaceAI's own search writes the body from the examples alone; nothing in the issue is copied into it and the
   // behavior prose is not an input.
-  const r = deriveProgram({ params: task.params, ret: task.ret, examples: task.examples });
+  const r = derive({ params: task.params, ret: task.ret, examples: task.examples });
   if (!r.ok) {
     // derive_under_specified names the gate and, when it passes the refusal-line allowlist, the parameter: e.g.
     // `derive_under_specified_far: status` (the full sentence, with the edge to add, is in `detail`).
@@ -177,12 +181,15 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   }
   const names = task.params.map((p) => p.name);
   const expr = compileProgram(r.fit.program, names);
-  if (expr.length > DERIVE_MAX_EXPR_CHARS) return { reason: "derive_expr_size" };
+  // Emit-time checks, in this order, each with its own code (a removed layer changes the code; see the guards test):
+  // the size cap before anything parses the text, then the shared body vocabulary, then the strict DSL allowlist.
+  if (expr.length > DERIVE_MAX_EXPR_CHARS) return { reason: "derive_emit_size" };
+  const parsed = ts.createSourceFile("e.ts", `(${expr});`, ts.ScriptTarget.Latest, true);
+  const st = parsed.statements[0];
+  const e = parsed.statements.length === 1 && st && ts.isExpressionStatement(st) && ts.isParenthesizedExpression(st.expression) ? st.expression.expression : null;
+  if (!e || !safeBody(e, new Set(names))) return { reason: "derive_expr_vocab" };
   const exprProblem = derivedExprProblem(expr, names);
   if (exprProblem) return { reason: exprProblem };
-  const parsed = ts.createSourceFile("e.ts", `(${expr});`, ts.ScriptTarget.Latest, true);
-  const e = ((parsed.statements[0] as ts.ExpressionStatement).expression as ts.ParenthesizedExpression).expression;
-  if (!safeBody(e, new Set(names))) return { reason: "derive_expr_vocab" };
   const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
   const content = `export function ${task.fn}(${sig}): ${task.ret} {\n  return ${expr};\n}\n`;
   if ((ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true) as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return { reason: "derive_expr_parse" };
