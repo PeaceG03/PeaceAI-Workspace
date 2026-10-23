@@ -13,7 +13,8 @@ export function shapeOf(expr: string, params: readonly string[]): string {
   let s = expr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, "S");
   s = s.replace(/\b[A-Za-z_$][\w$]*\b/g, (w) => { const i = params.indexOf(w); return i >= 0 ? `p${i}` : w; });
   s = s.replace(/(^|[^\w$])-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi, "$1K");
-  return s.replace(/\s+/g, " ").trim();
+  // a negative literal prints parenthesized: "(-5)" and "5" are one shape
+  return s.replace(/\(K\)/g, "K").replace(/\s+/g, " ").trim();
 }
 
 const size = (e: LedgerLike) => e.examples.length * 10000 + e.wrongProgram.length;

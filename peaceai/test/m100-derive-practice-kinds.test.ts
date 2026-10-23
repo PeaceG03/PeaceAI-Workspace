@@ -29,6 +29,7 @@ test("families: every form in exactly one family; only family-1 is active; stage
 test("kinds: shape normalizes names, numbers and strings; ledger shapes are KNOWN, others NEW, one smallest per kind", () => {
   assert.equal(shapeOf("(status === 429) || (500 <= status)", ["status"]), "(p0 === K) || (K <= p0)");
   assert.equal(shapeOf('a + ":" + b', ["a", "b"]), "p0 + S + p1");
+  assert.equal(shapeOf("(-5) <= n ? n : (-5)", ["n"]), "K <= p0 ? p0 : K");
   const ledger = [{ id: "r2-hidden-island", params: ["n"], wrongProgram: "!(11 <= n && n <= 49)", examples: [] }];
   const e = (prog: string, n: number, category = "island/hidden_island") => ({ id: `x${n}`, params: ["x"], wrongProgram: prog, examples: Array.from({ length: n }, () => [0, true]), practice: { category } });
   const ks = kindsOf([e("!(3 <= x && x <= 9)", 9), e("!(1 <= x && x <= 2)", 4), e("x <= 4", 6, "threshold/sparse")], ledger, true);
