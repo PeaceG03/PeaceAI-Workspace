@@ -926,6 +926,16 @@ export function unreadProblem(input: DeriveInput, program: DeriveNode, read: Rea
     if (n.op === "min" || n.op === "max") caps.push(n);
     if (n.op === "and" || n.op === "or") decisions.push(n.a, n.b);
   });
+  // For each && / || operand, the settings of its sibling operands (up the &&/|| chain) where it decides the result.
+  type Req = { d: DeriveNode | null; v: DeriveValue | null };
+  const ctx = new Map<DeriveNode, Req[]>();
+  const chain = (n: DeriveNode, c: Req[]): void => {
+    if (n.op !== "and" && n.op !== "or") return;
+    const live = n.op === "and";
+    ctx.set(n.a, [...c, { d: n.b, v: live }]); ctx.set(n.b, [...c, { d: n.a, v: live }]);
+    chain(n.a, ctx.get(n.a)!); chain(n.b, ctx.get(n.b)!);
+  };
+  walk(program, (n) => { if ((n.op === "and" || n.op === "or") && !ctx.has(n)) chain(n, []); });
   if (typeOf(evalProgram(program, examples[0]!.args) ?? 0) === "boolean") decisions.unshift(program);
   const atCap = (a: readonly DeriveValue[]) => caps.some((n) => { const v = evalProgram(n.a, a); return typeof v !== "number" || (n.op === "min" ? v >= n.c : v <= n.c); });
   const degenerate = (j: number, v: DeriveValue | undefined) => (params[j]!.type === "number" ? typeof v === "number" && DEGENERATE_NUMS.has(v) : params[j]!.type === "string" ? v === "" : false);
@@ -943,24 +953,33 @@ export function unreadProblem(input: DeriveInput, program: DeriveNode, read: Rea
     if (![...groups.values()].some((g) => g.vals.size >= 2)) return { gate: "unread", param: names[i]!, searched: 0, detail: `${names[i]} is not read by \`${expr}\`, but no two examples differ only in ${names[i]} and give the same result; add such a pair` };
     const good = [...groups.values()].filter((g) => g.vals.size >= need && setting(g.args, i));
     // The requirements: some good group, and one at each outcome of each decision that an example reaches.
-    const reqs: { d: DeriveNode | null; v: DeriveValue | null }[] = [{ d: null, v: null }];
+    const reqs: Req[] = [{ d: null, v: null }];
     for (const d of decisions) for (const v of [true, false]) if (examples.some((e) => evalProgram(d, e.args) === v)) reqs.push({ d, v });
-    const holds = (r: { d: DeriveNode | null; v: DeriveValue | null }, a: readonly DeriveValue[]) => r.d === null || evalProgram(r.d, a) === r.v;
+    const holds = (r: Req, a: readonly DeriveValue[]) => r.d === null || evalProgram(r.d, a) === r.v;
     const miss = reqs.find((r) => !good.some((g) => holds(r, g.args)));
     if (!miss) continue;
-    // The ask: a setting meeting (a) and the missing outcome, from an example with degenerate values replaced.
+    // The ask: a setting meeting (a) and the missing outcome, from an example with degenerate values replaced. With no
+    // good group at all, prefer also an outcome where the parameter never varied (a > 5 && b > 3 with b varied only at
+    // a <= 5: ask where 6 <= a is true, not where the && short-circuits). An && / || operand's outcome is asked where
+    // its sibling operands do not decide the result alone (c).
+    const varied = [...groups.values()].filter((g) => g.vals.size >= 2 && setting(g.args, i));
+    const prefer = miss.d === null ? reqs.find((r) => r.d !== null && !varied.some((g) => holds(r, g.args))) : undefined;
+    const ctxOf = (r: Req | undefined): Req[] => (r?.d ? ctx.get(r.d) ?? [] : []);
+    const targets: Req[][] = prefer ? [[prefer, ...ctxOf(prefer)], [prefer], []] : [[miss, ...ctxOf(miss)], [miss]];
     let base: DeriveValue[] | null = null;
-    for (const e of examples) {
+    for (const target of targets) for (const e of examples) {
+      if (base) break;
+      const fits = (t: readonly DeriveValue[]) => holds(miss, t) && target.every((r) => holds(r, t));
       const pt = [...e.args];
       params.forEach((p, j) => {
         if (j === i || !degenerate(j, pt[j])) return;
         const cands: DeriveValue[] = p.type === "number"
           ? [...new Set(examples.map((f) => f.args[j] as number).filter((v) => !DEGENERATE_NUMS.has(v))), 2, 3, 7, -2]
           : [...new Set(examples.map((f) => f.args[j] as string).filter((v) => v !== "")), "a"];
-        for (const c of cands) { const t = [...pt]; t[j] = c; if (holds(miss, t) && !atCap(t)) { pt[j] = c; return; } }
+        for (const c of cands) { const t = [...pt]; t[j] = c; if (fits(t) && !atCap(t)) { pt[j] = c; return; } }
         pt[j] = cands[0]!;
       });
-      if (setting(pt, i) && holds(miss, pt)) { base = pt; break; }
+      if (setting(pt, i) && fits(pt)) base = pt;
     }
     const what = miss.d === null ? "" : ` where \`${compileProgram(miss.d, names)}\` is ${String(miss.v)}`;
     const detail = `${names[i]} is not read by \`${expr}\`, but no ${need} or more examples differ only in ${names[i]} (giving the same result)${what} with the other number parameters not 0, 1 or -1, the other strings non-empty and the result inside every cap, where ${names[i]} could show; add such examples`;

@@ -3742,25 +3742,15 @@
     "gate": "unread",
     "askAt": [
      [
-      -300,
+      6,
       0
      ],
      [
-      -300,
+      6,
       100
      ]
     ],
     "answers": [
-     [
-      -300,
-      0,
-      false
-     ],
-     [
-      -300,
-      100,
-      false
-     ],
      [
       6,
       0,
@@ -3772,7 +3762,7 @@
       true
      ]
     ],
-    "rounds": 2,
+    "rounds": 1,
     "after": {
      "refused": "derive_budget",
      "gate": null

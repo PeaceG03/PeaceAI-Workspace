@@ -108,6 +108,9 @@ for (const c of M103_ADV) {
       // The ask point meets the same conditions: only the unread parameter may be degenerate.
       assert.ok(q.at.every((v, j) => j === pi || !degenerate(v)), JSON.stringify(q));
     }
+    // ... and the truth itself depends on the parameter there (no other side decides alone: a > 5 && b > 3 asks at 6 <= a).
+    const shows = (at: Row) => new Set(c.grid.map((g) => JSON.stringify(c.truth(...at.map((v, j) => (j === pi ? g[pi] : v)))))).size >= 2;
+    assert.ok(!first.ok && first.questions!.some((q) => shows(q.at)), `the parameter shows at an ask point: ${JSON.stringify(!first.ok && first.questions)}`);
     if (c.onMenu) { const q = !first.ok && first.questions![0]!; assert.ok(q && q.answers.some((a) => a === c.truth(...q.at)), `truth on the menu: ${JSON.stringify(q)}`); }
     for (let round = 0; round < 3; round++) {
       const r = deriveCandidate(inputOf(c, rows));
