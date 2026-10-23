@@ -504,7 +504,64 @@ function capabilityTokens(node: ts.Node): Map<string, number> {
 function capabilityDelta(base: ts.Node, real: ts.Node): string | null {
   const b = capabilityTokens(base);
   for (const [tk, n] of capabilityTokens(real)) if (n > (b.get(tk) ?? 0)) return `edit_new_capability:${tk}`;
+  const fb = floatTokens(base);
+  for (const [tk, n] of floatTokens(real)) if (n > (fb.get(tk) ?? 0)) return `edit_unawaited:${tk}`;
   return null;
+}
+/**
+ * Auditor #489 (G2 pass): ways an edit can leave a promise un-awaited, so the graded test could settle before the
+ * work (or its rejection) happens. Counted like capability tokens; an edit may not add any:
+ * - `call`: a bare expression statement calling a collaborator (a method on a parameter or on `this`, or a parameter
+ *   itself) without `await`
+ * - `void`: `void <call>`
+ * - `then`: a `.then` / `.catch` / `.finally` chain
+ * - `new-promise`: `new Promise(...)` (executor-timed work)
+ * - `callback`: a non-async callback whose body calls a collaborator, passed to anything other than an `await`ed
+ *   `Promise.all` / `Promise.allSettled` (e.g. `keys.forEach((k) => this.client.put(k))`)
+ */
+function floatTokens(node: ts.Node): Map<string, number> {
+  const out = new Map<string, number>();
+  const add = (k: string): void => { out.set(k, (out.get(k) ?? 0) + 1); };
+  const params = new Set<string>();
+  if (ts.isFunctionLike(node)) for (const p of node.parameters) if (ts.isIdentifier(p.name)) params.add(p.name.text);
+  const collaborator = (e: ts.Expression): boolean => {
+    const u = unwrap(e);
+    if (!ts.isCallExpression(u)) return false;
+    const callee = unwrap(u.expression);
+    if (ts.isIdentifier(callee)) return params.has(callee.text);
+    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+      const r = rootOf(callee.expression);
+      return r.kind === ts.SyntaxKind.ThisKeyword || (ts.isIdentifier(r) && params.has(r.text));
+    }
+    return false;
+  };
+  const callsCollaborator = (n: ts.Node): boolean => {
+    let hit = false;
+    const v = (x: ts.Node): void => { if (hit) return; if (ts.isAwaitExpression(x)) return; if (ts.isExpression(x) && collaborator(x)) { hit = true; return; } ts.forEachChild(x, v); };
+    v(n);
+    return hit;
+  };
+  const awaitedAll = (fn: ts.Node): boolean => {
+    // fn is an argument of `.map(...)` whose result is the array literal / argument of an awaited Promise.all(Settled)
+    let p: ts.Node = fn.parent;
+    for (let i = 0; i < 6 && p; i++, p = p.parent) {
+      if (ts.isCallExpression(p) && ts.isPropertyAccessExpression(p.expression) && ts.isIdentifier(p.expression.expression) && p.expression.expression.text === "Promise" && (p.expression.name.text === "all" || p.expression.name.text === "allSettled")) {
+        return !!p.parent && ts.isAwaitExpression(p.parent);
+      }
+      if (ts.isBlock(p) || ts.isSourceFile(p)) return false;
+    }
+    return false;
+  };
+  const visit = (n: ts.Node): void => {
+    if (ts.isExpressionStatement(n) && collaborator(n.expression)) add("call");
+    if (ts.isVoidExpression(n) && ts.isCallExpression(unwrap(n.expression))) add("void");
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && /^(?:then|catch|finally)$/.test(n.expression.name.text)) add("then");
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Promise") add("new-promise");
+    if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && n !== node && !(ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) && callsCollaborator(n.body) && !awaitedAll(n)) add("callback");
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return out;
 }
 const memberName = (m: ts.ClassElement): string | null => (m.name && (ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name) || ts.isStringLiteral(m.name)) ? m.name.text : null);
 const isStaticMember = (m: ts.ClassElement): boolean => (ts.getModifiers(m as ts.HasModifiers) ?? []).some((x) => x.kind === ts.SyntaxKind.StaticKeyword);

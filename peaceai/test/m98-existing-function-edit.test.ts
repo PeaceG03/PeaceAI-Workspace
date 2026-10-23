@@ -339,6 +339,19 @@ test("Auditor #489 (G2): mutable static/module state and timers in reached code 
   assert.ok(e);
   const body = e.extra[0]!.content;
   for (const line of body.split("\n").filter((l) => /new Storage\(|\bmeasure\(/.test(l))) assert.match(line, /(?:await settle|settleSync)\(\(\) =>/);
+  // ... and the EDIT may not leave a collaborator promise un-awaited (Job A and Job B share capabilityDelta)
+  const ASY = "export interface D { load: (k: string) => Promise<string>; save: (k: string) => Promise<void> }\nexport async function g(d: D): Promise<string> {\n  return await d.load(\"a\");\n}\n";
+  const ga = (nw: string) => d("src/g.ts", ASY, `in g in src/g.ts: replace statement return await d.load("a"); with ${nw}\n- fake d = { load: resolves("v"), save: resolves(1) }\n- expect g(d) resolves to "v"`);
+  assert.equal(ga(`d.save("x"); return await d.load("a");`), "edit_unawaited:call");
+  assert.equal(ga(`void d.save("x"); return await d.load("a");`), "edit_unawaited:void");
+  assert.equal(ga(`d.save("x").then(() => 1); return await d.load("a");`), "edit_unawaited:then");
+  assert.equal(ga(`await new Promise((r) => r(1)); return await d.load("a");`), "edit_unawaited:new-promise");
+  assert.equal(ga(`["x"].forEach((k) => d.save(k)); return await d.load("a");`), "edit_unawaited:callback");
+  assert.equal(ga(`await d.save("x"); return await d.load("a");`), null);
+  assert.equal(ga(`await Promise.all(["x"].map((k) => d.save(k))); return await d.load("a");`), null);
+  const evilFloat = ASY.replace("return await d.load(\"a\");", "d.save(\"x\"); return await d.load(\"a\");");
+  const jb = gradeExistingEditProblem("src/g.ts", ASY, evilFloat, "src/g.x.test.ts", "", () => null);
+  assert.equal(jb, "edit_unawaited:call");
 });
 
 test("negatives: the closure is hermetic or nothing (package imports, builtins, load-time IO, extends)", () => {
