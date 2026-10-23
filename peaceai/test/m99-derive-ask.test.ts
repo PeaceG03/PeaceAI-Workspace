@@ -63,6 +63,20 @@ test("unwitnessed cap: the span refusal asks past the shown stretch (both sides)
   assert.ok(done.r.ok && grid.every((a) => evalProgram(done.r.fit.program, a) === truth(a)), done.r.ok ? done.r.fit.expr : "");
 });
 
+test("rival refusal through deriveProgram: asks where the size + 2 rival (a cap at 3) and the fit disagree; the answers derive a - b in two rounds", () => {
+  // Passes every witness gate (spans over 100, both result signs shown); `min(3, actual - reference)` also fits.
+  const ab = [{ name: "actual", type: "number" }, { name: "reference", type: "number" }] as DeriveParam[];
+  const input: DeriveInput = { params: ab, ret: "number", examples: ex([[-1, -1, 0], [-1, 2, -3], [-1, 100, -101], [0, 0, 0], [0, 3, -3], [2, -1, 3], [3, 0, 3], [100, 100, 0], [100, 97, 3], [3, 100, -97], [50, 60, -10]]) };
+  const r0 = deriveProgram(input);
+  assert.ok(!r0.ok && r0.reason === "derive_under_specified" && r0.gate === "rival", JSON.stringify(r0));
+  // The rival is first found at (3, -1) (detail); the questions are where the two differ most, inside the examples' range (a box corner first).
+  assert.match(r0.detail!, /at \(3, -1\): 3 vs 4/);
+  assert.deepEqual(r0.questions, [{ at: [100, -1], answers: [3, 101] }, { at: [1000, -1000], answers: [3, 2000] }, { at: [3, -1], answers: [3, 4] }]);
+  const done = askLoop(input, ([a, b]) => (a as number) - (b as number), 8);
+  assert.equal(done.round, 2, done.asked.join(" ")); // round 2 asks about a floor past the new far answer (-10000, 0)
+  assert.ok(done.r.ok && done.r.fit.expr === "actual - reference", done.r.ok ? done.r.fit.expr : "");
+});
+
 test("rival and no-fit refusals ask too; questions are bounded, deterministic and never at an example", () => {
   const sq: DeriveInput = { params: [{ name: "x", type: "number" }], ret: "number", examples: ex([[0, 0], [2, 4], [-2, 4]]) };
   const mul: DeriveNode = { op: "mul", a: { op: "param", i: 0 }, b: { op: "param", i: 0 } };

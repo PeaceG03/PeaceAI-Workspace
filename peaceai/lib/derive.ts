@@ -930,11 +930,17 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
   const caps = repeatedResults(examples);
   const near = dedupePoints([...probeSet(params, examples), ...farProbes(params, examples)]).filter((a) => inside(a) && !exKeys.has(keyOf(a)));
   const far = farProbes(params, examples).filter((a) => !inside(a) && shownSign(a) && !exKeys.has(keyOf(a)));
+  /** The corners of the examples' box (number parameters at their smallest / largest example value; others as in the first example). */
+  const corners = span.reduce<DeriveValue[][]>((acc, sp, i) => acc.flatMap((a) => (sp ? [sp[0]!, sp[1]!] : [examples[0]!.args[i]!]).map((v) => [...a, v])), [[]]).slice(0, 64);
   const passes: { pass: "near" | "far"; probes: DeriveValue[][]; consts: number[][] }[] = [
     { pass: "near", probes: near, consts: params.map((p, i) => (p.type === "number" ? [...new Set([...edges[i]!, ...examples.map((e) => e.args[i] as number)])].sort((a, b) => a - b) : [])) },
     { pass: "far", probes: far, consts: edges },
   ];
   let searched = 0;
+  // Round 3 (Peace): after a near rival the far pass still runs (same budget), so the refusal asks about both kinds
+  // of rival at once; the refusal and its detail are the first rival's.
+  let found: DeriveGateProblem | null = null;
+  const asked: { at: DeriveValue[]; values: DeriveValue[] }[][] = [];
   for (const { pass, probes, consts } of passes) {
     if (probes.length === 0) continue;
     const points = [...examples.map((e) => e.args), ...probes];
@@ -952,11 +958,28 @@ export function rivalProblem(input: DeriveInput, program: DeriveNode, size: numb
       let k = examples.length;
       while (!(rv.vals[k] !== null && mine[k] !== null && rv.vals[k] !== mine[k])) k++;
       const pt = points[k]!;
-      return { gate: "rival", searched, rivals: points.map((a, j) => ({ at: [...a], values: [rv.vals[j]!, mine[j]!] })).filter((q, j) => j >= examples.length && q.values[0] !== null && q.values[1] !== null && q.values[0] !== q.values[1]).slice(0, DERIVE_MAX_QUESTIONS), detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}${pass === "far" ? " (a far probe, past the examples)" : ""}; add an example there` };
+      const rivals = dedupePoints(pass === "near" ? [...near, ...corners] : far).filter((a) => !exKeys.has(keyOf(a)))
+        .map((a) => ({ at: [...a], values: [evalProgram(rv.node, a) ?? null, evalProgram(program, a) ?? null] as DeriveValue[] }))
+        .filter((q) => q.values[0] !== null && q.values[1] !== null && q.values[0] !== q.values[1])
+        // A near rival is asked about inside the examples' range only (asking past it would only move the range out,
+        // round after round): the near probes and the corners of the examples' box, the rival evaluated at each. A
+        // far rival differs past the examples only: its far probes. Ask first where
+        // the two differ most (number results), so one answer rules out the most programs (a cap just above the shown
+        // results would otherwise be asked about one step at a time). Stable: ties keep probe order.
+        .map((q, o) => ({ q, o, d: typeof q.values[0] === "number" && typeof q.values[1] === "number" ? Math.abs(q.values[0] - q.values[1]) : 0 }))
+        .sort((x, y) => y.d - x.d || x.o - y.o).map((x) => x.q).slice(0, DERIVE_MAX_QUESTIONS);
+      asked.push(rivals);
+      found ??= { gate: "rival", searched: 0, detail: `\`${compileProgram(rv.node, names)}\` also fits every example but differs from \`${compileProgram(program, names)}\` at (${pt.map((v) => JSON.stringify(v)).join(", ")}): ${JSON.stringify(rv.vals[k])} vs ${JSON.stringify(mine[k])}${pass === "far" ? " (a far probe, past the examples)" : ""}; add an example there` };
+      continue;
     }
+    if (r.overBudget && found) break;
     if (r.overBudget) return { gate: "rival_budget", searched, detail: `the ${pass} rival search (${pass === "near" ? "every example value" : "the witnessed edges"} as constants, up to size ${size + DERIVE_RIVAL_EXTRA}) ran out of budget after ${r.searched} programs` };
   }
-  return null;
+  if (!found) return null;
+  // Questions: each pass's best first, round-robin (at most DERIVE_MAX_QUESTIONS).
+  const rivals: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
+  for (let j = 0; rivals.length < DERIVE_MAX_QUESTIONS && asked.some((q) => j < q.length); j++) for (const q of asked) if (j < q.length && rivals.length < DERIVE_MAX_QUESTIONS) rivals.push(q[j]!);
+  return { ...(found as DeriveGateProblem), searched, rivals };
 }
 
 /** The far-probe output table of a program (for the candidate's review note): at most `limit` rows. */
