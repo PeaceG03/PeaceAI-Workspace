@@ -33,6 +33,9 @@ test("if-return-chains evidence: the count equals ORDER_FORM_EVIDENCE; the bar i
   const counts = { sle: EV.examples.filter((e) => e.forms.includes("sle")).length };
   assert.deepEqual(EV.forms, counts);
   assert.deepEqual({ ...ORDER_FORM_EVIDENCE }, counts, "the engine's recorded count is the evidence file's");
+  // Auditor #495 B2: isCurrentNav (prefix match) and hostnameMatches (wildcard match) dropped as not string order
+  assert.equal(ORDER_FORM_EVIDENCE.sle, 11);
+  assert.ok(!EV.examples.some((e) => ["isCurrentNav", "hostnameMatches"].includes(e.fn)));
 });
 
 test("if-return-chains evidence: modules blob-pinned and hold the upstream function; each entry replays", () => {
