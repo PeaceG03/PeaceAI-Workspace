@@ -34,11 +34,12 @@ function emitted(id: string, inp: DeriveInput, cand: DeriveResult, formGate: rea
   if (formGate!.length === 0) assert.deepEqual(r, cand, `${id}: emitted as derived`);
   else assert.ok(!r.ok && r.reason === "derive_unevidenced_form" && JSON.stringify(r.forms) === JSON.stringify(formGate), `${id}: refused by the form gate: ${JSON.stringify(r)}`);
 }
-const LEDGER = JSON.parse(readFileSync(join(repo, "peaceai/test/m99-derive-mistakes.json"), "utf8")) as { schema: string; entries: Entry[] };
+const LEDGER = JSON.parse(readFileSync(join(repo, "peaceai/test/m99-derive-mistakes.json"), "utf8")) as { schema: string; note: string; entries: Entry[] };
 const input = (e: Entry, rows: readonly DeriveValue[][]): DeriveInput => ({ params: e.params.map((name, i) => ({ name, type: e.types?.[i] ?? "number" })), ret: e.ret, examples: rows.map((r) => ({ args: r.slice(0, -1), out: r[r.length - 1]! })) });
 
 test("mistakes ledger: shape, and every Auditor counterexample so far is in it", () => {
   assert.equal(LEDGER.schema, "peaceai-derive-mistakes:v1");
+  assert.match(LEDGER.note, /11 blocking\) describes seed 100 only/);
   const ids = LEDGER.entries.map((e) => e.id);
   assert.equal(new Set(ids).size, ids.length);
   for (const id of ["r1-s1-without-600", "r1-s1-drop-429", "r2-hidden-island", "r2-unwitnessed-cap", "r2-amb3-backoff-k7-1", "seed101-island-hidden-island-t465"]) assert.ok(ids.includes(id), id);

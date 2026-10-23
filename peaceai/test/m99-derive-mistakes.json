@@ -1,5 +1,6 @@
 {
  "schema": "peaceai-derive-mistakes:v1",
+ "note": "The residual count of the practice generator reported at 6f1ea5e (11 blocking) describes seed 100 only; other seeds find other wrong picks (seed 101: seed101-island-hidden-island-t465).",
  "entries": [
   {
    "id": "r1-s1-without-600",

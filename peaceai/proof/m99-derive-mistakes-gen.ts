@@ -93,4 +93,4 @@ for (const c of cases) {
   e.expected = { outcome: "refuse-and-ask", ...first, answers, rounds, after };
   out.push(e); console.log(c.id, JSON.stringify(first), rounds, JSON.stringify(after), Date.now() - t0, "ms");
 }
-writeFileSync(process.env.OUT ?? `${W}/peaceai/test/m99-derive-mistakes.json`, JSON.stringify({ schema: "peaceai-derive-mistakes:v1", entries: out }, null, 1) + "\n");
+writeFileSync(process.env.OUT ?? `${W}/peaceai/test/m99-derive-mistakes.json`, JSON.stringify({ schema: "peaceai-derive-mistakes:v1", note: "The residual count of the practice generator reported at 6f1ea5e (11 blocking) describes seed 100 only; other seeds find other wrong picks (seed 101: seed101-island-hidden-island-t465).", entries: out }, null, 1) + "\n");
