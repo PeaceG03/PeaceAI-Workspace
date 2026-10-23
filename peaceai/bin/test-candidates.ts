@@ -93,6 +93,34 @@ function runCandidateCapture(cwd: string, command: string, args: string[], timeo
 }
 
 /**
+ * Auditor #489: the ORIGINAL-SUITE step for an EXISTING_EDIT (M98) candidate runs under the Node permission model too
+ * (it imports the edited module, so it would otherwise execute the splice unconfined). Each test file runs directly in
+ * its own confined process (not under `--test`, whose children would not inherit the flags): fs reads limited to the
+ * tree's `src/`, the package.json chain and node_modules; fs read+write only in a per-run scratch dir that is also
+ * TMPDIR/HOME; no child_process, no addons, no wasi; workers only for tsx's loader. A test that can't run confined
+ * fails (fail closed) — the caller decides which tests that applies to (see judgedConfined).
+ */
+function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP_TIMEOUT_MS): boolean {
+  if (tests.length === 0) return true;
+  const modules = realpathSync(join(tree, "node_modules"));
+  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
+  const realTree = realpathSync(tree);
+  const pkgs = new Set<string>([join(realTree, "package.json")]);
+  for (const t of tests) { let d = dirname(t); while (d !== "." && d !== "/" && d !== "") { pkgs.add(join(realTree, d, "package.json")); d = dirname(d); } }
+  // Unsandboxed (dev) runs get their own scratch dir; sandboxed runs reuse the sandbox user's private home.
+  const scratch = sandboxUser ? sandboxHome : mkdtempSync(join(tmpdir(), "peaceai-confined-"));
+  try {
+    for (const t of tests) {
+      const args = ["--permission", `--allow-fs-read=${join(realTree, "src")}`, ...[...pkgs].sort().map((p) => `--allow-fs-read=${p}`), `--allow-fs-read=${modules}`, `--allow-fs-read=${scratch}`, `--allow-fs-write=${scratch}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t];
+      if (!runCandidateCapture(tree, process.execPath, args, timeout, { TSX_DISABLE_CACHE: "1", TMPDIR: scratch, HOME: scratch }).ok) return false;
+    }
+    return true;
+  } finally {
+    if (!sandboxUser) rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
  * Round 2/3 (Auditor #129): graded stub-body tests run under Node's permission model when the runtime has it
  * (Node >= 22, as in CI). Reads are narrowed to the test file, the module under test and node_modules; no fs
  * write, no child_process; worker threads only for tsx's loader; tsx cache off. Each test file runs directly
@@ -165,34 +193,6 @@ function runExistingTests(tree: string, tests: readonly string[], reads: readonl
     }
   }
   return { ok, out: outs.join("\n"), confined: true, notes: seen };
-}
-
-/**
- * Auditor #489: the ORIGINAL-SUITE step for an EXISTING_EDIT (M98) candidate runs under the Node permission model too
- * (it imports the edited module, so it would otherwise execute the splice unconfined). Each test file runs directly in
- * its own confined process (not under `--test`, whose children would not inherit the flags): fs reads limited to the
- * tree's `src/`, the package.json chain and node_modules; fs read+write only in a per-run scratch dir that is also
- * TMPDIR/HOME; no child_process, no addons, no wasi; workers only for tsx's loader. A test that can't run confined
- * fails (fail closed) — the caller decides which tests that applies to (see judgedConfined).
- */
-function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP_TIMEOUT_MS): boolean {
-  if (tests.length === 0) return true;
-  const modules = realpathSync(join(tree, "node_modules"));
-  const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
-  const realTree = realpathSync(tree);
-  const pkgs = new Set<string>([join(realTree, "package.json")]);
-  for (const t of tests) { let d = dirname(t); while (d !== "." && d !== "/" && d !== "") { pkgs.add(join(realTree, d, "package.json")); d = dirname(d); } }
-  // Unsandboxed (dev) runs get their own scratch dir; sandboxed runs reuse the sandbox user's private home.
-  const scratch = sandboxUser ? sandboxHome : mkdtempSync(join(tmpdir(), "peaceai-confined-"));
-  try {
-    for (const t of tests) {
-      const args = ["--permission", `--allow-fs-read=${join(realTree, "src")}`, ...[...pkgs].sort().map((p) => `--allow-fs-read=${p}`), `--allow-fs-read=${modules}`, `--allow-fs-read=${scratch}`, `--allow-fs-write=${scratch}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t];
-      if (!runCandidateCapture(tree, process.execPath, args, timeout, { TSX_DISABLE_CACHE: "1", TMPDIR: scratch, HOME: scratch }).ok) return false;
-    }
-    return true;
-  } finally {
-    if (!sandboxUser) rmSync(scratch, { recursive: true, force: true });
-  }
 }
 
 // M7 repair budget (Job B timeout is 25 minutes; up to five candidates run in parallel jobs).
