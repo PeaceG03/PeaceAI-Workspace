@@ -1081,22 +1081,25 @@ export function orderProblem(input: DeriveInput, program: DeriveNode, expr = com
   walk(program, (n) => { if (n.op === "sle") tests.push(n); });
   if (!tests.length) return null;
   const exKeys = new Set(examples.map((e) => keyOf(e.args)));
+  // Every look-alike the examples do not rule out is asked about at once (at most DERIVE_MAX_QUESTIONS inputs).
+  let first: DeriveGateProblem | null = null;
+  const rivals: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
   for (const L of DERIVE_ORDER_LOOKALIKES) {
     const shown = examples.filter((e) => evalProgram(program, e.args, undefined, L.le) !== evalProgram(program, e.args)).length;
     if (shown >= L.need) continue;
     const t = tests[0]!;
+    first ??= { gate: "order", param: params[t.i]!.name, searched: 0, detail: `\`${expr}\` compares strings in code-unit order, but ${shown ? "only " + shown + " example shows" : "no example shows"} where ${L.name} would give another result; add such examples` };
     const vals = [...new Set(examples.map((e) => e.args[t.i] as string))];
-    const rivals: { at: DeriveValue[]; values: DeriveValue[] }[] = [];
+    let got = 0;
     for (const [x, y] of L.at(vals)) {
+      if (got >= L.need - shown || rivals.length >= DERIVE_MAX_QUESTIONS) break;
       const pt = examples[0]!.args.map((a, k) => (k === t.i ? x : k === t.j ? y : a));
-      if (exKeys.has(keyOf(pt))) continue;
+      if (exKeys.has(keyOf(pt)) || rivals.some((r) => keyOf(r.at) === keyOf(pt))) continue;
       const mine = evalProgram(program, pt), other = evalProgram(program, pt, undefined, L.le);
-      if (mine !== undefined && other !== undefined && mine !== other) rivals.push({ at: pt, values: [mine, other] });
-      if (rivals.length >= L.need) break;
+      if (mine !== undefined && other !== undefined && mine !== other) { rivals.push({ at: pt, values: [mine, other] }); got++; }
     }
-    return { gate: "order", param: params[t.i]!.name, searched: 0, detail: `\`${expr}\` compares strings in code-unit order, but ${shown ? "only " + shown + " example shows" : "no example shows"} where ${L.name} would give another result; add such examples`, ...(rivals.length ? { rivals, at: rivals.map((r) => r.at) } : {}) };
   }
-  return null;
+  return first ? { ...first, ...(rivals.length ? { rivals, at: rivals.map((r) => r.at) } : {}) } : null;
 }
 
 /** The program with one min / max node replaced by the value it caps (the cap lifted). */
