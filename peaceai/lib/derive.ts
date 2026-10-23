@@ -814,7 +814,8 @@ export function paramsRead(n: DeriveNode): Set<number> {
 
 /**
  * The gates, in order (each names the parameter / edge the examples do not show):
- *  unread  every parameter the program does not read: two examples that differ only in it give the same result;
+ *  unread  every parameter the program does not read: two examples that differ only in it give the same result,
+ *          with every number parameter the program reads non-zero in them (a pair at 0 hides a product);
  *  chars   every string parameter it reads: the example values include an upper-case and a lower-case letter, a
  *          digit, an inner space, a leading or trailing space and punctuation (a verbatim copy or an emptiness test
  *          is only shown on the characters a case change, trim or escape would alter);
@@ -851,10 +852,29 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   const ptAt = (i: number, v: number) => pointAt(examples, i, v);
   const read = paramsRead(program);
   // unread
+  // m103 (Auditor #494, backoff/sparse: `baseMs` picked for `min(K, baseMs * (attempt + 1) ** 2)` from examples whose
+  // only pair differing in attempt alone had baseMs = 0): the pair must show the ignored parameter where it could
+  // matter, so every number parameter the program reads is non-zero in it (0 annihilates a product, `p * f(q)`, so a
+  // pair at p = 0 shows nothing about q).
+  const readNums = [...read].filter((j) => params[j]!.type === "number");
+  const live = (e: DeriveExample) => readNums.every((j) => e.args[j] !== 0);
   for (let i = 0; i < params.length; i++) {
     if (read.has(i)) continue;
-    const shown = examples.some((e, x) => examples.some((f, y) => y > x && rest(e.args, [i]) === rest(f.args, [i]) && keyOf([e.args[i]!]) !== keyOf([f.args[i]!]) && out(e) === out(f)));
-    if (!shown) return fail("unread", `${names[i]} is not read by \`${expr}\`, but no two examples differ only in ${names[i]} and give the same result; add such a pair`, i);
+    const pairs = (ok: (e: DeriveExample) => boolean) => examples.some((e, x) => ok(e) && examples.some((f, y) => y > x && rest(e.args, [i]) === rest(f.args, [i]) && keyOf([e.args[i]!]) !== keyOf([f.args[i]!]) && out(e) === out(f)));
+    if (!pairs(() => true)) return fail("unread", `${names[i]} is not read by \`${expr}\`, but no two examples differ only in ${names[i]} and give the same result; add such a pair`, i);
+    if (!pairs(live)) {
+      const base = examples.find(live), other = examples.find((f) => base && keyOf([f.args[i]!]) !== keyOf([base.args[i]!]));
+      const at = base && other ? [base.args.map((a, j) => (j === i ? other.args[i]! : a))] : undefined;
+      const problem = fail("unread", `${names[i]} is not read by \`${expr}\`, but the only examples that differ in ${names[i]} alone have ${readNums.map((j) => names[j]).join(" or ")} at 0, where a product hides ${names[i]}; add such a pair with ${readNums.map((j) => names[j]).join(" and ")} not 0`, i, at);
+      // The other answer there: a program that fits every example as well but reads the parameter through the
+      // product the zero hid (the program plus the read parameters' product times the change in it).
+      const mine = at ? evalProgram(program, at[0]!) : undefined;
+      if (at && base && typeof mine === "number" && typeof base.args[i] === "number") {
+        const other2 = mine + readNums.reduce((t, j) => t * (at[0]![j] as number), 1) * ((at[0]![i] as number) - (base.args[i] as number));
+        if (Number.isSafeInteger(other2) && other2 !== mine) problem.rivals = [{ at: [...at[0]!], values: [mine, other2] }];
+      }
+      return problem;
+    }
   }
   // chars
   for (const i of [...read].sort()) {
