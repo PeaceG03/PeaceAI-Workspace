@@ -780,6 +780,18 @@ export const DERIVE_STRING_CLASSES: readonly (readonly [string, RegExp])[] = [
   ["the empty string", /^$/],
 ];
 
+/** M101: the chars gate asks (instead of only refusing): at the empty string when it is missing, and at
+ *  DERIVE_CHARS_PROBE, one value with every other class (leading/trailing space, upper, lower, digit, inner space,
+ *  punctuation), when any other class is missing. The other arguments are the first example's. */
+export const DERIVE_CHARS_PROBE = " Ab 9. ";
+function charsAsk(examples: readonly DeriveExample[], i: number, missing: readonly string[]): DeriveValue[][] {
+  const at = (v: string) => examples[0]!.args.map((a, j) => (j === i ? v : a));
+  const asks: DeriveValue[][] = [];
+  if (missing.includes("the empty string")) asks.push(at(""));
+  if (missing.some((d) => d !== "the empty string")) asks.push(at(DERIVE_CHARS_PROBE));
+  return asks;
+}
+
 const walk = (n: DeriveNode, f: (x: DeriveNode) => void): void => {
   f(n);
   switch (n.op) {
@@ -846,7 +858,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (params[i]!.type !== "string") continue;
     const vals = examples.map((e) => e.args[i] as string);
     const missing = DERIVE_STRING_CLASSES.filter(([, re]) => !vals.some((v) => re.test(v))).map(([d]) => d);
-    if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i, vals.includes("") ? undefined : [examples[0]!.args.map((a, j) => (j === i ? "" : a))]);
+    if (missing.length) return fail("chars", `${names[i]} is read by \`${expr}\`, but no example value of it has ${missing.join(", ")}; add examples whose ${names[i]} does`, i, charsAsk(examples, i, missing));
   }
   // chars, digits (M101): a number written as its decimal text, str(p), is shown at 0, at a negative value, at the 1-digit
   // value, 1, and at a value of 4 or more digits (a falsy-zero case, `if (!n) return ""`, differs at 0; Math.abs at a

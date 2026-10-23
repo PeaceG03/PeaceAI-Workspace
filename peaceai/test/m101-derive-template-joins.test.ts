@@ -7,7 +7,7 @@
 // case, Math.abs, padStart, toLocaleString).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compileProgram, DERIVE_FORM_BAR, deriveProgram, derivedExprProblem, evalProgram, gateProblem, TEMPLATE_FORM_EVIDENCE, templateFits, templateSize, type DeriveNode, type DeriveParam, type DeriveValue } from "../lib/derive.ts";
+import { compileProgram, DERIVE_CHARS_PROBE, DERIVE_FORM_BAR, DERIVE_STRING_CLASSES, deriveProgram, derivedExprProblem, evalProgram, gateProblem, TEMPLATE_FORM_EVIDENCE, templateFits, templateSize, type DeriveNode, type DeriveParam, type DeriveValue } from "../lib/derive.ts";
 import { evalJs } from "../lib/derive-practice.ts";
 
 const ON = { tmpl: DERIVE_FORM_BAR, str: DERIVE_FORM_BAR } as const;
@@ -146,4 +146,14 @@ test("templateFits: an empty slot text in the pivot is placed once per position,
   const fits = templateFits([str("a"), str("b"), str("c")], ex, ON).map((f) => compileProgram(f, ["a", "b", "c"]));
   assert.ok(Date.now() - t < 5000);
   assert.ok(fits.includes(`a + ":" + b + "@" + c`) && fits.includes(`":" + b + "@" + c`), JSON.stringify(fits));
+});
+
+test("chars gate asks (miner: 39 string keys refused with no question): at \"\" and at one value with every other class", () => {
+  const ex = (vs: string[]) => ({ params: [str("name")], ret: "string" as const, examples: vs.map((v) => ({ args: [v], out: `tc:${v}` })), budget: 100_000 });
+  const r = deriveProgram(ex(["ab", "cd", "xyz", "q"]));
+  assert.ok(!r.ok && r.gate === "chars", JSON.stringify(r));
+  assert.deepEqual(!r.ok && r.questions?.map((q) => q.at), [[""], [DERIVE_CHARS_PROBE]]);
+  for (const [d, re] of DERIVE_STRING_CLASSES) if (d !== "the empty string") assert.ok(re.test(DERIVE_CHARS_PROBE), d);
+  const after = deriveProgram(ex(["ab", "cd", "xyz", "q", "", DERIVE_CHARS_PROBE]));
+  assert.equal(after.ok && after.fit.expr, `"tc:" + name`);
 });
