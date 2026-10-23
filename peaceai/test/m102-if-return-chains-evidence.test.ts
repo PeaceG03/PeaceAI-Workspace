@@ -4,7 +4,7 @@
 // count here. At the bar every entry replays fully: deriveCandidate (search + witness gates) from the recorded examples
 // alone gives the recorded expression. Under the bar the form stays off: it is never built. deriveProgram then applies
 // the round-3 form gate (m99 evidence file, the single source): a replayed program using a form under DERIVE_FORM_BAR
-// there (ternary, for the comparators and min / max) is refused as derive_unevidenced_form, never emitted.
+// there is refused as derive_unevidenced_form, never emitted (ternary, for the comparators and min / max, until M104 mined it to 12).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

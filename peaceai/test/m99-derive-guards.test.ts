@@ -172,11 +172,13 @@ function jobA(body: string) {
 
 test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comments, indented code) refuses the derive rule; the clean issue makes a candidate", () => {
   const clean = jobA(S1R);
-  // A general if (ternary: no upstream evidence entry): no candidate, refused by name (the form gate).
+  // A general if (ternary): refused by name while it had fewer than 10 upstream entries; M104 mined 12, so Job A now
+  // makes a candidate. (The below-bar refusal through deriveProgram is checked in m99-derive-from-behavior.test.ts with a
+  // child process reading an evidence file one ternary entry short.)
   const TERNARY = `Add a new module \`src/four-flag.ts\` exporting \`fourFlag(n: number): number\`.\n\nBehavior: 1 for 4, otherwise 0.\n\nExamples:\n${[-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50].map((n) => `- ${n} gives ${n === 4 ? 1 : 0}`).join("\n")}`;
   const tern = jobA(TERNARY);
-  assert.equal(tern.n, 0, tern.stdout);
-  assert.match(tern.stdout, new RegExp(`learned refusals: ${SPEC.id}=derive_unevidenced_form: ternary`));
+  assert.equal(tern.n, 1, tern.stdout);
+  assert.doesNotMatch(tern.stdout, /derive_unevidenced_form/);
   // S1 itself (eq, ||, range: each >= 10 upstream entries since round 4): a candidate.
   assert.equal(jobA(S1).n, 1);
   assert.equal(clean.n, 1, clean.stdout);
