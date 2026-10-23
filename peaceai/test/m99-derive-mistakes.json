@@ -2408,6 +2408,160 @@
      "gate": null
     }
    }
+  },
+  {
+   "id": "m101-str-falsy-zero",
+   "source": "m101 template-joins miner (grid-js/gridjs px, engine ced7ce4 with the forms on)",
+   "params": [
+    "width"
+   ],
+   "types": [
+    "number"
+   ],
+   "ret": "string",
+   "examples": [
+    [
+     -1,
+     "-1px"
+    ],
+    [
+     2,
+     "2px"
+    ],
+    [
+     10,
+     "10px"
+    ],
+    [
+     1234,
+     "1234px"
+    ]
+   ],
+   "wrongProgram": "(\"\" + width) + \"px\"",
+   "disagreeAt": [
+    0
+   ],
+   "correct": "",
+   "why": "no example was 0, so the falsy-zero case (if (!width) return \"\") was never seen",
+   "expected": {
+    "outcome": "refuse-and-ask",
+    "reason": "derive_no_fit",
+    "gate": null,
+    "askAt": [
+     [
+      622
+     ],
+     [
+      6
+     ],
+     [
+      0
+     ]
+    ],
+    "answers": [
+     [
+      622,
+      "622px"
+     ],
+     [
+      6,
+      "6px"
+     ],
+     [
+      0,
+      ""
+     ],
+     [
+      316,
+      "316px"
+     ],
+     [
+      928,
+      "928px"
+     ],
+     [
+      4,
+      "4px"
+     ],
+     [
+      1081,
+      "1081px"
+     ],
+     [
+      163,
+      "163px"
+     ],
+     [
+      469,
+      "469px"
+     ],
+     [
+      775,
+      "775px"
+     ],
+     [
+      1004,
+      "1004px"
+     ],
+     [
+      1157,
+      "1157px"
+     ],
+     [
+      239,
+      "239px"
+     ],
+     [
+      392,
+      "392px"
+     ],
+     [
+      545,
+      "545px"
+     ],
+     [
+      698,
+      "698px"
+     ],
+     [
+      851,
+      "851px"
+     ],
+     [
+      86,
+      "86px"
+     ],
+     [
+      1042,
+      "1042px"
+     ],
+     [
+      1195,
+      "1195px"
+     ],
+     [
+      124,
+      "124px"
+     ],
+     [
+      277,
+      "277px"
+     ],
+     [
+      430,
+      "430px"
+     ],
+     [
+      583,
+      "583px"
+     ]
+    ],
+    "rounds": 8,
+    "after": {
+     "refused": "derive_no_fit",
+     "gate": null
+    }
+   }
   }
  ]
 }

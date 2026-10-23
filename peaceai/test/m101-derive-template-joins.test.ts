@@ -3,7 +3,8 @@
 // bar deriveProgram never builds it (refused, or the older forms only). The inference itself (templateFits with an
 // explicit evidence count at the bar) is pinned here: every literal is cut from the outputs and checked by every
 // example; two fitting templates are ambiguous; a literal with a backslash or control character is never cut.
-// The digits gate (gateProblem): a written number needs a 1-digit and a 4+-digit example (padStart, toLocaleString).
+// The digits gate (gateProblem): a written number needs 0, a negative, a 1-digit and a 4+-digit example (a falsy-zero
+// case, Math.abs, padStart, toLocaleString).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { compileProgram, DERIVE_FORM_BAR, deriveProgram, derivedExprProblem, evalProgram, gateProblem, TEMPLATE_FORM_EVIDENCE, templateFits, templateSize, type DeriveNode, type DeriveParam, type DeriveValue } from "../lib/derive.ts";
@@ -65,12 +66,18 @@ test("str(number): a number slot compiles as (\"\" + n); the alignment finds it 
   else assert.equal(r.ok, false, "under the bar a written number is refused");
 });
 
-test("digits gate: a written number needs a 1-digit and a 4+-digit example, and asks at 7 / 1234", () => {
+test("digits gate: a written number needs 0, a negative, a 1-digit and a 4+-digit example; asks at 0 / -7 / 7 / 1234", () => {
   assert.equal(gateProblem(seqIn(NUMS), SEQ, 3), null);
-  // only 3-digit numbers: padStart(3) or a cut text would look the same: asks at 7 and at 1234
+  // only 3-digit numbers: a falsy-zero case, Math.abs, padStart(3) or a grouped text would look the same
   const three = gateProblem(seqIn([100, 123, 250, 999, 404]), SEQ, 3);
   assert.equal(three && `${three.gate}/${three.param}`, "chars/seq");
-  assert.deepEqual(three?.at?.map((a) => a[1]), [7, 1234]);
+  assert.deepEqual(three?.at?.map((a) => a[1]), [0, -7, 7, 1234]);
+  // no 0 (upstream grid-js/gridjs px: `if (!width) return ""`): asks at 0
+  const zero = gateProblem(seqIn([7, -3, 42, 1234]), SEQ, 3);
+  assert.deepEqual(zero && [zero.gate, zero.at?.map((a) => a[1])], ["chars", [0]]);
+  // no negative (Math.abs would look the same): asks at -7
+  const neg = gateProblem(seqIn([0, 7, 42, 1234]), SEQ, 3);
+  assert.deepEqual(neg && [neg.gate, neg.at?.map((a) => a[1])], ["chars", [-7]]);
   // 1- to 3-digit numbers: a grouped text (toLocaleString) would look the same: asks at 1234
   const small = gateProblem(seqIn([0, 7, -3, 42, 5, 11, 123, 999]), SEQ, 3);
   assert.equal(small && `${small.gate}/${small.param}`, "chars/seq");

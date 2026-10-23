@@ -60,6 +60,9 @@ cases.push({ id: "m100-kind-s1-shape-sparse-k-p0", source: `${C9}, task 34225 (s
 // ("" + n) for OrangeproAI/orangepro-mcp src/local/viz/reportTheme.ts fmt, n.toLocaleString("en-US"): wrong at 1230.
 // The gate now needs a 4+-digit example (asks at 1234); the forms stay off under DERIVE_FORM_BAR evidence.
 cases.push({ id: "m101-str-grouped-digits", source: "m101 template-joins miner (OrangeproAI/orangepro-mcp@405209f fmt, engine 293f584 with the forms on)", names: ["n"], types: ["number"], ret: "string", rows: [[-1, "-1"], [2, "2"], [10, "10"], [123, "123"]], wrong: '("" + n)', at: [1230], why: "no example had 4 or more digits, so the grouping separator (toLocaleString) was never seen", truth: ([n]) => n.toLocaleString("en-US"), grid: g1(-3000, 3000) });
+// M101: the same miner (forms on, digits gate at 4 digits) derived ("" + width) + "px" for grid-js/gridjs
+// src/util/width.ts px, `if (!width) return ""; return `${Math.floor(width)}px``: wrong at 0. The gate now asks at 0.
+cases.push({ id: "m101-str-falsy-zero", source: "m101 template-joins miner (grid-js/gridjs px, engine ced7ce4 with the forms on)", names: ["width"], types: ["number"], ret: "string", rows: [[-1, "-1px"], [2, "2px"], [10, "10px"], [1234, "1234px"]], wrong: '("" + width) + "px"', at: [0], why: "no example was 0, so the falsy-zero case (if (!width) return \"\") was never seen", truth: ([w]) => (w ? `${Math.floor(w)}px` : ""), grid: g1(-3000, 3000) });
 
 const key = (v: V[]) => JSON.stringify(v);
 const out: any[] = [];
