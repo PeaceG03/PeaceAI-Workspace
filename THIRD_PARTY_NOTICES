@@ -1779,6 +1779,8 @@ fixtures (commit path):
   cc453025b38977886c79e1056f3b513ba19f8671 peaceai/test/fixtures/m97-te7/eriknewton__sanctuary-framework-6f99035ea093.txt
   cc453025b38977886c79e1056f3b513ba19f8671 peaceai/test/fixtures/m98-ee/eriknewton__sanctuary-framework-bdd3b7d23a5f.txt
   cc453025b38977886c79e1056f3b513ba19f8671 peaceai/test/fixtures/m98-ee/eriknewton__sanctuary-framework-800afd83d337.txt
+  cc453025b38977886c79e1056f3b513ba19f8671 peaceai/test/fixtures/m99-dfb/eriknewton__sanctuary-framework-2a42f78bc42d.txt
+  cc453025b38977886c79e1056f3b513ba19f8671 peaceai/test/fixtures/m99-dfb/eriknewton__sanctuary-framework-d1efca6aaef7.txt
 license URL: https://github.com/eriknewton/sanctuary-framework/blob/f5be9c12894e74c3c214efedd5c8a826545846cd/LICENSE
 ---- license text ----
 Apache License
@@ -2953,6 +2955,7 @@ license: Apache-2.0 (LICENSE, sha256 of trimmed text 283ea6cc2997a1a70da0049e09a
 fixtures (commit path):
   287119c4499827289895ac37ba18da620b5e4b3b peaceai/test/fixtures/m90-te4/vercel-labs__scriptc-e9adb6c6dbd0.txt
   287119c4499827289895ac37ba18da620b5e4b3b peaceai/test/fixtures/m97-te7/vercel-labs__scriptc-32456c95a58c.txt
+  287119c4499827289895ac37ba18da620b5e4b3b peaceai/test/fixtures/m99-dfb/vercel-labs__scriptc-c75892b72788.txt
 license URL: https://github.com/vercel-labs/scriptc/blob/287119c4499827289895ac37ba18da620b5e4b3b/LICENSE
 ---- license text ----
 Apache License
@@ -3648,6 +3651,7 @@ fixtures (commit path):
   f2acb53d353c9658f7a80737ea96f05447bc60eb peaceai/test/fixtures/m90-te4/awslabs__aidlc-workflows-7cdfcbcab344.txt
   f2acb53d353c9658f7a80737ea96f05447bc60eb peaceai/test/fixtures/m97-te7/awslabs__aidlc-workflows-73dfd324012b.txt
   f2acb53d353c9658f7a80737ea96f05447bc60eb peaceai/test/fixtures/m97-te7/awslabs__aidlc-workflows-f6e1e5d48e81.txt
+  f2acb53d353c9658f7a80737ea96f05447bc60eb peaceai/test/fixtures/m99-dfb/awslabs__aidlc-workflows-a7ac74b92737.txt
 license URL: https://github.com/awslabs/aidlc-workflows/blob/f2acb53d353c9658f7a80737ea96f05447bc60eb/LICENSE
 ---- license text ----
 MIT No Attribution
@@ -3675,6 +3679,7 @@ fixtures (commit path):
   775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f peaceai/test/fixtures/m98-ee/AetherAI3__aether-agent-6b2d944044e4.txt
   775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f peaceai/test/fixtures/m98-ee/AetherAI3__aether-agent-38975f5f592e.txt
   775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f peaceai/test/fixtures/m98-ee/AetherAI3__aether-agent-cc9d549994a4.txt
+  775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f peaceai/test/fixtures/m99-dfb/AetherAI3__aether-agent-14d43d89265c.txt
 license URL: https://github.com/AetherAI3/aether-agent/blob/775d81c6d6a9f0df6d7d7ec85c99159d6acbc88f/LICENSE
 ---- license text ----
                                  Apache License
@@ -4133,6 +4138,7 @@ fixtures (commit path):
   405209f3c533d3e7fd03854982a3c8f51272c6ae peaceai/test/fixtures/m93-te6/OrangeproAI__orangepro-mcp-aec6bc141957.txt
   405209f3c533d3e7fd03854982a3c8f51272c6ae peaceai/test/fixtures/m93-te6/OrangeproAI__orangepro-mcp-5c23aa4e41d8.txt
   405209f3c533d3e7fd03854982a3c8f51272c6ae peaceai/test/fixtures/m97-te7/OrangeproAI__orangepro-mcp-0241dc3e60ba.txt
+  405209f3c533d3e7fd03854982a3c8f51272c6ae peaceai/test/fixtures/m99-dfb/OrangeproAI__orangepro-mcp-59bed415639e.txt
 license URL: https://github.com/OrangeproAI/orangepro-mcp/blob/405209f3c533d3e7fd03854982a3c8f51272c6ae/LICENSE
 ---- license text ----
 MIT License
@@ -4163,6 +4169,7 @@ license: MIT (LICENSE, sha256 of trimmed text 0c421278de1b22f07febad89fda6077c5a
 fixtures (commit path):
   d92eee849e93a77779a77d349f235224cb62408b peaceai/test/fixtures/m91-te5/anton-abyzov__vskill-9c9100b94a1e.txt
   d92eee849e93a77779a77d349f235224cb62408b peaceai/test/fixtures/m91-te5/anton-abyzov__vskill-86f8c5b940fc.txt
+  d92eee849e93a77779a77d349f235224cb62408b peaceai/test/fixtures/m99-dfb/anton-abyzov__vskill-491a16ec7de0.txt
 license URL: https://github.com/anton-abyzov/vskill/blob/d92eee849e93a77779a77d349f235224cb62408b/LICENSE
 ---- license text ----
 MIT License
@@ -4410,6 +4417,7 @@ fixtures (commit path):
   144cec4e5d985be48c84ec53c8d13edff6128982 peaceai/test/fixtures/m91-te5/oomol-lab__oo-cli-d66831ea682b.txt
   144cec4e5d985be48c84ec53c8d13edff6128982 peaceai/test/fixtures/m93-te6/oomol-lab__oo-cli-d7b228241da6.txt
   144cec4e5d985be48c84ec53c8d13edff6128982 peaceai/test/fixtures/m97-te7/oomol-lab__oo-cli-923e87e2f617.txt
+  144cec4e5d985be48c84ec53c8d13edff6128982 peaceai/test/fixtures/m99-dfb/oomol-lab__oo-cli-d949b8e7081c.txt
 license URL: https://github.com/oomol-lab/oo-cli/blob/144cec4e5d985be48c84ec53c8d13edff6128982/LICENSE
 ---- license text ----
 MIT License
@@ -4736,6 +4744,7 @@ repo: Scl-Ywr/inkos
 license: Apache-2.0 (LICENSE, sha256 of trimmed text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b)
 fixtures (commit path):
   50219a1d2bca05b3b956d8a8ba20ab1a2329266c peaceai/test/fixtures/m93-te6/Scl-Ywr__inkos-7715ed6135c5.txt
+  50219a1d2bca05b3b956d8a8ba20ab1a2329266c peaceai/test/fixtures/m99-dfb/Scl-Ywr__inkos-aad7c3f78350.txt
 license URL: https://github.com/Scl-Ywr/inkos/blob/50219a1d2bca05b3b956d8a8ba20ab1a2329266c/LICENSE
 ---- license text ----
 Apache License
@@ -5261,6 +5270,7 @@ license: MIT (LICENSE, sha256 of trimmed text 639d5d0a62d6c4eb4f43648c07a2f6ee8a
 fixtures (commit path):
   1d2bfdf676d12f783fb70ce6c92957434d704687 peaceai/test/fixtures/m98-ee/iongion__container-desktop-602cd3f66b64.txt
   4e088552415da112ca24374bf9e9ed70d2594b2c peaceai/test/fixtures/m98-ee/iongion__container-desktop-3e940578dff4.txt
+  96e41de5aaec1ad26e4ab2b62a8b9609d8f29ffc peaceai/test/fixtures/m99-dfb/iongion__container-desktop-30202470015d.txt
 license URL: https://github.com/iongion/container-desktop/blob/1d2bfdf676d12f783fb70ce6c92957434d704687/LICENSE
 ---- license text ----
 # MIT License
@@ -5752,6 +5762,179 @@ license URL: https://github.com/zhiyingzzhou/renewlet/blob/8f19af3e6fc43ffdf7c65
 MIT License
 
 Copyright (c) 2026 zhiyingzzhou
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: formsy/formsy-react
+license: MIT (LICENSE, sha256 of trimmed text 7a4e8463e54d07bba35b503eed0843123143bdc12622d0a61aba31b3869177f9)
+fixtures (commit path):
+  d84eb0a38d6ba196aaa4a741747078a428a8935b peaceai/test/fixtures/m99-dfb/formsy__formsy-react-cb4fabf0af3f.txt
+license URL: https://github.com/formsy/formsy-react/blob/d84eb0a38d6ba196aaa4a741747078a428a8935b/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2019 The Formsy Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: inversify/inversify-express-utils
+license: MIT (LICENSE, sha256 of trimmed text 5d657cf0f820b405de458d8bdc7195a9704f6791d9a58b4619614e4d58c08c2c)
+fixtures (commit path):
+  cd5ae93289a8eac5771745279b761e80ad8294bc peaceai/test/fixtures/m99-dfb/inversify__inversify-express-utils-eee620934f0d.txt
+license URL: https://github.com/inversify/inversify-express-utils/blob/cd5ae93289a8eac5771745279b761e80ad8294bc/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016 inversify
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: ngParty/ng-metadata
+license: MIT (LICENSE, sha256 of trimmed text 322d4c3c636afc81a9c21b51baae681e37cddf10e94c4f491db3d6d83f99a08f)
+fixtures (commit path):
+  677bf01f6a907bbdcf40e34e5accd760a2a4865b peaceai/test/fixtures/m99-dfb/ngParty__ng-metadata-d1b58ddcbeed.txt
+license URL: https://github.com/ngParty/ng-metadata/blob/677bf01f6a907bbdcf40e34e5accd760a2a4865b/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015 ngParty
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: ramarivera/pi-model-guardrails
+license: MIT (LICENSE, sha256 of trimmed text 80085d1d679672b783715b744fa092460713f792f1b055abdfae2db5f49d9231)
+fixtures (commit path):
+  3ce7f8dc6a977d160beb9a20788940fa3901fdc2 peaceai/test/fixtures/m99-dfb/ramarivera__pi-model-guardrails-98225baf9e9a.txt
+license URL: https://github.com/ramarivera/pi-model-guardrails/blob/3ce7f8dc6a977d160beb9a20788940fa3901fdc2/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Ramiro Rivera
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: sbluemin/fleet-harness
+license: MIT (LICENSE, sha256 of trimmed text 55694b77e35e4e37984e6c698a07d64f3b7efb42eee940480912e384d4422faa)
+fixtures (commit path):
+  57a51038a19688b43d04c8be0c016424a1659f18 peaceai/test/fixtures/m99-dfb/sbluemin__fleet-harness-6d63e9323ce9.txt
+license URL: https://github.com/sbluemin/fleet-harness/blob/57a51038a19688b43d04c8be0c016424a1659f18/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 sbluemin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OF THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: typestyle/csx
+license: MIT (LICENSE, sha256 of trimmed text 0d13a552ae132af753f57d9cd3363bc23aaf6fada369d767a2dc5b126447d875)
+fixtures (commit path):
+  23dabf2e5260b371776d68e02c3c2f675bbde17f peaceai/test/fixtures/m99-dfb/typestyle__csx-cfa0cb884a83.txt
+license URL: https://github.com/typestyle/csx/blob/23dabf2e5260b371776d68e02c3c2f675bbde17f/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015 Basarat Ali Syed
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

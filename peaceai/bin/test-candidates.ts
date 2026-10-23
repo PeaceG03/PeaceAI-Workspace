@@ -14,6 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
+import { derivedModuleProblem } from "../lib/learned-derive.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
@@ -129,8 +130,17 @@ function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP
  * Older runtimes run the same direct command without the permission flags (`confined: false` is logged).
  */
 const PERMISSION_NODE_MAJOR = 22;
+/**
+ * The runtime's Node major version. PEACEAI_SIMULATE_NODE_MAJOR (tests only, Auditor #491 round 2) can lower it, never
+ * raise it, so a test can show the Node < 22 path (not-confined) on a Node 22 runner; it can only make grading refuse.
+ */
+function nodeMajor(): number {
+  const real = Number(process.versions.node.split(".")[0]);
+  const sim = Number(process.env.PEACEAI_SIMULATE_NODE_MAJOR);
+  return Number.isInteger(sim) && sim > 0 ? Math.min(real, sim) : real;
+}
 function runGradedTests(tree: string, tsx: string, tests: readonly string[], module: string, notes = false): { ok: boolean; out: string; confined: boolean; notes: number } {
-  const confined = Number(process.versions.node.split(".")[0]) >= PERMISSION_NODE_MAJOR;
+  const confined = nodeMajor() >= PERMISSION_NODE_MAJOR;
   const modules = realpathSync(join(tree, "node_modules"));
   const loader = join(modules, "tsx", "dist", "esm", "index.mjs");
   const outs: string[] = [];
@@ -245,7 +255,7 @@ function gradeTest(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
       // grew that file. Then "before" = today's file with the tested function's body stubbed; fail closed otherwise.
       // Round 3 (Auditor #129 F2): never graded unconfined. Without the permission model (Node < 22) the
       // stub-body route is ungradable.
-      if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
       // Round 3 (Auditor #129): a module that imports other repo files cannot load under the narrowed reads.
       if (paths.length === 1 && existsSync(join(tree, paths[0]!)) && moduleImportsRepoFiles(readFileSync(join(tree, paths[0]!), "utf8"))) return ungradable("module-imports-repo-files");
       // Round 2 (Auditor #129): the real code must pass REAL_RUNS_REQUIRED times in all (pass 2 was the first),
@@ -343,7 +353,7 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   const f = files[0];
   if (files.length !== 1 || newTests.length !== 1 || !f || !f.isNew || !f.newPath || f.newPath !== newTests[0] || !scope.isTest(f.newPath) || baseFiles.has(f.newPath)) return ungradable("not-test-only");
-  if (Number(process.versions.node.split(".")[0]) < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+  if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
   const testPath = f.newPath;
   const test = readFileSync(join(tree, testPath), "utf8");
   const dir = dirname(testPath);
@@ -462,7 +472,7 @@ function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, ne
  * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
  * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
  */
-function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, replaceExpression = false): TestGrading {
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, derive = false, replaceExpression = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   if (workflowStep) return gradeWorkflowStep(tree, files, ungradable);
@@ -484,6 +494,15 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (lstatSync(file).isSymbolicLink() || relative(tree, realpathSync(file)).startsWith("..")) return ungradable("not-applied");
     if (!newTests.every((t) => callsFunction(readFileSync(join(tree, t), "utf8"), fn))) return ungradable("not-test-only");
     const real = readFileSync(file, "utf8");
+    // M99, DERIVE_FROM_BEHAVIOR: the new module is exactly the derived function (re-checked against the DSL grammar),
+    // and the new tests pass in every zone of EXISTING_TZ_RUNS (the candidate's tests read no clock, but prove it).
+    if (derive) {
+      if (created.length !== 1 || source.length !== 0 || derivedModuleProblem(real)) return ungradable("not-test-only");
+      // Auditor #491: those runs are confined (Node's permission model: reads = the test file, the new module and
+      // node_modules; no write, no child process), as TEST_CASE_EXISTING's are. Never graded unconfined.
+      if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
+      if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, created, false, tz).ok) return ungradable("real-not-stable");
+    }
     const stub = stubFunction(real, fn);
     if (stub === null) return ungradable("not-test-only");
     writeFileSync(file, stub);
@@ -784,7 +803,7 @@ for (const candidate of selected) {
     // M98 (public-existing-function-edit-v1): a statement edit inside an existing function / method, graded by its
     // fake-driven test (gradeExistingEdit: confined edit, hermetic re-check on the graded tree, zone + locale runs).
     else if (candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT")) result.testGrading = gradeExistingEdit(tree, files, newTests, result.newTestsPassed);
-    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
+    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION") || candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {
       console.log(`${candidate.id} protected_digest=changed stage=tests`);
