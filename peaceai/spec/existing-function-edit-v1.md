@@ -304,6 +304,44 @@ Grading order and confinement in `test-candidates.ts` (Auditor #489, hole 1):
 - Node 22's permission model does not restrict the network. The static gate (no new `fetch`/`process`/... token)
   and the hermetic walk are what stop network I/O.
 
+## Allowlist (Auditor #489, review of 7508d20)
+
+A banned-word list was walked around with no banned word and no computed key: X1 went
+`Object.getOwnPropertyDescriptors(Object)` -> Object.prototype -> the `__proto__` getter's `.get.call(() => 0)` ->
+Function.prototype -> Function, and X2 polluted Object.prototype the same way. So, after the capability delta and the
+`edit_unawaited` check, every reference the edited target unit makes MORE often than the base unit did must be
+allowlisted (`allowTokens`, Job A and Job B alike). Otherwise the result is `edit_not_allowlisted:<token>`.
+
+What an edit may reference:
+- the target's own parameters and locals, `this`, and fresh literals;
+- member reads and method calls on those, except the banned member names below;
+- `Math.min/max/floor/ceil/round/abs/trunc/sign`, `Number.isInteger/isFinite/isNaN/isSafeInteger/MAX_SAFE_INTEGER/MIN_SAFE_INTEGER`,
+  `Array.isArray`, `Object.keys/values/entries` (own enumerable data only), `Promise.all/allSettled`;
+- calls to `String`, `Number`, `Boolean`, `parseInt` and `parseFloat`; `new` of `Error`, `TypeError`, `RangeError`, `Map` and `Set`;
+- `undefined`, `NaN` and `Infinity`.
+
+Every entry is a pure, total function or constant over primitive or plain values, with no I/O, clock, randomness,
+prototype, descriptor or function-constructor access. The justification for each entry is next to the constants in
+`learned-edit-existing.ts`.
+
+Tokens (each one is refused by a test, and each test was verified by removing the guard):
+
+| token | refuses |
+|---|---|
+| `member:<m>` | any receiver: `call`, `apply`, `bind`, `getOwnPropertyDescriptor(s)`, `getOwnPropertyNames/Symbols`, `get/setPrototypeOf`, `defineProperty/ies`, `captureStackTrace`, `prepareStackTrace`, `stackTraceLimit` and the reflection names |
+| `accessor:get\|set` | `.get` or `.set` read without being called directly (descriptor accessors) |
+| `gm:<G>.<m>` | a member of a known global that isn't listed (`Object.assign`, `Object.fromEntries`, `Math.random`, ...) |
+| `ref:<name>` | any other non-local identifier (`Date`, `RegExp`, `Symbol`, `JSON`, ...) |
+| `size` | `repeat`/`padStart`/`padEnd` without a literal of at most 256; `Array(n)`/`new Array(n)`; `push`/`unshift`/`concat` of the receiver into itself; self-doubling assignment |
+| `regex` | any regex literal (`RegExp` falls under `ref:RegExp`) |
+| `reflstr:<s>` | a reflection name as a string literal |
+| `call-local` | calling a local that isn't a parameter |
+| `write-nonfresh` | a property write, delete or `++`/`--` whose owner isn't a fresh `const` literal local |
+| `shadow` | a local named like an allowlisted or capability global |
+
+Emitted tests come from the fixed bullet grammar, so fakes and data are literals. A `__proto__` key, a reflection key
+or a quoted reflection key in a fake or in data is `edit_test_grammar`.
+
 ## Known residual risk
 
 A computed read `x[k]` is allowed when the receiver is an identifier or `this`, and the key may come from the test.
@@ -313,6 +351,9 @@ The mitigations:
 - Literal keys are checked against the reflection list.
 - Computed calls are refused.
 - Any new cast, and any new dynamic computed key that isn't `param[param]`, is refused by the capability delta.
+
+Member names on parameters and locals are an open domain (`client.head`, `deps.load`), so they are checked against a
+denylist (`EDIT_BANNED_MEMBERS` plus the reflection names), not an allowlist. Every GLOBAL reference is allowlisted.
 
 ## Evidence
 
