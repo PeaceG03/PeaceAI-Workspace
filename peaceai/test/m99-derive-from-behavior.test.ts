@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "799182d79506931e78a232b5729121a339c0aa584dd008479d5aacd9869f7cc1";
+const SHA = "d524d97867fce153daba37ab07dd58fa715abcb471c87a94f2f416b8dd8f06e0"; // M104: learned spec evidence counts re-pinned (if-form entries added); the spec's rule fields are unchanged
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 

@@ -1,0 +1,163 @@
+/**
+ * pi-notifications core: shared types, sanitizer, backend detection,
+ * notification session and per-trigger formatters.
+ *
+ * Content channel byte builders live in channels/, config in settings.ts, and
+ * external-extension integrations in extensions/. All output goes through an
+ * injectable Sink so every byte path is unit-testable without a terminal.
+ * Protocol semantics verified against Kitty's OSC 99 spec and VS Code's OSC 99
+ * handler (microsoft/vscode#294703) — see SPEC.md.
+ */
+import { AsyncQueue } from './async-queue.ts'
+
+export type UpdateKind = 'open' | 'update' | 'close'
+
+export type NotificationUpdate = {
+    kind: UpdateKind
+    title?: string
+    body?: string
+    /** Priority: low, normal, critical. */
+    priority?: 'low' | 'normal' | 'critical'
+    /** Only honor the notification when the terminal's focus state matches. */
+    focus?: 'always' | 'unfocused' | 'invisible'
+    /** Mute the notification sound. */
+    silent?: boolean
+}
+
+export type Sink = (bytes: string) => void
+
+export type Backend = 'osc99' | 'osc777' | 'herdr'
+
+// ---------------------------------------------------------------------------
+// Sanitizer — single choke point at the channel boundary.
+// Strips C0 (U+0000–U+001F), DEL (U+007F), C1 (U+0080–U+009F) and the OSC 99
+// field separator ';'. Keeps printable Unicode. Caps at the Kitty payload limit.
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line no-control-regex -- intentional: the sanitizer strips control characters
+const UNSAFE_RE = /[\u0000-\u001F\u007F\u0080-\u009F;]/gu
+
+export const MAX_PAYLOAD_BYTES = 2048
+
+export const truncateUtf8 = (text: string, maxBytes = MAX_PAYLOAD_BYTES): string => {
+    const encoder = new TextEncoder()
+
+    if (encoder.encode(text).length <= maxBytes) return text
+
+    let out = ''
+    for (const ch of text) {
+        const next = out + ch
+
+        if (encoder.encode(next).length > maxBytes) return out
+
+        out = next
+    }
+
+    return out
+}
+
+export const sanitizeText = (text: string): string => {
+    return truncateUtf8(text.replace(UNSAFE_RE, ''))
+}
+
+// ---------------------------------------------------------------------------
+// Backend detection
+// ---------------------------------------------------------------------------
+
+export const detectBackend = (): Backend => {
+    if (process.env.HERDR_SOCKET_PATH !== undefined && process.env.HERDR_SOCKET_PATH !== '')
+        return 'herdr'
+    if (process.env.KITTY_WINDOW_ID !== undefined) return 'osc99'
+    if (process.env.TERM_PROGRAM === 'vscode') return 'osc99'
+    if (process.env.TERM_PROGRAM === 'ghostty') return 'osc777'
+
+    return 'osc777'
+}
+
+// ---------------------------------------------------------------------------
+// Notification session
+// ---------------------------------------------------------------------------
+
+/** One notification unit: exactly one channel consumes the pushed updates. */
+export class NotificationSession {
+    readonly queue: AsyncQueue<NotificationUpdate>
+
+    constructor(readonly id: string) {
+        this.queue = new AsyncQueue<NotificationUpdate>()
+    }
+
+    push(update: NotificationUpdate): void {
+        this.queue.push(update)
+    }
+
+    end(): void {
+        this.queue.end()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Formatters (per-trigger → NotificationUpdate)
+// ---------------------------------------------------------------------------
+
+export type WorkSummary = {
+    turns: number
+    errors: number
+}
+
+const plural = (n: number): string => {
+    return n === 1 ? '' : 's'
+}
+
+export const formatWorkOpen = (): NotificationUpdate => ({
+    kind: 'open',
+    title: 'Pi working…',
+    silent: true,
+})
+
+export const formatWorkError = (toolName: string): NotificationUpdate => ({
+    kind: 'update',
+    body: `tool ${toolName} failed`,
+})
+
+export type WorkProgress = {
+    turns: number
+    tools: number
+    elapsedMs: number
+}
+
+/** `12s`, `1m 5s`, `1h 2m` — compact elapsed time for the progress line. */
+export const formatElapsed = (ms: number): string => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+    const h = Math.floor(totalSeconds / 3600)
+    const m = Math.floor((totalSeconds % 3600) / 60)
+    const s = totalSeconds % 60
+    if (h > 0) return `${h}h ${m}m`
+    if (m > 0) return `${m}m ${s}s`
+
+    return `${s}s`
+}
+
+/** Per-turn progress: stats in the body, title stays clean. */
+export const formatWorkProgress = ({
+    turns,
+    tools,
+    elapsedMs,
+}: WorkProgress): NotificationUpdate => ({
+    kind: 'update',
+    title: 'Pi working…',
+    body: `turn ${turns} · ${tools} tool${plural(tools)} · ${formatElapsed(elapsedMs)}`,
+    silent: true,
+})
+
+export const formatWorkClose = ({ turns, errors }: WorkSummary): NotificationUpdate => ({
+    kind: 'close',
+    title: errors > 0 ? `Pi ready · ${errors} error${plural(errors)}` : 'Pi ready',
+    body: `${turns} turn${plural(turns)} · ${errors} error${plural(errors)}`,
+})
+
+export const formatAttention = (title: string, body: string): NotificationUpdate => ({
+    kind: 'close',
+    title,
+    body,
+    priority: 'critical',
+})

@@ -11692,3 +11692,119 @@ Apache License
    See the License for the specific language governing permissions and
    limitations under the License.
 ---- end ----
+==============================================================================
+repo: AdityaChauhanX07/FairNotice
+license: MIT (LICENSE, sha256 of trimmed text 5ceb785d34e2fc91e7e6f5d00a9c052759967fbb92162ce56d992431311e00f8)
+fixtures (commit path):
+  24597282124996141f3236be998a877b7dbc0909 peaceai/test/fixtures/m99-dfb/AdityaChauhanX07__FairNotice-71f8f35a84a0.txt
+license URL: https://github.com/AdityaChauhanX07/FairNotice/blob/24597282124996141f3236be998a877b7dbc0909/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 FairNotice
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: Pingid/lickle-bin
+license: MIT (LICENSE, sha256 of trimmed text 8256a439ee98c2bdc101f5094cf1ed18afea91e5e43a64dca8a8e4e46c1d8943)
+fixtures (commit path):
+  3abcff8682dd2e03258e3786f4ad3c071b7cf508 peaceai/test/fixtures/m99-dfb/Pingid__lickle-bin-fa8b84c1b206.txt
+license URL: https://github.com/Pingid/lickle-bin/blob/3abcff8682dd2e03258e3786f4ad3c071b7cf508/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2023 Daniel Beaven
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: ceski23/pi-notifications
+license: MIT (LICENSE, sha256 of trimmed text 94258a1c14ee4fcd508412e913551bb3e6971f8a6693fd1f915b07795ce7d132)
+fixtures (commit path):
+  a57346e54a34ca98bc12e104ad42b37fc3c03225 peaceai/test/fixtures/m99-dfb/ceski23__pi-notifications-0549d364e6a0.txt
+license URL: https://github.com/ceski23/pi-notifications/blob/a57346e54a34ca98bc12e104ad42b37fc3c03225/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Cezary Bober
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: faradayio/vault-env-js
+license: MIT (LICENSE, sha256 of trimmed text e25677ab200cdd56cd2fd2bc4708b42621f510b43fe06364afb881dd442825a2)
+fixtures (commit path):
+  fa732d7c400d8b460309d11ccaa9a17b35cc25e6 peaceai/test/fixtures/m99-dfb/faradayio__vault-env-js-d3597047bb94.txt
+license URL: https://github.com/faradayio/vault-env-js/blob/fa732d7c400d8b460309d11ccaa9a17b35cc25e6/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016 Faraday
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

@@ -1,0 +1,442 @@
+/**
+ * Codec debugging utilities for inspecting byte layouts.
+ *
+ * - `describe(codec)`         static byte-layout summary from the codec alone.
+ * - `annotate(codec, bytes)`  per-region table showing what each byte means.
+ * - `inspect(codec, value)`   `encode` + `annotate` in one call.
+ * - `layout(codec, bytes)`    structured `LayoutNode` tree for programmatic use.
+ * - `slots(codec, bytes)`     flat leaf list (the table backing `annotate`).
+ */
+import { encode, reader } from './io.ts'
+import * as L from './lib/index.ts'
+import type { Codec } from './types.ts'
+
+// ---------------- Public API ----------------
+
+/** Static byte-layout summary from `codec` alone (no value, no bytes). */
+export function describe(codec: Codec.Type<any>): string {
+  return describeNode(codec, '', []).join('\n')
+}
+
+/** Decode `bytes` through `codec` and pretty-print the per-region table. */
+export function annotate<T>(codec: Codec.Type<T>, bytes: Uint8Array): string {
+  const { root, bailedAt } = walk(codec, bytes)
+  const all = flatten(root)
+  const last = all[all.length - 1]
+  const consumed = last ? last.offset + last.size : 0
+  const rows: string[][] = [
+    ['offset', 'size', 'hex', 'path', 'type', 'value'],
+    ...all.map((x) => [
+      hexOffset(x.offset),
+      String(x.size),
+      formatHex(bytes, x.offset, x.size),
+      formatPath(x.path) || '·',
+      x.type,
+      formatValue(x.value),
+    ]),
+  ]
+  const trailer =
+    `\n\n${all.length} region${s(all.length)}, ${consumed}/${bytes.length} byte${s(bytes.length)}` +
+    (consumed < bytes.length ? ` (${bytes.length - consumed} unconsumed)` : '')
+  const bail = bailedAt
+    ? `\n\nFAILED at ${formatPath(bailedAt.path) || '·'} (offset ${bailedAt.offset}): ${bailedAt.value}`
+    : ''
+  return formatTable(rows) + trailer + bail
+}
+
+/** Encode `value` with `codec`, then annotate the resulting bytes. */
+export function inspect<T>(codec: Codec.Type<T>, value: T): string {
+  return annotate(codec, encode(codec, value))
+}
+
+/** Decode `bytes` through `codec`, returning the hierarchical layout tree. */
+export function layout<T>(codec: Codec.Type<T>, bytes: Uint8Array): layout.Node {
+  return walk(codec, bytes).root
+}
+
+/** Flat leaf-region list: same data as `layout` but with composites elided. */
+export function slots<T>(codec: Codec.Type<T>, bytes: Uint8Array): slots.Slot[] {
+  return flatten(walk(codec, bytes).root)
+}
+
+// ---------------- Types ----------------
+export namespace slots {
+  /** A single byte region: a slice of the buffer that maps to one decoded value. */
+  export type Slot = {
+    /** Path from the root codec, e.g. `['user', 'scores', 0]`. */
+    path: (string | number)[]
+    /** Byte offset within the input buffer. */
+    offset: number
+    /** Number of bytes consumed. */
+    size: number
+    /** Decoded value (`undefined` for padding / unused bytes). */
+    value: unknown
+    /** Codec `label` (e.g. `'u8'`, `'lpUtf8'`, `'struct'`). */
+    type: string
+  }
+}
+
+export namespace layout {
+  /** Slot augmented with `children` for composite codecs; leaves omit `children`. */
+  export type Node = slots.Slot & { children?: layout.Node[] }
+}
+
+type Path = (string | number)[]
+// ---------------- Codec introspection ----------------
+
+const label = (c?: L.Codec.Type<any>): string | undefined => (c as unknown as L.Codec.Labeled<string>)?.label
+
+const codecLabel = (c: L.Codec.Type<any>): string => {
+  const lab = label(c)
+  if (lab === 'literal' && 'value' in (c as any)) return `literal(${formatValue((c as any).value)})`
+  return lab ?? '<unlabeled>'
+}
+
+const sizeLabel = (c: L.Codec.Type<any>): string =>
+  c === L._varint ? '1–5 bytes' : L.is.sized(c) ? `${c.s} byte${s(c.s)}` : 'dynamic'
+
+const isTagField = (v: any): boolean => (label(v) === 'literal' || label(v) === 'constant') && 'value' in v
+
+/** First literal-tagged field of a struct variant — names the path segment for `tagged`. */
+const variantTag = (variant: L.Codec.Type<any>): string | number | undefined => {
+  if (label(variant) !== 'struct') return undefined
+  for (const v of Object.values((variant as any).shape as Record<string, any>)) if (isTagField(v)) return v.value
+  return undefined
+}
+
+/** Static byte size of the first tag-shaped (literal/constant) field on a struct variant. */
+const firstTagFieldSize = (variant: L.Codec.Type<any>): number => {
+  if (label(variant) !== 'struct') return 0
+  for (const v of Object.values((variant as any).shape as Record<string, any>)) if (isTagField(v)) return v.s ?? 0
+  return 0
+}
+
+// ---------------- Static describe ----------------
+
+// Per-label child enumeration — drives the recursive tree drawing. Labels missing
+// from this table render as leaves (sized, cstr, optional, nullable, typed, union,
+// scalars, varint, utf8, lpUtf8, literal). `lazy` is transparent at walk time but
+// shown explicitly here so describe-time output mirrors the codec's structure.
+const kidsOf: Record<string, (cc: any) => Array<[string, L.Codec.Type<any>]>> = {
+  struct: (cc) => Object.entries(cc.shape),
+  tuple: (cc) => (cc.shape as L.Codec.Type<any>[]).map((v, i) => [`[${i}]`, v]),
+  array: (cc) => [[`× ${cc.shape.size}`, cc.shape.item]],
+  list: (cc) => [
+    ['length', cc.shape.len],
+    ['items × N', cc.shape.item],
+  ],
+  lazy: (cc) => [['<lazy>', cc.shape.inner]],
+  framed: (cc) => [
+    ['length', cc.shape.lc],
+    ['inner', cc.shape.inner],
+  ],
+  padded: (cc) => [['inner', cc.shape.inner]],
+  keyed: (cc) => [
+    ['tag', cc.shape.tag],
+    ...Object.entries(cc.shape.variants as Record<string, L.Codec.Type<any>>).map(
+      ([k, v]) => [`'${k}'`, v] as [string, L.Codec.Type<any>],
+    ),
+  ],
+  tagged: (cc) => [
+    ['tag', cc.shape.tag],
+    ...(cc.shape.variants as L.Codec.Type<any>[]).map((v, i): [string, L.Codec.Type<any>] => {
+      const tv = variantTag(v)
+      return [`variant ${tv !== undefined ? JSON.stringify(tv) : `#${i}`}`, v]
+    }),
+  ],
+}
+
+// `stack[i]` is true when level i is the last sibling at that depth — used to pick │/├/└ glyphs.
+const describeNode = (c: L.Codec.Type<any>, name: string, stack: boolean[]): string[] => {
+  const indent = stack
+    .slice(0, -1)
+    .map((last) => (last ? '   ' : '│  '))
+    .join('')
+  const branch = stack.length === 0 ? '' : stack[stack.length - 1] ? '└─ ' : '├─ '
+  const head = `${indent}${branch}${name ? `${name}: ` : ''}${codecLabel(c)} (${sizeLabel(c)})`
+  const kids = kidsOf[label(c) ?? '']?.(c) ?? []
+  return [head, ...kids.flatMap(([n, child], i) => describeNode(child, n, [...stack, i === kids.length - 1]))]
+}
+
+// ---------------- Byte walker ----------------
+
+const PADDING = '<padding>'
+const UNUSED = '<unused>'
+
+/** Sentinel returned by `visit` when a dynamic decode failure bubbles up. */
+const BAIL = Symbol('walk_bail')
+type Bail = typeof BAIL
+const isBail = (v: unknown): v is Bail => v === BAIL
+
+const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+/**
+ * Walk `codec` against `bytes`, catching decode failures as `type: 'error'` slots.
+ * Sized failures recover (advance to slot end, continue siblings); dynamic failures
+ * bail out and surface the deepest error site in `bailedAt`.
+ */
+const walk = <T>(codec: Codec.Type<T>, bytes: Uint8Array): { root: layout.Node; bailedAt?: slots.Slot } => {
+  const r = reader(bytes)
+  const out: layout.Node[] = []
+  const result = visit(codec, r, [], out)
+  const root = out[0]!
+  if (!isBail(result)) return { root }
+  // Deepest error slot = bail site.
+  const all = flatten(root)
+  for (let i = all.length - 1; i >= 0; i--) if (all[i]!.type === 'error') return { root, bailedAt: all[i]! }
+  return { root }
+}
+
+/** Execute `fn` with `r.end` temporarily restricted to `end`. */
+const inFrame = <T>(r: L.Codec.Reader, end: number, fn: () => T): T => {
+  const saved = r.end
+  r.end = end
+  try {
+    return fn()
+  } finally {
+    r.end = saved
+  }
+}
+
+/** Append a filler slot (padding / unused) covering `[r.pos, end)` if any, and advance `r.pos`. */
+const fillTo = (r: L.Codec.Reader, end: number, kids: layout.Node[], path: Path, seg: string, type: string) => {
+  if (r.pos >= end) return
+  kids.push({ path: [...path, seg], offset: r.pos, size: end - r.pos, value: undefined, type })
+  r.pos = end
+}
+
+/** Decode a leaf codec, emitting a `type: 'error'` slot on failure. */
+const leaf = (c: L.Codec.Type<any>, r: L.Codec.Reader, path: Path, out: layout.Node[], start: number): unknown => {
+  try {
+    const value = c.d(r)
+    out.push({ path, offset: start, size: r.pos - start, value, type: codecLabel(c) })
+    return value
+  } catch (e) {
+    const sized = L.is.sized(c)
+    out.push({ path, offset: start, size: sized ? c.s : r.pos - start, value: errMsg(e), type: 'error' })
+    if (!sized) return BAIL
+    r.pos = start + c.s
+    return undefined
+  }
+}
+
+type Walker<C = any> = (cc: C, r: L.Codec.Reader, path: Path, kids: layout.Node[], start: number) => unknown
+
+// Walks `c` against `r`, appending one `LayoutNode` per visited codec to `out`.
+// Leaves push a flat slot; composites recurse via the `composites` dispatch table.
+// `lazy` is transparent — the inner codec's node replaces lazy in the tree.
+const visit = (c: L.Codec.Type<any>, r: L.Codec.Reader, path: Path, out: layout.Node[]): unknown => {
+  const start = r.pos
+  const lab = label(c)
+  if (!L.is.shape(c)) return leaf(c, r, path, out, start)
+  if (L.is.lazy(c)) return visit((c as any).shape.inner, r, path, out)
+  const handler = composites[lab as keyof L.ShapeCodecKindMap]!
+  const node: layout.Node = { path, offset: start, size: 0, value: undefined, type: lab!, children: [] }
+  const result = handler(c as any, r, path, node.children!, start)
+  node.size = r.pos - start
+  if (!isBail(result)) node.value = result
+  out.push(node)
+  return result
+}
+
+// Per-label composite walkers. Each returns the decoded value (which becomes
+// `node.value`) or `BAIL` on dynamic failure — in which case the outer `visit`
+// pushes the partial node with whatever children were accumulated so far.
+
+const composites: { [K in keyof L.ShapeCodecKindMap]: Walker<L.ShapeCodecKindMap[K]> } = {
+  'typed.array': (cc, r, path, kids, start) => {
+    return leaf(cc, r, path, kids, start)
+  },
+  'typed.struct': (cc, r, path, kids, start) => {
+    return leaf(cc, r, path, kids, start)
+  },
+  literal: (cc, r, path, kids) => {
+    return visit(cc.shape.value, r, path, kids)
+  },
+  constant: (cc, r, path, kids) => {
+    return visit(cc.shape.inner, r, path, kids)
+  },
+  lazy: (cc, r, path, kids) => {
+    return visit(cc.shape.inner, r, path, kids)
+  },
+  transform: (cc, r, path, kids) => {
+    return visit(cc.shape.inner, r, path, kids)
+  },
+  struct: (cc, r, path, kids) => {
+    const o: any = {}
+    for (const k of Object.keys(cc.shape)) {
+      const v = visit(cc.shape[k]!, r, [...path, k], kids)
+      if (isBail(v)) return BAIL
+      o[k] = v
+    }
+    return o
+  },
+  tuple: (cc, r, path, kids) => {
+    const sh = cc.shape as L.Codec.Type<any>[]
+    const o: any[] = new Array(sh.length)
+    for (let i = 0; i < sh.length; i++) {
+      const v = visit(sh[i]!, r, [...path, i], kids)
+      if (isBail(v)) return BAIL
+      o[i] = v
+    }
+    return o
+  },
+  array: (cc, r, path, kids) => {
+    const { item, size } = cc.shape
+    const o: any[] = new Array(size)
+    for (let i = 0; i < size; i++) {
+      const v = visit(item, r, [...path, i], kids)
+      if (isBail(v)) return BAIL
+      o[i] = v
+    }
+    return o
+  },
+  list: (cc, r, path, kids) => {
+    const { item, len } = cc.shape
+    const n = visit(len, r, [...path, 'length'], kids)
+    if (isBail(n)) return BAIL
+    const o: any[] = new Array(n as number)
+    for (let i = 0; i < (n as number); i++) {
+      const v = visit(item, r, [...path, i], kids)
+      if (isBail(v)) return BAIL
+      o[i] = v
+    }
+    return o
+  },
+  framed: (cc, r, path, kids) => {
+    const { inner, lc } = cc.shape
+    const n = visit(lc, r, [...path, 'length'], kids)
+    if (isBail(n)) return BAIL
+    const end = r.pos + (n as number)
+    return inFrame(r, end, () => {
+      const v = visit(inner, r, path, kids)
+      if (isBail(v)) return BAIL
+      fillTo(r, end, kids, path, UNUSED, 'unused')
+      return v
+    })
+  },
+  padded: (cc, r, path, kids, start) => {
+    const end = start + cc.s
+    return inFrame(r, end, () => {
+      const v = visit(cc.shape.inner, r, path, kids)
+      if (isBail(v)) {
+        // padded is sized — recover by skipping to slot end and surface partial node.
+        r.pos = end
+        return undefined
+      }
+      fillTo(r, end, kids, path, PADDING, 'padding')
+      return v
+    })
+  },
+  keyed: (cc, r, path, kids, start) => {
+    const { variants, tag } = cc.shape
+    const keys = Object.keys(variants)
+    const tagStart = r.pos
+    const before = kids.length
+    const idx = visit(tag, r, [...path, 'tag'], kids)
+    if (isBail(idx)) return BAIL
+    if ((idx as number) >= keys.length) {
+      kids.length = before // replace success slot with error
+      kids.push({
+        path: [...path, 'tag'],
+        offset: tagStart,
+        size: r.pos - tagStart,
+        value: `keyed: tag index ${idx} out of bounds [0, ${keys.length})`,
+        type: 'error',
+      })
+      return BAIL
+    }
+    const k = keys[idx as number]!
+    const v = visit(variants[k]!, r, [...path, k], kids)
+    if (isBail(v)) return BAIL
+    if (L.is.sized(cc)) fillTo(r, start + cc.s, kids, path, PADDING, 'padding')
+    return { [k]: v }
+  },
+  tagged: (cc, r, path, kids, start) => {
+    const { variants, tag } = cc.shape
+    const firstTagS = firstTagFieldSize(variants[0]!)
+    const tagStart = r.pos
+    const before = kids.length
+
+    // literal tag (s=0): a separate index byte is written, walk it as a slot.
+    // constant tag (s>0): the variant struct emits the tag itself — peek to find the variant.
+    let idx: number
+    let tagValue: unknown
+    if (firstTagS === 0) {
+      const ti = visit(tag, r, [...path, 'tag'], kids)
+      if (isBail(ti)) return BAIL
+      idx = tagValue = ti as number
+    } else {
+      try {
+        tagValue = tag.d(r)
+      } catch (e) {
+        kids.push({ path: [...path, 'tag'], offset: tagStart, size: r.pos - tagStart, value: errMsg(e), type: 'error' })
+        return BAIL
+      }
+      r.pos = tagStart
+      idx = variants.findIndex((va: any) => Object.values(va.shape).some((l: any) => l?.value === tagValue))
+    }
+    if (!variants[idx]) {
+      kids.length = before
+      kids.push({
+        path: [...path, 'tag'],
+        offset: tagStart,
+        size: firstTagS === 0 ? r.pos - tagStart : firstTagS,
+        value:
+          firstTagS === 0
+            ? `tagged: tag index ${idx} out of bounds [0, ${variants.length})`
+            : `tagged: unknown tag value ${JSON.stringify(tagValue)}`,
+        type: 'error',
+      })
+      return BAIL
+    }
+    const variant = variants[idx]!
+    const seg = variantTag(variant) ?? idx
+    const v = visit(variant, r, [...path, seg], kids)
+    if (isBail(v)) return BAIL
+    if (L.is.sized(cc)) fillTo(r, start + cc.s, kids, path, PADDING, 'padding')
+    return v
+  },
+}
+
+// ---------------- Internals ----------------
+const flatten = (n: layout.Node, out: slots.Slot[] = []): slots.Slot[] => {
+  if (!n.children || n.children.length === 0) out.push(n)
+  else for (const c of n.children) flatten(c, out)
+  return out
+}
+
+// ---------------- Formatting ----------------
+const s = (n: number): string => (n === 1 ? '' : 's')
+
+const hexOffset = (n: number): string => `0x${n.toString(16).padStart(4, '0')}`
+
+const formatHex = (bytes: Uint8Array, offset: number, size: number, max = 12): string => {
+  const end = Math.min(offset + size, offset + max, bytes.length)
+  const hex = Array.from(bytes.subarray(offset, end), (b) => b.toString(16).padStart(2, '0')).join(' ')
+  return size > max ? `${hex} …` : hex
+}
+
+const formatPath = (path: Path): string =>
+  path.map((seg, i) => (typeof seg === 'number' ? `[${seg}]` : i === 0 ? seg : `.${seg}`)).join('')
+
+const formatValue = (v: unknown): string => {
+  if (v === undefined) return '—'
+  if (v === null) return 'null'
+  if (typeof v === 'string') {
+    const j = JSON.stringify(v)
+    return j.length > 40 ? j.slice(0, 39) + '…"' : j
+  }
+  if (typeof v === 'bigint') return `${v}n`
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (v instanceof Uint8Array) return `Uint8Array(${v.length})`
+  if (Array.isArray(v)) return `Array(${v.length})`
+  return `<${(v as any)?.constructor?.name ?? 'object'}>`
+}
+
+const formatTable = (rows: string[][]): string => {
+  const widths = rows[0]!.map((_, i) => rows.reduce((m, r) => Math.max(m, r[i]!.length), 0))
+  const fmt = (row: string[]) => row.map((cell, i) => cell.padEnd(widths[i]!)).join('  ')
+  const sep = widths.map((w) => '─'.repeat(w)).join('  ')
+  return [fmt(rows[0]!), sep, ...rows.slice(1).map(fmt)].join('\n')
+}

@@ -2,7 +2,7 @@
  "schema": "peaceai-m99-derive-from-behavior-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200.",
+ "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200. M104 (if evidence): entries whose derived program uses the if form (ternary) added the round-4 way from GitHub code search (if/else-return and ternary functions over numbers and strings; the same license, replay, dedupe, email and private-core filters); none uses the M102 string order (sle), and the M102 comparator / min / max entries are not counted here.",
  "examples": [
   {
    "repo": "AetherAI3/aether-agent",
@@ -16706,6 +16706,758 @@
    "forms": [
     "eq",
     "or"
+   ]
+  },
+  {
+   "repo": "AdityaChauhanX07/FairNotice",
+   "commit": "24597282124996141f3236be998a877b7dbc0909",
+   "module": "src/lib/confidence.ts",
+   "fn": "s",
+   "params": [
+    {
+     "name": "n",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(n === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "const s = (n: number): string => (n === 1 ? \"\" : \"s\");",
+   "path": "src/lib/confidence.ts",
+   "fileBlob": "71f8f35a84a0ef1084d9c2e8dfab12ec544241b8",
+   "sha256": "87dc7ed2ea239d748f31d82d1fdbb8b62d4b494e0abb8184971ab4a53bce209c",
+   "fixture": "peaceai/test/fixtures/m99-dfb/AdityaChauhanX07__FairNotice-71f8f35a84a0.txt",
+   "license": "MIT",
+   "licenseSha256": "5ceb785d34e2fc91e7e6f5d00a9c052759967fbb92162ce56d992431311e00f8",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "Pingid/lickle-bin",
+   "commit": "3abcff8682dd2e03258e3786f4ad3c071b7cf508",
+   "module": "src/debug.ts",
+   "fn": "s",
+   "params": [
+    {
+     "name": "n",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(n === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "const s = (n: number): string => (n === 1 ? '' : 's')",
+   "path": "src/debug.ts",
+   "fileBlob": "fa8b84c1b206262581842b6c098171a46b34cf95",
+   "sha256": "f224e1c2cdbf07a53bf516c77637340290d4516da87d4459803e047c1e15ba66",
+   "fixture": "peaceai/test/fixtures/m99-dfb/Pingid__lickle-bin-fa8b84c1b206.txt",
+   "license": "MIT",
+   "licenseSha256": "8256a439ee98c2bdc101f5094cf1ed18afea91e5e43a64dca8a8e4e46c1d8943",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "ceski23/pi-notifications",
+   "commit": "a57346e54a34ca98bc12e104ad42b37fc3c03225",
+   "module": "src/core.ts",
+   "fn": "plural",
+   "params": [
+    {
+     "name": "n",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(n === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "const plural = (n: number): string => {\n    return n === 1 ? '' : 's'\n}",
+   "path": "src/core.ts",
+   "fileBlob": "0549d364e6a03d8eb5faafcb4eb5e723becb53ca",
+   "sha256": "d3b3785e3c560c1c5984352d02e1da240e65548200b03a6bca1479d36cc5fd76",
+   "fixture": "peaceai/test/fixtures/m99-dfb/ceski23__pi-notifications-0549d364e6a0.txt",
+   "license": "MIT",
+   "licenseSha256": "94258a1c14ee4fcd508412e913551bb3e6971f8a6693fd1f915b07795ce7d132",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
+   ]
+  },
+  {
+   "repo": "faradayio/vault-env-js",
+   "commit": "fa732d7c400d8b460309d11ccaa9a17b35cc25e6",
+   "module": "prepare.ts",
+   "fn": "plural",
+   "params": [
+    {
+     "name": "n",
+     "type": "number"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      -1
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      0
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      2
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      10
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      100
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1000
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      1
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      -99
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      550
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      325
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      775
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      212
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      437
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      662
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      887
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      268
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      493
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      718
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      943
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      156
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      381
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      606
+     ],
+     "out": "s"
+    },
+    {
+     "args": [
+      831
+     ],
+     "out": "s"
+    }
+   ],
+   "expr": "(n === 1) ? \"\" : \"s\"",
+   "heldOut": {
+    "right": 2378,
+    "wrong": 0
+   },
+   "upstream": "function plural(n: number): string {\n  return n === 1 ? \"\" : \"s\";\n}",
+   "path": "prepare.ts",
+   "fileBlob": "d3597047bb9466623fb9462cd66dbdaf4e51ddee",
+   "sha256": "05e446840f0876bfc454da260fa06946aac65cf9e26e16afc892bb20fb2f05b2",
+   "fixture": "peaceai/test/fixtures/m99-dfb/faradayio__vault-env-js-d3597047bb94.txt",
+   "license": "MIT",
+   "licenseSha256": "e25677ab200cdd56cd2fd2bc4708b42621f510b43fe06364afb881dd442825a2",
+   "addedForGates": [
+    "far: (-99) gives \"s\"",
+    "region: (550) gives \"s\"",
+    "region: (325) gives \"s\"",
+    "region: (775) gives \"s\"",
+    "region: (212) gives \"s\"",
+    "region: (437) gives \"s\"",
+    "region: (662) gives \"s\"",
+    "region: (887) gives \"s\"",
+    "region: (268) gives \"s\"",
+    "region: (493) gives \"s\"",
+    "region: (718) gives \"s\"",
+    "region: (943) gives \"s\"",
+    "region: (156) gives \"s\"",
+    "region: (381) gives \"s\"",
+    "region: (606) gives \"s\"",
+    "region: (831) gives \"s\""
+   ],
+   "forms": [
+    "ternary",
+    "eq"
    ]
   }
  ],
