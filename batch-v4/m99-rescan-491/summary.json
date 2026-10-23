@@ -1,0 +1,219 @@
+{
+ "what": "Auditor #491 B1 rescan: miner5.mts (= mine99c/miner3.mts, the 364/276/88 scan, with PR #491's derive.ts at the witness gates; held-out = rest of grid; far probes also compared with upstream)",
+ "derive": "PR #491 m99/derive-from-behavior, derive.ts as at ab5cece+",
+ "same690": {
+  "accepted": 11,
+  "right": 11,
+  "wrong": 0,
+  "transitions": {
+   "ok_right -> derive_under_specified/chars": 261,
+   "ok_right -> derive_under_specified/edge": 1,
+   "ok_right -> derive_under_specified/rival": 2,
+   "ok_right -> derive_under_specified/unread": 1,
+   "ok_right -> ok_right": 11,
+   "ok_wrong -> derive_under_specified/chars": 79,
+   "ok_wrong -> derive_under_specified/unread": 9,
+   "refused -> derive_ambiguous": 7,
+   "refused -> derive_budget": 27,
+   "refused -> derive_examples": 25,
+   "refused -> derive_no_fit": 267
+  }
+ },
+ "full": {
+  "stats": {
+   "candidates": 4777,
+   "refuse_derive_under_specified_chars": 602,
+   "not_pure_int_or_runs": 3112,
+   "refuse_derive_no_fit": 430,
+   "constant_output": 502,
+   "refuse_derive_budget": 43,
+   "refuse_derive_examples": 42,
+   "refuse_derive_ambiguous": 13,
+   "refuse_derive_under_specified_unread": 13,
+   "refuse_derive_under_specified_rival": 3,
+   "ok_right": 15,
+   "refuse_derive_under_specified_cap": 1,
+   "refuse_derive_under_specified_edge": 1
+  },
+  "accepted": [
+   {
+    "repo": "songsid/AgEnD",
+    "file": "src/update-install.ts",
+    "fn": "isLocalLinkTarget",
+    "expr": "entryIsSymlink",
+    "train": 8,
+    "heldRight": 14,
+    "heldWrong": 0,
+    "farRight": 3,
+    "farWrong": 0
+   },
+   {
+    "repo": "ckyycc/ngx-hana-nameserver-history-viewer",
+    "file": "src/nameserver-history-viewer/utils/ui-util.ts",
+    "fn": "getRoundedValue",
+    "expr": "value",
+    "train": 4,
+    "heldRight": 6,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "AetherAI3/aether-agent",
+    "file": "src/core/managed_tool_host/primitives.ts",
+    "fn": "clock",
+    "expr": "now",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "fabric-runtime/pi-fabric",
+    "file": "src/entropy/fingerprint.ts",
+    "fn": "roundMetric",
+    "expr": "value",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "iongion/container-desktop",
+    "file": "support/cli/lib/versioning.ts",
+    "fn": "setPlainVersion",
+    "expr": "version",
+    "train": 14,
+    "heldRight": 107,
+    "heldWrong": 0,
+    "farRight": 6,
+    "farWrong": 0
+   },
+   {
+    "repo": "phetsims/dot",
+    "file": "js/util/roundSymmetric.ts",
+    "fn": "roundSymmetric",
+    "expr": "value",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "acidb/mobiscroll",
+    "file": "src/core/util/misc.ts",
+    "fn": "round",
+    "expr": "nr",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "acidb/mobiscroll",
+    "file": "src/core/util/misc.ts",
+    "fn": "floor",
+    "expr": "nr",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "Jiyuan-Tan/CausalSmith",
+    "file": "CausalSmith/tools/src/presentation/tex_anchors.ts",
+    "fn": "canonicalizeProofTitle",
+    "expr": "proof",
+    "train": 14,
+    "heldRight": 107,
+    "heldWrong": 0,
+    "farRight": 6,
+    "farWrong": 0
+   },
+   {
+    "repo": "amitkumardubey/praana",
+    "file": "src/provider-catalog.ts",
+    "fn": "stripProviderRoutingPrefix",
+    "expr": "modelId",
+    "train": 14,
+    "heldRight": 107,
+    "heldWrong": 0,
+    "farRight": 6,
+    "farWrong": 0
+   },
+   {
+    "repo": "zszz3/AgentRecall",
+    "file": "apps/main-2.0/src/core/evaluation/dataset-folder-io.ts",
+    "fn": "datasetFolderCaseId",
+    "expr": "itemId",
+    "train": 14,
+    "heldRight": 107,
+    "heldWrong": 0,
+    "farRight": 6,
+    "farWrong": 0
+   },
+   {
+    "repo": "Choaterboater/casper",
+    "file": "src/app/capabilities.ts",
+    "fn": "browserRequested",
+    "expr": "browserReady",
+    "train": 8,
+    "heldRight": 14,
+    "heldWrong": 0,
+    "farRight": 3,
+    "farWrong": 0
+   },
+   {
+    "repo": "fatwang2/search2ai",
+    "file": "src/chat/upstream.ts",
+    "fn": "upstreamPath",
+    "expr": "pathname",
+    "train": 14,
+    "heldRight": 107,
+    "heldWrong": 0,
+    "farRight": 6,
+    "farWrong": 0
+   },
+   {
+    "repo": "open-gsd/gsd-pi",
+    "file": "packages/pi-ai/scripts/lib/model-cost.ts",
+    "fn": "roundCost",
+    "expr": "value",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   },
+   {
+    "repo": "borgar/numfmt",
+    "file": "lib/clamp.ts",
+    "fn": "clamp",
+    "expr": "num",
+    "train": 3,
+    "heldRight": 5,
+    "heldWrong": 0,
+    "farRight": 4,
+    "farWrong": 0
+   }
+  ]
+ },
+ "before": {
+  "stats": {
+   "candidates": 2794,
+   "ok_right": 276,
+   "not_pure_int_or_runs": 1822,
+   "refuse_derive_budget": 40,
+   "constant_output": 282,
+   "refuse_derive_no_fit": 256,
+   "ok_wrong": 88,
+   "refuse_derive_examples": 25,
+   "refuse_derive_ambiguous": 5
+  }
+ }
+}
