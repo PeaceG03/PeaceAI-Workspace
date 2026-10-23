@@ -536,7 +536,7 @@ export const FORMS: readonly Form[] = [
       let why = mode === "missing_chars" ? "the string values show only lower-case letters (no empty value)" : mode === "missing_empty" ? "no example had an empty string value" : mode === "missing_digits" ? "the numbers were shown only with 3 digits" : mode === "lookalike" ? "string values containing the template's own literal texts" : "every character class, the empty string and 1- to 5-digit numbers shown";
       if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
       const sg = k === 3 ? ["", "a", "Z", "-", "a b", " a", "x:y", "a1", "Hello World", "\"q\""] : STRING_GRID;
-      const ng = [-1000, -12, -1, 0, 1, 5, 9, 10, 99, 100, 101, 1234, 1000000];
+      const ng = [-1000, -450, -12, -7, -1, 0, 1, 2, 5, 7, 9, 10, 42, 99, 100, 101, 999, 1000, 1234, 2026, 99999, 1000000]; // >= 20 (the task-shape test), 1-7 digits
       const g = kinds.map((t) => (t === "number" ? ng : sg) as DeriveValue[]);
       const grid = g.reduce<DeriveValue[][]>((acc, xs) => acc.flatMap((a) => xs.map((x) => [...a, x])), [[]]);
       return { params: kinds.map((t, i) => (t === "number" ? num(names[i]!) : str(names[i]!))), ret: "string", truth, truthText, inputs, why, grid };
