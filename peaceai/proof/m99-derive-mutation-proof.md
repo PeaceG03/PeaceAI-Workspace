@@ -66,4 +66,28 @@ Notes:
 - One earlier p - q far mutant (`false && A || B`) left the gate in place, so it could not fail; it is replaced by the three p - q rows above (both sides, and each side alone).
 - B2 MAX_KEPT_CELLS: first killed only by the guards file running out of heap. The bound is now a clamped input (`maxKeptCells`, never above MAX_KEPT_CELLS, via keptCellsLimit), so removing the check, the clamp, or the main search's use of it each fails an assertion. Not covered on its own: the rival search ignoring the caller's bound (it then runs under MAX_KEPT_CELLS itself, still bounded).
 - The `not-confined` path in gradeSelf (Node below the permission-model major) cannot be reached on Node 22, the only Node version CI and the box run. It is guarded by the version check alone.
-- The wiring in peaceai/bin/review-comment.ts (it sets deriveReviewNote on a candidate that has no note) is not tested by its own test. Its two halves are tested: deriveReviewNote (rebuilt note, the 24-row far-probe table, null for anything else) and review.ts rendering a multi-line note as written.
+- The wiring in peaceai/bin/review-comment.ts is now tested end to end (round 2, B3: section below).
+
+## Auditor #491 round 2, B3: the review hook, end to end (head 8004623, Node 22, m99-derive-review-hook.test.ts)
+
+The hook test runs peaceai/bin/review-comment.ts as a process on a candidates dir (a DERIVE candidate built from S1, plus
+a plain edit) and reads the comment it writes.
+
+| # | mutant | file | result | killed by |
+|---|---|---|---|---|
+| H1 | attach - tag check | `peaceai/lib/learned-derive.ts` | KILLED | review-comment.ts end to end: the DERIVE note (expression + far-probe table) lands on the DERIVE candidate, above its diff, and nowhere else; review-comment.ts fails closed: a DERIVE candidate with a placeholder note, or whose note cannot be rebuilt, stops the job (no comment written); attachDeriveNotes / assertDeriveNotesShown: each refusal on its own |
+| H2 | attach - existing (placeholder) note throws | `peaceai/lib/learned-derive.ts` | KILLED | review-comment.ts fails closed: a DERIVE candidate with a placeholder note, or whose note cannot be rebuilt, stops the job (no comment written); attachDeriveNotes / assertDeriveNotesShown: each refusal on its own |
+| H3 | attach - existing note overwritten silently | `peaceai/lib/learned-derive.ts` | KILLED | attachDeriveNotes / assertDeriveNotesShown: each refusal on its own |
+| H4 | attach - null rebuild throws | `peaceai/lib/learned-derive.ts` | KILLED | review-comment.ts fails closed: a DERIVE candidate with a placeholder note, or whose note cannot be rebuilt, stops the job (no comment written); attachDeriveNotes / assertDeriveNotesShown: each refusal on its own |
+| H5 | assert - body check | `peaceai/lib/learned-derive.ts` | KILLED | attachDeriveNotes / assertDeriveNotesShown: each refusal on its own |
+| H6 | assert - no-op | `peaceai/lib/learned-derive.ts` | KILLED | attachDeriveNotes / assertDeriveNotesShown: each refusal on its own |
+| H7 | review-comment attach call | `peaceai/bin/review-comment.ts` | KILLED | review-comment.ts end to end: the DERIVE note (expression + far-probe table) lands on the DERIVE candidate, above its diff, and nowhere else; review-comment.ts fails closed: a DERIVE candidate with a placeholder note, or whose note cannot be rebuilt, stops the job (no comment written) |
+| H8 | review.ts drops multi-line notes | `peaceai/lib/review.ts` | KILLED | review-comment.ts end to end: the DERIVE note (expression + far-probe table) lands on the DERIVE candidate, above its diff, and nowhere else |
+| H9 | review-comment assert call (alone) | `peaceai/bin/review-comment.ts` | SURVIVED | (none: see note) |
+| H10 | review-comment assert call + review.ts drop | `peaceai/bin/review-comment.ts + peaceai/lib/review.ts` | KILLED | review-comment.ts end to end: the DERIVE note (expression + far-probe table) lands on the DERIVE candidate, above its diff, and nowhere else |
+
+10 mutants, 9 killed, 1 survived.
+
+- H9 (the `assertDeriveNotesShown` call removed on its own) survives by design: it is a second layer behind review.ts
+  rendering the note. Nothing else on the path drops a note, so removing only the check changes no output. H10 drops
+  the note in review.ts too, and the end-to-end test catches it, so a lost note never lands silently.
