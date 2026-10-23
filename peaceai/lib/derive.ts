@@ -711,6 +711,8 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *  far     (1) every parameter compared with constants has an example at least DERIVE_FAR past its last constant
  *          and one at least DERIVE_FAR before its first (the regions past the outermost edges, true or false, are
  *          shown, not assumed); two compared parameters: examples with p - q >= DERIVE_FAR and <= -DERIVE_FAR;
+ *          a min / max cap at c: an example whose capped value is >= c + DERIVE_FAR and one <= c - DERIVE_FAR, for
+ *          each side some neighbour or far probe reaches;
  *  region  inside every region the program's constants cut a compared parameter into, no example-free stretch
  *          longer than half the region (finite) or DERIVE_FAR (open, up to the farthest example): regionProblem;
  *  span    every number parameter the result is computed from (not only compared) is shown over at least DERIVE_FAR
@@ -791,6 +793,29 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (!examples.some((e) => (e.args[i] as number) <= lo))
       return fail("far", `${names[i]}: \`${expr}\` has its first edge at ${lo + DERIVE_FAR}, but no example has ${names[i]} <= ${lo}; add one so the result before every edge is shown, not assumed`, i, [ptAt(i, lo)]);
   }
+  // far, caps (upstream scan, round 3: a cap with one witnessed side shown only up to 100 wide): a min / max cap is an
+  // edge on the value it caps, so that value is shown at least DERIVE_FAR past the cap on each side the program can
+  // reach at a neighbour or far probe (a floor below a lower cap, or a cap above, cannot hide past the examples).
+  const capProbes = [...probeSet(params, examples), ...farProbes(params, examples)];
+  let capFar: DeriveGateProblem | null = null;
+  walk(program, (n) => {
+    if (capFar || (n.op !== "min" && n.op !== "max")) return;
+    const inner = (a: readonly DeriveValue[]) => evalProgram(n.a, a);
+    const sub = compileProgram(n.a, names);
+    for (const [side, target] of [[1, n.c + DERIVE_FAR], [-1, n.c - DERIVE_FAR]] as const) {
+      const past = (a: readonly DeriveValue[]) => { const v = inner(a); return typeof v === "number" && (side > 0 ? v >= target : v <= target); };
+      if (examples.some((e) => past(e.args))) continue;
+      const reach = capProbes.filter(past).sort((x, y) => Math.abs((inner(x) as number) - target) - Math.abs((inner(y) as number) - target))[0];
+      if (!reach) continue;
+      capFar = fail("far", `\`${sub}\` is capped at ${n.c}, but no example has it ${side > 0 ? ">=" : "<="} ${target}; add one so the result ${side > 0 ? "past" : "before"} the cap is shown, not assumed`, undefined, [[...reach]]);
+      // The other answer there: the cap lifted past the examples (a program that keeps the cap up to the last
+      // example and then lets the value through fits every example as well).
+      const mine = evalProgram(program, reach), lifted = evalProgram(liftNode(program, n), reach);
+      if (typeof mine === "number" && typeof lifted === "number" && mine !== lifted) capFar.rivals = [{ at: [...reach], values: [mine, lifted] }];
+      return;
+    }
+  });
+  if (capFar) return capFar;
   for (const [i, j] of deltas.values()) {
     const d = (e: DeriveExample) => (e.args[i] as number) - (e.args[j] as number);
     if (!examples.some((e) => d(e) >= DERIVE_FAR) || !examples.some((e) => d(e) <= -DERIVE_FAR))
@@ -840,6 +865,14 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   if (reachFail) return reachFail;
   // rival (3)
   return rivalProblem(input, program, size, budget);
+}
+
+/** The program with one min / max node replaced by the value it caps (the cap lifted). */
+function liftNode(x: DeriveNode, cap: DeriveNode): DeriveNode {
+  if (x === cap) return (cap as { a: DeriveNode }).a;
+  const o: Record<string, unknown> = { ...x };
+  for (const k of ["a", "b", "c", "t", "e"]) { const v = o[k]; if (v && typeof v === "object") o[k] = liftNode(v as DeriveNode, cap); }
+  return o as DeriveNode;
 }
 
 /**

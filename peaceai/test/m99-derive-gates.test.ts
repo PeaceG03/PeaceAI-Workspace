@@ -4,7 +4,7 @@
 // removed (peaceai/proof/m99-derive-mutation-proof.md), plus the far-probe review note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
+import { arithmeticParams, DERIVE_FAR, DERIVE_MIN_REACH, deriveProgram, evalProgram, farProbes, gateProblem, regionProblem, rivalProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
 import { buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, deriveReviewNote, parseDeriveTask } from "../lib/learned-derive.ts";
 import { reviewBody } from "../lib/review.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
@@ -126,9 +126,9 @@ test(`gate branch / cap: each branch and each side of a cap is reached by at lea
   // min(100, x): one example past the cap is not enough.
   const x = [num("x")];
   const cap: DeriveNode = { op: "min", c: 100, a: P0 };
-  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [3, 3], [200, 100]], 2), "cap");
-  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [3, 3], [200, 100], [300, 100]], 2) === "cap", false);
-  assert.equal(gate(x, "number", cap, [[1, 1], [200, 100], [300, 100]], 2), "cap");
+  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [-5, -5], [200, 100]], 2), "cap");
+  assert.equal(gate(x, "number", cap, [[1, 1], [2, 2], [-5, -5], [200, 100], [300, 100]], 2) === "cap", false);
+  assert.equal(gate(x, "number", cap, [[-5, -5], [200, 100], [300, 100]], 2), "cap");
 });
 
 // Auditor #491 round 2 (wrong programs passed the witness gates): the hidden island `!(11 <= n && n <= 49)` was
@@ -268,3 +268,31 @@ test("reserved names: a parameter or function named eval, arguments or globalThi
   const ok = parseDeriveTask(DERIVE_TRIGGER, cleanIssueText({ title: "t", body: S1_BODY } as never));
   assert.ok("task" in ok);
 });
+
+// Upstream scan, round 3 (rcbyr/keen-slider sign: -1, 0, 2, 10, 99 gave `min(x, 1)`, wrong at every x < -1): a min /
+// max cap is an edge on the value it caps, so that value is shown DERIVE_FAR past the cap on each side a probe reaches.
+test("gate far, caps: the capped value is shown DERIVE_FAR past the cap on each side the program reaches", () => {
+  const x = [num("x")];
+  const cap: DeriveNode = { op: "min", c: 1, a: P0 };
+  const sign = [[-1, -1], [0, 0], [2, 1], [10, 1], [99, 1]] as const;
+  assert.equal(gate(x, "number", cap, sign, 2), "far"); // nothing at x >= 101
+  assert.equal(gate(x, "number", cap, [...sign, [990, 1]], 2), "far"); // nothing at x <= -99
+  assert.equal(gate(x, "number", cap, [...sign, [990, 1], [-100, -100]], 2) === "far", false);
+  const r = deriveProgram({ params: x, ret: "number", examples: sign.map(([a, o]) => ({ args: [a], out: o })) });
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.gate, "far");
+    assert.deepEqual(r.questions, [{ at: [990], answers: [1, 990] }]); // the cap lifted past the examples gives 990
+  }
+  // A floor the program cannot reach past is not asked for: max(0, x) capped at 1 (clamp to [0, 1]).
+  const clamp: DeriveNode = { op: "min", c: 1, a: { op: "max", c: 0, a: P0 } };
+  const rows = [[-500, 0], [-100, 0], [-3, 0], [0, 0], [1, 1], [2, 1], [150, 1], [900, 1]] as const;
+  assert.notEqual(gate(x, "number", clamp, rows, 2), "far");
+  // The upstream function, asked: 990 -> 1, -100 -> -1, -101 -> -1; then the floor is derived (right everywhere).
+  const up = (v: number) => Math.sign(v);
+  const ex = [...sign, [990, 1], [-100, -1], [-101, -1]].map(([a, o]) => ({ args: [a!], out: o! }));
+  const d = deriveProgram({ params: x, ret: "number", examples: ex });
+  assert.ok(d.ok);
+  if (d.ok) for (let v = -2000; v <= 2000; v++) assert.equal(evalProgram(d.fit.program, [v]), up(v) || 0, String(v));
+});
+
