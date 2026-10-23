@@ -3,7 +3,7 @@
 // until the examples rule out every look-alike order (DERIVE_ORDER_LOOKALIKES), asking about each one not ruled out.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compileProgram, DERIVE_FORM_BAR, DERIVE_MIN_REACH, DERIVE_ORDER_LOOKALIKES, deriveProgram, evalProgram, gateProblem, ORDER_FORM_EVIDENCE, orderProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
+import { compileProgram, DERIVE_FORM_BAR, DERIVE_MIN_REACH, DERIVE_ORDER_LOOKALIKES, deriveProgram, evalProgram, gateProblem, ORDER_FORM_EVIDENCE, orderProblem, orderShownProblem, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam } from "../lib/derive.ts";
 
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const P: DeriveParam[] = [{ name: "a", type: "string" }, { name: "b", type: "string" }];
@@ -84,4 +84,49 @@ test("order gate: a look-alike that cannot change the program on any input tried
   assert.ok(!p!.rivals!.some((r) => evalProgram(EQ, r.at, undefined, shorter.le) !== evalProgram(EQ, r.at)));
   // answered: case (a, A) and first character (ac, ab) -> accepted by the order gate
   assert.equal(orderProblem(inp([...pairs, ["a", "A"], ["ac", "ab"]]), EQ), null);
+});
+
+/** The ask loop: answer every question from the truth until the engine derives (or 8 rounds). */
+const askLoop = (params: DeriveParam[], ret: DeriveInput["ret"], examples: DeriveExample[], truth: (a: string[]) => string | number) => {
+  let inp: DeriveInput = { params, ret, examples };
+  let r = deriveProgram(inp);
+  const firsts: string[] = [];
+  for (let round = 0; round < 8 && !r.ok; round++) {
+    const f = r as { gate?: string; questions?: { at: unknown[] }[] };
+    firsts.push(f.gate ?? "");
+    const qs = f.questions ?? [];
+    assert.ok(qs.length, "a refusal with no question: " + JSON.stringify(r).slice(0, 300));
+    inp = { ...inp, examples: [...inp.examples, ...qs.map((q) => ({ args: q.at as string[], out: truth(q.at as string[]) }))] };
+    r = deriveProgram(inp);
+  }
+  return { r, gates: firsts };
+};
+
+test("order-shown gate (practice seed 100 #809): a bare string parameter from examples that always had x >= y is refused, asking at y before x; the ask loop derives max", () => {
+  const XY: DeriveParam[] = [{ name: "x", type: "string" }, { name: "y", type: "string" }];
+  const max = (a: string[]) => (a[0]! < a[1]! ? a[1]! : a[0]!);
+  const rows: [string, string][] = [["trail ", "Zz 9"], ["Zz 9", ""], ["x.y", "2026-10-23"], ["9", "10"], ["", ""], ["ab", "10"], ["b", "aa"], ["b", "Hello World"]];
+  const examples = rows.map((a) => ({ args: a, out: max(a) }));
+  const p = orderShownProblem({ params: XY, ret: "string", examples }, { op: "param", i: 0 });
+  if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) { assert.equal(p, null, "off with the order atom off"); return; }
+  assert.ok(p && p.gate === "order", JSON.stringify(p));
+  assert.ok(p.at?.some((a) => (a[0] as string) < (a[1] as string)), "asks at x before y");
+  const { r, gates } = askLoop(XY, "string", examples, max);
+  assert.ok(gates.includes("order"));
+  assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
+  for (const a of [["a", "b"], ["b", "a"], ["", "a"], ["a", "a"]]) assert.equal(evalProgram(r.fit.program, a), max(a));
+});
+
+test("order-shown + branch gate (practice seed 100 #1343, stuck with no question): a comparator from examples with no a < b asks there, then on the short branch; the ask loop derives it", () => {
+  const rev = (a: string[]) => byCodeUnit(a[1]!, a[0]!);
+  const rows: [string, string][] = [["Zz 9", ""], ["aa", "aa"], ["MiXeD", "2026-09-30"], ["9", "10"], ["ab", "10"]];
+  const examples = rows.map((a) => ({ args: a, out: rev(a) }));
+  const sub: DeriveNode = { op: "if", c: { op: "sle", i: 0, j: 1 }, t: K(0), e: K(-1) };
+  const p = orderShownProblem({ params: P, ret: "number", examples }, sub);
+  if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) { assert.equal(p, null); return; }
+  assert.ok(p?.at?.length === 1 && (p.at[0]![0] as string) < (p.at[0]![1] as string), JSON.stringify(p));
+  const { r, gates } = askLoop(P, "number", examples, rev);
+  assert.ok(gates.includes("order") && gates.includes("branch"), gates.join());
+  assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
+  for (const [a, b] of FULL) assert.equal(evalProgram(r.fit.program, [a, b]), rev([a, b]));
 });

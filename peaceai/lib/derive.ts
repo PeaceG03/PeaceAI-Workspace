@@ -897,6 +897,11 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   // order (M102): every string-order test `s <= t` is shown to be code-unit order, not a look-alike order
   const orderFail = orderProblem(input, program, expr);
   if (orderFail) return orderFail;
+  // order (M102, practice seed 100 if_chain/sparse): with the order atom buildable, both strict orders of a compared pair
+  // are shown (`a <= b ? 0 : -1` from examples that never had a < b); so are both orders of a passed-through string
+  // parameter and each other string parameter (`x` from examples that always had x >= y, the truth max(x, y))
+  const shownFail = orderShownProblem(input, program, expr);
+  if (shownFail) return shownFail;
   // edge (1)
   const byVal = (i: number, v: DeriveValue) => examples.filter((e) => e.args[i] === v);
   /** Two examples, same other arguments, argument i = x and = y, different results. */
@@ -1032,6 +1037,24 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   }
   // branch / cap (2)
   const hits = new Map<DeriveNode, [number, number]>();
+  /** M102 (practice seed 100 if_chain/sparse, stuck with no question): inputs that reach the short side of an if whose
+   * condition reads strings, from the first example with each pair of string parameters set from DERIVE_ORDER_POOL. */
+  const branchAsk = (n: DeriveNode, side: 0 | 1, need: number): DeriveValue[][] | undefined => {
+    const strs = params.map((p, i) => (p.type === "string" ? i : -1)).filter((i) => i >= 0);
+    if (!strs.length || !examples.length) return undefined;
+    const exKeys = new Set(examples.map((e) => keyOf(e.args))), at: DeriveValue[][] = [];
+    const pairs: [number, number][] = strs.length === 1 ? [[strs[0]!, strs[0]!]] : strs.flatMap((i) => strs.filter((j) => j > i).map((j) => [i, j] as [number, number]));
+    for (const [i, j] of pairs) for (const x of DERIVE_ORDER_POOL) for (const y of DERIVE_ORDER_POOL) {
+      if (at.length >= Math.min(need, DERIVE_MAX_QUESTIONS)) return at;
+      const pt = examples[0]!.args.map((v, m) => (m === i ? x : m === j ? y : v));
+      if (i === j && x !== y) continue;
+      if (exKeys.has(keyOf(pt)) || at.some((q) => keyOf(q) === keyOf(pt))) continue;
+      let hit = false;
+      if (evalProgram(program, pt, (m, sd) => { if (m === n && sd === side) hit = true; }) === undefined) continue;
+      if (hit) at.push(pt);
+    }
+    return at.length ? at : undefined;
+  };
   for (const e of examples) evalProgram(program, e.args, (n, side) => { const h = hits.get(n) ?? [0, 0]; h[side]++; hits.set(n, h); });
   let reachFail: DeriveGateProblem | null = null;
   walk(program, (n) => {
@@ -1044,7 +1067,7 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     if (s0 >= (point ? 1 : DERIVE_MIN_REACH) && s1 >= DERIVE_MIN_REACH) return;
     const sub = compileProgram(n, names);
     reachFail = n.op === "if"
-      ? fail("branch", `\`${sub}\`: its condition is true for ${s0} example(s) and false for ${s1}; each branch needs at least ${DERIVE_MIN_REACH} examples`)
+      ? fail("branch", `\`${sub}\`: its condition is true for ${s0} example(s) and false for ${s1}; each branch needs at least ${DERIVE_MIN_REACH} examples`, undefined, branchAsk(n, s0 < (point ? 1 : DERIVE_MIN_REACH) ? 0 : 1, (point ? 1 : DERIVE_MIN_REACH) - Math.min(s0, s1)))
       : fail("cap", `\`${sub}\`: ${s0} example(s) below the cap ${n.c} and ${s1} past it; each side needs at least ${DERIVE_MIN_REACH} examples`);
   });
   if (reachFail) return reachFail;
@@ -1116,6 +1139,41 @@ export function orderProblem(input: DeriveInput, program: DeriveNode, expr = com
     }
   }
   return first ? { ...first, ...(rivals.length ? { rivals, at: rivals.map((r) => r.at) } : {}) } : null;
+}
+
+/**
+ * The order-shown gate (M102): only with the order atom at the bar (ORDER_FORM_EVIDENCE). For each string pair an
+ * order test compares, and, when the program is a bare string parameter with a string result, for that parameter with
+ * each other string parameter: some example has the first before the second (code-unit order) and some the second
+ * before the first. Otherwise the examples cannot tell the program from an order test that branches on the unshown
+ * order. Asks at the first example with the pair set to ("a", "b") / ("b", "a").
+ */
+export function orderShownProblem(input: DeriveInput, program: DeriveNode, expr = compileProgram(program, input.params.map((p) => p.name))): DeriveGateProblem | null {
+  if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return null;
+  const { params, examples } = input;
+  if (!examples.length) return null;
+  const pairs: [number, number][] = [];
+  walk(program, (n) => { if (n.op === "sle") pairs.push([n.i, n.j]); });
+  if (program.op === "param" && params[program.i]!.type === "string" && input.ret === "string") params.forEach((p, j) => { if (j !== (program as { i: number }).i && p.type === "string") pairs.push([(program as { i: number }).i, j]); });
+  const exKeys = new Set(examples.map((e) => keyOf(e.args)));
+  const seen = new Set<string>();
+  for (const [i, j] of pairs) {
+    const k = i < j ? `${i},${j}` : `${j},${i}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const before = examples.some((e) => (e.args[i] as string) < (e.args[j] as string)), after = examples.some((e) => (e.args[j] as string) < (e.args[i] as string));
+    if (before && after) continue;
+    const at: DeriveValue[][] = [];
+    const tries: [string, string][][] = [before ? [] : [["a", "b"], ["a", "c"], ["A", "a"]], after ? [] : [["b", "a"], ["c", "a"], ["a", "A"]]];
+    for (const side of tries) {
+      const pt = side.map(([x, y]) => examples[0]!.args.map((v, m) => (m === i ? x : m === j ? y : v))).find((q) => !exKeys.has(keyOf(q)));
+      if (pt) at.push(pt);
+    }
+    const names = params.map((p) => p.name);
+    const miss = [before ? null : `${names[i]} before ${names[j]}`, after ? null : `${names[j]} before ${names[i]}`].filter(Boolean).join(" or ");
+    return { gate: "order", param: names[i]!, searched: 0, detail: `\`${expr}\` could branch on the order of ${names[i]} and ${names[j]}, but no example has ${miss} (code-unit order); add such examples`, ...(at.length ? { at } : {}) };
+  }
+  return null;
 }
 
 /** The program with one min / max node replaced by the value it caps (the cap lifted). */
