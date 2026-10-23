@@ -15,7 +15,7 @@ T = [
   "Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.\n\n"
   "Examples:\n"
   "- 429 gives true\n- 500 gives true\n- 502 gives true\n- 503 gives true\n- 504 gives true\n- 550 gives true\n- 599 gives true\n"
-  "- 428 gives false\n- 430 gives false\n- 499 gives false\n- 600 gives false\n- 700 gives false\n- 200 gives false\n- 204 gives false\n"
+  "- 428 gives false\n- 430 gives false\n- 499 gives false\n- 465 gives false\n- 600 gives false\n- 700 gives false\n- 200 gives false\n- 204 gives false\n- 100 gives false\n"
   "- 301 gives false\n- 400 gives false\n- 403 gives false\n- 404 gives false\n- 0 gives false",
   "The ten-minute chain stopped on R2_PUT_500 (run 39451888891) and R2_GET_500 (run 39467160610) because R2ObjectClient.request never retries; this is the status check the future retry will use."),
  ("S2", 487, "src/r2-retry-delay.ts", "r2RetryDelayMs",
@@ -26,7 +26,7 @@ T = [
   "The wait is never more than 30000 ms, whatever the attempt or base. A base of 0 always gives 0.\n\n"
   "Examples (attempt, baseMs gives wait):\n"
   "- 0, 1000 gives 1000\n- 1, 1000 gives 4000\n- 2, 1000 gives 9000\n- 3, 1000 gives 16000\n- 4, 1000 gives 25000\n"
-  "- 5, 1000 gives 30000\n- 10, 1000 gives 30000\n- 0, 500 gives 500\n- 1, 500 gives 2000\n- 2, 250 gives 2250\n"
+  "- 5, 1000 gives 30000\n- 10, 1000 gives 30000\n- 100, 1000 gives 30000\n- 0, 500 gives 500\n- 1, 500 gives 2000\n- 2, 250 gives 2250\n"
   "- 0, 0 gives 0\n- 7, 0 gives 0\n- 0, 40000 gives 30000",
   "The future R2 retry needs a wait that grows per attempt and never exceeds 30 seconds, so one retry cannot stall a scan."),
  ("S3", 488, "src/host-failure-line.ts", "hostFailureLine",
