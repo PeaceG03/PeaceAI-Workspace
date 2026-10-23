@@ -81,7 +81,9 @@ A program whose value is the same at every point (`p && !p`, `x - x`) does not c
 A unique smallest fit is still refused, `derive_under_specified` with the gate and parameter (through the rule:
 `derive_under_specified_<gate>: <param>`; the detail names the example to add), unless every gate passes, in order:
 
-- unread: a parameter the program ignores has two examples differing only in it with the same result;
+- unread: a parameter the program ignores has two examples differing only in it with the same result, and (m103,
+  Auditor #494: backoff/sparse) every number parameter the program reads is non-zero in that pair (0 annihilates a
+  product, so a pair at 0 shows nothing; refused otherwise, asking at a non-zero example with the parameter changed);
 - chars: a string parameter the program reads has example values with upper case, lower case, a digit, an inner
   space, a leading or trailing space, punctuation, and (round 3, the practice generator's conditional suffix) the empty
   string itself, asked for when no example has it;
