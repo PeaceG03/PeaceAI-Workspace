@@ -1,4 +1,4 @@
-// M99 (#491 round 3, Peace): the derive engine's mistakes ledger, peaceai/test/fixtures/derive-mistakes.json. Every
+// M99 (#491 round 3, Peace): the derive engine's mistakes ledger, peaceai/test/m99-derive-mistakes.json. Every
 // wrong program a NOT PASS found (and the scan's), with the examples it was accepted from, an input where it is wrong
 // and the right output there, is replayed here on every change: the engine must never accept a wrong program from
 // those examples again. Each entry also pins what happens now (refuse and ask at the recorded inputs; then, with the
@@ -21,7 +21,7 @@ type Entry = {
     | { outcome: "derive"; program: string; rightOnGrid: boolean }
     | { outcome: "known-limit"; program: string; note: string };
 };
-const LEDGER = JSON.parse(readFileSync(join(repo, "peaceai/test/fixtures/derive-mistakes.json"), "utf8")) as { schema: string; entries: Entry[] };
+const LEDGER = JSON.parse(readFileSync(join(repo, "peaceai/test/m99-derive-mistakes.json"), "utf8")) as { schema: string; entries: Entry[] };
 const input = (e: Entry, rows: readonly DeriveValue[][]): DeriveInput => ({ params: e.params.map((name) => ({ name, type: "number" as const })), ret: e.ret, examples: rows.map((r) => ({ args: r.slice(0, -1), out: r[r.length - 1]! })) });
 
 test("mistakes ledger: shape, and every Auditor counterexample so far is in it", () => {

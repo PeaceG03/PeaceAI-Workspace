@@ -126,14 +126,14 @@ programs that fit every example disagree, with each one's output there: for a ri
 programs' outputs (inside the examples for a near rival, past them for a far one, largest difference first); for a
 gate the input it names, with the derived program's output and that of a program built to fit every example but
 differ there (the other boolean; a cap / floor at the largest / smallest shown result; for a cap's far side, the cap
-lifted). Deterministic, inside the existing budgets, never at an example input, and never answered from the derived
+lifted, or every cap lifted when an outer cap hides that one there, as in clamp01's floor past its ceiling). Deterministic, inside the existing budgets, never at an example input, and never answered from the derived
 program: the issue author answers. The refusal record carries them (`fn(args)=a|b; ...`, safe integers and booleans
 only), and the no-candidate comment asks them in plain words ("What should f(27) give? One program that fits every
 example gives false, another gives true."), leak-scanned like the rest of the comment.
 
 ## Mistakes ledger (round 3, Peace)
 
-peaceai/test/fixtures/derive-mistakes.json lists every wrong program a review found (and the upstream scan's): the
+peaceai/test/m99-derive-mistakes.json lists every wrong program a review found (and the upstream scan's): the
 examples, the wrong program, an input where it is wrong and the right output there, why in one plain line, and what
 happens now (refuse and ask at the recorded inputs, then the program derived once the answers are added; or a known
 limit the review note shows). peaceai/test/m99-derive-mistakes.test.ts replays the whole ledger on every change and

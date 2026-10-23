@@ -1,7 +1,7 @@
 // M99 (#491 round 3, Peace: every wrong pick Auditor finds becomes something PeaceAI permanently avoids).
 // Usage: tsx peaceai/proof/m99-derive-mistakes-gen.ts (rewrites the ledger; the amb3 rows are the wrong picks Auditor's
 // narrow generator found at d5ac588, re-found with peaceai/proof/m99-derive-ambiguity.ts narrow on that head).
-// Builds peaceai/test/fixtures/derive-mistakes.json: each Auditor counterexample, replayed on the current engine,
+// Builds peaceai/test/m99-derive-mistakes.json: each Auditor counterexample, replayed on the current engine,
 // with the ask loop answered from the hidden truth (here only, never stored as code in the ledger).
 import { writeFileSync } from "node:fs";
 const W = process.env.W ?? new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
@@ -62,4 +62,4 @@ for (const c of cases) {
   e.expected = { outcome: "refuse-and-ask", ...first, answers, rounds, after };
   out.push(e); console.log(c.id, JSON.stringify(first), rounds, JSON.stringify(after), Date.now() - t0, "ms");
 }
-writeFileSync(process.env.OUT ?? `${W}/peaceai/test/fixtures/derive-mistakes.json`, JSON.stringify({ schema: "peaceai-derive-mistakes:v1", entries: out }, null, 1) + "\n");
+writeFileSync(process.env.OUT ?? `${W}/peaceai/test/m99-derive-mistakes.json`, JSON.stringify({ schema: "peaceai-derive-mistakes:v1", entries: out }, null, 1) + "\n");
