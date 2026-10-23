@@ -67,8 +67,18 @@ and the test it emits checks them. Before G1-T could be approved, Auditor would 
 upstream single-statement fixes per template replaying exactly; the uniqueness refusal; the selection step's
 confinement; and a census of how many PeaceSTOCKS targets each template reaches.
 
-**Status on this branch.** None of G1-T is built. The splice (`replace statement OLD with NEW`) stays unapproved,
-with no proposal.
+**Status on this branch.** None of G1-T is built. **The splice trigger is disabled in code**, not only unapproved:
+the production entry `existingEditDetail` (reached from `applyRule` and `applyExistingEditRule`) refuses every task
+with `edit_splice_disabled` (`EXISTING_EDIT_SPLICE_DISABLED`), whatever the edit, so even an approval entry for this
+spec hash could not land a splice. The gates stay reachable only through `analyzeSuppliedEdit` (negative proofs and
+census site eligibility, never an entry point).
+
+**Hook: pending DERIVE_FROM_BEHAVIOR v1.** The reusable derive-from-examples engine is being built separately
+(M99, branch `m99/derive-from-behavior`); this branch does not build a second one. `EXISTING_EDIT_DERIVER` is `null`
+and `deriveExistingEditDetail` refuses with `edit_derive_pending`. When DERIVE_FROM_BEHAVIOR v1 is merged and reviewed:
+set the deriver to an adapter around it, give `EXISTING_EDIT` a behavior-only trigger (target + behavior + G2 bullets,
+code in the behavior text refused), and run the ONE derived (OLD, NEW) through `gateSuppliedEdit` unchanged (capability
+delta, hermetic walk, `edit_unawaited`, Job B); zero or several fits refuse. That is a new spec hash and a new review.
 
 ## Task phrasing
 

@@ -1194,8 +1194,61 @@ export function applyExistingEditRule(trigger: string, params: Record<string, st
   return existingEditDetail(trigger, params, objective, files, isTest).edit;
 }
 
-/** The same as applyExistingEditRule, with the refusal code (census, negative proofs). */
+// ---------------------------------------------------------------------------------------------------------------
+// Auditor #489 hole 4 (credit): the `replace statement OLD with NEW` SPLICE trigger is DISABLED.
+//
+// In that phrasing the issue supplies NEW, the full new code, and the engine only splices it in, so PeaceAI writes
+// none of the code it would be credited with. The production entry (existingEditDetail, used by learned.ts applyRule
+// and applyExistingEditRule) therefore refuses EVERY task with `edit_splice_disabled`, whatever the edit is: no
+// splice can land as a PeaceAI skill. The gates below stay, because a DERIVED edit must pass exactly the same ones.
+//
+// TODO(DERIVE_FROM_BEHAVIOR v1): when the reusable derive-from-examples engine (branch m99/derive-from-behavior,
+// peaceai/lib/derive.ts) lands, set EXISTING_EDIT_DERIVER to an adapter around it and give EXISTING_EDIT a
+// behavior-only trigger (target + behavior + G2 fake/expect bullets, NO code; refuse code in the behavior text like
+// learned-derive.ts behaviorCodeProblem). deriveExistingEditDetail then runs the derived (OLD, NEW) through
+// gateSuppliedEdit unchanged: capability delta, hermetic walk, edit_unawaited, Job B. Zero or several derived
+// candidates must refuse (fail closed). Until then deriveExistingEditDetail refuses with `edit_derive_pending`.
+// ---------------------------------------------------------------------------------------------------------------
+export const EXISTING_EDIT_SPLICE_DISABLED = true as const;
+
+/** What a deriver gets: the target, its file, and the behavior-only test bullets (never NEW code). */
+export interface ExistingEditBehaviorTask { file: string; target: string; source: string; behavior: string; test: FakeTest }
+/** A deriver returns ONE derived statement edit, or a refusal (none or several candidates fit => refuse). */
+export type ExistingEditDeriver = (task: ExistingEditBehaviorTask) => { oldText: string; newText: string } | { reason: string };
+/** The DERIVE_FROM_BEHAVIOR hook. null until DERIVE_FROM_BEHAVIOR v1 is merged and reviewed (see TODO above). */
+export const EXISTING_EDIT_DERIVER: ExistingEditDeriver | null = null;
+
+/** Production entry: the splice trigger is disabled (Auditor #489 hole 4), so every task is refused. */
 export function existingEditDetail(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): { edit: ExistingEdit | null; reason: string | null } {
+  void files; void isTest;
+  const no = (reason: string) => ({ edit: null, reason });
+  if (!okParams(params)) return no("edit_params");
+  const re = new RegExp(trigger);
+  if (objective.split("\n").map((l) => l.trim()).filter((l) => re.test(l)).length !== 1) return no("edit_trigger");
+  return no("edit_splice_disabled");
+}
+
+/**
+ * The DERIVE_FROM_BEHAVIOR entry (hook). Refuses with `edit_derive_pending` while EXISTING_EDIT_DERIVER is null.
+ * When wired, the derived edit goes through gateSuppliedEdit, the same gates a supplied edit had to pass.
+ */
+export function deriveExistingEditDetail(task: Omit<ExistingEditBehaviorTask, "source" | "test"> & { bullets: readonly string[] }, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): { edit: ExistingEdit | null; reason: string | null } {
+  const deriver: ExistingEditDeriver | null = EXISTING_EDIT_DERIVER;
+  if (!deriver) return { edit: null, reason: "edit_derive_pending" };
+  const file = files.find((f) => f.path === task.file);
+  const test = parseFakeTest(task.bullets.map((l) => l.trim()));
+  if (!file || !test) return { edit: null, reason: !file ? "edit_path" : "edit_test_grammar" };
+  const d = deriver({ file: task.file, target: task.target, source: file.content, behavior: task.behavior, test });
+  if ("reason" in d) return { edit: null, reason: d.reason };
+  return gateSuppliedEdit(task.target, task.file, d, [`in ${task.target} in ${task.file}: derived from behavior`, ...task.bullets.map((l) => l.trim())], files, isTest);
+}
+
+/**
+ * GATES ONLY, never an entry point: analyses a SUPPLIED statement edit in the (disabled) splice phrasing against every
+ * gate (path, grammar, site, capability delta, hermetic walk, unawaited, test grammar). Used by the negative proofs,
+ * the census (site eligibility) and, through gateSuppliedEdit, by a future derived edit.
+ */
+export function analyzeSuppliedEdit(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): { edit: ExistingEdit | null; reason: string | null } {
   const no = (reason: string) => ({ edit: null, reason });
   if (!okParams(params)) return no("edit_params");
   const lines = objective.split("\n").map((l) => l.trim());
@@ -1203,10 +1256,25 @@ export function existingEditDetail(trigger: string, params: Record<string, strin
   const heads = lines.filter((l) => re.test(l));
   if (heads.length !== 1) return no("edit_trigger");
   const g = re.exec(heads[0]!)!.groups ?? {};
-  const file = files.find((f) => f.path === g.file);
-  if (!file || isTest(file.path) || isExcludedSource(file.path) || !/^src\/[\w./-]+\.ts$/.test(file.path) || file.path.endsWith(".d.ts") || PROTECTED_SELF.some((p) => p.pattern.test(file.path))) return no("edit_path");
   const split = splitBody(g.body ?? "");
-  if (!split) return no("edit_split");
+  if (!split) {
+    const file = files.find((f) => f.path === g.file);
+    if (!file || !editablePath(file.path, isTest)) return no("edit_path");
+    return no("edit_split");
+  }
+  return gateSuppliedEdit(g.target!, g.file!, split, [heads[0]!, ...lines.filter((l) => l !== heads[0])], files, isTest);
+}
+
+const editablePath = (path: string, isTest: (p: string) => boolean): boolean =>
+  !isTest(path) && !isExcludedSource(path) && /^src\/[\w./-]+\.ts$/.test(path) && !path.endsWith(".d.ts") && !PROTECTED_SELF.some((p) => p.pattern.test(path));
+
+/** Every gate for ONE statement edit (oldText -> newText) of `target` in `filePath`; lines[0] is the header line. */
+function gateSuppliedEdit(target: string, filePath: string, split: { oldText: string; newText: string }, lines: readonly string[], files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): { edit: ExistingEdit | null; reason: string | null } {
+  const no = (reason: string) => ({ edit: null, reason });
+  const g = { target };
+  const heads = [lines[0]!];
+  const file = files.find((f) => f.path === filePath);
+  if (!file || !editablePath(file.path, isTest)) return no("edit_path");
   if (newGrammarProblem(parseStatements(split.newText) ?? [], true)) return no("edit_new_grammar");
   // every bullet must be a fake or an expect bullet: a stray check is refused, never silently dropped
   if (lines.some((l) => /^[-*+•] /.test(l) && !/^- (?:fake|expect) /.test(l))) return no("edit_test_grammar");

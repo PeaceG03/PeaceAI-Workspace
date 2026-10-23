@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyRule, RULE_KINDS, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { codeTokens, editConfinedTarget, editStatement, existingEditDetail, isExcludedSource, EXISTING_EDIT_ENV_RUNS, EXISTING_EDIT_TRIGGER, EXISTING_EDIT_VOCAB, existingEditReads, gradedTestCalls, gradeExistingEditProblem, hasComment, hermeticProblem, newGrammarProblem, parseStatements, splitBody, type CallShape } from "../lib/learned-edit-existing.ts";
+import { analyzeSuppliedEdit, codeTokens, deriveExistingEditDetail, editConfinedTarget, editStatement, existingEditDetail, EXISTING_EDIT_DERIVER, EXISTING_EDIT_SPLICE_DISABLED, isExcludedSource, EXISTING_EDIT_ENV_RUNS, EXISTING_EDIT_TRIGGER, EXISTING_EDIT_VOCAB, existingEditReads, gradedTestCalls, gradeExistingEditProblem, hasComment, hermeticProblem, newGrammarProblem, parseStatements, splitBody, type CallShape } from "../lib/learned-edit-existing.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
 import { phrasingFor } from "../lib/propose.ts";
@@ -103,9 +103,19 @@ const MISC = [
 ].join("\n");
 const FILES = [{ path: "src/storage.ts", content: STORAGE }, { path: "src/api.ts", content: API }, { path: "src/misc.ts", content: MISC }];
 const isTest = (p: string) => /\.test\.ts$/.test(p);
+// Auditor #489 hole 4: the production entry (applyRule -> existingEditDetail) refuses every splice with
+// edit_splice_disabled. The gate proofs below therefore run the SUPPLIED edit through analyzeSuppliedEdit (gates only,
+// never an entry point; a future DERIVE_FROM_BEHAVIOR edit must pass the same gates), with applyRule's public reason form.
+const whyForm = (code: string): string => { const i = code.indexOf(":"); if (i < 0) return code; const n = code.slice(i + 1); return /^[A-Za-z_$][\w$]{0,63}$/.test(n) ? `${code.slice(0, i)}: ${n}` : code.slice(0, i); };
 const run = (objective: string, files = FILES, exists: (p: string) => boolean = () => false) => {
+  const d = analyzeSuppliedEdit(SPEC.trigger, SPEC.params as Record<string, string>, objective, files, isTest);
+  if (!d.edit) return { e: null, r: whyForm(d.reason ?? "edit_refused") };
+  if (d.edit.extra.some((x) => exists(x.path))) return { e: null, r: "new_test_path_exists" };
+  return { e: d.edit as { path: string; content: string; extra: { path: string; content: string }[]; selfGrade?: boolean }, r: undefined };
+};
+const prod = (objective: string, files = FILES) => {
   const w: { reason?: string } = {};
-  const e = applyRule(SPEC, objective, files, isTest, undefined, w, exists) as { path: string; content: string; extra: { path: string; content: string }[]; selfGrade?: boolean } | null;
+  const e = applyRule(SPEC, objective, files, isTest, undefined, w, () => false);
   return { e, r: w.reason };
 };
 const B = [
@@ -146,9 +156,26 @@ test("spec: valid, hash-pinned, one value per param, kind and trigger wired; pro
   const list = (sha: string) => ({ ok: true as const, list: { schema: "peaceai-approved-rules:v1", rules: [{ id: SPEC.id, sha256: sha, source: "workspace" }] } as never });
   assert.equal(admitRules([SPEC], list(SHA))[0]!.decision, "APPROVED");
   assert.equal(admitRules([SPEC], list("0".repeat(64)))[0]!.decision, "HASH_CHANGED");
-  assert.match(phrasingFor(SPEC), /replace statement OLD with NEW/);
+  assert.match(phrasingFor(SPEC), /^DISABLED \(Auditor #489 hole 4.*DERIVE_FROM_BEHAVIOR/);
   for (const p of ["peaceai/lib/learned-edit-existing.ts", "peaceai/spec/existing-function-edit-v1.md", "peaceai/test/m98-existing-function-edit.test.ts", "peaceai/rules/proposals/m98-existing-function-edit-evidence.json", "peaceai/test/fixtures/m98-ee/x.txt", "peaceai/rules/learned/public-existing-function-edit-v1.json", "peaceai/rules/proposals/public-existing-function-edit-v1.json"])
     assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
+});
+
+test("Auditor #489 hole 4: the splice trigger is disabled — no task (fix B/C shapes, R1-R3b, plain edits) is accepted; the derive hook is pending", () => {
+  assert.equal(EXISTING_EDIT_SPLICE_DISABLED, true);
+  assert.equal(EXISTING_EDIT_DERIVER, null);
+  const R1 = "in f in src/m1.ts: replace statement return n + 1; with const k = [\"constr\", \"uctor\"].join(\"\"); const F = ((() => 0) as any)[k]; F(\"globalThis.__m98_pwned = typeof process\")(); return n + 2;\n- expect f(1) returns 3";
+  const plain = M("in total in src/misc.ts: replace statement return sum + twice.length; with return sum + twice.length + 1;");
+  for (const obj of [B, C(), R1, plain]) {
+    const p = prod(obj, [...FILES, { path: "src/m1.ts", content: "export function f(n: number): number {\n  return n + 1;\n}\n" }]);
+    assert.equal(p.e, null);
+    assert.equal(p.r, "edit_splice_disabled");
+    assert.equal(existingEditDetail(SPEC.trigger, SPEC.params as Record<string, string>, obj, FILES, isTest).reason, "edit_splice_disabled");
+  }
+  // the same B task IS a well-formed edit for the gates: the refusal is the credit rule, not an accident of parsing
+  assert.ok(run(B).e);
+  assert.equal(prod(B + "\n" + B.split("\n")[0]).r, "edit_trigger");
+  assert.equal(deriveExistingEditDetail({ file: "src/storage.ts", target: "Storage.measure", behavior: "count bytes with head()", bullets: B.split("\n").slice(1) }, FILES, isTest).reason, "edit_derive_pending");
 });
 
 test("approved rules unchanged: every approved.json entry still hash-matches a valid spec file", () => {
@@ -275,7 +302,7 @@ test("negatives: site, split, entry, reach, hidden state, test grammar, reflecti
 
 test("Auditor #489: no splice may add a capability the base lacked — Function ctor, prototype pollution, hidden I/O defaults (Job A + Job B)", () => {
   // Job A: every Auditor repro is refused at the task-text gate; the control (direct global I/O) stays refused.
-  const detail = (file: string, obj: string) => existingEditDetail(SPEC.trigger, SPEC.params, obj, [{ path: file, content: REPRO[file]! }], isTest).reason;
+  const detail = (file: string, obj: string) => analyzeSuppliedEdit(SPEC.trigger, SPEC.params, obj, [{ path: file, content: REPRO[file]! }], isTest).reason;
   const REPRO: Record<string, string> = {
     "src/m1.ts": "export function f(n: number): number {\n  return n + 1;\n}\n",
     "src/m2.ts": "export interface Deps { load: (k: string) => Promise<string>; fetchImpl?: typeof fetch }\nexport async function g(deps: Deps): Promise<string> {\n  return await deps.load(\"a\");\n}\n",
@@ -303,12 +330,12 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
 
   // Counted, not just present: a base that already has one `?? fetch` default can't gain a second (hidden exfil).
   const HAS = "export interface D { load: (k: string) => Promise<string>; f?: typeof fetch }\nexport async function g(d: D): Promise<string> {\n  const s = d.f ?? fetch;\n  return await d.load(\"a\");\n}\n";
-  assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in g in src/h.ts: replace statement return await d.load(\"a\"); with const t = d.f ?? fetch; await t(\"https://example.invalid/x\"); return await d.load(\"b\");\n- fake d = { load: resolves(\"v\"), f: resolves(1) }\n- expect g(d) resolves to \"v\"", [{ path: "src/h.ts", content: HAS }], isTest).reason, "edit_new_capability:id:fetch");
+  assert.equal(analyzeSuppliedEdit(SPEC.trigger, SPEC.params, "in g in src/h.ts: replace statement return await d.load(\"a\"); with const t = d.f ?? fetch; await t(\"https://example.invalid/x\"); return await d.load(\"b\");\n- fake d = { load: resolves(\"v\"), f: resolves(1) }\n- expect g(d) resolves to \"v\"", [{ path: "src/h.ts", content: HAS }], isTest).reason, "edit_new_capability:id:fetch");
 
   // Cast-free prototype paths: a dynamic computed key is only allowed as param[param]; string-built keys on a local or a
   // parameter receiver are refused, literal non-reflection keys and plain edits still pass.
   const F1 = [{ path: "src/m.ts", content: "export function f(n: number, o: { a: number }): number {\n  return n + 1;\n}\n" }];
-  const ed = (nw: string) => existingEditDetail(SPEC.trigger, SPEC.params, `in f in src/m.ts: replace statement return n + 1; with ${nw}\n- expect f(1, { a: 1 }) returns 3`, F1, isTest).reason;
+  const ed = (nw: string) => analyzeSuppliedEdit(SPEC.trigger, SPEC.params, `in f in src/m.ts: replace statement return n + 1; with ${nw}\n- expect f(1, { a: 1 }) returns 3`, F1, isTest).reason;
   assert.equal(ed(`const q = {}; const k = ["__pro", "to__"].join(""); q[k].polluted = 1; return n + 2;`), "edit_new_capability:computed");
   assert.equal(ed(`const k = ["__pro", "to__"].join(""); const p = o[k]; p.z = 1; return n + 2;`), "edit_new_capability:computed");
   assert.equal(ed(`const H = f["constr" + "uctor"]; return n + 2;`), "edit_new_capability:computed");
@@ -321,13 +348,13 @@ test("Auditor #489: no splice may add a capability the base lacked — Function 
   assert.equal(ed(`const { a } = o; return n + a + 1;`), null);
 
   // Engine excludes test helpers and fixtures as edit targets, no matter what targets.json denyPatterns say.
-  assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/x.test-helper.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/x.test-helper.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
-  assert.equal(existingEditDetail(SPEC.trigger, SPEC.params, "in f in src/fixtures/x.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/fixtures/x.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
+  assert.equal(analyzeSuppliedEdit(SPEC.trigger, SPEC.params, "in f in src/x.test-helper.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/x.test-helper.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
+  assert.equal(analyzeSuppliedEdit(SPEC.trigger, SPEC.params, "in f in src/fixtures/x.ts: replace statement return 1; with return 2;\n- expect f() returns 2", [{ path: "src/fixtures/x.ts", content: "export function f(): number {\n  return 1;\n}\n" }], isTest).reason, "edit_path");
   assert.ok(isExcludedSource("src/a.test-helper.ts") && isExcludedSource("src/__mocks__/a.ts") && isExcludedSource("src/fixtures/a.ts") && !isExcludedSource("src/a.ts"));
 });
 
 test("Auditor #489 (G2): mutable static/module state and timers in reached code stay refused; the emitted test awaits every call", () => {
-  const d = (file: string, content: string, obj: string) => existingEditDetail(SPEC.trigger, SPEC.params, obj, [{ path: file, content }], isTest).reason;
+  const d = (file: string, content: string, obj: string) => analyzeSuppliedEdit(SPEC.trigger, SPEC.params, obj, [{ path: file, content }], isTest).reason;
   // static mutable class state read + written by the tested method (shared across calls) is hidden state
   const STAT = "export class Counter {\n  static n = 0;\n  bump(): number {\n    return 1;\n  }\n}\n";
   assert.equal(d("src/s.ts", STAT, "in Counter.bump in src/s.ts: replace statement return 1; with Counter.n += 1; return Counter.n;\n- expect new Counter().bump() returns 1"), "edit_global_write");
