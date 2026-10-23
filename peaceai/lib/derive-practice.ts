@@ -10,6 +10,7 @@
 // loop is run, every question answered from the truth, to see where it ends. Every wrong accepted program is
 // returned in the derive mistakes ledger's shape (peaceai-derive-mistakes:v1), so it can be added there.
 // No model and no training: labels are exact, computed on the CPU. The engine's own budgets bound every search.
+import { readFileSync } from "node:fs";
 import { deriveProgram, derivedExprProblem, DERIVE_MAX_EXAMPLES, DERIVE_MAX_STRING, type DeriveExample, type DeriveInput, type DeriveNode, type DeriveParam, type DeriveType, type DeriveValue } from "./derive.ts";
 
 export const PRACTICE_SCHEMA = "peaceai-derive-practice:v1";
@@ -377,10 +378,143 @@ export const FORMS: readonly Form[] = [
       return { params: [str("message"), str("causeCode")], ret: "string", truth, truthText: `causeCode === "" ? ${JSON.stringify(P)} + message : ${JSON.stringify(P)} + message + ${JSON.stringify(mid)} + causeCode`, inputs, why, grid: cross(STRING_GRID, STRING_GRID) };
     },
   },
+  // ---- M100 scale-up shapes (every one inside the derive DSL; modulo and startsWith are not: see SKIPPED_SHAPES)
+  {
+    name: "thresh2", modes: ["full", "missing_far_side", "sparse", "amb3"],
+    build: (r, mode) => {
+      // multi-parameter thresholds: a <= b (parameter against parameter) or a >= k1 && b <= k2
+      const pp = r.f() < 0.35;
+      if (pp) {
+        let inputs: DeriveValue[][] = [];
+        for (const x of uniqInts([-150, -40, -1, 0, 1, 7, 55, 160, r.int(-300, 300)])) inputs.push([x, x], [x, x - 1], [x - 1, x]);
+        inputs.push([-200, 200], [200, -200], [0, 150], [150, 0]);
+        let why = "a and b shown equal, one apart both ways, and far apart both ways";
+        if (mode === "missing_far_side") { inputs = inputs.filter((x) => Math.abs(N(x) - N(x, 1)) <= 1); why = "a and b were only ever shown at most 1 apart"; }
+        else if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+        else if (mode === "amb3") { inputs = amb3(r, 2, 10); why = "Auditor's amb3 set: a few values in -5..24"; }
+        const ax = axis(inputs.map((x) => N(x)), [0]), bx = axis(inputs.map((x) => N(x, 1)), [0]);
+        return { params: [num("a"), num("b")], ret: "boolean", truth: (x) => N(x) <= N(x, 1), truthText: "a <= b", inputs, why, grid: cross(ax, bx) };
+      }
+      const k1 = mode === "amb3" ? r.int(2, 16) : r.int(-50, 400), k2 = mode === "amb3" ? r.int(2, 16) : r.int(-50, 400);
+      const truth: Truth = (x) => N(x) >= k1 && N(x, 1) <= k2;
+      const ca = coverLine([k1 - 1]), cb = coverLine([k2]);
+      let inputs: DeriveValue[][] = [...ca.map((a) => [a, k2 - 10]), ...cb.map((b) => [k1 + 10, b]), [k1 - 50, k2 + 50], [k1 + 50, k2 + 50], [k1 - 50, k2 - 50]];
+      let why = "each threshold shown on both sides and far past it, with the other one met";
+      if (mode === "missing_far_side") { const up = r.f() < 0.5; inputs = up ? inputs.filter((x) => N(x) <= k1 + 10) : inputs.filter((x) => N(x, 1) >= k2 - 10); why = up ? `a was never shown more than 10 past ${k1}` : `b was never shown more than 10 below ${k2}`; }
+      else if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+      else if (mode === "amb3") { inputs = amb3(r, 2, k1); why = "Auditor's amb3 set: a few values in -5..24"; }
+      const ax = axis(inputs.map((x) => N(x)), [k1]), bx = axis(inputs.map((x) => N(x, 1)), [k2]);
+      return { params: [num("a"), num("b")], ret: "boolean", truth, truthText: `a >= ${k1} && b <= ${k2}`, inputs, why, grid: cross(ax, bx) };
+    },
+  },
+  {
+    name: "outside_range", modes: ["full", "missing_far_side", "hidden_island", "sparse", "amb3"],
+    build: (r, mode) => {
+      // two-sided range with open ends: true below lo and above hi
+      const lo = mode === "amb3" ? r.int(2, 16) : r.int(-50, 500), hi = lo + (mode === "amb3" ? 5 : r.int(2, 120));
+      return oneParamBool("n", (a) => N(a) < lo || N(a) > hi, `n < ${lo} || n > ${hi}`, [lo - 1, hi], r, mode, { island: [lo, hi] });
+    },
+  },
+  {
+    name: "nested_cap", modes: ["full", "unwitnessed_cap", "sparse", "amb3"],
+    build: (r, mode) => {
+      // min of max: Math.min(K2, Math.max(K1, a * b))
+      const K1 = mode === "amb3" ? r.int(-5, 5) : r.int(-300, 50), K2 = K1 + (mode === "amb3" ? 10 * r.int(2, 8) : r.int(100, 2000));
+      const truth: Truth = (x) => Math.min(K2, Math.max(K1, N(x) * N(x, 1)));
+      const all: DeriveValue[][] = [[0, 5], [3, 7], [-2, 9], [1, K1 + 20], [2, Math.floor((K1 + K2) / 4)], [1, K2], [1, K2 + 1], [2, K2], [K2, 3], [1, K2 + 300], [-1, K2 + 300],
+        [1, K1], [1, K1 - 1], [K1, 1], [1, K1 - 200], [K1 - 300, 1], [-60, 60], [60, 60], [7, -7], [-9, -9]];
+      let inputs = all, why = "both caps reached on both sides, far past each";
+      if (mode === "unwitnessed_cap") {
+        const top = r.f() < 0.5;
+        inputs = all.filter((x) => (top ? N(x) * N(x, 1) < K2 : N(x) * N(x, 1) > K1));
+        why = top ? `no example reached the upper cap ${K2}` : `no example reached the floor ${K1}`;
+      } else if (mode === "sparse") { inputs = sparse(r, all); why = "a random handful of the examples"; }
+      else if (mode === "amb3") { inputs = amb3(r, 2, 3); why = "Auditor's amb3 set: a few values in -5..24"; }
+      const ax = axis(inputs.map((x) => N(x)), [0, 1]), bx = axis(inputs.map((x) => N(x, 1)), [K1, K2]);
+      return { params: [num("a"), num("b")], ret: "number", truth, truthText: `Math.min(${K2}, Math.max(${K1}, a * b))`, inputs, why, grid: cross(ax, bx) };
+    },
+  },
+  {
+    name: "piecewise", modes: ["full", "unwitnessed_cap", "missing_far_side", "narrow_span", "sparse"],
+    build: (r, mode) => {
+      // piecewise linear, 2 or 3 pieces: Math.max(K1, n + c), Math.min(K2, n + n), Math.min(K2, Math.max(K1, n + n))
+      const v = r.pick(["max_lin", "min_dbl", "clamp_dbl"] as const);
+      const c = r.pick([0, 1, 2, -1]);
+      const K1 = 2 * r.int(-100, 100), K2 = K1 + 2 * r.int(20, 300);
+      const truth: Truth = v === "max_lin" ? (a) => Math.max(K1, N(a) + c) : v === "min_dbl" ? (a) => Math.min(K2, 2 * N(a)) : (a) => Math.max(K1, Math.min(K2, 2 * N(a)));
+      const lin = c === 0 ? "n" : c > 0 ? `n + ${c}` : `n - ${-c}`;
+      const truthText = v === "max_lin" ? `Math.max(${K1}, ${lin})` : v === "min_dbl" ? `Math.min(${K2}, n + n)` : `Math.max(${K1}, Math.min(${K2}, n + n))`;
+      const cuts = v === "max_lin" ? [K1 - c] : v === "min_dbl" ? [K2 / 2] : [K1 / 2, K2 / 2];
+      const full = uniqInts([...coverLine(cuts), ...cuts.map((x) => x - 1), ...cuts.map((x) => x + 2)]);
+      let xs = full, why = "every bend shown on both sides, far past the outermost";
+      if (mode === "unwitnessed_cap") { xs = v === "max_lin" ? full.filter((x) => x > cuts[0]!) : full.filter((x) => x < cuts[cuts.length - 1]!); why = "no example reached the flat piece past the last bend"; }
+      else if (mode === "missing_far_side") { const hi = Math.max(...cuts), lo = Math.min(...cuts); xs = full.filter((x) => x >= lo - 2 && x <= hi + 3); why = `nothing at least ${FAR} past the bends`; }
+      else if (mode === "narrow_span") { const m = Math.round((Math.min(...cuts) + Math.max(...cuts)) / 2); xs = uniqInts([m - 3, m - 1, m, m + 1, m + 2, m + 4]); why = "n only shown over a short stretch between the bends"; }
+      let inputs = xs.map((x) => [x] as DeriveValue[]);
+      if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+      return { params: [num("n")], ret: "number", truth, truthText, inputs, why, grid: grid1([...inputs.map((a) => N(a)), ...cuts]).map((x) => [x]) };
+    },
+  },
+  {
+    name: "prefix_join", modes: ["full", "missing_empty", "missing_chars", "sparse"],
+    build: (r, mode) => {
+      // startsWith-like joins the DSL can express: a prefix only when the value is non-empty, or a separator only between two non-empty parts
+      const two = r.f() < 0.5, P = r.pick(["ERR:", "id-", "#", "v"]), sep = r.pick([":", "/", " - ", "."]);
+      const rich = ["Hello World", "a", "x7", " lead", "trail ", "ERR_42", "MiXeD", "q.r", "", "Zz 9"], lower = ["abc", "hello", "xyz", "q", "word", ""];
+      const pool = mode === "missing_chars" ? lower : rich;
+      let inputs: DeriveValue[][] = two ? r.shuffle(pool.flatMap((a) => pool.map((b) => [a, b] as DeriveValue[]))).slice(0, 20) : pool.map((s) => [s]);
+      if (two) for (const p of [["", "abc"], ["", "Q 1"], ["xy", "Z"], ["M n", "7"]] as DeriveValue[][]) inputs.push(p);
+      let why = mode === "missing_chars" ? "the string values show only lower-case letters" : "empty and non-empty values shown with every character class";
+      if (mode === "missing_empty") { inputs = inputs.filter((x) => x[0] !== ""); why = "no example had an empty first value, so the branch without the prefix/separator was never seen"; }
+      else if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+      const truth: Truth = two ? (a) => (S(a) === "" ? S(a, 1) : S(a) + sep + S(a, 1)) : (a) => (S(a) === "" ? "" : P + S(a));
+      return { params: two ? [str("a"), str("b")] : [str("s")], ret: "string", truth, truthText: two ? `a === "" ? b : a + ${JSON.stringify(sep)} + b` : `s === "" ? "" : ${JSON.stringify(P)} + s`, inputs, why, grid: two ? cross(STRING_GRID, STRING_GRID) : STRING_GRID.map((s) => [s]) };
+    },
+  },
+  {
+    name: "bool_combo", modes: ["full", "missing_far_side", "missing_eq_neighbour", "sparse", "amb3"],
+    build: (r, mode) => {
+      // boolean combinations of 2-3 comparisons over two parameters
+      const amb = mode === "amb3";
+      const k1 = amb ? r.int(2, 16) : r.int(-50, 300), k2 = amb ? r.int(2, 16) : r.int(-50, 300), k3 = k1 - (amb ? 3 : r.int(5, 40));
+      const v = r.pick(["and", "or", "and_or_eq"] as const);
+      const truth: Truth = v === "and" ? (x) => N(x) >= k1 && N(x, 1) >= k2 : v === "or" ? (x) => N(x) <= k1 || N(x, 1) >= k2 : (x) => (N(x) >= k1 && N(x, 1) <= k2) || N(x) === k3;
+      const truthText = v === "and" ? `a >= ${k1} && b >= ${k2}` : v === "or" ? `a <= ${k1} || b >= ${k2}` : `(a >= ${k1} && b <= ${k2}) || a === ${k3}`;
+      const cutA = v === "or" ? [k1] : [k1 - 1, ...(v === "and_or_eq" ? [k3 - 1, k3] : [])], cutB = v === "and_or_eq" ? [k2] : [k2 - 1];
+      // a small cover of each axis (both sides of every cut, between cuts, 100 past the ends), crossed: at most 40
+      const small = (cs: number[]) => uniqInts([...cs.flatMap((c) => [c, c + 1]), Math.min(...cs) - FAR, Math.max(...cs) + 1 + FAR, ...cs.slice(1).map((c, i) => Math.round((c + cs[i]! + 1) / 2))]);
+      const A = small(cutA), B = small(cutB);
+      let inputs = cross(A, B);
+      if (inputs.length > DERIVE_MAX_EXAMPLES) inputs = r.shuffle(inputs).slice(0, DERIVE_MAX_EXAMPLES);
+      let why = "every comparison shown on both sides of its edge and far past it, across the other parameter's regions";
+      if (mode === "missing_far_side") { const lo = Math.min(...cutA) - 5, hi = Math.max(...cutA) + 6; inputs = inputs.filter((x) => N(x) >= lo && N(x) <= hi); why = "a was never shown far from its edges"; }
+      else if (mode === "missing_eq_neighbour") { const e = v === "and_or_eq" ? k3 : cutA[0]!; const d = v === "and_or_eq" && r.f() < 0.5 ? -1 : 1; inputs = inputs.filter((x) => N(x) !== e + d); why = `a = ${e} was shown but not a = ${e + d}`; }
+      else if (mode === "sparse") { inputs = sparse(r, inputs); why = "a random handful of the examples"; }
+      else if (amb) { inputs = amb3(r, 2, k1); why = "Auditor's amb3 set: a few values in -5..24"; }
+      const ax = axis(inputs.map((x) => N(x)), [k1, k3]), bx = axis(inputs.map((x) => N(x, 1)), [k2]);
+      return { params: [num("a"), num("b")], ret: "boolean", truth, truthText, inputs, why, grid: cross(ax, bx), ...(v === "and_or_eq" ? { point: (x: readonly DeriveValue[]) => N(x) === k3 } : {}) };
+    },
+  },
+];
+
+/** Shapes asked for in M100 that the derive DSL cannot express, so no practice form draws them. */
+export const SKIPPED_SHAPES: readonly { shape: string; why: string }[] = [
+  { shape: "modulo / parity (n % k)", why: "the DSL has no remainder operator" },
+  { shape: "startsWith / prefix tests on a string", why: "a string parameter is only ever tested for emptiness (no literal comparison, slicing or calls); prefix_join covers the joins the DSL can build" },
 ];
 
 /** Every (form, mode) category, in a fixed order; task i is category i mod this length. */
 export const CATEGORIES: readonly { form: Form; mode: PracticeMode }[] = FORMS.flatMap((form) => form.modes.map((mode) => ({ form, mode })));
+/** The practice families manifest (peaceai/lib/derive-practice-families.json): which forms CI grades (active) and which are staged. */
+export interface PracticeFamily { name: string; status: "active" | "staged"; title: string; forms: string[] }
+export const FAMILIES: readonly PracticeFamily[] = (JSON.parse(readFileSync(new URL("./derive-practice-families.json", import.meta.url), "utf8")) as { families: PracticeFamily[] }).families;
+/** The categories of the named families ("active" = every active family; "all" = every family). Unknown names throw. */
+export function familyCategories(spec: string): readonly { form: Form; mode: PracticeMode }[] {
+  const names = spec === "active" ? FAMILIES.filter((f) => f.status === "active").map((f) => f.name) : spec === "all" ? FAMILIES.map((f) => f.name) : spec.split(",").map((s) => s.trim()).filter(Boolean);
+  const forms = new Set<string>();
+  for (const n of names) { const f = FAMILIES.find((x) => x.name === n); if (!f) throw new Error(`unknown practice family ${n}`); for (const x of f.forms) forms.add(x); }
+  return CATEGORIES.filter((c) => forms.has(c.form.name));
+}
 export const categoryName = (form: string, mode: string) => `${form}/${mode}`;
 
 /** Practice task `index` of run `seed` (deterministic; independent of shards). Categories filter by name prefix. */
