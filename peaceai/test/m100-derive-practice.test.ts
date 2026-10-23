@@ -56,7 +56,8 @@ test(`practice run (seed ${SEED}, ${COUNT} tasks, budget ${BUDGET}): no wrong pr
   assert.ok(grades.every((g) => !g.unsafe), "every accepted expression passes derivedExprProblem");
   const wrong = grades.filter((g) => g.outcome === "wrong" && !g.knownLimit);
   const entries = wrong.map((g) => ledgerEntry(practiceTask(SEED, g.index), g, "test", SEED));
-  for (const e of entries) assert.deepEqual(Object.keys(e).slice(0, 9).filter((k) => k !== "types"), ["id", "source", "params", "ret", "examples", "wrongProgram", "disagreeAt", "correct", "why"].slice(0, Object.keys(e).slice(0, 9).filter((k) => k !== "types").length));
+  const LEDGER_KEYS = ["id", "source", "params", "ret", "examples", "wrongProgram", "disagreeAt", "correct", "why"];
+  for (const e of entries) assert.deepEqual(Object.keys(e).filter((k) => LEDGER_KEYS.includes(k)), LEDGER_KEYS, "the derive mistakes ledger's entry keys (peaceai-derive-mistakes:v1)");
   assert.equal(wrong.length, 0, `wrong programs accepted (ledger shape):\n${entries.map((e) => JSON.stringify(e)).join("\n")}`);
 });
 
