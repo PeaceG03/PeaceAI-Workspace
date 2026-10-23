@@ -5,7 +5,7 @@
 // every example, and refuses instead of guessing:
 //   - derive_no_fit      nothing up to the size limit fits every example (or the only fit reads no parameter);
 //   - derive_ambiguous   two programs of the minimal size fit every example but disagree on a probe;
-//   - derive_budget      the search budget ran out before a fit was found;
+//   - derive_budget      the search budget (programs built, or kept-value memory) ran out before a fit was found;
 //   - derive_examples    contradictory, mistyped or out-of-range examples.
 // The DSL (typed; the size of a program is its node count, leaves count 1):
 //   number : parameter | 1 | 2 | a + b | a - b | a * b | sq(a) | min(C, a) | max(C, a) | if(G, x, y)
@@ -15,7 +15,7 @@
 //   if-guards G (conditional on emptiness or equality only): s is empty | p == C
 //   C: integers taken from the examples that the behavior description also names (DeriveInput.described);
 //   L: string pieces of the example outputs (outputs with the example's non-empty string arguments cut out)
-//   plus "".
+//   that at least two examples produce, plus "".
 //   No memorizing: a string parameter is only ever tested for emptiness (never against a literal), and an integer
 //   the description does not write is never compared with a parameter, so a lookup table of example inputs is not
 //   in the search space (such tasks are derive_no_fit instead of a wrong fit).
@@ -68,6 +68,8 @@ export const DERIVE_MAX_EXAMPLES = 40;
 export const DERIVE_MAX_PARAMS = 3;
 export const DERIVE_MAX_STRING = 120;
 const MAX_POINTS = 400;
+/** Memory bound: total characters of kept value vectors; past it the search stops (derive_budget). */
+const MAX_KEPT_CHARS = 64_000_000;
 const MAX_INT = 1e12;
 
 interface Prog { node: DeriveNode; size: number; vals: DeriveValue[]; usesParam: boolean }
@@ -237,17 +239,20 @@ function intConstants(input: DeriveInput): number[] {
   }
   return [...s].sort((a, b) => a - b);
 }
-/** String pieces of the outputs: each output with the example's non-empty string arguments cut out, plus "". */
+/**
+ * String pieces of the outputs: each output with the example's non-empty string arguments cut out; a piece is kept
+ * only when at least two examples produce it (a piece seen in one output is that output memorized), plus "".
+ */
 function stringPieces(input: DeriveInput): string[] {
-  const s = new Set<string>([""]);
+  const support = new Map<string, number>();
   for (const ex of input.examples) {
     if (typeof ex.out !== "string") continue;
     const cuts = [...new Set(ex.args.filter((a): a is string => typeof a === "string" && a.length > 0))].sort((a, b) => b.length - a.length);
     let parts = [ex.out];
     for (const c of cuts) parts = parts.flatMap((p) => p.split(c));
-    for (const p of parts) if (p.length > 0 && p.length <= DERIVE_MAX_STRING) s.add(p);
+    for (const p of new Set(parts)) if (p.length > 0 && p.length <= DERIVE_MAX_STRING) support.set(p, (support.get(p) ?? 0) + 1);
   }
-  return [...s].sort();
+  return ["", ...[...support].filter(([, n]) => n >= 2).map(([p]) => p)].sort();
 }
 
 /**
@@ -274,6 +279,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   const guards: Prog[] = []; // if-guards: emptiness / equality atoms
   const seen: Record<DeriveType, Set<string>> = { number: new Set(), string: new Set(), boolean: new Set() };
   let searched = 0;
+  let keptChars = 0;
   let overBudget = false;
   const fits: Prog[] = [];
 
@@ -287,6 +293,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
     const k = keyOf(vals);
     if (seen[ty].has(k)) return;
     seen[ty].add(k);
+    if ((keptChars += k.length) > MAX_KEPT_CHARS) { overBudget = true; return; }
     const p: Prog = { node, size, vals, usesParam };
     (levels[ty][size] ??= []).push(p);
     if (guard) guards.push(p);

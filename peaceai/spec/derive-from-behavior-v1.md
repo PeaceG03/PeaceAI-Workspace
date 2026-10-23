@@ -44,7 +44,8 @@ the points = examples + a deterministic probe set:
   `&&`, `||`, `!`
 - guards G: `s === ""`, `p === C`
 - C: the integers in the examples (arguments and outputs) that the behavior prose also writes; L: output pieces with
-  the string arguments cut out, plus `""`.
+  the string arguments cut out that at least two examples produce (a piece of one output is that output
+  memorized), plus `""`.
 - No memorizing: a string parameter is only tested for emptiness, never compared with a literal, and an integer the
   prose does not write is never compared with a parameter. Without this, the smallest fit of a few examples is a
   lookup table of the example inputs, which fits every example and generalizes to nothing. On the upstream evidence
@@ -59,7 +60,7 @@ the other examples' values, each boolean flipped; examples themselves are droppe
 Result, at the first size where a program reading a parameter fits every example:
 - exactly one observational class: the program (`ok`);
 - two or more: `derive_ambiguous` (they disagree on at least one probe; the refusal names two programs and a probe);
-- none up to size 13: `derive_no_fit`; more than 4,000,000 programs built: `derive_budget`;
+- none up to size 13: `derive_no_fit`; more than 4,000,000 programs built, or more than 64,000,000 characters of kept value vectors: `derive_budget`;
 - bad examples (count, arity, types, a contradiction): `derive_examples`.
 
 Compilation: `min` / `max` become conditionals (no `Math`), `a * a` stays a product, ranges become
