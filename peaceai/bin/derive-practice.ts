@@ -32,8 +32,11 @@ if (shard) {
   const [j, n] = shard.split("/").map(Number) as [number, number];
   const file = `${partsDir}/${j}.jsonl`;
   const done = new Set(existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => (JSON.parse(l) as PracticeGrade).index) : []);
-  for (let i = j; i < count; i += n) {
-    if (done.has(i) || i % sliceN !== sliceJ) continue;
+  // The slice's tasks (i = sliceJ + k * sliceN) are dealt to the shards by k, so every shard gets a share.
+  appendFileSync(file, "");
+  for (let k = j; sliceJ + k * sliceN < count; k += n) {
+    const i = sliceJ + k * sliceN;
+    if (done.has(i)) continue;
     const g = gradeTask(practiceTask(seed, i, cats), { budget, maxKeptCells: cells, askRounds });
     appendFileSync(file, JSON.stringify(g) + "\n");
   }
