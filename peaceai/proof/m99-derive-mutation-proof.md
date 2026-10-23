@@ -91,3 +91,13 @@ a plain edit) and reads the comment it writes.
 - H9 (the `assertDeriveNotesShown` call removed on its own) survives by design: it is a second layer behind review.ts
   rendering the note. Nothing else on the path drops a note, so removing only the check changes no output. H10 drops
   the note in review.ts too, and the end-to-end test catches it, so a lost note never lands silently.
+
+## Round 3: span sign gate (m100 practice floor_clamp; Node 22, gates + ask + mistakes tests)
+
+| # | mutant | file | result | killed by |
+|---|---|---|---|---|
+| S1 | sign: the "nothing at 0 or below" branch removed | `peaceai/lib/derive.ts` | KILLED | gate span: a computed-from parameter shown over DERIVE_FAR; every result sign the program reaches is shown; mistakes ledger: replayed (m100-floor-unshown) |
+| S2 | sign: the "negative, but not DERIVE_FAR below 0" branch removed | `peaceai/lib/derive.ts` | KILLED | gate span: a computed-from parameter shown over DERIVE_FAR; every result sign the program reaches is shown |
+| S3 | sign: `beyond` always true (asks even where a shown floor keeps the result flat) | `peaceai/lib/derive.ts` | KILLED | unwitnessed cap: the span refusal asks past the shown stretch; gate span; mistakes ledger: replayed |
+
+3 mutants, 3 killed.

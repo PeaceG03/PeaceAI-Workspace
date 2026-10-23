@@ -189,6 +189,17 @@ test("gate span: a computed-from parameter shown over DERIVE_FAR; every result s
   // round 3 (practice generator, cap_lin2 inside): min(916, a * b) shown up to 873 was derived as a * b, wrong at (-31, -30).
   const capIn = deriveProgram({ params: ab, ret: "number", examples: ex([[-3, 70, -210], [2, 2, 4], [1, -90, -90], [7, 9, 63], [97, 9, 873], [-93, 70, -6510]]) });
   assert.ok(!capIn.ok && capIn.gate === "span" && /corner|inside the examples' range of every parameter/.test(capIn.detail ?? ""), JSON.stringify(capIn));
+  // round 3, span sign (m100 practice floor_clamp): `n` for max(61, n) shown from 61 to 212 is refused, asking at n = 0;
+  // shown negative only down to -43, it asks at -DERIVE_FAR; a floor already shown (flat there) is not asked about.
+  const pos = [[61, 61], [62, 62], [112, 112], [162, 162], [212, 212]] as const;
+  assert.equal(gate(n, "number", P0, pos), "span:n");
+  assert.deepEqual(gateProblem({ params: n, ret: "number", examples: ex(pos) }, P0, 1)!.at, [[0]]);
+  const neg43 = [[57, 57], [107, 107], [157, 157], [-43, -43], [7, 7]] as const;
+  assert.equal(gate(n, "number", P0, neg43), "span:n");
+  assert.deepEqual(gateProblem({ params: n, ret: "number", examples: ex(neg43) }, P0, 1)!.at, [[-DERIVE_FAR]]);
+  assert.equal(gate(n, "number", P0, [...neg43, [-143, -143]]), "");
+  const floored: DeriveNode = { op: "if", c: { op: "le", a: lit(61), b: P0 }, t: P0, e: lit(61) };
+  assert.notEqual(gate(n, "number", floored, [...pos, [10, 61], [-90, 61]]), "span:n"); // (edge still asks: 60 and 61 both give 61)
   // Compared-only parameters are not "computed from"; string parameters have no span.
   assert.deepEqual([...arithmeticParams({ op: "le", a: P0, b: lit(5) })], []);
   assert.deepEqual([...arithmeticParams({ op: "if", c: { op: "le", a: P0, b: lit(5) }, t: P1, e: { op: "add", a: P0, b: { op: "int", v: 1 } } })].sort(), [0, 1]);
