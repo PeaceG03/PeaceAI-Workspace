@@ -12335,3 +12335,32 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+==============================================================================
+repo: pipeworx-io/mcp-clearlydefined
+license: MIT (LICENSE, sha256 of trimmed text e68205eb30c9b52e5b5a1472ea2c44a500e9ebe56b825a4f0c1ed2a24f91225f)
+fixtures (commit path):
+  bac20d0adabfe505acac43fef207a4f676cd6878 peaceai/test/fixtures/m99-dfb/pipeworx-io__mcp-clearlydefined-0f0826c66d30.txt
+license URL: https://github.com/pipeworx-io/mcp-clearlydefined/blob/bac20d0adabfe505acac43fef207a4f676cd6878/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Mojibake Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

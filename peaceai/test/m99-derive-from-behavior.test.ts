@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "338e78dde58227a1214195dc6b22765c19928c63cc00a01b29c8e796b18f0dd6"; // M104: learned spec evidence counts re-pinned (if-form entries added); the spec's rule fields are unchanged
+const SHA = "2136ccd8fb37c2d6f124b4e81d3b796d2a6070dfafd47b33eb1c119a9ff23fb7"; // M104: learned spec evidence counts re-pinned (if-form entries added); the spec's rule fields are unchanged
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -81,7 +81,7 @@ test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (its ternary
   // Auditor ruling on 6f1ea5e: no program using a form with fewer than DERIVE_FORM_BAR replaying upstream evidence
   // entries is emitted. Round 4 mining brought eq to >= 10 entries, so S1 (eq, ||, range) derives; S3 needs a general
   // if (ternary). M104 mined 12 upstream if entries, but the Auditor #498 ruling counts distinct problems per sub-shape:
-  // S3's if is eq-const/string (a parameter === a constant choosing a string), which has 8 distinct entries (identical
+  // S3's if is eq-const/string (a parameter === a constant choosing a string), which has 9 distinct entries (identical
   // examples once, at most 2 per expression shape), under the bar, so S3 is still refused by name.
   const r1 = run(S1), r3 = run(S3);
   assert.equal(r1.why ?? null, null);
@@ -437,11 +437,11 @@ test("evidence by form (#491 round 3, Auditor ruling): the recorded forms replay
   for (const f of DERIVE_FORMS) assert.deepEqual(formsOf(FORM_SAMPLE[f]), [f], f);
   for (const f of allowed) assert.ok(counts[f] >= DERIVE_FORM_BAR, `${f}: ${counts[f]}`);
   for (const f of DERIVE_FORMS) if (counts[f] < DERIVE_FORM_BAR) assert.deepEqual(unevidencedForms(FORM_SAMPLE[f]), [f], f);
-  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; M104 mining: ternary 16
-  // entries, but per sub-shape only eq-const/string 8 distinct ones, Auditor #498: no ternary sub-shape is emitted).
+  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; M104 mining: ternary 17
+  // entries, but per sub-shape only eq-const/string 9 distinct ones, Auditor #498: no ternary sub-shape is emitted).
   assert.deepEqual(allowed, ["cap", "strcat", "eq", "or", "range", "square"], JSON.stringify(counts));
-  assert.equal(counts.ternary, 16, "M104: 16 replaying upstream if / else entries");
-  assert.deepEqual(evidenceTernaryShapeCounts(), { "eq-const/string": 8 });
+  assert.equal(counts.ternary, 17, "M104: 17 replaying upstream if / else entries");
+  assert.deepEqual(evidenceTernaryShapeCounts(), { "eq-const/string": 9 });
 });
 test("form gate: boundary at the bar, fail closed on a bad evidence file, refused by name through deriveProgram", () => {
   const zero = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;

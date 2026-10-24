@@ -2,7 +2,7 @@
  "schema": "peaceai-m99-derive-from-behavior-evidence:v1",
  "bar": 10,
  "manifestSha256": "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231",
- "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200. M104 (if evidence): entries whose derived program uses the if form (ternary) added the round-4 way from GitHub code search (if/else-return and ternary functions over numbers and strings; the same license, replay, dedupe, email and private-core filters); none uses the M102 string order (sle), and the M102 comparator / min / max entries are not counted here. Ternary: 16 entries from 16 repos, but (Auditor #498) the gate also needs every ternary sub-shape to have 10 distinct problems (identical examples count once, at most 2 per expression shape); eq-const/string has 8, so no ternary is emitted yet. Two candidates that replayed on the probe grid were dropped on manual review because upstream differs off the grid (a startsWith('http') branch, an endsWith('s') branch).",
+ "note": "DERIVE_FROM_BEHAVIOR v1: 27 exported pure functions (typed number / string / boolean params and result) from 24 permissive repos outside lm-corpus. Examples are the upstream function run on a fixed input grid (every 3rd row, at most 14, as the starting training slice), extended only by following PeaceAI's own derive_under_specified refusals the way an issue author would (each added row and the gate that asked for it is in addedForGates; Auditor #491 B1); held out: the rest of the grid plus every probe point (neighbour and far probes) not in the training rows; the prose is the function's leading doc comment only (empty for 13), never its body. PeaceAI derives the recorded expression from the training examples alone (the prose is recorded for review and never given to the engine); it is right on every held-out row, and each recorded expression was reviewed equal to the upstream body on its whole typed domain (template literal = concatenation; the ternary and comparisons as written). The evidence test re-derives each expression from the recorded examples and checks the pinned module text contains the upstream function; no third-party code is run by the test. Round 3 (Auditor #491: if / cap / range / square forms): 11 cap-form functions added, 8 from the M88-M99 miner clones and 3 from GitHub code search for clamp01 (microsoft/vscode, voxel51/fiftyone, jakearchibald/jakearchibald.com), each re-derived on the round-3 engine from its grid slice plus only the rows its refusals asked for, and right on every held-out integer from -1200 to 1200. M104 (if evidence): entries whose derived program uses the if form (ternary) added the round-4 way from GitHub code search (if/else-return and ternary functions over numbers and strings; the same license, replay, dedupe, email and private-core filters); none uses the M102 string order (sle), and the M102 comparator / min / max entries are not counted here. Ternary: 17 entries from 17 repos, but (Auditor #498) the gate also needs every ternary sub-shape to have 10 distinct problems (identical examples count once, at most 2 per expression shape); eq-const/string has 9, so no ternary is emitted yet. Three candidates that replayed on the probe grid were dropped on manual review because upstream differs off the grid (a startsWith('http') branch, an endsWith('s') branch, a '.' directory branch).",
  "examples": [
   {
    "repo": "AetherAI3/aether-agent",
@@ -19009,6 +19009,87 @@
    "addedForGates": [
     "chars: (\" Ab 9. \", \"a\") gives \" Ab 9. a\"",
     "chars: (\"\", \" Ab 9. \") gives \"\""
+   ],
+   "forms": [
+    "ternary",
+    "strcat",
+    "eq"
+   ],
+   "ternaryShapes": [
+    "eq-const/string"
+   ]
+  },
+  {
+   "repo": "pipeworx-io/mcp-clearlydefined",
+   "commit": "bac20d0adabfe505acac43fef207a4f676cd6878",
+   "module": "src/index.ts",
+   "fn": "detailSuffix",
+   "params": [
+    {
+     "name": "detail",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "prose": "",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "out": " — a"
+    },
+    {
+     "args": [
+      "ab"
+     ],
+     "out": " — ab"
+    },
+    {
+     "args": [
+      "Hello"
+     ],
+     "out": " — Hello"
+    },
+    {
+     "args": [
+      "x y"
+     ],
+     "out": " — x y"
+    },
+    {
+     "args": [
+      "123"
+     ],
+     "out": " — 123"
+    },
+    {
+     "args": [
+      " Ab 9. "
+     ],
+     "out": " —  Ab 9. "
+    }
+   ],
+   "expr": "((detail === \"\") ? detail : \" — \") + detail",
+   "heldOut": {
+    "right": 181,
+    "wrong": 0
+   },
+   "upstream": "function detailSuffix(detail: string): string {\n  return detail ? ` — ${detail}` : '';\n}",
+   "path": "src/index.ts",
+   "fileBlob": "0f0826c66d308e3b60bfadd63d9fe44d73f21874",
+   "sha256": "c755f82e7d942433846d8e039c21ab1d137c8def5be838b6dfb0a4bf66bbe478",
+   "fixture": "peaceai/test/fixtures/m99-dfb/pipeworx-io__mcp-clearlydefined-0f0826c66d30.txt",
+   "license": "MIT",
+   "licenseSha256": "e68205eb30c9b52e5b5a1472ea2c44a500e9ebe56b825a4f0c1ed2a24f91225f",
+   "addedForGates": [
+    "chars: (\" Ab 9. \") gives \" —  Ab 9. \""
    ],
    "forms": [
     "ternary",
