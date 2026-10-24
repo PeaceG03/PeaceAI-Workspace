@@ -60,6 +60,9 @@ const C: Record<string, Case> = {
   litBranch: { name: '(s === "") ? "-" : "!"', types: ["string"], make: (k) => iff(emp(0), lit(sfx(k, "-")), lit("!")), grid: S1, key: "[string@0] if(empty(p0),<str>,<str>)" },
   // "" vs a non-empty string literal.
   nonEmpty: { name: '(n === 1) ? "-" : "s"', types: ["number"], make: (k) => iff(eqC(0, int(1)), lit(sfx(k, "-")), lit(sfx(k, "s"))), grid: N1, key: "[number@0] if(eq(p0,<num>),<str>,<str>)" },
+  // Parameter types: the same comparison of two strings and of two numbers.
+  eqStr: { name: '(s === t) ? "same" : "diff"', types: STR2, make: (k) => iff({ op: "eq", a: p(0), b: p(1) }, lit(sfx(k, "same")), lit("diff")), grid: SS, key: "[string@0,string@1] if(eq(p0,p1),<str>,<str>)" },
+  eqNum: { name: '(n === m) ? "same" : "diff"', types: NUM2, make: (k) => iff({ op: "eq", a: p(0), b: p(1) }, lit(sfx(k, "same")), lit("diff")), grid: NN, key: "[number@0,number@1] if(eq(p0,p1),<str>,<str>)" },
   // Sibling ifs and depth.
   inner: { name: '(n === 1) ? "one" : "many"', types: ["number"], make: (k) => iff(eqC(0, int(1)), lit(sfx(k, "one")), lit("many")), grid: N1, key: "[number@0] if(eq(p0,<num>),<str>,<str>)" },
   nested: { name: '(n === 0) ? "zero" : ((n === 1) ? "one" : "many")', types: ["number"], make: (k) => iff(eqC(0, int(0)), lit(sfx(k, "zero")), iff(eqC(0, int(1)), lit("one"), lit("many"))), grid: N1, key: "[number@0] if(eq(p0,<num>),<str>,if(eq(p0,<num>),<str>,<str>))" },
@@ -118,6 +121,7 @@ test("skeletons (Auditor #498 on 3e6ef9a): the surrounding join, comparison dire
   both(C.oneInCat, C.plural, "an if inside a join and the same if alone");
   both(C.twoInCat, C.twoInCatSame, "sibling ifs on two parameters and on one");
   both(C.twoInCat, C.oneInCat, "two ifs in a join and one");
+  both(C.eqStr, C.eqNum, "string and number parameters");
 });
 
 // The child processes get a minimal environment (PATH and a scratch HOME only).
@@ -178,12 +182,6 @@ test("skeletons end to end (Auditor #498 on c8ad8ea and 3e6ef9a): one child proc
   const controlsA: Spec[] = [VALUE_FALLBACK, spec(C.join, 's + (((s === "") ? s : "/") + t)', P2, rows(([s, t]) => s + ((s === "" ? s : "/") + t), SEVEN)), spec(C.min, "(a <= b) ? a : b", AB, rows(([a, b]) => (a <= b ? a : b), ORDER))];
   const refusedB: Spec[] = [controlsA[2]];
   const controlsB: Spec[] = [refusedA[7]];
-  // The search alone fits each (so a refusal is the skeleton gate) to the expected skeleton.
-  for (const c of [...refusedA, ...controlsA]) {
-    const r = deriveCandidate({ params: c.params as never, ret: "string", examples: c.examples as never });
-    assert.ok(r.ok && r.fit.expr === c.expr, `${c.expr}: ${JSON.stringify(r).slice(0, 200)}`);
-    assert.deepEqual(ternaryShapesOf(r.fit.program, c.params.map((q) => q.type as DeriveType)), [c.key], c.expr);
-  }
   // n <= 5 ? n : m and 5 <= n ? n : m: the search does not build them (no fit / budget), so nothing can emit them; the
   // probe still asks, under the other's fakes (gate level above: they refuse each other).
   const NM = [{ name: "n", type: "number" }, { name: "m", type: "number" }];
@@ -217,6 +215,13 @@ test("skeletons end to end (Auditor #498 on c8ad8ea and 3e6ef9a): one child proc
     };
     check(ra, controlsA, refusedA, "evidence A");
     check(rb, controlsB, refusedB, "evidence B");
+    // The search alone fits each (so a refusal is the skeleton gate) to the expected skeleton (checked after the child, so
+    // a mutant that lets a case through fails on emission above, not on the key string here).
+    for (const c of [...refusedA, ...controlsA]) {
+      const r = deriveCandidate({ params: c.params as never, ret: "string", examples: c.examples as never });
+      assert.ok(r.ok && r.fit.expr === c.expr, `${c.expr}: ${JSON.stringify(r).slice(0, 200)}`);
+      assert.deepEqual(ternaryShapesOf(r.fit.program, c.params.map((q) => q.type as DeriveType)), [c.key], c.expr);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
