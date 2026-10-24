@@ -172,7 +172,8 @@ function jobA(body: string) {
 
 test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comments, indented code) refuses the derive rule; the clean issue makes a candidate", () => {
   const clean = jobA(S1R);
-  // A general if (ternary: no upstream evidence entry): no candidate, refused by name (the form gate).
+  // A general if (ternary: no upstream evidence entry; since Auditor #498 its program skeleton [number@0] if(eq(p0,<num>),<num>,<num>) would also need
+  // 10 distinct entries): no candidate, refused by name (the form gate).
   const TERNARY = `Add a new module \`src/four-flag.ts\` exporting \`fourFlag(n: number): number\`.\n\nBehavior: 1 for 4, otherwise 0.\n\nExamples:\n${[-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50].map((n) => `- ${n} gives ${n === 4 ? 1 : 0}`).join("\n")}`;
   const tern = jobA(TERNARY);
   assert.equal(tern.n, 0, tern.stdout);

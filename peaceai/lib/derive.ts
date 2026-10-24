@@ -646,12 +646,17 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   if (!r.ok) return r;
   // Round 3 (Auditor ruling on 6f1ea5e): never emit a program that uses a form fewer than DERIVE_FORM_BAR replaying
   // upstream evidence entries show (counts read from the evidence file, the single source; see evidenceFormCounts).
-  const forms = unevidencedForms(r.fit.program);
+  const types = input.params.map((p) => p.type);
+  const forms = unevidencedForms(r.fit.program, undefined, types);
   if (forms.length === 0) return r;
   const counts = evidenceFormCounts();
+  // M104 (Auditor #498): a ternary whose program skeleton is under the bar is refused even when the form count is not.
+  const shapeCounts = evidenceTernaryShapeCounts();
+  const short = ternaryShapesOf(r.fit.program, types).filter((k) => !((shapeCounts[k] ?? 0) >= DERIVE_FORM_BAR));
+  const shapeText = (f: DeriveForm) => (f === "ternary" && counts.ternary >= DERIVE_FORM_BAR ? `, but the program skeleton ${short.map((k) => `${k} has ${shapeCounts[k] ?? 0} distinct ones`).join(" and ")}` : "");
   return {
     ok: false, reason: "derive_unevidenced_form", forms, searched: r.searched,
-    detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries)`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
+    detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries${shapeText(f)})`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
   };
 }
 
@@ -730,10 +735,94 @@ export function evidenceFormCounts(text?: string): Record<DeriveForm, number> {
 }
 let cachedCounts: Record<DeriveForm, number> | undefined;
 
-/** The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted). */
-export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<DeriveForm, number>> = evidenceFormCounts()): DeriveForm[] {
-  return formsOf(program).filter((f) => !((counts[f] ?? 0) >= DERIVE_FORM_BAR));
+/**
+ * The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted).
+ * M104 (Auditor #498 rulings on 19d6100, b2f0f67, c8ad8ea and 3e6ef9a): the ternary form is also refused unless the
+ * program's whole skeleton (ternaryShapesOf: full AST, parameters renamed by first appearance with their types,
+ * literals as <num> / <str> / <empty>) has at least DERIVE_FORM_BAR distinct evidence entries (evidenceTernaryShapeCounts:
+ * identical examples count once, at most 2 per expression shape). Without `types` parameters are `unknown`, which no
+ * evidence entry records, so such a program is never covered.
+ */
+export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<DeriveForm, number>> = evidenceFormCounts(), types?: readonly DeriveType[], shapeCounts: Readonly<Record<string, number>> = evidenceTernaryShapeCounts()): DeriveForm[] {
+  return formsOf(program).filter((f) => {
+    if (!((counts[f] ?? 0) >= DERIVE_FORM_BAR)) return true;
+    if (f !== "ternary") return false;
+    return ternaryShapesOf(program, types).some((k) => !((shapeCounts[k] ?? 0) >= DERIVE_FORM_BAR));
+  });
 }
+
+/**
+ * M104 (Auditor #498 on 3e6ef9a: replace the per-if key): the evidence key of a program that contains an if is its
+ * WHOLE expression skeleton, a single string. It keeps the full AST: every operator and every operand in its order
+ * (so `n <= 5` and `5 <= n` differ, and so do `s + x` and `t + x`, min and max). Parameters are renamed p0, p1, ... by
+ * first appearance in a left-to-right walk (guard and branches alike), so the key does not depend on the parameter
+ * names, but `(s === "") ? s : t` and `(s === "") ? t : s` differ. The renamed parameters are listed first with their
+ * type and declared argument position (`[string@1,string@0]`: p0 is the second argument), so a guard on the other
+ * argument, `(t === "") ? s : t` against `(s === "") ? t : s`, is another key (the same body with the arguments
+ * swapped is a different function signature; kept apart so this round does not loosen the c8ad8ea gate). Literals become type placeholders: `<num>` (an integer or number literal, a min /
+ * max cap, range bounds), `<str>` (a non-empty string), and `<empty>` for "" (a test against or a branch of the empty
+ * string behaves differently from any other string: `s === ""` is an emptiness test, and "" is the identity of a
+ * join). No other literal is special. A program without an if has no key (it is not gated here).
+ * Example: s + (((s === "") ? s : "/") + t) is `[string@0,string@1] cat(p0,cat(if(empty(p0),p0,<str>),p1))`.
+ * The function keeps its name and returns a one-element list, as the evidence field `ternaryShapes` does.
+ */
+export function ternaryShapesOf(program: DeriveNode, types?: readonly DeriveType[]): string[] {
+  let hasIf = false;
+  const order: number[] = [];
+  const pn = (i: number) => { if (!order.includes(i)) order.push(i); return `p${order.indexOf(i)}`; };
+  const litOf = (v: number | string) => (typeof v === "number" ? "<num>" : v === "" ? "<empty>" : "<str>");
+  const sk = (x: DeriveNode): string => {
+    switch (x.op) {
+      case "param": return pn(x.i);
+      case "int": return "<num>";
+      case "lit": return litOf(x.v);
+      case "add": case "sub": case "mul": case "cat": case "and": case "or": case "eq": case "le": return `${x.op}(${sk(x.a)},${sk(x.b)})`;
+      case "sq": case "not": case "str": return `${x.op}(${sk(x.a)})`;
+      case "min": case "max": return `${x.op}(<num>,${sk(x.a)})`;
+      case "range": return `range(<num>,${pn(x.i)},<num>)`;
+      case "empty": return `empty(${pn(x.i)})`;
+      case "sle": { const i = pn(x.i); return `sle(${i},${pn(x.j)})`; }
+      case "if": { hasIf = true; const c = sk(x.c), t = sk(x.t); return `if(${c},${t},${sk(x.e)})`; }
+      case "tmpl": return `tmpl(${x.parts.map(sk).join(",")})`;
+    }
+  };
+  const body = sk(program);
+  return hasIf ? [`[${order.map((i) => `${types?.[i] ?? "unknown"}@${i}`).join(",")}] ${body}`] : [];
+}
+/**
+ * Distinct evidence entries per program skeleton (from each entry's recorded `ternaryShapes`). Two rules make the
+ * count a count of distinct problems, not of copies (Auditor #498): entries with identical examples count once, and at
+ * most 2 count per expression shape (the expression with its parameters renamed p0, p1, ..., as the M102 evidence
+ * cap). Fail closed like evidenceFormCounts.
+ */
+export function evidenceTernaryShapeCounts(text?: string): Record<string, number> {
+  if (text === undefined && cachedShapeCounts) return { ...cachedShapeCounts };
+  const counts: Record<string, number> = {};
+  try {
+    const ev = JSON.parse(text ?? readFileSync(DERIVE_EVIDENCE_PATH, "utf8")) as { examples?: unknown };
+    if (!Array.isArray(ev.examples)) throw new Error("no examples");
+    const perShape = new Map<string, number>(), seenExamples = new Set<string>();
+    for (const e of ev.examples as { ternaryShapes?: unknown; expr?: unknown; params?: unknown; examples?: unknown }[]) {
+      if (!e || !Array.isArray(e.ternaryShapes) || typeof e.expr !== "string" || !Array.isArray(e.params)) continue;
+      const names = (e.params as { name?: unknown }[]).map((p) => (typeof p?.name === "string" ? p.name : ""));
+      // Rename parameters outside string literals only.
+      const shape = e.expr.split(/("(?:[^"\\]|\\.)*")/).map((part, j) => (j % 2 ? part : part.replace(/[A-Za-z_$][\w$]*/g, (w) => (names.includes(w) ? `p${names.indexOf(w)}` : w)))).join("");
+      const exKey = JSON.stringify(e.examples);
+      for (const k of new Set(e.ternaryShapes as unknown[])) {
+        if (typeof k !== "string") continue;
+        const g = `${k}\0${shape}`;
+        if (seenExamples.has(`${k}\0${exKey}`) || (perShape.get(g) ?? 0) >= 2) continue;
+        seenExamples.add(`${k}\0${exKey}`); perShape.set(g, (perShape.get(g) ?? 0) + 1);
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+    }
+  } catch {
+    for (const k of Object.keys(counts)) delete counts[k];
+  }
+  if (text === undefined) cachedShapeCounts = { ...counts };
+  return counts;
+}
+let cachedShapeCounts: Record<string, number> | undefined;
 
 /**
  * The search and the witness gates WITHOUT the form gate: for replaying and mining upstream evidence only (the
