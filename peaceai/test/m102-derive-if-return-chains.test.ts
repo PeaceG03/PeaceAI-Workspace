@@ -188,11 +188,11 @@ test("form gate (main 5c66982, round 3; Auditor #498): with sle on, a comparator
   if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return;
   assert.ok(cmp.ok, JSON.stringify(cmp).slice(0, 300));
   assert.ok(cmp.ok && formsOf(cmp.fit.program).includes("ternary"));
-  // Its if keys have no upstream entry: even with the ternary form and the plural key (eq-num-const|lit,lit|string@top) at the bar
+  // Its if keys have no upstream entry: even with the ternary form and the plural key (eq-num-const(p0)|lit,lit|string@top) at the bar
   // (Auditor #498) it stays refused.
-  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-num-const|lit,lit|string@top": DERIVE_FORM_BAR }).includes("ternary"));
-  assert.ok(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"]).every((k) => k !== "eq-num-const|lit,lit|string@top"), JSON.stringify(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"])));
-  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, undefined, ["string", "string"], { "eq-num-const|lit,lit|string@top": DERIVE_FORM_BAR }).includes("ternary"));
+  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-num-const(p0)|lit,lit|string@top": DERIVE_FORM_BAR }).includes("ternary"));
+  assert.ok(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"]).every((k) => k !== "eq-num-const(p0)|lit,lit|string@top"), JSON.stringify(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"])));
+  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, undefined, ["string", "string"], { "eq-num-const(p0)|lit,lit|string@top": DERIVE_FORM_BAR }).includes("ternary"));
   const p = deriveProgram(mk(byCodeUnit, "number"));
   assert.ok(!p.ok && p.reason === "derive_unevidenced_form" && (p as { forms?: string[] }).forms?.includes("ternary"), JSON.stringify(p).slice(0, 300));
   for (const f of [(a: string, b: string) => (a <= b ? a : b), (a: string, b: string) => (a <= b ? b : a)]) {

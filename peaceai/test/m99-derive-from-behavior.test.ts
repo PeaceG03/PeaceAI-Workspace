@@ -96,10 +96,10 @@ test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (its ternary
   assert.deepEqual(c1.ok && formsOf(c1.fit.program), ["eq", "or", "range"]);
   assert.equal(c3.ok && c3.fit.expr, '"MARKETS_SCHEDULER_HOST_FAILED:" + (message + (((causeCode === "") ? causeCode : ":cause=") + causeCode))');
   assert.deepEqual(c3.ok && formsOf(c3.fit.program), ["ternary", "strcat", "eq"]);
-  assert.deepEqual(c3.ok && ternaryShapesOf(c3.fit.program, ["string", "string"]), ["eq-str-empty|param,lit|string@concat"]);
+  assert.deepEqual(c3.ok && ternaryShapesOf(c3.fit.program, ["string", "string"]), ["eq-str-empty(p1)|guard-param,lit|string@concat"]);
   assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, undefined, ["string", "string"]), ["ternary"]);
   // With the ternary form and 10 distinct entries of its key it would be emitted (the key gate, not the search, refuses it).
-  assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-str-empty|param,lit|string@concat": DERIVE_FORM_BAR }), []);
+  assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-str-empty(p1)|guard-param,lit|string@concat": DERIVE_FORM_BAR }), []);
   const s2 = run(S2).e!;
   assert.equal(s2.path, "src/r2-retry-delay.ts");
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
@@ -462,7 +462,7 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
   assert.deepEqual(formsOf({ op: "mul", a: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } }, b: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } } }), ["square"]);
   // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted; a general if (ternary: no upstream
   // entry) is refused by name, with the count in the detail. In a child process (a copy of derive.ts reading a test
-  // evidence file), 10 plural entries ((n === k) ? "" : "s", key eq-num-const|lit,lit|string@top) bring the form to the
+  // evidence file), 10 plural entries ((n === k) ? "" : "s", key eq-num-const(p0)|lit,lit|string@top) bring the form to the
   // bar but not the key of (n === 4) ? 1 : 0 (number result), which is still refused, naming the key; 10 distinct
   // entries of its own key emit it.
   const N = [{ name: "n", type: "number" as const }];
@@ -490,12 +490,12 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
       assert.equal(out.status, 0, out.stderr);
       return JSON.parse(out.stdout) as { ok: boolean; reason?: string; forms?: string[]; detail?: string; expr?: string };
     };
-    const sub = probe("eq-num-const|lit,lit|string@top");
+    const sub = probe("eq-num-const(p0)|lit,lit|string@top");
     assert.equal(sub.ok, false);
     assert.equal(sub.reason, "derive_unevidenced_form");
     assert.deepEqual(sub.forms, ["ternary"]);
-    assert.match(sub.detail!, new RegExp(`ternary form .*; ${DERIVE_FORM_BAR} replaying upstream evidence entries, but the if key eq-num-const\\|lit,lit\\|number@top has 0 distinct ones\\)`));
-    assert.equal(probe("eq-num-const|lit,lit|number@top").ok, true, "10 distinct entries of its own key unlock it");
+    assert.match(sub.detail!, new RegExp(`ternary form .*; ${DERIVE_FORM_BAR} replaying upstream evidence entries, but the if key eq-num-const\\(p0\\)\\|lit,lit\\|number@top has 0 distinct ones\\)`));
+    assert.equal(probe("eq-num-const(p0)|lit,lit|number@top").ok, true, "10 distinct entries of its own key unlock it");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -519,18 +519,18 @@ test("ternary keys (Auditor #498 on 19d6100 and b2f0f67): only the if keys with 
   const eqp: DeriveNode = { op: "if", c: { op: "eq", a: p(0), b: p(1) }, t: { op: "lit", v: "same" }, e: { op: "lit", v: "diff" } };
   const sle: DeriveNode = { op: "if", c: { op: "sle", i: 0, j: 1 }, t: p(0), e: p(1) };
   const nested: DeriveNode = { op: "if", c: { op: "eq", a: p(0), b: { op: "int", v: 0 } }, t: { op: "lit", v: "zero" }, e: { op: "if", c: { op: "le", a: p(0), b: { op: "int", v: 5 } }, t: { op: "lit", v: "few" }, e: { op: "lit", v: "many" } } };
-  assert.deepEqual(ternaryShapesOf(max, ["number", "number"]), ["le|param,param|number@top"]);
-  assert.deepEqual(ternaryShapesOf(max), ["le|param,param|unknown@top"], "untyped parameter branches are never covered");
-  assert.deepEqual(ternaryShapesOf(cmp, ["string", "string"]), ["le|lit,lit|number@top"]);
-  assert.deepEqual(ternaryShapesOf(plural, ["number"]), ["eq-num-const|lit,lit|string@top"]);
-  assert.deepEqual(ternaryShapesOf(flag, ["number"]), ["eq-num-const|lit,lit|number@top"]);
-  assert.deepEqual(ternaryShapesOf(join, ["string"]), ["eq-str-empty|param,lit|string@concat"]);
-  assert.deepEqual(ternaryShapesOf(eqp, ["string", "string"]), ["eq|lit,lit|string@top"]);
-  assert.deepEqual(ternaryShapesOf(sle, ["string", "string"]), ["sle|param,param|string@top"]);
-  assert.deepEqual(ternaryShapesOf(nested, ["number"]), ["eq-num-const|lit,nested|string@top", "le|lit,lit|string@if"]);
+  assert.deepEqual(ternaryShapesOf(max, ["number", "number"]), ["le(p0,p1)|guard-param-b,guard-param-a|number@top"]);
+  assert.deepEqual(ternaryShapesOf(max), ["le(p0,p1)|guard-param-b,guard-param-a|unknown@top"], "untyped parameter branches are never covered");
+  assert.deepEqual(ternaryShapesOf(cmp, ["string", "string"]), ["le(p0,p1)|lit,lit|number@top"]);
+  assert.deepEqual(ternaryShapesOf(plural, ["number"]), ["eq-num-const(p0)|lit,lit|string@top"]);
+  assert.deepEqual(ternaryShapesOf(flag, ["number"]), ["eq-num-const(p0)|lit,lit|number@top"]);
+  assert.deepEqual(ternaryShapesOf(join, ["string"]), ["eq-str-empty(p0)|guard-param,lit|string@concat"]);
+  assert.deepEqual(ternaryShapesOf(eqp, ["string", "string"]), ["eq(p0,p1)|lit,lit|string@top"]);
+  assert.deepEqual(ternaryShapesOf(sle, ["string", "string"]), ["sle(p0,p1)|guard-param-a,guard-param-b|string@top"]);
+  assert.deepEqual(ternaryShapesOf(nested, ["number"]), ["eq-num-const(p0)|lit,nested|string@top", "le(p0)|lit,lit|string@if"]);
   // Even with the plural key at the bar, every other key stays refused (max, comparator, numeric branches, a join, a
   // nested if whose inner guard is <=); the form count alone never unlocks them.
-  const K = "eq-num-const|lit,lit|string@top";
+  const K = "eq-num-const(p0)|lit,lit|string@top";
   const at = { [K]: DERIVE_FORM_BAR };
   const F = { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }; // the form count at the bar (no entry on main)
   assert.deepEqual(unevidencedForms(plural, F, ["number"], at), []);

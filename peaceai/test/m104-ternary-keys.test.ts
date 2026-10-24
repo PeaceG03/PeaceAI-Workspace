@@ -1,6 +1,7 @@
-// M104 (Auditor NOT PASS #498 on b2f0f67): the ternary gate keys every if by guard class (with the guard parameter's
-// type and a separate empty-string test: eq-num-const / eq-str-empty / eq-str-const / le / sle / eq ...), the kind of
-// each branch (lit / param / concat / nested), the result type, and the place of the if (top / concat / if / expr).
+// M104 (Auditor NOT PASS #498 on b2f0f67 and c8ad8ea): the ternary gate keys every if by guard class (with the guard
+// parameter's type and a separate empty-string test: eq-num-const / eq-str-empty / eq-str-const / le / sle / eq ...)
+// and the parameter positions the guard reads, the kind of each branch (lit / guard-param / other-param-a, -b ... /
+// concat / nested), the result type, and the place of the if (top / concat / if / expr).
 // Nested ifs and every if inside a concat each need their own fully keyed evidence. Here: 10 distinct plural-only
 // entries ((n === 1) ? "" : "s...") unlock none of Auditor's four cases; 10 distinct entries of each case's own keys do.
 import { test } from "node:test";
@@ -26,12 +27,12 @@ const pairs = <A, B>(as: A[], bs: B[]) => as.flatMap((a) => bs.map((b) => [a, b]
 // make(0) is Auditor's program; make(k) varies only a literal (none to vary in the first), so every fake has the same
 // keys; each fake has its own examples (and expression text).
 const CASES: Case[] = [
-  { name: '(s === "") ? t : s', types: ["string", "string"], make: () => iff({ op: "empty", i: 0 }, p(1), p(0)), grid: pairs(S, S), keys: ["eq-str-empty|param,param|string@top"] },
-  { name: 's === "x" ? t : "y"', types: ["string", "string"], make: (k) => iff(eqC(0, lit(k === 0 ? "x" : `x${k}`)), p(1), lit(k === 0 ? "y" : `y${k}`)), grid: pairs([...S, "x1", "x2"], S), keys: ["eq-str-const|param,lit|string@top"] },
-  { name: 'nested: (n === 0) ? "zero" : ((n === 1) ? "one" : "many")', types: ["number"], make: (k) => iff(eqC(0, int(0)), lit(k === 0 ? "zero" : `zero${k}`), iff(eqC(0, int(1)), lit("one"), lit("many"))), grid: N.map((n) => [n]), keys: ["eq-num-const|lit,lit|string@if", "eq-num-const|lit,nested|string@top"] },
-  { name: 'two ifs in a concat: ((n === 1) ? "" : "s") + ((m === 1) ? "" : "es")', types: ["number", "number"], make: (k) => cat(iff(eqC(0, int(1)), lit(""), lit(k === 0 ? "s" : `s${k}`)), iff(eqC(1, int(1)), lit(""), lit("es"))), grid: pairs(N, N), keys: ["eq-num-const|lit,lit|string@concat"] },
+  { name: '(s === "") ? t : s', types: ["string", "string"], make: () => iff({ op: "empty", i: 0 }, p(1), p(0)), grid: pairs(S, S), keys: ["eq-str-empty(p0)|other-param-a,guard-param|string@top"] },
+  { name: 's === "x" ? t : "y"', types: ["string", "string"], make: (k) => iff(eqC(0, lit(k === 0 ? "x" : `x${k}`)), p(1), lit(k === 0 ? "y" : `y${k}`)), grid: pairs([...S, "x1", "x2"], S), keys: ["eq-str-const(p0)|other-param-a,lit|string@top"] },
+  { name: 'nested: (n === 0) ? "zero" : ((n === 1) ? "one" : "many")', types: ["number"], make: (k) => iff(eqC(0, int(0)), lit(k === 0 ? "zero" : `zero${k}`), iff(eqC(0, int(1)), lit("one"), lit("many"))), grid: N.map((n) => [n]), keys: ["eq-num-const(p0)|lit,lit|string@if", "eq-num-const(p0)|lit,nested|string@top"] },
+  { name: 'two ifs in a concat: ((n === 1) ? "" : "s") + ((m === 1) ? "" : "es")', types: ["number", "number"], make: (k) => cat(iff(eqC(0, int(1)), lit(""), lit(k === 0 ? "s" : `s${k}`)), iff(eqC(1, int(1)), lit(""), lit("es"))), grid: pairs(N, N), keys: ["eq-num-const(p0)|lit,lit|string@concat", "eq-num-const(p1)|lit,lit|string@concat"] },
 ];
-const PLURAL: Case = { name: '(n === 1) ? "" : "s"', types: ["number"], make: (k) => iff(eqC(0, int(1)), lit(""), lit(k === 0 ? "s" : `s${k}`)), grid: N.map((n) => [n]), keys: ["eq-num-const|lit,lit|string@top"] };
+const PLURAL: Case = { name: '(n === 1) ? "" : "s"', types: ["number"], make: (k) => iff(eqC(0, int(1)), lit(""), lit(k === 0 ? "s" : `s${k}`)), grid: N.map((n) => [n]), keys: ["eq-num-const(p0)|lit,lit|string@top"] };
 const NAMES = ["s", "t"];
 
 // One fake upstream entry: the program's recorded keys, its own expression text, examples from evaluating it.
@@ -49,11 +50,11 @@ test("ternary keys: each Auditor case has its own fully keyed ifs (guard class w
   assert.deepEqual(ternaryShapesOf(PLURAL.make(0), PLURAL.types), PLURAL.keys);
   for (const c of CASES) assert.deepEqual(ternaryShapesOf(c.make(0), c.types), c.keys, c.name);
   // A guard parameter of another type, an empty-string test, and a non-empty constant are all different guards.
-  assert.deepEqual(ternaryShapesOf(iff(eqC(0, lit("")), p(1), p(0)), ["string", "string"]), ["eq-str-empty|param,param|string@top"]);
-  assert.deepEqual(ternaryShapesOf(iff(eqC(0, int(1)), lit(""), lit("s")), ["number"]), ["eq-num-const|lit,lit|string@top"]);
-  assert.deepEqual(ternaryShapesOf(iff(eqC(0, lit("1")), lit(""), lit("s")), ["string"]), ["eq-str-const|lit,lit|string@top"]);
+  assert.deepEqual(ternaryShapesOf(iff(eqC(0, lit("")), p(1), p(0)), ["string", "string"]), ["eq-str-empty(p0)|other-param-a,guard-param|string@top"]);
+  assert.deepEqual(ternaryShapesOf(iff(eqC(0, int(1)), lit(""), lit("s")), ["number"]), ["eq-num-const(p0)|lit,lit|string@top"]);
+  assert.deepEqual(ternaryShapesOf(iff(eqC(0, lit("1")), lit(""), lit("s")), ["string"]), ["eq-str-const(p0)|lit,lit|string@top"]);
   // The same if on top and inside a concat are different keys.
-  assert.deepEqual(ternaryShapesOf(cat(p(0), PLURAL.make(0)), ["number"]), ["eq-num-const|lit,lit|string@concat"]);
+  assert.deepEqual(ternaryShapesOf(cat(p(0), PLURAL.make(0)), ["number"]), ["eq-num-const(p0)|lit,lit|string@concat"]);
 });
 
 test("ternary keys: 10 distinct plural-only entries unlock none of Auditor's cases; 10 distinct same-key entries unlock each", () => {
@@ -99,11 +100,50 @@ test("ternary keys end to end: deriveProgram refuses (s === \"\") ? t : s with p
     assert.equal(r.ok, false, JSON.stringify(r).slice(0, 300));
     assert.equal(r.reason, "derive_unevidenced_form");
     assert.deepEqual(r.forms, ["ternary"]);
-    assert.match(r.detail!, /but the if key eq-str-empty\|param,param\|string@top has 0 distinct ones\)/);
+    assert.match(r.detail!, /but the if key eq-str-empty\(p0\)\|other-param-a,guard-param\|string@top has 0 distinct ones\)/);
     const ok = probe([...plural, ...fakes(CASES[0], DERIVE_FORM_BAR)]);
     assert.equal(ok.ok, true, JSON.stringify(ok).slice(0, 300));
     assert.equal(ok.fit!.expr, '(value === "") ? fallback : value');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Auditor #498 on c8ad8ea: a parameter branch records which parameter. Ten (p0 === "") ? p1 : p0 entries unlock none of
+// these; ten of each one's own key unlock it.
+const E = { op: "empty" } as const;
+const SS = pairs(S, S), SSS = S.flatMap((a) => SS.map((r) => [a, ...r] as DeriveValue[]));
+const PARAM_CASES: Case[] = [
+  { name: '(s === "") ? s : t (swapped)', types: ["string", "string"], make: () => iff({ ...E, i: 0 }, p(0), p(1)), grid: SS, keys: ["eq-str-empty(p0)|guard-param,other-param-a|string@top"] },
+  { name: '(t === "") ? s : t (guard on the other parameter)', types: ["string", "string"], make: () => iff({ ...E, i: 1 }, p(0), p(1)), grid: SS, keys: ["eq-str-empty(p1)|other-param-a,guard-param|string@top"] },
+  { name: '(s === "") ? t : u (else not the guard parameter)', types: ["string", "string", "string"], make: () => iff({ ...E, i: 0 }, p(1), p(2)), grid: SSS, keys: ["eq-str-empty(p0)|other-param-a,other-param-b|string@top"] },
+  { name: '(s === "") ? t : t (both branches the same other parameter)', types: ["string", "string"], make: () => iff({ ...E, i: 0 }, p(1), p(1)), grid: SS, keys: ["eq-str-empty(p0)|other-param-a,other-param-a|string@top"] },
+];
+// The join hole: s + ((s === "") ? s : "/") + t (then is the guard parameter) vs s + ((t === "") ? s : "/") + t.
+const JOIN: Case = { name: 's + (((s === "") ? s : "/") + t)', types: ["string", "string"], make: (k) => cat(p(0), cat(iff({ ...E, i: 0 }, p(0), lit(k === 0 ? "/" : `/${k}`)), p(1))), grid: SS, keys: ["eq-str-empty(p0)|guard-param,lit|string@concat"] };
+const JOIN_OTHER: Case = { name: 's + (((t === "") ? s : "/") + t)', types: ["string", "string"], make: (k) => cat(p(0), cat(iff({ ...E, i: 1 }, p(0), lit(k === 0 ? "/" : `/${k}`)), p(1))), grid: SS, keys: ["eq-str-empty(p1)|other-param-a,lit|string@concat"] };
+// A concat branch and a lit branch; a number and a string result with the same guard and branch kinds.
+const CONCAT_BRANCH: Case = { name: '(s === "") ? "-" : s + "!"', types: ["string"], make: (k) => iff({ ...E, i: 0 }, lit(k === 0 ? "-" : `-${k}`), cat(p(0), lit("!"))), grid: S.map((x) => [x]), keys: ["eq-str-empty(p0)|lit,concat|string@top"] };
+const LIT_BRANCH: Case = { name: '(s === "") ? "-" : "!"', types: ["string"], make: (k) => iff({ ...E, i: 0 }, lit(k === 0 ? "-" : `-${k}`), lit("!")), grid: S.map((x) => [x]), keys: ["eq-str-empty(p0)|lit,lit|string@top"] };
+const NUM_RESULT: Case = { name: "(n === 1) ? 0 : 1", types: ["number"], make: (k) => iff(eqC(0, int(1)), int(k), int(k + 100)), grid: N.map((n) => [n]), keys: ["eq-num-const(p0)|lit,lit|number@top"] };
+const refuses = (c: Case, base: Case, why: string) => {
+  const counts = evidenceTernaryShapeCounts(file(fakes(base, DERIVE_FORM_BAR)));
+  assert.deepEqual(unevidencedForms(base.make(0), ALL, base.types, counts), [], `${base.name} fakes unlock ${base.name}`);
+  assert.deepEqual(unevidencedForms(c.make(0), ALL, c.types, counts), ["ternary"], `${why}: ${c.name}`);
+  assert.deepEqual(unevidencedForms(c.make(0), ALL, c.types, evidenceTernaryShapeCounts(file(fakes(c, DERIVE_FORM_BAR)))), [], `10 of its own key unlock ${c.name}`);
+};
+
+test("ternary keys: which parameter a branch is (guard-param / other-param-a, -b) and which the guard reads", () => {
+  assert.deepEqual(ternaryShapesOf(CASES[0].make(0), CASES[0].types), CASES[0].keys);
+  for (const c of [...PARAM_CASES, JOIN, JOIN_OTHER]) assert.deepEqual(ternaryShapesOf(c.make(0), c.types), c.keys, c.name);
+  for (const c of PARAM_CASES) refuses(c, CASES[0], 'ten (p0 === "") ? p1 : p0 entries must not unlock');
+  refuses(JOIN_OTHER, JOIN, "ten join entries (then = the guard parameter) must not unlock");
+});
+
+test("ternary keys: a concat branch is not a literal, and the result type is part of the key", () => {
+  assert.deepEqual(ternaryShapesOf(CONCAT_BRANCH.make(0), CONCAT_BRANCH.types), CONCAT_BRANCH.keys);
+  refuses(CONCAT_BRANCH, LIT_BRANCH, "literal-branch entries must not unlock a concat branch");
+  assert.deepEqual(ternaryShapesOf(NUM_RESULT.make(0), NUM_RESULT.types), NUM_RESULT.keys);
+  refuses(NUM_RESULT, PLURAL, "string-result entries must not unlock a number result");
+  refuses(PLURAL, NUM_RESULT, "number-result entries must not unlock a string result");
 });
