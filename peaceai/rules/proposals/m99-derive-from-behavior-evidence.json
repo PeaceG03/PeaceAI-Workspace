@@ -16896,7 +16896,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -17087,7 +17087,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -17278,7 +17278,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -17469,7 +17469,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -17660,7 +17660,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -17852,7 +17852,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -18043,7 +18043,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -18234,7 +18234,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -18425,7 +18425,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-num-const(p0)|lit,lit|string@top"
+    "[number@0] if(eq(p0,<num>),<empty>,<str>)"
    ]
   },
   {
@@ -18511,7 +18511,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,lit|string@concat"
+    "[string@0,string@1] cat(p0,cat(if(empty(p0),p0,<str>),p1))"
    ]
   },
   {
@@ -18592,7 +18592,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,lit|string@concat"
+    "[string@0] cat(if(empty(p0),p0,<str>),p0)"
    ]
   },
   {
@@ -18678,7 +18678,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,lit|string@concat"
+    "[string@0,string@1] cat(p0,cat(if(empty(p0),p0,<str>),p1))"
    ]
   },
   {
@@ -18763,7 +18763,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|other-param-a,guard-param|string@top"
+    "[string@0,string@1] if(empty(p0),p1,p0)"
    ]
   },
   {
@@ -18844,7 +18844,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,lit|string@concat"
+    "[string@0] cat(if(empty(p0),p0,<str>),p0)"
    ]
   },
   {
@@ -18930,7 +18930,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,lit|string@concat"
+    "[string@0,string@1] cat(p0,cat(if(empty(p0),p0,<str>),p1))"
    ]
   },
   {
@@ -19016,7 +19016,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,other-param-a|string@concat"
+    "[string@0,string@1] cat(p0,if(empty(p0),p0,p1))"
    ]
   },
   {
@@ -19097,7 +19097,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-str-empty(p0)|guard-param,lit|string@concat"
+    "[string@0] cat(if(empty(p0),p0,<str>),p0)"
    ]
   }
  ],
