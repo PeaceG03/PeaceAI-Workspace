@@ -180,7 +180,7 @@ test("order-shown + branch gate (practice seed 100 #1343, stuck with no question
   for (const [a, b] of FULL) assert.equal(evalProgram(r.fit.program, [a, b]), rev([a, b]));
 });
 
-test("form gate (main 5c66982, round 3; Auditor #498): with sle on, a comparator or min / max uses the ternary form (if keys le|... or sle|..., no upstream entry) and is refused; an order test alone, or two joined by && (range), is emitted", () => {
+test("form gate (main 5c66982, round 3; Auditor #498): with sle on, a comparator or min / max uses the ternary form (their program skeletons have no upstream entry) and is refused; an order test alone, or two joined by && (range), is emitted", () => {
   const P2: DeriveParam[] = [{ name: "a", type: "string" }, { name: "b", type: "string" }];
   const rows: [string, string][] = [...FULL, ["Zz 9", "a"], ["a", "a"], ["", ""], ["b", "b"]];
   const mk = (f: (a: string, b: string) => string | number | boolean, ret: DeriveInput["ret"]): DeriveInput => ({ params: P2, ret, examples: rows.map(([a, b]) => ({ args: [a, b], out: f(a, b) })) });
@@ -188,11 +188,11 @@ test("form gate (main 5c66982, round 3; Auditor #498): with sle on, a comparator
   if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return;
   assert.ok(cmp.ok, JSON.stringify(cmp).slice(0, 300));
   assert.ok(cmp.ok && formsOf(cmp.fit.program).includes("ternary"));
-  // Its if keys have no upstream entry: even with the ternary form and the plural key (eq-num-const(p0)|lit,lit|string@top) at the bar
+  // Its skeleton has no upstream entry: even with the ternary form and the plural skeleton at the bar
   // (Auditor #498) it stays refused.
-  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-num-const(p0)|lit,lit|string@top": DERIVE_FORM_BAR }).includes("ternary"));
-  assert.ok(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"]).every((k) => k !== "eq-num-const(p0)|lit,lit|string@top"), JSON.stringify(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"])));
-  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, undefined, ["string", "string"], { "eq-num-const(p0)|lit,lit|string@top": DERIVE_FORM_BAR }).includes("ternary"));
+  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "[number@0] if(eq(p0,<num>),<empty>,<str>)": DERIVE_FORM_BAR }).includes("ternary"));
+  assert.ok(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"]).every((k) => k !== "[number@0] if(eq(p0,<num>),<empty>,<str>)"), JSON.stringify(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"])));
+  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, undefined, ["string", "string"], { "[number@0] if(eq(p0,<num>),<empty>,<str>)": DERIVE_FORM_BAR }).includes("ternary"));
   const p = deriveProgram(mk(byCodeUnit, "number"));
   assert.ok(!p.ok && p.reason === "derive_unevidenced_form" && (p as { forms?: string[] }).forms?.includes("ternary"), JSON.stringify(p).slice(0, 300));
   for (const f of [(a: string, b: string) => (a <= b ? a : b), (a: string, b: string) => (a <= b ? b : a)]) {

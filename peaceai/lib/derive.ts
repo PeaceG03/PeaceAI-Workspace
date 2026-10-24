@@ -650,10 +650,10 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   const forms = unevidencedForms(r.fit.program, undefined, types);
   if (forms.length === 0) return r;
   const counts = evidenceFormCounts();
-  // M104 (Auditor #498): a ternary whose own sub-shape is under the bar is refused even when the form count is not.
+  // M104 (Auditor #498): a ternary whose program skeleton is under the bar is refused even when the form count is not.
   const shapeCounts = evidenceTernaryShapeCounts();
   const short = ternaryShapesOf(r.fit.program, types).filter((k) => !((shapeCounts[k] ?? 0) >= DERIVE_FORM_BAR));
-  const shapeText = (f: DeriveForm) => (f === "ternary" && counts.ternary >= DERIVE_FORM_BAR ? `, but the if key ${short.map((k) => `${k} has ${shapeCounts[k] ?? 0} distinct ones`).join(" and ")}` : "");
+  const shapeText = (f: DeriveForm) => (f === "ternary" && counts.ternary >= DERIVE_FORM_BAR ? `, but the program skeleton ${short.map((k) => `${k} has ${shapeCounts[k] ?? 0} distinct ones`).join(" and ")}` : "");
   return {
     ok: false, reason: "derive_unevidenced_form", forms, searched: r.searched,
     detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries${shapeText(f)})`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
@@ -737,10 +737,11 @@ let cachedCounts: Record<DeriveForm, number> | undefined;
 
 /**
  * The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted).
- * M104 (Auditor #498 rulings on 19d6100 and b2f0f67): the ternary form is also refused unless EVERY if node's key (its
- * guard class, the kind of each branch, the result type and where it sits; ternaryShapesOf) has at least DERIVE_FORM_BAR distinct evidence entries
- * (evidenceTernaryShapeCounts: identical examples count once, at most 2 per expression shape). Parameter types
- * (`types`) say what a parameter branch returns; without them such a branch is of unknown type and never covered.
+ * M104 (Auditor #498 rulings on 19d6100, b2f0f67, c8ad8ea and 3e6ef9a): the ternary form is also refused unless the
+ * program's whole skeleton (ternaryShapesOf: full AST, parameters renamed by first appearance with their types,
+ * literals as <num> / <str> / <empty>) has at least DERIVE_FORM_BAR distinct evidence entries (evidenceTernaryShapeCounts:
+ * identical examples count once, at most 2 per expression shape). Without `types` parameters are `unknown`, which no
+ * evidence entry records, so such a program is never covered.
  */
 export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<DeriveForm, number>> = evidenceFormCounts(), types?: readonly DeriveType[], shapeCounts: Readonly<Record<string, number>> = evidenceTernaryShapeCounts()): DeriveForm[] {
   return formsOf(program).filter((f) => {
@@ -750,96 +751,46 @@ export function unevidencedForms(program: DeriveNode, counts: Readonly<Record<De
   });
 }
 
-/** The type a node evaluates to (`unknown` for a parameter whose type is not given). */
-function nodeType(n: DeriveNode, types?: readonly DeriveType[]): DeriveType | "unknown" {
-  switch (n.op) {
-    case "param": return types?.[n.i] ?? "unknown";
-    case "int": case "add": case "sub": case "mul": case "sq": case "min": case "max": return "number";
-    case "lit": return typeof n.v === "string" ? "string" : "number";
-    case "cat": case "str": case "tmpl": return "string";
-    case "and": case "or": case "not": case "eq": case "le": case "range": case "empty": case "sle": return "boolean";
-    case "if": { const t = nodeType(n.t, types); return t === "unknown" ? nodeType(n.e, types) : t; }
-  }
-}
-const isConst = (n: DeriveNode) => n.op === "lit" || n.op === "int";
 /**
- * The guard class of an if node (Auditor #498 on b2f0f67: keyed by the tested parameter's type and the constant):
- * `eq-str-empty` (a string parameter is "" : the empty op, or === ""), `eq-str-const` (a string parameter === a
- * non-empty string), `eq-num-const` (a number parameter === a number); a parameter of another or unknown type against a
- * constant is `eq-<type>-const`; any other guard is its own op (eq of two non-constants, le, sle, range, and, or, not).
- */
-function guardClass(c: DeriveNode, types?: readonly DeriveType[]): string {
-  if (c.op === "empty") return "eq-str-empty";
-  if (c.op === "eq") {
-    const [p, k] = c.a.op === "param" && isConst(c.b) ? [c.a, c.b] : c.b.op === "param" && isConst(c.a) ? [c.b, c.a] : [undefined, undefined];
-    if (p && p.op === "param" && k && (k.op === "lit" || k.op === "int")) {
-      const pt = types?.[p.i] ?? "unknown", kt = typeof k.v === "string" ? "string" : "number";
-      if (pt === "string" && kt === "string") return k.v === "" ? "eq-str-empty" : "eq-str-const";
-      if (pt === "number" && kt === "number") return "eq-num-const";
-      return `eq-${pt}-const`;
-    }
-  }
-  return c.op;
-}
-/** The parameters a guard reads, in order of first appearance. */
-function guardParams(c: DeriveNode): number[] {
-  const out: number[] = [];
-  const walk = (x: DeriveNode): void => {
-    const add = (i: number) => { if (!out.includes(i)) out.push(i); };
-    if (x.op === "param") add(x.i);
-    if (x.op === "empty") add(x.i);
-    if (x.op === "sle") { add(x.i); add(x.j); }
-    for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode); }
-    if (x.op === "tmpl") for (const q of x.parts) walk(q);
-  };
-  walk(c);
-  return out;
-}
-const LETTERS = "abcdefghijklmnopqrstuvwxyz";
-/**
- * What the two branches of an if are (Auditor #498 on c8ad8ea: a parameter branch records WHICH parameter): a constant
- * (`lit`), a parameter the guard reads (`guard-param` when the guard reads one parameter, else `guard-param-a`,
- * `guard-param-b`, ... in the guard's order), another parameter (`other-param-a`, `other-param-b`, ... by first
- * appearance in then, else, so `t` / `u` are told apart from `t` / `t`), a string join (`concat`), another if (`nested`),
- * or its own op.
- */
-function branchKinds(x: Extract<DeriveNode, { op: "if" }>): string {
-  const g = guardParams(x.c), others: number[] = [];
-  const kind = (n: DeriveNode): string => {
-    if (isConst(n)) return "lit";
-    if (n.op === "param") {
-      if (g.includes(n.i)) return g.length === 1 ? "guard-param" : `guard-param-${LETTERS[g.indexOf(n.i)]}`;
-      if (!others.includes(n.i)) others.push(n.i);
-      return `other-param-${LETTERS[others.indexOf(n.i)]}`;
-    }
-    if (n.op === "cat" || n.op === "tmpl" || n.op === "str") return "concat";
-    if (n.op === "if") return "nested";
-    return n.op;
-  };
-  const t = kind(x.t); // then first: other parameters are lettered by first appearance
-  return `${t},${kind(x.e)}`;
-}
-/**
- * M104 (Auditor #498 on b2f0f67): the key of every if node in `program` (sorted, unique):
- * `guard|then-kind,else-kind|result type@place`, e.g. `eq-num-const(p0)|lit,lit|string@top` for (n === 1) ? "" : "s" and
- * `eq-str-empty(p0)|other-param-a,guard-param|string@top` for (s === "") ? t : s. The guard records which parameter
- * positions it reads (p0, p1, ...), so a guard on the other parameter is another key.
- * Place is where the if sits: `top` (the whole program), `concat` (a part of a string join), `if` (a branch or guard
- * of another if) or `expr` (inside any other node). Every if node, nested or in a join, needs its own key's evidence.
+ * M104 (Auditor #498 on 3e6ef9a: replace the per-if key): the evidence key of a program that contains an if is its
+ * WHOLE expression skeleton, a single string. It keeps the full AST: every operator and every operand in its order
+ * (so `n <= 5` and `5 <= n` differ, and so do `s + x` and `t + x`, min and max). Parameters are renamed p0, p1, ... by
+ * first appearance in a left-to-right walk (guard and branches alike), so the key does not depend on the parameter
+ * names, but `(s === "") ? s : t` and `(s === "") ? t : s` differ. The renamed parameters are listed first with their
+ * type and declared argument position (`[string@1,string@0]`: p0 is the second argument), so a guard on the other
+ * argument, `(t === "") ? s : t` against `(s === "") ? t : s`, is another key (the same body with the arguments
+ * swapped is a different function signature; kept apart so this round does not loosen the c8ad8ea gate). Literals become type placeholders: `<num>` (an integer or number literal, a min /
+ * max cap, range bounds), `<str>` (a non-empty string), and `<empty>` for "" (a test against or a branch of the empty
+ * string behaves differently from any other string: `s === ""` is an emptiness test, and "" is the identity of a
+ * join). No other literal is special. A program without an if has no key (it is not gated here).
+ * Example: s + (((s === "") ? s : "/") + t) is `[string@0,string@1] cat(p0,cat(if(empty(p0),p0,<str>),p1))`.
+ * The function keeps its name and returns a one-element list, as the evidence field `ternaryShapes` does.
  */
 export function ternaryShapesOf(program: DeriveNode, types?: readonly DeriveType[]): string[] {
-  const out = new Set<string>();
-  const walk = (x: DeriveNode, place: string): void => {
-    if (x.op === "if") out.add(`${guardClass(x.c, types)}(${guardParams(x.c).map((i) => `p${i}`).join(",")})|${branchKinds(x)}|${nodeType(x, types)}@${place}`);
-    const inner = x.op === "if" ? "if" : x.op === "cat" || x.op === "tmpl" || x.op === "str" ? "concat" : "expr";
-    for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode, inner); }
-    if (x.op === "tmpl") for (const q of x.parts) walk(q, "concat");
+  let hasIf = false;
+  const order: number[] = [];
+  const pn = (i: number) => { if (!order.includes(i)) order.push(i); return `p${order.indexOf(i)}`; };
+  const litOf = (v: number | string) => (typeof v === "number" ? "<num>" : v === "" ? "<empty>" : "<str>");
+  const sk = (x: DeriveNode): string => {
+    switch (x.op) {
+      case "param": return pn(x.i);
+      case "int": return "<num>";
+      case "lit": return litOf(x.v);
+      case "add": case "sub": case "mul": case "cat": case "and": case "or": case "eq": case "le": return `${x.op}(${sk(x.a)},${sk(x.b)})`;
+      case "sq": case "not": case "str": return `${x.op}(${sk(x.a)})`;
+      case "min": case "max": return `${x.op}(<num>,${sk(x.a)})`;
+      case "range": return `range(<num>,${pn(x.i)},<num>)`;
+      case "empty": return `empty(${pn(x.i)})`;
+      case "sle": { const i = pn(x.i); return `sle(${i},${pn(x.j)})`; }
+      case "if": { hasIf = true; const c = sk(x.c), t = sk(x.t); return `if(${c},${t},${sk(x.e)})`; }
+      case "tmpl": return `tmpl(${x.parts.map(sk).join(",")})`;
+    }
   };
-  walk(program, "top");
-  return [...out].sort();
+  const body = sk(program);
+  return hasIf ? [`[${order.map((i) => `${types?.[i] ?? "unknown"}@${i}`).join(",")}] ${body}`] : [];
 }
 /**
- * Distinct evidence entries per ternary sub-shape (from each entry's recorded `ternaryShapes`). Two rules make the
+ * Distinct evidence entries per program skeleton (from each entry's recorded `ternaryShapes`). Two rules make the
  * count a count of distinct problems, not of copies (Auditor #498): entries with identical examples count once, and at
  * most 2 count per expression shape (the expression with its parameters renamed p0, p1, ..., as the M102 evidence
  * cap). Fail closed like evidenceFormCounts.
