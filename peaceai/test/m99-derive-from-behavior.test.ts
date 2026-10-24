@@ -24,7 +24,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const SPEC = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
-const SHA = "2136ccd8fb37c2d6f124b4e81d3b796d2a6070dfafd47b33eb1c119a9ff23fb7"; // M104: learned spec evidence counts re-pinned (if-form entries added); the spec's rule fields are unchanged
+const SHA = "799182d79506931e78a232b5729121a339c0aa584dd008479d5aacd9869f7cc1";
 const FILES = [{ path: "src/host.ts", content: "export const x = 1;\n" }, { path: "src/host.test.ts", content: 'import { x } from "./host.ts";\n' }];
 const S1 = `Add a new module \`src/r2-retry-status.ts\` exporting \`isRetryableR2Status(status: number): boolean\`.
 
@@ -80,9 +80,9 @@ test("spec: valid, hash pinned, kind wired; any approved.json entry pins the exa
 test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (its ternary sub-shape has fewer than 10 distinct upstream entries, Auditor #498)", () => {
   // Auditor ruling on 6f1ea5e: no program using a form with fewer than DERIVE_FORM_BAR replaying upstream evidence
   // entries is emitted. Round 4 mining brought eq to >= 10 entries, so S1 (eq, ||, range) derives; S3 needs a general
-  // if (ternary). M104 mined 12 upstream if entries, but the Auditor #498 ruling counts distinct problems per sub-shape:
-  // S3's if is eq-const/string (a parameter === a constant choosing a string), which has 9 distinct entries (identical
-  // examples once, at most 2 per expression shape), under the bar, so S3 is still refused by name.
+  // if (ternary: no upstream entry; the M104 if entries are parked on m106/ternary-evidence until a single
+  // re-approval). Since Auditor #498 the gate also needs S3's own sub-shape, eq-const/string (a parameter === a constant
+  // choosing a string), to have 10 distinct entries (identical examples once, at most 2 per expression shape).
   const r1 = run(S1), r3 = run(S3);
   assert.equal(r1.why ?? null, null);
   assert.match(r1.e!.content, /return \(status === 429\) \|\| \(500 <= status && status <= 599\);/);
@@ -97,8 +97,8 @@ test("S1-S3 (scanner refile): S1 and S2 derive; S3 refuses honestly (its ternary
   assert.deepEqual(c3.ok && formsOf(c3.fit.program), ["ternary", "strcat", "eq"]);
   assert.deepEqual(c3.ok && ternaryShapesOf(c3.fit.program, ["string", "string"]), ["eq-const/string"]);
   assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, undefined, ["string", "string"]), ["ternary"]);
-  // With 10 distinct eq-const/string entries it would be emitted (the sub-shape gate, not the search, refuses it).
-  assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, undefined, ["string", "string"], { "eq-const/string": DERIVE_FORM_BAR }), []);
+  // With the ternary form and 10 distinct eq-const/string entries it would be emitted (the sub-shape gate, not the search, refuses it).
+  assert.deepEqual(c3.ok && unevidencedForms(c3.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-const/string": DERIVE_FORM_BAR }), []);
   const s2 = run(S2).e!;
   assert.equal(s2.path, "src/r2-retry-delay.ts");
   assert.equal(s2.content, "export function r2RetryDelayMs(attempt: number, baseMs: number): number {\n  return (baseMs * ((attempt + 1) * (attempt + 1))) <= 30000 ? (baseMs * ((attempt + 1) * (attempt + 1))) : 30000;\n}\n");
@@ -437,11 +437,11 @@ test("evidence by form (#491 round 3, Auditor ruling): the recorded forms replay
   for (const f of DERIVE_FORMS) assert.deepEqual(formsOf(FORM_SAMPLE[f]), [f], f);
   for (const f of allowed) assert.ok(counts[f] >= DERIVE_FORM_BAR, `${f}: ${counts[f]}`);
   for (const f of DERIVE_FORMS) if (counts[f] < DERIVE_FORM_BAR) assert.deepEqual(unevidencedForms(FORM_SAMPLE[f]), [f], f);
-  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; M104 mining: ternary 17
-  // entries, but per sub-shape only eq-const/string 9 distinct ones, Auditor #498: no ternary sub-shape is emitted).
+  // Pinned so a change in what PeaceAI may emit is a visible diff (round 4 mining: eq 17; no general if upstream: the
+  // M104 if entries are parked on m106/ternary-evidence, so no ternary sub-shape has an entry).
   assert.deepEqual(allowed, ["cap", "strcat", "eq", "or", "range", "square"], JSON.stringify(counts));
-  assert.equal(counts.ternary, 17, "M104: 17 replaying upstream if / else entries");
-  assert.deepEqual(evidenceTernaryShapeCounts(), { "eq-const/string": 9 });
+  assert.equal(counts.ternary, 0);
+  assert.deepEqual(evidenceTernaryShapeCounts(), {});
 });
 test("form gate: boundary at the bar, fail closed on a bad evidence file, refused by name through deriveProgram", () => {
   const zero = Object.fromEntries(DERIVE_FORMS.map((f) => [f, 0])) as Record<DeriveForm, number>;
@@ -459,9 +459,10 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
   assert.equal(evidenceFormCounts(many(["or", "or"])).or, DERIVE_FORM_BAR, "an entry counts once per form");
   // A square of a subexpression and a square of a parameter are both the square form.
   assert.deepEqual(formsOf({ op: "mul", a: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } }, b: { op: "add", a: { op: "param", i: 0 }, b: { op: "int", v: 1 } } }), ["square"]);
-  // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted, and since M104 (ternary: 12 entries)
-  // so is a general if. With an evidence file one ternary entry short of the bar (a copy of derive.ts run in a child
-  // process), the same behavior is refused by name, with the count in the detail.
+  // Through deriveProgram: an equality-only behavior (eq: >= 10 entries) is emitted; a general if (ternary: no upstream
+  // entry) is refused by name, with the count in the detail. In a child process (a copy of derive.ts reading a test
+  // evidence file), 10 eq-const/string ternary entries bring the form to the bar but not the sub-shape eq-const/number
+  // of (n === 4) ? 1 : 0, which is still refused, naming the sub-shape; 10 distinct eq-const/number entries emit it.
   const N = [{ name: "n", type: "number" as const }];
   const grid = [-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50];
   const eqEx = [-5, 0, 3, 4, 5, 9, 100, -100, 200, 6, 2].map((n) => ({ args: [n], out: n === 4 }));
@@ -470,27 +471,29 @@ test("form gate: boundary at the bar, fail closed on a bad evidence file, refuse
   const ex = grid.map((n) => ({ args: [n], out: n === 4 ? 1 : 0 }));
   const c = deriveCandidate({ params: N, ret: "number", examples: ex });
   assert.ok(c.ok && c.fit.expr === "(n === 4) ? 1 : 0", "the search alone fits (n === 4) ? 1 : 0");
-  // The real evidence: the form count (12) is at the bar but the sub-shape eq-const/number has no entry, so refused.
-  const sub = deriveProgram({ params: N, ret: "number", examples: ex });
-  assert.ok(!sub.ok && sub.reason === "derive_unevidenced_form" && JSON.stringify(sub.forms) === '["ternary"]', JSON.stringify(sub).slice(0, 300));
-  assert.match(!sub.ok ? sub.detail! : "", /sub-shape eq-const\/number has 0 distinct ones/);
+  const r = deriveProgram({ params: N, ret: "number", examples: ex });
+  assert.ok(!r.ok && r.reason === "derive_unevidenced_form" && JSON.stringify(r.forms) === '["ternary"]', JSON.stringify(r).slice(0, 300));
+  assert.match(!r.ok ? r.detail! : "", new RegExp(`ternary form .*; ${evidenceFormCounts().ternary} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
   const dir = mkdtempSync(join(tmpdir(), "m104-gate-"));
   try {
     mkdirSync(join(dir, "peaceai/lib"), { recursive: true });
     mkdirSync(join(dir, "peaceai/rules/proposals"), { recursive: true });
     symlinkSync(resolve(root, "node_modules"), join(dir, "node_modules"));
     writeFileSync(join(dir, "peaceai/lib/derive.ts"), read("peaceai/lib/derive.ts"));
-    let drop = evidenceFormCounts().ternary - (DERIVE_FORM_BAR - 1);
-    const short = { ...EV, examples: EV.examples.filter((e) => !(e.forms.includes("ternary") && drop-- > 0)) };
-    writeFileSync(join(dir, "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json"), JSON.stringify(short));
     writeFileSync(join(dir, "probe.ts"), `import { deriveProgram } from "./peaceai/lib/derive.ts";\nprocess.stdout.write(JSON.stringify(deriveProgram(${JSON.stringify({ params: N, ret: "number", examples: ex })})));\n`);
-    const out = spawnSync(process.execPath, [resolve(root, "node_modules/tsx/dist/cli.mjs"), "probe.ts"], { cwd: dir, encoding: "utf8" });
-    assert.equal(out.status, 0, out.stderr);
-    const r = JSON.parse(out.stdout) as { ok: boolean; reason?: string; forms?: string[]; detail?: string };
-    assert.equal(r.ok, false);
-    assert.equal(r.reason, "derive_unevidenced_form");
-    assert.deepEqual(r.forms, ["ternary"]);
-    assert.match(r.detail!, new RegExp(`ternary form .*; ${DERIVE_FORM_BAR - 1} replaying upstream evidence entries\\).*at least ${DERIVE_FORM_BAR}`));
+    const probe = (shape: string) => {
+      const fake = Array.from({ length: DERIVE_FORM_BAR }, (_, k) => ({ repo: `t/${k}`, fn: `f${k}`, params: [{ name: "n", type: "number" }], expr: `(n === ${k}) ? 1 : 0`, examples: [{ args: [k], out: 1 }, { args: [k + 1], out: 0 }], forms: ["ternary", "eq"], ternaryShapes: [shape] }));
+      writeFileSync(join(dir, "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json"), JSON.stringify({ ...EV, examples: [...EV.examples, ...fake] }));
+      const out = spawnSync(process.execPath, [resolve(root, "node_modules/tsx/dist/cli.mjs"), "probe.ts"], { cwd: dir, encoding: "utf8" });
+      assert.equal(out.status, 0, out.stderr);
+      return JSON.parse(out.stdout) as { ok: boolean; reason?: string; forms?: string[]; detail?: string; expr?: string };
+    };
+    const sub = probe("eq-const/string");
+    assert.equal(sub.ok, false);
+    assert.equal(sub.reason, "derive_unevidenced_form");
+    assert.deepEqual(sub.forms, ["ternary"]);
+    assert.match(sub.detail!, new RegExp(`ternary form .*; ${DERIVE_FORM_BAR} replaying upstream evidence entries, but the sub-shape eq-const/number has 0 distinct ones\\)`));
+    assert.equal(probe("eq-const/number").ok, true, "10 distinct entries of its own sub-shape unlock it");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -526,10 +529,11 @@ test("ternary sub-shapes (Auditor #498 on 19d6100): only the sub-shapes with 10 
   // Even with eq-const/string at the bar, every other sub-shape stays refused (max, comparator, numeric branches, a
   // nested if whose inner guard is <=); the form count alone never unlocks them.
   const at = { "eq-const/string": DERIVE_FORM_BAR };
-  assert.deepEqual(unevidencedForms(plural, undefined, ["number"], at), []);
-  assert.deepEqual(unevidencedForms(join, undefined, ["string"], at), ["strcat"].filter((f) => evidenceFormCounts().strcat < DERIVE_FORM_BAR));
-  for (const [x, t] of [[max, ["number", "number"]], [cmp, ["string", "string"]], [flag, ["number"]], [eqp, ["string", "string"]], [sle, ["string", "string"]], [nested, ["number"]]] as [DeriveNode, DeriveType[]][]) assert.deepEqual(unevidencedForms(x, undefined, t, at), ["ternary"], JSON.stringify(x));
-  assert.deepEqual(unevidencedForms(plural, undefined, ["number"], { "eq-const/string": DERIVE_FORM_BAR - 1 }), ["ternary"]);
+  const F = { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }; // the form count at the bar (no entry on main)
+  assert.deepEqual(unevidencedForms(plural, F, ["number"], at), []);
+  assert.deepEqual(unevidencedForms(join, F, ["string"], at), ["strcat"].filter((f) => evidenceFormCounts().strcat < DERIVE_FORM_BAR));
+  for (const [x, t] of [[max, ["number", "number"]], [cmp, ["string", "string"]], [flag, ["number"]], [eqp, ["string", "string"]], [sle, ["string", "string"]], [nested, ["number"]]] as [DeriveNode, DeriveType[]][]) assert.deepEqual(unevidencedForms(x, F, t, at), ["ternary"], JSON.stringify(x));
+  assert.deepEqual(unevidencedForms(plural, F, ["number"], { "eq-const/string": DERIVE_FORM_BAR - 1 }), ["ternary"]);
   // Distinct counting: identical examples count once (any names or quotes), at most 2 per expression shape, renaming
   // only outside string literals; fail closed.
   const ent = (fn: string, name: string, expr: string, rows: number[], shapes: unknown = ["eq-const/string"]) => ({ fn, params: [{ name, type: "number" }], expr, examples: rows.map((n) => ({ args: [n], out: n === 1 ? "" : "s" })), ternaryShapes: shapes });

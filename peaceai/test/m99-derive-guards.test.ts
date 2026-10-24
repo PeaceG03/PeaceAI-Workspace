@@ -172,8 +172,8 @@ function jobA(body: string) {
 
 test("Job A: code hidden where cleaning drops it (``` / ~~~ fences, HTML comments, indented code) refuses the derive rule; the clean issue makes a candidate", () => {
   const clean = jobA(S1R);
-  // A general if (ternary): refused by name. M104 mined 12 ternary entries, but this if's sub-shape (eq-const/number)
-  // has none (Auditor #498: a sub-shape needs 10 distinct entries), so Job A makes no candidate.
+  // A general if (ternary: no upstream evidence entry; since Auditor #498 its sub-shape eq-const/number would also need
+  // 10 distinct entries): no candidate, refused by name (the form gate).
   const TERNARY = `Add a new module \`src/four-flag.ts\` exporting \`fourFlag(n: number): number\`.\n\nBehavior: 1 for 4, otherwise 0.\n\nExamples:\n${[-5, 0, 3, 4, 5, 6, 9, 100, -100, 200, 2, 7, 50].map((n) => `- ${n} gives ${n === 4 ? 1 : 0}`).join("\n")}`;
   const tern = jobA(TERNARY);
   assert.equal(tern.n, 0, tern.stdout);

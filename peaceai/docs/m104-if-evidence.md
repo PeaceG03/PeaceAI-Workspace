@@ -1,7 +1,9 @@
-# M104: upstream if-form (ternary) evidence
+# M104: ternary sub-shape gate (Auditor #498)
 
-Branch m104/if-evidence (stacked on m102 #495; main merged in after #495 landed). The engine change is the Auditor #498
-sub-shape gate in peaceai/lib/derive.ts; the rest is the evidence file (the single source of form counts) and tests.
+Branch m104/if-evidence. This branch changes the engine gate only: peaceai/rules/** is byte-identical to main, so the
+learned spec still hashes to 799182d7 (approved in #499) and the evidence file has no ternary entry. The mined if
+evidence (17 entries, `ternaryShapes` on each) is parked on branch m106/ternary-evidence (b4061c1), to be proposed for a
+single re-approval once a 10th distinct eq-const/string entry exists.
 
 ## Gate (Auditor #498 on 19d6100)
 The plain ternary form count is no longer enough. Each if node in a derived program gets a sub-shape
@@ -14,18 +16,8 @@ string literals). Each evidence entry records its `ternaryShapes`, and a test ch
 fails closed (unreadable file or missing field: 0). So a `<=` guard with number branches (max, the m102 comparator),
 or `===` with number branches, stays refused however many plural entries are added.
 
-## Method (round 4, unchanged)
-GitHub code search for if / else-return and ternary functions over numbers and strings; permissive-license classifier
-unchanged; every candidate replayed (examples -> the same program) and re-derived on the typed held-out domain (0
-wrong); whitespace-identical upstream text deduped against the m99 / m101 / m102 upstreams; modules with emails or
-private-core lines dropped; at most 3 entries per repo. No entry uses the M102 string order (sle); the M102
-comparator / min / max entries are not counted as if-evidence.
+## Parked evidence (m106/ternary-evidence, not on this branch)
 
-Manual review against upstream dropped two candidates that replayed on the probe grid but differ off it:
-iirose-plugins/adapter-iirose `parseAvatar` (a `startsWith('http')` branch) and
-ministryofjustice/digital-prison-services `possessive` (an `endsWith('s')` branch). One more was a whitespace duplicate.
-
-## Ternary entries: 17, from 17 repos (all MIT); distinct per sub-shape: eq-const/string 9 (< 10, so no ternary is emitted)
 
 | normalized expr | entries | distinct examples | counted (cap 2) | repo fn |
 |---|---:|---:|---:|---|
@@ -41,30 +33,18 @@ ministryofjustice/digital-prison-services `possessive` (an `endsWith('s')` branc
 
 All 17 are sub-shape eq-const/string; no other sub-shape has any entry. The first 12 (slices 1-2) split as 9 eq-suffix
 (8 plural "s" with byte-identical 23-row examples, plus hasComma ","), 2 join (join and logPath, identical examples)
-and 1 indent: about 4 distinct problems, as the Auditor found. Slices 3-4 add 5 distinct ones. Other mined copies
+and 1 indent: about 4 distinct problems, as the Auditor found. The later mining added 5 distinct ones. Other mined copies
 (more plurals, 7 more `value === "" ? fallback : value`, a second `#` + id) add 0 under the rule and were not added.
 Manual review also dropped hoangvantuan/substack-cli `joinOut` (upstream also treats "." as empty).
 
-What the tests pin: S3 (scanner refile) is refused again ("derive_unevidenced_form: ternary", detail names the
+What the tests on this branch pin: S3 (scanner refile) is refused ("derive_unevidenced_form: ternary", detail names the
 sub-shape and its distinct count); Job A has no general-if candidate; the m102 comparator and string min/max are
-refused; with eq-const/string set to 10 only that shape unlocks. The learned spec hash is re-pinned to 2136ccd8 (only its
-evidence counts change: 128 examples, 106 repos). #499 landed the approval of 799182d7 (the 111-example spec), so on this
-branch that approval reads HASH_CHANGED: the two approval tests (approved.json entries hash-match a spec; any
-approved.json entry pins the exact hash) fail until Peace approves the new hash. Every other test passes.
+refused; with eq-const/string set to 10 only that shape unlocks.
+In a child process with 10 test eq-const/string entries, `(n === 4) ? 1 : 0` (eq-const/number) is still refused, naming
+its sub-shape; 10 distinct eq-const/number entries emit it.
 
 ## Practice runs (seed 100, 5000 tasks, budget 100000, cells 16000000)
 
-| family | head | right | refused | blocking | known-limit wrong | right after ask | wrong after ask |
-|---|---|---|---|---|---|---|---|
-| if-return-chains | m102 d335cff | 361 | 4639 | 0 | 0 | 1339 | 0 |
-| if-return-chains | m104 0d0b89f (plain form gate, superseded) | 723 | 4277 | 0 | 0 | 1860 | 0 |
-| if-return-chains | m104 547118d (sub-shape gate) | 361 | 4639 | 0 | 0 | 1339 | 0 |
-| family-1 | m102 d335cff | 725 | 4182 | 0 | 93 | 1425 | 97 (+219 known limit) |
-| family-1 | m104 0d0b89f | 725 | 4182 | 0 | 93 | 1425 | 97 (+219 known limit) |
-| template-joins | m102 d335cff | 1345 | 3655 | 0 | 0 | 2832 | 0 |
-| template-joins | m104 0d0b89f | 1345 | 3655 | 0 | 0 | 2832 | 0 |
-
-With the sub-shape gate, if-return-chains is back to m102: all 5000 task records are identical to m102 (no ternary
-sub-shape reaches 10). family-1 and template-joins had 0 tasks reaching the form gate at m102 and were identical at
-0d0b89f, where the gate was looser, so the stricter gate cannot change them. The later evidence additions (slices 3-4)
-only raise counts that are already >= 10 (strcat, eq) or a ternary sub-shape that stays < 10.
+if-return-chains on this branch: see the PR body for the run at this head (expected as at m102: 361 right, 0 blocking,
+1339 right / 0 wrong after asking). With no ternary entry the gate refuses every ternary, exactly as on main;
+family-1 and template-joins have no task that reaches the form gate.

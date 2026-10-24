@@ -188,9 +188,9 @@ test("form gate (main 5c66982, round 3; Auditor #498): with sle on, a comparator
   if (ORDER_FORM_EVIDENCE.sle < DERIVE_FORM_BAR) return;
   assert.ok(cmp.ok, JSON.stringify(cmp).slice(0, 300));
   assert.ok(cmp.ok && formsOf(cmp.fit.program).includes("ternary"));
-  // The ternary form count (12, M104) is at the bar, but the comparator's sub-shapes have no upstream entry: even with
-  // the eq-const/string sub-shape at the bar it stays refused.
-  assert.ok(evidenceFormCounts().ternary >= DERIVE_FORM_BAR);
+  // Its sub-shapes have no upstream entry: even with the ternary form and the eq-const/string sub-shape at the bar
+  // (Auditor #498) it stays refused.
+  assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, { ...evidenceFormCounts(), ternary: DERIVE_FORM_BAR }, ["string", "string"], { "eq-const/string": DERIVE_FORM_BAR }).includes("ternary"));
   assert.ok(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"]).every((k) => k !== "eq-const/string"), JSON.stringify(cmp.ok && ternaryShapesOf(cmp.fit.program, ["string", "string"])));
   assert.ok(cmp.ok && unevidencedForms(cmp.fit.program, undefined, ["string", "string"], { "eq-const/string": DERIVE_FORM_BAR }).includes("ternary"));
   const p = deriveProgram(mk(byCodeUnit, "number"));
