@@ -40,6 +40,9 @@ test("template-join evidence: modules blob-pinned and hold the upstream function
   for (const e of [...M99.examples, ...EV.examples]) perRepo.set(e.repo, (perRepo.get(e.repo) ?? 0) + 1);
   assert.ok([...perRepo.values()].every((n) => n <= 3), "at most 3 per repo (with the M99 evidence)");
   const m99 = new Set(M99.examples.map((e) => `${e.repo}\0${e.fn}`));
+  const KNOWN_REFUSALS = new Set(["schmayterling/comment-issues getIssueUrl"]);
+  const refused: string[] = [];
+  let tmplReplayed = 0;
   for (const e of EV.examples) {
     assert.ok(!m99.has(`${e.repo}\0${e.fn}`), `${e.repo} ${e.fn} is not an M99 entry`);
     const b = readFileSync(resolve(root, e.fixture));
@@ -54,6 +57,13 @@ test("template-join evidence: modules blob-pinned and hold the upstream function
     const names = e.params.map((p) => p.name);
     assert.equal(derivedExprProblem(e.expr, names), null, `${e.repo} ${e.fn} whitelist`);
     const r = deriveProgram({ params: e.params, ret: e.ret, examples: e.examples });
+    if (KNOWN_REFUSALS.has(`${e.repo} ${e.fn}`)) {
+      // m103 unread gate (Auditor #497 ruling): providerName only varies while repoUrl = "", so it is never shown irrelevant.
+      assert.ok(!r.ok && r.reason === "derive_under_specified", `${e.repo} ${e.fn}: the known refusal (${r.ok ? "derived" : r.reason})`);
+      refused.push(`${e.repo} ${e.fn}`);
+      continue;
+    }
+    if (e.forms.every(on) && e.forms.includes("tmpl")) tmplReplayed++;
     if (e.forms.every(on)) {
       assert.ok(r.ok, `${e.repo} ${e.fn}: ${r.ok ? "" : r.reason}`);
       assert.equal(compileProgram(r.fit.program, names), e.expr, `${e.repo} ${e.fn}`);
@@ -69,6 +79,9 @@ test("template-join evidence: modules blob-pinned and hold the upstream function
       for (const x of e.examples) assert.equal(evalProgram(hit!, x.args), x.out);
     }
   }
+  assert.deepEqual(refused, [...KNOWN_REFUSALS], "every known refusal is an evidence entry and refuses");
+  assert.equal(tmplReplayed, 35, "replayed tmpl entries");
+  assert.ok(tmplReplayed >= DERIVE_FORM_BAR, "replayed tmpl entries reach the bar");
 });
 
 test("template-join evidence: permissive licenses by hash in THIRD_PARTY_NOTICES; the fixtures dir holds exactly them", () => {

@@ -81,7 +81,15 @@ A program whose value is the same at every point (`p && !p`, `x - x`) does not c
 A unique smallest fit is still refused, `derive_under_specified` with the gate and parameter (through the rule:
 `derive_under_specified_<gate>: <param>`; the detail names the example to add), unless every gate passes, in order:
 
-- unread: a parameter the program ignores has two examples differing only in it with the same result;
+- unread: every parameter the program ignores is shown irrelevant at non-degenerate settings (m103, Auditor #494
+  backoff/sparse and #497 sibling witnesses): a group of examples differing only in it with the same result, where
+  (a) every other number parameter is not 0, 1 or -1 and every other string parameter is non-empty (a product by 0,
+  a power of 1 or an empty-string branch hides it), and no min / max cap of the program is at or past its cap value
+  (a held cap hides it); (b) it takes at least 3 distinct values (both values for a boolean; a symmetric pair such as
+  a = 0 and a = -2 in (a + 1) ** 2 hides it); (c) for a boolean result and for each operand of every && / ||, such a
+  group at each of its outcomes some example reaches (a short-circuited operand hides it). Refused otherwise, asking
+  at a setting meeting the same conditions with the parameter changed; the answers are the program's result and the
+  results of programs that read the parameter and fit every example;
 - chars: a string parameter the program reads has example values with upper case, lower case, a digit, an inner
   space, a leading or trailing space, punctuation, and (round 3, the practice generator's conditional suffix) the empty
   string itself, asked for when no example has it;
