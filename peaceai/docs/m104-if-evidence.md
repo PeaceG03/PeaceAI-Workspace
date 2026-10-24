@@ -47,8 +47,10 @@ Manual review also dropped hoangvantuan/substack-cli `joinOut` (upstream also tr
 
 What the tests pin: S3 (scanner refile) is refused again ("derive_unevidenced_form: ternary", detail names the
 sub-shape and its distinct count); Job A has no general-if candidate; the m102 comparator and string min/max are
-refused; with eq-const/string set to 10 only that shape unlocks. The learned spec hash is re-pinned (only its
-evidence counts change), so the 799182d7 approval would read HASH_CHANGED if this landed before #499.
+refused; with eq-const/string set to 10 only that shape unlocks. The learned spec hash is re-pinned to 2136ccd8 (only its
+evidence counts change: 128 examples, 106 repos). #499 landed the approval of 799182d7 (the 111-example spec), so on this
+branch that approval reads HASH_CHANGED: the two approval tests (approved.json entries hash-match a spec; any
+approved.json entry pins the exact hash) fail until Peace approves the new hash. Every other test passes.
 
 ## Practice runs (seed 100, 5000 tasks, budget 100000, cells 16000000)
 
