@@ -1015,7 +1015,10 @@ export function paramsRead(n: DeriveNode): Set<number> {
 
 /**
  * The gates, in order (each names the parameter / edge the examples do not show):
- *  unread  every parameter the program does not read: two examples that differ only in it give the same result;
+ *  unread  every parameter the program does not read is shown irrelevant at non-degenerate settings: examples that
+ *          differ only in it give the same result, with the other numbers not 0 / 1 / -1, the other strings
+ *          non-empty, no min / max cap held, at least DERIVE_UNREAD_VALUES values of it, at both outcomes of a
+ *          boolean result and of each && / || operand (unreadProblem);
  *  chars   every string parameter it reads: the example values include an upper-case and a lower-case letter, a
  *          digit, an inner space, a leading or trailing space and punctuation (a verbatim copy or an emptiness test
  *          is only shown on the characters a case change, trim or escape would alter);
@@ -1042,6 +1045,263 @@ export function paramsRead(n: DeriveNode): Set<number> {
  *          products); and a second search with the witnessed edges as constants finds none that differs on a far
  *          probe past the examples (rivalProblem). rival_budget: a search ran out of budget.
  */
+/** Smallest number of distinct values an unread parameter takes in one witness group (m103, Auditor #497 (b)). */
+export const DERIVE_UNREAD_VALUES = 3;
+/** Number values that hide another parameter (a product by 0, a power or product by 1 or -1). */
+const DEGENERATE_NUMS = new Set([0, 1, -1]);
+
+/** A program with the node `at` (by identity) replaced by `by`. */
+function replaceNode(n: DeriveNode, at: DeriveNode, by: DeriveNode): DeriveNode {
+  if (n === at) return by;
+  switch (n.op) {
+    case "add": case "sub": case "mul": case "cat": case "and": case "or": case "eq": case "le": return { ...n, a: replaceNode(n.a, at, by), b: replaceNode(n.b, at, by) };
+    case "sq": case "not": case "min": case "max": return { ...n, a: replaceNode(n.a, at, by) };
+    case "if": return { ...n, c: replaceNode(n.c, at, by), t: replaceNode(n.t, at, by), e: replaceNode(n.e, at, by) };
+    default: return n;
+  }
+}
+
+/**
+ * Programs that read parameter i and fit every example as well as `program` does: the program with i joined to its
+ * result or to one of the parameters it reads (x * f(i), x + f(i) for f in i, i + 1, (i + 1) ** 2, i ** 2; strings
+ * x + i, i + x). Their results are the other answers at an unread question (m103, Auditor #497: a linear guess left a
+ * quadratic truth off the menu).
+ */
+function unreadVariants(input: DeriveInput, program: DeriveNode, i: number): DeriveNode[] {
+  const { params, examples } = input;
+  const P: DeriveNode = { op: "param", i };
+  const leaves: DeriveNode[] = [];
+  walk(program, (n) => { if (n.op === "param" && n !== program) leaves.push(n); });
+  const typeAt = (n: DeriveNode) => typeOf(evalProgram(n, examples[0]!.args) ?? 0);
+  const targets = [program, ...leaves.filter((n) => n.op === "param" && params[n.i]!.type === params[i]!.type)];
+  const out: DeriveNode[] = [];
+  for (const x of targets) {
+    if (params[i]!.type === "number" && typeAt(x) === "number") {
+      const one: DeriveNode = { op: "int", v: 1 };
+      for (const f of [P, { op: "add", a: P, b: one }, { op: "sq", a: { op: "add", a: P, b: one } }, { op: "sq", a: P }] as DeriveNode[]) {
+        out.push(replaceNode(program, x, { op: "mul", a: x, b: f }), replaceNode(program, x, { op: "add", a: x, b: f }));
+      }
+    } else if (params[i]!.type === "string" && typeAt(x) === "string") {
+      out.push(replaceNode(program, x, { op: "cat", a: x, b: P }), replaceNode(program, x, { op: "cat", a: P, b: x }));
+      // Joined only where another string is non-empty (`s === "" ? "" : s + t` shown only at s = "").
+      params.forEach((q, j) => { if (j !== i && q.type === "string") out.push(replaceNode(program, x, { op: "if", c: { op: "empty", i: j }, t: x, e: { op: "cat", a: x, b: P } })); });
+    }
+  }
+  // The term a degenerate value hid: the result plus f(i) times (p - d) or its square, for f(i) in i, i + 1, i - 1,
+  // another number parameter p and d in 0, 1, -1 (a * b + c, c + (a * b) ** 2, b ** a at b = 1).
+  if (params[i]!.type === "number" && typeAt(program) === "number") {
+    params.forEach((q, j) => {
+      if (j === i || q.type !== "number") return;
+      for (const d of [0, 1, -1]) {
+        const pj: DeriveNode = d === 0 ? { op: "param", i: j } : { op: "sub", a: { op: "param", i: j }, b: { op: "int", v: d } };
+        for (const f of [P, { op: "add", a: P, b: { op: "int", v: 1 } }, { op: "sub", a: P, b: { op: "int", v: 1 } }] as DeriveNode[]) {
+          const t: DeriveNode = { op: "mul", a: f, b: pj };
+          out.push({ op: "add", a: program, b: t }, { op: "add", a: program, b: { op: "sq", a: t } });
+        }
+      }
+    });
+  }
+  // m105 (Auditor #497 follow-ups). Values of parameter j in the examples (distinct, first-seen order).
+  const valsOf = (j: number) => [...new Map(examples.map((e) => [keyOf([e.args[j]!]), e.args[j]!])).values()];
+  const rt = typeAt(program);
+  const I = (v: number): DeriveNode => ({ op: "int", v });
+  // A term cancelled by a value outside {0, 1, -1}: the result plus i times (p - d) for d an example value of p, or
+  // times (p - q) (A: b * (a - 2) at a = 2; M: c * (b - 2); B: c * (a - b) at a = b).
+  if (params[i]!.type === "number" && rt === "number") {
+    params.forEach((q, j) => {
+      if (j === i || q.type !== "number") return;
+      for (const d of valsOf(j) as number[]) if (!DEGENERATE_NUMS.has(d)) out.push({ op: "add", a: program, b: { op: "mul", a: P, b: { op: "sub", a: { op: "param", i: j }, b: I(d) } } });
+      params.forEach((r, k) => { if (k > j && k !== i && r.type === "number") out.push({ op: "add", a: program, b: { op: "mul", a: P, b: { op: "sub", a: { op: "param", i: j }, b: { op: "param", i: k } } } }); });
+    });
+  }
+  // A cut or cap on i at 0 or at a constant of the program (J: a > 5 && b > 3 with b shown only above 3; H:
+  // a + c * min(0, b) with b shown only positive).
+  if (params[i]!.type === "number") {
+    const cuts = new Set<number>([0]);
+    walk(program, (n) => { if (n.op === "int" || (n.op === "lit" && typeof n.v === "number")) cuts.add(n.v as number); if (n.op === "min" || n.op === "max") cuts.add(n.c); if (n.op === "range") { cuts.add(n.lo); cuts.add(n.hi); } });
+    for (const d of cuts) {
+      if (rt === "boolean") for (const op of ["and", "or"] as const) out.push({ op, a: program, b: { op: "le", a: I(d), b: P } }, { op, a: program, b: { op: "le", a: P, b: I(d) } });
+      if (rt === "number") for (const op of ["min", "max"] as const) {
+        const cap: DeriveNode = { op: "sub", a: { op, c: d, a: P }, b: I(d) };
+        out.push({ op: "add", a: program, b: cap });
+        params.forEach((q, k) => { if (k !== i && q.type === "number") out.push({ op: "add", a: program, b: { op: "mul", a: { op: "param", i: k }, b: cap } }); });
+      }
+    }
+  }
+  // A branch on another parameter (G: a <= 5 ? a : a + b; F: s === "ab" ? s : s + t; K: f ? a + b : a): i joined to the result on one
+  // side of a cut (or at one value) of p only.
+  const join: DeriveNode | null = params[i]!.type === "number" && rt === "number" ? { op: "add", a: program, b: P } : params[i]!.type === "string" && rt === "string" ? { op: "cat", a: program, b: P } : null;
+  // Cuts leave at least 2 example values of p on each side (as the rival search keeps off the extreme example values);
+  // p = v (or p empty) only as the side where i was shown, the result joined elsewhere (F).
+  if (join) params.forEach((q, j) => {
+    if (j === i) return;
+    const vs = valsOf(j);
+    const both = (c: DeriveNode) => [{ op: "if", c, t: program, e: join }, { op: "if", c, t: join, e: program }] as DeriveNode[];
+    const shownAt = (c: DeriveNode) => [{ op: "if", c, t: program, e: join }] as DeriveNode[];
+    const sorted = q.type === "number" ? [...(vs as number[])].sort((x, y) => x - y) : [];
+    if (q.type === "boolean") out.push(...both({ op: "param", i: j }));
+    else if (q.type === "number") {
+      for (const d of sorted.slice(1, -2)) out.push(...both({ op: "le", a: { op: "param", i: j }, b: I(d) }));
+      for (const v of vs) out.push(...shownAt({ op: "eq", a: { op: "param", i: j }, b: I(v as number) }));
+    } else {
+      out.push(...shownAt({ op: "empty", i: j }));
+      for (const v of vs) out.push(...shownAt({ op: "eq", a: { op: "param", i: j }, b: { op: "lit", v: v as string } }));
+    }
+  });
+  // A boolean i (U7, K: f ? a * a : a, f ? a + b : a): the result changed where i is one value.
+  if (params[i]!.type === "boolean") {
+    const ys: DeriveNode[] = rt === "number" ? [{ op: "sq", a: program }, { op: "add", a: program, b: I(1) }, { op: "sub", a: program, b: I(1) }, { op: "mul", a: program, b: I(2) }]
+      : rt === "string" ? [{ op: "cat", a: program, b: program }, { op: "lit", v: "" }] : rt === "boolean" ? [{ op: "not", a: program }] : [];
+    params.forEach((q, k) => { if (k !== i && q.type === rt && rt === "number") ys.push({ op: "add", a: program, b: { op: "param", i: k } }, { op: "mul", a: program, b: { op: "param", i: k } }); if (k !== i && q.type === rt && rt === "string") ys.push({ op: "cat", a: program, b: { op: "param", i: k } }); });
+    for (const y of ys) out.push({ op: "if", c: P, t: y, e: program }, { op: "if", c: P, t: program, e: y });
+  }
+  return out.filter((v) => examples.every((e) => keyOf([evalProgram(v, e.args) ?? null]) === keyOf([e.out])));
+}
+
+/**
+ * The unread gate (m103; Auditor #494 backoff/sparse, Auditor #497 sibling witnesses). Every declared parameter the
+ * program does not read must be SHOWN irrelevant at non-degenerate settings: a group of examples that differ only in
+ * it, give the same result, and
+ *  (a) every other number parameter is not 0, 1 or -1 (a product by 0, a power of 1, a product by +-1 or a square
+ *      of a zero product hides it) and every other string parameter is non-empty (`s + t`, `s === "" ? "" : s + t`
+ *      at s = "" hides t), and no min / max cap of the program is at or past its cap value (a held cap hides it);
+ *  (b) it takes at least DERIVE_UNREAD_VALUES distinct values there (both values for a boolean): a symmetric pair
+ *      (a = 0 and a = -2 in (a + 1) ** 2) hides it;
+ *  (c) for a boolean result, and for each operand of every && / ||, such a group at both of its outcomes that some
+ *      example reaches (b varied only where a > 5 is false hides b in a > 5 && b > 3).
+ * Otherwise refused, asking at a setting that meets the same conditions, with the parameter's value changed; the
+ * answers are the program's result and the results of programs that read it and fit every example (unreadVariants).
+ */
+export function unreadProblem(input: DeriveInput, program: DeriveNode, read: ReadonlySet<number>, expr: string): DeriveGateProblem | null {
+  const { params, examples } = input;
+  const names = params.map((p) => p.name);
+  const caps: Extract<DeriveNode, { op: "min" | "max" }>[] = [];
+  const decisions: DeriveNode[] = [];
+  walk(program, (n) => {
+    if (n.op === "min" || n.op === "max") caps.push(n);
+    if (n.op === "and" || n.op === "or") decisions.push(n.a, n.b);
+  });
+  // For each && / || operand, the settings of its sibling operands (up the &&/|| chain) where it decides the result.
+  type Req = { d: DeriveNode | null; v: DeriveValue | null };
+  const ctx = new Map<DeriveNode, Req[]>();
+  const chain = (n: DeriveNode, c: Req[]): void => {
+    if (n.op !== "and" && n.op !== "or") return;
+    const live = n.op === "and";
+    ctx.set(n.a, [...c, { d: n.b, v: live }]); ctx.set(n.b, [...c, { d: n.a, v: live }]);
+    chain(n.a, ctx.get(n.a)!); chain(n.b, ctx.get(n.b)!);
+  };
+  walk(program, (n) => { if ((n.op === "and" || n.op === "or") && !ctx.has(n)) chain(n, []); });
+  if (typeOf(evalProgram(program, examples[0]!.args) ?? 0) === "boolean") decisions.unshift(program);
+  const atCap = (a: readonly DeriveValue[]) => caps.some((n) => { const v = evalProgram(n.a, a); return typeof v !== "number" || (n.op === "min" ? v >= n.c : v <= n.c); });
+  const degenerate = (j: number, v: DeriveValue | undefined) => (params[j]!.type === "number" ? typeof v === "number" && DEGENERATE_NUMS.has(v) : params[j]!.type === "string" ? v === "" : false);
+  const setting = (a: readonly DeriveValue[], i: number) => a.every((v, j) => j === i || !degenerate(j, v)) && !atCap(a);
+  // (a) on the varied parameter's own values (m105, Auditor #497 D, E): a string value counts only when it has at least
+  // 2 characters and one that is not a space (t.trim(), t.slice(1) are "" on whitespace and on 1-character values).
+  const shows = (j: number, v: DeriveValue | undefined) => params[j]!.type !== "string" || (typeof v === "string" && v.length >= 2 && /\S/.test(v));
+  for (let i = 0; i < params.length; i++) {
+    if (read.has(i)) continue;
+    const need = params[i]!.type === "boolean" ? 2 : DERIVE_UNREAD_VALUES;
+    const groups = new Map<string, { args: readonly DeriveValue[]; vals: Map<string, DeriveValue>; shown: Set<string> }>();
+    for (const e of examples) {
+      const k = keyOf(e.args.filter((_, j) => j !== i));
+      const g = groups.get(k) ?? { args: e.args, vals: new Map(), shown: new Set() };
+      g.vals.set(keyOf([e.args[i]!]), e.args[i]!);
+      if (shows(i, e.args[i])) g.shown.add(keyOf([e.args[i]!]));
+      groups.set(k, g);
+    }
+    if (![...groups.values()].some((g) => g.vals.size >= 2)) return { gate: "unread", param: names[i]!, searched: 0, detail: `${names[i]} is not read by \`${expr}\`, but no two examples differ only in ${names[i]} and give the same result; add such a pair` };
+    const good = [...groups.values()].filter((g) => g.shown.size >= need && setting(g.args, i));
+    // The requirements: some good group, and one at each outcome of each decision that an example reaches.
+    const reqs: Req[] = [{ d: null, v: null }];
+    for (const d of decisions) for (const v of [true, false]) if (examples.some((e) => evalProgram(d, e.args) === v)) reqs.push({ d, v });
+    const holds = (r: Req, a: readonly DeriveValue[]) => r.d === null || evalProgram(r.d, a) === r.v;
+    const miss = reqs.find((r) => !good.some((g) => holds(r, g.args)));
+    if (!miss) {
+      // m105 (Auditor #497 A, B, M, G, F, H, J): shown irrelevant only if no program that reads it (unreadVariants: a
+      // term cancelled by a value outside {0, 1, -1}, a branch on another parameter, a cut or cap on it, ...) also
+      // fits every example and differs at a non-degenerate setting. Else refused, asking there.
+      const variants = unreadVariants(input, program, i);
+      if (!variants.length) continue;
+      const exKeys = new Set(examples.map((e) => keyOf(e.args)));
+      const iv = [...new Map(examples.map((e) => [keyOf([e.args[i]!]), e.args[i]!])).values()];
+      const pool: DeriveValue[] = params[i]!.type === "number" ? [...iv, 2, 3, 7, 11, -2, -7, -40] : params[i]!.type === "string" ? [...iv.filter((v) => shows(i, v)), "Ab", "x y", "Qz-9"] : [true, false];
+      const settings = [...new Map(examples.map((e) => [keyOf(e.args.filter((_, j) => j !== i)), e.args])).values()];
+      const probes: { at: DeriveValue[]; values: DeriveValue[]; n: number; o: number }[] = [];
+      for (const a of settings) for (const v of pool) {
+        if (degenerate(i, v)) continue;
+        const pt = [...a]; pt[i] = v;
+        if (exKeys.has(keyOf(pt)) || !setting(pt, i)) continue;
+        const mine = evalProgram(program, pt);
+        if (mine === undefined || mine === null) continue;
+        const vals = variants.map((x) => evalProgram(x, pt)).filter((x): x is DeriveValue => x !== undefined && x !== null);
+        const n = vals.filter((x) => keyOf([x]) !== keyOf([mine])).length;
+        if (n) { exKeys.add(keyOf(pt)); probes.push({ at: pt, values: [mine, ...vals], n, o: probes.length }); }
+      }
+      if (!probes.length) continue;
+      probes.sort((x, y) => y.n - x.n || x.o - y.o);
+      const asked = probes.slice(0, DERIVE_MAX_QUESTIONS);
+      const first = asked[0]!;
+      const rv = variants.find((x) => { const v = evalProgram(x, first.at); return v !== undefined && v !== null && keyOf([v]) !== keyOf([first.values[0]!]); })!;
+      return { gate: "unread", param: names[i]!, searched: 0, detail: `${names[i]} is not read by \`${expr}\`, but \`${compileProgram(rv, names)}\` reads it, fits every example and differs at (${first.at.map((v) => JSON.stringify(v)).join(", ")}); add examples where ${names[i]} could show`, at: asked.map((q) => q.at), rivals: asked.map((q) => ({ at: q.at, values: q.values })) };
+    }
+    // The ask: a setting meeting (a) and the missing outcome, from an example with degenerate values replaced. With no
+    // good group at all, prefer also an outcome where the parameter never varied (a > 5 && b > 3 with b varied only at
+    // a <= 5: ask where 6 <= a is true, not where the && short-circuits). An && / || operand's outcome is asked where
+    // its sibling operands do not decide the result alone (c).
+    const varied = [...groups.values()].filter((g) => g.vals.size >= 2 && setting(g.args, i));
+    const prefer = miss.d === null ? reqs.find((r) => r.d !== null && !varied.some((g) => holds(r, g.args))) : undefined;
+    const ctxOf = (r: Req | undefined): Req[] => (r?.d ? ctx.get(r.d) ?? [] : []);
+    const targets: Req[][] = prefer ? [[prefer, ...ctxOf(prefer)], [prefer], []] : [[miss, ...ctxOf(miss)], [miss]];
+    let base: DeriveValue[] | null = null;
+    for (const target of targets) for (const e of examples) {
+      if (base) break;
+      const fits = (t: readonly DeriveValue[]) => holds(miss, t) && target.every((r) => holds(r, t));
+      const pt = [...e.args];
+      params.forEach((p, j) => {
+        if (j === i || !degenerate(j, pt[j])) return;
+        const cands: DeriveValue[] = p.type === "number"
+          ? [...new Set(examples.map((f) => f.args[j] as number).filter((v) => !DEGENERATE_NUMS.has(v))), 2, 3, 7, -2]
+          : [...new Set(examples.map((f) => f.args[j] as string).filter((v) => v !== "")), "a"];
+        for (const c of cands) { const t = [...pt]; t[j] = c; if (fits(t) && !atCap(t)) { pt[j] = c; return; } }
+        pt[j] = cands[0]!;
+      });
+      if (setting(pt, i) && fits(pt)) base = pt;
+    }
+    const what = miss.d === null ? "" : ` where \`${compileProgram(miss.d, names)}\` is ${String(miss.v)}`;
+    const detail = `${names[i]} is not read by \`${expr}\`, but no ${need} or more examples differ only in ${names[i]} (giving the same result)${what} with the other number parameters not 0, 1 or -1, the other strings non-empty and the result inside every cap, where ${names[i]} could show; add such examples`;
+    if (!base) return { gate: "unread", param: names[i]!, searched: 0, detail };
+    const have = new Map<string, DeriveValue>();
+    for (const e of examples) if (keyOf(e.args.filter((_, j) => j !== i)) === keyOf(base.filter((_, j) => j !== i)) && shows(i, e.args[i])) have.set(keyOf([e.args[i]!]), e.args[i]!);
+    const pool: DeriveValue[] = [base[i]!, ...examples.map((e) => e.args[i]!), ...(params[i]!.type === "number" ? [2, 3, 7, 11, 13] : params[i]!.type === "string" ? ["Ab", "x y", "Qz-9"] : [true, false])].filter((v) => shows(i, v));
+    const at: DeriveValue[][] = [];
+    for (const v of pool) {
+      if (have.size + at.length >= need || at.length >= DERIVE_MAX_QUESTIONS) break;
+      const k = keyOf([v]);
+      if (have.has(k) || at.some((a) => keyOf([a[i]!]) === k)) continue;
+      const pt = [...base]; pt[i] = v;
+      if (examples.some((e) => keyOf(e.args) === keyOf(pt))) { have.set(k, v); continue; }
+      at.push(pt);
+    }
+    const variants = unreadVariants(input, program, i);
+    // With no fitted variant differing there, another answer reading the parameter (m105, Auditor #497 U7, K, D: an
+    // unread boolean or string was refused with nothing asked). The point is not an example, so a program giving that
+    // value there and the derived one elsewhere fits every example as well.
+    const alt = (mine: DeriveValue, pt: readonly DeriveValue[]): DeriveValue => {
+      const v = pt[i]!;
+      if (typeof mine === "boolean") return !mine;
+      if (typeof mine === "string") return mine + (typeof v === "string" ? v : String(v));
+      return typeof v === "number" && v !== 0 ? mine + v : mine + 1;
+    };
+    const rivals = at.map((pt) => {
+      const values = [evalProgram(program, pt), ...variants.map((v) => evalProgram(v, pt))].filter((v): v is DeriveValue => v !== undefined && v !== null);
+      if (values.length && new Set(values.map((v) => keyOf([v]))).size < 2) values.push(alt(values[0]!, pt));
+      return { at: pt, values };
+    }).filter((r) => new Set(r.values.map((v) => keyOf([v]))).size >= 2);
+    return { gate: "unread", param: names[i]!, searched: 0, detail, at, ...(rivals.length ? { rivals } : {}) };
+  }
+  return null;
+}
+
 export function gateProblem(input: DeriveInput, program: DeriveNode, size: number, budget = DERIVE_BUDGET, spent?: { searched: number }): DeriveGateProblem | null {
   const { params, examples } = input;
   const names = params.map((p) => p.name);
@@ -1051,12 +1311,9 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   const fail = (gate: DeriveGate, detail: string, param?: number, at?: DeriveValue[][]): DeriveGateProblem => ({ gate, detail, searched: 0, ...(param !== undefined ? { param: names[param]! } : {}), ...(at ? { at } : {}) });
   const ptAt = (i: number, v: number) => pointAt(examples, i, v);
   const read = paramsRead(program);
-  // unread
-  for (let i = 0; i < params.length; i++) {
-    if (read.has(i)) continue;
-    const shown = examples.some((e, x) => examples.some((f, y) => y > x && rest(e.args, [i]) === rest(f.args, [i]) && keyOf([e.args[i]!]) !== keyOf([f.args[i]!]) && out(e) === out(f)));
-    if (!shown) return fail("unread", `${names[i]} is not read by \`${expr}\`, but no two examples differ only in ${names[i]} and give the same result; add such a pair`, i);
-  }
+  // unread (m103, Auditor #494 and #497): unreadProblem.
+  const unread = unreadProblem(input, program, read, expr);
+  if (unread) return unread;
   // chars
   for (const i of [...read].sort()) {
     if (params[i]!.type !== "string") continue;

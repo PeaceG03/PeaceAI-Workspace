@@ -47,10 +47,14 @@ test("B1 repro: S1 without \"600 gives false\" is refused (gate far), not derive
   assert.equal(s1.ok && s1.fit.expr, "(status === 429) || (500 <= status && status <= 599)");
 });
 
-test("gate unread: a parameter the program ignores needs two examples differing only in it with the same result", () => {
+test("gate unread: a parameter the program ignores needs examples differing only in it with the same result (m103: at a non-degenerate setting, 3 values)", () => {
   const ab = [num("a"), num("b")];
   assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3]]), "unread:b");
-  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101], [0, 3, 0]]), ""); // round 3: a = 0 shown (gate span, sign)
+  // m103 (Auditor #497): b 1 vs 7 at a = 1 no longer shows b is ignored (a = 1 hides a power or product, and two
+  // values a symmetric term); b at 3 values with a = 2 does.
+  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101], [0, 3, 0]]), "unread:b");
+  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101], [0, 3, 0], [2, 9, 2], [2, -5, 2], [5, 4, 5]]), ""); // round 3: a = 0 shown (gate span, sign); m105 (Auditor #497 G): b not 0 at a > 2 too
+  assert.equal(gate(ab, "number", P0, [[1, 1, 1], [2, 2, 2], [3, 0, 3], [1, 7, 1], [101, 0, 101], [0, 3, 0], [2, 9, 2], [2, -5, 2]]), "unread:b"); // else a <= 2 ? a : a + b fits
 });
 
 test("gate chars: a string parameter that is read needs upper, lower, digit, inner space, edge space and punctuation", () => {
