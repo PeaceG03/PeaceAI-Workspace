@@ -781,24 +781,56 @@ function guardClass(c: DeriveNode, types?: readonly DeriveType[]): string {
   }
   return c.op;
 }
-/** What a branch is: a constant, a parameter as is, a string join, another if (nested), or its own op. */
-function branchKind(n: DeriveNode): string {
-  if (isConst(n)) return "lit";
-  if (n.op === "param") return "param";
-  if (n.op === "cat" || n.op === "tmpl" || n.op === "str") return "concat";
-  if (n.op === "if") return "nested";
-  return n.op;
+/** The parameters a guard reads, in order of first appearance. */
+function guardParams(c: DeriveNode): number[] {
+  const out: number[] = [];
+  const walk = (x: DeriveNode): void => {
+    const add = (i: number) => { if (!out.includes(i)) out.push(i); };
+    if (x.op === "param") add(x.i);
+    if (x.op === "empty") add(x.i);
+    if (x.op === "sle") { add(x.i); add(x.j); }
+    for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode); }
+    if (x.op === "tmpl") for (const q of x.parts) walk(q);
+  };
+  walk(c);
+  return out;
+}
+const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+/**
+ * What the two branches of an if are (Auditor #498 on c8ad8ea: a parameter branch records WHICH parameter): a constant
+ * (`lit`), a parameter the guard reads (`guard-param` when the guard reads one parameter, else `guard-param-a`,
+ * `guard-param-b`, ... in the guard's order), another parameter (`other-param-a`, `other-param-b`, ... by first
+ * appearance in then, else, so `t` / `u` are told apart from `t` / `t`), a string join (`concat`), another if (`nested`),
+ * or its own op.
+ */
+function branchKinds(x: Extract<DeriveNode, { op: "if" }>): string {
+  const g = guardParams(x.c), others: number[] = [];
+  const kind = (n: DeriveNode): string => {
+    if (isConst(n)) return "lit";
+    if (n.op === "param") {
+      if (g.includes(n.i)) return g.length === 1 ? "guard-param" : `guard-param-${LETTERS[g.indexOf(n.i)]}`;
+      if (!others.includes(n.i)) others.push(n.i);
+      return `other-param-${LETTERS[others.indexOf(n.i)]}`;
+    }
+    if (n.op === "cat" || n.op === "tmpl" || n.op === "str") return "concat";
+    if (n.op === "if") return "nested";
+    return n.op;
+  };
+  const t = kind(x.t); // then first: other parameters are lettered by first appearance
+  return `${t},${kind(x.e)}`;
 }
 /**
  * M104 (Auditor #498 on b2f0f67): the key of every if node in `program` (sorted, unique):
- * `guard|then-kind,else-kind|result type@place`, e.g. `eq-num-const|lit,lit|string@top` for (n === 1) ? "" : "s".
+ * `guard|then-kind,else-kind|result type@place`, e.g. `eq-num-const(p0)|lit,lit|string@top` for (n === 1) ? "" : "s" and
+ * `eq-str-empty(p0)|other-param-a,guard-param|string@top` for (s === "") ? t : s. The guard records which parameter
+ * positions it reads (p0, p1, ...), so a guard on the other parameter is another key.
  * Place is where the if sits: `top` (the whole program), `concat` (a part of a string join), `if` (a branch or guard
  * of another if) or `expr` (inside any other node). Every if node, nested or in a join, needs its own key's evidence.
  */
 export function ternaryShapesOf(program: DeriveNode, types?: readonly DeriveType[]): string[] {
   const out = new Set<string>();
   const walk = (x: DeriveNode, place: string): void => {
-    if (x.op === "if") out.add(`${guardClass(x.c, types)}|${branchKind(x.t)},${branchKind(x.e)}|${nodeType(x, types)}@${place}`);
+    if (x.op === "if") out.add(`${guardClass(x.c, types)}(${guardParams(x.c).map((i) => `p${i}`).join(",")})|${branchKinds(x)}|${nodeType(x, types)}@${place}`);
     const inner = x.op === "if" ? "if" : x.op === "cat" || x.op === "tmpl" || x.op === "str" ? "concat" : "expr";
     for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode, inner); }
     if (x.op === "tmpl") for (const q of x.parts) walk(q, "concat");
