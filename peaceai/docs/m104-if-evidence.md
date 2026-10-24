@@ -33,7 +33,9 @@ Tests (m104-ternary-keys.test.ts): 10 distinct plural entries unlock only plural
 `(s === "") ? s : t`, `(t === "") ? s : t`, `(s === "") ? t : u`, `(s === "") ? t : t`. Join entries (then = guard
 parameter) do not unlock a join whose then is the other parameter. Literal-branch entries do not unlock a concat branch,
 and string-result and number-result entries do not unlock each other. For each case, 10 distinct entries of its own key
-unlock it. Mutants checked by hand on 17c05bd: concat branch classified as `lit`, result type dropped, parameter
+unlock it. End to end, one child process with ten `(p0 === "") ? p1 : p0` and ten join fakes: deriveProgram emits
+`(value === "") ? fallback : value` but refuses `(s === "") ? s : t`, `(t === "") ? s : t`, `(s === "") ? t : u` and
+`s + (((t === "") ? s : "/") + t)`, each naming its key. Mutants checked by hand on 17c05bd: concat branch classified as `lit`, result type dropped, parameter
 branches unnamed, guard positions dropped, other parameters not lettered. Each one fails a gate assertion in this file
 (not only a key-string assertion).
 

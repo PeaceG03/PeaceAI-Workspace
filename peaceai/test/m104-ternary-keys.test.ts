@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DERIVE_FORM_BAR, DERIVE_FORMS, evalProgram, evidenceTernaryShapeCounts, ternaryShapesOf, unevidencedForms, type DeriveNode, type DeriveType, type DeriveValue } from "../lib/derive.ts";
+import { DERIVE_FORM_BAR, DERIVE_FORMS, deriveCandidate, evalProgram, evidenceTernaryShapeCounts, ternaryShapesOf, unevidencedForms, type DeriveNode, type DeriveType, type DeriveValue } from "../lib/derive.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const p = (i: number): DeriveNode => ({ op: "param", i });
@@ -149,4 +149,51 @@ test("ternary keys: a concat branch is not a literal, and the result type is par
   assert.deepEqual(ternaryShapesOf(NUM_RESULT.make(0), NUM_RESULT.types), NUM_RESULT.keys);
   refuses(NUM_RESULT, PLURAL, "string-result entries must not unlock a number result");
   refuses(PLURAL, NUM_RESULT, "number-result entries must not unlock a string result");
+});
+
+test("ternary keys end to end (Auditor #498 on c8ad8ea): ten (p0 === \"\") ? p1 : p0 and ten join entries do not let deriveProgram emit a program with other parameter branches", () => {
+  // One child process, all cases batched: a copy of derive.ts reads a test evidence file with the evidence on main
+  // plus ten distinct (p0 === "") ? p1 : p0 entries and ten distinct join entries (then = the guard parameter).
+  const EV = JSON.parse(readFileSync(resolve(root, "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json"), "utf8")) as { examples: unknown[] };
+  const P2 = [{ name: "s", type: "string" }, { name: "t", type: "string" }];
+  const P3 = [...P2, { name: "u", type: "string" }];
+  const rows = (f: (a: string[]) => string, args: string[][]) => args.map((a) => ({ args: a, out: f(a) }));
+  const SEVEN = [["", ""], ["", " Ab 9. "], ["a", "Hello"], ["ab", "ab"], ["Hello", "a"], [" Ab 9. ", ""], [" Ab 9. ", " Ab 9. "]];
+  const specs = [
+    { expr: '(s === "") ? s : t', key: 'eq-str-empty(p0)|guard-param,other-param-a|string@top', params: P2, examples: rows(([s, t]) => (s === "" ? s : t), SEVEN) },
+    { expr: '(t === "") ? s : t', key: 'eq-str-empty(p1)|other-param-a,guard-param|string@top', params: P2, examples: rows(([s, t]) => (t === "" ? s : t), SEVEN) },
+    { expr: '(s === "") ? t : u', key: 'eq-str-empty(p0)|other-param-a,other-param-b|string@top', params: P3, examples: rows(([s, t, u]) => (s === "" ? t : u), [["", "a", "b"], ["", "Hello", " Ab 9. "], ["", " Ab 9. ", "x"], ["a", "b", "c"], ["ab", " Ab 9. ", "Hello"], ["Hello", "a", " Ab 9. "], [" Ab 9. ", "", ""], ["x", "a", "b"], ["", "", "ab"], [" Ab 9. ", "ab", "a"]]) },
+    { expr: 's + (((t === "") ? s : "/") + t)', key: 'eq-str-empty(p1)|other-param-a,lit|string@concat', params: P2, examples: rows(([s, t]) => s + ((t === "" ? s : "/") + t), SEVEN) },
+  ];
+  // The search alone fits each (so a refusal is the key gate), and the fakes' keys are not theirs.
+  for (const c of specs) {
+    const r = deriveCandidate({ params: c.params as never, ret: "string", examples: c.examples });
+    assert.ok(r.ok && r.fit.expr === c.expr, `${c.expr}: ${JSON.stringify(r).slice(0, 200)}`);
+    assert.deepEqual(ternaryShapesOf(r.fit.program, c.params.map((p) => p.type as DeriveType)), [c.key]);
+  }
+  const dir = mkdtempSync(join(tmpdir(), "m104-keys2-"));
+  try {
+    mkdirSync(join(dir, "peaceai/lib"), { recursive: true });
+    mkdirSync(join(dir, "peaceai/rules/proposals"), { recursive: true });
+    symlinkSync(resolve(root, "node_modules"), join(dir, "node_modules"));
+    writeFileSync(join(dir, "peaceai/lib/derive.ts"), readFileSync(resolve(root, "peaceai/lib/derive.ts"), "utf8"));
+    writeFileSync(join(dir, "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json"), JSON.stringify({ ...EV, examples: [...EV.examples, ...fakes(CASES[0], DERIVE_FORM_BAR), ...fakes(JOIN, DERIVE_FORM_BAR)] }));
+    // A positive control in the same process: the fakes' own key, (value === "") ? fallback : value, is emitted.
+    const control = { params: [{ name: "value", type: "string" }, { name: "fallback", type: "string" }], ret: "string", examples: rows(([v, f]) => (v === "" ? f : v), [["", "a"], ["a", "ab"], ["ab", "Hello"], ["Hello", ""], [" Ab 9. ", "a"], ["", " Ab 9. "]]) };
+    const all = [control, ...specs.map((c) => ({ params: c.params, ret: "string", examples: c.examples }))];
+    writeFileSync(join(dir, "probe.ts"), `import { deriveProgram } from "./peaceai/lib/derive.ts";\nprocess.stdout.write(JSON.stringify(${JSON.stringify(all)}.map((s) => deriveProgram(s as never))));\n`);
+    const out = spawnSync(process.execPath, [resolve(root, "node_modules/tsx/dist/cli.mjs"), "probe.ts"], { cwd: dir, encoding: "utf8" });
+    assert.equal(out.status, 0, out.stderr);
+    const [ctl, ...res] = JSON.parse(out.stdout) as { ok: boolean; reason?: string; forms?: string[]; detail?: string; fit?: { expr: string } }[];
+    assert.equal(ctl.ok && ctl.fit!.expr, '(value === "") ? fallback : value', "the fakes unlock their own key");
+    specs.forEach((c, i) => {
+      const r = res[i];
+      assert.equal(r.ok, false, `${c.expr} must not be emitted: ${JSON.stringify(r).slice(0, 200)}`);
+      assert.equal(r.reason, "derive_unevidenced_form", c.expr);
+      assert.deepEqual(r.forms, ["ternary"], c.expr);
+      assert.ok(r.detail!.includes(`but the if key ${c.key} has 0 distinct ones)`), `${c.expr}: ${r.detail}`);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
