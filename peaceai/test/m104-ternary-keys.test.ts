@@ -138,6 +138,9 @@ test("ternary keys: which parameter a branch is (guard-param / other-param-a, -b
   for (const c of [...PARAM_CASES, JOIN, JOIN_OTHER]) assert.deepEqual(ternaryShapesOf(c.make(0), c.types), c.keys, c.name);
   for (const c of PARAM_CASES) refuses(c, CASES[0], 'ten (p0 === "") ? p1 : p0 entries must not unlock');
   refuses(JOIN_OTHER, JOIN, "ten join entries (then = the guard parameter) must not unlock");
+  // Two other parameters: the same one twice and two different ones are different keys, both ways.
+  refuses(PARAM_CASES[2], PARAM_CASES[3], "ten (s === \"\") ? t : t entries must not unlock");
+  refuses(PARAM_CASES[3], PARAM_CASES[2], "ten (s === \"\") ? t : u entries must not unlock");
 });
 
 test("ternary keys: a concat branch is not a literal, and the result type is part of the key", () => {
