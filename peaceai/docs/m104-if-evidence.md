@@ -59,10 +59,10 @@ Before any evidence for such programs is proposed, this needs a finer key.
 | `p0 + ((p0 === "") ? p0 : p1)` | 1 | 1 | 1 | w5s/project-config globAppendIfNotEmpty |
 | `((p0 === "") ? p0 : " — ") + p0` | 1 | 1 | 1 | pipeworx-io/mcp-clearlydefined detailSuffix |
 
-Under the key above (m106 d7c16d5) the 17 entries count: `eq-num-const|lit,lit|string@top` 2 distinct (8 plurals + hasComma),
-`eq-str-empty|param,lit|string@concat` 5 (join/logPath, indent, `#`, withPrefix, detailSuffix),
-`eq-str-empty|param,param|string@top` 1 (valueOrFallback), `eq-str-empty|param,param|string@concat` 1
-(globAppendIfNotEmpty). No key is near 10. The first 12 (slices 1-2) split as 9 eq-suffix
+Under the key above (m106 e05d02a) the 17 entries count: `eq-num-const(p0)|lit,lit|string@top` 2 distinct (8 plurals +
+hasComma), `eq-str-empty(p0)|guard-param,lit|string@concat` 5 (join/logPath, indent, `#`, withPrefix, detailSuffix),
+`eq-str-empty(p0)|other-param-a,guard-param|string@top` 1 (valueOrFallback),
+`eq-str-empty(p0)|guard-param,other-param-a|string@concat` 1 (globAppendIfNotEmpty). No key is near 10. The first 12 (slices 1-2) split as 9 eq-suffix
 (8 plural "s" with byte-identical 23-row examples, plus hasComma ","), 2 join (join and logPath, identical examples)
 and 1 indent: about 4 distinct problems, as the Auditor found. The later mining added 5 distinct ones. Other mined copies
 (more plurals, 7 more `value === "" ? fallback : value`, a second `#` + id) add 0 under the rule and were not added.
