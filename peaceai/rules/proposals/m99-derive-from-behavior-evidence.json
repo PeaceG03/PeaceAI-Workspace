@@ -16896,7 +16896,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -17087,7 +17087,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -17278,7 +17278,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -17469,7 +17469,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -17660,7 +17660,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -17852,7 +17852,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -18043,7 +18043,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -18234,7 +18234,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -18425,7 +18425,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-num-const|lit,lit|string@top"
    ]
   },
   {
@@ -18511,7 +18511,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,lit|string@concat"
    ]
   },
   {
@@ -18592,7 +18592,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,lit|string@concat"
    ]
   },
   {
@@ -18678,7 +18678,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,lit|string@concat"
    ]
   },
   {
@@ -18763,7 +18763,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,param|string@top"
    ]
   },
   {
@@ -18844,7 +18844,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,lit|string@concat"
    ]
   },
   {
@@ -18930,7 +18930,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,lit|string@concat"
    ]
   },
   {
@@ -19016,7 +19016,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,param|string@concat"
    ]
   },
   {
@@ -19097,7 +19097,7 @@
     "eq"
    ],
    "ternaryShapes": [
-    "eq-const/string"
+    "eq-str-empty|param,lit|string@concat"
    ]
   }
  ],

@@ -653,7 +653,7 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   // M104 (Auditor #498): a ternary whose own sub-shape is under the bar is refused even when the form count is not.
   const shapeCounts = evidenceTernaryShapeCounts();
   const short = ternaryShapesOf(r.fit.program, types).filter((k) => !((shapeCounts[k] ?? 0) >= DERIVE_FORM_BAR));
-  const shapeText = (f: DeriveForm) => (f === "ternary" && counts.ternary >= DERIVE_FORM_BAR ? `, but the sub-shape ${short.map((k) => `${k} has ${shapeCounts[k] ?? 0} distinct ones`).join(" and ")}` : "");
+  const shapeText = (f: DeriveForm) => (f === "ternary" && counts.ternary >= DERIVE_FORM_BAR ? `, but the if key ${short.map((k) => `${k} has ${shapeCounts[k] ?? 0} distinct ones`).join(" and ")}` : "");
   return {
     ok: false, reason: "derive_unevidenced_form", forms, searched: r.searched,
     detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries${shapeText(f)})`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
@@ -737,8 +737,8 @@ let cachedCounts: Record<DeriveForm, number> | undefined;
 
 /**
  * The forms `program` uses that fewer than DERIVE_FORM_BAR evidence entries show (empty: it may be emitted).
- * M104 (Auditor #498 ruling on 19d6100): the ternary form is also refused unless EVERY if node's sub-shape (its guard
- * class and branch type, ternaryShapesOf) has at least DERIVE_FORM_BAR distinct evidence entries
+ * M104 (Auditor #498 rulings on 19d6100 and b2f0f67): the ternary form is also refused unless EVERY if node's key (its
+ * guard class, the kind of each branch, the result type and where it sits; ternaryShapesOf) has at least DERIVE_FORM_BAR distinct evidence entries
  * (evidenceTernaryShapeCounts: identical examples count once, at most 2 per expression shape). Parameter types
  * (`types`) say what a parameter branch returns; without them such a branch is of unknown type and never covered.
  */
@@ -763,23 +763,47 @@ function nodeType(n: DeriveNode, types?: readonly DeriveType[]): DeriveType | "u
 }
 const isConst = (n: DeriveNode) => n.op === "lit" || n.op === "int";
 /**
- * The guard class of an if node: `eq-const` (a parameter === a constant, or a string parameter is empty); otherwise the
- * guard's own op (eq of two non-constants, le, sle, range, and, or, not, ...).
+ * The guard class of an if node (Auditor #498 on b2f0f67: keyed by the tested parameter's type and the constant):
+ * `eq-str-empty` (a string parameter is "" : the empty op, or === ""), `eq-str-const` (a string parameter === a
+ * non-empty string), `eq-num-const` (a number parameter === a number); a parameter of another or unknown type against a
+ * constant is `eq-<type>-const`; any other guard is its own op (eq of two non-constants, le, sle, range, and, or, not).
  */
-function guardClass(c: DeriveNode): string {
-  if (c.op === "empty") return "eq-const";
-  if (c.op === "eq" && ((c.a.op === "param" && isConst(c.b)) || (c.b.op === "param" && isConst(c.a)))) return "eq-const";
+function guardClass(c: DeriveNode, types?: readonly DeriveType[]): string {
+  if (c.op === "empty") return "eq-str-empty";
+  if (c.op === "eq") {
+    const [p, k] = c.a.op === "param" && isConst(c.b) ? [c.a, c.b] : c.b.op === "param" && isConst(c.a) ? [c.b, c.a] : [undefined, undefined];
+    if (p && p.op === "param" && k && (k.op === "lit" || k.op === "int")) {
+      const pt = types?.[p.i] ?? "unknown", kt = typeof k.v === "string" ? "string" : "number";
+      if (pt === "string" && kt === "string") return k.v === "" ? "eq-str-empty" : "eq-str-const";
+      if (pt === "number" && kt === "number") return "eq-num-const";
+      return `eq-${pt}-const`;
+    }
+  }
   return c.op;
 }
-/** M104: the sub-shapes `guard/branch type` of every if node in `program` (sorted, unique), e.g. `eq-const/string`. */
+/** What a branch is: a constant, a parameter as is, a string join, another if (nested), or its own op. */
+function branchKind(n: DeriveNode): string {
+  if (isConst(n)) return "lit";
+  if (n.op === "param") return "param";
+  if (n.op === "cat" || n.op === "tmpl" || n.op === "str") return "concat";
+  if (n.op === "if") return "nested";
+  return n.op;
+}
+/**
+ * M104 (Auditor #498 on b2f0f67): the key of every if node in `program` (sorted, unique):
+ * `guard|then-kind,else-kind|result type@place`, e.g. `eq-num-const|lit,lit|string@top` for (n === 1) ? "" : "s".
+ * Place is where the if sits: `top` (the whole program), `concat` (a part of a string join), `if` (a branch or guard
+ * of another if) or `expr` (inside any other node). Every if node, nested or in a join, needs its own key's evidence.
+ */
 export function ternaryShapesOf(program: DeriveNode, types?: readonly DeriveType[]): string[] {
   const out = new Set<string>();
-  const walk = (x: DeriveNode): void => {
-    if (x.op === "if") out.add(`${guardClass(x.c)}/${nodeType(x, types)}`);
-    for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode); }
-    if (x.op === "tmpl") for (const q of x.parts) walk(q);
+  const walk = (x: DeriveNode, place: string): void => {
+    if (x.op === "if") out.add(`${guardClass(x.c, types)}|${branchKind(x.t)},${branchKind(x.e)}|${nodeType(x, types)}@${place}`);
+    const inner = x.op === "if" ? "if" : x.op === "cat" || x.op === "tmpl" || x.op === "str" ? "concat" : "expr";
+    for (const k of ["a", "b", "c", "t", "e"] as const) { const y = (x as Record<string, unknown>)[k]; if (y && typeof y === "object") walk(y as DeriveNode, inner); }
+    if (x.op === "tmpl") for (const q of x.parts) walk(q, "concat");
   };
-  walk(program);
+  walk(program, "top");
   return [...out].sort();
 }
 /**
