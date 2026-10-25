@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { existingTargetRefusal, existingTargetAnalysisForEvidence, repoFileLists, type RepoFile } from "../lib/learned-test-existing.ts";
+import { existingTargetRefusal, existingTargetAnalysisForEvidence, primGlobalTouched, repoFileLists, type RepoFile } from "../lib/learned-test-existing.ts";
 
 const LIT = "export const L: string[] = [\"a\", \"b\"];\nexport function f(x: string): number { return L.indexOf(x); }\n";
 const CALL = "function mk(n: number): string[] { return [\"a\", \"b\"]; }\nexport const L = mk(1);\nexport function f(x: string): number { return L.indexOf(x); }\n";
@@ -134,6 +134,7 @@ const CONTROLS: Record<string, [string, Record<string, string>]> = {
   dynamic_import_destructured_read: [LIT, { "src/s.test.ts": "test(\"t\", async () => { const { L, f } = await import(\"./m\"); if (f(L[0]!) !== 0 || !L.includes(\"b\")) throw new Error(\"x\"); });\n" }],
   // Auditor #505 controls: a plain read of a known-safe global-object member keeps the relaxation; an erased
   // type-only import of an unscanned file is no load
+  D3_test_fake_fetch_write: [DUTC_X, { "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = (async () => new Response(\"{}\")) as typeof fetch;\nglobalThis.fetch = original;\n" }],
   D3_safe_global_member_read: [DUTC_X, { "src/s.ts": "export function g(): void { globalThis.console.log(\"x\"); }\n" }],
   D3_global_name_as_property: [DUTC_X, { "src/s.ts": "export const o = { globalThis: 1, window: 2 };\nexport const n = o.window;\n" }],
   D4_type_only_import_unlisted: [LIT, { "src/s.ts": "import type { T } from \"./types\";\nexport const t: T | null = null;\n" }],
@@ -188,6 +189,26 @@ test("repo scan: a Date.UTC const is a primitive only with the real, unpatched g
     passed: { "src/s.ts": "function p(x: unknown): void { void x; }\np(Date);\n" },
     imported_name: { "src/s.ts": "import { Date } from \"./d\";\nexport const y = Date;\n", "src/d.ts": "export const Date = 1;\n" },
     declared_name: { "src/s.ts": "export function g(Date: number): number { return Date; }\n" },
+    // Auditor #505 option X: the root itself, patched directly, still cancels
+    reflect_set_member: { "src/s.ts": "Reflect.set(Date, \"UTC\", () => []);\n" },
+    delete_member: { "src/s.ts": "delete (Date as { UTC?: unknown }).UTC;\n" },
+    delete_member_plain: { "src/s.js": "delete Date.UTC;\n" },
+    alias_then_patch: { "src/s.ts": "const D: any = Date;\nD.UTC = () => [];\n" },
+    alias_then_patch_in_test: { "src/s.test.ts": "const D: any = Date;\nD.UTC = () => [];\n" },
+    // option X: plain writes through a global object cancel when the name is the root, or when the form is not plain
+    global_object_plain_write: { "src/s.js": "globalThis.Date = class {};\n" },
+    global_object_plain_write_window: { "src/s.js": "window.Date = class {};\n" },
+    global_object_plain_write_global: { "src/s.test.js": "global.Date = class {};\n" },
+    global_object_folded_key: { "src/s.js": "globalThis[\"Da\" + \"te\"] = class {};\n" },
+    global_object_literal_key: { "src/s.js": "globalThis[\"fetch\"] = () => 0;\n" },
+    global_object_cast_write: { "src/s.ts": "(globalThis as { fetch?: unknown }).fetch = () => 0;\n" },
+    global_object_alias_write: { "src/s.ts": "const G: any = globalThis;\nG.fetch = () => 0;\n" },
+    global_object_compound_write: { "src/s.js": "globalThis.fetch ||= () => 0;\n" },
+    global_object_delete: { "src/s.js": "delete globalThis.fetch;\n" },
+    global_object_destructuring_write: { "src/s.js": "({ a: globalThis.fetch } = { a: () => 0 });\n" },
+    global_object_define_property_other: { "src/s.ts": "Object.defineProperty(globalThis, \"fetch\", { value: () => 0 });\n" },
+    global_object_expando_then_alias: { "src/s.js": "globalThis.fetch = 0;\nconst G = globalThis;\nG.Date = class {};\n" },
+    global_object_passed_other: { "src/s.ts": "function p(o: unknown): void { void o; }\np(self);\n" },
   };
   for (const [k, others] of Object.entries(attacks)) for (const v of V4P) {
     const all: Record<string, string> = { "src/m.ts": DUTC, ...others };
@@ -197,9 +218,35 @@ test("repo scan: a Date.UTC const is a primitive only with the real, unpatched g
     assert.notEqual(r, null, `${k} ${v}`);
     assert.match(why.shared ?? "", /global_Date|repo:/, `${k} ${v}: ${why.shared}`);
   }
+  // option X positive: a test's fake `globalThis.fetch = ..` (and its restore) no longer cancels (the PeaceSTOCKS row 136 shape)
+  const fakeFetch = { "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = (async () => new Response(\"{}\")) as typeof fetch;\nglobalThis.fetch = original;\nwindow.onload = null;\n" };
+  for (const v of V4P) assert.equal(run(DUTC, fakeFetch, v, true), "ok", `fake fetch ${v}`);
   // a non-inert argument: the const is not a proven primitive (the load check refuses the call anyway)
   const nonInert = "function mk(): number { return 1; }\nconst E = Date.UTC(mk(), 0, 1);\nexport function f(x: number): number { return x - E; }\n";
   for (const v of V4P) assert.notEqual(run(nonInert, {}, v, true), "ok", `non-inert ${v}`);
+});
+
+// Auditor #505 option X, Math: a `Math.*(..)` const never passes the load check under v1-v7, so the Math relaxation is
+// checked directly through the same repo check (primGlobalTouched = globalTouched over the scan's repo index).
+test("repo scan: the global-root check for Math uses the same denylist (option X)", () => {
+  const files = (o: Record<string, string>) => Object.entries({ "src/m.ts": "export const E = Math.max(1, 2);\n", ...o }).map(([path, content]) => ({ path, content }));
+  assert.equal(primGlobalTouched(files({}), "Math"), null);
+  assert.equal(primGlobalTouched(files({ "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = original;\nglobalThis.Date = class {} as never;\n" }), "Math"), null, "other names written");
+  assert.match(primGlobalTouched(files({ "src/a.test.ts": "globalThis.Date = class {};\n" }), "Date") ?? "", /global_Date/, "the Date root still cancels Date");
+  const attacks: Record<string, Record<string, string>> = {
+    patch_member: { "src/s.js": "Math.max = function () { return []; };\n" },
+    define_property: { "src/s.ts": "Object.defineProperty(Math, \"max\", { value: () => [] });\n" },
+    reflect_set: { "src/s.ts": "Reflect.set(Math, \"max\", () => []);\n" },
+    delete_member: { "src/s.js": "delete Math.max;\n" },
+    alias_then_patch: { "src/s.ts": "const M: any = Math;\nM.max = () => [];\n" },
+    global_object_plain_write: { "src/s.js": "globalThis.Math = {};\n" },
+    global_object_plain_write_self: { "src/s.js": "self.Math = {};\n" },
+    global_object_folded_key: { "src/s.js": "globalThis[\"Ma\" + \"th\"] = {};\n" },
+    global_object_alias: { "src/s.ts": "const G: any = globalThis;\nG.Math = {};\n" },
+    global_object_alias_other_name: { "src/s.ts": "const G: any = globalThis;\nG.fetch = 0;\n" },
+    global_object_expando_then_alias: { "src/s.js": "globalThis.fetch = 0;\nconst G = globalThis;\nG.Math = {};\n" },
+  };
+  for (const [k, o] of Object.entries(attacks)) assert.match(primGlobalTouched(files(o), "Math") ?? "", /global_Math/, k);
 });
 
 test("repo scan: the refusal names the first problem (diagnostics)", () => {

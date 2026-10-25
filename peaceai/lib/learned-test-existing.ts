@@ -2140,6 +2140,15 @@ function isWriteTarget(n: ts.Node): boolean {
  * a declaration, import, parameter, assignment, value use (passed, stored, spread) or a `globalThis.Date`-style access
  * fails closed.
  */
+/**
+ * Is `n` (named globalThis / global / window / self) the global object? Yes unless a real local declaration (a
+ * variable, parameter, binding, import, function or class) binds the name: a JS expando write (`globalThis.x = ..` in
+ * a .js file) gives the global object a declaration too, and must not hide it.
+ */
+function globalObjectRef(n: ts.Identifier, checker: ts.TypeChecker): boolean {
+  const s = checker.getSymbolAtLocation(n);
+  return !s?.declarations?.some((d) => ts.isVariableDeclaration(d) || ts.isParameter(d) || ts.isBindingElement(d) || ts.isImportSpecifier(d) || ts.isImportClause(d) || ts.isNamespaceImport(d) || ts.isImportEqualsDeclaration(d) || ts.isFunctionDeclaration(d) || ts.isClassDeclaration(d) || ts.isEnumDeclaration(d) || ts.isModuleDeclaration(d));
+}
 function globalTouched(ri: RepoIndex, name: string): string | null {
   let found: string | null = null;
   const at = (n: ts.Node) => { const sf = n.getSourceFile(); return `${relOf(sf.fileName)}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`; };
@@ -2149,11 +2158,16 @@ function globalTouched(ri: RepoIndex, name: string): string | null {
       // Auditor #505 (3): any use of globalThis / global / window / self (an alias, an argument, a spread, a write,
       // `Object.defineProperty(globalThis, ..)`, an element access) fails closed; only a plain read of a known-safe
       // member (`globalThis.console.log(..)`) is allowed.
-      if (ts.isIdentifier(n) && GLOBAL_OBJECTS.has(n.text) && !inTypePosition(n) && isGlobalId(n, ri.checker)) {
+      if (ts.isIdentifier(n) && GLOBAL_OBJECTS.has(n.text) && !inTypePosition(n) && globalObjectRef(n, ri.checker)) {
         const p = n.parent;
         const nameSlot = (ts.isPropertyAccessExpression(p) && p.name === n) || ((ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodDeclaration(p) || ts.isMethodSignature(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p) || ts.isEnumMember(p)) && p.name === n) || ts.isQualifiedName(p);
         const safeRead = ts.isPropertyAccessExpression(p) && p.expression === n && SAFE_GLOBAL_OBJECT_MEMBERS.has(p.name.text) && p.name.text !== name && !isWriteTarget(p);
-        if (!nameSlot && !safeRead) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
+        // Auditor #505 option X: a plain `globalThis.<identifier> = ..` (the access itself, unwrapped, as the left of
+        // `=`) cancels only when the identifier is the relaxed root (`Date` for Date.UTC, `Math` for Math.*): a
+        // denylist of the root name, not a builtins list. Computed keys, aliases, casts, compound writes, delete,
+        // destructuring and every other form still cancel regardless of the name.
+        const plainWrite = ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text !== name && ts.isBinaryExpression(p.parent) && p.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.parent.left === p;
+        if (!nameSlot && !safeRead && !plainWrite) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
       }
       if (ts.isIdentifier(n) && n.text === name && !inTypePosition(n)) {
         const p = n.parent;
@@ -2171,6 +2185,14 @@ function globalTouched(ri: RepoIndex, name: string): string | null {
     if (found) return found;
   }
   return null;
+}
+/**
+ * Test hook (Auditor #505 option X): whether the repo shadows or patches the global root `name` (`Date`, `Math`, ..),
+ * exactly as the prim-global relaxation checks it; null when untouched. A repo-level problem is returned as `repo: ..`.
+ */
+export function primGlobalTouched(repo: readonly RepoFile[], name: string): string | null {
+  const ri = repoIndex(repo);
+  return ri.problem ? `repo: ${ri.problem}` : globalTouched(ri, name);
 }
 function sharedBindingsProblem(bindings: readonly ReadBinding[], repo: readonly RepoFile[] | undefined, read: (rel: string) => string | null): string | null {
   const shaped = bindings.map((b) => ({ b, shape: bindingShape(b, read) }));
