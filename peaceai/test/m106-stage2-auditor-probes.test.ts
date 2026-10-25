@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   addOnlyTestCheck, appliedDiffRefusals, checkStage2Proposal, computeNeverZone, parseGitDiff, parseRawZ, stage2ZoneRefusal,
-  TOKEN_SCRIPTS, STAGE2_PHASES, stage2EngineFindings, stage2LedgerReasons, stage2PathRefusal, STAGE2_DATA_ALLOWLIST, type Stage2Record,
+  TOKEN_SCRIPTS, STAGE2_PHASES, stage2EngineFindings, stage2LedgerReasons, stage2PathRefusal, STAGE2_DATA_ALLOWLIST, type Stage2Record, type Stage2RunFacts,
 } from "../lib/selfchange.ts";
 import { guardedRun, isolatedRun, lastCount, prepareStage2, recordStage2, stage2PrFacts, treeHash, watchedHashes, type Stage2PhaseRun } from "../lib/selfpropose.ts";
 
@@ -451,8 +451,9 @@ test("M106 #504 round 2 B4: no retry across runs; the record names its run, the 
   assert.equal(recordStage2(prep as never, []).run, null, "no run id (offline) = cannot match any ledger entry");
   const rec = { ...withRun, id: "sc-x" } as Stage2Record;
   const entry = { schema: "peaceai-self-change-ledger:v1" as const, id: "sc-x", base: "b".repeat(40), runId: "77", patchSha256: "" };
-  const RUN = { id: "77", attempt: 1, path: ".github/workflows/self-change-stage2.yml" };
-  const L = { entry, commits: 1, runs: [RUN], recordSource: "artifact" as const };
+  const TPL = "a1".repeat(20);
+  const RUN = { id: "77", attempt: 1, path: ".github/workflows/self-change-stage2.yml", event: "workflow_dispatch", headBranch: "main", headSha: "e".repeat(40), workflowBlob: TPL, recordJob: "success" };
+  const L = { entry, commits: 1, runs: [RUN], recordSource: "artifact" as const, templateBlob: TPL };
   assert.deepEqual(stage2LedgerReasons(rec, L), []);
   // a second run for the same id: its ledger PUT fails (no sha = create-only), so the entry keeps naming run 77;
   // a record from the second run (run 78) never matches; deleting and re-creating the entry shows up as >1 commit
@@ -466,6 +467,28 @@ test("M106 #504 round 2 B4: no retry across runs; the record names its run, the 
   // R3-4: a hand-made record copying the run id (e.g. a tested-failing record edited to awaiting-review) is not the artifact
   assert.deepEqual(stage2LedgerReasons(rec, { ...L, recordSource: "fixture" }), ["FIXTURE_RECORD_NEVER_LANDS"]);
   assert.deepEqual(stage2LedgerReasons(rec, { ...L, recordSource: "none" }), ["RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT"]);
+  // round 4 (Auditor at 9e68d59): an edited self-change-stage2.yml dispatched on a side branch, a non-dispatch run, a
+  // workflow blob that is not the reviewed template on Workspace main, or a record job that did not succeed (artifact
+  // uploaded early) is refused; each check alone, then the positive case
+  const prov = (o: Partial<Stage2RunFacts>, t: string | null = TPL) => stage2LedgerReasons(rec, { ...L, templateBlob: t, runs: [{ ...RUN, ...o }] });
+  assert.deepEqual(prov({ headBranch: "probe-side" }), ["RUN_NOT_ON_MAIN"]);
+  assert.deepEqual(prov({ event: "push" }), ["RUN_NOT_WORKFLOW_DISPATCH"]);
+  assert.deepEqual(prov({ event: "repository_dispatch" }), ["RUN_NOT_WORKFLOW_DISPATCH"]);
+  assert.deepEqual(prov({ workflowBlob: "b2".repeat(20) }), ["RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE"], "edited workflow");
+  assert.deepEqual(prov({ workflowBlob: null }), ["RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE"], "blob unreadable");
+  assert.deepEqual(prov({}, null), ["RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE"], "no reviewed template on main");
+  assert.deepEqual(prov({ recordJob: "failure" }), ["RECORD_JOB_NOT_SUCCESS"]);
+  assert.deepEqual(prov({ recordJob: "cancelled" }), ["RECORD_JOB_NOT_SUCCESS"]);
+  assert.deepEqual(prov({ recordJob: "" }), ["RECORD_JOB_NOT_SUCCESS"], "still running");
+  assert.deepEqual(prov({ recordJob: "success,success" }), ["RECORD_JOB_NOT_SUCCESS"], "two record jobs");
+  assert.deepEqual(prov({ headBranch: "probe-side", workflowBlob: "b2".repeat(20) }), ["RUN_NOT_ON_MAIN", "RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE"], "Auditor's side-branch edit");
+  assert.deepEqual(prov({}), [], "positive: reviewed template, main, workflow_dispatch, record job success");
+  // decide2 gathers these with GETs: the run's workflow blob at its head_sha, attempt-1 jobs, the template blob at main
+  const binSrc = readFileSync(join(repo, "peaceai/bin/self-change.ts"), "utf8");
+  const d2 = binSrc.slice(binSrc.indexOf('mode === "decide2"'), binSrc.indexOf('} else if (mode === "decide")'));
+  assert.match(d2, /contents\/\$\{one\.path\.replace\(\/@\.\*\$\/, ""\)\}\?ref=\$\{one\.headSha\}/);
+  assert.match(d2, /actions\/runs\/\$\{one\.id\}\/attempts\/1\/jobs/);
+  assert.match(d2, /\$\{MAIN\}:peaceai\/results-repo\/self-change-stage2\.yml/);
   const tsx = join(repo, "node_modules/.bin/tsx");
   const env = { ...process.env, GITHUB_ACTIONS: "", GITHUB_REPOSITORY: "" };
   for (const f of ["/tmp/forged.stage2.json", join(repo, "peaceai/test/forged.stage2.json"), join(repo, "peaceai/test/fixtures/../x.json")]) {

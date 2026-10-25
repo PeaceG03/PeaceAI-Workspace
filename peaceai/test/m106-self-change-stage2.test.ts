@@ -280,7 +280,7 @@ const comment = (body: string, over: Partial<CommandComment> = {}): CommandComme
   return { id, url: `https://github.com/PeaceG03/PeaceAI-Workspace/pull/9#issuecomment-${id}`, body, author: "PeaceG03", association: "OWNER", createdAt: "2026-10-25T07:00:00Z", ...over };
 };
 const both = (sha = HEAD) => [comment(`/auditor-pass sc-demo ${sha}`), comment(`/verdict sc-demo ${sha} right`)];
-const LEDGER: Stage2PrFacts["ledger"] = { entry: { schema: "peaceai-self-change-ledger:v1", id: "sc-demo", base: "b".repeat(40), runId: "4242", patchSha256: "" }, commits: 1, runs: [{ id: "4242", attempt: 1, path: ".github/workflows/self-change-stage2.yml" }], recordSource: "artifact" };
+const LEDGER: Stage2PrFacts["ledger"] = { entry: { schema: "peaceai-self-change-ledger:v1", id: "sc-demo", base: "b".repeat(40), runId: "4242", patchSha256: "" }, commits: 1, runs: [{ id: "4242", attempt: 1, path: ".github/workflows/self-change-stage2.yml", event: "workflow_dispatch", headBranch: "main", headSha: "e".repeat(40), workflowBlob: "f".repeat(40), recordJob: "success" }], recordSource: "artifact", templateBlob: "f".repeat(40) };
 const PR: Stage2PrFacts = { headSha: HEAD, diffSha256: "d".repeat(64), baseOnMain: true, commitsExact: true, recheck: { ok: true, refusals: [], paths: [], newTests: [] }, ledger: LEDGER };
 
 test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /verdict AND Auditor /auditor-pass on that exact commit", () => {
@@ -319,6 +319,15 @@ test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /ve
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [...LEDGER.runs!, { id: "4243", attempt: 1, path: ".github/workflows/self-change-stage2.yml" }] } }, both(), AUD, ON), "STAGE2_RUN_NOT_UNIQUE");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [{ id: "4243", attempt: 1, path: ".github/workflows/self-change-stage2.yml" }] } }, both(), AUD, ON), "RUN_NOT_LEDGER_RUN");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [{ id: "4242", attempt: 1, path: ".github/workflows/other.yml" }] } }, both(), AUD, ON), "RUN_NOT_LEDGER_RUN");
+  // round 4: provenance of the ONE run (reviewed workflow blob, Results main, workflow_dispatch, record job succeeded)
+  const run1 = LEDGER.runs![0]!;
+  const withRun = (o: Partial<typeof run1>, extra: Partial<NonNullable<typeof LEDGER>> = {}) => ({ ...PR, ledger: { ...LEDGER, ...extra, runs: [{ ...run1, ...o }] } });
+  has(stage2LandingDecision(goodRecord(), SUITE, withRun({ headBranch: "side" }), both(), AUD, ON), "RUN_NOT_ON_MAIN");
+  has(stage2LandingDecision(goodRecord(), SUITE, withRun({ event: "push" }), both(), AUD, ON), "RUN_NOT_WORKFLOW_DISPATCH");
+  has(stage2LandingDecision(goodRecord(), SUITE, withRun({ workflowBlob: "0".repeat(40) }), both(), AUD, ON), "RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE");
+  has(stage2LandingDecision(goodRecord(), SUITE, withRun({}, { templateBlob: null }), both(), AUD, ON), "RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE");
+  has(stage2LandingDecision(goodRecord(), SUITE, withRun({ recordJob: "failure" }), both(), AUD, ON), "RECORD_JOB_NOT_SUCCESS");
+  has(stage2LandingDecision(goodRecord(), SUITE, withRun({ recordJob: null }), both(), AUD, ON), "RECORD_JOB_NOT_SUCCESS");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: undefined } }, both(), AUD, ON), "STAGE2_RUN_NOT_UNIQUE");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, recheck: { ok: false, refusals: [{ path: "x", reason: "never-zone" }], paths: [], newTests: [] } }, both(), AUD, ON), "CHECK_REFUSED_ON_PR_DIFF");
   // each approval is required, on this id and this sha, by the listed login, traced, with a member association

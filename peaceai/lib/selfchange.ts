@@ -1055,8 +1055,13 @@ export interface Stage2PrFacts {
   /** Blocker 1: checkStage2Proposal re-run on the real base..head diff with the base tree's never-zone */
   recheck: Stage2Check;
   /** Round 2 B4: the Results ledger entry for rec.id and how many commits ever touched it (write-once = exactly 1) */
-  ledger: { entry: Stage2LedgerEntry | null; commits: number; runs?: { id: string; attempt: number; path: string }[]; recordSource?: "artifact" | "fixture" | "none" };
+  ledger: { entry: Stage2LedgerEntry | null; commits: number; runs?: Stage2RunFacts[]; recordSource?: "artifact" | "fixture" | "none"; templateBlob?: string | null };
 }
+/**
+ * Round 3 R3-5 provenance: what decide2 reads (GETs only) about a self-change-stage2 run. `workflowBlob` is the git blob
+ * of the run's workflow file at the run's head_sha; `recordJob` is the conclusion of its `record` job (attempt 1).
+ */
+export interface Stage2RunFacts { id: string; attempt: number; path: string; event?: string; headBranch?: string; headSha?: string; workflowBlob?: string | null; recordJob?: string | null }
 /** Round 2 B4: the record must come from the ONE run the write-once ledger names for this id. */
 export function stage2LedgerReasons(rec: Stage2Record, ledger: Stage2PrFacts["ledger"] | undefined): string[] {
   const e = ledger?.entry;
@@ -1069,6 +1074,16 @@ export function stage2LedgerReasons(rec: Stage2Record, ledger: Stage2PrFacts["le
   const runs = ledger!.runs ?? [];
   if (runs.length !== 1) r.push("STAGE2_RUN_NOT_UNIQUE");
   else if (runs[0]!.id !== e.runId || runs[0]!.attempt !== 1 || !/(^|\/)self-change-stage2\.yml$/.test(runs[0]!.path)) r.push("RUN_NOT_LEDGER_RUN");
+  else {
+    // round 4: the run is the REVIEWED workflow, dispatched on Results main, and its record job finished successfully
+    // (an edited copy dispatched on a side branch, or an artifact uploaded early in a run, does not count)
+    const run = runs[0]!;
+    if (run.headBranch !== "main") r.push("RUN_NOT_ON_MAIN");
+    if (run.event !== "workflow_dispatch") r.push("RUN_NOT_WORKFLOW_DISPATCH");
+    const t = ledger!.templateBlob;
+    if (!t || !/^[0-9a-f]{40}$/.test(t) || run.workflowBlob !== t) r.push("RUN_WORKFLOW_NOT_REVIEWED_TEMPLATE");
+    if (run.recordJob !== "success") r.push("RECORD_JOB_NOT_SUCCESS");
+  }
   // R3-4: the record came from that run's artifact, downloaded by decide2 itself
   if (ledger!.recordSource !== "artifact") r.push(ledger!.recordSource === "fixture" ? "FIXTURE_RECORD_NEVER_LANDS" : "RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT");
   return r;

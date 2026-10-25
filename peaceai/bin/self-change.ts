@@ -28,7 +28,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record } from "../lib/selfchange.ts";
+import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record, type Stage2RunFacts } from "../lib/selfchange.ts";
 import { prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
 
 const argv = process.argv.slice(2);
@@ -111,11 +111,21 @@ if (mode === "propose") {
   try { const t = getRaw(`repos/${RESULTS}/contents/${ledgerPath}`); entry = t ? JSON.parse(t) : null; } catch { entry = null; }
   let commits = 0;
   try { commits = gh(`repos/${RESULTS}/commits?path=${encodeURIComponent(ledgerPath)}&per_page=100`).length; } catch { commits = 0; }
-  let runs: { id: string; attempt: number; path: string }[] = [];
+  let runs: Stage2RunFacts[] = [];
   try {
     runs = (gh(`repos/${RESULTS}/actions/workflows/self-change-stage2.yml/runs?per_page=100`, ".workflow_runs[] | tojson") as any[])
-      .filter((r) => r.display_title === `self-change-stage2 ${id}`).map((r) => ({ id: String(r.id), attempt: Number(r.run_attempt), path: String(r.path ?? "") }));
+      .filter((r) => r.display_title === `self-change-stage2 ${id}`)
+      .map((r) => ({ id: String(r.id), attempt: Number(r.run_attempt), path: String(r.path ?? ""), event: String(r.event ?? ""), headBranch: String(r.head_branch ?? ""), headSha: String(r.head_sha ?? "") }));
   } catch { runs = []; }
+  // round 4 provenance of the ONE run: its workflow file's blob at the run's head_sha, and its record job's conclusion
+  const one = runs.length === 1 ? runs[0]! : null;
+  if (one && /^\d+$/.test(one.id) && /^[0-9a-f]{40}$/.test(one.headSha ?? "")) {
+    try { one.workflowBlob = execFileSync("gh", ["api", `repos/${RESULTS}/contents/${one.path.replace(/@.*$/, "")}?ref=${one.headSha}`, "--jq", ".sha"], { encoding: "utf8" }).trim() || null; } catch { one.workflowBlob = null; }
+    try { one.recordJob = (gh(`repos/${RESULTS}/actions/runs/${one.id}/attempts/1/jobs?per_page=100`, ".jobs[] | tojson") as any[]).filter((j) => j.name === "record").map((j) => String(j.conclusion ?? "")).join(",") || null; } catch { one.recordJob = null; }
+  }
+  // the reviewed template: peaceai/results-repo/self-change-stage2.yml on Workspace main (never the PR's copy)
+  const tpl = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${MAIN}:peaceai/results-repo/self-change-stage2.yml`], { cwd: repo, encoding: "utf8" });
+  const templateBlob = tpl.status === 0 ? tpl.stdout.trim() : null;
   // the record: from the ledger run's own artifact (read-only download), never from a hand-supplied file
   let rec: Stage2Record | null = null;
   let recordSource: "artifact" | "fixture" | "none" = "none";
@@ -130,7 +140,7 @@ if (mode === "propose") {
   }
   if (!rec || rec.id !== id) die(2, `self-change decide2 id=${id} land=false reasons=RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT`);
   const r2 = rec!;
-  const facts = stage2PrFacts(repo, r2, headSha, prCommits, MAIN, { entry, commits, runs, recordSource });
+  const facts = stage2PrFacts(repo, r2, headSha, prCommits, MAIN, { entry, commits, runs, recordSource, templateBlob });
   const d = stage2LandingDecision(r2, suiteFilesAt(repo, r2.baseSha), facts, comments, { auditor: approvers.auditor ?? [], peace: approvers.peace ?? [] }, atMain(STAGE2_FLAG_PATH));
   die(d.ok ? 0 : 2, `self-change decide2 id=${r2.id} land=${d.ok}${d.ok ? ` auditor=${d.auditorComment} peace=${d.architectComment}` : ` reasons=${d.reasons.join(",")}`}`);
 } else if (mode === "decide") {
