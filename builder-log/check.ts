@@ -33,6 +33,7 @@ export const APPROVED_SINCE = {
   TSCONFIG_SCRIPT: "2026-10-16 12:17", // public-tsconfig-script-v1, approval PR #300 merged ed44b44 (18:17Z); earlier entries keep "missing skill"
   READ_ONLY_OPS: "2026-10-16 22:18", // read-only ops (GET-only allowlist, peaceai/read-only-ops.json enabled), PR #337 merged 8890c49 (04:18Z); not a code edit and not a learned rule, so it never credits a Builder OPS_ACTION row
   TEST_CASE_EXISTING: "2026-10-17 13:42", // public-test-case-existing-v1 (fix-free characterization test), approval PR #367 squash-merged b200b05 (19:42Z); earlier entries keep "missing skill"
+  DERIVE_FROM_BEHAVIOR: "2026-10-23 18:22", // public-derive-from-behavior-v1 (new pure function derived from behavior-only examples), approval PR #499 merged 8d60a96 (00:22Z Oct 24); earlier entries keep "missing skill"
   IMPORT_EDIT: "2026-10-15 22:33", // public-import-edit-v2, approval PR #234 merged ba5f2b7 (04:33Z); earlier entries keep "missing skill"
 } as const;
 /**
