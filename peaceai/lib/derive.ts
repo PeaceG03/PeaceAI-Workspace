@@ -58,6 +58,15 @@ export interface DeriveInput {
   slack?: number;
   /** Memory bound in kept values (programs x points); clamped to MAX_KEPT_CELLS (default it). */
   maxKeptCells?: number;
+  /**
+   * M111 (public-derive-from-behavior-v2, rule param dsl typed-dsl-v2 only): boolean label chains. A boolean
+   * parameter is also an if-guard (size 1), but only over constant branches or other label chains (if / else-if
+   * chains and decision trees that return constant labels); in a fully covered all-boolean domain
+   * (finiteDomainCovered) every output is a constant leaf even when seen once; a side's reach is counted over the
+   * finite domain; and an all-boolean program that branches on a boolean parameter is refused (gate domain) until
+   * the examples cover every input. Off (the default, v1): the search, gates and refusals are unchanged.
+   */
+  labelChains?: boolean;
 }
 export type DeriveNode =
   | { op: "param"; i: number }
@@ -478,6 +487,10 @@ interface SearchSpec {
   templates?: readonly DeriveNode[];
   /** M102: build the string-order atom `s <= t` (only with ORDER_FORM_EVIDENCE at the bar; default from it). */
   order?: boolean;
+  /** M111: boolean parameters are if-guards over label-chain branches only (DeriveInput.labelChains). */
+  labelChains?: boolean;
+  /** M111: extra constant leaves for label chains (finiteDomainLabels; only in a fully covered all-boolean domain). */
+  labels?: readonly (number | string)[];
   maxSize: number;
   budget: number;
   /** Memory bound in kept values (keptCellsLimit). */
@@ -500,7 +513,9 @@ function runSearch(S: SearchSpec): SearchOut {
   const P = points.length;
   const types: DeriveType[] = ["number", "string", "boolean"];
   const levels: Record<DeriveType, Prog[][]> = { number: [[]], string: [[]], boolean: [[]] };
-  const guards: Prog[] = []; // if-guards: emptiness / equality atoms
+  const guards: Prog[] = []; // if-guards: emptiness / equality atoms (M111, labelChains: also boolean parameters)
+  const chains = new Set<DeriveNode>(); // M111: label chains (ifs whose branches are constant leaves or label chains)
+  const constLike = (n: DeriveNode) => n.op === "lit" || n.op === "int" || chains.has(n);
   const seen: Record<DeriveType, Set<string>> = { number: new Set(), string: new Set(), boolean: new Set() };
   let searched = 0, keptCells = 0, overBudget = false, stopped = false;
   const fits: Prog[] = [];
@@ -538,7 +553,7 @@ function runSearch(S: SearchSpec): SearchOut {
   for (let size = 1; size <= S.maxSize && !overBudget && !stopped; size++) {
     for (const ty of types) levels[ty][size] ??= [];
     if (size === 1) {
-      params.forEach((p, i) => { const n: DeriveNode = { op: "param", i }; push(p.type, 1, n, true, byNode(n)); });
+      params.forEach((p, i) => { const n: DeriveNode = { op: "param", i }; push(p.type, 1, n, true, byNode(n), !!S.labelChains && p.type === "boolean"); });
       for (const v of [1, 2]) { const n: DeriveNode = { op: "int", v }; push("number", 1, n, false, byNode(n)); }
       for (const v of S.pieces) { const n: DeriveNode = { op: "lit", v }; push("string", 1, n, false, byNode(n)); }
     }
@@ -608,18 +623,25 @@ function runSearch(S: SearchSpec): SearchOut {
       }
     }
     // Conditionals: if(G, x, y) with |G| + |x| + |y| = size - 1; number branches may also be K constants.
-    for (let lg = 2; lg <= Math.min(3, size - 3) && !overBudget && !stopped; lg++) {
+    // M111 (labelChains): a boolean parameter is a size-1 guard whose branches are constant leaves (the K caps, the
+    // level-1 literals and S.labels) or label chains only; an if over constant-like branches is itself a label chain.
+    for (let lg = S.labelChains ? 1 : 2; lg <= Math.min(3, size - 3) && !overBudget && !stopped; lg++) {
       for (const g of guardAt(lg)) for (let lt = 1; lt <= size - 2 - lg; lt++) {
         const le = size - 1 - lg - lt;
         if (le < 1) continue;
         const gv = g.vals as (boolean | null)[];
+        const boolGuard = g.node.op === "param";
         for (const ty of ["number", "string"] as const) {
-          const constLeaves = (n: number) => (ty === "number" && n === 1 ? S.caps.map((c) => ({ node: { op: "lit", v: c } as DeriveNode, vals: new Array<V>(P).fill(c) })) : []);
-          const xs = [...at(ty, lt), ...constLeaves(lt)], ys = [...at(ty, le), ...constLeaves(le)];
+          const leaf = (v: number | string) => ({ node: { op: "lit", v } as DeriveNode, vals: new Array<V>(P).fill(v) });
+          const constLeaves = (n: number) => (n !== 1 ? [] : [...(ty === "number" ? S.caps.map(leaf) : []), ...(boolGuard ? (S.labels ?? []).filter((v) => typeof v === (ty === "number" ? "number" : "string")).map(leaf) : [])]);
+          const side = (n: number) => [...at(ty, n).filter((x) => !boolGuard || constLike(x.node)), ...constLeaves(n)];
+          const xs = side(lt), ys = side(le);
           for (const x of xs) for (const y of ys) {
             if (x.node === y.node || (x.node.op === "lit" && y.node.op === "lit" && x.node.v === y.node.v)) continue;
             const xv = x.vals, yv = y.vals;
-            push(ty, size, { op: "if", c: g.node, t: x.node, e: y.node }, true, map1((k) => (gv[k] === null ? null : gv[k] ? xv[k] : yv[k])));
+            const node: DeriveNode = { op: "if", c: g.node, t: x.node, e: y.node };
+            if (S.labelChains && constLike(x.node) && constLike(y.node)) chains.add(node);
+            push(ty, size, node, true, map1((k) => (gv[k] === null ? null : gv[k] ? xv[k] : yv[k])));
           }
         }
       }
@@ -635,6 +657,65 @@ const dedupePoints = (pts: readonly DeriveValue[][]): DeriveValue[][] => {
   return pts.filter((a) => { const k = keyOf(a); if (seen.has(k)) return false; seen.add(k); return true; });
 };
 
+// ---- M111: boolean label chains (public-derive-from-behavior-v2 only; DeriveInput.labelChains) ----
+
+/** Every input of an all-boolean signature (false before true, first parameter slowest); null when a parameter is not boolean. */
+export function finiteDomain(params: readonly DeriveParam[]): boolean[][] | null {
+  if (!params.length || params.some((p) => p.type !== "boolean")) return null;
+  let rows: boolean[][] = [[]];
+  for (let i = 0; i < params.length; i++) rows = rows.flatMap((r) => [[...r, false], [...r, true]]);
+  return rows;
+}
+/** The inputs of an all-boolean signature that no example gives (empty when covered; null when not all-boolean). */
+export function finiteDomainMissing(input: Pick<DeriveInput, "params" | "examples">): boolean[][] | null {
+  const dom = finiteDomain(input.params);
+  if (!dom) return null;
+  const have = new Set(input.examples.map((e) => keyOf(e.args)));
+  return dom.filter((r) => !have.has(keyOf(r)));
+}
+/**
+ * The examples give EVERY input of an all-boolean signature (2, 4 or 8 inputs): the wanted function is then fully
+ * stated by its examples, and any program that fits them equals it on every input it can ever be called with.
+ */
+export const finiteDomainCovered = (input: Pick<DeriveInput, "params" | "examples">): boolean => finiteDomainMissing(input)?.length === 0;
+/**
+ * The constant leaves of label chains in a covered all-boolean domain: each distinct output, even one given once (the
+ * table IS the function there, so a once-seen label is not a guess), that is not already a level-1 literal or K cap.
+ * Number outputs must be safe integers; string outputs pass the literal checks of the pieces.
+ */
+export function finiteDomainLabels(examples: readonly DeriveExample[], pieces: readonly string[], caps: readonly number[]): (number | string)[] {
+  const out: (number | string)[] = [];
+  for (const e of examples) {
+    const v = e.out;
+    if (typeof v === "boolean" || (typeof v === "number" ? !isInt(v) || caps.includes(v) || v === 1 || v === 2 : pieces.includes(v) || v.length > DERIVE_MAX_STRING || UNSAFE_LITERAL.test(v))) continue;
+    if (!out.includes(v)) out.push(v);
+  }
+  return out;
+}
+/** An if over boolean parameters only, every leaf a constant: a label chain / decision tree of a finite domain. */
+export function isBooleanLabelTree(program: DeriveNode, params: readonly DeriveParam[]): boolean {
+  const ok = (n: DeriveNode): boolean => n.op === "lit" || n.op === "int" || (n.op === "if" && n.c.op === "param" && params[n.c.i]?.type === "boolean" && ok(n.t) && ok(n.e));
+  return program.op === "if" && ok(program);
+}
+/** The program branches on a boolean parameter somewhere (an M111 guard). */
+const branchesOnBoolean = (program: DeriveNode, params: readonly DeriveParam[]): boolean => {
+  let hit = false;
+  walk(program, (n) => { if (n.op === "if" && n.c.op === "param" && params[n.c.i]?.type === "boolean") hit = true; });
+  return hit;
+};
+/** Gate domain (M111): ask for the inputs of an all-boolean signature the examples leave out (at most DERIVE_MAX_QUESTIONS). */
+function domainProblem(input: DeriveInput, expr: string): DeriveGateProblem | null {
+  const missing = finiteDomainMissing(input);
+  if (!missing?.length) return null;
+  const outs = [...new Set(input.examples.map((e) => keyOf([e.out])))].map((k) => (JSON.parse(k) as DeriveValue[])[0]!);
+  const rows = missing.slice(0, DERIVE_MAX_QUESTIONS);
+  const total = 2 ** input.params.length;
+  return {
+    gate: "domain", searched: 0, at: rows, rivals: rows.map((at) => ({ at, values: outs })),
+    detail: `${expr ? `\`${expr}\` branches on boolean parameters, but ` : ""}the examples give ${total - missing.length} of the ${total} possible inputs, so the order of the branches is not shown; add the result for ${missing.map((r) => `(${r.join(", ")})`).join(" and ")}`,
+  };
+}
+
 /**
  * The search. At the first size where some parameter-reading program matches every example, DERIVE_SLACK more
  * levels are built and: exactly one such behavior up to there (on examples + neighbour probes + far probes) -> the
@@ -647,7 +728,11 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
   // Round 3 (Auditor ruling on 6f1ea5e): never emit a program that uses a form fewer than DERIVE_FORM_BAR replaying
   // upstream evidence entries show (counts read from the evidence file, the single source; see evidenceFormCounts).
   const types = input.params.map((p) => p.type);
-  const forms = unevidencedForms(r.fit.program, undefined, types);
+  // M111 (v2 only): a label chain over boolean parameters whose examples give EVERY input is the examples' own table,
+  // equal to the wanted function on every input it can be called with, so no unseen input is left for upstream
+  // evidence of the ternary form to vouch for; the ternary bar does not apply to it (every other form's still does).
+  const table = !!input.labelChains && finiteDomainCovered(input) && isBooleanLabelTree(r.fit.program, input.params);
+  const forms = unevidencedForms(r.fit.program, undefined, types).filter((f) => !(table && f === "ternary"));
   if (forms.length === 0) return r;
   const counts = evidenceFormCounts();
   // M104 (Auditor #498): a ternary whose program skeleton is under the bar is refused even when the form count is not.
@@ -841,14 +926,22 @@ export function deriveCandidate(input: DeriveInput): DeriveResult {
   const names = params.map((p) => p.name);
   const slack = Math.max(0, Math.min(input.slack ?? DERIVE_SLACK, DERIVE_SLACK));
   let first = 0;
+  const caps = repeatedResults(examples), pieces = stringPieces(examples);
+  const labelChains = !!input.labelChains;
   const r = runSearch({
     params, ret: input.ret, points, nEx, target: examples.map((e) => e.out),
-    consts: edgesByParam(params, examples), caps: repeatedResults(examples), pieces: stringPieces(examples), templates: templateFits(params, examples), maxSize, budget, cells: keptCellsLimit(input),
+    consts: edgesByParam(params, examples), caps, pieces, templates: templateFits(params, examples), maxSize, budget, cells: keptCellsLimit(input),
+    ...(labelChains ? { labelChains, ...(finiteDomainCovered(input) ? { labels: finiteDomainLabels(examples, pieces, caps) } : {}) } : {}),
     stop: (size, fits) => { if (fits.length > 0 && first === 0) first = size; return first > 0 && size >= first + slack; },
   });
   const searched = r.searched;
   if (r.overBudget) return { ok: false, reason: "derive_budget", searched };
-  if (r.fits.length === 0) { const questions = edgeQuestions(input); return { ok: false, reason: "derive_no_fit", ...(questions.length ? { questions } : {}), searched }; }
+  if (r.fits.length === 0) {
+    // M111: no fit in an all-boolean domain the examples do not cover: ask for the missing inputs (a full table fits).
+    const dom = labelChains && input.ret !== "boolean" ? domainProblem(input, "") : null;
+    if (dom) { const questions = deriveQuestions(input, { op: "lit", v: "" }, [], dom.rivals ?? []); return { ok: false, reason: "derive_under_specified", gate: "domain", detail: dom.detail, ...(questions.length ? { questions } : {}), searched }; }
+    const questions = edgeQuestions(input); return { ok: false, reason: "derive_no_fit", ...(questions.length ? { questions } : {}), searched };
+  }
   const best = r.fits[0]!;
   if (r.fits.length > 1) {
     const b = r.fits[1]!;
@@ -870,7 +963,7 @@ export function deriveCandidate(input: DeriveInput): DeriveResult {
 
 // ---- The witness gates (Auditor, #491 review): a fit is accepted only when the examples SHOW what it relies on.
 
-export type DeriveGate = "unread" | "chars" | "order" | "edge" | "far" | "region" | "span" | "branch" | "cap" | "rival" | "rival_budget";
+export type DeriveGate = "unread" | "chars" | "order" | "edge" | "far" | "region" | "span" | "branch" | "cap" | "rival" | "rival_budget" | "domain";
 export interface DeriveGateProblem { gate: DeriveGate; param?: string; detail: string; searched: number; at?: DeriveValue[][]; rivals?: { at: DeriveValue[]; values: DeriveValue[] }[] }
 
 /**
@@ -1318,6 +1411,9 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
   const fail = (gate: DeriveGate, detail: string, param?: number, at?: DeriveValue[][]): DeriveGateProblem => ({ gate, detail, searched: 0, ...(param !== undefined ? { param: names[param]! } : {}), ...(at ? { at } : {}) });
   const ptAt = (i: number, v: number) => pointAt(examples, i, v);
   const read = paramsRead(program);
+  // domain (M111, labelChains only): an all-boolean program that branches on a boolean parameter is accepted only when
+  // the examples give every input (otherwise the branch order at the missing inputs is a guess).
+  if (input.labelChains && branchesOnBoolean(program, params)) { const dom = domainProblem(input, expr); if (dom) return dom; }
   // unread (m103, Auditor #494 and #497): unreadProblem.
   const unread = unreadProblem(input, program, read, expr);
   if (unread) return unread;
@@ -1502,6 +1598,11 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     return at.length ? at : undefined;
   };
   for (const e of examples) evalProgram(program, e.args, (n, side) => { const h = hits.get(n) ?? [0, 0]; h[side]++; hits.set(n, h); });
+  // M111 (labelChains only): in an all-boolean domain a side can be reached by fewer than DERIVE_MIN_REACH inputs at
+  // all (in a chain over 2 booleans the innermost sides have 1 each); it then needs every one of them (at least 1).
+  const dom = input.labelChains ? finiteDomain(params) : null;
+  const domHits = new Map<DeriveNode, [number, number]>();
+  if (dom) for (const a of dom) evalProgram(program, a, (n, side) => { const h = domHits.get(n) ?? [0, 0]; h[side]++; domHits.set(n, h); });
   let reachFail: DeriveGateProblem | null = null;
   walk(program, (n) => {
     if (reachFail) return;
@@ -1510,6 +1611,13 @@ export function gateProblem(input: DeriveInput, program: DeriveNode, size: numbe
     // A condition that holds for ONE input only (`p === c` or an emptiness test of the only parameter) has a
     // single-input true branch: one example is all there is to show (gate edge already asks for c - 1, c, c + 1).
     const point = n.op === "if" && params.length === 1 && (n.c.op === "empty" || (n.c.op === "eq" && ((n.c.a.op === "param" && n.c.b.op === "lit") || (n.c.a.op === "lit" && n.c.b.op === "param"))));
+    if (dom) {
+      const [d0, d1] = domHits.get(n) ?? [0, 0];
+      const need0 = Math.max(1, Math.min(DERIVE_MIN_REACH, d0)), need1 = Math.max(1, Math.min(DERIVE_MIN_REACH, d1));
+      if (s0 >= need0 && s1 >= need1) return;
+      reachFail = fail("branch", `\`${compileProgram(n, names)}\`: its condition is true for ${s0} example(s) of ${d0} possible input(s) and false for ${s1} of ${d1}; each branch needs min(${DERIVE_MIN_REACH}, its possible inputs) examples, at least 1`);
+      return;
+    }
     if (s0 >= (point ? 1 : DERIVE_MIN_REACH) && s1 >= DERIVE_MIN_REACH) return;
     const sub = compileProgram(n, names);
     reachFail = n.op === "if"

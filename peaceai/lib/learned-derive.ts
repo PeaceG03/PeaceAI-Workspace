@@ -27,7 +27,8 @@ import ts from "typescript";
 export const DERIVE_PARAM_KEYS = ["ambiguity", "dsl", "examples", "grading", "placement", "test"] as const;
 export const DERIVE_VOCAB: Record<(typeof DERIVE_PARAM_KEYS)[number], readonly string[]> = {
   ambiguity: ["refuse-unwitnessed"],
-  dsl: ["typed-dsl-v1"],
+  // M111: typed-dsl-v2 (public-derive-from-behavior-v2) = v1 plus boolean label chains (DeriveInput.labelChains).
+  dsl: ["typed-dsl-v1", "typed-dsl-v2"],
   examples: ["literal-data-only"],
   grading: ["self-fail-before-pass-after"],
   placement: ["new-module"],
@@ -172,7 +173,12 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
   // PeaceAI's own search writes the body from the examples alone; nothing in the issue is copied into it and the
   // behavior prose is not an input.
-  const r = derive({ params: task.params, ret: task.ret, examples: task.examples });
+  const base = { params: task.params, ret: task.ret, examples: task.examples };
+  // M111 (decision #466: an approved version never widens; a widening is a new version): typed-dsl-v2 answers only
+  // tasks v1 does not; a task v1 already derives is not_needed here, so the two rules never both answer one task.
+  const v2 = params.dsl === "typed-dsl-v2";
+  if (v2 && derive(base).ok) return { reason: "not_needed" };
+  const r = derive(v2 ? { ...base, labelChains: true } : base);
   if (!r.ok) {
     // derive_under_specified names the gate and, when it passes the refusal-line allowlist, the parameter: e.g.
     // `derive_under_specified_far: status` (the full sentence, with the edge to add, is in `detail`).
@@ -321,7 +327,9 @@ export function deriveReviewNote(diff: string, derive: typeof deriveProgram = de
     examples.push({ args: args as DeriveValue[], out });
   }
   if (!examples.length) return null;
-  const r = derive({ params, ret, examples });
+  // M111: as Job A, v1 first, then v2 (typed-dsl-v2: boolean label chains) only for examples v1 does not derive.
+  const v1 = derive({ params, ret, examples });
+  const r = v1.ok ? v1 : derive({ params, ret, examples, labelChains: true });
   if (!r.ok || compileProgram(r.fit.program, params.map((p) => p.name)) !== expr) return null;
   const rows = farProbeTable(r.fit.program, params, examples, DERIVE_NOTE_ROWS).map((row) => `${fn}(${row.args.map(lit).join(", ")}) = ${row.out === undefined ? "(error)" : lit(row.out)}`);
   return [`Derived by PeaceAI from the ${examples.length} examples (DERIVE_FROM_BEHAVIOR). Expression and far probes (inputs past every edge the examples show):`, "", "```text", `return ${expr};`, "", ...rows, "```"].join("\n");
