@@ -22,9 +22,10 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /(^|\/)[^/]*public-origin[^/]*$/i, why: "the public-origin allowlist (leak gate): core's docs/peaceai-public-origin.json and any copy, test or reader of it" },
   { pattern: /^\.github\//, why: "workflows, required checks and approval workflows" },
   { pattern: /^\.githooks\/|(^|\/)\.git\//, why: "git hooks" },
+  { pattern: /(^|\/)\.[^/]/, why: "dot-paths anywhere (.env / .npmrc / hook and tool config; M106, found by the stage-2 never-zone cross-check)" },
   { pattern: /^(package(-lock)?\.json|npm-shrinkwrap\.json|\.npmrc|tsconfig[^/]*\.json|\.gitignore|\.gitattributes)$/, why: "dependencies and build config" },
   { pattern: /^(README\.md|CONSTITUTION[^/]*|SECURITY[^/]*|CODEOWNERS|LICENSE[^/]*)$/, why: "governance documents" },
-  { pattern: /^peaceai\/rules\//, why: "approved learned-rule list and rule specs" },
+  { pattern: /^peaceai\/rules\/|(^|\/)approved\.json$/, why: "approved learned-rule list and rule specs (and any approved.json; M106)" },
   { pattern: /^peaceai\/test\//, why: "the live test suite (new tests go under peaceai/self-tests/)" },
   { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.test\.ts$/, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
   { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|await-held-runs\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/, why: "approval, leak, scan, hook, gate and self-change tools" },
@@ -337,6 +338,19 @@ function rootIdent(e: ts.Expression): ts.Identifier | null {
   }
   return ts.isIdentifier(x) ? x : null;
 }
+/** A value made right here (a literal, `new X()`, or a copy from a copying method), so mutating it touches nothing shared. */
+const FRESH_METHODS = new Set(["split", "slice", "map", "filter", "concat", "flat", "flatMap", "toSorted", "toReversed", "keys", "values", "entries", "match", "matchAll"]);
+function freshValue(e: ts.Expression): boolean {
+  let x = e;
+  while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x)) x = x.expression;
+  if (ts.isArrayLiteralExpression(x) || ts.isObjectLiteralExpression(x) || ts.isNewExpression(x) || ts.isStringLiteral(x) || ts.isTemplateExpression(x)) return true;
+  if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression)) {
+    const m = x.expression.name.text;
+    if (FRESH_METHODS.has(m)) return true;
+    if (ts.isIdentifier(x.expression.expression) && ["Array", "Object"].includes(x.expression.expression.text) && ["from", "of", "keys", "values", "entries"].includes(m)) return true;
+  }
+  return false;
+}
 function declaredNames(n: ts.Node, out: Set<string>): void {
   const bind = (b: ts.BindingName) => {
     if (ts.isIdentifier(b)) out.add(b.text);
@@ -398,7 +412,7 @@ export function addOnlyTestCheck(path: string, base: string | null, cand: string
       if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) writeTo(n.left);
       if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) writeTo(n.operand);
       if (ts.isDeleteExpression(n)) writeTo(n.expression);
-      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && MUTATORS.has(n.expression.name.text)) {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && MUTATORS.has(n.expression.name.text) && !freshValue(n.expression.expression)) {
         const r = rootIdent(n.expression.expression);
         if (!r || !local.has(r.text) || isImportedLocal(r.text)) refusals.push(`mutates ${n.expression.getText(csf).slice(0, 40)} (not declared in the added code)`);
       }
@@ -417,8 +431,11 @@ export function addOnlyTestCheck(path: string, base: string | null, cand: string
 
 /** Names of lists whose growth weakens a gate (Auditor limit 2): allowlists, exemptions, known refusals, grandfathering. */
 export const LISTY = /allow|exempt|known|grandfather|accept|skip|ignore|whitelist|permit|trusted|bypass|except|waive|tolerat/i;
-function tsListElements(sf: ts.SourceFile): { lists: Map<string, string[]>; adds: number } {
+/** Names of on/off switches: flipping one to true (or adding one set to true) is an enable flip (Auditor limit 1). */
+export const FLAGGY = /enable|disabl|(^|_)on$|^on[A-Z_]|flag|switch|live$|^live/i;
+function tsListElements(sf: ts.SourceFile): { lists: Map<string, string[]>; adds: number; flags: Map<string, string> } {
   const lists = new Map<string, string[]>();
+  const flags = new Map<string, string>();
   let adds = 0;
   const elems = (e: ts.Expression | undefined): string[] | null => {
     if (!e) return null;
@@ -436,6 +453,7 @@ function tsListElements(sf: ts.SourceFile): { lists: Map<string, string[]>; adds
     else if ((ts.isPropertyAssignment(n) || ts.isPropertyDeclaration(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) { name = n.name.text; init = n.initializer; }
     const key = name ? (scope ? `${scope}.${name}` : name) : scope;
     if (name && LISTY.test(name)) { const el = elems(init); if (el) lists.set(key, [...(lists.get(key) ?? []), ...el]); }
+    if (name && FLAGGY.test(name) && init && (init.kind === ts.SyntaxKind.TrueKeyword || init.kind === ts.SyntaxKind.FalseKeyword)) flags.set(key, init.kind === ts.SyntaxKind.TrueKeyword ? "true" : "false");
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && MUTATORS.has(n.expression.name.text)) {
       const r = rootIdent(n.expression.expression);
       const recv = ts.isPropertyAccessExpression(n.expression.expression) ? n.expression.expression.name.text : r?.text ?? "";
@@ -444,8 +462,13 @@ function tsListElements(sf: ts.SourceFile): { lists: Map<string, string[]>; adds
     ts.forEachChild(n, (c) => visit(c, key));
   };
   visit(sf, "");
-  return { lists, adds };
+  return { lists, adds, flags };
 }
+function jsonFlags(v: unknown, path: string, out: Map<string, string>): void {
+  if (Array.isArray(v)) { v.forEach((x, i) => jsonFlags(x, `${path}[${i}]`, out)); return; }
+  if (v && typeof v === "object") for (const [k, x] of Object.entries(v as Record<string, unknown>)) { if (typeof x === "boolean" && FLAGGY.test(k)) out.set(`${path}.${k}`, String(x)); jsonFlags(x, `${path}.${k}`, out); }
+}
+const flipped = (b: Map<string, string>, c: Map<string, string>): string[] => [...c].filter(([k, v]) => (v === "true" && b.get(k) !== "true") || (v === "false" && b.get(k) === "true" && /disabl/i.test(k))).map(([k]) => `flips switch ${k}`);
 function jsonListElements(v: unknown, path: string, listy: boolean, out: Map<string, string[]>): void {
   if (Array.isArray(v)) { if (listy) out.set(path, v.map((x) => JSON.stringify(x))); v.forEach((x, i) => jsonListElements(x, `${path}[${i}]`, listy, out)); return; }
   if (v && typeof v === "object") {
@@ -454,7 +477,7 @@ function jsonListElements(v: unknown, path: string, listy: boolean, out: Map<str
     for (const k of Object.keys(o)) jsonListElements(o[k], `${path}.${k}`, listy || LISTY.test(k), out);
   }
 }
-/** Auditor limit 2 (non-test files): any element added to an allowlist-like list, or a new mutation of one, is refused. */
+/** Auditor limits 2 and 1 (non-test files): any element added to an allowlist-like list, a new mutation of one, or an enable flip (a switch turned on) is refused. */
 export function listGrowthRefusals(path: string, base: string | null, cand: string): string[] {
   const out: string[] = [];
   const grown = (b: Map<string, string[]>, c: Map<string, string[]>) => {
@@ -468,8 +491,9 @@ export function listGrowthRefusals(path: string, base: string | null, cand: stri
     if (!csf) return ["file does not parse"];
     const bsf = base === null ? null : parseTs(path, base);
     const c = tsListElements(csf);
-    const b = bsf ? tsListElements(bsf) : { lists: new Map<string, string[]>(), adds: 0 };
+    const b = bsf ? tsListElements(bsf) : { lists: new Map<string, string[]>(), adds: 0, flags: new Map<string, string>() };
     grown(b.lists, c.lists);
+    out.push(...flipped(b.flags, c.flags));
     if (c.adds > b.adds) out.push("adds a call that grows an allowlist-like list");
   } else if (/\.json$/.test(path)) {
     let cj: unknown, bj: unknown = null;
@@ -479,6 +503,10 @@ export function listGrowthRefusals(path: string, base: string | null, cand: stri
     jsonListElements(cj, "$", whole, c);
     if (bj !== null) jsonListElements(bj, "$", whole, b);
     grown(b, c);
+    const cf = new Map<string, string>(), bf = new Map<string, string>();
+    jsonFlags(cj, "$", cf);
+    if (bj !== null) jsonFlags(bj, "$", bf);
+    out.push(...flipped(bf, cf));
   }
   return [...new Set(out)];
 }

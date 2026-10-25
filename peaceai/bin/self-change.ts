@@ -12,10 +12,10 @@
 //   propose2 --id ID --patch FILE [--source URL] [--base REF] [--out DIR] [--budget MIN]
 //            same place rules as propose; never-zone + add-only + list-growth check, base suite on the candidate,
 //            each new test fails on the base and passes on the candidate -> <out>/self-changes/<id>.stage2.{json,bundle}
-//   decide2  --record FILE (--pr N | --approvals FILE) [--live DIR]   landing decision: flag peaceai/self/stage2.json
+//   decide2  --record FILE (--pr N | --approvals FILE) [--repo DIR]   landing decision: flag peaceai/self/stage2.json
 //            on, PR head = graded candidate, PR diff hash = recorded hash, Auditor `/auditor-pass <id> <sha>` and Peace
 //            `/verdict <id> <sha> right`. Prints only; never posts, applies, pushes or merges.
-//   credit2  --record FILE --landed SHA [--live DIR]   byte-identical credit (any Builder edit = no credit).
+//   credit2  --record FILE --landed SHA [--repo DIR]   byte-identical credit (any Builder edit = no credit).
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -58,7 +58,7 @@ if (mode === "propose") {
   die(r.code, r.message);
 } else if (mode === "decide2" || mode === "credit2") {
   const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as Stage2Record;
-  const liveRepo = resolve(opt("live") ?? process.cwd());
+  const liveRepo = resolve(opt("repo") ?? process.cwd());
   if (mode === "credit2") {
     const landed = opt("landed") ?? "";
     if (!/^[0-9a-f]{40}$/.test(landed)) die(1, "usage: --landed <40-hex merge sha>");
