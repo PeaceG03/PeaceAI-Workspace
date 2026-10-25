@@ -3,9 +3,9 @@
 // It makes a FRESH clone of the source at the base commit, applies the change there, runs the LIVE suite (the base
 // commit's peaceai/test/*.test.ts, restored from the base) plus new peaceai/self-tests, and writes the record and
 // a git bundle of the exact candidate commit (so the promotion PR head can be that tested commit).
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appliedDiffRefusals, budgetMinutes, checkSelfChangeDiff, checkStage2Proposal, computeNeverZone, listSha, parseGitDiff, parseRawZ, SELF_SCHEMA, selfChangeAllowedHere, sha256, STAGE2_COUNTS_TRUST, STAGE2_DIFF_ARGS, STAGE2_PHASES, STAGE2_SCHEMA, stage2DiffSha, stage2GradeDecision, type CaseRun, type NeverZoneSet, type SelfChangeRecord, type Stage2Check, type Stage2Phase, type Stage2PrFacts, type Stage2Record, type TestRun } from "./selfchange.ts";
@@ -157,7 +157,37 @@ export function prepareStage2(work: string, id: string, diff: string, baseSha: s
 }
 
 export interface RawRun { file?: string; name?: string; exitCode: number; pass: number; fail: number; leftovers: number; tampered?: string[] }
-export interface Stage2PhaseRun { schema: typeof STAGE2_RUN_SCHEMA; id: string; phase: Stage2Phase; candidateSha: string; runs: RawRun[]; leftovers: number; tampered?: number }
+export interface Stage2PhaseRun { schema: typeof STAGE2_RUN_SCHEMA; id: string; phase: Stage2Phase; candidateSha: string; runs: RawRun[]; leftovers: number; tampered?: number; candUid?: "separate" }
+
+/**
+ * Stage-2 candidate uid (Peace 2026-10-25: required before any flag flip). The run job creates a separate system
+ * user (no home, no shell, no sudo) and names it in PEACEAI_STAGE2_CAND. Candidate code then runs only as that uid,
+ * through `sudo -n -u <name> -- env -i ...`, on a clone it can read but not change (owned by the runner user, no
+ * group/other write), with a private HOME/TMPDIR it owns; afterwards every process of that uid is killed and counted
+ * as a leftover. In the private job run2 refuses without it. The counts stay advisory (candidate code still prints
+ * them), but the candidate can no longer reach sudo, the runner user's files or its processes.
+ */
+export const STAGE2_CAND_ENV = "PEACEAI_STAGE2_CAND";
+export interface CandUid { name: string; uid: number }
+export function stage2CandUid(env: Record<string, string | undefined>): { ok: true; cand: CandUid } | { ok: false; reason: string } {
+  const name = env[STAGE2_CAND_ENV] ?? "";
+  if (!name) return { ok: false, reason: "CAND_UID_REQUIRED" };
+  if (!/^[a-z_][a-z0-9_-]{0,31}$/.test(name)) return { ok: false, reason: "CAND_UID_BAD_NAME" };
+  const id = spawnSync("id", ["-u", name], { encoding: "utf8" });
+  const uid = Number((id.stdout ?? "").trim());
+  if (id.status !== 0 || !/^\d+$/.test((id.stdout ?? "").trim())) return { ok: false, reason: "CAND_UID_MISSING" };
+  if (uid === 0 || uid === (process.getuid?.() ?? -1)) return { ok: false, reason: "CAND_UID_NOT_SEPARATE" };
+  if (spawnSync("sudo", ["-n", "-u", name, "--", "true"], { stdio: "ignore", timeout: 20_000 }).status !== 0) return { ok: false, reason: "CAND_UID_UNREACHABLE" };
+  if (spawnSync("sudo", ["-n", "-u", name, "--", "sudo", "-n", "true"], { stdio: "ignore", timeout: 20_000 }).status === 0) return { ok: false, reason: "CAND_UID_HAS_SUDO" };
+  return { ok: true, cand: { name, uid } };
+}
+const candPids = (uid: number): number[] => (spawnSync("ps", ["-e", "-o", "pid=,uid="], { encoding: "utf8" }).stdout ?? "").split("\n")
+  .map((l) => l.trim().split(/\s+/).map(Number)).filter((x) => x.length === 2 && x[1] === uid && x[0]! > 0).map(([pid]) => pid!);
+/** The clone the candidate uid reads: no group/other write anywhere, readable and traversable by others. */
+function candReadOnly(work: string): void {
+  chmodSync(work, 0o755);
+  execFileSync("chmod", ["-R", "go-w,go+rX", work], { stdio: "ignore" });
+}
 
 /** Processes in session `sid` (and, inside the private job only, any new process of this user since `before`). */
 function strays(sid: number, before: ReadonlySet<number>, strict: boolean): number[] {
@@ -207,26 +237,42 @@ export function watchedHashes(work: string, files: readonly string[], grader: st
   if (grader) m.set("grader", treeHash(real(grader)));
   return m;
 }
-export function guardedRun(work: string, args: string[], deadline: number, files: readonly string[], grader: string | null): RawRun {
+export function guardedRun(work: string, args: string[], deadline: number, files: readonly string[], grader: string | null, cand: CandUid | null = null): RawRun {
   const before = watchedHashes(work, files, grader);
-  const r = isolatedRun(work, args, deadline);
+  const r = isolatedRun(work, args, deadline, cand);
   const after = watchedHashes(work, files, grader);
   const tampered = [...before].filter(([k, v]) => after.get(k) !== v).map(([k]) => k);
   return tampered.length ? { ...r, exitCode: r.exitCode || 1, fail: r.fail + 1, tampered } : { ...r, tampered };
 }
-export function isolatedRun(cwd: string, args: string[], deadline: number): { exitCode: number; pass: number; fail: number; leftovers: number } {
+export function isolatedRun(cwd: string, args: string[], deadline: number, cand: CandUid | null = null): { exitCode: number; pass: number; fail: number; leftovers: number } {
   const strict = selfChangeAllowedHere(process.env).ok;
   const before = pidsNow();
   const left = Math.max(1000, deadline - Date.now());
-  const r = spawnSync("setsid", ["--wait", join(cwd, "node_modules/.bin/tsx"), ...args], { cwd, encoding: "utf8", timeout: left, killSignal: "SIGKILL", maxBuffer: 1 << 28, env: suiteEnv() });
+  const tsx = join(cwd, "node_modules/.bin/tsx");
+  let r: SpawnSyncReturns<string>;
+  let priv = "";
+  if (cand) {
+    // the candidate uid: read-only clone, private HOME/TMPDIR it owns, nothing inherited (env -i with the minimal env)
+    candReadOnly(cwd);
+    priv = mkdtempSync(join(tmpdir(), "peaceai-s2cand-home-"));
+    if (spawnSync("sudo", ["-n", "chown", cand.name, priv], { stdio: "ignore" }).status !== 0) { rmSync(priv, { recursive: true, force: true }); return { exitCode: 1, pass: 0, fail: 1, leftovers: 0 }; }
+    const env = { ...suiteEnv(), HOME: priv, TMPDIR: priv };
+    const pairs = Object.entries(env).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`);
+    r = spawnSync("sudo", ["-n", "-u", cand.name, "--", "env", "-i", ...pairs, "setsid", "--wait", tsx, ...args], { cwd, encoding: "utf8", timeout: left, killSignal: "SIGKILL", maxBuffer: 1 << 28, env: suiteEnv() });
+  } else {
+    r = spawnSync("setsid", ["--wait", tsx, ...args], { cwd, encoding: "utf8", timeout: left, killSignal: "SIGKILL", maxBuffer: 1 << 28, env: suiteEnv() });
+  }
   let leftovers = 0;
   for (let round = 0; round < 3; round++) {
     const s = r.pid ? strays(r.pid, before, strict) : [];
-    if (!s.length) break;
-    leftovers += s.length;
+    const c = cand ? candPids(cand.uid) : [];
+    if (!s.length && !c.length) break;
+    leftovers += s.length + c.length;
     for (const pid of s) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+    if (c.length) spawnSync("sudo", ["-n", "kill", "-KILL", ...c.map(String)], { stdio: "ignore" });
     spawnSync("sleep", ["0.2"]);
   }
+  if (priv) { spawnSync("sudo", ["-n", "rm", "-rf", "--", priv], { stdio: "ignore" }); rmSync(priv, { recursive: true, force: true }); }
   return { exitCode: r.status ?? 124, pass: lastCount(r.stdout ?? "", "pass"), fail: lastCount(r.stdout ?? "", "fail") + (r.status === null ? 1 : 0), leftovers };
 }
 
@@ -234,11 +280,11 @@ export function isolatedRun(cwd: string, args: string[], deadline: number): { ex
  * The only place candidate code runs. `work` is a fresh clone holding base and candidate, with its OWN dependencies
  * (npm ci --ignore-scripts at the base lockfile; package files are never-zone). Writes nothing outside `work`.
  */
-export function runStage2Phase(work: string, prep: Stage2Prep, phase: Stage2Phase, deadline: number, grader: string | null = null): Stage2PhaseRun {
-  const out: Stage2PhaseRun = { schema: STAGE2_RUN_SCHEMA, id: prep.id, phase, candidateSha: prep.candidateSha, runs: [], leftovers: 0, tampered: 0 };
+export function runStage2Phase(work: string, prep: Stage2Prep, phase: Stage2Phase, deadline: number, grader: string | null = null, cand: CandUid | null = null): Stage2PhaseRun {
+  const out: Stage2PhaseRun = { schema: STAGE2_RUN_SCHEMA, id: prep.id, phase, candidateSha: prep.candidateSha, runs: [], leftovers: 0, tampered: 0, ...(cand ? { candUid: "separate" as const } : {}) };
   // R3-2: every base test file + the new test files + node_modules + the grader must be unchanged by each run
   const watch = [...prep.suiteFiles, ...prep.check.newTests.map((t) => t.file)];
-  const isolatedRun = (cwd: string, args: string[], dl: number) => guardedRun(cwd, args, dl, watch, grader);
+  const isolatedRun = (cwd: string, args: string[], dl: number) => guardedRun(cwd, args, dl, watch, grader, cand);
   const tap = ["--test", "--test-reporter=tap"];
   const cases = prep.check.newTests.flatMap((t) => t.names.map((name) => ({ file: t.file, name })));
   const clean = (sha: string) => { git(work, "checkout", "--quiet", "-f", "--detach", sha); git(work, "clean", "-qfdx", "-e", "node_modules"); };
@@ -332,6 +378,8 @@ export function runStage2InSandbox(o: { prepFile: string; bundle: string; source
   const here = selfChangeAllowedHere(process.env);
   if (!here.ok) return { code: 3, message: `self-change stage2 refused reason=${here.reason}` };
   if (!(STAGE2_PHASES as readonly string[]).includes(o.phase)) return { code: 1, message: `usage: --phase ${STAGE2_PHASES.join("|")}` };
+  const cu = stage2CandUid(process.env);
+  if (!cu.ok) return { code: 3, message: `self-change stage2 refused reason=${cu.reason}` };
   const prep = JSON.parse(readFileSync(o.prepFile, "utf8")) as Stage2Prep;
   if (prep.schema !== STAGE2_PREP_SCHEMA || !prep.check.ok || !/^[0-9a-f]{40}$/.test(prep.candidateSha)) return { code: 1, message: "self-change stage2 run: nothing to run (prepare refused)" };
   const deadline = Date.now() + budgetMinutes(o.budget) * 60_000;
@@ -342,7 +390,9 @@ export function runStage2InSandbox(o: { prepFile: string; bundle: string; source
     git(work, "remote", "remove", "origin");
     git(work, "checkout", "--quiet", "--detach", prep.baseSha);
     execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: work, stdio: "ignore", env: suiteEnv() });
-    run = runStage2Phase(work, prep, o.phase as Stage2Phase, deadline, join(import.meta.dirname, "../.."));
+    candReadOnly(work);
+    if (spawnSync("sudo", ["-n", "-u", cu.cand.name, "--", "test", "-r", join(work, "package.json")], { stdio: "ignore" }).status !== 0) return { code: 3, message: "self-change stage2 refused reason=CAND_UID_CANNOT_READ_CLONE" };
+    run = runStage2Phase(work, prep, o.phase as Stage2Phase, deadline, join(import.meta.dirname, "../.."), cu.cand);
   } finally { rmSync(work, { recursive: true, force: true }); }
   writeOnce(join(o.out, `${prep.id}.${o.phase}.json`), JSON.stringify(run, null, 1) + "\n");
   return { code: 0, message: `self-change stage2 run id=${prep.id} phase=${o.phase} runs=${run.runs.length} leftovers=${run.leftovers}` };

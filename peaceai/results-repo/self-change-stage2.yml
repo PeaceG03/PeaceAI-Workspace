@@ -18,9 +18,12 @@ run-name: self-change-stage2 ${{ inputs.id }}
 #            run2; a process snapshot before and a leftover check after (leftovers = phase output deleted = failed).
 #   record   (no candidate code) builds the record from the prepare output and the phase outputs.
 # No retry: run_attempt must be 1, outputs are write-once and the id ledger is write-once across runs.
-# ADVISORY COUNTS (round 2 B1): the run job's VM has passwordless sudo and candidate code shares the test process,
-# so the pass/fail counts can be forged (GITHUB_ENV is unset for run2, but sudo can still reach the runner). The
-# counts can only block; landing always needs both human approvals on the exact head.
+# ADVISORY COUNTS (round 2 B1): candidate code shares the test process, so the pass/fail counts can be forged by
+# what it prints; they can only block, and landing always needs both human approvals on the exact head.
+# CANDIDATE UID (Peace 2026-10-25, required before any flag flip): the run job creates peaceai-cand (system user, no
+# home, no shell, no sudo) and run2 runs every candidate test only as that uid, on a clone it can read but not
+# change, with a private HOME/TMPDIR, killing every process of that uid afterwards. The runner's passwordless sudo,
+# its files and its processes are out of the candidate's reach; run2 refuses in this job without the uid.
 # Landing is decided later in the Workspace by `self-change.ts decide2 --pr N`: flag peaceai/self/stage2.json on
 # main (only Peace flips it), Peace `/verdict <id> <sha> right` AND Auditor `/auditor-pass <id> <sha>` on that exact
 # head, base on main and the PR exactly base..head. Credit is refused until a recorded generator run exists.
@@ -145,12 +148,18 @@ jobs:
         with:
           name: self-change-stage2-${{ inputs.id }}-prep
           path: ${{ runner.temp }}/prep
+      - name: Candidate user (no home, no shell, no sudo)
+        run: |
+          set -euo pipefail
+          sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
+          if sudo -n -u peaceai-cand -- sudo -n true 2>/dev/null; then echo "peaceai-cand must not have sudo"; exit 1; fi
       - name: Process snapshot
         run: ps -e -o pid= | sort -n > "$RUNNER_TEMP/ps-before"
-      - name: Run phase ${{ matrix.phase }} (candidate code; fresh clone + own install inside)
+      - name: Run phase ${{ matrix.phase }} (candidate code as peaceai-cand; fresh clone + own install inside)
         working-directory: grader
         env:
           PHASE: ${{ matrix.phase }}
+          PEACEAI_STAGE2_CAND: peaceai-cand
         # round 2 B1(4): no runner command files for candidate-code steps (GITHUB_ENV / PATH / OUTPUT / STATE / summary)
         run: |
           set -euo pipefail
