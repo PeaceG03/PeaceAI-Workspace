@@ -1,0 +1,27 @@
+{
+ "id": "public-derive-from-behavior-v2",
+ "kind": "DERIVE_FROM_BEHAVIOR",
+ "shape": "DERIVE_FROM_BEHAVIOR",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list (not in approved.json until Peace posts /approve-rule on its proposal issue)",
+ "engine": "the v1 engine (peaceai/lib/derive.ts, peaceai/lib/learned-derive.ts) with DeriveInput.labelChains on, set only by the rule param dsl typed-dsl-v2: a boolean parameter is also a size-1 if-guard whose branches are constant leaves or label chains (if / else-if chains and decision trees returning constant labels); in a fully covered all-boolean domain every output is a constant leaf even when seen once (finiteDomainLabels); branch reach is counted over the finite domain (a side needs min(2, the inputs that can reach it), at least 1); gate domain refuses an all-boolean program that branches on a boolean parameter until the examples give every input, and asks for the missing ones; the ternary evidence bar (M104 skeleton gate) does not apply to an all-boolean label tree whose examples cover the whole domain (isBooleanLabelTree + finiteDomainCovered), every other form and skeleton keeps its bar. Job B and the review note as v1 (the note re-derives v1 first, then v2)",
+ "scope": "the v1 scope (one new module + one new test file from header, prose and literal examples) for a task v1 refuses (a task v1 derives is not_needed here, so v1 and v2 never both answer one task) whose 2 or 3 parameters are all boolean, whose result is a number or string label, and whose examples give the result for EVERY input (4 or 8 examples); the body is the smallest label chain / decision tree within size 13 that gives every example. Mixed boolean + number / string chains are searched but still need the M104 skeleton evidence (none yet), so they are refused as in v1",
+ "refusals": "every v1 refusal; not_needed (v1 already derives the task); derive_under_specified_domain (an all-boolean task whose examples leave out an input: the order of the branches is not shown; the refusal asks for the missing inputs, with every result the examples show as the possible answers; number answers reach the public refusal line, string answers do not, as in v1); derive_examples count for a one-boolean function (2 inputs, under the v1 minimum of 3 examples); derive_no_fit for tables that need a tree larger than size 13",
+ "evidence": {
+  "examples": 111,
+  "repos": 89,
+  "file": "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json",
+  "method": "the v1 evidence, unchanged (no evidence entry added or removed; form and skeleton counts unchanged). The v2 widening is argued, not mined: when every parameter is boolean and the examples give every input, any program that fits the examples equals the wanted function on every input it can be called with, so there is no unseen input for upstream evidence to vouch for; the ternary bar is lifted only there",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "For Auditor: the exemption loosens the M104 ternary skeleton gate for exhaustive all-boolean tables only (peaceai/docs/m111-boolean-label-chains.md). No upstream frequency evidence of boolean label chains was mined for this proposal; if Auditor wants it, the m102 mining method (permissive GitHub code search, empty-vm replay) applies."
+ },
+ "learned": "peaceai/rules/learned/public-derive-from-behavior-v2.json",
+ "tests": [
+  "peaceai/test/m111-derive-boolean-label-chains.test.ts",
+  "peaceai/test/m99-derive-from-behavior.test.ts",
+  "peaceai/test/m104-ternary-keys.test.ts"
+ ],
+ "untouched": "public-derive-from-behavior-v1 (same spec and hash 799182d7..., and with labelChains off the same search, gates and refusals); every other learned spec; the evidence files"
+}

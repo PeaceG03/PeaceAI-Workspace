@@ -217,3 +217,35 @@ derive_expr_vocab, derive_expr_*, derive_path, derive_module_exists, new_test_pa
   (the prose is deliberately not read). More examples narrow the choice; a threshold needs an example on each side
   of it at v and v + 1, or it is `derive_no_fit`; the witness gates then ask for the examples that show the rest
   (edges, far regions, two per branch, no disagreeing rival), so issues need more examples than the bare fit.
+
+## public-derive-from-behavior-v2 (M111): boolean label chains
+
+A new rule version (decision #466: an approved version never widens). `public-derive-from-behavior-v2` is the v1 spec
+with only `id`, `minerVersion` and the param `dsl: typed-dsl-v2` changed; it is off until Peace approves its hash
+(`/approve-rule e11ae193d1927c4d26efb430d862763db7f9683170a6438deb7e53d98eadff8c` on its proposal issue). v1 is unchanged:
+`typed-dsl-v1` runs the search with `labelChains` off, so its search, gates and refusals are byte-for-byte the M104 ones.
+
+What `typed-dsl-v2` adds (`DeriveInput.labelChains`, peaceai/lib/derive.ts):
+
+- A boolean parameter is a size-1 if-guard, but only over constant branches or other label chains: if / else-if chains
+  and decision trees that return constant labels (`failed ? "ERROR" : (silent ? "SILENT" : "OK")`). Existing guards
+  (emptiness, `p === C`, `s <= t`) are unchanged.
+- In a fully covered all-boolean domain (2 or 3 boolean parameters, an example for every one of the 4 or 8 inputs)
+  every output is a constant leaf even when only one example gives it. Elsewhere the v1 rule stands: an output piece
+  seen once is never searched (no memorizing).
+- Branch reach in an all-boolean domain: a side needs min(2, the inputs that can reach it at all), at least 1; in a
+  2-boolean chain the innermost sides are reached by one input each.
+- Gate domain: an all-boolean program that branches on a boolean parameter is refused until the examples give every
+  input (`derive_under_specified_domain`), and the refusal asks for the missing inputs (at most 3), offering every
+  result the examples show; with an input missing the branch order there is a guess. A no-fit in such a domain asks
+  the same way.
+- Form gate: the ternary bar (and the M104 skeleton bar) does not apply to an all-boolean label tree whose examples
+  cover the whole domain. Such a program IS the examples' table: it equals the wanted function on every input it can
+  be called with, so there is no unseen input for upstream evidence to vouch for. Every other form and every other
+  if program keeps its bar (mixed boolean + number / string chains are searched but refused until evidenced).
+- v2 answers only what v1 does not: a task v1 derives is `not_needed` under v2. The review note re-derives v1 first,
+  then v2.
+
+Limits (v2): a one-boolean function has 2 inputs, under the v1 minimum of 3 examples (`derive_examples`); a table that
+needs a tree larger than size 13 is `derive_no_fit`; string answers to a domain question are not on the public refusal
+line (number answers are), as in v1.
