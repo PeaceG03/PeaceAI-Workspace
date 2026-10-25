@@ -1836,6 +1836,8 @@ const SCAN_CODE = /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/;
 const SCAN_DECL = /\.d\.[cm]?ts$/;
 const SCAN_ROOT = "/repo/";
 const INF_DEPTH = 1e6;
+/** Builtin modules that run string code or load modules the scan does not see; any import of them fails closed. */
+const CODE_LOADER_MODULES = new Set(["vm", "node:vm", "module", "node:module"]);
 const SHARED_TOO_LARGE = "too_large";
 /** Methods that change their receiver. */
 const WRITE_METHODS = new Set([...MUTATORS, "fill", "copyWithin", "setTime"]);
@@ -1935,13 +1937,22 @@ function repoIndex(repo: readonly RepoFile[]): RepoIndex {
         const p = n.parent;
         if (n.text === "require") { if (ts.isCallExpression(p) && p.expression === n && p.arguments.length === 1 && literal(p.arguments[0])) specs.push(p.arguments[0]); else fail("require", sf); }
         if (n.text === "eval" || n.text === "Function") fail(n.text, sf);
+        // Auditor #505 final (B2): `process.getBuiltinModule` reaches node:vm / node:module without an import
+        if (n.text === "process" && ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text === "getBuiltinModule") fail("getBuiltinModule", sf);
         if (/^set(?:Timeout|Interval|Immediate)$/.test(n.text) && ts.isCallExpression(p) && p.expression === n && p.arguments[0] && !ts.isArrowFunction(p.arguments[0]) && !ts.isFunctionExpression(p.arguments[0]) && !ts.isIdentifier(p.arguments[0])) fail("string_timer", sf);
       }
+      // Auditor #505 final (B2): string code through a function's `.constructor` (`(() => {}).constructor(..)`,
+      // `[].constructor.constructor(..)`) and any `getBuiltinModule` member, whatever the receiver, fail closed; a class's
+      // own constructor is a declaration, not an access, and is unaffected
+      const member = ts.isPropertyAccessExpression(n) ? n.name.text : ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) ? n.argumentExpression.text : null;
+      if ((member === "constructor" || member === "getBuiltinModule") && !inTypePosition(n)) fail(member === "constructor" ? "constructor_access" : "getBuiltinModule", sf);
       ts.forEachChild(n, v);
     };
     v(sf);
     for (const s of specs) {
       const t = s.text;
+      // Auditor #505 final (B2/B3a): vm runs string code and module (createRequire, Module._load) loads unscanned code
+      if (CODE_LOADER_MODULES.has(t)) { fail(`code_loader_import_${t.replace("node:", "")}`, sf); continue; }
       // Auditor #505 (4): a relative import / export / require / import() must resolve to a scanned file (an unscanned
       // module could write the binding); only a declaration-level type-only import / export (erased) is exempt
       if (t.startsWith("./") || t.startsWith("../") || t === "." || t === "..") {
@@ -1964,17 +1975,26 @@ interface ReadBinding { path: string; name: string; sf: ts.SourceFile; idx: Modu
 type BindingShape = { kind: "prim"; globals?: Set<string> } | { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean; globals?: Set<string> };
 /** Global roots whose members a const initializer reads (directly or through the module consts it names). */
 const MEMBER_READ_ROOTS = new Set(["Math", "Date"]);
+/** A sentinel root: the initializer was followed past the depth bound, so the relaxation is refused. */
+const ROOTS_TOO_DEEP = "<too_deep>";
 /**
  * Auditor #505 (Math.PI gap): every `Math` / `Date` reference in a const's initializer, nested reads and computed keys
  * included (`Math.PI`, `Math.PI.toString()`, `Math["P" + "I"]`, `Date.prototype`, `Date.now`), following the module
  * consts it names; each root found must pass the same repo-wide global-root check as a `Date.UTC(..)` call.
  */
 function memberReadRoots(init: ts.Expression, idx: ModuleIndex, out: Set<string>, seen: Set<string>, depth = 0): void {
-  if (depth > 12) return;
+  // Auditor #505 final: past the depth bound the roots are unknown, so refuse (a sentinel root), never stop silently
+  if (depth > 12) { out.add(ROOTS_TOO_DEEP); return; }
   const v = (n: ts.Node): void => {
     if (ts.isIdentifier(n) && !inTypePosition(n)) {
       const p = n.parent;
       const nameSlot = ((ts.isPropertyAccessExpression(p) || ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p)) && (p as { name?: ts.Node }).name === n);
+      // Auditor #505 final (B1): the scan does not walk function bodies here, so any reference (a call, `new`, a
+      // callback, a method receiver) to a repo function, a class / module let-var / namespace, or an imported value
+      // counts as reaching both Math and Date (fail closed)
+      const opaque = !nameSlot && !ts.isShorthandPropertyAssignment(p) && (idx.fns.has(n.text) || idx.mutable.has(n.text) || (idx.imports.has(n.text) && !idx.imports.get(n.text)!.typeOnly));
+      const opaqueShorthand = ts.isShorthandPropertyAssignment(p) && p.name === n && (idx.fns.has(n.text) || idx.mutable.has(n.text) || (idx.imports.has(n.text) && !idx.imports.get(n.text)!.typeOnly));
+      if (opaque || opaqueShorthand) for (const r of MEMBER_READ_ROOTS) out.add(r);
       if (!nameSlot && MEMBER_READ_ROOTS.has(n.text) && unshadowed(idx, n.text)) out.add(n.text);
       else if (!nameSlot && !ts.isShorthandPropertyAssignment(p) && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
       else if (ts.isShorthandPropertyAssignment(p) && p.name === n && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
@@ -2171,6 +2191,23 @@ function globalObjectRef(n: ts.Identifier, checker: ts.TypeChecker): boolean {
   const s = checker.getSymbolAtLocation(n);
   return !s?.declarations?.some((d) => ts.isVariableDeclaration(d) || ts.isParameter(d) || ts.isBindingElement(d) || ts.isImportSpecifier(d) || ts.isImportClause(d) || ts.isNamespaceImport(d) || ts.isImportEqualsDeclaration(d) || ts.isFunctionDeclaration(d) || ts.isClassDeclaration(d) || ts.isEnumDeclaration(d) || ts.isModuleDeclaration(d));
 }
+/** Auditor #505 final (B3b): could the file run in sloppy mode (so a plain function's `this` is the global object)? */
+function sloppy(sf: ts.SourceFile): boolean {
+  if (/\.(?:mjs|mts)$/.test(sf.fileName)) return false;
+  const strict = sf.statements.length > 0 && ts.isExpressionStatement(sf.statements[0]!) && ts.isStringLiteral(sf.statements[0]!.expression) && sf.statements[0]!.expression.text === "use strict";
+  if (strict) return false;
+  if (/\.(?:cjs|cts)$/.test(sf.fileName)) return true;
+  if (/\.(?:js|jsx)$/.test(sf.fileName)) return !sf.statements.some((x) => ts.isImportDeclaration(x) || ts.isExportDeclaration(x) || ts.isExportAssignment(x) || (ts.canHaveModifiers(x) && !!ts.getModifiers(x)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)));
+  return false;
+}
+function thisMayBeGlobal(n: ts.Node): boolean {
+  for (let q = n.parent; q; q = q.parent) {
+    if (ts.isArrowFunction(q)) continue;
+    if (ts.isClassLike(q) || ts.isMethodDeclaration(q) || ts.isConstructorDeclaration(q) || ts.isGetAccessor(q) || ts.isSetAccessor(q) || ts.isClassStaticBlockDeclaration(q)) return false;
+    if (ts.isFunctionDeclaration(q) || ts.isFunctionExpression(q)) return true;
+  }
+  return true;
+}
 function globalTouched(ri: RepoIndex, name: string): string | null {
   let found: string | null = null;
   const at = (n: ts.Node) => { const sf = n.getSourceFile(); return `${relOf(sf.fileName)}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`; };
@@ -2191,6 +2228,10 @@ function globalTouched(ri: RepoIndex, name: string): string | null {
         const plainWrite = ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text !== name && ts.isBinaryExpression(p.parent) && p.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.parent.left === p;
         if (!nameSlot && !safeRead && !plainWrite) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
       }
+      // Auditor #505 final (B3b): in a sloppy-mode file (.cjs, .cts, or a .js / .jsx with no ESM syntax and no
+      // "use strict"), `this` in a plain function (not an arrow, not a class member) or at top level can be the global
+      // object; any use of it cancels the relaxation
+      if (n.kind === ts.SyntaxKind.ThisKeyword && sloppy(f) && thisMayBeGlobal(n)) { found = `global_${name}_via_sloppy_this at ${at(n)}`; return; }
       if (ts.isIdentifier(n) && n.text === name && !inTypePosition(n)) {
         const p = n.parent;
         const ok =
@@ -2235,7 +2276,7 @@ function sharedBindingsProblem(bindings: readonly ReadBinding[], repo: readonly 
   const ri = repoIndex(repo);
   if (ri.problem) return ri.problem === SHARED_TOO_LARGE ? SHARED_TOO_LARGE : `repo: ${ri.problem}`;
   for (const { b, shape } of viaGlobal) for (const g of (shape as { globals: Set<string> }).globals) {
-    const r = globalTouched(ri, g);
+    const r = g === ROOTS_TOO_DEEP ? "member_read_roots_too_deep" : globalTouched(ri, g);
     if (r) return `${b.path}#${b.name}: ${r}`;
   }
   for (const { b, shape } of todo) {

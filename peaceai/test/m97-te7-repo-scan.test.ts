@@ -290,6 +290,73 @@ test("repo scan: every const reading a member of Math or Date (nested, computed,
     assert.match(primGlobalTouched(files(o), "Math") ?? "", /global_Math/, JSON.stringify(o));
 });
 
+// Auditor #505 final review at aa6a6b2 (B1-B3). Each repro: [target, other files, expected diagnostic]. The target alone
+// (no other files, or only the helper module it imports) is accepted on the listed versions, and with the other files it is refused there with that diagnostic.
+const KD = "function k(): number { return Date.UTC(1970, 0, 1); }\nexport const E = k();\nexport function f(x: number): number { return x - E; }\n";
+const KM = "function k(): number { return Math.PI; }\nexport const E = k();\nexport function f(x: number): number { return x + E; }\n";
+const KX = "import { k } from \"./c\";\nexport const E = k();\nexport function f(x: number): number { return x + E; }\n";
+const KC = "class C { static k(): number { return Math.PI; } }\nexport const E = C.k();\nexport function f(x: number): number { return x + E; }\n";
+const C_TS = "export function k(): number { return Math.PI; }\n";
+const HT = (h: string, path = "src/h.ts"): Record<string, string> => ({ [path]: h, "src/x.test.ts": `import "./${path.slice(4).replace(/\.ts$/, "")}";\nimport { f } from "./m";\nimport test from "node:test";\ntest("t", () => { f(1); });\n` });
+const FINAL: Record<string, [string, Record<string, string>, RegExp, readonly (typeof VERS)[number][], Record<string, string>?]> = {
+  B1_fn_decl_Date_UTC_write: [KD, { "src/x.test.ts": "Date.UTC = () => 5;\n" }, /E: global_Date_shadowed_or_patched/, VERS],
+  B1_fn_decl_globalThis_Date: [KD, { "src/x.test.ts": "(globalThis as any).Date = { UTC: () => 5 };\n" }, /E: global_(?:Math|Date)_via_global_object/, VERS],
+  B1_fn_decl_globalThis_Math: [KM, { "src/x.test.ts": "(globalThis as any).Math = { PI: 4 };\n" }, /E: global_Math_via_global_object/, VERS],
+  B1_fn_decl_Math_PI_write: [KM, { "src/x.test.ts": "Object.defineProperty(Math, \"PI\", { value: 4 });\n" }, /E: global_Math_shadowed_or_patched/, VERS],
+  B1_imported_fn_globalThis_Math: [KX, { "src/c.ts": C_TS, "src/x.test.ts": "(globalThis as any).Math = { PI: 4 };\n" }, /E: global_Math_via_global_object/, ["v2", "v3", "v4", "v5", "v6", "v7"], { "src/c.ts": C_TS }],
+  B1_class_static_method: [KC, { "src/x.test.ts": "(globalThis as any).Math = { PI: 4 };\n" }, /E: global_Math_via_global_object/, []],
+  B2_arrow_constructor: [DUTC_X, HT("(() => {}).constructor(\"Date.UTC = () => 5\")();\nexport {};\n"), /repo: constructor_access:src\/h\.ts/, VERS],
+  B2_async_constructor: [DUTC_X, HT("Object.getPrototypeOf(async () => {}).constructor(\"globalThis.Math = { PI: 4 }\");\nexport {};\n"), /repo: constructor_access:src\/h\.ts/, VERS],
+  B2_array_constructor_constructor: [MATH_PI, HT("[].constructor.constructor(\"globalThis.Math = { PI: 4 }\")();\nexport {};\n"), /repo: constructor_access:src\/h\.ts/, VERS],
+  B2_constructor_element_access: [MATH_PI, HT("([] as any)[\"constructor\"][\"constructor\"](\"Math.PI = 4\")();\nexport {};\n"), /repo: constructor_access:src\/h\.ts/, VERS],
+  B2_vm_named_import: [DUTC_X, HT("import { runInThisContext } from \"node:vm\";\nrunInThisContext(\"Date.UTC = () => 6\");\nexport {};\n"), /repo: code_loader_import_vm:src\/h\.ts/, VERS],
+  B2_vm_default_import: [MATH_PI, HT("import vm from \"vm\";\nvm.runInThisContext(\"Math.PI = 4\");\nexport {};\n"), /repo: code_loader_import_vm:src\/h\.ts/, VERS],
+  B2_vm_dynamic_import: [DUTC_X, HT("export async function g(): Promise<void> { (await import(\"node:vm\")).runInThisContext(\"Date.UTC = () => 6\"); }\n"), /repo: code_loader_import_vm:src\/h\.ts/, VERS],
+  B2_vm_require: [DUTC_X, HT("require(\"vm\").runInThisContext(\"Date.UTC = () => 6\");\n", "src/h.cjs"), /repo: code_loader_import_vm:src\/h\.cjs/, VERS],
+  B2_getBuiltinModule: [DUTC_X, HT("(process as any).getBuiltinModule(\"node:vm\").runInThisContext(\"Date.UTC = () => 6\");\nexport {};\n"), /repo: getBuiltinModule:src\/h\.ts/, VERS],
+  B2_getBuiltinModule_alias: [DUTC_X, HT("const p: any = process;\np.getBuiltinModule(\"node:vm\");\nexport {};\n"), /repo: getBuiltinModule:src\/h\.ts/, VERS],
+  B3a_createRequire: [DUTC_X, HT("import { createRequire } from \"node:module\";\ncreateRequire(import.meta.url)(\"../scripts/evil.cjs\");\nexport {};\n"), /repo: code_loader_import_module:src\/h\.ts/, VERS],
+  B3a_module_require: [MATH_PI, HT("const m = require(\"module\");\nm.createRequire(__filename)(\"../scripts/evil.cjs\");\n", "src/h.cjs"), /repo: code_loader_import_module:src\/h\.cjs/, VERS],
+  B3b_cjs_sloppy_this: [DUTC_X, HT("(function () { return this; })().Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  B3b_cjs_sloppy_this_Math: [MATH_PI, HT("(function () { return this; })().Math = { PI: 4 };\n", "src/h.cjs"), /E: global_Math_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  B3b_cts_sloppy_this: [DUTC_X, HT("function g(this: any): void { this.Date = { UTC: () => 9 }; }\ng.call(undefined);\n", "src/h.cts"), /E: global_Date_via_sloppy_this at src\/h\.cts:1/, VERS],
+  B3b_script_js_sloppy_this: [MATH_PI, HT("var g = function () { return this; };\ng().Math = { PI: 4 };\n", "src/h.js"), /E: global_Math_via_sloppy_this at src\/h\.js:1/, VERS],
+  B3b_cjs_top_level_this: [DUTC_X, HT("this.x = 1;\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+};
+test("repo scan (Auditor #505 final): B1-B3 repros are refused with their diagnostic", () => {
+  for (const [k, [t, o, re, vs, base]] of Object.entries(FINAL)) {
+    for (const v of VERS) assert.notEqual(run(t, o, v, true), "ok", `${k} ${v}`);
+    for (const v of vs) {
+      assert.equal(run(t, base ?? {}, v, true), "ok", `${k} ${v}: the target alone is accepted`);
+      const why: { shared?: string } = {};
+      run(t, o, v, true, (p, c, f, opts) => existingTargetRefusal(p, c, f, { ...(opts as object), why } as never));
+      assert.match(why.shared ?? "", re, `${k} ${v}`);
+    }
+  }
+});
+test("repo scan (Auditor #505 final): helpers, classes, strict code and other modules stay accepted without a mutation", () => {
+  const ok: Record<string, [string, Record<string, string>, readonly (typeof VERS)[number][]]> = {
+    plain_helper_Date: [KD, { "src/x.test.ts": "import { f } from \"./m\";\nf(1);\n" }, VERS],
+    plain_helper_Math: [KM, { "src/s.ts": "export const g = (): number => Math.abs(-1) + Date.UTC(1970, 0, 1);\n" }, VERS],
+    imported_helper: [KX, { "src/c.ts": C_TS }, ["v2", "v3", "v4", "v5", "v6", "v7"]],
+    helper_fake_fetch: [KD, { "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = original;\n" }, VERS],
+    class_own_constructor: [DUTC_X, HT("export class K { n: number; constructor() { this.n = 1; } m(): number { return this.n; } }\n"), VERS],
+    esm_js_function_this: [DUTC_X, HT("export function g() { return this; }\n", "src/h.js"), VERS],
+    strict_cjs_function_this: [MATH_PI, HT("\"use strict\";\n(function () { return this; })();\n", "src/h.cjs"), VERS],
+    cjs_class_method_and_arrow_this: [MATH_PI, HT("class K { m() { return () => this; } }\nmodule.exports = { K };\n", "src/h.cjs"), VERS],
+    other_node_builtins: [DUTC_X, HT("import { join } from \"node:path\";\nimport { readFileSync } from \"node:fs\";\nexport const j = (): string => join(\"a\", String(readFileSync.length));\n"), VERS],
+  };
+  for (const [k, [t, o, vs]] of Object.entries(ok)) for (const v of vs) assert.equal(run(t, o, v, true), "ok", `${k} ${v}`);
+});
+test("repo scan (Auditor #505 final): past the depth bound the member-read roots refuse (a sentinel), never stop silently", () => {
+  const chain = Array.from({ length: 16 }, (_, i) => `const C${i} = ${i === 0 ? "1" : `C${i - 1}`};`).join("\n");
+  assert.deepEqual(constGlobalRoots(`${chain}\nexport const E = C15;`, "E"), ["<too_deep>"]);
+  assert.deepEqual(constGlobalRoots(`${chain.split("\n").slice(0, 8).join("\n")}\nexport const E = C7;`, "E"), []);
+  assert.deepEqual(constGlobalRoots("function k(): number { return 1; }\nexport const E = k();", "E"), ["Date", "Math"]);
+  assert.deepEqual(constGlobalRoots("import { k } from \"./c\";\nexport const E = [0].map(k);", "E"), ["Date", "Math"]);
+  assert.deepEqual(constGlobalRoots("import type { T } from \"./c\";\nexport const E = 1 as T;", "E"), []);
+});
+
 test("repo scan: the refusal names the first problem (diagnostics)", () => {
   const why: { shared?: string } = {};
   const files: RepoFile[] = [{ path: "src/m.ts", content: LIT }, { path: "src/s.ts", content: ATTACKS.push_literal![1]["src/s.ts"]! }];
