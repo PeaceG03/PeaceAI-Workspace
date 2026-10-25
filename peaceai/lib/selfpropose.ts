@@ -417,3 +417,169 @@ export function stage2PrFacts(repo: string, rec: Stage2Record, headSha: string, 
   const recheck = checkStage2Proposal(diff, { base: showAt(repo, rec.baseSha), cand: showAt(repo, headSha) }, neverZoneAtSha(repo, rec.baseSha));
   return { headSha, diffSha256: stage2DiffSha(diff), baseOnMain, commitsExact, recheck, ledger };
 }
+
+// ---- M109 stage 2: the proposal GENERATOR (Auditor #504 limit 5 provenance: "a PeaceAI engine run whose only input
+// was the task text"). Inputs are exactly (1) the task text and (2) a snapshot of the task's BASE commit read through
+// git objects of that commit only. The skills (selfGenerateCore) run in a separate `node` process under the Node
+// permission model with NO fs read or write grant, no child processes, no workers, no code generation from strings
+// and an empty environment; its source is shipped as text and hashed into the record. So the generator cannot read
+// the landed diff, the answer commit, later commits, the source repo or any credential: it sees only what the
+// trusted side hands it on stdin. The trusted side (no generator code) turns the output into a canonical git diff,
+// runs the stage-2 check on it with the base tree's never-zone, and writes a record. Credit stays hard-refused
+// (stage2Credit); this record is the provenance a later, Auditor-reviewed credit rule would need.
+// Known limit: the Node permission model does not block network access; the generator code is reviewed,
+// dependency-free and in the never-zone (selfpropose.ts), and its environment carries no token.
+
+export const SELF_GEN_SCHEMA = "peaceai-self-gen:v1";
+/** Snapshot texts are limited to the shapes a stage-2 proposal could edit (and the generator might read). */
+const GEN_TEXT_SHAPE = /^docs\/[a-z0-9][a-z0-9._-]{0,80}\.md$|^peaceai\/docs\/[a-z0-9][a-z0-9._-]{0,80}\.md$|^peaceai\/test\/[a-z0-9][a-z0-9._-]{0,80}\.test\.ts$/;
+const GEN_MAX_TEXT = 512 * 1024;
+export interface GenSnapshot { baseSha: string; paths: string[]; files: Record<string, string> }
+export interface GenInput { task: string; baseSha: string; paths: string[]; files: Record<string, string> }
+export interface GenOutput { status: "candidate" | "refused"; skill: string | null; reason: string; files: { path: string; text: string }[] }
+export interface SelfGenRecord {
+  schema: typeof SELF_GEN_SCHEMA; taskSha256: string; baseSha: string; snapshotSha256: string; generatorSha256: string;
+  status: "candidate" | "refused" | "refused-by-check" | "error"; skill: string | null; reason: string;
+  paths: string[]; candidateBlobs: Record<string, string>; diff: string; diffSha256: string; check: Stage2Check | null; createdAt: string;
+}
+
+/** The base commit's tree, through git objects of `baseSha` only (ls-tree + cat-file of its blobs). No checkout. */
+export function genSnapshot(repo: string, baseSha: string): GenSnapshot {
+  if (!/^[0-9a-f]{40}$/.test(baseSha)) throw new Error("genSnapshot: base must be a full commit sha");
+  const rows = execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", baseSha], { cwd: repo, encoding: "utf8", maxBuffer: 1 << 28 }).split("\0").filter(Boolean);
+  const paths: string[] = [];
+  const want: { path: string; oid: string }[] = [];
+  for (const r of rows) {
+    const tab = r.indexOf("\t");
+    const [mode, type, oid] = r.slice(0, tab).split(" ");
+    const path = r.slice(tab + 1);
+    if (type !== "blob") continue;
+    paths.push(path);
+    if (mode === "100644" && GEN_TEXT_SHAPE.test(path)) want.push({ path, oid: oid! });
+  }
+  const files: Record<string, string> = {};
+  if (want.length) {
+    const out = execFileSync("git", ["cat-file", "--batch"], { cwd: repo, input: want.map((w) => w.oid).join("\n") + "\n", maxBuffer: 1 << 28 });
+    let at = 0;
+    for (const w of want) {
+      const nl = out.indexOf(0x0a, at);
+      const size = Number(out.subarray(at, nl).toString("utf8").split(" ")[2]);
+      const body = out.subarray(nl + 1, nl + 1 + size);
+      at = nl + 1 + size + 1;
+      if (size <= GEN_MAX_TEXT && !body.includes(0)) files[w.path] = body.toString("utf8");
+    }
+  }
+  return { baseSha, paths: paths.sort(), files };
+}
+
+/**
+ * The generator skills. SELF-CONTAINED on purpose (no imports, no module-scope references): it is shipped to the
+ * sandboxed process as source text. Deterministic: same task + same snapshot -> same output.
+ *   DOC_PAGE_STUB  "docs: <title>" -> a NEW root doc page docs/<slug>.md holding the title (a stub; it cannot know
+ *                  facts the task text does not state).
+ *   TEST_APPEND    "M<NN>: ..." -> locates peaceai/test/m<NN>-*.test.ts, then REFUSES: writing a test body from
+ *                  task text alone is not a skill PeaceAI has.
+ * Everything else is refused NO_FAMILY. Refusals are the honest default.
+ */
+export function selfGenerateCore(input: GenInput): GenOutput {
+  const task = String(input && input.task ? input.task : "").replace(/\s+/g, " ").trim();
+  const paths: string[] = Array.isArray(input && input.paths) ? input.paths : [];
+  const refuse = (skill: string | null, reason: string): GenOutput => ({ status: "refused", skill, reason, files: [] });
+  if (!task) return refuse(null, "EMPTY_TASK");
+  const doc = /^docs?\s*:\s*(.+)$/i.exec(task);
+  if (doc) {
+    const title = doc[1]!.replace(/[\s.]+$/, "");
+    const stop = new Set(["a", "an", "the", "of", "on", "in", "is", "are", "to", "for", "and", "or", "not", "no", "be", "by", "with", "as", "at", "it"]);
+    const words = title.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 0 && !stop.has(w)).slice(0, 6);
+    if (words.length === 0) return refuse("DOC_PAGE_STUB", "NO_SLUG: the title has no usable words");
+    const path = `docs/${words.join("-")}.md`;
+    if (path.length > 90) return refuse("DOC_PAGE_STUB", "NO_SLUG: slug too long");
+    if (paths.includes(path)) return refuse("DOC_PAGE_STUB", `TARGET_EXISTS: ${path}`);
+    const head = title.charAt(0).toUpperCase() + title.slice(1);
+    return { status: "candidate", skill: "DOC_PAGE_STUB", reason: "new root doc page from the task title", files: [{ path, text: `# ${head}\n\n${head}.\n` }] };
+  }
+  const m = /\bM(\d{1,3})\b/.exec(task);
+  if (m) {
+    const rx = new RegExp(`^peaceai/test/m${m[1]}-[a-z0-9-]+\\.test\\.ts$`);
+    const hits = paths.filter((p) => rx.test(p));
+    if (hits.length !== 1) return refuse("TEST_APPEND", `NO_TARGET: ${hits.length} files match peaceai/test/m${m[1]}-*.test.ts`);
+    return refuse("TEST_APPEND", `NO_SKILL: writing a test body from the task text alone is not supported (target located: ${hits[0]})`);
+  }
+  return refuse(null, "NO_FAMILY: no self-change generator skill matches the task text");
+}
+
+const PERMISSION_FLAG = process.allowedNodeEnvironmentFlags.has("--permission") ? "--permission" : "--experimental-permission";
+/** The exact program the sandboxed process runs for a generator source (hashed into the record). */
+export const genProgram = (coreSource: string): string =>
+  `"use strict";const __name=(f)=>f;const core=(${coreSource});` +
+  `const input=JSON.parse(require("node:fs").readFileSync(0,"utf8"));process.stdout.write(JSON.stringify(core(input)));`;
+/**
+ * Run a generator source under the permission model with no fs/child/worker grant and an empty env, from an empty
+ * temp cwd; input on stdin, output (JSON) on stdout. Exported for the leak-wall tests (probe sources).
+ */
+export function runGeneratorSandboxed(coreSource: string, input: unknown, timeoutMs = 60_000): { ok: boolean; output: unknown; error: string } {
+  const cwd = mkdtempSync(join(tmpdir(), "peaceai-gen-"));
+  try {
+    const r = spawnSync(process.execPath, [PERMISSION_FLAG, "--disallow-code-generation-from-strings", "--no-warnings", "-e", genProgram(coreSource)], { cwd, env: {}, input: JSON.stringify(input), encoding: "utf8", timeout: timeoutMs, maxBuffer: 1 << 26 });
+    if (r.status !== 0) return { ok: false, output: null, error: `exit=${r.status ?? r.signal} ${(r.stderr ?? "").slice(0, 2000)}` };
+    try { return { ok: true, output: JSON.parse(r.stdout), error: "" }; } catch { return { ok: false, output: null, error: "generator output is not JSON" }; }
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+}
+
+const gitBlobSha = (text: string): string => { const b = Buffer.from(text, "utf8"); return createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex"); };
+/** The canonical stage-2 diff (STAGE2_DIFF_ARGS) of whole-file writes over the base texts, built in a throwaway repo. */
+function proposalDiff(base: Record<string, string | null>, writes: readonly { path: string; text: string }[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-gendiff-"));
+  try {
+    const g = (...a: string[]) => execFileSync("git", ["-c", "core.autocrlf=false", "-c", "core.safecrlf=false", ...NOREPLY, ...a], { cwd: dir, encoding: "utf8", maxBuffer: 1 << 28 });
+    g("init", "--quiet");
+    const put = (p: string, t: string) => { mkdirSync(join(dir, p, ".."), { recursive: true }); writeFileSync(join(dir, p), t); };
+    for (const [p, t] of Object.entries(base)) if (t !== null) put(p, t);
+    g("add", "-A");
+    g("commit", "--quiet", "--allow-empty", "--no-verify", "-m", "base");
+    for (const w of writes) put(w.path, w.text);
+    g("add", "-A");
+    return g(STAGE2_DIFF_ARGS[0], "--cached", ...STAGE2_DIFF_ARGS.slice(1), "HEAD");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+/**
+ * One generator run: snapshot the base, run the skills sandboxed on (task, snapshot), then (trusted side) validate
+ * the output shape, build the canonical diff and run the stage-2 check with the base tree's never-zone.
+ * `coreSource` is for tests only; the CLI always uses selfGenerateCore.
+ */
+export function generateStage2Proposal(repo: string, task: string, baseSha: string, coreSource: string = selfGenerateCore.toString()): SelfGenRecord {
+  const snap = genSnapshot(repo, baseSha);
+  const program = genProgram(coreSource);
+  const rec: SelfGenRecord = {
+    schema: SELF_GEN_SCHEMA, taskSha256: sha256(task), baseSha, snapshotSha256: sha256(JSON.stringify(snap)), generatorSha256: sha256(program),
+    status: "error", skill: null, reason: "", paths: [], candidateBlobs: {}, diff: "", diffSha256: "", check: null, createdAt: new Date().toISOString(),
+  };
+  const run = runGeneratorSandboxed(coreSource, { task, baseSha, paths: snap.paths, files: snap.files } satisfies GenInput);
+  if (!run.ok) return { ...rec, reason: `GENERATOR_FAILED: ${run.error}` };
+  const o = run.output as GenOutput;
+  const shapeOk = !!o && (o.status === "candidate" || o.status === "refused") && Array.isArray(o.files) && typeof o.reason === "string" &&
+    o.files.every((f) => f && typeof f.path === "string" && typeof f.text === "string");
+  if (!shapeOk) return { ...rec, reason: "GENERATOR_OUTPUT_MALFORMED" };
+  rec.skill = typeof o.skill === "string" ? o.skill : null;
+  rec.reason = o.reason;
+  if (o.status === "refused") return { ...rec, status: "refused" };
+  if (o.files.length === 0) return { ...rec, status: "refused", reason: "GENERATOR_EMPTY_CANDIDATE" };
+  const seen = new Set<string>();
+  for (const f of o.files) {
+    if (seen.has(f.path)) return { ...rec, status: "refused", reason: `GENERATOR_DUPLICATE_PATH: ${f.path}` };
+    seen.add(f.path);
+    // a write to a base file the generator was never shown would be blind (and its base text is not in the snapshot)
+    if (snap.paths.includes(f.path) && !(f.path in snap.files)) return { ...rec, status: "refused", reason: `GENERATOR_WRITES_UNSEEN_FILE: ${f.path}` };
+  }
+  const base: Record<string, string | null> = {};
+  for (const f of o.files) base[f.path] = snap.files[f.path] ?? null;
+  const cand = new Map(o.files.map((f) => [f.path, f.text]));
+  rec.paths = [...seen].sort();
+  for (const f of o.files) rec.candidateBlobs[f.path] = gitBlobSha(f.text);
+  try { rec.diff = proposalDiff(base, o.files); } catch (e) { return { ...rec, status: "error", reason: `DIFF_FAILED: ${(e as Error).message.slice(0, 500)}` }; }
+  rec.diffSha256 = stage2DiffSha(rec.diff);
+  rec.check = checkStage2Proposal(rec.diff, { base: (p) => snap.files[p] ?? showAt(repo, baseSha)(p), cand: (p) => cand.get(p) ?? snap.files[p] ?? showAt(repo, baseSha)(p) }, neverZoneAtSha(repo, baseSha));
+  rec.status = rec.check.ok ? "candidate" : "refused-by-check";
+  return rec;
+}
