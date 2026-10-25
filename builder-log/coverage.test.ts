@@ -106,7 +106,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/220 on 2026-10-22 with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/220 on 2026-10-22, 91/222 from 2026-10-24 with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -189,9 +189,15 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
   // PeaceSTOCKS#40-#52 as merge commits 3ed589e to 0ab37c8): +13 PeaceAI real tasks -> 74/205.
   // Batch v10 (seq 261-275, #471-#485 on public-test-case-existing-v5/v6, landed 2026-10-22 18:33 MT through verdict PRs
   // PeaceSTOCKS#53-#67 as merge commits 6a41f91 to 8ff15d3): +15 PeaceAI real tasks -> 89/220.
-  assert.equal(today.allTime.peaceaiAble, 89);
-  assert.equal(today.allTime.builderTasks, 220);
-  assert.equal(today.allTime.percent, 40.5);
+  const r22 = coverageReport(text, "2026-10-22", { onMain });
+  assert.equal(r22.allTime.peaceaiAble, 89);
+  assert.equal(r22.allTime.builderTasks, 220);
+  assert.equal(r22.allTime.percent, 40.5);
+  // S1/S2 (seq 276-277, #501/#502 on public-derive-from-behavior-v1, DERIVE_FROM_BEHAVIOR, landed 2026-10-24 22:07 MT through
+  // verdict PRs PeaceSTOCKS#70/#71 as merge commits d6f3da9 and 0bbb039): +2 PeaceAI real tasks -> 91/222.
+  assert.equal(today.allTime.peaceaiAble, 91);
+  assert.equal(today.allTime.builderTasks, 222);
+  assert.equal(today.allTime.percent, 41);
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/133.
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
   assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 133);
