@@ -1961,7 +1961,28 @@ function repoIndex(repo: readonly RepoFile[]): RepoIndex {
 
 /** One binding the analysis read: its module, name and declaration. */
 interface ReadBinding { path: string; name: string; sf: ts.SourceFile; idx: ModuleIndex; isEnum: boolean }
-type BindingShape = { kind: "prim"; globals?: Set<string> } | { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean };
+type BindingShape = { kind: "prim"; globals?: Set<string> } | { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean; globals?: Set<string> };
+/** Global roots whose members a const initializer reads (directly or through the module consts it names). */
+const MEMBER_READ_ROOTS = new Set(["Math", "Date"]);
+/**
+ * Auditor #505 (Math.PI gap): every `Math` / `Date` reference in a const's initializer, nested reads and computed keys
+ * included (`Math.PI`, `Math.PI.toString()`, `Math["P" + "I"]`, `Date.prototype`, `Date.now`), following the module
+ * consts it names; each root found must pass the same repo-wide global-root check as a `Date.UTC(..)` call.
+ */
+function memberReadRoots(init: ts.Expression, idx: ModuleIndex, out: Set<string>, seen: Set<string>, depth = 0): void {
+  if (depth > 12) return;
+  const v = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && !inTypePosition(n)) {
+      const p = n.parent;
+      const nameSlot = ((ts.isPropertyAccessExpression(p) || ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p)) && (p as { name?: ts.Node }).name === n);
+      if (!nameSlot && MEMBER_READ_ROOTS.has(n.text) && unshadowed(idx, n.text)) out.add(n.text);
+      else if (!nameSlot && !ts.isShorthandPropertyAssignment(p) && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
+      else if (ts.isShorthandPropertyAssignment(p) && p.name === n && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(init);
+}
 /** The value shape of a const initializer: 0 = a primitive, k = every value k property steps down is primitive, INF = unknown. */
 function shapeDepth(e: ts.Expression, m: { sf: ts.SourceFile; idx: ModuleIndex }, read: (rel: string) => string | null, seen: Set<string>, depth = 0): number {
   if (depth > 12) return INF_DEPTH;
@@ -2080,7 +2101,8 @@ function bindingShape(b: ReadBinding, read: (rel: string) => string | null): Bin
   PRIM_GLOBAL_ROOTS = roots;
   let d: number;
   try { d = shapeDepth(init, b, read, new Set([`${b.sf.fileName}\0${b.name}`])); } finally { PRIM_GLOBAL_ROOTS = null; }
-  return d === 0 ? (roots.size ? { kind: "prim", globals: roots } : { kind: "prim" }) : { kind: "data", primDepth: d, regex: regexInit(x, b.idx) };
+  memberReadRoots(init, b.idx, roots, new Set([b.name]));
+  return d === 0 ? (roots.size ? { kind: "prim", globals: roots } : { kind: "prim" }) : { kind: "data", primDepth: d, regex: regexInit(x, b.idx), ...(roots.size ? { globals: roots } : {}) };
 }
 
 /** Enum names (module path \0 name) the analysis read, keyed by the analysis's shared reasons set. */
@@ -2190,6 +2212,15 @@ function globalTouched(ri: RepoIndex, name: string): string | null {
  * Test hook (Auditor #505 option X): whether the repo shadows or patches the global root `name` (`Date`, `Math`, ..),
  * exactly as the prim-global relaxation checks it; null when untouched. A repo-level problem is returned as `repo: ..`.
  */
+/** Test hook (Auditor #505, Math.PI gap): the global roots a module const's initializer reads, sorted. */
+export function constGlobalRoots(source: string, name: string): string[] {
+  const sf = ts.createSourceFile("/hook.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const idx = indexModule(sf);
+  const init = idx.consts.get(name)?.initializer;
+  const out = new Set<string>();
+  if (init) memberReadRoots(init, idx, out, new Set([name]));
+  return [...out].sort();
+}
 export function primGlobalTouched(repo: readonly RepoFile[], name: string): string | null {
   const ri = repoIndex(repo);
   return ri.problem ? `repo: ${ri.problem}` : globalTouched(ri, name);
@@ -2197,7 +2228,7 @@ export function primGlobalTouched(repo: readonly RepoFile[], name: string): stri
 function sharedBindingsProblem(bindings: readonly ReadBinding[], repo: readonly RepoFile[] | undefined, read: (rel: string) => string | null): string | null {
   const shaped = bindings.map((b) => ({ b, shape: bindingShape(b, read) }));
   const todo = shaped.filter((x) => x.shape.kind !== "prim");
-  const viaGlobal = shaped.filter((x) => x.shape.kind === "prim" && x.shape.globals);
+  const viaGlobal = shaped.filter((x) => x.shape.kind !== "fn" && x.shape.globals);
   if (!todo.length && !viaGlobal.length) return null;
   const first = todo[0] ?? viaGlobal[0]!;
   if (!repo) return `${first.b.path}#${first.b.name}: no_repo_list`;

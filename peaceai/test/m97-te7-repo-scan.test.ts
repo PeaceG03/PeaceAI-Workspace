@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { existingTargetRefusal, existingTargetAnalysisForEvidence, primGlobalTouched, repoFileLists, type RepoFile } from "../lib/learned-test-existing.ts";
+import { existingTargetRefusal, existingTargetAnalysisForEvidence, constGlobalRoots, primGlobalTouched, repoFileLists, type RepoFile } from "../lib/learned-test-existing.ts";
 
 const LIT = "export const L: string[] = [\"a\", \"b\"];\nexport function f(x: string): number { return L.indexOf(x); }\n";
 const CALL = "function mk(n: number): string[] { return [\"a\", \"b\"]; }\nexport const L = mk(1);\nexport function f(x: string): number { return L.indexOf(x); }\n";
@@ -17,6 +17,9 @@ const RX = "export const RX = /^[a-z]+$/;\nexport function f(x: string): boolean
 const NOEXP = "const L: string[] = [\"a\", \"b\"];\nexport function f(x: string): number { return L.indexOf(x); }\nexport function g(): string[] { return L; }\n";
 
 const DUTC_X = "export const E = Date.UTC(1970, 0, 1);\nexport function f(x: number): number { return x - E; }\n";
+const MATH_PI = "export const E = Math.PI;\nexport function f(x: number): boolean { return x === E; }\n";
+const MATH_PI_NESTED = "export const E = [Math.PI, { p: Math.E * 2 }];\nexport function f(x: number): boolean { return x === E[0]; }\n";
+const MATH_PI_VIA_CONST = "const P = Math.PI;\nexport const E = P;\nexport function f(x: number): boolean { return x === E; }\n";
 const MATH_X = "export const E = Math.max(1, 2);\nexport function f(x: number): number { return x - E; }\n";
 
 /** name -> [target module, the other repo files]. The target is always src/m.ts, function f. */
@@ -108,6 +111,15 @@ const ATTACKS: Record<string, [string, Record<string, string>]> = {
   D3_window_spread: [DUTC_X, { "src/s.ts": "export const w = { ...window };\n" }],
   D3_self_unsafe_member: [DUTC_X, { "src/s.ts": "export const d = self.Date;\n" }],
   D3_math_root_via_alias: [MATH_X, { "src/s.ts": "const G: any = globalThis;\nG.Math = { max: () => [] };\n" }],
+  // Auditor #505 Math.PI gap: a const reading a member of Math goes through the same global-root check
+  PI_global_object_plain_write: [MATH_PI, { "src/s.js": "globalThis.Math = { PI: [] };\n" }],
+  PI_global_object_cast_write: [MATH_PI, { "src/s.ts": "(globalThis as any).Math = { PI: [] };\n" }],
+  PI_define_property_global_object: [MATH_PI, { "src/s.ts": "Object.defineProperty(globalThis, \"Math\", { value: { PI: [] } });\n" }],
+  PI_direct_patch: [MATH_PI, { "src/s.js": "Math.PI = 4;\n" }],
+  PI_define_property_member: [MATH_PI, { "src/s.ts": "Object.defineProperty(Math, \"PI\", { value: [] });\n" }],
+  PI_alias_patch_in_test: [MATH_PI, { "src/s.test.ts": "const M: any = Math;\nM.PI = [];\n" }],
+  PI_nested_literal: [MATH_PI_NESTED, { "src/s.js": "globalThis.Math = { PI: [], E: [] };\n" }],
+  PI_via_module_const: [MATH_PI_VIA_CONST, { "src/s.ts": "Object.defineProperty(globalThis, \"Math\", { value: { PI: [] } });\n" }],
   // (4) relative imports that resolve to no scanned file fail closed
   D4_test_imports_unlisted_js: [LIT, { "src/x.test.ts": "import { poke } from \"./evil.js\";\npoke();\n" }],
   D4_test_imports_outside_scope: [LIT, { "src/x.test.ts": "import \"../scripts/evil\";\n" }],
@@ -135,6 +147,9 @@ const CONTROLS: Record<string, [string, Record<string, string>]> = {
   // Auditor #505 controls: a plain read of a known-safe global-object member keeps the relaxation; an erased
   // type-only import of an unscanned file is no load
   D3_test_fake_fetch_write: [DUTC_X, { "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = (async () => new Response(\"{}\")) as typeof fetch;\nglobalThis.fetch = original;\n" }],
+  PI_unpatched: [MATH_PI, { "src/s.ts": "export const g = (): number => Math.PI * 2 + Math.max(1, 2);\n", "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = original;\n" }],
+  PI_nested_unpatched: [MATH_PI_NESTED, {}],
+  PI_via_module_const_unpatched: [MATH_PI_VIA_CONST, {}],
   D3_safe_global_member_read: [DUTC_X, { "src/s.ts": "export function g(): void { globalThis.console.log(\"x\"); }\n" }],
   D3_global_name_as_property: [DUTC_X, { "src/s.ts": "export const o = { globalThis: 1, window: 2 };\nexport const n = o.window;\n" }],
   D4_type_only_import_unlisted: [LIT, { "src/s.ts": "import type { T } from \"./types\";\nexport const t: T | null = null;\n" }],
@@ -247,6 +262,32 @@ test("repo scan: the global-root check for Math uses the same denylist (option X
     global_object_expando_then_alias: { "src/s.js": "globalThis.fetch = 0;\nconst G = globalThis;\nG.Math = {};\n" },
   };
   for (const [k, o] of Object.entries(attacks)) assert.match(primGlobalTouched(files(o), "Math") ?? "", /global_Math/, k);
+});
+
+// Auditor #505 Math.PI gap, forms the v1-v7 load check refuses on its own (a nested call, a computed key, Date members):
+// the const still routes its root through the global-root check, and a repo-wide mutation of that root cancels.
+test("repo scan: every const reading a member of Math or Date (nested, computed, through a const) names that root", () => {
+  const cases: [string, string[]][] = [
+    ["export const E = Math.PI;", ["Math"]],
+    ["export const E = Math.PI.toString();", ["Math"]],
+    ["export const E = Math[\"P\" + \"I\"];", ["Math"]],
+    ["export const E = (Math as { PI: number }).PI;", ["Math"]],
+    ["export const E = [{ p: Math.E }];", ["Math"]],
+    ["const P = Math.PI;\nexport const E = { P };", ["Math"]],
+    ["export const E = Date.prototype;", ["Date"]],
+    ["export const E = Date.now;", ["Date"]],
+    ["export const E = Date.UTC(1970, 0, 1) + Math.PI;", ["Date", "Math"]],
+    ["export const E = 3.14;", []],
+    ["export const E = { Math: 1, PI: 2 };", []],
+    ["const Math = { PI: 3 };\nexport const E = Math.PI;", []],
+  ];
+  for (const [src, roots] of cases) assert.deepEqual(constGlobalRoots(src, "E"), roots, src);
+  const files = (o: Record<string, string>) => Object.entries({ "src/m.ts": "export const E = Date.prototype;\n", ...o }).map(([path, content]) => ({ path, content }));
+  assert.equal(primGlobalTouched(files({}), "Date"), null);
+  for (const o of <Record<string, string>[]>[{ "src/s.js": "globalThis.Date = class {};\n" }, { "src/s.ts": "(globalThis as any).Date = class {};\n" }, { "src/s.ts": "Object.defineProperty(globalThis, \"Date\", { value: 1 });\n" }, { "src/s.js": "Date.now = () => 0;\n" }])
+    assert.match(primGlobalTouched(files(o), "Date") ?? "", /global_Date/, JSON.stringify(o));
+  for (const o of [{ "src/s.js": "globalThis.Math = { PI: [] };\n" }, { "src/s.js": "globalThis[\"Ma\" + \"th\"] = {};\n" }])
+    assert.match(primGlobalTouched(files(o), "Math") ?? "", /global_Math/, JSON.stringify(o));
 });
 
 test("repo scan: the refusal names the first problem (diagnostics)", () => {
