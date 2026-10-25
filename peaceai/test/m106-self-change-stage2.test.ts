@@ -229,7 +229,7 @@ function goodRecord(): Stage2Record {
     check: { ok: true, refusals: [], paths: ["peaceai/lib/propose.ts", T], newTests: [{ file: T, names: ["three"] }] },
     baseSuite: { suite: "live", files: [...SUITE], filesSha256: listSha(SUITE), exitCode: 0, pass: 40, fail: 0 },
     newTests: [{ file: T, name: "three", onBase: { exitCode: 1, pass: 0, fail: 1 }, onCandidate: { exitCode: 0, pass: 1, fail: 0 } }],
-    phases: STAGE2_PHASES.map((phase) => ({ phase, ran: true, leftovers: 0 })),
+    phases: STAGE2_PHASES.map((phase) => ({ phase, ran: true, leftovers: 0, tampered: 0 })),
     status: "awaiting-review", createdAt: "2026-10-25T07:00:00.000Z",
     countsTrust: STAGE2_COUNTS_TRUST, run: { repository: "PeaceG03/PeaceAI-Results", runId: "4242", runAttempt: "1" },
   };
@@ -258,6 +258,8 @@ test("M106 limit 3: grade = unchanged base suite passes on the candidate, each n
     ["a phase never ran (job failed / no retry)", (r) => { r.phases = r.phases.filter((p) => p.phase !== "new-on-base"); }, "PHASE_NOT_RUN"],
     ["a phase marked not run", (r) => { r.phases[0]!.ran = false; }, "PHASE_NOT_RUN"],
     ["leftover processes after a phase", (r) => { r.phases[1]!.leftovers = 1; }, "LEFTOVER_PROCESSES"],
+    ["a watched file changed during a phase (R3-2)", (r) => { r.phases[2]!.tampered = 1; }, "TREE_CHANGED_DURING_RUN"],
+    ["phase without a tampered count (R3-2)", (r) => { delete (r.phases[0] as { tampered?: number }).tampered; }, "TREE_CHANGED_DURING_RUN"],
   ];
   for (const [what, mut, reason] of bad) {
     const r = goodRecord();
@@ -278,7 +280,7 @@ const comment = (body: string, over: Partial<CommandComment> = {}): CommandComme
   return { id, url: `https://github.com/PeaceG03/PeaceAI-Workspace/pull/9#issuecomment-${id}`, body, author: "PeaceG03", association: "OWNER", createdAt: "2026-10-25T07:00:00Z", ...over };
 };
 const both = (sha = HEAD) => [comment(`/auditor-pass sc-demo ${sha}`), comment(`/verdict sc-demo ${sha} right`)];
-const LEDGER: Stage2PrFacts["ledger"] = { entry: { schema: "peaceai-self-change-ledger:v1", id: "sc-demo", base: "b".repeat(40), runId: "4242", patchSha256: "" }, commits: 1 };
+const LEDGER: Stage2PrFacts["ledger"] = { entry: { schema: "peaceai-self-change-ledger:v1", id: "sc-demo", base: "b".repeat(40), runId: "4242", patchSha256: "" }, commits: 1, runs: [{ id: "4242", attempt: 1, path: ".github/workflows/self-change-stage2.yml" }], recordSource: "artifact" };
 const PR: Stage2PrFacts = { headSha: HEAD, diffSha256: "d".repeat(64), baseOnMain: true, commitsExact: true, recheck: { ok: true, refusals: [], paths: [], newTests: [] }, ledger: LEDGER };
 
 test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /verdict AND Auditor /auditor-pass on that exact commit", () => {
@@ -309,6 +311,15 @@ test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /ve
   has(stage2LandingDecision({ ...goodRecord(), run: { repository: "PeaceG03/PeaceAI-Results", runId: "4242", runAttempt: "2" } }, SUITE, PR, both(), AUD, ON), "RECORD_NOT_FROM_LEDGER_RUN");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, entry: { ...LEDGER.entry!, id: "sc-other" } } }, both(), AUD, ON), "LEDGER_MISSING");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, entry: { ...LEDGER.entry!, base: "c".repeat(40) } } }, both(), AUD, ON), "LEDGER_BASE_MISMATCH");
+  // R3-4 / R3-5: the record is the ledger run's own artifact, and exactly one stage-2 run ever named the id
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, recordSource: "fixture" } }, both(), AUD, ON), "FIXTURE_RECORD_NEVER_LANDS");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, recordSource: "none" } }, both(), AUD, ON), "RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, recordSource: undefined } }, both(), AUD, ON), "RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [] } }, both(), AUD, ON), "STAGE2_RUN_NOT_UNIQUE");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [...LEDGER.runs!, { id: "4243", attempt: 1, path: ".github/workflows/self-change-stage2.yml" }] } }, both(), AUD, ON), "STAGE2_RUN_NOT_UNIQUE");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [{ id: "4243", attempt: 1, path: ".github/workflows/self-change-stage2.yml" }] } }, both(), AUD, ON), "RUN_NOT_LEDGER_RUN");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: [{ id: "4242", attempt: 1, path: ".github/workflows/other.yml" }] } }, both(), AUD, ON), "RUN_NOT_LEDGER_RUN");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, runs: undefined } }, both(), AUD, ON), "STAGE2_RUN_NOT_UNIQUE");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, recheck: { ok: false, refusals: [{ path: "x", reason: "never-zone" }], paths: [], newTests: [] } }, both(), AUD, ON), "CHECK_REFUSED_ON_PR_DIFF");
   // each approval is required, on this id and this sha, by the listed login, traced, with a member association
   has(stage2LandingDecision(goodRecord(), SUITE, PR, [comment(`/verdict sc-demo ${HEAD} right`)], AUD, ON), "AUDITOR_PASS_MISSING");

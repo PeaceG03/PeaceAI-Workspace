@@ -4,7 +4,8 @@
 // commit's peaceai/test/*.test.ts, restored from the base) plus new peaceai/self-tests, and writes the record and
 // a git bundle of the exact candidate commit (so the promotion PR head can be that tested commit).
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appliedDiffRefusals, budgetMinutes, checkSelfChangeDiff, checkStage2Proposal, computeNeverZone, listSha, parseGitDiff, parseRawZ, SELF_SCHEMA, selfChangeAllowedHere, sha256, STAGE2_COUNTS_TRUST, STAGE2_DIFF_ARGS, STAGE2_PHASES, STAGE2_SCHEMA, stage2DiffSha, stage2GradeDecision, type CaseRun, type NeverZoneSet, type SelfChangeRecord, type Stage2Check, type Stage2Phase, type Stage2PrFacts, type Stage2Record, type TestRun } from "./selfchange.ts";
@@ -155,8 +156,8 @@ export function prepareStage2(work: string, id: string, diff: string, baseSha: s
   return prep;
 }
 
-export interface RawRun { file?: string; name?: string; exitCode: number; pass: number; fail: number; leftovers: number }
-export interface Stage2PhaseRun { schema: typeof STAGE2_RUN_SCHEMA; id: string; phase: Stage2Phase; candidateSha: string; runs: RawRun[]; leftovers: number }
+export interface RawRun { file?: string; name?: string; exitCode: number; pass: number; fail: number; leftovers: number; tampered?: string[] }
+export interface Stage2PhaseRun { schema: typeof STAGE2_RUN_SCHEMA; id: string; phase: Stage2Phase; candidateSha: string; runs: RawRun[]; leftovers: number; tampered?: number }
 
 /** Processes in session `sid` (and, inside the private job only, any new process of this user since `before`). */
 function strays(sid: number, before: ReadonlySet<number>, strict: boolean): number[] {
@@ -179,6 +180,40 @@ export function lastCount(stdout: string, k: "pass" | "fail"): number {
   const all = [...stdout.matchAll(new RegExp(`^# ${k} (\\d+)$`, "gm"))];
   return all.length ? Number(all[all.length - 1][1]) : 0;
 }
+/** Auditor #504 round 3 R3-2: content hash of a file or a whole tree (symlinks hashed by target, never followed; "" = absent). */
+export function treeHash(root: string, skip: ReadonlySet<string> = new Set([".git"])): string {
+  const h = createHash("sha256");
+  const walk = (p: string, rel: string): void => {
+    let st;
+    try { st = lstatSync(p); } catch { h.update(`absent\0${rel}\0`); return; }
+    if (st.isSymbolicLink()) h.update(`link\0${rel}\0${readlinkSync(p)}\0`);
+    else if (st.isDirectory()) { h.update(`dir\0${rel}\0${st.mode & 0o7777}\0`); for (const e of readdirSync(p).sort()) if (!skip.has(e)) walk(join(p, e), rel ? `${rel}/${e}` : e); }
+    else if (st.isFile()) h.update(`file\0${rel}\0${st.mode & 0o7777}\0`).update(readFileSync(p)).update("\0");
+    else h.update(`other\0${rel}\0`);
+  };
+  walk(root, "");
+  return h.digest("hex");
+}
+/**
+ * R3-2: what a candidate run must not change: every base test file and new test file in the clone, the clone's
+ * node_modules, and the grader checkout (everything but .git). Hashed before and after each run; any change fails it.
+ */
+export function watchedHashes(work: string, files: readonly string[], grader: string | null): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const f of [...new Set(files)].sort()) m.set(`test:${f}`, treeHash(join(work, f)));
+  // follow a top-level node_modules / grader symlink (the shared install is what a run could rewrite); links inside are hashed by target
+  const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+  m.set("node_modules", treeHash(real(join(work, "node_modules"))));
+  if (grader) m.set("grader", treeHash(real(grader)));
+  return m;
+}
+export function guardedRun(work: string, args: string[], deadline: number, files: readonly string[], grader: string | null): RawRun {
+  const before = watchedHashes(work, files, grader);
+  const r = isolatedRun(work, args, deadline);
+  const after = watchedHashes(work, files, grader);
+  const tampered = [...before].filter(([k, v]) => after.get(k) !== v).map(([k]) => k);
+  return tampered.length ? { ...r, exitCode: r.exitCode || 1, fail: r.fail + 1, tampered } : { ...r, tampered };
+}
 export function isolatedRun(cwd: string, args: string[], deadline: number): { exitCode: number; pass: number; fail: number; leftovers: number } {
   const strict = selfChangeAllowedHere(process.env).ok;
   const before = pidsNow();
@@ -199,8 +234,11 @@ export function isolatedRun(cwd: string, args: string[], deadline: number): { ex
  * The only place candidate code runs. `work` is a fresh clone holding base and candidate, with its OWN dependencies
  * (npm ci --ignore-scripts at the base lockfile; package files are never-zone). Writes nothing outside `work`.
  */
-export function runStage2Phase(work: string, prep: Stage2Prep, phase: Stage2Phase, deadline: number): Stage2PhaseRun {
-  const out: Stage2PhaseRun = { schema: STAGE2_RUN_SCHEMA, id: prep.id, phase, candidateSha: prep.candidateSha, runs: [], leftovers: 0 };
+export function runStage2Phase(work: string, prep: Stage2Prep, phase: Stage2Phase, deadline: number, grader: string | null = null): Stage2PhaseRun {
+  const out: Stage2PhaseRun = { schema: STAGE2_RUN_SCHEMA, id: prep.id, phase, candidateSha: prep.candidateSha, runs: [], leftovers: 0, tampered: 0 };
+  // R3-2: every base test file + the new test files + node_modules + the grader must be unchanged by each run
+  const watch = [...prep.suiteFiles, ...prep.check.newTests.map((t) => t.file)];
+  const isolatedRun = (cwd: string, args: string[], dl: number) => guardedRun(cwd, args, dl, watch, grader);
   const tap = ["--test", "--test-reporter=tap"];
   const cases = prep.check.newTests.flatMap((t) => t.names.map((name) => ({ file: t.file, name })));
   const clean = (sha: string) => { git(work, "checkout", "--quiet", "-f", "--detach", sha); git(work, "clean", "-qfdx", "-e", "node_modules"); };
@@ -219,6 +257,7 @@ export function runStage2Phase(work: string, prep: Stage2Prep, phase: Stage2Phas
     }
   }
   out.leftovers = out.runs.reduce((n, r) => n + r.leftovers, 0);
+  out.tampered = out.runs.reduce((n, r) => n + (r.tampered?.length ?? 0), 0);
   return out;
 }
 
@@ -232,14 +271,15 @@ export function recordStage2(prep: Stage2Prep, runs: readonly Stage2PhaseRun[]):
   if (!prep.check.ok || !prep.candidateSha) return rec;
   const get = (ph: Stage2Phase) => runs.find((r) => r.schema === STAGE2_RUN_SCHEMA && r.phase === ph && r.id === prep.id && r.candidateSha === prep.candidateSha);
   const failed: CaseRun = { exitCode: 1, pass: 0, fail: 1 };
-  const asCase = (r: RawRun | undefined): CaseRun => (r ? { exitCode: r.leftovers ? 1 : r.exitCode, pass: r.pass, fail: r.fail + (r.leftovers ? 1 : 0) } : failed);
-  for (const ph of STAGE2_PHASES) { const r = get(ph); rec.phases.push({ phase: ph, ran: !!r, leftovers: r?.leftovers ?? 0 }); }
+  const bad = (r: RawRun) => r.leftovers > 0 || !Array.isArray(r.tampered) || r.tampered.length > 0;
+  const asCase = (r: RawRun | undefined): CaseRun => (r ? { exitCode: bad(r) ? 1 : r.exitCode, pass: r.pass, fail: r.fail + (bad(r) ? 1 : 0) } : failed);
+  for (const ph of STAGE2_PHASES) { const r = get(ph); rec.phases.push({ phase: ph, ran: !!r, leftovers: r?.leftovers ?? 0, tampered: r ? (typeof r.tampered === "number" ? r.tampered : 1) : 0 }); }
   const s = get("suite")?.runs[0];
   rec.baseSuite = { ...rec.baseSuite, ...asCase(s), ...(s ? {} : { exitCode: 1 }) };
   const cases = prep.check.newTests.flatMap((t) => t.names.map((name) => ({ file: t.file, name })));
   const find = (ph: Stage2Phase, c: { file: string; name: string }) => get(ph)?.runs.find((r) => r.file === c.file && r.name === c.name);
   // a missing base run counts as "passes on base" (never as the wanted failure)
-  for (const c of cases) { const b = find("new-on-base", c); rec.newTests.push({ ...c, onCandidate: asCase(find("new-on-candidate", c)), onBase: b && !b.leftovers ? { exitCode: b.exitCode, pass: b.pass, fail: b.fail } : { exitCode: 0, pass: 1, fail: 0 } }); }
+  for (const c of cases) { const b = find("new-on-base", c); rec.newTests.push({ ...c, onCandidate: asCase(find("new-on-candidate", c)), onBase: b && !bad(b) ? { exitCode: b.exitCode, pass: b.pass, fail: b.fail } : { exitCode: 0, pass: 1, fail: 0 } }); }
   rec.status = stage2GradeDecision(rec, prep.suiteFiles).ok ? "awaiting-review" : "tested-failing";
   return rec;
 }
@@ -302,7 +342,7 @@ export function runStage2InSandbox(o: { prepFile: string; bundle: string; source
     git(work, "remote", "remove", "origin");
     git(work, "checkout", "--quiet", "--detach", prep.baseSha);
     execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: work, stdio: "ignore", env: suiteEnv() });
-    run = runStage2Phase(work, prep, o.phase as Stage2Phase, deadline);
+    run = runStage2Phase(work, prep, o.phase as Stage2Phase, deadline, join(import.meta.dirname, "../.."));
   } finally { rmSync(work, { recursive: true, force: true }); }
   writeOnce(join(o.out, `${prep.id}.${o.phase}.json`), JSON.stringify(run, null, 1) + "\n");
   return { code: 0, message: `self-change stage2 run id=${prep.id} phase=${o.phase} runs=${run.runs.length} leftovers=${run.leftovers}` };

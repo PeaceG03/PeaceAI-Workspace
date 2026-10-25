@@ -1,16 +1,16 @@
 // M106 stage 2, Auditor's #504 review: every probe Auditor ran against head 4be9544 (round 1, blockers 1-6) and
-// against 98611e6 (round 2, B1-B4) is kept here as a permanent negative test. Each one must stay refused; the positive controls show the guard is not just "refuse all".
+// against 98611e6 (round 2, B1-B4) and against b22af4d (round 3, R3-1..R3-5) is kept here as a permanent negative test. Each one must stay refused; the positive controls show the guard is not just "refuse all".
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   addOnlyTestCheck, appliedDiffRefusals, checkStage2Proposal, computeNeverZone, parseGitDiff, parseRawZ, stage2ZoneRefusal,
   TOKEN_SCRIPTS, STAGE2_PHASES, stage2EngineFindings, stage2LedgerReasons, stage2PathRefusal, STAGE2_DATA_ALLOWLIST, type Stage2Record,
 } from "../lib/selfchange.ts";
-import { isolatedRun, lastCount, prepareStage2, recordStage2, stage2PrFacts, type Stage2PhaseRun } from "../lib/selfpropose.ts";
+import { guardedRun, isolatedRun, lastCount, prepareStage2, recordStage2, stage2PrFacts, treeHash, watchedHashes, type Stage2PhaseRun } from "../lib/selfpropose.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const NOREPLY = ["-c", "user.name=PeaceG03", "-c", "user.email=301894882+PeaceG03@users.noreply.github.com", "-c", "commit.gpgsign=false"];
@@ -209,8 +209,8 @@ test("M106 #504 blocker 5: each candidate run gets its own session; leftover pro
   // the record: a phase with leftovers, or a missing phase output, is failed (no retry)
   const prep = { schema: "peaceai-self-change-prep:v2", id: "sc-x", baseSha: "b".repeat(40), mainSha: "b".repeat(40), candidateSha: "c".repeat(40), diffSha256: "d".repeat(64), paths: ["peaceai/lib/free.ts", "peaceai/test/m999.test.ts"], candidateBlobs: {}, check: { ok: true, refusals: [], paths: [], newTests: [{ file: "peaceai/test/m999.test.ts", names: ["n"] }] }, suiteFiles: ["peaceai/test/a.test.ts"], createdAt: "" } as const;
   const run = (phase: (typeof STAGE2_PHASES)[number], over: Partial<Stage2PhaseRun["runs"][number]> = {}): Stage2PhaseRun => ({
-    schema: "peaceai-self-change-run:v2", id: "sc-x", phase, candidateSha: "c".repeat(40), leftovers: over.leftovers ?? 0,
-    runs: [phase === "suite" ? { exitCode: 0, pass: 5, fail: 0, leftovers: 0, ...over } : phase === "new-on-base" ? { file: "peaceai/test/m999.test.ts", name: "n", exitCode: 1, pass: 0, fail: 1, leftovers: 0, ...over } : { file: "peaceai/test/m999.test.ts", name: "n", exitCode: 0, pass: 1, fail: 0, leftovers: 0, ...over }],
+    schema: "peaceai-self-change-run:v2", id: "sc-x", phase, candidateSha: "c".repeat(40), leftovers: over.leftovers ?? 0, tampered: over.tampered?.length ?? 0,
+    runs: [phase === "suite" ? { exitCode: 0, pass: 5, fail: 0, leftovers: 0, tampered: [], ...over } : phase === "new-on-base" ? { file: "peaceai/test/m999.test.ts", name: "n", exitCode: 1, pass: 0, fail: 1, leftovers: 0, tampered: [], ...over } : { file: "peaceai/test/m999.test.ts", name: "n", exitCode: 0, pass: 1, fail: 0, leftovers: 0, tampered: [], ...over }],
   });
   const p = JSON.parse(JSON.stringify(prep));
   assert.equal(recordStage2(p, STAGE2_PHASES.map((ph) => run(ph))).status, "awaiting-review", "control");
@@ -218,6 +218,13 @@ test("M106 #504 blocker 5: each candidate run gets its own session; leftover pro
   assert.equal(recordStage2(p, [run("suite", { leftovers: 1 }), run("new-on-candidate"), run("new-on-base")]).status, "tested-failing", "leftover in suite");
   assert.equal(recordStage2(p, [run("suite"), run("new-on-candidate"), run("new-on-base", { leftovers: 2 })]).status, "tested-failing", "leftover on base");
   assert.equal(recordStage2(p, [run("suite"), run("new-on-candidate"), { ...run("new-on-base"), candidateSha: "e".repeat(40) }]).status, "tested-failing", "foreign phase output");
+  // round 3 R3-2: a run that changed a watched file (base test, node_modules, grader) fails its phase; a run output
+  // without the tampered list is treated as tampered
+  assert.equal(recordStage2(p, [run("suite", { tampered: ["test:peaceai/test/m32-multibody.test.ts"] }), run("new-on-candidate"), run("new-on-base")]).status, "tested-failing", "tampered suite");
+  assert.equal(recordStage2(p, [run("suite"), run("new-on-candidate", { tampered: ["node_modules"] }), run("new-on-base")]).status, "tested-failing", "tampered candidate");
+  assert.equal(recordStage2(p, [run("suite"), run("new-on-candidate"), run("new-on-base", { tampered: ["grader"] })]).status, "tested-failing", "tampered on base");
+  const noList = run("suite"); delete (noList.runs[0] as { tampered?: string[] }).tampered;
+  assert.equal(recordStage2(p, [noList, run("new-on-candidate"), run("new-on-base")]).status, "tested-failing", "missing tampered list");
 });
 
 test("M106 #504 blocker 6: the base is pinned to main and the PR is exactly base..head, re-checked on the real diff", () => {
@@ -444,17 +451,244 @@ test("M106 #504 round 2 B4: no retry across runs; the record names its run, the 
   assert.equal(recordStage2(prep as never, []).run, null, "no run id (offline) = cannot match any ledger entry");
   const rec = { ...withRun, id: "sc-x" } as Stage2Record;
   const entry = { schema: "peaceai-self-change-ledger:v1" as const, id: "sc-x", base: "b".repeat(40), runId: "77", patchSha256: "" };
-  assert.deepEqual(stage2LedgerReasons(rec, { entry, commits: 1 }), []);
+  const RUN = { id: "77", attempt: 1, path: ".github/workflows/self-change-stage2.yml" };
+  const L = { entry, commits: 1, runs: [RUN], recordSource: "artifact" as const };
+  assert.deepEqual(stage2LedgerReasons(rec, L), []);
   // a second run for the same id: its ledger PUT fails (no sha = create-only), so the entry keeps naming run 77;
   // a record from the second run (run 78) never matches; deleting and re-creating the entry shows up as >1 commit
-  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, { entry, commits: 1 }), ["RECORD_NOT_FROM_LEDGER_RUN"]);
-  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, { entry: { ...entry, runId: "78" }, commits: 3 }), ["LEDGER_REWRITTEN"]);
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, L), ["RECORD_NOT_FROM_LEDGER_RUN"]);
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, { ...L, entry: { ...entry, runId: "78" }, commits: 3, runs: [RUN, { ...RUN, id: "78" }] }), ["LEDGER_REWRITTEN", "STAGE2_RUN_NOT_UNIQUE"]);
   assert.deepEqual(stage2LedgerReasons(rec, { entry: null, commits: 0 }), ["LEDGER_MISSING"]);
-  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, repository: "someone/else" } }, { entry, commits: 1 }), ["RECORD_NOT_FROM_LEDGER_RUN"]);
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, repository: "someone/else" } }, L), ["RECORD_NOT_FROM_LEDGER_RUN"]);
+  // R3-5: Results main is unprotected, so the ledger could be force-pushed away and re-created with ONE commit; the
+  // runs list still shows both dispatches for the id -> refused
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, { ...L, entry: { ...entry, runId: "78" }, commits: 1, runs: [RUN, { ...RUN, id: "78" }] }), ["STAGE2_RUN_NOT_UNIQUE"]);
+  // R3-4: a hand-made record copying the run id (e.g. a tested-failing record edited to awaiting-review) is not the artifact
+  assert.deepEqual(stage2LedgerReasons(rec, { ...L, recordSource: "fixture" }), ["FIXTURE_RECORD_NEVER_LANDS"]);
+  assert.deepEqual(stage2LedgerReasons(rec, { ...L, recordSource: "none" }), ["RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT"]);
+  const tsx = join(repo, "node_modules/.bin/tsx");
+  const env = { ...process.env, GITHUB_ACTIONS: "", GITHUB_REPOSITORY: "" };
+  for (const f of ["/tmp/forged.stage2.json", join(repo, "peaceai/test/forged.stage2.json"), join(repo, "peaceai/test/fixtures/../x.json")]) {
+    const d = spawnSync(tsx, [join(repo, "peaceai/bin/self-change.ts"), "decide2", "--id", "sc-forge", "--pr", "1", "--record", f, "--repo", repo], { encoding: "utf8", env });
+    assert.equal(d.status, 1, f);
+    assert.match(d.stderr + d.stdout, /--record is fixtures-only/, f);
+  }
   // decide2 reads the ledger with GETs only
   const bin = readFileSync(join(repo, "peaceai/bin/self-change.ts"), "utf8");
   const s2 = bin.slice(bin.indexOf('mode === "decide2"'), bin.indexOf('} else if (mode === "decide")'));
   assert.match(s2, /contents\/\$\{ledgerPath\}/);
   assert.match(s2, /commits\?path=/);
+  assert.match(s2, /"run", "download", String\(entry\.runId\), "-R", RESULTS/);
+  assert.match(s2, /actions\/workflows\/self-change-stage2\.yml\/runs/);
   assert.doesNotMatch(s2, /"-X"|--method|PUT|POST|DELETE/);
+});
+
+// ---------------------------------------------------------------- round 3 (Auditor at b22af4d), probes in probe/r3
+const R3 = JSON.parse(readFileSync(join(repo, "peaceai/test/m106-r3-cases.json"), "utf8")) as Record<string, string>;
+const engine = (src: string, testFile = false, path = testFile ? "peaceai/test/zz.test.ts" : "peaceai/lib/zz.ts") => stage2EngineFindings(path, src, { testFile });
+const realZone = () => {
+  const tracked = execFileSync("git", ["ls-files"], { cwd: repo, encoding: "utf8" }).split("\n").filter(Boolean);
+  return computeNeverZone(tracked, (p) => { try { return readFileSync(join(repo, p), "utf8"); } catch { return null; } });
+};
+// apply a probe diff to copies of the real base files (plain `git apply` outside a repo) and run the full static check
+function checkProbe(diff: string, zone = realZone()) {
+  const d = mkdtempSync(join(tmpdir(), "m106-r3-"));
+  try {
+    const paths = parseGitDiff(diff).files.map((f) => (f.newPath ?? f.oldPath)!);
+    for (const p of paths) if (existsSync(join(repo, p))) { mkdirSync(join(d, p, ".."), { recursive: true }); writeFileSync(join(d, p), readFileSync(join(repo, p))); }
+    writeFileSync(join(d, ".p"), diff);
+    execFileSync("git", ["apply", "--whitespace=nowarn", ".p"], { cwd: d, stdio: "ignore" });
+    const at = (root: string) => (p: string) => (existsSync(join(root, p)) ? readFileSync(join(root, p), "utf8") : null);
+    return checkStage2Proposal(diff, { base: at(repo), cand: at(d) }, zone);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+}
+
+test("M106 #504 round 3 R3-1 / R3-3: constructor as a key in any form, binding built-ins whole, and self-change imports are refused (probe/r3 t7, e7, e7b, eng, eng2, f5-f8)", () => {
+  const REFUSED: Record<string, string> = {
+    t7_e7: 'const { constructor: F } = (() => {}) as any;\nexport const r = F("return process")().exit(0);\nexport const v = 1;\n',
+    e7b: "const { constructor: F } = (() => {}) as any;\nexport const r = F(\"return import('node:assert/strict')\")().then((m: any) => { m.default.__defineGetter__(\"equal\", () => () => undefined); });\nexport const v = 1;\n",
+    n1_named_import_holder: 'import { isolatedRun } from "./selfpropose.ts";\nexport const r = isolatedRun(".", ["-e", "1"], Date.now() + 1000);\n',
+    self_change_import: 'import { STAGE2_PHASES } from "./selfchange.ts";\nexport const r = STAGE2_PHASES.length;\n',
+    self_change_import_js: 'import * as s from "../lib/selfchange.js";\nexport const r = s;\n',
+    self_propose_dyn: 'export const r = import("./selfpropose.ts");\n',
+    n2_computed_import: 'export const r = import("node:" + "assert");\n',
+    n3_createRequire: 'import { createRequire } from "node:module";\nexport const r = createRequire(import.meta.url)("node:assert");\n',
+    n7_destructure_ctor: 'const { constructor: F } = (() => {}) as any;\nexport const r = F("return process")().exit(0);\n',
+    n7b_tagged_template_fn: "const { constructor: F } = (() => {}) as any;\nexport const r = F`return process.exit(0)`;\n",
+    n7c_ctor_via_getproto: 'const p: any = Object.getPrototypeOf(() => {});\nconst { constructor: F } = p;\nexport const r = F("return 1")();\n',
+    ctor_shorthand: "const { constructor } = (() => {}) as any;\nexport const r = constructor;\n",
+    ctor_string_key: 'const { "constructor": F } = (() => {}) as any;\nexport const r = F;\n',
+    p2_ctor_computed_key: 'const { ["constr" + "uctor"]: F } = (() => {}) as any;\nexport const r = F("return 1")();\n',
+    ctor_computed_template: "const { [`constr${'uctor'}`]: F } = (() => {}) as any;\nexport const r = F;\n",
+    ctor_computed_var: 'const k = ["constr", "uctor"].join("");\nconst { [k]: F } = (() => {}) as any;\nexport const r = F;\n',
+    ctor_element: 'export const r = (() => 1)["constr" + "uctor"];\n',
+    ctor_element_template: "export const r = (() => 1)[`constr${'uctor'}`];\n",
+    ctor_element_built: "const u = 'uctor';\nexport const r = (() => 1)[`constr${u}`];\n",
+    ctor_string_template: "const k = `constr${'uctor'}`;\nexport const r = k;\n",
+    ctor_nested: "const { a: { constructor: F } } = { a: () => 1 } as any;\nexport const r = F;\n",
+    ctor_param: "export const r = ({ constructor: F }: any) => F;\n",
+    proto_key: 'const { ["proto" + "type"]: P } = Array as any;\nexport const r = P;\n',
+    n8_symbol_for: 'export const r = (Symbol as any).for("nodejs.rejection");\n',
+    n10_prepareStackTrace: "export const r = (Error.prepareStackTrace = (e: any, s: any) => s);\n",
+    n10b_alias_error: "const E: any = Error;\nexport const r = (E.prepareStackTrace = (e: any, s: any) => s);\n",
+    n11_alias_object_define: 'const O: any = Object;\nconst x: any = {};\nexport const r = O.defineProperty(x, "a", { value: 1 });\n',
+    alias_reflect: "const R = Reflect;\nexport const r = R;\n",
+    alias_function: "const F = Function;\nexport const r = F;\n",
+    alias_proxy: "export const r = [Proxy][0];\n",
+    alias_globalThis_arg: "const f = (g: unknown) => g;\nexport const r = f(globalThis);\n",
+    alias_process_arg: "export const r = [process];\n",
+    alias_object_spread: "export const r = { O: Object };\n",
+    alias_object_shorthand: "export const r = { Object };\n",
+    alias_default_param: "export const r = (o: any = Object) => o;\n",
+    alias_destructure_default: "export const r = ({ o = Error }: any) => o;\n",
+    computed_call: "const k = 'keys';\nexport const r = (Object as any)[k]({});\n",
+    n14_process_via_stdout: "const p: any = (process.stdout as any)._handle;\nexport const r = p;\n",
+    n15_opt_chain_process: "export const r = (process as any)?.exit?.(0);\n",
+    n16_process_bracket: 'export const r = process["exit"](0);\n',
+    n17_destructure_process: "const { stdout } = process;\nexport const r = (stdout as any).constructor;\n",
+    n18_bind_process: "export const r = process.nextTick.call(null, () => {});\n",
+  };
+  for (const [k, src] of Object.entries(REFUSED)) assert.ok(engine(src).length > 0, `${k} must be refused`);
+  // the exact t7 / e7 shapes, through the full proposal check (lib + a new test importing it)
+  const zone = computeNeverZone([], () => null);
+  const T = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { v } from "../lib/zz.ts";\ntest("real failure", () => { assert.equal(v, 1); });\n';
+  for (const k of ["t7_e7", "e7b"]) {
+    const lib = REFUSED[k]!;
+    const c = checkStage2Proposal(newFile("peaceai/lib/zz.ts", lib) + newFile("peaceai/test/zz.test.ts", T), { base: () => null, cand: (p) => (p === "peaceai/lib/zz.ts" ? lib : T) }, zone);
+    assert.equal(c.ok, false, k);
+    assert.match(reasons(c), /engine-safety: uses constructor as a key/, k);
+  }
+  // an existing self-change import is not re-counted (multiset diff): learned-multibody.ts already imports selfchange.ts
+  const old = 'import { PROTECTED_SELF } from "./selfchange.ts";\nexport const f = () => PROTECTED_SELF.length;\n';
+  const c = checkStage2Proposal(editFile("peaceai/lib/zz.ts", old, old.replace("length;", "length + 0;")) + newFile("peaceai/test/zz.test.ts", T.replace("{ v }", "{ f as v }")), { base: (p) => (p === "peaceai/lib/zz.ts" ? old : null), cand: (p) => (p === "peaceai/lib/zz.ts" ? old.replace("length;", "length + 0;") : T.replace("{ v }", "{ f as v }")) }, zone);
+  assert.ok(!c.refusals.some((r) => /^engine-safety/.test(r.reason)), reasons(c));
+  // positive controls: ordinary built-in use still passes
+  const OK = [
+    "export const r = Object.keys({ a: 1 }).length;\n",
+    'export const r = new Error("x");\n',
+    "export const r = (e: unknown) => e instanceof Error;\n",
+    'export const r = JSON.parse("1") + Math.max(1, 2);\n',
+    "export const r = (xs: number[], i: number) => xs[i];\n",
+    "export const r = typeof Symbol;\n",
+    "export const r = (x: unknown): x is Error => x instanceof Error;\n",
+    "export const r = Array.isArray([]) && Number.isFinite(1) && String(1) === '1';\n",
+    'export const r = (): void => { process.stdout.write("x\\n"); process.stderr.write(""); };\n',
+    "export const r = process.cwd() + process.platform + process.argv.length + String(process.hrtime.bigint());\n",
+    "export const r = (): void => process.nextTick(() => {});\n",
+    'export const r = { a: 1, ["b"]: 2, [0]: 3 };\n',
+    "export class C { x = 1; constructor() {} }\n",
+    "export const r = Promise.resolve(1).then((n) => n);\n",
+    "export const r = new Map<string, number>([['a', 1]]).get('a');\n",
+  ];
+  for (const src of OK) assert.deepEqual(engine(src), [], src);
+  // test files: Error subclasses may be passed (assert.throws(fn, Error))
+  assert.deepEqual(engine('import test from "node:test";\nimport assert from "node:assert/strict";\ntest("t", () => { assert.throws(() => { throw new TypeError("x"); }, TypeError); assert.throws(() => { throw new Error("x"); }, Error); });\n', true), []);
+});
+
+test("M106 #504 round 3 R3-1 / R3-3 in test files: f5-f8 (destructured __defineGetter__ / constructor) and the folded c7-f4 forms are refused by both rules", () => {
+  const base = 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("existing must fail", () => { assert.equal(1, 2); });\n';
+  const T: Record<string, string> = {
+    c7: 'const z = (assert as any).__defineGetter__("equal", () => () => {});',
+    c8: 'import { strict } from "node:assert";\nconst z = (strict as any).__defineGetter__("equal", () => () => {});',
+    c8b: 'const z = (assert as any)["__define" + "Getter__"]("equal", () => () => {});',
+    f1_template: "const k = `__define${'Getter'}__`;\nconst z = (assert as any)[k](\"equal\", () => () => {});",
+    f2_var_concat: 'const a = "__def", b = "ineGetter__";\nconst z = (assert as any)[a + b]("equal", () => () => {});',
+    f3_join: 'const k = ["__define", "Getter__"].join("");\nconst z = (assert as any)[k]("equal", () => () => {});',
+    f4_fromCharCode: 'const k = String.fromCharCode(95,95,100,101,102,105,110,101,71,101,116,116,101,114,95,95);\nconst z = (assert as any)[k]("equal", () => () => {});',
+    f5_destructure_method: 'const { __defineGetter__: dg } = assert as any;\nconst z = dg.call(assert, "equal", () => () => {});',
+    f6_destructure_computed: 'const k = ["__define", "Getter__"].join("");\nconst { [k]: dg } = assert as any;\nconst z = dg.call(assert, "equal", () => () => {});',
+    f7_ctor_destructure_test: 'const { constructor: F } = (() => {}) as any;\nconst z = F("a", "a.equal = () => {}")(assert);',
+    f8_ctor_destructure_named: 'import { strict } from "node:assert";\nconst { constructor: F } = (() => {}) as any;\nconst g = F("a", "a.equal = () => {}");\nconst z = g(strict);',
+  };
+  const baseFind = engine(base, true);
+  for (const [k, add] of Object.entries(T)) {
+    const lines = add.split("\n");
+    const imp = lines.filter((l) => l.startsWith("import ")), rest = lines.filter((l) => !l.startsWith("import "));
+    const cand = base.replace('import assert from "node:assert/strict";\n', 'import assert from "node:assert/strict";\n' + imp.map((l) => l + "\n").join("")) + rest.join("\n") + "\n";
+    assert.ok(addOnlyTestCheck("peaceai/test/zz.test.ts", base, cand).refusals.length > 0, `${k}: add-only rule`);
+    assert.ok(engine(cand, true).filter((x) => !baseFind.includes(x)).length > 0, `${k}: engine rule`);
+    const c = checkStage2Proposal(editFile("peaceai/test/m999-x.test.ts", base, cand), { base: () => base, cand: () => cand }, computeNeverZone([], () => null));
+    assert.equal(c.ok, false, k);
+  }
+});
+
+test("M106 #504 round 3: every cases7 diff (learned-multibody.ts + zz-probe.test.ts) is refused, the docs .md control is allowed; cases8 row57 (propose.ts) is refused", () => {
+  const zone = realZone();
+  const want: Record<string, RegExp> = {
+    r3_ctor_destructure_exit: /engine-safety: uses constructor as a key/,
+    r3_ctor_assert_patch: /engine-safety: uses constructor as a key/,
+    r3_fs_rewrite: /engine-safety: non-test code imports node:fs/,
+    r3_alias_object: /engine-safety: binds or passes (Object|Error) whole/,
+    r3_data_new_file: /engine-safety: non-test code imports node:fs|never-zone: data file/,
+    r3_data_new_file_ts: /engine-safety: non-test code imports node:fs/,
+    r3_data_yml: /never-zone/,
+  };
+  for (const [k, re] of Object.entries(want)) {
+    assert.ok(R3[k], k);
+    const c = checkProbe(R3[k]!, zone);
+    assert.equal(c.ok, false, k);
+    assert.match(reasons(c), re, k);
+  }
+  const docs = checkProbe(R3.r3_data_docs_md!, zone);
+  assert.equal(docs.ok, true, `control r3_data_docs_md: ${reasons(docs)}`);
+  // row 57 (a real propose.ts change): propose.ts is in the never-zone closure now
+  assert.ok(zone.why.has("peaceai/lib/propose.ts"), "propose.ts is never-zone");
+  const c57 = checkStage2Proposal(R3.row57!, { base: () => "", cand: () => "" }, zone);
+  assert.equal(c57.ok, false);
+  assert.ok(c57.refusals.some((r) => r.path === "peaceai/lib/propose.ts" && /never-zone/.test(r.reason)), reasons(c57));
+});
+
+test("M106 #504 round 3 R3-2: proposed engine code may not import fs in any form", () => {
+  for (const src of [
+    'import { writeFileSync } from "node:fs";\nexport const r = writeFileSync;\n',
+    'import * as fs from "fs";\nexport const r = fs;\n',
+    'import { writeFile } from "fs/promises";\nexport const r = writeFile;\n',
+    'import { writeFile } from "node:fs/promises";\nexport const r = writeFile;\n',
+    'export const r = import("node:fs/promises");\n',
+    'export const r = require("fs");\n',
+    'export { writeFileSync } from "node:fs";\n',
+  ]) assert.match(engine(src).join("; "), /node:fs|imports fs|engine-safety/, src);
+  assert.deepEqual(engine('import { join } from "node:path";\nexport const r = join("a");\n'), []);
+});
+
+test("M106 #504 round 3 R3-2: base tests, node_modules and the grader are hashed around every candidate run; a run that rewrites a test fails (probe/r3/fsdemo)", () => {
+  const tsx = join(repo, "node_modules/.bin/tsx");
+  if (!existsSync(tsx)) return;
+  const work = mkdtempSync(join(tmpdir(), "m106-r3-fs-"));
+  const grader = mkdtempSync(join(tmpdir(), "m106-r3-grader-"));
+  try {
+    symlinkSync(join(repo, "node_modules"), join(work, "node_modules"), "dir");
+    writeFileSync(join(grader, "g.txt"), "grader\n");
+    const Z = 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("real failure", () => { assert.equal(1, 2); });\n';
+    writeFileSync(join(work, "z.test.ts"), Z);
+    writeFileSync(join(work, "e12.ts"), 'import { writeFileSync } from "node:fs";\nwriteFileSync(new URL("./z.test.ts", import.meta.url), \'import test from "node:test";\\ntest("ok", () => {});\\n\');\nexport const ok = true;\n');
+    writeFileSync(join(work, "a.test.ts"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ok } from "./e12.ts";\ntest("a", () => { assert.ok(ok); });\n');
+    const files = ["a.test.ts", "z.test.ts"];
+    const r = guardedRun(work, ["--test", "--test-reporter=tap", "--test-concurrency=1", ...files], Date.now() + 60_000, files, grader);
+    assert.deepEqual(r.tampered, ["test:z.test.ts"]);
+    assert.ok(r.fail >= 1 && r.exitCode !== 0, JSON.stringify(r));
+    // a clean run reports nothing
+    writeFileSync(join(work, "z.test.ts"), Z);
+    writeFileSync(join(work, "e12.ts"), "export const ok = true;\n");
+    const clean = guardedRun(work, ["--test", "--test-reporter=tap", "a.test.ts"], Date.now() + 60_000, ["a.test.ts"], grader);
+    assert.deepEqual(clean.tampered, []);
+    assert.equal(clean.exitCode, 0);
+    // node_modules (followed through the top-level symlink) and the grader tree are watched too
+    const nm = mkdtempSync(join(tmpdir(), "m106-r3-nm-"));
+    try {
+      writeFileSync(join(nm, "x.js"), "1");
+      rmSync(join(work, "node_modules"));
+      symlinkSync(nm, join(work, "node_modules"), "dir");
+      const h0 = watchedHashes(work, ["z.test.ts"], grader);
+      writeFileSync(join(nm, "x.js"), "2");
+      const h1 = watchedHashes(work, ["z.test.ts"], grader);
+      assert.notEqual(h0.get("node_modules"), h1.get("node_modules"));
+      writeFileSync(join(grader, "g.txt"), "changed\n");
+      assert.notEqual(h1.get("grader"), watchedHashes(work, ["z.test.ts"], grader).get("grader"));
+      const g0 = treeHash(grader);
+      mkdirSync(join(grader, ".git"));
+      writeFileSync(join(grader, ".git/x"), "1");
+      assert.equal(treeHash(grader), g0, ".git is not watched");
+    } finally { rmSync(nm, { recursive: true, force: true }); }
+  } finally { rmSync(work, { recursive: true, force: true }); rmSync(grader, { recursive: true, force: true }); }
 });

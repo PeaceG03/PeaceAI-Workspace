@@ -18,14 +18,15 @@
 //            the ONLY candidate-code step: fresh clone + own npm ci, fresh session per run, leftovers killed and
 //            counted (= failed) -> <out>/<id>.<phase>.json (raw counts, no verdict)
 //   record2  --prep FILE --runs DIR [--out DIR]   no candidate code -> <out>/self-changes/<id>.stage2.json
-//   decide2  --record FILE --pr N [--repo DIR]   landing decision; flag + approvers read from origin/main, base on
+//   decide2  --id ID --pr N [--repo DIR]   (record downloaded from the ledger's run; --record FILE fixtures only, never lands)   landing decision; flag + approvers read from origin/main, base on
 //            main, PR = exactly base..head, check re-run on the real diff, the Results write-once ledger entry for
 //            the id names the run that made the record (read with GET only), Auditor `/auditor-pass <id> <sha>` and
 //            Peace `/verdict <id> <sha> right`. Prints only; never posts, applies, pushes or merges.
 //   credit2  always refuses: no generator run record exists yet (limit 5 needs provenance, a later PR).
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record } from "../lib/selfchange.ts";
 import { prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
@@ -81,33 +82,57 @@ if (mode === "propose") {
   die(2, `self-change credit2 id=${rec.id} credit=false mark="${NO_GENERATOR_MARK}"`);
 } else if (mode === "decide2") {
   if (opt("approvals") !== undefined) die(1, "self-change decide2 refused: --approvals is a fixture-only mode (tests call stage2LandingDecision directly); use --pr N");
-  const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as Stage2Record;
   const repo = resolve(opt("repo") ?? process.cwd());
   const pr = opt("pr") ?? "";
-  if (!/^\d+$/.test(pr)) die(1, "usage: decide2 --record FILE --pr <number> [--repo DIR]");
+  const id = opt("id") ?? "";
+  if (!/^\d+$/.test(pr) || !/^sc-[a-z0-9-]{3,48}$/.test(id)) die(1, "usage: decide2 --id sc-<name> --pr <number> [--repo DIR]");
+  // R3-4: the record is DOWNLOADED (read-only) from the ledger's run; a local --record is accepted only from the
+  // committed test fixtures and such a decision never lands
+  const recOpt = opt("record");
+  const fixtures = join(repo, "peaceai/test/fixtures") + "/";
+  if (recOpt !== undefined && !resolve(recOpt).startsWith(fixtures)) die(1, "self-change decide2 refused: --record is fixtures-only; decide2 downloads the record artifact from the ledger's run");
   const origin = spawnSync("git", ["remote", "get-url", "origin"], { cwd: repo, encoding: "utf8" }).stdout.trim().replace(/\.git$/, "");
   if (!origin.endsWith(`github.com/${WORKSPACE_REPO}`)) die(1, `self-change decide2 refused: --repo origin must be ${WORKSPACE_REPO}`);
   const MAIN = "refs/peaceai/decide2-main";
   git(repo, "fetch", "--quiet", "--no-tags", "origin", `+refs/heads/main:${MAIN}`, `+refs/pull/${pr}/head:refs/peaceai/decide2-pr`);
-  const gh = (path: string) => execFileSync("gh", ["api", "--paginate", "--jq", ".[] | tojson", path], { encoding: "utf8", maxBuffer: 1 << 26 }).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const gh = (path: string, jq = ".[] | tojson") => execFileSync("gh", ["api", "--paginate", "--jq", jq, path], { encoding: "utf8", maxBuffer: 1 << 26 }).split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const headSha = execFileSync("gh", ["api", `repos/${WORKSPACE_REPO}/pulls/${pr}`, "--jq", ".head.sha"], { encoding: "utf8" }).trim();
   const comments = (gh(`repos/${WORKSPACE_REPO}/issues/${pr}/comments`) as any[]).map((c) => ({ id: c.id, url: c.html_url, body: c.body ?? "", author: c.user?.login, association: c.author_association, createdAt: c.created_at })) as CommandComment[];
   const prCommits = (gh(`repos/${WORKSPACE_REPO}/pulls/${pr}/commits`) as any[]).map((c) => String(c.sha));
   // flag and approvers from MAIN (never from the PR, the proposal or this checkout's working tree)
   const atMain = (p: string) => { const r = spawnSync("git", ["show", `${MAIN}:${p}`], { cwd: repo, encoding: "utf8" }); return r.status === 0 ? r.stdout : null; };
   const approvers = JSON.parse(atMain("peaceai/self/approvers.json") ?? "{}");
-  // round 2 B4: the write-once Results ledger entry for this id (read-only GETs) and the commits that ever touched it
+  // round 2 B4 + R3-5: the write-once Results ledger entry for this id, the commits that ever touched it, and every
+  // self-change-stage2 run for this id (the runs list survives a force-push of Results main). GETs only.
   const RESULTS = PRIVATE_RUNNERS[0];
-  const ledgerPath = `${STAGE2_LEDGER_DIR}/${rec.id}.json`;
-  const safeId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(rec.id ?? "");
+  const ledgerPath = `${STAGE2_LEDGER_DIR}/${id}.json`;
   const getRaw = (path: string) => { const r = spawnSync("gh", ["api", "-H", "Accept: application/vnd.github.raw", path], { encoding: "utf8", maxBuffer: 1 << 26 }); return r.status === 0 ? r.stdout : null; };
   let entry: Stage2LedgerEntry | null = null;
-  try { const t = safeId ? getRaw(`repos/${RESULTS}/contents/${ledgerPath}`) : null; entry = t ? JSON.parse(t) : null; } catch { entry = null; }
+  try { const t = getRaw(`repos/${RESULTS}/contents/${ledgerPath}`); entry = t ? JSON.parse(t) : null; } catch { entry = null; }
   let commits = 0;
-  try { commits = safeId ? gh(`repos/${RESULTS}/commits?path=${encodeURIComponent(ledgerPath)}&per_page=100`).length : 0; } catch { commits = 0; }
-  const facts = stage2PrFacts(repo, rec, headSha, prCommits, MAIN, { entry, commits });
-  const d = stage2LandingDecision(rec, suiteFilesAt(repo, rec.baseSha), facts, comments, { auditor: approvers.auditor ?? [], peace: approvers.peace ?? [] }, atMain(STAGE2_FLAG_PATH));
-  die(d.ok ? 0 : 2, `self-change decide2 id=${rec.id} land=${d.ok}${d.ok ? ` auditor=${d.auditorComment} peace=${d.architectComment}` : ` reasons=${d.reasons.join(",")}`}`);
+  try { commits = gh(`repos/${RESULTS}/commits?path=${encodeURIComponent(ledgerPath)}&per_page=100`).length; } catch { commits = 0; }
+  let runs: { id: string; attempt: number; path: string }[] = [];
+  try {
+    runs = (gh(`repos/${RESULTS}/actions/workflows/self-change-stage2.yml/runs?per_page=100`, ".workflow_runs[] | tojson") as any[])
+      .filter((r) => r.display_title === `self-change-stage2 ${id}`).map((r) => ({ id: String(r.id), attempt: Number(r.run_attempt), path: String(r.path ?? "") }));
+  } catch { runs = []; }
+  // the record: from the ledger run's own artifact (read-only download), never from a hand-supplied file
+  let rec: Stage2Record | null = null;
+  let recordSource: "artifact" | "fixture" | "none" = "none";
+  if (recOpt !== undefined) { rec = JSON.parse(readFileSync(resolve(recOpt), "utf8")) as Stage2Record; recordSource = "fixture"; }
+  else if (entry && /^\d+$/.test(String(entry.runId))) {
+    const dir = mkdtempSync(join(tmpdir(), "peaceai-decide2-"));
+    try {
+      const r = spawnSync("gh", ["run", "download", String(entry.runId), "-R", RESULTS, "-n", `self-change-stage2-${id}`, "-D", dir], { encoding: "utf8" });
+      const f = join(dir, `${id}.stage2.json`);
+      if (r.status === 0 && existsSync(f)) { rec = JSON.parse(readFileSync(f, "utf8")) as Stage2Record; recordSource = "artifact"; }
+    } catch { rec = null; } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+  if (!rec || rec.id !== id) die(2, `self-change decide2 id=${id} land=false reasons=RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT`);
+  const r2 = rec!;
+  const facts = stage2PrFacts(repo, r2, headSha, prCommits, MAIN, { entry, commits, runs, recordSource });
+  const d = stage2LandingDecision(r2, suiteFilesAt(repo, r2.baseSha), facts, comments, { auditor: approvers.auditor ?? [], peace: approvers.peace ?? [] }, atMain(STAGE2_FLAG_PATH));
+  die(d.ok ? 0 : 2, `self-change decide2 id=${r2.id} land=${d.ok}${d.ok ? ` auditor=${d.auditorComment} peace=${d.architectComment}` : ` reasons=${d.reasons.join(",")}`}`);
 } else if (mode === "decide") {
   const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as SelfChangeRecord;
   // Approvals come straight from GitHub (--pr N: the PR's current head SHA and its comments, each with id and URL),

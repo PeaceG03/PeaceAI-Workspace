@@ -595,6 +595,16 @@ function foldString(n: ts.Node): string | null {
   return lit(n);
 }
 
+/** Round 3: the WHOLE string a literal expression builds ("a" + `b${"c"}`), or null if any part is not a literal. */
+function exactFold(e: ts.Node): string | null {
+  if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return e.text;
+  if (ts.isNumericLiteral(e)) return e.text;
+  if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isTypeAssertionExpression(e) || ts.isNonNullExpression(e) || ts.isSatisfiesExpression(e)) return exactFold(e.expression);
+  if (ts.isTemplateExpression(e)) { let r = e.head.text; for (const sp of e.templateSpans) { const v = exactFold(sp.expression); if (v === null) return null; r += v + sp.literal.text; } return r; }
+  if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) { const a = exactFold(e.left), b = exactFold(e.right); return a === null || b === null ? null : a + b; }
+  return null;
+}
+
 /**
  * Auditor #504 round 2 B1(3): an ENFORCED (not advisory) static rule for added or changed code. Proposed engine code
  * runs inside the same process as the base tests that import it, so it may not reach the test machinery or the
@@ -608,6 +618,12 @@ const PROCESS_READ_OK = new Set(["argv", "cwd", "platform", "arch", "version", "
 const BUILTIN_GLOBALS = new Set(["Object", "Array", "String", "Number", "Boolean", "Function", "Promise", "JSON", "Math", "Date", "RegExp", "Error", "TypeError", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Reflect", "Proxy", "console", "Buffer", "URL", "BigInt", "Intl", "Atomics", "SharedArrayBuffer", "ArrayBuffer", "Uint8Array", "setTimeout", "setInterval", "queueMicrotask"]);
 const BANNED_MODULES = /^(node:)?(child_process|process|module|vm|worker_threads|cluster|inspector|v8|repl|async_hooks|diagnostics_channel|trace_events)(\/|$)/;
 const TEST_MODULES = /^(node:)?(assert|test)(\/|$)/;
+/** R3-2: no file-system access from proposed ENGINE code (it could rewrite base tests or the grader mid-run). */
+const FS_MODULES = /^(node:)?fs(\/|$)/;
+/** R3 (non-blocking n1): never-zone helpers that spawn or grade (isolatedRun, ...) are not importable by proposed code. */
+const SELF_MODULES = /(^|\/)self(propose|change)(\.[cm]?[jt]s)?$/;
+/** R3-3: these may be used (X.y, X(...), new X, instanceof X, typeof X) but never bound, passed, stored or returned whole. */
+const NO_BARE = new Set(["Object", "Reflect", "Error", "Function", "Proxy", "Symbol", "globalThis", "global", "process", "Array", "JSON", "Math", "Promise", "console", "module", "require", "exports", "Buffer", "String", "Number", "Boolean", "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet", "Intl", "Atomics", "TypeError", "RangeError", "SyntaxError"]);
 export function stage2EngineFindings(path: string, text: string, opts: { testFile?: boolean } = {}): string[] {
   const out: string[] = [];
   const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, /\.(mjs|cjs|js)$/.test(path) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
@@ -621,6 +637,8 @@ export function stage2EngineFindings(path: string, text: string, opts: { testFil
   const spec = (m: string, n: ts.Node) => {
     if (BANNED_MODULES.test(m)) out.push(`engine-safety: imports ${m}`);
     if (!opts.testFile && TEST_MODULES.test(m)) out.push(`engine-safety: non-test code imports ${m}`);
+    if (!opts.testFile && FS_MODULES.test(m)) out.push(`engine-safety: non-test code imports ${m} (no file-system access from proposed engine code)`);
+    if (SELF_MODULES.test(m)) out.push(`engine-safety: imports ${m} (self-change machinery is not importable by proposed code)`);
     void n;
   };
   const v = (n: ts.Node): void => {
@@ -638,13 +656,60 @@ export function stage2EngineFindings(path: string, text: string, opts: { testFil
         if (n.text === "eval" || n.text === "Function") out.push(`engine-safety: uses ${n.text}`);
         if (n.text === "Reflect") out.push("engine-safety: uses Reflect");
         if (n.text === "process" && !(ts.isPropertyAccessExpression(p) && p.expression === n && PROCESS_READ_OK.has(p.name.text))) out.push(`engine-safety: uses process${ts.isPropertyAccessExpression(p) && p.expression === n ? `.${p.name.text}` : ""} (only ${[...PROCESS_READ_OK].join("/")} may be read)`);
+        // round 3 (eng.mts n13/n14/n18): stdout/stderr only as .write(...); functions only called directly (no _handle, .call, .constructor)
+        if (n.text === "process" && ts.isPropertyAccessExpression(p) && p.expression === n && PROCESS_READ_OK.has(p.name.text)) {
+          const g = p.parent;
+          const called = (e: ts.Node) => ts.isCallExpression(e.parent) && e.parent.expression === e;
+          const k = p.name.text;
+          const fine = k === "stdout" || k === "stderr" ? ts.isPropertyAccessExpression(g) && g.expression === p && g.name.text === "write" && called(g)
+            : k === "cwd" || k === "nextTick" ? called(p)
+            : k === "hrtime" ? called(p) || (ts.isPropertyAccessExpression(g) && g.expression === p && g.name.text === "bigint" && called(g))
+            : true;
+          if (!fine) out.push(`engine-safety: process.${k} used other than ${k === "stdout" || k === "stderr" ? `process.${k}.write(...)` : "as a direct call"} (${at(g)})`);
+        }
       }
       if (/^__(define|lookup)(Getter|Setter)__$|^__proto__$/.test(n.text)) out.push(`engine-safety: uses ${n.text}`);
       if (n.text === "constructor" && ts.isPropertyAccessExpression(p) && p.name === n) out.push("engine-safety: reads .constructor");
+      // R3-1: `constructor` in ANY binding / property-name position ({ constructor: F } = fn, { constructor }, obj literal keys)
+      if (n.text === "constructor" && (ts.isBindingElement(p) || ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p))) out.push("engine-safety: uses constructor as a key");
+      // R3-3: built-ins / globals only as X.y, X(...), new X(...), instanceof X, typeof X; never bound or passed whole
+      if (NO_BARE.has(n.text) && !(opts.testFile && /Error$/.test(n.text))) {
+        const ok = (ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAccessExpression(p) && p.expression === n) || (ts.isElementAccessExpression(p) && p.expression === n)
+          || ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.expression === n) || (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword && p.right === n)
+          || ts.isTypeOfExpression(p) || ts.isTypeReferenceNode(p) || ts.isExpressionWithTypeArguments(p) || ts.isQualifiedName(p) || ts.isTypeQueryNode(p)
+          || ts.isImportSpecifier(p) || ts.isExportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)
+          || ((ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isBindingElement(p) || ts.isEnumMember(p)) && p.name === n)
+          || (ts.isBindingElement(p) && p.propertyName === n) || ts.isLabeledStatement(p) || ts.isBreakOrContinueStatement(p);
+        if (!ok) out.push(`engine-safety: binds or passes ${n.text} whole (${at(p)})`);
+      }
     }
+    // R3-1: computed keys in destructuring / object literals must fold to a plain string (and never to constructor & co)
+    if ((ts.isBindingElement(n) && n.propertyName && ts.isComputedPropertyName(n.propertyName)) || ((ts.isPropertyAssignment(n) || ts.isMethodDeclaration(n)) && ts.isComputedPropertyName(n.name))) {
+      const cp = (ts.isBindingElement(n) ? n.propertyName : (n as ts.PropertyAssignment).name) as ts.ComputedPropertyName;
+      const k = exactFold(cp.expression);
+      const symbolKey = ts.isPropertyAccessExpression(cp.expression) && ts.isIdentifier(cp.expression.expression) && cp.expression.expression.text === "Symbol";
+      if (k === null && !symbolKey && !ts.isNumericLiteral(cp.expression)) out.push(`engine-safety: computed key ${at(cp)} (keys must be plain names)`);
+      else if (k !== null && /^(constructor|prototype|__proto__)$/.test(k)) out.push(`engine-safety: uses ${k} as a key`);
+    }
+    if (ts.isBindingElement(n) && n.propertyName && (ts.isStringLiteral(n.propertyName) || ts.isNoSubstitutionTemplateLiteral(n.propertyName)) && /^(constructor|prototype|__proto__)$/.test(n.propertyName.text)) out.push(`engine-safety: uses ${n.propertyName.text} as a key`);
+    if ((ts.isPropertyAssignment(n) || ts.isMethodDeclaration(n)) && ts.isStringLiteral(n.name) && /^(constructor|__proto__)$/.test(n.name.text)) out.push(`engine-safety: uses ${n.name.text} as a key`);
+    // R3-1: a computed member CALL x[expr](...) in proposed engine code (the key may be built at runtime)
+    if (ts.isCallExpression(n)) { const c = un(n.expression); if (ts.isElementAccessExpression(c) && !ts.isNumericLiteral(un(c.argumentExpression))) out.push(`engine-safety: computed member call ${at(c)}`); }
     const folded = foldString(n);
     if (folded !== null && ACCESSOR_HACK.test(folded)) out.push(`engine-safety: accessor-definition name in a string`);
-    if (ts.isElementAccessExpression(n) && (foldString(n.argumentExpression) ?? "") === "constructor") out.push("engine-safety: reads .constructor");
+    if (ts.isElementAccessExpression(n) && /^(constructor|prototype|__proto__)$/.test(foldString(n.argumentExpression) ?? "")) out.push(`engine-safety: reads [${foldString(n.argumentExpression)}]`);
+    if (ts.isElementAccessExpression(n)) {
+      const ex = exactFold(n.argumentExpression);
+      const key = un(n.argumentExpression);
+      if (ex !== null && /^(constructor|prototype|__proto__)$/.test(ex)) out.push(`engine-safety: reads [${ex}]`);
+      // a key BUILT inline (template with substitutions, + concatenation) that does not fold completely
+      else if (ex === null && (ts.isTemplateExpression(key) || (ts.isBinaryExpression(key) && key.operatorToken.kind === ts.SyntaxKind.PlusToken))) out.push(`engine-safety: computed key built inline ${at(n)}`);
+    }
+    if (ts.isTemplateExpression(n) || (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken && !(ts.isBinaryExpression(n.parent) && n.parent.operatorToken.kind === ts.SyntaxKind.PlusToken))) {
+      const ex = exactFold(n);
+      if (ex !== null && /^(constructor|prototype)$/.test(ex) && !(ts.isElementAccessExpression(n.parent) && n.parent.argumentExpression === n)) out.push(`engine-safety: "${ex}" as a string`);
+    }
+    if (folded !== null && /^(constructor|prototype)$/.test(folded) && !(ts.isElementAccessExpression(n.parent) && n.parent.argumentExpression === n)) out.push(`engine-safety: "${folded}" as a string`);
     const write = (target: ts.Expression) => {
       const t = un(target);
       if (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) {
@@ -928,7 +993,7 @@ export interface Stage2Record {
   baseSuite: TestRun;
   newTests: { file: string; name: string; onBase: CaseRun; onCandidate: CaseRun }[];
   /** Blocker 5: each grading phase ran in its own job; leftover processes after a phase fail it. */
-  phases: { phase: Stage2Phase; ran: boolean; leftovers: number }[];
+  phases: { phase: Stage2Phase; ran: boolean; leftovers: number; tampered: number }[];
   /**
    * Auditor #504 round 2 B1: every pass/fail/exit count above is reported by a process that ran candidate code, in a
    * VM the candidate could tamper with. They are ADVISORY: a failing count blocks, a passing count never lands
@@ -959,7 +1024,7 @@ export function stage2GradeDecision(rec: Stage2Record, baseSuiteFiles: readonly 
   const got = rec.newTests.map((t) => `${t.file}\0${t.name}`);
   if (want.length !== got.length || want.some((w) => !got.includes(w))) reasons.push("NEW_TESTS_NOT_ALL_RUN");
   if (rec.paths.some(isStage2Executable) && want.length === 0) reasons.push("NO_NEW_TEST_FOR_EXECUTABLE_CHANGE");
-  for (const ph of STAGE2_PHASES) { const r = (rec.phases ?? []).find((x) => x.phase === ph); if (!r || !r.ran) reasons.push("PHASE_NOT_RUN"); else if (r.leftovers !== 0) reasons.push("LEFTOVER_PROCESSES"); }
+  for (const ph of STAGE2_PHASES) { const r = (rec.phases ?? []).find((x) => x.phase === ph); if (!r || !r.ran) reasons.push("PHASE_NOT_RUN"); else if (r.leftovers !== 0) reasons.push("LEFTOVER_PROCESSES"); else if (r.tampered !== 0) reasons.push("TREE_CHANGED_DURING_RUN"); }
   for (const t of rec.newTests) {
     if (t.onBase.exitCode === 0 && t.onBase.fail === 0) reasons.push("NEW_TEST_PASSES_ON_BASE");
     if (t.onCandidate.exitCode !== 0 || t.onCandidate.fail !== 0 || t.onCandidate.pass === 0) reasons.push("NEW_TEST_FAILS_ON_CANDIDATE");
@@ -990,7 +1055,7 @@ export interface Stage2PrFacts {
   /** Blocker 1: checkStage2Proposal re-run on the real base..head diff with the base tree's never-zone */
   recheck: Stage2Check;
   /** Round 2 B4: the Results ledger entry for rec.id and how many commits ever touched it (write-once = exactly 1) */
-  ledger: { entry: Stage2LedgerEntry | null; commits: number };
+  ledger: { entry: Stage2LedgerEntry | null; commits: number; runs?: { id: string; attempt: number; path: string }[]; recordSource?: "artifact" | "fixture" | "none" };
 }
 /** Round 2 B4: the record must come from the ONE run the write-once ledger names for this id. */
 export function stage2LedgerReasons(rec: Stage2Record, ledger: Stage2PrFacts["ledger"] | undefined): string[] {
@@ -1000,6 +1065,12 @@ export function stage2LedgerReasons(rec: Stage2Record, ledger: Stage2PrFacts["le
   if (ledger!.commits !== 1) r.push("LEDGER_REWRITTEN");
   if (!rec.run || rec.run.repository !== "PeaceG03/PeaceAI-Results" || rec.run.runId !== e.runId || rec.run.runAttempt !== "1") r.push("RECORD_NOT_FROM_LEDGER_RUN");
   if (e.base !== rec.baseSha) r.push("LEDGER_BASE_MISMATCH");
+  // R3-5: exactly ONE self-change-stage2 run ever named this id, and it is the ledger's run (attempt 1)
+  const runs = ledger!.runs ?? [];
+  if (runs.length !== 1) r.push("STAGE2_RUN_NOT_UNIQUE");
+  else if (runs[0]!.id !== e.runId || runs[0]!.attempt !== 1 || !/(^|\/)self-change-stage2\.yml$/.test(runs[0]!.path)) r.push("RUN_NOT_LEDGER_RUN");
+  // R3-4: the record came from that run's artifact, downloaded by decide2 itself
+  if (ledger!.recordSource !== "artifact") r.push(ledger!.recordSource === "fixture" ? "FIXTURE_RECORD_NEVER_LANDS" : "RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT");
   return r;
 }
 export function stage2LandingDecision(rec: Stage2Record, baseSuiteFiles: readonly string[], pr: Stage2PrFacts, comments: readonly CommandComment[], approvers: { auditor: readonly string[]; peace: readonly string[] }, flagText: string | null): PromotionDecision {
