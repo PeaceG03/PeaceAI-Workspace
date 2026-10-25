@@ -5,37 +5,43 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  addOnlyTestCheck, checkStage2Proposal, listGrowthRefusals, listSha, NEVER_ZONE, protectedReason,
+  addOnlyTestCheck, checkStage2Proposal, computeNeverZone, listGrowthRefusals, listSha, NEVER_ZONE, NO_GENERATOR_MARK, protectedReason,
   stage2Credit, stage2DiffSha, stage2Enabled, stage2GradeDecision, stage2LandingDecision, stage2PathRefusal,
-  STAGE2_FLAG_PATH, STAGE2_SCHEMA, type CommandComment, type Stage2Record,
+  STAGE2_FLAG_PATH, STAGE2_PHASES, STAGE2_SCHEMA, type CommandComment, type Stage2PrFacts, type Stage2Record,
 } from "../lib/selfchange.ts";
 import { inSafeZone } from "../lib/self-zone.ts";
-import { proposeStage2InSandbox } from "../lib/selfpropose.ts";
+import { prepareStage2InSandbox, runStage2InSandbox } from "../lib/selfpropose.ts";
 
 const repo = join(import.meta.dirname, "../..");
 
-// ---- a tiny proposal builder: one git-diff entry per file, every candidate line counted as added
+// ---- a tiny proposal builder: one VALID git-diff entry per file (whole-file hunks with exact counts)
 interface F { path: string; base: string | null; cand: string | null; mode?: string; renameFrom?: string; binary?: boolean }
-function proposal(files: F[]) {
+/** an empty closure: only the NEVER_ZONE patterns apply (the real base-tree closure is tested in the probes file) */
+const NO_CLOSURE = computeNeverZone([], () => null);
+const linesOf = (s: string | null) => (s === null || s === "" ? [] : s.replace(/\n$/, "").split("\n"));
+function diffOf(files: F[]): string {
   const parts: string[] = [];
   for (const f of files) {
     const from = f.renameFrom ?? f.path;
     parts.push(`diff --git a/${from} b/${f.path}`);
-    if (f.renameFrom) parts.push("similarity index 90%", `rename from ${f.renameFrom}`, `rename to ${f.path}`);
     if (f.base === null) parts.push(`new file mode ${f.mode ?? "100644"}`);
     else if (f.cand === null) parts.push("deleted file mode 100644");
     else if (f.mode) parts.push("old mode 100644", `new mode ${f.mode}`);
-    if (f.binary) { parts.push(`Binary files a/${from} and b/${f.path} differ`); continue; }
-    parts.push(f.base === null ? "--- /dev/null" : `--- a/${from}`, f.cand === null ? "+++ /dev/null" : `+++ b/${f.path}`, "@@ -1 +1 @@");
-    const old = new Set((f.base ?? "").split("\n"));
-    for (const l of (f.cand ?? "").split("\n")) if (!old.has(l)) parts.push(`+${l}`);
+    if (f.renameFrom) parts.push("similarity index 90%", `rename from ${f.renameFrom}`, `rename to ${f.path}`);
+    if (f.binary) { parts.push("index 1111111..2222222", "GIT binary patch", "literal 1", "Hc$@<O00001", "", "literal 1", "Hc$@<O00001", ""); continue; }
+    const a = linesOf(f.base), b = linesOf(f.cand);
+    if (f.base !== null && f.cand !== null && a.join("\n") === b.join("\n")) continue;
+    parts.push(f.base === null ? "--- /dev/null" : `--- a/${from}`, f.cand === null ? "+++ /dev/null" : `+++ b/${f.path}`);
+    parts.push(`@@ -${a.length ? 1 : 0},${a.length} +${b.length ? 1 : 0},${b.length} @@`, ...a.map((l) => `-${l}`), ...b.map((l) => `+${l}`));
   }
-  const diff = parts.join("\n") + "\n";
+  return parts.join("\n") + "\n";
+}
+function proposal(files: F[]) {
   const read = {
     base: (p: string) => files.find((f) => f.path === p)?.base ?? null,
     cand: (p: string) => files.find((f) => f.path === p)?.cand ?? null,
   };
-  return checkStage2Proposal(diff, read);
+  return checkStage2Proposal(diffOf(files), read, NO_CLOSURE);
 }
 const reasons = (c: { refusals: { reason: string }[] }) => c.refusals.map((r) => r.reason).join(" | ");
 
@@ -56,7 +62,7 @@ const BASE_TEST = [
 const add = (extra: string) => BASE_TEST + extra + "\n";
 const T = "peaceai/test/m999-x.test.ts";
 
-test("M106 limit 1: every never-zone path is refused, even as a proposal; PeaceAI's own engines and root docs are proposable", () => {
+test("M106 limit 1: every never-zone path is refused, even as a proposal; engine paths and root docs pass the PATTERN check (the base-tree closure in m106-stage2-auditor-probes still closes most engines)", () => {
   const never = [
     ".github/workflows/peace-task.yml", ".github/CODEOWNERS", ".githooks/pre-push", ".env", ".npmrc", "peaceai/.env", "CODEOWNERS", "docs/CODEOWNERS",
     "README.md", "SECURITY.md", "package.json", "package-lock.json", "tsconfig.json", "docs/peaceai-public-origin.json",
@@ -91,7 +97,9 @@ test("M106 limit 1: every never-zone path is refused, even as a proposal; PeaceA
 
 test("M106 limit 1: a proposal touching any never-zone path, by any side of a rename, is refused whole", () => {
   const ok = { path: "peaceai/lib/propose.ts", base: "export const a = 1;\n", cand: "export const a = 2;\n" };
-  assert.equal(proposal([ok]).ok, true, reasons(proposal([ok])));
+  const okTest = { path: "peaceai/test/m999-new.test.ts", base: null, cand: 'import test from "node:test";\ntest("a is 2", () => {});\n' };
+  assert.equal(proposal([ok, okTest]).ok, true, reasons(proposal([ok, okTest])));
+  assert.match(reasons(proposal([ok])), /an executable change needs at least one new test/, "Auditor #504: >= 1 new test for any executable change");
   for (const bad of [".github/workflows/x.yml", "peaceai/lib/selfchange.ts", "peaceai/self/stage2.json", "peaceai/rules/approved.json", "builder-log/check.ts", "peaceai/lib/verdict.ts"]) {
     const c = proposal([ok, { path: bad, base: "x\n", cand: "y\n" }]);
     assert.equal(c.ok, false, bad);
@@ -107,14 +115,14 @@ test("M106: binary, mode changes, symlinks, deletions and renames are refused", 
   assert.match(reasons(proposal([{ path: "peaceai/lib/a.ts", base: null, cand: "a\n", mode: "120000" }])), /file mode 120000/);
   assert.match(reasons(proposal([{ path: "peaceai/lib/a.ts", base: "a\n", cand: null }])), /deletes a file/);
   assert.match(reasons(proposal([{ path: "peaceai/lib/b.ts", renameFrom: "peaceai/lib/a.ts", base: "a\n", cand: "a\n" }])), /renames or copies/);
-  assert.match(reasons(checkStage2Proposal("", { base: () => null, cand: () => null })), /not a git diff/);
+  assert.match(reasons(checkStage2Proposal("", { base: () => null, cand: () => null }, NO_CLOSURE)), /not a git diff/);
 });
 
 test("M106: content bans (credentials, hooks, approval commands, dynamic code, runner variables)", () => {
   for (const [line, why] of [
     ["const t = process.env.GITHUB_TOKEN;", /credential/], ["const k = secrets.X;", /credential/], ['run("git", ["push", "--no-verify"]);', /git hooks/],
     ['const c = "/auditor-pass sc-x abc";', /approval command/], ['const c = "/approve-rule abc";', /approval command/], ['eval("1");', /dynamic code/],
-    ['const f = new Function("return 1");', /dynamic code/], ["const m = require(name);", /dynamic code/], ["if (process.env.PEACEAI_SELF_X) {}", /self-change \/ runner/],
+    ['const f = new Function("return 1");', /dynamic code/], ["const m = require(name);", /dynamic code|computed/], ["if (process.env.PEACEAI_SELF_X) {}", /self-change \/ runner/],
   ] as const) {
     assert.match(reasons(proposal([{ path: "peaceai/lib/a.ts", base: "export const a = 1;\n", cand: `export const a = 1;\n${line}\n` }])), why, line);
   }
@@ -221,6 +229,7 @@ function goodRecord(): Stage2Record {
     check: { ok: true, refusals: [], paths: ["peaceai/lib/propose.ts", T], newTests: [{ file: T, names: ["three"] }] },
     baseSuite: { suite: "live", files: [...SUITE], filesSha256: listSha(SUITE), exitCode: 0, pass: 40, fail: 0 },
     newTests: [{ file: T, name: "three", onBase: { exitCode: 1, pass: 0, fail: 1 }, onCandidate: { exitCode: 0, pass: 1, fail: 0 } }],
+    phases: STAGE2_PHASES.map((phase) => ({ phase, ran: true, leftovers: 0 })),
     status: "awaiting-review", createdAt: "2026-10-25T07:00:00.000Z",
   };
 }
@@ -243,6 +252,10 @@ test("M106 limit 3: grade = unchanged base suite passes on the candidate, each n
     ["new test ran nothing on candidate", (r) => { r.newTests[0]!.onCandidate = { exitCode: 0, pass: 0, fail: 0 }; }, "NEW_TEST_FAILS_ON_CANDIDATE"],
     ["no candidate sha", (r) => { r.candidateSha = ""; }, "BAD_RECORD"],
     ["no diff hash", (r) => { r.diffSha256 = "x"; }, "BAD_RECORD"],
+    ["executable change with no new test", (r) => { r.newTests = []; r.check.newTests = []; }, "NO_NEW_TEST_FOR_EXECUTABLE_CHANGE"],
+    ["a phase never ran (job failed / no retry)", (r) => { r.phases = r.phases.filter((p) => p.phase !== "new-on-base"); }, "PHASE_NOT_RUN"],
+    ["a phase marked not run", (r) => { r.phases[0]!.ran = false; }, "PHASE_NOT_RUN"],
+    ["leftover processes after a phase", (r) => { r.phases[1]!.leftovers = 1; }, "LEFTOVER_PROCESSES"],
   ];
   for (const [what, mut, reason] of bad) {
     const r = goodRecord();
@@ -263,7 +276,7 @@ const comment = (body: string, over: Partial<CommandComment> = {}): CommandComme
   return { id, url: `https://github.com/PeaceG03/PeaceAI-Workspace/pull/9#issuecomment-${id}`, body, author: "PeaceG03", association: "OWNER", createdAt: "2026-10-25T07:00:00Z", ...over };
 };
 const both = (sha = HEAD) => [comment(`/auditor-pass sc-demo ${sha}`), comment(`/verdict sc-demo ${sha} right`)];
-const PR = { headSha: HEAD, diffSha256: "d".repeat(64) };
+const PR: Stage2PrFacts = { headSha: HEAD, diffSha256: "d".repeat(64), baseOnMain: true, commitsExact: true, recheck: { ok: true, refusals: [], paths: [], newTests: [] } };
 
 test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /verdict AND Auditor /auditor-pass on that exact commit", () => {
   const ok = stage2LandingDecision(goodRecord(), SUITE, PR, both(), AUD, ON);
@@ -282,6 +295,10 @@ test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /ve
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, headSha: NEW }, both(NEW), AUD, ON), "HEAD_NOT_PROPOSAL");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, headSha: "" }, both(), AUD, ON), "HEAD_NOT_PROPOSAL");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, diffSha256: "e".repeat(64) }, both(), AUD, ON), "DIFF_NOT_PROPOSAL");
+  // Auditor #504 blocker 6 / blocker 1: base pinned to main, PR = exactly base..head, check re-run on the real diff
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, baseOnMain: false }, both(), AUD, ON), "BASE_NOT_ON_MAIN");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, commitsExact: false }, both(), AUD, ON), "PR_COMMITS_NOT_BASE_HEAD");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, recheck: { ok: false, refusals: [{ path: "x", reason: "never-zone" }], paths: [], newTests: [] } }, both(), AUD, ON), "CHECK_REFUSED_ON_PR_DIFF");
   // each approval is required, on this id and this sha, by the listed login, traced, with a member association
   has(stage2LandingDecision(goodRecord(), SUITE, PR, [comment(`/verdict sc-demo ${HEAD} right`)], AUD, ON), "AUDITOR_PASS_MISSING");
   has(stage2LandingDecision(goodRecord(), SUITE, PR, [comment(`/auditor-pass sc-demo ${HEAD}`)], AUD, ON), "PEACE_VERDICT_MISSING");
@@ -302,9 +319,10 @@ test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /ve
   assert.notEqual(stage2DiffSha("diff a"), stage2DiffSha("diff b"));
 });
 
-test("M106 limit 5: credit only when the landed change is byte-identical to the recorded proposal", () => {
+test("M106 limit 5 (Auditor #504 blocker 4): credit is hard-refused until a recorded generator run exists, byte-identical or not", () => {
   const rec = goodRecord();
-  assert.deepEqual(stage2Credit(rec, { paths: [...rec.paths].reverse(), blobs: { ...rec.candidateBlobs } }), { credit: true, mark: "PeaceAI stage-2 proposal, landed byte-identical" });
+  assert.deepEqual(stage2Credit(rec, { paths: [...rec.paths].reverse(), blobs: { ...rec.candidateBlobs } }), { credit: false, mark: NO_GENERATOR_MARK });
+  assert.equal(NO_GENERATOR_MARK, "no credit: no generator run record");
   for (const [what, landed] of [
     ["one blob edited", { paths: rec.paths, blobs: { ...rec.candidateBlobs, "peaceai/lib/propose.ts": "9".repeat(40) } }],
     ["extra path", { paths: [...rec.paths, "peaceai/lib/other.ts"], blobs: { ...rec.candidateBlobs, "peaceai/lib/other.ts": "3".repeat(40) } }],
@@ -313,29 +331,54 @@ test("M106 limit 5: credit only when the landed change is byte-identical to the 
   ] as const) {
     const c = stage2Credit(rec, landed);
     assert.equal(c.credit, false, what);
-    assert.match(c.mark, /^no credit: Builder-edited/, what);
+    assert.match(c.mark, /^no credit: no generator run record \(and Builder-edited/, what);
   }
+  // the CLI refuses too, before reading any repo
+  const bin = readFileSync(join(repo, "peaceai/bin/self-change.ts"), "utf8");
+  const c2 = bin.slice(bin.indexOf('mode === "credit2"'), bin.indexOf('mode === "decide2"'));
+  assert.match(c2, /die\(2, `self-change credit2 id=\$\{rec\.id\} credit=false/);
+  assert.doesNotMatch(c2, /credit=true|die\(0/);
 });
 
-test("M106 limit 3/4: the grading job runs only in a private ephemeral Actions job; the workflow template has no secrets and no write", () => {
-  const r = proposeStage2InSandbox({ id: "sc-test", diff: "", source: repo, base: "HEAD", out: "/nonexistent", budget: "1" });
+test("M106 limit 3/4 (Auditor #504 blocker 5): grading runs only in private ephemeral Actions jobs; prepare / run / record are separate jobs", () => {
+  const r = prepareStage2InSandbox({ id: "sc-test", diff: "", source: repo, base: "HEAD", out: "/nonexistent" });
   assert.equal(r.code, 3);
   assert.match(r.message, /^self-change stage2 refused reason=(PRIVATE_ACTIONS_ONLY|PUBLIC_RUNNER_REFUSED)$/, "off Actions, and on the public Workspace runner");
+  const r2 = runStage2InSandbox({ prepFile: "/nonexistent", bundle: "/nonexistent", source: repo, phase: "suite", out: "/nonexistent" });
+  assert.equal(r2.code, 3);
   const wf = readFileSync(join(repo, "peaceai/results-repo/self-change-stage2.yml"), "utf8");
   const code = wf.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
   assert.match(code, /^on:\n  workflow_dispatch:/m, "dispatch only");
   assert.match(code, /^permissions:\n  contents: read\n/m);
-  assert.doesNotMatch(code, /secrets\.|GH_TOKEN|GITHUB_TOKEN|write|git push|gh (pr|issue|api)|\/verdict|\/auditor-pass|merge/);
-  assert.equal((code.match(/persist-credentials: false/g) ?? []).length, 2);
-  assert.match(code, /npm ci --ignore-scripts/);
-  assert.match(code, /github\.repository == 'PeaceG03\/PeaceAI-Results'/);
-  assert.match(code, /self-change\.ts propose2 /);
+  assert.doesNotMatch(code, /secrets\.|GH_TOKEN|GITHUB_TOKEN|write|git push|gh (pr|issue|api)|\/verdict|\/auditor-pass|merge|symlink|ln -s|retry|propose2/);
+  const checkouts = code.match(/actions\/checkout@/g) ?? [];
+  assert.equal((code.match(/persist-credentials: false/g) ?? []).length, checkouts.length, "no checkout persists the token");
+  // three jobs, each once (no retry), on the private repo only
+  const jobs = code.slice(code.indexOf("\njobs:\n"));
+  assert.deepEqual([...jobs.matchAll(/^  ([a-z]+):$/gm)].map((m) => m[1]), ["prepare", "run", "record"]);
+  assert.equal((code.match(/github\.repository == 'PeaceG03\/PeaceAI-Results' && github\.run_attempt == 1/g) ?? []).length, 3);
+  // only the patch file is read from Results; the grader is its own read-only install at main
+  assert.match(code, /sparse-checkout-cone-mode: false\n\s+sparse-checkout: \|\n\s+\/self-proposals\/\$\{\{ inputs\.id \}\}\.patch\n/);
+  assert.match(code, /rm -rf results/);
+  assert.equal((code.match(/npm ci --ignore-scripts --no-audit --no-fund && chmod -R a-w \./g) ?? []).length, 3);
+  assert.match(code, /self-change\.ts prepare2 /);
+  assert.match(code, /self-change\.ts run2 --phase "\$PHASE"/);
+  assert.match(code, /self-change\.ts record2 /);
+  assert.match(code, /phase: \[suite, new-on-candidate, new-on-base\]/);
+  // leftover check after every phase: kill, delete the phase output, fail
+  assert.match(code, /name: Process snapshot\n\s+run: ps -e/);
+  assert.match(code, /name: Leftover process check\n\s+if: always\(\)[\s\S]*kill -9[\s\S]*rm -f "\$RUNNER_TEMP\/run\/\$ID\.\$PHASE\.json"\n\s+exit 1/);
+  // record runs no candidate code: no run2, no bundle checkout
+  const rec = jobs.slice(jobs.indexOf("\n  record:"));
+  assert.doesNotMatch(rec, /run2|git fetch|bundle/);
   assert.doesNotMatch(code, /\$\{\{[^}]*inputs\.[^}]*\}\}[^\n]*\n?\s*node_modules/, "inputs reach the run script only by env");
-  // the CLI decides and prints; it never posts, applies, pushes or merges
+  // the CLI decides and prints; it never posts, applies, pushes or merges; decide2 is --pr only
   const bin = readFileSync(join(repo, "peaceai/bin/self-change.ts"), "utf8");
-  const s2 = bin.slice(bin.indexOf('mode === "propose2"'), bin.indexOf('} else if (mode === "decide")'));
+  const s2 = bin.slice(bin.indexOf('mode === "decide2"'), bin.indexOf('} else if (mode === "decide")'));
   assert.ok(s2.length > 0);
   assert.doesNotMatch(s2, /"push"|"merge"|"comment"|--method|-X|"POST"|writeFileSync/);
+  assert.match(s2, /--approvals is a fixture-only mode/);
+  assert.match(s2, /git", \["show", `\$\{MAIN\}:\$\{p\}`\]/, "flag and approvers come from main");
   const approvers = JSON.parse(readFileSync(join(repo, "peaceai/self/approvers.json"), "utf8"));
   assert.deepEqual(approvers.peace, ["PeaceG03"]);
 });

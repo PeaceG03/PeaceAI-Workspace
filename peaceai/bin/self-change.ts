@@ -8,20 +8,26 @@
 //            `/promote-self-change <id> <sha>`, both traced by comment id/URL, both SHAs = PR head = tested
 //            candidate. Prints only; this tool never posts either comment.
 //   rollback --record FILE --repo DIR            one step: on a NEW branch in DIR, revert the promotion merge
-// M106 stage 2 (proposals that may touch protected, never-zone excluded, paths; Auditor's limits 1-5):
-//   propose2 --id ID --patch FILE [--source URL] [--base REF] [--out DIR] [--budget MIN]
-//            same place rules as propose; never-zone + add-only + list-growth check, base suite on the candidate,
-//            each new test fails on the base and passes on the candidate -> <out>/self-changes/<id>.stage2.{json,bundle}
-//   decide2  --record FILE (--pr N | --approvals FILE) [--repo DIR]   landing decision: flag peaceai/self/stage2.json
-//            on, PR head = graded candidate, PR diff hash = recorded hash, Auditor `/auditor-pass <id> <sha>` and Peace
-//            `/verdict <id> <sha> right`. Prints only; never posts, applies, pushes or merges.
-//   credit2  --record FILE --landed SHA [--repo DIR]   byte-identical credit (any Builder edit = no credit).
+// M106 stage 2 (proposals that may touch protected, never-zone excluded, paths; Auditor's limits 1-5 and the #504
+// review). Grading is split so candidate code never shares a process tree, a dependency install or a job with the
+// grader or the record (each mode below is its own job in the private workflow; no retry, outputs are write-once):
+//   prepare2 --id ID --patch FILE --base SHA [--source URL] [--out DIR]   no candidate code: base must be on main,
+//            never-zone closure of the base tree, strict parse + git apply + staged==parsed + check on git's own
+//            diff -> <out>/<id>.prep.json + <id>.bundle
+//   run2     --prep FILE --bundle FILE --phase suite|new-on-candidate|new-on-base [--source URL] [--out DIR] [--budget MIN]
+//            the ONLY candidate-code step: fresh clone + own npm ci, fresh session per run, leftovers killed and
+//            counted (= failed) -> <out>/<id>.<phase>.json (raw counts, no verdict)
+//   record2  --prep FILE --runs DIR [--out DIR]   no candidate code -> <out>/self-changes/<id>.stage2.json
+//   decide2  --record FILE --pr N [--repo DIR]   landing decision; flag + approvers read from origin/main, base on
+//            main, PR = exactly base..head, check re-run on the real diff, Auditor `/auditor-pass <id> <sha>` and
+//            Peace `/verdict <id> <sha> right`. Prints only; never posts, applies, pushes or merges.
+//   credit2  always refuses: no generator run record exists yet (limit 5 needs provenance, a later PR).
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_DIFF_ARGS, STAGE2_FLAG_PATH, stage2Credit, stage2DiffSha, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2Record } from "../lib/selfchange.ts";
-import { proposeInSandbox, proposeStage2InSandbox, suiteFilesAt } from "../lib/selfpropose.ts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2Record } from "../lib/selfchange.ts";
+import { prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
 
 const argv = process.argv.slice(2);
 const mode = argv[0];
@@ -45,44 +51,52 @@ if (mode === "propose") {
     nodeModules: existsSync(join(process.cwd(), "node_modules")) ? join(process.cwd(), "node_modules") : undefined,
   });
   die(r.code, r.message);
-} else if (mode === "propose2") {
+} else if (mode === "prepare2" || mode === "run2") {
   const here = selfChangeAllowedHere(process.env);
   if (!here.ok) die(3, `self-change stage2 refused reason=${here.reason}`);
-  const id = opt("id") ?? "";
-  if (!/^sc-[a-z0-9-]{3,48}$/.test(id)) die(1, "usage: --id sc-<name>");
-  const r = proposeStage2InSandbox({
-    id, diff: readFileSync(resolve(opt("patch") ?? ""), "utf8"), source: opt("source") ?? `https://github.com/${WORKSPACE_REPO}.git`,
-    base: opt("base") ?? "origin/main", out: resolve(opt("out") ?? join(process.env.RUNNER_TEMP ?? "", "self-change-records")), budget: opt("budget"),
-    nodeModules: existsSync(join(process.cwd(), "node_modules")) ? join(process.cwd(), "node_modules") : undefined,
-  });
-  die(r.code, r.message);
-} else if (mode === "decide2" || mode === "credit2") {
-  const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as Stage2Record;
-  const liveRepo = resolve(opt("repo") ?? process.cwd());
-  if (mode === "credit2") {
-    const landed = opt("landed") ?? "";
-    if (!/^[0-9a-f]{40}$/.test(landed)) die(1, "usage: --landed <40-hex merge sha>");
-    const paths = git(liveRepo, "diff", "--name-only", "--no-renames", `${landed}^1`, landed).split("\n").filter(Boolean);
-    const blobs: Record<string, string | null> = {};
-    for (const p of paths) { const r = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${landed}:${p}`], { cwd: liveRepo, encoding: "utf8" }); blobs[p] = r.status === 0 ? r.stdout.trim() : null; }
-    const c = stage2Credit(rec, { paths, blobs });
-    die(c.credit ? 0 : 2, `self-change credit2 id=${rec.id} credit=${c.credit} mark="${c.mark}"`);
+  const source = opt("source") ?? `https://github.com/${WORKSPACE_REPO}.git`;
+  const out = resolve(opt("out") ?? join(process.env.RUNNER_TEMP ?? "", "self-change-records"));
+  if (mode === "prepare2") {
+    const id = opt("id") ?? "";
+    if (!/^sc-[a-z0-9-]{3,48}$/.test(id)) die(1, "usage: --id sc-<name>");
+    const r = prepareStage2InSandbox({ id, diff: readFileSync(resolve(opt("patch") ?? ""), "utf8"), source, base: opt("base") ?? "", out });
+    die(r.code, r.message);
   }
-  const pr = opt("pr");
-  let ap: { headSha: string; comments: CommandComment[] };
-  if (pr) {
-    if (!/^\d+$/.test(pr)) die(1, "usage: --pr <number>");
-    const gh = (path: string) => execFileSync("gh", ["api", "--paginate", "--jq", ".[] | tojson", path], { encoding: "utf8", maxBuffer: 1 << 26 }).split("\n").filter(Boolean).map((l) => JSON.parse(l));
-    const headSha = execFileSync("gh", ["api", `repos/${WORKSPACE_REPO}/pulls/${pr}`, "--jq", ".head.sha"], { encoding: "utf8" }).trim();
-    const comments = gh(`repos/${WORKSPACE_REPO}/issues/${pr}/comments`) as any[];
-    ap = { headSha, comments: comments.map((c) => ({ id: c.id, url: c.html_url, body: c.body ?? "", author: c.user?.login, association: c.author_association, createdAt: c.created_at })) };
-  } else ap = JSON.parse(readFileSync(resolve(opt("approvals") ?? ""), "utf8"));
-  const approvers = JSON.parse(readFileSync(resolve(import.meta.dirname, "../self/approvers.json"), "utf8"));
-  // the flag is read from the LIVE main checkout (never from the proposal), the PR diff from the head the PR names
-  const flag = existsSync(join(liveRepo, STAGE2_FLAG_PATH)) ? readFileSync(join(liveRepo, STAGE2_FLAG_PATH), "utf8") : null;
-  const head = /^[0-9a-f]{40}$/.test(ap.headSha ?? "") ? ap.headSha : "";
-  const diffSha = head && spawnSync("git", ["cat-file", "-e", `${head}^{commit}`], { cwd: liveRepo }).status === 0 ? stage2DiffSha(git(liveRepo, ...STAGE2_DIFF_ARGS, rec.baseSha, head)) : "";
-  const d = stage2LandingDecision(rec, suiteFilesAt(liveRepo, rec.baseSha), { headSha: head, diffSha256: diffSha }, ap.comments ?? [], { auditor: approvers.auditor ?? [], peace: approvers.peace ?? [] }, flag);
+  const r = runStage2InSandbox({ prepFile: resolve(opt("prep") ?? ""), bundle: resolve(opt("bundle") ?? ""), source, phase: opt("phase") ?? "", out, budget: opt("budget") });
+  die(r.code, r.message);
+} else if (mode === "record2") {
+  const prep = JSON.parse(readFileSync(resolve(opt("prep") ?? ""), "utf8")) as Stage2Prep;
+  const dir = resolve(opt("runs") ?? "");
+  const runs = STAGE2_PHASES.map((ph) => join(dir, `${prep.id}.${ph}.json`)).filter((f) => existsSync(f)).map((f) => JSON.parse(readFileSync(f, "utf8")) as Stage2PhaseRun);
+  const rec = recordStage2(prep, runs);
+  const file = join(resolve(opt("out") ?? join(process.env.RUNNER_TEMP ?? "", "self-change-records")), "self-changes", `${prep.id}.stage2.json`);
+  if (existsSync(file)) die(1, `refusing to overwrite ${file} (a stage-2 failure is final; rerun with a new id)`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(rec, null, 1) + "\n", { flag: "wx" });
+  die(rec.status === "awaiting-review" ? 0 : 3, `self-change stage2 record id=${rec.id} status=${rec.status} phases=${rec.phases.map((p) => `${p.phase}:${p.ran ? "ran" : "missing"}${p.leftovers ? `,leftovers=${p.leftovers}` : ""}`).join(" ")}`);
+} else if (mode === "credit2") {
+  // Auditor #504 blocker 4: no credit without a recorded generator run (task text only, output hash bound). None exists.
+  const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as Stage2Record;
+  die(2, `self-change credit2 id=${rec.id} credit=false mark="${NO_GENERATOR_MARK}"`);
+} else if (mode === "decide2") {
+  if (opt("approvals") !== undefined) die(1, "self-change decide2 refused: --approvals is a fixture-only mode (tests call stage2LandingDecision directly); use --pr N");
+  const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as Stage2Record;
+  const repo = resolve(opt("repo") ?? process.cwd());
+  const pr = opt("pr") ?? "";
+  if (!/^\d+$/.test(pr)) die(1, "usage: decide2 --record FILE --pr <number> [--repo DIR]");
+  const origin = spawnSync("git", ["remote", "get-url", "origin"], { cwd: repo, encoding: "utf8" }).stdout.trim().replace(/\.git$/, "");
+  if (!origin.endsWith(`github.com/${WORKSPACE_REPO}`)) die(1, `self-change decide2 refused: --repo origin must be ${WORKSPACE_REPO}`);
+  const MAIN = "refs/peaceai/decide2-main";
+  git(repo, "fetch", "--quiet", "--no-tags", "origin", `+refs/heads/main:${MAIN}`, `+refs/pull/${pr}/head:refs/peaceai/decide2-pr`);
+  const gh = (path: string) => execFileSync("gh", ["api", "--paginate", "--jq", ".[] | tojson", path], { encoding: "utf8", maxBuffer: 1 << 26 }).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const headSha = execFileSync("gh", ["api", `repos/${WORKSPACE_REPO}/pulls/${pr}`, "--jq", ".head.sha"], { encoding: "utf8" }).trim();
+  const comments = (gh(`repos/${WORKSPACE_REPO}/issues/${pr}/comments`) as any[]).map((c) => ({ id: c.id, url: c.html_url, body: c.body ?? "", author: c.user?.login, association: c.author_association, createdAt: c.created_at })) as CommandComment[];
+  const prCommits = (gh(`repos/${WORKSPACE_REPO}/pulls/${pr}/commits`) as any[]).map((c) => String(c.sha));
+  // flag and approvers from MAIN (never from the PR, the proposal or this checkout's working tree)
+  const atMain = (p: string) => { const r = spawnSync("git", ["show", `${MAIN}:${p}`], { cwd: repo, encoding: "utf8" }); return r.status === 0 ? r.stdout : null; };
+  const approvers = JSON.parse(atMain("peaceai/self/approvers.json") ?? "{}");
+  const facts = stage2PrFacts(repo, rec, headSha, prCommits, MAIN);
+  const d = stage2LandingDecision(rec, suiteFilesAt(repo, rec.baseSha), facts, comments, { auditor: approvers.auditor ?? [], peace: approvers.peace ?? [] }, atMain(STAGE2_FLAG_PATH));
   die(d.ok ? 0 : 2, `self-change decide2 id=${rec.id} land=${d.ok}${d.ok ? ` auditor=${d.auditorComment} peace=${d.architectComment}` : ` reasons=${d.reasons.join(",")}`}`);
 } else if (mode === "decide") {
   const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as SelfChangeRecord;
@@ -119,4 +133,4 @@ if (mode === "propose") {
   });
   if (bad.length) die(3, `self-change rollback id=${rec.id} INCOMPLETE paths=${bad.length}`);
   die(0, `self-change rollback id=${rec.id} branch=${branch} reverts=${of!.slice(0, 12)} head=${git(repo, "rev-parse", "HEAD").slice(0, 12)} (open it as a normal PR)`);
-} else die(1, "usage: self-change.ts propose|decide|rollback|propose2|decide2|credit2");
+} else die(1, "usage: self-change.ts propose|decide|rollback|prepare2|run2|record2|decide2|credit2");

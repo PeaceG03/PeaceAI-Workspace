@@ -1,15 +1,21 @@
 name: self-change-stage2
 
 # M106 (installed in PeaceAI-Results from PeaceAI-Workspace peaceai/results-repo/; BUILDER-WRITTEN, Peace-approved
-# 2026-10-25, for Auditor review). The private, short-lived grading job for a stage-2 self-change PROPOSAL.
-# It only grades: fresh clone of the public Workspace at the base, apply PeaceAI's patch
-# (self-proposals/<id>.patch in this repo), never-zone + add-only + list-growth check, the UNCHANGED base suite on
-# the candidate, each new test must fail on the base and pass on the candidate, and record the proposal diff
-# hash. No secrets, no write permission, no push, no PR, no comment; the token is not persisted and not in the
-# environment of the grading step (selfChangeAllowedHere refuses CREDENTIALS_IN_ENV). The artifact holds only the
-# record (hashes, paths, test names, counts) and the candidate bundle (the public Workspace plus the public patch).
-# Landing is decided later in the Workspace by `self-change.ts decide2`: flag peaceai/self/stage2.json on (only
-# Peace flips it), Peace `/verdict <id> <sha> right` AND Auditor `/auditor-pass <id> <sha>` on that exact head.
+# 2026-10-25, revised for Auditor's #504 review). The private, short-lived grading run for a stage-2 self-change
+# PROPOSAL. It only grades; no secrets, no write permission, no push, no PR, no comment; no token is persisted or in
+# any grading step's environment (selfChangeAllowedHere refuses CREDENTIALS_IN_ENV).
+# Three kinds of job, so candidate code never shares a job, process tree or dependency install with the grader or
+# the record:
+#   prepare  (no candidate code)  the ONLY file read from this repo is self-proposals/<id>.patch (sparse checkout);
+#            the grader is a separate read-only Workspace checkout at main with its own install; base pinned to
+#            main, never-zone closure of the base tree, strict parse, staged==parsed, check on git's own diff.
+#   run      (one fresh VM per phase; the only place candidate code runs) fresh clone + its own npm ci inside
+#            run2; a process snapshot before and a leftover check after (leftovers = phase output deleted = failed).
+#   record   (no candidate code) builds the record from the prepare output and the phase outputs.
+# No retry: run_attempt must be 1 and outputs are write-once; a failure is final (rerun = new id).
+# Landing is decided later in the Workspace by `self-change.ts decide2 --pr N`: flag peaceai/self/stage2.json on
+# main (only Peace flips it), Peace `/verdict <id> <sha> right` AND Auditor `/auditor-pass <id> <sha>` on that exact
+# head, base on main and the PR exactly base..head. Credit is refused until a recorded generator run exists.
 on:
   workflow_dispatch:
     inputs:
@@ -17,7 +23,7 @@ on:
         description: "proposal id (sc-<name>); the patch is self-proposals/<id>.patch on main"
         required: true
       base:
-        description: "Workspace base commit (40 hex)"
+        description: "Workspace base commit (40 hex, an ancestor of Workspace main)"
         required: true
 
 permissions:
@@ -27,42 +33,173 @@ concurrency:
   group: self-change-stage2-${{ inputs.id }}
   cancel-in-progress: false
 
+env:
+  ID: ${{ inputs.id }}
+  BASE: ${{ inputs.base }}
+  SOURCE: https://github.com/PeaceG03/PeaceAI-Workspace.git
+
 jobs:
-  grade:
-    if: github.repository == 'PeaceG03/PeaceAI-Results'
+  prepare:
+    if: github.repository == 'PeaceG03/PeaceAI-Results' && github.run_attempt == 1
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$ID" =~ ^sc-[a-z0-9-]{3,48}$ ]] || { echo "bad id"; exit 1; }
+          [[ "$BASE" =~ ^[0-9a-f]{40}$ ]] || { echo "bad base"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           path: results
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /self-proposals/${{ inputs.id }}.patch
+      - name: Take only the patch file
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/in"
+          cp "results/self-proposals/$ID.patch" "$RUNNER_TEMP/in/proposal.patch"
+          rm -rf results
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: PeaceG03/PeaceAI-Workspace
-          ref: ${{ inputs.base }}
-          path: workspace
+          ref: main
+          path: grader
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: Install (no lifecycle scripts)
-        working-directory: workspace
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Grade the proposal
-        working-directory: workspace
-        env:
-          ID: ${{ inputs.id }}
-          BASE: ${{ inputs.base }}
+      - name: Grader install (read-only after)
+        working-directory: grader
+        run: npm ci --ignore-scripts --no-audit --no-fund && chmod -R a-w .
+      - name: Prepare (no candidate code)
+        working-directory: grader
         run: |
           set -euo pipefail
-          case "$ID" in sc-[a-z0-9-]*) ;; *) echo "bad id"; exit 1 ;; esac
-          case "$BASE" in *[!0-9a-f]*|'') echo "bad base"; exit 1 ;; esac
-          [ "${#BASE}" = 40 ] || { echo "bad base"; exit 1; }
-          node_modules/.bin/tsx peaceai/bin/self-change.ts propose2 --id "$ID" --base "$BASE" \
-            --patch "../results/self-proposals/$ID.patch" --source https://github.com/PeaceG03/PeaceAI-Workspace.git \
-            --out "$RUNNER_TEMP/self-change-records"
+          node_modules/.bin/tsx peaceai/bin/self-change.ts prepare2 --id "$ID" --base "$BASE" \
+            --patch "$RUNNER_TEMP/in/proposal.patch" --source "$SOURCE" --out "$RUNNER_TEMP/prep"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: self-change-stage2-${{ inputs.id }}-prep
+          path: ${{ runner.temp }}/prep/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  run:
+    needs: prepare
+    if: github.repository == 'PeaceG03/PeaceAI-Results' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        phase: [suite, new-on-candidate, new-on-base]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PeaceG03/PeaceAI-Workspace
+          ref: main
+          path: grader
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Grader install (read-only after)
+        working-directory: grader
+        run: npm ci --ignore-scripts --no-audit --no-fund && chmod -R a-w .
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: self-change-stage2-${{ inputs.id }}-prep
+          path: ${{ runner.temp }}/prep
+      - name: Process snapshot
+        run: ps -e -o pid= | sort -n > "$RUNNER_TEMP/ps-before"
+      - name: Run phase ${{ matrix.phase }} (candidate code; fresh clone + own install inside)
+        working-directory: grader
+        env:
+          PHASE: ${{ matrix.phase }}
+        run: |
+          set -euo pipefail
+          node_modules/.bin/tsx peaceai/bin/self-change.ts run2 --phase "$PHASE" \
+            --prep "$RUNNER_TEMP/prep/$ID.prep.json" --bundle "$RUNNER_TEMP/prep/$ID.bundle" \
+            --source "$SOURCE" --out "$RUNNER_TEMP/run"
+      - name: Leftover process check
+        if: always()
+        env:
+          PHASE: ${{ matrix.phase }}
+        run: |
+          set -uo pipefail
+          ps -e -o pid= | sort -n > "$RUNNER_TEMP/ps-after"
+          left=""
+          for p in $(comm -13 "$RUNNER_TEMP/ps-before" "$RUNNER_TEMP/ps-after"); do
+            [ "$p" = "$$" ] && continue
+            [ -d "/proc/$p" ] || continue
+            ppid=$(awk '{print $4}' "/proc/$p/stat" 2>/dev/null || echo 0)
+            [ "$ppid" = "$$" ] && continue
+            left="$left $p"
+          done
+          if [ -n "$left" ]; then
+            echo "LEFTOVER processes after phase $PHASE:$left"
+            kill -9 $left 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/run/$ID.$PHASE.json"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: success()
+        with:
+          name: self-change-stage2-${{ inputs.id }}-run-${{ matrix.phase }}
+          path: ${{ runner.temp }}/run/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  record:
+    needs: [prepare, run]
+    if: always() && github.repository == 'PeaceG03/PeaceAI-Results' && github.run_attempt == 1 && needs.prepare.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PeaceG03/PeaceAI-Workspace
+          ref: main
+          path: grader
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Grader install (read-only after)
+        working-directory: grader
+        run: npm ci --ignore-scripts --no-audit --no-fund && chmod -R a-w .
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: self-change-stage2-${{ inputs.id }}-prep
+          path: ${{ runner.temp }}/prep
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: self-change-stage2-${{ inputs.id }}-run-suite
+          path: ${{ runner.temp }}/runs
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: self-change-stage2-${{ inputs.id }}-run-new-on-candidate
+          path: ${{ runner.temp }}/runs
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: self-change-stage2-${{ inputs.id }}-run-new-on-base
+          path: ${{ runner.temp }}/runs
+      - name: Record (no candidate code; missing or leftover phase = failed)
+        working-directory: grader
+        run: |
+          set -euo pipefail
+          node_modules/.bin/tsx peaceai/bin/self-change.ts record2 --prep "$RUNNER_TEMP/prep/$ID.prep.json" \
+            --runs "$RUNNER_TEMP/runs" --out "$RUNNER_TEMP/self-change-records"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
