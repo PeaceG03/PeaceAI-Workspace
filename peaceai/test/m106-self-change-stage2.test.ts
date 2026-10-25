@@ -78,13 +78,16 @@ test("M106 limit 1: every never-zone path is refused, even as a proposal; engine
     "src/universe.ts", "docs/sub/a.md", "docs/A.md", "/peaceai/lib/x.ts", "peaceai/../package.json", "peaceai//lib/x.ts", "peaceai/./lib/x.ts",
   ];
   for (const p of never) assert.ok(stage2PathRefusal(p), `${p} must be refused`);
-  // Stage 1 (M11) is closed to these too, except the gaps below. This PR leaves PROTECTED_SELF (and its pinned
-  // digest) unchanged; the gaps are listed for Auditor as a follow-up tightening, and stage 2 closes them already.
-  const STAGE1_GAPS = ["peaceai/.env", "peaceai/approved.json", "peaceai/read-only-ops.json", "peaceai/results-repo/self-change-stage2.yml", "peaceai/results-repo/rule-approval.yml"];
-  for (const p of never.filter((p) => !p.startsWith("src/") && !p.startsWith("docs/sub") && p !== "docs/A.md" && !STAGE1_GAPS.includes(p))) {
+  // Stage 1 (M11) is closed to every one of these too.
+  // The former STAGE1_GAPS are closed in stage 1 too (Peace-approved PROTECTED_DIGEST re-pin, 2026-10-25).
+  const FORMER_STAGE1_GAPS = ["peaceai/.env", "peaceai/approved.json", "peaceai/read-only-ops.json", "peaceai/results-repo/self-change-stage2.yml", "peaceai/results-repo/rule-approval.yml", "peaceai/results-repo/rule-approval.mjs", "peaceai/lib/.env", ".env.local", "src/approved.json"];
+  for (const p of never.filter((p) => !p.startsWith("src/") && !p.startsWith("docs/sub") && p !== "docs/A.md")) {
     assert.ok(protectedReason(p), `${p} must also be closed to M11 stage 1`);
   }
-  for (const p of STAGE1_GAPS) assert.ok(stage2PathRefusal(p), `${p}: stage 2 closes the stage-1 gap`);
+  for (const p of FORMER_STAGE1_GAPS) {
+    assert.ok(stage2PathRefusal(p), `${p}: stage 2 refuses it`);
+    assert.ok(protectedReason(p), `${p}: stage 1 refuses it too`);
+  }
   for (const p of ["peaceai/lib/propose.ts", "peaceai/lib/learned.ts", "peaceai/lib/nlparse.ts", "peaceai/bin/generate.ts", "peaceai/test/m999-x.test.ts", "peaceai/docs/a.md", "docs/guide.md"]) {
     assert.equal(stage2PathRefusal(p), null, p);
   }
@@ -426,4 +429,5 @@ test("M106 limit 3/4 (Auditor #504 blocker 5): grading runs only in private ephe
   assert.match(s2, /git", \["show", `\$\{MAIN\}:\$\{p\}`\]/, "flag and approvers come from main");
   const approvers = JSON.parse(readFileSync(join(repo, "peaceai/self/approvers.json"), "utf8"));
   assert.deepEqual(approvers.peace, ["PeaceG03"]);
+  assert.deepEqual(approvers.auditor, ["PeaceG03"], "stage-2 landing: Peace /verdict (peace) + Auditor /auditor-pass (auditor), confirmed by Peace 2026-10-25");
 });

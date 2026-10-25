@@ -67,6 +67,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^\.github\/workflows\/corpus-checks\.yml$/, why: "the dispatch-only whole-corpus memcheck and core-free proof (no training)" },
   { pattern: /^\.github\/workflows\/derive-practice\.yml$|^peaceai\/lib\/derive-practice(-kinds)?\.ts$|^peaceai\/lib\/derive-practice-families\.json$|^peaceai\/bin\/derive-practice(-kinds|-dedup)?\.ts$|^peaceai\/bin\/derive-family-census\.ts$|^peaceai\/lib\/derive-family-census\.ts$/, why: "M100 derive practice workflow (checks only, no training), its families manifest and the tools it runs (with the census lib the census bin imports: Peace, 2026-10-23, for now)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
+  { pattern: /(^|\/)\.env(\.[^/]*)?$|(^|\/)approved\.json$|^peaceai\/read-only-ops\.json$|^peaceai\/results-repo\//, why: "the stage-1 gaps the M106 cross-check found (stage 2 already closes them; Peace approved this re-pin 2026-10-25): .env files anywhere, any approved.json, the read-only-ops enable list and the Results-repo workflow templates (self-change-stage2.yml, rule-approval.yml/.mjs)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
 ];
