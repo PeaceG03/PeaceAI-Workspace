@@ -103,6 +103,7 @@ PR route with no GRANDFATHERED entry. Coverage becomes 89/220 (40.5%) from 2026-
 Seq 276-277 record Peace's tasks #501 (isRetryableR2Status) and #502 (r2RetryDelayMs), behavior-only refiles of #486/#487, the first
 PeaceAI landings on DERIVE_FROM_BEHAVIOR (public-derive-from-behavior-v1, approved via #499 as 8d60a96; added to APPROVED_SINCE from
 2026-10-23 18:22 MT). PeaceAI derived each new function from the issue's examples, including Peace's own answers to the deriver's
-questions (review comments 6389128432 and 6383886641), each `/verdict A right`. The peacestocks-write runs were approved by Builder with
+questions (comment 6388142538 and his 699/464/30000 answers on the issues); PeaceAI review comments 6389128432 and
+6383886641, each `/verdict A right`. The peacestocks-write runs were approved by Builder with
 Peace's explicit permission; after Auditor byte-check PASS PeaceAI's verdict PRs PeaceSTOCKS#70/#71 were squash-merged as d6f3da9 and
 0bbb039 (rows in merge order). Coverage becomes 91/222 (41.0%) from 2026-10-24.
