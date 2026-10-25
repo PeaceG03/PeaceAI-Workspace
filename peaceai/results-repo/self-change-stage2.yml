@@ -153,6 +153,8 @@ jobs:
           set -euo pipefail
           sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
           if sudo -n -u peaceai-cand -- sudo -n true 2>/dev/null; then echo "peaceai-cand must not have sudo"; exit 1; fi
+          chmod 700 "$HOME"
+          if sudo -n -u peaceai-cand test -r "$HOME"; then echo "peaceai-cand must not read the runner HOME"; exit 1; fi
       - name: Process snapshot
         run: ps -e -o pid= | sort -n > "$RUNNER_TEMP/ps-before"
       - name: Run phase ${{ matrix.phase }} (candidate code as peaceai-cand; fresh clone + own install inside)

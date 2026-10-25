@@ -246,5 +246,5 @@ test("script: one merge call, always squash + --match-head-commit; no push, bran
 test("protected: the catch-up script and its logic are inside the protected set, with PROTECTED_SELF unchanged", () => {
   for (const p of ["peaceai/bin/approve-rule-catchup.ts", "peaceai/lib/approval.ts", "peaceai/test/m82-approval-catchup.test.ts", ".github/workflows/peace-approve-rule.yml"]) assert.ok(protectedReason(p), p);
   const m12 = read("peaceai/test/m12-test-rule.test.ts");
-  assert.equal(createHash("sha256").update(PROTECTED_SELF.map((x) => x.pattern.source).join("\n")).digest("hex"), /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1]);
+  assert.equal(createHash("sha256").update(PROTECTED_SELF.map((x) => `/${x.pattern.source}/${x.pattern.flags}`).join("\n")).digest("hex"), /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1]);
 });
