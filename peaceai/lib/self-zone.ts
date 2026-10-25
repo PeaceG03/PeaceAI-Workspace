@@ -8,7 +8,7 @@
 //               themselves (selfchange.ts PROTECTED_SELF and this file). A candidate touching any of them is refused
 //               in applyRule (reason self_protected_path) and again by the protected-file digest in Job B.
 //   SAFE ZONE - the only non-src paths a Workspace candidate may create or edit: new tests under
-//               peaceai/self-tests/, docs under peaceai/docs/, and the NAMED low-risk helpers below. Nothing
+//               peaceai/self-tests/, docs under peaceai/docs/ and docs/ (M106), and the NAMED low-risk helpers below. Nothing
 //               outside peaceai/self-tests/ may import from it (pinned by tests), so a safe-zone edit can never
 //               change what a gate computes.
 import { createHash } from "node:crypto";
@@ -45,6 +45,8 @@ export const SAFE_ZONE: readonly { pattern: RegExp; what: string }[] = [
   { pattern: new RegExp(String.raw`^peaceai/self-tests/${SEG}\.test\.ts$`), what: "a new self-test" },
   { pattern: new RegExp(String.raw`^peaceai/self-tests/helpers/${SEG}\.test\.ts$`), what: "a new test of a named helper" },
   { pattern: new RegExp(String.raw`^peaceai/docs/${SEG}\.md$`), what: "a doc page" },
+  // M106 (Auditor ruling (A) on the self-change plan, 2026-10-25): root docs/*.md, the same shape rules as peaceai/docs/
+  { pattern: new RegExp(String.raw`^docs/${SEG}\.md$`), what: "a root doc page" },
 ];
 
 const plain = (p: string) => !p.startsWith("/") && !p.includes("\\") && !p.split("/").some((s) => s === "" || s === "." || s === ".." || s.startsWith("."));

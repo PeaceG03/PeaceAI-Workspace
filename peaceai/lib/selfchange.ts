@@ -3,6 +3,7 @@
 // in the live checkout. Nothing here pushes, merges or edits the live tree; promotion is a normal PR that a human
 // lands after the gates below, and every self-change is recorded in private Results with a one-step rollback.
 import { createHash } from "node:crypto";
+import ts from "typescript";
 
 export const SELF_SCHEMA = "peaceai-self-change:v1";
 export const AUDITOR_COMMAND = "/auditor-pass";
@@ -67,6 +68,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^\.github\/workflows\/derive-practice\.yml$|^peaceai\/lib\/derive-practice(-kinds)?\.ts$|^peaceai\/lib\/derive-practice-families\.json$|^peaceai\/bin\/derive-practice(-kinds|-dedup)?\.ts$|^peaceai\/bin\/derive-family-census\.ts$|^peaceai\/lib\/derive-family-census\.ts$/, why: "M100 derive practice workflow (checks only, no training), its families manifest and the tools it runs (with the census lib the census bin imports: Peace, 2026-10-23, for now)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
+  { pattern: /^peaceai\/results-repo\//, why: "the workflow templates installed in PeaceAI-Results: rule approval and the stage-2 self-change grading job (M106)" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
 ];
 
@@ -245,4 +247,354 @@ export function promotionDecision(rec: SelfChangeRecord, liveFilesAtBase: readon
 /** The record's own check must still hold; a record cannot carry a passing check for refused paths. */
 function checkOkAgain(rec: SelfChangeRecord): boolean {
   return rec.paths.every((p) => protectedReason(p) === null);
+}
+
+// ======================================================================================================================
+// M106 SELF-CHANGE STAGE 2 (Peace, 2026-10-25 00:29 MT: "PeaceAI may propose changes to its own protected code under
+// all of Auditor's limits"). It extends the M11 sandbox above, it is not a second framework:
+//   1. NEVER_ZONE: paths PeaceAI may not even PROPOSE (stage2PathRefusal). Everything else under peaceai/ and the root
+//      docs/*.md pages may be proposed, protected or not.
+//   2. Tests are ADD-ONLY against the base (addOnlyTestRefusals): every existing top-level statement stays
+//      AST-identical and in order; added statements are imports, consts, functions and plain test()/it() calls only;
+//      no skip/only/todo/timeout/hooks/mocks/stubs, no writes to anything not declared in the added code. Growing any
+//      allowlist / exemption / KNOWN_* / GRANDFATHERED / accepted-reason list anywhere is a weakening (listGrowth).
+//   3. Grading (selfpropose.ts proposeStage2InSandbox, private ephemeral Actions job only): the UNCHANGED base suite
+//      passes on the candidate, and every new test fails on the base and passes on the candidate (stage2GradeDecision).
+//   4. Landing: PeaceAI only proposes. The recorded diff hash must equal the PR's diff, the PR head must be the graded
+//      candidate commit, and it needs Peace `/verdict <id> <sha> right` AND Auditor `/auditor-pass <id> <sha>` on that
+//      exact commit (a later push moves the head and voids both). OFF unless peaceai/self/stage2.json enables it, and
+//      only Peace flips that file (it is in the never-zone).
+//   5. Credit only when the landed change is byte-identical to the recorded proposal (stage2Credit).
+// ======================================================================================================================
+
+export const STAGE2_SCHEMA = "peaceai-self-change:v2";
+export const STAGE2_FLAG_PATH = "peaceai/self/stage2.json";
+export const STAGE2_FLAG_SCHEMA = "peaceai-self-stage2:v1";
+export const VERDICT_COMMAND = "/verdict";
+/** The proposal hash: sha256 of the canonical diff text (`git diff --binary --full-index --no-color --no-ext-diff --no-renames`). */
+export const STAGE2_DIFF_ARGS = ["diff", "--binary", "--full-index", "--no-color", "--no-ext-diff", "--no-renames"] as const;
+export const stage2DiffSha = (diffText: string): string => sha256(diffText.replace(/\s+$/, "") + "\n");
+
+/** Auditor limit 1: never proposable (checked on every side of every diff entry). */
+export const NEVER_ZONE: readonly { pattern: RegExp; why: string }[] = [
+  { pattern: /(^|\/)\.[^/]/, why: "dot-paths: .github workflows, git hooks, .npmrc / .env secret and environment config" },
+  { pattern: /(^|\/)CODEOWNERS$|^(README\.md|CONSTITUTION[^/]*|SECURITY[^/]*|LICENSE[^/]*)$/, why: "CODEOWNERS and governance documents" },
+  { pattern: /(^|\/)[^/]*public-origin[^/]*$/i, why: "the public-origin allowlist (leak gate)" },
+  { pattern: /^(package(-lock)?\.json|npm-shrinkwrap\.json|tsconfig[^/]*\.json)$/, why: "dependencies and build config (install scripts, test runner flags)" },
+  { pattern: /^peaceai\/lib\/(leak|kernelguard|coretext|coreindex|substr|policy|prguard|scope)\.ts$|^peaceai\/bin\/(leak-scan|prepush-scan|core-scan|kernel-guard|pr-guard)\.ts$|^peaceai\/proof\//, why: "leak-check, scope and tamper-proof gates" },
+  { pattern: /^peaceai\/lib\/(self-zone|selfchange|selfpropose)\.ts$|^peaceai\/bin\/self-change\.ts$|^peaceai\/results-repo\/|^peaceai\/self\//, why: "the self-change rules, their grading job, its workflow template, approvers and the stage-2 enable flag" },
+  { pattern: /^peaceai\/rules\/|(^|\/)approved\.json$/, why: "approved.json and every rule approval, learned spec and proposal record" },
+  { pattern: /^peaceai\/lib\/(approval|approved|verdict|trigger|results|carry|regrade|stacked|rebase|patch)\.ts$|^peaceai\/bin\/(approve-rule[^/]*|check-approved-list|parse-verdict|record-verdict|verdict-patch|verdict-stale|apply-verdict-patch|carry-check|carry-verdict|record-task|regrade-fetch)\.ts$/, why: "the /verdict, /approve-rule and /auditor-pass verification and landing code" },
+  { pattern: /^peaceai\/bin\/(test-candidates|gate|regate)\.ts$|^peaceai\/lib\/(gate|records|diff)\.ts$/, why: "the Job B grading harness and its records" },
+  { pattern: /^peaceai\/bin\/[^/]+\.sh$/, why: "shell scripts run on the trusted runner with secrets" },
+  { pattern: /^peaceai\/targets\.json$|^peaceai\/lib\/target\.ts$|^peaceai\/read-only-ops\.json$/, why: "enable flips and allowed-file config (targets.json selfZone, read-only-ops enabled)" },
+  { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model and its job guard" },
+  { pattern: /^builder-log\//, why: "the Builder task log and the coverage counter (check.ts, trace.ts, coverage.ts and their tests)" },
+];
+
+/** Strings a stage-2 proposal may not ADD anywhere (credentials, hooks, approval commands, dynamic code, gate variables). */
+const STAGE2_CONTENT_BANNED: readonly { pattern: RegExp; why: string }[] = [
+  { pattern: /GITHUB_TOKEN|GH_TOKEN|DEPLOY_KEY|PEACEAI_[A-Z_]*KEY|TARGET_PR_TOKEN|secrets\./, why: "names a credential" },
+  { pattern: /hooksPath|--no-verify/, why: "touches git hooks" },
+  { pattern: /\/approve-rule|\/promote-self-change|\/auditor-pass/, why: "names an approval command" },
+  { pattern: /\beval\s*\(|new Function\s*\(|require\(\s*[^"'`]/, why: "dynamic code loading" },
+  { pattern: /process\.env\.(PEACEAI_SELF|GITHUB_)/, why: "reads a self-change / runner variable" },
+];
+
+const plainPath = (p: string) => !p.startsWith("/") && !p.includes("\\") && !p.split("/").some((s) => s === "" || s === "." || s === "..");
+/** Where a stage-2 proposal may write: PeaceAI's own tree (peaceai/**) and the root doc pages (docs/<seg>.md). */
+const STAGE2_AREA = /^peaceai\/|^docs\/[a-z0-9][a-z0-9._-]{0,80}\.md$/;
+
+/** Auditor limit 1: why PeaceAI may not propose a change to this path, or null. */
+export function stage2PathRefusal(path: string): string | null {
+  if (!plainPath(path)) return "never-zone: path is not a plain relative path";
+  const n = NEVER_ZONE.find((z) => z.pattern.test(path));
+  if (n) return `never-zone: ${n.why}`;
+  if (!STAGE2_AREA.test(path)) return "outside the stage-2 areas (peaceai/**, docs/*.md)";
+  return null;
+}
+
+/** A test file for limit 2: any *.test.ts, and everything under peaceai/test/ (its fixtures too). */
+export const isStage2TestPath = (p: string): boolean => /\.test\.(ts|mts|js|mjs)$/.test(p) || /^peaceai\/test\//.test(p);
+
+const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
+function parseTs(path: string, text: string): ts.SourceFile | null {
+  const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  return (sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length ? null : sf;
+}
+/** Canonical, comment- and whitespace-free form of a node: two statements are AST-identical iff these are equal. */
+const canon = (n: ts.Node, sf: ts.SourceFile): string => printer.printNode(ts.EmitHint.Unspecified, n, sf);
+
+const BANNED_TEST_NAMES = new Set(["skip", "only", "todo", "timeout", "concurrency", "mock", "mocks", "stub", "stubs", "spy", "spyOn", "fake", "fakes", "sinon", "jest", "vi", "before", "beforeEach", "after", "afterEach", "beforeAll", "afterAll", "defineProperty", "defineProperties", "setPrototypeOf", "Reflect", "__proto__", "prototype"]);
+const MUTATORS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "add", "delete", "clear", "assign"]);
+const TEST_CALLEES = new Set(["test", "it"]);
+
+function rootIdent(e: ts.Expression): ts.Identifier | null {
+  let x: ts.Expression = e;
+  for (;;) {
+    if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x) || ts.isNonNullExpression(x) || ts.isParenthesizedExpression(x) || ts.isAsExpression(x)) x = x.expression;
+    else break;
+  }
+  return ts.isIdentifier(x) ? x : null;
+}
+function declaredNames(n: ts.Node, out: Set<string>): void {
+  const bind = (b: ts.BindingName) => {
+    if (ts.isIdentifier(b)) out.add(b.text);
+    else for (const el of b.elements) if (!ts.isOmittedExpression(el)) bind(el.name);
+  };
+  const v = (x: ts.Node): void => {
+    if (ts.isVariableDeclaration(x) || ts.isParameter(x) || ts.isBindingElement(x)) bind(x.name);
+    if ((ts.isFunctionDeclaration(x) || ts.isFunctionExpression(x) || ts.isClassDeclaration(x)) && x.name) out.add(x.name.text);
+    ts.forEachChild(x, v);
+  };
+  v(n);
+}
+
+/**
+ * Auditor limit 2: a proposed test file must be add-only against the base. Returns the refusals (empty = ok) and the
+ * names of the added test() / it() cases (each must then fail on the base and pass on the candidate).
+ */
+export function addOnlyTestCheck(path: string, base: string | null, cand: string): { refusals: string[]; added: string[] } {
+  const refusals: string[] = [];
+  const added: string[] = [];
+  const csf = parseTs(path, cand);
+  if (!csf) return { refusals: ["test file does not parse"], added };
+  const bsf = base === null ? null : parseTs(path, base);
+  if (base !== null && !bsf) return { refusals: ["base test file does not parse"], added };
+  const B = bsf ? bsf.statements.map((s) => canon(s, bsf)) : [];
+  const C = csf.statements.map((s) => canon(s, csf));
+  // every base statement, AST-identical and in the same order (a subsequence of the candidate)
+  const matched = new Set<number>();
+  let j = 0;
+  for (let i = 0; i < B.length; i++) {
+    while (j < C.length && C[j] !== B[i]) j++;
+    if (j >= C.length) { refusals.push(`existing statement ${i + 1} changed, moved or removed`); break; }
+    matched.add(j++);
+  }
+  const addedNodes = csf.statements.filter((_, k) => !matched.has(k));
+  const local = new Set<string>();
+  for (const s of addedNodes) declaredNames(s, local);
+  for (const s of addedNodes) {
+    if (ts.isImportDeclaration(s)) {
+      if (s.importClause?.namedBindings && ts.isNamedImports(s.importClause.namedBindings)) for (const el of s.importClause.namedBindings.elements) if (BANNED_TEST_NAMES.has((el.propertyName ?? el.name).text)) refusals.push(`imports ${(el.propertyName ?? el.name).text}`);
+      if (s.importClause?.name) local.add(s.importClause.name.text);
+      if (s.importClause?.namedBindings) { if (ts.isNamespaceImport(s.importClause.namedBindings)) local.add(s.importClause.namedBindings.name.text); else for (const el of s.importClause.namedBindings.elements) local.add(el.name.text); }
+      continue;
+    }
+    if (ts.isVariableStatement(s)) { if (!(s.declarationList.flags & ts.NodeFlags.Const)) refusals.push("added top-level let/var"); }
+    else if (ts.isFunctionDeclaration(s) || ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s)) { /* ok */ }
+    else if (ts.isExpressionStatement(s) && ts.isCallExpression(s.expression) && ts.isIdentifier(s.expression.expression) && TEST_CALLEES.has(s.expression.expression.text)) {
+      const a0 = s.expression.arguments[0];
+      if (!a0 || !(ts.isStringLiteral(a0) || ts.isNoSubstitutionTemplateLiteral(a0))) refusals.push("added test without a literal name");
+      else if (s.expression.arguments.length !== 2) refusals.push(`test "${a0.text}" must be test(name, fn) (no options object)`);
+      else added.push(a0.text);
+    } else { refusals.push(`added top-level statement of kind ${ts.SyntaxKind[s.kind]} (only imports, consts, functions, types and test()/it() calls)`); continue; }
+    const v = (n: ts.Node): void => {
+      if (ts.isIdentifier(n) && BANNED_TEST_NAMES.has(n.text)) refusals.push(`uses ${n.text}`);
+      if (ts.isStringLiteral(n) && ts.isElementAccessExpression(n.parent) && n.parent.argumentExpression === n && BANNED_TEST_NAMES.has(n.text)) refusals.push(`uses ["${n.text}"]`);
+      const writeTo = (t: ts.Expression) => {
+        if (ts.isIdentifier(t) ? !local.has(t.text) : (() => { const r = rootIdent(t); return !r || !local.has(r.text) || isImportedLocal(r.text); })()) refusals.push(`writes ${t.getText(csf).slice(0, 40)} (not declared in the added code)`);
+      };
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) writeTo(n.left);
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) writeTo(n.operand);
+      if (ts.isDeleteExpression(n)) writeTo(n.expression);
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && MUTATORS.has(n.expression.name.text)) {
+        const r = rootIdent(n.expression.expression);
+        if (!r || !local.has(r.text) || isImportedLocal(r.text)) refusals.push(`mutates ${n.expression.getText(csf).slice(0, 40)} (not declared in the added code)`);
+      }
+      ts.forEachChild(n, v);
+    };
+    v(s);
+  }
+  // imported bindings are shared with the graded code: never a write target even though they are "added"
+  function isImportedLocal(name: string): boolean {
+    return csf!.statements.some((s) => ts.isImportDeclaration(s) && !!s.importClause && (s.importClause.name?.text === name || (!!s.importClause.namedBindings && (ts.isNamespaceImport(s.importClause.namedBindings) ? s.importClause.namedBindings.name.text === name : s.importClause.namedBindings.elements.some((e) => e.name.text === name)))));
+  }
+  const dup = added.filter((n, k) => added.indexOf(n) !== k || (bsf !== null && B.some((b) => b.includes(JSON.stringify(n)))));
+  for (const d of new Set(dup)) refusals.push(`test name "${d}" is not unique in the file`);
+  return { refusals: [...new Set(refusals)], added };
+}
+
+/** Names of lists whose growth weakens a gate (Auditor limit 2): allowlists, exemptions, known refusals, grandfathering. */
+export const LISTY = /allow|exempt|known|grandfather|accept|skip|ignore|whitelist|permit|trusted|bypass|except|waive|tolerat/i;
+function tsListElements(sf: ts.SourceFile): { lists: Map<string, string[]>; adds: number } {
+  const lists = new Map<string, string[]>();
+  let adds = 0;
+  const elems = (e: ts.Expression | undefined): string[] | null => {
+    if (!e) return null;
+    let x = e;
+    while (ts.isAsExpression(x) || ts.isSatisfiesExpression(x) || ts.isParenthesizedExpression(x) || ts.isTypeAssertionExpression(x)) x = x.expression;
+    if (ts.isArrayLiteralExpression(x)) return x.elements.map((y) => canon(y, sf));
+    if (ts.isObjectLiteralExpression(x)) return x.properties.map((y) => canon(y, sf));
+    if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && ["Set", "Map"].includes(x.expression.text)) return x.arguments?.length ? elems(x.arguments[0]) ?? [canon(x.arguments[0]!, sf)] : [];
+    return null;
+  };
+  const visit = (n: ts.Node, scope: string): void => {
+    let name: string | null = null;
+    let init: ts.Expression | undefined;
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) { name = n.name.text; init = n.initializer; }
+    else if ((ts.isPropertyAssignment(n) || ts.isPropertyDeclaration(n)) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name))) { name = n.name.text; init = n.initializer; }
+    const key = name ? (scope ? `${scope}.${name}` : name) : scope;
+    if (name && LISTY.test(name)) { const el = elems(init); if (el) lists.set(key, [...(lists.get(key) ?? []), ...el]); }
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && MUTATORS.has(n.expression.name.text)) {
+      const r = rootIdent(n.expression.expression);
+      const recv = ts.isPropertyAccessExpression(n.expression.expression) ? n.expression.expression.name.text : r?.text ?? "";
+      if (LISTY.test(recv)) adds++;
+    }
+    ts.forEachChild(n, (c) => visit(c, key));
+  };
+  visit(sf, "");
+  return { lists, adds };
+}
+function jsonListElements(v: unknown, path: string, listy: boolean, out: Map<string, string[]>): void {
+  if (Array.isArray(v)) { if (listy) out.set(path, v.map((x) => JSON.stringify(x))); v.forEach((x, i) => jsonListElements(x, `${path}[${i}]`, listy, out)); return; }
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (listy) out.set(`${path}{}`, Object.keys(o).map((k) => JSON.stringify([k, o[k]])));
+    for (const k of Object.keys(o)) jsonListElements(o[k], `${path}.${k}`, listy || LISTY.test(k), out);
+  }
+}
+/** Auditor limit 2 (non-test files): any element added to an allowlist-like list, or a new mutation of one, is refused. */
+export function listGrowthRefusals(path: string, base: string | null, cand: string): string[] {
+  const out: string[] = [];
+  const grown = (b: Map<string, string[]>, c: Map<string, string[]>) => {
+    for (const [k, els] of c) {
+      const left = [...(b.get(k) ?? [])];
+      for (const e of els) { const i = left.indexOf(e); if (i >= 0) left.splice(i, 1); else { out.push(`adds an entry to allowlist-like ${k}`); break; } }
+    }
+  };
+  if (/\.(ts|mts|tsx)$/.test(path)) {
+    const csf = parseTs(path, cand);
+    if (!csf) return ["file does not parse"];
+    const bsf = base === null ? null : parseTs(path, base);
+    const c = tsListElements(csf);
+    const b = bsf ? tsListElements(bsf) : { lists: new Map<string, string[]>(), adds: 0 };
+    grown(b.lists, c.lists);
+    if (c.adds > b.adds) out.push("adds a call that grows an allowlist-like list");
+  } else if (/\.json$/.test(path)) {
+    let cj: unknown, bj: unknown = null;
+    try { cj = JSON.parse(cand); if (base !== null) bj = JSON.parse(base); } catch { return ["json does not parse"]; }
+    const c = new Map<string, string[]>(), b = new Map<string, string[]>();
+    const whole = LISTY.test(path.split("/").pop() ?? "");
+    jsonListElements(cj, "$", whole, c);
+    if (bj !== null) jsonListElements(bj, "$", whole, b);
+    grown(b, c);
+  }
+  return [...new Set(out)];
+}
+
+export interface Stage2Check { ok: boolean; refusals: { path: string; reason: string }[]; paths: string[]; newTests: { file: string; names: string[] }[] }
+/**
+ * Limits 1 and 2 on a proposal: `diff` is the proposal (git diff), `read` gives a path's text at the base and on the
+ * candidate (null = absent). Binary, mode changes, deletions, renames and copies are refused, as in M11.
+ */
+export function checkStage2Proposal(diff: string, read: { base: (p: string) => string | null; cand: (p: string) => string | null }): Stage2Check {
+  const { files, malformed } = parseGitDiff(diff);
+  const refusals: { path: string; reason: string }[] = [];
+  const newTests: { file: string; names: string[] }[] = [];
+  if (malformed) refusals.push({ path: "-", reason: "diff is empty or not a git diff" });
+  const paths = new Set<string>();
+  for (const f of files) {
+    for (const p of [f.oldPath, f.newPath]) {
+      if (p === null) continue;
+      paths.add(p);
+      const r = stage2PathRefusal(p);
+      if (r) refusals.push({ path: p, reason: r });
+    }
+    const where = f.newPath ?? f.oldPath ?? "-";
+    if (f.binary) refusals.push({ path: where, reason: "binary change" });
+    for (const mode of [f.newMode, f.oldMode]) if (mode && mode !== "100644") refusals.push({ path: where, reason: `file mode ${mode}` });
+    if (f.status === "D") refusals.push({ path: where, reason: "deletes a file" });
+    if (f.status === "R" || f.status === "C") refusals.push({ path: where, reason: "renames or copies a file" });
+    f.added.forEach((line) => { for (const b of STAGE2_CONTENT_BANNED) if (b.pattern.test(line)) refusals.push({ path: where, reason: `content: ${b.why}` }); });
+    if (f.newPath === null || f.status === "D" || stage2PathRefusal(f.newPath)) continue;
+    const cand = read.cand(f.newPath);
+    if (cand === null) { refusals.push({ path: f.newPath, reason: "candidate file missing" }); continue; }
+    const base = read.base(f.newPath);
+    if (isStage2TestPath(f.newPath)) {
+      if (!/\.test\.ts$/.test(f.newPath)) { refusals.push({ path: f.newPath, reason: "test fixtures and non-.ts tests are not proposable (add-only cannot be checked)" }); continue; }
+      const t = addOnlyTestCheck(f.newPath, base, cand);
+      for (const r of t.refusals) refusals.push({ path: f.newPath, reason: `add-only: ${r}` });
+      if (t.added.length) newTests.push({ file: f.newPath, names: t.added });
+    } else for (const r of listGrowthRefusals(f.newPath, base, cand)) refusals.push({ path: f.newPath, reason: `weakening: ${r}` });
+  }
+  const seen = new Set<string>();
+  const uniq = refusals.filter((r) => { const k = `${r.path}\0${r.reason}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  return { ok: uniq.length === 0, refusals: uniq, paths: [...paths].sort(), newTests };
+}
+
+export interface CaseRun { exitCode: number; pass: number; fail: number }
+export interface Stage2Record {
+  schema: typeof STAGE2_SCHEMA;
+  id: string;
+  baseSha: string;
+  candidateSha: string;
+  /** sha256 of `git diff --binary --full-index --no-color --no-ext-diff --no-renames <base> <candidate>` (the proposal hash). */
+  diffSha256: string;
+  paths: string[];
+  /** git blob id of every touched path on the candidate (null = absent), for the byte-identical credit check. */
+  candidateBlobs: Record<string, string | null>;
+  check: Stage2Check;
+  baseSuite: TestRun;
+  newTests: { file: string; name: string; onBase: CaseRun; onCandidate: CaseRun }[];
+  status: "refused" | "tested-failing" | "awaiting-review";
+  createdAt: string;
+}
+
+/** Limit 3: the record proves the grading. `baseSuiteFiles` is the base commit's own test-file list. */
+export function stage2GradeDecision(rec: Stage2Record, baseSuiteFiles: readonly string[]): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (rec.schema !== STAGE2_SCHEMA) reasons.push("BAD_RECORD");
+  if (!rec.check?.ok || !rec.paths.every((p) => stage2PathRefusal(p) === null)) reasons.push("CHECK_REFUSED");
+  const s = rec.baseSuite;
+  if (!s || baseSuiteFiles.length === 0 || s.filesSha256 !== listSha(baseSuiteFiles) || listSha(s.files) !== listSha(baseSuiteFiles)) reasons.push("BASE_SUITE_MISMATCH");
+  else if (s.exitCode !== 0 || s.fail !== 0 || s.pass === 0) reasons.push("BASE_SUITE_FAILED_ON_CANDIDATE");
+  const want = rec.check?.newTests?.flatMap((t) => t.names.map((n) => `${t.file}\0${n}`)) ?? [];
+  const got = rec.newTests.map((t) => `${t.file}\0${t.name}`);
+  if (want.length !== got.length || want.some((w) => !got.includes(w))) reasons.push("NEW_TESTS_NOT_ALL_RUN");
+  for (const t of rec.newTests) {
+    if (t.onBase.exitCode === 0 && t.onBase.fail === 0) reasons.push("NEW_TEST_PASSES_ON_BASE");
+    if (t.onCandidate.exitCode !== 0 || t.onCandidate.fail !== 0 || t.onCandidate.pass === 0) reasons.push("NEW_TEST_FAILS_ON_CANDIDATE");
+  }
+  if (!/^[0-9a-f]{40}$/.test(rec.candidateSha) || !/^[0-9a-f]{64}$/.test(rec.diffSha256)) reasons.push("BAD_RECORD");
+  return { ok: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+/** Limit 4: OFF unless the flag file says exactly { schema, enabled: true }. Missing or malformed = off. */
+export function stage2Enabled(flagText: string | null): boolean {
+  if (flagText === null) return false;
+  try { const j = JSON.parse(flagText) as { schema?: unknown; enabled?: unknown }; return j.schema === STAGE2_FLAG_SCHEMA && j.enabled === true; } catch { return false; }
+}
+
+/**
+ * Limit 4: may this proposal land? Needs the flag on, a passing grade, the PR head = graded candidate commit, the PR
+ * diff hash = recorded proposal hash, Auditor `/auditor-pass <id> <head>` and Peace `/verdict <id> <head> right`
+ * (both traced comments by the listed logins). Nothing here applies, pushes or merges anything.
+ */
+export function stage2LandingDecision(rec: Stage2Record, baseSuiteFiles: readonly string[], pr: { headSha: string; diffSha256: string }, comments: readonly CommandComment[], approvers: { auditor: readonly string[]; peace: readonly string[] }, flagText: string | null): PromotionDecision {
+  const reasons: string[] = [];
+  if (!stage2Enabled(flagText)) reasons.push("STAGE2_OFF");
+  reasons.push(...stage2GradeDecision(rec, baseSuiteFiles).reasons);
+  const head = /^[0-9a-f]{40}$/.test(pr.headSha) ? pr.headSha : "";
+  if (!head || head !== rec.candidateSha) reasons.push("HEAD_NOT_PROPOSAL");
+  if (pr.diffSha256 !== rec.diffSha256) reasons.push("DIFF_NOT_PROPOSAL");
+  const valid = (c: CommandComment, who: readonly string[]) => tracedComment(c) && who.includes(c.author) && ["OWNER", "MEMBER", "COLLABORATOR"].includes(c.association);
+  const pass = head ? comments.find((c) => valid(c, approvers.auditor) && c.body.trim() === `${AUDITOR_COMMAND} ${rec.id} ${head}`) : undefined;
+  if (!pass) reasons.push(comments.some((c) => valid(c, approvers.auditor) && c.body.trim().startsWith(`${AUDITOR_COMMAND} ${rec.id} `)) ? "AUDITOR_PASS_STALE_OR_SHA_MISMATCH" : "AUDITOR_PASS_MISSING");
+  const verdict = head ? comments.find((c) => valid(c, approvers.peace) && c.body.trim() === `${VERDICT_COMMAND} ${rec.id} ${head} right`) : undefined;
+  if (!verdict) reasons.push(comments.some((c) => valid(c, approvers.peace) && c.body.trim().startsWith(`${VERDICT_COMMAND} ${rec.id} `)) ? "PEACE_VERDICT_STALE_OR_SHA_MISMATCH" : "PEACE_VERDICT_MISSING");
+  const r = [...new Set(reasons)];
+  return { ok: r.length === 0, reasons: r, ...(pass && verdict ? { auditorComment: pass.url, architectComment: verdict.url } : {}) };
+}
+
+/**
+ * Limit 5: credit only when the landed commit changed exactly the proposal's paths to exactly the proposal's blobs.
+ * Any Builder edit (another blob, another path, a missing path) is NO credit, marked so.
+ */
+export function stage2Credit(rec: Stage2Record, landed: { paths: readonly string[]; blobs: Record<string, string | null> }): { credit: boolean; mark: string } {
+  const want = [...rec.paths].sort();
+  const got = [...new Set(landed.paths)].sort();
+  if (want.length !== got.length || want.some((p, i) => p !== got[i])) return { credit: false, mark: "no credit: Builder-edited (landed paths differ from the proposal)" };
+  for (const p of want) if ((landed.blobs[p] ?? null) !== (rec.candidateBlobs[p] ?? null)) return { credit: false, mark: `no credit: Builder-edited (${p} differs from the proposal)` };
+  return { credit: true, mark: "PeaceAI stage-2 proposal, landed byte-identical" };
 }

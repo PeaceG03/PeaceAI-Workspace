@@ -1,0 +1,72 @@
+name: self-change-stage2
+
+# M106 (installed in PeaceAI-Results from PeaceAI-Workspace peaceai/results-repo/; BUILDER-WRITTEN, Peace-approved
+# 2026-10-25, for Auditor review). The private, short-lived grading job for a stage-2 self-change PROPOSAL.
+# It only grades: fresh clone of the public Workspace at the base, apply PeaceAI's patch
+# (self-proposals/<id>.patch in this repo), never-zone + add-only + list-growth check, the UNCHANGED base suite on
+# the candidate, each new test must fail on the base and pass on the candidate, and record the proposal diff
+# hash. No secrets, no write permission, no push, no PR, no comment; the token is not persisted and not in the
+# environment of the grading step (selfChangeAllowedHere refuses CREDENTIALS_IN_ENV). The artifact holds only the
+# record (hashes, paths, test names, counts) and the candidate bundle (the public Workspace plus the public patch).
+# Landing is decided later in the Workspace by `self-change.ts decide2`: flag peaceai/self/stage2.json on (only
+# Peace flips it), Peace `/verdict <id> <sha> right` AND Auditor `/auditor-pass <id> <sha>` on that exact head.
+on:
+  workflow_dispatch:
+    inputs:
+      id:
+        description: "proposal id (sc-<name>); the patch is self-proposals/<id>.patch on main"
+        required: true
+      base:
+        description: "Workspace base commit (40 hex)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-change-stage2-${{ inputs.id }}
+  cancel-in-progress: false
+
+jobs:
+  grade:
+    if: github.repository == 'PeaceG03/PeaceAI-Results'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: results
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PeaceG03/PeaceAI-Workspace
+          ref: ${{ inputs.base }}
+          path: workspace
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install (no lifecycle scripts)
+        working-directory: workspace
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Grade the proposal
+        working-directory: workspace
+        env:
+          ID: ${{ inputs.id }}
+          BASE: ${{ inputs.base }}
+        run: |
+          set -euo pipefail
+          case "$ID" in sc-[a-z0-9-]*) ;; *) echo "bad id"; exit 1 ;; esac
+          case "$BASE" in *[!0-9a-f]*|'') echo "bad base"; exit 1 ;; esac
+          [ "${#BASE}" = 40 ] || { echo "bad base"; exit 1; }
+          node_modules/.bin/tsx peaceai/bin/self-change.ts propose2 --id "$ID" --base "$BASE" \
+            --patch "../results/self-proposals/$ID.patch" --source https://github.com/PeaceG03/PeaceAI-Workspace.git \
+            --out "$RUNNER_TEMP/self-change-records"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: self-change-stage2-${{ inputs.id }}
+          path: ${{ runner.temp }}/self-change-records/self-changes/
+          retention-days: 14
+          if-no-files-found: ignore
