@@ -2233,6 +2233,16 @@ function sloppy(sf: ts.SourceFile): boolean {
 function thisMayBeGlobal(n: ts.Node): boolean {
   for (let q = n.parent; q; q = q.parent) {
     if (ts.isArrowFunction(q)) continue;
+    // Auditor #505 r5 (X4): a class's heritage clause (`extends (..)`), a class member's computed key (`[..]`) and a
+    // decorator are evaluated in the scope AROUND the class, so their `this` is the outer one: skip past the class
+    // and keep walking outward
+    if (ts.isHeritageClause(q) || ts.isDecorator(q) || (ts.isComputedPropertyName(q) && !!q.parent && ts.isClassElement(q.parent))) {
+      let k: ts.Node | undefined = q.parent;
+      while (k && !ts.isClassLike(k)) k = k.parent;
+      if (!k) return true;
+      q = k;
+      continue;
+    }
     // Auditor #505 delta (X4): only a class body (its methods, accessors, constructor, fields, static blocks) binds
     // `this`; an object-literal method or accessor is a sloppy function like any other
     if (ts.isClassLike(q)) return false;

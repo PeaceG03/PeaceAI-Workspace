@@ -386,6 +386,14 @@ const DELTA: Record<string, [string, Record<string, string>, RegExp, readonly (t
   X4_cjs_object_getter: [DUTC_X, HT("const o = { get g() { return this; } };\nObject.getOwnPropertyDescriptor(o, \"g\").get.call(undefined).Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
   X4_cjs_object_setter: [MATH_PI, HT("const o = { set s(v) { this.Math = v; } };\nObject.getOwnPropertyDescriptor(o, \"s\").set.call(undefined, { PI: 4 });\n", "src/h.cjs"), /E: global_Math_via_sloppy_this at src\/h\.cjs:1/, VERS],
   X4_script_js_object_method: [MATH_PI, HT("var o = { m: function () { return this; }, n() { return this; } };\n(0, o.n)().Math = { PI: 4 };\n", "src/h.js"), /E: global_Math_via_sloppy_this at src\/h\.js:1/, VERS],
+  // Auditor #505 r5 (X4): `this` in a heritage clause, a computed member key or a decorator is the enclosing `this`
+  X4_cjs_heritage_clause: [DUTC_X, HT("(function () { class C extends ((this.Date = { UTC: () => 9 }), Object) {} void C; })();\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_static_computed_key: [DUTC_X, HT("(function () { class C { static [(this.Date = { UTC: () => 9 }, \"k\")]() {} } void C; })();\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_field_computed_key: [DUTC_X, HT("function g() { let G; class C { [(G = this, \"k\")] = 1; } void C; return G; }\ng().Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_accessor_computed_key: [MATH_PI, HT("function g() { let G; class C { get [(G = this, \"k\")]() { return 1; } } void C; return G; }\ng().Math = { PI: 4 };\n", "src/h.cjs"), /E: global_Math_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_class_decorator: [DUTC_X, HT("function g() { let G; @((G = this, (c) => c)) class C {} void C; return G; }\ng().Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_member_decorator: [DUTC_X, HT("function g() { let G; class C { @((G = this, () => {})) m() {} } void C; return G; }\ng().Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_nested_class_in_heritage: [DUTC_X, HT("function g() { let G; class C extends class { static s = (G = 0); } { [(G = this, \"k\")] = 1; } void C; return G; }\ng().Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
 };
 test("repo scan (Auditor #505 delta): X1-X4 repros are refused with their diagnostic", () => {
   for (const [k, [t, o, re, vs, base]] of Object.entries(DELTA)) {
@@ -413,6 +421,8 @@ test("repo scan (Auditor #505 delta): the matching positives stay accepted (allo
     const_enum_without_mutation: [EKC, { "src/s.ts": "export const g = (): number => Math.abs(-1);\n" }, VERS],
     literal_enum_with_other_global_write: [EKD, { "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = original;\n" }, VERS],
     math_pi_const: [MATH_PI, {}, VERS],
+    cjs_this_in_body_field_static_block: [DUTC_X, HT("class B {}\nclass C extends B { [\"k\"] = this; f = () => this; static s = this; static { this.t = 1; } m(a = this) { return [a, this]; } get [\"g\"]() { return this; } }\nclass D { [Symbol.iterator]() { return this; } }\nmodule.exports = { C, D };\n", "src/h.cjs"), VERS],
+    cjs_computed_key_in_class_method_body: [DUTC_X, HT("class C { m() { class I { [String(this)] = 1; } return { [this.k]: 1, I }; } }\nmodule.exports = { C };\n", "src/h.cjs"), VERS],
   };
   for (const [k, [t, o, vs]] of Object.entries(ok)) for (const v of vs) assert.equal(run(t, o, v, true), "ok", `${k} ${v}`);
 });
