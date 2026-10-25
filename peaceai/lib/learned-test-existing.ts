@@ -12,6 +12,8 @@
 //   outside the vocabulary (test_target_signature). No model.
 import ts from "typescript";
 import { createHash } from "node:crypto";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isDateLiteral, isMapSetLiteral, ISO_DATE_TEXT, parseTestTask, type TestTask } from "./learned-test.ts";
 import { DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, dateRefusal, plainPath } from "./learned-complex.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
@@ -1791,6 +1793,25 @@ export interface RepoFile { readonly path: string; readonly content: string }
  *   Its file and byte caps (MAX_SCAN_FILES / MAX_SCAN_BYTES) count denied files too and fail closed (too large).
  * Unreadable paths are dropped from both (the scan then fails closed on any import of them).
  */
+/**
+ * The one reader Job A and Job B hand repoFileLists: a regular file inside `root` (resolved for real), else null. A
+ * symlink (broken or not), a directory, a file reached through a symlinked directory outside the root, or any read
+ * error is skipped, never thrown.
+ */
+export function regularFileReader(root: string): (rel: string) => string | null {
+  let real: string | null = null;
+  try { real = realpathSync(root); } catch { real = null; }
+  return (rel: string): string | null => {
+    if (real === null) return null;
+    try {
+      const p = join(root, rel);
+      if (!lstatSync(p).isFile()) return null;
+      const r = relative(real, realpathSync(p));
+      if (r === "" || r.startsWith("..") || isAbsolute(r)) return null;
+      return readFileSync(p, "utf8");
+    } catch { return null; }
+  };
+}
 export function repoFileLists(paths: Iterable<string>, scope: { isSource(p: string): boolean; isDenied(p: string): boolean }, read: (p: string) => string | null): { context: RepoFile[]; scan: RepoFile[] } {
   const context: RepoFile[] = [];
   const scan: RepoFile[] = [];
@@ -1837,7 +1858,7 @@ const CALLBACK_ROLES: Record<string, string> = { reduce: "ceia", reduceRight: "c
 const PRIM_RETURN_GLOBALS = new Set(["String", "Number", "Boolean", "BigInt", "isNaN", "isFinite", "parseInt", "parseFloat", "Array.isArray", "Object.is", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.parseFloat", "Number.parseInt", "Date.UTC", "Date.parse", "encodeURIComponent", "decodeURIComponent"]);
 const PRIM_GLOBAL_CALLS = new Set(["String", "Number", "Boolean", "BigInt", "isNaN", "isFinite", "parseInt", "parseFloat", "Array.isArray", "JSON.stringify", "Object.is", "Object.hasOwn", "Object.keys", "Object.getOwnPropertyNames", "Object.isFrozen", "Object.isSealed", "Object.isExtensible", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.parseFloat", "Number.parseInt", "structuredClone", "encodeURIComponent", "decodeURIComponent"]);
 /** Global callees whose result is a fresh container of the argument's elements (or entries of them). */
-const CONTAINER_GLOBAL_CALLS = new Set(["Object.values", "Array.from", "Object.fromEntries", "Array.of"]);
+const CONTAINER_GLOBAL_CALLS = new Set(["Object.values", "Array.from", "Object.fromEntries"]);
 const ENTRY_GLOBAL_CALLS = new Set(["Object.entries"]);
 const CONTAINER_GLOBAL_NEW = new Set(["Set", "Map"]);
 /** Callback arguments the scan accepts without following: global conversions (no access to the receiver). */
@@ -1921,7 +1942,14 @@ function repoIndex(repo: readonly RepoFile[]): RepoIndex {
     v(sf);
     for (const s of specs) {
       const t = s.text;
-      if (t.startsWith("./") || t.startsWith("../") || t === "." || t === "..") continue;
+      // Auditor #505 (4): a relative import / export / require / import() must resolve to a scanned file (an unscanned
+      // module could write the binding); only a declaration-level type-only import / export (erased) is exempt
+      if (t.startsWith("./") || t.startsWith("../") || t === "." || t === "..") {
+        const decl = s.parent;
+        const typeOnly = (ts.isImportDeclaration(decl) && !!decl.importClause?.isTypeOnly) || (ts.isExportDeclaration(decl) && decl.isTypeOnly);
+        if (!typeOnly && !resolve(t, sf.fileName)) fail("unresolved_relative_import", sf);
+        continue;
+      }
       if (/^(?:node:|[a-z0-9][\w.-]*:)/i.test(t) && !t.startsWith("/")) continue;
       if (/^(?:@\/|~\/|#|\/)/.test(t) || top.has(t.split("/")[0]!) || resolve(t, sf.fileName)) fail("bare_internal_specifier", sf);
     }
@@ -2081,7 +2109,16 @@ function readBindings(a: Analysis, v2: V2Ctx | undefined): ReadBinding[] {
  * (`<binding>: <why> at <file>:<line>`). Without a repo list, any binding holding state fails closed.
  */
 const GLOBAL_OBJECTS = new Set(["globalThis", "global", "window", "self"]);
+/** The only members of a global object a repo may read when a prim-returning global's relaxation applies. */
+const SAFE_GLOBAL_OBJECT_MEMBERS = new Set(["console", "crypto", "fetch", "performance", "process", "structuredClone", "queueMicrotask", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "TextEncoder", "TextDecoder", "URL", "AbortController"]);
 /** A write position (assignment / compound target, ++ / --, delete, destructuring or for-in/of target). */
+/** Auditor #505 (1): does a function (its parameters and body, nested functions included) mention `arguments`? */
+function mentionsArguments(f: ts.Node): boolean {
+  let hit = false;
+  const v = (n: ts.Node): void => { if (hit) return; if (ts.isIdentifier(n) && n.text === "arguments") { hit = true; return; } ts.forEachChild(n, v); };
+  ts.forEachChild(f, v);
+  return hit;
+}
 function isWriteTarget(n: ts.Node): boolean {
   let x: ts.Node = n;
   while (ts.isParenthesizedExpression(x.parent) || ts.isNonNullExpression(x.parent) || ts.isAsExpression(x.parent) || ts.isTypeAssertionExpression(x.parent) || ts.isSatisfiesExpression(x.parent)) x = x.parent;
@@ -2109,8 +2146,15 @@ function globalTouched(ri: RepoIndex, name: string): string | null {
   for (const f of ri.files.values()) {
     const v = (n: ts.Node): void => {
       if (found) return;
-      const gobj = (e: ts.Expression) => { const y = unwrapExpr(e); return ts.isIdentifier(y) && GLOBAL_OBJECTS.has(y.text); };
-      if ((ts.isPropertyAccessExpression(n) && n.name.text === name && gobj(n.expression)) || (ts.isElementAccessExpression(n) && gobj(n.expression))) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
+      // Auditor #505 (3): any use of globalThis / global / window / self (an alias, an argument, a spread, a write,
+      // `Object.defineProperty(globalThis, ..)`, an element access) fails closed; only a plain read of a known-safe
+      // member (`globalThis.console.log(..)`) is allowed.
+      if (ts.isIdentifier(n) && GLOBAL_OBJECTS.has(n.text) && !inTypePosition(n) && isGlobalId(n, ri.checker)) {
+        const p = n.parent;
+        const nameSlot = (ts.isPropertyAccessExpression(p) && p.name === n) || ((ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodDeclaration(p) || ts.isMethodSignature(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p) || ts.isEnumMember(p)) && p.name === n) || ts.isQualifiedName(p);
+        const safeRead = ts.isPropertyAccessExpression(p) && p.expression === n && SAFE_GLOBAL_OBJECT_MEMBERS.has(p.name.text) && p.name.text !== name && !isWriteTarget(p);
+        if (!nameSlot && !safeRead) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
+      }
       if (ts.isIdentifier(n) && n.text === name && !inTypePosition(n)) {
         const p = n.parent;
         const ok =
@@ -2228,6 +2272,8 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
       if (fnValue) return /^(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf|freeze|seal|preventExtensions)|Reflect\..*)$/.test(g) ? fail("written_by_builtin", n) : null;
       if (d >= primDepth) return null;
       if (PRIM_GLOBAL_CALLS.has(g) || (/^Math\./.test(g))) return null;
+      // Auditor #505 (2): `Array.of(x, ..)` is `[x, ..]`, a fresh container HOLDING each argument (one level up)
+      if (ts.isCallExpression(call) && g === "Array.of" && i !== null) return use(call, d - 1, false, true);
       if (ts.isCallExpression(call) && CONTAINER_GLOBAL_CALLS.has(g) && i === 0) return use(call, d, false, true);
       if (ts.isCallExpression(call) && ENTRY_GLOBAL_CALLS.has(g) && i === 0) return use(call, d - 1, false, true);
       if (ts.isNewExpression(call) && CONTAINER_GLOBAL_NEW.has(g) && i === 0) return use(call, d - 1, false, true);
@@ -2252,6 +2298,8 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
     if (!f || !ri.files.has(f.getSourceFile().fileName) || i === null || ts.isNewExpression(call)) return fail("passed_to_unanalysed_callee", n);
     const p = f.parameters[i];
     if (!p || p.dotDotDotToken || f.parameters.some((q) => q.dotDotDotToken)) return fail("passed_to_unanalysed_callee", n);
+    // Auditor #505 (1): `arguments` reaches every argument past the parameter tracking (written, handed out)
+    if (mentionsArguments(f)) return fail("arguments_in_callee", n);
     addPattern(p.name, d);
     return null;
   };
@@ -2260,6 +2308,7 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
     for (const arg of call.arguments) {
       const x = unwrapExpr(arg);
       if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) {
+        if (mentionsArguments(x)) return fail("arguments_in_callee", x);
         x.parameters.forEach((p, k) => {
           const role = roles[k] ?? "a";
           if (p.dotDotDotToken) { addPattern(p.name, recv); return; }

@@ -15,7 +15,7 @@ import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
 import { derivedModuleProblem } from "../lib/learned-derive.ts";
-import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
+import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, regularFileReader, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
 import { relatedTests } from "../lib/sources.ts";
@@ -375,9 +375,7 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   const called = imported.filter((x) => callsFunction(test, x.local));
   if (imported.length !== 1 || called.length !== 1) return ungradable("not-test-only");
   const fn = called[0]!.imported;
-  const regular = (rel: string): string | null => {
-    try { const p = join(tree, rel); if (!lstatSync(p).isFile() || relative(tree, realpathSync(p)).startsWith("..")) return null; return readFileSync(p, "utf8"); } catch { return null; }
-  };
+  const regular = regularFileReader(tree);
   // M85: a public-test-case-existing-v2 candidate is re-checked under the v2 target (plain-data types, followed
   // sibling imports, sibling reads from the real tree); every other candidate under v1 exactly as before.
   // M88: a public-test-case-existing-v3 candidate is re-checked under the v3 target (v2 plus the global Date).
@@ -442,9 +440,7 @@ function existingEditStatic(tree: string, files: ReturnType<typeof parseDiff>, n
   const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && scope.isTest(f.newPath)).map((f) => f.newPath!);
   if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return "not-test-only";
-  const regular = (rel: string): string | null => {
-    try { const p = join(tree, rel); if (!lstatSync(p).isFile() || relative(tree, realpathSync(p)).startsWith("..")) return null; return readFileSync(p, "utf8"); } catch { return null; }
-  };
+  const regular = regularFileReader(tree);
   const modPath = source[0]!, testPath = tests[0]!;
   const real = regular(modPath), test = regular(testPath);
   let baseText: string;

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
 import { applyRule, specHash, type RuleSpec } from "../lib/learned.ts";
-import { existingTargetRefusal, MAX_SCAN_BYTES, MAX_SCAN_FILES, repoFileLists, TEST_TARGET_TOO_LARGE } from "../lib/learned-test-existing.ts";
+import { existingTargetRefusal, MAX_SCAN_BYTES, MAX_SCAN_FILES, regularFileReader, repoFileLists, TEST_TARGET_TOO_LARGE } from "../lib/learned-test-existing.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
@@ -23,6 +23,8 @@ const SPEC = JSON.parse(read("peaceai/rules/learned/public-test-case-existing-v1
 const SHA = specHash(SPEC);
 const isTest = (p: string) => /\.test\.ts$/.test(p);
 const CANARY = "CANARY-7f3e91c2-denied-text-never-leaves-the-scan";
+// a marker in a non-denied in-scope file: it must reach the model context, so the canary's absence is no accident
+const CONTROL = "CONTROL-4b8d20a6-context-file-reaches-the-model";
 
 const MOD = 'export const R: ReadonlySet<string> = new Set(["A", "B"]);\nexport function isR(x: string): boolean { return R.has(x); }\n';
 // PeaceSTOCKS-shaped barrel: re-exports a denied module (src/index.ts `export * from "./scheduler"`), not the target's.
@@ -102,12 +104,14 @@ test("(3) the scan caps count denied files and fail closed", () => {
 // ---- (1) the canary, end to end through Job A (generate.ts) and Job B (test-candidates.ts) ----
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=PeaceG03", "-c", `user.email=${PEACE_AUTHOR}`, ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const TSCONFIG = JSON.stringify({ compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, allowImportingTsExtensions: true, types: ["node"] }, include: ["src"] });
+const modelInput = (dir: string) => join(dir, "model-input.jsonl");
 function fakeKernel(dir: string): string {
   const file = join(dir, "fake-kernel.cjs");
   writeFileSync(file, `const crypto = require("node:crypto");
 exports.NATIVE_CODE_SYNTHESIS_PROTOCOL_VERSION = "x";
 exports.sourceFingerprint = (p, c) => crypto.createHash("sha256").update(p + "\\0" + c).digest("hex");
-exports.PeaceAINativeCodeSynthesizer = class { synthesize() { return { status: "INSUFFICIENT" }; } };
+// the fake model writes out everything it is given (context sources, objective / prompt, the whole request)
+exports.PeaceAINativeCodeSynthesizer = class { synthesize(req) { require("node:fs").appendFileSync(${JSON.stringify(modelInput(dir))}, JSON.stringify(req) + "\\n"); return { status: "INSUFFICIENT" }; } };
 exports.parsePlanSteps = () => null;
 `);
   return file;
@@ -120,12 +124,13 @@ const allText = (dir: string): string => {
 };
 const approval = { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/40#issuecomment-123", commentId: 123, issue: 40, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-25T00:00:00Z" };
 const env0 = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
-function jobs(host: string) {
+function jobs(host: string, setup?: (ws: string) => void) {
   const dir = mkdtempSync(join(tmpdir(), "m97-denied-"));
   const ws = join(dir, "ws");
   mkdirSync(join(ws, "src"), { recursive: true });
-  for (const [p, c] of Object.entries({ "src/m.ts": MOD, "src/index.ts": INDEX, "src/host.ts": host, "src/base.test.ts": 'import test from "node:test";\ntest("base", () => {});\n', "tsconfig.json": TSCONFIG, "package.json": '{ "name": "m97-denied", "private": true, "type": "module" }\n', ".gitignore": "node_modules\n" })) writeFileSync(join(ws, p), c);
+  for (const [p, c] of Object.entries({ "src/m.ts": `// ${CONTROL}\n${MOD}`, "src/index.ts": INDEX, "src/host.ts": host, "src/base.test.ts": 'import test from "node:test";\ntest("base", () => {});\n', "tsconfig.json": TSCONFIG, "package.json": '{ "name": "m97-denied", "private": true, "type": "module" }\n', ".gitignore": "node_modules\n" })) writeFileSync(join(ws, p), c);
   symlinkSync(join(root, "node_modules"), join(ws, "node_modules"));
+  setup?.(ws);
   git(ws, "init", "-q", "-b", "main"); git(ws, "add", "-A"); git(ws, "commit", "-qm", "base");
   const baseSha = git(ws, "rev-parse", "HEAD").trim();
   const rules = join(dir, "rules"); mkdirSync(rules);
@@ -150,8 +155,9 @@ function jobs(host: string) {
     });
     if (existsSync(resultsFile)) results = JSON.parse(readFileSync(resultsFile, "utf8"));
   }
-  const text = [a.stdout, a.stderr, allText(out), b ? `${b.stdout}\n${b.stderr}` : "", allText(bOut)].join("\n");
-  return { dir, baseSha, a, b, summary, results, text, clean: () => rmSync(dir, { recursive: true, force: true }) };
+  const model = existsSync(modelInput(dir)) ? readFileSync(modelInput(dir), "utf8") : "";
+  const text = [a.stdout, a.stderr, allText(out), b ? `${b.stdout}\n${b.stderr}` : "", allText(bOut), model].join("\n");
+  return { dir, baseSha, a, b, summary, results, text, model, clean: () => rmSync(dir, { recursive: true, force: true }) };
 }
 const confined = Number(process.versions.node.split(".")[0]) >= 22;
 
@@ -165,6 +171,10 @@ test("(1) canary: a denied file's text appears in none of Job A's or Job B's out
     if (confined) assert.equal(ok.results!.results[0]!.testGrading!.verdict, "COUNTS", JSON.stringify(ok.results!.results[0]!.testGrading));
     else assert.equal(ok.results!.results[0]!.testGrading!.reason, "not-confined");
     assert.ok(ok.text.length > 1000, "outputs were collected");
+    // the model was really called and really saw the context: the control file's marker is there, the canary is not
+    assert.ok(ok.model.length > 0, "the fake model received a request");
+    assert.equal(ok.model.includes(CONTROL), true, "the non-denied control file reached the model context");
+    assert.equal(ok.model.includes(CANARY), false, "canary reached the model context / prompt");
     assert.equal(ok.text.includes(CANARY), false, "canary leaked");
     assert.equal(ok.text.includes("hostHas"), false, "no denied-file identifier leaked either");
   } finally { ok.clean(); }
@@ -174,5 +184,44 @@ test("(1) canary: a denied file's text appears in none of Job A's or Job B's out
     assert.equal(bad.summary.candidates.length, 0, "a denied file writing the binding refuses in Job A");
     assert.match(bad.a.stdout, /test_target_impure/);
     assert.equal(bad.text.includes(CANARY), false, "canary leaked on the refusal path");
+    assert.equal(bad.model.includes(CONTROL), true, "the control file reached the model context on the refusal path");
+    assert.equal(bad.model.includes(CANARY), false, "canary reached the model on the refusal path");
   } finally { bad.clean(); }
+});
+
+// Auditor #505 (non-blocking): Job A reads the repo lists with the same symlink-safe reader as Job B (lstat + realpath,
+// null instead of a throw): a tracked broken symlink or a symlink leaving the checkout is skipped, never a crash.
+test("regularFileReader: regular files only, inside the root; symlinks (broken or not) and escapes are skipped", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m97-reader-"));
+  try {
+    const ws = join(dir, "ws"); mkdirSync(join(ws, "src"), { recursive: true });
+    writeFileSync(join(dir, "outside.ts"), "export const o = 1;\n");
+    mkdirSync(join(dir, "odir")); writeFileSync(join(dir, "odir", "x.ts"), "export const x = 1;\n");
+    writeFileSync(join(ws, "src", "ok.ts"), "export const ok = 1;\n");
+    symlinkSync("missing.ts", join(ws, "src", "broken.ts"));
+    symlinkSync("ok.ts", join(ws, "src", "alias.ts"));
+    symlinkSync(join(dir, "outside.ts"), join(ws, "src", "out.ts"));
+    symlinkSync(join(dir, "odir"), join(ws, "src", "linked"));
+    const rd = regularFileReader(ws);
+    assert.equal(rd("src/ok.ts"), "export const ok = 1;\n");
+    for (const p of ["src/broken.ts", "src/alias.ts", "src/out.ts", "src/linked/x.ts", "src/nope.ts", "src", "../outside.ts"]) assert.equal(rd(p), null, p);
+    assert.equal(regularFileReader(join(dir, "no-such-root"))("src/ok.ts"), null);
+    const { context, scan } = repoFileLists(["src/ok.ts", "src/broken.ts", "src/alias.ts", "src/out.ts", "src/linked/x.ts"], STOCKS, rd);
+    assert.deepEqual(scan.map((f) => f.path), ["src/ok.ts"]);
+    assert.deepEqual(context.map((f) => f.path), ["src/ok.ts"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const gen = read("peaceai/bin/generate.ts");
+  const tc = read("peaceai/bin/test-candidates.ts");
+  assert.match(gen, /const repoLists = repoFileLists\(tracked, scope, regularFileReader\(repo\)\);/);
+  assert.equal((tc.match(/const regular = regularFileReader\(tree\);/g) ?? []).length, 2);
+});
+
+test("Job A: a tracked broken symlink (and one leaving the checkout) in scope is skipped, not a crash", { timeout: 600_000 }, () => {
+  const r = jobs(HOST_OK, (ws) => { symlinkSync("missing-target.ts", join(ws, "src", "broken.ts")); symlinkSync("/etc/hostname", join(ws, "src", "outside.ts")); });
+  try {
+    assert.equal(r.a.status, 0, r.a.stderr);
+    assert.equal(r.summary.candidates.length, 1, r.a.stdout);
+    assert.equal(r.model.includes(CONTROL), true);
+    assert.equal(r.text.includes(CANARY), false);
+  } finally { r.clean(); }
 });

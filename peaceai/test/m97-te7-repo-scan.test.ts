@@ -16,6 +16,9 @@ const CALL_LOCAL = "function mk(n: number): string[] { return [\"a\", \"b\"]; }\
 const RX = "export const RX = /^[a-z]+$/;\nexport function f(x: string): boolean { return RX.test(x); }\n";
 const NOEXP = "const L: string[] = [\"a\", \"b\"];\nexport function f(x: string): number { return L.indexOf(x); }\nexport function g(): string[] { return L; }\n";
 
+const DUTC_X = "export const E = Date.UTC(1970, 0, 1);\nexport function f(x: number): number { return x - E; }\n";
+const MATH_X = "export const E = Math.max(1, 2);\nexport function f(x: number): number { return x - E; }\n";
+
 /** name -> [target module, the other repo files]. The target is always src/m.ts, function f. */
 const ATTACKS: Record<string, [string, Record<string, string>]> = {
   push_literal: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g(): void { L.push(\"z\"); }\n" }],
@@ -84,6 +87,34 @@ const ATTACKS: Record<string, [string, Record<string, string>]> = {
   regex_last_index: [RX, { "src/s.ts": "import { RX } from \"./m\";\nexport function g(): void { RX.lastIndex = 3; }\n" }],
   regex_to_user_replace: [RX, { "src/s.ts": "import { RX } from \"./m\";\nconst o = { replace(r: RegExp): void { r.lastIndex = 1; } };\nexport function g(): void { o.replace(RX); }\n" }],
   regex_untyped_receiver: [RX, { "src/s.js": "import { RX } from \"./m\";\nexport function g(s) { return s.split(RX); }\n" }],
+  // Auditor #505 NOT PASS at 989968f: (1) `arguments` past the parameter tracking
+  D1_arguments_write: [LIT, { "src/s.ts": "import { L } from \"./m\";\nfunction t(_a: string[]): void { (arguments[0] as string[]).push(\"z\"); }\nt(L);\n" }],
+  D1_arguments_handout: [LIT, { "src/s.ts": "import { L } from \"./m\";\nfunction t(_a: string[]): unknown { return arguments; }\nexport const r = t(L);\n" }],
+  D1_arguments_cross_module_test: [LIT, { "src/s.ts": "export function t(_a: string[]): void { (arguments[0] as string[]).push(\"z\"); }\n", "src/u.test.ts": "import { L } from \"./m\";\nimport { t } from \"./s\";\nt(L);\n" }],
+  D1_arguments_nested_arrow: [LIT, { "src/s.ts": "import { L } from \"./m\";\nfunction t(_a: string[]): void { const k = () => (arguments[0] as string[]).push(\"z\"); k(); }\nt(L);\n" }],
+  D1_arguments_const_function_expression: [LIT, { "src/s.ts": "import { L } from \"./m\";\nconst t = function (_a: string[]): void { (arguments[0] as string[]).push(\"z\"); };\nt(L);\n" }],
+  D1_arguments_callback: [OBJ.replace("export const O: { n: number } = { n: 1 };", "export const O: { n: number }[] = [{ n: 1 }];").replace("O.n", "O[0]!.n"), { "src/s.ts": "import { O } from \"./m\";\nO.forEach(function (_o) { (arguments[0] as { n: number }).n = 9; });\n" }],
+  // (2) Array.of(x) is [x]: a container holding x
+  D2_array_of_then_push: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport const A = Array.of(L);\n", "src/t.ts": "import { A } from \"./s\";\nA[0]!.push(\"z\");\n" }],
+  D2_array_of_second_arg: [LIT, { "src/s.ts": "import { L } from \"./m\";\nconst A = Array.of([\"q\"], L);\nA[1]!.push(\"z\");\n" }],
+  D2_array_of_handed_out: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g(): string[][] { return Array.of(L); }\n" }],
+  // (3) the Date.UTC relaxation bypassed through a global object (exported target, every version)
+  D3_globalThis_alias: [DUTC_X, { "src/s.ts": "const G: any = globalThis;\nG.Date = { UTC: () => [] };\n" }],
+  D3_defineProperty_globalThis: [DUTC_X, { "src/s.ts": "Object.defineProperty(globalThis, \"Date\", { value: { UTC: () => [] } });\n" }],
+  D3_assign_globalThis: [DUTC_X, { "src/s.ts": "Object.assign(globalThis, { Date: { UTC: () => [] } });\n" }],
+  D3_reflect_set_globalThis: [DUTC_X, { "src/s.ts": "Reflect.set(globalThis, \"Date\", { UTC: () => [] });\n" }],
+  D3_globalThis_passed: [DUTC_X, { "src/s.ts": "function p(o: any): void { o.Date = { UTC: () => [] }; }\np(globalThis);\n" }],
+  D3_global_alias: [DUTC_X, { "src/s.js": "const G = global;\nG.Date = { UTC: () => [] };\n" }],
+  D3_window_spread: [DUTC_X, { "src/s.ts": "export const w = { ...window };\n" }],
+  D3_self_unsafe_member: [DUTC_X, { "src/s.ts": "export const d = self.Date;\n" }],
+  D3_math_root_via_alias: [MATH_X, { "src/s.ts": "const G: any = globalThis;\nG.Math = { max: () => [] };\n" }],
+  // (4) relative imports that resolve to no scanned file fail closed
+  D4_test_imports_unlisted_js: [LIT, { "src/x.test.ts": "import { poke } from \"./evil.js\";\npoke();\n" }],
+  D4_test_imports_outside_scope: [LIT, { "src/x.test.ts": "import \"../scripts/evil\";\n" }],
+  D4_src_imports_dotdir: [LIT, { "src/s.ts": "import \"./.hidden/evil\";\nexport const q = 1;\n" }],
+  D4_export_from_unlisted: [LIT, { "src/s.ts": "export { poke } from \"./evil\";\n" }],
+  D4_require_unlisted: [LIT, { "src/s.js": "require(\"./evil\");\n" }],
+  D4_dynamic_import_unlisted: [LIT, { "src/s.ts": "export const p = import(\"./evil\");\n" }],
 };
 
 const CONTROLS: Record<string, [string, Record<string, string>]> = {
@@ -101,6 +132,13 @@ const CONTROLS: Record<string, [string, Record<string, string>]> = {
   export_star_unexported: [CALL_LOCAL, { "src/index.ts": "export * from \"./m\";\n", "src/s.ts": "import * as all from \"./index\";\nexport function g(x: string): number { return all.f(x); }\n" }],
   star_chain_cycle_no_binding: [CALL_LOCAL, { "src/index.ts": "export * from \"./a\";\nexport * from \"./m\";\n", "src/a.ts": "export * from \"./b\";\n", "src/b.ts": "export * from \"./a\";\nexport const Z = 1;\n" }],
   dynamic_import_destructured_read: [LIT, { "src/s.test.ts": "test(\"t\", async () => { const { L, f } = await import(\"./m\"); if (f(L[0]!) !== 0 || !L.includes(\"b\")) throw new Error(\"x\"); });\n" }],
+  // Auditor #505 controls: a plain read of a known-safe global-object member keeps the relaxation; an erased
+  // type-only import of an unscanned file is no load
+  D3_safe_global_member_read: [DUTC_X, { "src/s.ts": "export function g(): void { globalThis.console.log(\"x\"); }\n" }],
+  D3_global_name_as_property: [DUTC_X, { "src/s.ts": "export const o = { globalThis: 1, window: 2 };\nexport const n = o.window;\n" }],
+  D4_type_only_import_unlisted: [LIT, { "src/s.ts": "import type { T } from \"./types\";\nexport const t: T | null = null;\n" }],
+  D1_arguments_not_reached: [LIT, { "src/s.ts": "import { L } from \"./m\";\nfunction t(): number { return arguments.length; }\nexport const n = t() + L.length;\n" }],
+  D2_array_of_read: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g(): number { return Array.of(L).length + Array.of(L)[0]!.length; }\n" }],
 };
 
 const VERS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"] as const;
@@ -241,7 +279,7 @@ test("Job B: the seven builder-log rows' target shapes grade again with the scan
       assert.notEqual(existingTargetRefusal("src/m.ts", t, "f", o2), null, `${seq} without a repo list`);
       const w2: { shared?: string } = {};
       assert.notEqual(existingTargetRefusal("src/m.ts", t, "f", { ...o2, repo: context, why: w2 }), null, `${seq} with the context list only`);
-      assert.match(w2.shared ?? "", /reexport_unresolved at src\/index\.ts:1/, seq);
+      assert.match(w2.shared ?? "", /repo: unresolved_relative_import:src\/index\.ts/, seq);
     }
   }
 });

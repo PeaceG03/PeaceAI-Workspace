@@ -20,7 +20,7 @@ import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 import { nlDecision } from "../lib/nlparse.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
-import { repoFileLists } from "../lib/learned-test-existing.ts";
+import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
 
 const MAX_CANDIDATES = 5;
@@ -132,7 +132,8 @@ const task = nl.status === "parsed" ? { title: "", body: nl.objective } : issueT
 // Auditor #466 (c), option A: repoFileLists (the one helper Job B's TEST_CASE_EXISTING re-check uses too) builds the
 // context list (in scope, not denied: the only list any context, prompt, edit or record sees) and, separately, the
 // scan list (denied in-scope files included) that only the TEST_CASE_EXISTING static shared-binding scan reads.
-const repoLists = repoFileLists(tracked, scope, (path) => readFileSync(join(repo, path), "utf8"));
+// A tracked symlink (broken or not) or a file resolving outside the checkout is skipped, the way Job B reads.
+const repoLists = repoFileLists(tracked, scope, regularFileReader(repo));
 const candidatesForContext = repoLists.context;
 const scanOnlyFiles = repoLists.scan;
 // M6: symbol and keyword index over the target's in-scope files. Built here, in memory, after the
