@@ -1,6 +1,7 @@
 {
   "schema": "peaceai-self-approvers:v1",
-  "note": "Logins whose /auditor-pass (Auditor) and /promote-self-change (Architect) comments count for self-change promotion. Agents act under Peace's account under delegation; the pass must come first, and both must name the change id and the PR's current head SHA (the tested candidate).",
+  "note": "Logins whose /auditor-pass (Auditor) and /promote-self-change (Architect) comments count for self-change promotion. Agents act under Peace's account under delegation; the pass must come first, and both must name the change id and the PR's current head SHA (the tested candidate). M106 stage 2: a proposal lands only with Peace's `/verdict <id> <sha> right` (peace) AND Auditor's `/auditor-pass <id> <sha>` (auditor) on that exact head.",
   "auditor": ["PeaceG03"],
-  "architect": ["PeaceG03"]
+  "architect": ["PeaceG03"],
+  "peace": ["PeaceG03"]
 }

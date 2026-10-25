@@ -45,12 +45,12 @@ test("existing self-tests are frozen (only NEW self-tests are in the zone; scope
 });
 
 test("safe zone: only new tests, docs and the named helpers; odd shapes are refused", () => {
-  for (const p of [...SAFE_HELPERS, "peaceai/self-tests/dates.test.ts", "peaceai/self-tests/helpers/text.a-b.test.ts", "peaceai/docs/guide.md"]) {
+  for (const p of [...SAFE_HELPERS, "peaceai/self-tests/dates.test.ts", "peaceai/self-tests/helpers/text.a-b.test.ts", "peaceai/docs/guide.md", "docs/guide.md"]) {
     assert.ok(inSafeZone(p), p);
     assert.equal(selfZoneEditRefusal([p]), null, p);
   }
   for (const p of ["peaceai/self-tests/../lib/lm.ts", "peaceai/self-tests/.x.test.ts", "peaceai/self-tests/X.test.ts", "peaceai/self-tests/helpers/other.ts", "peaceai/self-tests/a.ts",
-    "peaceai/docs/a.txt", "peaceai/docs/sub/a.md", "/peaceai/docs/a.md", "peaceai/lib/new.ts", "peaceai/bin/new.ts", "README.md", "docs/a.md"]) {
+    "peaceai/docs/a.txt", "peaceai/docs/sub/a.md", "/peaceai/docs/a.md", "peaceai/lib/new.ts", "peaceai/bin/new.ts", "README.md", "docs/sub/a.md", "docs/A.md", "docs/.a.md", "docs/a.txt", "/docs/a.md", "docs/../a.md"]) {
     assert.ok(!inSafeZone(p), p);
     assert.notEqual(selfZoneEditRefusal([p]), null, p);
   }

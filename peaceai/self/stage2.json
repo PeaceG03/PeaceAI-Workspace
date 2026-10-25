@@ -1,0 +1,5 @@
+{
+ "schema": "peaceai-self-stage2:v1",
+ "enabled": false,
+ "note": "M106 self-change stage 2 (PeaceAI PROPOSES changes to its own protected code under Auditor's limits 1-5). OFF until Peace flips `enabled` to true in his own reviewed one-commit PR. This file is in the stage-2 never-zone: PeaceAI can never propose a change to it."
+}
