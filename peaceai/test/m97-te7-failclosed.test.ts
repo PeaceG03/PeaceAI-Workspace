@@ -23,9 +23,11 @@ const P = JSON.parse(read("peaceai/test/m97-te7-failclosed.probes.json")) as { c
 const VERS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"] as const;
 const optsFor = (v: string, rd: { read: (rel: string) => string | null }): Record<string, unknown> =>
   ({ v1: { load: rd }, v2: { v2: rd }, v3: { v2: rd, dates: true }, v4: { v2: rd, v4: true }, v5: { v2: rd, v5: true }, v6: { v2: rd, v6: true }, v7: { v2: rd, v7: true } } as Record<string, Record<string, unknown>>)[v]!;
+const repoOf = (files: Record<string, string>) => Object.entries(files).map(([path, content]) => ({ path, content }));
 const verdicts = (files: Files, fn: string) => {
   const rd = { read: (rel: string) => files[rel] ?? null };
-  return Object.fromEntries(VERS.map((v) => [v, existingTargetRefusal("src/a.ts", files["src/a.ts"]!, fn, optsFor(v, rd)) ?? "ok"]));
+  // Auditor (c): the probe's files are its whole repo (the shared-binding scan's `repo`).
+  return Object.fromEntries(VERS.map((v) => [v, existingTargetRefusal("src/a.ts", files["src/a.ts"]!, fn, { ...optsFor(v, rd), repo: repoOf(files) }) ?? "ok"]));
 };
 const one = (src: string, fn = "f", sib: Files = {}) => verdicts({ "src/a.ts": src, ...sib }, fn);
 const allRefused = (r: Record<string, string>) => VERS.every((v) => r[v] !== "ok");
@@ -98,7 +100,7 @@ test("v1 without the tree fails closed on any relative import; Job A and Job B g
   const tc = read("peaceai/bin/test-candidates.ts");
   assert.match(tc, /: \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
   const lib = read("peaceai/lib/learned-test-existing.ts");
-  assert.match(lib, /v2 \? \{ v2: sib, dates: v3, v4, v5, v6, v7 \} : \{ load: sib \}\);/);
+  assert.match(lib, /v2 \? \{ v2: sib, dates: v3, v4, v5, v6, v7, repo: files \} : \{ load: sib, repo: files \}\);/);
   // The evidence-only analysis is never a gate: only the evidence tests call it.
   assert.ok(!/existingTargetAnalysisForEvidence/.test(tc));
   assert.equal((lib.match(/existingTargetAnalysisForEvidence/g) ?? []).length, 1, "declared once, never called in the library");
@@ -129,16 +131,19 @@ test("Auditor #466 Job A repros (e2e: a test that passed twice): no candidate un
 // package import is unseen code). The evidence tests replay existingTargetAnalysisForEvidence; the full-engine counts
 // are pinned here so any drift is visible. Bar is 10 for every version. #466 4th review: v3 5 -> 4 (intervalsToTimeSlots:
 // `new Date(interval.start)` of a field, unproven provenance; fail-closed Date use).
+// Auditor (c) repo scan: with no repo file list every data binding a target reads fails closed (no_repo_list), so the
+// no-repo counts drop (v1 7 -> 4, v2 6 -> 5, v4 7 -> 5, v5 4 -> 3, v6 11 -> 10, v7 14 -> 8); with the pinned target and
+// siblings as the repo (the pinned closure has no writer) the earlier counts hold. Both are pinned.
 test("full-engine evidence replay counts (reported, not a gate)", () => {
-  const V: [string, string, Record<string, unknown> | null, number][] = [
-    ["v1", "m80-test-case-existing-evidence.json", null, 7], ["v2", "m85-test-case-existing-v2-evidence.json", {}, 6],
-    ["v3", "m88-test-case-existing-v3-evidence.json", { dates: true }, 4], ["v4", "m90-test-case-existing-v4-evidence.json", { v4: true }, 7],
-    ["v5", "m91-test-case-existing-v5-evidence.json", { v5: true }, 4], ["v6", "m93-test-case-existing-v6-evidence.json", { v6: true }, 11],
-    ["v7", "m97-test-case-existing-v7-evidence.json", { v7: true }, 14],
+  const V: [string, string, Record<string, unknown> | null, number, number][] = [
+    ["v1", "m80-test-case-existing-evidence.json", null, 4, 7], ["v2", "m85-test-case-existing-v2-evidence.json", {}, 5, 6],
+    ["v3", "m88-test-case-existing-v3-evidence.json", { dates: true }, 4, 4], ["v4", "m90-test-case-existing-v4-evidence.json", { v4: true }, 5, 7],
+    ["v5", "m91-test-case-existing-v5-evidence.json", { v5: true }, 3, 4], ["v6", "m93-test-case-existing-v6-evidence.json", { v6: true }, 10, 11],
+    ["v7", "m97-test-case-existing-v7-evidence.json", { v7: true }, 8, 14],
   ];
-  for (const [v, f, o, want] of V) {
+  for (const [v, f, o, want, wantRepo] of V) {
     const EV = JSON.parse(read(`peaceai/rules/proposals/${f}`)) as { examples: { module: string; fn: string; fixture: string; siblings?: { path: string; fixture: string }[] }[] };
-    let full = 0;
+    let full = 0, withRepo = 0;
     for (const e of EV.examples) {
       const text = read(e.fixture);
       const sibs = new Map((e.siblings ?? []).map((s) => [s.path, read(s.fixture)]));
@@ -146,9 +151,14 @@ test("full-engine evidence replay counts (reported, not a gate)", () => {
       const opts = o ? { v2: rd, ...o } : { load: rd };
       const r = existingTargetRefusal(e.module, text, e.fn, opts);
       if (r === null) full++;
+      const repo = [{ path: e.module, content: text }, ...[...sibs].map(([path, content]) => ({ path, content }))];
+      const rr = existingTargetRefusal(e.module, text, e.fn, { ...opts, repo });
+      if (rr === null) withRepo++;
+      if (r === null) assert.equal(rr, null, `${v} ${e.module}#${e.fn}: a repo only narrows the no-repo refusals`);
       // Whatever the full engine refuses beyond the analysis is a refusal, never an acceptance.
       if (existingTargetAnalysisForEvidence(e.module, text, e.fn, opts) !== null) assert.notEqual(r, null);
     }
-    assert.equal(full, want, `${v} full-engine accepted`);
+    assert.equal(full, want, `${v} full-engine accepted (no repo)`);
+    assert.equal(withRepo, wantRepo, `${v} full-engine accepted (pinned closure as repo)`);
   }
 });

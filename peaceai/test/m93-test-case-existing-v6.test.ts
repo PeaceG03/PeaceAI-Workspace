@@ -103,7 +103,7 @@ test("target negatives under v6: any, nested or returned unknown, other env defa
   const shadowProc = 'const process = { env: { A: "1" } };\nexport function f(env: NodeJS.ProcessEnv = process.env): boolean { return env.A === "1"; }\n';
   // A module-local `process` is not the global: its `.env` default is walked like any default (here a pure const),
   // and it is not an env default the checks must override.
-  assert.equal(existingTargetRefusal("src/b.ts", shadowProc, "f", { v2: { read: () => null }, v6: true }), null);
+  assert.equal(existingTargetRefusal("src/b.ts", shadowProc, "f", { v2: { read: () => null }, v6: true, repo: [{ path: "src/b.ts", content: shadowProc }] }), null);
   assert.deepEqual(envDefaultParams(shadowProc, "f"), []);
   const shadowProcIo = 'import { process } from "node:process";\nexport function f(env: NodeJS.ProcessEnv = process.env): boolean { return env.A === "1"; }\n';
   assert.equal(existingTargetRefusal("src/b.ts", shadowProcIo, "f", { v2: { read: () => null }, v6: true }), "test_target_io");

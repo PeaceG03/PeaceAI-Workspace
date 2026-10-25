@@ -77,7 +77,7 @@ const run = (fn: string, checks: string, spec: RuleSpec = SPEC, files = FILES) =
 };
 const filesOf = (o: Record<string, string>) => Object.entries(o).map(([path, content]) => ({ path, content }));
 const refusal = (files: { path: string; content: string }[], fn: string, opts: Record<string, unknown> = {}) =>
-  existingTargetRefusal("src/a.ts", files.find((f) => f.path === "src/a.ts")!.content, fn, { v2: { read: (rel: string) => files.find((f) => f.path === rel)?.content ?? null }, v7: true, ...opts });
+  existingTargetRefusal("src/a.ts", files.find((f) => f.path === "src/a.ts")!.content, fn, { v2: { read: (rel: string) => files.find((f) => f.path === rel)?.content ?? null }, v7: true, repo: files, ...opts });
 
 test("spec: valid, hash pinned, v6 params except the target, the v1 trigger; any listed approval pins the exact hash", () => {
   assert.ok(validateSpec(SPEC));
@@ -465,7 +465,8 @@ test("Auditor #466: module state through fresh aliases, module RegExp / iterator
   let neg = 0;
   for (const [k, [kind, fn, files, want]] of Object.entries(A466)) {
     const rd = { read: (rel: string) => files[rel] ?? null };
-    const got = ver(rd).map((o) => existingTargetRefusal("src/a.ts", files["src/a.ts"]!, fn, o as never) ?? "ok");
+    const repo = Object.entries(files).map(([path, content]) => ({ path, content })); // Auditor (c): the case's whole repo
+    const got = ver(rd).map((o) => existingTargetRefusal("src/a.ts", files["src/a.ts"]!, fn, { ...o, repo } as never) ?? "ok");
     assert.deepEqual(got, want, k);
     if (kind === "NEG") { neg++; assert.ok(want.every((r) => r !== "ok"), `${k} refused everywhere`); }
     if (kind === "OK") assert.ok(want.includes("ok"), k);

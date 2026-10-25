@@ -50,7 +50,8 @@ function verdicts(name: string): Record<string, string> {
   const own: Record<string, string> = { [`src/${name}.ts`]: F[`${name}.ts`]! };
   for (const s of SIB[name] ?? []) own[`src/${s}`] = F[s]!;
   const rd = { read: (rel: string) => own[rel] ?? null };
-  const O: Record<string, object> = { v1: { load: rd }, v2: { v2: rd }, v3: { v2: rd, dates: true }, v4: { v2: rd, dates: true, v4: true }, v5: { v2: rd, dates: true, v4: true, v5: true }, v6: { v2: rd, v6: true }, v7: { v2: rd, v7: true } };
+  const repo = Object.entries(own).map(([path, content]) => ({ path, content })); // Auditor (c): the probe's whole repo
+  const O: Record<string, object> = { v1: { load: rd, repo }, v2: { v2: rd, repo }, v3: { v2: rd, dates: true, repo }, v4: { v2: rd, dates: true, v4: true, repo }, v5: { v2: rd, dates: true, v4: true, v5: true, repo }, v6: { v2: rd, v6: true, repo }, v7: { v2: rd, v7: true, repo } };
   return Object.fromEntries(VERS.map((v) => [v, existingTargetRefusal(`src/${name}.ts`, own[`src/${name}.ts`]!, "f", O[v] as never) ?? "ok"]));
 }
 
