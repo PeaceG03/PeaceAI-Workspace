@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   addOnlyTestCheck, checkStage2Proposal, computeNeverZone, listGrowthRefusals, listSha, NEVER_ZONE, NO_GENERATOR_MARK, protectedReason,
   stage2Credit, stage2DiffSha, stage2Enabled, stage2GradeDecision, stage2LandingDecision, stage2PathRefusal,
-  STAGE2_FLAG_PATH, STAGE2_PHASES, STAGE2_SCHEMA, type CommandComment, type Stage2PrFacts, type Stage2Record,
+  STAGE2_COUNTS_TRUST, STAGE2_FLAG_PATH, STAGE2_PHASES, STAGE2_SCHEMA, type CommandComment, type Stage2PrFacts, type Stage2Record,
 } from "../lib/selfchange.ts";
 import { inSafeZone } from "../lib/self-zone.ts";
 import { prepareStage2InSandbox, runStage2InSandbox } from "../lib/selfpropose.ts";
@@ -184,7 +184,7 @@ test("M106 limit 2: test edits are add-only, checked on the AST against the base
   assert.deepEqual(ok.added, ["three", "four"]);
   assert.deepEqual(addOnlyTestCheck(T, null, 'import test from "node:test";\ntest("new file", () => {});\n'), { refusals: [], added: ["new file"] });
   // via the proposal: fixtures and non-.ts tests cannot be checked add-only, so they are refused
-  assert.match(reasons(proposal([{ path: "peaceai/test/fixtures/m999/a.txt", base: null, cand: "x\n" }])), /fixtures/);
+  assert.match(reasons(proposal([{ path: "peaceai/test/fixtures/m999/a.txt", base: null, cand: "x\n" }])), /fixtures|data file under peaceai/);
   assert.match(reasons(proposal([{ path: "peaceai/test/helper.ts", base: "a\n", cand: "b\n" }])), /fixtures and non-\.ts tests/);
   assert.match(reasons(proposal([{ path: "peaceai/self-tests/x.test.mjs", base: null, cand: "x\n" }])), /non-\.ts tests/);
   const p = proposal([{ path: T, base: BASE_TEST, cand: add('test("three", () => { assert.equal(f(2), 4); });') }]);
@@ -231,6 +231,7 @@ function goodRecord(): Stage2Record {
     newTests: [{ file: T, name: "three", onBase: { exitCode: 1, pass: 0, fail: 1 }, onCandidate: { exitCode: 0, pass: 1, fail: 0 } }],
     phases: STAGE2_PHASES.map((phase) => ({ phase, ran: true, leftovers: 0 })),
     status: "awaiting-review", createdAt: "2026-10-25T07:00:00.000Z",
+    countsTrust: STAGE2_COUNTS_TRUST, run: { repository: "PeaceG03/PeaceAI-Results", runId: "4242", runAttempt: "1" },
   };
 }
 
@@ -238,6 +239,7 @@ test("M106 limit 3: grade = unchanged base suite passes on the candidate, each n
   assert.deepEqual(stage2GradeDecision(goodRecord(), SUITE), { ok: true, reasons: [] });
   const bad: [string, (r: Stage2Record) => void, string][] = [
     ["schema", (r) => { (r as { schema: string }).schema = "peaceai-self-change:v1"; }, "BAD_RECORD"],
+    ["counts not labelled advisory (round 2 B1)", (r) => { (r as { countsTrust: string }).countsTrust = "trusted"; }, "BAD_RECORD"],
     ["check refused", (r) => { r.check.ok = false; }, "CHECK_REFUSED"],
     ["never-zone path in record", (r) => { r.paths.push("peaceai/lib/selfchange.ts"); }, "CHECK_REFUSED"],
     ["suite file dropped", (r) => { r.baseSuite.files = SUITE.slice(1); }, "BASE_SUITE_MISMATCH"],
@@ -276,7 +278,8 @@ const comment = (body: string, over: Partial<CommandComment> = {}): CommandComme
   return { id, url: `https://github.com/PeaceG03/PeaceAI-Workspace/pull/9#issuecomment-${id}`, body, author: "PeaceG03", association: "OWNER", createdAt: "2026-10-25T07:00:00Z", ...over };
 };
 const both = (sha = HEAD) => [comment(`/auditor-pass sc-demo ${sha}`), comment(`/verdict sc-demo ${sha} right`)];
-const PR: Stage2PrFacts = { headSha: HEAD, diffSha256: "d".repeat(64), baseOnMain: true, commitsExact: true, recheck: { ok: true, refusals: [], paths: [], newTests: [] } };
+const LEDGER: Stage2PrFacts["ledger"] = { entry: { schema: "peaceai-self-change-ledger:v1", id: "sc-demo", base: "b".repeat(40), runId: "4242", patchSha256: "" }, commits: 1 };
+const PR: Stage2PrFacts = { headSha: HEAD, diffSha256: "d".repeat(64), baseOnMain: true, commitsExact: true, recheck: { ok: true, refusals: [], paths: [], newTests: [] }, ledger: LEDGER };
 
 test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /verdict AND Auditor /auditor-pass on that exact commit", () => {
   const ok = stage2LandingDecision(goodRecord(), SUITE, PR, both(), AUD, ON);
@@ -298,6 +301,14 @@ test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /ve
   // Auditor #504 blocker 6 / blocker 1: base pinned to main, PR = exactly base..head, check re-run on the real diff
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, baseOnMain: false }, both(), AUD, ON), "BASE_NOT_ON_MAIN");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, commitsExact: false }, both(), AUD, ON), "PR_COMMITS_NOT_BASE_HEAD");
+  // round 2 B4: the write-once ledger names the run that made the record
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { entry: null, commits: 0 } }, both(), AUD, ON), "LEDGER_MISSING");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, commits: 3 } }, both(), AUD, ON), "LEDGER_REWRITTEN");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, entry: { ...LEDGER.entry!, runId: "9999" } } }, both(), AUD, ON), "RECORD_NOT_FROM_LEDGER_RUN");
+  has(stage2LandingDecision({ ...goodRecord(), run: null }, SUITE, PR, both(), AUD, ON), "RECORD_NOT_FROM_LEDGER_RUN");
+  has(stage2LandingDecision({ ...goodRecord(), run: { repository: "PeaceG03/PeaceAI-Results", runId: "4242", runAttempt: "2" } }, SUITE, PR, both(), AUD, ON), "RECORD_NOT_FROM_LEDGER_RUN");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, entry: { ...LEDGER.entry!, id: "sc-other" } } }, both(), AUD, ON), "LEDGER_MISSING");
+  has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, ledger: { ...LEDGER, entry: { ...LEDGER.entry!, base: "c".repeat(40) } } }, both(), AUD, ON), "LEDGER_BASE_MISMATCH");
   has(stage2LandingDecision(goodRecord(), SUITE, { ...PR, recheck: { ok: false, refusals: [{ path: "x", reason: "never-zone" }], paths: [], newTests: [] } }, both(), AUD, ON), "CHECK_REFUSED_ON_PR_DIFF");
   // each approval is required, on this id and this sha, by the listed login, traced, with a member association
   has(stage2LandingDecision(goodRecord(), SUITE, PR, [comment(`/verdict sc-demo ${HEAD} right`)], AUD, ON), "AUDITOR_PASS_MISSING");
@@ -350,13 +361,27 @@ test("M106 limit 3/4 (Auditor #504 blocker 5): grading runs only in private ephe
   const code = wf.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
   assert.match(code, /^on:\n  workflow_dispatch:/m, "dispatch only");
   assert.match(code, /^permissions:\n  contents: read\n/m);
-  assert.doesNotMatch(code, /secrets\.|GH_TOKEN|GITHUB_TOKEN|write|git push|gh (pr|issue|api)|\/verdict|\/auditor-pass|merge|symlink|ln -s|retry|propose2/);
+  // round 2 B4: the ONLY write is the ledger job (no checkout, no code); everything else holds no token and no write
+  const ledgerJob = code.slice(code.indexOf("\n  ledger:\n"), code.indexOf("\n  prepare:\n"));
+  const rest = code.replace(ledgerJob, "");
+  assert.ok(ledgerJob.length > 0 && code.indexOf("\n  ledger:\n") < code.indexOf("\n  prepare:\n"), "ledger job first");
+  assert.doesNotMatch(rest, /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token|write|git push|gh (pr|issue|api)|\/verdict|\/auditor-pass|merge|symlink|ln -s|retry|propose2/);
+  assert.doesNotMatch(ledgerJob, /secrets\.|uses:|checkout|node|npm|tsx|git push|gh (pr|issue)|merge|retry/, "the ledger job runs no action and no code");
+  assert.match(ledgerJob, /permissions:\n      contents: write\n/);
+  assert.equal((ledgerJob.match(/GH_TOKEN/g) ?? []).length, 1, "the token is in that one step only");
+  const put = /gh api -X PUT "repos\/\$GITHUB_REPOSITORY\/contents\/self-proposals\/ledger\/\$ID\.json"[^\n]*\n[^\n]*-f message=[^\n]*-f content="\$body"/;
+  assert.match(ledgerJob, put);
+  assert.doesNotMatch(ledgerJob, /-f sha|sha=/, "no sha: create-only, a reused id fails");
+  assert.match(ledgerJob, /\$GITHUB_RUN_ID/);
+  assert.match(code, /\n  prepare:\n    needs: ledger\n/);
+  // round 2 B1(4): candidate-code step runs with the runner command files unset
+  assert.match(code, /env -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_OUTPUT -u GITHUB_STATE -u GITHUB_STEP_SUMMARY \\\n\s+node_modules\/\.bin\/tsx peaceai\/bin\/self-change\.ts run2 /);
   const checkouts = code.match(/actions\/checkout@/g) ?? [];
   assert.equal((code.match(/persist-credentials: false/g) ?? []).length, checkouts.length, "no checkout persists the token");
-  // three jobs, each once (no retry), on the private repo only
+  // four jobs, each once (no retry), on the private repo only
   const jobs = code.slice(code.indexOf("\njobs:\n"));
-  assert.deepEqual([...jobs.matchAll(/^  ([a-z]+):$/gm)].map((m) => m[1]), ["prepare", "run", "record"]);
-  assert.equal((code.match(/github\.repository == 'PeaceG03\/PeaceAI-Results' && github\.run_attempt == 1/g) ?? []).length, 3);
+  assert.deepEqual([...jobs.matchAll(/^  ([a-z]+):$/gm)].map((m) => m[1]), ["ledger", "prepare", "run", "record"]);
+  assert.equal((code.match(/github\.repository == 'PeaceG03\/PeaceAI-Results' && github\.run_attempt == 1/g) ?? []).length, 4);
   // only the patch file is read from Results; the grader is its own read-only install at main
   assert.match(code, /sparse-checkout-cone-mode: false\n\s+sparse-checkout: \|\n\s+\/self-proposals\/\$\{\{ inputs\.id \}\}\.patch\n/);
   assert.match(code, /rm -rf results/);

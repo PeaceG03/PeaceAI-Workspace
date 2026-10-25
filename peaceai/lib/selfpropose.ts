@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appliedDiffRefusals, budgetMinutes, checkSelfChangeDiff, checkStage2Proposal, computeNeverZone, listSha, parseGitDiff, parseRawZ, SELF_SCHEMA, selfChangeAllowedHere, sha256, STAGE2_DIFF_ARGS, STAGE2_PHASES, STAGE2_SCHEMA, stage2DiffSha, stage2GradeDecision, type CaseRun, type NeverZoneSet, type SelfChangeRecord, type Stage2Check, type Stage2Phase, type Stage2PrFacts, type Stage2Record, type TestRun } from "./selfchange.ts";
+import { appliedDiffRefusals, budgetMinutes, checkSelfChangeDiff, checkStage2Proposal, computeNeverZone, listSha, parseGitDiff, parseRawZ, SELF_SCHEMA, selfChangeAllowedHere, sha256, STAGE2_COUNTS_TRUST, STAGE2_DIFF_ARGS, STAGE2_PHASES, STAGE2_SCHEMA, stage2DiffSha, stage2GradeDecision, type CaseRun, type NeverZoneSet, type SelfChangeRecord, type Stage2Check, type Stage2Phase, type Stage2PrFacts, type Stage2Record, type TestRun } from "./selfchange.ts";
 
 const NOREPLY = ["-c", "user.name=PeaceG03", "-c", "user.email=301894882+PeaceG03@users.noreply.github.com"];
 const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }).trim();
@@ -24,8 +24,7 @@ function runSuite(cwd: string, suite: "live" | "new", files: string[], deadline:
   if (files.length === 0) return { suite, files, filesSha256: listSha(files), exitCode: 0, pass: 0, fail: 0 };
   const left = Math.max(1000, deadline - Date.now());
   const r = spawnSync(join(cwd, "node_modules/.bin/tsx"), ["--test", "--test-reporter=tap", ...files], { cwd, encoding: "utf8", timeout: left, maxBuffer: 1 << 28, env: suiteEnv() });
-  const num = (k: string) => Number(new RegExp(`^# ${k} (\\d+)$`, "m").exec(r.stdout ?? "")?.[1] ?? 0);
-  return { suite, files, filesSha256: listSha(files), exitCode: r.status ?? 124, pass: num("pass"), fail: num("fail") + (r.status === null ? 1 : 0) };
+  return { suite, files, filesSha256: listSha(files), exitCode: r.status ?? 124, pass: lastCount(r.stdout ?? "", "pass"), fail: lastCount(r.stdout ?? "", "fail") + (r.status === null ? 1 : 0) };
 }
 
 /** nodeModules: an already-installed dependency tree to link (the job's own checkout); otherwise `npm ci` in the clone. */
@@ -120,6 +119,8 @@ export const neverZoneAtSha = (work: string, sha: string): NeverZoneSet => compu
 export interface Stage2Prep {
   schema: typeof STAGE2_PREP_SCHEMA; id: string; baseSha: string; mainSha: string; candidateSha: string; diffSha256: string;
   paths: string[]; candidateBlobs: Record<string, string | null>; check: Stage2Check; suiteFiles: string[]; createdAt: string;
+  /** round 2 B4: the Results run that prepared this id (from GITHUB_REPOSITORY / GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT) */
+  run?: Stage2Record["run"];
 }
 /**
  * Blockers 1, 2, 6 (no candidate code runs here). `work` is a fresh clone at `baseSha` whose `mainRef` is main.
@@ -170,6 +171,14 @@ const pidsNow = (): Set<number> => new Set((spawnSync("ps", ["-e", "-o", "pid="]
  * session is killed and counted; in the private job (strict) every new process of this user is too. Any leftover
  * fails the run. Off the private job (tests, the box) only the run's own session is touched.
  */
+/**
+ * Auditor #504 round 2 B1(2): the TAP runner prints its summary LAST, so the LAST `# pass N` / `# fail N` line counts;
+ * a test that prints a fake summary earlier cannot win. (The counts stay advisory: candidate code shares the process.)
+ */
+export function lastCount(stdout: string, k: "pass" | "fail"): number {
+  const all = [...stdout.matchAll(new RegExp(`^# ${k} (\\d+)$`, "gm"))];
+  return all.length ? Number(all[all.length - 1][1]) : 0;
+}
 export function isolatedRun(cwd: string, args: string[], deadline: number): { exitCode: number; pass: number; fail: number; leftovers: number } {
   const strict = selfChangeAllowedHere(process.env).ok;
   const before = pidsNow();
@@ -183,8 +192,7 @@ export function isolatedRun(cwd: string, args: string[], deadline: number): { ex
     for (const pid of s) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
     spawnSync("sleep", ["0.2"]);
   }
-  const num = (k: string) => Number(new RegExp(`^# ${k} (\\d+)$`, "m").exec(r.stdout ?? "")?.[1] ?? 0);
-  return { exitCode: r.status ?? 124, pass: num("pass"), fail: num("fail") + (r.status === null ? 1 : 0), leftovers };
+  return { exitCode: r.status ?? 124, pass: lastCount(r.stdout ?? "", "pass"), fail: lastCount(r.stdout ?? "", "fail") + (r.status === null ? 1 : 0), leftovers };
 }
 
 /**
@@ -219,7 +227,7 @@ export function recordStage2(prep: Stage2Prep, runs: readonly Stage2PhaseRun[]):
   const rec: Stage2Record = {
     schema: STAGE2_SCHEMA, id: prep.id, baseSha: prep.baseSha, candidateSha: prep.candidateSha, diffSha256: prep.diffSha256, paths: prep.paths,
     candidateBlobs: prep.candidateBlobs, check: prep.check, baseSuite: { suite: "live", files: prep.suiteFiles, filesSha256: listSha(prep.suiteFiles), exitCode: 1, pass: 0, fail: 0 },
-    newTests: [], phases: [], status: "refused", createdAt: new Date().toISOString(),
+    newTests: [], phases: [], status: "refused", createdAt: new Date().toISOString(), countsTrust: STAGE2_COUNTS_TRUST, run: prep.run ?? null,
   };
   if (!prep.check.ok || !prep.candidateSha) return rec;
   const get = (ph: Stage2Phase) => runs.find((r) => r.schema === STAGE2_RUN_SCHEMA && r.phase === ph && r.id === prep.id && r.candidateSha === prep.candidateSha);
@@ -265,6 +273,8 @@ export function prepareStage2InSandbox(o: { id: string; diff: string; source: st
     if (spawnSync("git", ["cat-file", "-e", `${o.base}^{commit}`], { cwd: work }).status !== 0) return { code: 2, message: "self-change stage2 refused reason=BASE_NOT_FOUND", prep: null };
     git(work, "checkout", "--quiet", "--detach", o.base);
     prep = prepareStage2(work, o.id, o.diff, o.base, "refs/remotes/origin/main");
+    const env = process.env;
+    prep.run = env.GITHUB_RUN_ID ? { repository: env.GITHUB_REPOSITORY ?? "", runId: env.GITHUB_RUN_ID, runAttempt: env.GITHUB_RUN_ATTEMPT ?? "" } : null;
     if (prep.candidateSha) {
       const bundle = join(o.out, `${o.id}.bundle`);
       if (existsSync(bundle)) throw new Error(`refusing to overwrite ${bundle} (a stage-2 failure is final; rerun with a new id)`);
@@ -303,8 +313,8 @@ export function runStage2InSandbox(o: { prepFile: string; bundle: string; source
  * base pinned to main, the PR = exactly one commit base..head, and the full check re-run on the real diff with
  * the base tree's never-zone. `prCommits` are the PR's commit SHAs as GitHub lists them. No candidate code runs.
  */
-export function stage2PrFacts(repo: string, rec: Stage2Record, headSha: string, prCommits: readonly string[], mainRef: string): Stage2PrFacts {
-  const none: Stage2PrFacts = { headSha: "", diffSha256: "", baseOnMain: false, commitsExact: false, recheck: { ok: false, refusals: [{ path: "-", reason: "PR head not available" }], paths: [], newTests: [] } };
+export function stage2PrFacts(repo: string, rec: Stage2Record, headSha: string, prCommits: readonly string[], mainRef: string, ledger: Stage2PrFacts["ledger"] = { entry: null, commits: 0 }): Stage2PrFacts {
+  const none: Stage2PrFacts = { headSha: "", diffSha256: "", baseOnMain: false, commitsExact: false, recheck: { ok: false, refusals: [{ path: "-", reason: "PR head not available" }], paths: [], newTests: [] }, ledger };
   const sha = (x: string) => /^[0-9a-f]{40}$/.test(x);
   if (!sha(headSha) || !sha(rec.baseSha) || spawnSync("git", ["cat-file", "-e", `${headSha}^{commit}`], { cwd: repo }).status !== 0 || spawnSync("git", ["cat-file", "-e", `${rec.baseSha}^{commit}`], { cwd: repo }).status !== 0) return { ...none, headSha };
   const main = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], { cwd: repo, encoding: "utf8" }).stdout.trim();
@@ -315,5 +325,5 @@ export function stage2PrFacts(repo: string, rec: Stage2Record, headSha: string, 
   const commitsExact = between.length === 1 && between[0] === headSha && parents.length === 1 && parents[0] === rec.baseSha && prCommits.length === 1 && prCommits[0] === headSha;
   const diff = git(repo, ...STAGE2_DIFF_ARGS, rec.baseSha, headSha);
   const recheck = checkStage2Proposal(diff, { base: showAt(repo, rec.baseSha), cand: showAt(repo, headSha) }, neverZoneAtSha(repo, rec.baseSha));
-  return { headSha, diffSha256: stage2DiffSha(diff), baseOnMain, commitsExact, recheck };
+  return { headSha, diffSha256: stage2DiffSha(diff), baseOnMain, commitsExact, recheck, ledger };
 }

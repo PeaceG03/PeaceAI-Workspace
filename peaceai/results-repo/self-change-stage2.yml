@@ -1,18 +1,26 @@
 name: self-change-stage2
+run-name: self-change-stage2 ${{ inputs.id }}
 
 # M106 (installed in PeaceAI-Results from PeaceAI-Workspace peaceai/results-repo/; BUILDER-WRITTEN, Peace-approved
 # 2026-10-25, revised for Auditor's #504 review). The private, short-lived grading run for a stage-2 self-change
-# PROPOSAL. It only grades; no secrets, no write permission, no push, no PR, no comment; no token is persisted or in
-# any grading step's environment (selfChangeAllowedHere refuses CREDENTIALS_IN_ENV).
-# Three kinds of job, so candidate code never shares a job, process tree or dependency install with the grader or
+# PROPOSAL. It only grades; no secrets, no push of code, no PR, no comment; no token is persisted or in any grading
+# step's environment (selfChangeAllowedHere refuses CREDENTIALS_IN_ENV). The ONE write is the ledger job below.
+# Four kinds of job, so candidate code never shares a job, process tree or dependency install with the grader or
 # the record:
+#   ledger   (no checkout, no code) round 2 B4: creates self-proposals/ledger/<id>.json in this repo with the
+#            contents API WITHOUT a sha, so it fails if the id was ever used (write-once); it names this run id.
+#            decide2 refuses a record whose run id is not the ledger's, or a ledger file touched by more than one
+#            commit. Its token (job-scoped contents: write) exists only in that one step.
 #   prepare  (no candidate code)  the ONLY file read from this repo is self-proposals/<id>.patch (sparse checkout);
 #            the grader is a separate read-only Workspace checkout at main with its own install; base pinned to
 #            main, never-zone closure of the base tree, strict parse, staged==parsed, check on git's own diff.
 #   run      (one fresh VM per phase; the only place candidate code runs) fresh clone + its own npm ci inside
 #            run2; a process snapshot before and a leftover check after (leftovers = phase output deleted = failed).
 #   record   (no candidate code) builds the record from the prepare output and the phase outputs.
-# No retry: run_attempt must be 1 and outputs are write-once; a failure is final (rerun = new id).
+# No retry: run_attempt must be 1, outputs are write-once and the id ledger is write-once across runs.
+# ADVISORY COUNTS (round 2 B1): the run job's VM has passwordless sudo and candidate code shares the test process,
+# so the pass/fail counts can be forged (GITHUB_ENV is unset for run2, but sudo can still reach the runner). The
+# counts can only block; landing always needs both human approvals on the exact head.
 # Landing is decided later in the Workspace by `self-change.ts decide2 --pr N`: flag peaceai/self/stage2.json on
 # main (only Peace flips it), Peace `/verdict <id> <sha> right` AND Auditor `/auditor-pass <id> <sha>` on that exact
 # head, base on main and the PR exactly base..head. Credit is refused until a recorded generator run exists.
@@ -39,7 +47,27 @@ env:
   SOURCE: https://github.com/PeaceG03/PeaceAI-Workspace.git
 
 jobs:
+  ledger:
+    if: github.repository == 'PeaceG03/PeaceAI-Results' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Claim the proposal id (write-once; fails if the id was ever used)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$ID" =~ ^sc-[a-z0-9-]{3,48}$ ]] || { echo "bad id"; exit 1; }
+          [[ "$BASE" =~ ^[0-9a-f]{40}$ ]] || { echo "bad base"; exit 1; }
+          body=$(printf '{"schema":"peaceai-self-change-ledger:v1","id":"%s","base":"%s","runId":"%s","patchSha256":""}\n' "$ID" "$BASE" "$GITHUB_RUN_ID" | base64 -w0)
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/self-proposals/ledger/$ID.json" \
+            -f message="self-change ledger: $ID run $GITHUB_RUN_ID" -f content="$body" > /dev/null \
+            || { echo "id $ID already used (or ledger write failed): a stage-2 failure is final; use a new id"; exit 1; }
+
   prepare:
+    needs: ledger
     if: github.repository == 'PeaceG03/PeaceAI-Results' && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -123,9 +151,11 @@ jobs:
         working-directory: grader
         env:
           PHASE: ${{ matrix.phase }}
+        # round 2 B1(4): no runner command files for candidate-code steps (GITHUB_ENV / PATH / OUTPUT / STATE / summary)
         run: |
           set -euo pipefail
-          node_modules/.bin/tsx peaceai/bin/self-change.ts run2 --phase "$PHASE" \
+          env -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_OUTPUT -u GITHUB_STATE -u GITHUB_STEP_SUMMARY \
+            node_modules/.bin/tsx peaceai/bin/self-change.ts run2 --phase "$PHASE" \
             --prep "$RUNNER_TEMP/prep/$ID.prep.json" --bundle "$RUNNER_TEMP/prep/$ID.bundle" \
             --source "$SOURCE" --out "$RUNNER_TEMP/run"
       - name: Leftover process check

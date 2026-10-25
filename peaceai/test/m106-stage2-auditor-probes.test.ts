@@ -1,5 +1,5 @@
-// M106 stage 2, Auditor's #504 review: every probe Auditor ran against head 4be9544 is kept here as a permanent
-// negative test (blockers 1-6). Each one must stay refused; the positive controls show the guard is not just "refuse all".
+// M106 stage 2, Auditor's #504 review: every probe Auditor ran against head 4be9544 (round 1, blockers 1-6) and
+// against 98611e6 (round 2, B1-B4) is kept here as a permanent negative test. Each one must stay refused; the positive controls show the guard is not just "refuse all".
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   addOnlyTestCheck, appliedDiffRefusals, checkStage2Proposal, computeNeverZone, parseGitDiff, parseRawZ, stage2ZoneRefusal,
-  TOKEN_SCRIPTS, STAGE2_PHASES, type Stage2Record,
+  TOKEN_SCRIPTS, STAGE2_PHASES, stage2EngineFindings, stage2LedgerReasons, stage2PathRefusal, STAGE2_DATA_ALLOWLIST, type Stage2Record,
 } from "../lib/selfchange.ts";
-import { isolatedRun, prepareStage2, recordStage2, stage2PrFacts, type Stage2PhaseRun } from "../lib/selfpropose.ts";
+import { isolatedRun, lastCount, prepareStage2, recordStage2, stage2PrFacts, type Stage2PhaseRun } from "../lib/selfpropose.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const NOREPLY = ["-c", "user.name=PeaceG03", "-c", "user.email=301894882+PeaceG03@users.noreply.github.com", "-c", "commit.gpgsign=false"];
@@ -272,4 +272,189 @@ test("M106 #504: decide2 refuses the fixture-only --approvals mode; credit2 alwa
     assert.equal(c.status, 2);
     assert.match(c.stdout, /credit=false mark="no credit: no generator run record"/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ======================= round 2 (Auditor on 98611e6) =======================
+const newFile = (path: string, text: string) => { const l = text.split("\n"); if (l[l.length - 1] === "") l.pop(); return `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${l.length} @@\n${l.map((x) => "+" + x).join("\n")}\n`; };
+const editFile = (path: string, base: string, cand: string) => { const b = base.split("\n"), c = cand.split("\n"); b.pop(); c.pop(); return `diff --git a/${path} b/${path}\nindex 1..2 100644\n--- a/${path}\n+++ b/${path}\n@@ -1,${b.length} +1,${c.length} @@\n${b.map((x) => "-" + x).join("\n")}\n${c.map((x) => "+" + x).join("\n")}\n`; };
+
+test("M106 #504 round 2 B1(2): the LAST TAP summary counts; a fake summary printed earlier by a test cannot win (probe/forge/c, d)", () => {
+  assert.equal(lastCount("# pass 50\n# fail 0\nnot ok 1 - x\n# pass 0\n# fail 1\n", "pass"), 0);
+  assert.equal(lastCount("# pass 50\n# fail 0\nnot ok 1 - x\n# pass 0\n# fail 1\n", "fail"), 1);
+  assert.equal(lastCount("no summary", "fail"), 0);
+  const d = mkdtempSync(join(repo, ".m106-forge-"));
+  try {
+    for (const [f, body] of [["c.test.ts", 'import test from "node:test";\nconsole.log("# pass 50\\n# fail 0");\ntest("x fails", () => { throw new Error("boom"); });\n'], ["d.test.ts", 'import test from "node:test";\nconsole.log("pass 50\\nfail 0");\ntest("x fails", () => { throw new Error("boom"); });\n']]) {
+      writeFileSync(join(d, f), body);
+      const r = isolatedRun(repo, ["--test", "--test-reporter=tap", join(d, f)], Date.now() + 60_000);
+      assert.deepEqual({ pass: r.pass, fail: r.fail, failed: r.exitCode !== 0 }, { pass: 0, fail: 1, failed: true }, f);
+    }
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test("M106 #504 round 2 B1(3): ENFORCED engine-safety rule on added / changed code (probe/forge/a, b; cases6 via learned-multibody.ts)", () => {
+  const zone = computeNeverZone([], () => null);
+  const T = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "../lib/zz.ts";\ntest("zz new", () => { assert.equal(f(), 1); });\n';
+  const check = (lib: string, base: string | null = null) => checkStage2Proposal((base === null ? newFile("peaceai/lib/zz.ts", lib) : editFile("peaceai/lib/zz.ts", base, lib)) + newFile("peaceai/test/zz.test.ts", T), { base: (p) => (p === "peaceai/lib/zz.ts" ? base : null), cand: (p) => (p === "peaceai/lib/zz.ts" ? lib : T) }, zone);
+  const ENGINE: Record<string, string> = {
+    forge_a_exit: "export const f = () => 1;\nprocess.exit(0);\n",
+    forge_b_assert_patch: 'import assert from "node:assert/strict";\n(assert as any).equal = () => {};\nexport const f = () => 1;\n',
+    cases6_defineGetter: 'import nodeAssert from "node:assert/strict";\nexport const f = (): number => { (nodeAssert as any).__defineGetter__("equal", () => () => undefined); return 1; };\n',
+    node_test_import: 'import test from "node:test";\nexport const f = () => 1;\n',
+    assert_require: 'const a = require("node:assert");\nexport const f = () => 1;\n',
+    assert_dyn: 'export const f = () => 1;\nvoid import("assert");\n',
+    process_on: 'process.on("exit", () => {});\nexport const f = () => 1;\n',
+    process_once: 'process.once("beforeExit", () => {});\nexport const f = () => 1;\n',
+    process_env: "export const f = () => (process.env.X ? 1 : 1);\n",
+    process_bracket: 'export const f = () => { (process as any)["ex" + "it"](0); return 1; };\n',
+    process_alias: "const p = process;\nexport const f = () => 1;\n",
+    process_exitCode: "export const f = () => { process.exitCode = 0; return 1; };\n",
+    globalThis_write: "(globalThis as any).x = 1;\nexport const f = () => 1;\n",
+    globalThis_read: "export const f = () => ((globalThis as any).process ? 1 : 1);\n",
+    global_write: "(global as any).x = 1;\nexport const f = () => 1;\n",
+    proto_write: "(Array.prototype as any).includes = () => true;\nexport const f = () => 1;\n",
+    proto_user: "class A {}\n(A.prototype as any).x = 1;\nexport const f = () => 1;\n",
+    dunder_proto: "const o: any = {};\no.__proto__.x = 1;\nexport const f = () => 1;\n",
+    setPrototypeOf: "Object.setPrototypeOf({}, null);\nexport const f = () => 1;\n",
+    defineSetter: '({} as any).__defineSetter__("x", () => {});\nexport const f = () => 1;\n',
+    lookupGetter: 'const g = ({} as any).__lookupGetter__("x");\nexport const f = () => 1;\n',
+    computed_define: 'const k = "__define" + "Getter__";\nexport const f = () => 1;\n',
+    reflect: 'import * as m from "./other.ts";\nReflect.set(m, "x", 1);\nexport const f = () => 1;\n',
+    defineProperty_import: 'import * as m from "./other.ts";\nObject.defineProperty(m, "x", { value: 1 });\nexport const f = () => 1;\n',
+    assign_builtin: "Object.assign(Math, { max: () => 0 });\nexport const f = () => 1;\n",
+    write_import: 'import { cfg } from "./other.ts";\n(cfg as any).on = true;\nexport const f = () => 1;\n',
+    delete_builtin: "delete (JSON as any).parse;\nexport const f = () => 1;\n",
+    builtin_write: "(Math as any).max = () => 0;\nexport const f = () => 1;\n",
+    child_process: 'import { execSync } from "node:child_process";\nexport const f = () => 1;\n',
+    worker_threads: 'import { Worker } from "node:worker_threads";\nexport const f = () => 1;\n',
+    node_process: 'import p from "node:process";\nexport const f = () => 1;\n',
+    constructor_escape: 'export const f = () => (() => 1).constructor("return 1")();\n',
+    eval: 'export const f = () => eval("1");\n',
+  };
+  for (const [k, lib] of Object.entries(ENGINE)) {
+    const c = check(lib);
+    assert.ok(c.refusals.some((r) => /^engine-safety:/.test(r.reason)), `${k} must be refused (enforced): ${reasons(c)}`);
+    assert.equal(c.ok, false, k);
+  }
+  // only NEW occurrences count: an unrelated edit to a file that already reads process.env is not refused
+  const old = "export const g = process.env.HOME;\nexport const f = () => 1;\n";
+  assert.ok(!check(old.replace("=> 1", "=> 2"), old).refusals.some((r) => /^engine-safety/.test(r.reason)), "pre-existing occurrence is not re-counted");
+  // control: plain engine code passes
+  const ok = check('import { join } from "node:path";\nexport const f = (): number => { const xs: number[] = []; xs.push(1); return join("a", "b").length - 2; };\n');
+  assert.ok(!ok.refusals.some((r) => /^engine-safety/.test(r.reason)), reasons(ok));
+  // tests too: the same rule minus the node:assert / node:test ban (a test file that exits 0 at import neuters its file)
+  for (const extra of ["const quit = process.exit(0);\n", 'const hook = process.on("exit", () => {});\n', "const g = (globalThis as any).x;\n"]) {
+    const base = 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("existing must fail", () => { assert.equal(1, 2); });\n';
+    const cand = base + extra + 'test("zz new", () => { assert.ok(true); });\n';
+    const c = checkStage2Proposal(editFile("peaceai/test/m999-x.test.ts", base, cand), { base: () => base, cand: () => cand }, zone);
+    assert.ok(c.refusals.some((r) => /^engine-safety:/.test(r.reason)), `${extra.trim()}: ${reasons(c)}`);
+  }
+  assert.deepEqual(stage2EngineFindings("peaceai/test/x.test.ts", 'import test from "node:test";\nimport assert from "node:assert/strict";\n', { testFile: true }), []);
+});
+
+test("M106 #504 round 2 B1(3): cases6 (learned-multibody.ts neuters node:assert at load) is refused by the full prepare step", () => {
+  const d = baseRepo();
+  try {
+    const base = git(d, "rev-parse", "HEAD");
+    const lib = 'import nodeAssert from "node:assert/strict";\nexport const free = 1;\nexport const multibodyReady = (): boolean => { (nodeAssert as any).__defineGetter__("equal", () => () => undefined); return true; };\nexport const MB_READY = multibodyReady();\n';
+    const t = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { MB_READY } from "../lib/free.ts";\ntest("zz multibody ready", () => { assert.ok(MB_READY); });\n';
+    const diff = editFile("peaceai/lib/free.ts", "export const free = 1;\n", lib) + newFile("peaceai/test/zz-probe.test.ts", t);
+    const prep = prepareStage2(d, "sc-r2-cases6", diff, base, "refs/heads/main");
+    assert.equal(prep.check.ok, false);
+    assert.match(reasons(prep.check), /engine-safety: non-test code imports node:assert\/strict/);
+    assert.match(reasons(prep.check), /engine-safety: uses __defineGetter__/);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test("M106 #504 round 2 B2: data files protected code reads are never-zone (cases4 derive-practice-families.json, cases5 nl/model.json); the allowlist is short and lives in selfchange.ts", () => {
+  for (const p of ["peaceai/lib/derive-practice-families.json", "peaceai/nl/model.json", "peaceai/model/x.json", "peaceai/rules/learned/x.json", "peaceai/spec/multibody-v1.md", "peaceai/test/fixtures/m99-dfb/a.txt", "peaceai/lib/x.txt", "peaceai/lib/x.yml", "peaceai/x.sh", "peaceai/proof/x.md", "peaceai/package.json", "peaceai/lib/x"]) {
+    assert.match(stage2PathRefusal(p) ?? "", /never-zone/, p);
+  }
+  assert.equal(STAGE2_DATA_ALLOWLIST.length, 1, "keep the allowlist short (adding to it is a never-zone edit)");
+  assert.match(stage2PathRefusal("peaceai/lib/selfchange.ts") ?? "", /never-zone/, "the allowlist's own file is never-zone");
+  for (const p of ["peaceai/docs/a.md", "peaceai/lib/free.ts", "docs/a.md"]) assert.equal(stage2PathRefusal(p), null, `control: ${p}`);
+  // the real repo's never-zone and the exact probe diffs (headers + first hunk of cases4 / cases5)
+  const tracked = execFileSync("git", ["ls-files"], { cwd: repo, encoding: "utf8" }).split("\n").filter(Boolean);
+  const read = (p: string) => { try { return readFileSync(join(repo, p), "utf8"); } catch { return null; } };
+  const zone = computeNeverZone(tracked, read);
+  const T = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { FAMILIES } from "../lib/derive-practice.ts";\n\ntest("zz probe families", () => {\n  assert.equal(FAMILIES.length > 0, true);\n});\n';
+  for (const path of ["peaceai/lib/derive-practice-families.json", "peaceai/nl/model.json"]) {
+    const base = read(path)!;
+    const cand = base.replace(/"active"|"none"/, (m) => (m === '"active"' ? '"staged"' : '"guard"'));
+    assert.notEqual(cand, base);
+    const c = checkStage2Proposal(editFile(path, base, cand) + newFile("peaceai/test/zz-probe.test.ts", T), { base: (p) => (p === path ? base : null), cand: (p) => (p === path ? cand : T) }, zone);
+    assert.equal(c.ok, false, path);
+    assert.ok(c.refusals.some((r) => r.path === path && /never-zone: data file under peaceai\//.test(r.reason)), `${path}: ${reasons(c)}`);
+  }
+  // and through prepare on a git base
+  const d = baseRepo();
+  try {
+    mkdirSync(join(d, "peaceai/nl"), { recursive: true });
+    writeFileSync(join(d, "peaceai/nl/model.json"), '{"labels":["none"]}\n');
+    git(d, "add", "-A");
+    git(d, "commit", "-qm", "model");
+    const base = git(d, "rev-parse", "HEAD");
+    const prep = prepareStage2(d, "sc-r2-cases5", editFile("peaceai/nl/model.json", '{"labels":["none"]}\n', '{"labels":["guard"]}\n'), base, "refs/heads/main");
+    assert.equal(prep.check.ok, false);
+    assert.match(reasons(prep.check), /never-zone: data file under peaceai\//);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test("M106 #504 round 2 B3: __defineGetter__ & co in any form, and computed member calls / writes on imports, are refused in test files (probe/neuter2)", () => {
+  const BASE = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { strict } from "node:assert";\ntest("existing must fail", () => { assert.equal(1, 2); });\n';
+  const NEUTER2: Record<string, string> = {
+    c7_defineGetter: 'const z = (assert as any).__defineGetter__("equal", () => () => {});\n',
+    c8_defineGetter_named: 'const z = (strict as any).__defineGetter__("equal", () => () => {});\n',
+    c8b_computed_concat: 'const z = (strict as any)["__define" + "Getter__"]("equal", () => () => {});\n',
+    c8c_computed_template: 'const z = (strict as any)[`__define${"Getter"}__`]("equal", () => () => {});\n',
+    c8d_computed_var: 'const k = "__define" + "Getter__";\nconst z = (strict as any)[k]("equal", () => () => {});\n',
+    c8e_computed_join: 'const z = (strict as any)[["__define", "Getter__"].join("")]("equal", () => () => {});\n',
+    c8f_defineSetter: 'const z = (assert as any).__defineSetter__("equal", () => {});\n',
+    c8g_lookupGetter: 'const z = (assert as any).__lookupGetter__("equal");\n',
+    c8h_lookupSetter: 'const z = (assert as any).__lookupSetter__("equal");\n',
+    c8i_proto_string: 'const z = (assert as any)["__pro" + "to__"];\n',
+    c8j_computed_write_named: 'const k = "equal";\ntest("w", () => { (strict as any)[k] = () => {}; });\n',
+    c8k_constructor: 'const z = (strict as any).constructor;\n',
+    c23_test_body: 'test("helper", () => { (strict as any).__defineGetter__("equal", () => () => {}); });\n',
+    c24_named_objassign_in_test: 'test("helper2", () => { const o: any = { s: strict }; o.s.equal = () => {}; });\n',
+    c22_named_in_array_assign: 'const arr: any[] = [strict];\nconst z = Object.assign(arr[0], { equal: () => {} });\n',
+    c12_alias: 'const a: any = strict;\ntest("helper3", () => { a.equal = () => {}; });\n',
+    c4_reflect: 'const z = Reflect.set(strict, "equal", () => {});\n',
+    c5_defprop: 'const z = Object.defineProperty(strict, "equal", { value: () => {} });\n',
+    c6_named_assign: 'test("helper4", () => { (strict as any).equal = () => {}; });\n',
+  };
+  for (const [k, extra] of Object.entries(NEUTER2)) {
+    const r = addOnlyTestCheck("peaceai/test/m999-neuter.test.ts", BASE, BASE + extra);
+    assert.ok(r.refusals.length > 0, `${k} must be refused`);
+  }
+  // the files Auditor ran (probe/neuter2/c7, c8, c8b, c23), byte for byte
+  for (const [k, extra] of [["c7", 'const z = (assert as any).__defineGetter__("equal", () => () => {});\n'], ["c8", 'const z = (strict as any).__defineGetter__("equal", () => () => {});\n'], ["c8b", 'const z = (strict as any)["__define" + "Getter__"]("equal", () => () => {});\n'], ["c23", 'test("helper", () => { (strict as any).__defineGetter__("equal", () => () => {}); });\n']] as const) {
+    assert.match(addOnlyTestCheck("peaceai/test/m999-neuter.test.ts", BASE, BASE + extra).refusals.join(" | "), /accessor-definition|__defineGetter__|computed member call/, k);
+  }
+  // controls: numeric index calls and plain method calls on fresh values are fine
+  const ok = addOnlyTestCheck("peaceai/test/m999-neuter.test.ts", BASE, BASE + 'test("zz ok", () => { const fs = [() => 1]; const o = { n: 1 }; o.n = 2; assert.equal(fs[0]() + o.n, 3); });\n');
+  assert.deepEqual(ok.refusals, []);
+});
+
+test("M106 #504 round 2 B4: no retry across runs; the record names its run, the write-once ledger names the run per id, and a reused id cannot match", () => {
+  const prep = { schema: "peaceai-self-change-prep:v2", id: "sc-x", baseSha: "b".repeat(40), mainSha: "b".repeat(40), candidateSha: "", diffSha256: "", paths: [], candidateBlobs: {}, check: { ok: false, refusals: [], paths: [], newTests: [] }, suiteFiles: [], createdAt: "" };
+  const withRun = recordStage2({ ...prep, run: { repository: "PeaceG03/PeaceAI-Results", runId: "77", runAttempt: "1" } } as never, []);
+  assert.deepEqual(withRun.run, { repository: "PeaceG03/PeaceAI-Results", runId: "77", runAttempt: "1" });
+  assert.equal(withRun.countsTrust, "candidate-process-reported, advisory");
+  assert.equal(recordStage2(prep as never, []).run, null, "no run id (offline) = cannot match any ledger entry");
+  const rec = { ...withRun, id: "sc-x" } as Stage2Record;
+  const entry = { schema: "peaceai-self-change-ledger:v1" as const, id: "sc-x", base: "b".repeat(40), runId: "77", patchSha256: "" };
+  assert.deepEqual(stage2LedgerReasons(rec, { entry, commits: 1 }), []);
+  // a second run for the same id: its ledger PUT fails (no sha = create-only), so the entry keeps naming run 77;
+  // a record from the second run (run 78) never matches; deleting and re-creating the entry shows up as >1 commit
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, { entry, commits: 1 }), ["RECORD_NOT_FROM_LEDGER_RUN"]);
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, runId: "78" } }, { entry: { ...entry, runId: "78" }, commits: 3 }), ["LEDGER_REWRITTEN"]);
+  assert.deepEqual(stage2LedgerReasons(rec, { entry: null, commits: 0 }), ["LEDGER_MISSING"]);
+  assert.deepEqual(stage2LedgerReasons({ ...rec, run: { ...rec.run!, repository: "someone/else" } }, { entry, commits: 1 }), ["RECORD_NOT_FROM_LEDGER_RUN"]);
+  // decide2 reads the ledger with GETs only
+  const bin = readFileSync(join(repo, "peaceai/bin/self-change.ts"), "utf8");
+  const s2 = bin.slice(bin.indexOf('mode === "decide2"'), bin.indexOf('} else if (mode === "decide")'));
+  assert.match(s2, /contents\/\$\{ledgerPath\}/);
+  assert.match(s2, /commits\?path=/);
+  assert.doesNotMatch(s2, /"-X"|--method|PUT|POST|DELETE/);
 });

@@ -19,14 +19,15 @@
 //            counted (= failed) -> <out>/<id>.<phase>.json (raw counts, no verdict)
 //   record2  --prep FILE --runs DIR [--out DIR]   no candidate code -> <out>/self-changes/<id>.stage2.json
 //   decide2  --record FILE --pr N [--repo DIR]   landing decision; flag + approvers read from origin/main, base on
-//            main, PR = exactly base..head, check re-run on the real diff, Auditor `/auditor-pass <id> <sha>` and
+//            main, PR = exactly base..head, check re-run on the real diff, the Results write-once ledger entry for
+//            the id names the run that made the record (read with GET only), Auditor `/auditor-pass <id> <sha>` and
 //            Peace `/verdict <id> <sha> right`. Prints only; never posts, applies, pushes or merges.
 //   credit2  always refuses: no generator run record exists yet (limit 5 needs provenance, a later PR).
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2Record } from "../lib/selfchange.ts";
+import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record } from "../lib/selfchange.ts";
 import { prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
 
 const argv = process.argv.slice(2);
@@ -95,7 +96,16 @@ if (mode === "propose") {
   // flag and approvers from MAIN (never from the PR, the proposal or this checkout's working tree)
   const atMain = (p: string) => { const r = spawnSync("git", ["show", `${MAIN}:${p}`], { cwd: repo, encoding: "utf8" }); return r.status === 0 ? r.stdout : null; };
   const approvers = JSON.parse(atMain("peaceai/self/approvers.json") ?? "{}");
-  const facts = stage2PrFacts(repo, rec, headSha, prCommits, MAIN);
+  // round 2 B4: the write-once Results ledger entry for this id (read-only GETs) and the commits that ever touched it
+  const RESULTS = PRIVATE_RUNNERS[0];
+  const ledgerPath = `${STAGE2_LEDGER_DIR}/${rec.id}.json`;
+  const safeId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(rec.id ?? "");
+  const getRaw = (path: string) => { const r = spawnSync("gh", ["api", "-H", "Accept: application/vnd.github.raw", path], { encoding: "utf8", maxBuffer: 1 << 26 }); return r.status === 0 ? r.stdout : null; };
+  let entry: Stage2LedgerEntry | null = null;
+  try { const t = safeId ? getRaw(`repos/${RESULTS}/contents/${ledgerPath}`) : null; entry = t ? JSON.parse(t) : null; } catch { entry = null; }
+  let commits = 0;
+  try { commits = safeId ? gh(`repos/${RESULTS}/commits?path=${encodeURIComponent(ledgerPath)}&per_page=100`).length : 0; } catch { commits = 0; }
+  const facts = stage2PrFacts(repo, rec, headSha, prCommits, MAIN, { entry, commits });
   const d = stage2LandingDecision(rec, suiteFilesAt(repo, rec.baseSha), facts, comments, { auditor: approvers.auditor ?? [], peace: approvers.peace ?? [] }, atMain(STAGE2_FLAG_PATH));
   die(d.ok ? 0 : 2, `self-change decide2 id=${rec.id} land=${d.ok}${d.ok ? ` auditor=${d.auditorComment} peace=${d.architectComment}` : ` reasons=${d.reasons.join(",")}`}`);
 } else if (mode === "decide") {

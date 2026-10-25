@@ -436,12 +436,23 @@ const plainPath = (p: string) => !p.startsWith("/") && !p.includes("\\") && !p.s
 /** Where a stage-2 proposal may write: PeaceAI's own tree (peaceai/**) and the root doc pages (docs/<seg>.md). */
 const STAGE2_AREA = /^peaceai\/|^docs\/[a-z0-9][a-z0-9._-]{0,80}\.md$/;
 
+/**
+ * Auditor #504 round 2 B2: protected code also READS data (derive-practice-families.json via new URL(...), nl/model.json
+ * via nlparse.ts), which an import closure cannot see. So every NON-CODE file under peaceai/ is never-zone unless it
+ * matches this short allowlist. The allowlist lives here, in selfchange.ts, which is itself never-zone.
+ * Code = .ts/.mts/.cts/.js/.mjs/.cjs (still subject to the closure); test files are code or refused as fixtures.
+ */
+export const STAGE2_DATA_ALLOWLIST: readonly { pattern: RegExp; why: string }[] = [
+  { pattern: /^peaceai\/docs\/[a-z0-9][a-z0-9._-]{0,80}\.md$/, why: "PeaceAI's own doc pages (stage-1 safe zone shape)" },
+];
+const CODE_PATH = /\.(ts|mts|cts|js|mjs|cjs)$/;
 /** Auditor limit 1: why PeaceAI may not propose a change to this path, or null. */
 export function stage2PathRefusal(path: string): string | null {
   if (!plainPath(path)) return "never-zone: path is not a plain relative path";
   const n = NEVER_ZONE.find((z) => z.pattern.test(path));
   if (n) return `never-zone: ${n.why}`;
   if (!STAGE2_AREA.test(path)) return "outside the stage-2 areas (peaceai/**, docs/*.md)";
+  if (path.startsWith("peaceai/") && !CODE_PATH.test(path) && !STAGE2_DATA_ALLOWLIST.some((a) => a.pattern.test(path))) return "never-zone: data file under peaceai/ (protected code may read it; only allowlisted data files are proposable)";
   return null;
 }
 
@@ -524,7 +535,9 @@ function parseTs(path: string, text: string): ts.SourceFile | null {
 /** Canonical, comment- and whitespace-free form of a node: two statements are AST-identical iff these are equal. */
 const canon = (n: ts.Node, sf: ts.SourceFile): string => printer.printNode(ts.EmitHint.Unspecified, n, sf);
 
-const BANNED_TEST_NAMES = new Set(["skip", "only", "todo", "timeout", "concurrency", "mock", "mocks", "stub", "stubs", "spy", "spyOn", "fake", "fakes", "sinon", "jest", "vi", "before", "beforeEach", "after", "afterEach", "beforeAll", "afterAll", "defineProperty", "defineProperties", "setPrototypeOf", "Reflect", "__proto__", "prototype"]);
+const BANNED_TEST_NAMES = new Set(["skip", "only", "todo", "timeout", "concurrency", "mock", "mocks", "stub", "stubs", "spy", "spyOn", "fake", "fakes", "sinon", "jest", "vi", "before", "beforeEach", "after", "afterEach", "beforeAll", "afterAll", "defineProperty", "defineProperties", "setPrototypeOf", "Reflect", "__proto__", "prototype", "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__", "constructor"]);
+/** Auditor #504 round 2 B3: accessor-definition names in ANY form (identifier, string, folded concatenation). */
+const ACCESSOR_HACK = /__(define|lookup)(Getter|Setter)__|__proto__|__define|__lookup/;
 const MUTATORS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "add", "delete", "clear", "assign"]);
 const TEST_CALLEES = new Set(["test", "it"]);
 
@@ -568,6 +581,99 @@ function declaredNames(n: ts.Node, out: Set<string>, each: (name: string) => voi
   if (ts.isIdentifier(n)) put(n.text); else if (ts.isObjectBindingPattern(n) || ts.isArrayBindingPattern(n)) bind(n); else v(n);
 }
 
+/** The text of a string literal / template / `+` chain of them (null otherwise); only the top of a `+` chain is folded. */
+function foldString(n: ts.Node): string | null {
+  const lit = (e: ts.Node): string | null => {
+    if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return e.text;
+    if (ts.isTemplateExpression(e)) return e.head.text + e.templateSpans.map((s) => s.literal.text).join("");
+    if (ts.isParenthesizedExpression(e)) return lit(e.expression);
+    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) { const a = lit(e.left), b = lit(e.right); return a === null && b === null ? null : (a ?? "") + (b ?? ""); }
+    return null;
+  };
+  if (n.parent && ts.isBinaryExpression(n.parent) && n.parent.operatorToken.kind === ts.SyntaxKind.PlusToken) return null;
+  if (n.parent && ts.isParenthesizedExpression(n.parent)) return null;
+  return lit(n);
+}
+
+/**
+ * Auditor #504 round 2 B1(3): an ENFORCED (not advisory) static rule for added or changed code. Proposed engine code
+ * runs inside the same process as the base tests that import it, so it may not reach the test machinery or the
+ * process: no node:assert / node:test (engine code only) / child_process / process-level modules, no `process`
+ * beyond a read-only allowlist, no globalThis / global, no writes or definers on imports, globals or built-ins, no
+ * prototype / accessor patching, no Reflect, no eval / Function / computed import, no `.constructor`. Findings are
+ * compared base vs candidate as a multiset, so only NEW occurrences count. Static checks cannot be complete; they
+ * narrow the attack, the counts stay advisory and Auditor's review of the diff is the gate.
+ */
+const PROCESS_READ_OK = new Set(["argv", "cwd", "platform", "arch", "version", "versions", "hrtime", "nextTick", "stdout", "stderr"]);
+const BUILTIN_GLOBALS = new Set(["Object", "Array", "String", "Number", "Boolean", "Function", "Promise", "JSON", "Math", "Date", "RegExp", "Error", "TypeError", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Reflect", "Proxy", "console", "Buffer", "URL", "BigInt", "Intl", "Atomics", "SharedArrayBuffer", "ArrayBuffer", "Uint8Array", "setTimeout", "setInterval", "queueMicrotask"]);
+const BANNED_MODULES = /^(node:)?(child_process|process|module|vm|worker_threads|cluster|inspector|v8|repl|async_hooks|diagnostics_channel|trace_events)(\/|$)/;
+const TEST_MODULES = /^(node:)?(assert|test)(\/|$)/;
+export function stage2EngineFindings(path: string, text: string, opts: { testFile?: boolean } = {}): string[] {
+  const out: string[] = [];
+  const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, /\.(mjs|cjs|js)$/.test(path) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  const imported = new Set<string>();
+  for (const s of sf.statements) if (ts.isImportDeclaration(s) && s.importClause) declaredNames(s.importClause, imported);
+  const un = (e: ts.Expression): ts.Expression => { let x = e; while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x) || ts.isTypeAssertionExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression; return x; };
+  const root = (e: ts.Expression): ts.Identifier | null => { let x = un(e); while (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x) || ts.isCallExpression(x)) x = un(x.expression); return ts.isIdentifier(x) ? x : null; };
+  const shared = (id: ts.Identifier | null) => !!id && (imported.has(id.text) || BUILTIN_GLOBALS.has(id.text) || ["globalThis", "global", "window", "self", "process", "module", "exports", "require"].includes(id.text));
+  const chainHas = (e: ts.Expression, re: RegExp): boolean => { let x = un(e); for (;;) { if (ts.isPropertyAccessExpression(x)) { if (re.test(x.name.text)) return true; x = un(x.expression); } else if (ts.isElementAccessExpression(x)) { const k = foldString(x.argumentExpression) ?? ""; if (re.test(k)) return true; x = un(x.expression); } else return false; } };
+  const at = (n: ts.Node) => n.getText(sf).replace(/\s+/g, " ").slice(0, 60);
+  const spec = (m: string, n: ts.Node) => {
+    if (BANNED_MODULES.test(m)) out.push(`engine-safety: imports ${m}`);
+    if (!opts.testFile && TEST_MODULES.test(m)) out.push(`engine-safety: non-test code imports ${m}`);
+    void n;
+  };
+  const v = (n: ts.Node): void => {
+    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) spec(n.moduleSpecifier.text, n);
+    if (ts.isImportEqualsDeclaration(n)) out.push(`engine-safety: import = require (${at(n)})`);
+    if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) {
+      const a = n.arguments[0];
+      if (a && (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a))) spec(a.text, n); else out.push(`engine-safety: computed import/require (${at(n)})`);
+    }
+    if (ts.isIdentifier(n)) {
+      const p = n.parent;
+      const isName = (ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n) || ts.isImportSpecifier(p) || ts.isExportSpecifier(p) || (ts.isMethodDeclaration(p) && p.name === n) || (ts.isPropertyDeclaration(p) && p.name === n) || ts.isTypeReferenceNode(p) || ts.isQualifiedName(p);
+      if (!isName) {
+        if (["globalThis", "global", "window", "self"].includes(n.text)) out.push(`engine-safety: uses ${n.text}`);
+        if (n.text === "eval" || n.text === "Function") out.push(`engine-safety: uses ${n.text}`);
+        if (n.text === "Reflect") out.push("engine-safety: uses Reflect");
+        if (n.text === "process" && !(ts.isPropertyAccessExpression(p) && p.expression === n && PROCESS_READ_OK.has(p.name.text))) out.push(`engine-safety: uses process${ts.isPropertyAccessExpression(p) && p.expression === n ? `.${p.name.text}` : ""} (only ${[...PROCESS_READ_OK].join("/")} may be read)`);
+      }
+      if (/^__(define|lookup)(Getter|Setter)__$|^__proto__$/.test(n.text)) out.push(`engine-safety: uses ${n.text}`);
+      if (n.text === "constructor" && ts.isPropertyAccessExpression(p) && p.name === n) out.push("engine-safety: reads .constructor");
+    }
+    const folded = foldString(n);
+    if (folded !== null && ACCESSOR_HACK.test(folded)) out.push(`engine-safety: accessor-definition name in a string`);
+    if (ts.isElementAccessExpression(n) && (foldString(n.argumentExpression) ?? "") === "constructor") out.push("engine-safety: reads .constructor");
+    const write = (target: ts.Expression) => {
+      const t = un(target);
+      if (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) {
+        if (shared(root(t))) out.push(`engine-safety: writes into an import / global / built-in (${at(t)})`);
+        if (chainHas(t, /^prototype$|^__proto__$/)) out.push(`engine-safety: patches a prototype (${at(t)})`);
+      } else if (ts.isIdentifier(t) && imported.has(t.text)) out.push(`engine-safety: reassigns import ${t.text}`);
+    };
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) write(n.left);
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) write(n.operand);
+    if (ts.isDeleteExpression(n)) write(n.expression);
+    if (ts.isCallExpression(n)) {
+      const c = un(n.expression);
+      const name = ts.isPropertyAccessExpression(c) ? c.name.text : ts.isElementAccessExpression(c) ? foldString(c.argumentExpression) ?? "" : "";
+      const owner = ts.isPropertyAccessExpression(c) || ts.isElementAccessExpression(c) ? root(c.expression) : null;
+      if (owner?.text === "Object" && /^(setPrototypeOf|defineProperty|defineProperties|assign|freeze|seal|preventExtensions)$/.test(name)) {
+        const a0 = n.arguments[0];
+        if (name === "setPrototypeOf" || (a0 && (shared(root(a0)) || chainHas(a0, /^prototype$/)))) out.push(`engine-safety: Object.${name} on an import / global / built-in / prototype (${at(n)})`);
+      }
+      if (ts.isPropertyAccessExpression(c) && /^(push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin|set|add|delete|clear)$/.test(name) && shared(root(c.expression)) && !ts.isCallExpression(un(c.expression))) {
+        const r = root(c.expression);
+        if (r && imported.has(r.text)) out.push(`engine-safety: mutates an imported value (${at(n)})`);
+      }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  return out;
+}
+
 /**
  * Auditor limit 2: a proposed test file must be add-only against the base. Returns the refusals (empty = ok) and the
  * names of the added test() / it() cases (each must then fail on the base and pass on the candidate).
@@ -601,6 +707,8 @@ export function addOnlyTestCheck(path: string, base: string | null, cand: string
   const rebind = new Set<string>();
   const fresh = new Set<string>();
   const moduleObjects = new Set<string>(["globalThis", "global", "process", "console", "Object", "Array", "Math", "JSON", "Promise", "Symbol", "Reflect", "module", "require", "exports"]);
+  const imported = new Set<string>();
+  for (const s of csf.statements) if (ts.isImportDeclaration(s) && s.importClause) { const names = new Set<string>(); declaredNames(s.importClause, names); for (const x of names) imported.add(x); }
   for (const s of csf.statements) if (ts.isImportDeclaration(s) && s.importClause) {
     if (s.importClause.name) moduleObjects.add(s.importClause.name.text);
     if (s.importClause.namedBindings && ts.isNamespaceImport(s.importClause.namedBindings)) moduleObjects.add(s.importClause.namedBindings.name.text);
@@ -632,11 +740,19 @@ export function addOnlyTestCheck(path: string, base: string | null, cand: string
     const v = (n: ts.Node): void => {
       if (ts.isIdentifier(n) && BANNED_TEST_NAMES.has(n.text)) refusals.push(`uses ${n.text}`);
       if (ts.isStringLiteral(n) && ts.isElementAccessExpression(n.parent) && n.parent.argumentExpression === n && BANNED_TEST_NAMES.has(n.text)) refusals.push(`uses ["${n.text}"]`);
+      // B3: __defineGetter__ & co in any spelling, and computed member calls / computed writes on anything not fresh
+      const folded = foldString(n);
+      if (folded !== null && ACCESSOR_HACK.test(folded)) refusals.push(`uses an accessor-definition name ("${folded.slice(0, 30)}")`);
+      if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
+        const callee = unwrap(n.expression);
+        if (ts.isElementAccessExpression(callee) && !ts.isNumericLiteral(unwrap(callee.argumentExpression))) refusals.push(`computed member call ${callee.getText(csf).slice(0, 40)} (call methods by name)`);
+      }
       const writeTo = (target: ts.Expression) => {
         const t = unwrap(target);
         if (ts.isIdentifier(t)) { if (!rebind.has(t.text) || declCount.get(t.text) !== 1) refusals.push(`writes ${t.text} (not a variable declared once in the added code)`); return; }
         if (ts.isArrayLiteralExpression(t) || ts.isObjectLiteralExpression(t)) { for (const el of ts.isArrayLiteralExpression(t) ? t.elements : t.properties) { const e = ts.isShorthandPropertyAssignment(el) ? el.name : ts.isPropertyAssignment(el) ? el.initializer : ts.isSpreadElement(el) || ts.isSpreadAssignment(el) ? el.expression : ts.isOmittedExpression(el) ? null : (el as ts.Expression); if (e) writeTo(e as ts.Expression); } return; }
         const owner = (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) ? unwrap(t.expression) : null;
+        if (ts.isElementAccessExpression(t) && owner && ts.isIdentifier(owner) && imported.has(owner.text)) refusals.push(`computed write ${target.getText(csf).slice(0, 40)} on an imported binding`);
         if (!owner || !ts.isIdentifier(owner) || !fresh.has(owner.text)) refusals.push(`writes ${target.getText(csf).slice(0, 40)} (only a value made in the added code may be written, one level deep)`);
       };
       if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) writeTo(n.left);
@@ -777,6 +893,10 @@ export function checkStage2Proposal(diff: string, read: { base: (p: string) => s
     if (cand === null) { refusals.push({ path: f.newPath, reason: "candidate file missing" }); continue; }
     const base = read.base(f.newPath);
     if (/\.(ts|mts|cts|js|mjs|cjs)$/.test(f.newPath)) {
+      // round 2 B1(3): ENFORCED engine-safety rule, new occurrences only (tests: same rule minus the assert/test import ban)
+      const testFile = isStage2TestPath(f.newPath);
+      const had = base === null ? [] : stage2EngineFindings(f.newPath, base, { testFile });
+      for (const x of stage2EngineFindings(f.newPath, cand, { testFile })) { const i = had.indexOf(x); if (i >= 0) had.splice(i, 1); else refusals.push({ path: f.newPath, reason: x }); }
       const left = base === null ? [] : stage2ContentFindings(f.newPath, base);
       for (const x of stage2ContentFindings(f.newPath, cand)) { const i = left.indexOf(x); if (i >= 0) left.splice(i, 1); else refusals.push({ path: f.newPath, reason: x.replace(/^content: /, "content (advisory lint): ") }); }
     }
@@ -809,16 +929,28 @@ export interface Stage2Record {
   newTests: { file: string; name: string; onBase: CaseRun; onCandidate: CaseRun }[];
   /** Blocker 5: each grading phase ran in its own job; leftover processes after a phase fail it. */
   phases: { phase: Stage2Phase; ran: boolean; leftovers: number }[];
+  /**
+   * Auditor #504 round 2 B1: every pass/fail/exit count above is reported by a process that ran candidate code, in a
+   * VM the candidate could tamper with. They are ADVISORY: a failing count blocks, a passing count never lands
+   * anything on its own (landing needs the flag, the diff checks, Peace /verdict AND Auditor /auditor-pass).
+   */
+  countsTrust: typeof STAGE2_COUNTS_TRUST;
+  /** Round 2 B4: the Results run that graded this id (the write-once ledger entry must name the same run). */
+  run: { repository: string; runId: string; runAttempt: string } | null;
   status: "refused" | "tested-failing" | "awaiting-review";
   createdAt: string;
 }
 export const STAGE2_PHASES = ["suite", "new-on-candidate", "new-on-base"] as const;
+export const STAGE2_COUNTS_TRUST = "candidate-process-reported, advisory" as const;
+/** Round 2 B4: the write-once id ledger in PeaceAI-Results (one file per proposal id, created once, never updated). */
+export const STAGE2_LEDGER_DIR = "self-proposals/ledger";
+export interface Stage2LedgerEntry { schema: "peaceai-self-change-ledger:v1"; id: string; base: string; runId: string; patchSha256: string }
 export type Stage2Phase = (typeof STAGE2_PHASES)[number];
 
 /** Limit 3: the record proves the grading. `baseSuiteFiles` is the base commit's own test-file list. */
 export function stage2GradeDecision(rec: Stage2Record, baseSuiteFiles: readonly string[]): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  if (rec.schema !== STAGE2_SCHEMA) reasons.push("BAD_RECORD");
+  if (rec.schema !== STAGE2_SCHEMA || rec.countsTrust !== STAGE2_COUNTS_TRUST) reasons.push("BAD_RECORD");
   if (!rec.check?.ok || !rec.paths.every((p) => stage2PathRefusal(p) === null)) reasons.push("CHECK_REFUSED");
   const s = rec.baseSuite;
   if (!s || baseSuiteFiles.length === 0 || s.filesSha256 !== listSha(baseSuiteFiles) || listSha(s.files) !== listSha(baseSuiteFiles)) reasons.push("BASE_SUITE_MISMATCH");
@@ -857,6 +989,18 @@ export interface Stage2PrFacts {
   commitsExact: boolean;
   /** Blocker 1: checkStage2Proposal re-run on the real base..head diff with the base tree's never-zone */
   recheck: Stage2Check;
+  /** Round 2 B4: the Results ledger entry for rec.id and how many commits ever touched it (write-once = exactly 1) */
+  ledger: { entry: Stage2LedgerEntry | null; commits: number };
+}
+/** Round 2 B4: the record must come from the ONE run the write-once ledger names for this id. */
+export function stage2LedgerReasons(rec: Stage2Record, ledger: Stage2PrFacts["ledger"] | undefined): string[] {
+  const e = ledger?.entry;
+  if (!e || e.schema !== "peaceai-self-change-ledger:v1" || e.id !== rec.id) return ["LEDGER_MISSING"];
+  const r: string[] = [];
+  if (ledger!.commits !== 1) r.push("LEDGER_REWRITTEN");
+  if (!rec.run || rec.run.repository !== "PeaceG03/PeaceAI-Results" || rec.run.runId !== e.runId || rec.run.runAttempt !== "1") r.push("RECORD_NOT_FROM_LEDGER_RUN");
+  if (e.base !== rec.baseSha) r.push("LEDGER_BASE_MISMATCH");
+  return r;
 }
 export function stage2LandingDecision(rec: Stage2Record, baseSuiteFiles: readonly string[], pr: Stage2PrFacts, comments: readonly CommandComment[], approvers: { auditor: readonly string[]; peace: readonly string[] }, flagText: string | null): PromotionDecision {
   const reasons: string[] = [];
@@ -868,6 +1012,7 @@ export function stage2LandingDecision(rec: Stage2Record, baseSuiteFiles: readonl
   if (pr.baseOnMain !== true) reasons.push("BASE_NOT_ON_MAIN");
   if (pr.commitsExact !== true) reasons.push("PR_COMMITS_NOT_BASE_HEAD");
   if (!pr.recheck?.ok) reasons.push("CHECK_REFUSED_ON_PR_DIFF");
+  reasons.push(...stage2LedgerReasons(rec, pr.ledger));
   const valid = (c: CommandComment, who: readonly string[]) => tracedComment(c) && who.includes(c.author) && ["OWNER", "MEMBER", "COLLABORATOR"].includes(c.association);
   const pass = head ? comments.find((c) => valid(c, approvers.auditor) && c.body.trim() === `${AUDITOR_COMMAND} ${rec.id} ${head}`) : undefined;
   if (!pass) reasons.push(comments.some((c) => valid(c, approvers.auditor) && c.body.trim().startsWith(`${AUDITOR_COMMAND} ${rec.id} `)) ? "AUDITOR_PASS_STALE_OR_SHA_MISMATCH" : "AUDITOR_PASS_MISSING");
