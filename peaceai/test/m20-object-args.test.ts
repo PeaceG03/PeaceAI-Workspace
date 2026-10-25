@@ -108,7 +108,7 @@ test("protected (M20, Auditor): lib/objargs.ts is protected and inside the pinne
   const { PROTECTED_SELF: P, protectedReason } = await import("../lib/selfchange.ts");
   assert.ok(protectedReason("peaceai/lib/objargs.ts"));
   const m12 = readFileSync(join(repo, "peaceai/test/m12-test-rule.test.ts"), "utf8");
-  assert.equal(createHash("sha256").update(P.map((x) => x.pattern.source).join("\n")).digest("hex"), /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1]);
+  assert.equal(createHash("sha256").update(P.map((x) => `/${x.pattern.source}/${x.pattern.flags}`).join("\n")).digest("hex"), /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1]);
 });
 
 test("objargs boundary positive (Auditor '-1'): a negative number literal -1 is accepted as a value (and as a nested/array value)", () => {

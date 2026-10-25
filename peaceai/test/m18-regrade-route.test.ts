@@ -241,10 +241,10 @@ test("protected (M18, Auditor): lib/regrade.ts and bin/regrade-fetch.ts are prot
     const hits = P.filter((x) => x.pattern.test(f));
     assert.equal(hits.length, 1, `${f}: exactly one entry`);
     // Dropping that entry changes the digest that m12-test-rule.test.ts pins, so it cannot be removed silently.
-    const digest = (list: typeof P) => createHash("sha256").update(list.map((x) => x.pattern.source).join("\n")).digest("hex");
+    const digest = (list: typeof P) => createHash("sha256").update(list.map((x) => `/${x.pattern.source}/${x.pattern.flags}`).join("\n")).digest("hex");
     assert.notEqual(digest(P.filter((x) => x !== hits[0])), digest(P));
   }
   const m12 = readFileSync(join(repo, "peaceai/test/m12-test-rule.test.ts"), "utf8");
   const pinned = /const PROTECTED_DIGEST = "([0-9a-f]{64})"/.exec(m12)![1];
-  assert.equal(createHash("sha256").update(P.map((x) => x.pattern.source).join("\n")).digest("hex"), pinned);
+  assert.equal(createHash("sha256").update(P.map((x) => `/${x.pattern.source}/${x.pattern.flags}`).join("\n")).digest("hex"), pinned);
 });
