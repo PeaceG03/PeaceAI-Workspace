@@ -1838,6 +1838,18 @@ const SCAN_ROOT = "/repo/";
 const INF_DEPTH = 1e6;
 /** Builtin modules that run string code or load modules the scan does not see; any import of them fails closed. */
 const CODE_LOADER_MODULES = new Set(["vm", "node:vm", "module", "node:module"]);
+/**
+ * Auditor #505 delta (X3): the only non-relative specifiers a scanned file may import (as `node:<name>` or bare):
+ * Auditor's fixed list plus what PeaceSTOCKS imports at any commit (test, assert/strict, fs/promises, child_process,
+ * zlib, perf_hooks, http), and `process` (the same object as the global `process`, which any file can already reach;
+ * kept so the pinned evidence's `import process from "node:process"` still grades). None of them runs string code in
+ * this process or loads a module the scan does not see.
+ */
+const ALLOWED_BUILTINS = new Set(["path", "fs", "url", "util", "assert", "crypto", "events", "os", "stream", "timers", "buffer", "test", "assert/strict", "fs/promises", "child_process", "zlib", "perf_hooks", "http", "process"]);
+/** Builtins that exist only with the `node:` prefix (a bare `test` is an npm package). */
+const NODE_PREFIX_ONLY = new Set(["test"]);
+/** Auditor #505 delta (X2): tokens that reach the Function constructor or the builtin-module loader. */
+const FORBIDDEN_TOKENS = new Set(["constructor", "getBuiltinModule"]);
 const SHARED_TOO_LARGE = "too_large";
 /** Methods that change their receiver. */
 const WRITE_METHODS = new Set([...MUTATORS, "fill", "copyWithin", "setTime"]);
@@ -1941,11 +1953,13 @@ function repoIndex(repo: readonly RepoFile[]): RepoIndex {
         if (n.text === "process" && ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text === "getBuiltinModule") fail("getBuiltinModule", sf);
         if (/^set(?:Timeout|Interval|Immediate)$/.test(n.text) && ts.isCallExpression(p) && p.expression === n && p.arguments[0] && !ts.isArrowFunction(p.arguments[0]) && !ts.isFunctionExpression(p.arguments[0]) && !ts.isIdentifier(p.arguments[0])) fail("string_timer", sf);
       }
-      // Auditor #505 final (B2): string code through a function's `.constructor` (`(() => {}).constructor(..)`,
-      // `[].constructor.constructor(..)`) and any `getBuiltinModule` member, whatever the receiver, fail closed; a class's
-      // own constructor is a declaration, not an access, and is unaffected
-      const member = ts.isPropertyAccessExpression(n) ? n.name.text : ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) ? n.argumentExpression.text : null;
-      if ((member === "constructor" || member === "getBuiltinModule") && !inTypePosition(n)) fail(member === "constructor" ? "constructor_access" : "getBuiltinModule", sf);
+      // Auditor #505 final (B2) + delta (X2), at the token level: any identifier (a property name, a binding name, a
+      // shorthand, a parameter pattern) or string / template literal part spelled `constructor` or `getBuiltinModule`
+      // fails closed, anywhere in a scanned file (`(() => {}).constructor(..)`, `const { constructor: C } = f`,
+      // `Reflect.get(f, "constructor")`, `getOwnPropertyDescriptor(p, "constructor")`, `const { getBuiltinModule: g } =
+      // process`); a class body's own `constructor(..) {}` is a declaration with no such token and is unaffected
+      const tok = ts.isIdentifier(n) || ts.isPrivateIdentifier(n) ? n.text : ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n) ? n.text : null;
+      if (tok !== null && FORBIDDEN_TOKENS.has(tok) && !(ts.isStringLiteral(n) && ts.isConstructorDeclaration(n.parent) && ts.isClassLike(n.parent.parent))) fail(tok === "constructor" ? "constructor_access" : "getBuiltinModule", sf);
       ts.forEachChild(n, v);
     };
     v(sf);
@@ -1961,8 +1975,16 @@ function repoIndex(repo: readonly RepoFile[]): RepoIndex {
         if (!typeOnly && !resolve(t, sf.fileName)) fail("unresolved_relative_import", sf);
         continue;
       }
-      if (/^(?:node:|[a-z0-9][\w.-]*:)/i.test(t) && !t.startsWith("/")) continue;
+      // Auditor #505 delta (X3): every other specifier must be a builtin on a fixed allowlist (`node:<name>`, or the bare
+      // name); any other scheme (`data:`, `file:`, `http:` ..), absolute path, alias or package fails closed. The target
+      // repo (PeaceSTOCKS) imports no npm package at any commit, so none is allowed; a type-only import (erased) is exempt
+      const decl = s.parent;
+      const typeOnly = (ts.isImportDeclaration(decl) && !!decl.importClause?.isTypeOnly) || (ts.isExportDeclaration(decl) && decl.isTypeOnly);
+      const bare = t.startsWith("node:") ? t.slice(5) : t;
+      if (typeOnly) continue;
+      if (ALLOWED_BUILTINS.has(bare) && (t.startsWith("node:") || !NODE_PREFIX_ONLY.has(bare))) continue;
       if (/^(?:@\/|~\/|#|\/)/.test(t) || top.has(t.split("/")[0]!) || resolve(t, sf.fileName)) fail("bare_internal_specifier", sf);
+      else fail("unlisted_import_specifier", sf);
     }
   }
   const ri: RepoIndex = { checker, files, problem, resolve };
@@ -1992,8 +2014,11 @@ function memberReadRoots(init: ts.Expression, idx: ModuleIndex, out: Set<string>
       // Auditor #505 final (B1): the scan does not walk function bodies here, so any reference (a call, `new`, a
       // callback, a method receiver) to a repo function, a class / module let-var / namespace, or an imported value
       // counts as reaching both Math and Date (fail closed)
-      const opaque = !nameSlot && !ts.isShorthandPropertyAssignment(p) && (idx.fns.has(n.text) || idx.mutable.has(n.text) || (idx.imports.has(n.text) && !idx.imports.get(n.text)!.typeOnly));
-      const opaqueShorthand = ts.isShorthandPropertyAssignment(p) && p.name === n && (idx.fns.has(n.text) || idx.mutable.has(n.text) || (idx.imports.has(n.text) && !idx.imports.get(n.text)!.typeOnly));
+      // Auditor #505 delta (X1): only followed module consts are transparent; every other repo declaration (an enum or
+      // const enum, a function, a class, a let / var, a namespace, a value import) is opaque and reaches both roots
+      const repoDecl = idx.fns.has(n.text) || idx.mutable.has(n.text) || idx.enums.has(n.text) || (idx.imports.has(n.text) && !idx.imports.get(n.text)!.typeOnly);
+      const opaque = !nameSlot && !ts.isShorthandPropertyAssignment(p) && repoDecl;
+      const opaqueShorthand = ts.isShorthandPropertyAssignment(p) && p.name === n && repoDecl;
       if (opaque || opaqueShorthand) for (const r of MEMBER_READ_ROOTS) out.add(r);
       if (!nameSlot && MEMBER_READ_ROOTS.has(n.text) && unshadowed(idx, n.text)) out.add(n.text);
       else if (!nameSlot && !ts.isShorthandPropertyAssignment(p) && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
@@ -2112,7 +2137,12 @@ function calleeReturnKind(name: string, m: { sf: ts.SourceFile; idx: ModuleIndex
   return d && d.length === 1 && idx.exportNames.has(imp.imported) ? loadCallReturnKind(d[0]!.type, idx) : null;
 }
 function bindingShape(b: ReadBinding, read: (rel: string) => string | null): BindingShape {
-  if (b.isEnum) return { kind: "data", primDepth: 1 };
+  if (b.isEnum) {
+    // Auditor #505 delta (X1): an enum member computed from Math / Date (`enum K { A = Math.PI }`) reaches that root
+    const roots = new Set<string>();
+    for (const st of b.sf.statements) if (ts.isEnumDeclaration(st) && st.name.text === b.name) for (const mb of st.members) if (mb.initializer) memberReadRoots(mb.initializer, b.idx, roots, new Set([b.name]));
+    return { kind: "data", primDepth: 1, ...(roots.size ? { globals: roots } : {}) };
+  }
   const init = b.idx.consts.get(b.name)?.initializer;
   if (!init) return { kind: "data", primDepth: INF_DEPTH };
   const x = unwrapExpr(init);
@@ -2203,8 +2233,10 @@ function sloppy(sf: ts.SourceFile): boolean {
 function thisMayBeGlobal(n: ts.Node): boolean {
   for (let q = n.parent; q; q = q.parent) {
     if (ts.isArrowFunction(q)) continue;
-    if (ts.isClassLike(q) || ts.isMethodDeclaration(q) || ts.isConstructorDeclaration(q) || ts.isGetAccessor(q) || ts.isSetAccessor(q) || ts.isClassStaticBlockDeclaration(q)) return false;
-    if (ts.isFunctionDeclaration(q) || ts.isFunctionExpression(q)) return true;
+    // Auditor #505 delta (X4): only a class body (its methods, accessors, constructor, fields, static blocks) binds
+    // `this`; an object-literal method or accessor is a sloppy function like any other
+    if (ts.isClassLike(q)) return false;
+    if (ts.isFunctionLike(q)) return !!q.parent && ts.isClassLike(q.parent) && (ts.isMethodDeclaration(q) || ts.isConstructorDeclaration(q) || ts.isGetAccessor(q) || ts.isSetAccessor(q)) ? false : true;
   }
   return true;
 }

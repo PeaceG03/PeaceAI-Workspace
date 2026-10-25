@@ -348,6 +348,74 @@ test("repo scan (Auditor #505 final): helpers, classes, strict code and other mo
   };
   for (const [k, [t, o, vs]] of Object.entries(ok)) for (const v of vs) assert.equal(run(t, o, v, true), "ok", `${k} ${v}`);
 });
+// Auditor #505 delta review at 84b03bf (X1-X4), same shape as FINAL: refused v1-v7 with the diagnostic, and the target
+// alone accepted on the listed versions.
+const EK = "enum K { A = Math.PI }\nexport const E = K.A;\nexport function f(x: number): number { return x + E; }\n";
+const EKC = "const enum K { A = Math.PI }\nexport const E = K.A;\nexport function f(x: number): number { return x + E; }\n";
+const EKD = "enum K { A = 1 }\nexport const E = K.A;\nexport function f(x: number): number { return x + E; }\n";
+const EKR = "enum K { A = Math.PI }\nexport function f(x: number): number { return x + K.A; }\n";
+const NS = "namespace N { export const A = 1; }\nexport const E = N.A;\nexport function f(x: number): number { return x + E; }\n";
+const GM = { "src/x.test.ts": "(globalThis as any).Math = { PI: 4 };\n" };
+const GD = { "src/x.test.ts": "(globalThis as any).Date = { UTC: () => 5 };\n" };
+const CA = /repo: constructor_access:src\/h\.ts/, GB = /repo: getBuiltinModule:src\/h\.ts/, UL = /repo: unlisted_import_specifier:src\/h\.ts/;
+const DELTA: Record<string, [string, Record<string, string>, RegExp, readonly (typeof VERS)[number][], Record<string, string>?]> = {
+  X1_enum_Math_PI: [EK, GM, /E: global_Math_via_global_object/, VERS],
+  X1_const_enum_Math_PI: [EKC, GM, /E: global_Math_via_global_object/, VERS],
+  X1_enum_literal_member_globalThis_Date: [EKD, GD, /E: global_(?:Math|Date)_via_global_object/, VERS],
+  X1_enum_read_directly: [EKR, GM, /global_Math_via_global_object/, VERS],
+  X1_namespace_member: [NS, GM, /./, []],
+  X2_destructured_constructor: [DUTC_X, HT("const { constructor: C } = (() => 0) as any;\nC(\"Date.UTC = () => 5\")();\nexport {};\n"), CA, VERS],
+  X2_shorthand_constructor: [DUTC_X, HT("const { constructor } = (() => 0) as any;\nconstructor(\"Date.UTC = () => 5\")();\nexport {};\n"), CA, VERS],
+  X2_parameter_destructuring: [DUTC_X, HT("function g({ constructor: C }: any): void { C(\"Date.UTC = () => 5\")(); }\ng(() => 0);\nexport {};\n"), CA, VERS],
+  X2_reflect_get: [DUTC_X, HT("(Reflect.get(() => 0, \"constructor\") as any)(\"Date.UTC = () => 5\")();\nexport {};\n"), CA, VERS],
+  X2_get_own_property_descriptor: [MATH_PI, HT("(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(() => 0), \"constructor\") as any).value(\"Math.PI = 4\")();\nexport {};\n"), CA, VERS],
+  X2_template_literal: [DUTC_X, HT("((() => 0) as any)[`constructor`](\"Date.UTC = () => 5\")();\nexport {};\n"), CA, VERS],
+  X2_template_part: [DUTC_X, HT("((() => 0) as any)[`${\"\"}constructor`](\"Date.UTC = () => 5\")();\nexport {};\n"), CA, VERS],
+  X2_destructured_getBuiltinModule: [DUTC_X, HT("const { getBuiltinModule: g } = process as any;\ng(\"node:vm\").runInThisContext(\"Date.UTC = () => 5\");\nexport {};\n"), GB, VERS],
+  X2_reflect_get_getBuiltinModule: [DUTC_X, HT("(Reflect.get(process, \"getBuiltinModule\") as any)(\"node:vm\");\nexport {};\n"), GB, VERS],
+  X3_data_url: [DUTC_X, HT("import \"data:text/javascript,Date.UTC=()=>5\";\nexport {};\n"), UL, VERS],
+  X3_file_url: [DUTC_X, HT("import \"file:///tmp/evil2.mjs\";\nexport {};\n"), UL, VERS],
+  X3_http_url: [MATH_PI, HT("import \"http://example.com/e.mjs\";\nexport {};\n"), UL, VERS],
+  X3_export_star_data_url: [DUTC_X, HT("export * from \"data:text/javascript,export const a = 1\";\n"), UL, VERS],
+  X3_node_inspector: [DUTC_X, HT("import inspector from \"node:inspector\";\nvoid inspector;\nexport {};\n"), UL, VERS],
+  X3_node_repl: [DUTC_X, HT("import \"node:repl\";\nexport {};\n"), UL, VERS],
+  X3_unlisted_builtin_bare: [DUTC_X, HT("import \"worker_threads\";\nexport {};\n"), UL, VERS],
+  X3_npm_package: [DUTC_X, HT("import _ from \"lodash\";\nvoid _;\nexport {};\n"), UL, VERS],
+  X3_bare_test_is_a_package: [DUTC_X, HT("import \"test\";\nexport {};\n"), UL, VERS],
+  X4_cjs_object_method: [DUTC_X, HT("const o = { m() { return this; } };\n(0, o.m)().Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_object_getter: [DUTC_X, HT("const o = { get g() { return this; } };\nObject.getOwnPropertyDescriptor(o, \"g\").get.call(undefined).Date = { UTC: () => 9 };\n", "src/h.cjs"), /E: global_Date_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_cjs_object_setter: [MATH_PI, HT("const o = { set s(v) { this.Math = v; } };\nObject.getOwnPropertyDescriptor(o, \"s\").set.call(undefined, { PI: 4 });\n", "src/h.cjs"), /E: global_Math_via_sloppy_this at src\/h\.cjs:1/, VERS],
+  X4_script_js_object_method: [MATH_PI, HT("var o = { m: function () { return this; }, n() { return this; } };\n(0, o.n)().Math = { PI: 4 };\n", "src/h.js"), /E: global_Math_via_sloppy_this at src\/h\.js:1/, VERS],
+};
+test("repo scan (Auditor #505 delta): X1-X4 repros are refused with their diagnostic", () => {
+  for (const [k, [t, o, re, vs, base]] of Object.entries(DELTA)) {
+    for (const v of VERS) assert.notEqual(run(t, o, v, true), "ok", `${k} ${v}`);
+    for (const v of vs) {
+      assert.equal(run(t, base ?? {}, v, true), "ok", `${k} ${v}: the target alone is accepted`);
+      const why: { shared?: string } = {};
+      run(t, o, v, true, (p, c, f, opts) => existingTargetRefusal(p, c, f, { ...(opts as object), why } as never));
+      assert.match(why.shared ?? "", re, `${k} ${v}`);
+    }
+  }
+});
+test("repo scan (Auditor #505 delta): the matching positives stay accepted (allowlisted builtins, own constructors, strict and class `this`, enums with no mutation)", () => {
+  const BUILTINS = ["path", "fs", "url", "util", "assert", "crypto", "events", "os", "stream", "timers", "buffer", "assert/strict", "fs/promises", "child_process", "zlib", "perf_hooks", "http", "process"];
+  const imports = [...BUILTINS.flatMap((b, i) => [`import * as n${i} from "node:${b}";`, `import * as b${i} from "${b}";`]), "import * as t0 from \"node:test\";"].join("\n");
+  const ok: Record<string, [string, Record<string, string>, readonly (typeof VERS)[number][]]> = {
+    every_allowlisted_builtin: [DUTC_X, HT(`${imports}\nexport const u = [${BUILTINS.map((_, i) => `n${i}, b${i}`).join(", ")}, t0].length;\n`), VERS],
+    type_only_package_import: [DUTC_X, HT("import type { Foo } from \"lodash\";\nexport type { Bar } from \"some-pkg\";\nexport const x: Foo | null = null;\n"), VERS],
+    class_own_constructor_and_super: [DUTC_X, HT("export class A { n = 1; constructor() { this.n = 2; } }\nexport class B extends A { constructor() { super(); this.n = 3; } }\n"), VERS],
+    cjs_class_members_this: [MATH_PI, HT("class K { x = () => this; static s() { return this; } get g() { return this; } set h(v) { this.v = v; } constructor() { this.v = 0; } m() { return this; } }\nmodule.exports = { K };\n", "src/h.cjs"), VERS],
+    strict_cjs_object_method_this: [DUTC_X, HT("\"use strict\";\nconst o = { m() { return this; } };\n(0, o.m)();\n", "src/h.cjs"), VERS],
+    mjs_object_method_this: [DUTC_X, HT("const o = { m() { return this; } };\n(0, o.m)();\nexport {};\n", "src/h.mjs"), VERS],
+    esm_js_object_method_this: [DUTC_X, HT("const o = { m() { return this; } };\nexport const r = (0, o.m)();\n", "src/h.js"), VERS],
+    enum_and_const_enum_without_mutation: [EK, {}, VERS],
+    const_enum_without_mutation: [EKC, { "src/s.ts": "export const g = (): number => Math.abs(-1);\n" }, VERS],
+    literal_enum_with_other_global_write: [EKD, { "src/a.test.ts": "const original = globalThis.fetch;\nglobalThis.fetch = original;\n" }, VERS],
+    math_pi_const: [MATH_PI, {}, VERS],
+  };
+  for (const [k, [t, o, vs]] of Object.entries(ok)) for (const v of vs) assert.equal(run(t, o, v, true), "ok", `${k} ${v}`);
+});
 test("repo scan (Auditor #505 final): past the depth bound the member-read roots refuse (a sentinel), never stop silently", () => {
   const chain = Array.from({ length: 16 }, (_, i) => `const C${i} = ${i === 0 ? "1" : `C${i - 1}`};`).join("\n");
   assert.deepEqual(constGlobalRoots(`${chain}\nexport const E = C15;`, "E"), ["<too_deep>"]);
