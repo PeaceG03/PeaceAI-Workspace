@@ -1808,6 +1808,8 @@ const MAP_GET_DEPTH = 2;
 /** Callback parameter roles by method: e = element, i = index (primitive), a = the receiver, c = accumulator. */
 const CALLBACK_ROLES: Record<string, string> = { reduce: "ceia", reduceRight: "ceia", toSorted: "ee", sort: "ee" };
 /** Global callees that read an argument and return a primitive (or a fresh deep copy). */
+/** Globals whose result is always a primitive (Math.* too, except the impure random, which statelessInit refuses anyway). */
+const PRIM_RETURN_GLOBALS = new Set(["String", "Number", "Boolean", "BigInt", "isNaN", "isFinite", "parseInt", "parseFloat", "Array.isArray", "Object.is", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.parseFloat", "Number.parseInt", "Date.UTC", "Date.parse", "encodeURIComponent", "decodeURIComponent"]);
 const PRIM_GLOBAL_CALLS = new Set(["String", "Number", "Boolean", "BigInt", "isNaN", "isFinite", "parseInt", "parseFloat", "Array.isArray", "JSON.stringify", "Object.is", "Object.hasOwn", "Object.keys", "Object.getOwnPropertyNames", "Object.isFrozen", "Object.isSealed", "Object.isExtensible", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.parseFloat", "Number.parseInt", "structuredClone", "encodeURIComponent", "decodeURIComponent"]);
 /** Global callees whose result is a fresh container of the argument's elements (or entries of them). */
 const CONTAINER_GLOBAL_CALLS = new Set(["Object.values", "Array.from", "Object.fromEntries", "Array.of"]);
@@ -1961,6 +1963,12 @@ function shapeDepth(e: ts.Expression, m: { sf: ts.SourceFile; idx: ModuleIndex }
       r = Math.max(r, 2 + shapeDepth(pair.elements[1]!, m, read, seen, depth + 1));
     }
     return r >= INF_DEPTH ? INF_DEPTH : r;
+  }
+  // a call of a global that always returns a primitive (the binding then holds a primitive, nothing to share)
+  if (ts.isCallExpression(x)) {
+    const c = unwrapExpr(x.expression);
+    const nm = ts.isIdentifier(c) ? c.text : ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) ? `${c.expression.text}.${c.name.text}` : null;
+    if (nm && (PRIM_RETURN_GLOBALS.has(nm) || (nm.startsWith("Math.") && nm !== "Math.random")) && unshadowed(m.idx, nm.split(".")[0]!)) return 0;
   }
   if (ts.isCallExpression(x) && ts.isIdentifier(x.expression)) {
     const kind = calleeReturnKind(x.expression.text, m, read);
@@ -2287,6 +2295,14 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
     for (const s of S.keys()) names.add(s.name);
     const declFiles = new Set<string>();
     for (const s of S.keys()) for (const d of s.declarations ?? []) declFiles.add(d.getSourceFile().fileName);
+    // files that export a tracked symbol (only those leak it through `export *` / `export * as`); a file with no
+    // module symbol is counted as exporting (fail closed)
+    const exportFiles = new Set<string>();
+    for (const s of S.keys()) for (const d of s.declarations ?? []) {
+      const sf = d.getSourceFile();
+      const ms = checker.getSymbolAtLocation(sf);
+      if (!ms || checker.getExportsOfModule(ms).some((e) => norm(e) === s)) exportFiles.add(sf.fileName);
+    }
     for (const f of ri.files.values()) {
       const nsNames = new Set<string>();
       const local = new Set(names);
@@ -2300,14 +2316,24 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
         }
         if (ts.isExportDeclaration(st) && st.moduleSpecifier && ts.isStringLiteralLike(st.moduleSpecifier) && !st.isTypeOnly) {
           const target = ri.resolve(st.moduleSpecifier.text, f.fileName);
-          if (target && declFiles.has(target) && (!st.exportClause || ts.isNamespaceExport(st.exportClause))) return `reexport_star at ${at(st)}`;
+          if (target && exportFiles.has(target) && (!st.exportClause || ts.isNamespaceExport(st.exportClause))) return `reexport_star at ${at(st)}`;
         }
       }
       const v = (n: ts.Node): void => {
         if (problem) return;
         if (ts.isCallExpression(n) && n.arguments.length === 1 && ts.isStringLiteralLike(n.arguments[0]!) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require" && isGlobalId(n.expression, checker)))) {
           const target = ri.resolve((n.arguments[0] as ts.StringLiteralLike).text, f.fileName);
-          if (target && declFiles.has(target)) { fail("dynamic_import_of_module", n); return; }
+          if (target && declFiles.has(target)) {
+            // `const { A, B: C } = await import("./m")` (or `= require("./m")`) is a named import; any other use of the
+            // module object (kept, passed, member-read, rest) fails closed.
+            const pat = destructuredImport(n);
+            if (!pat) { fail("dynamic_import_of_module", n); return; }
+            for (const el of pat.elements) {
+              const exported = ((el.propertyName ?? el.name) as ts.Identifier).text;
+              for (const [s, d] of [...S]) if (s.name === exported && s.declarations?.some((x) => x.getSourceFile().fileName === target)) addSym(checker.getSymbolAtLocation(el.name), d, el.name);
+              if (problem) return;
+            }
+          }
         }
         if (ts.isIdentifier(n) && (local.has(n.text) || nsNames.has(n.text)) && !done.has(n) && !inTypePosition(n)) {
           const p = n.parent;
@@ -2342,6 +2368,21 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
     // a deeper-than-before alias (smaller depth) must be re-checked everywhere it is used
     done.clear();
   }
+}
+
+/** The plain object pattern a literal dynamic import / require is destructured into (no rest, no computed or nested names). */
+function destructuredImport(call: ts.CallExpression): ts.ObjectBindingPattern | null {
+  let e: ts.Node = call;
+  while (ts.isParenthesizedExpression(e.parent)) e = e.parent;
+  if (call.expression.kind === ts.SyntaxKind.ImportKeyword) {
+    if (!ts.isAwaitExpression(e.parent)) return null;
+    e = e.parent;
+    while (ts.isParenthesizedExpression(e.parent)) e = e.parent;
+  }
+  const d = e.parent;
+  if (!ts.isVariableDeclaration(d) || d.initializer !== e || !ts.isObjectBindingPattern(d.name)) return null;
+  const ok = d.name.elements.every((el) => !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)));
+  return ok ? d.name : null;
 }
 
 export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: string; type: string }[]; ret: string }

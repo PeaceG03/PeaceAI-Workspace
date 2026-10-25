@@ -63,6 +63,11 @@ const ATTACKS: Record<string, [string, Record<string, string>]> = {
   dynamic_import_literal: [LIT, { "src/s.ts": "export async function g(): Promise<void> { const m = await import(\"./m\"); m.L.push(\"z\"); }\n" }],
   require_nonliteral: [LIT, { "src/s.js": "const p = \"./m\";\nmodule.exports = function g() { require(p).L.push(\"z\"); };\n" }],
   require_literal: [LIT, { "src/s.js": "module.exports = function g() { require(\"./m\").L.push(\"z\"); };\n" }],
+  dynamic_import_destructured_push: [LIT, { "src/s.test.ts": "test(\"t\", async () => { const { L } = await import(\"./m\"); L.push(\"z\"); });\n" }],
+  dynamic_import_destructured_renamed: [LIT, { "src/s.ts": "export async function g(): Promise<string[]> { const { L: Q } = (await import(\"./m.ts\")); return Q; }\n" }],
+  dynamic_import_destructured_rest: [LIT, { "src/s.ts": "export async function g(): Promise<void> { const { ...r } = await import(\"./m\"); void r; }\n" }],
+  dynamic_import_destructured_nested: [LIT, { "src/s.ts": "export async function g(): Promise<void> { const { L: [a] } = await import(\"./m\"); void a; }\n" }],
+  require_destructured_sort: [LIT, { "src/s.js": "const { L } = require(\"./m\");\nmodule.exports = function g() { L.sort(); };\n" }],
   unparseable_module: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g( { L.push(\"z\");\n" }],
   eval_anywhere: [LIT, { "src/s.ts": "export function g(s: string): unknown { return eval(s); }\n" }],
   internal_bare_specifier: [LIT, { "src/s.ts": "import { L } from \"src/m\";\nexport function g(): void { L.push(\"z\"); }\n" }],
@@ -84,6 +89,8 @@ const CONTROLS: Record<string, [string, Record<string, string>]> = {
   object_rows_read: [OBJ.replace("export const O: { n: number } = { n: 1 };", "export const O: { n: number }[] = [{ n: 1 }];").replace("O.n", "O[0]!.n"), { "src/s.ts": "import { O } from \"./m\";\nexport function g(): number[] { return O.map((o) => o.n * 2); }\nexport function h(k: number): number { const r = O.find((o) => o.n === k); return r ? r.n : 0; }\n" }],
   spread_copy: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g(): string[] { const c = [...L]; c.push(\"z\"); return c; }\n" }],
   regex_string_methods: [RX, { "src/s.ts": "import { RX } from \"./m\";\nexport function g(s: string): string[] { const a = s.match(RX); const b = RX.exec(s); return [s.replace(RX, \"\"), RX.source, String(a), String(b)]; }\n" }],
+  export_star_unexported: [CALL_LOCAL, { "src/index.ts": "export * from \"./m\";\n", "src/s.ts": "import * as all from \"./index\";\nexport function g(x: string): number { return all.f(x); }\n" }],
+  dynamic_import_destructured_read: [LIT, { "src/s.test.ts": "test(\"t\", async () => { const { L, f } = await import(\"./m\"); if (f(L[0]!) !== 0 || !L.includes(\"b\")) throw new Error(\"x\"); });\n" }],
 };
 
 const VERS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"] as const;
@@ -112,6 +119,9 @@ test("repo scan: without a repo list a read binding holding state is refused (fa
   for (const t of [LIT, CALL_LOCAL, OBJ, ENUM, RX]) for (const v of VERS) assert.notEqual(run(t, {}, v, false), "ok", `${t.slice(0, 30)} ${v}`);
   const prim = "export const N = 3;\nconst S = \"a\" + \"b\";\nexport function f(x: number): number { return x + N + S.length; }\n";
   for (const v of VERS) assert.equal(run(prim, {}, v, false), "ok", v);
+  // a const holding a prim-returning global's result is a primitive too: the scan does not refuse it (v4+ accept it)
+  const pc = "const E = Date.UTC(1970, 0, 1);\nexport function f(x: number): number { return x - E; }\n";
+  for (const v of ["v4", "v5", "v6", "v7"] as const) assert.equal(run(pc, {}, v, false), "ok", v);
 });
 
 test("repo scan: the refusal names the first problem (diagnostics)", () => {
