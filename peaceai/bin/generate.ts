@@ -20,6 +20,7 @@ import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 import { nlDecision } from "../lib/nlparse.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
+import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
 
 const MAX_CANDIDATES = 5;
@@ -128,9 +129,13 @@ if (nl.status === "unsure") {
 }
 const task = nl.status === "parsed" ? { title: "", body: nl.objective } : issueTask;
 
-const candidatesForContext = tracked
-  .filter((path) => scope.isSource(path) && !scope.isDenied(path))
-  .map((path) => ({ path, content: readFileSync(join(repo, path), "utf8") }));
+// Auditor #466 (c), option A: repoFileLists (the one helper Job B's TEST_CASE_EXISTING re-check uses too) builds the
+// context list (in scope, not denied: the only list any context, prompt, edit or record sees) and, separately, the
+// scan list (denied in-scope files included) that only the TEST_CASE_EXISTING static shared-binding scan reads.
+// A tracked symlink (broken or not) or a file resolving outside the checkout is skipped, the way Job B reads.
+const repoLists = repoFileLists(tracked, scope, regularFileReader(repo));
+const candidatesForContext = repoLists.context;
+const scanOnlyFiles = repoLists.scan;
 // M6: symbol and keyword index over the target's in-scope files. Built here, in memory, after the
 // visibility gate (select job + re-check) has passed; only counts are logged and nothing is saved.
 const objectiveText = cleanIssueText(task);
@@ -285,7 +290,7 @@ for (const a of planSteps ? [] : admissions) {
   const why: { reason?: string; questions?: string } = {};
   // M99: DERIVE_FROM_BEHAVIOR also checks the raw body (fenced code / HTML comments are dropped by cleaning).
   if (a.spec.kind === "DERIVE_FROM_BEHAVIOR") { const r = rawIssueProblem(task.body); if (r) { ruleRefusals.push({ id: a.spec.id, reason: r }); continue; } }
-  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists); // Auditor #135: full ls-files + disk
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists, [...scanOnlyFiles, ...workflowFiles]); // Auditor #135: full ls-files + disk
   if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); if (why.questions && !ruleQuestions) ruleQuestions = why.questions; continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).

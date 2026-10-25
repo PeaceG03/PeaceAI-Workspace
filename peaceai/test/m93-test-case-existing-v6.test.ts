@@ -103,7 +103,7 @@ test("target negatives under v6: any, nested or returned unknown, other env defa
   const shadowProc = 'const process = { env: { A: "1" } };\nexport function f(env: NodeJS.ProcessEnv = process.env): boolean { return env.A === "1"; }\n';
   // A module-local `process` is not the global: its `.env` default is walked like any default (here a pure const),
   // and it is not an env default the checks must override.
-  assert.equal(existingTargetRefusal("src/b.ts", shadowProc, "f", { v2: { read: () => null }, v6: true }), null);
+  assert.equal(existingTargetRefusal("src/b.ts", shadowProc, "f", { v2: { read: () => null }, v6: true, repo: [{ path: "src/b.ts", content: shadowProc }] }), null);
   assert.deepEqual(envDefaultParams(shadowProc, "f"), []);
   const shadowProcIo = 'import { process } from "node:process";\nexport function f(env: NodeJS.ProcessEnv = process.env): boolean { return env.A === "1"; }\n';
   assert.equal(existingTargetRefusal("src/b.ts", shadowProcIo, "f", { v2: { read: () => null }, v6: true }), "test_target_io");
@@ -229,7 +229,7 @@ test("stub and Job B wiring: v6 candidates are re-checked under v6 (with v2-v5 s
   const tc = read("peaceai/bin/test-candidates.ts");
   assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false, v6 = false(?:, v7 = false)?\): TestGrading/);
   assert.match(tc, /existing-v5@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\), typeof candidate\.operationId === "string" && \(?candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\)/);
-  assert.match(tc, /dates: v3, v4, v5, v6(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);/);
+  assert.match(tc, /dates: v3, v4, v5, v6(?:, v7)?, repo \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, repo \}\) !== null\) return ungradable\("not-test-only"\);\n  if \(v6 && envArgProblem\(real, fn, test\) !== null\) return ungradable\("not-test-only"\);/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 

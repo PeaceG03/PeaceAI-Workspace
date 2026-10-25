@@ -176,7 +176,7 @@ test("stub and Job B wiring: v3 candidates are re-checked with Date and stubbed 
   // M90: v4 candidates also set v2 and v3 (the v4 prefix follows the v3 prefix in both disjunctions).
   assert.match(tc, /candidate\.operationId\.startsWith\("learned:public-test-case-existing-v2@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\)/);
   assert.match(tc, /\(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v3@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\),/);
-  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)?, repo \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, repo \}\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 

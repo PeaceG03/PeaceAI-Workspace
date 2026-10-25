@@ -27,9 +27,11 @@ const P = JSON.parse(read("peaceai/test/m97-te7-date-failclosed.probes.json")) a
 const VERS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"] as const;
 const optsFor = (v: string, rd: { read: (rel: string) => string | null }): Record<string, unknown> =>
   ({ v1: { load: rd }, v2: { v2: rd }, v3: { v2: rd, dates: true }, v4: { v2: rd, v4: true }, v5: { v2: rd, v5: true }, v6: { v2: rd, v6: true }, v7: { v2: rd, v7: true } } as Record<string, Record<string, unknown>>)[v]!;
+const repoOf = (files: Record<string, string>) => Object.entries(files).map(([path, content]) => ({ path, content }));
 const verdicts = (files: Files, fn: string) => {
   const rd = { read: (rel: string) => files[rel] ?? null };
-  return Object.fromEntries(VERS.map((v) => [v, existingTargetRefusal("src/a.ts", files["src/a.ts"]!, fn, optsFor(v, rd)) ?? "ok"]));
+  // Auditor (c): the probe's files are its whole repo (the shared-binding scan's `repo`).
+  return Object.fromEntries(VERS.map((v) => [v, existingTargetRefusal("src/a.ts", files["src/a.ts"]!, fn, { ...optsFor(v, rd), repo: repoOf(files) }) ?? "ok"]));
 };
 const allRefused = (r: Record<string, string>) => VERS.every((v) => r[v] !== "ok");
 // Controls in Auditor's c9 file: UTC-only setters with toISOString / getTime (zone-free) on a tested-parameter string.

@@ -12,6 +12,8 @@
 //   outside the vocabulary (test_target_signature). No model.
 import ts from "typescript";
 import { createHash } from "node:crypto";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isDateLiteral, isMapSetLiteral, ISO_DATE_TEXT, parseTestTask, type TestTask } from "./learned-test.ts";
 import { DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, dateRefusal, plainPath } from "./learned-complex.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
@@ -1310,7 +1312,7 @@ function resolveName(a: Analysis, name: string, locals: ReadonlySet<string>): vo
     analyzeExpression(a, a.idx.consts.get(name)!.initializer!);
     return;
   }
-  if (a.idx.enums.has(name)) { if (a.v2) noteEnum(a.v2, a.idx, a.sf, name); return; }
+  if (a.idx.enums.has(name)) { noteEnumRead(a, name); if (a.v2) noteEnum(a.v2, a.idx, a.sf, name); return; }
   if (a.idx.mutable.has(name)) { add(TEST_TARGET_IMPURE); return; }
   const imp = a.idx.imports.get(name);
   if (imp) {
@@ -1754,13 +1756,967 @@ function literalDefault(e: ts.Expression | undefined): boolean {
   return ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(e.operand);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Auditor ruling on the #466 load-call allowance, part (c): the WHOLE-REPO SHARED-BINDING SCAN (every version, every
+// gate call; only adds refusals). `idx.mutated` sees one module, so a module const the target reads that ANOTHER
+// module writes (or pushes into), or that an export hands out, passed. Now every module-level const the analysis read
+// (exported or not; a literal or a call result) and every enum it read is checked over the WHOLE target repo
+// (`opts.repo`: every file the rule was given, test files included), with the TypeScript binder resolving names, so
+// aliases, renamed imports, namespace members and shadowing are followed by symbol, never by spelling:
+// - no module writes it or anything inside it: assignment (also compound, logical and destructuring targets), ++ / --,
+//   delete, a for-in / for-of target, a mutating method (push, set, sort, fill, ...), a method the scan does not know,
+//   Object.assign / defineProperty / freeze / setPrototypeOf, Reflect.*;
+// - nothing hands it out or passes it on: a return / yield / throw / `export default` / arrow body, a class field,
+//   storing it in another object, an argument (or spread argument) to a callee the scan cannot follow (a function
+//   declaration or a const arrow / function expression of the repo is followed: its parameter becomes an alias), a
+//   tagged template, a re-export of any form (`export { X as Y }`, `export { X } from`, `export *`, `export * as`);
+// - aliases are followed: `const a = L`, `a = L`, destructuring (`const { x } = L`, `[a] = L`), for-of variables,
+//   callback parameters of read methods, parameters of followed callees, defaults, conditional / `??` / `||` results,
+//   containers that hold it (`[L]`, `{ k: L }`, `[...L]`), read-method results that hold parts of it (`find`, `slice`,
+//   Object.values / entries, Array.from, `new Set(L)`); each alias carries its depth below the binding;
+// - fail closed: any unparseable module, any dynamic import or require with a non-literal specifier (or `require`
+//   used as a value), eval / Function, a string-literal timer, an import-equals, a bare specifier that may name a
+//   repo module (`@/`, `~/`, `#`, `/`, or a repo top-level directory), a namespace import of a module declaring the
+//   binding (or an alias) used as anything but `ns.member` reads, a literal dynamic import / require of such a module;
+// - a primitive const (literal or arithmetic initializer, or a call whose declared return type is primitive) holds no
+//   state and is skipped; a const function value is checked for writes only; reads that reach a primitive (by the
+//   initializer's literal shape, or a primitive-array return type) end the walk.
+// Without `opts.repo` (Job B today, direct callers), any such binding is refused (fail closed).
+export interface RepoFile { readonly path: string; readonly content: string }
+/**
+ * Auditor #466 (c), option A (joint Builder + Auditor decision): the one builder of both repo lists, used by Job A
+ * (generate.ts) and Job B (test-candidates.ts gradeExisting), with two separate outputs:
+ * - `context`: every path the target config puts in scope (`isSource`, test files included) and does not deny, with its
+ *   regular-file content. The only list that may reach model context, prompts, edits, records, logs or artifacts.
+ * - `scan`: the same plus the denied in-scope paths, for the static shared-binding scan only (an `export * from` a
+ *   denied module, or a denied module that writes or hands out a binding, is then seen and judged; it is never a target).
+ *   Its file and byte caps (MAX_SCAN_FILES / MAX_SCAN_BYTES) count denied files too and fail closed (too large).
+ * Unreadable paths are dropped from both (the scan then fails closed on any import of them).
+ */
+/**
+ * The one reader Job A and Job B hand repoFileLists: a regular file inside `root` (resolved for real), else null. A
+ * symlink (broken or not), a directory, a file reached through a symlinked directory outside the root, or any read
+ * error is skipped, never thrown.
+ */
+export function regularFileReader(root: string): (rel: string) => string | null {
+  let real: string | null = null;
+  try { real = realpathSync(root); } catch { real = null; }
+  return (rel: string): string | null => {
+    if (real === null) return null;
+    try {
+      const p = join(root, rel);
+      if (!lstatSync(p).isFile()) return null;
+      const r = relative(real, realpathSync(p));
+      if (r === "" || r.startsWith("..") || isAbsolute(r)) return null;
+      return readFileSync(p, "utf8");
+    } catch { return null; }
+  };
+}
+export function repoFileLists(paths: Iterable<string>, scope: { isSource(p: string): boolean; isDenied(p: string): boolean }, read: (p: string) => string | null): { context: RepoFile[]; scan: RepoFile[] } {
+  const context: RepoFile[] = [];
+  const scan: RepoFile[] = [];
+  const seen = new Set<string>();
+  for (const p of paths) {
+    if (!p || seen.has(p) || !scope.isSource(p)) continue;
+    seen.add(p);
+    const c = read(p);
+    if (c === null) continue;
+    const f = { path: p, content: c };
+    scan.push(f);
+    if (!scope.isDenied(p)) context.push(f);
+  }
+  return { context, scan };
+}
+/** Bounds of the scan (more is refused, test_target_too_large). */
+export const MAX_SCAN_FILES = 4000;
+export const MAX_SCAN_BYTES = 48 * 1024 * 1024;
+const MAX_SCAN_ROUNDS = 24;
+const MAX_SCAN_ALIASES = 512;
+const SCAN_CODE = /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/;
+const SCAN_DECL = /\.d\.[cm]?ts$/;
+const SCAN_ROOT = "/repo/";
+const INF_DEPTH = 1e6;
+/** Builtin modules that run string code or load modules the scan does not see; any import of them fails closed. */
+const CODE_LOADER_MODULES = new Set(["vm", "node:vm", "module", "node:module"]);
+/**
+ * Auditor #505 delta (X3): the only non-relative specifiers a scanned file may import (as `node:<name>` or bare):
+ * Auditor's fixed list plus what PeaceSTOCKS imports at any commit (test, assert/strict, fs/promises, child_process,
+ * zlib, perf_hooks, http), and `process` (the same object as the global `process`, which any file can already reach;
+ * kept so the pinned evidence's `import process from "node:process"` still grades). None of them runs string code in
+ * this process or loads a module the scan does not see.
+ */
+const ALLOWED_BUILTINS = new Set(["path", "fs", "url", "util", "assert", "crypto", "events", "os", "stream", "timers", "buffer", "test", "assert/strict", "fs/promises", "child_process", "zlib", "perf_hooks", "http", "process"]);
+/** Builtins that exist only with the `node:` prefix (a bare `test` is an npm package). */
+const NODE_PREFIX_ONLY = new Set(["test"]);
+/** Auditor #505 delta (X2): tokens that reach the Function constructor or the builtin-module loader. */
+const FORBIDDEN_TOKENS = new Set(["constructor", "getBuiltinModule"]);
+const SHARED_TOO_LARGE = "too_large";
+/** Methods that change their receiver. */
+const WRITE_METHODS = new Set([...MUTATORS, "fill", "copyWithin", "setTime"]);
+/** Read methods whose result is a primitive (or undefined); callbacks still get their parameters aliased. */
+const PRIM_RESULT_METHODS = new Set(["indexOf", "lastIndexOf", "includes", "join", "some", "every", "findIndex", "findLastIndex", "has", "toString", "toLocaleString", "forEach", "toFixed", "toPrecision", "startsWith", "endsWith", "charAt", "charCodeAt", "codePointAt", "localeCompare", "padStart", "padEnd", "trim", "trimStart", "trimEnd", "toLowerCase", "toUpperCase", "repeat", "replace", "replaceAll", "split", "substring", "substr", "normalize", "match", "search", "test", "getTime", "valueOf", "toISOString", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable"]);
+/** Read methods whose result is (or holds) parts of the receiver: an element of it, or a fresh container of its elements. */
+const ELEMENT_RESULT_METHODS = new Set(["at", "find", "findLast", "get", "reduce", "reduceRight"]);
+/** Read methods whose result holds only the callback's return values (those are checked as callback hand-outs). */
+const MAPPED_RESULT_METHODS = new Set(["map", "flatMap", "exec"]);
+/** String methods that take a regex pattern and read it (a g / y module regex is refused by statelessInit). */
+const STRING_REGEX_METHODS = new Set(["match", "matchAll", "replace", "replaceAll", "split", "search"]);
+const CONTAINER_RESULT_METHODS = new Set(["slice", "concat", "filter", "flat", "toSorted", "toReversed", "toSpliced", "with", "values", "keys"]);
+const ENTRY_RESULT_METHODS = new Set(["entries"]);
+/** Map values sit two counted steps below the Map (its [k, v] entry pairs are one step down; see shapeDepth). */
+const MAP_GET_DEPTH = 2;
+/** Callback parameter roles by method: e = element, i = index (primitive), a = the receiver, c = accumulator. */
+const CALLBACK_ROLES: Record<string, string> = { reduce: "ceia", reduceRight: "ceia", toSorted: "ee", sort: "ee" };
+/** Global callees that read an argument and return a primitive (or a fresh deep copy). */
+/** Globals whose result is always a primitive (Math.* too, except the impure random, which statelessInit refuses anyway). */
+const PRIM_RETURN_GLOBALS = new Set(["String", "Number", "Boolean", "BigInt", "isNaN", "isFinite", "parseInt", "parseFloat", "Array.isArray", "Object.is", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.parseFloat", "Number.parseInt", "Date.UTC", "Date.parse", "encodeURIComponent", "decodeURIComponent"]);
+const PRIM_GLOBAL_CALLS = new Set(["String", "Number", "Boolean", "BigInt", "isNaN", "isFinite", "parseInt", "parseFloat", "Array.isArray", "JSON.stringify", "Object.is", "Object.hasOwn", "Object.keys", "Object.getOwnPropertyNames", "Object.isFrozen", "Object.isSealed", "Object.isExtensible", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger", "Number.parseFloat", "Number.parseInt", "structuredClone", "encodeURIComponent", "decodeURIComponent"]);
+/** Global callees whose result is a fresh container of the argument's elements (or entries of them). */
+const CONTAINER_GLOBAL_CALLS = new Set(["Object.values", "Array.from", "Object.fromEntries"]);
+const ENTRY_GLOBAL_CALLS = new Set(["Object.entries"]);
+const CONTAINER_GLOBAL_NEW = new Set(["Set", "Map"]);
+/** Callback arguments the scan accepts without following: global conversions (no access to the receiver). */
+const GLOBAL_CALLBACKS = new Set(["String", "Number", "Boolean"]);
+
+interface RepoIndex { checker: ts.TypeChecker; files: Map<string, ts.SourceFile>; problem: string | null; resolve: (spec: string, from: string) => string | null }
+const REPO_INDEX = new WeakMap<readonly RepoFile[], RepoIndex>();
+const scriptKindOf = (p: string): ts.ScriptKind => (/\.tsx$/.test(p) ? ts.ScriptKind.TSX : /\.jsx$/.test(p) ? ts.ScriptKind.JSX : /\.[cm]?js$/.test(p) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+const relOf = (fileName: string): string => (fileName.startsWith(SCAN_ROOT) ? fileName.slice(SCAN_ROOT.length) : fileName);
+/** The global name path of a callee the binder does not resolve (`Object.assign`, `String`), else null. */
+/** A name no repo declaration binds (a global; JS files bind `require` / `module` to declaration-less symbols). */
+const isGlobalId = (n: ts.Identifier, checker: ts.TypeChecker): boolean => { const s = checker.getSymbolAtLocation(n); return !s || !s.declarations?.length; };
+function globalCallee(e: ts.Expression, checker: ts.TypeChecker): string | null {
+  const x = unwrapExpr(e);
+  if (ts.isIdentifier(x)) return isGlobalId(x, checker) ? x.text : null;
+  if (ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression) && isGlobalId(x.expression, checker)) return `${x.expression.text}.${x.name.text}`;
+  return null;
+}
+function inTypePosition(n: ts.Node): boolean {
+  for (let q = n.parent; q; q = q.parent) {
+    if (ts.isExpressionWithTypeArguments(q)) return !(ts.isHeritageClause(q.parent) && q.parent.token === ts.SyntaxKind.ExtendsKeyword && ts.isClassLike(q.parent.parent));
+    if (ts.isTypeNode(q)) return true;
+    if (ts.isStatement(q) || ts.isSourceFile(q) || ts.isExpression(q) && !ts.isIdentifier(q) && !ts.isQualifiedName(q as ts.Node)) return false;
+  }
+  return false;
+}
+
+function repoIndex(repo: readonly RepoFile[]): RepoIndex {
+  const hit = REPO_INDEX.get(repo);
+  if (hit) return hit;
+  const code = repo.filter((f) => SCAN_CODE.test(f.path) && !SCAN_DECL.test(f.path));
+  const texts = new Map<string, string>();
+  let bytes = 0;
+  for (const f of code) { texts.set(SCAN_ROOT + f.path, f.content); bytes += f.content.length; }
+  const dirs = new Set<string>(["/repo"]);
+  for (const k of texts.keys()) { let d = k; while (d.includes("/") && d !== "/repo") { d = d.slice(0, d.lastIndexOf("/")); dirs.add(d); } }
+  const top = new Set(repo.map((f) => f.path.split("/")[0]!).filter((s) => s && !SCAN_CODE.test(s)));
+  const options: ts.CompilerOptions = { noLib: true, allowJs: true, checkJs: false, noEmit: true, types: [], module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, allowImportingTsExtensions: true, target: ts.ScriptTarget.Latest, jsx: ts.JsxEmit.Preserve };
+  const host: ts.CompilerHost = {
+    getSourceFile: (fn, lang) => { const t = texts.get(fn); return t === undefined ? undefined : ts.createSourceFile(fn, t, lang, true, scriptKindOf(fn)); },
+    getDefaultLibFileName: () => "/lib.d.ts",
+    writeFile: () => {},
+    getCurrentDirectory: () => "/repo",
+    getCanonicalFileName: (f) => f,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+    fileExists: (f) => texts.has(f),
+    readFile: (f) => texts.get(f),
+    directoryExists: (d) => dirs.has(d.replace(/\/$/, "")),
+    getDirectories: () => [],
+    realpath: (f) => f,
+  };
+  const program = ts.createProgram({ rootNames: code.length > MAX_SCAN_FILES || bytes > MAX_SCAN_BYTES ? [] : [...texts.keys()], options, host });
+  const checker = program.getTypeChecker();
+  const files = new Map<string, ts.SourceFile>();
+  for (const sf of program.getSourceFiles()) files.set(sf.fileName, sf);
+  const cache = new Map<string, string | null>();
+  const resolve = (spec: string, from: string): string | null => {
+    const k = `${from}\0${spec}`;
+    if (!cache.has(k)) { const r = ts.resolveModuleName(spec, from, options, host).resolvedModule?.resolvedFileName; cache.set(k, r && files.has(r) ? r : null); }
+    return cache.get(k)!;
+  };
+  let problem: string | null = code.length > MAX_SCAN_FILES || bytes > MAX_SCAN_BYTES ? SHARED_TOO_LARGE : null;
+  const fail = (why: string, sf: ts.SourceFile) => { if (!problem) problem = `${why}:${relOf(sf.fileName)}`; };
+  const literal = (e: ts.Expression | undefined): e is ts.StringLiteralLike => !!e && ts.isStringLiteralLike(e);
+  for (const sf of problem ? [] : files.values()) {
+    if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) { fail("unparseable", sf); continue; }
+    const specs: ts.StringLiteralLike[] = [];
+    const v = (n: ts.Node): void => {
+      if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && literal(n.moduleSpecifier)) specs.push(n.moduleSpecifier);
+      if (ts.isImportEqualsDeclaration(n)) fail("import_equals", sf);
+      if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) { if (n.arguments.length >= 1 && literal(n.arguments[0])) specs.push(n.arguments[0]); else fail("dynamic_import", sf); }
+      if (ts.isIdentifier(n) && !inTypePosition(n) && isValueReference(n) && isGlobalId(n, checker)) {
+        const p = n.parent;
+        if (n.text === "require") { if (ts.isCallExpression(p) && p.expression === n && p.arguments.length === 1 && literal(p.arguments[0])) specs.push(p.arguments[0]); else fail("require", sf); }
+        if (n.text === "eval" || n.text === "Function") fail(n.text, sf);
+        // Auditor #505 final (B2): `process.getBuiltinModule` reaches node:vm / node:module without an import
+        if (n.text === "process" && ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text === "getBuiltinModule") fail("getBuiltinModule", sf);
+        if (/^set(?:Timeout|Interval|Immediate)$/.test(n.text) && ts.isCallExpression(p) && p.expression === n && p.arguments[0] && !ts.isArrowFunction(p.arguments[0]) && !ts.isFunctionExpression(p.arguments[0]) && !ts.isIdentifier(p.arguments[0])) fail("string_timer", sf);
+      }
+      // Auditor #505 final (B2) + delta (X2), at the token level: any identifier (a property name, a binding name, a
+      // shorthand, a parameter pattern) or string / template literal part spelled `constructor` or `getBuiltinModule`
+      // fails closed, anywhere in a scanned file (`(() => {}).constructor(..)`, `const { constructor: C } = f`,
+      // `Reflect.get(f, "constructor")`, `getOwnPropertyDescriptor(p, "constructor")`, `const { getBuiltinModule: g } =
+      // process`); a class body's own `constructor(..) {}` is a declaration with no such token and is unaffected
+      const tok = ts.isIdentifier(n) || ts.isPrivateIdentifier(n) ? n.text : ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n) ? n.text : null;
+      if (tok !== null && FORBIDDEN_TOKENS.has(tok) && !(ts.isStringLiteral(n) && ts.isConstructorDeclaration(n.parent) && ts.isClassLike(n.parent.parent))) fail(tok === "constructor" ? "constructor_access" : "getBuiltinModule", sf);
+      ts.forEachChild(n, v);
+    };
+    v(sf);
+    for (const s of specs) {
+      const t = s.text;
+      // Auditor #505 final (B2/B3a): vm runs string code and module (createRequire, Module._load) loads unscanned code
+      if (CODE_LOADER_MODULES.has(t)) { fail(`code_loader_import_${t.replace("node:", "")}`, sf); continue; }
+      // Auditor #505 (4): a relative import / export / require / import() must resolve to a scanned file (an unscanned
+      // module could write the binding); only a declaration-level type-only import / export (erased) is exempt
+      if (t.startsWith("./") || t.startsWith("../") || t === "." || t === "..") {
+        const decl = s.parent;
+        const typeOnly = (ts.isImportDeclaration(decl) && !!decl.importClause?.isTypeOnly) || (ts.isExportDeclaration(decl) && decl.isTypeOnly);
+        if (!typeOnly && !resolve(t, sf.fileName)) fail("unresolved_relative_import", sf);
+        continue;
+      }
+      // Auditor #505 delta (X3): every other specifier must be a builtin on a fixed allowlist (`node:<name>`, or the bare
+      // name); any other scheme (`data:`, `file:`, `http:` ..), absolute path, alias or package fails closed. The target
+      // repo (PeaceSTOCKS) imports no npm package at any commit, so none is allowed; a type-only import (erased) is exempt
+      const decl = s.parent;
+      const typeOnly = (ts.isImportDeclaration(decl) && !!decl.importClause?.isTypeOnly) || (ts.isExportDeclaration(decl) && decl.isTypeOnly);
+      const bare = t.startsWith("node:") ? t.slice(5) : t;
+      if (typeOnly) continue;
+      if (ALLOWED_BUILTINS.has(bare) && (t.startsWith("node:") || !NODE_PREFIX_ONLY.has(bare))) continue;
+      if (/^(?:@\/|~\/|#|\/)/.test(t) || top.has(t.split("/")[0]!) || resolve(t, sf.fileName)) fail("bare_internal_specifier", sf);
+      else fail("unlisted_import_specifier", sf);
+    }
+  }
+  const ri: RepoIndex = { checker, files, problem, resolve };
+  REPO_INDEX.set(repo, ri);
+  return ri;
+}
+
+/** One binding the analysis read: its module, name and declaration. */
+interface ReadBinding { path: string; name: string; sf: ts.SourceFile; idx: ModuleIndex; isEnum: boolean }
+type BindingShape = { kind: "prim"; globals?: Set<string> } | { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean; globals?: Set<string> };
+/** Global roots whose members a const initializer reads (directly or through the module consts it names). */
+const MEMBER_READ_ROOTS = new Set(["Math", "Date"]);
+/** A sentinel root: the initializer was followed past the depth bound, so the relaxation is refused. */
+const ROOTS_TOO_DEEP = "<too_deep>";
+/**
+ * Auditor #505 (Math.PI gap): every `Math` / `Date` reference in a const's initializer, nested reads and computed keys
+ * included (`Math.PI`, `Math.PI.toString()`, `Math["P" + "I"]`, `Date.prototype`, `Date.now`), following the module
+ * consts it names; each root found must pass the same repo-wide global-root check as a `Date.UTC(..)` call.
+ */
+function memberReadRoots(init: ts.Expression, idx: ModuleIndex, out: Set<string>, seen: Set<string>, depth = 0): void {
+  // Auditor #505 final: past the depth bound the roots are unknown, so refuse (a sentinel root), never stop silently
+  if (depth > 12) { out.add(ROOTS_TOO_DEEP); return; }
+  const v = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && !inTypePosition(n)) {
+      const p = n.parent;
+      const nameSlot = ((ts.isPropertyAccessExpression(p) || ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p)) && (p as { name?: ts.Node }).name === n);
+      // Auditor #505 final (B1): the scan does not walk function bodies here, so any reference (a call, `new`, a
+      // callback, a method receiver) to a repo function, a class / module let-var / namespace, or an imported value
+      // counts as reaching both Math and Date (fail closed)
+      // Auditor #505 delta (X1): only followed module consts are transparent; every other repo declaration (an enum or
+      // const enum, a function, a class, a let / var, a namespace, a value import) is opaque and reaches both roots
+      const repoDecl = idx.fns.has(n.text) || idx.mutable.has(n.text) || idx.enums.has(n.text) || (idx.imports.has(n.text) && !idx.imports.get(n.text)!.typeOnly);
+      const opaque = !nameSlot && !ts.isShorthandPropertyAssignment(p) && repoDecl;
+      const opaqueShorthand = ts.isShorthandPropertyAssignment(p) && p.name === n && repoDecl;
+      if (opaque || opaqueShorthand) for (const r of MEMBER_READ_ROOTS) out.add(r);
+      if (!nameSlot && MEMBER_READ_ROOTS.has(n.text) && unshadowed(idx, n.text)) out.add(n.text);
+      else if (!nameSlot && !ts.isShorthandPropertyAssignment(p) && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
+      else if (ts.isShorthandPropertyAssignment(p) && p.name === n && idx.consts.has(n.text) && !seen.has(n.text)) { seen.add(n.text); const d = idx.consts.get(n.text)?.initializer; if (d) memberReadRoots(d, idx, out, seen, depth + 1); }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(init);
+}
+/** The value shape of a const initializer: 0 = a primitive, k = every value k property steps down is primitive, INF = unknown. */
+function shapeDepth(e: ts.Expression, m: { sf: ts.SourceFile; idx: ModuleIndex }, read: (rel: string) => string | null, seen: Set<string>, depth = 0): number {
+  if (depth > 12) return INF_DEPTH;
+  const x = unwrapExpr(e);
+  if (ts.isStringLiteralLike(x) || ts.isNumericLiteral(x) || ts.isBigIntLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword || ts.isTemplateExpression(x) || ts.isTypeOfExpression(x) || ts.isVoidExpression(x)) return 0;
+  if (ts.isPrefixUnaryExpression(x)) return 0;
+  if (regexInit(x, m.idx)) return 1; // its properties (source, flags, lastIndex, ...) are primitives
+  if (ts.isBinaryExpression(x)) {
+    const k = x.operatorToken.kind;
+    if (k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment) return INF_DEPTH;
+    if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken || k === ts.SyntaxKind.CommaToken) return Math.max(shapeDepth(x.left, m, read, seen, depth + 1), shapeDepth(x.right, m, read, seen, depth + 1));
+    return 0;
+  }
+  if (ts.isConditionalExpression(x)) return Math.max(shapeDepth(x.whenTrue, m, read, seen, depth + 1), shapeDepth(x.whenFalse, m, read, seen, depth + 1));
+  if (ts.isIdentifier(x)) {
+    if (x.text === "undefined" && unshadowed(m.idx, "undefined")) return 0;
+    const d = m.idx.consts.get(x.text);
+    const key = `${m.sf.fileName}\0${x.text}`;
+    if (!d?.initializer || m.idx.mutated.has(x.text) || seen.has(key)) return INF_DEPTH;
+    seen.add(key);
+    return shapeDepth(d.initializer, m, read, seen, depth + 1) === 0 ? 0 : INF_DEPTH;
+  }
+  if (ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression) && m.idx.enums.has(x.expression.text) && !m.idx.consts.has(x.expression.text) && !m.idx.imports.has(x.expression.text)) return 0;
+  if (ts.isArrayLiteralExpression(x)) {
+    let r = 1;
+    for (const el of x.elements) { if (ts.isSpreadElement(el)) return INF_DEPTH; if (!ts.isOmittedExpression(el)) r = Math.max(r, 1 + shapeDepth(el, m, read, seen, depth + 1)); }
+    return r >= INF_DEPTH ? INF_DEPTH : r;
+  }
+  if (ts.isObjectLiteralExpression(x)) {
+    let r = 1;
+    for (const p of x.properties) {
+      if (ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)) && !(ts.isIdentifier(p.name) && p.name.text === "__proto__") && !(ts.isStringLiteral(p.name) && p.name.text === "__proto__")) r = Math.max(r, 1 + shapeDepth(p.initializer, m, read, seen, depth + 1));
+      else if (ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer) r = Math.max(r, 1 + shapeDepth(p.name, m, read, seen, depth + 1));
+      else return INF_DEPTH;
+    }
+    return r >= INF_DEPTH ? INF_DEPTH : r;
+  }
+  if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && (x.expression.text === "Map" || x.expression.text === "Set") && unshadowed(m.idx, x.expression.text)) {
+    const a = x.arguments ?? [];
+    if (a.length === 0) return x.expression.text === "Map" ? 2 : 1;
+    if (a.length !== 1) return INF_DEPTH;
+    const lit = unwrapExpr(a[0]!);
+    if (!ts.isArrayLiteralExpression(lit)) return INF_DEPTH;
+    // A Set of primitives (depth 1). A Map with primitive keys counts its entry pairs: iteration / spread yield
+    // [k, v] pairs one step down and the values two steps down, so `get` is two steps too (MAP_GET_DEPTH); paths that
+    // reach the values in fewer counted steps (values(), forEach, entries()) only undercount, which is stricter.
+    let r = x.expression.text === "Map" ? 2 : 1;
+    for (const el of lit.elements) {
+      if (x.expression.text === "Set") { if (ts.isSpreadElement(el) || ts.isOmittedExpression(el) || shapeDepth(el, m, read, seen, depth + 1) !== 0) return INF_DEPTH; continue; }
+      const pair = ts.isSpreadElement(el) || ts.isOmittedExpression(el) ? null : unwrapExpr(el);
+      if (!pair || !ts.isArrayLiteralExpression(pair) || pair.elements.length !== 2 || pair.elements.some((y) => ts.isSpreadElement(y) || ts.isOmittedExpression(y)) || shapeDepth(pair.elements[0]!, m, read, seen, depth + 1) !== 0) return INF_DEPTH;
+      r = Math.max(r, 2 + shapeDepth(pair.elements[1]!, m, read, seen, depth + 1));
+    }
+    return r >= INF_DEPTH ? INF_DEPTH : r;
+  }
+  // a call of a global that always returns a primitive (the binding then holds a primitive, nothing to share)
+  if (ts.isCallExpression(x)) {
+    const c = unwrapExpr(x.expression);
+    const nm = ts.isIdentifier(c) ? c.text : ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) ? `${c.expression.text}.${c.name.text}` : null;
+    if (nm && (PRIM_RETURN_GLOBALS.has(nm) || (nm.startsWith("Math.") && nm !== "Math.random")) && unshadowed(m.idx, nm.split(".")[0]!) && x.arguments.every((a) => inertPrimArg(a, m.idx, 0))) {
+      // primitive only if the global is the real one: the repo scan checks no module shadows or patches it
+      PRIM_GLOBAL_ROOTS?.add(nm.split(".")[0]!);
+      return 0;
+    }
+  }
+  if (ts.isCallExpression(x) && ts.isIdentifier(x.expression)) {
+    const kind = calleeReturnKind(x.expression.text, m, read);
+    return kind === "prim" ? 0 : kind === "array" ? 1 : INF_DEPTH;
+  }
+  return INF_DEPTH;
+}
+/** Global roots (`Date`, `Math`, ...) a binding's primitive shape relied on; collected by bindingShape. */
+let PRIM_GLOBAL_ROOTS: Set<string> | null = null;
+/** An inert primitive argument: a literal, a sign / arithmetic of inert ones, or a never-written module const of one. */
+function inertPrimArg(e: ts.Expression, idx: ModuleIndex, depth: number): boolean {
+  if (depth > 12) return false;
+  const x = unwrapExpr(e);
+  if (ts.isNumericLiteral(x) || ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword) return true;
+  if (ts.isPrefixUnaryExpression(x)) return (x.operator === ts.SyntaxKind.MinusToken || x.operator === ts.SyntaxKind.PlusToken) && inertPrimArg(x.operand, idx, depth + 1);
+  if (ts.isBinaryExpression(x)) {
+    const k = x.operatorToken.kind;
+    const arith = [ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken];
+    return arith.includes(k) && inertPrimArg(x.left, idx, depth + 1) && inertPrimArg(x.right, idx, depth + 1);
+  }
+  if (ts.isIdentifier(x)) {
+    const d = idx.consts.get(x.text);
+    return !!d?.initializer && !idx.mutated.has(x.text) && !idx.imports.has(x.text) && inertPrimArg(d.initializer, idx, depth + 1);
+  }
+  return false;
+}
+/** A regex literal or `new RegExp(..)` / `RegExp(..)` of the global (state flags g / y are statelessInit's). */
+function regexInit(x: ts.Expression, idx: ModuleIndex): boolean {
+  if (ts.isRegularExpressionLiteral(x)) return true;
+  return (ts.isNewExpression(x) || ts.isCallExpression(x)) && ts.isIdentifier(x.expression) && x.expression.text === "RegExp" && unshadowed(idx, "RegExp");
+}
+/** The declared return kind of a plain-name callee (a same-module function declaration or a named relative import). */
+function calleeReturnKind(name: string, m: { sf: ts.SourceFile; idx: ModuleIndex }, read: (rel: string) => string | null): "prim" | "array" | null {
+  const local = m.idx.fns.get(name);
+  if (local && !m.idx.consts.has(name) && !m.idx.imports.has(name) && !m.idx.mutable.has(name)) return local.length === 1 ? loadCallReturnKind(local[0]!.type, m.idx) : null;
+  const imp = m.idx.imports.get(name);
+  if (!imp || imp.typeOnly || !imp.imported || imp.imported === "default") return null;
+  const hits = (siblingCandidates(m.sf.fileName, imp.spec) ?? []).filter((c) => read(c) !== null);
+  if (hits.length !== 1) return null;
+  const sf = ts.createSourceFile(hits[0]!, read(hits[0]!)!, ts.ScriptTarget.Latest, true);
+  const idx = indexModule(sf);
+  const d = idx.fns.get(imp.imported);
+  return d && d.length === 1 && idx.exportNames.has(imp.imported) ? loadCallReturnKind(d[0]!.type, idx) : null;
+}
+function bindingShape(b: ReadBinding, read: (rel: string) => string | null): BindingShape {
+  if (b.isEnum) {
+    // Auditor #505 delta (X1): an enum member computed from Math / Date (`enum K { A = Math.PI }`) reaches that root
+    const roots = new Set<string>();
+    for (const st of b.sf.statements) if (ts.isEnumDeclaration(st) && st.name.text === b.name) for (const mb of st.members) if (mb.initializer) memberReadRoots(mb.initializer, b.idx, roots, new Set([b.name]));
+    return { kind: "data", primDepth: 1, ...(roots.size ? { globals: roots } : {}) };
+  }
+  const init = b.idx.consts.get(b.name)?.initializer;
+  if (!init) return { kind: "data", primDepth: INF_DEPTH };
+  const x = unwrapExpr(init);
+  if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) return { kind: "fn" };
+  const roots = new Set<string>();
+  PRIM_GLOBAL_ROOTS = roots;
+  let d: number;
+  try { d = shapeDepth(init, b, read, new Set([`${b.sf.fileName}\0${b.name}`])); } finally { PRIM_GLOBAL_ROOTS = null; }
+  memberReadRoots(init, b.idx, roots, new Set([b.name]));
+  return d === 0 ? (roots.size ? { kind: "prim", globals: roots } : { kind: "prim" }) : { kind: "data", primDepth: d, regex: regexInit(x, b.idx), ...(roots.size ? { globals: roots } : {}) };
+}
+
+/** Enum names (module path \0 name) the analysis read, keyed by the analysis's shared reasons set. */
+const ENUM_READS = new WeakMap<Set<string>, Set<string>>();
+function noteEnumRead(a: Analysis, name: string): void {
+  let s = ENUM_READS.get(a.reasons);
+  if (!s) { s = new Set(); ENUM_READS.set(a.reasons, s); }
+  s.add(`${a.sf.fileName}\0${name}`);
+}
+function readBindings(a: Analysis, v2: V2Ctx | undefined): ReadBinding[] {
+  const out: ReadBinding[] = [];
+  const seen = new Set<string>();
+  const mods = new Map<string, { sf: ts.SourceFile; idx: ModuleIndex; consts: Set<string> }>([[a.sf.fileName, { sf: a.sf, idx: a.idx, consts: a.consts }]]);
+  if (v2) for (const [p, m] of v2.modules) if (m) mods.set(p, { sf: m.sf, idx: m.idx, consts: m.consts });
+  for (const [p, m] of mods) for (const n of m.consts) { const k = `${p}\0${n}`; if (!seen.has(k)) { seen.add(k); out.push({ path: p, name: n, sf: m.sf, idx: m.idx, isEnum: false }); } }
+  for (const k of ENUM_READS.get(a.reasons) ?? []) {
+    const [p, n] = k.split("\0") as [string, string];
+    const m = mods.get(p);
+    if (m && !seen.has(k)) { seen.add(k); out.push({ path: p, name: n, sf: m.sf, idx: m.idx, isEnum: true }); }
+  }
+  return out;
+}
+
+/**
+ * The whole-repo verdict for the bindings the analysis read: null (every one passes) or the first problem
+ * (`<binding>: <why> at <file>:<line>`). Without a repo list, any binding holding state fails closed.
+ */
+const GLOBAL_OBJECTS = new Set(["globalThis", "global", "window", "self"]);
+/** The only members of a global object a repo may read when a prim-returning global's relaxation applies. */
+const SAFE_GLOBAL_OBJECT_MEMBERS = new Set(["console", "crypto", "fetch", "performance", "process", "structuredClone", "queueMicrotask", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "TextEncoder", "TextDecoder", "URL", "AbortController"]);
+/** A write position (assignment / compound target, ++ / --, delete, destructuring or for-in/of target). */
+/** Auditor #505 (1): does a function (its parameters and body, nested functions included) mention `arguments`? */
+function mentionsArguments(f: ts.Node): boolean {
+  let hit = false;
+  const v = (n: ts.Node): void => { if (hit) return; if (ts.isIdentifier(n) && n.text === "arguments") { hit = true; return; } ts.forEachChild(n, v); };
+  ts.forEachChild(f, v);
+  return hit;
+}
+function isWriteTarget(n: ts.Node): boolean {
+  let x: ts.Node = n;
+  while (ts.isParenthesizedExpression(x.parent) || ts.isNonNullExpression(x.parent) || ts.isAsExpression(x.parent) || ts.isTypeAssertionExpression(x.parent) || ts.isSatisfiesExpression(x.parent)) x = x.parent;
+  const p = x.parent;
+  if (ts.isBinaryExpression(p) && p.left === x && p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return true;
+  if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && (p.operator === ts.SyntaxKind.PlusPlusToken || p.operator === ts.SyntaxKind.MinusMinusToken)) return true;
+  if (ts.isDeleteExpression(p)) return true;
+  if ((ts.isForInStatement(p) || ts.isForOfStatement(p)) && p.initializer === x) return true;
+  if (ts.isArrayLiteralExpression(p) || ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isSpreadElement(p) || ts.isSpreadAssignment(p)) {
+    let q: ts.Node = p;
+    while (ts.isArrayLiteralExpression(q) || ts.isObjectLiteralExpression(q) || ts.isPropertyAssignment(q) || ts.isShorthandPropertyAssignment(q) || ts.isSpreadElement(q) || ts.isSpreadAssignment(q)) q = q.parent;
+    return ts.isBinaryExpression(q) && q.operatorToken.kind === ts.SyntaxKind.EqualsToken && q.left.pos <= n.pos && n.end <= q.left.end;
+  }
+  return false;
+}
+/**
+ * Whether any module of the repo shadows or patches the global `name` (Date, Math, ...): every occurrence must be a
+ * member read (`Date.UTC(..)`, not a write of it), a call / `new` of it, a type, or another object's property name;
+ * a declaration, import, parameter, assignment, value use (passed, stored, spread) or a `globalThis.Date`-style access
+ * fails closed.
+ */
+/**
+ * Is `n` (named globalThis / global / window / self) the global object? Yes unless a real local declaration (a
+ * variable, parameter, binding, import, function or class) binds the name: a JS expando write (`globalThis.x = ..` in
+ * a .js file) gives the global object a declaration too, and must not hide it.
+ */
+function globalObjectRef(n: ts.Identifier, checker: ts.TypeChecker): boolean {
+  const s = checker.getSymbolAtLocation(n);
+  return !s?.declarations?.some((d) => ts.isVariableDeclaration(d) || ts.isParameter(d) || ts.isBindingElement(d) || ts.isImportSpecifier(d) || ts.isImportClause(d) || ts.isNamespaceImport(d) || ts.isImportEqualsDeclaration(d) || ts.isFunctionDeclaration(d) || ts.isClassDeclaration(d) || ts.isEnumDeclaration(d) || ts.isModuleDeclaration(d));
+}
+/** Auditor #505 final (B3b): could the file run in sloppy mode (so a plain function's `this` is the global object)? */
+function sloppy(sf: ts.SourceFile): boolean {
+  if (/\.(?:mjs|mts)$/.test(sf.fileName)) return false;
+  const strict = sf.statements.length > 0 && ts.isExpressionStatement(sf.statements[0]!) && ts.isStringLiteral(sf.statements[0]!.expression) && sf.statements[0]!.expression.text === "use strict";
+  if (strict) return false;
+  if (/\.(?:cjs|cts)$/.test(sf.fileName)) return true;
+  if (/\.(?:js|jsx)$/.test(sf.fileName)) return !sf.statements.some((x) => ts.isImportDeclaration(x) || ts.isExportDeclaration(x) || ts.isExportAssignment(x) || (ts.canHaveModifiers(x) && !!ts.getModifiers(x)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)));
+  return false;
+}
+function thisMayBeGlobal(n: ts.Node): boolean {
+  for (let q = n.parent; q; q = q.parent) {
+    if (ts.isArrowFunction(q)) continue;
+    // Auditor #505 r5 (X4): a class's heritage clause (`extends (..)`), a class member's computed key (`[..]`) and a
+    // decorator are evaluated in the scope AROUND the class, so their `this` is the outer one: skip past the class
+    // and keep walking outward
+    if (ts.isHeritageClause(q) || ts.isDecorator(q) || (ts.isComputedPropertyName(q) && !!q.parent && ts.isClassElement(q.parent))) {
+      let k: ts.Node | undefined = q.parent;
+      while (k && !ts.isClassLike(k)) k = k.parent;
+      if (!k) return true;
+      q = k;
+      continue;
+    }
+    // Auditor #505 delta (X4): only a class body (its methods, accessors, constructor, fields, static blocks) binds
+    // `this`; an object-literal method or accessor is a sloppy function like any other
+    if (ts.isClassLike(q)) return false;
+    if (ts.isFunctionLike(q)) return !!q.parent && ts.isClassLike(q.parent) && (ts.isMethodDeclaration(q) || ts.isConstructorDeclaration(q) || ts.isGetAccessor(q) || ts.isSetAccessor(q)) ? false : true;
+  }
+  return true;
+}
+function globalTouched(ri: RepoIndex, name: string): string | null {
+  let found: string | null = null;
+  const at = (n: ts.Node) => { const sf = n.getSourceFile(); return `${relOf(sf.fileName)}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`; };
+  for (const f of ri.files.values()) {
+    const v = (n: ts.Node): void => {
+      if (found) return;
+      // Auditor #505 (3): any use of globalThis / global / window / self (an alias, an argument, a spread, a write,
+      // `Object.defineProperty(globalThis, ..)`, an element access) fails closed; only a plain read of a known-safe
+      // member (`globalThis.console.log(..)`) is allowed.
+      if (ts.isIdentifier(n) && GLOBAL_OBJECTS.has(n.text) && !inTypePosition(n) && globalObjectRef(n, ri.checker)) {
+        const p = n.parent;
+        const nameSlot = (ts.isPropertyAccessExpression(p) && p.name === n) || ((ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodDeclaration(p) || ts.isMethodSignature(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p) || ts.isEnumMember(p)) && p.name === n) || ts.isQualifiedName(p);
+        const safeRead = ts.isPropertyAccessExpression(p) && p.expression === n && SAFE_GLOBAL_OBJECT_MEMBERS.has(p.name.text) && p.name.text !== name && !isWriteTarget(p);
+        // Auditor #505 option X: a plain `globalThis.<identifier> = ..` (the access itself, unwrapped, as the left of
+        // `=`) cancels only when the identifier is the relaxed root (`Date` for Date.UTC, `Math` for Math.*): a
+        // denylist of the root name, not a builtins list. Computed keys, aliases, casts, compound writes, delete,
+        // destructuring and every other form still cancel regardless of the name.
+        const plainWrite = ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text !== name && ts.isBinaryExpression(p.parent) && p.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.parent.left === p;
+        if (!nameSlot && !safeRead && !plainWrite) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
+      }
+      // Auditor #505 final (B3b): in a sloppy-mode file (.cjs, .cts, or a .js / .jsx with no ESM syntax and no
+      // "use strict"), `this` in a plain function (not an arrow, not a class member) or at top level can be the global
+      // object; any use of it cancels the relaxation
+      if (n.kind === ts.SyntaxKind.ThisKeyword && sloppy(f) && thisMayBeGlobal(n)) { found = `global_${name}_via_sloppy_this at ${at(n)}`; return; }
+      if (ts.isIdentifier(n) && n.text === name && !inTypePosition(n)) {
+        const p = n.parent;
+        const ok =
+          (ts.isPropertyAccessExpression(p) && p.name === n) ||
+          ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n && !isWriteTarget(p) && !(ts.isCallExpression(p.parent) && ts.isPropertyAccessExpression(p) && ["defineProperty", "assign"].includes(p.name.text))) ||
+          ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.expression === n) ||
+          ((ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodDeclaration(p) || ts.isMethodSignature(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p) || ts.isEnumMember(p)) && p.name === n) ||
+          (ts.isQualifiedName(p));
+        if (!ok) { found = `global_${name}_shadowed_or_patched at ${at(n)}`; return; }
+      }
+      ts.forEachChild(n, v);
+    };
+    v(f);
+    if (found) return found;
+  }
+  return null;
+}
+/**
+ * Test hook (Auditor #505 option X): whether the repo shadows or patches the global root `name` (`Date`, `Math`, ..),
+ * exactly as the prim-global relaxation checks it; null when untouched. A repo-level problem is returned as `repo: ..`.
+ */
+/** Test hook (Auditor #505, Math.PI gap): the global roots a module const's initializer reads, sorted. */
+export function constGlobalRoots(source: string, name: string): string[] {
+  const sf = ts.createSourceFile("/hook.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const idx = indexModule(sf);
+  const init = idx.consts.get(name)?.initializer;
+  const out = new Set<string>();
+  if (init) memberReadRoots(init, idx, out, new Set([name]));
+  return [...out].sort();
+}
+export function primGlobalTouched(repo: readonly RepoFile[], name: string): string | null {
+  const ri = repoIndex(repo);
+  return ri.problem ? `repo: ${ri.problem}` : globalTouched(ri, name);
+}
+function sharedBindingsProblem(bindings: readonly ReadBinding[], repo: readonly RepoFile[] | undefined, read: (rel: string) => string | null): string | null {
+  const shaped = bindings.map((b) => ({ b, shape: bindingShape(b, read) }));
+  const todo = shaped.filter((x) => x.shape.kind !== "prim");
+  const viaGlobal = shaped.filter((x) => x.shape.kind !== "fn" && x.shape.globals);
+  if (!todo.length && !viaGlobal.length) return null;
+  const first = todo[0] ?? viaGlobal[0]!;
+  if (!repo) return `${first.b.path}#${first.b.name}: no_repo_list`;
+  const ri = repoIndex(repo);
+  if (ri.problem) return ri.problem === SHARED_TOO_LARGE ? SHARED_TOO_LARGE : `repo: ${ri.problem}`;
+  for (const { b, shape } of viaGlobal) for (const g of (shape as { globals: Set<string> }).globals) {
+    const r = g === ROOTS_TOO_DEEP ? "member_read_roots_too_deep" : globalTouched(ri, g);
+    if (r) return `${b.path}#${b.name}: ${r}`;
+  }
+  for (const { b, shape } of todo) {
+    const r = bindingProblem(ri, b, shape as Exclude<BindingShape, { kind: "prim" }>);
+    if (r) return r === SHARED_TOO_LARGE ? r : `${b.path}#${b.name}: ${r}`;
+  }
+  return null;
+}
+
+function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean }): string | null {
+  const { checker } = ri;
+  const sf = ri.files.get(SCAN_ROOT + b.path);
+  if (!sf || sf.text !== b.sf.text) return "not_in_repo_list";
+  const fnValue = shape.kind === "fn";
+  const primDepth = shape.kind === "data" ? shape.primDepth : INF_DEPTH;
+  let declName: ts.Identifier | undefined;
+  for (const s of sf.statements) {
+    if (b.isEnum && ts.isEnumDeclaration(s) && s.name.text === b.name) declName = s.name;
+    if (!b.isEnum && ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name) && d.name.text === b.name) declName = d.name;
+  }
+  if (!declName) return "declaration_not_found";
+  const norm = (s: ts.Symbol | undefined): ts.Symbol | undefined => {
+    let x = s;
+    for (let i = 0; x && x.flags & ts.SymbolFlags.Alias && i < 16; i++) { try { x = checker.getAliasedSymbol(x); } catch { return undefined; } }
+    if (x && (x as unknown as { exportSymbol?: ts.Symbol }).exportSymbol) x = (x as unknown as { exportSymbol: ts.Symbol }).exportSymbol;
+    return x;
+  };
+  const root = norm(checker.getSymbolAtLocation(declName));
+  if (!root) return "symbol_not_found";
+  /** alias symbol -> depth below the binding (the binding itself is 0). */
+  const S = new Map<ts.Symbol, number>([[root, 0]]);
+  /** aliases that only ever hold a FRESH container of the binding's parts (`[...L]`, `L.slice()`, `{ k: L }`): writing
+   *  the container itself (push, `c[i] = v`, `c.k = v`) is no write to shared state; its elements are still shared. */
+  const FR = new Map<ts.Symbol, boolean>([[root, false]]);
+  let grew = false;
+  let problem: string | null = null;
+  const at = (n: ts.Node) => { const f = n.getSourceFile(); return `${relOf(f.fileName)}:${f.getLineAndCharacterOfPosition(n.getStart(f)).line + 1}`; };
+  const fail = (why: string, n: ts.Node): string => { if (!problem) problem = `${why} at ${at(n)}`; return problem; };
+  const addSym = (s: ts.Symbol | undefined, d: number, n: ts.Node, fresh = false): void => {
+    const x = norm(s);
+    if (!x) { fail("unresolved_alias", n); return; }
+    const was = S.get(x);
+    const nf = was === undefined ? fresh : FR.get(x)! && fresh;
+    if (was === undefined || d < was || nf !== FR.get(x)) { S.set(x, was === undefined ? d : Math.min(d, was)); FR.set(x, nf); grew = true; }
+    if (S.size > MAX_SCAN_ALIASES) problem = SHARED_TOO_LARGE;
+  };
+  const addPattern = (name: ts.BindingName, d: number, fresh = false): void => {
+    if (ts.isIdentifier(name)) { addSym(checker.getSymbolAtLocation(name), d, name, fresh); return; }
+    for (const el of name.elements) {
+      if (ts.isOmittedExpression(el)) continue;
+      addPattern(el.name, el.dotDotDotToken ? d : d + 1);
+    }
+  };
+  const addAssignPattern = (e: ts.Expression, d: number): void => {
+    const x = unwrapExpr(e);
+    if (ts.isIdentifier(x)) { addSym(checker.getSymbolAtLocation(x), d, x); return; }
+    if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.EqualsToken) { addAssignPattern(x.left, d); return; }
+    if (ts.isArrayLiteralExpression(x)) { for (const el of x.elements) if (!ts.isOmittedExpression(el)) addAssignPattern(ts.isSpreadElement(el) ? el.expression : el, ts.isSpreadElement(el) ? d : d + 1); return; }
+    if (ts.isObjectLiteralExpression(x)) {
+      for (const p of x.properties) {
+        if (ts.isPropertyAssignment(p)) addAssignPattern(p.initializer, d + 1);
+        else if (ts.isShorthandPropertyAssignment(p)) addSym(checker.getShorthandAssignmentValueSymbol(p), d + 1, p);
+        else if (ts.isSpreadAssignment(p)) addAssignPattern(p.expression, d);
+        else fail("stored", p);
+      }
+      return;
+    }
+    fail("stored", x);
+  };
+  /** Is `x` (an element / property of an array / object literal, or that literal) the target of a destructuring write? */
+  const destructuringTarget = (x: ts.Node): boolean => {
+    let c: ts.Node = x;
+    for (;;) {
+      const q = c.parent;
+      if (!q) return false;
+      if (ts.isArrayLiteralExpression(q) || ts.isObjectLiteralExpression(q) || ts.isSpreadElement(q) || ts.isSpreadAssignment(q) || ts.isShorthandPropertyAssignment(q) || (ts.isPropertyAssignment(q) && q.initializer === c) || ts.isParenthesizedExpression(q) || (ts.isBinaryExpression(q) && q.operatorToken.kind === ts.SyntaxKind.EqualsToken && q.left === c && c !== x && (ts.isArrayLiteralExpression(q.parent) || ts.isObjectLiteralExpression(q.parent) || ts.isPropertyAssignment(q.parent)))) { c = q; continue; }
+      if (c === x) return false;
+      if (ts.isBinaryExpression(q) && q.operatorToken.kind === ts.SyntaxKind.EqualsToken && q.left === c) return true;
+      if ((ts.isForOfStatement(q) || ts.isForInStatement(q)) && q.initializer === c) return true;
+      return false;
+    }
+  };
+  /** A callee that receives the value as argument `i` at depth `d` (or a callback argument of a read method). */
+  const passTo = (call: ts.CallExpression | ts.NewExpression, callee: ts.Expression, i: number | null, d: number, n: ts.Node): string | null => {
+    const g = globalCallee(callee, checker);
+    if (g !== null) {
+      if (fnValue) return /^(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf|freeze|seal|preventExtensions)|Reflect\..*)$/.test(g) ? fail("written_by_builtin", n) : null;
+      if (d >= primDepth) return null;
+      if (PRIM_GLOBAL_CALLS.has(g) || (/^Math\./.test(g))) return null;
+      // Auditor #505 (2): `Array.of(x, ..)` is `[x, ..]`, a fresh container HOLDING each argument (one level up)
+      if (ts.isCallExpression(call) && g === "Array.of" && i !== null) return use(call, d - 1, false, true);
+      if (ts.isCallExpression(call) && CONTAINER_GLOBAL_CALLS.has(g) && i === 0) return use(call, d, false, true);
+      if (ts.isCallExpression(call) && ENTRY_GLOBAL_CALLS.has(g) && i === 0) return use(call, d - 1, false, true);
+      if (ts.isNewExpression(call) && CONTAINER_GLOBAL_NEW.has(g) && i === 0) return use(call, d - 1, false, true);
+      return fail(/^(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf|freeze|seal|preventExtensions)|Reflect\.)/.test(g) ? "written_by_builtin" : `passed_to_${g}`, n);
+    }
+    if (fnValue) return null;
+    if (d >= primDepth) return null;
+    // a module regex (the binding itself) as the pattern of a String method on a receiver the checker types as a string
+    if (shape.kind === "data" && shape.regex && d === 0 && i === 0 && ts.isCallExpression(call)) {
+      const c = unwrapExpr(callee);
+      if (ts.isPropertyAccessExpression(c) && STRING_REGEX_METHODS.has(c.name.text)) {
+        const t = checker.getTypeAtLocation(c.expression);
+        if (t.flags & ts.TypeFlags.StringLike) return null;
+      }
+    }
+    const x = unwrapExpr(callee);
+    const s = ts.isIdentifier(x) ? norm(checker.getSymbolAtLocation(x)) : undefined;
+    const decl = s?.valueDeclaration;
+    let f: ts.FunctionLikeDeclaration | undefined;
+    if (decl && ts.isFunctionDeclaration(decl) && decl.body) f = decl;
+    else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && ts.isVariableDeclarationList(decl.parent) && decl.parent.flags & ts.NodeFlags.Const) { const init = unwrapExpr(decl.initializer); if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) f = init; }
+    if (!f || !ri.files.has(f.getSourceFile().fileName) || i === null || ts.isNewExpression(call)) return fail("passed_to_unanalysed_callee", n);
+    const p = f.parameters[i];
+    if (!p || p.dotDotDotToken || f.parameters.some((q) => q.dotDotDotToken)) return fail("passed_to_unanalysed_callee", n);
+    // Auditor #505 (1): `arguments` reaches every argument past the parameter tracking (written, handed out)
+    if (mentionsArguments(f)) return fail("arguments_in_callee", n);
+    addPattern(p.name, d);
+    return null;
+  };
+  const callbacks = (call: ts.CallExpression, m: string, recv: number): string | null => {
+    const roles = CALLBACK_ROLES[m] ?? "eia";
+    for (const arg of call.arguments) {
+      const x = unwrapExpr(arg);
+      if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) {
+        if (mentionsArguments(x)) return fail("arguments_in_callee", x);
+        x.parameters.forEach((p, k) => {
+          const role = roles[k] ?? "a";
+          if (p.dotDotDotToken) { addPattern(p.name, recv); return; }
+          if (role === "i") return;
+          const d = role === "e" ? recv + 1 : recv;
+          if (d < primDepth) addPattern(p.name, d);
+        });
+        continue;
+      }
+      if (ts.isIdentifier(x) && GLOBAL_CALLBACKS.has(x.text) && isGlobalId(x, checker)) continue;
+      if (ts.isIdentifier(x)) {
+        const s = norm(checker.getSymbolAtLocation(x));
+        const decl = s?.valueDeclaration;
+        let f: ts.FunctionLikeDeclaration | undefined;
+        if (decl && ts.isFunctionDeclaration(decl) && decl.body) f = decl;
+        else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && ts.isVariableDeclarationList(decl.parent) && decl.parent.flags & ts.NodeFlags.Const) { const init = unwrapExpr(decl.initializer); if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) f = init; }
+        if (f && ri.files.has(f.getSourceFile().fileName) && !S.has(s!)) {
+          f.parameters.forEach((p, k) => {
+            const role = roles[k] ?? "a";
+            if (p.dotDotDotToken) { addPattern(p.name, recv); return; }
+            if (role === "i") return;
+            const d = role === "e" ? recv + 1 : recv;
+            if (d < primDepth) addPattern(p.name, d);
+          });
+          continue;
+        }
+        if (S.has(s!)) continue; // the comparator / predicate is itself an alias value (checked where it is used)
+      }
+      if (shapeLiteralArg(x)) continue;
+      return fail("callback_not_followed", arg);
+    }
+    return null;
+  };
+  /** Non-function arguments of a read method (`indexOf(x)`, `slice(0, 2)`, `join(",")`): not handed the receiver. */
+  const shapeLiteralArg = (x: ts.Expression): boolean => !(ts.isArrowFunction(x) || ts.isFunctionExpression(x) || ts.isIdentifier(x) && !!norm(checker.getSymbolAtLocation(x))?.valueDeclaration && ts.isFunctionLike(norm(checker.getSymbolAtLocation(x))!.valueDeclaration!));
+  /** One use of the binding (or an alias of it, or a container holding it) whose value sits `base` steps below the binding. */
+  const use = (occ: ts.Expression, base: number, own: boolean, fresh0 = false): string | null => {
+    let x: ts.Expression = occ;
+    let d = base;
+    let steps = 0;
+    for (;;) {
+      const p = x.parent;
+      if ((ts.isParenthesizedExpression(p) || ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isNonNullExpression(p) || ts.isTypeAssertionExpression(p)) && p.expression === x) { x = p; continue; }
+      if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === x) { x = p; d += 1; steps += 1; continue; }
+      break;
+    }
+    const p = x.parent;
+    const fresh = fresh0 && steps === 0;
+    // the alias variable itself (rebinding a local is no write to shared state), or one slot of a fresh container
+    const local = (steps === 0 && !own) || (fresh0 && steps === 1);
+    if (ts.isBinaryExpression(p) && p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment && p.left === x) return local ? null : fail("write", p);
+    if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && (p.operator === ts.SyntaxKind.PlusPlusToken || p.operator === ts.SyntaxKind.MinusMinusToken)) return local ? null : fail("write", p);
+    if (ts.isDeleteExpression(p)) return local ? null : fail("write", p);
+    if ((ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === x) return local ? null : fail("write", p);
+    if (destructuringTarget(x)) return local ? null : fail("write", x);
+    if (fresh && !fnValue && d + 1 >= primDepth) return null; // a fresh container of primitives shares nothing
+    if (ts.isCallExpression(p) && p.expression === x) {
+      if (steps === 0) return null; // the value itself is called (a function value; its body is the purity analysis's)
+      const recv = d - 1;
+      if (recv >= primDepth) return null; // a method of a primitive
+      const m = ts.isPropertyAccessExpression(x) ? x.name.text : ts.isElementAccessExpression(x) && ts.isStringLiteralLike(x.argumentExpression) ? x.argumentExpression.text : null;
+      if (fnValue) return null;
+      if (!m) return fail("computed_method", p);
+      if (WRITE_METHODS.has(m) && !(fresh0 && steps === 1)) return fail(`mutator_${m}`, p);
+      const isRead = WRITE_METHODS.has(m) || MAPPED_RESULT_METHODS.has(m) || PRIM_RESULT_METHODS.has(m) || ELEMENT_RESULT_METHODS.has(m) || CONTAINER_RESULT_METHODS.has(m) || ENTRY_RESULT_METHODS.has(m);
+      if (!isRead) return fail(`unknown_method_${m}`, p);
+      const cb = callbacks(p, m, recv);
+      if (cb) return cb;
+      if (PRIM_RESULT_METHODS.has(m) || MAPPED_RESULT_METHODS.has(m)) return null;
+      if (WRITE_METHODS.has(m)) return m === "sort" || m === "reverse" || m === "fill" || m === "copyWithin" ? use(p, recv, false, true) : null; // a fresh container, mutated in place
+      return use(p, m === "get" ? recv + MAP_GET_DEPTH : ELEMENT_RESULT_METHODS.has(m) ? recv + 1 : ENTRY_RESULT_METHODS.has(m) ? recv - 1 : recv, false, !ELEMENT_RESULT_METHODS.has(m));
+    }
+    if (ts.isNewExpression(p) && p.expression === x) return fnValue ? null : fail("constructed", p);
+    if (ts.isVariableDeclaration(p) && p.initializer === x) { addPattern(p.name, d, fresh); return null; }
+    if ((ts.isParameter(p) || ts.isBindingElement(p)) && p.initializer === x) { addPattern(p.name, d, fresh); return null; }
+    if (fnValue) {
+      if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(x)) return passTo(p, p.expression, p.arguments.indexOf(x), d, x);
+      if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.right === x && ts.isIdentifier(unwrapExpr(p.left))) { addSym(checker.getSymbolAtLocation(unwrapExpr(p.left)), d, p); return null; }
+      return null;
+    }
+    if (d >= primDepth) return null; // a primitive read
+    if (ts.isBinaryExpression(p)) {
+      const k = p.operatorToken.kind;
+      if (p.right === x && (k === ts.SyntaxKind.EqualsToken || k === ts.SyntaxKind.QuestionQuestionEqualsToken || k === ts.SyntaxKind.BarBarEqualsToken || k === ts.SyntaxKind.AmpersandAmpersandEqualsToken)) {
+        const l = unwrapExpr(p.left);
+        if (ts.isIdentifier(l)) addSym(checker.getSymbolAtLocation(l), d, p, fresh);
+        else if (ts.isArrayLiteralExpression(l) || ts.isObjectLiteralExpression(l)) addAssignPattern(l, d);
+        else return fail("stored", p);
+        return use(p, d, false, fresh);
+      }
+      if (k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment) return null; // `s += x`: a primitive result
+      if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) return use(p, d, false);
+      if (k === ts.SyntaxKind.CommaToken) return p.right === x ? use(p, d, false, fresh) : null;
+      return null; // comparison, arithmetic, `in`, instanceof: a primitive result
+    }
+    if (ts.isReturnStatement(p) || (ts.isArrowFunction(p) && p.body === x) || ts.isYieldExpression(p)) return fail("returned", p);
+    if (ts.isThrowStatement(p)) return fail("thrown", p);
+    if (ts.isExportAssignment(p)) return fail("export_default", p);
+    if (ts.isPropertyDeclaration(p)) return fail("stored", p);
+    if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(x)) return passTo(p, p.expression, p.arguments.indexOf(x), d, x);
+    if (ts.isSpreadElement(p)) {
+      const q = p.parent;
+      if (ts.isArrayLiteralExpression(q)) return use(q, d, false, true);
+      if ((ts.isCallExpression(q) || ts.isNewExpression(q)) && d + 1 >= primDepth) return null;
+      if (ts.isCallExpression(q) || ts.isNewExpression(q)) { const g = globalCallee(q.expression, checker); return g && /^Math\./.test(g) ? null : fail("spread_into_call", p); }
+      return fail(`unhandled_${ts.SyntaxKind[(q as ts.Node).kind]}`, p);
+    }
+    if (ts.isSpreadAssignment(p)) return use(p.parent, d, false, true);
+    if (ts.isArrayLiteralExpression(p)) return use(p, d - 1, false, true);
+    if (ts.isPropertyAssignment(p) && p.initializer === x) return use(p.parent, d - 1, false, true);
+    if (ts.isShorthandPropertyAssignment(p)) return use(p.parent, d - 1, false, true);
+    if (ts.isConditionalExpression(p)) return p.condition === x ? null : use(p, d, false);
+    if (ts.isAwaitExpression(p)) return use(p, d, false, fresh);
+    if (ts.isPrefixUnaryExpression(p) || ts.isTypeOfExpression(p) || ts.isVoidExpression(p)) return null;
+    if (ts.isTemplateSpan(p)) return ts.isTaggedTemplateExpression(p.parent.parent) ? fail("tagged_template", p) : null;
+    if (ts.isTaggedTemplateExpression(p)) return fail("tagged_template", p);
+    if (ts.isElementAccessExpression(p) && p.argumentExpression === x) return null;
+    if (ts.isForOfStatement(p) && p.expression === x) {
+      const e = d + 1;
+      if (e >= primDepth) return null;
+      const init = p.initializer;
+      if (ts.isVariableDeclarationList(init)) { for (const dd of init.declarations) addPattern(dd.name, e); return null; }
+      const l = unwrapExpr(init);
+      if (ts.isIdentifier(l)) { addSym(checker.getSymbolAtLocation(l), e, l); return null; }
+      if (ts.isArrayLiteralExpression(l) || ts.isObjectLiteralExpression(l)) { addAssignPattern(l, e); return null; }
+      return fail("stored", p);
+    }
+    if (ts.isForInStatement(p) && p.expression === x) return null;
+    if ((ts.isIfStatement(p) || ts.isWhileStatement(p) || ts.isDoStatement(p) || ts.isSwitchStatement(p) || ts.isCaseClause(p)) && p.expression === x) return null;
+    if (ts.isExpressionStatement(p)) return null;
+    return fail(`unhandled_${ts.SyntaxKind[p.kind]}`, x);
+  };
+  // Fixpoint: walk every module until no new alias appears.
+  const done = new Set<ts.Node>();
+  for (let round = 0; ; round++) {
+    if (round >= MAX_SCAN_ROUNDS) return SHARED_TOO_LARGE;
+    grew = false;
+    const names = new Set<string>();
+    for (const s of S.keys()) names.add(s.name);
+    const declFiles = new Set<string>();
+    for (const s of S.keys()) for (const d of s.declarations ?? []) declFiles.add(d.getSourceFile().fileName);
+    // files that export a tracked symbol (only those leak it through `export *` / `export * as`); a file with no
+    // module symbol is counted as exporting (fail closed)
+    const exportFiles = new Set<string>();
+    // `export *` of a file leaks a tracked symbol if that file, or any file its own `export *` / `export {..} from`
+    // chain reaches (cycles included), exports one; an unresolvable relative specifier in the chain fails closed
+    const starMemo = new Map<string, true | string | null>();
+    const starLeaks = (start: string): true | string | null => {
+      const hit = starMemo.get(start);
+      if (hit !== undefined) return hit;
+      const seenF = new Set<string>([start]);
+      const queue = [start];
+      let res: true | string | null = null;
+      while (queue.length && !res) {
+        const fn = queue.shift()!;
+        if (exportFiles.has(fn)) { res = true; break; }
+        const sfx = ri.files.get(fn);
+        if (!sfx) { res = "unresolved"; break; }
+        const ms = checker.getSymbolAtLocation(sfx);
+        if (!ms) { if (sfx.statements.some((x) => ts.isExportDeclaration(x) || ts.isExportAssignment(x) || hasMod(x, ts.SyntaxKind.ExportKeyword))) { res = "unresolved"; break; } continue; }
+        if (checker.getExportsOfModule(ms).some((e) => { const t = norm(e); return !!t && S.has(t); })) { res = true; break; }
+        for (const x of sfx.statements) {
+          if (!ts.isExportDeclaration(x) || !x.moduleSpecifier) continue;
+          if (!ts.isStringLiteralLike(x.moduleSpecifier)) { res = "unresolved"; break; }
+          const t = ri.resolve(x.moduleSpecifier.text, fn);
+          if (!t) { if (/^[./]/.test(x.moduleSpecifier.text)) { res = "unresolved"; break; } continue; }
+          if (!seenF.has(t)) { seenF.add(t); queue.push(t); }
+        }
+      }
+      starMemo.set(start, res);
+      return res;
+    };
+    for (const s of S.keys()) for (const d of s.declarations ?? []) {
+      const sf = d.getSourceFile();
+      const ms = checker.getSymbolAtLocation(sf);
+      if (!ms || checker.getExportsOfModule(ms).some((e) => norm(e) === s)) exportFiles.add(sf.fileName);
+    }
+    for (const f of ri.files.values()) {
+      const nsNames = new Set<string>();
+      const local = new Set(names);
+      for (const st of f.statements) {
+        if (ts.isImportDeclaration(st) && ts.isStringLiteralLike(st.moduleSpecifier)) {
+          const target = ri.resolve(st.moduleSpecifier.text, f.fileName);
+          const nb = st.importClause?.namedBindings;
+          if (nb && ts.isNamedImports(nb)) for (const el of nb.elements) if (names.has((el.propertyName ?? el.name).text)) local.add(el.name.text);
+          if (st.importClause?.name) local.add(st.importClause.name.text);
+          if (nb && ts.isNamespaceImport(nb) && target && declFiles.has(target) && !st.importClause?.isTypeOnly) nsNames.add(nb.name.text);
+        }
+        if (ts.isExportDeclaration(st) && st.moduleSpecifier && ts.isStringLiteralLike(st.moduleSpecifier) && !st.isTypeOnly) {
+          const target = ri.resolve(st.moduleSpecifier.text, f.fileName);
+          if (!st.exportClause || ts.isNamespaceExport(st.exportClause)) {
+            if (!target) { if (/^[./]/.test(st.moduleSpecifier.text)) return `reexport_unresolved at ${at(st)}`; }
+            else { const leak = starLeaks(target); if (leak) return `reexport_star${leak === true ? "" : `_${leak}`} at ${at(st)}`; }
+          }
+        }
+      }
+      const v = (n: ts.Node): void => {
+        if (problem) return;
+        if (ts.isCallExpression(n) && n.arguments.length === 1 && ts.isStringLiteralLike(n.arguments[0]!) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require" && isGlobalId(n.expression, checker)))) {
+          const target = ri.resolve((n.arguments[0] as ts.StringLiteralLike).text, f.fileName);
+          if (target && declFiles.has(target)) {
+            // `const { A, B: C } = await import("./m")` (or `= require("./m")`) is a named import; any other use of the
+            // module object (kept, passed, member-read, rest) fails closed.
+            const pat = destructuredImport(n);
+            if (!pat) { fail("dynamic_import_of_module", n); return; }
+            for (const el of pat.elements) {
+              const exported = ((el.propertyName ?? el.name) as ts.Identifier).text;
+              for (const [s, d] of [...S]) if (s.name === exported && s.declarations?.some((x) => x.getSourceFile().fileName === target)) addSym(checker.getSymbolAtLocation(el.name), d, el.name);
+              if (problem) return;
+            }
+          }
+        }
+        if (ts.isIdentifier(n) && (local.has(n.text) || nsNames.has(n.text)) && !done.has(n) && !inTypePosition(n)) {
+          const p = n.parent;
+          if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p) || ((ts.isEnumDeclaration(p) || ts.isVariableDeclaration(p) || ts.isFunctionDeclaration(p) || ts.isClassDeclaration(p)) && p.name === n)) { /* declarations */ }
+          else if (ts.isExportSpecifier(p)) {
+            const decl = p.parent.parent;
+            const s = decl.moduleSpecifier ? norm(checker.getSymbolAtLocation(p.propertyName ?? p.name)) : norm(checker.getExportSpecifierLocalTargetSymbol(p));
+            if (s && S.has(s) && !decl.isTypeOnly && !p.isTypeOnly && (decl.moduleSpecifier || p.propertyName || S.get(s) !== 0 || s !== root)) { done.add(n); fail(decl.moduleSpecifier ? "reexport" : "export_alias", p); return; }
+          } else if (nsNames.has(n.text) && isValueReference(n)) {
+            const s = checker.getSymbolAtLocation(n);
+            if (s && s.flags & ts.SymbolFlags.Alias && s.declarations?.some(ts.isNamespaceImport)) {
+              done.add(n);
+              if (!(ts.isPropertyAccessExpression(p) && p.expression === n)) { fail("namespace_escape", n); return; }
+            }
+          } else if (ts.isPropertyAccessExpression(p) && p.name === n) {
+            const s = norm(checker.getSymbolAtLocation(n));
+            if (s && S.has(s)) { done.add(n); use(p, S.get(s)!, s === root); }
+          } else if (ts.isShorthandPropertyAssignment(p) && p.name === n) {
+            const s = norm(checker.getShorthandAssignmentValueSymbol(p));
+            if (s && S.has(s)) { done.add(n); use(n, S.get(s)!, s === root, FR.get(s)); }
+          } else if (isValueReference(n)) {
+            const s = norm(checker.getSymbolAtLocation(n));
+            if (s && S.has(s)) { done.add(n); use(n, S.get(s)!, s === root, FR.get(s)); }
+          }
+        }
+        ts.forEachChild(n, v);
+      };
+      v(f);
+      if (problem) return problem;
+    }
+    if (!grew) return null;
+    // a deeper-than-before alias (smaller depth) must be re-checked everywhere it is used
+    done.clear();
+  }
+}
+
+/** The plain object pattern a literal dynamic import / require is destructured into (no rest, no computed or nested names). */
+function destructuredImport(call: ts.CallExpression): ts.ObjectBindingPattern | null {
+  let e: ts.Node = call;
+  while (ts.isParenthesizedExpression(e.parent)) e = e.parent;
+  if (call.expression.kind === ts.SyntaxKind.ImportKeyword) {
+    if (!ts.isAwaitExpression(e.parent)) return null;
+    e = e.parent;
+    while (ts.isParenthesizedExpression(e.parent)) e = e.parent;
+  }
+  const d = e.parent;
+  if (!ts.isVariableDeclaration(d) || d.initializer !== e || !ts.isObjectBindingPattern(d.name)) return null;
+  // plain names only: no rest, no computed / string keys, no nested pattern, a default only a primitive literal (a
+  // default runs code when the export is undefined); the module object is the initializer itself, kept nowhere else
+  const lit = (x: ts.Expression): boolean => { const y = unwrapExpr(x); return ts.isStringLiteralLike(y) || ts.isNumericLiteral(y) || y.kind === ts.SyntaxKind.TrueKeyword || y.kind === ts.SyntaxKind.FalseKeyword || y.kind === ts.SyntaxKind.NullKeyword || (ts.isPrefixUnaryExpression(y) && y.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(y.operand)); };
+  const ok = d.name.elements.every((el) => !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)) && (!el.initializer || lit(el.initializer)));
+  return ok ? d.name : null;
+}
+
 export interface TargetInfo { decl: ts.FunctionDeclaration; params: { name: string; type: string }[]; ret: string }
 
 /**
  * The named refusal for testing `fn` in module `content` (path `path`), or null when it is an exported, fully
  * typed, provably pure function. Exported for Job B (re-checked on the real tree before grading) and the tests.
  */
-type TargetOpts = { v2?: { read: (rel: string) => string | null }; load?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean; v7?: boolean };
+type TargetOpts = { v2?: { read: (rel: string) => string | null }; load?: { read: (rel: string) => string | null }; dates?: boolean; v4?: boolean; v5?: boolean; v6?: boolean; v7?: boolean; /** Auditor (c): every file of the target repo (test files included) for the shared-binding scan; without it any read binding holding state is refused. */ repo?: readonly RepoFile[]; /** set to the first shared-binding scan problem (diagnostics only) */ why?: { shared?: string } };
 export function existingTargetRefusal(path: string, content: string, fn: string, opts?: TargetOpts): string | null {
   return targetRefusal(path, content, fn, opts, false);
 }
@@ -1796,7 +2752,7 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   // M97: v7 takes every target v6 takes, unchanged (Job A then answers not_needed). Only a target v6 refuses is
   // analyzed with the v7 widenings and the v7 hardening, so v7 never loses a v6 target and never weakens one.
   if (opts?.v7 && opts.v2) {
-    const r6 = targetRefusal(path, content, fn, { v2: opts.v2, v6: true }, skipLoad, inner);
+    const r6 = targetRefusal(path, content, fn, { v2: opts.v2, v6: true, repo: opts.repo, why: opts.why }, skipLoad, inner);
     if (r6 === null) return null;
   } else if (opts?.v7) return targetRefusal(path, content, fn, { ...opts, v7: false }, skipLoad, inner);
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
@@ -1835,7 +2791,10 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   // Auditor #466 (4th pass): a load-time callee must return a primitive or an array of primitives (LOAD_CALL_RETURN).
   const retKind = inner ? loadCallReturnKind(f.type, idx) : null;
   if (inner && !retKind) return TEST_TARGET_IMPURE;
-  const lc = inner?.lc ?? makeLoadCallCheck(path, content, opts);
+  // Auditor (c): the whole-repo shared-binding scan runs on every gate call (Job A, Job B, callee checks of a gate
+  // call), never in evidence replay.
+  const evidence = inner ? !!inner.evidence : skipLoad;
+  const lc = inner?.lc ?? makeLoadCallCheck(path, content, opts, evidence);
   if (v2) v2.lc = lc;
   const cached = v2?.modules.get(path);
   const a: Analysis = { reasons: v2 ? v2.reasons : reasons, fns: cached ? cached.fns : new Set([fn]), consts: cached ? cached.consts : new Set(), idx, sf, v2, lc, callee: !!inner };
@@ -1856,6 +2815,17 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
   // Auditor #466 (4th review): a tested function that returns a Date hands it only to the test - never to another
   // module the analysis read (one importing it back, by name or as a namespace).
   if (!inner && v2 && (teReturnsDate(teDateIdx(sf), f) || teDateIdx(sf).containerReturn.has(f) || teParamFeedsDate(teDateIdx(sf), f)) && dateImportedBack(v2, path, fn)) a.reasons.add(TEST_TARGET_DATE_LOCAL);
+  // Auditor (c): no module of the repo may write, hand out or pass on a binding the analysis read (sharedBindingsProblem).
+  // (Skipped once a reason refuses; with `opts.why` it still runs for the diagnostic, without changing the verdict.)
+  const refusedAlready = PRIORITY.some((r) => a.reasons.has(r));
+  if (!evidence && (!refusedAlready || opts?.why)) {
+    const rd = v2 ? v2.read : opts?.load ? (rel: string) => (rel === path ? content : opts.load!.read(rel)) : (rel: string) => (rel === path ? content : null);
+    const sp = sharedBindingsProblem(readBindings(a, v2), opts?.repo, rd);
+    if (sp) {
+      if (!refusedAlready) a.reasons.add(sp === SHARED_TOO_LARGE ? TEST_TARGET_TOO_LARGE : TEST_TARGET_IMPURE);
+      if (opts?.why && opts.why.shared === undefined) opts.why.shared = sp;
+    }
+  }
   for (const r of PRIORITY) if (a.reasons.has(r)) return r;
   // M93 (Auditor #460): with an exempted `= process.env` default, only the test may call the target.
   if (envDefaults.size && v2 && envTargetReferenced(v2, fn, f, f.parameters.flatMap((p, i) => (envDefaults.has(p) ? [i] : [])))) return TEST_TARGET_IO;
@@ -1896,9 +2866,9 @@ function targetRefusal(path: string, content: string, fn: string, opts: TargetOp
  */
 interface LoadCallVerdict { kind: "prim" | "array"; aliasFree: boolean }
 type LoadCallCheck = (path: string, fn: string) => LoadCallVerdict | null;
-interface CalleeMode { lc: LoadCallCheck; verdict?: LoadCallVerdict }
+interface CalleeMode { lc: LoadCallCheck; verdict?: LoadCallVerdict; /** the root call is evidence replay (no shared-binding scan) */ evidence?: boolean }
 const MAX_LOAD_CALL_DEPTH = 4;
-function makeLoadCallCheck(rootPath: string, rootContent: string, opts: TargetOpts | undefined): LoadCallCheck {
+function makeLoadCallCheck(rootPath: string, rootContent: string, opts: TargetOpts | undefined, evidence = false): LoadCallCheck {
   const rd = opts?.v2?.read ?? opts?.load?.read ?? null;
   const readAny = (rel: string): string | null => (rel === rootPath ? rootContent : rd ? rd(rel) : null);
   const stack = new Set<string>();
@@ -1909,7 +2879,7 @@ function makeLoadCallCheck(rootPath: string, rootContent: string, opts: TargetOp
     if (text === null) return null;
     stack.add(key);
     try {
-      const mode: CalleeMode = { lc: check };
+      const mode: CalleeMode = { lc: check, evidence };
       return targetRefusal(p, text, name, opts, true, mode) === null && mode.verdict ? mode.verdict : null;
     } finally { stack.delete(key); }
   };
@@ -2926,7 +3896,7 @@ const parseCheck = (text: string): ts.Expression | null => {
   return ts.isParenthesizedExpression(e) ? e.expression : null;
 };
 
-export function buildExistingTestEdit(params: Record<string, string | string[]>, task: ExistingTestTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), why?: { reason?: string }): ExistingTestEdit | null {
+export function buildExistingTestEdit(params: Record<string, string | string[]>, task: ExistingTestTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), why?: { reason?: string }, scan?: readonly RepoFile[]): ExistingTestEdit | null {
   const no = (r: string) => { if (why) why.reason = r; return null; };
   if (!validParams(params)) return no("bad_rule_params");
   if (!plainPath(task.file)) return no("path_not_plain");
@@ -2941,21 +3911,24 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const v4 = params.target === "exported-pure-function-v4" || v5;
   const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
+  // Auditor (c): `files` is the context list (the target and its sibling reads come only from it); the shared-binding
+  // scan checks `scan` (repoFileLists' scan list: in-scope files, test files and denied files included), else `files`.
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7 } : { load: sib });
+  const repoAll = scan ?? files;
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7, repo: repoAll } : { load: sib, repo: repoAll });
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
-  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol, { load: sib }) === null) return no("not_needed");
+  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol, { load: sib, repo: repoAll }) === null) return no("not_needed");
   // M88: likewise v3 leaves a target v2 already takes to v2.
-  if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib }) === null) return no("not_needed");
+  if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, repo: repoAll }) === null) return no("not_needed");
   // M90: and v4 leaves a target v3 already takes to v3.
-  if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true }) === null) return no("not_needed");
+  if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, repo: repoAll }) === null) return no("not_needed");
   // M91: and v5 leaves a target v4 already takes to v4.
-  if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true }) === null) return no("not_needed");
+  if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, repo: repoAll }) === null) return no("not_needed");
   // M93: and v6 leaves a target v5 already takes to v5.
-  if (v6 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, v5: true }) === null) return no("not_needed");
+  if (v6 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, v5: true, repo: repoAll }) === null) return no("not_needed");
   // M97: and v7 leaves a target v6 already takes to v6.
-  if (v7 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, v6: true }) === null) return no("not_needed");
+  if (v7 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, v6: true, repo: repoAll }) === null) return no("not_needed");
   // M97 (v7): a void target's checks are `throws CODE` or `is undefined`, at least one `throws` (the stub returns a
   // value, so a test with no `throws` would be graded on that artifact alone).
   if (v7 && voidTarget(target.content, task.symbol) && (!task.checks.every((c) => c.kind === "throws" || (c.kind === "equal" && c.value === "undefined")) || !task.checks.some((c) => c.kind === "throws"))) return no(TEST_CHECK_REFUSED);
@@ -2997,10 +3970,10 @@ export function applyExistingTestRule(trigger: string, params: Record<string, st
 }
 
 /** Job A entry: admitted only via the hash-pinned approved list (Peace /approve-rule); reasons for refusal lines. */
-export function runExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }): ExistingTestEdit | null {
+export function runExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }, scan?: readonly RepoFile[]): ExistingTestEdit | null {
   const task = parseExistingTestTask(trigger, objective);
   if (!task) { if (why) why.reason = "task_unparsed"; return null; }
-  return buildExistingTestEdit(params, task, files, isTest, why);
+  return buildExistingTestEdit(params, task, files, isTest, why, scan);
 }
 
 /**

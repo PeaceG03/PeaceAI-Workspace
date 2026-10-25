@@ -47,7 +47,7 @@ for (const c of CASES) {
 test("generate.ts passes the full ls-files + disk check to every rule", () => {
   const g = readFileSync(join(root, "peaceai/bin/generate.ts"), "utf8");
   assert.match(g, /const newPathExists = pathExistsIn\(repo, tracked\);/);
-  assert.match(g, /applyRule\(a\.spec, [^\n]*, why, newPathExists\)/);
+  assert.match(g, /applyRule\(a\.spec, [^\n]*, why, newPathExists(?:, \[\.\.\.scanOnlyFiles, \.\.\.workflowFiles\])?\)/);
 });
 
 test("a broken symlink at the new test path counts as existing (lstat, not existsSync)", () => {
