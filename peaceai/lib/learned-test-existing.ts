@@ -1781,6 +1781,31 @@ function literalDefault(e: ts.Expression | undefined): boolean {
 //   initializer's literal shape, or a primitive-array return type) end the walk.
 // Without `opts.repo` (Job B today, direct callers), any such binding is refused (fail closed).
 export interface RepoFile { readonly path: string; readonly content: string }
+/**
+ * Auditor #466 (c), option A (joint Builder + Auditor decision): the one builder of both repo lists, used by Job A
+ * (generate.ts) and Job B (test-candidates.ts gradeExisting), with two separate outputs:
+ * - `context`: every path the target config puts in scope (`isSource`, test files included) and does not deny, with its
+ *   regular-file content. The only list that may reach model context, prompts, edits, records, logs or artifacts.
+ * - `scan`: the same plus the denied in-scope paths, for the static shared-binding scan only (an `export * from` a
+ *   denied module, or a denied module that writes or hands out a binding, is then seen and judged; it is never a target).
+ *   Its file and byte caps (MAX_SCAN_FILES / MAX_SCAN_BYTES) count denied files too and fail closed (too large).
+ * Unreadable paths are dropped from both (the scan then fails closed on any import of them).
+ */
+export function repoFileLists(paths: Iterable<string>, scope: { isSource(p: string): boolean; isDenied(p: string): boolean }, read: (p: string) => string | null): { context: RepoFile[]; scan: RepoFile[] } {
+  const context: RepoFile[] = [];
+  const scan: RepoFile[] = [];
+  const seen = new Set<string>();
+  for (const p of paths) {
+    if (!p || seen.has(p) || !scope.isSource(p)) continue;
+    seen.add(p);
+    const c = read(p);
+    if (c === null) continue;
+    const f = { path: p, content: c };
+    scan.push(f);
+    if (!scope.isDenied(p)) context.push(f);
+  }
+  return { context, scan };
+}
 /** Bounds of the scan (more is refused, test_target_too_large). */
 export const MAX_SCAN_FILES = 4000;
 export const MAX_SCAN_BYTES = 48 * 1024 * 1024;
@@ -1908,7 +1933,7 @@ function repoIndex(repo: readonly RepoFile[]): RepoIndex {
 
 /** One binding the analysis read: its module, name and declaration. */
 interface ReadBinding { path: string; name: string; sf: ts.SourceFile; idx: ModuleIndex; isEnum: boolean }
-type BindingShape = { kind: "prim" } | { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean };
+type BindingShape = { kind: "prim"; globals?: Set<string> } | { kind: "fn" } | { kind: "data"; primDepth: number; regex?: boolean };
 /** The value shape of a const initializer: 0 = a primitive, k = every value k property steps down is primitive, INF = unknown. */
 function shapeDepth(e: ts.Expression, m: { sf: ts.SourceFile; idx: ModuleIndex }, read: (rel: string) => string | null, seen: Set<string>, depth = 0): number {
   if (depth > 12) return INF_DEPTH;
@@ -1968,13 +1993,36 @@ function shapeDepth(e: ts.Expression, m: { sf: ts.SourceFile; idx: ModuleIndex }
   if (ts.isCallExpression(x)) {
     const c = unwrapExpr(x.expression);
     const nm = ts.isIdentifier(c) ? c.text : ts.isPropertyAccessExpression(c) && ts.isIdentifier(c.expression) ? `${c.expression.text}.${c.name.text}` : null;
-    if (nm && (PRIM_RETURN_GLOBALS.has(nm) || (nm.startsWith("Math.") && nm !== "Math.random")) && unshadowed(m.idx, nm.split(".")[0]!)) return 0;
+    if (nm && (PRIM_RETURN_GLOBALS.has(nm) || (nm.startsWith("Math.") && nm !== "Math.random")) && unshadowed(m.idx, nm.split(".")[0]!) && x.arguments.every((a) => inertPrimArg(a, m.idx, 0))) {
+      // primitive only if the global is the real one: the repo scan checks no module shadows or patches it
+      PRIM_GLOBAL_ROOTS?.add(nm.split(".")[0]!);
+      return 0;
+    }
   }
   if (ts.isCallExpression(x) && ts.isIdentifier(x.expression)) {
     const kind = calleeReturnKind(x.expression.text, m, read);
     return kind === "prim" ? 0 : kind === "array" ? 1 : INF_DEPTH;
   }
   return INF_DEPTH;
+}
+/** Global roots (`Date`, `Math`, ...) a binding's primitive shape relied on; collected by bindingShape. */
+let PRIM_GLOBAL_ROOTS: Set<string> | null = null;
+/** An inert primitive argument: a literal, a sign / arithmetic of inert ones, or a never-written module const of one. */
+function inertPrimArg(e: ts.Expression, idx: ModuleIndex, depth: number): boolean {
+  if (depth > 12) return false;
+  const x = unwrapExpr(e);
+  if (ts.isNumericLiteral(x) || ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword) return true;
+  if (ts.isPrefixUnaryExpression(x)) return (x.operator === ts.SyntaxKind.MinusToken || x.operator === ts.SyntaxKind.PlusToken) && inertPrimArg(x.operand, idx, depth + 1);
+  if (ts.isBinaryExpression(x)) {
+    const k = x.operatorToken.kind;
+    const arith = [ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken];
+    return arith.includes(k) && inertPrimArg(x.left, idx, depth + 1) && inertPrimArg(x.right, idx, depth + 1);
+  }
+  if (ts.isIdentifier(x)) {
+    const d = idx.consts.get(x.text);
+    return !!d?.initializer && !idx.mutated.has(x.text) && !idx.imports.has(x.text) && inertPrimArg(d.initializer, idx, depth + 1);
+  }
+  return false;
 }
 /** A regex literal or `new RegExp(..)` / `RegExp(..)` of the global (state flags g / y are statelessInit's). */
 function regexInit(x: ts.Expression, idx: ModuleIndex): boolean {
@@ -2000,8 +2048,11 @@ function bindingShape(b: ReadBinding, read: (rel: string) => string | null): Bin
   if (!init) return { kind: "data", primDepth: INF_DEPTH };
   const x = unwrapExpr(init);
   if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) return { kind: "fn" };
-  const d = shapeDepth(init, b, read, new Set([`${b.sf.fileName}\0${b.name}`]));
-  return d === 0 ? { kind: "prim" } : { kind: "data", primDepth: d, regex: regexInit(x, b.idx) };
+  const roots = new Set<string>();
+  PRIM_GLOBAL_ROOTS = roots;
+  let d: number;
+  try { d = shapeDepth(init, b, read, new Set([`${b.sf.fileName}\0${b.name}`])); } finally { PRIM_GLOBAL_ROOTS = null; }
+  return d === 0 ? (roots.size ? { kind: "prim", globals: roots } : { kind: "prim" }) : { kind: "data", primDepth: d, regex: regexInit(x, b.idx) };
 }
 
 /** Enum names (module path \0 name) the analysis read, keyed by the analysis's shared reasons set. */
@@ -2029,12 +2080,67 @@ function readBindings(a: Analysis, v2: V2Ctx | undefined): ReadBinding[] {
  * The whole-repo verdict for the bindings the analysis read: null (every one passes) or the first problem
  * (`<binding>: <why> at <file>:<line>`). Without a repo list, any binding holding state fails closed.
  */
+const GLOBAL_OBJECTS = new Set(["globalThis", "global", "window", "self"]);
+/** A write position (assignment / compound target, ++ / --, delete, destructuring or for-in/of target). */
+function isWriteTarget(n: ts.Node): boolean {
+  let x: ts.Node = n;
+  while (ts.isParenthesizedExpression(x.parent) || ts.isNonNullExpression(x.parent) || ts.isAsExpression(x.parent) || ts.isTypeAssertionExpression(x.parent) || ts.isSatisfiesExpression(x.parent)) x = x.parent;
+  const p = x.parent;
+  if (ts.isBinaryExpression(p) && p.left === x && p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return true;
+  if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && (p.operator === ts.SyntaxKind.PlusPlusToken || p.operator === ts.SyntaxKind.MinusMinusToken)) return true;
+  if (ts.isDeleteExpression(p)) return true;
+  if ((ts.isForInStatement(p) || ts.isForOfStatement(p)) && p.initializer === x) return true;
+  if (ts.isArrayLiteralExpression(p) || ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isSpreadElement(p) || ts.isSpreadAssignment(p)) {
+    let q: ts.Node = p;
+    while (ts.isArrayLiteralExpression(q) || ts.isObjectLiteralExpression(q) || ts.isPropertyAssignment(q) || ts.isShorthandPropertyAssignment(q) || ts.isSpreadElement(q) || ts.isSpreadAssignment(q)) q = q.parent;
+    return ts.isBinaryExpression(q) && q.operatorToken.kind === ts.SyntaxKind.EqualsToken && q.left.pos <= n.pos && n.end <= q.left.end;
+  }
+  return false;
+}
+/**
+ * Whether any module of the repo shadows or patches the global `name` (Date, Math, ...): every occurrence must be a
+ * member read (`Date.UTC(..)`, not a write of it), a call / `new` of it, a type, or another object's property name;
+ * a declaration, import, parameter, assignment, value use (passed, stored, spread) or a `globalThis.Date`-style access
+ * fails closed.
+ */
+function globalTouched(ri: RepoIndex, name: string): string | null {
+  let found: string | null = null;
+  const at = (n: ts.Node) => { const sf = n.getSourceFile(); return `${relOf(sf.fileName)}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`; };
+  for (const f of ri.files.values()) {
+    const v = (n: ts.Node): void => {
+      if (found) return;
+      const gobj = (e: ts.Expression) => { const y = unwrapExpr(e); return ts.isIdentifier(y) && GLOBAL_OBJECTS.has(y.text); };
+      if ((ts.isPropertyAccessExpression(n) && n.name.text === name && gobj(n.expression)) || (ts.isElementAccessExpression(n) && gobj(n.expression))) { found = `global_${name}_via_global_object at ${at(n)}`; return; }
+      if (ts.isIdentifier(n) && n.text === name && !inTypePosition(n)) {
+        const p = n.parent;
+        const ok =
+          (ts.isPropertyAccessExpression(p) && p.name === n) ||
+          ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n && !isWriteTarget(p) && !(ts.isCallExpression(p.parent) && ts.isPropertyAccessExpression(p) && ["defineProperty", "assign"].includes(p.name.text))) ||
+          ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.expression === n) ||
+          ((ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodDeclaration(p) || ts.isMethodSignature(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p) || ts.isEnumMember(p)) && p.name === n) ||
+          (ts.isQualifiedName(p));
+        if (!ok) { found = `global_${name}_shadowed_or_patched at ${at(n)}`; return; }
+      }
+      ts.forEachChild(n, v);
+    };
+    v(f);
+    if (found) return found;
+  }
+  return null;
+}
 function sharedBindingsProblem(bindings: readonly ReadBinding[], repo: readonly RepoFile[] | undefined, read: (rel: string) => string | null): string | null {
-  const todo = bindings.map((b) => ({ b, shape: bindingShape(b, read) })).filter((x) => x.shape.kind !== "prim");
-  if (!todo.length) return null;
-  if (!repo) return `${todo[0]!.b.path}#${todo[0]!.b.name}: no_repo_list`;
+  const shaped = bindings.map((b) => ({ b, shape: bindingShape(b, read) }));
+  const todo = shaped.filter((x) => x.shape.kind !== "prim");
+  const viaGlobal = shaped.filter((x) => x.shape.kind === "prim" && x.shape.globals);
+  if (!todo.length && !viaGlobal.length) return null;
+  const first = todo[0] ?? viaGlobal[0]!;
+  if (!repo) return `${first.b.path}#${first.b.name}: no_repo_list`;
   const ri = repoIndex(repo);
   if (ri.problem) return ri.problem === SHARED_TOO_LARGE ? SHARED_TOO_LARGE : `repo: ${ri.problem}`;
+  for (const { b, shape } of viaGlobal) for (const g of (shape as { globals: Set<string> }).globals) {
+    const r = globalTouched(ri, g);
+    if (r) return `${b.path}#${b.name}: ${r}`;
+  }
   for (const { b, shape } of todo) {
     const r = bindingProblem(ri, b, shape as Exclude<BindingShape, { kind: "prim" }>);
     if (r) return r === SHARED_TOO_LARGE ? r : `${b.path}#${b.name}: ${r}`;
@@ -2298,6 +2404,34 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
     // files that export a tracked symbol (only those leak it through `export *` / `export * as`); a file with no
     // module symbol is counted as exporting (fail closed)
     const exportFiles = new Set<string>();
+    // `export *` of a file leaks a tracked symbol if that file, or any file its own `export *` / `export {..} from`
+    // chain reaches (cycles included), exports one; an unresolvable relative specifier in the chain fails closed
+    const starMemo = new Map<string, true | string | null>();
+    const starLeaks = (start: string): true | string | null => {
+      const hit = starMemo.get(start);
+      if (hit !== undefined) return hit;
+      const seenF = new Set<string>([start]);
+      const queue = [start];
+      let res: true | string | null = null;
+      while (queue.length && !res) {
+        const fn = queue.shift()!;
+        if (exportFiles.has(fn)) { res = true; break; }
+        const sfx = ri.files.get(fn);
+        if (!sfx) { res = "unresolved"; break; }
+        const ms = checker.getSymbolAtLocation(sfx);
+        if (!ms) { if (sfx.statements.some((x) => ts.isExportDeclaration(x) || ts.isExportAssignment(x) || hasMod(x, ts.SyntaxKind.ExportKeyword))) { res = "unresolved"; break; } continue; }
+        if (checker.getExportsOfModule(ms).some((e) => { const t = norm(e); return !!t && S.has(t); })) { res = true; break; }
+        for (const x of sfx.statements) {
+          if (!ts.isExportDeclaration(x) || !x.moduleSpecifier) continue;
+          if (!ts.isStringLiteralLike(x.moduleSpecifier)) { res = "unresolved"; break; }
+          const t = ri.resolve(x.moduleSpecifier.text, fn);
+          if (!t) { if (/^[./]/.test(x.moduleSpecifier.text)) { res = "unresolved"; break; } continue; }
+          if (!seenF.has(t)) { seenF.add(t); queue.push(t); }
+        }
+      }
+      starMemo.set(start, res);
+      return res;
+    };
     for (const s of S.keys()) for (const d of s.declarations ?? []) {
       const sf = d.getSourceFile();
       const ms = checker.getSymbolAtLocation(sf);
@@ -2316,7 +2450,10 @@ function bindingProblem(ri: RepoIndex, b: ReadBinding, shape: { kind: "fn" } | {
         }
         if (ts.isExportDeclaration(st) && st.moduleSpecifier && ts.isStringLiteralLike(st.moduleSpecifier) && !st.isTypeOnly) {
           const target = ri.resolve(st.moduleSpecifier.text, f.fileName);
-          if (target && exportFiles.has(target) && (!st.exportClause || ts.isNamespaceExport(st.exportClause))) return `reexport_star at ${at(st)}`;
+          if (!st.exportClause || ts.isNamespaceExport(st.exportClause)) {
+            if (!target) { if (/^[./]/.test(st.moduleSpecifier.text)) return `reexport_unresolved at ${at(st)}`; }
+            else { const leak = starLeaks(target); if (leak) return `reexport_star${leak === true ? "" : `_${leak}`} at ${at(st)}`; }
+          }
         }
       }
       const v = (n: ts.Node): void => {
@@ -2381,7 +2518,10 @@ function destructuredImport(call: ts.CallExpression): ts.ObjectBindingPattern | 
   }
   const d = e.parent;
   if (!ts.isVariableDeclaration(d) || d.initializer !== e || !ts.isObjectBindingPattern(d.name)) return null;
-  const ok = d.name.elements.every((el) => !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)));
+  // plain names only: no rest, no computed / string keys, no nested pattern, a default only a primitive literal (a
+  // default runs code when the export is undefined); the module object is the initializer itself, kept nowhere else
+  const lit = (x: ts.Expression): boolean => { const y = unwrapExpr(x); return ts.isStringLiteralLike(y) || ts.isNumericLiteral(y) || y.kind === ts.SyntaxKind.TrueKeyword || y.kind === ts.SyntaxKind.FalseKeyword || y.kind === ts.SyntaxKind.NullKeyword || (ts.isPrefixUnaryExpression(y) && y.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(y.operand)); };
+  const ok = d.name.elements.every((el) => !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)) && (!el.initializer || lit(el.initializer)));
   return ok ? d.name : null;
 }
 
@@ -3571,7 +3711,7 @@ const parseCheck = (text: string): ts.Expression | null => {
   return ts.isParenthesizedExpression(e) ? e.expression : null;
 };
 
-export function buildExistingTestEdit(params: Record<string, string | string[]>, task: ExistingTestTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), why?: { reason?: string }): ExistingTestEdit | null {
+export function buildExistingTestEdit(params: Record<string, string | string[]>, task: ExistingTestTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), why?: { reason?: string }, scan?: readonly RepoFile[]): ExistingTestEdit | null {
   const no = (r: string) => { if (why) why.reason = r; return null; };
   if (!validParams(params)) return no("bad_rule_params");
   if (!plainPath(task.file)) return no("path_not_plain");
@@ -3586,22 +3726,24 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
   const v4 = params.target === "exported-pure-function-v4" || v5;
   const v3 = params.target === "exported-pure-function-v3" || v4;
   const v2 = params.target === "exported-pure-function-v2" || v3;
-  // Auditor (c): `files` (every in-scope file, test files included) is the repo the shared-binding scan checks.
+  // Auditor (c): `files` is the context list (the target and its sibling reads come only from it); the shared-binding
+  // scan checks `scan` (repoFileLists' scan list: in-scope files, test files and denied files included), else `files`.
   const sib = { read: (rel: string) => files.find((f) => f.path === rel && !isTest(f.path))?.content ?? null };
-  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7, repo: files } : { load: sib, repo: files });
+  const repoAll = scan ?? files;
+  const r = existingTargetRefusal(target.path, target.content, task.symbol, v2 ? { v2: sib, dates: v3, v4, v5, v6, v7, repo: repoAll } : { load: sib, repo: repoAll });
   if (r) return no(r);
   // M85: the v2 spec leaves a target the v1 spec already takes to v1 (one candidate per task, never two).
-  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol, { load: sib, repo: files }) === null) return no("not_needed");
+  if (v2 && existingTargetRefusal(target.path, target.content, task.symbol, { load: sib, repo: repoAll }) === null) return no("not_needed");
   // M88: likewise v3 leaves a target v2 already takes to v2.
-  if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, repo: files }) === null) return no("not_needed");
+  if (v3 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, repo: repoAll }) === null) return no("not_needed");
   // M90: and v4 leaves a target v3 already takes to v3.
-  if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, repo: files }) === null) return no("not_needed");
+  if (v4 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, repo: repoAll }) === null) return no("not_needed");
   // M91: and v5 leaves a target v4 already takes to v4.
-  if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, repo: files }) === null) return no("not_needed");
+  if (v5 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, repo: repoAll }) === null) return no("not_needed");
   // M93: and v6 leaves a target v5 already takes to v5.
-  if (v6 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, v5: true, repo: files }) === null) return no("not_needed");
+  if (v6 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, dates: true, v4: true, v5: true, repo: repoAll }) === null) return no("not_needed");
   // M97: and v7 leaves a target v6 already takes to v6.
-  if (v7 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, v6: true, repo: files }) === null) return no("not_needed");
+  if (v7 && existingTargetRefusal(target.path, target.content, task.symbol, { v2: sib, v6: true, repo: repoAll }) === null) return no("not_needed");
   // M97 (v7): a void target's checks are `throws CODE` or `is undefined`, at least one `throws` (the stub returns a
   // value, so a test with no `throws` would be graded on that artifact alone).
   if (v7 && voidTarget(target.content, task.symbol) && (!task.checks.every((c) => c.kind === "throws" || (c.kind === "equal" && c.value === "undefined")) || !task.checks.some((c) => c.kind === "throws"))) return no(TEST_CHECK_REFUSED);
@@ -3643,10 +3785,10 @@ export function applyExistingTestRule(trigger: string, params: Record<string, st
 }
 
 /** Job A entry: admitted only via the hash-pinned approved list (Peace /approve-rule); reasons for refusal lines. */
-export function runExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }): ExistingTestEdit | null {
+export function runExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }, scan?: readonly RepoFile[]): ExistingTestEdit | null {
   const task = parseExistingTestTask(trigger, objective);
   if (!task) { if (why) why.reason = "task_unparsed"; return null; }
-  return buildExistingTestEdit(params, task, files, isTest, why);
+  return buildExistingTestEdit(params, task, files, isTest, why, scan);
 }
 
 /**

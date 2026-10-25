@@ -98,9 +98,9 @@ test("v1 without the tree fails closed on any relative import; Job A and Job B g
   assert.equal(existingTargetRefusal("src/a.ts", 'import { K } from "./b";\nexport function f(s: string): string { return s + K; }\n', "f"), TEST_TARGET_IMPURE);
   assert.equal(existingTargetRefusal("src/a.ts", 'import { K } from "pkg";\nexport function f(s: string): string { return s; }\n', "f"), TEST_TARGET_IO);
   const tc = read("peaceai/bin/test-candidates.ts");
-  assert.match(tc, /: \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /: \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, repo \}\) !== null\) return ungradable\("not-test-only"\)/);
   const lib = read("peaceai/lib/learned-test-existing.ts");
-  assert.match(lib, /v2 \? \{ v2: sib, dates: v3, v4, v5, v6, v7, repo: files \} : \{ load: sib, repo: files \}\);/);
+  assert.match(lib, /v2 \? \{ v2: sib, dates: v3, v4, v5, v6, v7, repo: repoAll \} : \{ load: sib, repo: repoAll \}\);/);
   // The evidence-only analysis is never a gate: only the evidence tests call it.
   assert.ok(!/existingTargetAnalysisForEvidence/.test(tc));
   assert.equal((lib.match(/existingTargetAnalysisForEvidence/g) ?? []).length, 1, "declared once, never called in the library");

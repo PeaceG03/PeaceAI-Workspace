@@ -170,7 +170,7 @@ test("stub and Job B wiring: v5 candidates are re-checked under v5 (with v2, v3 
   assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false, v5 = false(?:, v6 = false)?(?:, v7 = false)?\): TestGrading/);
   // M93: v6 candidates set v5 too (the v6 prefix follows the v5 prefix in every disjunction).
   assert.match(tc, /existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\), typeof candidate\.operationId === "string" && (?:\()?candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)/);
-  assert.match(tc, /dates: v3, v4, v5(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /dates: v3, v4, v5(?:, v6)?(?:, v7)?, repo \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, repo \}\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
 });
 

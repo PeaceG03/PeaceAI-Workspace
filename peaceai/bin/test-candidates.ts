@@ -15,7 +15,7 @@ import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
 import { derivedModuleProblem } from "../lib/learned-derive.ts";
-import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, voidTestProblem } from "../lib/learned-test-existing.ts";
+import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
 import { relatedTests } from "../lib/sources.ts";
@@ -361,7 +361,8 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   if (specs.length !== 1) return ungradable("not-test-only");
   const spec = specs[0]!.replace(/\.ts$/, "");
   const modPath = join(dir, `${spec}.ts`);
-  if (!baseFiles.has(modPath) || !scope.isSource(modPath) || scope.isTest(modPath)) return ungradable("not-test-only");
+  // Auditor #466 (c), option A: a denied module is never a target (the scan list reads denied files; that never makes them one).
+  if (!baseFiles.has(modPath) || !scope.isSource(modPath) || scope.isTest(modPath) || scope.isDenied(modPath)) return ungradable("not-test-only");
   const file = join(tree, modPath);
   try { if (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile() || relative(tree, realpathSync(file)).startsWith("..")) return ungradable("not-applied"); } catch { return ungradable("not-applied"); }
   const real = readFileSync(file, "utf8");
@@ -390,7 +391,11 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
   // a void target only in `assert.throws(() => f(..), ..)` (at least once) or `assert.equal(f(..), undefined)`, and every
   // `new Map(..)` / `new Set(..)` a bounded literal.
   // Auditor #466 (3rd review): v1 gets the tree for the load-closure check only (`load`); v1's analysis still reads no sibling.
-  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6, v7 } : { load: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) } }) !== null) return ungradable("not-test-only");
+  // Auditor #466 (c), option A: the shared-binding scan's repo is repoFileLists' scan list of the graded tree (every
+  // in-scope file, test files, the candidate test and denied files included), built exactly as Job A's is (generate.ts);
+  // it reaches only the static scan (the target and its sibling reads stay on the non-denied scope checks below).
+  const repo = repoFileLists(gitIn(tree, "ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0"), scope, regular).scan;
+  if (existingTargetRefusal(modPath, real, fn, v2 ? { v2: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, dates: v3, v4, v5, v6, v7, repo } : { load: { read: (rel) => (scope.isSource(rel) && !scope.isTest(rel) ? regular(rel) : null) }, repo }) !== null) return ungradable("not-test-only");
   if (v6 && envArgProblem(real, fn, test) !== null) return ungradable("not-test-only");
   if (v7 && (voidTestProblem(real, fn, test) !== null || mapSetTestProblem(test) !== null)) return ungradable("not-test-only");
   // Auditor #466 (4th review), every version: the test side of the fail-closed Date check (dateTestProblem).

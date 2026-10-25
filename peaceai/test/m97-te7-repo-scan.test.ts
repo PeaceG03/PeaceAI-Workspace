@@ -4,8 +4,9 @@
 // below is refused under v1-v7 with the repo list (Job A's `files`); the controls stay accepted; without a repo list a
 // read binding holding state is refused (fail closed).
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { existingTargetRefusal, existingTargetAnalysisForEvidence, type RepoFile } from "../lib/learned-test-existing.ts";
+import { existingTargetRefusal, existingTargetAnalysisForEvidence, repoFileLists, type RepoFile } from "../lib/learned-test-existing.ts";
 
 const LIT = "export const L: string[] = [\"a\", \"b\"];\nexport function f(x: string): number { return L.indexOf(x); }\n";
 const CALL = "function mk(n: number): string[] { return [\"a\", \"b\"]; }\nexport const L = mk(1);\nexport function f(x: string): number { return L.indexOf(x); }\n";
@@ -68,6 +69,14 @@ const ATTACKS: Record<string, [string, Record<string, string>]> = {
   dynamic_import_destructured_rest: [LIT, { "src/s.ts": "export async function g(): Promise<void> { const { ...r } = await import(\"./m\"); void r; }\n" }],
   dynamic_import_destructured_nested: [LIT, { "src/s.ts": "export async function g(): Promise<void> { const { L: [a] } = await import(\"./m\"); void a; }\n" }],
   require_destructured_sort: [LIT, { "src/s.js": "const { L } = require(\"./m\");\nmodule.exports = function g() { L.sort(); };\n" }],
+  dynamic_import_default_calls: [LIT, { "src/s.ts": "function mk(): string[] { return []; }\nexport async function g(): Promise<void> { const { L = mk() } = await import(\"./m\"); L.push(\"z\"); }\n" }],
+  dynamic_import_default_read_only: [LIT, { "src/s.ts": "function mk(): string[] { return []; }\nexport async function g(): Promise<number> { const { L = mk() } = await import(\"./m\"); return L.length; }\n" }],
+  dynamic_import_computed_key: [LIT, { "src/s.ts": "export async function g(): Promise<number> { const { [\"L\"]: q } = await import(\"./m\"); return q.length; }\n" }],
+  dynamic_import_string_key: [LIT, { "src/s.ts": "export async function g(): Promise<number> { const { \"L\": q } = await import(\"./m\"); return q.length; }\n" }],
+  dynamic_import_object_kept: [LIT, { "src/s.ts": "let m: unknown;\nexport async function g(): Promise<number> { const { L } = (m = await import(\"./m\")) as { L: string[] }; return L.length; }\nexport const h = () => m;\n" }],
+  star_chain_local_export: [LIT, { "src/index.ts": "export * from \"./mid\";\n", "src/mid.ts": "import { L } from \"./m\";\nexport { L };\n" }],
+  star_chain_cycle: [LIT, { "src/index.ts": "export * from \"./a\";\n", "src/a.ts": "export * from \"./b\";\n", "src/b.ts": "export * from \"./a\";\nimport { L } from \"./m\";\nexport { L };\n" }],
+  star_chain_unresolved: [CALL_LOCAL, { "src/index.ts": "export * from \"./a\";\n", "src/a.ts": "export * from \"./missing\";\n" }],
   unparseable_module: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g( { L.push(\"z\");\n" }],
   eval_anywhere: [LIT, { "src/s.ts": "export function g(s: string): unknown { return eval(s); }\n" }],
   internal_bare_specifier: [LIT, { "src/s.ts": "import { L } from \"src/m\";\nexport function g(): void { L.push(\"z\"); }\n" }],
@@ -90,6 +99,7 @@ const CONTROLS: Record<string, [string, Record<string, string>]> = {
   spread_copy: [LIT, { "src/s.ts": "import { L } from \"./m\";\nexport function g(): string[] { const c = [...L]; c.push(\"z\"); return c; }\n" }],
   regex_string_methods: [RX, { "src/s.ts": "import { RX } from \"./m\";\nexport function g(s: string): string[] { const a = s.match(RX); const b = RX.exec(s); return [s.replace(RX, \"\"), RX.source, String(a), String(b)]; }\n" }],
   export_star_unexported: [CALL_LOCAL, { "src/index.ts": "export * from \"./m\";\n", "src/s.ts": "import * as all from \"./index\";\nexport function g(x: string): number { return all.f(x); }\n" }],
+  star_chain_cycle_no_binding: [CALL_LOCAL, { "src/index.ts": "export * from \"./a\";\nexport * from \"./m\";\n", "src/a.ts": "export * from \"./b\";\n", "src/b.ts": "export * from \"./a\";\nexport const Z = 1;\n" }],
   dynamic_import_destructured_read: [LIT, { "src/s.test.ts": "test(\"t\", async () => { const { L, f } = await import(\"./m\"); if (f(L[0]!) !== 0 || !L.includes(\"b\")) throw new Error(\"x\"); });\n" }],
 };
 
@@ -119,9 +129,39 @@ test("repo scan: without a repo list a read binding holding state is refused (fa
   for (const t of [LIT, CALL_LOCAL, OBJ, ENUM, RX]) for (const v of VERS) assert.notEqual(run(t, {}, v, false), "ok", `${t.slice(0, 30)} ${v}`);
   const prim = "export const N = 3;\nconst S = \"a\" + \"b\";\nexport function f(x: number): number { return x + N + S.length; }\n";
   for (const v of VERS) assert.equal(run(prim, {}, v, false), "ok", v);
-  // a const holding a prim-returning global's result is a primitive too: the scan does not refuse it (v4+ accept it)
-  const pc = "const E = Date.UTC(1970, 0, 1);\nexport function f(x: number): number { return x - E; }\n";
-  for (const v of ["v4", "v5", "v6", "v7"] as const) assert.equal(run(pc, {}, v, false), "ok", v);
+});
+
+// Auditor (c), tightening 3: `Date.UTC(..)` (and the other prim-returning globals) is a primitive only when every
+// argument is inert and no module of the repo shadows or patches the global; with no repo list that is unproven.
+const DUTC = "const E = Date.UTC(1970, 0, 1);\nexport function f(x: number): number { return x - E; }\n";
+const V4P = ["v4", "v5", "v6", "v7"] as const;
+test("repo scan: a Date.UTC const is a primitive only with the real, unpatched global and inert arguments", () => {
+  for (const v of V4P) {
+    assert.equal(run(DUTC, {}, v, true), "ok", `alone ${v}`);
+    assert.equal(run(DUTC, { "src/s.ts": "export const t = (): number => Date.UTC(2020, 0, 1) + new Date(0).getTime() + Date.now();\n" }, v, true), "ok", `reads ${v}`);
+    assert.notEqual(run(DUTC, {}, v, false), "ok", `no repo ${v}`);
+  }
+  const attacks: Record<string, Record<string, string>> = {
+    patch_member: { "src/s.ts": "(Date as unknown as { UTC: () => unknown }).UTC = () => [];\n" },
+    patch_member_plain: { "src/s.js": "Date.UTC = function () { return []; };\n" },
+    global_object: { "src/s.ts": "(globalThis as { Date?: unknown }).Date = class {};\n" },
+    global_object_index: { "src/s.ts": "const k = \"Da\" + \"te\";\n(globalThis as Record<string, unknown>)[k] = 1;\n" },
+    define_property: { "src/s.ts": "Object.defineProperty(Date, \"UTC\", { value: () => 0 });\n" },
+    passed: { "src/s.ts": "function p(x: unknown): void { void x; }\np(Date);\n" },
+    imported_name: { "src/s.ts": "import { Date } from \"./d\";\nexport const y = Date;\n", "src/d.ts": "export const Date = 1;\n" },
+    declared_name: { "src/s.ts": "export function g(Date: number): number { return Date; }\n" },
+  };
+  for (const [k, others] of Object.entries(attacks)) for (const v of V4P) {
+    const all: Record<string, string> = { "src/m.ts": DUTC, ...others };
+    const why: { shared?: string } = {};
+    const rd = { read: (rel: string) => all[rel] ?? null };
+    const r = existingTargetRefusal("src/m.ts", DUTC, "f", { v2: rd, dates: true, v4: true, v5: v !== "v4", v6: v === "v6" || v === "v7", v7: v === "v7", repo: Object.entries(all).map(([path, content]) => ({ path, content })), why } as never);
+    assert.notEqual(r, null, `${k} ${v}`);
+    assert.match(why.shared ?? "", /global_Date|repo:/, `${k} ${v}: ${why.shared}`);
+  }
+  // a non-inert argument: the const is not a proven primitive (the load check refuses the call anyway)
+  const nonInert = "function mk(): number { return 1; }\nconst E = Date.UTC(mk(), 0, 1);\nexport function f(x: number): number { return x - E; }\n";
+  for (const v of V4P) assert.notEqual(run(nonInert, {}, v, true), "ok", `non-inert ${v}`);
 });
 
 test("repo scan: the refusal names the first problem (diagnostics)", () => {
@@ -159,4 +199,49 @@ test("repo scan: Map values are reached as deep through get as through iteration
   for (const v of VERS) assert.equal(run(MAP, {}, v, true), "ok", `alone ${v}`);
   const PRIM = "export const M = new Map<string, number>([[\"a\", 1]]);\nexport function f(k: string): number { return M.get(k) ?? 0; }\n";
   for (const v of VERS) assert.equal(run(PRIM, { "src/s.ts": "import { M } from \"./m\";\nexport function g(k: string): number | undefined { return M.get(k); }\n" }, v, true), "ok", v);
+});
+
+// Job B (test-candidates.ts gradeExisting) re-checks the target with the repo list too, built by the one helper Job A
+// uses (generate.ts: repoFileLists, scan output), so the scan cannot drift between the jobs. The shapes below are the seven
+// builder-log TEST_CASE_EXISTING rows (seq 143, 144, 226, 227, 233, 249, 259) that grade again with it, behind a
+// PeaceSTOCKS-shaped barrel re-exporting a denied module (src/index.ts `export * from "./scheduler"`): refused with no
+// repo list, and with only the context list (the denied module is then unresolvable: fail closed).
+test("Job A and Job B build the scan's repo list with repoFileLists; Job B passes it to both option objects", () => {
+  const gen = readFileSync(new URL("../bin/generate.ts", import.meta.url), "utf8");
+  const tc = readFileSync(new URL("../bin/test-candidates.ts", import.meta.url), "utf8");
+  assert.match(gen, /const repoLists = repoFileLists\(tracked, scope, /);
+  assert.match(tc, /const repo = repoFileLists\(gitIn\(tree, "ls-files", "-z", "--cached", "--others", "--exclude-standard"\)\.split\("\\0"\), scope, regular\)\.scan;/);
+  const call = tc.split("\n").find((l) => l.includes("existingTargetRefusal(modPath, real, fn,"))!;
+  assert.match(call, /dates: v3, v4, v5, v6, v7, repo \}/);
+  assert.match(call, / : \{ load: \{ read: .*\}, repo \}\) !== null\)/);
+});
+
+const JOB_B_ROWS: Record<string, [string, Record<string, string>]> = {
+  "143": ["export const R: ReadonlySet<string> = new Set([\"WAIT_A\", \"WAIT_B\"]);\nexport function f(x: string): boolean { return R.has(x); }\n",
+    { "src/h.test.ts": "test(\"t\", async () => { const { f } = await import(\"./m\"); if (!f(\"WAIT_A\")) throw new Error(\"x\"); });\n" }],
+  "144": ["export const C = new Set([\n  \"queued\",\n  \"in_progress\",\n]);\nexport function f(x: string): boolean { return C.has(x); }\n", {}],
+  "226": ["export const D = [2, 3, 4, 5, 6] as const;\nexport function f(d: number): boolean { return (D as readonly number[]).includes(d); }\n", {}],
+  "227": ["export const D = [2, 3, 4, 5, 6] as const;\nexport function f(d: number): number { for (let i = d; i >= 0; i--) if ((D as readonly number[]).includes(i)) return i; return -1; }\n", {}],
+  "233": ["import { W } from \"./y\";\nexport function f(x: number): boolean { return W.some(([s, e]) => x >= s && x < e); }\n",
+    { "src/y.ts": "export const W: ReadonlyArray<readonly [number, number]> = [\n  [320, 340],\n  [560, 580],\n];\n", "src/y.test.ts": "test(\"t\", async () => { const { W } = await import(\"./y\"); if (W.length !== 2) throw new Error(\"x\"); });\n" }],
+  "249": ["const A = new Set([\"queued\", \"in_progress\", \"waiting\"]);\nexport function f(xs: string[]): number { return xs.filter((x) => A.has(x)).length; }\n", { "src/index.ts": "export * from \"./m\";\n" }],
+  "259": ["import { W } from \"./y\";\nexport function f(x: number): number { for (const [s, e] of W) if (x < e) return Math.max(0, s - x); return -1; }\n",
+    { "src/y.ts": "export const W: ReadonlyArray<readonly [number, number]> = [\n  [320, 340],\n  [560, 580],\n];\n" }],
+};
+test("Job B: the seven builder-log rows' target shapes grade again with the scan list (refused without it)", () => {
+  const scope = { isSource: (p: string) => p.startsWith("src/"), isDenied: (p: string) => /(^|\/)(host|scheduler|backfill)\.ts$/.test(p) };
+  for (const [seq, [t, o]] of Object.entries(JOB_B_ROWS)) {
+    const all: Record<string, string> = { "src/m.ts": t, "src/scheduler.ts": "export function tick(): number { return 1; }\n", ...o, "src/index.ts": `export * from "./scheduler";\n${o["src/index.ts"] ?? ""}` };
+    const { scan: repo, context } = repoFileLists(Object.keys(all), scope, (p) => all[p] ?? null);
+    assert.equal(context.some((f) => f.path === "src/scheduler.ts"), false);
+    const rd = { read: (rel: string) => (rel.endsWith(".test.ts") ? null : context.find((f) => f.path === rel)?.content ?? null) };
+    for (const o2 of [{ v2: rd, dates: true, v4: true, v5: true }, { v2: rd, dates: true, v4: true, v5: true, v6: true, v7: true }]) {
+      const why: { shared?: string } = {};
+      assert.equal(existingTargetRefusal("src/m.ts", t, "f", { ...o2, repo, why }), null, `${seq}: ${why.shared}`);
+      assert.notEqual(existingTargetRefusal("src/m.ts", t, "f", o2), null, `${seq} without a repo list`);
+      const w2: { shared?: string } = {};
+      assert.notEqual(existingTargetRefusal("src/m.ts", t, "f", { ...o2, repo: context, why: w2 }), null, `${seq} with the context list only`);
+      assert.match(w2.shared ?? "", /reexport_unresolved at src\/index\.ts:1/, seq);
+    }
+  }
 });

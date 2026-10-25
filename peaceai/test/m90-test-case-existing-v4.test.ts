@@ -178,7 +178,7 @@ test("stub and Job B wiring: v4 candidates are re-checked under v4 (with v2 and 
   assert.match(tc, /function gradeExisting\([^)]*v2 = false, v3 = false, v4 = false(?:, v5 = false)?(?:, v6 = false)?(?:, v7 = false)?\): TestGrading/);
   // M91: v5 candidates set v4 too.
   assert.match(tc, /typeof candidate\.operationId === "string" && \(candidate\.operationId\.startsWith\("learned:public-test-case-existing-v4@"\) \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v5@"\)(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v6@"\))?(?: \|\| candidate\.operationId\.startsWith\("learned:public-test-case-existing-v7@"\))?\),/);
-  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)? \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \} \}\) !== null\) return ungradable\("not-test-only"\)/);
+  assert.match(tc, /dates: v3, v4(?:, v5)?(?:, v6)?(?:, v7)?, repo \} : \{ load: \{ read: \(rel\) => \(scope\.isSource\(rel\) && !scope\.isTest\(rel\) \? regular\(rel\) : null\) \}, repo \}\) !== null\) return ungradable\("not-test-only"\)/);
   assert.match(tc, /stubAll\(real, \[fn\], v2\)/);
   assert.match(tc, /gradedTestSourceProblem\(test, \[spec, `\$\{spec\}\.ts`\], declaredFunctions\(real\), moduleDataKeys\(real\), v3\)/);
 });
