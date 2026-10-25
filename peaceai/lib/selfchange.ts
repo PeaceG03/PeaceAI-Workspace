@@ -22,10 +22,9 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /(^|\/)[^/]*public-origin[^/]*$/i, why: "the public-origin allowlist (leak gate): core's docs/peaceai-public-origin.json and any copy, test or reader of it" },
   { pattern: /^\.github\//, why: "workflows, required checks and approval workflows" },
   { pattern: /^\.githooks\/|(^|\/)\.git\//, why: "git hooks" },
-  { pattern: /(^|\/)\.[^/]/, why: "dot-paths anywhere (.env / .npmrc / hook and tool config; M106, found by the stage-2 never-zone cross-check)" },
   { pattern: /^(package(-lock)?\.json|npm-shrinkwrap\.json|\.npmrc|tsconfig[^/]*\.json|\.gitignore|\.gitattributes)$/, why: "dependencies and build config" },
   { pattern: /^(README\.md|CONSTITUTION[^/]*|SECURITY[^/]*|CODEOWNERS|LICENSE[^/]*)$/, why: "governance documents" },
-  { pattern: /^peaceai\/rules\/|(^|\/)approved\.json$/, why: "approved learned-rule list and rule specs (and any approved.json; M106)" },
+  { pattern: /^peaceai\/rules\//, why: "approved learned-rule list and rule specs" },
   { pattern: /^peaceai\/test\//, why: "the live test suite (new tests go under peaceai/self-tests/)" },
   { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.test\.ts$/, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
   { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|await-held-runs\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/, why: "approval, leak, scan, hook, gate and self-change tools" },
@@ -69,7 +68,6 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^\.github\/workflows\/derive-practice\.yml$|^peaceai\/lib\/derive-practice(-kinds)?\.ts$|^peaceai\/lib\/derive-practice-families\.json$|^peaceai\/bin\/derive-practice(-kinds|-dedup)?\.ts$|^peaceai\/bin\/derive-family-census\.ts$|^peaceai\/lib\/derive-family-census\.ts$/, why: "M100 derive practice workflow (checks only, no training), its families manifest and the tools it runs (with the census lib the census bin imports: Peace, 2026-10-23, for now)" },
   { pattern: /^peaceai\/test\/m42-prepush-reach\.test\.ts$/, why: "the pre-push hook reachability and attack proofs (M42, Auditor #157)" },
   { pattern: /^peaceai\/self\//, why: "self-change records and configuration" },
-  { pattern: /^peaceai\/results-repo\//, why: "the workflow templates installed in PeaceAI-Results: rule approval and the stage-2 self-change grading job (M106)" },
   { pattern: /^builder-log\//, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
 ];
 

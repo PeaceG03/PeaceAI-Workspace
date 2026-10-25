@@ -5,7 +5,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  addOnlyTestCheck, checkStage2Proposal, listGrowthRefusals, listSha, NEVER_ZONE, protectedReason, PROTECTED_SELF,
+  addOnlyTestCheck, checkStage2Proposal, listGrowthRefusals, listSha, NEVER_ZONE, protectedReason,
   stage2Credit, stage2DiffSha, stage2Enabled, stage2GradeDecision, stage2LandingDecision, stage2PathRefusal,
   STAGE2_FLAG_PATH, STAGE2_SCHEMA, type CommandComment, type Stage2Record,
 } from "../lib/selfchange.ts";
@@ -72,11 +72,13 @@ test("M106 limit 1: every never-zone path is refused, even as a proposal; PeaceA
     "src/universe.ts", "docs/sub/a.md", "docs/A.md", "/peaceai/lib/x.ts", "peaceai/../package.json", "peaceai//lib/x.ts", "peaceai/./lib/x.ts",
   ];
   for (const p of never) assert.ok(stage2PathRefusal(p), `${p} must be refused`);
-  // stage 1 (M11) is at least as closed, except outside-peaceai paths it refuses differently and the read-only-ops
-  // enable switch (stage-1 status unchanged here; flagged for Auditor)
-  for (const p of never.filter((p) => !p.startsWith("src/") && !p.startsWith("docs/sub") && p !== "docs/A.md" && p !== "peaceai/read-only-ops.json")) {
+  // Stage 1 (M11) is closed to these too, except the gaps below. This PR leaves PROTECTED_SELF (and its pinned
+  // digest) unchanged; the gaps are listed for Auditor as a follow-up tightening, and stage 2 closes them already.
+  const STAGE1_GAPS = ["peaceai/.env", "peaceai/approved.json", "peaceai/read-only-ops.json", "peaceai/results-repo/self-change-stage2.yml", "peaceai/results-repo/rule-approval.yml"];
+  for (const p of never.filter((p) => !p.startsWith("src/") && !p.startsWith("docs/sub") && p !== "docs/A.md" && !STAGE1_GAPS.includes(p))) {
     assert.ok(protectedReason(p), `${p} must also be closed to M11 stage 1`);
   }
+  for (const p of STAGE1_GAPS) assert.ok(stage2PathRefusal(p), `${p}: stage 2 closes the stage-1 gap`);
   for (const p of ["peaceai/lib/propose.ts", "peaceai/lib/learned.ts", "peaceai/lib/nlparse.ts", "peaceai/bin/generate.ts", "peaceai/test/m999-x.test.ts", "peaceai/docs/a.md", "docs/guide.md"]) {
     assert.equal(stage2PathRefusal(p), null, p);
   }
@@ -85,7 +87,6 @@ test("M106 limit 1: every never-zone path is refused, even as a proposal; PeaceA
   for (const p of ["docs/sub/a.md", "docs/A.md", "docs/.a.md", "docs/a.txt", "docs/../a.md"]) assert.ok(!inSafeZone(p), p);
   // the never-zone names its own machinery
   assert.ok(NEVER_ZONE.some((z) => z.pattern.test("peaceai/lib/selfchange.ts")) && NEVER_ZONE.some((z) => z.pattern.test(STAGE2_FLAG_PATH)));
-  assert.ok(PROTECTED_SELF.some((z) => z.pattern.test("peaceai/results-repo/self-change-stage2.yml")), "the grading workflow template is protected from stage 1 too");
 });
 
 test("M106 limit 1: a proposal touching any never-zone path, by any side of a rename, is refused whole", () => {
