@@ -213,7 +213,8 @@ test("regularFileReader: regular files only, inside the root; symlinks (broken o
   const gen = read("peaceai/bin/generate.ts");
   const tc = read("peaceai/bin/test-candidates.ts");
   assert.match(gen, /const repoLists = repoFileLists\(tracked, scope, regularFileReader\(repo\)\);/);
-  assert.equal((tc.match(/const regular = regularFileReader\(tree\);/g) ?? []).length, 2);
+  // 3 since M112: the DERIVE_FROM_BEHAVIOR v3 append branch of gradeSelf reads the module closure the same way
+  assert.equal((tc.match(/const regular = regularFileReader\(tree\);/g) ?? []).length, 3);
 });
 
 test("Job A: a tracked broken symlink (and one leaving the checkout) in scope is skipped, not a crash", { timeout: 600_000 }, () => {

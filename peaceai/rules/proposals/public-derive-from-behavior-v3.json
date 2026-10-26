@@ -1,0 +1,27 @@
+{
+ "id": "public-derive-from-behavior-v3",
+ "kind": "DERIVE_FROM_BEHAVIOR",
+ "shape": "DERIVE_FROM_BEHAVIOR",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list (not in approved.json until Peace posts /approve-rule on its proposal issue)",
+ "engine": "the v1/v2 engine (peaceai/lib/derive.ts, peaceai/lib/learned-derive.ts) with the rule param placement end-of-existing-module, bound to DERIVE_APPEND_TRIGGER: the same search (v1 first, then v2 label chains) and every v1/v2 gate, then the derived function is appended to the named existing module (old text unchanged, one blank line, the function at the very end) plus one new test file; appendTargetProblem checks the module before the search and derivedAppendProblem re-checks the result; Job B (test-candidates.ts) re-checks the append against the base commit's text and runs the module's existing tests and the new test confined to the module's closure; the review note is rebuilt from an append diff",
+ "scope": "an issue whose header reads 'Append a new function NAME(params): type to the existing module src/....ts' with behavior prose and literal examples, naming a module that exists (exact path) in src/ outside protected, denied, test, fixture, .d.ts and self-protected paths; one function with a single return expression from the v1/v2 vocabulary; imports are never added or changed",
+ "refusals": "every v1/v2 refusal (not_needed is not applied to appends: a v1-derivable function appended to an existing module is the point); target_file_not_found (missing module or case near-miss; v3 never creates one); derive_path; derive_append_layout (CRLF, no final newline, a trailing blank line, empty); derive_append_parse; derive_append_name_collision (any identifier, word in the text, export * or export * as); derive_append_mutable_state (top-level let / var / using); derive_append_side_effects (anything the module or its import closure runs at import, a package or unresolved import, export default of an expression); derive_append_not_add_only; derive_params (a spec pairing a placement with the other placement's trigger); new_test_path_exists; denied_path (repo deny patterns via applyRule)",
+ "evidence": {
+  "examples": 111,
+  "repos": 89,
+  "file": "peaceai/rules/proposals/m99-derive-from-behavior-evidence.json",
+  "method": "the v1 evidence, unchanged (no entry added or removed). v3 changes where the derived function goes, not which functions can be derived: the search, the vocabulary, the size bound and every evidence gate are the v1/v2 ones; the append is argued safe by construction (add-only text, refused on collisions, mutable state and import-time code; the module's own tests must still pass in Job B)",
+  "origin": "external-licensed",
+  "bar": 10,
+  "qualifies": true,
+  "note": "For Auditor: v3 does not widen what can be derived; it widens where (an existing module). See peaceai/docs/m112-append-to-existing-module.md."
+ },
+ "learned": "peaceai/rules/learned/public-derive-from-behavior-v3.json",
+ "tests": [
+  "peaceai/test/m112-derive-append-existing-module.test.ts",
+  "peaceai/test/m111-derive-boolean-label-chains.test.ts",
+  "peaceai/test/m99-derive-from-behavior.test.ts"
+ ],
+ "untouched": "public-derive-from-behavior-v1 (hash 799182d7...) and -v2 (hash e11ae193...): same specs, and in new-module placement the same search, gates and refusals; every other learned spec; the evidence files; approved.json"
+}
