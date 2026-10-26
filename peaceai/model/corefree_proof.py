@@ -188,12 +188,15 @@ def ext_problem(m):
 # function; all six required, nothing else). Only Peace's public owner repos. It carries no content sha256, so the
 # proof records the sha256 of the doc text itself. Unknown fields, mixed schemas or anything malformed: fail closed.
 FT_KEYS = {"doc", "split", "repo", "sha", "path", "function"}
+# M119 (LM retrain list mode): an optional seventh field, "line" (int >= 1): the doc is exactly that one line of
+# <sha>:<path> (a builder-log row), checked below by equality, which is stricter than the prefix check.
+FT_OPTIONAL = {"line"}
 
 
 def ft_problem(m):
     if not isinstance(m, dict):
         return "not an object"
-    unknown = set(m) - FT_KEYS
+    unknown = set(m) - FT_KEYS - FT_OPTIONAL
     if unknown:
         return f"unknown field {sorted(unknown)[0]}"
     if FT_KEYS - set(m):
@@ -208,6 +211,8 @@ def ft_problem(m):
         return "bad sha"
     if not isinstance(m["repo"], str) or m["repo"] not in OWNER_PUBLIC:
         return "fine-tune entry: not a public owner repo"
+    if "line" in m and (type(m["line"]) is not int or m["line"] < 1):
+        return "bad line"
     return None
 
 
@@ -287,7 +292,11 @@ for m in man:
         m = {**m, "sha256": tsha}  # derived from the doc text (the fine-tune manifest carries none)
     if schema == "finetune":
         src_text = git_file(m["repo"], m["sha"], m["path"])
-        if src_text is None or not src_text.startswith(t):
+        if "line" in m:
+            src_lines = src_text.split("\n") if src_text is not None else []
+            if not (m["line"] <= len(src_lines) and src_lines[m["line"] - 1] == t):
+                sys.exit(f"corefree_proof: doc {m['doc']} is not line {m['line']} of {m['repo']}@{m['sha']}:{m['path']} (or it cannot be read from git)")
+        elif src_text is None or not src_text.startswith(t):
             sys.exit(f"corefree_proof: doc {m['doc']} is not a prefix of {m['repo']}@{m['sha']}:{m['path']} (or it cannot be read from git)")
     if tsha != m["sha256"]:
         sys.exit(f"corefree_proof: doc {m['doc']} text does not hash to its manifest sha256")

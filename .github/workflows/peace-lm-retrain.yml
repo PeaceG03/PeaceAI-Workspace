@@ -1,0 +1,413 @@
+name: peace-lm-retrain
+
+# M119 (Builder + Auditor, free compute under Peace's 2026-10-25 rule): fine-tune the LIVE LM on the reviewed commit
+# list (peaceai/model/lm-retrain-commits.txt: Workspace PR merges at their Auditor-PASSed heads, merged PeaceSTOCKS
+# verdict PRs, builder-log rows added since 2026-10-16), with the Auditor's gate inside the run:
+#   (1) live and candidate are scored in THIS run on the same set C v2 byte slice (slice_sha256 checked), same code;
+#   (2) the corpus is deduplicated against all of set C v2 and the 364 judge items (exact, 24-token windows, whole
+#       short items) and re-checked to 0 overlaps; the overlap counts are recorded;
+#   (3) both models are scored on the 364 judge set; the candidate's AUC must be >= the live model's AUC;
+#   (4) GitHub-hosted runners only; counts-only logs; no artifacts, no caches; model, scores and record land in the
+#       private Results repo only; the memcheck uses the strict 32-character rule (no pretrain-corpus proof attached);
+#   (5) no promotion: latest.json is never touched; promotion needs the Auditor's review of this run id and weights sha.
+# Jobs: corpus-gate (peaceai-core: core-free proof of the exact corpus, read-only keys) -> finetune-eval-land
+# (peaceai-results) -> retrain-memcheck (peaceai-core, read-only keys; LM job id pinned in lm.ts LM_JOB_WORKFLOWS) -> record-memcheck (peaceai-results).
+# Every step that uses a key is preceded by a check that the checkout is GITHUB_SHA, unmodified, and the key scripts
+# match their pins.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-lm-train
+  cancel-in-progress: false
+
+env:
+  CFG: peaceai/model/lm-retrain.json
+  RESULTS_SHA256: |-
+    bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
+  CORE_SHA256: |-
+    bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    7e2650ddd67247f4a45a0968409e448fa00d3a66ee1acc9409c8c29aab018754  peaceai/bin/clone-core.sh
+
+jobs:
+  corpus-gate:
+    name: build, dedup and core-free-prove the fine-tune corpus
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: peaceai-core
+    permissions:
+      contents: read
+    outputs:
+      drops: ${{ steps.prove.outputs.drops }}
+      manifest: ${{ steps.prove.outputs.manifest }}
+      proof: ${{ steps.prove.outputs.proof }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: Verify the checkout and the key scripts before any key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Fetch the judge items (read-only key, sparse, lm-judge/items.json only)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_READ_KEY is not set: refused (fail closed)"; exit 1; }
+          res="$RUNNER_TEMP/res"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$res"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone /lm-judge/items.json
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
+          test "$(jq length "$res/lm-judge/items.json")" = "$(jq -r .eval.judgeItemCount "$CFG")" || { echo "judge item count changed: refused"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/w"; cp "$res/lm-judge/items.json" "$RUNNER_TEMP/items.json"; rm -rf "$res"
+      - name: Build the corpus at the pinned heads and dedup it against set C v2 and the judge items
+        run: ./peaceai/bin/lm-retrain-corpus.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json"
+      - name: Verify the checkout and the key scripts before the core key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Core-free proof; drop flagged docs; rebuild; prove again (must be PROVEN)
+        id: prove
+        run: |
+          set -euo pipefail
+          W="$RUNNER_TEMP/w"; mkdir -p "$RUNNER_TEMP/stub"; echo '{"version":"lm-retrain-corpus"}' > "$RUNNER_TEMP/stub/config.json"
+          prove() { python3 peaceai/model/corefree_proof.py --corpus "$W/ft" --core-dir "$RUNNER_TEMP/peaceai-core" --model "$RUNNER_TEMP/stub" --stage finetune --source-root "$W/srcroot"; }
+          prove
+          jq -r '.near.threshold as $t | .files[] | select(.coreExact or .coreNearMax >= $t) | .doc' "$RUNNER_TEMP/stub/corefree-proof-finetune.json" > "$RUNNER_TEMP/drops.txt"
+          echo "core-flagged docs dropped: $(grep -c . "$RUNNER_TEMP/drops.txt" || true)"
+          ./peaceai/bin/lm-retrain-corpus.sh "$W" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/drops.txt"
+          prove
+          P="$RUNNER_TEMP/stub/corefree-proof-finetune.json"
+          test "$(jq -r .noCoreFiles "$P")" = PROVEN || { echo "corpus not proven core-free after the drop: refused"; exit 1; }
+          ms=$(sha256sum "$W/ft/manifest.jsonl" | cut -c1-64)
+          test "$(jq -r .manifestSha256 "$P")" = "$ms" || { echo "proof is not for this manifest: refused"; exit 1; }
+          test "$(jq -r .recheckOverlapDocs "$W/dedup.json")" = 0 || { echo "eval overlap after dedup: refused"; exit 1; }
+          echo "drops=$(paste -sd, "$RUNNER_TEMP/drops.txt")" >> "$GITHUB_OUTPUT"
+          echo "manifest=$ms" >> "$GITHUB_OUTPUT"
+          b64=$(jq 'del(.coreCommit)' "$P" | gzip -9c | base64 -w0)
+          [ "${#b64}" -le 800000 ] || { echo "proof too large for a job output: refused"; exit 1; }
+          echo "proof=$b64" >> "$GITHUB_OUTPUT"
+          echo "fine-tune corpus PROVEN core-free: docs=$(jq '.files | length' "$P")"
+      - name: Delete core, the corpus, the clones and the judge items
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/w" "$RUNNER_TEMP/stub" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/res" "$RUNNER_TEMP/drops.txt"
+
+  finetune-eval-land:
+    name: fine-tune from the live model, score both in this run, gate, land in Results
+    needs: corpus-gate
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    environment: peaceai-results
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Restore the live model and the judge items from Results (checked against latest.json and the weights sha)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          live=$(jq -r .live.version "$CFG"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad live version"; exit 1; }
+          res="$RUNNER_TEMP/res"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$res"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone /lm-judge/items.json /models/lm/latest.json "/models/lm/$live/"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
+          test "$(jq -r .version "$res/models/lm/latest.json")" = "$live" || { echo "the configured live model is not latest.json: refused"; exit 1; }
+          L="$res/models/lm/$live"
+          if [ -n "$(find "$L" -type l)" ]; then echo "refused: symlink in model dir"; exit 1; fi
+          test "lm-v1-$(sha256sum "$L/weights.npz" | cut -c1-12)" = "$live" || { echo "live weights do not hash to their version: refused"; exit 1; }
+          test "$(jq -r .version "$L/config.json")" = "$live" || { echo "live config version mismatch: refused"; exit 1; }
+          m() { jq -r ".model.$1" "$CFG"; }
+          test "$(jq -c '[.ctx, .d_model, .n_layer, .n_head, .vocab_size]' "$L/config.json")" = "[$(m ctx),$(m d_model),$(m n_layer),$(m n_head),$(m vocab)]" || { echo "live shape differs from the config: refused"; exit 1; }
+          test "$(jq length "$res/lm-judge/items.json")" = "$(jq -r .eval.judgeItemCount "$CFG")" || { echo "judge item count changed: refused"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/live"; cp "$L"/config.json "$L"/tokenizer.json "$L"/weights.npz "$RUNNER_TEMP/live/"
+          cp "$res/lm-judge/items.json" "$RUNNER_TEMP/items.json"; rm -rf "$res"
+          echo "live model $live restored (weights sha matches its version)"
+      - name: Rebuild the exact proven corpus (same drops; manifest sha must equal the proven one)
+        env:
+          DROPS: ${{ needs.corpus-gate.outputs.drops }}
+          MANIFEST: ${{ needs.corpus-gate.outputs.manifest }}
+          PROOF: ${{ needs.corpus-gate.outputs.proof }}
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: |
+          set -euo pipefail
+          [[ "$DROPS" =~ ^([0-9]+(,[0-9]+)*)?$ && "$MANIFEST" =~ ^[0-9a-f]{64}$ ]] || { echo "bad corpus-gate outputs: refused"; exit 1; }
+          printf '%s' "$DROPS" | tr , '\n' > "$RUNNER_TEMP/drops.txt"
+          ./peaceai/bin/lm-retrain-corpus.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/drops.txt"
+          test "$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)" = "$MANIFEST" || { echo "rebuilt corpus differs from the proven one: refused"; exit 1; }
+          printf '%s' "$PROOF" | base64 -d | gunzip | head -c 20000000 > "$RUNNER_TEMP/corefree-proof-finetune.json"
+          test "$(jq -r .noCoreFiles "$RUNNER_TEMP/corefree-proof-finetune.json")" = PROVEN && test "$(jq -r .manifestSha256 "$RUNNER_TEMP/corefree-proof-finetune.json")" = "$MANIFEST" || { echo "proof does not match: refused"; exit 1; }
+          rm -rf "$RUNNER_TEMP/w/srcroot"
+          jq -c '{docsIn, docsOut, overlapDocs, overlapDocsSetC, overlapDocsJudge, droppedByList, recheckOverlapDocs}' "$RUNNER_TEMP/w/dedup.json"
+      - name: Fine-tune from the live weights (live tokenizer, same shape) and export
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"; m() { jq -r ".model.$1" "$CFG"; }; f() { jq -r ".finetune.$1" "$CFG"; }
+          # train.py --init-from reads checkpoint arrays (p.<name>); the exported live weights are plain <name> (fp16).
+          "$py" -c 'import numpy as np, sys; z = np.load(sys.argv[1], allow_pickle=False); np.savez(sys.argv[2], **{"p." + k: z[k] for k in z.files})' "$RUNNER_TEMP/live/weights.npz" "$RUNNER_TEMP/init.npz"
+          mkdir -p "$RUNNER_TEMP/ftwork"; cp "$RUNNER_TEMP/live/tokenizer.json" "$RUNNER_TEMP/ftwork/"
+          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/w/ft" --work "$RUNNER_TEMP/ftwork" --init-from "$RUNNER_TEMP/init.npz" \
+            --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
+            --steps "$(f steps)" --lr "$(f lr)" --warmup "$(f warmup)" --eval-every "$(f evalEvery)" --patience "$(f patience)" --threads 4 --max-seconds "$(f maxSeconds)" \
+            > "$RUNNER_TEMP/ft.log" 2>&1 || { echo "fine-tune failed exit=$?"; exit 1; }
+          grep -E '^(params=|tokens |initialized |best val_loss|stopped )' "$RUNNER_TEMP/ft.log" || true
+          grep -q '^initialized from weights' "$RUNNER_TEMP/ft.log" || { echo "fine-tune did not start from the live weights: refused"; exit 1; }
+          cmp -s "$RUNNER_TEMP/live/tokenizer.json" "$RUNNER_TEMP/ftwork/tokenizer.json" || { echo "tokenizer changed: refused"; exit 1; }
+          ck=best.npz; test -f "$RUNNER_TEMP/ftwork/best.npz" || ck=checkpoint.npz
+          "$py" peaceai/model/export.py --work "$RUNNER_TEMP/ftwork" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint "$ck" > /dev/null
+          cp "$RUNNER_TEMP/ftwork/metrics.jsonl" "$RUNNER_TEMP/model/ft-metrics.jsonl"; cp "$RUNNER_TEMP/w/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
+          cp "$RUNNER_TEMP/corefree-proof-finetune.json" "$RUNNER_TEMP/model/corefree-proof-finetune.json"
+          # Provenance under .retrain (not the two-corpus field: that memcheck mode needs a pretrain-corpus proof this run cannot rebuild).
+          fts=$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)
+          jq --arg live "$(jq -r .live.version "$CFG")" --arg f "$fts" --arg l "$(jq -r .list.sha256 "$CFG")" --arg r "$GITHUB_RUN_ID" --arg s "$GITHUB_SHA" \
+            '.retrain = {initFrom: $live, finetuneManifestSha256: $f, commitListSha256: $l, runId: $r, workspaceSha: $s}' "$RUNNER_TEMP/model/config.json" > "$RUNNER_TEMP/cfg.json" && mv "$RUNNER_TEMP/cfg.json" "$RUNNER_TEMP/model/config.json"
+          rm -rf "$RUNNER_TEMP/ftwork" "$RUNNER_TEMP/init.npz"
+          jq -r '"candidate \(.version) ctx=\(.ctx) params=\(.params) steps=\(.trained_steps)"' "$RUNNER_TEMP/model/config.json"
+      - name: Score live and candidate in this run (same set C v2 byte slice, same 364 judge items, same code)
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"; E="$RUNNER_TEMP/evals"; mkdir -p "$E"; mb=$(jq -r .eval.setcMaxBytes "$CFG")
+          for who in live model; do
+            "$py" peaceai/model/eval_c.py --model "$RUNNER_TEMP/$who" --corpus "$RUNNER_TEMP/w/setc" --max-bytes "$mb" --threads 4 > "$E/setc-$who.txt"
+            cat "$E/setc-$who.txt"
+            "$py" peaceai/model/judge364.py --model "$RUNNER_TEMP/$who" --items "$RUNNER_TEMP/items.json" --out "$E/judge-$who.json" --threads 4
+          done
+      - name: Gate (slice identical and pinned; 0 eval overlap; candidate judge AUC >= live judge AUC)
+        id: gate
+        run: |
+          set -euo pipefail
+          E="$RUNNER_TEMP/evals"; want=$(jq -r .eval.setcSliceSha256 "$CFG")
+          sl() { sed -n 's/.* slice_sha256=\([0-9a-f]*\) .*/\1/p' "$E/setc-$1.txt"; }
+          bpb() { sed -n 's/.* bits_per_byte=\([0-9.]*\).*/\1/p' "$E/setc-$1.txt"; }
+          a() { jq -r .summary.auc_exact "$E/judge-$1.json"; }
+          ok=true; why=()
+          [ "$(sl live)" = "$want" ] && [ "$(sl model)" = "$want" ] || { ok=false; why+=(slice); }
+          [ "$(jq -r .recheckOverlapDocs "$RUNNER_TEMP/w/dedup.json")" = 0 ] || { ok=false; why+=(overlap); }
+          python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' "$(a model)" "$(a live)" || { ok=false; why+=(judge_auc); }
+          v=$(jq -r .version "$RUNNER_TEMP/model/config.json"); w=$(sha256sum "$RUNNER_TEMP/model/weights.npz" | cut -c1-64)
+          [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad candidate version"; exit 1; }
+          jq -n --arg run "$GITHUB_RUN_ID" --arg ws "$GITHUB_SHA" --slurpfile cfg "$CFG" --slurpfile dd "$RUNNER_TEMP/w/dedup.json" \
+            --slurpfile jl "$E/judge-live.json" --slurpfile jm "$E/judge-model.json" --arg v "$v" --arg w "$w" \
+            --arg bl "$(bpb live)" --arg bm "$(bpb model)" --arg sl "$(sl live)" --arg sm "$(sl model)" --arg ok "$ok" --arg why "${why[*]:-}" \
+            --arg proof "$(sha256sum "$RUNNER_TEMP/model/corefree-proof-finetune.json" | cut -c1-64)" \
+            '{schema: "peaceai-lm-retrain-record:v1", runId: $run, workspaceSha: $ws, live: $cfg[0].live.version, candidate: $v, candidateWeightsSha256: $w,
+              commitList: $cfg[0].list, finetune: $cfg[0].finetune, dedup: $dd[0], finetuneCorefreeProofSha256: $proof,
+              setcV2: {maxBytes: $cfg[0].eval.setcMaxBytes, sliceSha256: {live: $sl, candidate: $sm}, bitsPerByte: {live: ($bl | tonumber), candidate: ($bm | tonumber)}},
+              judge364: {live: $jl[0].summary, candidate: $jm[0].summary},
+              gate: {pass: ($ok == "true"), failed: ($why | split(" ") | map(select(. != "")))}, promoted: false, memcheck: "pending (memcheck job, strict 32-character rule)"}' > "$E/record.json"
+          jq -c '{live, candidate, candidateWeightsSha256, bpb: .setcV2.bitsPerByte, judgeAuc: {live: .judge364.live.auc_derived_right_vs_wrong_mean, candidate: .judge364.candidate.auc_derived_right_vs_wrong_mean}, overlapDocs: .dedup.overlapDocs, gate}' "$E/record.json"
+          echo "pass=$ok" >> "$GITHUB_OUTPUT"
+          if [ "$ok" = true ]; then echo "version=$v" >> "$GITHUB_OUTPUT"; fi
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Land the run record (and, only on gate PASS, the candidate) in Results only (no latest.json; no promotion)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          MODEL_DIR: ${{ runner.temp }}/model
+          EVALS: ${{ runner.temp }}/evals
+          PASS: ${{ steps.gate.outputs.pass }}
+        run: |
+          set -euo pipefail
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain candidate (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              v=$(jq -r .version "$MODEL_DIR/config.json")
+              [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }
+              if [ -n "$(find "$MODEL_DIR" "$EVALS" -type l)" ]; then echo "landing refused: symlink"; exit 1; fi
+              r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"; test ! -e "$r"; mkdir -p "$r"; cp "$EVALS"/* "$r"/
+              allowed=("runs/lm-retrain/$GITHUB_RUN_ID/")
+              if [ "$PASS" = true ]; then d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp -P "$MODEL_DIR"/* "$d"/; allowed+=("models/lm/$v/"); fi
+              git -C "$RESULTS_DIR" add -A
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                okp=false; for p in "${allowed[@]}"; do [ "${name:0:${#p}}" = "$p" ] && okp=true; done
+                [ "$okp" = true ] || { echo "landing refused: path outside the run record and model dir"; exit 1; }
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/live" "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/evals"
+      - name: Result (fail unless the gate passed)
+        env:
+          PASS: ${{ steps.gate.outputs.pass }}
+        run: test "$PASS" = true || { echo "gate FAILED: record landed, candidate not landed"; exit 1; }
+
+  retrain-memcheck:
+    name: verbatim memcheck of the landed candidate (strict 32-character rule; counts only)
+    needs: [corpus-gate, finetune-eval-land]
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.finetune-eval-land.outputs.version != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    environment: peaceai-core
+    permissions:
+      contents: read
+    outputs:
+      memcheck: ${{ steps.mc.outputs.memcheck }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling and hash-pinned numpy
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Verify the checkout and the key scripts before any key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Fetch the landed candidate and the judge items (read-only key, sparse)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+          V: ${{ needs.finetune-eval-land.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_READ_KEY is not set: refused (fail closed)"; exit 1; }
+          [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
+          res="$RUNNER_TEMP/res"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$res"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone /lm-judge/items.json "/models/lm/$V/"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
+          if [ -n "$(find "$res/models/lm/$V" -type l)" ]; then echo "refused: symlink in model dir"; exit 1; fi
+          test "lm-v1-$(sha256sum "$res/models/lm/$V/weights.npz" | cut -c1-12)" = "$V" || { echo "weights do not hash to the version: refused"; exit 1; }
+          test "$(jq -r .retrain.runId "$res/models/lm/$V/config.json")" = "$GITHUB_RUN_ID" || { echo "model is not from this run: refused"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/model"; cp "$res/models/lm/$V"/* "$RUNNER_TEMP/model/"; cp "$res/lm-judge/items.json" "$RUNNER_TEMP/items.json"; rm -rf "$res"
+          rm -f "$RUNNER_TEMP/model"/memcheck.json
+      - name: Rebuild the exact training corpus (public prompts for the memcheck)
+        env:
+          DROPS: ${{ needs.corpus-gate.outputs.drops }}
+          MANIFEST: ${{ needs.corpus-gate.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          [[ "$DROPS" =~ ^([0-9]+(,[0-9]+)*)?$ && "$MANIFEST" =~ ^[0-9a-f]{64}$ ]] || { echo "bad corpus-gate outputs: refused"; exit 1; }
+          printf '%s' "$DROPS" | tr , '\n' > "$RUNNER_TEMP/drops.txt"
+          ./peaceai/bin/lm-retrain-corpus.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/drops.txt"
+          test "$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)" = "$MANIFEST" || { echo "rebuilt corpus differs: refused"; exit 1; }
+          test "$(jq -r .retrain.finetuneManifestSha256 "$RUNNER_TEMP/model/config.json")" = "$MANIFEST" || { echo "model was not trained on this corpus: refused"; exit 1; }
+          rm -rf "$RUNNER_TEMP/w/srcroot" "$RUNNER_TEMP/w/setc" "$RUNNER_TEMP/items.json"
+      - name: Verify the checkout and the key scripts before the core key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Clone core (read-only key, outside the workspace)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
+        run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
+      - name: Verbatim memcheck (strict 32-character rule: no training corpus given; counts only)
+        id: mc
+        env:
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+          PEACEAI_LM_MODEL_DIR: ${{ runner.temp }}/model
+          PEACEAI_LM_CORPUS: ${{ runner.temp }}/w/ft
+          PEACEAI_CORE_DIR: ${{ runner.temp }}/peaceai-core
+          PEACEAI_LM_THREADS: "4"
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true
+          M="$RUNNER_TEMP/model/memcheck.json"; test -f "$M" || { echo "no memcheck record"; exit 1; }
+          test "$(jq -r .substringRule "$M")" = strict || { echo "memcheck did not use the strict rule: refused"; exit 1; }
+          echo "memcheck=$(gzip -9c "$M" | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - name: Delete core, the model and the corpus
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/model" "$RUNNER_TEMP/res" "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json"
+
+  record-memcheck:
+    name: record the memcheck in Results (append-only; no promotion)
+    needs: [finetune-eval-land, retrain-memcheck]
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.retrain-memcheck.outputs.memcheck != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Decode the count-level memcheck record
+        env:
+          MC: ${{ needs.retrain-memcheck.outputs.memcheck }}
+          V: ${{ needs.finetune-eval-land.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/mc"; printf '%s' "$MC" | base64 -d | gunzip | head -c 5000000 > "$RUNNER_TEMP/mc/memcheck.json"
+          jq -e .status "$RUNNER_TEMP/mc/memcheck.json" > /dev/null
+          jq -r '"memcheck status=\(.status) rule=\(.substringRule)"' "$RUNNER_TEMP/mc/memcheck.json"
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Land memcheck.json next to the run record and the candidate (latest.json untouched)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          V: ${{ needs.finetune-eval-land.outputs.version }}
+          MC_DIR: ${{ runner.temp }}/mc
+        run: |
+          set -euo pipefail
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain memcheck (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              d="$RESULTS_DIR/models/lm/$V"; r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"
+              test -d "$d" && test -d "$r" && test ! -e "$d/memcheck.json" && test ! -e "$r/memcheck.json"
+              cp "$MC_DIR/memcheck.json" "$d/memcheck.json"; cp "$MC_DIR/memcheck.json" "$r/memcheck.json"
+              git -C "$RESULTS_DIR" add -A
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                [ "$name" = "models/lm/$V/memcheck.json" ] || [ "$name" = "runs/lm-retrain/$GITHUB_RUN_ID/memcheck.json" ] || { echo "landing refused: unexpected path"; exit 1; }
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          rm -rf "$RUNNER_TEMP/mc"
+      - name: Result (fail unless memcheck PASS; promotion still needs the Auditor's review of this run id and weights sha)
+        env:
+          MC: ${{ needs.retrain-memcheck.outputs.memcheck }}
+        run: test "$(printf '%s' "$MC" | base64 -d | gunzip | jq -r .status)" = PASS
