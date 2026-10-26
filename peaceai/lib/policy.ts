@@ -55,6 +55,45 @@ const ZERO_WIDTH = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u20
 const UNICODE_HYPHENS = /[\u2010-\u2015\u2043\u2212\u2E17\u2E1A\u2E3A\u2E3B\u2E40\u301C\u30A0\uFE31\uFE32\uFE58\uFE63\uFF0D]/g;
 const UNICODE_SPACES = /[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g;
 
+/**
+ * HTML entities GitHub renders in an issue body. Any other named entity (for example `&sopf;`, which renders as
+ * a letter) makes the task builder (`hasUnknownEntity`), so nothing can be spelled through an entity this table
+ * does not decode.
+ */
+const NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00A0", lpar: "(", rpar: ")", colon: ":", semi: ";",
+  comma: ",", period: ".", excl: "!", quest: "?", num: "#", percnt: "%", dollar: "$", commat: "@", ast: "*",
+  midast: "*", plus: "+", equals: "=", sol: "/", bsol: "\\", verbar: "|", vert: "|", VerticalLine: "|",
+  lowbar: "_", UnderBar: "_", grave: "`", DiacriticalGrave: "`", Hat: "^", lsqb: "[", lbrack: "[", rsqb: "]",
+  rbrack: "]", lcub: "{", lbrace: "{", rcub: "}", rbrace: "}", hyphen: "\u2010", dash: "\u2010", ndash: "\u2013",
+  mdash: "\u2014", minus: "\u2212", shy: "\u00AD", ensp: "\u2002", emsp: "\u2003", thinsp: "\u2009",
+  ZeroWidthSpace: "\u200B", zwnj: "\u200C", zwj: "\u200D", NoBreak: "\u2060", Tab: "\t", NewLine: "\n",
+  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201C", rdquo: "\u201D", hellip: "\u2026", middot: "\u00B7",
+  times: "\u00D7", divide: "\u00F7", deg: "\u00B0", copy: "\u00A9", reg: "\u00AE", trade: "\u2122",
+  rarr: "\u2192", larr: "\u2190", harr: "\u2194", uarr: "\u2191", darr: "\u2193", le: "\u2264", ge: "\u2265",
+  ne: "\u2260", asymp: "\u2248", bull: "\u2022", sect: "\u00A7", para: "\u00B6", euro: "\u20AC", pound: "\u00A3",
+};
+const NAMED_ENTITY = /&([A-Za-z][A-Za-z0-9]{0,31});/g;
+const codePoint = (n: number): string => (n > 0 && n <= 0x10ffff && (n < 0xd800 || n > 0xdfff) ? String.fromCodePoint(n) : "\uFFFD");
+
+/**
+ * Decodes HTML entities once, as GitHub renders them: `&#40;`, `&#x28;` and the named entities above.
+ * `lenient` also decodes numeric references without the closing `;` (used only to find contrary clauses, so
+ * more decoding can only give builder); the credit line uses the strict, rendered form.
+ */
+export function decodeEntities(text: string, lenient = false): string {
+  const numeric = lenient ? /&#(?:[xX]([0-9a-fA-F]{1,6})|(\d{1,7}));?/g : /&#(?:[xX]([0-9a-fA-F]{1,6})|(\d{1,7}));/g;
+  return text.replace(new RegExp(`${numeric.source}|${NAMED_ENTITY.source}`, "g"), (m, hex?: string, dec?: string, name?: string) =>
+    hex !== undefined ? codePoint(parseInt(hex, 16)) : dec !== undefined ? codePoint(parseInt(dec, 10)) : name !== undefined && Object.hasOwn(NAMED_ENTITIES, name) ? NAMED_ENTITIES[name]! : m,
+  );
+}
+
+/** True when the text holds a named entity `decodeEntities` does not know (fail closed: builder). */
+export function hasUnknownEntity(text: string): boolean {
+  for (const m of text.matchAll(NAMED_ENTITY)) if (!Object.hasOwn(NAMED_ENTITIES, m[1]!)) return true;
+  return false;
+}
+
 /** Text as compared for provenance: zero-width characters removed, NFKC, unicode hyphens and spaces folded. */
 export function normalizeProvenance(text: string): string {
   return text
@@ -138,21 +177,107 @@ function clausesAllPeace(normalized: string): boolean {
   return true;
 }
 
-/** The Context credit line(s) of the stripped body, with quoted and backticked spans removed. */
+/** The Context credit line(s) of the stripped body (raw markup; see `visibleCreditText`). */
 export function contextCreditLines(normalized: string): string[] {
   return stripNonCredit(normalized)
     .split("\n")
-    .filter((l) => CONTEXT_LINE.test(l))
-    .map((l) => l.replace(/"[^"\n]*"?|\u201C[^\u201D\n]*\u201D?|`[^`\n]*`?/g, " "));
+    .filter((l) => CONTEXT_LINE.test(l));
+}
+
+/** Cuts the line at `i` (an unclosed construct hides everything after it, so nothing after it counts). */
+const cutAt = (s: string, i: number): string => (i < 0 ? s : s.slice(0, i));
+
+/** Markdown links and images: an image is dropped whole (alt, destination, title); a link keeps only its text. */
+function dropLinks(s: string): string {
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    const image = s.startsWith("![", i);
+    if (!image && s[i] !== "[") {
+      out += s[i++];
+      continue;
+    }
+    const open = image ? i + 1 : i;
+    let depth = 0;
+    let close = -1;
+    for (let j = open; j < s.length; j++) {
+      if (s[j] === "\\") j++;
+      else if (s[j] === "[") depth++;
+      else if (s[j] === "]" && --depth === 0) {
+        close = j;
+        break;
+      }
+    }
+    if (close < 0) return out + s.slice(i, i + 1) + dropLinks(s.slice(i + 1)); // literal bracket
+    const text = s.slice(open + 1, close);
+    const next = s[close + 1];
+    let end = -1;
+    if (next === "(" || next === "[") {
+      const [o, c] = next === "(" ? ["(", ")"] : ["[", "]"];
+      let d = 0;
+      for (let j = close + 1; j < s.length; j++) {
+        if (s[j] === "\\") j++;
+        else if (s[j] === o) d++;
+        else if (s[j] === c && --d === 0) {
+          end = j;
+          break;
+        }
+      }
+      if (end < 0) return out; // unclosed destination or title: hides the rest of the line
+    } else end = close; // [text] with no destination: literal text
+    out += image ? " " : ` ${dropLinks(text)} `;
+    i = end + 1;
+  }
+  return out;
+}
+
+/**
+ * The text a reader actually sees on the credit line: backticked spans, `~~` / `~` strikethrough, `<del>`,
+ * `<s>` and `<strike>` with their content, HTML tags with all their attributes (so `<img alt=...>` is gone),
+ * autolinks and bare URLs, image alt text and link destinations and titles are removed, and quoted spans are blanked. An
+ * unclosed construct removes the rest of the line. Any markup left over after that (a stray `<tag`, `](`
+ * or `~`) also removes the rest of the line.
+ */
+export function visibleCreditText(line: string): string {
+  let s = line.replace(/`+[^`]*`+/g, " ");
+  s = cutAt(s, s.indexOf("`"));
+  s = s.replace(/<(del|s|strike)\b(?:\s[^>]*)?>[\s\S]*?<\/\1\s*>/gi, " ");
+  s = cutAt(s, s.search(/<\s*(?:del|s|strike)\b/i));
+  s = s.replace(/(~+)[^~]+\1/g, " ");
+  s = cutAt(s, s.indexOf("~"));
+  s = s.replace(/<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/g, " ");
+  s = s.replace(/<\/?[A-Za-z][A-Za-z0-9-]*(?:\s+[^\s"'=<>`/]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*\s*\/?>/g, " ");
+  s = cutAt(s, s.search(/<\/?[A-Za-z!?]/));
+  s = dropLinks(s);
+  s = cutAt(s, s.indexOf("]("));
+  s = s.replace(/\b(?:https?:\/\/|www\.)[^\s<]*/gi, " "); // bare URLs (autolinked) never carry the mark
+  return s.replace(/"[^"\n]*"?|\u201C[^\u201D\n]*\u201D?/g, " ");
+}
+
+/**
+ * The credit marker as it must stand in the visible credit text: `(source: peace)` closing the credit clause,
+ * followed only by the end of the line or a sentence end (`.` then a space or the end). Every real credit line
+ * reads `... Peace's task (source: peace). <context sentences>`, so text after the sentence end is allowed;
+ * anything glued to the marker (`~~`, `)`, `'`, `*`, `]`, `>`) is not.
+ */
+const VISIBLE_PEACE_MARK = /\(\s*source\s*:\s*peace\s*\)(?=\s*$|\.(?:\s|$))/i;
+
+/** The visible text of the body's single credit line, or null when there is not exactly one. */
+export function creditLineVisible(body: unknown): string | null {
+  const text = normalizeProvenance(decodeEntities(typeof body === "string" ? body : ""));
+  const lines = contextCreditLines(text);
+  return lines.length === 1 ? visibleCreditText(lines[0]!).replace(/\s+/g, " ").trim() : null;
 }
 
 /** Task source from provenance (see the block comment above). Anything unclear is `builder`. */
 export function taskSource(labels: readonly unknown[], body: unknown): "peace" | "builder" {
   if (!Array.isArray(labels) || hasBuilderLabel(labels)) return "builder";
-  const text = normalizeProvenance(typeof body === "string" ? body : "");
-  if (TEAM_PICKED_MARK.test(text) || !clausesAllPeace(text)) return "builder";
-  const credit = contextCreditLines(text);
-  return credit.length === 1 && SOURCE_PEACE_MARK.test(credit[0]!) ? "peace" : "builder";
+  const raw = typeof body === "string" ? body : "";
+  if (hasUnknownEntity(raw)) return "builder";
+  for (const text of [normalizeProvenance(raw), normalizeProvenance(decodeEntities(raw, true))])
+    if (TEAM_PICKED_MARK.test(text) || !clausesAllPeace(text)) return "builder";
+  const credit = creditLineVisible(raw);
+  return credit !== null && VISIBLE_PEACE_MARK.test(credit) ? "peace" : "builder";
 }
 
 /** sha256 (hex) of the issue body exactly as fetched (UTF-8); recorded in task.json as `bodySha256`. */

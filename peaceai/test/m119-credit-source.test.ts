@@ -9,8 +9,9 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodySha256, bodyUnchangedSinceLabel, contextCreditLines, normalizeProvenance, recordedTaskSource,
-  SOURCE_PEACE_MARK, stripNonCredit, taskSource, TEAM_PICKED_MARK,
+  BUILDER_LABEL, bodySha256, bodyUnchangedSinceLabel, contextCreditLines, creditLineVisible, decodeEntities,
+  hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
+  TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
 import { buildRecords, taskSourceOf } from "../lib/records.ts";
 
@@ -129,6 +130,76 @@ test("BLOCKING 3: any non-peace (source ...: clause anywhere means builder", () 
     assert.equal(src(issue(CTX_GENUINE, "```", c, "```")), "builder", `fence: ${c}`);
     assert.equal(src(issue(CTX_GENUINE, `> ${c}`)), "builder", `quote: ${c}`);
   }
+});
+
+// Round 3 (Auditor NOT PASS at a92d0b9).
+const CTX = "Context (Builder pre-file, behavior only): Peace's task";
+test("B1: a mark hidden in link, image or HTML markup or struck through on the credit line gives builder", () => {
+  for (const line of [
+    `${CTX} [notes](https://x/a(source: peace)). Slice 3.`, // link URL with balanced parentheses
+    `${CTX} [notes](https://x/a(source: peace))`,
+    `${CTX} [n](https://x '(source: peace)'). Slice 3.`, // single-quoted link title
+    `${CTX} [n](https://x "(source: peace)"). Slice 3.`, // double-quoted link title
+    `${CTX} [n](https://x ((source: peace))). Slice 3.`, // parenthesized link title
+    `${CTX} [n][r] [r]: https://x/(source: peace)`, // inline "definition" is visible text, but a URL never carries the mark
+    `${CTX} https://x/(source: peace)`,
+    `${CTX} www.x.com/(source: peace)`,
+    `${CTX} ![(source: peace)](x.png). Slice 3.`, // image alt text
+    `${CTX} ![(source: peace)](x.png)`,
+    `${CTX} ![(source: peace)][img]`,
+    `${CTX} <img alt='(source: peace)'>. Slice 3.`, // HTML attribute
+    `${CTX} <img src="x.png" alt="(source: peace)" />`,
+    `${CTX} <img alt='(source: peace)'`, // unclosed tag hides the rest of the line
+    `${CTX} <a title=(source:peace)>x</a>`,
+    `${CTX} <https://x/(source:peace)>`,
+    `${CTX} ~~old wording (source: peace)~~. Slice 3.`, // strikethrough
+    `${CTX} ~~old wording (source: peace)~~`,
+    `${CTX} ~old wording (source: peace)~`,
+    `${CTX} ~~old wording (source: peace)`, // unclosed strikethrough
+    `${CTX} <del>(source: peace)</del>. Slice 3.`,
+    `${CTX} <del class="x">(source: peace)</del>`,
+    `${CTX} <s>(source: peace)</s>. Slice 3.`,
+    `${CTX} <S>(source: peace)</S>`,
+    `${CTX} <strike>(source: peace)</strike>`,
+    `${CTX} <del>(source: peace)`, // unclosed <del>
+    `${CTX} \`(source: peace)\`. Slice 3.`,
+    // something visible glued to the marker
+    `${CTX} (source: peace)'). Slice 3.`,
+    `${CTX} **(source: peace)**. Slice 3.`,
+    `${CTX} (source: peace)x`,
+  ]) {
+    assert.equal(src(issue(line)), "builder", line);
+    assert.equal(src(issue(line, "Slice 3 of Peace's system.")), "builder", line);
+  }
+  // visible text keeps the link text and nothing of the markup
+  assert.equal(visibleCreditText("a [notes](https://x/a(source: peace)) b").replace(/\s+/g, " "), "a notes b");
+  assert.equal(visibleCreditText("a ![(source: peace)](x.png) <img alt='(source: peace)'> b").replace(/\s+/g, " "), "a b");
+  assert.equal(visibleCreditText("a ~~x (source: peace)~~ <del>y</del> <s>z</s> b").replace(/\s+/g, " "), "a b");
+  // the genuine forms still give peace: end of line, sentence end, a visible link elsewhere on the line
+  for (const line of [`${CTX} (source: peace)`, `${CTX} (source: peace).`, `${CTX} (source: peace). See [the log](https://x/y(z)).`, `${CTX} (source: peace) `])
+    assert.equal(src(issue(line)), "peace", line);
+});
+
+test("B2: entity-encoded contrary clauses and hidden entities give builder", () => {
+  for (const extra of [
+    "&#40;source: builder&#41;", "&lpar;source: builder&rpar;", "&#x28;source&colon; builder&#x29;", "&#40source: builder&#41",
+    "(&#115;ource: builder)", "(source&#58; builder)", "(sou&#8203;rce: builder)", "Team&#8209;picked task", "Team&hyphen;picked",
+    "&lpar;source: team-picked&rpar;",
+  ]) {
+    assert.equal(src(issue(CTX_GENUINE, extra)), "builder", extra);
+    assert.equal(src(issue(`${CTX_GENUINE} ${extra}`)), "builder", extra);
+  }
+  // an entity this decoder does not know could spell a letter (&sopf; renders as a double-struck s)
+  assert.equal(hasUnknownEntity("(&sopf;ource: builder)"), true);
+  assert.equal(src(issue(CTX_GENUINE, "(&sopf;ource: builder)")), "builder");
+  // an encoded marker on the credit line is what GitHub renders, so it is the visible marker
+  assert.equal(src(issue(`${CTX} &#40;source: peace&#41;. Slice 3.`)), "peace");
+  assert.equal(src(issue(`${CTX} &lpar;source&colon; peace&rpar;. Slice 3.`)), "peace");
+  // a semicolon-less reference is literal text when rendered: it is no credit, but it is a contrary clause
+  assert.equal(src(issue(`${CTX} &#40source: peace). Slice 3.`)), "builder");
+  assert.equal(decodeEntities("&#40;&lpar;&#x29;&rpar;&amp;lpar;&nosuch;"), "(())&lpar;&nosuch;");
+  assert.equal(decodeEntities("&#40x", true), "(x");
+  assert.equal(creditLineVisible(issue(`${CTX} &#40;source: peace&#41;.`)), `${CTX} (source: peace).`);
 });
 
 test("the source:builder label check is trimmed and case-insensitive", () => {
