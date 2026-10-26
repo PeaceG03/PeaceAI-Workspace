@@ -32,11 +32,13 @@ export const BUILDER_LABEL = "source:builder";
  *
  * `peace` is an ALLOW-match: only when ALL of these hold, otherwise `builder` (fail closed):
  *  1. no `source:builder` label (compared trimmed and case-insensitive);
- *  2. after normalization (zero-width characters removed, NFKC, unicode hyphens -> "-") and after stripping
- *     HTML comments, fenced and indented code, blockquote lines and the Examples block, the body has exactly
- *     ONE credit line (a top-level line starting `Context ...:`, or the older `(Builder pre-file, ...):`
- *     form), and that line itself, outside any quoted or backticked span, carries `(source: peace)`;
- *  3. every `(source ...:` clause anywhere in the normalized body, stripped regions included, is exactly
+ *  2. after HTML-entity decoding and normalization (zero-width characters removed, NFKC, unicode hyphens -> "-")
+ *     and after stripping HTML comments, fenced and indented code, blockquote lines and the Examples block, the
+ *     body has exactly ONE credit line (a top-level line starting `Context ...:`, or the older
+ *     `(Builder pre-file, ...):` form), and that line's VISIBLE text (visibleCreditText: no link or image
+ *     destinations, titles or alt text, no HTML tags or attributes, no struck-through, code or quoted spans)
+ *     carries `(source: peace)` closing the credit clause;
+ *  3. every `(source ...:` clause anywhere in the normalized body (raw and entity-decoded), stripped regions included, is exactly
  *     `(source: peace)` (so `(source : builder)`, `( source: builder)` or a zero-width-split `source` all
  *     give builder);
  *  4. no team-picked wording anywhere in the normalized body (Team-picked, Teampicked, Builder-picked,
@@ -48,9 +50,8 @@ export const BUILDER_LABEL = "source:builder";
  *
  * Builder-log exception (ruling, not code): builder-log rows seq 98-122 (#233, #240, #248, #255, #259, #262,
  * #288-#290, #293-#295, #297-#299, #301, #319, #329) stay credited as Peace's real tasks although those issue
- * bodies carry no credit line. That rests on Peace's own Oct 16 2026 confirmation that Builder-drafted tasks
- * filed as Peace's tasks count toward PeaceAI coverage, with the "Builder pre-file" note kept in the issue body
- * (see README "Task source"). It does not apply to new tasks: a new task without a Context credit line is
+ * bodies carry no credit line. Source: Peace, Auditor chat, Oct 16 2026 8:06 PM MT, replying to the #329 question ('Go ahead that's fine'); relayed by Auditor; no public link.
+ * (See README "Task source".) It does not apply to new tasks: a new task without a Context credit line is
  * recorded as `builder` here.
  */
 const ZERO_WIDTH = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0]/g;

@@ -81,19 +81,27 @@ neither the account nor who edited the body can be attributed). `peace` is an al
 `taskSource`); anything else is `builder` (not Peace's):
 
 - no `source:builder` label (compared trimmed and case-insensitive);
-- the body is normalized (zero-width characters removed, NFKC, unicode hyphens folded to `-`), then HTML comments,
+- HTML entities (numeric and named) are decoded first (a named entity outside the known table gives builder),
+  then the body is normalized (zero-width characters removed, NFKC, unicode hyphens folded to `-`); HTML comments,
   fenced and indented code, blockquote lines and the Examples block are stripped, and what is left has exactly
   **one credit line**: a top-level line starting `Context (...):` (or the older `(Builder pre-file, ...):` form of
-  #353-#488) that itself carries `(source: peace)` outside any quoted or backticked span;
-- every `(source ...:` clause anywhere in the normalized body, stripped regions included, is exactly
-  `(source: peace)`; so `(source : builder)`, `( source: builder)` or a zero-width-split `source` give builder;
+  #353-#488);
+- the credit line's **visible text** carries `(source: peace)` closing the credit clause (followed only by the end
+  of the line or a sentence end): link and image destinations, titles and alt text, HTML tags with all their
+  attributes, autolinks and bare URLs, code spans, quoted spans, and `~~` / `~` / `<del>` / `<s>` / `<strike>`
+  content don't count, and an unclosed construct hides the rest of the line;
+- every `(source ...:` clause anywhere in the body, stripped regions included and with entities decoded, is
+  exactly `(source: peace)`; so `(source : builder)`, `( source: builder)`, a zero-width-split `source` or
+  `&#40;source: builder&#41;` give builder;
 - no team-picked wording anywhere (Team-picked / Teampicked / Builder-picked, chosen by the team, Peace asked us or
   the team to pick, not credited as ...).
 
-It is decided at pick time and again by Job C, which also requires the body it fetches to have the pick-time
-sha256 and no body edit after the issue's first `peace-task` label event (GitHub `userContentEdits` and
-`LabeledEvent` timeline). Job C stores `source` (`peace` | `builder`) and `bodySha256` (sha256 of the full body)
-in `task.json`; a record without `source` reads as `builder`.
+It is decided at pick time and again by Job C, with the labels re-read at record time. Job C also requires that
+no `source:builder` label was ever added, and that the credit line's visible text at the issue's FIRST
+`peace-task` label event (the body revision then, reconstructed from GitHub `userContentEdits`) is identical to
+its visible text at record time, with complete edit history. Edits elsewhere in the body (added examples, notes)
+don't affect credit. Job C stores `source` (`peace` | `builder`) and `bodySha256` (sha256 of the full body, for
+traceability) in `task.json`; a record without `source` reads as `builder`.
 
 **New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
 Peace's own task: `Context (Builder pre-file, ...): Peace's task (source: peace). ...`; a team-picked task says
@@ -101,10 +109,7 @@ so on that line (`Team-picked task (...; not credited as source: peace ...)`) an
 
 Ruling on older rows (builder-log, not this code): builder-log seq 98-122 (#233, #240, #248, #255, #259, #262,
 #288-#290, #293-#295, #297-#299, #301, #319, #329) stay credited as Peace's real tasks although those issue bodies
-carry no credit line, under Peace's Oct 16 2026 confirmation (relayed to the team by Auditor; no public link):
-Builder-drafted tasks filed as Peace's tasks count toward PeaceAI coverage, no separation needed, but the
-"Builder pre-file" note stays in the issue body. Their Results records say `source: "peace"`; no new task gets
-this exception.
+carry no credit line. Source: Peace, Auditor chat, Oct 16 2026 8:06 PM MT, replying to the #329 question ('Go ahead that's fine'); relayed by Auditor; no public link. Their Results records say `source: "peace"`; no new task gets this exception.
 
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.
