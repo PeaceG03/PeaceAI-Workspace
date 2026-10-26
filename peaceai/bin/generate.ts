@@ -290,7 +290,7 @@ for (const a of planSteps ? [] : admissions) {
   const why: { reason?: string; questions?: string } = {};
   // M99: DERIVE_FROM_BEHAVIOR also checks the raw body (fenced code / HTML comments are dropped by cleaning).
   if (a.spec.kind === "DERIVE_FROM_BEHAVIOR") { const r = rawIssueProblem(task.body); if (r) { ruleRefusals.push({ id: a.spec.id, reason: r }); continue; } }
-  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists, [...scanOnlyFiles, ...workflowFiles]); // Auditor #135: full ls-files + disk
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists, [...scanOnlyFiles, ...workflowFiles], `${task.title}\n\n${task.body}`); // Auditor #135: full ls-files + disk; M114: the uncleaned text, read only by the v5 derive rule's example strings
   if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); if (why.questions && !ruleQuestions) ruleQuestions = why.questions; continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).

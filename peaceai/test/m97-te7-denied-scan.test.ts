@@ -83,11 +83,11 @@ test("(2) scanning never makes a denied file a target: Job A refuses a task nami
   assert.match(gen, /const repoLists = repoFileLists\(tracked, scope, /);
   assert.match(gen, /const candidatesForContext = repoLists\.context;\nconst scanOnlyFiles = repoLists\.scan;/);
   assert.equal((gen.match(/scanOnlyFiles/g) ?? []).length, 2, "the scan list is used once: the applyRule scan argument");
-  assert.match(gen, /applyRule\(a\.spec, objectiveText, \[\.\.\.candidatesForContext, \.\.\.workflowFiles\], scope\.isTest, target, why, newPathExists, \[\.\.\.scanOnlyFiles, \.\.\.workflowFiles\]\)/);
+  assert.match(gen, /applyRule\(a\.spec, objectiveText, \[\.\.\.candidatesForContext, \.\.\.workflowFiles\], scope\.isTest, target, why, newPathExists, \[\.\.\.scanOnlyFiles, \.\.\.workflowFiles\](?:, `\$\{task\.title\}\\n\\n\$\{task\.body\}`)?\)/); // M114: + the raw issue text (read only by the v5 derive rule)
   assert.match(tc, /const repo = repoFileLists\(gitIn\(tree, "ls-files", "-z", "--cached", "--others", "--exclude-standard"\)\.split\("\\0"\), scope, regular\)\.scan;/);
   const lib = read("peaceai/lib/learned.ts");
   assert.match(lib, /return runExistingTestRule\(spec\.trigger, spec\.params, objective, files, isTest, why, scan\);/);
-  assert.match(lib, /const edit = applyRuleInner\(spec, objective, files, isTest, repo, why, scan\);/);
+  assert.match(lib, /const edit = applyRuleInner\(spec, objective, files, isTest, repo, why, scan(?:, raw)?\);/); // M114: + raw (read only by the v5 derive rule)
 });
 
 test("(3) the scan caps count denied files and fail closed", () => {

@@ -18,7 +18,7 @@ import { LEARNED_CANONICAL, parseTask, type LearnedTriggerName } from "../lib/nl
 import { TSCONFIG_SCRIPT_TRIGGER } from "../lib/tsconfig-script.ts";
 import { WORKFLOW_JOB_TRIGGER } from "../lib/workflow-job.ts";
 import { EXISTING_EDIT_TRIGGER } from "../lib/learned-edit-existing.ts";
-import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_TRIGGER } from "../lib/learned-derive.ts";
+import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER } from "../lib/learned-derive.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const KINDS: Record<LearnedTriggerName, string> = {
@@ -29,6 +29,7 @@ const KINDS: Record<LearnedTriggerName, string> = {
   envFix: "ENV_FIX", dateFunction: "COMPLEX_FUNCTION", testExisting: "TEST_EXISTING", existingEdit: "EXISTING_EDIT", deriveFromBehavior: "DERIVE_FROM_BEHAVIOR",
   deriveAppend: "DERIVE_FROM_BEHAVIOR",
   deriveList: "DERIVE_FROM_BEHAVIOR",
+  deriveString: "DERIVE_FROM_BEHAVIOR",
 };
 const ENGINE: Partial<Record<LearnedTriggerName, string>> = {
   testCase: TEST_TRIGGER, throwGuard: GUARD_TRIGGER, addFunction: FUNCTION_TRIGGER, workflowStep: WORKFLOW_TRIGGER, replaceExpression: REPLACE_TRIGGER,
@@ -37,6 +38,7 @@ const ENGINE: Partial<Record<LearnedTriggerName, string>> = {
   envFix: ENV_FIX_TRIGGER, dateFunction: DATE_TRIGGER, testExisting: TEST_EXISTING_TRIGGER, existingEdit: EXISTING_EDIT_TRIGGER, deriveFromBehavior: DERIVE_TRIGGER,
   deriveAppend: DERIVE_APPEND_TRIGGER,
   deriveList: DERIVE_LIST_TRIGGER,
+  deriveString: DERIVE_STRING_TRIGGER,
 };
 
 test("every learned trigger is keyed by name with its pinned kind, and each name maps to its own engine trigger", () => {

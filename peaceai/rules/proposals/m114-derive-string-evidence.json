@@ -1,0 +1,3672 @@
+{
+ "schema": "peaceai-m114-derive-string-evidence:v1",
+ "note": "M114 evidence for public-derive-from-behavior-v5: 34 one-expression string functions from 25 permissively licensed repos (MIT / Apache-2.0; GPL, AGPL, unlicensed and NOASSERTION repos were dropped). Each entry is re-derived by deriveStringProgram from a seeded grid of input lines built from its own tokens and delimiters (seed 114): the first 6 grid rows, then only the rows the refusals asked for (every asked row of a round answered by the upstream function itself), else the next grid row, at most 40 rows; the derived program is then checked against the upstream function on every other grid row and on 400 probe rows from strProbeTable. 30 in-vocabulary functions derive with 0 wrong on 12806 held-out rows. 4 entries are marked outOfVocabulary on purpose (trimStart before a two-character prefix, `.pop() || path`, `split()[1] || \"main\"`, `slice(1)`): 1 is refused (derive_no_fit) and 3 derive an in-vocabulary program that agrees with every example but is wrong on some held-out rows (wrongAt lists the first three). This is the disclosed out-of-vocabulary limit: v5 misses no in-vocabulary rival fit, but it cannot know a function outside its vocabulary. Upstream text, commit, path, git blob sha and sha256 of the fetched file are recorded per entry.",
+ "functions": [
+  {
+   "repo": "GMOD/ucsc-hub-js",
+   "commit": "6094330caed8d2e3961ced7becd4f89fdff5f67e",
+   "path": "src/util.ts",
+   "fn": "isComment",
+   "license": "MIT",
+   "fileBlob": "75dcb34c10fffd75396fed073f3ee0ff715450f2",
+   "sha256": "5ae6e8da1a0024015abd4e1ac0491b4a1a7d464ee00b65a99c0e7d1f2fd8d626",
+   "upstream": "export function isComment(line: string) {\n  return line.trim().startsWith('#')\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "  # y   # y"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a#b # x track x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "# x"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "track # x a#b x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "  # y "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "#"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "zz# y   # y"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "## y   # y"
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"#\") gives true",
+    "derive_ambiguous: (\"zz# y   # y\") gives false",
+    "derive_ambiguous: (\"## y   # y\") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\"#\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 435,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "Otto-Schmitz/smart-gitignore",
+   "commit": "deb61030562cbef84ef6406b429a31ce28f2fd38",
+   "path": "src/normalize.ts",
+   "fn": "isComment",
+   "license": "MIT",
+   "fileBlob": "26daf78f912382f6d2923f1eae7c3e59c0c5bf82",
+   "sha256": "4c537eecd7044f4896d49ff27352b654c1289a6712a77038a779dfb5bbe7903e",
+   "upstream": "export function isComment(line: string): boolean {\n  return line.trim().startsWith('#');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "dist/ a#"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "dist/ # # deps a#"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "#"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "# deps # dist/ a# "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "dist/ "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " # "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "#dist/ a#"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "zz#"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\" # \") gives true",
+    "derive_ambiguous: (\"#dist/ a#\") gives true",
+    "derive_ambiguous: (\"zz#\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\"#\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "Otto-Schmitz/smart-gitignore",
+   "commit": "deb61030562cbef84ef6406b429a31ce28f2fd38",
+   "path": "src/normalize.ts",
+   "fn": "isBlank",
+   "license": "MIT",
+   "fileBlob": "26daf78f912382f6d2923f1eae7c3e59c0c5bf82",
+   "sha256": "4c537eecd7044f4896d49ff27352b654c1289a6712a77038a779dfb5bbe7903e",
+   "upstream": "export function isBlank(line: string): boolean {\n  return line.trim() === '';\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "   "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "dist  x  "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "x  dist   "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "dist "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " dist  "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "d"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "i"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "di"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"d\") gives false",
+    "derive_ambiguous: (\"i\") gives false",
+    "derive_ambiguous: (\"di\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim() === \"\"",
+   "shape": "test",
+   "heldOut": {
+    "right": 335,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "PhyschicWinter9/thai-adblock-list",
+   "commit": "dbb4dc233147f39ca4085aaefb4602e4082200e6",
+   "path": "src/lib/utils.ts",
+   "fn": "isComment",
+   "license": "MIT",
+   "fileBlob": "9fceb879c7be8509682ee6fa7647c852a5477230",
+   "sha256": "d94e689bfb31fd8dc68f42ba600a312dff51a6b1effe36620b9d0126fb44c31b",
+   "upstream": "export function isComment(rule: string): boolean {\n  return rule.trim().startsWith('!');\n}",
+   "params": [
+    {
+     "name": "rule",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "a!b x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "a!b ! ||ads.com^ x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "!"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "||ads.com^ ! a!b x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "a!b "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "! a!b ! title "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " ! "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "!b x"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "|!"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "!b ! ||ads.com^ x"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a!b ! ||ads.!"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ". ! "
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"! a!b ! title \") gives true",
+    "derive_ambiguous: (\" ! \") gives true",
+    "derive_ambiguous: (\"!b x\") gives true",
+    "derive_ambiguous: (\"|!\") gives false",
+    "derive_ambiguous: (\"!b ! ||ads.com^ x\") gives true",
+    "derive_ambiguous: (\"a!b ! ||ads.!\") gives false",
+    "derive_ambiguous: (\". ! \") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "rule.trim().startsWith(\"!\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "rioskit/obsidian-todo-txt-mode",
+   "commit": "fa3c69e9a831a1a96ca071849967ebc7f32a0b55",
+   "path": "src/utils/todotxt-core/parser.ts",
+   "fn": "isDueDateKeyValue",
+   "license": "MIT",
+   "fileBlob": "779a51885504edb6e85b66996117f994e41d6f77",
+   "sha256": "ffb7be13ad08ded9d0766b84f627d5c604214709ab974b958423b5388c21340f",
+   "upstream": "export function isDueDateKeyValue(keyValue: string): boolean {\n    return keyValue.startsWith('due:');\n}",
+   "params": [
+    {
+     "name": "keyValue",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "duexdue:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "due:due::rec:1w:xdue:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "due:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "rec:1w:due::due:xdue: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "due "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "due"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " due: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "due: duexdue:"
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"due\") gives false",
+    "derive_ambiguous: (\" due: \") gives false",
+    "derive_ambiguous: (\"due: duexdue:\") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "keyValue.startsWith(\"due:\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "rioskit/obsidian-todo-txt-mode",
+   "commit": "fa3c69e9a831a1a96ca071849967ebc7f32a0b55",
+   "path": "src/utils/todotxt-core/parser.ts",
+   "fn": "isCommentLine",
+   "license": "MIT",
+   "fileBlob": "779a51885504edb6e85b66996117f994e41d6f77",
+   "sha256": "ffb7be13ad08ded9d0766b84f627d5c604214709ab974b958423b5388c21340f",
+   "upstream": "export function isCommentLine(line: string): boolean {\n    return line.trim().startsWith('#');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "a# a#"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x # task a#"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "#"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "task # x a# "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "# x # "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " # "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "#a# a#"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "# a#"
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"# x # \") gives true",
+    "derive_ambiguous: (\" # \") gives true",
+    "derive_ambiguous: (\"#a# a#\") gives true",
+    "derive_ambiguous: (\"# a#\") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\"#\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 433,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "rioskit/obsidian-todo-txt-mode",
+   "commit": "fa3c69e9a831a1a96ca071849967ebc7f32a0b55",
+   "path": "src/utils/todotxt-core/parser.ts",
+   "fn": "isCompletedTask",
+   "license": "MIT",
+   "fileBlob": "779a51885504edb6e85b66996117f994e41d6f77",
+   "sha256": "ffb7be13ad08ded9d0766b84f627d5c604214709ab974b958423b5388c21340f",
+   "upstream": "export function isCompletedTask(line: string): boolean {\n    return line.trimStart().startsWith('x ');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "(A) x2"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(A) x xx x2"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx x (A) x2 "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(A) "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x (A) task "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " x2"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx (A) x (A) "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " xx "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " x2 (A) x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "task"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx xx x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "task x2"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx (A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(A) xx x xx"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "task x (A) task"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " task x2 xx"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(A) x2 x2 (A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " (A) "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx task task x2 "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x2 x2 (A) (A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx xx "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " (A) x task x2"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x2 xx (A) (A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xx task xx xx "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " (A) x x2 (A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " xx task x2 task "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "task xx "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " task x (A)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x task x "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "x ) x2"
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"x (A) task \") gives true",
+    "derive_under_specified_outputs (next grid row): (\" x2\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"xx (A) x (A) \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" xx \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" x2 (A) x\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"task\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"xx xx x\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"task x2\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"xx (A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\" \") gives false",
+    "derive_under_specified_outputs (next grid row): (\"(A) xx x xx\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"task x (A) task\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"(A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\" task x2 xx\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"(A) x2 x2 (A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\" (A) \") gives false",
+    "derive_under_specified_outputs (next grid row): (\"xx task task x2 \") gives false",
+    "derive_under_specified_outputs (next grid row): (\"x2 x2 (A) (A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"xx xx \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" (A) x task x2\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"x2 xx (A) (A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"xx task xx xx \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" (A) x x2 (A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\" xx task x2 task \") gives false",
+    "derive_under_specified_outputs (next grid row): (\"task xx \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" task x (A)\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"x task x \") gives true",
+    "derive_ambiguous: (\"x \") gives true",
+    "derive_ambiguous: (\"x ) x2\") gives true"
+   ],
+   "outOfVocabulary": true,
+   "expr": "line.startsWith(\"x \")",
+   "shape": "test",
+   "heldOut": {
+    "right": 407,
+    "wrong": 7
+   },
+   "wrongAt": [
+    "[\" x (A)\"]",
+    "[\" x  \"]",
+    "[\" x xx x2\"]"
+   ]
+  },
+  {
+   "repo": "jkitchin/scimax_vscode",
+   "commit": "6f2c1840f6c304b8343b7faf11258b8334fc3cbc",
+   "path": "src/parser/orgElements.ts",
+   "fn": "isClockLine",
+   "license": "MIT",
+   "fileBlob": "aa767a4f64c384da57bb59ebf92174b5630abc40",
+   "sha256": "d6147f319022ce97235103ebdd0a9bd6ffa10cf11b2db2fe43521776f6763b35",
+   "upstream": "export function isClockLine(line: string): boolean {\n    return line.trim().startsWith('CLOCK:');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "x CLOCK"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "xCLOCK:clock:CLOCK"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CLOCK:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "clock:CLOCK:xCLOCK "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CLOCK: x [2024] "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "C"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " CL "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CL"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CLO"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " CLOC "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CLOC"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CLOCK"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " CLOCK: "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "CLOCKCLOCK:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "CLOCK:x CLOCK"
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"CLOCK: x [2024] \") gives true",
+    "derive_ambiguous: (\"C\") gives false",
+    "derive_ambiguous: (\" CL \") gives false",
+    "derive_ambiguous: (\"CL\") gives false",
+    "derive_ambiguous: (\"CLO\") gives false",
+    "derive_ambiguous: (\" CLOC \") gives false",
+    "derive_ambiguous: (\"CLOC\") gives false",
+    "derive_ambiguous: (\"CLOCK\") gives false",
+    "derive_ambiguous: (\" CLOCK: \") gives true",
+    "derive_ambiguous: (\"CLOCKCLOCK:\") gives false",
+    "derive_ambiguous: (\"CLOCK:x CLOCK\") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\"CLOCK:\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 436,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "jkitchin/scimax_vscode",
+   "commit": "6f2c1840f6c304b8343b7faf11258b8334fc3cbc",
+   "path": "src/parser/orgElements.ts",
+   "fn": "isDrawerEnd",
+   "license": "MIT",
+   "fileBlob": "aa767a4f64c384da57bb59ebf92174b5630abc40",
+   "sha256": "d6147f319022ce97235103ebdd0a9bd6ffa10cf11b2db2fe43521776f6763b35",
+   "upstream": "export function isDrawerEnd(line: string): boolean {\n    return line.trim() === ':END:';\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ":end:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " x"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ":END:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " :END:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "D:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ":END"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " ND: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "ND:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "END::end:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " END: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "END:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " :END: "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      ":END::end:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ":end::END:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ":END: :end:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ": END: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x :END:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " x:END:"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\" :END:\") gives true",
+    "derive_ambiguous: (\"D:\") gives false",
+    "derive_ambiguous: (\":END\") gives false",
+    "derive_ambiguous: (\" ND: \") gives false",
+    "derive_ambiguous: (\"ND:\") gives false",
+    "derive_ambiguous: (\"END::end:\") gives false",
+    "derive_ambiguous: (\" END: \") gives false",
+    "derive_ambiguous: (\"END:\") gives false",
+    "derive_ambiguous: (\" :END: \") gives true",
+    "derive_ambiguous: (\":END::end:\") gives false",
+    "derive_ambiguous: (\":end::END:\") gives false",
+    "derive_ambiguous: (\":END: :end:\") gives false",
+    "derive_ambiguous: (\": END: \") gives false",
+    "derive_ambiguous: (\"x :END:\") gives false",
+    "derive_ambiguous: (\" x:END:\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim() === \":END:\"",
+   "shape": "test",
+   "heldOut": {
+    "right": 403,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "hyperlink-academy/leaflet",
+   "commit": "2701245da15d266c6aacad9bc2585e5809552ca5",
+   "path": "src/fonts.ts",
+   "fn": "isCustomFontId",
+   "license": "MIT",
+   "fileBlob": "215c69c047cadfd2532b20300a6b67f2bde191d9",
+   "sha256": "7173df8c55e293b4c5169ee681d8f8962f609605ff8b4f309b623f240a637559",
+   "upstream": "export function isCustomFontId(fontId: string): boolean {\n  return fontId.startsWith(\"custom:\");\n}",
+   "params": [
+    {
+     "name": "fontId",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "serif:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "serif:custom::custom::"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "custom:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "custom:custom::serif:: "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "serif "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "c"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " cu "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "cu serif:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "cus"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "ustom"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " cust "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "cust"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "custo"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " custom "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "custom"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " custom: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "custom custom:"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"c\") gives false",
+    "derive_ambiguous: (\" cu \") gives false",
+    "derive_ambiguous: (\"cu serif:\") gives false",
+    "derive_ambiguous: (\"cus\") gives false",
+    "derive_ambiguous: (\"ustom\") gives false",
+    "derive_ambiguous: (\" cust \") gives false",
+    "derive_ambiguous: (\"cust\") gives false",
+    "derive_ambiguous: (\"custo\") gives false",
+    "derive_ambiguous: (\" custom \") gives false",
+    "derive_ambiguous: (\"custom\") gives false",
+    "derive_ambiguous: (\" custom: \") gives false",
+    "derive_ambiguous: (\"custom custom:\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "fontId.startsWith(\"custom:\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 435,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "jd-opensource/micro-app",
+   "commit": "ce9911bc5f05260eeb80355e9445de1ced62151f",
+   "path": "src/libs/utils.ts",
+   "fn": "isInlineScript",
+   "license": "MIT",
+   "fileBlob": "269a4275ad6ccfa4c122bb8c40179dd10be130ce",
+   "sha256": "bf91db0042b44aa8e2540b7f380d5f54c6347cb2ecb01d1934485dc74029095a",
+   "upstream": "export function isInlineScript(address: string): boolean {\n  return address.startsWith('inline-')\n}",
+   "params": [
+    {
+     "name": "address",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "app.js-"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "app.js-inline--inline--"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "inline-"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "inline-inline--app.js-- "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "app.js "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "i"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "line"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "ne- inline-"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "in"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " inl "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "nline"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "inl"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "inli"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " inlin "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "inlin"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "inline"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " inline- "
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"i\") gives false",
+    "derive_ambiguous: (\"line\") gives false",
+    "derive_ambiguous: (\"ne- inline-\") gives false",
+    "derive_ambiguous: (\"in\") gives false",
+    "derive_ambiguous: (\" inl \") gives false",
+    "derive_ambiguous: (\"nline\") gives false",
+    "derive_ambiguous: (\"inl\") gives false",
+    "derive_ambiguous: (\"inli\") gives false",
+    "derive_ambiguous: (\" inlin \") gives false",
+    "derive_ambiguous: (\"inlin\") gives false",
+    "derive_ambiguous: (\"inline\") gives false",
+    "derive_ambiguous: (\" inline- \") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "address.startsWith(\"inline-\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "neptyneco/neptyne-spreadsheet",
+   "commit": "381578afecb6960aeddc974198f047325d24ee58",
+   "path": "frontend/src/SheetUtils.ts",
+   "fn": "isFormulaValue",
+   "license": "MIT",
+   "fileBlob": "447ef8d05592ea84c540f427e9e4625875271ca5",
+   "sha256": "2b31cb09643c3e654160c920361939e33d7106290503b01d8f14d232a510f92d",
+   "upstream": "export const isFormulaValue = (value: string): boolean => value.startsWith(\"=\");",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "x= ="
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x==1+2 ="
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "="
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "1+2=x= = "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x= "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "=x=A1 "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " = "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "==1+2 ="
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"=x=A1 \") gives true",
+    "derive_ambiguous: (\" = \") gives false",
+    "derive_ambiguous: (\"==1+2 =\") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "value.startsWith(\"=\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 436,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "sequelize/sequelize",
+   "commit": "b7f5857d5b092b34937adae556b9e0b696ff8b65",
+   "path": "packages/core/src/utils/join-sql-fragments.ts",
+   "fn": "doesNotWantTrailingSpace",
+   "license": "MIT",
+   "fileBlob": "c0d53b407653e9c2e60527aff80a59419864d430",
+   "sha256": "51e4fa126df5139f63b4a6ac5f5e811620f94f89dbc3dd329e39105ae130616d",
+   "upstream": "function doesNotWantTrailingSpace(str: string): boolean {\n  return str.endsWith('(');\n}",
+   "params": [
+    {
+     "name": "str",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "())"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(),(,x,)"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "("
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "x,(,(),) "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "() "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "(()COUNT "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " )"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x,(),(,() "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " ),(),("
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " ( "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "())("
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " ),(), ( "
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"(()COUNT \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" )\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"x,(),(,() \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" x \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" ),(),(\") gives true",
+    "derive_ambiguous: (\" ( \") gives false",
+    "derive_ambiguous: (\"())(\") gives true",
+    "derive_ambiguous: (\" ),(), ( \") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "str.endsWith(\"(\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 435,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "scalabel/scalabel",
+   "commit": "071d073598e7c988134dc70a5c0c52761226bf42",
+   "path": "app/src/server/path.ts",
+   "fn": "getRedisBaseKey",
+   "license": "Apache-2.0",
+   "fileBlob": "ffa8cab8d89bcb00c0d1b49787f956812d140fb7",
+   "sha256": "523dd02de12868594fa63ac81e9bdeee914a51a42079f311b0e0fafcf249f297",
+   "upstream": "export function getRedisBaseKey(metadataKey: string): string {\n  return metadataKey.split(\":\")[0]\n}",
+   "params": [
+    {
+     "name": "metadataKey",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "42:"
+     ],
+     "out": "42"
+    },
+    {
+     "args": [
+      "42:proj:meta:"
+     ],
+     "out": "42"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "proj"
+     ],
+     "out": "proj"
+    },
+    {
+     "args": [
+      "meta:proj:42: "
+     ],
+     "out": "meta"
+    },
+    {
+     "args": [
+      "42 "
+     ],
+     "out": "42 "
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "metadataKey.split(\":\")[0] ?? \"\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "scalabel/scalabel",
+   "commit": "071d073598e7c988134dc70a5c0c52761226bf42",
+   "path": "app/src/server/path.ts",
+   "fn": "checkRedisReminderKey",
+   "license": "Apache-2.0",
+   "fileBlob": "ffa8cab8d89bcb00c0d1b49787f956812d140fb7",
+   "sha256": "523dd02de12868594fa63ac81e9bdeee914a51a42079f311b0e0fafcf249f297",
+   "upstream": "export function checkRedisReminderKey(key: string): boolean {\n  return key.split(\":\")[1] === \"reminder\"\n}",
+   "params": [
+    {
+     "name": "key",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "reminders:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminders:proj:meta:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "proj"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:proj:reminders: "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminders "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "proj:reminders:reminder "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:reminders:proj:reminders "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " meta "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " :reminders:proj"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminder"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:meta:proj"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminder:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:reminders"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminders:meta:proj:meta"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminder:proj:reminders:reminder"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminders"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " reminder::meta"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminders:::reminders"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " reminders "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:reminder:reminder: "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "::reminders:reminders"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:meta "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " reminders:proj:reminder:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ":meta:reminders:reminders"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "meta:reminder:meta:meta "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "eta:reminder:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " meta:reminder: "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "reminders:meta:reminder:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "reminders:reminder"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "reminder: reminder:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " meta:reminder "
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"proj:reminders:reminder \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" \") gives false",
+    "derive_under_specified_outputs (next grid row): (\"meta:reminders:proj:reminders \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" meta \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" :reminders:proj\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"reminder\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"meta:meta:proj\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"reminder:\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"meta:reminders\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"reminders:meta:proj:meta\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"reminder:proj:reminders:reminder\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"reminders\") gives false",
+    "derive_under_specified_outputs (next grid row): (\" reminder::meta\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"reminders:::reminders\") gives false",
+    "derive_under_specified_outputs (next grid row): (\" reminders \") gives false",
+    "derive_under_specified_outputs (next grid row): (\"meta:reminder:reminder: \") gives true",
+    "derive_under_specified_outputs (next grid row): (\"::reminders:reminders\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"meta:meta \") gives false",
+    "derive_under_specified_outputs (next grid row): (\" reminders:proj:reminder:\") gives false",
+    "derive_under_specified_outputs (next grid row): (\":meta:reminders:reminders\") gives false",
+    "derive_under_specified_outputs (next grid row): (\"meta:reminder:meta:meta \") gives true",
+    "derive_ambiguous: (\"eta:reminder:\") gives true",
+    "derive_ambiguous: (\" meta:reminder: \") gives true",
+    "derive_ambiguous: (\"reminders:meta:reminder:\") gives false",
+    "derive_ambiguous: (\"reminders:reminder\") gives true",
+    "derive_ambiguous: (\"reminder: reminder:\") gives false",
+    "derive_ambiguous: (\" meta:reminder \") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "(key.split(\":\")[1] ?? \"\") === \"reminder\"",
+   "shape": "test",
+   "heldOut": {
+    "right": 419,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "tomtom-international/commisery-action",
+   "commit": "fb3f6c52295f5f46634ab749d9e3d90582a7271d",
+   "path": "src/label.ts",
+   "fn": "getCategory",
+   "license": "Apache-2.0",
+   "fileBlob": "f8c177a93148ef3477bc7f96fed779f05c8fff5e",
+   "sha256": "df4d76a6f75000ff57923a6d1181acb981bc4e86104ef6a6f091cae0a6d91e6d",
+   "upstream": "export function getCategory(value: string): string {\n  return value.split(\":\")[0];\n}",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "feat:"
+     ],
+     "out": "feat"
+    },
+    {
+     "args": [
+      "feat:bump:minor:"
+     ],
+     "out": "feat"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "bump"
+     ],
+     "out": "bump"
+    },
+    {
+     "args": [
+      "minor:bump:feat: "
+     ],
+     "out": "minor"
+    },
+    {
+     "args": [
+      "feat "
+     ],
+     "out": "feat "
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "value.split(\":\")[0] ?? \"\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "ably/ably-cli",
+   "commit": "3cbf5954913f906e23cd10bfedc15146e0eae0ad",
+   "path": "src/utils/api-key.ts",
+   "fn": "extractAppIdFromApiKey",
+   "license": "Apache-2.0",
+   "fileBlob": "76238ff5b74574fdf023f634dddeb83826cd5f62",
+   "sha256": "b19a4b35cc1ea245b43ea6a0d3885875b857a101e05199a3ba8725477a9a3fcb",
+   "upstream": "export function extractAppIdFromApiKey(apiKey: string): string {\n  return apiKey.split(\".\")[0] ?? \"\";\n}",
+   "params": [
+    {
+     "name": "apiKey",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "x."
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      "x:app1:secret:"
+     ],
+     "out": "x:app1:secret:"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "app1"
+     ],
+     "out": "app1"
+    },
+    {
+     "args": [
+      "secret:app1:x: "
+     ],
+     "out": "secret:app1:x: "
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": "x "
+    },
+    {
+     "args": [
+      " . "
+     ],
+     "out": " "
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\" . \") gives \" \""
+   ],
+   "outOfVocabulary": false,
+   "expr": "apiKey.split(\".\")[0] ?? \"\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "ably/ably-cli",
+   "commit": "3cbf5954913f906e23cd10bfedc15146e0eae0ad",
+   "path": "src/utils/api-key.ts",
+   "fn": "extractKeyNameFromApiKey",
+   "license": "Apache-2.0",
+   "fileBlob": "76238ff5b74574fdf023f634dddeb83826cd5f62",
+   "sha256": "b19a4b35cc1ea245b43ea6a0d3885875b857a101e05199a3ba8725477a9a3fcb",
+   "upstream": "export function extractKeyNameFromApiKey(apiKey: string): string {\n  return apiKey.split(\":\")[0] ?? \"\";\n}",
+   "params": [
+    {
+     "name": "apiKey",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      ":"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "x:app1.key2:secret:"
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "app1.key2"
+     ],
+     "out": "app1.key2"
+    },
+    {
+     "args": [
+      "secret:app1.key2:x: "
+     ],
+     "out": "secret"
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": "x "
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "apiKey.split(\":\")[0] ?? \"\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "better-auth/better-icons",
+   "commit": "033316ecb8f4982235af4111a2257e80231f5ab1",
+   "path": "src/icon-utils.ts",
+   "fn": "getIconPrefix",
+   "license": "MIT",
+   "fileBlob": "8ae3006f4142bcc7994900d6cc06d62a573e7275",
+   "sha256": "05e0f2ffa264bd3e29e15ba96d28718542659e781fde7c8690a8e6a8acffe0c3",
+   "upstream": "function getIconPrefix(iconId: string): string {\n  return iconId.split(\":\")[0];\n}",
+   "params": [
+    {
+     "name": "iconId",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "x:"
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      "x:mdi:lucide:"
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "mdi"
+     ],
+     "out": "mdi"
+    },
+    {
+     "args": [
+      "lucide:mdi:x: "
+     ],
+     "out": "lucide"
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": "x "
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "iconId.split(\":\")[0] ?? \"\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "xiaozi/yogu-chat-app",
+   "commit": "20d736ccdb3fb459fa17f75906d3aa11d5f97dfe",
+   "path": "src/utils/fileUtils.ts",
+   "fn": "getFileName",
+   "license": "Apache-2.0",
+   "fileBlob": "737dfea6a49d5861672ddbd53e3cb86b7dfda8bc",
+   "sha256": "521398e7a92b84292b97c7e29d72297a001e311835d6c7e451ceb888e81715e2",
+   "upstream": "export function getFileName(path: string): string {\n  return path.split(\"/\").pop() || path;\n}",
+   "params": [
+    {
+     "name": "path",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "/.x"
+     ],
+     "out": ".x"
+    },
+    {
+     "args": [
+      "/src/notes/.x"
+     ],
+     "out": ".x"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "src"
+     ],
+     "out": "src"
+    },
+    {
+     "args": [
+      "notes/src//.x "
+     ],
+     "out": ".x "
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": " "
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": true,
+   "expr": "path.slice(path.lastIndexOf(\"/\") + 1)",
+   "shape": "str",
+   "heldOut": {
+    "right": 396,
+    "wrong": 43
+   },
+   "wrongAt": [
+    "[\"notes/\"]",
+    "[\"/.x/.x/\"]",
+    "[\".x/.x//\"]"
+   ]
+  },
+  {
+   "repo": "mkpoli/tyler",
+   "commit": "81edaaa785cd85ac42dfdca464b97ea4655a78d0",
+   "path": "src/cli/config.ts",
+   "fn": "parseList",
+   "license": "MIT",
+   "fileBlob": "60bb4ba0f5991f39bfd3177d44028f0cb7c22225",
+   "sha256": "f93c0224eba99c4920a8f91610f7c3d6620fabfdb4714106daf92d05482ee560",
+   "upstream": "function parseList(value: string): string[] {\n\treturn value.split(\",\").map((s) => s.trim());\n}",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    }
+   ],
+   "ret": "string[]",
+   "examples": [
+    {
+     "args": [
+      ",x y"
+     ],
+     "out": [
+      "",
+      "x y"
+     ]
+    },
+    {
+     "args": [
+      ",a,c ,x y"
+     ],
+     "out": [
+      "",
+      "a",
+      "c",
+      "x y"
+     ]
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": [
+      ""
+     ]
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "out": [
+      "a"
+     ]
+    },
+    {
+     "args": [
+      "c ,a,,x y "
+     ],
+     "out": [
+      "c",
+      "a",
+      "",
+      "x y"
+     ]
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": [
+      ""
+     ]
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "value.split(\",\").map((v) => v.trim())",
+   "shape": "split",
+   "heldOut": {
+    "right": 393,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "theopenbee/openbee",
+   "commit": "d7d349276274c35675b4e2769a3d8ce22f603867",
+   "path": "web/src/lib/scopes.ts",
+   "fn": "parseScopes",
+   "license": "MIT",
+   "fileBlob": "572cbadcfe85ab524045c0ecd6b456a8dd9c788f",
+   "sha256": "068a53f6465dc2ec00312f4920958cc2bb634acb780e25d2a7dd767380fe4e07",
+   "upstream": "export function parseScopes(raw: string): string[] {\n  return raw ? raw.split(\",\").map((s) => s.trim()).filter(Boolean) : []\n}",
+   "params": [
+    {
+     "name": "raw",
+     "type": "string"
+    }
+   ],
+   "ret": "string[]",
+   "examples": [
+    {
+     "args": [
+      ",x"
+     ],
+     "out": [
+      "x"
+     ]
+    },
+    {
+     "args": [
+      ",read,admin ,x"
+     ],
+     "out": [
+      "read",
+      "admin",
+      "x"
+     ]
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      "read"
+     ],
+     "out": [
+      "read"
+     ]
+    },
+    {
+     "args": [
+      "admin ,read,,x "
+     ],
+     "out": [
+      "admin",
+      "read",
+      "x"
+     ]
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": []
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "raw.split(\",\").map((v) => v.trim()).filter((v) => v !== \"\")",
+   "shape": "split",
+   "heldOut": {
+    "right": 337,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "remix-run/react-router-website",
+   "commit": "e9b619c5b05209d1eaf0ba02218633732347c789",
+   "path": "server/client-address.ts",
+   "fn": "getFirstHeaderValue",
+   "license": "MIT",
+   "fileBlob": "6f13dcd730e1220a3903653f6ba5ac8b2f797cb5",
+   "sha256": "0bd923ace9ea757a8e54fef38349392a9700fc906fe6241989610e1abc8be4d3",
+   "upstream": "function getFirstHeaderValue(value: string): string {\n  return value.split(\",\")[0]?.trim() ?? \"\";\n}",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      ",a"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      ",1.2.3.4,x ,a"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "1.2.3.4"
+     ],
+     "out": "1.2.3.4"
+    },
+    {
+     "args": [
+      "x ,1.2.3.4,,a "
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": ""
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "(value.split(\",\")[0] ?? \"\").trim()",
+   "shape": "str",
+   "heldOut": {
+    "right": 441,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "oomol-lab/open-connector",
+   "commit": "ddaca97b65cd27dd511d7355f4740ac3dd77bd68",
+   "path": "src/providers/googlechat/runtime.ts",
+   "fn": "stripPrefix",
+   "license": "Apache-2.0",
+   "fileBlob": "3adfa842de63c7c69f1cea08379b7f1cf35d6101",
+   "sha256": "d56baee3004c5ce07c9a91b991d1d331716b2d804042b4da97c630acfbddc864",
+   "upstream": "export function stripPrefix(value: string, prefix: string): string {\n  return value.startsWith(prefix) ? value.slice(prefix.length) : value;\n}",
+   "params": [
+    {
+     "name": "value",
+     "type": "string"
+    },
+    {
+     "name": "prefix",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "spaces",
+      "x"
+     ],
+     "out": "spaces"
+    },
+    {
+     "args": [
+      "spaces/xx ",
+      "users/"
+     ],
+     "out": "spaces/xx "
+    },
+    {
+     "args": [
+      " AAA ",
+      "x"
+     ],
+     "out": " AAA "
+    },
+    {
+     "args": [
+      "xspaces/",
+      "x"
+     ],
+     "out": "spaces/"
+    },
+    {
+     "args": [
+      " ",
+      "users/"
+     ],
+     "out": " "
+    },
+    {
+     "args": [
+      "spaces/",
+      "x"
+     ],
+     "out": "spaces/"
+    },
+    {
+     "args": [
+      "x",
+      "users/"
+     ],
+     "out": "x"
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"x\", \"users/\") gives \"x\""
+   ],
+   "outOfVocabulary": false,
+   "expr": "value.startsWith(prefix) ? value.slice(prefix.length) : value",
+   "shape": "str",
+   "heldOut": {
+    "right": 436,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "zhe-qi/clhoria-template",
+   "commit": "589f13ef6b294b3ed74646e3595ade644a6dcb47",
+   "path": "src/utils/tools/string.ts",
+   "fn": "stripPrefix",
+   "license": "MIT",
+   "fileBlob": "6dc5ae75702dcf2489a6f6a1341ea3bbfeaac6ee",
+   "sha256": "9ec9579e6fd7f05822c5264159c97a7353d01a071f7e5ee60ea72a335505b4a5",
+   "upstream": "export function stripPrefix(path: string, prefix: string): string {\n  return path.startsWith(prefix) ? path.slice(prefix.length) : path;\n}",
+   "params": [
+    {
+     "name": "path",
+     "type": "string"
+    },
+    {
+     "name": "prefix",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "x",
+      "x"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "/apiusersxusers ",
+      "/v1"
+     ],
+     "out": "/apiusersxusers "
+    },
+    {
+     "args": [
+      " /v1 ",
+      "x"
+     ],
+     "out": " /v1 "
+    },
+    {
+     "args": [
+      "xusers/api",
+      "x"
+     ],
+     "out": "users/api"
+    },
+    {
+     "args": [
+      " ",
+      "/v1"
+     ],
+     "out": " "
+    },
+    {
+     "args": [
+      "/api",
+      "x"
+     ],
+     "out": "/api"
+    },
+    {
+     "args": [
+      "x",
+      "/v1"
+     ],
+     "out": "x"
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"x\", \"/v1\") gives \"x\""
+   ],
+   "outOfVocabulary": false,
+   "expr": "path.startsWith(prefix) ? path.slice(prefix.length) : path",
+   "shape": "str",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "vybestack/llxprt-code",
+   "commit": "4387141f3b40a04f69d135669c8fd6513f63cbdc",
+   "path": "scripts/eslint-guard/constants.ts",
+   "fn": "isAllowedPolicyOff",
+   "license": "Apache-2.0",
+   "fileBlob": "c88db959e241661e1bab8ec4e73ba70fe0af1d6b",
+   "sha256": "23150fccd81c14f6c935e301267941875829ed8fd24911aaee90af3aa1499728",
+   "upstream": "export function isAllowedPolicyOff(line: string) {\n  return line.includes('eslint-policy-allow-off:');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "eslint-policyoff:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy eslint-policy-allow-off: //  off:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-allow-off:"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "//  eslint-policy-allow-off: eslint-policy off: "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "eslint-policy "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "slint-policy-a"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "lint-policy-al"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-a"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policyoff:eslint-policy-a"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-allo"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-allow"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "slint-policy-allow-"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policyoff:eslint-policy-allow-"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-allow-o"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "slint-policy-allow-of"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policyoff:eslint-policy-allow-of"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-allow-off"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "slint-policy-allow-off:"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "eslint-policy-allow-off-policyoff:"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"eslint-policy-\") gives false",
+    "derive_ambiguous: (\"slint-policy-a\") gives false",
+    "derive_ambiguous: (\"lint-policy-al\") gives false",
+    "derive_ambiguous: (\"eslint-policy-a\") gives false",
+    "derive_ambiguous: (\"eslint-policyoff:eslint-policy-a\") gives false",
+    "derive_ambiguous: (\"eslint-policy-allo\") gives false",
+    "derive_ambiguous: (\"eslint-policy-allow\") gives false",
+    "derive_ambiguous: (\"slint-policy-allow-\") gives false",
+    "derive_ambiguous: (\"eslint-policyoff:eslint-policy-allow-\") gives false",
+    "derive_ambiguous: (\"eslint-policy-allow-o\") gives false",
+    "derive_ambiguous: (\"slint-policy-allow-of\") gives false",
+    "derive_ambiguous: (\"eslint-policyoff:eslint-policy-allow-of\") gives false",
+    "derive_ambiguous: (\"eslint-policy-allow-off\") gives false",
+    "derive_ambiguous: (\"slint-policy-allow-off:\") gives false",
+    "derive_ambiguous: (\"eslint-policy-allow-off-policyoff:\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.includes(\"eslint-policy-allow-off:\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 440,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "vybestack/llxprt-code",
+   "commit": "4387141f3b40a04f69d135669c8fd6513f63cbdc",
+   "path": "scripts/eslint-guard/constants.ts",
+   "fn": "isCommentOnlyLine",
+   "license": "Apache-2.0",
+   "fileBlob": "c88db959e241661e1bab8ec4e73ba70fe0af1d6b",
+   "sha256": "23150fccd81c14f6c935e301267941875829ed8fd24911aaee90af3aa1499728",
+   "upstream": "export function isCommentOnlyLine(line: string) {\n  return line.trim().startsWith('//');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "/ / code"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "/ ///a//code"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "//"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a///// /code "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "/ / "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "// / / x "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " // "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "/// / code"
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_outputs (next grid row): (\"// / / x \") gives true",
+    "derive_ambiguous: (\" // \") gives true",
+    "derive_ambiguous: (\"/// / code\") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\"//\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "vybestack/llxprt-code",
+   "commit": "4387141f3b40a04f69d135669c8fd6513f63cbdc",
+   "path": "scripts/eslint-guard/constants.ts",
+   "fn": "addedContent",
+   "license": "Apache-2.0",
+   "fileBlob": "c88db959e241661e1bab8ec4e73ba70fe0af1d6b",
+   "sha256": "23150fccd81c14f6c935e301267941875829ed8fd24911aaee90af3aa1499728",
+   "upstream": "export function addedContent(line: string) {\n  return line.slice(1);\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "-"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "-+line"
+     ],
+     "out": "+line"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "+"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "line+- "
+     ],
+     "out": "ine+- "
+    },
+    {
+     "args": [
+      "- "
+     ],
+     "out": " "
+    },
+    {
+     "args": [
+      "+-x "
+     ],
+     "out": "-x "
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "line-+- "
+     ],
+     "out": "ine-+- "
+    },
+    {
+     "args": [
+      " line "
+     ],
+     "out": "line "
+    },
+    {
+     "args": [
+      " -+"
+     ],
+     "out": "-+"
+    },
+    {
+     "args": [
+      "x"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "lineline+"
+     ],
+     "out": "ineline+"
+    },
+    {
+     "args": [
+      "line-"
+     ],
+     "out": "ine-"
+    },
+    {
+     "args": [
+      "-line+line"
+     ],
+     "out": "line+line"
+    },
+    {
+     "args": [
+      "x+-x"
+     ],
+     "out": "+-x"
+    },
+    {
+     "args": [
+      " xline"
+     ],
+     "out": "xline"
+    },
+    {
+     "args": [
+      "--"
+     ],
+     "out": "-"
+    },
+    {
+     "args": [
+      " - "
+     ],
+     "out": "- "
+    },
+    {
+     "args": [
+      "linexx "
+     ],
+     "out": "inexx "
+    },
+    {
+     "args": [
+      "lineline "
+     ],
+     "out": "ineline "
+    },
+    {
+     "args": [
+      " -+x"
+     ],
+     "out": "-+x"
+    },
+    {
+     "args": [
+      "line--"
+     ],
+     "out": "ine--"
+    },
+    {
+     "args": [
+      "linexlineline "
+     ],
+     "out": "inexlineline "
+    },
+    {
+     "args": [
+      " -+-"
+     ],
+     "out": "-+-"
+    },
+    {
+     "args": [
+      " linexx "
+     ],
+     "out": "linexx "
+    },
+    {
+     "args": [
+      "xline "
+     ],
+     "out": "line "
+    },
+    {
+     "args": [
+      " x+-"
+     ],
+     "out": "x+-"
+    },
+    {
+     "args": [
+      "+x+ "
+     ],
+     "out": "x+ "
+    },
+    {
+     "args": [
+      "line"
+     ],
+     "out": "ine"
+    },
+    {
+     "args": [
+      " -linex"
+     ],
+     "out": "-linex"
+    },
+    {
+     "args": [
+      " linex+ "
+     ],
+     "out": "linex+ "
+    },
+    {
+     "args": [
+      " line+x"
+     ],
+     "out": "line+x"
+    },
+    {
+     "args": [
+      " +-"
+     ],
+     "out": "+-"
+    },
+    {
+     "args": [
+      "line-line"
+     ],
+     "out": "ine-line"
+    },
+    {
+     "args": [
+      "xlineline "
+     ],
+     "out": "lineline "
+    },
+    {
+     "args": [
+      "+x"
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      " line"
+     ],
+     "out": "line"
+    },
+    {
+     "args": [
+      "linex"
+     ],
+     "out": "inex"
+    },
+    {
+     "args": [
+      "+x "
+     ],
+     "out": "x "
+    }
+   ],
+   "addedForGates": [
+    "derive_no_fit (next grid row): (\"+-x \") gives \"-x \"",
+    "derive_no_fit (next grid row): (\" \") gives \"\"",
+    "derive_no_fit (next grid row): (\"line-+- \") gives \"ine-+- \"",
+    "derive_no_fit (next grid row): (\" line \") gives \"line \"",
+    "derive_no_fit (next grid row): (\" -+\") gives \"-+\"",
+    "derive_no_fit (next grid row): (\"x\") gives \"\"",
+    "derive_no_fit (next grid row): (\"lineline+\") gives \"ineline+\"",
+    "derive_no_fit (next grid row): (\"line-\") gives \"ine-\"",
+    "derive_no_fit (next grid row): (\"-line+line\") gives \"line+line\"",
+    "derive_no_fit (next grid row): (\"x+-x\") gives \"+-x\"",
+    "derive_no_fit (next grid row): (\" xline\") gives \"xline\"",
+    "derive_no_fit (next grid row): (\"--\") gives \"-\"",
+    "derive_no_fit (next grid row): (\" - \") gives \"- \"",
+    "derive_no_fit (next grid row): (\"linexx \") gives \"inexx \"",
+    "derive_no_fit (next grid row): (\"lineline \") gives \"ineline \"",
+    "derive_no_fit (next grid row): (\" -+x\") gives \"-+x\"",
+    "derive_no_fit (next grid row): (\"line--\") gives \"ine--\"",
+    "derive_no_fit (next grid row): (\"linexlineline \") gives \"inexlineline \"",
+    "derive_no_fit (next grid row): (\" -+-\") gives \"-+-\"",
+    "derive_no_fit (next grid row): (\" linexx \") gives \"linexx \"",
+    "derive_no_fit (next grid row): (\"xline \") gives \"line \"",
+    "derive_no_fit (next grid row): (\" x+-\") gives \"x+-\"",
+    "derive_no_fit (next grid row): (\"+x+ \") gives \"x+ \"",
+    "derive_no_fit (next grid row): (\"line\") gives \"ine\"",
+    "derive_no_fit (next grid row): (\" -linex\") gives \"-linex\"",
+    "derive_no_fit (next grid row): (\" linex+ \") gives \"linex+ \"",
+    "derive_no_fit (next grid row): (\" line+x\") gives \"line+x\"",
+    "derive_no_fit (next grid row): (\" +-\") gives \"+-\"",
+    "derive_no_fit (next grid row): (\"line-line\") gives \"ine-line\"",
+    "derive_no_fit (next grid row): (\"xlineline \") gives \"lineline \"",
+    "derive_no_fit (next grid row): (\"+x\") gives \"x\"",
+    "derive_no_fit (next grid row): (\" line\") gives \"line\"",
+    "derive_no_fit (next grid row): (\"linex\") gives \"inex\"",
+    "derive_no_fit (next grid row): (\"+x \") gives \"x \""
+   ],
+   "outOfVocabulary": true,
+   "refused": "derive_no_fit",
+   "detail": "no program of the v5 string DSL fits every example (746 searched)"
+  },
+  {
+   "repo": "tooltipdev/lexicon-to-zod",
+   "commit": "443231f03d92181e01ebdd2f27017e4356d9f041",
+   "path": "src/utils.ts",
+   "fn": "refValueToDefKey",
+   "license": "MIT",
+   "fileBlob": "c0baced6f69709685824b34d6b435a8c89f798f9",
+   "sha256": "f45e68e8d3b014d6936745c178b61bc6fbba78f3df90e33979e14fe0e7ceed6a",
+   "upstream": "export function refValueToDefKey(ref: string): string {\n  return ref.split(\"#\")[1] || \"main\";\n}",
+   "params": [
+    {
+     "name": "ref",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "#x"
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      "#lex#view#x"
+     ],
+     "out": "lex"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": "main"
+    },
+    {
+     "args": [
+      "lex"
+     ],
+     "out": "main"
+    },
+    {
+     "args": [
+      "view#lex##x "
+     ],
+     "out": "lex"
+    },
+    {
+     "args": [
+      " "
+     ],
+     "out": "main"
+    },
+    {
+     "args": [
+      "# x "
+     ],
+     "out": " x "
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"# x \") gives \" x \""
+   ],
+   "outOfVocabulary": true,
+   "expr": "ref.split(\"#\")[1] ?? \"main\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 391,
+    "wrong": 25
+   },
+   "wrongAt": [
+    "[\"lex##main \"]",
+    "[\"view##lex# \"]",
+    "[\" x##lex\"]"
+   ]
+  },
+  {
+   "repo": "kitschpatrol/tweakpane-css",
+   "commit": "1371b974853ae288c91e6f91f70023358f919d13",
+   "path": "src/utilities.ts",
+   "fn": "stripPrefix",
+   "license": "MIT",
+   "fileBlob": "aef5c58feee017b2fa73af1020268e6e4c00d9d6",
+   "sha256": "584a27132bb63117e2c3c1ceb5834eabff28fa6f3cc8c6d1998db0c5ab899548",
+   "upstream": "export function stripPrefix(name: string): string {\n\treturn name.split(' ').slice(1).join(' ')\n}",
+   "params": [
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "x "
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "x -- bg "
+     ],
+     "out": "-- bg "
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "--"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "bg -- x  "
+     ],
+     "out": "-- x  "
+    },
+    {
+     "args": [
+      "-- x color "
+     ],
+     "out": "x color "
+    }
+   ],
+   "addedForGates": [],
+   "outOfVocabulary": false,
+   "expr": "name.split(\" \").length > 1 ? name.split(\" \").slice(1).join(\" \") : \"\"",
+   "shape": "str",
+   "heldOut": {
+    "right": 436,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "redseye/MemoryCastle",
+   "commit": "43a5ea2b5a75f6cab5bbbfb274a63c91480e942c",
+   "path": "app/src/importer/line-helpers.ts",
+   "fn": "isBlank",
+   "license": "MIT",
+   "fileBlob": "70895b142d406da30357650ebf595be250fdc037",
+   "sha256": "3cd0e46edbcdfd99e07e88ce6cf86df662f519fd0005b9a5f2d1a0303ccd0a93",
+   "upstream": "export function isBlank(line: string): boolean {\n  return line.trim() === '';\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "a b a b"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "   x a b"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "x    a b "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "  "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "    "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " b"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      " a"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\"a\") gives false",
+    "derive_ambiguous: (\" b\") gives false",
+    "derive_ambiguous: (\" a\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim() === \"\"",
+   "shape": "test",
+   "heldOut": {
+    "right": 431,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "redseye/MemoryCastle",
+   "commit": "43a5ea2b5a75f6cab5bbbfb274a63c91480e942c",
+   "path": "app/src/importer/line-helpers.ts",
+   "fn": "isBlockquote",
+   "license": "MIT",
+   "fileBlob": "70895b142d406da30357650ebf595be250fdc037",
+   "sha256": "3cd0e46edbcdfd99e07e88ce6cf86df662f519fd0005b9a5f2d1a0303ccd0a93",
+   "upstream": "export function isBlockquote(line: string): boolean {\n  return line.trim().startsWith('>');\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "a> "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "a> > > q "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ">"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "> q > a>  "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "> a> x "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " > "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      ">a> "
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\" > \") gives true",
+    "derive_ambiguous: (\">a> \") gives true"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\">\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "sushi-labs/sushiswap",
+   "commit": "52d5cd73d5986b577d492e10d5ed706809d7aa97",
+   "path": "apps/web/src/lib/perps/math.ts",
+   "fn": "stripSign",
+   "license": "MIT",
+   "fileBlob": "add7fbe248218ba35909a2a201ae08703fb78026",
+   "sha256": "d1d1af71330288536484fb366aab7b95a058cb40042ac3851762d3e0c0960edc",
+   "upstream": "function stripSign(s: string) {\n  return s.trim().startsWith('-') ? s.trim().slice(1) : s.trim()\n}",
+   "params": [
+    {
+     "name": "s",
+     "type": "string"
+    }
+   ],
+   "ret": "string",
+   "examples": [
+    {
+     "args": [
+      "x+2"
+     ],
+     "out": "x+2"
+    },
+    {
+     "args": [
+      "x - -- +2"
+     ],
+     "out": "x - -- +2"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "-"
+     ],
+     "out": ""
+    },
+    {
+     "args": [
+      "-- - x +2 "
+     ],
+     "out": "- - x +2"
+    },
+    {
+     "args": [
+      "x "
+     ],
+     "out": "x"
+    },
+    {
+     "args": [
+      " - -- +2"
+     ],
+     "out": " -- +2"
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\" - -- +2\") gives \" -- +2\""
+   ],
+   "outOfVocabulary": false,
+   "expr": "s.trim().startsWith(\"-\") ? s.trim().slice(1) : s.trim()",
+   "shape": "str",
+   "heldOut": {
+    "right": 437,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "jerrywu001/cc-sessions-viewer",
+   "commit": "66e3dcb701328041ae34d8251e38c0eb6609af14",
+   "path": "src/tabStatus.ts",
+   "fn": "isSlashCommandInput",
+   "license": "MIT",
+   "fileBlob": "bddaa31b0a56442cd9e7b6d448da4a8fcfd11fc1",
+   "sha256": "db133d4ac0a3a656b9785808bf95cc277c41d5edae401f6125d455c277c1926a",
+   "upstream": "export function isSlashCommandInput(line: string): boolean {\n  return line.trimStart().startsWith('/')\n}",
+   "params": [
+    {
+     "name": "line",
+     "type": "string"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      "x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "x/a/b"
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      ""
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "/"
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "a/b/x "
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      "/ x help "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      " / "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "/x "
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      "x/a/"
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_ambiguous: (\" / \") gives true",
+    "derive_ambiguous: (\"/x \") gives true",
+    "derive_ambiguous: (\"x/a/\") gives false"
+   ],
+   "outOfVocabulary": false,
+   "expr": "line.trim().startsWith(\"/\")",
+   "shape": "test",
+   "heldOut": {
+    "right": 438,
+    "wrong": 0
+   }
+  }
+ ]
+}
