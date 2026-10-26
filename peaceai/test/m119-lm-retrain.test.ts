@@ -279,3 +279,59 @@ test("M119 judge items: fetched from the pinned notes/lm-judge-eval commit at th
   assert.match(read("peaceai/bin/lm-retrain-live.sh"), /lm-retrain-judge\.sh "\$dest" "\$live"/);
   assert.ok(protectedReason("peaceai/bin/lm-retrain-judge.sh"));
 });
+
+// Auditor #536 follow-up: committed fixture test for lm-retrain-judge.sh's refusals. Made-up items and scores in a
+// throwaway git repo; the real Results remote URL is redirected to it with url.insteadOf (no network, no real key).
+function judgeFixture(opts: { items?: number | null; scoresModel?: string | null; pin?: (good: string) => string; key?: boolean; ver?: string }) {
+  const t = mkdtempSync(join(tmpdir(), "m119-judge-"));
+  try {
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: join(t, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1", RUNNER_TEMP: t, HOME: t } as NodeJS.ProcessEnv;
+    delete env.DEPLOY_KEY;
+    const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main", ...a], { cwd, env, encoding: "utf8" }).trim();
+    const src = join(t, "results");
+    mkdirSync(join(src, "lm-judge"), { recursive: true }); g(src, "init", "-q");
+    g(src, "config", "uploadpack.allowAnySHA1InWant", "true"); g(src, "config", "uploadpack.allowFilter", "true");
+    const ver = "lm-v1-0123456789ab";
+    if (opts.items !== null) writeFileSync(join(src, "lm-judge", "items.json"), JSON.stringify(Array.from({ length: opts.items ?? 364 }, (_, i) => ({ key: `k${i}`, label: i % 2 ? "right" : "wrong" }))));
+    if (opts.scoresModel !== null) writeFileSync(join(src, "lm-judge", `scores-${ver}.json`), JSON.stringify({ model: opts.scoresModel ?? ver, agg: {} }));
+    writeFileSync(join(src, "README.md"), "fixture\n");
+    g(src, "add", "."); g(src, "commit", "-qm", "fixture");
+    const good = g(src, "rev-parse", "HEAD");
+    writeFileSync(join(t, "gitconfig"), `[url "file://${src}"]\n\tinsteadOf = git@github.com:PeaceG03/PeaceAI-Results.git\n[protocol "file"]\n\tallow = always\n`);
+    const cwd = join(t, "cwd"); mkdirSync(join(cwd, "peaceai", "bin"), { recursive: true }); mkdirSync(join(cwd, "peaceai", "model"), { recursive: true });
+    for (const f of ["lm-retrain-judge.sh", "with-deploy-key.sh"]) writeFileSync(join(cwd, "peaceai", "bin", f), read(`peaceai/bin/${f}`), { mode: 0o755 });
+    const cfg = JSON.parse(JSON.stringify(CFG)); cfg.eval.judgeCommit = opts.pin ? opts.pin(good) : good;
+    writeFileSync(join(cwd, "peaceai", "model", "lm-retrain.json"), JSON.stringify(cfg));
+    if (opts.key !== false) env.DEPLOY_KEY = "not-a-real-key";
+    const dest = join(t, "dest");
+    const r = spawnSync("bash", ["peaceai/bin/lm-retrain-judge.sh", dest, ...(opts.ver === "" ? [] : [opts.ver ?? ver])], { cwd, env, encoding: "utf8" });
+    let out: string[] = []; try { out = execFileSync("ls", [dest], { encoding: "utf8" }).split("\n").filter(Boolean); } catch { /* none */ }
+    return { status: r.status, text: r.stdout + r.stderr, out };
+  } finally { rmSync(t, { recursive: true, force: true }); }
+}
+
+test("M119 lm-retrain-judge.sh: control fixture passes and writes items + recorded scores", () => {
+  const r = judgeFixture({});
+  assert.equal(r.status, 0, r.text);
+  assert.match(r.text, /judge items fetched from the pinned commit: 364/);
+  assert.deepEqual(r.out.sort(), ["items.json", "scores-live-recorded.json"]);
+});
+
+test("M119 lm-retrain-judge.sh refuses: wrong model in scores, missing files, 363 items, unknown sha, branch pin, no key", () => {
+  const cases: [string, Parameters<typeof judgeFixture>[0], RegExp][] = [
+    ["wrong model in the scores file", { scoresModel: "lm-v1-ffffffffffff" }, /recorded judge scores are for another model: refused/],
+    ["missing scores file", { scoresModel: null }, /recorded judge scores missing for lm-v1-0123456789ab: refused/],
+    ["missing items file", { items: null }, /judge items missing at the pinned commit: refused/],
+    ["363 items", { items: 363 }, /judge item count changed: refused/],
+    ["unknown sha", { pin: () => "0".repeat(40) }, /judge commit could not be fetched: refused/],
+    ["branch name instead of a sha", { pin: () => "notes/lm-judge-eval" }, /bad judge commit pin: refused/],
+    ["no key", { key: false }, /no Results key: refused \(fail closed\)/],
+  ];
+  for (const [name, o, msg] of cases) {
+    const r = judgeFixture(o);
+    assert.notEqual(r.status, 0, `${name}: must fail\n${r.text}`);
+    assert.match(r.text, msg, name);
+    assert.ok(!r.out.includes("scores-live-recorded.json"), `${name}: no recorded scores written`);
+    if (name !== "missing scores file" && name !== "wrong model in the scores file") assert.ok(!r.out.includes("items.json"), `${name}: no items written`);
+  }
+});
