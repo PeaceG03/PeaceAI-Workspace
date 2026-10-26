@@ -325,7 +325,8 @@ Fail closed in this order:
    3 greedy asked rows.
 7. `derive_under_specified_unread`
 8. `derive_under_specified_path`: an unpinned fallback or default becomes an asked row; so does a split on a
-   delimiter that gives no example two non-empty fields (Auditor #530).
+   delimiter that gives no example two non-empty fields (Auditor #530), and a split no example's result depends on
+   (the same result as reading the line as one field on every example; Auditor #530 R2).
 
 Job B re-checks a derive candidate by its operation id: v5 through `derivedStringModuleProblem` /
 `derivedStringAppendProblem`, v4 and v1-v3 exactly as before. Emitted text is re-checked by `strExprProblem` (no
@@ -335,6 +336,7 @@ Known limit (disclosed): a function outside v5's vocabulary can be fitted by a w
 out-of-vocabulary upstream entries show this, and so does a case-insensitive startsWith when every example is
 lowercase. That no in-vocabulary rival fit was missed rests on sampled harnesses, not on a proof: a rival that differs
 only on inputs no probe covers is not caught (Auditor #530 found one, now probed). A delimiter that appears in no
-example cannot be derived. Escaping
+example cannot be derived: a whole-line fit is not gated, and is wrong when the intended parser splits on a delimiter
+no example holds. Escaping
 (escapeCheckinNote) is refused and recorded as v6 scope. Details, held-out results, evidence and limits:
 peaceai/docs/m114-string-parsing.md.

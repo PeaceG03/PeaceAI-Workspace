@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
-import { compileStr, deriveStringProgram, evalStr, outKey, readsQ, strExprProblem, strLit, validProgram, type StrArg, type StrExample, type StrOut, type StrParam, type StrProgram, type StrRet, type XNode } from "../lib/derive-string.ts";
+import { compileStr, deriveStringProgram, evalStr, outKey, readsQ, strExprProblem, strLit, validProgram, type StrArg, type StrExample, type StrResult, type StrOut, type StrParam, type StrProgram, type StrRet, type XNode } from "../lib/derive-string.ts";
 import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_STRING_DSL, DERIVE_STRING_OPERATION, DERIVE_STRING_PLACEMENT, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER, DERIVE_VOCAB, deriveAppendRecheck, deriveModuleRecheck, deriveReviewNote, deriveStringReviewNote, derivedStringModuleProblem, parseDeriveStringTask, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
 import { specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
@@ -388,6 +388,44 @@ test("Auditor #530 (2): a split on a delimiter that never gives two non-empty fi
   // a delimiter that does split an example is unaffected
   const ok = deriveAnswering(P, "string", { op: "str", x: { trim: false, piece: { k: "field", d: "|", i: 0 }, post: false }, dflt: "" }, ["scan|ok", "r2|late", "x", "ok|"].map((l) => [l])).r;
   assert.ok(ok.ok && compileStr(ok.program, ["line"]).includes('split("|")'), JSON.stringify(ok));
+});
+
+test("Auditor #530 R2: a split no example's result depends on is refused as under-specified (path gate) with an asked row that shows it, never derived", () => {
+  const P: StrParam[] = [{ name: "line", type: "string" }, { name: "q", type: "number" }];
+  // every round of deriving with the asked rows answered by the reference
+  const rounds = (params: StrParam[], ret: StrRet, ref: StrProgram, lines: readonly StrArg[][]): StrResult[] => {
+    const examples: StrExample[] = lines.map((args) => ({ args: [...args], out: evalStr(ref, args) }));
+    const out = [deriveStringProgram({ params, ret, examples })];
+    for (let n = 0, last = out[0]!; n < 8 && !last.ok && last.questions?.length; n++, last = out.at(-1)!) {
+      for (const q of last.questions) examples.push({ args: [...q.at], out: evalStr(ref, q.at) });
+      out.push(deriveStringProgram({ params, ret, examples }));
+    }
+    return out;
+  };
+  const tell = (end: StrResult, ref: StrProgram, rows: StrArg[][]) => !end.ok || rows.every((a) => outKey(evalStr(end.program, a)) === outKey(evalStr(ref, a)));
+  // (a) the delimiter is in the lines (":" splits "part:scan" in two) but never moves a result: every line holding it
+  // asks for a field past its end, so line.split(":")[q] ?? "" and the reference (which splits on "=") agree on every example
+  const refA: StrProgram = { op: "str", x: { trim: false, piece: { k: "field", d: "=", i: "q" }, post: false }, dflt: "" };
+  const linesA: StrArg[][] = [["part:scan", 2], [" ok ", 0], ["ok", 0], ["late", 1], ["r2:x", 3], ["scan", 0], ["12", 0], ["x", 2]];
+  const a = rounds(P, "string", refA, linesA);
+  const ga = a.find((r) => !r.ok && "gate" in r && r.gate === "path" && /no example's result depends on the split on ":"/.test(r.detail));
+  assert.ok(ga && !ga.ok && ga.reason === "derive_under_specified", JSON.stringify(a));
+  const qa = ga.questions?.[0];
+  assert.ok(qa && (qa.at[0] as string).includes(":") && new Set(qa.answers.map(outKey)).size === 2, JSON.stringify(ga.questions));
+  assert.ok(tell(a.at(-1)!, refA, [["a=b", 1], ["a:b", 1], ["a=b:c", 0], ["k=v", 0]]), JSON.stringify(a.at(-1)));
+  // (b) the split result is invisible in the outputs: (line.trim().split(" ")[q] ?? "").endsWith("scan") fits, but each
+  // line with a space asks for a field that is missing or does not end in "scan", so its result is false with or without the split
+  const refB: StrProgram = { op: "test", x: { trim: true, piece: { k: "field", d: "|", i: "q" }, post: false }, test: "ends", c: "scan", neg: false };
+  const linesB: StrArg[][] = [["scan", 0], ["r2scan", 0], ["late", 0], ["ok x", 1], ["ok", 0], ["x scan", 2]];
+  const b = rounds(P, "boolean", refB, linesB);
+  const gb = b.find((r) => !r.ok && "gate" in r && r.gate === "path" && /no example's result depends on the split on " "/.test(r.detail));
+  assert.ok(gb && !gb.ok && gb.reason === "derive_under_specified", JSON.stringify(b));
+  assert.ok(gb.questions?.length && new Set(gb.questions[0]!.answers.map(outKey)).size === 2, JSON.stringify(gb.questions));
+  assert.ok(tell(b.at(-1)!, refB, [["x scan", 1], ["a|scan", 1], ["scan|x", 0], ["a b|scan", 1]]), JSON.stringify(b.at(-1)));
+  // a split that some example's result does depend on still derives
+  const refC: StrProgram = { op: "str", x: { trim: false, piece: { k: "field", d: ":", i: "q" }, post: false }, dflt: "" };
+  const c = deriveAnswering(P, "string", refC, [["part:scan", 1], ["ok", 0], ["late", 1], ["r2:x", 0], ["a:b:c", 2], ["x", 2]]).r;
+  assert.ok(c.ok && compileStr(c.program, ["line", "q"]).includes('split(":")[q]'), JSON.stringify(c));
 });
 
 test("triggers are disjoint: no v1-v4 header matches v5 and no v5 header matches v1-v4; v1-v4 never answer a string-parser task", () => {

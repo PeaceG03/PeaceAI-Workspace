@@ -65,6 +65,11 @@ and again in Job B.
    silently; it becomes an asked row (Auditor #523 lesson). A split on a delimiter that gives no example two
    non-empty fields (the delimiter is absent, or only at an edge: the `-` of `-3`, a padding space) is refused here
    too, with a row that has two fields (Auditor #530 (2)): such examples fit a split on any of those delimiters.
+   So is a split no example's result depends on (Auditor #530 R2): the fit gives the same result on every example as
+   the same program reading the line as one field. The delimiter is in the lines but never moves a result (every line
+   that holds it asks for a field past its end), or the field it picks never changes the output (a test or parse that
+   comes out the same). It asks for a row where the split changes the result. A fit that reads the whole line is not
+   gated this way (see Limits).
 
 Probes: the examples, their fields and trims, the constants of every fit with and without padding, and, for a string q,
 cuts of each example line around each delimiter (`v+d`, `d+v`, the first field plus d, d plus the last field, each
@@ -115,16 +120,30 @@ lines:
 
 ## Random harness (after Auditor #530)
 
-The Auditor's own harness is not in the repo, so this is one built from its description: the seeded generator with
+`peaceai/bin/derive-string-harness.ts` (a measurement script: not a test file, not run by CI). Reproduce with
+
+    node_modules/.bin/tsx peaceai/bin/derive-string-harness.ts 1-9 200
+
+(one seed per process, e.g. `... 5 200`, is faster in parallel; the per-seed numbers are the same). It is built from
+the Auditor's description: the seeded generator with
 field indices 0-3, `_` added to the delimiters, defaults `none` / `?` / 99 / 7, lines padded on the left, right or both,
 and one task in ten whose example lines all have a single field. Each derived program is checked on 300 fresh lines
 plus, for 120 of them and for every example, each first-k-fields cut bare, padded left / right / both and with a
 trailing delimiter, and the line re-joined on every other delimiter. 9 seeds (1-9) × 200 tasks:
 
-- this branch: 1381 derived, 150 refused, 246 unwitnessed, **0 wrong**, plus 23 wrong on tasks whose reference splits
-  on a delimiter that gives no example (asked rows included) two fields. No example-only search can recover that
-  delimiter; the harness counts these separately as unreachable (the Limits section discloses it). 5 of them derive
-  `line.trim()`; every one fits all its examples and asked rows.
+- this branch (after Auditor #530 R2): 1367 derived, 164 refused, 256 unwitnessed, **0 wrong**, plus **13
+  unrecoverable**: the reference splits on a delimiter that splits no example or asked row, and the derived program
+  reads the whole line (`line.trim()` 5, `isint` 5, `=== "ok"` / `=== "scan"`, `includes("ok")`, `line.length`). No
+  derived program in the 13 splits. Seeds 1-9: 145/19, 150/19, 154/14, 160/18, 148/22, 153/15, 158/16, 150/22,
+  149/19 derived/refused; unrecoverable 1, 0, 0, 0, 5, 0, 2, 1, 4.
+- after Auditor #530 (1)-(3), before R2 (d51ac25): 1381 derived, 150 refused, 0 wrong, 23 unrecoverable. The R2 gate
+  turned the 10 of them that derive a split (e.g. `line.trim().split(" ")[q] ?? "?"` for a reference on `_`) into
+  refusals.
+- a tried and not adopted extension of R2 to whole-line fits (each common delimiter in no example must be told apart
+  by an example, else ask rows): 13 to 2 unrecoverable on the same seeds, at 44 fewer derived. It refused real
+  whole-line parsers in the held-out specs and upstream evidence (`isComment`, `hasTag`) until rows with every absent
+  delimiter were answered. Limited to examples with no field structure at all it caught none of the 13. Left to the
+  Auditor / Peace as a policy choice.
 - the engine before the fixes (5a23b1c): 1372 derived, 3 wrong (all the padded-last-field rival: `isint(trim.field 1
   on =)`, `int(trim.field 3 on :) ?? 99`, `int(trim.field 2 on ;) ?? 0`), 41 unreachable.
 
@@ -167,9 +186,11 @@ names.
   eval, the near-rival families and a 9-seed random harness), not on a proof: the probes are a finite sample, and a
   rival that differs only on inputs no probe covers is not caught. Auditor #530 found one
   (`s.split(d)[i]` vs `s.trim().split(d)[i]`), now probed. Credit still rests on Peace's verdict on each real candidate.
-- A delimiter that appears in no example cannot be derived. A split that gives no example two non-empty fields is
-  refused, but the examples can still be fitted by a program that does not split (`line.trim()`) or splits on another
-  delimiter the examples show; the random harness counts these separately (see the harness section).
+- A delimiter that appears in no example cannot be derived. A fitted split that gives no example two non-empty fields,
+  or that no example's result depends on, is refused with an asked row (Auditor #530 (2) and R2). A fit that reads
+  the whole line is not gated: when the intended parser takes field 0 or the last field on a delimiter no example
+  holds, the whole-line fit is derived and is wrong on lines with that delimiter (13 of 1800 random-harness tasks;
+  see the harness section).
 - A `-0` example read by the strict-integer parse returns `-0`, which fails the generated test's comparison at
   self-grade (fail-safe: the candidate does not count). Not fixed in v5.
 - Single-character delimiters only. No escapes, newlines or tabs inside literals. Non-integer q values are not probed.

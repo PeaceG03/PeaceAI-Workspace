@@ -39,7 +39,10 @@
 //   derive_under_specified_path: the fit has a fallback the examples never take: a field or tail that can be missing
 //                            (every example has it), a strip whose prefix is on every example (or on none), an
 //                            integer parse that never fails (or never succeeds); a split on a delimiter that gives
-//                            no example two non-empty fields (Auditor #530); with the row it asks for.
+//                            no example two non-empty fields (Auditor #530); a split no example's result depends
+//                            on: the fit gives the same result on every example as when the line is read as one
+//                            field (Auditor #530 R2); with the row it asks for. A fit that reads the whole line is
+//                            not gated: a split on a delimiter that is in no example cannot be seen (a known limit).
 // A default D (the missing-field result, the failed-parse result) is never chosen silently: when no example takes
 // that path, every candidate D ("" and each example result; 0 and -1 for a number) is a rival, so the task is refused
 // as derive_ambiguous (or, failing that, by the path gate).
@@ -243,6 +246,14 @@ function splitOn(p: StrProgram): { trim: boolean; d: string } | null {
   if (p.op === "count" || p.op === "split") return { trim: p.trim, d: p.d };
   if ("x" in p && (p.x.piece.k === "field" || p.x.piece.k === "last" || p.x.piece.k === "rest")) return { trim: p.x.trim, d: p.x.piece.d };
   return null;
+}
+
+/** The program with its split made a no-op (a delimiter no writable line holds): the line read as one field. */
+const NO_DELIM = "\u0001";
+function oneField(p: StrProgram): StrProgram {
+  if (p.op === "count" || p.op === "split") return { ...p, d: NO_DELIM };
+  if ("x" in p && (p.x.piece.k === "field" || p.x.piece.k === "last" || p.x.piece.k === "rest")) return { ...p, x: { ...p.x, piece: { ...p.x.piece, d: NO_DELIM } } } as StrProgram;
+  return p;
 }
 
 /** The fallback paths a program has (each must be taken by some example). */
@@ -611,6 +622,18 @@ function gateProblem(prog: StrProgram, input: StrInput, probes: readonly StrArg[
     const at = probes.find((a) => twoFields(a[0] as string));
     const v = at ? evalStr(prog, at) : undefined;
     return { ok: false, reason: "derive_under_specified", gate: "path", detail: `no example's line has two non-empty fields on ${JSON.stringify(sd.d)}; add an example with the delimiter the parser splits on`, questions: at && v !== undefined ? [{ at, answers: [v, "?"] }] : [] };
+  }
+  // Auditor #530 R2: a fit that splits must show the split in some example's result: the same program reading the
+  // line as one field (split on a delimiter no line holds) must give a different result on some example. Otherwise
+  // every example reads the same with or without the split (the delimiter is in the lines but never moves a result,
+  // or the field it picks is always the whole line or always missing), so the split, and its delimiter, are a guess
+  if (sd) {
+    const one = oneField(prog);
+    const shows = (a: readonly StrArg[]) => outKey(evalStr(prog, a)) !== outKey(evalStr(one, a));
+    if (!examples.some((e) => shows(e.args))) {
+      const at = probes.find(shows);
+      return { ok: false, reason: "derive_under_specified", gate: "path", detail: `no example's result depends on the split on ${JSON.stringify(sd.d)}; add an example whose result the split changes`, questions: at ? [{ at, answers: uniq([evalStr(prog, at), evalStr(one, at)].map(outKey)).map((k) => JSON.parse(k) as StrOut) }] : [] };
+    }
   }
   const seen = new Set<Path>();
   for (const e of examples) evalStr(prog, e.args, (p) => seen.add(p));
