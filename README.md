@@ -81,15 +81,21 @@ neither the account nor who edited the body can be attributed). `peace` is an al
 `taskSource`); anything else is `builder` (not Peace's):
 
 - no `source:builder` label (compared trimmed and case-insensitive);
+- **no raw HTML** outside fenced code blocks: any `<` followed by a letter, `/`, `!` or `?` gives builder (tags,
+  also split over several lines, comments, `<?...?>`, `<![CDATA[...]]>`, `<!DOCTYPE ...>`); write `&lt;` for a
+  literal `<`;
 - HTML entities (numeric and named) are decoded first (a named entity outside the known table gives builder),
   then the body is normalized (zero-width characters removed, NFKC, unicode hyphens folded to `-`); HTML comments,
   fenced and indented code, blockquote lines and the Examples block are stripped, and what is left has exactly
   **one credit line**: a top-level line starting `Context (...):` (or the older `(Builder pre-file, ...):` form of
   #353-#488);
-- the credit line's **visible text** carries `(source: peace)` closing the credit clause (followed only by the end
-  of the line or a sentence end): link and image destinations, titles and alt text, HTML tags with all their
+- the credit line's **visible text** carries `(source: peace)` closing the credit clause: link and image destinations, titles and alt text, HTML tags with all their
   attributes, autolinks and bare URLs, code spans, quoted spans, and `~~` / `~` / `<del>` / `<s>` / `<strike>`
   content don't count, and an unclosed construct hides the rest of the line;
+- `(source: peace)` appears once on the credit line, and **only an allowlisted text may follow it**: nothing,
+  `.`, or `. ` plus exactly one of the trailing texts of the 80 genuine tasks (#353-#502), pinned in
+  `policy.ts` (`CREDIT_TRAILING_ALLOWLIST`, count and sha256 checked by the m119 test; protected). Anything else
+  after the mark ("Not Peace's task.", "source=builder.") gives builder;
 - every `(source ...:` clause anywhere in the body, stripped regions included and with entities decoded, is
   exactly `(source: peace)`; so `(source : builder)`, `( source: builder)`, a zero-width-split `source` or
   `&#40;source: builder&#41;` give builder;
@@ -97,14 +103,16 @@ neither the account nor who edited the body can be attributed). `peace` is an al
   the team to pick, not credited as ...).
 
 It is decided at pick time and again by Job C, with the labels re-read at record time. Job C also requires that
-no `source:builder` label was ever added, and that the credit line's visible text at the issue's FIRST
-`peace-task` label event (the body revision then, reconstructed from GitHub `userContentEdits`) is identical to
-its visible text at record time, with complete edit history. Edits elsewhere in the body (added examples, notes)
-don't affect credit. Job C stores `source` (`peace` | `builder`) and `bodySha256` (sha256 of the full body, for
+no `source:builder` label was ever added, and that the body is **add-only** since the issue's FIRST `peace-task`
+label event: the body revision then (the latest GitHub `userContentEdits` revision strictly before the label; an
+edit with the label's own timestamp gives builder) must have every line still present, unchanged and in order, at
+record time, and its credit line's visible text must be identical. Lines may be added (examples, notes); a removed,
+reworded or reordered line, a deleted revision or incomplete edit history gives builder. Job C stores `source` (`peace` | `builder`) and `bodySha256` (sha256 of the full body, for
 traceability) in `task.json`; a record without `source` reads as `builder`.
 
 **New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
-Peace's own task: `Context (Builder pre-file, ...): Peace's task (source: peace). ...`; a team-picked task says
+Peace's own task: `Context (Builder pre-file, ...): <context> Peace's task (source: peace)`, with **the mark at
+the end of the line** (context goes before it or on other lines; the trailing allowlist never grows); a team-picked task says
 so on that line (`Team-picked task (...; not credited as source: peace ...)`) and gets no `(source: peace)`.
 
 Ruling on older rows (builder-log, not this code): builder-log seq 98-122 (#233, #240, #248, #255, #259, #262,
