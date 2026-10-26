@@ -26,7 +26,11 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^(README\.md|CONSTITUTION[^/]*|SECURITY[^/]*|CODEOWNERS|LICENSE[^/]*)$/i, why: "governance documents" },
   { pattern: /^peaceai\/rules\//i, why: "approved learned-rule list and rule specs" },
   { pattern: /^peaceai\/test\//i, why: "the live test suite (new tests go under peaceai/self-tests/)" },
-  { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.test\.ts$/i, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
+  // M117 (Auditor #512/#527 note): the ONE entry without the i flag, so its peaceai/self-tests/ exemption is exact
+  // (lowercase only, the directory test:self runs) while the protected part stays case-insensitive by spelling each
+  // letter of .test.ts. Tighten-only: every path the old /i form refused is still refused, and case variants such as
+  // peaceai/Self-Tests/x.test.ts are now refused too (m110 pins both).
+  { pattern: /^(?!peaceai\/self-tests\/)(.*\/)?[^/]*\.[tT][eE][sS][tT]\.[tT][sS]$/, why: "existing tests anywhere (new tests go under peaceai/self-tests/)" },
   { pattern: /^peaceai\/bin\/(approve-rule[^/]*|check-approved-list\.ts|leak-scan\.ts|prepush-scan\.ts|core-scan\.ts|install-pre-push\.sh|push-proof-main\.sh|await-checks\.sh|await-held-runs\.sh|clone-core\.sh|self-change\.ts|nl-refusal\.ts|regate\.ts|gate\.ts)$/i, why: "approval, leak, scan, hook, gate and self-change tools" },
   { pattern: /^peaceai\/bin\/test-candidates\.ts$/i, why: "the grading harness (M14)" },
   { pattern: /^peaceai\/bin\/(?:pr-guard|verdict-patch|parse-verdict|target-check|issue-fetch|lm-fill|lm-provenance|no-candidate-comment|review-comment|select|train)\.ts$|^peaceai\/proof\/tamper-proof\.ts$/i, why: "the TypeScript tools workflow steps run on the trusted runner: pr-guard.ts (its output drives the target-pr step holding TARGET_PR_TOKEN), verdict-patch.ts, parse-verdict.ts, target-check.ts (also in target-pr), issue-fetch.ts, lm-fill.ts, lm-provenance.ts, no-candidate-comment.ts, review-comment.ts, select.ts, train.ts (holds the Results deploy key) and the tamper-proof check (M95)" },
