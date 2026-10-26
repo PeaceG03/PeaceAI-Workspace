@@ -390,6 +390,18 @@ test("negatives: the closure is hermetic or nothing (package imports, builtins, 
   assert.equal(withPrelude("const T = Date.now();\nexport const t = T;\n"), "edit_io_global: Date");
   assert.equal(withPrelude("import { x } from \"./dep.ts\";\nexport const y = x;\n", [{ path: "src/dep.ts", content: "export const x = process.env.HOME;\n" }]), "edit_io_global: process");
   assert.equal(withPrelude("import { x } from \"./dep.ts\";\nexport const y = x;\n", [{ path: "src/dep.ts", content: "export const x = 1;\n" }]), undefined);
+  // Auditor #520: the hermetic walk is shallow (it never enters a function), so an initializer that calls one, or makes
+  // the runtime call user code, is refused by the strict inert-at-load allowlist (here and in any imported module)
+  for (const pre of [
+    "export const a = (() => fetch(\"x\"))();\n",
+    "export const a = (() => { (globalThis as any).x = 1; return 1; })();\n",
+    "export const a = console.log(1);\n",
+    "const tag = (s: TemplateStringsArray) => s[0];\nexport const a = tag`x`;\n",
+    "const o = { get g() { return 1; } };\nexport const a = o.g;\n",
+    "const o = { toString() { return \"x\"; } };\nexport const a = `${o}`;\n",
+    "const o = [1];\nexport const a = [...o];\n",
+  ]) assert.equal(withPrelude(pre), "edit_module_load", pre);
+  assert.equal(withPrelude("import { x } from \"./dep.ts\";\nexport const y = x;\n", [{ path: "src/dep.ts", content: "export const x = (() => { console.log(1); return 1; })();\n" }]), "edit_module_load");
   const ext = STORAGE.replace("export class Storage {", "class Base {}\nexport class Storage extends Base {");
   assert.equal(run(B, [{ path: "src/storage.ts", content: ext }]).r, "edit_class_extends");
 });
@@ -500,6 +512,8 @@ test("evidence G1: >= 10 upstream commits replay exactly: editStatement on the p
 test("evidence G2: >= 10 upstream tests drive a method / function with injected object-literal fakes; the hermetic walk accepts that shape on the pinned closure", () => {
   assert.ok(EV.g2.length >= EV.bar);
   assert.ok(new Set(EV.g2.map((e) => e.repo)).size >= 10);
+  const STRICT_LOAD_REFUSED: Record<string, string> = { "pete-mc/dataverse-powertools": "src/general/dataverse/webApi.ts" };
+  const accepted = new Set<string>();
   for (const e of EV.g2) {
     const test = pinned(e.test);
     assert.ok(test.includes(e.snippet.split("\n")[0]!), `${e.repo} snippet`);
@@ -508,8 +522,13 @@ test("evidence G2: >= 10 upstream tests drive a method / function with injected 
     const entry = e.entry.kind === "new" ? { kind: "new" as const, cls: e.entry.cls!, method: e.entry.method!, args: e.entry.args.map(inj), ctorArgs: e.entry.ctorArgs!.map(inj) } : { kind: "call" as const, fn: e.entry.fn!, args: e.entry.args.map(inj) };
     assert.ok([...e.entry.args, ...(e.entry.ctorArgs ?? [])].some((a) => a && typeof a === "object"), `${e.repo} injects an object literal`);
     const r = hermeticProblem(e.module, rd, [{ entry, code: "", names: [entry.kind === "new" ? entry.cls : entry.fn] }], e.target);
+    // Auditor #520: the strict inert-at-load allowlist (importTimeProblem) now refuses this closure, whose webApi.ts
+    // runs `"/".charCodeAt(0)` at import (a method call; fail closed). Recorded here, not counted; the bar still holds.
+    if (STRICT_LOAD_REFUSED[e.repo]) { assert.equal(r, `edit_module_load:${STRICT_LOAD_REFUSED[e.repo]}`, e.repo); continue; }
+    accepted.add(e.repo);
     assert.deepEqual(r, { targetReached: true }, `${e.repo} ${e.target}`);
   }
+  assert.ok(accepted.size >= EV.bar, `${accepted.size} accepted`);
 });
 
 test("evidence: licenses by hash in THIRD_PARTY_NOTICES; fixtures dir holds exactly the evidence fixtures", () => {

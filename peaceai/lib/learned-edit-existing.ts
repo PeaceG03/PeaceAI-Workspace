@@ -431,6 +431,110 @@ function inertAtLoad(e: ts.Expression): boolean {
 }
 
 /**
+ * Auditor #520: STRICT inert-at-load, an allowlist (fail closed). The shallow hermetic walk below never looks inside a
+ * function, so an initializer that CALLS one (an IIFE, `console.log(1)`, a tagged template) or makes the runtime call
+ * user code (a getter by member access or destructuring, toString / valueOf by a template or arithmetic, an iterator
+ * by a spread) ran code at import unseen. Allowed: literals (regex literals too); `undefined`; a plain name bound in the closure; a function
+ * or arrow that is not invoked; an array literal (no spread, no hole) or object literal (plain or string / number keys,
+ * no computed key, no spread, no getter / setter, no `__proto__`, methods allowed) of strict-inert parts; an untagged
+ * template or + - * / % ** whose operands are primitive (a literal, or a plain name of a top-level const in the closure
+ * whose initializer is primitive); parens / `as` / `satisfies` / `!`; and two shapes that run no user code on fresh
+ * literals, only when the global is not rebound in the closure: Object.freeze(object / array literal) and
+ * new Set / new Map(array literal). Everything else (any other call or `new`, member access, tagged template,
+ * conditional, typeof, await, class expression, ...) is refused.
+ */
+function strictInert(c: Closure, e: ts.Expression): boolean {
+  const x = unwrap(e);
+  if (primitiveAtLoad(c, x, 0) || ts.isRegularExpressionLiteral(x)) return true;
+  if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) return true;
+  if (ts.isIdentifier(x)) return x.text === "undefined" ? !closureBinds(c, "undefined") : closureDecl(c, x) !== null;
+  if (ts.isArrayLiteralExpression(x)) return x.elements.every((el) => !ts.isSpreadElement(el) && !ts.isOmittedExpression(el) && strictInert(c, el));
+  if (ts.isObjectLiteralExpression(x)) return x.properties.every((p) => {
+    if (!p.name || ts.isComputedPropertyName(p.name) || ts.isPrivateIdentifier(p.name)) return false;
+    if ((ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === "__proto__") return false;
+    if (ts.isPropertyAssignment(p)) return strictInert(c, p.initializer);
+    if (ts.isShorthandPropertyAssignment(p)) return !p.objectAssignmentInitializer && closureDecl(c, p.name) !== null;
+    return ts.isMethodDeclaration(p) && !p.asteriskToken;
+  });
+  const fresh = (a: ts.Expression | undefined): boolean => !!a && (ts.isObjectLiteralExpression(unwrap(a)) || ts.isArrayLiteralExpression(unwrap(a))) && strictInert(c, a);
+  if (ts.isCallExpression(x) && !x.questionDotToken && ts.isPropertyAccessExpression(x.expression) && ts.isIdentifier(x.expression.expression) && x.expression.expression.text === "Object" && x.expression.name.text === "freeze" && !closureBinds(c, "Object")) return x.arguments.length === 1 && fresh(x.arguments[0]);
+  if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && (x.expression.text === "Set" || x.expression.text === "Map") && !closureBinds(c, x.expression.text)) {
+    const a = x.arguments ?? [];
+    if (a.length === 0) return true;
+    const arr = unwrap(a[0]!);
+    if (a.length !== 1 || !ts.isArrayLiteralExpression(arr) || !strictInert(c, arr)) return false;
+    return x.expression.text === "Set" || arr.elements.every((el) => { const pair = unwrap(el); return ts.isArrayLiteralExpression(pair) && pair.elements.length === 2; });
+  }
+  return false;
+}
+
+/** A primitive value whose evaluation runs no user code: a literal, or + - * / % ** / an untagged template over such values or names of primitive top-level consts. */
+function primitiveAtLoad(c: Closure, e: ts.Expression, depth: number): boolean {
+  if (depth > 32) return false;
+  const x = unwrap(e);
+  if (ts.isStringLiteral(x) || ts.isNumericLiteral(x) || ts.isBigIntLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) return true;
+  if (x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword) return true;
+  if (ts.isPrefixUnaryExpression(x) && (x.operator === ts.SyntaxKind.MinusToken || x.operator === ts.SyntaxKind.PlusToken) && ts.isNumericLiteral(unwrap(x.operand))) return true;
+  if (ts.isTemplateExpression(x)) return x.templateSpans.every((s) => primitiveAtLoad(c, s.expression, depth + 1));
+  if (ts.isBinaryExpression(x) && [ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken].includes(x.operatorToken.kind)) return primitiveAtLoad(c, x.left, depth + 1) && primitiveAtLoad(c, x.right, depth + 1);
+  if (ts.isIdentifier(x)) {
+    const d = closureDecl(c, x);
+    return !!d && ts.isVariableDeclaration(d) && !!d.initializer && ts.isIdentifier(d.name) && (d.parent.flags & ts.NodeFlags.BlockScoped) === ts.NodeFlags.Const && ts.isSourceFile(d.parent.parent.parent) && primitiveAtLoad(c, d.initializer, depth + 1);
+  }
+  return false;
+}
+
+const closureFileOf = (c: Closure, n: ts.Node): boolean => [...c.files.values()].includes(n.getSourceFile());
+/** The value declaration a plain name resolves to (through imports), when it is a top-level declaration in the closure. */
+function closureDecl(c: Closure, id: ts.Identifier): ts.Declaration | null {
+  let sym = ts.isShorthandPropertyAssignment(id.parent) && id.parent.name === id ? c.checker.getShorthandAssignmentValueSymbol(id.parent) : c.checker.getSymbolAtLocation(id);
+  if (sym && sym.flags & ts.SymbolFlags.Alias) sym = c.checker.getAliasedSymbol(sym);
+  const d = sym?.valueDeclaration;
+  if (!d || !closureFileOf(c, d)) return null;
+  const top = ts.isVariableDeclaration(d) ? d.parent.parent : d;
+  return ts.isSourceFile(top.parent) && (ts.isVariableStatement(top) || ts.isFunctionDeclaration(top) || ts.isClassDeclaration(top) || ts.isEnumDeclaration(top)) ? d : null;
+}
+/** True when some module of the closure declares or imports `name` at top level (a global it would shadow). */
+const closureBinds = (c: Closure, name: string): boolean => [...c.files.values()].some((sf) => {
+  let hit = false;
+  const walk = (n: ts.Node): void => { if (hit) return; if (ts.isIdentifier(n) && n.text === name && isBindingName(n)) hit = true; else n.forEachChild(walk); };
+  walk(sf);
+  return hit;
+});
+/** A declaring occurrence of a name (import, variable, parameter, function, class, enum, namespace, binding element). */
+const isBindingName = (n: ts.Identifier): boolean => {
+  const p = n.parent;
+  return (ts.isImportSpecifier(p) && p.name === n) || ts.isImportClause(p) || ts.isNamespaceImport(p) || ts.isImportEqualsDeclaration(p)
+    || ((ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isFunctionDeclaration(p) || ts.isFunctionExpression(p) || ts.isClassDeclaration(p) || ts.isClassExpression(p) || ts.isEnumDeclaration(p) || ts.isModuleDeclaration(p) || ts.isBindingElement(p)) && (p as { name?: ts.Node }).name === n);
+};
+
+/** Auditor #520: every expression a module of the closure evaluates at import passes strictInert, else `edit_module_load:<path>`. */
+export function importTimeProblem(c: Closure): string | null {
+  for (const [p, sf] of c.files) {
+    const bad = `edit_module_load:${p}`;
+    for (const st of sf.statements) {
+      if (ts.isVariableStatement(st)) {
+        if (st.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)) continue;
+        const fl = st.declarationList.flags;
+        const kind = fl & ts.NodeFlags.BlockScoped;
+        if (kind === ts.NodeFlags.Using || kind === ts.NodeFlags.AwaitUsing) return bad; // disposed at module end
+        for (const d of st.declarationList.declarations) {
+          if (!ts.isIdentifier(d.name)) return bad; // destructuring runs getters / iterators
+          if (d.initializer && !strictInert(c, d.initializer)) return bad;
+        }
+      } else if (ts.isEnumDeclaration(st)) {
+        if (st.members.some((m) => m.initializer && !primitiveAtLoad(c, m.initializer, 0) )) return bad;
+      } else if (ts.isClassDeclaration(st)) {
+        for (const m of st.members) if (ts.isPropertyDeclaration(m) && m.initializer && (ts.getModifiers(m) ?? []).some((k) => k.kind === ts.SyntaxKind.StaticKeyword) && !strictInert(c, m.initializer)) return bad;
+      } else if (ts.isExportAssignment(st)) {
+        if (!strictInert(c, st.expression)) return bad;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Module-load check of every module in the closure: only imports, declarations and variable / enum / static-field
  * initializers run at import, and those initializers are walked (shallow: function bodies are not run at load) under
  * the same hermetic rules; a module function they call is walked in full.
@@ -454,7 +558,9 @@ export function loadProblem(c: Closure, modPath: string): string | null {
     }
   }
   const r = reachProblem(c, modPath, null);
-  return typeof r === "string" ? r : null;
+  if (typeof r === "string") return r;
+  // Auditor #520: after the hermetic walk (so its specific codes stay first), the strict allowlist on every initializer.
+  return importTimeProblem(c);
 }
 
 /** Where the last refusal of reachProblem was raised (`/r/<path>:<line>`), for census reports only. */

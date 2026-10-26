@@ -264,8 +264,55 @@ test("negative: a module (or anything it imports) that runs code at import", () 
     ["package import", withUnits(`import { z } from "zod";\n${UNITS}`)],
     ["unresolved import", [{ path: "src/units.ts", content: UNITS }]],
     ["class static block", withUnits(`${UNITS}\nexport class K { static { capped(1); } }\n`)],
+    // Auditor #520: the shallow walk never looks inside a function, so each of these ran code at import unseen.
+    // importTimeProblem now holds every top-level initializer of the closure to a strict allowlist (fail closed).
+    ["IIFE that fetches", withUnits(`${UNITS}\nexport const a = (() => fetch("x"))();\n`)],
+    ["IIFE that reads process.env", withUnits(`${UNITS}\nexport const a = (() => process.env.HOME)();\n`)],
+    ["IIFE that writes globalThis", withUnits(`${UNITS}\nexport const a = (() => { (globalThis as any).x = 1; return 1; })();\n`)],
+    ["IIFE that logs", withUnits(`${UNITS}\nexport const a = (function () { console.log(1); return 1; })();\n`)],
+    ["arrow IIFE with a body", withUnits(`${UNITS}\nconst run = () => 1;\nexport const a = run();\n`)],
+    ["direct call of console.log", withUnits(`${UNITS}\nexport const a = console.log(1);\n`)],
+    ["call of a module function", withUnits(`${UNITS}\nexport const a = capped(3);\n`)],
+    ["custom tagged template", withUnits(`${UNITS}\nconst tag = (s: TemplateStringsArray) => s[0];\nexport const a = tag\`x\`;\n`)],
+    ["String.raw tagged template", withUnits(`${UNITS}\nexport const a = String.raw\`x\`;\n`)],
+    ["getter by member access", withUnits(`${UNITS}\nconst o = { get g() { return 1; } };\nexport const a = o.g;\n`)],
+    ["getter by destructuring", withUnits(`${UNITS}\nconst o = { g: 1 };\nexport const { g } = o;\n`)],
+    ["iterator by array destructuring", withUnits(`${UNITS}\nconst o = [1];\nexport const [h] = o;\n`)],
+    ["getter defined in an object literal", withUnits(`${UNITS}\nexport const o = { get g() { return 1; } };\n`)],
+    ["toString by template interpolation of an object", withUnits(`${UNITS}\nconst o = { toString() { return "x"; } };\nexport const a = \`\${o}\`;\n`)],
+    ["valueOf by arithmetic on an object", withUnits(`${UNITS}\nconst o = { valueOf() { return 1; } };\nexport const a = o + 1;\n`)],
+    ["toString by a computed key", withUnits(`${UNITS}\nconst k = { toString() { return "x"; } };\nexport const a = { [k as never]: 1 };\n`)],
+    ["Symbol.iterator by an array spread", withUnits(`${UNITS}\nconst it = { *[Symbol.iterator]() { yield 1; } };\nexport const a = [...(it as never as number[])];\n`)],
+    ["object spread (getters on the source run)", withUnits(`${UNITS}\nconst o = { g: 1 };\nexport const a = { ...o };\n`)],
+    ["Symbol.iterator by new Set of a name", withUnits(`${UNITS}\nconst it = [1];\nexport const a = new Set(it);\n`)],
+    ["Object.freeze of a name", withUnits(`${UNITS}\nconst o = { g: 1 };\nexport const a = Object.freeze(o);\n`)],
+    ["new of a module class", withUnits(`${UNITS}\nexport const a = new Clock(1);\n`)],
+    ["static field initializer that calls", withUnits(`${UNITS}\nexport class K { static n = capped(1); }\n`)],
+    ["enum member initializer that calls", withUnits(`${UNITS}\nexport enum E { A = capped(1) }\n`)],
+    ["conditional on a global", withUnits(`${UNITS}\nexport const a = typeof window === "undefined" ? 1 : 2;\n`)],
+    ["unknown global read", withUnits(`${UNITS}\nexport const a = navigator;\n`)],
+    ["Object.freeze when a sibling rebinds Object", [{ path: "src/units.ts", content: `import { Object } from "./unit-types.ts";\n${UNITS}` }, { path: "src/unit-types.ts", content: `${UNIT_TYPES}export const Object = { freeze: (x: unknown) => { console.log("x"); return x; } };\n` }]],
+    ["sibling module with an IIFE", [{ path: "src/units.ts", content: UNITS }, { path: "src/unit-types.ts", content: `${UNIT_TYPES}export const B = (() => { console.log("x"); return 1; })();\n` }]],
+    ["sibling module whose initializer runs a getter", [{ path: "src/units.ts", content: UNITS }, { path: "src/unit-types.ts", content: `${UNIT_TYPES}const o = { get e() { return 1; } };\nexport const C = o.e;\n` }]],
   ];
   for (const [label, files] of cases) assert.match(refuse("src/units.ts", files) ?? "", /^derive_append_side_effects/, label);
+});
+
+test("strict inert-at-load still accepts plain constant data, unused functions and literal-only templates / arithmetic", () => {
+  const extra = [
+    `export const NAMES = ["a", "b"] as const;`,
+    `export const TABLE = { a: 1, "b-c": -2, f: (n: number) => n, m(n: number) { return n; } } satisfies Record<string, unknown>;`,
+    `export const SECS = 24 * 60 * 60;`,
+    `export const LABEL = \`r\${ROUND}-\${SECS}\`;`,
+    `export const KEYS = new Set(["x", "y"]);`,
+    `export const PAIRS = new Map([["x", 1]]);`,
+    `export const ALIAS = capped;`,
+    `export class K { static readonly N = 3; }`,
+    `export enum Dir { Up = 1, Down = -1 }`,
+  ].join("\n");
+  const why: { reason?: string } = {};
+  const e = runDeriveRule(V3.trigger, V3.params, objective(issue("src/units.ts", OK.fn, [...OK.params], OK.ret, okExamples)), withUnits(`${UNITS}\n${extra}\n`), isTest, why);
+  assert.ok(e, why.reason);
 });
 
 test("negative: protected, denied, never-zone, test, .d.ts, fixture and traversal paths", () => {

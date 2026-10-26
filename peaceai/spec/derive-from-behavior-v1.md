@@ -263,7 +263,8 @@ module must exist (exact path, else `target_file_not_found`) and pass `appendTar
 path (`derive_path`), LF layout ending in exactly one newline (`derive_append_layout`), parsable, no use of the name
 anywhere and no `export *` (`derive_append_name_collision`), no top-level `let` / `var` / `using`
 (`derive_append_mutable_state`), and nothing run at import in it or its import closure, no package or unresolved import
-(`derive_append_side_effects`). The edit is the old text, one blank line, the function; imports never change
+(`derive_append_side_effects`; every top-level initializer in the closure must pass the strict inert-at-load
+allowlist `importTimeProblem`, fail closed: no call, `new`, member access, tagged template, spread or destructuring). The edit is the old text, one blank line, the function; imports never change
 (`derivedAppendProblem` re-checks, `derive_append_not_add_only`). Job B re-checks both against the base commit's text and
 runs the module's existing tests with the new test, confined to the module's closure. Details, held-out results and
 limits: peaceai/docs/m112-append-to-existing-module.md.

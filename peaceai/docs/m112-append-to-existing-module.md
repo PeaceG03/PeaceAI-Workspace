@@ -40,7 +40,7 @@ followed by behavior prose and literal examples, exactly as for v1.
 | `derive_append_parse` | the module does not parse |
 | `derive_append_name_collision` | the name appears anywhere in the module (any binding, import, export, type, property, use, even a comment: fail closed), or the module has `export *` / `export * as` |
 | `derive_append_mutable_state` | a top-level `let`, `var` or `using` |
-| `derive_append_side_effects` | the module or anything it imports runs code at import (top-level calls, clock / env reads, static blocks, `export default` of an expression), imports a package, or has an unresolved import (the M-edit-existing `loadClosure` / `loadProblem` checks) |
+| `derive_append_side_effects` | the module or anything it imports runs code at import (top-level calls, clock / env reads, static blocks, `export default` of an expression), imports a package, or has an unresolved import (the M-edit-existing `loadClosure` / `loadProblem` checks), or any top-level initializer in the import closure fails the strict inert-at-load allowlist (`importTimeProblem`, see below) |
 | `derive_append_not_add_only` | the built text is not old text + blank line + one function (re-check) |
 | `derive_params` | a spec pairing a placement with the other placement's trigger |
 
@@ -95,3 +95,24 @@ type-checked under strict. So the four tiny modules of slice 1 could have been o
 - A module ending with a blank line, CRLF or no final newline is refused rather than normalized.
 - Job B grades a derive candidate only on Node >= 22 (permission model), as for v1/v2; CI runs Node 22.
 - Off until Peace approves the v3 hash on its proposal issue.
+
+## Strict inert-at-load (Auditor #520)
+
+The hermetic walk `loadProblem` / `reachProblem` is shallow: it never looks inside a function, so an initializer that
+CALLS one ran code at import unseen (`export const a = (() => fetch("x"))();`, an IIFE reading `process.env`, writing
+`globalThis` or logging, `console.log(1)`, a custom tagged template), as did one that makes the runtime call user code
+(a getter by member access or destructuring, `toString` / `valueOf` by a template or arithmetic, an iterator by a
+spread or `new Set(name)`), in the module or in any module it imports. `loadProblem` now also runs `importTimeProblem`
+(peaceai/lib/learned-edit-existing.ts) on every module of the closure: every top-level variable initializer, enum member
+initializer, static field initializer and `export default` expression must pass a strict allowlist, else
+`edit_module_load:<path>` (here `derive_append_side_effects`). Allowed: literals (regex too), `undefined`, a plain name
+bound at top level in the closure, a function or arrow that is not invoked, array literals (no spread, no hole) and
+object literals (plain / string / number keys, no computed key, spread, getter / setter or `__proto__`; methods allowed)
+of allowed parts, an untagged template or `+ - * / % **` over primitives only (literals, or names of top-level consts
+whose initializer is primitive), `as` / `satisfies` / `!` / parens, and on fresh literals only, with the global not
+rebound anywhere in the closure, `Object.freeze(literal)` and `new Set` / `new Map(array literal)`. Destructuring
+declarations and `using` are refused. Everything else (any other call or `new`, member access, tagged template,
+conditional, `typeof`, `await`, class expression) is refused: fail closed. The same check applies to EXISTING_EDIT
+(not approved; its splice entry is disabled) through the shared `loadProblem`; one of its 15 G2 evidence closures
+(pete-mc/dataverse-powertools, `"/".charCodeAt(0)` at import) is now refused and recorded as such in
+m98-existing-function-edit.test.ts (14 accepted, bar 10). The negatives for each case are in the import-time test.
