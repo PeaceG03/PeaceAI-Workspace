@@ -10,7 +10,7 @@ import type { CandidateResult } from "../lib/rank.ts";
 import { activeRanker, loadLatestModel, shadowRanking } from "../lib/ranker/pipeline.ts";
 import { activeWithLm, latestLmDir, lmEvaluate, lmFlags, lmShadowRanking } from "../lib/lm.ts";
 import { buildRecords, stableJson } from "../lib/records.ts";
-import { recordedTaskSource } from "../lib/policy.ts";
+import { bodySha256, recordedTaskSource } from "../lib/policy.ts";
 import { isRepaired, validateRepairRecord, type StoredRepairRecord } from "../lib/repairrecord.ts";
 import { appendIndex, loadAll, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 
@@ -76,8 +76,10 @@ const records = buildRecords(
     baseSha: summary.baseSha,
     title: String(issue.title ?? "").slice(0, 300),
     body: String(issue.body ?? "").slice(0, 4000),
-    // M119: the pick-time source (labels + body) and the full fetched body must both say peace.
-    source: recordedTaskSource(process.env.TASK_SOURCE, issue.body),
+    // M119: the pick-time source (labels + body) and the full fetched body must both say peace, the body must
+    // be the one picked (sha256) and unedited since the first peace-task label event; else builder.
+    source: recordedTaskSource(process.env.TASK_SOURCE, issue.body, { pickBodySha256: process.env.TASK_BODY_SHA256, provenance: issue.provenance }),
+    bodySha256: bodySha256(issue.body),
     ...(targetName ? { target: targetName } : {}),
     ...regrade,
   },

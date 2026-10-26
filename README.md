@@ -76,13 +76,35 @@ whose candidates all make the same edit counts as a single-candidate task (`sing
 read as a fraction, are below 0.2 (about 20%). Held-out tasks are recorded and reviewed like any
 other but are never used for training; agreement is also reported for them separately.
 
-**Task source**: provenance decides it, never the filer account (Peace and Builder both file as PeaceG03).
-A task is `peace` only when it has no `source:builder` label, its body carries the `(source: peace)` credit
-line (the same marker builder-log credit reads), every `(source: ...)` clause in it says peace, and nothing in
-it says team-picked ("Team-picked task", "not credited as source: peace", "asked the team to pick"). Anything
-else, including no credit line, is `builder` (not Peace's). It is decided at pick time and again by Job C on
-the full issue body, and stored as `source` (`peace` | `builder`) in `task.json` and the summary; a record
-without the field reads as `builder` (`peaceai/lib/policy.ts` `taskSource`).
+**Task source**: provenance decides it, never the filer account (Peace and Builder both file as PeaceG03, so
+neither the account nor who edited the body can be attributed). `peace` is an allow-match (`peaceai/lib/policy.ts`
+`taskSource`); anything else is `builder` (not Peace's):
+
+- no `source:builder` label (compared trimmed and case-insensitive);
+- the body is normalized (zero-width characters removed, NFKC, unicode hyphens folded to `-`), then HTML comments,
+  fenced and indented code, blockquote lines and the Examples block are stripped, and what is left has exactly
+  **one credit line**: a top-level line starting `Context (...):` (or the older `(Builder pre-file, ...):` form of
+  #353-#488) that itself carries `(source: peace)` outside any quoted or backticked span;
+- every `(source ...:` clause anywhere in the normalized body, stripped regions included, is exactly
+  `(source: peace)`; so `(source : builder)`, `( source: builder)` or a zero-width-split `source` give builder;
+- no team-picked wording anywhere (Team-picked / Teampicked / Builder-picked, chosen by the team, Peace asked us or
+  the team to pick, not credited as ...).
+
+It is decided at pick time and again by Job C, which also requires the body it fetches to have the pick-time
+sha256 and no body edit after the issue's first `peace-task` label event (GitHub `userContentEdits` and
+`LabeledEvent` timeline). Job C stores `source` (`peace` | `builder`) and `bodySha256` (sha256 of the full body)
+in `task.json`; a record without `source` reads as `builder`.
+
+**New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
+Peace's own task: `Context (Builder pre-file, ...): Peace's task (source: peace). ...`; a team-picked task says
+so on that line (`Team-picked task (...; not credited as source: peace ...)`) and gets no `(source: peace)`.
+
+Ruling on older rows (builder-log, not this code): builder-log seq 98-122 (#233, #240, #248, #255, #259, #262,
+#288-#290, #293-#295, #297-#299, #301, #319, #329) stay credited as Peace's real tasks although those issue bodies
+carry no credit line, under Peace's Oct 16 2026 confirmation (relayed to the team by Auditor; no public link):
+Builder-drafted tasks filed as Peace's tasks count toward PeaceAI coverage, no separation needed, but the
+"Builder pre-file" note stays in the issue body. Their Results records say `source: "peace"`; no new task gets
+this exception.
 
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.

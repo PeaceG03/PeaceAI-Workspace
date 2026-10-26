@@ -39,6 +39,8 @@ export interface TaskRecord {
    * including team-picked tasks. Absent (records from before the field) reads as `builder` (fail closed).
    */
   source?: TaskSource;
+  /** M119: sha256 (hex, UTF-8) of the full issue body as fetched by Job C. Absent on older records. */
+  bodySha256?: string;
   /** M5: target repository (`owner/repo`) the diffs apply to. Absent on older records = this Workspace. */
   target?: string;
   /** M18: this attempt re-grades a chosen candidate of an earlier attempt on a newer base (fresh grade). */
@@ -150,6 +152,7 @@ export interface TaskInputs {
   title: string;
   body: string;
   source?: TaskSource;
+  bodySha256?: string;
   target?: string;
   regradeOf?: RegradeOf;
 }
@@ -245,6 +248,7 @@ export function buildRecords(
       heldOut: isHeldOut(task.issue),
       requiresTests,
       source: task.source === "peace" ? "peace" : "builder",
+      ...(typeof task.bodySha256 === "string" && /^[0-9a-f]{64}$/.test(task.bodySha256) ? { bodySha256: task.bodySha256 } : {}),
       ...(task.target ? { target: task.target } : {}),
       ...(task.regradeOf ? { regradeOf: { ...task.regradeOf } } : {}),
     },

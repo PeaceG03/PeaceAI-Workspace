@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { isCandidateIssue, labeledByOwner, pickNext, STATE, staleRunning, type LabelEvent, type QueueIssue } from "../lib/queue.ts";
-import { BUILDER_LABEL, taskSource } from "../lib/policy.ts";
+import { BUILDER_LABEL, bodySha256, taskSource } from "../lib/policy.ts";
 import { TASK_LABEL } from "../lib/trigger.ts";
 
 const repo = process.env.GITHUB_REPOSITORY ?? "";
@@ -53,4 +53,6 @@ if (picked !== null)
 // Provenance decides the source (labels and the issue body's credit line), never the filer account.
 const pickedIssue = picked === null ? null : issues.find((i) => i.number === picked)!;
 const source = pickedIssue === null ? "" : taskSource(pickedIssue.labels, pickedIssue.body);
-output({ issue: picked ?? "", source, waiting: issues.filter(isCandidateIssue).length });
+// M119: the sha256 of the body the source was decided on; Job C records builder if the body it fetches differs.
+const bodySha = pickedIssue === null ? "" : bodySha256(pickedIssue.body);
+output({ issue: picked ?? "", source, body_sha256: bodySha, waiting: issues.filter(isCandidateIssue).length });
