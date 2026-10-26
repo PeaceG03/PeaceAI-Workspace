@@ -107,3 +107,16 @@ questions (comment 6388142538 and his 699/464/30000 answers on the issues); Peac
 6383886641, each `/verdict A right`. The peacestocks-write runs were approved by Builder with
 Peace's explicit permission; after Auditor byte-check PASS PeaceAI's verdict PRs PeaceSTOCKS#70/#71 were squash-merged as d6f3da9 and
 0bbb039 (rows in merge order). Coverage becomes 91/222 (41.0%) from 2026-10-24.
+
+## Scanner health-check slice 1 landings (2026-10-26)
+
+Seq 278-281 record team-picked tasks #513 (checkinLine), #514 (isCheckinSilent), #515 (isCheckinExpired) and #516 (partState),
+slice 1 of Peace's scanner self-health-check. Provenance (Auditor): on 2026-10-25 Peace asked the team to pick a real task; the spec
+and examples were written by Builder's helper after a derive dry-run disclosed to Auditor, PeaceAI derived each body
+(DERIVE_FROM_BEHAVIOR) and Peace gave each `/verdict A right`. The rows therefore say `source: team-picked`, not `(source: peace)`,
+and earn no real-task coverage credit. #513-#515 used public-derive-from-behavior-v1; for #516 v1 refused (derive_no_fit), and
+public-derive-from-behavior-v2 (approved via #518, landed as #519 2e04d3d) was taught for the gap #516 exposed and proven offline on
+#516 before PeaceAI derived it live. PeaceAI review comments 6404211332, 6404256176, 6404297936 and 6407944873. The peacestocks-write
+runs were approved by Builder under Peace's standing permission, after Auditor PASS; after Auditor byte-check PASS PeaceAI's verdict
+PRs PeaceSTOCKS#73/#72/#74/#75 were squash-merged as 24025a3, f01a60d, 6cdbc2b and 8dec076 (rows in merge order). Coverage stays
+91/222 (41.0%).
