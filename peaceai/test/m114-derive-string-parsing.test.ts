@@ -341,6 +341,55 @@ test("Auditor #523 lessons: an unpinned default is an asked row; a test true on 
   assert.ok(!id.ok && id.reason === "derive_under_specified" && id.gate === "outputs", JSON.stringify(id));
 });
 
+// Auditor #530: derive, answer every asked row with the reference, and return the final result (at most 8 rounds)
+function deriveAnswering(params: StrParam[], ret: StrRet, ref: StrProgram, lines: readonly StrArg[][]) {
+  const examples: StrExample[] = lines.map((args) => ({ args: [...args], out: evalStr(ref, args) }));
+  let r = deriveStringProgram({ params, ret, examples });
+  for (let n = 0; n < 8 && !r.ok && r.questions?.length; n++) {
+    for (const q of r.questions) examples.push({ args: [...q.at], out: evalStr(ref, q.at) });
+    r = deriveStringProgram({ params, ret, examples });
+  }
+  return { r, examples };
+}
+
+test("Auditor #530 (1): s.split(d)[i] vs s.trim().split(d)[i] is probed (the first i+1 fields, padded); the repro and three harness variants derive the trimmed program", () => {
+  const P: StrParam[] = [{ name: "s", type: "string" }];
+  const fld = (d: string, i: number): XNode => ({ trim: true, piece: { k: "field", d, i }, post: false });
+  const cases: { ret: StrRet; ref: StrProgram; lines: string[]; at: string; want: string }[] = [
+    // the exact repro: Number(s.trim().split(",")[1]) or 0
+    { ret: "number", ref: { op: "int", x: fld(",", 1), lenient: false, dflt: 0 }, lines: ["a,12,c", "b,7,d", "x,zz,q", "y", " k,5,m "], at: "a,12 ", want: "s.trim().split(\",\")[1]" },
+    // harness variants: field 3 on "/" with ?? "none"; the int-or-99 field 2; !isint(field 3 on "_")
+    { ret: "string", ref: { op: "str", x: fld("/", 3), dflt: "none" }, lines: ["a/b/c/ok/z", "p/q/r/late/w", "x/y", " a/b/c/err/z "], at: "a/b/c/ok ", want: "s.trim().split(\"/\")[3]" },
+    { ret: "number", ref: { op: "int", x: fld("|", 2), lenient: false, dflt: 99 }, lines: ["a|b|12|c", "x|y|7|z", "p|q|zz|r", "m|n", " a|b|5|c "], at: "a|b|12 ", want: "s.trim().split(\"|\")[2]" },
+    { ret: "boolean", ref: { op: "isint", x: fld("_", 3), neg: true }, lines: ["a_b_c_12_z", "a_b_c_ok_z", "p_q_r_7_w", "p_q_r_late_w", "x_y", " a_b_c_5_z "], at: "a_b_c_12 ", want: "s.trim().split(\"_\")[3]" },
+  ];
+  for (const c of cases) {
+    const { r } = deriveAnswering(P, c.ret, c.ref, c.lines.map((l) => [l]));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.ok(compileStr(r.program, ["s"]).includes(c.want), compileStr(r.program, ["s"]));
+    assert.equal(outKey(evalStr(r.program, [c.at])), outKey(evalStr(c.ref, [c.at])), c.at);
+  }
+  // the repro's first round asks the padded truncated line itself
+  const first = deriveStringProgram({ params: P, ret: "number", examples: cases[0]!.lines.map((l) => ({ args: [l], out: evalStr(cases[0]!.ref, [l]) })) });
+  assert.ok(!first.ok && first.questions?.some((q) => q.at[0] === "a,12 "), JSON.stringify(first));
+});
+
+test("Auditor #530 (2): a split on a delimiter that never gives two non-empty fields on an example is refused as under-specified (path gate), never derived", () => {
+  const P: StrParam[] = [{ name: "line", type: "string" }];
+  // every example has one field; before the gate this derived line.trim().split(" ") (the reference splits on ":")
+  const ref: StrProgram = { op: "split", trim: true, d: ":", each: true, drop: false };
+  const lines = [" ok", "late ", "scan", " 12 ", "r2", ""];
+  const r = deriveStringProgram({ params: P, ret: "string[]", examples: lines.map((l) => ({ args: [l], out: evalStr(ref, [l]) })) });
+  assert.ok(!r.ok && r.reason === "derive_under_specified" && r.gate === "path" && /no example's line has two non-empty fields on " "/.test(r.detail), JSON.stringify(r));
+  assert.ok(r.questions?.length && (r.questions[0]!.at[0] as string).trim().includes(" "), JSON.stringify(r.questions));
+  // answering the asked row never yields a wrong program: the ":" split is in no example, so the search refuses
+  const end = deriveAnswering(P, "string[]", ref, lines.map((l) => [l])).r;
+  assert.ok(!end.ok || ["a:b", " x : y "].every((l) => outKey(evalStr(end.program, [l])) === outKey(evalStr(ref, [l]))), JSON.stringify(end));
+  // a delimiter that does split an example is unaffected
+  const ok = deriveAnswering(P, "string", { op: "str", x: { trim: false, piece: { k: "field", d: "|", i: 0 }, post: false }, dflt: "" }, ["scan|ok", "r2|late", "x", "ok|"].map((l) => [l])).r;
+  assert.ok(ok.ok && compileStr(ok.program, ["line"]).includes('split("|")'), JSON.stringify(ok));
+});
+
 test("triggers are disjoint: no v1-v4 header matches v5 and no v5 header matches v1-v4; v1-v4 never answer a string-parser task", () => {
   const v5Heads = SPECS.flatMap((h) => [NEW(h), appendHead("src/health.ts", h)]).map((l) => objective(l).trim());
   const scalarHeads = ["Add a new module `src/budget.ts` exporting `isOverBudget(spent: number, budget: number): boolean`.", "Append a new function `tagLine(name: string, level: string): string` to the existing module `src/units.ts`.", "Add a new module `src/x.ts` exporting `partOf(line: string): string`.", "Add a new module `src/x.ts` exporting `parts(lines: string[]): number`.", "Append a new function `notes(lines: string[], sep: string): string[]` to the existing module `src/units.ts`."].map((l) => objective(l).trim());

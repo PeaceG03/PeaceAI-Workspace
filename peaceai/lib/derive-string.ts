@@ -28,12 +28,18 @@
 //                            result that is not the first argument unchanged on every example;
 //   derive_budget            more than STR_MAX_FITS fitting programs or STR_MAX_PROBES probes;
 //   derive_no_fit            no program fits every example;
-//   derive_ambiguous         two programs fit every example but give different results on some probe (every
-//                            fitting program is compared, not only the smallest), with up to 3 rows it asks for;
+//   derive_ambiguous         two fitting programs give different results on some probe, with up to 3 rows it asks
+//                            for. Every fitting program is run on the probes, but the probes are a finite sample
+//                            of variants of the examples, so two fits that differ only on inputs no probe covers
+//                            are not told apart. That no in-vocabulary rival is missed rests on sampled harnesses
+//                            (the m114 tests and the seeded and random harnesses), not on a proof. Auditor #530
+//                            found one such rival: s.split(d)[i] vs s.trim().split(d)[i] when field i is the last
+//                            field of a padded line, now probed by the first i+1 fields padded;
 //   derive_under_specified_unread: q is never read;
 //   derive_under_specified_path: the fit has a fallback the examples never take: a field or tail that can be missing
 //                            (every example has it), a strip whose prefix is on every example (or on none), an
-//                            integer parse that never fails (or never succeeds); with the row it asks for.
+//                            integer parse that never fails (or never succeeds); a split on a delimiter that gives
+//                            no example two non-empty fields (Auditor #530); with the row it asks for.
 // A default D (the missing-field result, the failed-parse result) is never chosen silently: when no example takes
 // that path, every candidate D ("" and each example result; 0 and -1 for a number) is a rival, so the task is refused
 // as derive_ambiguous (or, failing that, by the path gate).
@@ -230,6 +236,13 @@ export function readsQ(p: StrProgram): boolean {
   if (!("x" in p)) return false;
   const pc = p.x.piece;
   return (pc.k === "field" && pc.i === "q") || (pc.k === "strip" && pc.p === "q");
+}
+
+/** The delimiter a program splits its line on (with whether it trims the line first), or null. */
+function splitOn(p: StrProgram): { trim: boolean; d: string } | null {
+  if (p.op === "count" || p.op === "split") return { trim: p.trim, d: p.d };
+  if ("x" in p && (p.x.piece.k === "field" || p.x.piece.k === "last" || p.x.piece.k === "rest")) return { trim: p.x.trim, d: p.x.piece.d };
+  return null;
 }
 
 /** The fallback paths a program has (each must be taken by some example). */
@@ -445,7 +458,9 @@ function probeInputs(input: StrInput, P: Pools, consts: readonly string[]): StrA
     for (const v of [t, ` ${t} `, ` ${t}`, `${t} `, t.trim(), t.slice(1), t.slice(0, -1), `~${t}`, `${t}~`]) add(v);
     for (const d of P.delims) {
       const f = t.split(d);
-      for (let k = 1; k < f.length; k++) add(f.slice(0, k).join(d));
+      // the first k fields alone, bare and padded (Auditor #530 (1)): s.split(d)[i] and s.trim().split(d)[i] differ
+      // only when field i is the LAST field of a padded line, which padding the whole line or cutting it alone never shows
+      for (let k = 1; k <= f.length; k++) { const c = f.slice(0, k).join(d); add(c); add(` ${c}`); add(`${c} `); add(` ${c} `); }
       for (const v of [`${t}${d}zz`, `${t}${d}`, `${d}${t}`, `${t}${d}${d}`, `${t}${d} `]) add(v);
       for (let j = 0; j < f.length && j <= STR_MAX_FIELD + 1; j++) {
         const w = (x: string) => add([...f.slice(0, j), x, ...f.slice(j + 1)].join(d));
@@ -587,6 +602,16 @@ function askRows(probes: readonly StrArg[][], vals: readonly StrOut[][]): StrQue
 function gateProblem(prog: StrProgram, input: StrInput, probes: readonly StrArg[][]): StrResult | null {
   const { params, examples } = input;
   if (params.length === 2 && !readsQ(prog)) return { ok: false, reason: "derive_under_specified", gate: "unread", detail: `the fit never reads ${params[1]!.name}` };
+  // Auditor #530 (2): a fit that splits on d where no example's line has two non-empty fields on d (d is absent, or
+  // only at an edge: the "-" of "-3", a padding space) shows nothing about d: the examples fit a split on any such
+  // delimiter (or none), and the one they were written for may be in no example
+  const sd = splitOn(prog);
+  const twoFields = (t: string) => (sd!.trim ? t.trim() : t).split(sd!.d).filter((f) => f !== "").length > 1;
+  if (sd && !examples.some((e) => twoFields(e.args[0] as string))) {
+    const at = probes.find((a) => twoFields(a[0] as string));
+    const v = at ? evalStr(prog, at) : undefined;
+    return { ok: false, reason: "derive_under_specified", gate: "path", detail: `no example's line has two non-empty fields on ${JSON.stringify(sd.d)}; add an example with the delimiter the parser splits on`, questions: at && v !== undefined ? [{ at, answers: [v, "?"] }] : [] };
+  }
   const seen = new Set<Path>();
   for (const e of examples) evalStr(prog, e.args, (p) => seen.add(p));
   for (const pair of pathsOf(prog)) for (const path of pair) {
