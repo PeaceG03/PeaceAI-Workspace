@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
 import { compileStr, deriveStringProgram, evalStr, outKey, readsQ, strExprProblem, strLit, validProgram, type StrArg, type StrExample, type StrOut, type StrParam, type StrProgram, type StrRet, type XNode } from "../lib/derive-string.ts";
-import { DERIVE_APPEND_TRIGGER, DERIVE_STRING_DSL, DERIVE_STRING_OPERATION, DERIVE_STRING_PLACEMENT, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER, DERIVE_VOCAB, deriveAppendRecheck, deriveModuleRecheck, deriveReviewNote, deriveStringReviewNote, derivedStringModuleProblem, parseDeriveStringTask, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
+import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_STRING_DSL, DERIVE_STRING_OPERATION, DERIVE_STRING_PLACEMENT, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER, DERIVE_VOCAB, deriveAppendRecheck, deriveModuleRecheck, deriveReviewNote, deriveStringReviewNote, derivedStringModuleProblem, parseDeriveStringTask, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
 import { specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
 import { DERIVE_APPEND_PHRASING, DERIVE_STRING_PHRASING, PHRASING, phrasingFor } from "../lib/propose.ts";
@@ -31,6 +31,7 @@ const read = (p: string) => readFileSync(join(repo, p), "utf8");
 const V1 = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v1.json")) as RuleSpec;
 const V2 = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v2.json")) as RuleSpec;
 const V3 = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v3.json")) as RuleSpec;
+const V4 = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v4.json")) as RuleSpec;
 const V5 = JSON.parse(read("peaceai/rules/learned/public-derive-from-behavior-v5.json")) as RuleSpec;
 const SHA5 = specHash(V5);
 const CONFINED = Number(process.versions.node.split(".")[0]) >= 22;
@@ -340,19 +341,19 @@ test("Auditor #523 lessons: an unpinned default is an asked row; a test true on 
   assert.ok(!id.ok && id.reason === "derive_under_specified" && id.gate === "outputs", JSON.stringify(id));
 });
 
-test("triggers are disjoint: no v1-v3 header matches v5 and no v5 header matches v1-v3; v1-v3 never answer a string-parser task", () => {
+test("triggers are disjoint: no v1-v4 header matches v5 and no v5 header matches v1-v4; v1-v4 never answer a string-parser task", () => {
   const v5Heads = SPECS.flatMap((h) => [NEW(h), appendHead("src/health.ts", h)]).map((l) => objective(l).trim());
-  const scalarHeads = ["Add a new module `src/budget.ts` exporting `isOverBudget(spent: number, budget: number): boolean`.", "Append a new function `tagLine(name: string, level: string): string` to the existing module `src/units.ts`.", "Add a new module `src/x.ts` exporting `partOf(line: string): string`."].map((l) => objective(l).trim());
+  const scalarHeads = ["Add a new module `src/budget.ts` exporting `isOverBudget(spent: number, budget: number): boolean`.", "Append a new function `tagLine(name: string, level: string): string` to the existing module `src/units.ts`.", "Add a new module `src/x.ts` exporting `partOf(line: string): string`.", "Add a new module `src/x.ts` exporting `parts(lines: string[]): number`.", "Append a new function `notes(lines: string[], sep: string): string[]` to the existing module `src/units.ts`."].map((l) => objective(l).trim());
   for (const l of v5Heads) {
     assert.ok(new RegExp(DERIVE_STRING_TRIGGER, "imu").test(l), l);
-    for (const t of [DERIVE_TRIGGER, DERIVE_APPEND_TRIGGER]) assert.ok(!new RegExp(t, "imu").test(l), l);
+    for (const t of [DERIVE_TRIGGER, DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER]) assert.ok(!new RegExp(t, "imu").test(l), l);
   }
   for (const l of scalarHeads) {
     assert.ok(!new RegExp(DERIVE_STRING_TRIGGER, "imu").test(l), l);
-    assert.ok([DERIVE_TRIGGER, DERIVE_APPEND_TRIGGER].some((t) => new RegExp(t, "imu").test(l)), l);
+    assert.ok([DERIVE_TRIGGER, DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER].some((t) => new RegExp(t, "imu").test(l)), l);
   }
   const h = SPECS[0]!;
-  for (const s of [V1, V2, V3]) for (const head of [NEW(h), appendHead("src/health.ts", h)]) {
+  for (const s of [V1, V2, V3, V4]) for (const head of [NEW(h), appendHead("src/health.ts", h)]) {
     const w: { reason?: string } = {};
     const b = issue(head, rows(h));
     assert.equal(runDeriveRule(s.trigger, s.params, objective(b), FILES, isTest, w, rawOf(b)), null, s.id);
@@ -539,6 +540,7 @@ test("spec v5: valid; the v3 spec with only id, minerVersion, trigger, two param
   assert.equal(specHash(V1), "799182d79506931e78a232b5729121a339c0aa584dd008479d5aacd9869f7cc1", "v1 unchanged");
   assert.equal(specHash(V2), "e11ae193d1927c4d26efb430d862763db7f9683170a6438deb7e53d98eadff8c", "v2 unchanged");
   assert.equal(specHash(V3), "7087afcfdbe365b01816b5db0b518407733c7ce88b9d29d57392358be4bc6f8f", "v3 unchanged");
+  assert.equal(specHash(V4), "6edd341f45c7e4486bfb727aa90a66db1fcac4f7e3e3ce7ad6bf561240d0d6f8", "v4 unchanged");
   assert.equal(SHA5, "6533548a2d2cc73fda838b3a5388f7dd59fcfc3ced3400ed83e26da7ab932d76");
   // Lesson (M85+): never assert v5 is absent from approved.json; any listed entry must pin this exact hash.
   const onMain = JSON.parse(read("peaceai/rules/approved.json")) as { rules: { id: string; sha256: string }[] };
@@ -561,7 +563,7 @@ test("Job B re-checks a derive module by the candidate's own rule id", () => {
   const v1mod = "export function twice(n: number): number {\n  return n * 2;\n}\n";
   assert.equal(sha(V5).startsWith(DERIVE_STRING_OPERATION), true);
   assert.equal(deriveModuleRecheck(sha(V5), v5mod), null);
-  for (const s of [V1, V2, V3]) {
+  for (const s of [V1, V2, V3, V4]) {
     assert.notEqual(deriveModuleRecheck(sha(s), v5mod), null, s.id);
     assert.notEqual(deriveAppendRecheck(sha(s), HEALTH, `${HEALTH}\n${v5mod}`), null, s.id);
   }

@@ -27,6 +27,7 @@ import {
   isProofOrNoCoverage,
   LIVE_LANDING,
   liveProvenSkills,
+  parseLogEntries,
   peaceStocksSha,
 } from "./coverage.ts";
 
@@ -198,6 +199,13 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
   assert.equal(today.allTime.peaceaiAble, 91);
   assert.equal(today.allTime.builderTasks, 222);
   assert.equal(today.allTime.percent, 41);
+  // Health-check slice 1 (seq 278-281, team-picked #513-#516 on DERIVE_FROM_BEHAVIOR v1/v1/v1/v2, landed 2026-10-26 01:09 MT
+  // through verdict PRs PeaceSTOCKS#73/#72/#74/#75 as 24025a3, f01a60d, 6cdbc2b, 8dec076): recorded as team-picked, not
+  // "(source: peace)" (Auditor), so they earn no real-task credit and the figure stays 91/222.
+  for (const seq of [278, 279, 280, 281]) {
+    const e = parseLogEntries(text).find((x) => x.seq === seq)!;
+    assert.equal(isPeaceRealTask(e, onMain), false);
+  }
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/133.
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
   assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 133);

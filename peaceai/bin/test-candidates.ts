@@ -500,8 +500,9 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (derive) {
       let reads: string[];
       if (created.length === 1 && source.length === 0) {
-        // M114 (the Auditor #523 lesson): re-checked by the candidate's own rule: a v5 candidate as a v5 string module
-        // (derivedStringModuleProblem), a v1 / v2 / v3 candidate exactly as before (derivedModuleProblem).
+        // M113 (Auditor #523 B2) / M114: re-checked by the candidate's own rule: a v4 candidate as a v4 list module
+        // (derivedListModuleProblem), a v5 candidate as a v5 string module (derivedStringModuleProblem), a v1 / v2 / v3
+        // candidate exactly as before (derivedModuleProblem).
         if (deriveModuleRecheck(derive.operationId, real)) return ungradable("not-test-only");
         reads = created;
       } else if (created.length === 0 && source.length === 1) {
