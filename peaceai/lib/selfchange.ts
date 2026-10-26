@@ -531,6 +531,15 @@ export function stage2ZoneRefusal(path: string, zone: NeverZoneSet, added = fals
 
 /** A test file for limit 2: any *.test.ts, and everything under peaceai/test/ (its fixtures too). */
 export const isStage2TestPath = (p: string): boolean => /\.test\.(ts|mts|js|mjs)$/.test(p) || /^peaceai\/test\//.test(p);
+/**
+ * M118 (Auditor #529 ruling b): where a stage-2 test may live. Only files a CI suite actually runs: test:self runs
+ * `find peaceai/self-tests -name '*.test.ts'` (recursive) and test:tools runs the shell glob `peaceai/test/*.test.ts`
+ * (NOT recursive). Case-sensitive, like the Linux runners. Every segment is plain ([A-Za-z0-9_-] then [A-Za-z0-9_.-]):
+ * no dot-files (the shell glob skips them), no spaces or glob characters (test:self word-splits find's output).
+ * A test path outside this is refused, so an added test that no suite would ever execute cannot be counted.
+ */
+export const STAGE2_RUN_TEST_PATH = /^peaceai\/self-tests\/(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\.test\.ts$|^peaceai\/test\/[A-Za-z0-9_-][A-Za-z0-9_.-]*\.test\.ts$/;
+export const STAGE2_TEST_LOCATION_REFUSAL = "test is not where CI runs it: stage-2 tests must be peaceai/self-tests/**/*.test.ts (test:self) or peaceai/test/*.test.ts (test:tools, not recursive), case-sensitive; no suite would execute this file";
 
 const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
 function parseTs(path: string, text: string): ts.SourceFile | null {
@@ -972,6 +981,7 @@ export function checkStage2Proposal(diff: string, read: { base: (p: string) => s
     }
     if (isStage2TestPath(f.newPath)) {
       if (!/\.test\.ts$/.test(f.newPath)) { refusals.push({ path: f.newPath, reason: "test fixtures and non-.ts tests are not proposable (add-only cannot be checked)" }); continue; }
+      if (!STAGE2_RUN_TEST_PATH.test(f.newPath)) { refusals.push({ path: f.newPath, reason: STAGE2_TEST_LOCATION_REFUSAL }); continue; }
       const t = addOnlyTestCheck(f.newPath, base, cand);
       for (const r of t.refusals) refusals.push({ path: f.newPath, reason: `add-only: ${r}` });
       if (t.added.length) newTests.push({ file: f.newPath, names: t.added });
