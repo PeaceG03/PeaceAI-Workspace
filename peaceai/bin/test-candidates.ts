@@ -14,7 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
-import { appendTargetProblem, derivedAppendProblem, derivedModuleProblem } from "../lib/learned-derive.ts";
+import { appendTargetProblem, deriveAppendRecheck, deriveModuleRecheck } from "../lib/learned-derive.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, regularFileReader, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
@@ -473,7 +473,7 @@ function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, ne
  * without the guard) and runs the new tests again as the sandbox user. Only pass-with-guard AND
  * fail-without counts. `fixSha` records the task base the "before" tree was taken from.
  */
-function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, derive = false, replaceExpression = false): TestGrading {
+function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, tsx: string, addFunction = false, workflowStep = false, derive: false | { operationId: unknown } = false, replaceExpression = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
   if (workflowStep) return gradeWorkflowStep(tree, files, ungradable);
@@ -500,7 +500,9 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (derive) {
       let reads: string[];
       if (created.length === 1 && source.length === 0) {
-        if (derivedModuleProblem(real)) return ungradable("not-test-only");
+        // M113 (Auditor #523 B2): re-checked by the candidate's own rule: a v4 candidate as a v4 list module
+        // (derivedListModuleProblem), a v1 / v2 / v3 candidate exactly as before (derivedModuleProblem).
+        if (deriveModuleRecheck(derive.operationId, real)) return ungradable("not-test-only");
         reads = created;
       } else if (created.length === 0 && source.length === 1) {
         // M112 (public-derive-from-behavior-v3): the function was appended to an existing module. The real file must
@@ -513,7 +515,7 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
         const regular = regularFileReader(tree);
         const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
         const readBase = (rel: string): string | null => (rel === modPath ? baseText : read(rel));
-        if (derivedAppendProblem(baseText, real) !== null || appendTargetProblem(modPath, baseText, fn, readBase, scope.isTest) !== null) return ungradable("not-test-only");
+        if (deriveAppendRecheck(derive.operationId, baseText, real) !== null || appendTargetProblem(modPath, baseText, fn, readBase, scope.isTest) !== null) return ungradable("not-test-only");
         const closure = existingEditReads(modPath, read);
         if (!closure) return ungradable("module-imports-repo-files");
         reads = closure;
@@ -823,7 +825,7 @@ for (const candidate of selected) {
     // M98 (public-existing-function-edit-v1): a statement edit inside an existing function / method, graded by its
     // fake-driven test (gradeExistingEdit: confined edit, hermetic re-check on the graded tree, zone + locale runs).
     else if (candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT")) result.testGrading = gradeExistingEdit(tree, files, newTests, result.newTestsPassed);
-    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION") || candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
+    else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION") || candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR") && { operationId: candidate.operationId }, candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {
       console.log(`${candidate.id} protected_digest=changed stage=tests`);
