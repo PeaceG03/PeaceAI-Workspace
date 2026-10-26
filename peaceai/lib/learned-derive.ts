@@ -22,6 +22,8 @@ import { compileProgram, deriveProgram, derivedExprProblem, farProbeTable, DERIV
 import { allowedName, formatDeriveQuestions } from "./refusal-reason.ts";
 import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./learned-function.ts";
 import { importStyle } from "./learned-test.ts";
+import { isExcludedSource, loadClosure, loadProblem } from "./learned-edit-existing.ts";
+import { PROTECTED_SELF } from "./selfchange.ts";
 import ts from "typescript";
 
 export const DERIVE_PARAM_KEYS = ["ambiguity", "dsl", "examples", "grading", "placement", "test"] as const;
@@ -31,7 +33,8 @@ export const DERIVE_VOCAB: Record<(typeof DERIVE_PARAM_KEYS)[number], readonly s
   dsl: ["typed-dsl-v1", "typed-dsl-v2"],
   examples: ["literal-data-only"],
   grading: ["self-fail-before-pass-after"],
-  placement: ["new-module"],
+  // M112: end-of-existing-module (public-derive-from-behavior-v3) = append the derived function to an existing module.
+  placement: ["new-module", "end-of-existing-module"],
   test: ["new-file-examples"],
 };
 export function validDeriveParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
@@ -44,6 +47,11 @@ const TYPE = String.raw`(?:number|string|boolean)`;
 const PARAM = String.raw`${NAME}: ?${TYPE}`;
 /** The header line (the rule's trigger): Add a new module src/x.ts exporting name(a: T, b: U): R */
 export const DERIVE_TRIGGER = String.raw`^add (?:a )?new module (?<file>src\/[\w./-]+\.ts) exporting (?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${DERIVE_MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE}) ?\.?$`;
+/**
+ * M112 (public-derive-from-behavior-v3, placement end-of-existing-module): the header line for appending the derived
+ * function to a module that already exists: Append a new function name(a: T, b: U): R to the existing module src/x.ts
+ */
+export const DERIVE_APPEND_TRIGGER = String.raw`^append (?:a )?new function (?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${DERIVE_MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE}) to (?:the )?existing module (?<file>src\/[\w./-]+\.ts) ?\.?$`;
 export { DERIVE_MAX_EXPR_CHARS } from "./derive.ts";
 const EXAMPLES_HEAD = /^examples\b[^:\n]{0,80}:$/i;
 const BEHAVIOR_HEAD = /^behaviou?r:\s*/i;
@@ -157,8 +165,71 @@ export function parseDeriveTask(trigger: string, objective: string): DeriveParse
 const slug = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40).replace(/-$/, "") || "fn";
 const lit = (v: DeriveValue) => (typeof v === "string" ? JSON.stringify(v) : String(v));
 
-export interface DeriveEdit { path: string; content: string; create: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
+export interface DeriveEdit { path: string; content: string; create?: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number } | { reason: string; detail?: string; questions?: DeriveQuestion[] };
+
+/** M112: the placement of public-derive-from-behavior-v3; its trigger is DERIVE_APPEND_TRIGGER. */
+export const DERIVE_APPEND_PLACEMENT = "end-of-existing-module";
+
+const parseClean = (path: string, content: string): ts.SourceFile | null => {
+  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
+  return (sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length ? null : sf;
+};
+
+/** Every name the module text binds or mentions: any identifier anywhere (declarations, imports, exports, uses, keys). */
+function moduleNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>();
+  const walk = (n: ts.Node): void => { if (ts.isIdentifier(n) || ts.isPrivateIdentifier(n)) out.add(n.text); n.forEachChild(walk); };
+  walk(sf);
+  return out;
+}
+
+/**
+ * M112 (public-derive-from-behavior-v3): the checks on an EXISTING module before a derived function is appended to it.
+ * Null when it may take the function, else a refusal code. Fail closed:
+ * - the module is a regular src/ module (not a test, .d.ts, fixture or helper, not protected) whose text parses, ends
+ *   with one newline and has no carriage return, so the append changes no existing line;
+ * - the new name is new: no identifier anywhere in the module (declaration, import, export, use, property) and no
+ *   `export *` (it could re-export the same name) -> derive_append_name_collision;
+ * - no top-level `let` / `var` (mutable state) -> derive_append_mutable_state;
+ * - importing it runs nothing: its whole relative import closure passes the EXISTING_EDIT load check (only imports and
+ *   declarations at top level, hermetic initializers, no package imports) -> derive_append_side_effects.
+ * Imports are never changed: the derived body reads only its own parameters and literals, so it needs none.
+ */
+export function appendTargetProblem(path: string, content: string, fn: string, read: (rel: string) => string | null, isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p)): string | null {
+  if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path) || isExcludedSource(path) || PROTECTED_SELF.some((p) => p.pattern.test(path))) return "derive_path";
+  if (content.includes("\r") || !content.endsWith("\n") || content.endsWith("\n\n") || content.trim() === "") return "derive_append_layout";
+  const sf = parseClean(path, content);
+  if (!sf) return "derive_append_parse";
+  if (moduleNames(sf).has(fn) || new RegExp(`(?<![\\w$])${fn.replace(/\$/g, "\\$")}(?![\\w$])`).test(content)) return "derive_append_name_collision";
+  for (const st of sf.statements) {
+    if (ts.isExportDeclaration(st) && (!st.exportClause || ts.isNamespaceExport(st.exportClause))) return "derive_append_name_collision";
+    if (ts.isVariableStatement(st) && (st.declarationList.flags & ts.NodeFlags.BlockScoped) !== ts.NodeFlags.Const) return "derive_append_mutable_state";
+    // `export default <expression>` runs that expression at import; only a plain name is inert.
+    if (ts.isExportAssignment(st) && !ts.isIdentifier(st.expression)) return "derive_append_side_effects";
+  }
+  const c = loadClosure(path, read);
+  if (typeof c === "string") return `derive_append_side_effects${allowedName(c.split(":")[0]!) ? `: ${c.split(":")[0]}` : ""}`;
+  const lp = loadProblem(c, path);
+  if (lp !== null) return `derive_append_side_effects${allowedName(lp.split(":")[0]!) ? `: ${lp.split(":")[0]}` : ""}`;
+  return null;
+}
+
+/**
+ * M112: the append itself is add-only. `after` is `before` plus "\n" plus one module that passes derivedModuleProblem
+ * (one exported single-return function over its own typed parameters), and the parsed statements of `before` are
+ * unchanged. Null when clean, else a reason code. Job B runs it again on the real files.
+ */
+export function derivedAppendProblem(before: string, after: string): string | null {
+  if (!after.startsWith(before) || !after.slice(before.length).startsWith("\n")) return "derive_append_not_add_only";
+  const block = after.slice(before.length + 1);
+  const shape = derivedModuleProblem(block);
+  if (shape) return shape;
+  const a = parseClean("a.ts", after), b = parseClean("b.ts", before);
+  if (!a || !b || a.statements.length !== b.statements.length + 1) return "derive_append_not_add_only";
+  for (const [i, st] of b.statements.entries()) if (st.getText(b) !== a.statements[i]!.getText(a)) return "derive_append_not_add_only";
+  return null;
+}
 
 /**
  * `derive` is the search (deriveProgram); the parameter exists only so the emit-time checks below can be shown to
@@ -167,18 +238,36 @@ export type DeriveBuild = { edit: DeriveEdit; expr: string; size: number } | { r
 export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), derive: typeof deriveProgram = deriveProgram): DeriveBuild {
   for (const k of DERIVE_PARAM_KEYS) if (typeof params[k] !== "string" || !DERIVE_VOCAB[k].includes(params[k] as string)) return { reason: "derive_params" };
   const path = task.file;
-  if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return { reason: "derive_path" };
+  const append = params.placement === DERIVE_APPEND_PLACEMENT;
   const dir = path.slice(0, path.lastIndexOf("/") + 1);
-  if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return { reason: "derive_path" };
-  if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
+  let target: { path: string; content: string } | undefined;
+  if (append) {
+    // M112: the module must already exist, exactly as named (a near-miss in case is not it), and may take the function.
+    if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return { reason: "derive_path" };
+    target = files.find((f) => f.path === path);
+    if (!target) return { reason: "target_file_not_found" };
+    const read = (rel: string): string | null => { const f = files.find((x) => x.path === rel); return f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null; };
+    const problem = appendTargetProblem(path, target.content, task.fn, read, isTest);
+    if (problem) return { reason: problem };
+  } else {
+    if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return { reason: "derive_path" };
+    if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return { reason: "derive_path" };
+    if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
+  }
   // PeaceAI's own search writes the body from the examples alone; nothing in the issue is copied into it and the
   // behavior prose is not an input.
   const base = { params: task.params, ret: task.ret, examples: task.examples };
   // M111 (decision #466: an approved version never widens; a widening is a new version): typed-dsl-v2 answers only
   // tasks v1 does not; a task v1 already derives is not_needed here, so the two rules never both answer one task.
+  // M112: an append (v3) has its own trigger, so no new-module rule answers its task: it searches v1 first and, with
+  // typed-dsl-v2, falls back to the boolean label chains, exactly as the review note does.
   const v2 = params.dsl === "typed-dsl-v2";
-  if (v2 && derive(base).ok) return { reason: "not_needed" };
-  const r = derive(v2 ? { ...base, labelChains: true } : base);
+  let r: ReturnType<typeof deriveProgram>;
+  if (append) { r = derive(base); if (!r.ok && v2) r = derive({ ...base, labelChains: true }); }
+  else {
+    if (v2 && derive(base).ok) return { reason: "not_needed" };
+    r = derive(v2 ? { ...base, labelChains: true } : base);
+  }
   if (!r.ok) {
     // derive_under_specified names the gate and, when it passes the refusal-line allowlist, the parameter: e.g.
     // `derive_under_specified_far: status` (the full sentence, with the edge to add, is in `detail`).
@@ -202,8 +291,11 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
   const exprProblem = derivedExprProblem(expr, names);
   if (exprProblem) return { reason: exprProblem };
   const sig = task.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-  const content = `export function ${task.fn}(${sig}): ${task.ret} {\n  return ${expr};\n}\n`;
-  if ((ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true) as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return { reason: "derive_expr_parse" };
+  const fnText = `export function ${task.fn}(${sig}): ${task.ret} {\n  return ${expr};\n}\n`;
+  if ((ts.createSourceFile(path, fnText, ts.ScriptTarget.Latest, true) as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length) return { reason: "derive_expr_parse" };
+  // M112: appended after one blank line at the very end; no existing line changes.
+  const content = target ? `${target.content}\n${fnText}` : fnText;
+  if (target) { const p = derivedAppendProblem(target.content, content); if (p) return { reason: p }; }
   // The test: the issue's examples, exactly.
   const call = (args: readonly DeriveValue[]) => `${task.fn}(${args.map(lit).join(", ")})`;
   const exampleLines = task.examples.map((ex) => `  assert.equal(${call(ex.args)}, ${lit(ex.out)});`);
@@ -222,11 +314,15 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
     "});",
     "",
   ].join("\n");
-  return { edit: { path, content, create: true, extra: [{ path: testPath, content: test, create: true }], selfGrade: true }, expr, size: r.fit.size };
+  const extra = [{ path: testPath, content: test, create: true as const }];
+  return { edit: target ? { path, content, extra, selfGrade: true } : { path, content, create: true, extra, selfGrade: true }, expr, size: r.fit.size };
 }
 
 /** Job A entry: refusal code in `why.reason`; null when there is no candidate. */
 export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
+  // M112: the placement and the trigger go together (new-module: DERIVE_TRIGGER; end-of-existing-module:
+  // DERIVE_APPEND_TRIGGER), so a spec can never point one placement's engine at the other's phrasing.
+  if ((params.placement === DERIVE_APPEND_PLACEMENT) !== (trigger === DERIVE_APPEND_TRIGGER) || (params.placement !== DERIVE_APPEND_PLACEMENT && trigger !== DERIVE_TRIGGER)) { if (why) why.reason = "derive_params"; return null; }
   const parsed = parseDeriveTask(trigger, objective);
   if ("reason" in parsed) { if (why && parsed.reason !== "derive_trigger") why.reason = parsed.reason; return null; }
   const built = buildDeriveEdit(params, parsed.task, files, isTest);
@@ -285,6 +381,30 @@ function createdFiles(diff: string): { path: string; content: string }[] {
   return out;
 }
 
+/**
+ * M112: the function block a unified diff appends to an existing file, when that is all the file's diff does: one
+ * hunk, no removed line, the added lines last with no context after them (so they end the file), opening with one
+ * blank line. The block is returned without that blank line. Files whose diff does anything else are left out.
+ */
+function appendedBlocks(diff: string): { path: string; content: string }[] {
+  const out: { path: string; content: string }[] = [];
+  for (const part of diff.split(/^diff --git /m).slice(1)) {
+    if (/^(?:new|deleted) file mode /m.test(part) || /^(?:rename|copy) (?:from|to) /m.test(part)) continue;
+    const path = /^\+\+\+ b\/(.+)$/m.exec(part)?.[1];
+    const lines = part.split("\n");
+    const hunks = lines.filter((l) => l.startsWith("@@ "));
+    if (!path || hunks.length !== 1) continue;
+    const body = lines.slice(lines.indexOf(hunks[0]!) + 1);
+    if (body.at(-1) === "") body.pop();
+    const first = body.findIndex((l) => l.startsWith("+"));
+    if (first < 0 || body.slice(0, first).some((l) => !l.startsWith(" ")) || body.slice(first).some((l) => !l.startsWith("+"))) continue;
+    const added = body.slice(first).map((l) => l.slice(1));
+    if (added[0] !== "" || added.length < 2) continue;
+    out.push({ path, content: `${added.slice(1).join("\n")}\n` });
+  }
+  return out;
+}
+
 /** A literal argument or expected value as written by buildDeriveEdit (number, -number, string, boolean), else undefined. */
 function litValue(e: ts.Expression): DeriveValue | undefined {
   if (ts.isNumericLiteral(e)) return Number(e.text);
@@ -305,8 +425,9 @@ function litValue(e: ts.Expression): DeriveValue | undefined {
 export function deriveReviewNote(diff: string, derive: typeof deriveProgram = deriveProgram): string | null {
   const files = createdFiles(diff);
   const tests = files.filter((f) => /\.test\.ts$/.test(f.path));
-  const mods = files.filter((f) => !/\.test\.ts$/.test(f.path));
-  if (tests.length !== 1 || mods.length !== 1 || derivedModuleProblem(mods[0]!.content) !== null) return null;
+  // M112: the module is either created (v1, v2) or is the block appended to an existing module (v3).
+  const mods = [...files.filter((f) => !/\.test\.ts$/.test(f.path)), ...appendedBlocks(diff).filter((f) => !/\.test\.ts$/.test(f.path))];
+  if (diff.split(/^diff --git /m).length - 1 !== 2 || tests.length !== 1 || mods.length !== 1 || derivedModuleProblem(mods[0]!.content) !== null) return null;
   const sf = ts.createSourceFile("m.ts", mods[0]!.content, ts.ScriptTarget.Latest, true);
   const f = sf.statements[0] as ts.FunctionDeclaration;
   const fn = f.name!.text;

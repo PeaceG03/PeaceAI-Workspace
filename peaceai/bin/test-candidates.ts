@@ -14,7 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
-import { derivedModuleProblem } from "../lib/learned-derive.ts";
+import { appendTargetProblem, derivedAppendProblem, derivedModuleProblem } from "../lib/learned-derive.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, regularFileReader, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
@@ -498,11 +498,30 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     // M99, DERIVE_FROM_BEHAVIOR: the new module is exactly the derived function (re-checked against the DSL grammar),
     // and the new tests pass in every zone of EXISTING_TZ_RUNS (the candidate's tests read no clock, but prove it).
     if (derive) {
-      if (created.length !== 1 || source.length !== 0 || derivedModuleProblem(real)) return ungradable("not-test-only");
+      let reads: string[];
+      if (created.length === 1 && source.length === 0) {
+        if (derivedModuleProblem(real)) return ungradable("not-test-only");
+        reads = created;
+      } else if (created.length === 0 && source.length === 1) {
+        // M112 (public-derive-from-behavior-v3): the function was appended to an existing module. The real file must
+        // be the base file plus one blank line plus exactly the derived function (add-only), the base module must
+        // still pass every append check (name new, no mutable top-level state, nothing runs at import), and the
+        // confined runs may read the module's whole relative import closure (and nothing else of the repo).
+        const modPath = source[0]!;
+        let baseText: string;
+        try { baseText = git(repo, "show", `${base}:${modPath}`); } catch { return ungradable("revert-failed"); }
+        const regular = regularFileReader(tree);
+        const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
+        const readBase = (rel: string): string | null => (rel === modPath ? baseText : read(rel));
+        if (derivedAppendProblem(baseText, real) !== null || appendTargetProblem(modPath, baseText, fn, readBase, scope.isTest) !== null) return ungradable("not-test-only");
+        const closure = existingEditReads(modPath, read);
+        if (!closure) return ungradable("module-imports-repo-files");
+        reads = closure;
+      } else return ungradable("not-test-only");
       // Auditor #491: those runs are confined (Node's permission model: reads = the test file, the new module and
       // node_modules; no write, no child process), as TEST_CASE_EXISTING's are. Never graded unconfined.
       if (nodeMajor() < PERMISSION_NODE_MAJOR) return ungradable("not-confined");
-      if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, created, false, tz).ok) return ungradable("real-not-stable");
+      if (afterFix) for (const tz of EXISTING_TZ_RUNS) if (!runExistingTests(tree, newTests, reads, false, tz).ok) return ungradable("real-not-stable");
     }
     const stub = stubFunction(real, fn);
     if (stub === null) return ungradable("not-test-only");

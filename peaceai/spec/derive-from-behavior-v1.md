@@ -249,3 +249,21 @@ What `typed-dsl-v2` adds (`DeriveInput.labelChains`, peaceai/lib/derive.ts):
 Limits (v2): a one-boolean function has 2 inputs, under the v1 minimum of 3 examples (`derive_examples`); a table that
 needs a tree larger than size 13 is `derive_no_fit`; string answers to a domain question are not on the public refusal
 line (number answers are), as in v1.
+
+## public-derive-from-behavior-v3 (M112): append to an existing module
+
+A new rule version (decision #466). `public-derive-from-behavior-v3` is the v2 spec with only `id`, `minerVersion`,
+`trigger` (`DERIVE_APPEND_TRIGGER`: "Append a new function NAME(params): type to the existing module src/....ts") and the
+param `placement: end-of-existing-module` changed; it is off until Peace approves its hash
+(`/approve-rule 7087afcfdbe365b01816b5db0b518407733c7ce88b9d29d57392358be4bc6f8f` on its proposal issue). Placement and
+trigger are bound: a spec pairing one with the other's trigger is `derive_params`. v1 and v2 are unchanged.
+
+The search and every gate are v1's then v2's (`not_needed` does not apply: v1 cannot append). Before the search the named
+module must exist (exact path, else `target_file_not_found`) and pass `appendTargetProblem`: a plain non-protected `src/`
+path (`derive_path`), LF layout ending in exactly one newline (`derive_append_layout`), parsable, no use of the name
+anywhere and no `export *` (`derive_append_name_collision`), no top-level `let` / `var` / `using`
+(`derive_append_mutable_state`), and nothing run at import in it or its import closure, no package or unresolved import
+(`derive_append_side_effects`). The edit is the old text, one blank line, the function; imports never change
+(`derivedAppendProblem` re-checks, `derive_append_not_add_only`). Job B re-checks both against the base commit's text and
+runs the module's existing tests with the new test, confined to the module's closure. Details, held-out results and
+limits: peaceai/docs/m112-append-to-existing-module.md.

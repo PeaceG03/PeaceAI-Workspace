@@ -16,7 +16,7 @@ import { cleanIssueText } from "./taskmap.ts";
 import { TEST_TRIGGER } from "./learned-test.ts";
 import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { EXISTING_EDIT_TRIGGER } from "./learned-edit-existing.ts";
-import { DERIVE_TRIGGER } from "./learned-derive.ts";
+import { DERIVE_APPEND_TRIGGER, DERIVE_TRIGGER } from "./learned-derive.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
 import { IMPORT_EDIT_V2_TRIGGER } from "./import-edit-v2.ts";
@@ -105,6 +105,8 @@ export const LEARNED_CANONICAL = {
   existingEdit: { re: new RegExp(EXISTING_EDIT_TRIGGER, "imu"), kind: "EXISTING_EDIT", family: null },
   // M99: DERIVE_FROM_BEHAVIOR header line ("add a new module src/x.ts exporting name(a: T): R"), public-derive-from-behavior-v1.
   deriveFromBehavior: { re: new RegExp(DERIVE_TRIGGER, "imu"), kind: "DERIVE_FROM_BEHAVIOR", family: null },
+  // M112: public-derive-from-behavior-v3 appends the derived function to an existing module (its own phrasing).
+  deriveAppend: { re: new RegExp(DERIVE_APPEND_TRIGGER, "imu"), kind: "DERIVE_FROM_BEHAVIOR", family: null },
 } as const satisfies Record<string, { re: RegExp; kind: string; family: Family | null }>;
 export type LearnedTriggerName = keyof typeof LEARNED_CANONICAL;
 const CANONICAL: readonly RegExp[] = [...PLAIN_CANONICAL, ...Object.values(LEARNED_CANONICAL).map((t) => t.re)];
