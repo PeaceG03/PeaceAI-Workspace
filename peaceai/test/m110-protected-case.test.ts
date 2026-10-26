@@ -47,7 +47,7 @@ test("#512 note closed: case variants of peaceai/self-tests are protected as exi
     assert.ok(c.refusals.some((r) => r.path === p && /outside the editable areas/.test(r.reason)), p);
   }
   // the exact lowercase directory stays the one place a new test may go
-  for (const p of ["peaceai/self-tests/x.test.ts", "peaceai/self-tests/helpers/x.test.ts", "peaceai/self-tests/NEW.test.ts", "peaceai/self-tests/a.TEST.TS"]) assert.equal(protectedReason(p), null, p);
+  for (const p of ["peaceai/self-tests/x.test.ts", "peaceai/self-tests/sub/x.test.ts", "peaceai/self-tests/NEW.test.ts", "peaceai/self-tests/a.TEST.TS"]) assert.equal(protectedReason(p), null, p);
   assert.equal(checkSelfChangeDiff(newFileDiff("peaceai/self-tests/x.test.ts")).ok, true);
   const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> };
   assert.match(pkg.scripts["test:self"]!, /find peaceai\/self-tests -name/);
