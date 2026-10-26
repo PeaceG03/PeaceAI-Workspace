@@ -2,6 +2,7 @@ import { editKey } from "./dedupe.ts";
 import type { SummaryCandidate } from "./gate.ts";
 import { isHeldOut, isTestTask, taskRequiresTests } from "./policy.ts";
 import { isPassing, rankCandidates, shuffle, type CandidateResult } from "./rank.ts";
+import { correctedSource } from "./sourcecorrections.ts";
 import type { TestGrading } from "./results.ts";
 import type { RegradeOf } from "./regrade.ts";
 import type { VerdictValue } from "./verdict.ts";
@@ -370,7 +371,8 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
   return {
     issue: task.issue,
     runId: task.runId,
-    source: taskSourceOf(task),
+    // M119: an add-only correction (peaceai/source-corrections.jsonl) can lower a record to builder.
+    source: correctedSource(task, taskSourceOf(task)),
     target: task.target ?? null,
     test: task.test,
     heldOut: task.heldOut,

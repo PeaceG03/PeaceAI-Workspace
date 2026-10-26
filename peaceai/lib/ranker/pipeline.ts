@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { correctedSource } from "../sourcecorrections.ts";
 import { distinctEligible, effectiveVerdict, stableJson, taskSourceOf, type RankingRecord, type ShadowRanking, type TaskRecord, type TaskSource } from "../records.ts";
 import type { StoredTask } from "../store.ts";
 import { extractFeatures, FEATURE_VERSION, type CandidateFeatures } from "./features.ts";
@@ -55,7 +56,7 @@ export function toExample(task: TaskRecord, ranking: RankingRecord, e: ReturnTyp
   return {
     issue: task.issue,
     runId: task.runId,
-    source: taskSourceOf(task),
+    source: correctedSource(task, taskSourceOf(task)), // M119 add-only source corrections
     test: task.test,
     heldOut: task.heldOut,
     withdrawn: e.withdrawn,
