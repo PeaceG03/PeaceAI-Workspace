@@ -10,7 +10,7 @@ import test from "node:test";
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
   BUILDER_LABEL, bodyAtFirstLabel, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
-  hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
+  hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
 import { buildRecords, taskSourceOf } from "../lib/records.ts";
@@ -202,6 +202,34 @@ test("B2: entity-encoded contrary clauses and hidden entities give builder", () 
   assert.equal(creditLineVisible(issue(`${CTX} &#40;source: peace&#41;.`)), `${CTX} (source: peace).`);
 });
 
+// Round 4 (Auditor NOT PASS at 40aaddb): allowlists instead of deny-lists.
+test("R4.1: raw HTML anywhere outside code fences gives builder", () => {
+  for (const extra of [
+    '<a href="https://x"\n  title="(source: builder)">notes</a>', // multi-line <a href=...>
+    "<img\n  alt='(source: peace)'\n  src=x.png>", // multi-line <img alt=...>
+    "<?xml version=\"1.0\"?>",
+    "<![CDATA[(source: builder)]]>",
+    "<!DOCTYPE html>",
+    "<!-- note -->",
+    "</div>",
+    "<br>",
+    "<details><summary>more</summary>x</details>",
+    "a<b",
+    "<A HREF=x>y</A>",
+    "<\u200Bimg alt=x>", // a zero-width character between < and the tag name
+  ]) {
+    assert.equal(src(issue(CTX_GENUINE, extra)), "builder", extra);
+    assert.equal(src(issue(extra, CTX_GENUINE)), "builder", extra);
+  }
+  // not HTML: inside a fenced block (closed or unclosed), entity-escaped, or < before a digit, space, = or -
+  for (const ok of [["```html", "<img alt=x>", "```"], ["~~~", "</div>", "~~~"], ["```", "<b>"], ["&lt;img alt=x>"], ["n < 5, n<=6, a <- b, x<3"]]) {
+    assert.equal(hasRawHtml(issue(CTX_GENUINE, ...ok)), false, ok.join("|"));
+    assert.equal(src(issue(CTX_GENUINE, ...ok)), "peace", ok.join("|"));
+  }
+  assert.equal(hasRawHtml("```\n<b>\n```\n<i>"), true); // after the fence closes
+  assert.equal(hasRawHtml("````\n```\n<b>\n````"), false); // a shorter fence does not close it
+});
+
 test("the source:builder label check is trimmed and case-insensitive", () => {
   for (const l of [BUILDER_LABEL, "Source:Builder", " source:builder ", "SOURCE:BUILDER\t", "source\u200B:builder"])
     assert.equal(taskSource([...TASK_LABELS, l], GENUINE), "builder", JSON.stringify(l));
@@ -246,8 +274,8 @@ test("Job C: the credit line at the first peace-task label must equal the credit
   assert.equal(job(GENUINE, edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark))), "builder");
   const reworded = GENUINE.replace("this is the status test", "this is the test");
   assert.equal(job(reworded, edited(rev("2026-10-26T20:00:00Z", reworded), rev(CREATED, GENUINE))), "builder");
-  const hidden = GENUINE.replace(CTX_GENUINE, `${CTX_GENUINE} <del>old</del>`); // markup-only edit: same visible text
-  assert.equal(job(hidden, edited(rev("2026-10-26T20:00:00Z", hidden), rev(CREATED, GENUINE))), "peace");
+  const hidden = GENUINE.replace(CTX_GENUINE, `${CTX_GENUINE} <del>old</del>`); // round 4: raw HTML is builder
+  assert.equal(job(hidden, edited(rev("2026-10-26T20:00:00Z", hidden), rev(CREATED, GENUINE))), "builder");
   // the first label counts: relabelling after a credit-line edit does not reset it
   const relabel = { ...edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark)), taskLabeledAt: ["2026-10-26T21:00:00Z", LABELED] };
   assert.equal(job(GENUINE, relabel), "builder");
