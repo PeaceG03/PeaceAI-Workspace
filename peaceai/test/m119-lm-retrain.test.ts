@@ -184,5 +184,98 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
 test("M119: every new file is protected", () => {
   for (const f of [".github/workflows/peace-lm-retrain.yml", "peaceai/bin/lm-retrain-corpus.sh", "peaceai/model/lm-retrain.json", "peaceai/model/lm-retrain-commits.txt",
     "peaceai/model/retrain_list.py", "peaceai/model/eval_dedup.py", "peaceai/model/judge364.py", "peaceai/test/m119-lm-retrain.test.ts",
-    "peaceai/model/val_split.py", "peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-train.sh", "peaceai/bin/lm-retrain-headcheck.sh"]) assert.ok(protectedReason(f), f);
+    "peaceai/model/val_split.py", "peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-train.sh", "peaceai/bin/lm-retrain-headcheck.sh", "peaceai/model/retrain_summary.py"]) assert.ok(protectedReason(f), f);
+});
+
+// Auditor #533 follow-ups: behaviour tests for the head check and the non-finite validation-loss refusal.
+function headcheckFixture(squashDiffers: boolean, publishRef: boolean) {
+  const t = mkdtempSync(join(tmpdir(), "m119-headcheck-"));
+  const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main", ...a], { cwd, encoding: "utf8" }).trim();
+  const remote = join(t, "remote.git"), d = join(t, "src", "PeaceG03", "Demo"), cwd = join(t, "cwd");
+  g(t, "init", "-q", "--bare", remote);
+  mkdirSync(d, { recursive: true }); g(d, "init", "-q"); g(d, "remote", "add", "origin", remote);
+  writeFileSync(join(d, "a.txt"), "base\n"); g(d, "add", "."); g(d, "commit", "-qm", "base");
+  const base = g(d, "rev-parse", "HEAD");
+  g(d, "checkout", "-qb", "pr"); writeFileSync(join(d, "a.txt"), "head\n"); g(d, "commit", "-qam", "pr");
+  const head = g(d, "rev-parse", "HEAD");
+  g(d, "checkout", "-q", "main"); writeFileSync(join(d, "a.txt"), squashDiffers ? "tampered\n" : "head\n"); g(d, "commit", "-qam", "squash");
+  const merge = g(d, "rev-parse", "HEAD");
+  assert.notEqual(merge, base);
+  if (publishRef) g(d, "push", "-q", "origin", `${head}:refs/pull/7/head`);
+  mkdirSync(join(cwd, "peaceai", "model"), { recursive: true });
+  writeFileSync(join(cwd, "peaceai", "model", "lm-retrain.json"), JSON.stringify({ list: { file: "list.txt" } }));
+  writeFileSync(join(cwd, "list.txt"), `code PeaceG03/Demo #7 head=${head} merge=${merge}\n`);
+  const r = spawnSync("bash", [resolve("peaceai/bin/lm-retrain-headcheck.sh"), join(t, "src")], { cwd, encoding: "utf8" });
+  rmSync(t, { recursive: true, force: true });
+  return r;
+}
+
+test("M119 headcheck: a squash merge equal to refs/pull/N/head passes (control)", () => {
+  const r = headcheckFixture(false, true);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /squash_or_rebase=1 files_compared=1 differences=0/);
+});
+
+test("M119 headcheck: a squash merge whose content differs from refs/pull/N/head fails", () => {
+  const r = headcheckFixture(true, true);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout, /a merged file differs from the PR head/);
+  assert.match(r.stdout, /merged content is not the PR head content: refused/);
+});
+
+test("M119 headcheck: a missing refs/pull/N/head fails closed", () => {
+  const r = headcheckFixture(false, false);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout, /could not be fetched: refused/);
+});
+
+test("M119 headcheck: a git diff-tree error fails closed (no process substitution swallowing it)", () => {
+  const s = read("peaceai/bin/lm-retrain-headcheck.sh");
+  assert.doesNotMatch(s, /<\s*<\(git[^)]*diff-tree/);
+  assert.match(s, /diff-tree [^\n]*> "\$changed" \\\n\s*\|\| \{[^}]*git diff-tree failed: refused"; exit 1; \}/);
+});
+
+test("M119 sweep summary: a NaN or inf validation loss is refused; finite losses summarize", () => {
+  const t = mkdtempSync(join(tmpdir(), "m119-summary-"));
+  try {
+    const run = (vals: string[]) => {
+      const p = join(t, "m.jsonl");
+      writeFileSync(p, vals.map((v, i) => `{"step": ${i * 10}, "val_loss": ${v}}`).join("\n") + "\n");
+      return spawnSync("python3", ["peaceai/model/retrain_summary.py", p, "0.001", "20", "0", "0", '{"sha256":"x"}'], { encoding: "utf8" });
+    };
+    for (const bad of [["2.0", "NaN", "1.5"], ["2.0", "Infinity"], ["-Infinity", "1.0"], ["2.0", "1.0", "NaN"]]) {
+      const r = run(bad);
+      assert.notEqual(r.status, 0, bad.join(","));
+      assert.match(r.stderr, /non-finite validation loss at step \d+: refused/);
+      assert.equal(r.stdout, "");
+    }
+    const ok = run(["2.0", "1.5", "1.7"]);
+    assert.equal(ok.status, 0, ok.stderr);
+    const s = JSON.parse(ok.stdout);
+    assert.equal(s.bestVal, 1.5); assert.equal(s.bestStep, 10); assert.equal(s.stoppedStep, 20);
+  } finally { rmSync(t, { recursive: true, force: true }); }
+  assert.match(read("peaceai/bin/lm-retrain-train.sh"), /peaceai\/model\/retrain_summary\.py/);
+});
+
+test("M119 judge items: fetched from the pinned notes/lm-judge-eval commit at the path the judge code reads (not Results main)", () => {
+  // Results main has no lm-judge/; the 364 items and recorded scores live on notes/lm-judge-eval (score.mts reads
+  // lm-judge/items.json there: an array of {key, label, file, context, derived, reference, ...}; scores-<v>.json has .agg).
+  assert.equal(CFG.eval.judgeItems, "lm-judge/items.json");
+  assert.equal(CFG.eval.judgeRef, "notes/lm-judge-eval");
+  assert.equal(CFG.eval.judgeCommit, "804a95675815d3d7965e95be8d9c368600863412");
+  assert.equal(CFG.eval.judgeItemCount, 364);
+  const j = read("peaceai/bin/lm-retrain-judge.sh");
+  assert.match(j, /fetch --quiet --depth 1 --filter=blob:none origin "\$c" \|\| \{[^}]*refused"; exit 1; \}/);
+  assert.match(j, /test "\$\(git -C "\$res" rev-parse HEAD\)" = "\$c"/);
+  assert.match(j, /\[ "\$items" = lm-judge\/items\.json \]/);
+  assert.match(j, /jq length "\$res\/\$items"\)" = "\$\(jq -r \.eval\.judgeItemCount "\$cfg"\)"/);
+  assert.match(j, /scores-\$ver\.json[\s\S]*jq -r \.model[\s\S]*scores-live-recorded\.json/);
+  // judge364.py reads the same fields score.mts does.
+  const jp = read("peaceai/model/judge364.py");
+  for (const k of ["context", "file", "label", "key"]) assert.match(jp, new RegExp(`it\\["${k}"\\]|i\\['${k}'\\]|it\\['${k}'\\]|\\["${k}"\\]`), k);
+  // No step reads lm-judge/ from a default-branch Results clone any more.
+  for (const f of [WF, read("peaceai/bin/lm-retrain-live.sh")]) assert.doesNotMatch(f, /sparse-checkout set[^\n]*lm-judge/);
+  assert.equal((WF.match(/lm-retrain-judge\.sh "\$RUNNER_TEMP"/g) ?? []).length, 2);
+  assert.match(read("peaceai/bin/lm-retrain-live.sh"), /lm-retrain-judge\.sh "\$dest" "\$live"/);
+  assert.ok(protectedReason("peaceai/bin/lm-retrain-judge.sh"));
 });

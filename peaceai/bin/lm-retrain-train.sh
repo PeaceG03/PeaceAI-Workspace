@@ -24,19 +24,5 @@ if [ "$stop" = 0 ]; then extra=(--patience "$(f patience)" --max-seconds "$(f ma
 rm -f "$work/init.npz"
 grep -q '^initialized from weights' "$work/train.log" || { echo "fine-tune did not start from the live weights: refused"; exit 1; }
 cmp -s "$live/tokenizer.json" "$work/tokenizer.json" || { echo "tokenizer changed: refused"; exit 1; }
-"$py" - "$work/metrics.jsonl" "$lr" "$(f steps)" "$stop" "$(grep -c '(early stop)' "$work/train.log" || true)" "$vs" > "$work/summary.json" <<'PY'
-import json, sys
-path, lr, steps, stop, early, vs = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), json.loads(sys.argv[6])
-rows = [json.loads(l) for l in open(path) if l.strip()]
-val = [(r["step"], r["val_loss"]) for r in rows if "val_loss" in r]
-if not val or val[0][0] != 0:
-    sys.exit("no step-0 validation loss")
-after = [v for v in val if v[0] > 0]
-if not after:
-    sys.exit("no validation loss after step 0")
-best = min(after, key=lambda v: (v[1], v[0]))
-stopped = max(r["step"] for r in rows)
-print(json.dumps({"lr": lr, "steps": steps, "stopAt": stop, "step0Val": val[0][1], "bestVal": best[1], "bestStep": best[0],
-                  "stoppedStep": stopped, "valAtStop": dict(val).get(stopped), "earlyStop": early > 0, "valSplit": vs}, sort_keys=True))
-PY
+"$py" peaceai/model/retrain_summary.py "$work/metrics.jsonl" "$lr" "$(f steps)" "$stop" "$(grep -c '(early stop)' "$work/train.log" || true)" "$vs" > "$work/summary.json"
 cat "$work/summary.json"
