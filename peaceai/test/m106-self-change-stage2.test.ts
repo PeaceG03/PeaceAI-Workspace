@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addOnlyTestCheck, checkStage2Proposal, computeNeverZone, listGrowthRefusals, listSha, NEVER_ZONE, NO_GENERATOR_MARK, protectedReason,
-  stage2Credit, stage2DiffSha, stage2Enabled, stage2GradeDecision, stage2LandingDecision, stage2PathRefusal,
+  isStage2TestPath, stage2Credit, stage2DiffSha, stage2Enabled, stage2GradeDecision, stage2LandingDecision, stage2PathRefusal, stage2ZoneRefusal,
+  STAGE2_RUN_TEST_PATH, STAGE2_TEST_LOCATION_REFUSAL,
   STAGE2_COUNTS_TRUST, STAGE2_FLAG_PATH, STAGE2_PHASES, STAGE2_SCHEMA, type CommandComment, type Stage2PrFacts, type Stage2Record,
 } from "../lib/selfchange.ts";
 import { inSafeZone } from "../lib/self-zone.ts";
@@ -431,3 +432,61 @@ test("M106 limit 3/4 (Auditor #504 blocker 5): grading runs only in private ephe
   assert.deepEqual(approvers.peace, ["PeaceG03"]);
   assert.deepEqual(approvers.auditor, ["PeaceG03"], "stage-2 landing: Peace /verdict (peace) + Auditor /auditor-pass (auditor), confirmed by Peace 2026-10-25");
 });
+
+// M118 (Auditor #529 ruling b): a stage-2 test must sit where a CI suite runs it. test:self = find peaceai/self-tests
+// -name '*.test.ts' (recursive); test:tools = the shell glob peaceai/test/*.test.ts (not recursive). Case-sensitive.
+const NEW_TEST_BODY = 'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("t", () => { assert.equal(1, 1); });\n';
+const newTest = (path: string) => proposal([{ path, base: null, cand: NEW_TEST_BODY }]);
+test("M118: new add-only tests are accepted only under peaceai/self-tests/** and peaceai/test/*.test.ts, each refusal exact", () => {
+  for (const p of ["peaceai/test/x.test.ts", "peaceai/self-tests/x.test.ts", "peaceai/self-tests/sub/x.test.ts"]) {
+    const c = newTest(p);
+    assert.deepEqual(c.refusals, [], p);
+    assert.deepEqual(c.newTests, [{ file: p, names: ["t"] }], p);
+  }
+  for (const p of ["peaceai/lib/x.test.ts", "peaceai/test/sub/x.test.ts", "peaceai/Self-Tests/x.test.ts", "peaceai/TEST/x.test.ts", "peaceai/x.test.ts", "peaceai/SELF-TESTS/x.test.ts", "peaceai/self-tests-x/a.test.ts"]) {
+    const c = newTest(p);
+    assert.equal(c.ok, false, p);
+    assert.deepEqual(c.refusals, [{ path: p, reason: STAGE2_TEST_LOCATION_REFUSAL }], p);
+    assert.deepEqual(c.newTests, [], p);
+  }
+  // .TS is not code, so the data-file never-zone refuses it before the test checks (unchanged by M118)
+  assert.deepEqual(newTest("peaceai/test/X.TEST.TS").refusals, [{ path: "peaceai/test/X.TEST.TS", reason: "never-zone: data file under peaceai/ (protected code may read it; only allowlisted data files are proposable)" }]);
+  // an executable change paired only with an unrun test is refused (the test cannot count)
+  const lib = { path: "peaceai/lib/propose.ts", base: "export const a = 1;\n", cand: "export const a = 2;\n" };
+  const c = proposal([lib, { path: "peaceai/lib/propose.test.ts", base: null, cand: NEW_TEST_BODY }]);
+  assert.ok(c.refusals.some((r) => r.path === "peaceai/lib/propose.test.ts" && r.reason === STAGE2_TEST_LOCATION_REFUSAL), reasons(c));
+  assert.match(reasons(c), /an executable change needs at least one new test/);
+  // the allowed set mirrors the real scripts
+  const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as { scripts: Record<string, string> };
+  assert.equal(pkg.scripts["test:tools"], "tsx --test peaceai/test/*.test.ts");
+  assert.equal(pkg.scripts["test:self"], "tsx --test $(find peaceai/self-tests -name '*.test.ts' -type f | LC_ALL=C sort)");
+});
+
+test("M118 tighten-only: every proposal M118 accepts was accepted before, and the only new refusal is the location one", () => {
+  // Before M118 a lone new test file with a clean body was accepted iff it passed the zone check, was a stage-2 test
+  // path and ended in .test.ts (pinned in m110 before this change). M118 inserts one refusal after those checks.
+  const oldAccept = (p: string) => stage2ZoneRefusal(p, NO_CLOSURE, true) === null && isStage2TestPath(p) && /\.test\.ts$/.test(p);
+  const segs = ["peaceai", "self-tests", "Self-Tests", "SELF-TESTS", "test", "TEST", "Test", "tests", "lib", "sub", "a", "self-tests-x", "x.test.ts", "X.TEST.TS", "x.Test.ts", "x.test.mts", "x.test.js", "x.ts", ".x.test.ts", "x*.test.ts", "x~.test.ts", "x.test.ts.bak"];
+  let checked = 0, nowRefused = 0;
+  const seen = new Set<string>();
+  let seed = 118;
+  const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed >>> 8) % n; };
+  const paths: string[] = [];
+  for (const a of segs) for (const b of segs) paths.push(`peaceai/${a}/${b}`);
+  for (let i = 0; i < 1500; i++) paths.push(["peaceai", ...Array.from({ length: 1 + rnd(3) }, () => segs[rnd(segs.length)]!)].join("/"));
+  for (const p of paths) {
+    if (seen.has(p) || !plainSegs(p)) continue;
+    seen.add(p);
+    const c = newTest(p);
+    checked++;
+    if (c.ok) assert.ok(oldAccept(p) && STAGE2_RUN_TEST_PATH.test(p), `newly accepted: ${p}`);
+    assert.equal(c.ok, oldAccept(p) && STAGE2_RUN_TEST_PATH.test(p), p);
+    const loc = c.refusals.filter((r) => r.reason === STAGE2_TEST_LOCATION_REFUSAL);
+    if (oldAccept(p) && !STAGE2_RUN_TEST_PATH.test(p)) { nowRefused++; assert.deepEqual(c.refusals, [{ path: p, reason: STAGE2_TEST_LOCATION_REFUSAL }], p); }
+    else assert.equal(loc.length, 0, p);
+  }
+  // the run-path pattern is a strict subset of the old accepted shape and is case-sensitive
+  assert.equal(STAGE2_RUN_TEST_PATH.flags, "");
+  assert.ok(checked > 500 && nowRefused > 20, `${checked} ${nowRefused}`);
+});
+function plainSegs(p: string): boolean { return !p.split("/").some((s) => s === "" || s === "." || s === ".."); }

@@ -89,13 +89,13 @@ test("M117 tighten-only: everything the old /i entry refused is still refused (e
   assert.ok(checked > 20000 && newlyRefused > 0, `${checked} ${newlyRefused}`);
 });
 
-// M117 finding (documents current behavior, not a requirement): stage 2's checkStage2Proposal never consults
-// PROTECTED_SELF. Its limit 2 accepts a NEW add-only test file anywhere under peaceai/ (peaceai/test/ and peaceai/lib/
-// too, pinned in m106), so a new peaceai/Self-Tests/x.test.ts is accepted there exactly like peaceai/lib/x.test.ts:
-// the case of the directory plays no part. Stage 1 (protectedReason, selfProtectedReason, inSafeZone) is what M117 tightens.
-test("M117: stage 1 now refuses case variants; stage 2 treats them like any new add-only test under peaceai/", async () => {
+// M118 (Auditor #529 ruling b): stage 2's checkStage2Proposal still never consults PROTECTED_SELF, but it now accepts a
+// new add-only test ONLY where CI runs it (peaceai/self-tests/** for test:self, peaceai/test/*.test.ts for test:tools),
+// case-sensitively. So peaceai/Self-Tests/x.test.ts and peaceai/lib/x.test.ts are refused in stage 2 as well (m106 pins
+// the exact reason). Before M118 this test pinned all three as accepted.
+test("M117/M118: stage 1 refuses case variants; stage 2 refuses them too, and accepts only lowercase peaceai/self-tests/", async () => {
   const { selfProtectedReason, inSafeZone } = await import("../lib/self-zone.ts");
-  const { checkStage2Proposal } = await import("../lib/selfchange.ts");
+  const { checkStage2Proposal, STAGE2_TEST_LOCATION_REFUSAL } = await import("../lib/selfchange.ts");
   for (const p of ["peaceai/Self-Tests/x.test.ts", "peaceai/SELF-TESTS/x.test.ts", "peaceai/self-Tests/x.test.ts"]) {
     assert.equal(selfProtectedReason(p), EXISTING_TESTS.why, p);
     assert.equal(inSafeZone(p), false, p);
@@ -106,7 +106,10 @@ test("M117: stage 1 now refuses case variants; stage 2 treats them like any new 
   const s2 = (p: string) => {
     const lines = body.split("\n").filter(Boolean);
     const diff = `diff --git a/${p} b/${p}\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/${p}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join("\n")}\n`;
-    return checkStage2Proposal(diff, { base: () => null, cand: (q) => (q === p ? body : null) }, { why: new Map(), shadows: new Set() }).ok;
+    return checkStage2Proposal(diff, { base: () => null, cand: (q) => (q === p ? body : null) }, { why: new Map(), shadows: new Set() });
   };
-  for (const p of ["peaceai/Self-Tests/x.test.ts", "peaceai/self-tests/x.test.ts", "peaceai/lib/x.test.ts"]) assert.equal(s2(p), true, p);
+  assert.equal(s2("peaceai/self-tests/x.test.ts").ok, true);
+  for (const p of ["peaceai/Self-Tests/x.test.ts", "peaceai/SELF-TESTS/x.test.ts", "peaceai/self-Tests/x.test.ts", "peaceai/lib/x.test.ts"]) {
+    assert.deepEqual(s2(p).refusals, [{ path: p, reason: STAGE2_TEST_LOCATION_REFUSAL }], p);
+  }
 });
