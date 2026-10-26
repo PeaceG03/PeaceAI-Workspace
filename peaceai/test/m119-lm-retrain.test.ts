@@ -256,3 +256,26 @@ test("M119 sweep summary: a NaN or inf validation loss is refused; finite losses
   } finally { rmSync(t, { recursive: true, force: true }); }
   assert.match(read("peaceai/bin/lm-retrain-train.sh"), /peaceai\/model\/retrain_summary\.py/);
 });
+
+test("M119 judge items: fetched from the pinned notes/lm-judge-eval commit at the path the judge code reads (not Results main)", () => {
+  // Results main has no lm-judge/; the 364 items and recorded scores live on notes/lm-judge-eval (score.mts reads
+  // lm-judge/items.json there: an array of {key, label, file, context, derived, reference, ...}; scores-<v>.json has .agg).
+  assert.equal(CFG.eval.judgeItems, "lm-judge/items.json");
+  assert.equal(CFG.eval.judgeRef, "notes/lm-judge-eval");
+  assert.equal(CFG.eval.judgeCommit, "804a95675815d3d7965e95be8d9c368600863412");
+  assert.equal(CFG.eval.judgeItemCount, 364);
+  const j = read("peaceai/bin/lm-retrain-judge.sh");
+  assert.match(j, /fetch --quiet --depth 1 --filter=blob:none origin "\$c" \|\| \{[^}]*refused"; exit 1; \}/);
+  assert.match(j, /test "\$\(git -C "\$res" rev-parse HEAD\)" = "\$c"/);
+  assert.match(j, /\[ "\$items" = lm-judge\/items\.json \]/);
+  assert.match(j, /jq length "\$res\/\$items"\)" = "\$\(jq -r \.eval\.judgeItemCount "\$cfg"\)"/);
+  assert.match(j, /scores-\$ver\.json[\s\S]*jq -r \.model[\s\S]*scores-live-recorded\.json/);
+  // judge364.py reads the same fields score.mts does.
+  const jp = read("peaceai/model/judge364.py");
+  for (const k of ["context", "file", "label", "key"]) assert.match(jp, new RegExp(`it\\["${k}"\\]|i\\['${k}'\\]|it\\['${k}'\\]|\\["${k}"\\]`), k);
+  // No step reads lm-judge/ from a default-branch Results clone any more.
+  for (const f of [WF, read("peaceai/bin/lm-retrain-live.sh")]) assert.doesNotMatch(f, /sparse-checkout set[^\n]*lm-judge/);
+  assert.equal((WF.match(/lm-retrain-judge\.sh "\$RUNNER_TEMP"/g) ?? []).length, 2);
+  assert.match(read("peaceai/bin/lm-retrain-live.sh"), /lm-retrain-judge\.sh "\$dest" "\$live"/);
+  assert.ok(protectedReason("peaceai/bin/lm-retrain-judge.sh"));
+});
