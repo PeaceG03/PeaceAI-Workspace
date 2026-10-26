@@ -263,13 +263,22 @@ test("R4.2: only the pinned trailing texts may follow (source: peace).", () => {
   for (const t of CREDIT_TRAILING_ALLOWLIST) assert.equal(creditTrailingAllowed(`${CTX} (source: peace). ${t}`), true, t);
 });
 
-test("R4.2: the trailing-text allowlist is pinned (80 genuine tasks, policy.ts is protected)", async () => {
+test("R4.2: the trailing-text allowlist is pinned (80 genuine tasks, a protected file)", async () => {
   const { createHash } = await import("node:crypto");
   const { protectedReason } = await import("../lib/selfchange.ts");
+  const FILE = "peaceai/lib/credit-trailing-allowlist.json";
+  assert.equal(createHash("sha256").update(readFileSync(FILE)).digest("hex"), "b3498f21fd467c5d526b61615ea76fb2f0b6f633d1c45e22c89bc67648582d4f");
+  const rows = JSON.parse(readFileSync(FILE, "utf8")) as { issue: number; trailing: string }[];
+  assert.deepEqual(rows.map((r) => r.issue), [
+    ...[353, 354, 355, 356, 357, 358, 359, 370, 371, 372, 373, 374], ...Array.from({ length: 8 }, (_, i) => 390 + i), 399, 400, 401, 402, 403,
+    ...Array.from({ length: 11 }, (_, i) => 415 + i), ...Array.from({ length: 11 }, (_, i) => 427 + i), ...Array.from({ length: 13 }, (_, i) => 443 + i),
+    ...Array.from({ length: 18 }, (_, i) => 471 + i), 501, 502,
+  ]);
   assert.equal(CREDIT_TRAILING_ALLOWLIST.length, 80);
   assert.equal(new Set(CREDIT_TRAILING_ALLOWLIST).size, 80);
   assert.ok(Object.isFrozen(CREDIT_TRAILING_ALLOWLIST));
   assert.equal(createHash("sha256").update(JSON.stringify(CREDIT_TRAILING_ALLOWLIST)).digest("hex"), "56e2f3c0484381fee00ea7d06459fb717b692ffea39109a04a0d795b1750d36e");
+  assert.ok(protectedReason(FILE), FILE);
   assert.ok(protectedReason("peaceai/lib/policy.ts"));
 });
 
