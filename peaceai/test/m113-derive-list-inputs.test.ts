@@ -571,6 +571,9 @@ const ADVERSARIAL: { name: string; f: (l: number[]) => number }[] = [
   { name: "min capped at 10", f: (l) => Math.min(10, ...l) },
   { name: "sum capped at 100", f: (l) => Math.min(100, l.reduce((a, b) => a + b, 0)) },
   { name: "sum floored at 0", f: (l) => Math.max(0, l.reduce((a, b) => a + b, 0)) },
+  // round 3: D far past every example value (the gate has no reach limit for max / min)
+  { name: "max seeded -1000", f: (l) => Math.max(-1000, ...l) },
+  { name: "min seeded 1000", f: (l) => Math.min(1000, ...l) },
 ];
 const POOL = [-100, -95, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 50, 105, 110];
 function adversarial(seed: number, trials: number): Record<string, { derived: number; wrong: number; refused: number }> {
@@ -596,7 +599,7 @@ function adversarial(seed: number, trials: number): Record<string, { derived: nu
   return out;
 }
 
-test("Auditor #523 B1: seeded max / min, capped and floored sums on random examples: 0 wrong over seeds 112, 7 and 2026", () => {
+test("Auditor #523 B1: seeded max / min (also seeded -1000 / 1000), capped and floored sums on random examples: 0 wrong over seeds 112, 7 and 2026", () => {
   for (const seed of [112, 7, 2026]) {
     const got = adversarial(seed, 40);
     for (const [name, c] of Object.entries(got)) {
@@ -629,6 +632,32 @@ test("Auditor #523 B1: the seed gate refuses with an asked row; answered, the ma
   assert.ok(!s1.ok && s1.gate === "seed" && /sum at or above 101/.test(s1.detail), JSON.stringify(s1));
   const s2 = deriveListProgram({ params: P1, ret: "number", examples: rowsOf([[], [5, 40, 12], [-150, 3], [9], [3, 3, 1], [150, -100], [150, 1]], sum) });
   assert.ok(s2.ok && compileList(s2.program, ["xs"], 0) === "xs.reduce((n, x) => n + x, 0)", JSON.stringify(s2));
+});
+
+test("Auditor #523 round 3: a max / min seed far past the examples is still checked (no reach limit)", () => {
+  const P1: ListParam[] = [{ name: "xs", type: { list: "number" } }];
+  const rowsOf = (ls: number[][], f: (l: number[]) => number) => ls.map((l) => ({ args: [l] as ListArg[], out: f(l) }));
+  const ls = [[], [5, 40, 12], [90], [3, 3, 1], [-20, 7, 61], [-60, 15]];
+  for (const D of [-200, -250, -1000, -100000]) {
+    const r = deriveListProgram({ params: P1, ret: "number", examples: rowsOf(ls, (l) => Math.max(D, ...l)) });
+    assert.ok(!r.ok && r.reason === "derive_under_specified" && r.gate === "seed", `max ${D}: ${JSON.stringify(r)}`);
+    assert.deepEqual(r.questions, [{ at: [[D - 1]], answers: [D - 1, D] }], `max ${D}`);
+    // answered the "at least D" way: no fit; the plain-max way: the max with D for the empty list
+    assert.equal((deriveListProgram({ params: P1, ret: "number", examples: rowsOf([...ls, [D - 1]], (l) => Math.max(D, ...l)) }) as { reason?: string }).reason, "derive_no_fit", `max ${D}`);
+    const ok = deriveListProgram({ params: P1, ret: "number", examples: rowsOf([...ls, [D - 1]], (l) => (l.length ? Math.max(...l) : D)) });
+    assert.ok(ok.ok && compileList(ok.program, ["xs"], 0) === `xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), ${D})`, `max ${D}: ${JSON.stringify(ok)}`);
+  }
+  for (const D of [200, 1000]) {
+    const r = deriveListProgram({ params: P1, ret: "number", examples: rowsOf(ls, (l) => Math.min(D, ...l)) });
+    assert.ok(!r.ok && r.gate === "seed", `min ${D}: ${JSON.stringify(r)}`);
+    assert.deepEqual(r.questions, [{ at: [[D + 1]], answers: [D + 1, D] }], `min ${D}`);
+  }
+  // records: the asked row keeps the other fields of an example element
+  const PR: ListParam[] = [{ name: "xs", type: { list: { fields: [{ name: "part", type: "string" }, { name: "age", type: "number" }] } } }];
+  const rl = ls.map((l) => l.map((age, i) => ({ part: i % 2 ? "scan" : "r2", age })));
+  const rr = deriveListProgram({ params: PR, ret: "number", examples: rl.map((l) => ({ args: [l] as ListArg[], out: Math.max(-1000, ...l.map((x) => x.age)) })) });
+  assert.ok(!rr.ok && rr.gate === "seed", JSON.stringify(rr));
+  assert.deepEqual(rr.questions, [{ at: [[{ part: "r2", age: -1001 }]], answers: [-1001, -1000] }]);
 });
 
 test("Auditor #523 ruling: a condition true on every example element is a rival, not dropped (count x >= 0 vs the length)", () => {

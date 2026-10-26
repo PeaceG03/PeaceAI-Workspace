@@ -610,9 +610,12 @@ export function seedProblem(input: ListInput, prog: ListProgram): { gate: ListGa
   for (const side of sides) {
     const tiers = side === "low" ? (prog.op === "sum" ? [D - DERIVE_FAR - 1, D - 1] : [D - 1]) : (prog.op === "sum" ? [D + DERIVE_FAR + 1, D + 1] : [D + 1]);
     const past = (v: number, t: number) => (side === "low" ? v <= t : v >= t);
-    const t = tiers.find((t) => vals.some((x) => past(x.v, t)));
+    // A max / min is checked with no reach limit (Auditor #523 round 3): however far D is from the example values, a
+    // non-empty example must be past it, else "the max but at least D" reads the same examples. A sum is checked on
+    // the tiers its probe lists reach.
+    const t = prog.op === "sum" ? tiers.find((t) => vals.some((x) => past(x.v, t))) : tiers[0];
     if (t === undefined || outs.some((o) => past(o, t))) continue;
-    const q = vals.find((x) => past(x.v, t))!;
+    const q = vals.find((x) => past(x.v, t)) ?? oneElement(input, prog, t);
     const alt = D; // the floored / capped reading: the seed D itself
     const kind = prog.op === "max" ? `its largest ${name} below ${D}, the empty-list result` : prog.op === "min" ? `its smallest ${name} above ${D}, the empty-list result` : `a ${side === "low" ? "sum at or below" : "sum at or above"} ${t}`;
     return {
@@ -621,6 +624,16 @@ export function seedProblem(input: ListInput, prog: ListProgram): { gate: ListGa
     };
   }
   return null;
+}
+
+/** The seed gate's asked row when no probe list reaches past D: one example's arguments, its list one element whose (field) value is v. */
+function oneElement(input: ListInput, prog: Extract<ListProgram, { op: "max" | "min" | "sum" }>, v: number): { a: ListArg[]; v: number } {
+  const li = listIndex(input.params);
+  const ex = input.examples.find((e) => (e.args[li] as readonly ListElem[]).length > 0)!;
+  const x = (ex.args[li] as readonly ListElem[])[0]!;
+  const a = [...ex.args];
+  a[li] = [prog.f === null ? v : { ...(x as ListRecord), [prog.f]: v }] as ListArg;
+  return { a, v: evalList(prog, a, li) as number };
 }
 
 /** Derives the list program, or refuses (see the head of this file). */
