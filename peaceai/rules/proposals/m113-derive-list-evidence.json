@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m113-derive-list-evidence:v1",
- "note": "DERIVE_FROM_BEHAVIOR v4 (list inputs): 28 exported pure upstream functions over one array parameter, from 25 MIT / Apache-2.0 / ISC repos found by GitHub code search (exported one-expression functions calling filter / some / every / reduce / map / Math.max / Math.min on an array parameter; repos without a license, with NOASSERTION, or under GPL / AGPL were dropped). The v4 signature keeps the record fields the body reads, typed as the body uses them (a string union is string, an optional field is required). Examples are the upstream function run on a seeded grid (seed 113, 48 rows of lists of length 0-6; numbers from -150..150 including the neighbours of 0 and values 100 or more away; strings from the field's own literals): the first 6 rows are the training slice, extended only by following PeaceAI's own refusals the way an issue author would (an ambiguity question answered by the upstream function; a derive_under_specified_kept refusal, which names its condition, answered by one list of the first two grid elements where that condition holds; else the next grid row; each added row and the refusal that asked for it is in addedForGates); held out: the other grid rows plus every probe list not in the training rows. 26 functions are derived and right on every held-out row (2932 rows, 0 wrong); 2 (maxNumber and max, a running max seeded with 0) have no program in the DSL and are refused (derive_no_fit). Numbers are integers here as in v1, so `component > 0` is derived as `1 <= component`, equal on integers only. Shapes with upstream evidence: sum (8), sum of kept elements (3), count (2), some (3), every (2), filter (2), field of kept elements (1), max (3), min (2). Shapes with no upstream function in this set: length, label, test (map to boolean), field of every element, and the not / nes / le / lep / gep / ltp / gtp / nep predicates; they are covered by the M113 unit tests and seeded eval only. The evidence test re-derives each expression from the recorded examples; no third-party code is run by the test.",
+ "note": "DERIVE_FROM_BEHAVIOR v4 (list inputs): 28 exported pure upstream functions over one array parameter, from 25 MIT / Apache-2.0 / ISC repos found by GitHub code search (exported one-expression functions calling filter / some / every / reduce / map / Math.max / Math.min on an array parameter; repos without a license, with NOASSERTION, or under GPL / AGPL were dropped). The v4 signature keeps the record fields the body reads, typed as the body uses them (a string union is string, an optional field is required). Examples are the upstream function run on a seeded grid (seed 113, 48 rows of lists of length 0-6; numbers from -150..150 including the neighbours of 0 and values 100 or more away; strings from the field's own literals): the first 6 rows are the training slice, extended only by following PeaceAI's own refusals the way an issue author would (an ambiguity question, or the row a gate asks for such as derive_under_specified_seed, answered by the upstream function; a derive_under_specified_kept refusal, which names its condition, answered by one list of the first two grid elements where that condition holds; else the next grid row; each added row and the refusal that asked for it is in addedForGates); held out: the other grid rows plus every probe list not in the training rows. 26 functions are derived and right on every held-out row (3144 rows, 0 wrong); 2 (maxNumber and max, a running max seeded with 0) have no program in the DSL and are refused (derive_no_fit). Numbers are integers here as in v1, so `component > 0` is derived as `1 <= component`, equal on integers only. Shapes with upstream evidence: sum (8), sum of kept elements (3), count (2), some (3), every (2), filter (2), field of kept elements (1), max (3), min (2). Shapes with no upstream function in this set: length, label, test (map to boolean), field of every element, and the not / nes / le / lep / gep / ltp / gtp / nep predicates; they are covered by the M113 unit tests and seeded eval only. The evidence test re-derives each expression from the recorded examples; no third-party code is run by the test.",
  "functions": [
   {
    "repo": "Senryoku/Draftmancer",
@@ -70,13 +70,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "arr.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -148,13 +167,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "xs.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -226,13 +264,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "numbers.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -304,13 +361,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "arr.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -382,13 +458,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "arr.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -460,13 +555,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "numbers.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -538,13 +652,32 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       200
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[200]]) gives 200",
+    "derive_under_specified_seed: ([[-101]]) gives -101"
+   ],
    "expr": "array.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -638,13 +771,36 @@
       ]
      ],
      "out": 99
+    },
+    {
+     "args": [
+      [
+       {
+        "runtime": 200
+       }
+      ]
+     ],
+     "out": 200
+    },
+    {
+     "args": [
+      [
+       {
+        "runtime": -101
+       }
+      ]
+     ],
+     "out": -101
     }
    ],
-   "addedForGates": [],
+   "addedForGates": [
+    "ambiguous: ([[{\"runtime\":200}]]) gives 200",
+    "derive_under_specified_seed: ([[{\"runtime\":-101}]]) gives -101"
+   ],
    "expr": "movies.reduce((n, x) => n + x.runtime, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 84,
+    "right": 97,
     "wrong": 0
    }
   },
@@ -842,6 +998,17 @@
      "args": [
       [
        {
+        "pid": -1,
+        "size": 150
+       }
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       {
         "pid": -2,
         "size": 30
        },
@@ -863,12 +1030,13 @@
     "derive_examples: ([[{\"pid\":-40,\"size\":7},{\"pid\":150,\"size\":-150}]]) gives 0",
     "derive_examples: ([[{\"pid\":-101,\"size\":-1},{\"pid\":99,\"size\":-1},{\"pid\":30,\"size\":2},{\"pid\":101,\"size\":-40},{\"pid\":3,\"size\":1},{\"pid\":-1,\"size\":-150}]]) gives -150",
     "derive_under_specified_kept (two grid elements where x.pid === -1): ([[{\"pid\":-1,\"size\":0},{\"pid\":-1,\"size\":-150}]]) gives -150",
+    "derive_under_specified_seed: ([[{\"pid\":-1,\"size\":150}]]) gives 150",
     "derive_under_specified_edge: ([[{\"pid\":-2,\"size\":30},{\"pid\":99,\"size\":30},{\"pid\":-101,\"size\":-1}]]) gives 0"
    ],
    "expr": "blocks.filter((x) => x.pid === -1).reduce((n, x) => n + x.size, 0)",
    "shape": "sum-eqn",
    "heldOut": {
-    "right": 672,
+    "right": 720,
     "wrong": 0
    }
   },
@@ -1030,17 +1198,41 @@
       ]
      ],
      "out": 7
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "expense",
+        "amount_cents": -101
+       }
+      ]
+     ],
+     "out": -101
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "expense",
+        "amount_cents": 150
+       }
+      ]
+     ],
+     "out": 150
     }
    ],
    "addedForGates": [
     "derive_examples: ([[{\"amount_cents\":99,\"kind\":\"refund\"},{\"amount_cents\":3,\"kind\":\"refund\"},{\"amount_cents\":-1,\"kind\":\"settlement\"},{\"amount_cents\":2,\"kind\":\"refund\"},{\"amount_cents\":150,\"kind\":\"settlement\"}]]) gives 0",
     "derive_examples: ([[{\"amount_cents\":7,\"kind\":\"expense\"},{\"amount_cents\":-150,\"kind\":\"refund\"}]]) gives 7",
-    "derive_under_specified_kept (two grid elements where x.kind === \"expense\"): ([[{\"amount_cents\":0,\"kind\":\"expense\"},{\"amount_cents\":7,\"kind\":\"expense\"}]]) gives 7"
+    "derive_under_specified_kept (two grid elements where x.kind === \"expense\"): ([[{\"amount_cents\":0,\"kind\":\"expense\"},{\"amount_cents\":7,\"kind\":\"expense\"}]]) gives 7",
+    "derive_under_specified_seed: ([[{\"amount_cents\":-101,\"kind\":\"expense\"}]]) gives -101",
+    "derive_under_specified_seed: ([[{\"amount_cents\":150,\"kind\":\"expense\"}]]) gives 150"
    ],
    "expr": "entries.filter((x) => x.kind === \"expense\").reduce((n, x) => n + x.amount_cents, 0)",
    "shape": "sum-eqs",
    "heldOut": {
-    "right": 284,
+    "right": 344,
     "wrong": 0
    }
   },

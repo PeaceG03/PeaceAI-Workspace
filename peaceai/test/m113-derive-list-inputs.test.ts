@@ -15,8 +15,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { APPROVED_SCHEMA } from "../lib/approved.ts";
-import { compileList, deriveListProgram, listExprProblem, listGateProblem, listLit, parseListType, type ListArg, type ListParam } from "../lib/derive-list.ts";
-import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_DSL, DERIVE_LIST_PLACEMENT, DERIVE_LIST_TRIGGER, DERIVE_TRIGGER, DERIVE_VOCAB, buildDeriveListEdit, deriveListReviewNote, deriveReviewNote, derivedListAppendProblem, derivedListModuleProblem, parseDeriveListTask, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
+import { compileList, deriveListProgram, evalList, listExprProblem, listGateProblem, listLit, parseListType, valueKey, type ListArg, type ListParam } from "../lib/derive-list.ts";
+import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_DSL, DERIVE_LIST_PLACEMENT, DERIVE_LIST_TRIGGER, DERIVE_TRIGGER, DERIVE_VOCAB, DERIVE_LIST_OPERATION, buildDeriveListEdit, deriveAppendRecheck, deriveListReviewNote, deriveModuleRecheck, deriveReviewNote, derivedListAppendProblem, derivedListModuleProblem, parseDeriveListTask, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
 import { specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
 import { DERIVE_APPEND_PHRASING, DERIVE_LIST_PHRASING, PHRASING, phrasingFor } from "../lib/propose.ts";
@@ -125,13 +125,17 @@ function probeInputs(h: Spec, seed: number, n = 150): ListArg[][] {
 }
 
 // ---- Held-out slice-2-shaped specs (written before their first run; not used to build the engine) ----
-// `examples` is what was written first. On the first run five of the eight were REFUSED, each naming what it lacked
-// (recorded in the next test): four by the far gate (no element 100 or more past the cut on the low side) and
-// totalErrors as derive_ambiguous (the plain sum and the sum of the elements with errors >= 1 agree on every
-// example; asked: totalErrors([{ part: "scan", errors: -1 }]) gives -1 or 0?). `asked` is exactly one row per refusal,
-// answered by the reference function the way an issue author would. Nothing else in these specs was changed after the
-// first run. The engine was changed once after it: the kept gate (see the kept-gate negative) was added; these specs
-// derive the same programs with and without it.
+// `examples` is what was written first. On the first run five of the eight were REFUSED, each naming what it lacked:
+// four by the far gate (no element 100 or more past the cut on the low side) and totalErrors as derive_ambiguous
+// (asked: totalErrors([{ part: "scan", errors: -1 }]) gives -1 or 0?). Each got one asked row, answered by the
+// reference function the way an issue author would. The engine was changed twice after that first run, and the record
+// in the next test is the run on the current engine (nothing in `examples` was changed):
+//   - the kept gate (see the kept-gate negative); these specs derive the same programs with and without it;
+//   - Auditor #523 round 2: the seed gate and unsplit predicates kept as rivals. oldestAge (a max with 0 for the
+//     empty list) is now refused by the seed gate (no example has its largest ageMin below 0) and got one asked row,
+//     [{ scan, -1 }]; totalErrors (a plain sum) is asked first [{ scan, -101 }] (an unsplit cut `-1 <= x.errors` is now
+//     a rival) and then [{ scan, 111 }] (an unsplit cut on the high side). Its earlier asked row
+//     [{ a, -1 }, { b, 2 }, { c, 0 }] is replaced by those two. Every program derived is the same as before.
 const C = (part: string, ageMin: number): R => ({ part, ageMin });
 const K = (part: string, ok: boolean): R => ({ part, ok });
 const D = (part: string, ageDays: number): R => ({ part, ageDays });
@@ -140,7 +144,7 @@ const HELD_OUT: Spec[] = [
   { fn: "countErrored", sig: "checkins: { part: string; ok: boolean }[]", ret: "number", f: (l: R[]) => l.filter((x) => !x.ok).length,
     examples: [[[]], [[K("scan", true), K("r2", true), K("tenmin", true)]], [[K("scan", false), K("r2", true), K("tenmin", false)]], [[K("scan", false)]], [[K("r2", true), K("r2", false), K("r2", false), K("scan", false)]]], asked: [] },
   { fn: "oldestAge", sig: "checkins: { part: string; ageMin: number }[]", ret: "number", f: (l: R[]) => (l.length ? Math.max(...l.map((x) => x.ageMin as number)) : 0),
-    examples: [[[]], [[C("scan", 5), C("r2", 40), C("tenmin", 12)]], [[C("scan", 90)]], [[C("a", 3), C("b", 3), C("c", 1)]], [[C("a", 0), C("b", 720), C("c", 61), C("d", 15)]]], asked: [] },
+    examples: [[[]], [[C("scan", 5), C("r2", 40), C("tenmin", 12)]], [[C("scan", 90)]], [[C("a", 3), C("b", 3), C("c", 1)]], [[C("a", 0), C("b", 720), C("c", 61), C("d", 15)]]], asked: [[[C("scan", -1)]]] },
   { fn: "anySilent", sig: "checkins: { part: string; ageMin: number }[], limit: number", ret: "boolean", f: (l: R[], t: number) => l.some((x) => (x.ageMin as number) > t),
     examples: [[[], 30], [[C("scan", 5), C("r2", 10), C("tenmin", 12)], 30], [[C("scan", 31)], 30], [[C("scan", 30)], 30], [[C("r2", 29), C("scan", 45), C("x", 2)], 30], [[C("a", 100)], 60], [[C("a", 60)], 60], [[C("a", 61), C("b", 0)], 60], [[C("a", -5), C("b", 200), C("c", 3)], 15], [[C("a", 15), C("b", 15), C("c", 15)], 15]], asked: [[[C("a", -90), C("b", 0), C("c", 5)], 30]] },
   { fn: "pruneOld", sig: "checkins: { part: string; ageDays: number }[], keepDays: number", ret: "{ part: string; ageDays: number }[]", f: (l: R[], k: number) => l.filter((x) => (x.ageDays as number) <= k),
@@ -150,13 +154,16 @@ const HELD_OUT: Spec[] = [
   { fn: "statusLabels", sig: "checkins: { part: string; ageMin: number }[]", ret: "string[]", f: (l: R[]) => l.map((x) => ((x.ageMin as number) > 60 ? "STALE" : "FRESH")),
     examples: [[[]], [[C("scan", 5), C("r2", 60), C("tenmin", 61)]], [[C("a", 600)]], [[C("a", 0), C("b", 59), C("c", 62), C("d", 1440)]], [[C("a", -3)]]], asked: [[[C("a", -45), C("b", 61)]]] },
   { fn: "totalErrors", sig: "checkins: { part: string; errors: number }[]", ret: "number", f: (l: R[]) => l.reduce((n, x) => n + (x.errors as number), 0),
-    examples: [[[]], [[E("scan", 0), E("r2", 2), E("tenmin", 1)]], [[E("scan", 5)]], [[E("a", 10), E("b", 0), E("c", 0), E("d", 3)]]], asked: [[[E("a", -1), E("b", 2), E("c", 0)]]] },
+    examples: [[[]], [[E("scan", 0), E("r2", 2), E("tenmin", 1)]], [[E("scan", 5)]], [[E("a", 10), E("b", 0), E("c", 0), E("d", 3)]]], asked: [[[E("scan", -101)]], [[E("scan", 111)]]] },
   { fn: "stalePartNames", sig: "checkins: { part: string; ageMin: number }[], limit: number", ret: "string[]", f: (l: R[], t: number) => l.filter((x) => (x.ageMin as number) > t).map((x) => x.part),
     examples: [[[], 30], [[C("scan", 5), C("r2", 31), C("tenmin", 30)], 30], [[C("a", 100), C("b", 1)], 60], [[C("a", 61), C("b", 60), C("c", 200)], 60], [[C("x", 0)], 10]], asked: [[[C("a", -50), C("b", 61)], 60]] },
 ];
 
 // ---- Every shape of the DSL, one spec each (written for this test; scanCount and hasExitThree were refused on
-// their first run, derive_ambiguous and derive_under_specified_far, and got one asked row each) ----
+// their first run, derive_ambiguous and derive_under_specified_far, and got one asked row each. After Auditor #523
+// round 2, partNames is refused as derive_ambiguous (the unsplit cut `-1 <= x.ageMin` is a rival) and got one asked
+// row; failedErrors (a sum of the kept elements) is refused by the seed gate twice, below -100 and above 100, and got
+// two asked rows) ----
 const F = (ok: boolean, errors: number): R => ({ ok, errors });
 const SHAPES: Spec[] = [
   { shape: "length", fn: "numCheckins", sig: "parts: string[]", ret: "number", f: (l: string[]) => l.length,
@@ -164,7 +171,7 @@ const SHAPES: Spec[] = [
   { shape: "test", fn: "staleFlags", sig: "ages: number[]", ret: "boolean[]", f: (l: number[]) => l.map((x) => x > 60),
     examples: [[[]], [[60, 61, 0]], [[200, -45]], [[5, 100, 59, 62]], [[61, 61, 60]]], asked: [] },
   { shape: "pluck", fn: "partNames", sig: "checkins: { part: string; ageMin: number }[]", ret: "string[]", f: (l: R[]) => l.map((x) => x.part),
-    examples: [[[]], [[C("scan", 5), C("r2", 60), C("tenmin", 61)]], [[C("a", 600)]], [[C("b", 0), C("b", 1)]]], asked: [] },
+    examples: [[[]], [[C("scan", 5), C("r2", 60), C("tenmin", 61)]], [[C("a", 600)]], [[C("b", 0), C("b", 1)]]], asked: [[[C("scan", -101)]]] },
   { shape: "count eqs", fn: "scanCount", sig: "checkins: { part: string; ok: boolean }[]", ret: "number", f: (l: R[]) => l.filter((x) => x.part === "scan").length,
     examples: [[[]], [[K("scan", true), K("r2", true), K("tenmin", false)]], [[K("scan", false), K("scan", true), K("r2", false)]], [[K("tenmin", true)]], [[K("scan", true), K("r2", false), K("scan", false), K("tenmin", true)]]], asked: [[[K("scan", true)]]] },
   { shape: "filter nep", fn: "otherParts", sig: "parts: string[], name: string", ret: "string[]", f: (l: string[], n: string) => l.filter((x) => x !== n),
@@ -180,7 +187,7 @@ const SHAPES: Spec[] = [
   { shape: "count ltp", fn: "countBelow", sig: "ages: number[], limit: number", ret: "number", f: (l: number[], t: number) => l.filter((x) => x < t).length,
     examples: [[[], 10], [[10, 11, 9], 10], [[0, 200, -150], 10], [[5, 6, 4], 5], [[50], 50], [[51, 49], 50], [[0, 1, -1], 0]], asked: [] },
   { shape: "sum of kept", fn: "failedErrors", sig: "checkins: { ok: boolean; errors: number }[]", ret: "number", f: (l: R[]) => l.filter((x) => !x.ok).reduce((n, x) => n + (x.errors as number), 0),
-    examples: [[[]], [[F(true, 3), F(false, 2), F(false, 5)]], [[F(true, 9)]], [[F(false, 4), F(true, 1), F(true, 0)]], [[F(false, 0), F(false, 7), F(true, 2), F(false, 1)]]], asked: [] },
+    examples: [[[]], [[F(true, 3), F(false, 2), F(false, 5)]], [[F(true, 9)]], [[F(false, 4), F(true, 1), F(true, 0)]], [[F(false, 0), F(false, 7), F(true, 2), F(false, 1)]]], asked: [[[F(false, -101)]], [[F(false, 110)]]] },
   { shape: "filter ge", fn: "positives", sig: "deltas: number[]", ret: "number[]", f: (l: number[]) => l.filter((x) => x > 0),
     examples: [[[]], [[0, 1, -1]], [[150, -150, 2]], [[5, 0, 0, 3]], [[-7]]], asked: [] },
   { shape: "every gep", fn: "allAtLeast", sig: "scores: number[], floor: number", ret: "boolean", f: (l: number[], t: number) => l.every((x) => x >= t),
@@ -194,16 +201,21 @@ const derive = (h: Spec, head: string, first = false, files = FILES) => {
 };
 const NEW = (h: Spec) => addHead("src/health-sum.ts", h);
 
-test("held-out record: the specs as first written; five refused, each naming what it lacked", () => {
+test("held-out record: the specs as first written; six refused, each naming what it lacked", () => {
   const got = HELD_OUT.map((h) => { const { e, why } = derive(h, NEW(h), true); return e ? "derived" : why.reason; });
-  assert.deepEqual(got, ["derived", "derived", "derive_under_specified_far: ageMin", "derive_under_specified_far: ageDays", "derived", "derive_under_specified_far: ageMin", "derive_ambiguous", "derive_under_specified_far: ageMin"]);
+  assert.deepEqual(got, ["derived", "derive_under_specified_seed: ageMin", "derive_under_specified_far: ageMin", "derive_under_specified_far: ageDays", "derived", "derive_under_specified_far: ageMin", "derive_ambiguous", "derive_under_specified_far: ageMin"]);
   // the refusal's own detail carries the question that the asked row answers
   const t = parseDeriveListTask(objective(issue(NEW(HELD_OUT[6]!), rows(HELD_OUT[6]!, true))));
   assert.ok("task" in t);
   const b = buildDeriveListEdit(V4.params, t.task, FILES, isTest);
   assert.ok("reason" in b && b.reason === "derive_ambiguous");
-  assert.match((b as { detail?: string }).detail ?? "", /Asked: totalErrors\(\[\{ part: "scan", errors: -1 \}\]\) gives -1 or 0\?/);
-  for (const h of HELD_OUT) assert.ok(h.asked.length <= 1, h.fn);
+  assert.match((b as { detail?: string }).detail ?? "", /Asked: totalErrors\(\[\{ part: "scan", errors: -101 \}\]\) gives -101 or 0\?/);
+  const o = parseDeriveListTask(objective(issue(NEW(HELD_OUT[1]!), rows(HELD_OUT[1]!, true))));
+  assert.ok("task" in o);
+  const ob = buildDeriveListEdit(V4.params, o.task, FILES, isTest);
+  assert.match((ob as { detail?: string }).detail ?? "", /Asked: oldestAge\(\[\{ part: "scan", ageMin: -1 \}\]\) gives -1 or 0\?/);
+  // one asked row per refusal, answered in turn (totalErrors: two refusals in a row)
+  for (const h of HELD_OUT) assert.ok(h.asked.length <= (h.fn === "totalErrors" ? 2 : 1), h.fn);
 });
 
 test("held-out specs: each derives (new module and append), equal to the reference on 150 seeded random lists per spec", () => {
@@ -278,8 +290,8 @@ test("every DSL shape: one spec each derives the intended program, equal to the 
     "filter ge": "deltas.filter((x) => 1 <= x)",
     "every gep": "scores.every((x) => floor <= x)",
   });
-  // first-run refusals of the two specs that needed one asked row each
-  assert.deepEqual(SHAPES.filter((h) => h.asked.length).map((h) => [h.fn, derive(h, NEW(h), true).why.reason]), [["scanCount", "derive_ambiguous"], ["hasExitThree", "derive_under_specified_far: codes"]]);
+  // first-run refusals of the specs that needed asked rows
+  assert.deepEqual(SHAPES.filter((h) => h.asked.length).map((h) => [h.fn, derive(h, NEW(h), true).why.reason]), [["partNames", "derive_ambiguous"], ["scanCount", "derive_ambiguous"], ["hasExitThree", "derive_under_specified_far: codes"], ["failedErrors", "derive_under_specified_seed: errors"]]);
 });
 
 // ---- Negatives ----
@@ -326,7 +338,8 @@ test("negative: the kept gate (found by the running-max negative): without a lis
 test("negative: the gates (no empty list, no list of 3+, scalar never read, one side of P unseen, no edge, nothing far)", () => {
   assert.equal(reason(N([[[1]], [[2, 3, 4]], [[5, 6]], [[1, 1, 7]]], (l: number[]) => l.length)), "derive_under_specified_empty: xs");
   assert.equal(reason(N([[[]], [[2, 3]], [[5]], [[1, 7]]], (l: number[]) => l.length)), "derive_under_specified_many: xs");
-  assert.equal(reason(N([[[], 5], [[2, 3, 4], 5], [[5], 1], [[1, 1, 7], 9]], (l: number[]) => l.length, "xs: number[], limit: number")), "derive_under_specified_unread: limit");
+  // (elements far on both sides and one equal to limit: the unsplit cuts and `x !== limit` would be rivals otherwise)
+  assert.equal(reason(N([[[], 5], [[2, 3, 4], 5], [[5], 1], [[1, 1, 7], 9], [[-150, 150, 0], 3], [[5, 1, 0], 5]], (l: number[]) => l.length, "xs: number[], limit: number")), "derive_under_specified_unread: limit");
   // P = ok holds on one example element only (branch)
   const O = (ok: boolean) => ({ ok });
   assert.equal(reason(N([[[]], [[O(false), O(false), O(false)]], [[O(true), O(false)]], [[O(false)]]], (l: R[]) => l.filter((x) => x.ok).length, "xs: { ok: boolean }[]")), "derive_under_specified_branch: ok");
@@ -491,7 +504,7 @@ test("evidence: each derived upstream function re-derives to its recorded expres
   }
   assert.equal(ev.functions.length, 28);
   assert.equal(derived, 26);
-  assert.equal(held, 2932);
+  assert.equal(held, 3144);
   assert.deepEqual(V4.evidence, { commits: 23, files: 23, hunks: 26, repos: [...new Set(ev.functions.filter((f) => f.expr).map((f) => f.repo))].sort() });
 });
 
@@ -549,6 +562,118 @@ test("spec v4: valid; the v3 spec with only id, minerVersion, trigger, two param
   for (const s of [V1, V2]) assert.equal(phrasingFor(s), PHRASING.DERIVE_FROM_BEHAVIOR);
 });
 
+// ---- Auditor #523 round 2 ----
+// B1: a max / min seeded with a constant, a capped or a floored sum, on RANDOM examples (seeded; the Auditor's
+// families, not fixed rows). Every derived program must equal the reference on 2000 random lists; refusals are fine.
+const ADVERSARIAL: { name: string; f: (l: number[]) => number }[] = [
+  { name: "running max from 0", f: (l) => Math.max(0, ...l) },
+  { name: "running max from 5", f: (l) => Math.max(5, ...l) },
+  { name: "min capped at 10", f: (l) => Math.min(10, ...l) },
+  { name: "sum capped at 100", f: (l) => Math.min(100, l.reduce((a, b) => a + b, 0)) },
+  { name: "sum floored at 0", f: (l) => Math.max(0, l.reduce((a, b) => a + b, 0)) },
+];
+const POOL = [-100, -95, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 50, 105, 110];
+function adversarial(seed: number, trials: number): Record<string, { derived: number; wrong: number; refused: number }> {
+  const R = rng(seed);
+  const pick = <T>(a: readonly T[]) => a[Math.floor(R() * a.length)]!;
+  const wide = () => (R() < 0.5 ? pick(POOL) : Math.floor(R() * 601) - 300);
+  const list = (n: number, w = false) => Array.from({ length: n }, () => (w ? wide() : pick(POOL)));
+  const out: Record<string, { derived: number; wrong: number; refused: number }> = {};
+  const params: ListParam[] = [{ name: "xs", type: { list: "number" } }];
+  for (const fam of ADVERSARIAL) {
+    const c = (out[fam.name] = { derived: 0, wrong: 0, refused: 0 });
+    for (let k = 0; k < trials; k++) {
+      const lists = [[], list(3 + Math.floor(R() * 4))];
+      const n = 6 + Math.floor(R() * 25);
+      for (let i = 2; i < n; i++) lists.push(list(Math.floor(R() * 8)));
+      const examples = [...new Map(lists.map((l) => [valueKey([l]), { args: [l] as ListArg[], out: fam.f(l) }])).values()];
+      const r = deriveListProgram({ params, ret: "number", examples });
+      if (!r.ok) { c.refused++; continue; }
+      c.derived++;
+      for (let h = 0; h < 2000; h++) { const l = list(Math.floor(R() * 12), true); if (evalList(r.program, [l], 0) !== fam.f(l)) { c.wrong++; break; } }
+    }
+  }
+  return out;
+}
+
+test("Auditor #523 B1: seeded max / min, capped and floored sums on random examples: 0 wrong over seeds 112, 7 and 2026", () => {
+  for (const seed of [112, 7, 2026]) {
+    const got = adversarial(seed, 40);
+    for (const [name, c] of Object.entries(got)) {
+      assert.equal(c.wrong, 0, `seed ${seed} ${name}: ${JSON.stringify(c)}`);
+      assert.equal(c.derived + c.refused, 40);
+    }
+  }
+});
+
+test("Auditor #523 B1: the seed gate refuses with an asked row; answered, the max is derived (or no program fits)", () => {
+  const P1: ListParam[] = [{ name: "xs", type: { list: "number" } }];
+  const runMax = (l: number[]) => Math.max(0, ...l);
+  const plainMax = (l: number[]) => (l.length ? Math.max(...l) : 0);
+  const rowsOf = (ls: number[][], f: (l: number[]) => number) => ls.map((l) => ({ args: [l] as ListArg[], out: f(l) }));
+  // the Auditor's example: before this round it derived the max with 0 for the empty list, and [-5] gave -5
+  const ls = [[], [5, 40, 12], [90], [3, 3, 1], [0, 720, 61, 15]];
+  const r = deriveListProgram({ params: P1, ret: "number", examples: rowsOf(ls, runMax) });
+  assert.ok(!r.ok && r.reason === "derive_under_specified" && r.gate === "seed", JSON.stringify(r));
+  assert.deepEqual(r.questions, [{ at: [[-1]], answers: [-1, 0] }]);
+  // answered the "max, but at least 0" way: no program in the DSL fits; answered the plain-max way: derived
+  assert.equal((deriveListProgram({ params: P1, ret: "number", examples: rowsOf([...ls, [-1]], runMax) }) as { reason?: string }).reason, "derive_no_fit");
+  const ok = deriveListProgram({ params: P1, ret: "number", examples: rowsOf([...ls, [-1]], plainMax) });
+  assert.ok(ok.ok && compileList(ok.program, ["xs"], 0) === "xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)");
+  // a min with the empty-list result 10 needs a list whose min is above 10
+  const minR = deriveListProgram({ params: P1, ret: "number", examples: rowsOf([[], [5, 40, 12], [9], [3, 3, 1], [0, -720, 6, 1]], (l) => Math.min(10, ...l)) });
+  assert.ok(!minR.ok && minR.gate === "seed" && minR.questions?.[0]?.answers[1] === 10, JSON.stringify(minR));
+  // a plain sum needs a sum past -100 and past 100 (else "floored at 0" / "capped at 100" read the same examples)
+  const sum = (l: number[]) => l.reduce((a, b) => a + b, 0);
+  const s1 = deriveListProgram({ params: P1, ret: "number", examples: rowsOf([[], [5, 40, 12], [-150, 3], [9], [3, 3, 1], [150, -100]], sum) });
+  assert.ok(!s1.ok && s1.gate === "seed" && /sum at or above 101/.test(s1.detail), JSON.stringify(s1));
+  const s2 = deriveListProgram({ params: P1, ret: "number", examples: rowsOf([[], [5, 40, 12], [-150, 3], [9], [3, 3, 1], [150, -100], [150, 1]], sum) });
+  assert.ok(s2.ok && compileList(s2.program, ["xs"], 0) === "xs.reduce((n, x) => n + x, 0)", JSON.stringify(s2));
+});
+
+test("Auditor #523 ruling: a condition true on every example element is a rival, not dropped (count x >= 0 vs the length)", () => {
+  const P1: ListParam[] = [{ name: "xs", type: { list: "number" } }];
+  const ls = [[], [1, 2, 3], [5], [0, 10, 7], [4, 4, 9, 2]];
+  const r = deriveListProgram({ params: P1, ret: "number", examples: ls.map((l) => ({ args: [l], out: l.filter((x) => x >= 0).length })) });
+  assert.ok(!r.ok && r.reason === "derive_ambiguous" && (r.questions?.length ?? 0) >= 1, JSON.stringify(r));
+  assert.match(r.detail, /xs\.length/);
+  assert.match(r.detail, /0 <= x/);
+  // its asked row: one negative element far below the cut; answered, the count is derived only when a list holds
+  // elements on both sides (else the gates name what is missing); the length is never chosen silently
+  const q = r.questions![0]!;
+  assert.ok((q.at[0] as number[]).some((x) => x < 0), JSON.stringify(q));
+  const more = [...ls, [-150, 3, 4], [-1, 0, 150, -2]];
+  const r2 = deriveListProgram({ params: P1, ret: "number", examples: more.map((l) => ({ args: [l], out: l.filter((x) => x >= 0).length })) });
+  assert.ok(r2.ok && compileList(r2.program, ["xs"], 0) === "xs.filter((x) => 0 <= x).length", JSON.stringify(r2));
+  const r3 = deriveListProgram({ params: P1, ret: "number", examples: more.map((l) => ({ args: [l], out: l.length })) });
+  assert.ok(r3.ok && compileList(r3.program, ["xs"], 0) === "xs.length", JSON.stringify(r3));
+});
+
+test("Auditor #523 B2: Job B re-checks a derive module by the candidate's own rule id; reserved record fields are refused", () => {
+  const sha = (s: RuleSpec) => `learned:${s.id}@${specHash(s)}`;
+  const v4mod = "export function pick(xs: number[]): number {\n  return xs.filter((x) => 5 <= x).length;\n}\n";
+  const v1mod = "export function twice(n: number): number {\n  return n * 2;\n}\n";
+  assert.equal(sha(V4).startsWith(DERIVE_LIST_OPERATION), true);
+  assert.equal(deriveModuleRecheck(sha(V4), v4mod), null);
+  // v1, v2 and v3 candidates: exactly the pre-M113 re-check (derivedModuleProblem), so v4-shaped code is refused
+  for (const s of [V1, V2, V3]) {
+    assert.notEqual(deriveModuleRecheck(sha(s), v4mod), null, s.id);
+    assert.notEqual(deriveAppendRecheck(sha(s), HEALTH, `${HEALTH}\n${v4mod}`), null, s.id);
+  }
+  assert.notEqual(deriveModuleRecheck(undefined, v4mod), null);
+  assert.equal(deriveAppendRecheck(sha(V4), HEALTH, `${HEALTH}\n${v4mod}`), null);
+  // and a v4 candidate never passes with a v1 module either
+  assert.notEqual(deriveModuleRecheck(sha(V4), v1mod), null);
+  // reserved record field names (the parse refuses them; the re-check on the diff alone does too)
+  for (const f of ["constructor", "__proto__", "length", "toString"]) {
+    const m = `export function pick(xs: { ${f}: number; s: string }[]): number {\n  return xs.filter((x) => 5 <= x.${f}).length;\n}\n`;
+    assert.equal(derivedListModuleProblem(m), "derive_reserved_name", f);
+    assert.notEqual(deriveModuleRecheck(sha(V4), m), null, f);
+    const ret = `export function pick(xs: { a: number; s: string }[]): { ${f}: number; s: string }[] {\n  return xs;\n}\n`;
+    assert.notEqual(derivedListModuleProblem(ret), null, `${f} in the result type`);
+  }
+});
+
 // ---- Job A (generate.ts) and Job B (test-candidates.ts) end to end, with v4 on a temporary approved list ----
 const entry = { id: V4.id, sha256: SHA4, source: "workspace", approval: { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/41#issuecomment-123", commentId: 123, issue: 41, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-26T00:00:00Z" } };
 const TSCONFIG = JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true, allowImportingTsExtensions: true }, include: ["src"] });
@@ -604,15 +729,15 @@ for (const form of ["new module", "append"] as const) {
   });
 }
 
-function grade(dir: string, ws: string, baseSha: string, diff: string) {
+function grade(dir: string, ws: string, baseSha: string, diff: string, operationId = `learned:${V4.id}@${SHA4}`) {
   const inDir = join(dir, "in");
   rmSync(inDir, { recursive: true, force: true });
   mkdirSync(join(inDir, "candidates"), { recursive: true });
   writeFileSync(join(inDir, "candidates", "candidate-1.diff"), diff);
-  const candidates = [{ id: "candidate-1", file: "candidates/candidate-1.diff", transformations: ["LEARNED_DERIVE_FROM_BEHAVIOR"], operationId: `learned:${V4.id}@${SHA4}`, diffBytes: diff.length, diffLines: 5, selfGrade: true as const }];
+  const candidates = [{ id: "candidate-1", file: "candidates/candidate-1.diff", transformations: ["LEARNED_DERIVE_FROM_BEHAVIOR"], operationId, diffBytes: diff.length, diffLines: 5, selfGrade: true as const }];
   writeFileSync(join(inDir, "summary.json"), JSON.stringify({ schema: "peaceai-workspace-candidates:v1", taskId: "workspace-issue-9", baseSha, candidates }));
   const list = join(dir, "approved.json");
-  writeFileSync(list, JSON.stringify({ schema: APPROVED_SCHEMA, rules: [entry] }));
+  writeFileSync(list, JSON.stringify({ schema: APPROVED_SCHEMA, rules: [entry, ...[V1, V3].map((x, i) => ({ ...entry, id: x.id, sha256: specHash(x), approval: { ...entry.approval, url: `https://github.com/PeaceG03/PeaceAI-Workspace/issues/41#issuecomment-${124 + i}`, commentId: 124 + i } }))] }));
   const out = join(dir, "out");
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
@@ -627,7 +752,7 @@ function grade(dir: string, ws: string, baseSha: string, diff: string) {
   return { g: results.results[0].testGrading as { verdict: string; reason: string | null; stubFails?: boolean }, stdout: r.stdout };
 }
 
-test("Job B: the v4 new module and the v4 append COUNT; a side effect or an extra statement is not-test-only", { skip: !CONFINED && "Node < 22: derive candidates grade not-confined", timeout: 900_000 }, () => {
+test("Job B: the v4 new module and the v4 append COUNT; a side effect, an extra statement or a v1 / v3 id is not-test-only", { skip: !CONFINED && "Node < 22: derive candidates grade not-confined", timeout: 900_000 }, () => {
   const dir = mkdtempSync(join(tmpdir(), "m113b-"));
   try {
     const { ws, baseSha } = workspace(dir);
@@ -651,5 +776,12 @@ test("Job B: the v4 new module and the v4 append COUNT; a side effect or an extr
     assert.deepEqual([sorted.g.verdict, sorted.g.reason], ["UNGRADABLE", "not-test-only"], sorted.stdout);
     const extra = grade(dir, ws, baseSha, diffOf(a, `${a.content}\nexport const leak = 1;\n`));
     assert.deepEqual([extra.g.verdict, extra.g.reason], ["UNGRADABLE", "not-test-only"], extra.stdout);
+    // Auditor #523 B2: the same v4 module and append under a v3 (or v1) operation id: re-checked as before M113
+    for (const s of [V3, V1]) {
+      const asOld = grade(dir, ws, baseSha, diffOf(n, n.content), `learned:${s.id}@${specHash(s)}`);
+      assert.deepEqual([asOld.g.verdict, asOld.g.reason], ["UNGRADABLE", "not-test-only"], asOld.stdout);
+    }
+    const asV3 = grade(dir, ws, baseSha, diffOf(a, a.content), `learned:${V3.id}@${specHash(V3)}`);
+    assert.deepEqual([asV3.g.verdict, asV3.g.reason], ["UNGRADABLE", "not-test-only"], asV3.stdout);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -24,9 +24,12 @@
 //   derive_examples          3-40 examples, every value typed as declared, list lengths at most LIST_MAX_ELEMS,
 //                            no contradiction, not all outputs equal;
 //   derive_under_specified_empty / _many: an example with the empty list and one with at least 3 elements;
-//   (unwitnessed predicates) a program whose P is true on every example element, or false on every one, is dropped
-//                            before the search: the examples cannot tell where its cut lies (a plain sum is then
-//                            the unfiltered sum, never a threshold chased past the values seen);
+//   (unsplit predicates)     a P true on every example element, or false on every one, stays a candidate like any
+//                            other (so "count x >= 0" over non-negative examples is a rival of the length and the
+//                            task is derive_ambiguous, with a question). The one exception: a constant cut `E <= C` /
+//                            `C <= E` with |C| >= DERIVE_FAR is dropped (the far gate's distance; without it every
+//                            example set has an unsplit cut at its own smallest or largest value, and asking past it
+//                            only moves that cut);
 //   derive_budget            more than LIST_MAX_CANDIDATES programs or LIST_MAX_EVALS evaluations;
 //   derive_no_fit            no program fits every example;
 //   derive_ambiguous         two programs fit every example but give different results on some probe list
@@ -34,8 +37,13 @@
 //   derive_under_specified_<gate>: the unique fit relies on something the examples do not show: unread (the scalar
 //                            parameter is never read), branch (P true and false on at least DERIVE_MIN_REACH example
 //                            elements each), kept (a count / filter / sum or field of the kept elements needs one
-//                            example list where P holds on 2 or more elements), edge (a threshold's both sides: E = C and E = C + 1, or E - t = 0 and
-//                            1), far (an element at least DERIVE_FAR past the threshold on each side).
+//                            example list where P holds on 2 or more elements), seed (max / min with the empty-list
+//                            result D: some non-empty example list must give a max below D / a min above D, else
+//                            "the max, but at least D" reads the same examples; a sum (D = 0): when some probe list
+//                            gives a sum below D - DERIVE_FAR (else below D), an example must too, and the same above
+//                            D + DERIVE_FAR (else above D), else a floor or a cap reads the same examples), edge (a
+//                            threshold's both sides: E = C and E = C + 1, or E - t = 0 and 1), far (an element at
+//                            least DERIVE_FAR past the threshold on each side).
 // Programs that agree on every probe list are one behavior; the smallest (then the first enumerated) is emitted.
 // Compiled programs call only filter / some / every / map / reduce and read .length on the list parameter, with
 // arrow callbacks over the element (no mutation: sort, push, splice and friends are not in the DSL). listExprProblem
@@ -68,7 +76,7 @@ export type ListProgram =
   | { op: "label"; pred: ListPred; yes: string; no: string }
   | { op: "pluck"; f: string; pred: ListPred | null };
 
-export type ListGate = "empty" | "many" | "unread" | "branch" | "kept" | "edge" | "far";
+export type ListGate = "empty" | "many" | "unread" | "branch" | "kept" | "seed" | "edge" | "far";
 export interface ListQuestion { at: ListArg[]; answers: ListArg[] }
 export type ListResult =
   | { ok: true; program: ListProgram; size: number; fits: number; searched: number }
@@ -528,14 +536,14 @@ export function listProbes(input: ListInput): ListArg[][] | null {
 const sameOut = (a: ListArg, b: ListArg): boolean => valueKey(a) === valueKey(b);
 
 /** The gate the accepted program fails, or null. */
-export function listGateProblem(input: ListInput, prog: ListProgram): { gate: ListGate; param?: string; detail: string } | null {
+export function listGateProblem(input: ListInput, prog: ListProgram): { gate: ListGate; param?: string; detail: string; questions?: ListQuestion[] } | null {
   const { params, examples } = input;
   const li = listIndex(params);
   const elem = elemOf(params);
   const read = listParamsRead(prog);
   for (const [i, p] of params.entries()) if (i !== li && !read.has(i)) return { gate: "unread", param: p.name, detail: `the fitting program never reads ${p.name}` };
   const pred = predOf(prog);
-  if (!pred) return null;
+  if (!pred) return seedProblem(input, prog);
   const pts = examples.flatMap((e) => (e.args[li] as readonly ListElem[]).map((x) => ({ x, args: e.args })));
   const name = pred.f ?? params[li]!.name;
   const yes = pts.filter((q) => evalPred(pred, q.x, q.args)).length, no = pts.length - yes;
@@ -552,6 +560,8 @@ export function listGateProblem(input: ListInput, prog: ListProgram): { gate: Li
     const names = params.map((p) => p.name);
     return { gate: "kept", param: name, detail: `no example list has 2 or more elements where \`${compilePred(pred, listLocals(names).v, names)}\` holds; add one` };
   }
+  const seed = seedProblem(input, prog);
+  if (seed) return seed;
   // Threshold edges and far sides, as offsets from the edge (constant or the scalar parameter).
   const off = (q: { x: ListElem; args: readonly ListArg[] }): number | null => {
     const e = get(q.x, pred.f);
@@ -571,6 +581,48 @@ export function listGateProblem(input: ListInput, prog: ListProgram): { gate: Li
   return null;
 }
 
+/**
+ * The seed gate (Auditor #523 B1): a max / min seeded with a constant, a floored or a capped sum read the same
+ * examples as the plain max / min / sum unless one non-empty example list shows the difference. Null when shown.
+ */
+export function seedProblem(input: ListInput, prog: ListProgram): { gate: ListGate; param?: string; detail: string; questions: ListQuestion[] } | null {
+  if (prog.op !== "max" && prog.op !== "min" && prog.op !== "sum") return null;
+  const { params, examples } = input;
+  const li = listIndex(params);
+  const D = prog.op === "sum" ? 0 : prog.empty;
+  const nonEmpty = (a: readonly ListArg[]) => (a[li] as readonly ListElem[]).length > 0;
+  const outs = examples.filter((e) => nonEmpty(e.args)).map((e) => evalList(prog, e.args, li) as number);
+  const probes = listProbes(input);
+  const name = prog.f ?? params[li]!.name;
+  const names = params.map((p) => p.name);
+  if (!probes) return { gate: "seed", param: name, detail: `more than ${LIST_MAX_PROBES} probe lists`, questions: [] };
+  // Reach: the probe lists, and each example element with its summed field set to every value the probes hold
+  // (so a sum of the kept elements reaches as far as a plain sum does).
+  const reach: ListArg[][] = [...probes];
+  if (prog.f !== null) {
+    const f = prog.f;
+    const G = uniq(probes.flatMap((a) => (a[li] as readonly ListElem[]).map((x) => get(x, f))).filter(isInt));
+    const els = [...new Map(examples.flatMap((e) => (e.args[li] as readonly ListElem[]).map((x) => ({ x, args: e.args }))).map((q) => [valueKey([q.x, q.args]), q])).values()].slice(0, 40);
+    for (const q of els) for (const g of G) { const a = [...q.args]; a[li] = [{ ...(q.x as ListRecord), [f]: g }]; reach.push(a); }
+  }
+  const vals = reach.filter(nonEmpty).map((a) => ({ a, v: evalList(prog, a, li) as number })).sort((x, y) => (x.a[li] as readonly ListElem[]).length - (y.a[li] as readonly ListElem[]).length);
+  const sides: ("low" | "high")[] = prog.op === "max" ? ["low"] : prog.op === "min" ? ["high"] : ["low", "high"];
+  for (const side of sides) {
+    const tiers = side === "low" ? (prog.op === "sum" ? [D - DERIVE_FAR - 1, D - 1] : [D - 1]) : (prog.op === "sum" ? [D + DERIVE_FAR + 1, D + 1] : [D + 1]);
+    const past = (v: number, t: number) => (side === "low" ? v <= t : v >= t);
+    const t = tiers.find((t) => vals.some((x) => past(x.v, t)));
+    if (t === undefined || outs.some((o) => past(o, t))) continue;
+    const q = vals.find((x) => past(x.v, t))!;
+    const alt = D; // the floored / capped reading: the seed D itself
+    const kind = prog.op === "max" ? `its largest ${name} below ${D}, the empty-list result` : prog.op === "min" ? `its smallest ${name} above ${D}, the empty-list result` : `a ${side === "low" ? "sum at or below" : "sum at or above"} ${t}`;
+    return {
+      gate: "seed", param: name, questions: [{ at: q.a, answers: [q.v, alt] }],
+      detail: `no non-empty example list has ${kind} (a ${prog.op === "max" || (prog.op === "sum" && side === "low") ? "floor" : "cap"} would read the same examples as \`${compileList(prog, names, li)}\`); add one`,
+    };
+  }
+  return null;
+}
+
 /** Derives the list program, or refuses (see the head of this file). */
 export function deriveListProgram(input: ListInput): ListResult {
   const maxC = input.maxCandidates ?? LIST_MAX_CANDIDATES, maxE = input.maxEvals ?? LIST_MAX_EVALS;
@@ -581,12 +633,14 @@ export function deriveListProgram(input: ListInput): ListResult {
   const lname = input.params[li]!.name;
   if (!lens.includes(0)) return { ok: false, reason: "derive_under_specified", gate: "empty", param: lname, detail: "no example gives the result for the empty list", searched: 0 };
   if (!lens.some((n) => n >= 3)) return { ok: false, reason: "derive_under_specified", gate: "many", param: lname, detail: "no example has a list of at least 3 elements", searched: 0 };
-  // A predicate that is true on every example element (or false on every one) is not a reading the examples
-  // show: drop those programs before the fit check (the branch gate would refuse each of them anyway, and keeping
-  // them as rivals only chases thresholds past the last value the examples hold).
+  // Auditor #523 ruling: a predicate true on every example element (or false on every one) stays a rival, so a task
+  // the examples cannot split is derive_ambiguous with a question. Only a constant cut at least DERIVE_FAR from 0 is
+  // dropped: every example set has unsplit cuts at its own smallest and largest values, and asking past one only
+  // moves it (the same distance the far gate asks for).
   const elems = input.examples.flatMap((e) => (e.args[li] as readonly ListElem[]).map((x) => ({ x, args: e.args })));
   const witnessed = (p: ListPred) => elems.some((q) => evalPred(p, q.x, q.args)) && elems.some((q) => !evalPred(p, q.x, q.args));
-  const cands = listCandidates(input).filter((c) => { const p = predOf(c); return !p || witnessed(p); });
+  const farCut = (p: ListPred) => (p.op === "le" || p.op === "ge") && Math.abs(p.c) >= DERIVE_FAR;
+  const cands = listCandidates(input).filter((c) => { const p = predOf(c); return !p || witnessed(p) || !farCut(p); });
   if (cands.length > maxC) return { ok: false, reason: "derive_budget", detail: `${cands.length} candidate programs (limit ${maxC})`, searched: 0 };
   let evals = 0;
   const fits: ListProgram[] = [];
@@ -612,8 +666,16 @@ export function deriveListProgram(input: ListInput): ListResult {
     }
     if (rivals.length) {
       const questions: ListQuestion[] = [];
+      // The question for a rival: the shortest probe list where it disagrees, then the one holding the value
+      // farthest from 0 (so answering it moves an unsplit cut past DERIVE_FAR at once, not one value at a time).
+      const len = (a: readonly ListArg[]) => (a[li] as readonly ListElem[]).length;
+      const far = (a: readonly ListArg[]) => Math.max(0, ...(a[li] as readonly ListElem[]).flatMap((x) => fieldsOf(elemOf(input.params)).map((f) => get(x, f))).filter(isInt).map((v) => Math.abs(v)));
       for (const r of rivals) {
-        const k = probes.findIndex((a, i) => !sameOut(evalList(r, a, li), ref[i]!));
+        let k = -1;
+        for (const [i, a] of probes.entries()) {
+          if (sameOut(evalList(r, a, li), ref[i]!)) continue;
+          if (k < 0 || len(a) < len(probes[k]!) || (len(a) === len(probes[k]!) && far(a) > far(probes[k]!))) k = i;
+        }
         const answers = [ref[k]!, evalList(r, probes[k]!, li)];
         if (!questions.some((q) => valueKey(q.at) === valueKey(probes[k]))) questions.push({ at: probes[k]!, answers });
       }
@@ -626,7 +688,7 @@ export function deriveListProgram(input: ListInput): ListResult {
   }
   const prog = fits[0]!;
   const gate = listGateProblem(input, prog);
-  if (gate) return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, searched: cands.length };
+  if (gate) return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, ...(gate.questions ? { questions: gate.questions } : {}), searched: cands.length };
   return { ok: true, program: prog, size: listSize(prog), fits: fits.length, searched: cands.length };
 }
 

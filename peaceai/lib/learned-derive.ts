@@ -681,6 +681,11 @@ export function derivedListModuleProblem(content: string): string | null {
   if (st.length !== 1 || !ts.isReturnStatement(st[0]!) || !st[0]!.expression) return "derive_module_shape";
   const sig = listSignature(f, sf);
   if (!sig) return "derive_module_shape";
+  // Auditor #523 B2: the parse-time name checks again, on the diff alone (a record field such as `constructor` or
+  // `__proto__` would reach the prototype; `length` / `toString` shadow what the list reads).
+  const badField = (t: ListParamType) => isListType(t) && typeof t.list === "object" && t.list.fields.some((x) => LIST_FIELD_DENY.has(x.name) || DERIVE_RESERVED_NAMES.has(x.name) || PROTECTED_NAMES.test(x.name));
+  const names = [f.name.text, ...sig.params.map((x) => x.name)];
+  if (names.some((n) => DERIVE_RESERVED_NAMES.has(n) || PROTECTED_NAMES.test(n)) || sig.params.some((x) => badField(x.type)) || badField(sig.ret)) return "derive_reserved_name";
   const expr = st[0]!.expression.getText(sf);
   if (expr.length > DERIVE_MAX_EXPR_CHARS) return "derive_emit_size";
   return listExprProblem(expr, sig.params, sig.ret);
@@ -688,6 +693,20 @@ export function derivedListModuleProblem(content: string): string | null {
 /** M113: the v4 append is add-only, exactly as v3's (derivedAppendProblem), with a v4 module as the block. */
 export function derivedListAppendProblem(before: string, after: string): string | null {
   return appendProblemWith(before, after, derivedListModuleProblem);
+}
+
+/** The v4 rule's operation id prefix (`learned:<rule id>@<spec sha>`). */
+export const DERIVE_LIST_OPERATION = "learned:public-derive-from-behavior-v4@";
+/**
+ * Auditor #523 B2: Job B's re-check of a derive candidate's module, keyed on the candidate's rule id. A v4 candidate
+ * is re-checked as a v4 list module only; every other derive candidate (v1, v2, v3) exactly as before M113.
+ */
+export function deriveModuleRecheck(operationId: unknown, real: string): string | null {
+  return typeof operationId === "string" && operationId.startsWith(DERIVE_LIST_OPERATION) ? derivedListModuleProblem(real) : derivedModuleProblem(real);
+}
+/** The same for an append (v3 / v4): add-only, the block re-checked by the candidate's own rule. */
+export function deriveAppendRecheck(operationId: unknown, before: string, after: string): string | null {
+  return typeof operationId === "string" && operationId.startsWith(DERIVE_LIST_OPERATION) ? derivedListAppendProblem(before, after) : derivedAppendProblem(before, after);
 }
 
 /**

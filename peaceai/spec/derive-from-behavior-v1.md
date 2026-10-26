@@ -283,9 +283,14 @@ parameter `xs: T[]` (T number, string, boolean or a one-level record of 1-4 such
 string parameter; a bounded enumeration of a small DSL (length; count / filter / some / every where P; sum of a field,
 also of the kept elements; max / min of a field with the empty-list result; map to one of two labels or to P; a field of
 each (kept) element), every constant cut from the examples. Fail closed in this order: `derive_examples`,
-`derive_under_specified_empty` / `_many`, predicates the examples never split are dropped, `derive_budget`,
-`derive_no_fit`, `derive_ambiguous` (any two fitting programs that disagree on a probe list),
-`derive_under_specified_unread` / `_branch` / `_kept` / `_edge` / `_far`. New modules use the v1 edit; appends use v3's
+`derive_under_specified_empty` / `_many`, `derive_budget`, `derive_no_fit`, `derive_ambiguous` (any two fitting programs
+that disagree on a probe list, with asked rows; a predicate true on every example element, or false on every one, is a
+rival like any other, and only such a constant cut 100 or more from 0 is dropped), `derive_under_specified_unread` /
+`_branch` / `_kept` / `_seed` / `_edge` / `_far` (seed: a max / min with the empty-list result D needs a non-empty
+example whose max is below D / whose min is above D, and a sum needs an example past -100 and past 100 when a probe list
+reaches there, else past 0; refused with an asked row). Job B re-checks a derive candidate by its operation id: v4
+through `derivedListModuleProblem` / `derivedListAppendProblem` (reserved record field names refused there too),
+v1-v3 exactly as before. New modules use the v1 edit; appends use v3's
 `appendTargetProblem` and `derivedAppendProblem` unchanged. Emitted text is re-checked by `listExprProblem` (decompiled
 to the DSL and recompiled to identical text: only filter / some / every / map / reduce / length over the list parameter,
 no mutation, no calls) in Job A and Job B. Details, held-out results, evidence and limits:
