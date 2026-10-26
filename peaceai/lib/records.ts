@@ -33,7 +33,11 @@ export interface TaskRecord {
   test: boolean;
   heldOut: boolean;
   requiresTests: boolean;
-  /** Who opened the task: Peace, or the Builder agent (`source:builder` label at pick time). Absent = peace. */
+  /**
+   * Whose task it is by provenance (lib/policy.ts taskSource): `peace` only for Peace's own task (the
+   * `(source: peace)` credit line, no `source:builder` label, nothing team-picked); `builder` otherwise,
+   * including team-picked tasks. Absent (records from before the field) reads as `builder` (fail closed).
+   */
   source?: TaskSource;
   /** M5: target repository (`owner/repo`) the diffs apply to. Absent on older records = this Workspace. */
   target?: string;
@@ -42,7 +46,7 @@ export interface TaskRecord {
 }
 
 export type TaskSource = "peace" | "builder";
-export const taskSourceOf = (task: Pick<TaskRecord, "source">): TaskSource => (task.source === "builder" ? "builder" : "peace");
+export const taskSourceOf = (task: Pick<TaskRecord, "source">): TaskSource => (task.source === "peace" ? "peace" : "builder");
 
 export type RejectReason = "not-applied" | "typecheck" | "original-suite" | "new-tests" | "missing-required-test" | "test-grading" | null;
 
@@ -240,7 +244,7 @@ export function buildRecords(
       test: isTestTask(task.title),
       heldOut: isHeldOut(task.issue),
       requiresTests,
-      source: task.source === "builder" ? "builder" : "peace",
+      source: task.source === "peace" ? "peace" : "builder",
       ...(task.target ? { target: task.target } : {}),
       ...(task.regradeOf ? { regradeOf: { ...task.regradeOf } } : {}),
     },

@@ -18,7 +18,7 @@ const output = (pairs: Record<string, string | number>) => {
 
 const issues = jsonLines<QueueIssue>(
   gh("api", "--paginate", `repos/${repo}/issues?state=open&labels=${TASK_LABEL}&per_page=100`, "--jq",
-    '.[] | {number, state, author: .user.login, labels: [.labels[].name], isPullRequest: (.pull_request != null)} | tojson'),
+    '.[] | {number, state, author: .user.login, labels: [.labels[].name], isPullRequest: (.pull_request != null), body: (.body // "")} | tojson'),
 );
 
 if (mode === "count") {
@@ -50,5 +50,7 @@ for (const issue of issues.filter(isCandidateIssue).sort((a, b) => a.number - b.
 const picked = pickNext(issues, verified);
 if (picked !== null)
   gh("issue", "edit", String(picked), "--repo", repo, "--add-label", STATE.running, "--remove-label", STATE.queued);
-const source = picked === null ? "" : taskSource(issues.find((i) => i.number === picked)!.labels);
+// Provenance decides the source (labels and the issue body's credit line), never the filer account.
+const pickedIssue = picked === null ? null : issues.find((i) => i.number === picked)!;
+const source = pickedIssue === null ? "" : taskSource(pickedIssue.labels, pickedIssue.body);
 output({ issue: picked ?? "", source, waiting: issues.filter(isCandidateIssue).length });

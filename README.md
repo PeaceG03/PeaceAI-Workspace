@@ -76,8 +76,13 @@ whose candidates all make the same edit counts as a single-candidate task (`sing
 read as a fraction, are below 0.2 (about 20%). Held-out tasks are recorded and reviewed like any
 other but are never used for training; agreement is also reported for them separately.
 
-**Task source**: `source:builder` marks a `peace-task` opened by the Builder agent. The label is read
-when the task is picked and stored as `source` (`peace` | `builder`) in `task.json` and the summary.
+**Task source**: provenance decides it, never the filer account (Peace and Builder both file as PeaceG03).
+A task is `peace` only when it has no `source:builder` label, its body carries the `(source: peace)` credit
+line (the same marker builder-log credit reads), every `(source: ...)` clause in it says peace, and nothing in
+it says team-picked ("Team-picked task", "not credited as source: peace", "asked the team to pick"). Anything
+else, including no credit line, is `builder` (not Peace's). It is decided at pick time and again by Job C on
+the full issue body, and stored as `source` (`peace` | `builder`) in `task.json` and the summary; a record
+without the field reads as `builder` (`peaceai/lib/policy.ts` `taskSource`).
 
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.
