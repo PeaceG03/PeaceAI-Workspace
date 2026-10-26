@@ -287,11 +287,11 @@ each (kept) element), every constant cut from the examples. Fail closed in this 
 that disagree on a probe list, with asked rows; a predicate true on every example element, or false on every one, is a
 rival like any other, and only such a constant cut 100 or more from 0 is dropped), `derive_under_specified_unread` /
 `_branch` / `_kept` / `_seed` / `_edge` / `_far` (seed: a max / min with the empty-list result D needs a non-empty
-example whose max is below D / whose min is above D, and a sum needs an example past -100 and past 100 when a probe list
+example whose max is below D / whose min is above D however far D is from the examples, and a sum needs an example past -100 and past 100 when a probe list
 reaches there, else past 0; refused with an asked row). Job B re-checks a derive candidate by its operation id: v4
 through `derivedListModuleProblem` / `derivedListAppendProblem` (reserved record field names refused there too),
 v1-v3 exactly as before. New modules use the v1 edit; appends use v3's
 `appendTargetProblem` and `derivedAppendProblem` unchanged. Emitted text is re-checked by `listExprProblem` (decompiled
 to the DSL and recompiled to identical text: only filter / some / every / map / reduce / length over the list parameter,
-no mutation, no calls) in Job A and Job B. Details, held-out results, evidence and limits:
+no mutation, no calls) in Job A and Job B. Known limit (disclosed): deriving from examples can pick a wrong in-vocabulary program when the true function is outside v4's vocabulary and the examples do not pin it down. The derived program agrees with every example, but the probe lists carry no expected outputs, so nothing checks it against the true function beyond the examples. The search misses no in-vocabulary rival: every program in the vocabulary that fits the examples is compared, and any two that disagree are refused. On the Auditor's random-example harness the largest case is `every(ok || s === '')` (wrong on about 10-17 of 60 random tasks); sum caps or floors beyond +/-100 are another (the seed gate's sum check stops at +/-100; a sum capped at 1000 is wrong on about 30-40 of 60); sorted-order and dedupe functions are wrong on a few. Credit still rests on Peace's verdict on each real candidate. Details, held-out results, evidence and limits:
 peaceai/docs/m113-list-inputs.md.

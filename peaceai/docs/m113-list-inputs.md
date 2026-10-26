@@ -54,7 +54,7 @@ identical text) in Job A and Job B. String parsing (split, number parsing, regex
 | `derive_under_specified_unread` | the scalar parameter is never read |
 | `derive_under_specified_branch` | P is not true and false on enough example elements each |
 | `derive_under_specified_kept` | a count, a kept list, a sum of kept elements or a field of kept elements, and no example list has 2 or more elements where P holds; the detail names P |
-| `derive_under_specified_seed` | (Auditor #523 B1) a max / min whose empty-list result is D, and no non-empty example has a max below D (min: above D); a sum (D = 0), and no example is past -100 (else past 0) on a side some probe list reaches, and the same past 100: else "the max but at least D", "the sum floored at 0" or "capped at 100" read the same examples. Reach includes each example element with its summed field set to every probe value. The detail asks one row |
+| `derive_under_specified_seed` | (Auditor #523 B1, round 3) a max / min whose empty-list result is D, and no non-empty example has a max below D (min: above D), however far D is from the example values; a sum (D = 0), and no example is past -100 (else past 0) on a side some probe list reaches, and the same past 100: else "the max but at least D", "the sum floored at 0" or "capped at 100" read the same examples. Reach includes each example element with its summed field set to every probe value. Sums are checked only out to +/-100 (see Limits). The detail asks one row |
 | `derive_under_specified_edge` | a threshold's two sides are not both shown (E = C and E = C + 1, or E - t = 0 and 1) |
 | `derive_under_specified_far` | no element 100 or more past the threshold on each side |
 | `derive_list_expr`, `derive_params` | the emitted text fails the re-check; a dsl / placement / trigger mismatch |
@@ -149,6 +149,7 @@ specs above are synthetic, written for this PR, and use their own names.
 
 ## Limits
 
+- Known limit (disclosed): deriving from examples can pick a wrong in-vocabulary program when the true function is outside v4's vocabulary and the examples do not pin it down. The derived program agrees with every example, but the probe lists carry no expected outputs, so nothing checks it against the true function beyond the examples. The search misses no in-vocabulary rival: every program in the vocabulary that fits the examples is compared, and any two that disagree are refused. On the Auditor's random-example harness the largest case is `every(ok || s === '')` (wrong on about 10-17 of 60 random tasks); sum caps or floors beyond +/-100 are another (the seed gate's sum check stops at +/-100; a sum capped at 1000 is wrong on about 30-40 of 60); sorted-order and dedupe functions are wrong on a few. Credit still rests on Peace's verdict on each real candidate.
 - Integer cuts only, as in v1: `x > 0` is derived as `1 <= x` (equal on integers only).
 - One list parameter and at most one scalar; no nested lists, optional fields, string parsing, sorting, grouping,
   index-based access, averages, running state (a running max seeded with 0 is `derive_no_fit`), or two-field predicates.
