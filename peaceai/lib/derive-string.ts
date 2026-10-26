@@ -24,7 +24,8 @@
 // Fail closed, in this order:
 //   derive_examples          1-40 examples, every value typed as declared, strings printable ASCII without quotes or
 //                            backslashes and at most DERIVE_MAX_STRING chars, no contradiction;
-//   derive_under_specified_outputs: at least 2 distinct results (a boolean: DERIVE_MIN_REACH of each);
+//   derive_under_specified_outputs: at least 2 distinct results (a boolean: DERIVE_MIN_REACH of each); a string
+//                            result that is not the first argument unchanged on every example;
 //   derive_budget            more than STR_MAX_FITS fitting programs or STR_MAX_PROBES probes;
 //   derive_no_fit            no program fits every example;
 //   derive_ambiguous         two programs fit every example but give different results on some probe (every
@@ -81,6 +82,10 @@ export const STR_MAX_DELIMS = 8;
 export const STR_MAX_CONST = 24;
 export const STR_MAX_FITS = 20_000;
 export const STR_MAX_PROBES = 20_000;
+/** Probe-by-behavior cells the asked-row chooser may score per row. */
+export const STR_ASK_SCAN = 400_000;
+/** Extra string-q probe values cut from the example lines at a delimiter. */
+export const STR_MAX_QCUTS = 150;
 /** The one regular expression the DSL emits (a literal; never built from input). */
 export const STR_INT_RE = String.raw`/^-?\d{1,12}$/`;
 const INT_RE = /^-?\d{1,12}$/;
@@ -474,6 +479,21 @@ function probeInputs(input: StrInput, P: Pools, consts: readonly string[]): StrA
     for (const t of texts) for (const e of examples) out.push([t, e.args[1]!]);
     for (const e of examples) for (const q of qList) { out.push([e.args[0]!, q]); out.push([` ${e.args[0] as string} `, q]); }
     for (const q of qList) for (const t of [...texts].slice(0, 400)) out.push([t, q]);
+    if (params[1]!.type === "string") {
+      // q values cut from the example lines at a delimiter (a field with its delimiter, the fields) and each
+      // example q with a delimiter on either side: they tell a test on a field from the same test on the line,
+      // which a q holding the delimiter alone can do; paired with the example lines only (bounded by STR_MAX_QCUTS)
+      const cuts = new Set<string>();
+      const cut = (x: string) => { if (x && writable(x) && !qs.has(x) && cuts.size < STR_MAX_QCUTS) cuts.add(x); };
+      for (const e of examples) for (const d of P.delims) { const v = e.args[1] as string; cut(`${v}${d}`); cut(`${d}${v}`); }
+      for (const e of examples) for (const d of P.delims) {
+        const f = (e.args[0] as string).split(d);
+        if (f.length < 2) continue;
+        cut(`${f[0]}${d}`); cut(`${d}${f[f.length - 1]}`);
+        for (let j = 0; j < f.length && j <= STR_MAX_FIELD; j++) { cut(f[j]!); cut(f[j]!.trim()); }
+      }
+      for (const e of examples) for (const q of cuts) out.push([e.args[0]!, q]);
+    }
   }
   const seen = new Set<string>();
   return out.filter((a) => { const k = JSON.stringify(a); if (seen.has(k)) return false; seen.add(k); return true; });
@@ -499,6 +519,9 @@ export function deriveStringProgram(input: StrInput): StrResult {
     const t = examples.filter((e) => e.out === true).length, f = examples.length - t;
     if (t < DERIVE_MIN_REACH || f < DERIVE_MIN_REACH) return { ok: false, reason: "derive_under_specified", gate: "outputs", detail: `needs at least ${DERIVE_MIN_REACH} examples giving true and ${DERIVE_MIN_REACH} giving false` };
   } else if (new Set(outs).size < 2) return { ok: false, reason: "derive_under_specified", gate: "outputs", detail: "every example gives the same result" };
+  // a string parser whose every example returns its first argument unchanged shows nothing it removes or picks: the
+  // bare argument would fit, and a strip or pick that no example exercises is never in the pools, so refuse
+  if (ret === "string" && examples.every((e) => e.out === e.args[0])) return { ok: false, reason: "derive_under_specified", gate: "outputs", detail: `every example returns ${params[0]!.name} unchanged; add an example that shows what the parser changes` };
   const P = searchPools(input);
   const names = params.map((p) => p.name);
   const fits: StrProgram[] = [];
@@ -541,13 +564,22 @@ function askRows(probes: readonly StrArg[][], vals: readonly StrOut[][]): StrQue
   const out: StrQuestion[] = [];
   // classes of behaviors not yet told apart by a chosen probe
   let classes: number[][] = [vals.map((_, i) => i)];
-  for (let j = 0; j < probes.length && out.length < 3; j++) {
-    const split = classes.some((c) => new Set(c.map((i) => outKey(vals[i]![j]))).size > 1);
-    if (!split) continue;
-    const answers = uniq(vals.map((v) => outKey(v[j]))).slice(0, 4).map((k) => JSON.parse(k) as StrOut);
-    out.push({ at: probes[j]!, answers });
-    classes = classes.flatMap((c) => { const m = new Map<string, number[]>(); for (const i of c) { const k = outKey(vals[i]![j]); m.set(k, [...(m.get(k) ?? []), i]); } return [...m.values()]; }).filter((c) => c.length > 1);
-    if (!classes.length) break;
+  const splitBy = (cs: number[][], j: number) => cs.flatMap((c) => { const m = new Map<string, number[]>(); for (const i of c) { const k = outKey(vals[i]![j]); m.set(k, [...(m.get(k) ?? []), i]); } return [...m.values()]; });
+  // greedy: each asked row is the probe that tells the most behaviors apart (the first such probe on a tie),
+  // so one round can drop a whole family of rivals; the scan is bounded by STR_ASK_SCAN cells
+  const scan = Math.max(1, Math.floor(STR_ASK_SCAN / Math.max(1, vals.length)));
+  while (out.length < 3 && classes.length) {
+    let best = -1, bestN = 0;
+    for (let j = 0, seen = 0; j < probes.length && seen < scan; j++) {
+      if (!classes.some((c) => new Set(c.map((i) => outKey(vals[i]![j]))).size > 1)) continue;
+      seen++;
+      const n = splitBy(classes, j).length;
+      if (n > bestN) { best = j; bestN = n; }
+    }
+    if (best < 0) break;
+    const answers = uniq(vals.map((v) => outKey(v[best]))).slice(0, 4).map((k) => JSON.parse(k) as StrOut);
+    out.push({ at: probes[best]!, answers });
+    classes = splitBy(classes, best).filter((c) => c.length > 1);
   }
   return out;
 }
