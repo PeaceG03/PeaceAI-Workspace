@@ -91,6 +91,9 @@ test("add-only: lines may be added, never changed or removed", () => {
 test("wiring: CI checks add-only against the base; the reader paths use correctedSource", () => {
   const wf = readFileSync(".github/workflows/builder-log.yml", "utf8");
   assert.match(wf, /tsx peaceai\/bin\/source-corrections-check\.ts --base "\$BASE_SHA"/);
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8"); // the required tests job runs it too
+  const tests = ci.slice(ci.indexOf("  tests:"), ci.indexOf("  tamper-proof:"));
+  assert.match(tests, /git fetch --no-tags --depth=1 origin "\$BASE_SHA"\n\s+\.\/node_modules\/\.bin\/tsx peaceai\/bin\/source-corrections-check\.ts --base "\$BASE_SHA"/);
   assert.match(readFileSync("peaceai/lib/records.ts", "utf8"), /source: correctedSource\(task, taskSourceOf\(task\)\)/);
   assert.match(readFileSync("peaceai/lib/ranker/pipeline.ts", "utf8"), /source: correctedSource\(task, taskSourceOf\(task\)\)/);
 });

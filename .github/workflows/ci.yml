@@ -30,6 +30,16 @@ jobs:
           "$RUNNER_TEMP/lm-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r peaceai/model/requirements.txt
           echo "PEACEAI_PYTHON=$RUNNER_TEMP/lm-venv/bin/python" >> "$GITHUB_ENV"
       - run: npm run typecheck
+      - name: Source corrections valid + add-only against the base revision (M119)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$BASE_SHA" != 0000000000000000000000000000000000000000 ]]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            ./node_modules/.bin/tsx peaceai/bin/source-corrections-check.ts --base "$BASE_SHA"
+          else
+            ./node_modules/.bin/tsx peaceai/bin/source-corrections-check.ts
+          fi
       - run: npm test
       - run: npm run test:tools
       - run: npm run test:self
