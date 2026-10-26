@@ -295,3 +295,41 @@ v1-v3 exactly as before. New modules use the v1 edit; appends use v3's
 to the DSL and recompiled to identical text: only filter / some / every / map / reduce / length over the list parameter,
 no mutation, no calls) in Job A and Job B. Known limit (disclosed): deriving from examples can pick a wrong in-vocabulary program when the true function is outside v4's vocabulary and the examples do not pin it down. The derived program agrees with every example, but the probe lists carry no expected outputs, so nothing checks it against the true function beyond the examples. The search misses no in-vocabulary rival: every program in the vocabulary that fits the examples is compared, and any two that disagree are refused. On the Auditor's random-example harness the largest case is `every(ok || s === '')` (wrong on about 10-17 of 60 random tasks); sum caps or floors beyond +/-100 are another (the seed gate's sum check stops at +/-100; a sum capped at 1000 is wrong on about 30-40 of 60); sorted-order and dedupe functions are wrong on a few. Credit still rests on Peace's verdict on each real candidate. Details, held-out results, evidence and limits:
 peaceai/docs/m113-list-inputs.md.
+
+## public-derive-from-behavior-v5 (M114): string parsers
+
+A new rule version. `public-derive-from-behavior-v5` is the v3 spec with only `id`, `minerVersion`, `trigger`
+(`DERIVE_STRING_TRIGGER`, its own "string parser" header for a new module or an append) and the params
+`dsl: typed-dsl-v5-strings` and `placement: new-or-existing-module-v5` changed. It is off until Peace approves its
+hash (`/approve-rule 6533548a2d2cc73fda838b3a5388f7dd59fcfc3ced3400ed83e26da7ab932d76` on its proposal issue). The two
+params are bound to each other and to the trigger; any other pairing is `derive_params`. v1-v4 are unchanged, and
+their triggers never match a v5 header or the reverse.
+
+The engine is `peaceai/lib/derive-string.ts`. Its inputs are a text parameter and at most one number or string
+parameter. It runs a bounded enumeration over:
+
+- a piece of the text: the text, field i of a single-character split (with a default), the last field, the rest from
+  field i, or a stripped prefix / suffix; each optionally trimmed;
+- a result: the piece, a field count, a length, an integer read with the fixed `/^-?\d{1,12}$/`, a
+  `===` / startsWith / endsWith / includes test (optionally negated), an is-integer test, or a split into a list.
+
+Fail closed in this order:
+
+1. `derive_examples`
+2. `derive_examples_raw`: literals with a space are read from the raw issue text, cross-checked line by line.
+3. `derive_under_specified_outputs`, including every example returning the text unchanged.
+4. `derive_budget`
+5. `derive_no_fit`
+6. `derive_ambiguous`: every fitting program is compared on the probes; a test true on every example stays a rival;
+   up to 3 greedy asked rows.
+7. `derive_under_specified_unread`
+8. `derive_under_specified_path`: an unpinned fallback or default becomes an asked row.
+
+Job B re-checks a derive candidate by its operation id: v5 through `derivedStringModuleProblem` /
+`derivedStringAppendProblem`, v4 and v1-v3 exactly as before. Emitted text is re-checked by `strExprProblem` (no
+regex from input, no loops, no side effects).
+
+Known limit (disclosed): a function outside v5's vocabulary can be fitted by a wrong in-vocabulary program; 3 of 4
+out-of-vocabulary upstream entries show this. The claim is only that no in-vocabulary rival fit was missed. Escaping
+(escapeCheckinNote) is refused and recorded as v6 scope. Details, held-out results, evidence and limits:
+peaceai/docs/m114-string-parsing.md.
