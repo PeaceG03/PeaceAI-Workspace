@@ -94,7 +94,7 @@ neither the account nor who edited the body can be attributed). `peace` is an al
   content don't count, and an unclosed construct hides the rest of the line;
 - `(source: peace)` appears once on the credit line, and **only an allowlisted text may follow it**: nothing,
   `.`, or `. ` plus exactly one of the trailing texts of the 80 genuine tasks (#353-#502), pinned in
-  `policy.ts` (`CREDIT_TRAILING_ALLOWLIST`, count and sha256 checked by the m119 test; protected). Anything else
+  `peaceai/lib/credit-trailing-allowlist.json` (protected; its issues, count and sha256 are checked by the m119 test). Anything else
   after the mark ("Not Peace's task.", "source=builder.") gives builder;
 - every `(source ...:` clause anywhere in the body, stripped regions included and with entities decoded, is
   exactly `(source: peace)`; so `(source : builder)`, `( source: builder)`, a zero-width-split `source` or
