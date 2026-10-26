@@ -598,7 +598,12 @@ test("spec v5: valid; the v3 spec with only id, minerVersion, trigger, two param
   assert.equal(record.id, V5.id);
   assert.equal(record.learned, "peaceai/rules/learned/public-derive-from-behavior-v5.json");
   for (const p of [...record.tests, record.evidence.file]) assert.ok(existsSync(join(repo, p)), p);
-  assert.match(record.limits, /no in-vocabulary rival fit was missed/);
+  assert.match(record.limits, /no in-vocabulary rival fit was missed rests on sampled harnesses .*not on a proof/);
+  assert.match(record.limits, /case-insensitive startsWith when every example is lowercase/);
+  // Auditor #530 (3): neither the docs nor the engine header claims every rival is caught without the sampled-harness caveat
+  assert.doesNotMatch(read("peaceai/lib/derive-string.ts"), /every fitting program is compared/);
+  assert.match(read("peaceai/lib/derive-string.ts"), /rests on sampled harnesses[\s\S]{0,120}not on a proof/);
+  assert.doesNotMatch(read("peaceai/docs/m114-string-parsing.md"), /The claim is only that no in-vocabulary rival fit was missed/);
   assert.doesNotMatch(JSON.stringify(record), /on every probe/);
   assert.equal(phrasingFor(V5), DERIVE_STRING_PHRASING);
   assert.equal(phrasingFor(V3), DERIVE_APPEND_PHRASING);

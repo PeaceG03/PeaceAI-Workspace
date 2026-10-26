@@ -320,16 +320,21 @@ Fail closed in this order:
 3. `derive_under_specified_outputs`, including every example returning the text unchanged.
 4. `derive_budget`
 5. `derive_no_fit`
-6. `derive_ambiguous`: every fitting program is compared on the probes; a test true on every example stays a rival;
-   up to 3 greedy asked rows.
+6. `derive_ambiguous`: every fitting program is run on the probes (a finite sample of variants of the examples, incl.
+   each example cut to its first k fields and padded, Auditor #530); a test true on every example stays a rival; up to
+   3 greedy asked rows.
 7. `derive_under_specified_unread`
-8. `derive_under_specified_path`: an unpinned fallback or default becomes an asked row.
+8. `derive_under_specified_path`: an unpinned fallback or default becomes an asked row; so does a split on a
+   delimiter that gives no example two non-empty fields (Auditor #530).
 
 Job B re-checks a derive candidate by its operation id: v5 through `derivedStringModuleProblem` /
 `derivedStringAppendProblem`, v4 and v1-v3 exactly as before. Emitted text is re-checked by `strExprProblem` (no
 regex from input, no loops, no side effects).
 
 Known limit (disclosed): a function outside v5's vocabulary can be fitted by a wrong in-vocabulary program; 3 of 4
-out-of-vocabulary upstream entries show this. The claim is only that no in-vocabulary rival fit was missed. Escaping
+out-of-vocabulary upstream entries show this, and so does a case-insensitive startsWith when every example is
+lowercase. That no in-vocabulary rival fit was missed rests on sampled harnesses, not on a proof: a rival that differs
+only on inputs no probe covers is not caught (Auditor #530 found one, now probed). A delimiter that appears in no
+example cannot be derived. Escaping
 (escapeCheckinNote) is refused and recorded as v6 scope. Details, held-out results, evidence and limits:
 peaceai/docs/m114-string-parsing.md.
