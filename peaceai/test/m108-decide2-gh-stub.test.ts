@@ -115,7 +115,7 @@ process.stdout.write(out.join("\\n") + (out.length ? "\\n" : ""));
 chmodSync(join(fakeBin, "gh"), 0o755);
 
 const RUN_SHA = "e".repeat(40);
-const comment = (id: number, body: string) => ({ id, html_url: `https://github.com/PeaceG03/PeaceAI-Workspace/pull/${PR}#issuecomment-${id}`, body, user: { login: "PeaceG03" }, author_association: "OWNER", created_at: "2026-10-25T12:00:00Z" });
+const comment = (id: number, body: string, login = "PeaceG03", association = "OWNER") => ({ id, html_url: `https://github.com/PeaceG03/PeaceAI-Workspace/pull/${PR}#issuecomment-${id}`, body, user: { login }, author_association: association, created_at: "2026-10-25T12:00:00Z" });
 const ghRun = (o: Record<string, unknown> = {}) => ({ id: Number(RUN), run_attempt: 1, display_title: `self-change-stage2 ${ID}`, path: WF, event: "workflow_dispatch", head_branch: "main", head_sha: RUN_SHA, ...o });
 function state(o: Record<string, unknown> = {}) {
   return {
@@ -201,6 +201,42 @@ for (const [what, over, reasons] of approvalCases)
     const r = decide2(state(over));
     assert.equal(r.code, 2, `${r.out}\n${r.err}`);
     assert.deepEqual(reasonsOf(r.out), reasons, r.out);
+  });
+
+// ---- M116 (Auditor #527 note): the AUTHOR of each command, end to end through the stubbed gh. decide2 maps the
+// GitHub comment's user.login / author_association and stage2LandingDecision counts a command only from a login
+// listed in peaceai/self/approvers.json at origin main (auditor / peace: ["PeaceG03"]) with an OWNER, MEMBER or
+// COLLABORATOR association. A stranger's (or an outside contributor's) exact-sha command is not stale, it is MISSING.
+const authorCases: [string, Record<string, unknown>, string[]][] = [
+  ["the exact-sha Auditor pass is posted by another login", { comments: [comment(901, `/auditor-pass ${ID} ${head}`, "someone"), comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_MISSING"]],
+  ["the exact-sha verdict is posted by another login", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${head} right`, "someone")] }, ["PEACE_VERDICT_MISSING"]],
+  ["both exact-sha commands are posted by another login", { comments: [comment(901, `/auditor-pass ${ID} ${head}`, "peaceai-bot"), comment(902, `/verdict ${ID} ${head} right`, "peaceai-bot")] }, ["AUDITOR_PASS_MISSING", "PEACE_VERDICT_MISSING"]],
+  ["the pass is posted by a case-variant login (logins match exactly)", { comments: [comment(901, `/auditor-pass ${ID} ${head}`, "peaceg03"), comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_MISSING"]],
+  ["the verdict is posted by a case-variant login (logins match exactly)", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${head} right`, "PEACEG03")] }, ["PEACE_VERDICT_MISSING"]],
+  ["a stranger's wrong-sha pass does not even count as stale", { comments: [comment(901, `/auditor-pass ${ID} ${OTHER}`, "someone"), comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_MISSING"]],
+  ["a stranger's wrong-sha verdict does not even count as stale", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${OTHER} right`, "someone")] }, ["PEACE_VERDICT_MISSING"]],
+  ["the pass is by PeaceG03 with association NONE", { comments: [comment(901, `/auditor-pass ${ID} ${head}`, "PeaceG03", "NONE"), comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_MISSING"]],
+  ["the verdict is by PeaceG03 with association NONE", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${head} right`, "PeaceG03", "NONE")] }, ["PEACE_VERDICT_MISSING"]],
+  ["the pass is by PeaceG03 with association CONTRIBUTOR", { comments: [comment(901, `/auditor-pass ${ID} ${head}`, "PeaceG03", "CONTRIBUTOR"), comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_MISSING"]],
+  ["the verdict is by PeaceG03 with association FIRST_TIME_CONTRIBUTOR", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${head} right`, "PeaceG03", "FIRST_TIME_CONTRIBUTOR")] }, ["PEACE_VERDICT_MISSING"]],
+  ["the verdict is by PeaceG03 with a null association", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${head} right`, "PeaceG03", null as unknown as string)] }, ["PEACE_VERDICT_MISSING"]],
+  ["both are by another login with association OWNER (association alone is not enough)", { comments: [comment(901, `/auditor-pass ${ID} ${head}`, "someone", "OWNER"), comment(902, `/verdict ${ID} ${head} right`, "someone", "OWNER")] }, ["AUDITOR_PASS_MISSING", "PEACE_VERDICT_MISSING"]],
+];
+for (const [what, over, reasons] of authorCases)
+  test(`decide2 via stubbed gh refuses by author (${reasons.join("+")}): ${what}`, () => {
+    const r = decide2(state(over));
+    assert.equal(r.code, 2, `${r.out}\n${r.err}`);
+    assert.deepEqual(reasonsOf(r.out), reasons, r.out);
+  });
+
+// DOCUMENTS today's behavior (not a requirement): the association allow-list is OWNER/MEMBER/COLLABORATOR, so a
+// PeaceG03 comment that GitHub labelled MEMBER or COLLABORATOR would count. GitHub computes author_association
+// (a comment author cannot set it) and PeaceG03 owns this user repo, so its real comments are always OWNER; tightening
+// the list to OWNER-only is a protected selfchange.ts change for its own PR. Flip this test if that lands.
+for (const assoc of ["MEMBER", "COLLABORATOR"])
+  test(`decide2 via stubbed gh (documents current behavior): PeaceG03 with association ${assoc} still counts`, () => {
+    const r = decide2(state({ comments: [comment(901, `/auditor-pass ${ID} ${head}`, "PeaceG03", assoc), comment(902, `/verdict ${ID} ${head} right`, "PeaceG03", assoc)] }));
+    assert.equal(r.code, 0, `${r.out}\n${r.err}`);
   });
 
 test("decide2 via stubbed gh: exact pass + verdict but the flag is OFF at origin main -> exactly STAGE2_OFF", () => {
