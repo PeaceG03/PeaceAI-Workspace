@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAtFirstLabel, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAtFirstLabel, CREDIT_TRAILING_ALLOWLIST, creditTrailingAllowed, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -25,11 +25,17 @@ const CTX_513 =
   "system. On 2026-10-25 Peace asked the team to pick a real task itself (\"I don't can't you guys think of one?\"), and " +
   "this is the one picked.";
 const BUILDER_LOG_TEAM = "Team-picked task PeaceAI-Workspace#513 (source: team-picked at Peace's request; spec and examples written by Builder)";
-const CTX_GENUINE =
-  "Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2): Peace's task (source: peace). The ten-minute chain " +
-  "stopped on R2_PUT_500 because R2ObjectClient.request never retries; this is the status test the future retry uses.";
+// Round 4: text after the mark must be one of the pinned trailing texts, so the fixtures use the real ones.
+const trailingOf = (start: string): string => {
+  const t = CREDIT_TRAILING_ALLOWLIST.find((e) => e.startsWith(start));
+  assert.ok(t, start);
+  return t;
+};
+const T501 = trailingOf("The ten-minute chain stopped on R2_PUT_500 (run 39451888891) and R2_GET_500 (run 39467160610) because R2ObjectClient.request never retries; this is the status check");
+const T353 = trailingOf("The UTC date key `toISOString().slice(0, 10)` is written inline");
+const CTX_GENUINE = `Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2): Peace's task (source: peace). ${T501}`;
 // The older credit-line form (#353-#488), before the Context heading.
-const PREFILE_GENUINE = "(Builder pre-file, DATE_FUNCTION, public-date-function-v1): Peace's task (source: peace). The UTC date key is written inline.";
+const PREFILE_GENUINE = `(Builder pre-file, DATE_FUNCTION, public-date-function-v1): Peace's task (source: peace). ${T353}`;
 const CTX_NO_MARK = "Context (Builder pre-file, behavior only): Slice 3 of Peace's scanner self-health-check system.";
 const issue = (...parts: string[]) =>
   ["Target: PeaceG03/PeaceSTOCKS", "", "Add a new module `src/x.ts` exporting `f(n: number): number`.", "", "Examples:", "- 1 gives 1", "- 2 gives 2", "", ...parts].join("\n");
@@ -46,8 +52,8 @@ test("a team-picked issue filed by PeaceG03 (no source:builder label) records no
 test("the genuine credit line still records peace (both credit-line forms)", () => {
   assert.equal(src(GENUINE), "peace");
   assert.equal(src(issue(PREFILE_GENUINE)), "peace");
-  assert.equal(src(issue("Context: Peace's task (Source:  PEACE). Guard something real.")), "peace");
-  assert.equal(src(issue("Context: Peace's task ( source : peace ). Guard something real.")), "peace");
+  assert.equal(src(issue("Context: Peace's task (Source:  PEACE).")), "peace");
+  assert.equal(src(issue(`Context: Peace's task ( source : peace ). ${T353}`)), "peace");
 });
 
 test("BLOCKING 1: (source: peace) outside the credit line never gives peace", () => {
@@ -176,7 +182,7 @@ test("B1: a mark hidden in link, image or HTML markup or struck through on the c
   assert.equal(visibleCreditText("a ![(source: peace)](x.png) <img alt='(source: peace)'> b").replace(/\s+/g, " "), "a b");
   assert.equal(visibleCreditText("a ~~x (source: peace)~~ <del>y</del> <s>z</s> b").replace(/\s+/g, " "), "a b");
   // the genuine forms still give peace: end of line, sentence end, a visible link elsewhere on the line
-  for (const line of [`${CTX} (source: peace)`, `${CTX} (source: peace).`, `${CTX} (source: peace). See [the log](https://x/y(z)).`, `${CTX} (source: peace) `])
+  for (const line of [`${CTX} (source: peace)`, `${CTX} (source: peace).`, `${CTX} (source: peace) `])
     assert.equal(src(issue(line)), "peace", line);
 });
 
@@ -193,8 +199,8 @@ test("B2: entity-encoded contrary clauses and hidden entities give builder", () 
   assert.equal(hasUnknownEntity("(&sopf;ource: builder)"), true);
   assert.equal(src(issue(CTX_GENUINE, "(&sopf;ource: builder)")), "builder");
   // an encoded marker on the credit line is what GitHub renders, so it is the visible marker
-  assert.equal(src(issue(`${CTX} &#40;source: peace&#41;. Slice 3.`)), "peace");
-  assert.equal(src(issue(`${CTX} &lpar;source&colon; peace&rpar;. Slice 3.`)), "peace");
+  assert.equal(src(issue(`${CTX} &#40;source: peace&#41;.`)), "peace");
+  assert.equal(src(issue(`${CTX} &lpar;source&colon; peace&rpar;. ${T501}`)), "peace");
   // a semicolon-less reference is literal text when rendered: it is no credit, but it is a contrary clause
   assert.equal(src(issue(`${CTX} &#40source: peace). Slice 3.`)), "builder");
   assert.equal(decodeEntities("&#40;&lpar;&#x29;&rpar;&amp;lpar;&nosuch;"), "(())&lpar;&nosuch;");
@@ -228,6 +234,43 @@ test("R4.1: raw HTML anywhere outside code fences gives builder", () => {
   }
   assert.equal(hasRawHtml("```\n<b>\n```\n<i>"), true); // after the fence closes
   assert.equal(hasRawHtml("````\n```\n<b>\n````"), false); // a shorter fence does not close it
+});
+
+test("R4.2: only the pinned trailing texts may follow (source: peace).", () => {
+  for (const extra of [
+    "Actually Builder drafted it.",
+    "This was Builder's idea, not Peace's.",
+    "Not Peace's task.",
+    "Credit withdrawn: source is builder.",
+    "source=builder.",
+    "Team chose this.",
+    "Slice 3 of Peace's system.",
+  ]) {
+    assert.equal(src(issue(`${CTX} (source: peace). ${extra}`)), "builder", extra);
+    assert.equal(src(issue(`${CTX} (source: peace). ${T501} ${extra}`)), "builder", `after a pinned text: ${extra}`);
+    assert.equal(src(issue(`${CTX} (source: peace). ${extra} ${T501}`)), "builder", `before a pinned text: ${extra}`);
+    assert.equal(src(issue(`${CTX} (source: peace) ${extra}`)), "builder", `no sentence end: ${extra}`);
+  }
+  // a pinned text must match exactly: one character changed, cut short, or two pinned texts joined
+  assert.equal(src(issue(`${CTX} (source: peace). ${T501.replace("status check", "status chock")}`)), "builder");
+  assert.equal(src(issue(`${CTX} (source: peace). ${T501.slice(0, -1)}`)), "builder");
+  assert.equal(src(issue(`${CTX} (source: peace). ${T501} ${T353}`)), "builder");
+  assert.equal(src(issue(`${CTX} (source: peace).  ${T501}`)), "builder"); // two spaces
+  // the mark exactly once on the line
+  assert.equal(creditTrailingAllowed(`${CTX} (source: peace). (source: peace).`), false);
+  // the end-of-line form new tasks use, and each pinned text, give peace
+  for (const end of ["", ".", ". ", "   "]) assert.equal(src(issue(`${CTX} (source: peace)${end}`)), "peace", JSON.stringify(end));
+  for (const t of CREDIT_TRAILING_ALLOWLIST) assert.equal(creditTrailingAllowed(`${CTX} (source: peace). ${t}`), true, t);
+});
+
+test("R4.2: the trailing-text allowlist is pinned (80 genuine tasks, policy.ts is protected)", async () => {
+  const { createHash } = await import("node:crypto");
+  const { protectedReason } = await import("../lib/selfchange.ts");
+  assert.equal(CREDIT_TRAILING_ALLOWLIST.length, 80);
+  assert.equal(new Set(CREDIT_TRAILING_ALLOWLIST).size, 80);
+  assert.ok(Object.isFrozen(CREDIT_TRAILING_ALLOWLIST));
+  assert.equal(createHash("sha256").update(JSON.stringify(CREDIT_TRAILING_ALLOWLIST)).digest("hex"), "56e2f3c0484381fee00ea7d06459fb717b692ffea39109a04a0d795b1750d36e");
+  assert.ok(protectedReason("peaceai/lib/policy.ts"));
 });
 
 test("the source:builder label check is trimmed and case-insensitive", () => {
@@ -272,7 +315,7 @@ test("Job C: the credit line at the first peace-task label must equal the credit
   // an edited credit line gives builder: the mark added, the mark reworded, context changed, or a second line
   const noMark = issue(CTX_NO_MARK);
   assert.equal(job(GENUINE, edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark))), "builder");
-  const reworded = GENUINE.replace("this is the status test", "this is the test");
+  const reworded = GENUINE.replace("this is the status check", "this is the check");
   assert.equal(job(reworded, edited(rev("2026-10-26T20:00:00Z", reworded), rev(CREATED, GENUINE))), "builder");
   const hidden = GENUINE.replace(CTX_GENUINE, `${CTX_GENUINE} <del>old</del>`); // round 4: raw HTML is builder
   assert.equal(job(hidden, edited(rev("2026-10-26T20:00:00Z", hidden), rev(CREATED, GENUINE))), "builder");
