@@ -47,8 +47,9 @@ export const BUILDER_LABEL = "source:builder";
  *     chosen by the team, Peace asked us / the team to pick, not credited as source ...).
  * Job C (recordedTaskSource) adds: the pick-time value was exactly `peace`, the labels re-read at record time
  * still allow it, no `source:builder` label was ever added, and the credit line's visible text at the first
- * `peace-task` label event (reconstructed from userContentEdits) is identical to its visible text at record
- * time, with complete history. Edits elsewhere in the body do not affect credit.
+ * `peace-task` label event (reconstructed from the userContentEdits revision strictly before it) is identical to
+ * its visible text at record time, and the whole body is add-only since then (every labelled line still present,
+ * in order), with complete history.
  *
  * Builder-log exception (ruling, not code): builder-log rows seq 98-122 (#233, #240, #248, #255, #259, #262,
  * #288-#290, #293-#295, #297-#299, #301, #319, #329) stay credited as Peace's real tasks although those issue
@@ -354,7 +355,7 @@ const isoTime = (v: unknown): number | null => {
 
 /**
  * The issue body as it stood at the FIRST `peace-task` label event, reconstructed from userContentEdits: the
- * latest edit at or before that event (an issue never edited has no entries, and its current body is the one
+ * latest edit strictly before that event (an edit with the same timestamp as the label is ambiguous: null) (an issue never edited has no entries, and its current body is the one
  * labelled). null when the history is incomplete or malformed (a deleted revision, a missing body text, a bad
  * timestamp, no label event, or edits that all postdate the label).
  */
@@ -369,16 +370,16 @@ export function bodyAtFirstLabel(p: unknown, currentBody: unknown): string | nul
   let best: { t: number; body: string } | null = null;
   for (const e of x.edits) {
     const t = isoTime(e?.editedAt);
-    if (t === null || e.deletedAt !== null || typeof e.body !== "string") return null;
-    if (t <= firstLabel && (best === null || t > best.t)) best = { t, body: e.body };
+    if (t === null || e.deletedAt !== null || typeof e.body !== "string" || t === firstLabel) return null;
+    if (t < firstLabel && (best === null || t > best.t)) best = { t, body: e.body };
   }
   return best === null ? null : best.body;
 }
 
 /**
  * True only when the credit line's visible text at the first `peace-task` label (bodyAtFirstLabel) is identical
- * to its visible text in the body being recorded. Edits elsewhere in the body (added examples, notes) do not
- * matter; an edited credit line, or incomplete history, is false.
+ * to its visible text in the body being recorded; an edited credit line, or incomplete history, is false. The rest
+ * of the body is held to add-only by bodyAddOnlySinceLabel.
  */
 export function creditUnchangedSinceLabel(p: unknown, currentBody: unknown): boolean {
   const atLabel = bodyAtFirstLabel(p, currentBody);
@@ -388,10 +389,29 @@ export function creditUnchangedSinceLabel(p: unknown, currentBody: unknown): boo
 }
 
 /**
+ * Add-only since the first `peace-task` label (Auditor, round 4): every line of the labelled body
+ * (bodyAtFirstLabel) still appears, unchanged and in the same order, in the body being recorded. Lines may be
+ * added anywhere; a removed, reworded or reordered line is false, and so is incomplete history.
+ */
+export function bodyAddOnlySinceLabel(p: unknown, currentBody: unknown): boolean {
+  const atLabel = bodyAtFirstLabel(p, currentBody);
+  if (atLabel === null || typeof currentBody !== "string") return false;
+  const now = currentBody.replace(/\r\n?/g, "\n").split("\n");
+  let i = 0;
+  for (const line of atLabel.replace(/\r\n?/g, "\n").split("\n")) {
+    while (i < now.length && now[i] !== line) i++;
+    if (i === now.length) return false;
+    i++;
+  }
+  return true;
+}
+
+/**
  * Job C: the source written to task.json. `peace` only when the pick-time source (select output) is exactly
  * `peace`, the labels re-read at record time and the full fetched body still give `peace` (taskSource), no
- * `source:builder` label was ever added, and the credit line is unchanged since the first `peace-task` label
- * (creditUnchangedSinceLabel). Anything else is `builder`. The body's sha256 is recorded separately for
+ * `source:builder` label was ever added, the credit line is unchanged since the first `peace-task` label
+ * (creditUnchangedSinceLabel) and the whole body is add-only since then (bodyAddOnlySinceLabel). Anything else
+ * is `builder`. The body's sha256 is recorded separately for
  * traceability (`bodySha256`).
  */
 export function recordedTaskSource(
@@ -402,7 +422,7 @@ export function recordedTaskSource(
   if (pickTime !== "peace" || !Array.isArray(check.labels) || taskSource(check.labels, body) !== "peace") return "builder";
   const p = check.provenance as Partial<BodyProvenance> | null | undefined;
   if (!p || typeof p !== "object" || p.builderLabeled !== false) return "builder";
-  return creditUnchangedSinceLabel(p, body) ? "peace" : "builder";
+  return creditUnchangedSinceLabel(p, body) && bodyAddOnlySinceLabel(p, body) ? "peace" : "builder";
 }
 
 /**

@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAtFirstLabel, CREDIT_TRAILING_ALLOWLIST, creditTrailingAllowed, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_TRAILING_ALLOWLIST, creditTrailingAllowed, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -309,9 +309,12 @@ test("Job C: the credit line at the first peace-task label must equal the credit
   const p501 = edited(rev("2026-10-26T20:52:13Z", withMore), rev("2026-10-26T20:36:23Z", withMore.replace("- 3 gives 3\n", "")), rev(CREATED, GENUINE));
   assert.equal(bodyAtFirstLabel(p501, withMore), GENUINE);
   assert.equal(job(withMore, p501), "peace");
-  // an edit before the label is the labelled body
-  const p0 = edited(rev(LABELED, GENUINE), rev(CREATED, issue(CTX_NO_MARK)));
+  // an edit before the label is the labelled body; an edit at the label's own timestamp is ambiguous (strict <)
+  const p0 = edited(rev(CREATED, GENUINE), rev("2026-10-26T19:38:50Z", issue(CTX_NO_MARK)));
   assert.equal(job(GENUINE, p0), "peace");
+  assert.equal(job(GENUINE, edited(rev(LABELED, GENUINE), rev(CREATED, issue(CTX_NO_MARK)))), "builder");
+  assert.equal(job(GENUINE, edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(LABELED, GENUINE), rev(CREATED, GENUINE))), "builder");
+  assert.equal(bodyAtFirstLabel(edited(rev(LABELED, GENUINE), rev(CREATED, GENUINE)), GENUINE), null);
   // an edited credit line gives builder: the mark added, the mark reworded, context changed, or a second line
   const noMark = issue(CTX_NO_MARK);
   assert.equal(job(GENUINE, edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark))), "builder");
@@ -319,10 +322,38 @@ test("Job C: the credit line at the first peace-task label must equal the credit
   assert.equal(job(reworded, edited(rev("2026-10-26T20:00:00Z", reworded), rev(CREATED, GENUINE))), "builder");
   const hidden = GENUINE.replace(CTX_GENUINE, `${CTX_GENUINE} <del>old</del>`); // round 4: raw HTML is builder
   assert.equal(job(hidden, edited(rev("2026-10-26T20:00:00Z", hidden), rev(CREATED, GENUINE))), "builder");
+  const imaged = GENUINE.replace(CTX_GENUINE, CTX_GENUINE.replace("(source: peace).", "(source: peace). ![](x.png)")); // same visible text, line changed
+  assert.equal(job(imaged, edited(rev("2026-10-26T20:00:00Z", imaged), rev(CREATED, GENUINE))), "builder");
   // the first label counts: relabelling after a credit-line edit does not reset it
   const relabel = { ...edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark)), taskLabeledAt: ["2026-10-26T21:00:00Z", LABELED] };
   assert.equal(job(GENUINE, relabel), "builder");
   assert.equal(creditUnchangedSinceLabel(UNEDITED, GENUINE), true);
+});
+
+test("R4.3: the whole body is add-only since the first label: every labelled line still there, in order", () => {
+  const at = (now: string) => job(now, edited(rev("2026-10-26T20:00:00Z", now), rev(CREATED, GENUINE)));
+  assert.equal(at(GENUINE.replace("- 2 gives 2", "- 2 gives 2\n- 3 gives 3")), "peace"); // a line added
+  assert.equal(at(`Note first.\n${GENUINE}\nNote last.`), "peace"); // lines added at both ends
+  assert.equal(at(GENUINE.replace("- 2 gives 2\n", "")), "builder"); // an example removed
+  assert.equal(at(GENUINE.replace("- 2 gives 2", "- 2 gives 3")), "builder"); // an example reworded
+  assert.equal(at(GENUINE.replace("- 1 gives 1\n- 2 gives 2", "- 2 gives 2\n- 1 gives 1")), "builder"); // reordered
+  assert.equal(at(GENUINE.replace("Target: PeaceG03/PeaceSTOCKS", "Target: PeaceG03/PeaceAI-Workspace")), "builder"); // target changed
+  assert.equal(at(GENUINE.replace("\n\nExamples:", "\nExamples:")), "builder"); // a blank line removed
+  assert.equal(at(GENUINE.replace(/\n/g, "\r\n")), "peace"); // line endings only
+  assert.equal(bodyAddOnlySinceLabel(UNEDITED, GENUINE), true);
+  assert.equal(bodyAddOnlySinceLabel(UNEDITED, 42), false);
+});
+
+test("R4.4: a deleted revision (deletedAt set) gives builder", () => {
+  // identical history except deletedAt: only the deletion check separates peace from builder
+  const later = issue(CTX_GENUINE, "Note: more examples soon.");
+  const kept = edited(rev("2026-10-26T20:00:00Z", later), rev(CREATED, GENUINE));
+  const deleted = edited(rev("2026-10-26T20:00:00Z", later), { editedAt: CREATED, deletedAt: "2026-10-26T20:05:00Z", body: GENUINE });
+  const deletedLater = edited({ editedAt: "2026-10-26T20:00:00Z", deletedAt: "2026-10-26T20:05:00Z", body: later }, rev(CREATED, GENUINE));
+  assert.equal(job(later, kept), "peace");
+  assert.equal(job(later, deleted), "builder");
+  assert.equal(job(later, deletedLater), "builder"); // a deleted revision after the label too
+  assert.equal(bodyAtFirstLabel(deleted, later), null);
 });
 
 test("Job C: incomplete or malformed history gives builder", () => {
