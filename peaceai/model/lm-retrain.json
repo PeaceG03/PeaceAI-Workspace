@@ -2,10 +2,11 @@
  "schema": "peaceai-lm-retrain:m119",
  "note": "M119 (Builder + Auditor, free compute under Peace's 2026-10-25 rule). Used only by peace-lm-retrain.yml: fine-tune the live LM on the reviewed commit list, re-score live and candidate in the same run, land in Results only. No promotion; shadow mode unchanged.",
  "live": { "version": "lm-v1-088073d41dbc" },
- "list": { "file": "peaceai/model/lm-retrain-commits.txt", "sha256": "16d883c2e233cc09285bb80d577d209d796cc01c994297e8bd44d1d80f23001a",
+ "list": { "file": "peaceai/model/lm-retrain-commits.txt", "sha256": "6fe4978843cc3d9d5beea2296b28403185b4bf52dd25d482406fdb880946a312",
    "repos": { "PeaceG03/PeaceAI-Workspace": "34c44c1477a505b353d9881626d2795dd3a8fc82", "PeaceG03/PeaceSTOCKS": "8dec076346b89887708f2ffc44bc137201b5799f" } },
  "model": { "d_model": 320, "n_layer": 6, "n_head": 5, "ctx": 512, "vocab": 8192, "batch": 8 },
- "finetune": { "steps": 300, "lr": 0.0001, "warmup": 10, "patience": 4, "evalEvery": 25, "maxSeconds": 10800 },
+ "finetune": { "steps": 1200, "warmup": 30, "patience": 6, "evalEvery": 25, "seed": 20261010, "maxSeconds": 13800, "retrainMaxSeconds": 15000,
+   "sweep": { "lrs": [0.00005, 0.000025], "select": "lowest validation loss on the corpus heldout split (never set C v2 or the judge items); ties: earlier step, then first arm" } },
  "dedup": { "window": 24, "shortMin": 8 },
  "eval": { "setcMaxBytes": 1000000, "setcSliceSha256": "0207960bae5ddc9548dda9d72103bdf483b6d50dbaefe71353c44a78f67683eb", "judgeItems": "lm-judge/items.json", "judgeItemCount": 364 }
 }

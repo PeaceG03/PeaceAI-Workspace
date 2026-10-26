@@ -2,7 +2,8 @@
 # M119 (LM retrain): rebuild the retrain fine-tune corpus exactly, in every job that needs it.
 #   lm-retrain-corpus.sh <work> <judge-items.json> [<drop-ids-file>]
 # 1. anonymous clones of the public repos at the heads pinned in peaceai/model/lm-retrain.json (<work>/srcroot/<repo>,
-#    also corefree_proof.py's --source-root); 2. ft-pairs.ts --list over the reviewed commit list (sha256-pinned);
+#    also corefree_proof.py's --source-root), and lm-retrain-headcheck.sh: merged content == PR head content, file by
+#    file (squash/rebase merges against refs/pull/N/head); 2. ft-pairs.ts --list over the reviewed commit list (sha256-pinned);
 # 3. set C v2 (ext-fetch.ts --set-c) into <work>/setc; 4. eval_dedup.py against set C v2 and the judge items, also
 #    dropping the ids in <drop-ids-file> (core-flagged docs), into <work>/ft with the report <work>/dedup.json.
 # Counts only on stdout. Needs PEACEAI_PYTHON (numpy not needed) or python3.
@@ -20,6 +21,7 @@ while read -r r sha; do
   test "$(git -C "$d" rev-parse HEAD)" = "$sha" || { echo "pinned commit missing: refused"; exit 1; }
   specs+=("$r=$d@$sha")
 done < <(jq -r '.list.repos | to_entries[] | "\(.key) \(.value)"' "$cfg")
+./peaceai/bin/lm-retrain-headcheck.sh "$work/srcroot"
 rm -rf "$work/ft-raw" "$work/ft"
 ./node_modules/.bin/tsx peaceai/bin/ft-pairs.ts "$work/ft-raw" --list "$list" --list-sha256 "$lsha" "${specs[@]}"
 if [ ! -f "$work/setc/docs.jsonl" ]; then ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$work/csrc" "$work/setc" --set-c; rm -rf "$work/csrc"; fi

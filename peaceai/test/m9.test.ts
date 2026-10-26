@@ -430,7 +430,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
 
 const LM_TRAIN_M49_WORKFLOW_SHA256 = "01affbb7551b3453a0ecef535d7f8893bfac82c4c20464b074c14f2f110f9be9"; // M49 BLOCKING (1): fine-tune corpus from pinned commits + ft-gate before training. M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
 const POSTTRAIN_MEMCHECK_WORKFLOW_SHA256 = "0aa3e9b681aeebb851f70f6f922b73fc2a79f3df0cbe64233142074317376daf"; // M49 post-train memcheck (Architect option 1)
-const LM_RETRAIN_WORKFLOW_SHA256 = "a10e146f5c90669bfbd7a975f3bcc725baabaadc3a419058a5ca680b55304400"; // M119: LM retrain on the reviewed commit list (Builder + Auditor gate; m119-lm-retrain.test.ts pins its shape)
+const LM_RETRAIN_WORKFLOW_SHA256 = "0d60f0816f3bbc4808b7874fcd48d86d5b1724064296527e0e193e5aa77bf712"; // M119: LM retrain on the reviewed commit list (Builder + Auditor gate; m119-lm-retrain.test.ts pins its shape)
 const LM_TRAIN_WORKFLOW_SHA256 = "9355431302d31ed8ca132ee60e8f2ab2728c462bfbe7a7bacdeb013820ae6211"; // M51: pinned to the #148 manifest by sha (--manifest-sha), so M37 never trains on the M49 corpus
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
@@ -477,7 +477,7 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
       continue;
     }
     if (f === "m49-posttrain-memcheck.yml") {
-      // M49 (Architect option 1): the ONE memcheck exemption, pinned to the exact reviewed file; workflows.test.ts pins
+      // M49 (Architect option 1): the M49 post-train memcheck exemption (M119 peace-lm-retrain.yml has its own, above), pinned to the exact reviewed file; workflows.test.ts pins
       // its shape. Checks only: it never trains, builds the internal corpus, writes Results or uploads weights.
       assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), POSTTRAIN_MEMCHECK_WORKFLOW_SHA256, "m49-posttrain-memcheck.yml changed: re-review and re-pin");
       assert.ok(!/model\/train\.py|model\/export\.py|lm-corpus\.ts|results-write\.sh|PEACEAI_RESULTS_DEPLOY_KEY|latest\.json|pull_request|schedule:|push:/.test(text), f);

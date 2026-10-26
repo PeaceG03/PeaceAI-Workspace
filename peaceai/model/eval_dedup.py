@@ -1,7 +1,8 @@
 """M119 (LM retrain, Auditor gate 2): drop every training doc that overlaps an eval item, before training.
 
 Eval items: every doc of set C v2 (--setc DIR/docs.jsonl, from ext-fetch.ts --set-c) and every item of the 364-item
-right/wrong judge set (--judge items.json; each item checked as context+reference and as context+derived).
+judge set (--judge items.json; each item checked as context+reference, context+derived, and the reference and the
+derived text each on its own, so a short snippet of either inside a training doc is caught).
 A training doc overlaps an eval item when any of:
   exact   the raw text, or the whitespace-normalised token sequence, is equal (sha256 of either form);
   window  the two share a run of --window code tokens (\\w+ or one punctuation char; all positions);
@@ -57,6 +58,7 @@ if not isinstance(items, list) or not items:
 for it in items:
     for w in ("reference", "derived"):
         evals.append(("judge", str(it["context"]) + str(it[w])))
+        evals.append(("judge", str(it[w])))  # alone too: a short reference/derived snippet inside a training doc
 if not any(k == "setc" for k, _ in evals):
     sys.exit("eval_dedup: set C v2 is empty: refused")
 

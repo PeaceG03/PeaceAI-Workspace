@@ -6,7 +6,7 @@
 // against a backing PeaceAI repo@sha seq). Approved-but-unproven skills do not count.
 // PeaceAI real task (counts in BOTH numerator and denominator): by PeaceAI, asked contains
 // "(source: peace)", PeaceSTOCKS@sha is on PeaceSTOCKS main (fail closed if unverifiable), and not
-// coverage:none (optional field, or grandfather COVERAGE_NONE_SEQS 97/99/101). Both windows are
+// coverage:none (isCoverageNone in check.ts: the optional field, or the grandfathered COVERAGE_NONE_SEQS). Both windows are
 // bounded by asOf (all-time = every task with date <= asOf).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";

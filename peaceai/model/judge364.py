@@ -1,10 +1,11 @@
-"""M119 (LM retrain, Auditor gate 3): score a model on the 364-item right/wrong judge set (Results lm-judge/items.json).
+"""M119 (LM retrain, Auditor gate 3): score a model on the 364-item judge set (Results lm-judge/items.json;
+items are labelled right or wrong). The score is a comparison number only; it is not a claim about either model.
 
 Same items, blocks and math as Results lm-judge/score.mts + score_unverified.py: per item and per candidate
 (derived, reference) a unified diff adding the candidate under the item's context is split into blocks exactly like
 lm.ts diffScoreItems (max 8 blocks; context = "// <path>\\n" + last 30 before-lines; target = block[:2000] + "\\n"),
 each block is scored with infer.py's cond_logprob, and the candidate's mean = sum(logprob) / sum(tokens).
-Primary metric (lm-judge/analyze.py): AUC of right vs wrong items by the derived candidate's mean (ties count 1/2),
+Primary metric (lm-judge/analyze.py): AUC over the right-labelled vs wrong-labelled items of the derived candidate's mean (ties count 1/2),
 with the same bootstrap 95% interval (2000 draws, seed 7).
 This runs on a model with or without a memcheck PASS (comparison only, never a pipeline score).
 Writes --out (per-candidate aggregates; private: Results only). Prints one line of aggregates, never text or keys.
@@ -126,7 +127,7 @@ def main():
                "auc_derived_right_vs_wrong_mean": round(auc(pr, ng), 3), "auc_exact": auc(pr, ng), "auc_ci95": boot_auc(pr, ng),
                "pairwise_ref_beats_wrong_derived": sum(agg[f"{i['key']}:reference"]["mean"] > agg[f"{i['key']}:derived"]["mean"] for i in wrong)}
     json.dump({"model": cfg["version"], "verified": False, "scorer": "judge364.py (score.mts blocks + infer.py cond_logprob)", "summary": summary, "agg": agg}, open(args.out, "w"), indent=1)
-    print("judge364 " + " ".join(f"{k}={summary[k]}" for k in ("model", "n", "right", "wrong", "auc_derived_right_vs_wrong_mean", "auc_ci95", "pairwise_ref_beats_wrong_derived")).replace(" ", " ").replace(", ", ","))
+    print(f"judge364 model={summary['model']} n={summary['n']} auc={summary['auc_derived_right_vs_wrong_mean']} auc_ci95={summary['auc_ci95']}".replace(", ", ","))
 
 
 if __name__ == "__main__":
