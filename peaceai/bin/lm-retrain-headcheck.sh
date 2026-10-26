@@ -19,13 +19,15 @@ while read -r kind repo num head merge; do
   fi
   [ "${#ps[@]}" = 1 ] || { echo "$repo#$n: merge has ${#ps[@]} parents"; bad=$((bad + 1)); continue; }
   one=$((one + 1))
-  git -C "$d" fetch --quiet origin "+refs/pull/$n/head:refs/m119/pull/$n"
+  git -C "$d" fetch --quiet origin "+refs/pull/$n/head:refs/m119/pull/$n" || { echo "$repo#$n: refs/pull/$n/head could not be fetched: refused"; exit 1; }
   [ "$(git -C "$d" rev-parse "refs/m119/pull/$n")" = "$h" ] || { echo "$repo#$n: refs/pull/$n/head is not the listed head"; bad=$((bad + 1)); continue; }
+  changed=$(mktemp); git -C "$d" diff-tree -z --no-commit-id --name-only -r --no-renames "${ps[0]}" "$m" > "$changed" \
+    || { rm -f "$changed"; echo "$repo#$n: git diff-tree failed: refused"; exit 1; }
   while IFS= read -r -d '' f; do
     files=$((files + 1))
     a=$(git -C "$d" rev-parse --verify --quiet "$m:$f" || echo absent); b=$(git -C "$d" rev-parse --verify --quiet "$h:$f" || echo absent)
     [ "$a" = "$b" ] || { echo "$repo#$n: a merged file differs from the PR head"; bad=$((bad + 1)); }
-  done < <(git -C "$d" diff-tree -z --no-commit-id --name-only -r --no-renames "${ps[0]}" "$m")
+  done < "$changed"; rm -f "$changed"
 done < "$list"
 echo "head check: merges=$two squash_or_rebase=$one files_compared=$files differences=$bad"
 [ "$bad" = 0 ] || { echo "merged content is not the PR head content: refused"; exit 1; }
