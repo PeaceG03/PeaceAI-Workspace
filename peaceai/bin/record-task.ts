@@ -76,9 +76,9 @@ const records = buildRecords(
     baseSha: summary.baseSha,
     title: String(issue.title ?? "").slice(0, 300),
     body: String(issue.body ?? "").slice(0, 4000),
-    // M119: the pick-time source (labels + body) and the full fetched body must both say peace, the body must
-    // be the one picked (sha256) and unedited since the first peace-task label event; else builder.
-    source: recordedTaskSource(process.env.TASK_SOURCE, issue.body, { pickBodySha256: process.env.TASK_BODY_SHA256, provenance: issue.provenance }),
+    // M119: the pick-time source, the labels re-read at record time and the full fetched body must all say peace,
+    // no source:builder label ever, and the credit line unchanged since the first peace-task label; else builder.
+    source: recordedTaskSource(process.env.TASK_SOURCE, issue.body, { labels: issue.labels, provenance: issue.provenance }),
     bodySha256: bodySha256(issue.body),
     ...(targetName ? { target: targetName } : {}),
     ...regrade,

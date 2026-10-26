@@ -41,8 +41,10 @@ export const BUILDER_LABEL = "source:builder";
  *     give builder);
  *  4. no team-picked wording anywhere in the normalized body (Team-picked, Teampicked, Builder-picked,
  *     chosen by the team, Peace asked us / the team to pick, not credited as source ...).
- * Job C (recordedTaskSource) adds: the pick-time value was exactly `peace`, the body did not change between
- * pick and record (sha256), and the body was not edited after the first `peace-task` label event.
+ * Job C (recordedTaskSource) adds: the pick-time value was exactly `peace`, the labels re-read at record time
+ * still allow it, no `source:builder` label was ever added, and the credit line's visible text at the first
+ * `peace-task` label event (reconstructed from userContentEdits) is identical to its visible text at record
+ * time, with complete history. Edits elsewhere in the body do not affect credit.
  *
  * Builder-log exception (ruling, not code): builder-log rows seq 98-122 (#233, #240, #248, #255, #259, #262,
  * #288-#290, #293-#295, #297-#299, #301, #319, #329) stay credited as Peace's real tasks although those issue
@@ -286,15 +288,17 @@ export function bodySha256(body: unknown): string {
 }
 
 /**
- * Body edit history as fetched from the GitHub API (issue-fetch.ts, Job C): the issue's `lastEditedAt`, the
- * `editedAt` of every userContentEdits entry (`editsComplete` false when there were more than one page), and
- * the createdAt of every `peace-task` LabeledEvent.
+ * Body edit history as fetched from the GitHub API (issue-fetch.ts, Job C). `edits` is every userContentEdits
+ * entry with its full body text (`diff`; the oldest entry is the body as created), `editsComplete` is false when
+ * either connection had more than one page, `taskLabeledAt` holds the createdAt of every `peace-task`
+ * LabeledEvent, and `builderLabeled` is true when a `source:builder` label was ever added.
  */
 export interface BodyProvenance {
   lastEditedAt: string | null;
-  editTimes: string[];
+  edits: { editedAt: string; deletedAt: string | null; body: string | null }[];
   editsComplete: boolean;
   taskLabeledAt: string[];
+  builderLabeled: boolean;
 }
 
 const isoTime = (v: unknown): number | null => {
@@ -304,32 +308,54 @@ const isoTime = (v: unknown): number | null => {
 };
 
 /**
- * True only when the edit history is complete and well-formed, the issue has a `peace-task` label event, and
- * no body edit is later than the FIRST `peace-task` label event. Missing or malformed history is false.
+ * The issue body as it stood at the FIRST `peace-task` label event, reconstructed from userContentEdits: the
+ * latest edit at or before that event (an issue never edited has no entries, and its current body is the one
+ * labelled). null when the history is incomplete or malformed (a deleted revision, a missing body text, a bad
+ * timestamp, no label event, or edits that all postdate the label).
  */
-export function bodyUnchangedSinceLabel(p: unknown): boolean {
-  if (!p || typeof p !== "object") return false;
+export function bodyAtFirstLabel(p: unknown, currentBody: unknown): string | null {
+  if (!p || typeof p !== "object") return null;
   const x = p as Partial<BodyProvenance>;
-  if (x.editsComplete !== true || !Array.isArray(x.editTimes) || !Array.isArray(x.taskLabeledAt)) return false;
+  if (x.editsComplete !== true || !Array.isArray(x.edits) || !Array.isArray(x.taskLabeledAt)) return null;
   const labeled = x.taskLabeledAt.map(isoTime);
-  if (labeled.length === 0 || labeled.some((t) => t === null)) return false;
+  if (labeled.length === 0 || labeled.some((t) => t === null)) return null;
   const firstLabel = Math.min(...(labeled as number[]));
-  const edits = [...x.editTimes, ...(x.lastEditedAt === null || x.lastEditedAt === undefined ? [] : [x.lastEditedAt])].map(isoTime);
-  if (edits.some((t) => t === null)) return false;
-  return (edits as number[]).every((t) => t <= firstLabel);
+  if (x.edits.length === 0) return x.lastEditedAt === null && typeof currentBody === "string" ? currentBody : null;
+  let best: { t: number; body: string } | null = null;
+  for (const e of x.edits) {
+    const t = isoTime(e?.editedAt);
+    if (t === null || e.deletedAt !== null || typeof e.body !== "string") return null;
+    if (t <= firstLabel && (best === null || t > best.t)) best = { t, body: e.body };
+  }
+  return best === null ? null : best.body;
+}
+
+/**
+ * True only when the credit line's visible text at the first `peace-task` label (bodyAtFirstLabel) is identical
+ * to its visible text in the body being recorded. Edits elsewhere in the body (added examples, notes) do not
+ * matter; an edited credit line, or incomplete history, is false.
+ */
+export function creditUnchangedSinceLabel(p: unknown, currentBody: unknown): boolean {
+  const atLabel = bodyAtFirstLabel(p, currentBody);
+  if (atLabel === null) return false;
+  const before = creditLineVisible(atLabel);
+  return before !== null && before === creditLineVisible(currentBody);
 }
 
 /**
  * Job C: the source written to task.json. `peace` only when the pick-time source (select output) is exactly
- * `peace`, the full fetched body still gives `peace` (taskSource), its sha256 equals the pick-time sha256, and
- * the body was not edited after the first `peace-task` label event. Anything else is `builder`.
+ * `peace`, the labels re-read at record time and the full fetched body still give `peace` (taskSource), no
+ * `source:builder` label was ever added, and the credit line is unchanged since the first `peace-task` label
+ * (creditUnchangedSinceLabel). Anything else is `builder`. The body's sha256 is recorded separately for
+ * traceability (`bodySha256`).
  */
 export function recordedTaskSource(
   pickTime: unknown,
   body: unknown,
-  check: { pickBodySha256?: unknown; provenance?: unknown } = {},
+  check: { labels?: unknown; provenance?: unknown } = {},
 ): "peace" | "builder" {
-  if (pickTime !== "peace" || taskSource([], body) !== "peace") return "builder";
-  if (typeof check.pickBodySha256 !== "string" || check.pickBodySha256 !== bodySha256(body)) return "builder";
-  return bodyUnchangedSinceLabel(check.provenance) ? "peace" : "builder";
+  if (pickTime !== "peace" || !Array.isArray(check.labels) || taskSource(check.labels, body) !== "peace") return "builder";
+  const p = check.provenance as Partial<BodyProvenance> | null | undefined;
+  if (!p || typeof p !== "object" || p.builderLabeled !== false) return "builder";
+  return creditUnchangedSinceLabel(p, body) ? "peace" : "builder";
 }

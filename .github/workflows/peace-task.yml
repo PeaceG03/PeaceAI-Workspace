@@ -422,7 +422,7 @@ jobs:
       - name: Fetch the task text
         env:
           GH_TOKEN: ${{ github.token }}
-          ISSUE_PROVENANCE: "1" # M119: body edit history + peace-task label events for the task source
+          ISSUE_PROVENANCE: "1" # M119: body revisions + label events and the labels at record time, for the task source
         run: ISSUE_JSON="$RUNNER_TEMP/issue.json" ./node_modules/.bin/tsx peaceai/bin/issue-fetch.ts
       - name: Python runtime for the LM shadow score (numpy only, hash-pinned)
         if: vars.PEACEAI_LM_SHADOW == 'true'
@@ -436,7 +436,6 @@ jobs:
           PEACEAI_LM_SHADOW: ${{ vars.PEACEAI_LM_SHADOW }}
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
           TASK_SOURCE: ${{ needs.select.outputs.source }}
-          TASK_BODY_SHA256: ${{ needs.select.outputs.body_sha256 }}
           TASK_TARGET: ${{ needs.select.outputs.target }}
           PEACEAI_RANKER: ${{ vars.PEACEAI_RANKER }}
         run: |

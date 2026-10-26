@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodySha256, bodyUnchangedSinceLabel, contextCreditLines, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAtFirstLabel, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -221,31 +221,65 @@ test("unclear provenance fails closed to not-peace", () => {
 });
 
 const LABELED = "2026-10-26T19:38:52Z";
-const UNEDITED = { lastEditedAt: null, editTimes: [], editsComplete: true, taskLabeledAt: [LABELED] };
 const sha = bodySha256(GENUINE);
+const CREATED = "2026-10-26T19:38:51Z";
+// An issue labelled right after it was created; GitHub lists userContentEdits newest first, the oldest entry being
+// the body as created.
+const rev = (editedAt: string, body: string) => ({ editedAt, deletedAt: null, body });
+const UNEDITED = { lastEditedAt: null, edits: [], editsComplete: true, taskLabeledAt: [LABELED], builderLabeled: false };
+const edited = (...edits: { editedAt: string; deletedAt: string | null; body: string | null }[]) =>
+  ({ lastEditedAt: edits[0]!.editedAt, edits, editsComplete: true, taskLabeledAt: [LABELED], builderLabeled: false });
+const job = (body: string, provenance: unknown, labels: unknown = TASK_LABELS) => recordedTaskSource("peace", body, { labels, provenance });
 
-test("Job C: pick-time value, the same body (sha256) and no body edit after the first peace-task label", () => {
-  assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: sha, provenance: UNEDITED }), "peace");
-  // edits before the label (the first userContentEdits entry is the original body) are fine
-  const before = { lastEditedAt: "2026-10-26T19:38:51Z", editTimes: ["2026-10-26T19:38:51Z", "2026-10-26T19:30:00Z"], editsComplete: true, taskLabeledAt: [LABELED] };
-  assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: sha, provenance: before }), "peace");
-  // an edit after the first label event gives builder, even if the label was applied again later
-  const after = { ...before, lastEditedAt: "2026-10-26T20:00:00Z", editTimes: ["2026-10-26T20:00:00Z", ...before.editTimes] };
-  assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: sha, provenance: after }), "builder");
-  assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: sha, provenance: { ...after, taskLabeledAt: [LABELED, "2026-10-26T21:00:00Z"] } }), "builder");
-  assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: sha, provenance: { ...UNEDITED, lastEditedAt: "2026-10-26T20:00:00Z" } }), "builder");
-  // missing, incomplete or malformed history
-  for (const p of [undefined, null, {}, { ...UNEDITED, editsComplete: false }, { ...UNEDITED, taskLabeledAt: [] }, { ...UNEDITED, taskLabeledAt: ["yesterday"] }, { ...UNEDITED, editTimes: [5] }])
-    assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: sha, provenance: p }), "builder", JSON.stringify(p));
-  assert.equal(bodyUnchangedSinceLabel(UNEDITED), true);
-  // the body changed between pick and record, or no pick-time sha
-  assert.equal(recordedTaskSource("peace", GENUINE, { pickBodySha256: bodySha256(GENUINE + " "), provenance: UNEDITED }), "builder");
+test("Job C: the credit line at the first peace-task label must equal the credit line at record time", () => {
+  assert.equal(job(GENUINE, UNEDITED), "peace");
+  // the #501/#502 pattern: examples added after labelling, credit line untouched, keeps peace
+  const withMore = issue(CTX_GENUINE).replace("- 2 gives 2", "- 2 gives 2\n- 3 gives 3\n\nExamples 3 was answered by Peace in https://x/1");
+  const p501 = edited(rev("2026-10-26T20:52:13Z", withMore), rev("2026-10-26T20:36:23Z", withMore.replace("- 3 gives 3\n", "")), rev(CREATED, GENUINE));
+  assert.equal(bodyAtFirstLabel(p501, withMore), GENUINE);
+  assert.equal(job(withMore, p501), "peace");
+  // an edit before the label is the labelled body
+  const p0 = edited(rev(LABELED, GENUINE), rev(CREATED, issue(CTX_NO_MARK)));
+  assert.equal(job(GENUINE, p0), "peace");
+  // an edited credit line gives builder: the mark added, the mark reworded, context changed, or a second line
+  const noMark = issue(CTX_NO_MARK);
+  assert.equal(job(GENUINE, edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark))), "builder");
+  const reworded = GENUINE.replace("this is the status test", "this is the test");
+  assert.equal(job(reworded, edited(rev("2026-10-26T20:00:00Z", reworded), rev(CREATED, GENUINE))), "builder");
+  const hidden = GENUINE.replace(CTX_GENUINE, `${CTX_GENUINE} <del>old</del>`); // markup-only edit: same visible text
+  assert.equal(job(hidden, edited(rev("2026-10-26T20:00:00Z", hidden), rev(CREATED, GENUINE))), "peace");
+  // the first label counts: relabelling after a credit-line edit does not reset it
+  const relabel = { ...edited(rev("2026-10-26T20:00:00Z", GENUINE), rev(CREATED, noMark)), taskLabeledAt: ["2026-10-26T21:00:00Z", LABELED] };
+  assert.equal(job(GENUINE, relabel), "builder");
+  assert.equal(creditUnchangedSinceLabel(UNEDITED, GENUINE), true);
+});
+
+test("Job C: incomplete or malformed history gives builder", () => {
+  for (const p of [
+    undefined, null, {}, "x",
+    { ...UNEDITED, editsComplete: false },
+    { ...UNEDITED, taskLabeledAt: [] },
+    { ...UNEDITED, taskLabeledAt: ["yesterday"] },
+    { ...UNEDITED, lastEditedAt: "2026-10-26T20:00:00Z" }, // edited, but no revisions listed
+    { ...UNEDITED, builderLabeled: undefined },
+    edited(rev("2026-10-26T20:00:00Z", GENUINE)), // every revision after the label: the labelled body is unknown
+    edited(rev("2026-10-26T20:00:00Z", GENUINE), { editedAt: CREATED, deletedAt: "2026-10-26T20:01:00Z", body: null }), // deleted revision
+    edited(rev("2026-10-26T20:00:00Z", GENUINE), { editedAt: CREATED, deletedAt: null, body: null }),
+    edited(rev("2026-10-26T20:00:00Z", GENUINE), rev("not a time", GENUINE)),
+  ])
+    assert.equal(job(GENUINE, p), "builder", JSON.stringify(p));
+});
+
+test("Job C: labels are re-read at record time; a source:builder label ever added gives builder", () => {
+  assert.equal(job(GENUINE, UNEDITED, [...TASK_LABELS, "source:builder"]), "builder"); // on the issue at record time
+  assert.equal(job(GENUINE, UNEDITED, [...TASK_LABELS, " Source:Builder "]), "builder");
+  assert.equal(job(GENUINE, { ...UNEDITED, builderLabeled: true }), "builder"); // added before record time, since removed
+  assert.equal(job(GENUINE, UNEDITED, null), "builder"); // labels not re-read
   assert.equal(recordedTaskSource("peace", GENUINE, { provenance: UNEDITED }), "builder");
   assert.equal(recordedTaskSource("peace", GENUINE), "builder");
   // pick-time value must be exactly peace and the fetched body must still give peace
-  for (const pick of [undefined, "", "builder", "Peace", "peace "]) assert.equal(recordedTaskSource(pick, GENUINE, { pickBodySha256: sha, provenance: UNEDITED }), "builder", String(pick));
-  const b540 = issue(CTX_540);
-  assert.equal(recordedTaskSource("peace", b540, { pickBodySha256: bodySha256(b540), provenance: UNEDITED }), "builder");
+  for (const pick of [undefined, "", "builder", "Peace", "peace "]) assert.equal(recordedTaskSource(pick, GENUINE, { labels: TASK_LABELS, provenance: UNEDITED }), "builder", String(pick));
+  assert.equal(job(issue(CTX_540), UNEDITED), "builder");
 });
 
 test("records: bodySha256 recorded; missing or unknown source is builder, never peace", () => {
@@ -276,14 +310,16 @@ test("select, issue-fetch and Job C decide the source from provenance (wiring)",
   assert.match(select, /taskSource\(pickedIssue\.labels, pickedIssue\.body\)/);
   assert.match(select, /body_sha256: bodySha/);
   const record = readFileSync("peaceai/bin/record-task.ts", "utf8");
-  assert.match(record, /source: recordedTaskSource\(process\.env\.TASK_SOURCE, issue\.body, \{ pickBodySha256: process\.env\.TASK_BODY_SHA256, provenance: issue\.provenance \}\)/);
+  assert.match(record, /source: recordedTaskSource\(process\.env\.TASK_SOURCE, issue\.body, \{ labels: issue\.labels, provenance: issue\.provenance \}\)/);
   assert.match(record, /bodySha256: bodySha256\(issue\.body\)/);
   const fetch = readFileSync("peaceai/bin/issue-fetch.ts", "utf8");
-  assert.match(fetch, /userContentEdits\(first: 100\)/);
+  assert.match(fetch, /userContentEdits\(first: 100\) \{ totalCount nodes \{ editedAt deletedAt diff \} \}/);
+  assert.match(fetch, /body: issue\.body \?\? "", labels, \.\.\.withProvenance/);
+  assert.match(fetch, /builderLabeled:/);
   assert.match(fetch, /LABELED_EVENT/);
   const wf = readFileSync(".github/workflows/peace-task.yml", "utf8");
   assert.match(wf, /body_sha256: \$\{\{ steps\.pick\.outputs\.body_sha256 \}\}/);
-  assert.match(wf, /TASK_BODY_SHA256: \$\{\{ needs\.select\.outputs\.body_sha256 \}\}/);
+  assert.doesNotMatch(wf, /TASK_BODY_SHA256/); // round 3: edits elsewhere in the body no longer change credit
   const jobC = wf.slice(wf.indexOf("Commit records and the blind ranking"));
   const fetchStep = wf.slice(0, wf.indexOf("Commit records and the blind ranking")).lastIndexOf("Fetch the task text");
   assert.match(wf.slice(fetchStep, fetchStep + 300), /ISSUE_PROVENANCE: "1"/);
