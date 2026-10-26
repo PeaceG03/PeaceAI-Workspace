@@ -24,6 +24,7 @@ import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./
 import { importStyle } from "./learned-test.ts";
 import { isExcludedSource, loadClosure, loadProblem } from "./learned-edit-existing.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
+import { compileList, deriveListProgram, formatListType, isListType, lexListValues, listExprProblem, listIndex, listLit, listLitValue, listProbeTable, parseListType, LIST_MAX_PARAMS, type ListArg, type ListExample, type ListParam, type ListParamType } from "./derive-list.ts";
 import ts from "typescript";
 
 export const DERIVE_PARAM_KEYS = ["ambiguity", "dsl", "examples", "grading", "placement", "test"] as const;
@@ -39,6 +40,11 @@ export const DERIVE_VOCAB: Record<(typeof DERIVE_PARAM_KEYS)[number], readonly s
 };
 export function validDeriveParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
   if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...DERIVE_PARAM_KEYS].join(",")) return false;
+  // M113: public-derive-from-behavior-v4 is the one pair dsl typed-dsl-v4-lists + placement new-or-existing-module
+  // (never one without the other); its other params come from DERIVE_VOCAB like every derive spec.
+  if (p.dsl === DERIVE_LIST_DSL || p.placement === DERIVE_LIST_PLACEMENT) {
+    return p.dsl === DERIVE_LIST_DSL && p.placement === DERIVE_LIST_PLACEMENT && DERIVE_PARAM_KEYS.every((k) => k === "dsl" || k === "placement" || (typeof p[k] === "string" && DERIVE_VOCAB[k].includes(p[k] as string)));
+  }
   return DERIVE_PARAM_KEYS.every((k) => typeof p[k] === "string" && DERIVE_VOCAB[k].includes(p[k] as string));
 }
 
@@ -53,6 +59,22 @@ export const DERIVE_TRIGGER = String.raw`^add (?:a )?new module (?<file>src\/[\w
  */
 export const DERIVE_APPEND_TRIGGER = String.raw`^append (?:a )?new function (?<fn>${NAME}) ?\((?<sig>${PARAM}(?:, ?${PARAM}){0,${DERIVE_MAX_PARAMS - 1}})\) ?: ?(?<ret>${TYPE}) to (?:the )?existing module (?<file>src\/[\w./-]+\.ts) ?\.?$`;
 export { DERIVE_MAX_EXPR_CHARS } from "./derive.ts";
+/**
+ * M113 (public-derive-from-behavior-v4): the header line of a function over a LIST. Either phrasing of v1 / v3, with
+ * exactly one list parameter (`T[]`, T number, string, boolean or a record `{ a: number; b: string }` of 1-4 such
+ * fields) and at most one more scalar parameter (number or string); the result is a scalar or a list type:
+ *   Add a new module src/x.ts exporting name(xs: { a: number; b: string }[], limit: number): number
+ *   Append a new function name(xs: number[]): boolean to the existing module src/x.ts
+ * A header without a list parameter never matches, so v1-v3 and v4 never both answer one task.
+ */
+const LFIELD = String.raw`${NAME}: ?${TYPE}`;
+const LTYPE = String.raw`(?:${TYPE}|\{ ?${LFIELD}(?: ?[;,] ?${LFIELD}){0,3}[;,]? ?\})\[\]`;
+const LSCALAR = String.raw`${NAME}: ?(?:number|string)`;
+const LSIG = String.raw`(?:${NAME}: ?${LTYPE}(?:, ?${LSCALAR})?|${LSCALAR}, ?${NAME}: ?${LTYPE})`;
+export const DERIVE_LIST_TRIGGER = String.raw`^(?:add (?:a )?new module (?<file>src\/[\w./-]+\.ts) exporting|append (?:a )?new function) (?<fn>${NAME}) ?\((?<sig>${LSIG})\) ?: ?(?<ret>${LTYPE}|${TYPE})(?: to (?:the )?existing module (?<afile>src\/[\w./-]+\.ts))? ?\.?$`;
+/** M113: the placement and dsl of public-derive-from-behavior-v4 (bound to DERIVE_LIST_TRIGGER in runDeriveRule). */
+export const DERIVE_LIST_PLACEMENT = "new-or-existing-module";
+export const DERIVE_LIST_DSL = "typed-dsl-v4-lists";
 const EXAMPLES_HEAD = /^examples\b[^:\n]{0,80}:$/i;
 const BEHAVIOR_HEAD = /^behaviou?r:\s*/i;
 const BULLET = /^[-*] /;
@@ -221,9 +243,12 @@ export function appendTargetProblem(path: string, content: string, fn: string, r
  * unchanged. Null when clean, else a reason code. Job B runs it again on the real files.
  */
 export function derivedAppendProblem(before: string, after: string): string | null {
+  return appendProblemWith(before, after, derivedModuleProblem);
+}
+function appendProblemWith(before: string, after: string, moduleProblem: (block: string) => string | null): string | null {
   if (!after.startsWith(before) || !after.slice(before.length).startsWith("\n")) return "derive_append_not_add_only";
   const block = after.slice(before.length + 1);
-  const shape = derivedModuleProblem(block);
+  const shape = moduleProblem(block);
   if (shape) return shape;
   const a = parseClean("a.ts", after), b = parseClean("b.ts", before);
   if (!a || !b || a.statements.length !== b.statements.length + 1) return "derive_append_not_add_only";
@@ -320,6 +345,8 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
 
 /** Job A entry: refusal code in `why.reason`; null when there is no candidate. */
 export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
+  // M113: a v4 (list) spec has its own trigger, placement and dsl, all three together; nothing below sees one.
+  if (trigger === DERIVE_LIST_TRIGGER || params.placement === DERIVE_LIST_PLACEMENT || params.dsl === DERIVE_LIST_DSL) return runDeriveListRule(trigger, params, objective, files, isTest, why);
   // M112: the placement and the trigger go together (new-module: DERIVE_TRIGGER; end-of-existing-module:
   // DERIVE_APPEND_TRIGGER), so a spec can never point one placement's engine at the other's phrasing.
   if ((params.placement === DERIVE_APPEND_PLACEMENT) !== (trigger === DERIVE_APPEND_TRIGGER) || (params.placement !== DERIVE_APPEND_PLACEMENT && trigger !== DERIVE_TRIGGER)) { if (why) why.reason = "derive_params"; return null; }
@@ -469,7 +496,7 @@ export function attachDeriveNotes(
   candidates: readonly { id: string; transformations: readonly string[] }[],
   diffs: ReadonlyMap<string, string>,
   notes: Map<string, string>,
-  note: (diff: string) => string | null = (d) => deriveReviewNote(d),
+  note: (diff: string) => string | null = (d) => deriveReviewNote(d) ?? deriveListReviewNote(d),
 ): string[] {
   const ids: string[] = [];
   for (const c of candidates) {
@@ -490,4 +517,212 @@ export function assertDeriveNotesShown(body: string, presentation: readonly { la
     const want = `### Candidate ${p.label}\n\n${notes.get(p.id)}\n\n<details>`;
     if (!notes.get(p.id) || !body.includes(want)) throw new Error(`${p.id}: the DERIVE review note is not shown on candidate ${p.label}; the review is not built`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// M113: public-derive-from-behavior-v4, functions over a list (peaceai/lib/derive-list.ts holds the search).
+
+export interface DeriveListTask { fn: string; file: string; append: boolean; params: ListParam[]; ret: ListParamType; behavior: string; examples: ListExample[] }
+/** Record field names that would reach the prototype or shadow something in a literal. */
+const LIST_FIELD_DENY = new Set(["__proto__", "constructor", "prototype", "hasOwnProperty", "toString", "valueOf", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString", "length"]);
+/** Splits a signature at its top-level commas (a record type may use commas between its fields). */
+function splitTop(sig: string): string[] {
+  const out: string[] = [];
+  let depth = 0, cur = "";
+  for (const ch of sig) {
+    if (ch === "{") depth++;
+    if (ch === "}") depth--;
+    if (ch === "," && depth === 0) { out.push(cur.trim()); cur = ""; } else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+/** The v4 task: the header (DERIVE_LIST_TRIGGER), the Behavior: prose and the Examples: bullets with list literals. */
+export function parseDeriveListTask(objective: string): { task: DeriveListTask } | { reason: string } {
+  const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
+  const re = new RegExp(DERIVE_LIST_TRIGGER, "i");
+  const heads = lines.map((l, i) => (re.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (heads.length !== 1) return { reason: "derive_trigger" };
+  const head = lines[heads[0]!]!;
+  const g = re.exec(head)!.groups ?? {};
+  const append = /^append\b/i.test(head);
+  // add: the module comes before the name and no "to the existing module"; append: the reverse.
+  if (!g.fn || !g.sig || !g.ret || (append ? !g.afile || !!g.file : !g.file || !!g.afile)) return { reason: "derive_trigger" };
+  const file = (append ? g.afile : g.file)!;
+  const params: ListParam[] = [];
+  for (const part of splitTop(g.sig)) {
+    const i = part.indexOf(":");
+    const name = part.slice(0, i).trim(), type = i > 0 ? parseListType(part.slice(i + 1)) : null;
+    if (!type || !new RegExp(String.raw`^${NAME}$`).test(name) || params.some((p) => p.name === name) || name === g.fn || PROTECTED_NAMES.test(name)) return { reason: "derive_signature" };
+    if (DERIVE_RESERVED_NAMES.has(name)) return { reason: "derive_reserved_name" };
+    if (isListType(type) && typeof type.list === "object" && type.list.fields.some((f) => LIST_FIELD_DENY.has(f.name) || DERIVE_RESERVED_NAMES.has(f.name) || PROTECTED_NAMES.test(f.name))) return { reason: "derive_reserved_name" };
+    params.push({ name, type });
+  }
+  const ret = parseListType(g.ret);
+  if (!ret || params.length > LIST_MAX_PARAMS || params.filter((p) => isListType(p.type)).length !== 1) return { reason: "derive_signature" };
+  if (isListType(ret) && typeof ret.list === "object" && ret.list.fields.some((f) => LIST_FIELD_DENY.has(f.name) || DERIVE_RESERVED_NAMES.has(f.name) || PROTECTED_NAMES.test(f.name))) return { reason: "derive_reserved_name" };
+  if (PROTECTED_NAMES.test(g.fn)) return { reason: "derive_signature" };
+  if (DERIVE_RESERVED_NAMES.has(g.fn)) return { reason: "derive_reserved_name" };
+  const bIdx = lines.map((l, i) => (BEHAVIOR_HEAD.test(l) ? i : -1)).filter((i) => i >= 0);
+  const eIdx = lines.map((l, i) => (EXAMPLES_HEAD.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (bIdx.length !== 1 || eIdx.length !== 1 || !(heads[0]! < bIdx[0]! && bIdx[0]! < eIdx[0]!)) return { reason: "derive_sections" };
+  const behavior = [lines[bIdx[0]!]!.replace(BEHAVIOR_HEAD, ""), ...lines.slice(bIdx[0]! + 1, eIdx[0]!)].join(" ").trim();
+  if (behavior.length < 20) return { reason: "derive_sections" };
+  if (behaviorCodeProblem(behavior)) return { reason: "derive_behavior_code" };
+  const examples: ListExample[] = [];
+  let k = eIdx[0]! + 1;
+  for (; k < lines.length && BULLET.test(lines[k]!); k++) {
+    const v = lexListValues(lines[k]!.replace(BULLET, ""));
+    if (!v || v.values.length !== params.length) return { reason: "derive_examples" };
+    examples.push({ args: v.values, out: v.out });
+  }
+  if (examples.length === 0) return { reason: "derive_examples" };
+  const sectionEnd = k;
+  for (const [i, l] of lines.entries()) {
+    if (i === heads[0] || (i >= bIdx[0]! && i < sectionEnd)) continue;
+    if (STRONG_CODE.test(l)) return { reason: "derive_behavior_code" };
+    if (i > sectionEnd && BULLET.test(l)) return { reason: "derive_examples" };
+  }
+  return { task: { fn: g.fn, file, append, params, ret, behavior, examples } };
+}
+
+/** The v4 edit: the same placement checks as v1 (new module) or v3 (append), the list search, the emit checks. */
+export function buildDeriveListEdit(params: Record<string, unknown>, task: DeriveListTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), derive: typeof deriveListProgram = deriveListProgram): DeriveBuild {
+  if (params.dsl !== DERIVE_LIST_DSL || params.placement !== DERIVE_LIST_PLACEMENT || !validDeriveParams(params, "public")) return { reason: "derive_params" };
+  const path = task.file;
+  const dir = path.slice(0, path.lastIndexOf("/") + 1);
+  if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return { reason: "derive_path" };
+  let target: { path: string; content: string } | undefined;
+  if (task.append) {
+    target = files.find((f) => f.path === path);
+    if (!target) return { reason: "target_file_not_found" };
+    const read = (rel: string): string | null => { const f = files.find((x) => x.path === rel); return f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null; };
+    const problem = appendTargetProblem(path, target.content, task.fn, read, isTest);
+    if (problem) return { reason: problem };
+  } else {
+    if (!files.some((f) => f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/") && /\.ts$/.test(f.path) && !isTest(f.path))) return { reason: "derive_path" };
+    if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
+  }
+  // PeaceAI's own list search writes the body from the examples alone (the behavior prose is not an input).
+  const r = derive({ params: task.params, ret: task.ret, examples: task.examples });
+  if (!r.ok) {
+    // List-valued questions do not fit the scalar question line (refusal-reason.ts); they stay in `detail`.
+    const asks = r.questions?.length ? ` Asked: ${r.questions.map((q) => `${task.fn}(${q.at.map((a) => listLit(a)).join(", ")}) gives ${q.answers.map((a) => listLit(a)).join(" or ")}?`).join(" ")}` : "";
+    if (r.reason === "derive_under_specified") return { reason: `derive_under_specified_${r.gate}${r.param && allowedName(r.param) ? `: ${r.param}` : ""}`, detail: r.detail + asks };
+    return { reason: r.reason, detail: r.detail + asks };
+  }
+  const names = task.params.map((p) => p.name);
+  const expr = compileList(r.program, names, listIndex(task.params));
+  if (expr.length > DERIVE_MAX_EXPR_CHARS) return { reason: "derive_emit_size" };
+  const exprProblem = listExprProblem(expr, task.params, task.ret);
+  if (exprProblem) return { reason: exprProblem };
+  const sig = task.params.map((p) => `${p.name}: ${formatListType(p.type)}`).join(", ");
+  const fnText = `export function ${task.fn}(${sig}): ${formatListType(task.ret)} {\n  return ${expr};\n}\n`;
+  if (derivedListModuleProblem(fnText)) return { reason: "derive_expr_parse" };
+  const content = target ? `${target.content}\n${fnText}` : fnText;
+  if (target) { const p = derivedListAppendProblem(target.content, content); if (p) return { reason: p }; }
+  const call = (args: readonly ListArg[]) => `${task.fn}(${args.map((a, i) => listLit(a, task.params[i]!.type)).join(", ")})`;
+  const assertFn = isListType(task.ret) ? "assert.deepEqual" : "assert.equal";
+  const exampleLines = task.examples.map((ex) => `  ${assertFn}(${call(ex.args)}, ${listLit(ex.out, task.ret)});`);
+  const stem = path.slice(dir.length).replace(/\.ts$/, "");
+  const id7 = createHash("sha256").update(JSON.stringify([task.file, task.fn, sig, formatListType(task.ret), task.examples])).digest("hex").slice(0, 7);
+  const testPath = `${dir}${stem}.${slug(task.fn)}-${id7}.test.ts`;
+  if (files.some((f) => f.path.toLowerCase() === testPath.toLowerCase())) return { reason: "new_test_path_exists" };
+  const spec = `./${stem}${importStyle(files, isTest) === "ts" ? ".ts" : ""}`;
+  const test = [
+    'import assert from "node:assert/strict";',
+    'import test from "node:test";',
+    `import { ${task.fn} } from ${JSON.stringify(spec)};`,
+    "",
+    `test(${JSON.stringify(`${task.fn}: the examples from the issue`)}, () => {`,
+    ...exampleLines,
+    "});",
+    "",
+  ].join("\n");
+  const extra = [{ path: testPath, content: test, create: true as const }];
+  return { edit: target ? { path, content, extra, selfGrade: true } : { path, content, create: true, extra, selfGrade: true }, expr, size: r.size };
+}
+
+/** Job A entry for v4: the trigger, placement and dsl must be the v4 triple; refusal code in `why.reason`. */
+export function runDeriveListRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
+  if (trigger !== DERIVE_LIST_TRIGGER || params.placement !== DERIVE_LIST_PLACEMENT || params.dsl !== DERIVE_LIST_DSL) { if (why) why.reason = "derive_params"; return null; }
+  const parsed = parseDeriveListTask(objective);
+  if ("reason" in parsed) { if (why && parsed.reason !== "derive_trigger") why.reason = parsed.reason; return null; }
+  const built = buildDeriveListEdit(params, parsed.task, files, isTest);
+  if ("reason" in built) { if (why) why.reason = built.reason; return null; }
+  return built.edit;
+}
+
+/** The v4 function's signature, read back from its declaration (canonical type spelling only), or null. */
+function listSignature(f: ts.FunctionDeclaration, sf: ts.SourceFile): { params: ListParam[]; ret: ListParamType } | null {
+  const params: ListParam[] = [];
+  for (const p of f.parameters) {
+    if (!ts.isIdentifier(p.name) || p.initializer || p.dotDotDotToken || p.questionToken || !p.type) return null;
+    const text = p.type.getText(sf), t = parseListType(text);
+    if (!t || formatListType(t) !== text) return null;
+    params.push({ name: p.name.text, type: t });
+  }
+  const rt = f.type?.getText(sf), ret = rt ? parseListType(rt) : null;
+  if (!ret || formatListType(ret) !== rt || params.filter((p) => isListType(p.type)).length !== 1 || params.length > LIST_MAX_PARAMS) return null;
+  return { params, ret };
+}
+
+/**
+ * Job B re-check of a v4 module: exactly one exported function with a single `return` whose parameter and result
+ * types are v4 types in their canonical spelling and whose expression passes listExprProblem. Null when clean.
+ */
+export function derivedListModuleProblem(content: string): string | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || sf.statements.length !== 1) return "derive_module_shape";
+  const f = sf.statements[0]!;
+  if (!ts.isFunctionDeclaration(f) || !f.name || !f.body || f.asteriskToken || f.typeParameters || (ts.getModifiers(f) ?? []).map((m) => m.kind).join(",") !== String(ts.SyntaxKind.ExportKeyword)) return "derive_module_shape";
+  const st = f.body.statements;
+  if (st.length !== 1 || !ts.isReturnStatement(st[0]!) || !st[0]!.expression) return "derive_module_shape";
+  const sig = listSignature(f, sf);
+  if (!sig) return "derive_module_shape";
+  const expr = st[0]!.expression.getText(sf);
+  if (expr.length > DERIVE_MAX_EXPR_CHARS) return "derive_emit_size";
+  return listExprProblem(expr, sig.params, sig.ret);
+}
+/** M113: the v4 append is add-only, exactly as v3's (derivedAppendProblem), with a v4 module as the block. */
+export function derivedListAppendProblem(before: string, after: string): string | null {
+  return appendProblemWith(before, after, derivedListModuleProblem);
+}
+
+/**
+ * The v4 review note, rebuilt from the diff alone (as deriveReviewNote): one created or appended module that passes
+ * derivedListModuleProblem and one test of literal `assert.deepEqual(fn(...), value)` (list result) or
+ * `assert.equal(...)` (scalar result) lines; PeaceAI derives again and shows the note only for the exact expression.
+ */
+export function deriveListReviewNote(diff: string, derive: typeof deriveListProgram = deriveListProgram): string | null {
+  const files = createdFiles(diff);
+  const tests = files.filter((f) => /\.test\.ts$/.test(f.path));
+  const mods = [...files.filter((f) => !/\.test\.ts$/.test(f.path)), ...appendedBlocks(diff).filter((f) => !/\.test\.ts$/.test(f.path))];
+  if (diff.split(/^diff --git /m).length - 1 !== 2 || tests.length !== 1 || mods.length !== 1 || derivedListModuleProblem(mods[0]!.content) !== null) return null;
+  const sf = ts.createSourceFile("m.ts", mods[0]!.content, ts.ScriptTarget.Latest, true);
+  const f = sf.statements[0] as ts.FunctionDeclaration;
+  const fn = f.name!.text;
+  const sig = listSignature(f, sf)!;
+  const expr = ((f.body!.statements[0] as ts.ReturnStatement).expression!).getText(sf);
+  const want = isListType(sig.ret) ? "assert.deepEqual" : "assert.equal";
+  const examples: ListExample[] = [];
+  for (const line of tests[0]!.content.split("\n")) {
+    if (!/^\s*assert\.(?:deepEqual|equal)\(/.test(line)) continue;
+    const t = ts.createSourceFile("t.ts", line, ts.ScriptTarget.Latest, true);
+    const st = t.statements[0];
+    if (t.statements.length !== 1 || !st || !ts.isExpressionStatement(st) || !ts.isCallExpression(st.expression)) return null;
+    const [call, wantV, ...rest] = st.expression.arguments;
+    if (st.expression.expression.getText(t) !== want || !call || !wantV || rest.length || !ts.isCallExpression(call) || call.expression.getText(t) !== fn || call.arguments.length !== sig.params.length) return null;
+    const args = call.arguments.map(listLitValue);
+    const out = listLitValue(wantV);
+    if (out === undefined || args.some((a) => a === undefined)) return null;
+    examples.push({ args: args as ListArg[], out: out as ListArg });
+  }
+  if (!examples.length) return null;
+  const input = { params: sig.params, ret: sig.ret, examples };
+  const r = derive(input);
+  if (!r.ok || compileList(r.program, sig.params.map((p) => p.name), listIndex(sig.params)) !== expr) return null;
+  const rows = listProbeTable(r.program, input, DERIVE_NOTE_ROWS).map((row) => `${fn}(${row.args.map((a) => listLit(a)).join(", ")}) = ${listLit(row.out)}`);
+  return [`Derived by PeaceAI from the ${examples.length} examples (DERIVE_FROM_BEHAVIOR v4, list input). Expression and probe inputs the examples do not show:`, "", "```text", `return ${expr};`, "", ...rows, "```"].join("\n");
 }

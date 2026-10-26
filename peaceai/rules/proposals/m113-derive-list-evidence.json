@@ -1,0 +1,3875 @@
+{
+ "schema": "peaceai-m113-derive-list-evidence:v1",
+ "note": "DERIVE_FROM_BEHAVIOR v4 (list inputs): 28 exported pure upstream functions over one array parameter, from 25 MIT / Apache-2.0 / ISC repos found by GitHub code search (exported one-expression functions calling filter / some / every / reduce / map / Math.max / Math.min on an array parameter; repos without a license, with NOASSERTION, or under GPL / AGPL were dropped). The v4 signature keeps the record fields the body reads, typed as the body uses them (a string union is string, an optional field is required). Examples are the upstream function run on a seeded grid (seed 113, 48 rows of lists of length 0-6; numbers from -150..150 including the neighbours of 0 and values 100 or more away; strings from the field's own literals): the first 6 rows are the training slice, extended only by following PeaceAI's own refusals the way an issue author would (an ambiguity question answered by the upstream function; a derive_under_specified_kept refusal, which names its condition, answered by one list of the first two grid elements where that condition holds; else the next grid row; each added row and the refusal that asked for it is in addedForGates); held out: the other grid rows plus every probe list not in the training rows. 26 functions are derived and right on every held-out row (2932 rows, 0 wrong); 2 (maxNumber and max, a running max seeded with 0) have no program in the DSL and are refused (derive_no_fit). Numbers are integers here as in v1, so `component > 0` is derived as `1 <= component`, equal on integers only. Shapes with upstream evidence: sum (8), sum of kept elements (3), count (2), some (3), every (2), filter (2), field of kept elements (1), max (3), min (2). Shapes with no upstream function in this set: length, label, test (map to boolean), field of every element, and the not / nes / le / lep / gep / ltp / gtp / nep predicates; they are covered by the M113 unit tests and seeded eval only. The evidence test re-derives each expression from the recorded examples; no third-party code is run by the test.",
+ "functions": [
+  {
+   "repo": "Senryoku/Draftmancer",
+   "commit": "c757d1b73c370f88135cb699091f58d8fc3a094b",
+   "path": "src/utils.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "577eda60a1d3b0e4f478562d82f4a9512a5785e5",
+   "sha256": "46a694a95a01ffa4046f4bec85b42d287c5445605032fe4b5f5d5d4bb727d7f0",
+   "upstream": "export function sum(arr: number[]): number {\n\treturn arr.reduce((a, b) => a + b, 0);\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "zkywsg/Daily-LLM",
+   "commit": "20e367c0996c141b9c95713a44fdc9ed33069ebf",
+   "path": "web/src/components/node/golden/gin/lib/data.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "2b149bb11b7d8fa0e537494928a40a4dcdf96d87",
+   "sha256": "4202d37355aaad3d67396b2640e4424472bb4021e52bec51dc3b583eaa8d6b1d",
+   "upstream": "export function sum(xs: number[]): number {\n  return xs.reduce((a, b) => a + b, 0);\n}",
+   "params": [
+    {
+     "name": "xs",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "xs.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "jrmybtlr/usemods",
+   "commit": "6487b4172ecfe6c10ef15da8b1c154e262a0c8ac",
+   "path": "src/numbers.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "a9cfca2ebe0d4c68305028273518c599e931bed2",
+   "sha256": "76a66f4bcf1d1e63ffff2f79a94dabb4a39c85a53d7e35294fc4d4bd8d4d8490",
+   "upstream": "export function sum(numbers: number[]): number {\n  return numbers.reduce((a, b) => a + b, 0)\n}",
+   "params": [
+    {
+     "name": "numbers",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "numbers.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "Sage-Future/fatebook",
+   "commit": "ba7e89c790afd4532bc8e157d9c9c46fc0b4222f",
+   "path": "lib/_utils_common.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "b91e98a666154d1741c582bd7f0f679058503b56",
+   "sha256": "c9bb558a23870deb1b4af6f402e588435ffe66c15f7515a12429800c99ebfd39",
+   "upstream": "export function sum(arr: number[]) {\n  return arr.reduce((acc, curr) => acc + curr, 0)\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "tobe-fe-dalao/fastool",
+   "commit": "a1bf817a65077bc65cfef8738ef512441a62fee6",
+   "path": "src/array/index.ts",
+   "fn": "sum",
+   "license": "Apache-2.0",
+   "fileBlob": "6ff6aeec1d1555888fca614437e40586e3d083a7",
+   "sha256": "b3a7850f99d76509c83fe0d82d95db22a57e9e5deab153b71f583e85fcec30f0",
+   "upstream": "export function sum(arr: number[]): number {\n  return arr.reduce((acc, cur) => acc + cur, 0);\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "imMamdouhaboammar/riqor",
+   "commit": "7ffdd6a1cce88941edf82425e13ee8b6cc362ca3",
+   "path": "src/runner.ts",
+   "fn": "total",
+   "license": "MIT",
+   "fileBlob": "075c0303653e219b5f0a883a77f417ffe143f890",
+   "sha256": "08d74074e960814d2ee9f6bb11cea01ac6220cf16bcf2f59171089be9c7bbda5",
+   "upstream": "const total = (numbers: number[]) => numbers.reduce((sum, number) => sum + number, 0);",
+   "params": [
+    {
+     "name": "numbers",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "numbers.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "samuelmtimbo/unit",
+   "commit": "7d55830db7e7ccee5fe259d261a2618f5888f8a6",
+   "path": "src/util/array/index.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "8047297f3b91e985edd07edfdb130601ce886fe4",
+   "sha256": "590b2b24d9c186f418992cea4d3306b8784cfd038ed7fd131cc9440052ac4a95",
+   "upstream": "export function sum(array: number[]): number {\n  return array.reduce((acc, value) => acc + value, 0)\n}",
+   "params": [
+    {
+     "name": "array",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "array.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "Laksh-star/mcp-server-tmdb",
+   "commit": "c220c632686b5cde9d6e5ad77ea10e9efe04e616",
+   "path": "src/collection-gap.ts",
+   "fn": "runtimeTotal",
+   "license": "MIT",
+   "fileBlob": "d34fec8c256ce0c7cf10a2f676b5407ac42a9ae5",
+   "sha256": "04962e3e4d803f473281d1b9bcb460f6048dd0fb33962f77aec26113e112013c",
+   "upstream": "function runtimeTotal(movies: FranchiseMovie[]): number {\n  return movies.reduce((sum, movie) => sum + (movie.runtime || 0), 0);\n}",
+   "params": [
+    {
+     "name": "movies",
+     "type": "{ runtime: number }[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "runtime": 30
+       },
+       {
+        "runtime": 7
+       },
+       {
+        "runtime": 1
+       }
+      ]
+     ],
+     "out": 38
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "runtime": -1
+       }
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       {
+        "runtime": 1
+       },
+       {
+        "runtime": -101
+       }
+      ]
+     ],
+     "out": -100
+    },
+    {
+     "args": [
+      [
+       {
+        "runtime": 1
+       },
+       {
+        "runtime": 30
+       },
+       {
+        "runtime": 99
+       },
+       {
+        "runtime": 30
+       }
+      ]
+     ],
+     "out": 160
+    },
+    {
+     "args": [
+      [
+       {
+        "runtime": 99
+       }
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "movies.reduce((n, x) => n + x.runtime, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "Khushi-50/OS-Simulator",
+   "commit": "aa6e08b87931f12cbd4d750acf61f277e78285ad",
+   "path": "web/src/lib/memory.ts",
+   "fn": "totalFree",
+   "license": "MIT",
+   "fileBlob": "97e0d6a2e1d38d024e43de3128153030416ecca5",
+   "sha256": "a4ef1280401cabbc941dd274f722279d79a6b5c9d481398f11c5d518aefefb25",
+   "upstream": "export function totalFree(blocks: MemoryBlock[]): number {\n  return blocks.filter((b) => b.pid === -1).reduce((s, b) => s + b.size, 0);\n}",
+   "params": [
+    {
+     "name": "blocks",
+     "type": "{ pid: number; size: number }[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "pid": 30,
+        "size": 7
+       },
+       {
+        "pid": 1,
+        "size": -1
+       },
+       {
+        "pid": 1,
+        "size": -101
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": 1,
+        "size": 30
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": 99,
+        "size": 30
+       },
+       {
+        "pid": 99,
+        "size": 2
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": 7,
+        "size": -2
+       },
+       {
+        "pid": 2,
+        "size": -2
+       },
+       {
+        "pid": 0,
+        "size": 150
+       },
+       {
+        "pid": -1,
+        "size": 0
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": 99,
+        "size": 150
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": 30,
+        "size": 99
+       },
+       {
+        "pid": 150,
+        "size": 3
+       },
+       {
+        "pid": 3,
+        "size": -1
+       },
+       {
+        "pid": 30,
+        "size": 2
+       },
+       {
+        "pid": 2,
+        "size": 150
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": -40,
+        "size": 7
+       },
+       {
+        "pid": 150,
+        "size": -150
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": -101,
+        "size": -1
+       },
+       {
+        "pid": 99,
+        "size": -1
+       },
+       {
+        "pid": 30,
+        "size": 2
+       },
+       {
+        "pid": 101,
+        "size": -40
+       },
+       {
+        "pid": 3,
+        "size": 1
+       },
+       {
+        "pid": -1,
+        "size": -150
+       }
+      ]
+     ],
+     "out": -150
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": -1,
+        "size": 0
+       },
+       {
+        "pid": -1,
+        "size": -150
+       }
+      ]
+     ],
+     "out": -150
+    },
+    {
+     "args": [
+      [
+       {
+        "pid": -2,
+        "size": 30
+       },
+       {
+        "pid": 99,
+        "size": 30
+       },
+       {
+        "pid": -101,
+        "size": -1
+       }
+      ]
+     ],
+     "out": 0
+    }
+   ],
+   "addedForGates": [
+    "derive_examples: ([[{\"pid\":30,\"size\":99},{\"pid\":150,\"size\":3},{\"pid\":3,\"size\":-1},{\"pid\":30,\"size\":2},{\"pid\":2,\"size\":150}]]) gives 0",
+    "derive_examples: ([[{\"pid\":-40,\"size\":7},{\"pid\":150,\"size\":-150}]]) gives 0",
+    "derive_examples: ([[{\"pid\":-101,\"size\":-1},{\"pid\":99,\"size\":-1},{\"pid\":30,\"size\":2},{\"pid\":101,\"size\":-40},{\"pid\":3,\"size\":1},{\"pid\":-1,\"size\":-150}]]) gives -150",
+    "derive_under_specified_kept (two grid elements where x.pid === -1): ([[{\"pid\":-1,\"size\":0},{\"pid\":-1,\"size\":-150}]]) gives -150",
+    "derive_under_specified_edge: ([[{\"pid\":-2,\"size\":30},{\"pid\":99,\"size\":30},{\"pid\":-101,\"size\":-1}]]) gives 0"
+   ],
+   "expr": "blocks.filter((x) => x.pid === -1).reduce((n, x) => n + x.size, 0)",
+   "shape": "sum-eqn",
+   "heldOut": {
+    "right": 672,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "kanylbullen/xupersplit",
+   "commit": "a4001cb8cba2539b22c42fb889462de4c254c88f",
+   "path": "src/lib/money.ts",
+   "fn": "totalSpent",
+   "license": "MIT",
+   "fileBlob": "da65d583016eb7cd6ce1a0fd9cb9f43426b14093",
+   "sha256": "d14ed3d03c05b1d77e1f70b5d2f7a90411f4b364910dabc24f3a13b6bbb19386",
+   "upstream": "export function totalSpent(entries: Entry[]): number {\n  return entries\n    .filter((e) => e.kind === \"expense\")\n    .reduce((sum, e) => sum + e.amount_cents, 0);\n}",
+   "params": [
+    {
+     "name": "entries",
+     "type": "{ kind: string; amount_cents: number }[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "kind": "refund",
+        "amount_cents": 7
+       },
+       {
+        "kind": "settlement",
+        "amount_cents": -1
+       },
+       {
+        "kind": "settlement",
+        "amount_cents": -101
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "settlement",
+        "amount_cents": 30
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "refund",
+        "amount_cents": 30
+       },
+       {
+        "kind": "refund",
+        "amount_cents": 2
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "refund",
+        "amount_cents": -2
+       },
+       {
+        "kind": "settlement",
+        "amount_cents": -2
+       },
+       {
+        "kind": "settlement",
+        "amount_cents": 150
+       },
+       {
+        "kind": "expense",
+        "amount_cents": 0
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "refund",
+        "amount_cents": 150
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "refund",
+        "amount_cents": 99
+       },
+       {
+        "kind": "refund",
+        "amount_cents": 3
+       },
+       {
+        "kind": "settlement",
+        "amount_cents": -1
+       },
+       {
+        "kind": "refund",
+        "amount_cents": 2
+       },
+       {
+        "kind": "settlement",
+        "amount_cents": 150
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "expense",
+        "amount_cents": 7
+       },
+       {
+        "kind": "refund",
+        "amount_cents": -150
+       }
+      ]
+     ],
+     "out": 7
+    },
+    {
+     "args": [
+      [
+       {
+        "kind": "expense",
+        "amount_cents": 0
+       },
+       {
+        "kind": "expense",
+        "amount_cents": 7
+       }
+      ]
+     ],
+     "out": 7
+    }
+   ],
+   "addedForGates": [
+    "derive_examples: ([[{\"amount_cents\":99,\"kind\":\"refund\"},{\"amount_cents\":3,\"kind\":\"refund\"},{\"amount_cents\":-1,\"kind\":\"settlement\"},{\"amount_cents\":2,\"kind\":\"refund\"},{\"amount_cents\":150,\"kind\":\"settlement\"}]]) gives 0",
+    "derive_examples: ([[{\"amount_cents\":7,\"kind\":\"expense\"},{\"amount_cents\":-150,\"kind\":\"refund\"}]]) gives 7",
+    "derive_under_specified_kept (two grid elements where x.kind === \"expense\"): ([[{\"amount_cents\":0,\"kind\":\"expense\"},{\"amount_cents\":7,\"kind\":\"expense\"}]]) gives 7"
+   ],
+   "expr": "entries.filter((x) => x.kind === \"expense\").reduce((n, x) => n + x.amount_cents, 0)",
+   "shape": "sum-eqs",
+   "heldOut": {
+    "right": 284,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "jessicacarinejc/contacerta",
+   "commit": "e46eafa015412fa5b072cc6d6790f929b93b2845",
+   "path": "src/lib/finance.ts",
+   "fn": "totalBalance",
+   "license": "MIT",
+   "fileBlob": "eadd453bdf3127a31407ed68dcdebd65af6c5bc1",
+   "sha256": "83dad865941c265c3e811b8d67467955b2a711a56f20997f885c3a50da7de029",
+   "upstream": "export const totalBalance = (accounts: Account[]) =>\n  accounts.filter((item) => item.active).reduce((sum, item) => sum + item.balance, 0);",
+   "params": [
+    {
+     "name": "accounts",
+     "type": "{ active: boolean; balance: number }[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "active": false,
+        "balance": 7
+       },
+       {
+        "active": true,
+        "balance": -1
+       },
+       {
+        "active": true,
+        "balance": -101
+       }
+      ]
+     ],
+     "out": -102
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "active": true,
+        "balance": 30
+       }
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      [
+       {
+        "active": false,
+        "balance": 30
+       },
+       {
+        "active": false,
+        "balance": 2
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "active": false,
+        "balance": -2
+       },
+       {
+        "active": false,
+        "balance": -2
+       },
+       {
+        "active": true,
+        "balance": 150
+       },
+       {
+        "active": true,
+        "balance": 0
+       }
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       {
+        "active": false,
+        "balance": 150
+       }
+      ]
+     ],
+     "out": 0
+    }
+   ],
+   "addedForGates": [],
+   "expr": "accounts.filter((x) => x.active).reduce((n, x) => n + x.balance, 0)",
+   "shape": "sum-is",
+   "heldOut": {
+    "right": 154,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "netaart/cohub",
+   "commit": "23c26120b5bfa3aef250f516cbfec27b9126f938",
+   "path": "apps/api/src/session-content.ts",
+   "fn": "countToolCallsInContent",
+   "license": "Apache-2.0",
+   "fileBlob": "abf647ed297a3f89bc276bac4debb25b70971fa2",
+   "sha256": "be7cef2d645941c2547c79ff070cbe8270bd22c1603c628267bb136da62c61d8",
+   "upstream": "export const countToolCallsInContent = (blocks: ContentBlock[]) => blocks.filter((block) => block.type === \"tool_use\").length;",
+   "params": [
+    {
+     "name": "blocks",
+     "type": "{ type: string }[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "type": "thinking"
+       },
+       {
+        "type": "thinking"
+       },
+       {
+        "type": "tool_use"
+       }
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "type": "tool_use"
+       }
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       {
+        "type": "tool_use"
+       },
+       {
+        "type": "text"
+       }
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       {
+        "type": "tool_use"
+       },
+       {
+        "type": "thinking"
+       },
+       {
+        "type": "tool_result"
+       },
+       {
+        "type": "tool_result"
+       }
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       {
+        "type": "tool_result"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "type": "tool_use"
+       },
+       {
+        "type": "tool_use"
+       }
+      ]
+     ],
+     "out": 2
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_kept (two grid elements where x.type === \"tool_use\"): ([[{\"type\":\"tool_use\"},{\"type\":\"tool_use\"}]]) gives 2"
+   ],
+   "expr": "blocks.filter((x) => x.type === \"tool_use\").length",
+   "shape": "count-eqs",
+   "heldOut": {
+    "right": 41,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "opentripplanner/otp-react-redux",
+   "commit": "ccd183ff4c10704e264c88ae68ac768bd2163d84",
+   "path": "lib/actions/api-utils.ts",
+   "fn": "countFlexModes",
+   "license": "MIT",
+   "fileBlob": "a4af4694121459f44ad6c7298486e621f48672ef",
+   "sha256": "884d1b5f4b6102fcaaea25a1d61814524017ccd6c095b4fb10b20fa1eb07360e",
+   "upstream": "export const countFlexModes = (modes: TransportMode[]): number =>\n  modes.filter((m) => m.mode === 'FLEX').length",
+   "params": [
+    {
+     "name": "modes",
+     "type": "{ mode: string }[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "BUS"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "BUS"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "FLEX"
+       }
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "RAIL"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "RAIL"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "BUS"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "RAIL"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "RAIL"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "WALK"
+       },
+       {
+        "mode": "WALK"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "BUS"
+       },
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "WALK"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "WALK"
+       }
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "RAIL"
+       },
+       {
+        "mode": "FLEX"
+       }
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       {
+        "mode": "FLEX"
+       },
+       {
+        "mode": "FLEX"
+       }
+      ]
+     ],
+     "out": 2
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_branch: ([[{\"mode\":\"WALK\"},{\"mode\":\"WALK\"},{\"mode\":\"BUS\"},{\"mode\":\"WALK\"},{\"mode\":\"BUS\"}]]) gives 0",
+    "derive_under_specified_branch: ([[{\"mode\":\"BUS\"},{\"mode\":\"RAIL\"}]]) gives 0",
+    "derive_under_specified_branch: ([[{\"mode\":\"BUS\"},{\"mode\":\"BUS\"},{\"mode\":\"RAIL\"},{\"mode\":\"RAIL\"},{\"mode\":\"RAIL\"},{\"mode\":\"RAIL\"}]]) gives 0",
+    "derive_under_specified_branch: ([[{\"mode\":\"RAIL\"},{\"mode\":\"WALK\"},{\"mode\":\"WALK\"}]]) gives 0",
+    "derive_under_specified_branch: ([[{\"mode\":\"BUS\"},{\"mode\":\"RAIL\"},{\"mode\":\"WALK\"}]]) gives 0",
+    "derive_under_specified_branch: ([[]]) gives 0",
+    "derive_under_specified_branch: ([[{\"mode\":\"WALK\"}]]) gives 0",
+    "derive_under_specified_branch: ([[{\"mode\":\"RAIL\"},{\"mode\":\"FLEX\"}]]) gives 1",
+    "derive_under_specified_kept (two grid elements where x.mode === \"FLEX\"): ([[{\"mode\":\"FLEX\"},{\"mode\":\"FLEX\"}]]) gives 2"
+   ],
+   "expr": "modes.filter((x) => x.mode === \"FLEX\").length",
+   "shape": "count-eqs",
+   "heldOut": {
+    "right": 33,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "DeusData/codebase-memory-mcp",
+   "commit": "8530c8cd1c1ac8e1e3d2962bc213a8c9025fea0a",
+   "path": "graph-ui/src/projects/projects-model.ts",
+   "fn": "anyIndexing",
+   "license": "MIT",
+   "fileBlob": "68a7f943993568948dd40b26f7f7a762365d31cf",
+   "sha256": "f1ad1b35995ce6a1d100223adc15aa41880211588475455d9ba6c7abd8bd88ce",
+   "upstream": "export function anyIndexing(jobs: readonly IndexJob[]): boolean {\n    return jobs.some((job) => job.status === 'indexing');\n}",
+   "params": [
+    {
+     "name": "jobs",
+     "type": "{ status: string }[]"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "status": "error"
+       },
+       {
+        "status": "error"
+       },
+       {
+        "status": "done"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "done"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "done"
+       },
+       {
+        "status": "indexing"
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "done"
+       },
+       {
+        "status": "error"
+       },
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "unknown"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "unknown"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "error"
+       },
+       {
+        "status": "error"
+       },
+       {
+        "status": "done"
+       },
+       {
+        "status": "error"
+       },
+       {
+        "status": "done"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "done"
+       },
+       {
+        "status": "unknown"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "done"
+       },
+       {
+        "status": "done"
+       },
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "unknown"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "error"
+       },
+       {
+        "status": "error"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "done"
+       },
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "error"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "error"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "status": "unknown"
+       },
+       {
+        "status": "indexing"
+       }
+      ]
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_branch: ([[{\"status\":\"error\"},{\"status\":\"error\"},{\"status\":\"done\"},{\"status\":\"error\"},{\"status\":\"done\"}]]) gives false",
+    "derive_under_specified_branch: ([[{\"status\":\"done\"},{\"status\":\"unknown\"}]]) gives false",
+    "derive_under_specified_branch: ([[{\"status\":\"done\"},{\"status\":\"done\"},{\"status\":\"unknown\"},{\"status\":\"unknown\"},{\"status\":\"unknown\"},{\"status\":\"unknown\"}]]) gives false",
+    "derive_under_specified_branch: ([[{\"status\":\"unknown\"},{\"status\":\"error\"},{\"status\":\"error\"}]]) gives false",
+    "derive_under_specified_branch: ([[{\"status\":\"done\"},{\"status\":\"unknown\"},{\"status\":\"error\"}]]) gives false",
+    "derive_under_specified_branch: ([[]]) gives false",
+    "derive_under_specified_branch: ([[{\"status\":\"error\"}]]) gives false",
+    "derive_under_specified_branch: ([[{\"status\":\"unknown\"},{\"status\":\"indexing\"}]]) gives true"
+   ],
+   "expr": "jobs.some((x) => x.status === \"indexing\")",
+   "shape": "some-eqs",
+   "heldOut": {
+    "right": 34,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "echore/vault-autopilot",
+   "commit": "c709b1b87f7317255770dc3988c72250c19ceb3b",
+   "path": "src/gallery-model.ts",
+   "fn": "hasDeep",
+   "license": "MIT",
+   "fileBlob": "5af1c2724e23be979f03906d9a611b4ca0035ed0",
+   "sha256": "e29fd2c55e9f5ae6d8ba0f0d5832349b59ba4a698a654ac97cdbff2c1467b70b",
+   "upstream": "export function hasDeep(cards: GalleryCard[]): boolean {\n  return cards.some(c => c.depth === 'deep');\n}",
+   "params": [
+    {
+     "name": "cards",
+     "type": "{ depth: string }[]"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "depth": "quick"
+       },
+       {
+        "depth": "quick"
+       },
+       {
+        "depth": "shallow"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "depth": "shallow"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "depth": "shallow"
+       },
+       {
+        "depth": "deep"
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "depth": "shallow"
+       },
+       {
+        "depth": "quick"
+       },
+       {
+        "depth": "quick"
+       },
+       {
+        "depth": "quick"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "depth": "quick"
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "depth": "shallow"
+       },
+       {
+        "depth": "quick"
+       },
+       {
+        "depth": "deep"
+       },
+       {
+        "depth": "shallow"
+       },
+       {
+        "depth": "deep"
+       }
+      ]
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_branch: ([[{\"depth\":\"shallow\"},{\"depth\":\"quick\"},{\"depth\":\"deep\"},{\"depth\":\"shallow\"},{\"depth\":\"deep\"}]]) gives true"
+   ],
+   "expr": "cards.some((x) => x.depth === \"deep\")",
+   "shape": "some-eqs",
+   "heldOut": {
+    "right": 32,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "christophehurpeau/check-package-dependencies",
+   "commit": "ef1da88ec4a35f8a54e6bc8f492147116db5e61a",
+   "path": "src/cli.ts",
+   "fn": "hasError",
+   "license": "ISC",
+   "fileBlob": "01b6334826d9f6e9c5c28dff1e471df32a9ac61b",
+   "sha256": "c4c0b1755d6bc66adcb10620a33cbc90fe06e6fc97745edf40c449b9778fea76",
+   "upstream": "export function hasError(results: ESLintNamespace.LintResult[]): boolean {\n  return results.some((result) => result.errorCount > 0);\n}",
+   "params": [
+    {
+     "name": "results",
+     "type": "{ errorCount: number }[]"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "errorCount": 30
+       },
+       {
+        "errorCount": 7
+       },
+       {
+        "errorCount": 1
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": -1
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": 1
+       },
+       {
+        "errorCount": -101
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": 1
+       },
+       {
+        "errorCount": 30
+       },
+       {
+        "errorCount": 99
+       },
+       {
+        "errorCount": 30
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": 99
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": 0
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": 2
+       },
+       {
+        "errorCount": 7
+       },
+       {
+        "errorCount": -2
+       },
+       {
+        "errorCount": 2
+       },
+       {
+        "errorCount": -2
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "errorCount": 0
+       },
+       {
+        "errorCount": 150
+       }
+      ]
+     ],
+     "out": true
+    }
+   ],
+   "addedForGates": [
+    "ambiguous: ([[{\"errorCount\":0}]]) gives false",
+    "derive_under_specified_far: ([[{\"errorCount\":2},{\"errorCount\":7},{\"errorCount\":-2},{\"errorCount\":2},{\"errorCount\":-2}]]) gives true",
+    "derive_under_specified_far: ([[{\"errorCount\":0},{\"errorCount\":150}]]) gives true"
+   ],
+   "expr": "results.some((x) => 1 <= x.errorCount)",
+   "shape": "some-ge",
+   "heldOut": {
+    "right": 140,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "shawnpetros/salazar",
+   "commit": "e16841146e2ef2d71aa99117334939037e9804ff",
+   "path": "src/engine/validators.ts",
+   "fn": "allPassed",
+   "license": "MIT",
+   "fileBlob": "298c1cc95df4e4e85be3720f0448aace51ac0bdc",
+   "sha256": "265298cea307a48692211f762bfd8448bdf38a73791548a1342531a3d45faa0e",
+   "upstream": "export function allPassed(results: ValidationResult[]): boolean {\n  return results.every((r) => r.passed);\n}",
+   "params": [
+    {
+     "name": "results",
+     "type": "{ passed: boolean }[]"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "passed": false
+       },
+       {
+        "passed": false
+       },
+       {
+        "passed": true
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "passed": true
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "passed": true
+       },
+       {
+        "passed": true
+       }
+      ]
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       {
+        "passed": true
+       },
+       {
+        "passed": false
+       },
+       {
+        "passed": false
+       },
+       {
+        "passed": false
+       }
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       {
+        "passed": false
+       }
+      ]
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [],
+   "expr": "results.every((x) => x.passed)",
+   "shape": "every-is",
+   "heldOut": {
+    "right": 19,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "kawalcovid19/wargabantuwarga.com",
+   "commit": "28efab953964d377cb7847b3207647b50700e666",
+   "path": "lib/string-utils.ts",
+   "fn": "allIsEmptyString",
+   "license": "MIT",
+   "fileBlob": "3ef77694af5e4b1aca955477c1ea1b0495650e9f",
+   "sha256": "b190444931561b4e833e4e51c1d84e3071c416f8177f1758e62e162d41a3dc90",
+   "upstream": "export function allIsEmptyString(array: string[]) {\n  return array.every((str) => !str.length);\n}",
+   "params": [
+    {
+     "name": "array",
+     "type": "string[]"
+    }
+   ],
+   "ret": "boolean",
+   "examples": [
+    {
+     "args": [
+      [
+       "jakarta",
+       "jakarta",
+       "a"
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": true
+    },
+    {
+     "args": [
+      [
+       "a"
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       "a",
+       ""
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       "a",
+       "jakarta",
+       "jakarta",
+       "jakarta"
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       "jakarta"
+      ]
+     ],
+     "out": false
+    },
+    {
+     "args": [
+      [
+       "a",
+       "jakarta",
+       "",
+       "a",
+       ""
+      ]
+     ],
+     "out": false
+    }
+   ],
+   "addedForGates": [
+    "derive_under_specified_branch: ([[\"a\",\"jakarta\",\"\",\"a\",\"\"]]) gives false"
+   ],
+   "expr": "array.every((x) => x === \"\")",
+   "shape": "every-eqs",
+   "heldOut": {
+    "right": 31,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "dansreis/speclens",
+   "commit": "61eeb396364fb3ed39cc537a5fb088e512ac87f0",
+   "path": "src/lib/specChecks.ts",
+   "fn": "checksForChange",
+   "license": "Apache-2.0",
+   "fileBlob": "684b461c1b4e459aec65997ab983b86756b0a3cc",
+   "sha256": "d1ebfeb4ddb65a3141c2080ce05d2b3e6646e013fbac5163685505d94f968e76",
+   "upstream": "export function checksForChange(\n\tresults: SpecCheckResult[],\n\tchangeKey: string,\n): SpecCheckResult[] {\n\treturn results.filter((r) => r.changeKey === changeKey);\n}",
+   "params": [
+    {
+     "name": "results",
+     "type": "{ id: string; changeKey: string }[]"
+    },
+    {
+     "name": "changeKey",
+     "type": "string"
+    }
+   ],
+   "ret": "{ id: string; changeKey: string }[]",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "id": "SL004",
+        "changeKey": "drop-y"
+       },
+       {
+        "id": "SL001",
+        "changeKey": "archive/fix-x"
+       },
+       {
+        "id": "SL001",
+        "changeKey": "add-auth"
+       }
+      ],
+      "archive/fix-x"
+     ],
+     "out": [
+      {
+       "id": "SL001",
+       "changeKey": "archive/fix-x"
+      }
+     ]
+    },
+    {
+     "args": [
+      [],
+      "drop-y"
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       {
+        "id": "SL004",
+        "changeKey": "drop-y"
+       }
+      ],
+      "drop-y"
+     ],
+     "out": [
+      {
+       "id": "SL004",
+       "changeKey": "drop-y"
+      }
+     ]
+    },
+    {
+     "args": [
+      [
+       {
+        "id": "SL004",
+        "changeKey": "drop-y"
+       },
+       {
+        "id": "SL001",
+        "changeKey": "archive/fix-x"
+       }
+      ],
+      "add-auth"
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       {
+        "id": "SL001",
+        "changeKey": "drop-y"
+       },
+       {
+        "id": "SL001",
+        "changeKey": "archive/fix-x"
+       },
+       {
+        "id": "SL004",
+        "changeKey": "drop-y"
+       },
+       {
+        "id": "SL004",
+        "changeKey": "drop-y"
+       }
+      ],
+      "drop-y"
+     ],
+     "out": [
+      {
+       "id": "SL001",
+       "changeKey": "drop-y"
+      },
+      {
+       "id": "SL004",
+       "changeKey": "drop-y"
+      },
+      {
+       "id": "SL004",
+       "changeKey": "drop-y"
+      }
+     ]
+    },
+    {
+     "args": [
+      [
+       {
+        "id": "SL004",
+        "changeKey": "archive/fix-x"
+       }
+      ],
+      "add-auth"
+     ],
+     "out": []
+    }
+   ],
+   "addedForGates": [],
+   "expr": "results.filter((x) => x.changeKey === changeKey)",
+   "shape": "filter-eqp",
+   "heldOut": {
+    "right": 168,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "PiSchool/refactor-platform",
+   "commit": "1e7a5bae20dab11ec0ddeceba1528fa5275c17ea",
+   "path": "web/lib/prompts.ts",
+   "fn": "missingRequired",
+   "license": "MIT",
+   "fileBlob": "401388313ca33b51eaec7c0d51ea904d3ef88291",
+   "sha256": "825695ce49d5694a9f5d4c82611b3bd5e92566899c94142b9b570bb1189ae454",
+   "upstream": "export function missingRequired(rows: VariableRow[]): string[] {\n  return rows.filter((row) => row.state === 'missing').map((row) => row.name);\n}",
+   "params": [
+    {
+     "name": "rows",
+     "type": "{ name: string; state: string }[]"
+    }
+   ],
+   "ret": "string[]",
+   "examples": [
+    {
+     "args": [
+      [
+       {
+        "name": "audience",
+        "state": "optional"
+       },
+       {
+        "name": "tone",
+        "state": "filled"
+       },
+       {
+        "name": "tone",
+        "state": "missing"
+       }
+      ]
+     ],
+     "out": [
+      "tone"
+     ]
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       {
+        "name": "tone",
+        "state": "optional"
+       }
+      ]
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       {
+        "name": "audience",
+        "state": "optional"
+       },
+       {
+        "name": "audience",
+        "state": "filled"
+       }
+      ]
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       {
+        "name": "audience",
+        "state": "missing"
+       },
+       {
+        "name": "tone",
+        "state": "missing"
+       },
+       {
+        "name": "tone",
+        "state": "optional"
+       },
+       {
+        "name": "topic",
+        "state": "filled"
+       }
+      ]
+     ],
+     "out": [
+      "audience",
+      "tone"
+     ]
+    },
+    {
+     "args": [
+      [
+       {
+        "name": "audience",
+        "state": "optional"
+       }
+      ]
+     ],
+     "out": []
+    }
+   ],
+   "addedForGates": [],
+   "expr": "rows.filter((x) => x.state === \"missing\").map((x) => x.name)",
+   "shape": "pluck-eqs",
+   "heldOut": {
+    "right": 92,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "Kamino-Finance/kliquidity-sdk",
+   "commit": "369ed3ffd62338539a9beb4147d411a21489fd35",
+   "path": "src/utils/utils.ts",
+   "fn": "stripTwapZeros",
+   "license": "Apache-2.0",
+   "fileBlob": "a875b3a840c05e1ba91cdf71e7e99a3a48be6973",
+   "sha256": "51450d43c73393fbe94873d2835ae4d62d222700e77f4143398b0934bf40959c",
+   "upstream": "export function stripTwapZeros(chain: number[]): number[] {\n  return chain.filter((component) => component > 0);\n}",
+   "params": [
+    {
+     "name": "chain",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number[]",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": [
+      30,
+      7,
+      1
+     ]
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": [
+      1
+     ]
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": [
+      1,
+      30,
+      99,
+      30
+     ]
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": [
+      99
+     ]
+    },
+    {
+     "args": [
+      [
+       0
+      ]
+     ],
+     "out": []
+    },
+    {
+     "args": [
+      [
+       2,
+       7,
+       -2,
+       2,
+       -2
+      ]
+     ],
+     "out": [
+      2,
+      7,
+      2
+     ]
+    },
+    {
+     "args": [
+      [
+       0,
+       150
+      ]
+     ],
+     "out": [
+      150
+     ]
+    }
+   ],
+   "addedForGates": [
+    "ambiguous: ([[0]]) gives []",
+    "derive_under_specified_far: ([[2,7,-2,2,-2]]) gives [2,7,2]",
+    "derive_under_specified_far: ([[0,150]]) gives [150]"
+   ],
+   "expr": "chain.filter((x) => 1 <= x)",
+   "shape": "filter-ge",
+   "heldOut": {
+    "right": 140,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "pmndrs/glyph",
+   "commit": "4e25a96a57462fef5ad0d19065a822695b480f60",
+   "path": "benches/src/benchmark/product-result.ts",
+   "fn": "capturedMaximum",
+   "license": "MIT",
+   "fileBlob": "e4969f1311d7c5b4b27f2ac987584133e72ad652",
+   "sha256": "b56156134d97d0f5539fef52e63d6722de650291fd0d5892c66f4510dadae312",
+   "upstream": "function capturedMaximum(values: readonly number[]): number {\n  return values.length === 0 ? 0 : Math.max(...values);\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "values.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+   "shape": "max",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "pmndrs/glyph",
+   "commit": "4e25a96a57462fef5ad0d19065a822695b480f60",
+   "path": "benches/src/benchmark/product-result.ts",
+   "fn": "capturedMinimum",
+   "license": "MIT",
+   "fileBlob": "e4969f1311d7c5b4b27f2ac987584133e72ad652",
+   "sha256": "b56156134d97d0f5539fef52e63d6722de650291fd0d5892c66f4510dadae312",
+   "upstream": "function capturedMinimum(values: readonly number[]): number {\n  return values.length === 0 ? 0 : Math.min(...values);\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -101
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "values.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
+   "shape": "min",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "AGI-is-going-to-arrive/Antigravity-Context-Window-Monitor",
+   "commit": "9eaefb23a86e0b19d78a692222b657104c04ec02",
+   "path": "src/gm/tracker.ts",
+   "fn": "max",
+   "license": "MIT",
+   "fileBlob": "89c83cfc542b7c509504147561b6dd05980afa57",
+   "sha256": "0157cee55b55f683ced6e653e3101145f56ea98db315f017d83325db94e53379",
+   "upstream": "const max = (arr: number[]) => arr.length ? Math.max(...arr) : 0;",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+   "shape": "max",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "AGI-is-going-to-arrive/Antigravity-Context-Window-Monitor",
+   "commit": "9eaefb23a86e0b19d78a692222b657104c04ec02",
+   "path": "src/gm/tracker.ts",
+   "fn": "min",
+   "license": "MIT",
+   "fileBlob": "89c83cfc542b7c509504147561b6dd05980afa57",
+   "sha256": "0157cee55b55f683ced6e653e3101145f56ea98db315f017d83325db94e53379",
+   "upstream": "const min = (arr: number[]) => arr.length ? Math.min(...arr) : 0;",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": -101
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
+   "shape": "min",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "zkywsg/Daily-LLM",
+   "commit": "20e367c0996c141b9c95713a44fdc9ed33069ebf",
+   "path": "web/src/components/node/golden/gin/lib/data.ts",
+   "fn": "max",
+   "license": "MIT",
+   "fileBlob": "2b149bb11b7d8fa0e537494928a40a4dcdf96d87",
+   "sha256": "4202d37355aaad3d67396b2640e4424472bb4021e52bec51dc3b583eaa8d6b1d",
+   "upstream": "export function max(xs: number[]): number {\n  return xs.length === 0 ? 0 : Math.max(...xs);\n}",
+   "params": [
+    {
+     "name": "xs",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": -1
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    }
+   ],
+   "addedForGates": [],
+   "expr": "xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+   "shape": "max",
+   "heldOut": {
+    "right": 84,
+    "wrong": 0
+   }
+  },
+  {
+   "repo": "steipete/ReleaseBar",
+   "commit": "1fa6b29cad1301297773f61953b4fe71b3eb305d",
+   "path": "src/app-format.ts",
+   "fn": "maxNumber",
+   "license": "MIT",
+   "fileBlob": "a8927ea05210656bb25511aeb2d679d5af26ca6d",
+   "sha256": "62bed2ab87e59bfcfb39516baa779b15f2f75c970d07d1be6334678f57841ed5",
+   "upstream": "export function maxNumber(values: number[]): number {\n  return values.reduce((max, value) => Math.max(max, value), 0);\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       2,
+       7,
+       -2,
+       2,
+       -2
+      ]
+     ],
+     "out": 7
+    },
+    {
+     "args": [
+      [
+       0,
+       150
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -1,
+       0,
+       99,
+       150,
+       30,
+       99
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       150,
+       3,
+       3
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -1,
+       30,
+       2
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       2
+      ]
+     ],
+     "out": 2
+    },
+    {
+     "args": [
+      [
+       150,
+       -40
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       7,
+       150,
+       -150,
+       -101
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       99,
+       -1,
+       30,
+       2,
+       101
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       -40,
+       3
+      ]
+     ],
+     "out": 3
+    },
+    {
+     "args": [
+      [
+       1,
+       -1,
+       -150,
+       -2,
+       30,
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       30,
+       -101,
+       -1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      [
+       1,
+       -1,
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       150,
+       30
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -101,
+       1,
+       -150,
+       1
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       -2,
+       -101,
+       -1,
+       -2,
+       -1
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       2,
+       -2
+      ]
+     ],
+     "out": 2
+    },
+    {
+     "args": [
+      [
+       -150,
+       -2,
+       -40,
+       0,
+       30,
+       101
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       150,
+       -150,
+       -150
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       101,
+       -1,
+       -1
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       101
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       101,
+       99
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       -1,
+       0,
+       -2,
+       -40
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -40
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       101,
+       150,
+       -150,
+       101,
+       7
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       99,
+       -40
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       7,
+       99,
+       -40,
+       1,
+       3,
+       -40
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       0,
+       3,
+       0
+      ]
+     ],
+     "out": 3
+    }
+   ],
+   "addedForGates": [
+    "derive_no_fit: ([[2,7,-2,2,-2]]) gives 7",
+    "derive_no_fit: ([[0,150]]) gives 150",
+    "derive_no_fit: ([[-1,0,99,150,30,99]]) gives 150",
+    "derive_no_fit: ([[150,3,3]]) gives 150",
+    "derive_no_fit: ([[-1,30,2]]) gives 30",
+    "derive_no_fit: ([[]]) gives 0",
+    "derive_no_fit: ([[2]]) gives 2",
+    "derive_no_fit: ([[150,-40]]) gives 150",
+    "derive_no_fit: ([[7,150,-150,-101]]) gives 150",
+    "derive_no_fit: ([[-1]]) gives 0",
+    "derive_no_fit: ([[99,-1,30,2,101]]) gives 101",
+    "derive_no_fit: ([[-40,3]]) gives 3",
+    "derive_no_fit: ([[1,-1,-150,-2,30,99]]) gives 99",
+    "derive_no_fit: ([[30,-101,-1]]) gives 30",
+    "derive_no_fit: ([[1,-1,99]]) gives 99",
+    "derive_no_fit: ([[]]) gives 0",
+    "derive_no_fit: ([[-101]]) gives 0",
+    "derive_no_fit: ([[150,30]]) gives 150",
+    "derive_no_fit: ([[-101,1,-150,1]]) gives 1",
+    "derive_no_fit: ([[99]]) gives 99",
+    "derive_no_fit: ([[-2,-101,-1,-2,-1]]) gives 0",
+    "derive_no_fit: ([[2,-2]]) gives 2",
+    "derive_no_fit: ([[-150,-2,-40,0,30,101]]) gives 101",
+    "derive_no_fit: ([[150,-150,-150]]) gives 150",
+    "derive_no_fit: ([[101,-1,-1]]) gives 101",
+    "derive_no_fit: ([[]]) gives 0",
+    "derive_no_fit: ([[101]]) gives 101",
+    "derive_no_fit: ([[101,99]]) gives 101",
+    "derive_no_fit: ([[-1,0,-2,-40]]) gives 0",
+    "derive_no_fit: ([[-40]]) gives 0",
+    "derive_no_fit: ([[101,150,-150,101,7]]) gives 150",
+    "derive_no_fit: ([[99,-40]]) gives 99",
+    "derive_no_fit: ([[7,99,-40,1,3,-40]]) gives 99",
+    "derive_no_fit: ([[0,3,0]]) gives 3"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 144 programs fits every example"
+  },
+  {
+   "repo": "vilterp/datalog-ts",
+   "commit": "47f814baa01277ff2ac2a3d7f07c9a4d2831dee5",
+   "path": "util/util.ts",
+   "fn": "max",
+   "license": "MIT",
+   "fileBlob": "8ce47c1991edb8a3540e00b8b2f7da91aad8d75e",
+   "sha256": "4de1dae1862bef37aa5169b2f698dbb02cd10fff9224126750e8d1311d5188d0",
+   "upstream": "export function max(numbers: number[]): number {\n  return numbers.reduce((prev, cur) => Math.max(prev, cur), 0);\n}",
+   "params": [
+    {
+     "name": "numbers",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "examples": [
+    {
+     "args": [
+      [
+       30,
+       7,
+       1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       1,
+       -101
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       1,
+       30,
+       99,
+       30
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       2,
+       7,
+       -2,
+       2,
+       -2
+      ]
+     ],
+     "out": 7
+    },
+    {
+     "args": [
+      [
+       0,
+       150
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -1,
+       0,
+       99,
+       150,
+       30,
+       99
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       150,
+       3,
+       3
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -1,
+       30,
+       2
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       2
+      ]
+     ],
+     "out": 2
+    },
+    {
+     "args": [
+      [
+       150,
+       -40
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       7,
+       150,
+       -150,
+       -101
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -1
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       99,
+       -1,
+       30,
+       2,
+       101
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       -40,
+       3
+      ]
+     ],
+     "out": 3
+    },
+    {
+     "args": [
+      [
+       1,
+       -1,
+       -150,
+       -2,
+       30,
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       30,
+       -101,
+       -1
+      ]
+     ],
+     "out": 30
+    },
+    {
+     "args": [
+      [
+       1,
+       -1,
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -101
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       150,
+       30
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       -101,
+       1,
+       -150,
+       1
+      ]
+     ],
+     "out": 1
+    },
+    {
+     "args": [
+      [
+       99
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       -2,
+       -101,
+       -1,
+       -2,
+       -1
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       2,
+       -2
+      ]
+     ],
+     "out": 2
+    },
+    {
+     "args": [
+      [
+       -150,
+       -2,
+       -40,
+       0,
+       30,
+       101
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       150,
+       -150,
+       -150
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       101,
+       -1,
+       -1
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      []
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       101
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       101,
+       99
+      ]
+     ],
+     "out": 101
+    },
+    {
+     "args": [
+      [
+       -1,
+       0,
+       -2,
+       -40
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       -40
+      ]
+     ],
+     "out": 0
+    },
+    {
+     "args": [
+      [
+       101,
+       150,
+       -150,
+       101,
+       7
+      ]
+     ],
+     "out": 150
+    },
+    {
+     "args": [
+      [
+       99,
+       -40
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       7,
+       99,
+       -40,
+       1,
+       3,
+       -40
+      ]
+     ],
+     "out": 99
+    },
+    {
+     "args": [
+      [
+       0,
+       3,
+       0
+      ]
+     ],
+     "out": 3
+    }
+   ],
+   "addedForGates": [
+    "derive_no_fit: ([[2,7,-2,2,-2]]) gives 7",
+    "derive_no_fit: ([[0,150]]) gives 150",
+    "derive_no_fit: ([[-1,0,99,150,30,99]]) gives 150",
+    "derive_no_fit: ([[150,3,3]]) gives 150",
+    "derive_no_fit: ([[-1,30,2]]) gives 30",
+    "derive_no_fit: ([[]]) gives 0",
+    "derive_no_fit: ([[2]]) gives 2",
+    "derive_no_fit: ([[150,-40]]) gives 150",
+    "derive_no_fit: ([[7,150,-150,-101]]) gives 150",
+    "derive_no_fit: ([[-1]]) gives 0",
+    "derive_no_fit: ([[99,-1,30,2,101]]) gives 101",
+    "derive_no_fit: ([[-40,3]]) gives 3",
+    "derive_no_fit: ([[1,-1,-150,-2,30,99]]) gives 99",
+    "derive_no_fit: ([[30,-101,-1]]) gives 30",
+    "derive_no_fit: ([[1,-1,99]]) gives 99",
+    "derive_no_fit: ([[]]) gives 0",
+    "derive_no_fit: ([[-101]]) gives 0",
+    "derive_no_fit: ([[150,30]]) gives 150",
+    "derive_no_fit: ([[-101,1,-150,1]]) gives 1",
+    "derive_no_fit: ([[99]]) gives 99",
+    "derive_no_fit: ([[-2,-101,-1,-2,-1]]) gives 0",
+    "derive_no_fit: ([[2,-2]]) gives 2",
+    "derive_no_fit: ([[-150,-2,-40,0,30,101]]) gives 101",
+    "derive_no_fit: ([[150,-150,-150]]) gives 150",
+    "derive_no_fit: ([[101,-1,-1]]) gives 101",
+    "derive_no_fit: ([[]]) gives 0",
+    "derive_no_fit: ([[101]]) gives 101",
+    "derive_no_fit: ([[101,99]]) gives 101",
+    "derive_no_fit: ([[-1,0,-2,-40]]) gives 0",
+    "derive_no_fit: ([[-40]]) gives 0",
+    "derive_no_fit: ([[101,150,-150,101,7]]) gives 150",
+    "derive_no_fit: ([[99,-40]]) gives 99",
+    "derive_no_fit: ([[7,99,-40,1,3,-40]]) gives 99",
+    "derive_no_fit: ([[0,3,0]]) gives 3"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 144 programs fits every example"
+  }
+ ]
+}

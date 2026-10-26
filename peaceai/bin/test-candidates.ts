@@ -14,7 +14,7 @@ import { gradingVerdict, validateFix, type TestGrading } from "../lib/results.ts
 import { checkCandidateScope } from "../lib/scope.ts";
 import { callsFunction, declaredFunctions, expectsThrow, gradedTestSourceProblem, countStubNotes, hasNonDeclarationCallables, importedBindings, moduleDataKeys, moduleImportsRepoFiles, newStubCode, stubAll, stubFailureCredited, stubFunction } from "../lib/learned-function.ts";
 import { assertionFailuresOnly } from "../lib/learned-body.ts";
-import { appendTargetProblem, derivedAppendProblem, derivedModuleProblem } from "../lib/learned-derive.ts";
+import { appendTargetProblem, derivedAppendProblem, derivedListAppendProblem, derivedListModuleProblem, derivedModuleProblem } from "../lib/learned-derive.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, regularFileReader, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
 import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
@@ -500,7 +500,8 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
     if (derive) {
       let reads: string[];
       if (created.length === 1 && source.length === 0) {
-        if (derivedModuleProblem(real)) return ungradable("not-test-only");
+        // M113: or a v4 list function (derivedListModuleProblem: canonical v4 types, an expression in the list DSL).
+        if (derivedModuleProblem(real) && derivedListModuleProblem(real)) return ungradable("not-test-only");
         reads = created;
       } else if (created.length === 0 && source.length === 1) {
         // M112 (public-derive-from-behavior-v3): the function was appended to an existing module. The real file must
@@ -513,7 +514,7 @@ function gradeSelf(tree: string, files: ReturnType<typeof parseDiff>, newTests: 
         const regular = regularFileReader(tree);
         const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
         const readBase = (rel: string): string | null => (rel === modPath ? baseText : read(rel));
-        if (derivedAppendProblem(baseText, real) !== null || appendTargetProblem(modPath, baseText, fn, readBase, scope.isTest) !== null) return ungradable("not-test-only");
+        if ((derivedAppendProblem(baseText, real) !== null && derivedListAppendProblem(baseText, real) !== null) || appendTargetProblem(modPath, baseText, fn, readBase, scope.isTest) !== null) return ungradable("not-test-only");
         const closure = existingEditReads(modPath, read);
         if (!closure) return ungradable("module-imports-repo-files");
         reads = closure;

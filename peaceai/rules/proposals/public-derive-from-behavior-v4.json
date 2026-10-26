@@ -1,0 +1,27 @@
+{
+ "id": "public-derive-from-behavior-v4",
+ "kind": "DERIVE_FROM_BEHAVIOR",
+ "shape": "DERIVE_FROM_BEHAVIOR",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list (not in approved.json until Peace posts /approve-rule on its proposal issue)",
+ "engine": "a new list search (peaceai/lib/derive-list.ts) reached through the same rule kind and the v1/v3 paths in peaceai/lib/learned-derive.ts, bound to DERIVE_LIST_TRIGGER with the params dsl typed-dsl-v4-lists and placement new-or-existing-module (all three or derive_params): it enumerates small list programs (length; count / filter / some / every / map-to-boolean where P; sum of a field, optionally of the kept elements; max / min of a field with the empty-list result; map each element to one of two labels; a field of each, optionally kept, element), where P compares one field (or the element) with an integer cut next to an example value, a string literal from the examples, or the one scalar parameter, or tests a boolean field; it keeps every program that fits all examples and whose predicate splits the example elements, refuses when two fits disagree on any probe list, and applies the empty / many / unread / branch / kept / edge / far gates to the unique fit. The function is written to a new module (v1 path rules) or appended to an existing one (v3 append rules), plus one new test file; listExprProblem re-checks the emitted expression by decompiling and recompiling it to the identical text, and Job B (test-candidates.ts) accepts a v4 function only through derivedListModuleProblem / derivedListAppendProblem; the review note is rebuilt from the diff with a probe table",
+ "scope": "an issue whose header reads 'Add a new module src/....ts exporting NAME(params): type' or 'Append a new function NAME(params): type to the existing module src/....ts' where exactly one parameter is a list (number[], string[], boolean[] or { a: number; b: string }[] with 1-4 scalar fields) and at most one more parameter is a number or a string; behavior prose and literal examples (lists and one-level records of scalars, at most 12 elements, 3-40 examples); one function with a single return expression from the v4 list DSL; inputs that need string parsing are out of scope; imports are never added or changed",
+ "refusals": "derive_examples (count, arity, types, list length, contradiction, one result, a boolean scalar parameter); derive_signature; derive_reserved_name (record fields such as __proto__, constructor, length); derive_under_specified_empty / _many / _unread / _branch / _kept / _edge / _far; derive_no_fit; derive_ambiguous (questions in the detail); derive_budget; derive_list_expr; derive_params; every v1 new-module path refusal and every v3 append refusal (target_file_not_found, derive_path, derive_append_layout, derive_append_parse, derive_append_name_collision, derive_append_mutable_state, derive_append_side_effects, derive_append_not_add_only); new_test_path_exists; denied_path",
+ "evidence": {
+  "examples": 28,
+  "derived": 26,
+  "repos": 25,
+  "file": "peaceai/rules/proposals/m113-derive-list-evidence.json",
+  "method": "new upstream evidence for list functions (GitHub code search, permissive licenses only), each re-derived from a seeded grid slice plus only the rows its refusals asked for and checked against the upstream function on every held-out row",
+  "origin": "external-licensed",
+  "qualifies": true,
+  "note": "Shapes with no upstream function in the set (length, label, map-to-boolean, field of every element, and the not / nes / le / lep / gep / ltp / gtp / nep predicates) are covered by the M113 tests and seeded eval only. See peaceai/docs/m113-list-inputs.md."
+ },
+ "learned": "peaceai/rules/learned/public-derive-from-behavior-v4.json",
+ "tests": [
+  "peaceai/test/m113-derive-list-inputs.test.ts",
+  "peaceai/test/m112-derive-append-existing-module.test.ts",
+  "peaceai/test/m99-derive-from-behavior.test.ts"
+ ],
+ "untouched": "public-derive-from-behavior-v1 (hash 799182d7...), -v2 (hash e11ae193...) and -v3 (hash 7087afcf...): same specs, triggers, search, gates and refusals (no v1-v3 header matches the v4 trigger and the reverse); every other learned spec; the existing evidence files; approved.json"
+}

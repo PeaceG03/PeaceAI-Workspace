@@ -268,3 +268,25 @@ allowlist `importTimeProblem`, fail closed: no call, `new`, member access, tagge
 (`derivedAppendProblem` re-checks, `derive_append_not_add_only`). Job B re-checks both against the base commit's text and
 runs the module's existing tests with the new test, confined to the module's closure. Details, held-out results and
 limits: peaceai/docs/m112-append-to-existing-module.md.
+
+## public-derive-from-behavior-v4 (M113): list inputs
+
+A new rule version. `public-derive-from-behavior-v4` is the v3 spec with only `id`, `minerVersion`, `trigger`
+(`DERIVE_LIST_TRIGGER`: either v1/v3 header, with exactly one list parameter) and the params `dsl: typed-dsl-v4-lists`
+and `placement: new-or-existing-module` changed; it is off until Peace approves its hash (`/approve-rule
+6edd341f45c7e4486bfb727aa90a66db1fcac4f7e3e3ce7ad6bf561240d0d6f8` on its proposal issue). The two params are bound to each
+other and to the trigger: any other pairing is `derive_params`. v1, v2 and v3 are unchanged (same specs, hashes,
+vocabulary and code paths; their triggers never match a list signature, and v4's never matches a scalar one).
+
+The engine is `peaceai/lib/derive-list.ts`, called from `learned-derive.ts` the same way as v1's `derive.ts`: one list
+parameter `xs: T[]` (T number, string, boolean or a one-level record of 1-4 such fields) and at most one number or
+string parameter; a bounded enumeration of a small DSL (length; count / filter / some / every where P; sum of a field,
+also of the kept elements; max / min of a field with the empty-list result; map to one of two labels or to P; a field of
+each (kept) element), every constant cut from the examples. Fail closed in this order: `derive_examples`,
+`derive_under_specified_empty` / `_many`, predicates the examples never split are dropped, `derive_budget`,
+`derive_no_fit`, `derive_ambiguous` (any two fitting programs that disagree on a probe list),
+`derive_under_specified_unread` / `_branch` / `_kept` / `_edge` / `_far`. New modules use the v1 edit; appends use v3's
+`appendTargetProblem` and `derivedAppendProblem` unchanged. Emitted text is re-checked by `listExprProblem` (decompiled
+to the DSL and recompiled to identical text: only filter / some / every / map / reduce / length over the list parameter,
+no mutation, no calls) in Job A and Job B. Details, held-out results, evidence and limits:
+peaceai/docs/m113-list-inputs.md.
