@@ -27,8 +27,9 @@ const WF = ".github/workflows/self-change-stage2.yml";
 
 const tmp = mkdtempSync(join(tmpdir(), "m108-decide2-"));
 test.after(() => rmSync(tmp, { recursive: true, force: true }));
-const env0: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "1+t@users.noreply.github.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "1+t@users.noreply.github.com" };
-delete env0.GITHUB_ACTIONS; // decide2 refuses on public Actions runners; this test runs it as a local CLI
+// Auditor #507 note: a MINIMAL env (no ...process.env), so a real GH_TOKEN / GITHUB_* never reaches decide2 or the stub.
+const env0: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR ?? tmpdir(), GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "1+t@users.noreply.github.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "1+t@users.noreply.github.com" };
+for (const k of Object.keys(env0)) if (env0[k] === undefined) delete env0[k]; // GITHUB_ACTIONS is never copied: decide2 refuses on public Actions runners
 const git = (cwd: string, ...a: string[]) => { const r = spawnSync("git", a, { cwd, encoding: "utf8", env: env0 }); assert.equal(r.status, 0, `git ${a.join(" ")}: ${r.stderr}`); return r.stdout.trim(); };
 const put = (dir: string, p: string, s: string) => { mkdirSync(join(dir, p, ".."), { recursive: true }); writeFileSync(join(dir, p), s); };
 
@@ -181,4 +182,46 @@ test("decide2 via stubbed gh: no artifact for the ledger's run -> RECORD_NOT_FRO
   const r = decide2(state({ artifact: null }));
   assert.equal(r.code, 2);
   assert.equal(r.out, `self-change decide2 id=${ID} land=false reasons=RECORD_NOT_FROM_LEDGER_RUN_ARTIFACT`);
+});
+
+// ---- M115 (Auditor #504 follow-up): the approval branches end to end through the same stubbed gh. Landing needs
+// Peace's /verdict AND Auditor's /auditor-pass on the EXACT PR head sha, and the stage-2 flag ON at origin main.
+const OTHER = "f".repeat(40);
+const approvalCases: [string, Record<string, unknown>, string[]][] = [
+  ["both commands name a different sha than the PR head", { comments: [comment(901, `/auditor-pass ${ID} ${OTHER}`), comment(902, `/verdict ${ID} ${OTHER} right`)] }, ["AUDITOR_PASS_STALE_OR_SHA_MISMATCH", "PEACE_VERDICT_STALE_OR_SHA_MISMATCH"]],
+  ["the Auditor pass names a different sha (verdict exact)", { comments: [comment(901, `/auditor-pass ${ID} ${OTHER}`), comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_STALE_OR_SHA_MISMATCH"]],
+  ["the verdict names a different sha (pass exact)", { comments: [comment(901, `/auditor-pass ${ID} ${head}`), comment(902, `/verdict ${ID} ${OTHER} right`)] }, ["PEACE_VERDICT_STALE_OR_SHA_MISMATCH"]],
+  ["Peace's verdict but no Auditor pass", { comments: [comment(902, `/verdict ${ID} ${head} right`)] }, ["AUDITOR_PASS_MISSING"]],
+  ["Auditor's pass but no verdict", { comments: [comment(901, `/auditor-pass ${ID} ${head}`)] }, ["PEACE_VERDICT_MISSING"]],
+  ["no approval comments at all", { comments: [] }, ["AUDITOR_PASS_MISSING", "PEACE_VERDICT_MISSING"]],
+  ["the commands are for another id", { comments: [comment(901, `/auditor-pass sc-other ${head}`), comment(902, `/verdict sc-other ${head} right`)] }, ["AUDITOR_PASS_MISSING", "PEACE_VERDICT_MISSING"]],
+];
+for (const [what, over, reasons] of approvalCases)
+  test(`decide2 via stubbed gh refuses (${reasons.join("+")}): ${what}`, () => {
+    const r = decide2(state(over));
+    assert.equal(r.code, 2, `${r.out}\n${r.err}`);
+    assert.deepEqual(reasonsOf(r.out), reasons, r.out);
+  });
+
+test("decide2 via stubbed gh: exact pass + verdict but the flag is OFF at origin main -> exactly STAGE2_OFF", () => {
+  // a main commit on top of base that only turns the flag off (base stays an ancestor of main, template unchanged)
+  const off = join(tmp, "work-off");
+  git(tmp, "clone", "-q", origin, off);
+  put(off, "peaceai/self/stage2.json", JSON.stringify({ schema: "peaceai-self-stage2:v1", enabled: false }));
+  git(off, "commit", "-q", "-am", "flag off");
+  const offSha = git(off, "rev-parse", "HEAD");
+  git(origin, "fetch", "-q", off, `${offSha}:refs/heads/main`);
+  try {
+    const r = decide2(state());
+    assert.equal(r.code, 2, `${r.out}\n${r.err}`);
+    assert.deepEqual(reasonsOf(r.out), ["STAGE2_OFF"], r.out);
+  } finally {
+    git(origin, "update-ref", "refs/heads/main", base);
+  }
+  const back = decide2(state()); // restoring main restores landing: the only difference was the flag
+  assert.equal(back.code, 0, `${back.out}\n${back.err}`);
+});
+
+test("the committed stage-2 flag stays OFF", () => {
+  assert.equal(JSON.parse(readFileSync(join(root, "peaceai/self/stage2.json"), "utf8")).enabled, false);
 });
