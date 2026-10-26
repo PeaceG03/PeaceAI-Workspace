@@ -25,6 +25,7 @@ import { importStyle } from "./learned-test.ts";
 import { isExcludedSource, loadClosure, loadProblem } from "./learned-edit-existing.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
 import { compileStr, deriveStringProgram, lexStrValues, strExprProblem, strLit, strLitValue, strProbeTable, STR_MAX_PARAMS, type StrArg, type StrExample, type StrOut, type StrParam, type StrRet } from "./derive-string.ts";
+import { cleanIssueText } from "./taskmap.ts";
 import ts from "typescript";
 
 export const DERIVE_PARAM_KEYS = ["ambiguity", "dsl", "examples", "grading", "placement", "test"] as const;
@@ -340,9 +341,9 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
 }
 
 /** Job A entry: refusal code in `why.reason`; null when there is no candidate. */
-export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
+export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }, raw?: string): DeriveEdit | null {
   // M114: a v5 (string parser) spec has its own trigger, placement and dsl, all three together; nothing below sees one.
-  if (trigger === DERIVE_STRING_TRIGGER || params.placement === DERIVE_STRING_PLACEMENT || params.dsl === DERIVE_STRING_DSL) return runDeriveStringRule(trigger, params, objective, files, isTest, why);
+  if (trigger === DERIVE_STRING_TRIGGER || params.placement === DERIVE_STRING_PLACEMENT || params.dsl === DERIVE_STRING_DSL) return runDeriveStringRule(trigger, params, objective, files, isTest, why, raw);
   // M112: the placement and the trigger go together (new-module: DERIVE_TRIGGER; end-of-existing-module:
   // DERIVE_APPEND_TRIGGER), so a spec can never point one placement's engine at the other's phrasing.
   if ((params.placement === DERIVE_APPEND_PLACEMENT) !== (trigger === DERIVE_APPEND_TRIGGER) || (params.placement !== DERIVE_APPEND_PLACEMENT && trigger !== DERIVE_TRIGGER)) { if (why) why.reason = "derive_params"; return null; }
@@ -521,7 +522,7 @@ export function assertDeriveNotesShown(body: string, presentation: readonly { la
 export interface DeriveStringTask { fn: string; file: string; append: boolean; params: StrParam[]; ret: StrRet; behavior: string; examples: StrExample[] }
 
 /** The v5 task: the header (DERIVE_STRING_TRIGGER), the Behavior: prose and the Examples: bullets. */
-export function parseDeriveStringTask(objective: string): { task: DeriveStringTask } | { reason: string } {
+export function parseDeriveStringTask(objective: string, raw?: string): { task: DeriveStringTask } | { reason: string } {
   const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
   const re = new RegExp(DERIVE_STRING_TRIGGER, "i");
   const heads = lines.map((l, i) => (re.test(l) ? i : -1)).filter((i) => i >= 0);
@@ -561,7 +562,42 @@ export function parseDeriveStringTask(objective: string): { task: DeriveStringTa
     if (STRONG_CODE.test(l)) return { reason: "derive_behavior_code" };
     if (i > sectionEnd && BULLET.test(l)) return { reason: "derive_examples" };
   }
-  return { task: { fn: g.fn, file, append, params, ret: g.ret as StrRet, behavior, examples } };
+  const exact = exactStringExamples(lines.slice(eIdx[0]! + 1, sectionEnd), examples, raw);
+  if (typeof exact === "string") return { reason: exact };
+  return { task: { fn: g.fn, file, append, params, ret: g.ret as StrRet, behavior, examples: exact } };
+}
+
+/**
+ * M114: issue-text cleaning (taskmap.ts) turns `#`, backticks, `*`, an edge `_`, tabs and runs of spaces into one
+ * space, so a cleaned example string holding a space may not be what the author wrote (`"# note"` reads `" note"`).
+ * A string with no space is verbatim. Every example string holding a space is read from the uncleaned issue text
+ * instead: the raw Examples bullets, each of whose own cleaning is the cleaned bullet line (same count, same order,
+ * no HTML comment or code fence on the line); anything else is refused (derive_examples_raw), never guessed.
+ */
+function exactStringExamples(cleanBullets: readonly string[], examples: StrExample[], raw: string | undefined): StrExample[] | string {
+  const spaced = (e: StrExample) => [...e.args, e.out].some((v) => (typeof v === "string" && v.includes(" ")) || (Array.isArray(v) && v.some((x) => x.includes(" "))));
+  if (!examples.some(spaced)) return examples;
+  if (raw === undefined) return "derive_examples_raw";
+  const clean = (l: string) => cleanIssueText({ title: "", body: l } as Parameters<typeof cleanIssueText>[0]).trim();
+  const rawLines = raw.replace(/\r\n?/g, "\n").split("\n");
+  const heads = rawLines.map((l, i) => (EXAMPLES_HEAD.test(clean(l)) ? i : -1)).filter((i) => i >= 0);
+  if (heads.length !== 1) return "derive_examples_raw";
+  const bullets: string[] = [];
+  for (const l of rawLines.slice(heads[0]! + 1)) {
+    const c = clean(l);
+    if (!c) { if (bullets.length) break; continue; }
+    if (!BULLET.test(c)) break;
+    bullets.push(l);
+  }
+  if (bullets.length !== cleanBullets.length) return "derive_examples_raw";
+  const out: StrExample[] = [];
+  for (const [i, l] of bullets.entries()) {
+    if (/<!--|-->|```/.test(l) || clean(l) !== cleanBullets[i]) return "derive_examples_raw";
+    const v = lexStrValues(l.trim().replace(BULLET, ""));
+    if (!v || v.values.length !== examples[i]!.args.length || v.values.some((a, k) => typeof a !== typeof examples[i]!.args[k])) return "derive_examples_raw";
+    out.push({ args: v.values, out: v.out });
+  }
+  return out;
 }
 
 /** The v5 edit: the same placement checks as v1 (new module) or v3 (append), the string search, the emit checks. */
@@ -622,9 +658,9 @@ export function buildDeriveStringEdit(params: Record<string, unknown>, task: Der
 }
 
 /** Job A entry for v5: the trigger, placement and dsl must be the v5 triple; refusal code in `why.reason`. */
-export function runDeriveStringRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
+export function runDeriveStringRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }, raw?: string): DeriveEdit | null {
   if (trigger !== DERIVE_STRING_TRIGGER || params.placement !== DERIVE_STRING_PLACEMENT || params.dsl !== DERIVE_STRING_DSL) { if (why) why.reason = "derive_params"; return null; }
-  const parsed = parseDeriveStringTask(objective);
+  const parsed = parseDeriveStringTask(objective, raw);
   if ("reason" in parsed) { if (why && parsed.reason !== "derive_trigger") why.reason = parsed.reason; return null; }
   const built = buildDeriveStringEdit(params, parsed.task, files, isTest);
   if ("reason" in built) { if (why) why.reason = built.reason; return null; }

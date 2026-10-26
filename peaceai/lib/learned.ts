@@ -345,10 +345,11 @@ export function pathExistsIn(repo: string, tracked: readonly string[]): (path: s
  * Auditor #135 (all kinds): a generated NEW file (new test files in `extra`, or a created main file) is refused
  * with `new_test_path_exists` when `exists` reports it already present in the full checkout.
  */
-export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, exists?: (path: string) => boolean, scan?: readonly SourceFile[]): LearnedEdit | null {
+export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, exists?: (path: string) => boolean, scan?: readonly SourceFile[], raw?: string): LearnedEdit | null {
   // Auditor #466 (c), option A: `scan` (repoFileLists' scan list, denied files included) reaches only the
   // TEST_CASE_EXISTING static shared-binding scan; every rule still reads, targets and edits `files` alone.
-  const edit = applyRuleInner(spec, objective, files, isTest, repo, why, scan);
+  // M114: `raw` (the issue text before cleaning) reaches only the v5 string-parser derive rule (its example strings).
+  const edit = applyRuleInner(spec, objective, files, isTest, repo, why, scan, raw);
   if (!edit) {
     // M76: Job A hands the rules only in-scope files, so a Workspace task naming a protected (or out-of-zone) file
     // used to read as target_file_not_found. Name the real reason instead. This only renames a refusal; it never builds.
@@ -408,7 +409,7 @@ function whyReason(code: string): string {
   return /^[A-Za-z_$][\w$]{0,63}$/.test(name) ? `${head}: ${name}` : head;
 }
 
-function applyRuleInner(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, scan?: readonly SourceFile[]): LearnedEdit | null {
+function applyRuleInner(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, scan?: readonly SourceFile[], raw?: string): LearnedEdit | null {
   if (spec.kind === "ADD_TEST_CASE") {
     try {
       const task = parseTestTask(spec.trigger, objective);
@@ -485,7 +486,7 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
   }
   if (spec.kind === "DERIVE_FROM_BEHAVIOR") {
     try {
-      return runDeriveRule(spec.trigger, spec.params, objective, files, isTest, why); // M99: PeaceAI derives the body from behavior + examples; admitted only via the hash-pinned approved list
+      return runDeriveRule(spec.trigger, spec.params, objective, files, isTest, why, raw); // M99: PeaceAI derives the body from behavior + examples; admitted only via the hash-pinned approved list
     } catch {
       if (why) why.reason = "internal_error";
       return null;
