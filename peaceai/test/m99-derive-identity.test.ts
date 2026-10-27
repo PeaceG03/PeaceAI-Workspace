@@ -55,6 +55,16 @@ test("identity gate: any body equal to the parameter on every example is refused
   assert.equal(examplesIdentityProblem({ ...idNum, examples: [] }, fit("x")), null);
 });
 
+test("identity gate: equality is strict: the string '1' is not the number 1 (Auditor follow-up; kills the == mutant)", () => {
+  // String(n): every result is the parameter's digits as a string, never the parameter's own value.
+  const str: DeriveInput = { params: [{ name: "n", type: "number" }], ret: "string", examples: N17.map((n) => ({ args: [n], out: String(n) })) };
+  assert.equal(examplesIdentityProblem(str, fit("String(n)")), null);
+  // and the reverse: a number result equal to a string parameter's digits is not the parameter either
+  const num: DeriveInput = { params: [{ name: "s", type: "string" }], ret: "number", examples: ["1", "2", "3", "10", "42"].map((s) => ({ args: [s], out: Number(s) })) };
+  assert.equal(examplesIdentityProblem(num, fit("Number(s)")), null);
+  // (The uninformative check compares results with each other; they share the return type, so == there is the same as ===.)
+});
+
 test("identity gate: an identity-shaped set plus a changing example is not refused by the gate", () => {
   // one changing example: whatever the search and witness gates decide stands unchanged (here no fit, or the cap gate)
   for (const [k, o] of [[7, 8], [7, 0], [200000, 100000]] as const) {
