@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, creditLineAllowed, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_KINDS, CREDIT_KINDS_HISTORICAL, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, CREDIT_SLOT_DENY, CREDIT_TEMPLATES, creditLineAllowed, creditTemplatesFrom, loadCreditKinds, parseRuleKinds, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -138,7 +138,7 @@ test("BLOCKING 3: any non-peace (source ...: clause anywhere means builder", () 
 });
 
 // Round 3 (Auditor NOT PASS at a92d0b9).
-const CTX = "Context (Builder pre-file, behavior only): Peace's task";
+const CTX = "Context (Builder pre-file, ADD_FUNCTION, behavior only): Peace's task";
 test("B1: a mark hidden in link, image or HTML markup or struck through on the credit line gives builder", () => {
   for (const line of [
     `${CTX} [notes](https://x/a(source: peace)). Slice 3.`, // link URL with balanced parentheses
@@ -246,7 +246,7 @@ test("R4.1/R5.1: raw HTML anywhere, code fences included, gives builder", () => 
 
 test("R5.2: the credit line is a whole-line match: a genuine line or the strict new-task template", () => {
   // the template, decoded and normalized like the rest of the line; trailing whitespace ignored
-  for (const line of ["Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace)", "Context (x): Peace's task (source: peace).", "Context (): Peace's task (source: peace).  "])
+  for (const line of ["Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace)", "Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2): Peace's task (source: peace).", "Context (Builder pre-file, LOOP_FUNCTION, behavior only): Peace's task (source: peace).  "])
     assert.equal(src(issue(line)), "peace", line);
   assert.equal(src(issue("Context (...): Actually Builder drafted it. Peace's task (source: peace)")), "builder");
   for (const extra of [
@@ -284,7 +284,130 @@ test("R5.2: the credit line is a whole-line match: a genuine line or the strict 
   assert.equal(src(issue(`${CTX_GENUINE} ${lineOf(353).slice(lineOf(353).indexOf("(source: peace).") + 17)}`)), "builder");
   // every genuine line is allowed whole; the template regex is exactly as Auditor specified
   for (const r of GENUINE_ROWS) assert.equal(creditLineAllowed(r.line), true, String(r.issue));
-  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \([^)]*\): Peace's task \(source: peace\)\.?$`);
+  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \(Builder pre-file, ([A-Z][A-Z0-9_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$`);
+});
+
+test("M119 follow-up: the template's parenthetical is a fixed grammar; a contradiction inside it gives builder", () => {
+  const T = (paren: string) => `Context (${paren}): Peace's task (source: peace).`;
+  // every slot combination of the grammar gives peace
+  for (const paren of [
+    "Builder pre-file, ADD_FUNCTION",
+    "Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6",
+    "Builder pre-file, DATE_FUNCTION, public-date-function-v1, behavior only",
+    "Builder pre-file, DERIVE_FROM_BEHAVIOR, public-derive-from-behavior-v1 template join",
+    "Builder pre-file, DERIVE_FROM_BEHAVIOR, public-derive-from-behavior-v2 template join, behavior only",
+    "Builder pre-file, IMPORT_EDIT_V2, public-import-edit-v2",
+    "Builder pre-file, THROW_GUARD, public-throw-guard-top-v1",
+    "Builder pre-file, COMPLEX_FUNCTION, behavior only",
+  ])
+    assert.equal(src(issue(T(paren))), "peace", paren);
+  // the genuine parentheticals in the template form: every KIND and template name of the 80 is accepted
+  for (const r of GENUINE_ROWS) {
+    const paren = /^(?:Context )?\((Builder pre-file, [^)]*)\):/.exec(r.line)![1]!;
+    if (/refile of/.test(paren)) continue; // #489/#490 (refile of #486/#487): free text, allowed only as their genuine lines
+    assert.equal(creditLineAllowed(T(paren)), true, `${r.issue}: ${paren}`);
+  }
+  // contradictions inside the parentheses: free text, or a slot that spells one
+  for (const paren of [
+    "Builder drafted this, not Peace",
+    "Builder pre-file, ADD_FUNCTION, not Peace's",
+    "Builder pre-file, ADD_FUNCTION, Builder drafted this",
+    "Builder pre-file, ADD_FUNCTION, behavior only, not Peace's",
+    "Builder pre-file, ADD_FUNCTION, behavior only; Builder's idea",
+    "Builder pre-file, NOT_PEACE",
+    "Builder pre-file, BUILDER_DRAFTED",
+    "Builder pre-file, TEAM_TASK",
+    "Builder pre-file, ADD_FUNCTION, public-builder-drafted-v1",
+    "Builder pre-file, ADD_FUNCTION, public-not-peaces-v1",
+    "Builder pre-file, ADD_FUNCTION, public-team-picked-v1",
+    "Builder pre-file, ADD_FUNCTION, public-credit-withdrawn-v1 template join",
+    "Builder pre-file, ADD_FUNCTION, public-add-function-v1, Auditor chose it",
+    "Builder pre-file, ADD_FUNCTION, not-peace",
+    "Builder pre-file, ADD_FUNCTION, builder-drafted",
+    "Builder pre-file, ADD_FUNCTION, public-add-function-v1 not template join",
+    "Builder pre-file, ADD_FUNCTION, behavior only, behavior only",
+    "Builder pre-file, add_function",
+    "Builder pre-file,  ADD_FUNCTION",
+    "Builder pre-file, ADD_FUNCTION (Builder's)",
+    "Builder pre-file",
+    "x",
+    "",
+  ])
+    assert.equal(src(issue(T(paren))), "builder", paren);
+  // a contradiction on a SEPARATE line: team-picked wording and contrary (source ...) clauses are caught by the
+  // deny-list backstop anywhere in the body ...
+  const OK = T("Builder pre-file, ADD_FUNCTION");
+  for (const other of [
+    "Team-picked task.", "Builder-picked.", "Picked by the team.", "We chose this one.", "Peace asked us to pick.",
+    "(source: builder)", "( source: builder)", "&#40;source: builder&#41;",
+  ])
+    for (const body of [issue(OK, other), issue(other, OK)]) assert.equal(src(body), "builder", other);
+  // ... while free prose on another line ("Builder drafted this, not Peace.") is out of scope for the parser: it
+  // still reads peace here, and is covered by Auditor's pre-filing review (README, PR #544 scope note).
+  assert.equal(src(issue(OK, "Builder drafted this, not Peace.")), "peace");
+});
+
+test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.ts RULE_KINDS + the historical families, template = an existing rules/learned/<name>.json", async () => {
+  const { RULE_KINDS } = await import("../lib/learned.ts");
+  const { readdirSync } = await import("node:fs");
+  const T = (paren: string) => `Context (${paren}): Peace's task (source: peace).`;
+  // the KIND set is RULE_KINDS (read from learned.ts's source, so it follows any change there) plus exactly the historical four
+  assert.deepEqual([...CREDIT_KINDS].sort(), [...RULE_KINDS, "THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"].sort());
+  assert.deepEqual([...CREDIT_KINDS_HISTORICAL], ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"]);
+  assert.deepEqual(parseRuleKinds(readFileSync("peaceai/lib/learned.ts", "utf8")), [...RULE_KINDS]);
+  // the template set is exactly the rule files on disk that are also in approved.json (Auditor, after #546)
+  const approvedIds = new Set((JSON.parse(readFileSync("peaceai/rules/approved.json", "utf8")).rules as { id: string }[]).map((r) => r.id));
+  assert.deepEqual([...CREDIT_TEMPLATES].sort(), readdirSync("peaceai/rules/learned").filter((f) => f.startsWith("public-") && f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => approvedIds.has(id)).sort());
+  // every RULE_KIND, every historical family and every rule file gives peace in the template
+  for (const k of CREDIT_KINDS) assert.equal(src(issue(T(`Builder pre-file, ${k}`))), "peace", k);
+  for (const t of CREDIT_TEMPLATES) {
+    assert.equal(src(issue(T(`Builder pre-file, ADD_FUNCTION, ${t}`))), "peace", t);
+    assert.equal(src(issue(T(`Builder pre-file, ADD_FUNCTION, ${t} template join, behavior only`))), "peace", t);
+  }
+  // Auditor's examples, a short-word-only KIND, and lookalikes outside the sets give builder
+  for (const k of ["UNREQUESTED", "UNASKED_TASK", "DIDNT_ASK", "RETRACTED", "FALSE_CLAIM", "HUMAN_WROTE_IT", "NO_ASK", "ADD_FUNCTIONS", "ADD_FUNCTION_X", "TEST_CASE", "DERIVE"])
+    for (const paren of [`Builder pre-file, ${k}`, `Builder pre-file, ${k}, public-add-function-v1`, `Builder pre-file, ${k}, behavior only`])
+      assert.equal(src(issue(T(paren))), "builder", paren);
+  for (const t of ["public-unasked-v1", "public-didnt-ask-v1", "public-false-claim-v1", "public-add-function-v3", "public-add-function-v10", "public-add-function"])
+    for (const paren of [`Builder pre-file, ADD_FUNCTION, ${t}`, `Builder pre-file, ADD_FUNCTION, ${t} template join`])
+      assert.equal(src(issue(T(paren))), "builder", paren);
+  // a rule file on disk that is not approved is not a template
+  for (const t of ["public-existing-function-edit-v1", "public-set-literal-v1", "public-test-case-dateargs-v1"]) {
+    assert.ok(readdirSync("peaceai/rules/learned").includes(`${t}.json`) && !approvedIds.has(t), `${t}: on disk, not approved`);
+    assert.equal(CREDIT_TEMPLATES.has(t), false, t);
+    for (const paren of [`Builder pre-file, ADD_FUNCTION, ${t}`, `Builder pre-file, ADD_FUNCTION, ${t} template join, behavior only`])
+      assert.equal(src(issue(T(paren))), "builder", paren);
+  }
+  // creditTemplatesFrom: on disk AND approved; an approved id with no file is not a template; a malformed list approves nothing
+  const okList = (ids: unknown[]) => JSON.stringify({ schema: "peaceai-approved-rules:v1", rules: ids.map((id) => ({ id, sha256: "x" })) });
+  assert.deepEqual([...creditTemplatesFrom(["public-a-v1.json", "public-b-v1.json", "core-c-v1.json", "public-d-v1.txt"], okList(["public-a-v1", "public-e-v1", "core-c-v1"]))], ["public-a-v1"]);
+  for (const bad of [null, "", "not json", "[]", "{}", JSON.stringify({ schema: "other", rules: [{ id: "public-a-v1" }] }), JSON.stringify({ schema: "peaceai-approved-rules:v1", rules: {} }), okList(["public-a-v1", 7]), okList(["public-a-v1", null])])
+    assert.equal(creditTemplatesFrom(["public-a-v1.json"], bad).size, 0, String(bad));
+  // the deny list is still a backstop on both slots, independently of the sets
+  for (const w of ["NO_ASK", "NOT_PEACE", "BUILDER_DRAFTED", "public-team-picked-v1", "public-not-peaces-v1"]) assert.equal(CREDIT_SLOT_DENY.test(w), true, w);
+  for (const k of CREDIT_KINDS) assert.equal(CREDIT_SLOT_DENY.test(k), false, k);
+  for (const t of CREDIT_TEMPLATES) assert.equal(CREDIT_SLOT_DENY.test(t), false, t);
+  // the RULE_KINDS parse fails closed: no declaration, two declarations, or a malformed entry gives no kinds at all
+  const decl = 'export const RULE_KINDS = ["SET_LITERAL", "ADD_FUNCTION"] as const;';
+  assert.deepEqual(parseRuleKinds(decl), ["SET_LITERAL", "ADD_FUNCTION"]);
+  for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", ...MORE] as const;', 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;', 'export const RULE_KINDS = [] as const;', 'export const RULE_KINDS = ["A","B"] as const;'])
+    assert.deepEqual(parseRuleKinds(bad), [], bad);
+  // a failed RULE_KINDS parse at load time falls back ONLY to the 4 historical kinds (Auditor, after #546)
+  const HIST4 = ["DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING", "THROW_GUARD"];
+  for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;'])
+    assert.deepEqual([...loadCreditKinds(() => bad)].sort(), HIST4, bad);
+  assert.deepEqual([...loadCreditKinds(() => { throw new Error("ENOENT: learned.ts"); })].sort(), HIST4);
+  assert.deepEqual([...loadCreditKinds(() => decl)].sort(), [...HIST4, "ADD_FUNCTION", "SET_LITERAL"].sort());
+  assert.deepEqual([...loadCreditKinds()].sort(), [...CREDIT_KINDS].sort()); // the default reader is what loaded CREDIT_KINDS
+  // re-verified: every genuine KIND and template is in the sets, and all 80 genuine lines stay peace
+  for (const r of GENUINE_ROWS) {
+    const m = /\(Builder pre-file, ([A-Z][A-Z0-9_]*), (public-[a-z0-9-]+)\):/.exec(r.line);
+    if (m) {
+      assert.ok(CREDIT_KINDS.has(m[1]!), `${r.issue}: ${m[1]}`);
+      assert.ok(CREDIT_TEMPLATES.has(m[2]!), `${r.issue}: ${m[2]}`);
+    } else assert.match(r.line, /refile of #48[67]/, String(r.issue));
+    assert.equal(src(issue(r.line)), "peace", String(r.issue));
+  }
 });
 
 test("R5.2/R5.3: the whole-line allowlist is pinned, add-only and protected; one bad row or a sha mismatch allows nothing", async () => {

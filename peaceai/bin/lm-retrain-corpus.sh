@@ -4,6 +4,8 @@
 # 1. anonymous clones of the public repos at the heads pinned in peaceai/model/lm-retrain.json (<work>/srcroot/<repo>,
 #    also corefree_proof.py's --source-root), and lm-retrain-headcheck.sh: merged content == PR head content, file by
 #    file (squash/rebase merges against refs/pull/N/head); 2. ft-pairs.ts --list over the reviewed commit list (sha256-pinned);
+# 2b. ft_prepare.py (forgetting fix, run 40375535718): one version per (repo, path, function), split by file path, heldout
+#    docs sharing a significant line with train dropped (finetune.ftLineMinChars), report <work>/ft-prepare.json;
 # 3. set C v2 (ext-fetch.ts --set-c) into <work>/setc; 4. eval_dedup.py against set C v2 and the judge items, also
 #    dropping the ids in <drop-ids-file> (core-flagged docs), into <work>/ft with the report <work>/dedup.json.
 # Counts only on stdout. Needs PEACEAI_PYTHON (numpy not needed) or python3.
@@ -22,8 +24,10 @@ while read -r r sha; do
   specs+=("$r=$d@$sha")
 done < <(jq -r '.list.repos | to_entries[] | "\(.key) \(.value)"' "$cfg")
 ./peaceai/bin/lm-retrain-headcheck.sh "$work/srcroot"
-rm -rf "$work/ft-raw" "$work/ft"
-./node_modules/.bin/tsx peaceai/bin/ft-pairs.ts "$work/ft-raw" --list "$list" --list-sha256 "$lsha" "${specs[@]}"
+rm -rf "$work/ft-pairs" "$work/ft-raw" "$work/ft"
+./node_modules/.bin/tsx peaceai/bin/ft-pairs.ts "$work/ft-pairs" --list "$list" --list-sha256 "$lsha" "${specs[@]}"
+"$py" peaceai/model/ft_prepare.py --in "$work/ft-pairs" --out "$work/ft-raw" --report "$work/ft-prepare.json" --line-min-chars "$(jq -r .finetune.ftLineMinChars "$cfg")"
+rm -rf "$work/ft-pairs"
 if [ ! -f "$work/setc/docs.jsonl" ]; then ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$work/csrc" "$work/setc" --set-c; rm -rf "$work/csrc"; fi
 dargs=(); [ -n "$drops" ] && dargs=(--drop "$drops")
 "$py" peaceai/model/eval_dedup.py --corpus "$work/ft-raw" --setc "$work/setc" --judge "$items" --out "$work/ft" --report "$work/dedup.json" \

@@ -2023,7 +2023,7 @@
    "expected": {
     "outcome": "known-limit",
     "program": "n",
-    "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there)",
+    "note": "known limit: a cap or floor past every example fits every example; no gate can ask for it (the review note's far-probe table shows the program's values there). Since the identity gate (derive_expr_identity) this entry is no longer emitted: every example's result equals n, so deriveProgram refuses the fit (the search still picks n)",
     "formGate": []
    }
   },

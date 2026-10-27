@@ -419,7 +419,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".py"))) {
     const text = readFileSync(join(dir, f), "utf8");
     const imports = [...text.matchAll(/^\s*(?:import|from)\s+([A-Za-z_.]+)/gm)].map((m) => m[1]!.split(".")[0]);
-    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm", "manifest_parts"].includes(i!), `${f} imports ${i}`);
+    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm", "manifest_parts", "replay"].includes(i!), `${f} imports ${i}`);
     assert.ok(!/huggingface|from_pretrained|torch|tensorflow|transformers|tiktoken|sentencepiece|openai|anthropic|urllib|requests|socket|http/i.test(text), f);
   }
   for (const f of ["lib/lm.ts", "lib/fill.ts", "lib/lmcorpus.ts", "bin/lm-fill.ts", "bin/lm-memcheck.ts", "bin/lm-corpus.ts"]) {
@@ -430,7 +430,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
 
 const LM_TRAIN_M49_WORKFLOW_SHA256 = "01affbb7551b3453a0ecef535d7f8893bfac82c4c20464b074c14f2f110f9be9"; // M49 BLOCKING (1): fine-tune corpus from pinned commits + ft-gate before training. M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
 const POSTTRAIN_MEMCHECK_WORKFLOW_SHA256 = "0aa3e9b681aeebb851f70f6f922b73fc2a79f3df0cbe64233142074317376daf"; // M49 post-train memcheck (Architect option 1)
-const LM_RETRAIN_WORKFLOW_SHA256 = "8e37022ebf48c7856018e7f34f9e32377f7105482b6865b516771914f45ebeb8"; // M119: LM retrain on the reviewed commit list (Builder + Auditor gate; m119-lm-retrain.test.ts pins its shape)
+const LM_RETRAIN_WORKFLOW_SHA256 = "c26778ba1d1d8d32d54b0e440739fcb422f77433eb1b1179400c2ad385be7130"; // M123 condition 4: a sweep all deadline-cut at step 0 lands a record with "no candidate" (no candidate training, no model landed, no promotion). M123 continued-pretraining mode: mode choice input (finetune default, allowlist in lm-retrain-mode.sh), .pretrain block, full-split replay, JOB_START deadline, bpb_gate.py margin gate eval.minBpbGain, record v5, ft + replay memcheck (m123-lm-pretrain.test.ts). Before (2f952568...): M122 forgetting fix (run 40375535718): replay share from the live pretrain train split, pretrain-heldout validation, ft dedup + split by path, replay overlap proof before training, dry_run input with every Results write behind lm-retrain-dryrun-guard.sh (m122-lm-replay.test.ts). Before (ca860771...): Judge scorer-repro rule moved to peaceai/model/judge_repro.py (shared with peace-lm-judge-v2.yml, unchanged rule). Before: Judge gate v1 (after #550): judge set v2 items, judge AUC report-only via judge_gate.py (was 8e37022e...). M119: LM retrain on the reviewed commit list (Builder + Auditor gate; m119-lm-retrain.test.ts pins its shape)
 const LM_TRAIN_WORKFLOW_SHA256 = "9355431302d31ed8ca132ee60e8f2ab2728c462bfbe7a7bacdeb013820ae6211"; // M51: pinned to the #148 manifest by sha (--manifest-sha), so M37 never trains on the M49 corpus
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {
@@ -470,7 +470,8 @@ test("workflows: no public workflow trains, builds the corpus or runs the memche
     if (f === "peace-lm-retrain.yml") {
       // M119: the third training exemption (fine-tune of the live model), pinned to the exact reviewed file.
       assert.equal(createHash("sha256").update(readFileSync(join(wfDir, f))).digest("hex"), LM_RETRAIN_WORKFLOW_SHA256, "peace-lm-retrain.yml changed: re-review and re-pin");
-      assert.match(text, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m);
+      // M122: workflow_dispatch only, one boolean input (dry_run), permissions {}.
+      assert.match(text, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n\npermissions: \{\}\n/m);
       assert.equal((text.match(/^on:/gm) ?? []).length, 1);
       assert.equal((text.match(/persist-credentials: false/g) ?? []).length, (text.match(/actions\/checkout@/g) ?? []).length);
       assert.ok(!/lm-corpus\.ts|upload-artifact|download-artifact|actions\/cache|pull_request|schedule:|push:/.test(text), f);
@@ -577,7 +578,9 @@ test("M9 retrain: train.py stops early on held-out loss and keeps the best check
   const train = readFileSync(join(repo, "peaceai/model/train.py"), "utf8");
   assert.match(train, /--patience/);
   assert.match(train, /shutil\.copyfile\(W\("checkpoint\.npz"\), W\("best\.npz"\)\)/);
-  assert.match(train, /while best\["stale"\] < \(args\.patience or 10\*\*9\)/);
+  // LM retrain pretrain mode: the loop's stop rules moved into stop_reason() (patience first; then steps, max-steps-this-run, max-seconds, deadline).
+  assert.match(train, /def stop_reason\(\):\n    if args\.patience and best\["stale"\] >= args\.patience:\n        return "patience"/);
+  assert.match(train, /\nwhile \(reason := stop_reason\(\)\) is None:\n/);
   assert.match(readFileSync(join(repo, "peaceai/model/export.py"), "utf8"), /--checkpoint", default="checkpoint\.npz"/);
 });
 

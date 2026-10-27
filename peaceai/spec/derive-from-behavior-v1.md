@@ -201,7 +201,8 @@ other example sets and find other wrong picks (seed 101 found t465 above); a see
 
 derive_behavior_code, derive_sections, derive_signature, derive_examples, derive_no_fit, derive_ambiguous,
 derive_budget, derive_under_specified_<unread|chars|edge|far|region|span|branch|cap|rival|rival_budget>[: param],
-derive_unevidenced_form[: forms], derive_emit_size,
+derive_unevidenced_form[: forms], derive_expr_identity (every example's result equals one parameter unchanged),
+derive_examples_uninformative (every example gives one same result), derive_emit_size,
 derive_expr_vocab, derive_expr_*, derive_path, derive_module_exists, new_test_path_exists, derive_params.
 
 ## Limits (v1)
