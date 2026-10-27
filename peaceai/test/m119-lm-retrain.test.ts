@@ -297,13 +297,79 @@ test("M119 judge items: judge set v2 from Results main pinned by sha256 and coun
   assert.ok(protectedReason("peaceai/bin/lm-retrain-judge.sh"));
 });
 
+/**
+ * A shell script read the way bash splits words (Auditor #553 review, note b). Returns `code`: the text with comments
+ * removed, where '#' starts a comment only outside quotes and at the start of a word; and `bare`: the same code with
+ * every quote character and backslash escape removed, so `pu""sh`, `p'u'sh`, `"push"` and `pu\sh` all read `push`.
+ * Quoted text is kept (a quoted '#' is not a comment), and a newline inside quotes stays part of the quoted word.
+ */
+export function shellWords(text: string): { code: string; bare: string } {
+  let code = "", bare = "", q: "'" | '"' | null = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (q === "'") { code += c; if (c === "'") q = null; else bare += c; continue; }
+    if (q === '"') {
+      code += c;
+      if (c === "\\" && i + 1 < text.length) { const n = text[++i]!; code += n; if (n !== "\n") bare += /[$`"\\]/.test(n) ? n : c + n; continue; }
+      if (c === '"') q = null; else bare += c;
+      continue;
+    }
+    if (c === "'" || c === '"') { code += c; q = c; continue; }
+    if (c === "\\" && i + 1 < text.length) { const n = text[++i]!; code += c + n; if (n !== "\n") bare += n; continue; }
+    if (c === "#" && (i === 0 || /[\s;&|()<>]/.test(text[i - 1]!))) { while (i + 1 < text.length && text[i + 1] !== "\n") i++; continue; }
+    code += c; bare += c;
+  }
+  return { code, bare };
+}
+
+/** Problems with a Results-reading script: a push, a Results write, or shell forms the reader cannot follow. */
+export function resultsReadOnlyProblems(text: string): string[] {
+  const { code, bare } = shellWords(text), out: string[] = [];
+  for (const [name, t] of [["code", code], ["dequoted", bare]] as const) {
+    if (/\bpush\b/.test(t)) out.push(`${name}: git push`);
+    if (/results-write\.sh|\bgit (-C ("[^"]*"|\S+) )?(commit|tag|update-ref|remote set-url)\b|--force|--mirror/.test(t)) out.push(`${name}: Results write`);
+  }
+  // Forms that build a command word the checks above cannot read are refused outright: eval, ANSI-C $'..' quoting and
+  // source / '.' of another file. (A word built from variables, e.g. ${p}sh, is not caught here; the scripts are
+  // protected, so review covers that.)
+  if (/(^|[\s;&|(])eval\s/m.test(code)) out.push("eval");
+  if (/\$'/.test(code)) out.push("ANSI-C quoting");
+  if (/(^|[\s;&|(])(source|\.)\s/m.test(code)) out.push("sourced file");
+  return out;
+}
+
 test("M119 restore and judge-fetch scripts only read Results: no git push, no Results write inside lm-retrain-live.sh or lm-retrain-judge.sh (Auditor follow-up)", () => {
   for (const f of ["peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-judge.sh"]) {
-    const code = read(f).split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
-    assert.doesNotMatch(code, /\bpush\b/, `${f}: no git push`);
-    assert.doesNotMatch(code, /results-write\.sh|\bgit (-C "[^"]*" )?(commit|tag|update-ref|remote set-url)\b|--force|--mirror/, `${f}: no Results write`);
-    assert.match(code, /with-deploy-key\.sh git (clone|-C "\$res" (fetch|sparse-checkout|checkout))/, `${f}: the key is used to read`);
+    const text = read(f);
+    assert.deepEqual(resultsReadOnlyProblems(text), [], f);
+    assert.match(shellWords(text).code, /with-deploy-key\.sh git (clone|-C "\$res" (fetch|sparse-checkout|checkout))/, `${f}: the key is used to read`);
   }
+});
+
+test("M119 no-push check: quote splitting, escapes and a '#' inside quotes cannot hide a push or a Results write (Auditor #553 note b)", () => {
+  const base = read("peaceai/bin/lm-retrain-judge.sh");
+  // Each of these, appended to the real script, is a push or a write bash would run; each must be reported.
+  const evasions = [
+    'git -C "$res" pu""sh origin HEAD:main',
+    "git -C \"$res\" pu''sh origin HEAD:main",
+    'git -C "$res" "push" origin',
+    "git -C \"$res\" pu\\sh origin",
+    'echo "#" ; git -C "$res" push origin',
+    "x='#'; git -C \"$res\" push origin",
+    'echo "a\n# not a comment" && git push',
+    'git -C "$res" co""mmit -qm x',
+    'git -C "$res" ta\\g v1',
+    './peaceai/bin/results-wr""ite.sh "x"',
+    'git -C "$res" fetch --fo""rce',
+    "eval \"git -C $res pu\"\"sh\"",
+    "git -C \"$res\" $'\\x70ush'",
+    ". ./other.sh",
+  ];
+  for (const e of evasions) assert.notDeepEqual(resultsReadOnlyProblems(`${base}\n${e}\n`), [], e);
+  // Real comments still do not count, wherever they sit; quoted text that is only data is not a write.
+  for (const ok of ["# git push origin main", "echo hi   # then git push", 'echo "refused: not pushed"', "  # pu\"\"sh"]) assert.deepEqual(resultsReadOnlyProblems(`${base}\n${ok}\n`), [], ok);
+  assert.equal(shellWords('a "#b" #c\nd').code, 'a "#b" \nd');
+  assert.equal(shellWords("pu\"\"sh p'u'sh pu\\sh").bare, "push push push");
 });
 
 // Auditor #536 follow-up: committed fixture test for lm-retrain-judge.sh's refusals. Made-up items and scores in a
