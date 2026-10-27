@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, creditLineAllowed, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_KINDS, CREDIT_KINDS_HISTORICAL, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, CREDIT_SLOT_DENY, CREDIT_TEMPLATES, creditLineAllowed, parseRuleKinds, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -284,7 +284,7 @@ test("R5.2: the credit line is a whole-line match: a genuine line or the strict 
   assert.equal(src(issue(`${CTX_GENUINE} ${lineOf(353).slice(lineOf(353).indexOf("(source: peace).") + 17)}`)), "builder");
   // every genuine line is allowed whole; the template regex is exactly as Auditor specified
   for (const r of GENUINE_ROWS) assert.equal(creditLineAllowed(r.line), true, String(r.issue));
-  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \(Builder pre-file, ([A-Z][A-Z_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$`);
+  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \(Builder pre-file, ([A-Z][A-Z0-9_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$`);
 });
 
 test("M119 follow-up: the template's parenthetical is a fixed grammar; a contradiction inside it gives builder", () => {
@@ -294,8 +294,10 @@ test("M119 follow-up: the template's parenthetical is a fixed grammar; a contrad
     "Builder pre-file, ADD_FUNCTION",
     "Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6",
     "Builder pre-file, DATE_FUNCTION, public-date-function-v1, behavior only",
-    "Builder pre-file, DERIVE, public-derive-from-behavior-v1 template join",
-    "Builder pre-file, DERIVE, public-derive-from-behavior-v1 template join, behavior only",
+    "Builder pre-file, DERIVE_FROM_BEHAVIOR, public-derive-from-behavior-v1 template join",
+    "Builder pre-file, DERIVE_FROM_BEHAVIOR, public-derive-from-behavior-v2 template join, behavior only",
+    "Builder pre-file, IMPORT_EDIT_V2, public-import-edit-v2",
+    "Builder pre-file, THROW_GUARD, public-throw-guard-top-v1",
     "Builder pre-file, COMPLEX_FUNCTION, behavior only",
   ])
     assert.equal(src(issue(T(paren))), "peace", paren);
@@ -343,6 +345,49 @@ test("M119 follow-up: the template's parenthetical is a fixed grammar; a contrad
   // ... while free prose on another line ("Builder drafted this, not Peace.") is out of scope for the parser: it
   // still reads peace here, and is covered by Auditor's pre-filing review (README, PR #544 scope note).
   assert.equal(src(issue(OK, "Builder drafted this, not Peace.")), "peace");
+});
+
+test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.ts RULE_KINDS + the historical families, template = an existing rules/learned/<name>.json", async () => {
+  const { RULE_KINDS } = await import("../lib/learned.ts");
+  const { readdirSync } = await import("node:fs");
+  const T = (paren: string) => `Context (${paren}): Peace's task (source: peace).`;
+  // the KIND set is RULE_KINDS (read from learned.ts's source, so it follows any change there) plus exactly the historical four
+  assert.deepEqual([...CREDIT_KINDS].sort(), [...RULE_KINDS, "THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"].sort());
+  assert.deepEqual([...CREDIT_KINDS_HISTORICAL], ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"]);
+  assert.deepEqual(parseRuleKinds(readFileSync("peaceai/lib/learned.ts", "utf8")), [...RULE_KINDS]);
+  // the template set is exactly the rule files on disk
+  assert.deepEqual([...CREDIT_TEMPLATES].sort(), readdirSync("peaceai/rules/learned").filter((f) => f.startsWith("public-") && f.endsWith(".json")).map((f) => f.slice(0, -5)).sort());
+  // every RULE_KIND, every historical family and every rule file gives peace in the template
+  for (const k of CREDIT_KINDS) assert.equal(src(issue(T(`Builder pre-file, ${k}`))), "peace", k);
+  for (const t of CREDIT_TEMPLATES) {
+    assert.equal(src(issue(T(`Builder pre-file, ADD_FUNCTION, ${t}`))), "peace", t);
+    assert.equal(src(issue(T(`Builder pre-file, ADD_FUNCTION, ${t} template join, behavior only`))), "peace", t);
+  }
+  // Auditor's examples, a short-word-only KIND, and lookalikes outside the sets give builder
+  for (const k of ["UNREQUESTED", "UNASKED_TASK", "DIDNT_ASK", "RETRACTED", "FALSE_CLAIM", "HUMAN_WROTE_IT", "NO_ASK", "ADD_FUNCTIONS", "ADD_FUNCTION_X", "TEST_CASE", "DERIVE"])
+    for (const paren of [`Builder pre-file, ${k}`, `Builder pre-file, ${k}, public-add-function-v1`, `Builder pre-file, ${k}, behavior only`])
+      assert.equal(src(issue(T(paren))), "builder", paren);
+  for (const t of ["public-unasked-v1", "public-didnt-ask-v1", "public-false-claim-v1", "public-add-function-v3", "public-add-function-v10", "public-add-function"])
+    for (const paren of [`Builder pre-file, ADD_FUNCTION, ${t}`, `Builder pre-file, ADD_FUNCTION, ${t} template join`])
+      assert.equal(src(issue(T(paren))), "builder", paren);
+  // the deny list is still a backstop on both slots, independently of the sets
+  for (const w of ["NO_ASK", "NOT_PEACE", "BUILDER_DRAFTED", "public-team-picked-v1", "public-not-peaces-v1"]) assert.equal(CREDIT_SLOT_DENY.test(w), true, w);
+  for (const k of CREDIT_KINDS) assert.equal(CREDIT_SLOT_DENY.test(k), false, k);
+  for (const t of CREDIT_TEMPLATES) assert.equal(CREDIT_SLOT_DENY.test(t), false, t);
+  // the RULE_KINDS parse fails closed: no declaration, two declarations, or a malformed entry gives no kinds at all
+  const decl = 'export const RULE_KINDS = ["SET_LITERAL", "ADD_FUNCTION"] as const;';
+  assert.deepEqual(parseRuleKinds(decl), ["SET_LITERAL", "ADD_FUNCTION"]);
+  for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", ...MORE] as const;', 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;', 'export const RULE_KINDS = [] as const;', 'export const RULE_KINDS = ["A","B"] as const;'])
+    assert.deepEqual(parseRuleKinds(bad), [], bad);
+  // re-verified: every genuine KIND and template is in the sets, and all 80 genuine lines stay peace
+  for (const r of GENUINE_ROWS) {
+    const m = /\(Builder pre-file, ([A-Z][A-Z0-9_]*), (public-[a-z0-9-]+)\):/.exec(r.line);
+    if (m) {
+      assert.ok(CREDIT_KINDS.has(m[1]!), `${r.issue}: ${m[1]}`);
+      assert.ok(CREDIT_TEMPLATES.has(m[2]!), `${r.issue}: ${m[2]}`);
+    } else assert.match(r.line, /refile of #48[67]/, String(r.issue));
+    assert.equal(src(issue(r.line)), "peace", String(r.issue));
+  }
 });
 
 test("R5.2/R5.3: the whole-line allowlist is pinned, add-only and protected; one bad row or a sha mismatch allows nothing", async () => {
