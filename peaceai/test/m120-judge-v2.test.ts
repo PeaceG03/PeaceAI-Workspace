@@ -192,6 +192,37 @@ test("judge v2 label path: one wrong row is enough, held/train/skipped counts ar
   }
 });
 
+// Auditor (#553 review, note a): first-parameter witness mutants in rebuildItem survived the tests above (the only
+// two-parameter case, pick(a, b) = a, is dropped at the FIRST parameter, so a check that used r.args[0] for every
+// parameter, checked only the first parameter, or dropped only when the first parameter was unmoved still passed).
+// Each case below fails under one of them.
+test("judge v2 identity witnesses: every parameter of the return type is checked against its OWN argument", () => {
+  const ab = [S("a"), S("b")], sp = { params: ab, ret: "string" as JType };
+  // pickB(a, b) = b: the first parameter is moved on many rows, the second never. Dropped, naming b.
+  const pickB = "function pickB(a: string, b: string): string { return b; }";
+  const upB = runner(pickB, "pickB"), dB = exprRunner("b", ab);
+  const rB = rebuildItem(sp, [], pickB, v1Counts(ab, "string", [], upB, dB), upB, dB);
+  assert.equal(rB.kept, false, JSON.stringify(rB));
+  assert.equal(!rB.kept && rB.reason, "identity_indistinguishable");
+  assert.match(!rB.kept ? rB.detail : "", /different from b$/);
+  // join(a, b) = a + "-" + b: both parameters are moved; each witness count is that parameter's own count.
+  const join2 = 'function join2(a: string, b: string): string { return a + "-" + b; }';
+  const upJ = runner(join2, "join2"), dJ = exprRunner('a + "-" + b', ab);
+  const rJ = rebuildItem(sp, [], join2, v1Counts(ab, "string", [], upJ, dJ), upJ, dJ);
+  assert.ok(rJ.kept && rJ.label === "right", JSON.stringify(rJ));
+  const train = new Set(trainSlice(minerGrid(ab, [])).map((a) => JSON.stringify(a)));
+  const held = cartesian(wideDomains(ab, [], join2)).filter((a) => !train.has(JSON.stringify(a)));
+  assert.equal(rJ.held, held.length);
+  const own = { a: held.filter((x) => upJ(x) !== x[0]).length, b: held.filter((x) => upJ(x) !== x[1]).length };
+  assert.ok(own.a > 0 && own.b > 0);
+  assert.deepEqual(rJ.identityWitnesses, own);
+  // A mixed-type (number, string) item records a witness for the string parameter only.
+  const tag = 'function tag(n: number, s: string): string { return n > 0 ? s : "neg"; }';
+  const np = [N("n"), S("s")], upT = runner(tag, "tag"), dT = exprRunner('n > 0 ? s : "neg"', np);
+  const rT = rebuildItem({ params: np, ret: "string" }, [], tag, v1Counts(np, "string", [], upT, dT), upT, dT);
+  assert.ok(rT.kept, JSON.stringify(rT)); assert.deepEqual(Object.keys(rT.identityWitnesses), ["s"]);
+});
+
 test("judge v2: the sources file holds commit ids and integers only, keyed to the pinned v1 judge commit", () => {
   assert.equal(SRC.schema, SOURCES_SCHEMA);
   assert.equal(SRC.v1.commit, CFG.eval.judgeV1.commit);
