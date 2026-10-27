@@ -36,6 +36,10 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-test-case-existing-v7": "TEST_CASE_EXISTING", // M97: v7 target (Map / Set signatures and literals, void returns with throws checks); same kind
   "public-existing-function-edit-v1": "EXISTING_FUNCTION_EDIT", // M98: kind EXISTING_EDIT (G1 statement edit + G2 fake-driven test)
   "public-derive-from-behavior-v1": "DERIVE_FROM_BEHAVIOR", // M99: new pure function derived from behavior + examples (new module)
+  "public-derive-from-behavior-v2": "DERIVE_FROM_BEHAVIOR", // M111: v1 + boolean label chains (landed #516 as seq 281); same kind
+  "public-derive-from-behavior-v3": "DERIVE_FROM_BEHAVIOR", // M112: append to an existing module; same kind
+  "public-derive-from-behavior-v4": "DERIVE_FROM_BEHAVIOR", // M113: list inputs; same kind
+  "public-derive-from-behavior-v5": "DERIVE_FROM_BEHAVIOR", // M114: string parsers; same kind
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */

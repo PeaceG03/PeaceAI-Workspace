@@ -76,3 +76,18 @@ test("workflow-job-v1 and tsconfig-script-v1 map to their skills; both approved 
 test("public-env-fix-v2 maps to ENV_FIX", () => {
   assert.equal(RULE_SKILL["public-env-fix-v2"], "ENV_FIX");
 });
+
+test("#516 shape (seq 281): a public-derive-from-behavior-v2 landing is DERIVE_FROM_BEHAVIOR; every derive-from-behavior rule file maps to its kind", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const { resolve, join } = await import("node:path");
+  const line = e(281, "DERIVE_FROM_BEHAVIOR", "PeaceAI-Workspace#516, PeaceSTOCKS@8dec076");
+  assert.deepEqual(checkRuleSkills([line], (n) => (n === 516 ? ["public-derive-from-behavior-v2"] : null), { ci: true }), []);
+  assert.match(checkRuleSkills([e(281, "COMPLEX_FUNCTION", line.changed)], () => ["public-derive-from-behavior-v2"])[0]!, /\(DERIVE_FROM_BEHAVIOR\)/);
+  const dir = resolve(import.meta.dirname, "../peaceai/rules/learned");
+  const derive = readdirSync(dir).filter((f) => f.startsWith("public-derive-from-behavior-")).map((f) => f.replace(/\.json$/, ""));
+  assert.ok(derive.length >= 5, derive.join(","));
+  for (const r of derive) {
+    assert.equal((JSON.parse(readFileSync(join(dir, r + ".json"), "utf8")) as { kind: string }).kind, "DERIVE_FROM_BEHAVIOR", r);
+    assert.equal(RULE_SKILL[r], "DERIVE_FROM_BEHAVIOR", r);
+  }
+});
