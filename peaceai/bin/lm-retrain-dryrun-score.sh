@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # LM retrain dry run only (DRY_RUN=true): AFTER a sweep arm has finished training, score each kept checkpoint and the
 # live model on set C v2 (same byte slice as the gate: eval.setcMaxBytes, slice sha256 must equal eval.setcSliceSha256)
-# and print ONLY "dry-run arm=<n> lr=<lr> step=<s> setc_bpb=<x>" lines plus one "dry-run live setc_bpb=<x>" line.
+# and print ONLY "dry-run arm=<n> lr=<lr> step=<s> setc_bpb=<x>" lines plus one "dry-run live setc_bpb=<x>" line, then
+# one "dry-run arm=<n> phase setup_s=.. train_s=.. eval_s=.. score_s=.. job_s=.." line (numbers only: the arm's
+# timing.json seconds, this scoring's seconds, and seconds since JOB_START, -1 if unset) to size the pretrain budget.
 # Set C is fetched here (ext-fetch.ts --set-c, anonymous), after training; nothing here feeds early stopping or step
 # selection (the arm's summary.json is already written). Writes nothing outside <scratch>, which it deletes.
 #   DRY_RUN=true lm-retrain-dryrun-score.sh <arm work> <live dir> <arm> <lr> <scratch>
@@ -20,11 +22,18 @@ score() { # <model dir> <label>
   [ "$sl" = "$want" ] || { echo "dryrun-score: set C slice differs from the pinned one: refused"; exit 1; }
   echo "dry-run $2 setc_bpb=$bpb"
 }
+t_score=$(date +%s)
 score "$live" "live"
 n=0
 for c in $(cd "$work" && ls ckpt-*.npz 2>/dev/null | sed 's/^ckpt-\([0-9]*\)\.npz$/\1/' | sort -n); do
   "$py" peaceai/model/export.py --work "$work" --out "$s/m" --threads 4 --checkpoint "ckpt-$c.npz" > /dev/null
   score "$s/m" "arm=$arm lr=$lr step=$c"; rm -rf "$s/m"; n=$((n + 1))
 done
-[ "$n" -gt 0 ] || { echo "dryrun-score: no kept checkpoints"; exit 1; }
+# A deadline-cut arm with no evaluation after step 0 has no kept checkpoint: the phase line is still printed (sizing).
+[ "$n" -gt 0 ] || [ "$(jq -r '.deadlineCut == true and .bestStep == 0' "$work/summary.json")" = true ] || { echo "dryrun-score: no kept checkpoints"; exit 1; }
+num='^[0-9]+([.][0-9]+)?$'
+read -r ps pt pe < <(jq -r '[.setupSeconds, .trainSeconds, .evalSeconds] | map(tostring) | join(" ")' "$work/timing.json")
+psc=$(( $(date +%s) - t_score )); pj=-1; [[ "${JOB_START-}" =~ ^[0-9]+$ ]] && pj=$(( $(date +%s) - JOB_START ))
+[[ "$ps" =~ $num && "$pt" =~ $num && "$pe" =~ $num ]] || { echo "dryrun-score: bad timing record: refused"; exit 1; }
+echo "dry-run arm=$arm phase setup_s=$ps train_s=$pt eval_s=$pe score_s=$psc job_s=$pj"
 rm -rf "$s"

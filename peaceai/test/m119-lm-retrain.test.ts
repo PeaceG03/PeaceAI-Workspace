@@ -128,8 +128,8 @@ test("M119: a builder-log row doc must be exactly line N of <sha>:<path> (corefr
 }));
 
 test("M119: the retrain workflow carries the Auditor's gate and lands in Results only, with no promotion", () => {
-  // M122: workflow_dispatch only, with one boolean input (dry_run; m122-lm-replay.test.ts pins what it does).
-  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n\npermissions: \{\}\n/m);
+  // M122: workflow_dispatch only, with a boolean dry_run input (m122-lm-replay.test.ts pins what it does); M123 adds the mode choice (m123 pins it).
+  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n\npermissions: \{\}\n/m);
   assert.doesNotMatch(WF, /pull_request|workflow_run:|schedule:/);
   assert.doesNotMatch(WF, /upload-artifact|actions\/cache|download-artifact/, "no artifacts, no caches");
   assert.doesNotMatch(WF, /self-hosted/); assert.equal((WF.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 6);
@@ -141,16 +141,16 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   for (const l of /LANDING_SHA256: \|-\n((?: {4}.+\n)+)/.exec(m49)![1]!.trim().split("\n")) assert.ok(WF.includes(l.trim()));
   for (const l of /LANDING_SHA256: \|-\n((?: {4}.+\n)+)/.exec(mc)![1]!.trim().split("\n")) assert.ok(WF.includes(l.trim()));
   // Gate 1 + 3: both models scored in this run on the same pinned slice and the same judge items; judge AUC recorded (report-only).
-  assert.match(WF, /for who in live model; do\n.*eval_c\.py --model "\$RUNNER_TEMP\/\$who"[^\n]*--max-bytes "\$mb"[\s\S]*?judge364\.py --model "\$RUNNER_TEMP\/\$who"/);
+  assert.match(WF, /whos=\(live\); \[ "\$CAND" = true \] && whos\+=\(model\)\n\s+for who in "\$\{whos\[@\]\}"; do\n.*eval_c\.py --model "\$RUNNER_TEMP\/\$who"[^\n]*--max-bytes "\$mb"[\s\S]*?judge364\.py --model "\$RUNNER_TEMP\/\$who"/);
   assert.match(WF, /\[ "\$\(sl live\)" = "\$want" \] && \[ "\$\(sl model\)" = "\$want" \]/);
-  assert.match(WF, /float\(sys\.argv\[1\]\) >= float\(sys\.argv\[2\]\)/);
+  assert.doesNotMatch(WF, /float\(sys\.argv\[1\]\) >= float\(sys\.argv\[2\]\)/, "M123: no float comparison: the margin gate is exact (bpb_gate.py)");
   // Judge AUC is report-only (judge gate v1): judge_gate.py decides; it can block only under the promote-to-hard rule.
   assert.doesNotMatch(WF, /ge "\$\(a model\)" "\$\(a live\)"/);
   assert.match(WF, /judge_gate\.py --mode "\$\(jq -r \.eval\.judgeAucGate "\$CFG"\)" --live "\$E\/judge-live\.json" --candidate "\$E\/judge-model\.json" > "\$E\/judge-gate\.json"/);
   assert.match(WF, /\[ "\$\(jq -r \.blocks "\$E\/judge-gate\.json"\)" = false \] \|\| \{ ok=false; why\+=\(judge_auc\); \}/);
   assert.match(WF, /aucGate: \$jg\[0\]/);
-  // Set C v2 bits/byte is gating too (Auditor #533): candidate <= live.
-  assert.match(WF, /ge "\$\(bpb live\)" "\$\(bpb model\)" \|\| \{ ok=false; why\+=\(setc_bpb\); \}/);
+  // Set C v2 bits/byte is gating too (Auditor #533): candidate <= live; M123: by at least eval.minBpbGain.
+  assert.match(WF, /python3 peaceai\/model\/bpb_gate\.py "\$\(bpb live\)" "\$\(bpb model\)" "\$\(jq -r \.eval\.minBpbGain "\$CFG"\)" \|\| \{ ok=false; why\+=\(setc_bpb\); \}/);  // M123: candidate <= live - eval.minBpbGain (m123 pins bpb_gate.py)
   // The judge scorer must reproduce the live model's recorded aggregates in the same run.
   assert.match(WF, /scores-live-recorded\.json[\s\S]*judge-live\.json[\s\S]*why\+=\(judge_scorer_not_reproduced\)/);
   // Tuning: two sweep arms select by validation loss only (M122: over the replay corpus's pretrain-heldout windows); the candidate is retrained to the selected step.

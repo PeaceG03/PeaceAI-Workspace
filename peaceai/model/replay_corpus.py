@@ -10,12 +10,16 @@ bytes must hash to replay.manifestSha256 or this refuses; so every replay doc is
 with the live doc id and the live split (train docs were trained on, heldout docs never were).
 
 Selection (deterministic, no RNG): key(doc) = sha256(salt + "\\n" + split + "\\n" + doc id), ascending.
-  train: split=train docs in key order, each added while the running byte total stays <= trainMaxBytes.
+  train: split=train docs in key order, each added while the running byte total stays <= the mode's cap:
+         --mode finetune: replay.trainMaxBytes (pretrainTrainMaxBytes is never read);
+         --mode pretrain: replay.pretrainTrainMaxBytes (continued pretraining on the full train split: every split=train
+         doc must be selected, or this refuses). --mode is checked against the fixed allowlist MODES.
   val:   split=heldout docs with bytes >= valMinBytes in key order, the first valDocs (spread over many docs and repos
          by construction; train.py takes one window per doc).
 Two offline steps around the fetch (model code never touches the network; lm-retrain-replay.sh fetches):
-  replay_corpus.py plan --source <ext-manifest.jsonl> --config <lm-retrain.json> --plan <plan.jsonl>
-      checks both shas, selects, writes one JSON line per selected doc {i, doc, repo, commit, path, sha256, pattern
+  replay_corpus.py plan --mode <finetune|pretrain> --source <ext-manifest.jsonl> --config <lm-retrain.json> --plan <plan.jsonl> [--stats <json>]
+      checks both shas, selects, writes --stats {mode, trainCap, splitTrainDocs, splitTrainBytes, trainDocs, trainBytes,
+      fullTrainSplit, valDocs, valBytes} and one JSON line per selected doc {i, doc, repo, commit, path, sha256, pattern
       (the no-cone sparse-checkout pattern for exactly that path), line (the doc's manifest line, byte-identical)}.
   replay_corpus.py assemble --plan <plan.jsonl> --blobs <dir with one file per plan index> --out <dir>
       each blob's sha256 (of its UTF-8 text) must equal the manifest's or this refuses; writes --out/docs.jsonl
@@ -32,6 +36,17 @@ REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 HELDOUT_PERCENT = 5
+MODES = ("finetune", "pretrain")
+
+
+def train_cap(rc, mode):
+    """The replay train byte cap for this mode. pretrainTrainMaxBytes is read in pretrain mode only."""
+    if mode not in MODES:
+        raise ValueError("unknown retrain mode")
+    cap = rc["pretrainTrainMaxBytes"] if mode == "pretrain" else rc["trainMaxBytes"]
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+        raise ValueError("bad replay train byte cap")
+    return cap
 
 
 def sha(b):
@@ -60,12 +75,12 @@ def rebuild(src_bytes):
     return ("\n".join(l for _, l in out) + "\n").encode("utf-8"), out
 
 
-def select(entries, rc):
+def select(entries, rc, cap):
     def key(o):
         return sha(f"{rc['salt']}\n{o['split']}\n{o['doc']}".encode("utf-8"))
     train, total = [], 0
     for o, l in sorted((e for e in entries if e[0]["split"] == "train"), key=lambda e: key(e[0])):
-        if total + o["bytes"] <= rc["trainMaxBytes"]:
+        if total + o["bytes"] <= cap:
             train.append((o, l))
             total += o["bytes"]
     val = [e for e in sorted((e for e in entries if e[0]["split"] == "heldout" and e[0]["bytes"] >= rc["valMinBytes"]), key=lambda e: key(e[0]))][:rc["valDocs"]]
@@ -82,6 +97,8 @@ def sparse_pattern(path):
 
 
 def plan(a, rc):
+    if a.mode not in MODES:
+        sys.exit("replay refused: unknown retrain mode")
     src = open(a.source, "rb").read()
     if sha(src) != rc["source"]["sha256"]:
         sys.exit("replay refused: source ext manifest sha256 differs from the pin")
@@ -89,7 +106,14 @@ def plan(a, rc):
         mbytes, entries = rebuild(src)
         if sha(mbytes) != rc["manifestSha256"]:
             sys.exit("replay refused: rebuilt manifest is not the live model's training manifest")
-        train, val = select(entries, rc)
+        cap = train_cap(rc, a.mode)
+        train, val = select(entries, rc, cap)
+        split_train = [o for o, _ in entries if o["split"] == "train"]
+        stats = {"mode": a.mode, "trainCap": cap, "splitTrainDocs": len(split_train), "splitTrainBytes": sum(o["bytes"] for o in split_train),
+                 "trainDocs": len(train), "trainBytes": sum(o["bytes"] for o, _ in train), "valDocs": len(val), "valBytes": sum(o["bytes"] for o, _ in val)}
+        stats["fullTrainSplit"] = stats["trainDocs"] == stats["splitTrainDocs"]
+        if a.mode == "pretrain" and not stats["fullTrainSplit"]:
+            sys.exit("replay refused: pretrain mode must replay the full train split (pretrainTrainMaxBytes is below it)")
         rows = [dict(i=i, doc=o["doc"], repo=o["repo"], commit=o["commit"], path=o["path"], sha256=o["sha256"], pattern=sparse_pattern(o["path"]), line=l)
                 for i, (o, l) in enumerate(sorted(train + val, key=lambda e: e[0]["doc"]))]
     except (ValueError, KeyError) as e:
@@ -100,6 +124,10 @@ def plan(a, rc):
     with open(a.plan, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n")
+    if a.stats:
+        with open(a.stats, "w", encoding="utf-8") as f:
+            json.dump(stats, f, sort_keys=True)
+    print(f"replay mode={a.mode} train_cap={cap} full_train_split={str(stats['fullTrainSplit']).lower()} split_train_docs={stats['splitTrainDocs']} split_train_bytes={stats['splitTrainBytes']}")
     print(f"replay manifest sha256={rc['manifestSha256']} entries={len(entries)} train_docs={len(train)} train_bytes={sum(o['bytes'] for o, _ in train)} "
           f"val_docs={len(val)} val_bytes={sum(o['bytes'] for o, _ in val)} repos={len({o['repo'] for o, _ in train + val})} val_repos={len({o['repo'] for o, _ in val})}")
 
@@ -129,6 +157,8 @@ def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("plan")
+    p.add_argument("--mode", required=True)  # checked against MODES in plan() (no argparse default: unset is refused)
+    p.add_argument("--stats", default="")
     p.add_argument("--source", required=True)
     p.add_argument("--config", required=True)
     p.add_argument("--plan", required=True)

@@ -19,7 +19,13 @@ LM retrain replay (forgetting fix after run 40375535718; peaceai/model/replay.py
                         id, clamped to fit). Writes val.json {docs, windows, sha256, seed} into --work.
   --val-seed S          the window-offset seed (lm-retrain.json finetune.valSeed); required with --replay-corpus.
   --keep-checkpoints    copy checkpoint.npz to ckpt-<step>.npz at every eval (the retrain dry run scores each one on
-                        set C v2 AFTER training; train.py itself never reads set C or any judge item)."""
+                        set C v2 AFTER training; train.py itself never reads set C or any judge item).
+  --deadline EPOCH      (LM retrain, pretrain mode) a wall-clock deadline in Unix seconds: no step is started unless
+                        it, and its eval when one is due, is expected to finish before it (2x the slowest step and the
+                        slowest eval seen so far). With --max-seconds, the loop ends cleanly at the last completed step,
+                        so a job's time limit never kills a run with nothing written. 0 = none.
+Every run writes timing.json {setupSeconds, trainSeconds, evalSeconds, steps, stoppedStep, bestStep, stopReason
+("steps" | "patience" | "max_steps_this_run" | "max_seconds" | "deadline"), timeCut (max_seconds or deadline)}."""
 import argparse
 import json
 import os
@@ -52,6 +58,7 @@ ap.add_argument("--replay-frac", type=float, default=0.75)
 ap.add_argument("--val-windows", type=int, default=64)
 ap.add_argument("--val-seed", default=None)
 ap.add_argument("--keep-checkpoints", action="store_true")
+ap.add_argument("--deadline", type=float, default=0.0)
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -223,11 +230,33 @@ def save():
 best = {"val": float("inf"), "step": 0, "stale": 0}
 if os.path.exists(W("best.json")):
     best = json.load(open(W("best.json")))
+slow = {"step": 0.0, "eval": 0.0, "evalSeconds": 0.0}
 if step == 0:
+    te = time.time()
     log({"step": 0, "val_loss": round(eval_loss(), 4)})
+    slow["eval"] = time.time() - te
 start = time.time()
 run_start_step = step
-while best["stale"] < (args.patience or 10**9) and step < cfg["total_steps"] and time.time() - start < args.max_seconds and not (args.max_steps_this_run and step - run_start_step >= args.max_steps_this_run):
+
+
+def stop_reason():
+    if args.patience and best["stale"] >= args.patience:
+        return "patience"
+    if step >= cfg["total_steps"]:
+        return "steps"
+    if args.max_steps_this_run and step - run_start_step >= args.max_steps_this_run:
+        return "max_steps_this_run"
+    if time.time() - start >= args.max_seconds:
+        return "max_seconds"
+    if args.deadline:
+        nxt = step + 1
+        need = 2 * (slow["step"] + (slow["eval"] if nxt % args.eval_every == 0 or nxt == cfg["total_steps"] else 0.0))
+        if time.time() + need >= args.deadline:
+            return "deadline"
+    return None
+
+
+while (reason := stop_reason()) is None:
     if REPLAY:
         offs_r = rng.integers(0, len(replay_tok) - T - 1, k_replay) if k_replay else []
         offs_f = rng.integers(0, len(train_tok) - T - 1, B - k_replay) if B - k_replay else []
@@ -248,8 +277,12 @@ while best["stale"] < (args.patience or 10**9) and step < cfg["total_steps"] and
     rec = {"step": step, "loss": round(loss, 4), "lr": round(lr, 7), "grad_norm": round(gnorm, 3), "sec": round(time.time() - ts, 2)}
     if REPLAY:
         rec["replay_rows"], rec["ft_rows"] = len(offs_r), len(offs_f)
+    slow["step"] = max(slow["step"], time.time() - ts)
     if step % args.eval_every == 0 or step == cfg["total_steps"]:
+        te = time.time()
         rec["val_loss"] = round(eval_loss(), 4)
+        slow["eval"] = max(slow["eval"], time.time() - te)
+        slow["evalSeconds"] += time.time() - te
         save()
         if args.keep_checkpoints:
             import shutil
@@ -263,5 +296,8 @@ while best["stale"] < (args.patience or 10**9) and step < cfg["total_steps"] and
         json.dump(best, open(W("best.json"), "w"))
     log(rec)
 save()
+json.dump({"setupSeconds": round(start - t0, 1), "trainSeconds": round(time.time() - start, 1), "evalSeconds": round(slow["evalSeconds"], 1),
+           "steps": step - run_start_step, "stoppedStep": step, "bestStep": best["step"], "stopReason": reason,
+           "timeCut": reason in ("max_seconds", "deadline")}, open(W("timing.json"), "w"), sort_keys=True)
 print(f"best val_loss={best['val']} at step={best['step']}" + (" (early stop)" if args.patience and best["stale"] >= args.patience else ""), flush=True)
 print(f"stopped step={step} of {cfg['total_steps']} elapsed={time.time() - t0:.0f}s", flush=True)
