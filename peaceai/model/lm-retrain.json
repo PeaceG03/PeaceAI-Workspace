@@ -6,7 +6,7 @@
    "repos": { "PeaceG03/PeaceAI-Workspace": "34c44c1477a505b353d9881626d2795dd3a8fc82", "PeaceG03/PeaceSTOCKS": "8dec076346b89887708f2ffc44bc137201b5799f" } },
  "model": { "d_model": 320, "n_layer": 6, "n_head": 5, "ctx": 512, "vocab": 8192, "batch": 8 },
  "finetune": { "steps": 300, "warmup": 30, "patience": 4, "evalEvery": 25, "seed": 20261010, "maxSeconds": 13800, "retrainMaxSeconds": 15000,
-   "replayFrac": 0.75, "valWindows": 64, "ftLineMinChars": 20,
+   "replayFrac": 0.75, "valWindows": 64, "valSeed": "peaceai-val:v1", "ftLineMinChars": 20,
    "forgettingFix": "run 40375535718 (set C v2 bpb 1.6506 -> 2.0670): 18 distinct files with 85% duplicated lines, 1200 steps = ~25 passes, split by (commit, path, function) so 92% of heldout lines were in train and all 16 val windows sat in one doc. Now: one version per (repo, path, function), split by file path, replayFrac of every batch from the live model's pretrain train split, validation on valWindows pretrain-heldout docs (one window per doc), 300 steps.",
    "sweep": { "lrs": [0.00005, 0.000025], "select": "lowest validation loss on the replay corpus's pretrain-heldout windows (finetune.valWindows docs; never set C v2, the judge items or the fine-tune corpus); ties: earlier step, then first arm" } },
  "replay": { "manifestSha256": "6fc30d39a649601067a1ad8f74c10083993420db0abdbeb1ae8e72286fa19ab1",

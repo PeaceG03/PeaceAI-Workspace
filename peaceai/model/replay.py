@@ -2,10 +2,13 @@
 
 No numpy, no model code, no I/O beyond what the caller passes in, so the unit tests pin each rule directly.
   replay_rows(batch, frac)      replay sequences per training batch: floor(batch * frac + 0.5); frac in [0, 1].
-  val_windows(docs, ctx, n)     the early-stopping / step-selection windows: the first ctx+1 tokens of each heldout doc
+  val_windows(docs, ctx, n, seed)  the early-stopping / step-selection windows: ctx+1 tokens of each heldout doc
                                 (ascending doc id) that has at least ctx+1 tokens, ONE window per doc, the first n such
-                                docs. Refuses (ValueError) when fewer than n docs qualify, so the windows always span n
+                                docs. The window starts at val_offset(seed, doc, len, ctx) (seeded, deterministic, clamped
+                                so it fits; not the doc's first tokens, which are mostly headers and imports). Refuses (ValueError) when fewer than n docs qualify, so the windows always span n
                                 distinct docs (the old rule cut 16 windows from one token stream: all in one doc).
+  val_offset(seed, doc, n_tokens, ctx)  int(sha256("peaceai-val-offset:v1\n" + seed + "\n" + doc)[:16], 16) %
+                                (n_tokens - ctx): every start in [0, n_tokens - ctx - 1], so the window always fits.
   windows_sha(windows)          sha256 over "<doc>\\t<sha256 of the window's uint16 little-endian tokens>\\n".
   path_split(repo, path)        the fine-tune split by FILE PATH: heldout iff int(sha256("peaceai-ft-path:v1\\n" + repo +
                                 "\\n" + path)[:8], 16) % 10 == 0, so every version of a file lands on the same side.
@@ -22,8 +25,17 @@ def replay_rows(batch, frac):
     return int(math.floor(batch * frac + 0.5))
 
 
-def val_windows(docs, ctx, n):
-    """docs: iterable of (doc id, token list incl. the trailing EOD). Returns [(doc, tokens[0:ctx+1])]."""
+def val_offset(seed, doc, n_tokens, ctx):
+    if not isinstance(seed, str) or not seed:
+        raise ValueError("val seed must be a non-empty string")
+    if n_tokens < ctx + 1:
+        raise ValueError("doc shorter than one window")
+    h = hashlib.sha256(f"peaceai-val-offset:v1\n{seed}\n{doc}".encode("utf-8")).hexdigest()
+    return int(h[:16], 16) % (n_tokens - ctx)
+
+
+def val_windows(docs, ctx, n, seed):
+    """docs: iterable of (doc id, token list incl. the trailing EOD). Returns [(doc, tokens[o:o+ctx+1])], o = val_offset."""
     if n < 1:
         raise ValueError("val windows must be >= 1")
     out = []
@@ -33,7 +45,8 @@ def val_windows(docs, ctx, n):
             raise ValueError("val doc listed twice")
         seen.add(d)
         if len(toks) >= ctx + 1:
-            out.append((d, list(toks[:ctx + 1])))
+            o = val_offset(seed, d, len(toks), ctx)
+            out.append((d, list(toks[o:o + ctx + 1])))
             if len(out) == n:
                 return out
     raise ValueError(f"only {len(out)} heldout docs have {ctx + 1} tokens; {n} needed")

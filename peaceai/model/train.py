@@ -1,7 +1,7 @@
 """M9 training: self-trained BPE tokenizer + from-scratch transformer, seeded, CPU only, resumable.
 
 Usage: train.py --corpus DIR --work DIR [--steps N] [--max-seconds S] [--threads K] [--seed N]
-       [--replay-corpus RDIR [--replay-frac F] [--val-windows N]] [--keep-checkpoints]
+       [--replay-corpus RDIR [--replay-frac F] [--val-windows N] --val-seed S] [--keep-checkpoints]
 Reads DIR/docs.jsonl and DIR/manifest.jsonl (from peaceai/bin/lm-corpus.ts). Writes into --work only:
 tokenizer.json, tokens_*.npy, checkpoint.npz (fp32 weights + AdamW state + RNG state), metrics.jsonl.
 Prints step metrics only (no corpus text). Run it somewhere private when the corpus holds private code.
@@ -14,8 +14,10 @@ LM retrain replay (forgetting fix after run 40375535718; peaceai/model/replay.py
   --replay-frac F       share of every batch drawn from the replay train docs: replay.replay_rows(batch, F) rows
                         (default 0.75); the other rows come from --corpus split=train. Each step's record carries
                         replay_rows and ft_rows as built.
-  --val-windows N       replay.val_windows: the first ctx+1 tokens of each of the first N heldout docs that are long
-                        enough, one window per doc (default 64). Writes val.json {docs, windows, sha256} into --work.
+  --val-windows N       replay.val_windows: ctx+1 tokens of each of the first N heldout docs that are long enough, one
+                        window per doc (default 64), starting at replay.val_offset (seeded by --val-seed and the doc
+                        id, clamped to fit). Writes val.json {docs, windows, sha256, seed} into --work.
+  --val-seed S          the window-offset seed (lm-retrain.json finetune.valSeed); required with --replay-corpus.
   --keep-checkpoints    copy checkpoint.npz to ckpt-<step>.npz at every eval (the retrain dry run scores each one on
                         set C v2 AFTER training; train.py itself never reads set C or any judge item)."""
 import argparse
@@ -48,6 +50,7 @@ ap.add_argument("--patience", type=int, default=0)  # early stop after N evals w
 ap.add_argument("--replay-corpus", default="")
 ap.add_argument("--replay-frac", type=float, default=0.75)
 ap.add_argument("--val-windows", type=int, default=64)
+ap.add_argument("--val-seed", default=None)
 ap.add_argument("--keep-checkpoints", action="store_true")
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -139,16 +142,18 @@ T, B = cfg["ctx"], cfg["batch"]
 
 if REPLAY:
     # Validation = replay heldout docs only: one window per doc over val-windows distinct docs (replay.val_windows).
+    if not args.val_seed:
+        raise SystemExit("REPLAY_REFUSED: --val-seed is required with --replay-corpus")
     try:
         k_replay = replay.replay_rows(B, args.replay_frac)
-        wins = replay.val_windows([(i, tok.encode(rdocs[i]) + [lm.EOD]) for i in val_ids], T, args.val_windows)
+        wins = replay.val_windows([(i, tok.encode(rdocs[i]) + [lm.EOD]) for i in val_ids], T, args.val_windows, args.val_seed)
     except ValueError as e:
         raise SystemExit(f"REPLAY_REFUSED: {e}")
     if k_replay and len(replay_tok) < T + 2:
         raise SystemExit("REPLAY_TOO_SHORT")
     if k_replay < B and len(train_tok) < T + 2:
         raise SystemExit("FT_TOO_SHORT")
-    vrec = {"docs": len({d for d, _ in wins}), "windows": len(wins), "sha256": replay.windows_sha(wins)}
+    vrec = {"docs": len({d for d, _ in wins}), "windows": len(wins), "sha256": replay.windows_sha(wins), "seed": args.val_seed}
     rrec = {"replayFrac": args.replay_frac, "replayRows": k_replay, "ftRows": B - k_replay, "replayTokens": int(len(replay_tok)), "ftTokens": int(len(train_tok)), "val": vrec}
     if os.path.exists(W("replay.json")) and json.load(open(W("replay.json"))) != rrec:
         raise SystemExit("REPLAY_CONFIG_MISMATCH")

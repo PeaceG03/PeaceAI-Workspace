@@ -25,14 +25,14 @@ rm -rf "$work"; mkdir -p "$work"; cp "$live/tokenizer.json" "$work/"
 "$py" -c 'import numpy as np, sys; z = np.load(sys.argv[1], allow_pickle=False); np.savez(sys.argv[2], **{"p." + k: z[k] for k in z.files})' "$live/weights.npz" "$work/init.npz"
 if [ "$stop" = 0 ]; then extra=(--patience "$(f patience)" --max-seconds "$(f maxSeconds)"); else extra=(--patience 0 --max-steps-this-run "$stop" --max-seconds "$(f retrainMaxSeconds)"); fi
 "$py" peaceai/model/train.py --corpus "$corpus" --work "$work" --init-from "$work/init.npz" \
-  --replay-corpus "$rcorpus" --replay-frac "$(f replayFrac)" --val-windows "$(f valWindows)" "${keep[@]}" \
+  --replay-corpus "$rcorpus" --replay-frac "$(f replayFrac)" --val-windows "$(f valWindows)" --val-seed "$(f valSeed)" "${keep[@]}" \
   --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
   --steps "$(f steps)" --lr "$lr" --warmup "$(f warmup)" --eval-every "$(f evalEvery)" --seed "$(f seed)" --threads 4 "${extra[@]}" \
   > "$work/train.log" 2>&1 || { echo "fine-tune failed exit=$?"; exit 1; }
 rm -f "$work/init.npz"
 grep -q '^initialized from weights' "$work/train.log" || { echo "fine-tune did not start from the live weights: refused"; exit 1; }
 cmp -s "$live/tokenizer.json" "$work/tokenizer.json" || { echo "tokenizer changed: refused"; exit 1; }
-jq -e --argjson n "$(f valWindows)" --argjson fr "$(f replayFrac)" '.val.windows == $n and .val.docs == $n and .replayFrac == $fr' "$work/replay.json" > /dev/null \
+jq -e --argjson n "$(f valWindows)" --argjson fr "$(f replayFrac)" --arg vseed "$(f valSeed)" '.val.windows == $n and .val.docs == $n and .val.seed == $vseed and .replayFrac == $fr' "$work/replay.json" > /dev/null \
   || { echo "replay share or validation windows differ from the config: refused"; exit 1; }
 "$py" peaceai/model/retrain_summary.py "$work/metrics.jsonl" "$lr" "$(f steps)" "$stop" "$(grep -c '(early stop)' "$work/train.log" || true)" "$vs" \
   | jq -c --slurpfile r "$work/replay.json" '. + {replay: ($r[0] | {replayFrac, replayRows, ftRows, val})}' > "$work/summary.json"

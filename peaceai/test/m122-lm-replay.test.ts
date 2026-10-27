@@ -97,7 +97,7 @@ function replayFixture(d: string, opts: { ftHeldText?: string; valText?: string;
   return { ft: corpus(join(d, "ft"), ft), rp: corpus(join(d, "rp"), rp) };
 }
 const trainReplay = (d: string, c: { ft: string; rp: string }, work: string, extra: string[]) =>
-  spawnSync(py, [join(repo, "peaceai/model/train.py"), "--corpus", c.ft, "--work", join(d, work), "--replay-corpus", c.rp, ...TINY, ...extra], { encoding: "utf8" });
+  spawnSync(py, [join(repo, "peaceai/model/train.py"), "--corpus", c.ft, "--work", join(d, work), "--replay-corpus", c.rp, ...TINY, ...(extra.includes("--val-seed") ? [] : ["--val-seed", "m122-seed"]), ...extra], { encoding: "utf8" });
 
 test("M122 train.py: --replay-frac is respected in every batch (rows recorded per step); out-of-range refused", () => tmp((d) => {
   const c = replayFixture(d);
@@ -122,11 +122,54 @@ test("M122 train.py: validation = one window per pretrain-heldout doc over --val
   const c = replayFixture(d);
   const r = trainReplay(d, c, "w", ["--val-windows", "4"]); assert.equal(r.status, 0, r.stderr + r.stdout);
   const v = JSON.parse(readFileSync(join(d, "w", "val.json"), "utf8"));
-  assert.equal(v.windows, 4); assert.equal(v.docs, 4); assert.match(v.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(v.windows, 4); assert.equal(v.docs, 4); assert.match(v.sha256, /^[0-9a-f]{64}$/); assert.equal(v.seed, "m122-seed");
+  assert.equal(trainReplay(d, c, "w-same", ["--val-windows", "4"]).status, 0);
+  assert.equal(JSON.parse(readFileSync(join(d, "w-same", "val.json"), "utf8")).sha256, v.sha256, "same seed: same windows");
+  assert.equal(trainReplay(d, c, "w-seed2", ["--val-windows", "4", "--val-seed", "other-seed"]).status, 0);
+  assert.notEqual(JSON.parse(readFileSync(join(d, "w-seed2", "val.json"), "utf8")).sha256, v.sha256, "another seed: other windows");
+  const noSeed = spawnSync(py, [join(repo, "peaceai/model/train.py"), "--corpus", c.ft, "--work", join(d, "w-noseed"), "--replay-corpus", c.rp, ...TINY, "--val-windows", "4"], { encoding: "utf8" });
+  assert.notEqual(noSeed.status, 0); assert.match(noSeed.stdout + noSeed.stderr, /REPLAY_REFUSED: --val-seed is required/);
   const few = trainReplay(d, replayFixture(join(d, "few"), { valDocs: 2 }), "w2", ["--val-windows", "4"]);
   assert.notEqual(few.status, 0); assert.match(few.stdout + few.stderr, /REPLAY_REFUSED: only 2 heldout docs/);
   assert.equal(CFG.finetune.valWindows, 64); assert.ok(CFG.replay.valDocs > CFG.finetune.valWindows, "slack for docs the eval dedup drops");
+  assert.match(CFG.finetune.valSeed, /^peaceai-val:v\d+$/);
+  assert.match(read("peaceai/bin/lm-retrain-train.sh"), /--val-seed "\$\(f valSeed\)"/);
+  assert.match(read("peaceai/bin/lm-retrain-train.sh"), /\.val\.seed == \$vseed/);
 }));
+
+test("M122 val windows: a seeded, deterministic offset per doc (config seed + doc id), clamped to fit; not all at the doc start", () => {
+  const r = spawnSync(py, ["-c", `
+import json, sys
+sys.path.insert(0, ${JSON.stringify(join(repo, "peaceai/model"))})
+import replay
+ctx = 32
+docs = [(d, [(d * 7 + j) % 251 for j in range(40 + (d * 37) % 400)]) for d in range(100, 140)]
+docs.append((99, list(range(ctx + 1))))  # exactly one window long: the only start is 0
+a = replay.val_windows(docs, ctx, 30, "peaceai-val:v1")
+b = replay.val_windows(list(reversed(docs)), ctx, 30, "peaceai-val:v1")
+c = replay.val_windows(docs, ctx, 30, "another-seed")
+toks = dict(docs)
+offs = [replay.val_offset("peaceai-val:v1", d, len(toks[d]), ctx) for d, _ in a]
+ok_slices = all(w == toks[d][o:o + ctx + 1] and len(w) == ctx + 1 and 0 <= o <= len(toks[d]) - ctx - 1 for (d, w), o in zip(a, offs))
+bad = []
+for s in ("", None, 5):
+    try:
+        replay.val_windows(docs, ctx, 3, s); bad.append("accepted")
+    except ValueError:
+        bad.append("refused")
+print(json.dumps({"same": a == b, "otherSeed": a != c, "offs": offs, "slices": ok_slices, "bad": bad,
+                  "repeat": [replay.val_offset("peaceai-val:v1", 123, 500, ctx) for _ in range(3)]}))
+`], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const o = JSON.parse(r.stdout);
+  assert.ok(o.same, "deterministic: same seed and docs give the same windows (input order irrelevant)");
+  assert.ok(o.otherSeed, "the seed changes the windows");
+  assert.ok(o.slices, "each window is tokens[o:o+ctx+1] with o clamped so it fits");
+  assert.equal(o.offs[0], 0, "a doc exactly one window long starts at 0");
+  assert.ok(o.offs.filter((x: number) => x > 0).length >= 20, `offsets are not all zero: ${o.offs.join(",")}`);
+  assert.equal(new Set(o.repeat).size, 1);
+  assert.deepEqual(o.bad, ["refused", "refused", "refused"], "empty / missing / non-string seed refused");
+});
 
 test("M122 selection never reads set C: val loss depends only on the replay heldout docs; set C is gone before training; static scan", () => tmp((d) => {
   const val = (w: string) => jsonl(join(d, w, "metrics.jsonl")).filter((x) => "val_loss" in x).map((x) => x.val_loss);
