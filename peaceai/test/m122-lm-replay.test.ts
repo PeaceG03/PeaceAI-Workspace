@@ -215,7 +215,7 @@ test("M122 dry run: the guard refuses every Results write unless DRY_RUN is exac
   }
   const ok = guard({ DRY_RUN: "false" }); assert.equal(ok.status, 0); assert.equal(existsSync(marker), true, "a real run writes");
   // Workflow: the dry_run input, the DRY_RUN env, every results-write.sh call behind the guard, landing jobs skipped, no uploads.
-  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n\npermissions: \{\}\n/m);
+  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n\npermissions: \{\}\n/m);
   assert.match(WF, /\n  DRY_RUN: \$\{\{ inputs\.dry_run && 'true' \|\| 'false' \}\}\n/);
   const writes = WF.split("\n").filter((l) => l.includes("results-write.sh") && !l.includes("sha256") && !/^\s*#/.test(l) && !/  peaceai\/bin\/results-write\.sh$/.test(l));
   assert.ok(writes.length >= 2);
@@ -228,7 +228,8 @@ test("M122 dry run: the guard refuses every Results write unless DRY_RUN is exac
   assert.ok(WF.includes(`${H(readFileSync(join(repo, "peaceai/bin/lm-retrain-dryrun-guard.sh")))}  peaceai/bin/lm-retrain-dryrun-guard.sh`), "the guard is hash-checked before the key is used");
   const score = read("peaceai/bin/lm-retrain-dryrun-score.sh");
   const echoes = score.split("\n").filter((l) => /\becho\b/.test(l) && !/refused|no kept checkpoints/.test(l));
-  assert.deepEqual(echoes.map((l) => l.trim()), ['echo "dry-run $2 setc_bpb=$bpb"'], "the dry run prints set C bpb lines only");
+  // M123: plus one phase-times line (numbers only; each value checked against a number pattern first).
+  assert.deepEqual(echoes.map((l) => l.trim()), ['echo "dry-run $2 setc_bpb=$bpb"', 'echo "dry-run arm=$arm phase setup_s=$ps train_s=$pt eval_s=$pe score_s=$psc job_s=$pj"'], "the dry run prints set C bpb lines and phase times only");
   assert.match(score, /score "\$live" "live"/); assert.match(score, /score "\$s\/m" "arm=\$arm lr=\$lr step=\$c"/);
   assert.match(score, /\[ "\$sl" = "\$want" \]/, "same pinned set C slice as the gate");
 }));
@@ -317,15 +318,15 @@ test("M122 replay corpus: rebuilt manifest must hash to the pin; selection is tr
   const rc = { manifestSha256: H(live), source: { repo: "PeaceG03/PeaceAI-Workspace", commit: g(ws, "rev-parse", "HEAD"), path: "peaceai/model/ext-manifest.jsonl", sha256: H(srcText) }, salt: "peaceai-replay:v1", trainMaxBytes: 3000, valDocs: Math.min(2, nHeld), valMinBytes: 1 };
   // a scratch cwd with the scripts the replay build runs, and a config carrying the fixture pins
   const cwd = join(d, "cwd");
-  for (const f of ["peaceai/bin/lm-retrain-replay.sh", "peaceai/model/replay_corpus.py", "peaceai/model/eval_dedup.py", "peaceai/model/replay_proof.py", "peaceai/model/replay.py"]) {
+  for (const f of ["peaceai/bin/lm-retrain-replay.sh", "peaceai/bin/lm-retrain-mode.sh", "peaceai/model/replay_corpus.py", "peaceai/model/eval_dedup.py", "peaceai/model/replay_proof.py", "peaceai/model/replay.py"]) {
     mkdirSync(join(cwd, f, ".."), { recursive: true }); copyFileSync(join(repo, f), join(cwd, f));
   }
-  chmodSync(join(cwd, "peaceai/bin/lm-retrain-replay.sh"), 0o755);
+  chmodSync(join(cwd, "peaceai/bin/lm-retrain-replay.sh"), 0o755); chmodSync(join(cwd, "peaceai/bin/lm-retrain-mode.sh"), 0o755);
   writeFileSync(join(cwd, "peaceai/model/lm-retrain.json"), JSON.stringify({ ...CFG, replay: rc, eval: { ...CFG.eval, judgeItemsSha256: H("[{\"context\":\"q(\",\"reference\":\"1)\",\"derived\":\"2)\"}]") } }));
   writeFileSync(join(cwd, "peaceai/model/heldout-c.json"), JSON.stringify({ schema: "peaceai-heldout-c:v2", sets: { C: [{ repo: "axios/axios", sha: "b".repeat(40), contentSha256: [H("nope")] }] } }));
   const work = join(d, "work"); corpus(join(work, "setc"), [{ doc: 0, text: "unrelated set C text for the fixture only\n" }]); corpus(join(work, "ft"), [{ doc: 0, text: "ft\n", split: "train" }]);
   writeFileSync(join(d, "items.json"), "[{\"context\":\"q(\",\"reference\":\"1)\",\"derived\":\"2)\"}]");
-  const env = { ...process.env, PEACEAI_PYTHON: py, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${join(d, "remotes")}/.insteadOf`, GIT_CONFIG_VALUE_0: "https://github.com/", GIT_TERMINAL_PROMPT: "0" };
+  const env = { ...process.env, MODE: "finetune", PEACEAI_PYTHON: py, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${join(d, "remotes")}/.insteadOf`, GIT_CONFIG_VALUE_0: "https://github.com/", GIT_TERMINAL_PROMPT: "0" };
   const r = spawnSync("bash", ["peaceai/bin/lm-retrain-replay.sh", work, join(d, "items.json")], { cwd, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /replay proof: no overlap/);
@@ -338,7 +339,7 @@ test("M122 replay corpus: rebuilt manifest must hash to the pin; selection is tr
   assert.ok(m.filter((x) => x.split === "train").reduce((a, x) => a + x.bytes, 0) <= rc.trainMaxBytes);
   assert.ok(!existsSync(join(work, "replay-git")) && !existsSync(join(work, "replay-blobs")), "scratch clones deleted");
   // pins: a changed source or a manifest that does not rebuild to the pin is refused
-  const plan = (cfg: object) => { writeFileSync(join(d, "c.json"), JSON.stringify({ replay: cfg })); writeFileSync(join(d, "s.jsonl"), srcText); return spawnSync(py, ["peaceai/model/replay_corpus.py", "plan", "--source", join(d, "s.jsonl"), "--config", join(d, "c.json"), "--plan", join(d, "p.jsonl")], { cwd: repo, encoding: "utf8" }); };
+  const plan = (cfg: object) => { writeFileSync(join(d, "c.json"), JSON.stringify({ replay: cfg })); writeFileSync(join(d, "s.jsonl"), srcText); return spawnSync(py, ["peaceai/model/replay_corpus.py", "plan", "--mode", "finetune", "--source", join(d, "s.jsonl"), "--config", join(d, "c.json"), "--plan", join(d, "p.jsonl")], { cwd: repo, encoding: "utf8" }); };
   assert.equal(plan(rc).status, 0);
   assert.match(plan({ ...rc, source: { ...rc.source, sha256: "0".repeat(64) } }).stderr, /source ext manifest sha256 differs/);
   assert.match(plan({ ...rc, manifestSha256: "0".repeat(64) }).stderr, /not the live model's training manifest/);
@@ -364,7 +365,7 @@ test("M122 replay pins: the source is the public ext manifest M37 trained on; it
     const src = execFileSync("git", ["-C", repo, "show", `${CFG.replay.source.commit}:${CFG.replay.source.path}`], { maxBuffer: 1 << 28 });
     assert.equal(H(src), CFG.replay.source.sha256);
     writeFileSync(join(d, "s.jsonl"), src);
-    const r = spawnSync(py, ["peaceai/model/replay_corpus.py", "plan", "--source", join(d, "s.jsonl"), "--config", join(repo, "peaceai/model/lm-retrain.json"), "--plan", join(d, "p.jsonl")], { cwd: repo, encoding: "utf8" });
+    const r = spawnSync(py, ["peaceai/model/replay_corpus.py", "plan", "--mode", "finetune", "--source", join(d, "s.jsonl"), "--config", join(repo, "peaceai/model/lm-retrain.json"), "--plan", join(d, "p.jsonl")], { cwd: repo, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const rows = jsonl(join(d, "p.jsonl")), val = rows.filter((x) => JSON.parse(x.line).split === "heldout");
     assert.equal(val.length, CFG.replay.valDocs); assert.ok(new Set(val.map((x) => x.repo)).size >= 10, "val docs spread over many repos");
