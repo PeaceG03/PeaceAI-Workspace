@@ -297,6 +297,15 @@ test("M119 judge items: judge set v2 from Results main pinned by sha256 and coun
   assert.ok(protectedReason("peaceai/bin/lm-retrain-judge.sh"));
 });
 
+test("M119 restore and judge-fetch scripts only read Results: no git push, no Results write inside lm-retrain-live.sh or lm-retrain-judge.sh (Auditor follow-up)", () => {
+  for (const f of ["peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-judge.sh"]) {
+    const code = read(f).split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    assert.doesNotMatch(code, /\bpush\b/, `${f}: no git push`);
+    assert.doesNotMatch(code, /results-write\.sh|\bgit (-C "[^"]*" )?(commit|tag|update-ref|remote set-url)\b|--force|--mirror/, `${f}: no Results write`);
+    assert.match(code, /with-deploy-key\.sh git (clone|-C "\$res" (fetch|sparse-checkout|checkout))/, `${f}: the key is used to read`);
+  }
+});
+
 // Auditor #536 follow-up: committed fixture test for lm-retrain-judge.sh's refusals. Made-up items and scores in a
 // throwaway git repo; the real Results remote URL is redirected to it with url.insteadOf (no network, no real key).
 type JudgeOpts = { set?: "v1" | "v2"; items?: number | null; scoresModel?: string | null; pin?: (good: string) => string; sha?: string; ref?: string; key?: boolean; ver?: string; judgeSet?: string };
