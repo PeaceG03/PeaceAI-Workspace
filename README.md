@@ -81,9 +81,9 @@ neither the account nor who edited the body can be attributed). `peace` is an al
 `taskSource`); anything else is `builder` (not Peace's):
 
 - no `source:builder` label (compared trimmed and case-insensitive);
-- **no raw HTML** outside fenced code blocks: any `<` followed by a letter, `/`, `!` or `?` gives builder (tags,
-  also split over several lines, comments, `<?...?>`, `<![CDATA[...]]>`, `<!DOCTYPE ...>`); write `&lt;` for a
-  literal `<`;
+- **no raw HTML anywhere** in the raw or normalized body, code fences included: any `<` followed by a letter,
+  `/`, `!` or `?` gives builder (tags, also split over several lines, comments, `<?...?>`, `<![CDATA[...]]>`,
+  `<!DOCTYPE ...>`; three backticks followed by an info string holding a backtick is not a fence, so fences are never trusted); write `&lt;` for a literal `<`;
 - HTML entities (numeric and named) are decoded first (a named entity outside the known table gives builder),
   then the body is normalized (zero-width characters removed, NFKC, unicode hyphens folded to `-`); HTML comments,
   fenced and indented code, blockquote lines and the Examples block are stripped, and what is left has exactly
@@ -92,10 +92,13 @@ neither the account nor who edited the body can be attributed). `peace` is an al
 - the credit line's **visible text** carries `(source: peace)` closing the credit clause: link and image destinations, titles and alt text, HTML tags with all their
   attributes, autolinks and bare URLs, code spans, quoted spans, and `~~` / `~` / `<del>` / `<s>` / `<strike>`
   content don't count, and an unclosed construct hides the rest of the line;
-- `(source: peace)` appears once on the credit line, and **only an allowlisted text may follow it**: nothing,
-  `.`, or `. ` plus exactly one of the trailing texts of the 80 genuine tasks (#353-#502), pinned in
-  `peaceai/lib/credit-trailing-allowlist.json` (protected; its issues, count and sha256 are checked by the m119 test). Anything else
-  after the mark ("Not Peace's task.", "source=builder.") gives builder;
+- the **whole credit line** (decoded, normalized, trailing spaces trimmed) is allowed: it either equals one of
+  the 80 genuine credit lines (#353-#502), pinned in `peaceai/lib/credit-line-allowlist.json` (protected,
+  add-only; its sha256 is checked at runtime against a constant in `policy.ts`, and a mismatch or one malformed
+  row allows nothing), or it matches the new-task template
+  `^Context \([^)]*\): Peace's task \(source: peace\)\.?$`. Anything else ("Context (...): Actually Builder
+  drafted it. Peace's task (source: peace)", text after the mark) gives builder. Contradictions on other lines of
+  the body are out of scope for the parser and are covered by Auditor's pre-filing review;
 - every `(source ...:` clause anywhere in the body, stripped regions included and with entities decoded, is
   exactly `(source: peace)`; so `(source : builder)`, `( source: builder)`, a zero-width-split `source` or
   `&#40;source: builder&#41;` give builder;
@@ -111,8 +114,8 @@ reworded or reordered line, a deleted revision or incomplete edit history gives 
 traceability) in `task.json`; a record without `source` reads as `builder`.
 
 **New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
-Peace's own task: `Context (Builder pre-file, ...): <context> Peace's task (source: peace)`, with **the mark at
-the end of the line** (context goes before it or on other lines; the trailing allowlist never grows); a team-picked task says
+Peace's own task uses the template line exactly: `Context (<kind>): Peace's task (source: peace).` (nothing
+else on that line; context goes on other lines; the genuine-line allowlist never grows); a team-picked task says
 so on that line (`Team-picked task (...; not credited as source: peace ...)`) and gets no `(source: peace)`.
 
 Ruling on older rows (builder-log, not this code): builder-log seq 98-122 (#233, #240, #248, #255, #259, #262,
