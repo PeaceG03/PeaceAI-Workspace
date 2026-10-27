@@ -35,6 +35,12 @@ Eligibility is measured on the live (reference) model, never on the candidate be
 switch the gate off for itself. Today (lm-v1-088073d41dbc on v2): full 0.175 [0.116, 0.237], non-identity 0.434
 [0.315, 0.564]; not eligible, so the judge AUC is report-only.
 
+## Open questions (no behaviour change)
+- (c) Before any flip to hard: should a candidate also be blocked when its non-identity AUC is below the live model's,
+  in addition to the full-set comparison? Today the hard comparison (when eligible) uses the full-set `auc_exact`
+  only; the non-identity AUC is used only for eligibility and reporting. Raised by the Auditor after #552; to be
+  decided before `eval.judgeAucGate` is ever set to "hard". judge_gate.py and its tests are unchanged.
+
 ## Record
 `judge: {set, items, itemsSha256, resultsCommit, live, candidate, scorerReproducesLiveRecord, aucGate}` in the run
 record (schema peaceai-lm-retrain-record:v3); `aucGate` is judge_gate.py's output (configured, effective,

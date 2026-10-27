@@ -55,6 +55,25 @@ test("identity gate: any body equal to the parameter on every example is refused
   assert.equal(examplesIdentityProblem({ ...idNum, examples: [] }, fit("x")), null);
 });
 
+test("identity gate: a two-parameter function that returns its SECOND parameter unchanged is refused end to end (Auditor follow-up; kills the first-parameter-only witness mutant)", () => {
+  // a varies, b passes through; three examples differ only in a (b = 1000) so the unread-parameter gate is satisfied
+  // and the search fits `b`. deriveProgram must then refuse it as identity on b, not just on the first parameter.
+  const A = [7, -3, 12, 400, -55, 9, 31, -8, 64, 2, -900, 17, 5, 88, -1, 250, 3];
+  const num: DeriveInput = { params: [{ name: "a", type: "number" }, { name: "b", type: "number" }], ret: "number",
+    examples: [...N17.map((n, i) => ({ args: [A[i]!, n], out: n })), ...[11, 22, 33].map((a) => ({ args: [a, 1000], out: 1000 }))] };
+  const before = deriveCandidate(num);
+  assert.equal(before.ok && before.fit.expr, "b");
+  const r = deriveProgram(num);
+  assert.equal(!r.ok && `${r.reason}/${r.param}`, "derive_expr_identity/b");
+  assert.ok(num.examples.some((e) => e.out !== e.args[0]), "the first parameter alone shows nothing");
+  // the same with strings: p varies, q passes through
+  const str: DeriveInput = { params: [{ name: "p", type: "string" }, { name: "q", type: "string" }], ret: "string",
+    examples: [...S17.map((x, i) => ({ args: [S17[(i + 5) % 17]!, x], out: x })), ...["k", "mm", "n o"].map((x) => ({ args: [x, "hello"], out: "hello" }))] };
+  assert.equal((() => { const c = deriveCandidate(str); return c.ok && c.fit.expr; })(), "q");
+  const rs = deriveProgram(str);
+  assert.equal(!rs.ok && `${rs.reason}/${rs.param}`, "derive_expr_identity/q");
+});
+
 test("identity gate: equality is strict: the string '1' is not the number 1 (Auditor follow-up; kills the == mutant)", () => {
   // String(n): every result is the parameter's digits as a string, never the parameter's own value.
   const str: DeriveInput = { params: [{ name: "n", type: "number" }], ret: "string", examples: N17.map((n) => ({ args: [n], out: String(n) })) };
