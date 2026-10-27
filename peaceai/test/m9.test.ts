@@ -430,7 +430,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
 
 const LM_TRAIN_M49_WORKFLOW_SHA256 = "01affbb7551b3453a0ecef535d7f8893bfac82c4c20464b074c14f2f110f9be9"; // M49 BLOCKING (1): fine-tune corpus from pinned commits + ft-gate before training. M49: chained pretrain + fine-tune + evals (Architect-approved plan; Auditor review)
 const POSTTRAIN_MEMCHECK_WORKFLOW_SHA256 = "0aa3e9b681aeebb851f70f6f922b73fc2a79f3df0cbe64233142074317376daf"; // M49 post-train memcheck (Architect option 1)
-const LM_RETRAIN_WORKFLOW_SHA256 = "8e37022ebf48c7856018e7f34f9e32377f7105482b6865b516771914f45ebeb8"; // M119: LM retrain on the reviewed commit list (Builder + Auditor gate; m119-lm-retrain.test.ts pins its shape)
+const LM_RETRAIN_WORKFLOW_SHA256 = "41c58ed95418b29c28bf584e658a45a80ffa47057fc45448e44ed6770be56672"; // Judge gate v1 (after #550): judge set v2 items, judge AUC report-only via judge_gate.py (was 8e37022e...). M119: LM retrain on the reviewed commit list (Builder + Auditor gate; m119-lm-retrain.test.ts pins its shape)
 const LM_TRAIN_WORKFLOW_SHA256 = "9355431302d31ed8ca132ee60e8f2ab2728c462bfbe7a7bacdeb013820ae6211"; // M51: pinned to the #148 manifest by sha (--manifest-sha), so M37 never trains on the M49 corpus
 
 test("workflows: no public workflow trains, builds the corpus or runs the memcheck; LM steps run only behind their flags", () => {

@@ -140,11 +140,64 @@ test("judge v2: build() keeps keys and texts, records labelV1 and each drop, and
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
 
+// Auditor (after #550): label-path mutants that survived the tests above. Each case below fails under one of them:
+// a one-row label tolerance, a dropped single identity witness, the last (not first) wrong row, a miscounted or
+// train-including held set, an uncounted invalid output, a cross-type identity check, loose equality on labels or on
+// the v1 reproduction, and a v1 reproduction check that compares only one of the two counts.
+test("judge v2 label path: one wrong row is enough, held/train/skipped counts are exact, comparisons are strict", () => {
+  const sp = { params: [S("s")], ret: "string" as JType }, id = exprRunner("s", [S("s")]);
+  // Exactly one held-out row ("0X") separates the function from returning s: kept, labelled wrong, one witness.
+  const one = 'function only0X(s: string): string { return s === "0X" ? "" : s; }';
+  const up1 = runner(one, "only0X");
+  const r1 = rebuildItem(sp, [], one, v1Counts([S("s")], "string", [], up1, id), up1, id);
+  assert.ok(r1.kept, JSON.stringify(r1));
+  assert.equal(r1.label, "wrong"); assert.equal(r1.heldWrong, 1); assert.equal(r1.heldRight, r1.held - 1);
+  assert.deepEqual(r1.identityWitnesses, { s: 1 }); assert.deepEqual(r1.firstWrong!.args, ["0X"]);
+  // Counts: 18 wide rows minus the 4 training rows; the FIRST wrong row in grid order is reported.
+  const strip = 'function strip0x(s: string): string { return s.startsWith("0x") ? s.slice(2) : s; }';
+  const up2 = runner(strip, "strip0x");
+  const r2 = rebuildItem(sp, [], strip, v1Counts([S("s")], "string", [], up2, id), up2, id);
+  assert.ok(r2.kept);
+  const wide = wideDomains([S("s")], [], strip)[0]!;
+  assert.equal(r2.train, 4); assert.equal(r2.held, wide.length - 4); assert.equal(r2.skipped, 0);
+  assert.equal(r2.heldRight + r2.heldWrong, r2.held); assert.equal(r2.heldWrong, 3);
+  assert.deepEqual(r2.firstWrong, { args: ["0x"], out: "", derived: "0x" });
+  // Invalid upstream outputs on the wide grid are skipped and counted, never held.
+  const third = "function third(n: number): number { return n > 100 ? n / 3 : n * 2; }";
+  const up3 = runner(third, "third"), d3 = exprRunner("n * 2", [N("n")]);
+  const r3 = rebuildItem({ params: [N("n")], ret: "number" }, [], third, v1Counts([N("n")], "number", [], up3, d3), up3, d3);
+  assert.ok(r3.kept);
+  const wn = wideDomains([N("n")], [], third)[0]! as number[];
+  const bad = wn.filter((n) => n > 100 && n % 3 !== 0).length;
+  assert.ok(bad > 0); assert.equal(r3.skipped, bad); assert.equal(r3.held, wn.length - r3.train - bad);
+  // Identity is checked only for parameters of the return type.
+  const show = "function show(n: number): string { return String(n); }";
+  const up4 = runner(show, "show"), d4 = exprRunner("String(n)", [N("n")]);
+  const r4 = rebuildItem({ params: [N("n")], ret: "string" }, [], show, v1Counts([N("n")], "string", [], up4, d4), up4, d4);
+  assert.ok(r4.kept && r4.label === "right"); assert.deepEqual(r4.identityWitnesses, {});
+  // A derived program returning the number n where upstream returns the string "n" is wrong on every row (strict ===),
+  // both on the v1 grid (reproduced as 0 right) and on the wide grid.
+  const dn = exprRunner("n", [N("n")]);
+  const v1n = v1Counts([N("n")], "string", [], up4, dn);
+  assert.equal(v1n.heldRight, 0);
+  const r5 = rebuildItem({ params: [N("n")], ret: "string" }, [], show, v1n, up4, dn);
+  assert.ok(r5.kept, JSON.stringify(r5)); assert.equal(r5.label, "wrong"); assert.equal(r5.heldRight, 0);
+  // The v1 reproduction compares BOTH recorded counts.
+  const dbl = "function dbl(n: number): number { return n * 2; }";
+  const up6 = runner(dbl, "dbl"), d6 = exprRunner("n * 2", [N("n")]);
+  const v6 = v1Counts([N("n")], "number", [], up6, d6);
+  for (const v of [{ heldRight: v6.heldRight, heldWrong: v6.heldWrong + 3 }, { heldRight: v6.heldRight + 5, heldWrong: v6.heldWrong }]) {
+    const r = rebuildItem({ params: [N("n")], ret: "number" }, [], dbl, v, up6, d6);
+    assert.equal(r.kept, false, JSON.stringify(v)); assert.equal(!r.kept && r.reason, "upstream_not_reproduced");
+  }
+});
+
 test("judge v2: the sources file holds commit ids and integers only, keyed to the pinned v1 judge commit", () => {
   assert.equal(SRC.schema, SOURCES_SCHEMA);
-  assert.equal(SRC.v1.commit, CFG.eval.judgeCommit);
-  assert.equal(SRC.v1.items, CFG.eval.judgeItems);
-  assert.equal(SRC.v1.count, CFG.eval.judgeItemCount);
+  assert.equal(SRC.v1.commit, CFG.eval.judgeV1.commit);
+  assert.equal(SRC.v1.items, CFG.eval.judgeV1.items);
+  assert.equal(SRC.v1.itemsSha256, CFG.eval.judgeV1.itemsSha256);
+  assert.equal(SRC.v1.count, CFG.eval.judgeV1.itemCount);
   assert.equal(SRC.items.length, SRC.v1.count);
   for (const [i, it] of SRC.items.entries()) {
     assert.deepEqual(Object.keys(it), ["key", "head", "described"]);
@@ -176,7 +229,15 @@ test("judge v2 workflow: dispatch only, free runner, pinned key scripts, new Res
   assert.doesNotMatch(WF, /\b(cp|rm|mv|git rm)\b[^\n]*lm-judge\/|git push|--force/);
   // The build and the score are checked against the pins before any write.
   for (const s of ["items.sha256", ".summary.v2", ".summary.dropped.reasons", "aggregates differ from the recorded v1 aggregates", "live AUC on v2 differs from the pin"]) assert.ok(WF.includes(s), s);
-  assert.ok(WF.indexOf("live AUC on v2 differs") < WF.indexOf("PEACEAI_RESULTS_DEPLOY_KEY"));
+  assert.ok(WF.indexOf("live AUC on v2 differs") < WF.indexOf("results-write.sh \"Judge set v2"));
+  // The peaceai-results environment holds only the Results deploy key (run 40462457225 failed closed on the read
+  // key). The restore step only fetches, with JUDGE_SET=v1 (the v1 items and the live model's recorded v1 scores).
+  assert.doesNotMatch(WF, /PEACEAI_RESULTS_READ_KEY/);
+  assert.match(WF, /name: Restore the live model[^\n]*\n {8}env:\n[^\n]*\n[^\n]*\n {10}DEPLOY_KEY: \$\{\{ secrets\.PEACEAI_RESULTS_DEPLOY_KEY \}\}\n {10}JUDGE_SET: v1\n[\s\S]*?lm-retrain-live\.sh "\$RUNNER_TEMP\/r"/);
+  assert.match(WF, /test "\$\(jq -r \.v1\.commit "\$S"\)" = "\$\(jq -r \.eval\.judgeV1\.commit "\$CFG"\)"/);
+  // Upstream fetches discard git's own output, so a failed fetch prints only the refusal line (never a repo URL).
+  assert.match(WF, /git init --quiet "\$d" >\/dev\/null 2>&1/);
+  assert.match(WF, /"https:\/\/github\.com\/\$repo\.git" "\$head" >\/dev\/null 2>&1 \|\| \{ echo "an upstream head could not be fetched: refused"; exit 1; \}/);
   assert.match(WF, /environment: peaceai-results/);
 });
 

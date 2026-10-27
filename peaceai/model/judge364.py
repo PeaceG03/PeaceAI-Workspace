@@ -9,8 +9,10 @@ Primary metric (lm-judge/analyze.py): AUC over the right-labelled vs wrong-label
 with the same bootstrap 95% interval (2000 draws, seed 7).
 This runs on a model with or without a memcheck PASS (comparison only, never a pipeline score).
 Writes --out (per-candidate aggregates; private: Results only). Prints one line of aggregates, never text or keys.
+The summary also carries "nonidentity": the same AUC and interval over the items whose derived program is not
+`return <param>;` (judge v2 report-only gate, peaceai/model/judge_gate.py).
 Usage: judge364.py --model DIR --items items.json --out scores.json [--threads K]"""
-import argparse, json, math, os, random, sys
+import argparse, json, math, os, random, re, sys
 
 def js_slice(s, n):
     """JavaScript String.prototype.slice(0, n): n UTF-16 code units."""
@@ -76,6 +78,25 @@ def boot_auc(pos, neg, n=2000, seed=7):
     return [round(v[int(.025 * n)], 3), round(v[int(.975 * n)], 3)]
 
 
+SIGNATURE = re.compile(r"^export function \w+\(([^)]*)\): \w+ \{$", re.M)
+RETURN_NAME = re.compile(r"^\s*return (\w+);\s*\}\s*$")
+
+
+def identity_program(it):
+    """True when the derived program returns one parameter unchanged (`return <param>;`): the judge v2 identity rule."""
+    m, r = SIGNATURE.search(it["context"]), RETURN_NAME.match(it["derived"])
+    return bool(m and r and r.group(1) in [p.split(":")[0].strip() for p in m.group(1).split(",")])
+
+
+def auc_summary(items, agg):
+    """AUC of the derived candidate's mean, right- vs wrong-labelled items, with the bootstrap 95% interval."""
+    pr = [agg[f"{i['key']}:derived"]["mean"] for i in items if i["label"] == "right"]
+    ng = [agg[f"{i['key']}:derived"]["mean"] for i in items if i["label"] == "wrong"]
+    if not pr or not ng:
+        return {"n": len(items), "right": len(pr), "wrong": len(ng), "auc_exact": None, "auc_ci95": None}
+    return {"n": len(items), "right": len(pr), "wrong": len(ng), "auc_exact": auc(pr, ng), "auc_ci95": boot_auc(pr, ng)}
+
+
 def js_round6(x):
     return math.floor(x * 1e6 + 0.5) / 1e6
 
@@ -125,9 +146,13 @@ def main():
     ng = [agg[f"{i['key']}:derived"]["mean"] for i in wrong]
     summary = {"model": cfg["version"], "n": len(items), "right": len(right), "wrong": len(wrong),
                "auc_derived_right_vs_wrong_mean": round(auc(pr, ng), 3), "auc_exact": auc(pr, ng), "auc_ci95": boot_auc(pr, ng),
-               "pairwise_ref_beats_wrong_derived": sum(agg[f"{i['key']}:reference"]["mean"] > agg[f"{i['key']}:derived"]["mean"] for i in wrong)}
+               "pairwise_ref_beats_wrong_derived": sum(agg[f"{i['key']}:reference"]["mean"] > agg[f"{i['key']}:derived"]["mean"] for i in wrong),
+               # Judge v2 gate (report-only until peaceai/model/judge_gate.py's rule holds): the same AUC on the items whose
+               # derived program is not `return <param>;`.
+               "nonidentity": auc_summary([i for i in items if not identity_program(i)], agg)}
     json.dump({"model": cfg["version"], "verified": False, "scorer": "judge364.py (score.mts blocks + infer.py cond_logprob)", "summary": summary, "agg": agg}, open(args.out, "w"), indent=1)
-    print(f"judge364 model={summary['model']} n={summary['n']} auc={summary['auc_derived_right_vs_wrong_mean']} auc_ci95={summary['auc_ci95']}".replace(", ", ","))
+    ni = summary["nonidentity"]
+    print(f"judge364 model={summary['model']} n={summary['n']} auc={summary['auc_derived_right_vs_wrong_mean']} auc_ci95={summary['auc_ci95']} nonidentity_n={ni['n']} nonidentity_auc={None if ni['auc_exact'] is None else round(ni['auc_exact'], 3)} nonidentity_auc_ci95={ni['auc_ci95']}".replace(", ", ","))
 
 
 if __name__ == "__main__":
