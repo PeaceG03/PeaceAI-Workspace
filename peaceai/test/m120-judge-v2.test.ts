@@ -302,6 +302,16 @@ test("M120 judge scorer reproduction: tokens equal and mean within 1e-4 pass; a 
   assert.ok(!ok({ ...REC, "f000:derived": { ...REC["f000:derived"], mean: REC["f000:derived"].mean! + 1e-3 } }), "1e-3 mean drift fails");
   assert.ok(!ok({ ...REC, "f000:reference": { ...REC["f000:reference"], tokens: 26 } }), "a token mismatch fails");
   assert.ok(!ok({ ...REC, "f000:derived": { ...REC["f000:derived"], mean: null } }), "a mean on one side only fails");
+  // Auditor (#555): the other side of the one-sided-null rule. A recorded null mean (0 tokens) with a number in the run
+  // is refused with a counted difference, not passed or crashed (kills dropping the null-side check, or checking only
+  // the run's side).
+  const recNull = { ...REC, "f002:derived": E(0, 0) };
+  assert.equal(recNull["f002:derived"].mean, null);
+  for (const f of [[], ["--subset"]]) {
+    const r = repro(recNull, { ...recNull, "f002:derived": { logprob: 0, tokens: 0, mean: 0 } }, ...f);
+    assert.equal(r.code, 1, r.out); assert.match(r.out, /^judge scorer reproduction: entries=5 differing=1\n/, r.out);
+  }
+  assert.equal(repro(recNull, recNull).code, 0, "null on both sides passes");
   // the retrain compares equal key sets; judge v2 compares its kept items, each of which must be recorded
   const sub = { "f000:derived": REC["f000:derived"], "f001:reference": REC["f001:reference"] };
   assert.ok(!ok(sub), "retrain mode: a missing key fails");
