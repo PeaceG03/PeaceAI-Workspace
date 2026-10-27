@@ -294,8 +294,8 @@ const VISIBLE_PEACE_MARK = /\(\s*source\s*:\s*peace\s*\)(?=\s*$|\.(?:\s|$))/i;
  * `Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2, behavior only): Peace's task (source: peace).`
  * Free text in the parentheses (`Context (Builder drafted this, not Peace): ...`) no longer matches. Both name
  * slots are CLOSED sets (Auditor, #546): KIND must be in CREDIT_KINDS (learned.ts RULE_KINDS, read from its source,
- * plus the historical families of the genuine tasks) and the template must be in CREDIT_TEMPLATES (the name of an
- * existing peaceai/rules/learned/<name>.json). CREDIT_SLOT_DENY stays as a backstop on both slots.
+ * plus the historical families of the genuine tasks) and the template must be in CREDIT_TEMPLATES (the id of an
+ * existing peaceai/rules/learned/<id>.json that is also in peaceai/rules/approved.json). CREDIT_SLOT_DENY stays as a backstop on both slots.
  */
 export const NEW_TASK_CREDIT_LINE =
   /^Context \(Builder pre-file, ([A-Z][A-Z0-9_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$/;
@@ -310,7 +310,8 @@ export const CREDIT_SLOT_DENY =
  * The KIND slot's closed set: learned.ts RULE_KINDS, read from learned.ts's source text (importing it would make
  * an import cycle: learned.ts reaches policy.ts), plus the historical families of the genuine tasks that are not
  * rule kinds. The RULE_KINDS declaration must parse exactly (one `export const RULE_KINDS = ["A", ...] as const;`
- * line of upper-case names); anything else, or an unreadable file, empties the whole set (fail closed).
+ * line of upper-case names); anything else, or an unreadable file, gives no rule kinds, so the set falls back to
+ * the four historical families only (Auditor, after #546).
  */
 export const CREDIT_KINDS_HISTORICAL = ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"] as const;
 export function parseRuleKinds(source: string): string[] {
@@ -321,22 +322,46 @@ export function parseRuleKinds(source: string): string[] {
   if (!/^"[A-Z][A-Z0-9_]*"(?:, "[A-Z][A-Z0-9_]*")*$/.test(body)) return [];
   return [...body.matchAll(/"([A-Z][A-Z0-9_]*)"/g)].map((x) => x[1]!);
 }
-function loadCreditKinds(): ReadonlySet<string> {
+/** The load-time KIND set: RULE_KINDS read through `readLearned` (learned.ts), plus the historical four always. */
+export function loadCreditKinds(readLearned: () => string = () => readFileSync(new URL("./learned.ts", import.meta.url), "utf8")): ReadonlySet<string> {
+  let kinds: string[] = [];
   try {
-    const kinds = parseRuleKinds(readFileSync(new URL("./learned.ts", import.meta.url), "utf8"));
-    return new Set(kinds.length === 0 ? [] : [...kinds, ...CREDIT_KINDS_HISTORICAL]);
+    kinds = parseRuleKinds(readLearned());
+  } catch {
+    kinds = [];
+  }
+  return new Set([...kinds, ...CREDIT_KINDS_HISTORICAL]);
+}
+export const CREDIT_KINDS: ReadonlySet<string> = loadCreditKinds();
+/**
+ * The template slot's closed set (Auditor, after #546): ids that exist on disk as peaceai/rules/learned/<id>.json
+ * AND are listed in peaceai/rules/approved.json. An approved.json that does not parse as
+ * `{schema: "peaceai-approved-rules:v1", rules: [{id: string, ...}, ...]}` approves nothing (fail closed).
+ */
+export function creditTemplatesFrom(ruleFiles: readonly string[], approvedText: string | null): ReadonlySet<string> {
+  const approved = new Set<string>();
+  try {
+    const list = JSON.parse(approvedText ?? "") as { schema?: unknown; rules?: unknown };
+    if (!list || list.schema !== "peaceai-approved-rules:v1" || !Array.isArray(list.rules)) return new Set();
+    for (const r of list.rules) {
+      if (!r || typeof r !== "object" || typeof (r as { id?: unknown }).id !== "string") return new Set();
+      approved.add((r as { id: string }).id);
+    }
   } catch {
     return new Set();
   }
+  return new Set(
+    ruleFiles
+      .filter((f) => /^public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+\.json$/.test(f))
+      .map((f) => f.slice(0, -".json".length))
+      .filter((id) => approved.has(id)),
+  );
 }
-export const CREDIT_KINDS: ReadonlySet<string> = loadCreditKinds();
-/** The template slot's closed set: the names of the existing peaceai/rules/learned/<name>.json files. */
 function loadCreditTemplates(): ReadonlySet<string> {
   try {
-    return new Set(
-      readdirSync(new URL("../rules/learned/", import.meta.url))
-        .filter((f) => /^public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+\.json$/.test(f))
-        .map((f) => f.slice(0, -".json".length)),
+    return creditTemplatesFrom(
+      readdirSync(new URL("../rules/learned/", import.meta.url)),
+      readFileSync(new URL("../rules/approved.json", import.meta.url), "utf8"),
     );
   } catch {
     return new Set();

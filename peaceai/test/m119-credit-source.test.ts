@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_KINDS, CREDIT_KINDS_HISTORICAL, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, CREDIT_SLOT_DENY, CREDIT_TEMPLATES, creditLineAllowed, parseRuleKinds, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_KINDS, CREDIT_KINDS_HISTORICAL, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, CREDIT_SLOT_DENY, CREDIT_TEMPLATES, creditLineAllowed, creditTemplatesFrom, loadCreditKinds, parseRuleKinds, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -355,8 +355,9 @@ test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.
   assert.deepEqual([...CREDIT_KINDS].sort(), [...RULE_KINDS, "THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"].sort());
   assert.deepEqual([...CREDIT_KINDS_HISTORICAL], ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"]);
   assert.deepEqual(parseRuleKinds(readFileSync("peaceai/lib/learned.ts", "utf8")), [...RULE_KINDS]);
-  // the template set is exactly the rule files on disk
-  assert.deepEqual([...CREDIT_TEMPLATES].sort(), readdirSync("peaceai/rules/learned").filter((f) => f.startsWith("public-") && f.endsWith(".json")).map((f) => f.slice(0, -5)).sort());
+  // the template set is exactly the rule files on disk that are also in approved.json (Auditor, after #546)
+  const approvedIds = new Set((JSON.parse(readFileSync("peaceai/rules/approved.json", "utf8")).rules as { id: string }[]).map((r) => r.id));
+  assert.deepEqual([...CREDIT_TEMPLATES].sort(), readdirSync("peaceai/rules/learned").filter((f) => f.startsWith("public-") && f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => approvedIds.has(id)).sort());
   // every RULE_KIND, every historical family and every rule file gives peace in the template
   for (const k of CREDIT_KINDS) assert.equal(src(issue(T(`Builder pre-file, ${k}`))), "peace", k);
   for (const t of CREDIT_TEMPLATES) {
@@ -370,6 +371,18 @@ test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.
   for (const t of ["public-unasked-v1", "public-didnt-ask-v1", "public-false-claim-v1", "public-add-function-v3", "public-add-function-v10", "public-add-function"])
     for (const paren of [`Builder pre-file, ADD_FUNCTION, ${t}`, `Builder pre-file, ADD_FUNCTION, ${t} template join`])
       assert.equal(src(issue(T(paren))), "builder", paren);
+  // a rule file on disk that is not approved is not a template
+  for (const t of ["public-existing-function-edit-v1", "public-set-literal-v1", "public-test-case-dateargs-v1"]) {
+    assert.ok(readdirSync("peaceai/rules/learned").includes(`${t}.json`) && !approvedIds.has(t), `${t}: on disk, not approved`);
+    assert.equal(CREDIT_TEMPLATES.has(t), false, t);
+    for (const paren of [`Builder pre-file, ADD_FUNCTION, ${t}`, `Builder pre-file, ADD_FUNCTION, ${t} template join, behavior only`])
+      assert.equal(src(issue(T(paren))), "builder", paren);
+  }
+  // creditTemplatesFrom: on disk AND approved; an approved id with no file is not a template; a malformed list approves nothing
+  const okList = (ids: unknown[]) => JSON.stringify({ schema: "peaceai-approved-rules:v1", rules: ids.map((id) => ({ id, sha256: "x" })) });
+  assert.deepEqual([...creditTemplatesFrom(["public-a-v1.json", "public-b-v1.json", "core-c-v1.json", "public-d-v1.txt"], okList(["public-a-v1", "public-e-v1", "core-c-v1"]))], ["public-a-v1"]);
+  for (const bad of [null, "", "not json", "[]", "{}", JSON.stringify({ schema: "other", rules: [{ id: "public-a-v1" }] }), JSON.stringify({ schema: "peaceai-approved-rules:v1", rules: {} }), okList(["public-a-v1", 7]), okList(["public-a-v1", null])])
+    assert.equal(creditTemplatesFrom(["public-a-v1.json"], bad).size, 0, String(bad));
   // the deny list is still a backstop on both slots, independently of the sets
   for (const w of ["NO_ASK", "NOT_PEACE", "BUILDER_DRAFTED", "public-team-picked-v1", "public-not-peaces-v1"]) assert.equal(CREDIT_SLOT_DENY.test(w), true, w);
   for (const k of CREDIT_KINDS) assert.equal(CREDIT_SLOT_DENY.test(k), false, k);
@@ -379,6 +392,13 @@ test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.
   assert.deepEqual(parseRuleKinds(decl), ["SET_LITERAL", "ADD_FUNCTION"]);
   for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", ...MORE] as const;', 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;', 'export const RULE_KINDS = [] as const;', 'export const RULE_KINDS = ["A","B"] as const;'])
     assert.deepEqual(parseRuleKinds(bad), [], bad);
+  // a failed RULE_KINDS parse at load time falls back ONLY to the 4 historical kinds (Auditor, after #546)
+  const HIST4 = ["DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING", "THROW_GUARD"];
+  for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;'])
+    assert.deepEqual([...loadCreditKinds(() => bad)].sort(), HIST4, bad);
+  assert.deepEqual([...loadCreditKinds(() => { throw new Error("ENOENT: learned.ts"); })].sort(), HIST4);
+  assert.deepEqual([...loadCreditKinds(() => decl)].sort(), [...HIST4, "ADD_FUNCTION", "SET_LITERAL"].sort());
+  assert.deepEqual([...loadCreditKinds()].sort(), [...CREDIT_KINDS].sort()); // the default reader is what loaded CREDIT_KINDS
   // re-verified: every genuine KIND and template is in the sets, and all 80 genuine lines stay peace
   for (const r of GENUINE_ROWS) {
     const m = /\(Builder pre-file, ([A-Z][A-Z0-9_]*), (public-[a-z0-9-]+)\):/.exec(r.line);
