@@ -95,10 +95,15 @@ neither the account nor who edited the body can be attributed). `peace` is an al
 - the **whole credit line** (decoded, normalized, trailing spaces trimmed) is allowed: it either equals one of
   the 80 genuine credit lines (#353-#502), pinned in `peaceai/lib/credit-line-allowlist.json` (protected,
   add-only; its sha256 is checked at runtime against a constant in `policy.ts`, and a mismatch or one malformed
-  row allows nothing), or it matches the new-task template
-  `^Context \([^)]*\): Peace's task \(source: peace\)\.?$`. Anything else ("Context (...): Actually Builder
-  drafted it. Peace's task (source: peace)", text after the mark) gives builder. Contradictions on other lines of
-  the body are out of scope for the parser and are covered by Auditor's pre-filing review;
+  row allows nothing), or it matches the new-task template, whose parenthetical is a fixed grammar:
+  `^Context \(Builder pre-file, ([A-Z][A-Z_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$`,
+  and neither the KIND nor the template name may contain a contrary word (builder, team, peace, not, draft, pick,
+  credit, source, ...; `CREDIT_SLOT_DENY`). Free text in the parentheses ("Context (Builder drafted this, not
+  Peace): ...") gives builder, and so does anything else on the line ("Context (...): Actually Builder
+  drafted it. Peace's task (source: peace)", text after the mark). On other lines of the body, team-picked wording
+  and contrary `(source ...)` clauses are caught by the deny-list below; any other contradiction there (free
+  prose such as "Builder drafted this, not Peace.") is out of scope for the parser and is covered by Auditor's
+  pre-filing review;
 - every `(source ...:` clause anywhere in the body, stripped regions included and with entities decoded, is
   exactly `(source: peace)`; so `(source : builder)`, `( source: builder)`, a zero-width-split `source` or
   `&#40;source: builder&#41;` give builder;
@@ -114,7 +119,9 @@ reworded or reordered line, a deleted revision or incomplete edit history gives 
 traceability) in `task.json`; a record without `source` reads as `builder`.
 
 **New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
-Peace's own task uses the template line exactly: `Context (<kind>): Peace's task (source: peace).` (nothing
+Peace's own task uses the template line exactly, for example
+`Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2, behavior only): Peace's task (source: peace).`
+(KIND is the upper-case family; the template name, ` template join` and `, behavior only` are optional; nothing
 else on that line; context goes on other lines; the genuine-line allowlist never grows); a team-picked task says
 so on that line (`Team-picked task (...; not credited as source: peace ...)`) and gets no `(source: peace)`.
 
