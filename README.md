@@ -99,7 +99,7 @@ neither the account nor who edited the body can be attributed). `peace` is an al
   `^Context \(Builder pre-file, ([A-Z][A-Z0-9_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$`,
   where both name slots are closed sets: KIND must be one of `RULE_KINDS` in `peaceai/lib/learned.ts` (read from
   its source) or a historical family (THROW_GUARD, DATE_FUNCTION, LOOP_FUNCTION, TEST_CASE_EXISTING), and the
-  template must be the name of an existing `peaceai/rules/learned/<name>.json`; as a backstop, neither may contain
+  template must be the id of an existing `peaceai/rules/learned/<id>.json` that is also in `peaceai/rules/approved.json`; as a backstop, neither may contain
   a contrary word (builder, team, peace, not, no, draft, pick, credit, source, ...; `CREDIT_SLOT_DENY`). Free text in the parentheses ("Context (Builder drafted this, not
   Peace): ...") gives builder, and so does anything else on the line ("Context (...): Actually Builder
   drafted it. Peace's task (source: peace)", text after the mark). On other lines of the body, team-picked wording
@@ -123,7 +123,7 @@ traceability) in `task.json`; a record without `source` reads as `builder`.
 **New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
 Peace's own task uses the template line exactly, for example
 `Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2, behavior only): Peace's task (source: peace).`
-(KIND is a rule kind or historical family, the template an existing rule file; the template name, ` template join` and `, behavior only` are optional; nothing
+(KIND is a rule kind or historical family, the template an existing, approved rule; the template name, ` template join` and `, behavior only` are optional; nothing
 else on that line; context goes on other lines; the genuine-line allowlist never grows); a team-picked task says
 so on that line (`Team-picked task (...; not credited as source: peace ...)`) and gets no `(source: peace)`.
 
