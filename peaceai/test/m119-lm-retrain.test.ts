@@ -139,11 +139,15 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   const m49 = read(".github/workflows/peace-lm-train-m49.yml"), mc = read(".github/workflows/m49-posttrain-memcheck.yml");
   for (const l of /LANDING_SHA256: \|-\n((?: {4}.+\n)+)/.exec(m49)![1]!.trim().split("\n")) assert.ok(WF.includes(l.trim()));
   for (const l of /LANDING_SHA256: \|-\n((?: {4}.+\n)+)/.exec(mc)![1]!.trim().split("\n")) assert.ok(WF.includes(l.trim()));
-  // Gate 1 + 3: both models scored in this run on the same pinned slice and the same judge items; AUC >= live.
+  // Gate 1 + 3: both models scored in this run on the same pinned slice and the same judge items; judge AUC recorded (report-only).
   assert.match(WF, /for who in live model; do\n.*eval_c\.py --model "\$RUNNER_TEMP\/\$who"[^\n]*--max-bytes "\$mb"[\s\S]*?judge364\.py --model "\$RUNNER_TEMP\/\$who"/);
   assert.match(WF, /\[ "\$\(sl live\)" = "\$want" \] && \[ "\$\(sl model\)" = "\$want" \]/);
   assert.match(WF, /float\(sys\.argv\[1\]\) >= float\(sys\.argv\[2\]\)/);
-  assert.match(WF, /ge "\$\(a model\)" "\$\(a live\)" \|\| \{ ok=false; why\+=\(judge_auc\); \}/);
+  // Judge AUC is report-only (judge gate v1): judge_gate.py decides; it can block only under the promote-to-hard rule.
+  assert.doesNotMatch(WF, /ge "\$\(a model\)" "\$\(a live\)"/);
+  assert.match(WF, /judge_gate\.py --mode "\$\(jq -r \.eval\.judgeAucGate "\$CFG"\)" --live "\$E\/judge-live\.json" --candidate "\$E\/judge-model\.json" > "\$E\/judge-gate\.json"/);
+  assert.match(WF, /\[ "\$\(jq -r \.blocks "\$E\/judge-gate\.json"\)" = false \] \|\| \{ ok=false; why\+=\(judge_auc\); \}/);
+  assert.match(WF, /aucGate: \$jg\[0\]/);
   // Set C v2 bits/byte is gating too (Auditor #533): candidate <= live.
   assert.match(WF, /ge "\$\(bpb live\)" "\$\(bpb model\)" \|\| \{ ok=false; why\+=\(setc_bpb\); \}/);
   // The judge scorer must reproduce the live model's recorded aggregates in the same run.
@@ -161,7 +165,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   assert.match(train, /val_split\.py/); const code = (t: string) => t.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
   assert.doesNotMatch(code(train) + code(vs.replace(/^"""[\s\S]*?"""/m, "")), /setc|items\.json|judge|eval_c/i, "validation never touches set C or the judge items");
   assert.match(vs, /heldout/); assert.match(WF, /validationSplitSha256/);
-  assert.equal(CFG.eval.setcMaxBytes, 1000000); assert.equal(CFG.eval.judgeItemCount, 364); assert.equal(CFG.live.version, "lm-v1-088073d41dbc");
+  assert.equal(CFG.eval.setcMaxBytes, 1000000); assert.equal(CFG.eval.judgeItemCount, 230); assert.equal(CFG.live.version, "lm-v1-088073d41dbc");
   // Gate 2: dedup before training and 0 overlap after.
   assert.ok(WF.indexOf("lm-retrain-corpus.sh") > 0 && WF.indexOf("lm-retrain-corpus.sh") < WF.indexOf("lm-retrain-train.sh"));
   assert.match(WF, /recheckOverlapDocs "\$RUNNER_TEMP\/w\/dedup\.json"\)" = 0/);
@@ -174,7 +178,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   assert.doesNotMatch(mcJob, /PEACEAI_LM_TRAIN_CORPUS|PEACEAI_LM_FT_CORPUS/, "no training corpus given: the strict 32-character rule");
   assert.match(mcJob, /substringRule "\$M"\)" = strict/);
   assert.doesNotMatch(WF, /trainedOn/);
-  for (const f of [WF, read("peaceai/model/judge364.py"), read("peaceai/model/lm-retrain.json")]) assert.doesNotMatch(f, /right from wrong|tell right|can tell|distinguish(es)? right/i, "no wording that either model tells right from wrong");
+  for (const f of [WF, read("peaceai/model/judge364.py"), read("peaceai/model/lm-retrain.json"), read("peaceai/model/judge_gate.py"), read("peaceai/spec/lm-retrain-judge-gate-v1.md")]) assert.doesNotMatch(f, /right from wrong|tell right|can tell|distinguish(es)? right/i, "no wording that either model tells right from wrong");
   // Gate 5: latest.json is only ever read; landings are path-checked to the run record and the model dir.
   for (const l of WF.split("\n").filter((x) => x.includes("latest.json"))) assert.doesNotMatch(l, /cp |> |mv |tee /, "latest.json is never written");
   assert.match(WF, /landing refused: path outside the run record and model dir/);
@@ -184,7 +188,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
 test("M119: every new file is protected", () => {
   for (const f of [".github/workflows/peace-lm-retrain.yml", "peaceai/bin/lm-retrain-corpus.sh", "peaceai/model/lm-retrain.json", "peaceai/model/lm-retrain-commits.txt",
     "peaceai/model/retrain_list.py", "peaceai/model/eval_dedup.py", "peaceai/model/judge364.py", "peaceai/test/m119-lm-retrain.test.ts",
-    "peaceai/model/val_split.py", "peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-train.sh", "peaceai/bin/lm-retrain-headcheck.sh", "peaceai/model/retrain_summary.py"]) assert.ok(protectedReason(f), f);
+    "peaceai/model/val_split.py", "peaceai/model/judge_gate.py", "peaceai/spec/lm-retrain-judge-gate-v1.md", "peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-train.sh", "peaceai/bin/lm-retrain-headcheck.sh", "peaceai/model/retrain_summary.py"]) assert.ok(protectedReason(f), f);
 });
 
 // Auditor #533 follow-ups: behaviour tests for the head check and the non-finite validation-loss refusal.
@@ -257,81 +261,117 @@ test("M119 sweep summary: a NaN or inf validation loss is refused; finite losses
   assert.match(read("peaceai/bin/lm-retrain-train.sh"), /peaceai\/model\/retrain_summary\.py/);
 });
 
-test("M119 judge items: fetched from the pinned notes/lm-judge-eval commit at the path the judge code reads (not Results main)", () => {
-  // Results main has no lm-judge/; the 364 items and recorded scores live on notes/lm-judge-eval (score.mts reads
-  // lm-judge/items.json there: an array of {key, label, file, context, derived, reference, ...}; scores-<v>.json has .agg).
-  assert.equal(CFG.eval.judgeItems, "lm-judge/items.json");
-  assert.equal(CFG.eval.judgeRef, "notes/lm-judge-eval");
-  assert.equal(CFG.eval.judgeCommit, "804a95675815d3d7965e95be8d9c368600863412");
-  assert.equal(CFG.eval.judgeItemCount, 364);
+test("M119 judge items: judge set v2 from Results main pinned by sha256 and count; v1 (JUDGE_SET=v1) by the pinned notes/lm-judge-eval commit", () => {
+  // Judge gate v1 (after #550): the retrain scores judge set v2 (lm-judge-v2/ on Results main, landed by
+  // peace-lm-judge-v2.yml), pinned by content so a moved branch cannot change the items; v1 stays pinned by commit for
+  // the v2 builder. Items are an array of {key, label, file, context, derived, reference, ...}; scores-<v>.json has .agg.
+  assert.equal(CFG.eval.judgeSet, "v2");
+  assert.equal(CFG.eval.judgeItems, "lm-judge-v2/items.json");
+  assert.equal(CFG.eval.judgeRef, "main");
+  assert.equal(CFG.eval.judgeItemsSha256, "1deadaaea1992ad18e533595218c9c0953128615c18c9ce0d24dc58d505da2b8");
+  assert.equal(CFG.eval.judgeItemCount, 230);
+  assert.equal(CFG.eval.judgeAucGate, "report-only");
+  assert.equal(CFG.eval.judgeCommit, undefined, "v2 is pinned by content, not by a landing commit");
+  const V2 = JSON.parse(read("peaceai/model/judge-v2.json"));
+  assert.equal(CFG.eval.judgeItemsSha256, V2.items.sha256); assert.equal(CFG.eval.judgeItemCount, V2.items.n);
+  assert.equal(CFG.eval.judgeItems, `${V2.out}/items.json`);
+  assert.deepEqual(CFG.eval.judgeV1, { items: "lm-judge/items.json", ref: "notes/lm-judge-eval", commit: "804a95675815d3d7965e95be8d9c368600863412",
+    itemsSha256: "38266eb85de963155781e43644f413ed5b97eb58f055d8fe5567e92b7ddcaaa0", itemCount: 364 });
   const j = read("peaceai/bin/lm-retrain-judge.sh");
-  assert.match(j, /fetch --quiet --depth 1 --filter=blob:none origin "\$c" \|\| \{[^}]*refused"; exit 1; \}/);
-  assert.match(j, /test "\$\(git -C "\$res" rev-parse HEAD\)" = "\$c"/);
-  assert.match(j, /\[ "\$items" = lm-judge\/items\.json \]/);
-  assert.match(j, /jq length "\$res\/\$items"\)" = "\$\(jq -r \.eval\.judgeItemCount "\$cfg"\)"/);
+  assert.match(j, /fetch --quiet --depth 1 --filter=blob:none origin "\$want" 2>\/dev\/null \|\| \{[^}]*refused"; exit 1; \}/);
+  assert.match(j, /\[ "\$\{JUDGE_SET:-v2\}" != v1 \] \|\| test "\$got" = "\$c"/);
+  assert.match(j, /v1\)[^\n]*\n[^\n]*\n\s*\[ "\$items" = lm-judge\/items\.json \]/);
+  assert.match(j, /v2\)[^\n]*\n[^\n]*\n\s*\[ "\$items" = lm-judge-v2\/items\.json \]/);
+  assert.match(j, /test "\$\(sha256sum < "\$res\/\$items" \| cut -c1-64\)" = "\$sha"/);
+  assert.match(j, /test "\$\(jq length "\$res\/\$items"\)" = "\$n"/);
   assert.match(j, /scores-\$ver\.json[\s\S]*jq -r \.model[\s\S]*scores-live-recorded\.json/);
   // judge364.py reads the same fields score.mts does.
   const jp = read("peaceai/model/judge364.py");
   for (const k of ["context", "file", "label", "key"]) assert.match(jp, new RegExp(`it\\["${k}"\\]|i\\['${k}'\\]|it\\['${k}'\\]|\\["${k}"\\]`), k);
-  // No step reads lm-judge/ from a default-branch Results clone any more.
+  // No step reads a judge dir from a default-branch Results clone; only lm-retrain-judge.sh fetches judge items.
   for (const f of [WF, read("peaceai/bin/lm-retrain-live.sh")]) assert.doesNotMatch(f, /sparse-checkout set[^\n]*lm-judge/);
   assert.equal((WF.match(/lm-retrain-judge\.sh "\$RUNNER_TEMP"/g) ?? []).length, 2);
+  assert.doesNotMatch(WF, /JUDGE_SET/, "the retrain always scores the configured (v2) set");
   assert.match(read("peaceai/bin/lm-retrain-live.sh"), /lm-retrain-judge\.sh "\$dest" "\$live"/);
+  assert.match(read(".github/workflows/peace-lm-judge-v2.yml"), /JUDGE_SET: v1\n/);
   assert.ok(protectedReason("peaceai/bin/lm-retrain-judge.sh"));
 });
 
 // Auditor #536 follow-up: committed fixture test for lm-retrain-judge.sh's refusals. Made-up items and scores in a
 // throwaway git repo; the real Results remote URL is redirected to it with url.insteadOf (no network, no real key).
-function judgeFixture(opts: { items?: number | null; scoresModel?: string | null; pin?: (good: string) => string; key?: boolean; ver?: string }) {
+type JudgeOpts = { set?: "v1" | "v2"; items?: number | null; scoresModel?: string | null; pin?: (good: string) => string; sha?: string; ref?: string; key?: boolean; ver?: string; judgeSet?: string };
+function judgeFixture(opts: JudgeOpts) {
+  const set = opts.set ?? "v2", dir = set === "v1" ? "lm-judge" : "lm-judge-v2";
   const t = mkdtempSync(join(tmpdir(), "m119-judge-"));
   try {
     const env = { ...process.env, GIT_CONFIG_GLOBAL: join(t, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1", RUNNER_TEMP: t, HOME: t } as NodeJS.ProcessEnv;
-    delete env.DEPLOY_KEY;
+    delete env.DEPLOY_KEY; delete env.JUDGE_SET;
     const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main", ...a], { cwd, env, encoding: "utf8" }).trim();
     const src = join(t, "results");
-    mkdirSync(join(src, "lm-judge"), { recursive: true }); g(src, "init", "-q");
+    mkdirSync(join(src, dir), { recursive: true }); g(src, "init", "-q");
     g(src, "config", "uploadpack.allowAnySHA1InWant", "true"); g(src, "config", "uploadpack.allowFilter", "true");
     const ver = "lm-v1-0123456789ab";
-    if (opts.items !== null) writeFileSync(join(src, "lm-judge", "items.json"), JSON.stringify(Array.from({ length: opts.items ?? 364 }, (_, i) => ({ key: `k${i}`, label: i % 2 ? "right" : "wrong" }))));
-    if (opts.scoresModel !== null) writeFileSync(join(src, "lm-judge", `scores-${ver}.json`), JSON.stringify({ model: opts.scoresModel ?? ver, agg: {} }));
+    const itemsText = JSON.stringify(Array.from({ length: opts.items ?? (set === "v1" ? 364 : 230) }, (_, i) => ({ key: `k${i}`, label: i % 2 ? "right" : "wrong" })));
+    if (opts.items !== null) writeFileSync(join(src, dir, "items.json"), itemsText);
+    if (opts.scoresModel !== null) writeFileSync(join(src, dir, `scores-${ver}.json`), JSON.stringify({ model: opts.scoresModel ?? ver, agg: {} }));
     writeFileSync(join(src, "README.md"), "fixture\n");
     g(src, "add", "."); g(src, "commit", "-qm", "fixture");
     const good = g(src, "rev-parse", "HEAD");
+    const sha = opts.sha ?? createHash("sha256").update(itemsText).digest("hex");
     writeFileSync(join(t, "gitconfig"), `[url "file://${src}"]\n\tinsteadOf = git@github.com:PeaceG03/PeaceAI-Results.git\n[protocol "file"]\n\tallow = always\n`);
     const cwd = join(t, "cwd"); mkdirSync(join(cwd, "peaceai", "bin"), { recursive: true }); mkdirSync(join(cwd, "peaceai", "model"), { recursive: true });
     for (const f of ["lm-retrain-judge.sh", "with-deploy-key.sh"]) writeFileSync(join(cwd, "peaceai", "bin", f), read(`peaceai/bin/${f}`), { mode: 0o755 });
-    const cfg = JSON.parse(JSON.stringify(CFG)); cfg.eval.judgeCommit = opts.pin ? opts.pin(good) : good;
+    const cfg = JSON.parse(JSON.stringify(CFG));
+    if (set === "v1") { cfg.eval.judgeV1.commit = opts.pin ? opts.pin(good) : good; cfg.eval.judgeV1.itemsSha256 = sha; env.JUDGE_SET = "v1"; }
+    else { cfg.eval.judgeItemsSha256 = sha; if (opts.ref) cfg.eval.judgeRef = opts.ref; }
+    if (opts.judgeSet !== undefined) env.JUDGE_SET = opts.judgeSet;
     writeFileSync(join(cwd, "peaceai", "model", "lm-retrain.json"), JSON.stringify(cfg));
     if (opts.key !== false) env.DEPLOY_KEY = "not-a-real-key";
     const dest = join(t, "dest");
     const r = spawnSync("bash", ["peaceai/bin/lm-retrain-judge.sh", dest, ...(opts.ver === "" ? [] : [opts.ver ?? ver])], { cwd, env, encoding: "utf8" });
     let out: string[] = []; try { out = execFileSync("ls", [dest], { encoding: "utf8" }).split("\n").filter(Boolean); } catch { /* none */ }
-    return { status: r.status, text: r.stdout + r.stderr, out };
+    let commit = ""; try { commit = readFileSync(join(dest, "judge-commit.txt"), "utf8").trim(); } catch { /* none */ }
+    return { status: r.status, text: r.stdout + r.stderr, out, good, commit };
   } finally { rmSync(t, { recursive: true, force: true }); }
 }
 
-test("M119 lm-retrain-judge.sh: control fixture passes and writes items + recorded scores", () => {
-  const r = judgeFixture({});
-  assert.equal(r.status, 0, r.text);
-  assert.match(r.text, /judge items fetched from the pinned commit: 364/);
-  assert.deepEqual(r.out.sort(), ["items.json", "scores-live-recorded.json"]);
+test("M119 lm-retrain-judge.sh: control fixtures (v2 from main, v1 by commit) pass and write items + recorded scores + the Results commit", () => {
+  for (const set of ["v2", "v1"] as const) {
+    const r = judgeFixture({ set });
+    assert.equal(r.status, 0, r.text);
+    assert.match(r.text, new RegExp(`judge items fetched from the pinned commit: ${set === "v1" ? 364 : 230} \\(set ${set}, Results commit [0-9a-f]{40}\\)`));
+    assert.deepEqual(r.out.sort(), ["items.json", "judge-commit.txt", "scores-live-recorded.json"]);
+    assert.equal(r.commit, r.good, `${set}: the Results commit read is recorded`);
+    assert.doesNotMatch(r.text, /github\.com|file:\/\//, `${set}: no repo URL printed`);
+  }
 });
 
-test("M119 lm-retrain-judge.sh refuses: wrong model in scores, missing files, 363 items, unknown sha, branch pin, no key", () => {
-  const cases: [string, Parameters<typeof judgeFixture>[0], RegExp][] = [
-    ["wrong model in the scores file", { scoresModel: "lm-v1-ffffffffffff" }, /recorded judge scores are for another model: refused/],
-    ["missing scores file", { scoresModel: null }, /recorded judge scores missing for lm-v1-0123456789ab: refused/],
-    ["missing items file", { items: null }, /judge items missing at the pinned commit: refused/],
-    ["363 items", { items: 363 }, /judge item count changed: refused/],
-    ["unknown sha", { pin: () => "0".repeat(40) }, /judge commit could not be fetched: refused/],
-    ["branch name instead of a sha", { pin: () => "notes/lm-judge-eval" }, /bad judge commit pin: refused/],
-    ["no key", { key: false }, /no Results key: refused \(fail closed\)/],
+test("M119 lm-retrain-judge.sh refuses: not landed, sha or count drift, wrong model, missing scores, ref not main, unknown sha, branch pin, no key", () => {
+  const cases: [string, JudgeOpts, RegExp][] = [
+    ["v2 not landed yet", { items: null }, /judge items missing at the pinned commit: refused \(not landed yet\?\)/],
+    ["v2 items differ from the sha256 pin", { sha: "0".repeat(64) }, /judge items sha256 differs from the pin: refused/],
+    ["v2 229 items", { items: 229 }, /judge item count changed: refused/],
+    ["v2 wrong model in the scores file", { scoresModel: "lm-v1-ffffffffffff" }, /recorded judge scores are for another model: refused/],
+    ["v2 missing scores file", { scoresModel: null }, /recorded judge scores missing for lm-v1-0123456789ab: refused/],
+    ["v2 ref is not main", { ref: "notes/lm-judge-eval" }, /judge v2 is read from Results main only: refused/],
+    ["v2 bad sha pin", { sha: "abc" }, /bad judge items sha256 pin: refused/],
+    ["unknown judge set", { judgeSet: "v3" }, /unknown JUDGE_SET: refused/],
+    ["v2 no key", { key: false }, /no Results key: refused \(fail closed\)/],
+    ["v1 wrong model in the scores file", { set: "v1", scoresModel: "lm-v1-ffffffffffff" }, /recorded judge scores are for another model: refused/],
+    ["v1 missing scores file", { set: "v1", scoresModel: null }, /recorded judge scores missing for lm-v1-0123456789ab: refused/],
+    ["v1 missing items file", { set: "v1", items: null }, /judge items missing at the pinned commit: refused/],
+    ["v1 363 items", { set: "v1", items: 363 }, /judge item count changed: refused/],
+    ["v1 items differ from the sha256 pin", { set: "v1", sha: "1".repeat(64) }, /judge items sha256 differs from the pin: refused/],
+    ["v1 unknown sha", { set: "v1", pin: () => "0".repeat(40) }, /judge commit could not be fetched: refused/],
+    ["v1 branch name instead of a sha", { set: "v1", pin: () => "notes/lm-judge-eval" }, /bad judge commit pin: refused/],
+    ["v1 no key", { set: "v1", key: false }, /no Results key: refused \(fail closed\)/],
   ];
   for (const [name, o, msg] of cases) {
     const r = judgeFixture(o);
     assert.notEqual(r.status, 0, `${name}: must fail\n${r.text}`);
     assert.match(r.text, msg, name);
+    assert.doesNotMatch(r.text, /github\.com|file:\/\//, `${name}: no repo URL printed`);
     assert.ok(!r.out.includes("scores-live-recorded.json"), `${name}: no recorded scores written`);
-    if (name !== "missing scores file" && name !== "wrong model in the scores file") assert.ok(!r.out.includes("items.json"), `${name}: no items written`);
+    if (!/missing scores file|wrong model in the scores file/.test(name)) assert.ok(!r.out.includes("items.json"), `${name}: no items written`);
   }
 });

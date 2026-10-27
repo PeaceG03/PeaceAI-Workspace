@@ -22,5 +22,5 @@ m() { jq -r ".model.$1" "$cfg"; }
 test "$(jq -c '[.ctx, .d_model, .n_layer, .n_head, .vocab_size]' "$L/config.json")" = "[$(m ctx),$(m d_model),$(m n_layer),$(m n_head),$(m vocab)]" || { echo "live shape differs from the config: refused"; exit 1; }
 mkdir -p "$dest/live"; cp "$L"/config.json "$L"/tokenizer.json "$L"/weights.npz "$dest/live/"
 rm -rf "$res"
-./peaceai/bin/lm-retrain-judge.sh "$dest" "$live"   # judge items + recorded scores: pinned commit on notes/lm-judge-eval (not on main)
+./peaceai/bin/lm-retrain-judge.sh "$dest" "$live"   # judge items + recorded scores: v2 on Results main pinned by sha256 (JUDGE_SET=v1: pinned commit on notes/lm-judge-eval)
 echo "live model $live restored (weights sha matches its version)"
