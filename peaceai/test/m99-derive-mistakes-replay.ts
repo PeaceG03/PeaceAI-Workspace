@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
-import { deriveCandidate, deriveProgram, evalProgram, unevidencedForms, type DeriveInput, type DeriveResult, type DeriveValue } from "../lib/derive.ts";
+import { deriveCandidate, deriveProgram, evalProgram, examplesIdentityProblem, unevidencedForms, type DeriveInput, type DeriveResult, type DeriveValue } from "../lib/derive.ts";
 import { repo } from "./m7-fixtures.ts";
 
 export type After = { formGate?: string[]; program?: string; rightOnGrid?: boolean; wrongAt?: DeriveValue[]; correctThere?: DeriveValue; limit?: string; refused?: string; gate?: string | null };
@@ -22,7 +22,10 @@ export function emitted(id: string, inp: DeriveInput, cand: DeriveResult, formGa
   if (!cand.ok) { assert.deepEqual(r, cand, `${id}: refused by the same witness gate`); return; }
   assert.ok(formGate, `${id}: formGate pinned`);
   assert.deepEqual(unevidencedForms(cand.fit.program), formGate, `${id}: formGate`);
-  if (formGate!.length === 0) assert.deepEqual(r, cand, `${id}: emitted as derived`);
+  // identity gate: a fit equal to one parameter on every example (or one same result on every example) is refused
+  const same = examplesIdentityProblem(inp, cand.fit);
+  if (same) assert.deepEqual(r, { ok: false, ...same, searched: cand.searched }, `${id}: refused by the identity gate`);
+  else if (formGate!.length === 0) assert.deepEqual(r, cand, `${id}: emitted as derived`);
   else assert.ok(!r.ok && r.reason === "derive_unevidenced_form" && JSON.stringify(r.forms) === JSON.stringify(formGate), `${id}: refused by the form gate: ${JSON.stringify(r)}`);
 }
 export const LEDGER = JSON.parse(readFileSync(join(repo, "peaceai/test/m99-derive-mistakes.json"), "utf8")) as { schema: string; note: string; entries: Entry[] };

@@ -1,0 +1,185 @@
+{
+ "note": "The 10 landed derive-from-behavior tasks (PeaceAI-Workspace issues, landed in PeaceSTOCKS by merge commit): issue title and body as filed, the learned rule that derived each, and the sha256 of each file the landing added. The identity gate must leave every one deriving to these exact bytes.",
+ "tasks": [
+  {
+   "issue": 501,
+   "landed": "d6f3da9",
+   "rule": "public-derive-from-behavior-v1",
+   "title": "[r2-retry-status] isRetryableR2Status: which R2 reply statuses are worth retrying",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/r2-retry-status.ts` exporting `isRetryableR2Status(status: number): boolean`.\n\nBehavior: given the HTTP status code of a reply from R2, answer true when the request is worth retrying and false when it is not. Worth retrying: 429 (too many requests) and every server error status from 500 through 599. Not worth retrying: everything else, including success, redirect and other client error statuses, and anything above 599.\n\nExamples:\n- 429 gives true\n- 500 gives true\n- 502 gives true\n- 503 gives true\n- 504 gives true\n- 515 gives true\n- 527 gives true\n- 538 gives true\n- 550 gives true\n- 562 gives true\n- 574 gives true\n- 586 gives true\n- 592 gives true\n- 599 gives true\n- 428 gives false\n- 430 gives false\n- 438 gives false\n- 442 gives false\n- 447 gives false\n- 455 gives false\n- 459 gives false\n- 464 gives false\n- 472 gives false\n- 476 gives false\n- 481 gives false\n- 485 gives false\n- 490 gives false\n- 494 gives false\n- 499 gives false\n- 600 gives false\n- 699 gives false\n- 100 gives false\n- 200 gives false\n- 204 gives false\n- 301 gives false\n- 400 gives false\n- 403 gives false\n- 404 gives false\n- 0 gives false\n\nExamples 438 to 494, 515 to 592 and 100 were answered by Peace in https://github.com/PeaceG03/PeaceAI-Workspace/issues/501#issuecomment-6388142538\n\nContext (Builder pre-file, refile of #486, behavior only): Peace's task (source: peace). The ten-minute chain stopped on R2_PUT_500 (run 39451888891) and R2_GET_500 (run 39467160610) because R2ObjectClient.request never retries; this is the status check the future retry will use. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it in is a separate task (see batch-v4/scanner/DIAGNOSIS.md).",
+   "files": [
+    {
+     "path": "src/r2-retry-status.ts",
+     "sha256": "760eac59560ec7c08c339a7548670080a133e770f4b229788f5526a1e40f0f67"
+    },
+    {
+     "path": "src/r2-retry-status.is-retryable-r2-status-6c6b154.test.ts",
+     "sha256": "6009e5a36377b5abdec3d7d68b7f08c99fb03a3f33df53ae6dffe2763e4a9bd1"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 502,
+   "landed": "0bbb039",
+   "rule": "public-derive-from-behavior-v1",
+   "title": "[r2-retry-delay] r2RetryDelayMs: bounded backoff for an R2 retry attempt",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/r2-retry-delay.ts` exporting `r2RetryDelayMs(attempt: number, baseMs: number): number`.\n\nBehavior: how many milliseconds to wait before retry number `attempt` (counting from 0), given a base wait of `baseMs`. Attempt 0 waits exactly the base. Each later attempt waits longer than the one before, following the pattern in the examples. The wait is never more than 30000 ms, whatever the attempt or base. A base of 0 always gives 0.\n\nExamples (attempt, baseMs gives wait):\n- 0, 1000 gives 1000\n- 1, 1000 gives 4000\n- 2, 1000 gives 9000\n- 3, 1000 gives 16000\n- 4, 1000 gives 25000\n- 5, 1000 gives 30000\n- 10, 1000 gives 30000\n- 100, 1000 gives 30000\n- 0, 500 gives 500\n- 1, 500 gives 2000\n- 2, 250 gives 2250\n- 0, 0 gives 0\n- 7, 0 gives 0\n- 0, 40000 gives 30000\n\nContext (Builder pre-file, refile of #487, behavior only): Peace's task (source: peace). The future R2 retry needs a wait that grows per attempt and never exceeds 30 seconds, so one retry cannot stall a scan. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it in is a separate task (see batch-v4/scanner/DIAGNOSIS.md).",
+   "files": [
+    {
+     "path": "src/r2-retry-delay.ts",
+     "sha256": "6a83949eeacf5cb4d7975c1db20f1d8e148f3b02d6583f72b7afd171bdbeff78"
+    },
+    {
+     "path": "src/r2-retry-delay.r2-retry-delay-ms-de95c16.test.ts",
+     "sha256": "5079cc2ea6a1f08bcb79d6d8acff917ac74ca62fc540972120d89405882f3cbb"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 513,
+   "landed": "24025a3",
+   "rule": "public-derive-from-behavior-v1",
+   "title": "[health-checkin-line] checkinLine: the plain-text health check-in line a scanner part writes",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-checkin-line.ts` exporting `checkinLine(part: string, status: string, note: string): string`.\n\nBehavior: the one plain-text health check-in line a scanner part writes for the health module. The line is the word CHECKIN, then the part name, then the status word, then the note with the key facts or the error, each separated from the one before by a single vertical bar, in that order. The pieces are copied exactly as given, with nothing trimmed or changed, so an empty piece still keeps its bar.\n\nExamples (part, status, note gives line):\n- \"scan\", \"OK\", \"rows 812\" gives \"CHECKIN|scan|OK|rows 812\"\n- \"tenmin\", \"ERROR\", \"R2_GET_500\" gives \"CHECKIN|tenmin|ERROR|R2_GET_500\"\n- \"gap-refill\", \"OK\", \"\" gives \"CHECKIN|gap-refill|OK|\"\n- \"Daily Bars\", \"WARN\", \"late 3m\" gives \"CHECKIN|Daily Bars|WARN|late 3m\"\n- \"r2\", \"ERROR\", \" timeout \" gives \"CHECKIN|r2|ERROR| timeout \"\n- \"\", \"OK\", \"no part\" gives \"CHECKIN||OK|no part\"\n- \"intraday2\", \"\", \"missing status\" gives \"CHECKIN|intraday2||missing status\"\n- \" backfill\", \"Ok\", \"done: 4/4\" gives \"CHECKIN| backfill|Ok|done: 4/4\"\n- \"read-api \", \"SILENT\", \"last 2026-10-24\" gives \"CHECKIN|read-api |SILENT|last 2026-10-24\"\n- \"Sidecar9\", \" OK\", \"count=12, ok\" gives \"CHECKIN|Sidecar9| OK|count=12, ok\"\n- \"host\", \"error 2\", \"fetch failed\" gives \"CHECKIN|host|error 2|fetch failed\"\n- \"parser\", \"Bad, 3 \", \"x\" gives \"CHECKIN|parser|Bad, 3 |x\"\n\nContext (Builder pre-file, behavior only): Peace's task (source: peace). Slice 1 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. On 2026-10-25 Peace asked the team to pick a real task itself (\"I don't can't you guys think of one?\"), and this is the one picked. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the scanner parts is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-checkin-line.ts",
+     "sha256": "a4dc3e8c4441fd4c046008d108f7adea7f02188c398c6b4e19eb7300ad8886a0"
+    },
+    {
+     "path": "src/health-checkin-line.checkin-line-344c2b6.test.ts",
+     "sha256": "231a5e576ff81aec21aa8f4137084b905f55e593342de98c441e278484247765"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 514,
+   "landed": "f01a60d",
+   "rule": "public-derive-from-behavior-v1",
+   "title": "[health-silent] isCheckinSilent: has a scanner part gone silent since its last check-in",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-silent.ts` exporting `isCheckinSilent(ageMinutes: number, allowedMinutes: number): boolean`.\n\nBehavior: a scanner part has gone silent when its last health check-in is older than the gap allowed for that part. Given how many minutes ago the last check-in was written and how many minutes the part may go between check-ins, answer true when the age is more than the allowed gap and false when it is at or under it.\n\nExamples (ageMinutes, allowedMinutes gives silent):\n- 0, 10 gives false\n- 5, 10 gives false\n- 10, 10 gives false\n- 11, 10 gives true\n- 12, 10 gives true\n- 60, 10 gives true\n- 200, 10 gives true\n- 9, 10 gives false\n- 30, 30 gives false\n- 31, 30 gives true\n- 29, 30 gives false\n- 0, 120 gives false\n- 119, 120 gives false\n- 120, 120 gives false\n- 121, 120 gives true\n- 240, 120 gives true\n- 400, 120 gives true\n- 15, 1440 gives false\n- 1440, 1440 gives false\n- 1441, 1440 gives true\n- 3000, 1440 gives true\n- 700, 1440 gives false\n\nContext (Builder pre-file, behavior only): Peace's task (source: peace). Slice 1 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. On 2026-10-25 Peace asked the team to pick a real task itself (\"I don't can't you guys think of one?\"), and this is the one picked. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the scanner parts is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-silent.ts",
+     "sha256": "2e683111c18c4a74011a0659fe782ffc2a35ae17d818f7e15fb5f44f7d769fc8"
+    },
+    {
+     "path": "src/health-silent.is-checkin-silent-93a449d.test.ts",
+     "sha256": "61f05a2a91b0d352ce17b2ba32d2a5a04229c8d7da43ed95a2ce64024b8ec6bc"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 515,
+   "landed": "6cdbc2b",
+   "rule": "public-derive-from-behavior-v1",
+   "title": "[health-expired] isCheckinExpired: is a health check-in past the one-month keep window",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-expired.ts` exporting `isCheckinExpired(ageDays: number): boolean`.\n\nBehavior: health check-ins are kept for one month, counted as 30 days. Given how many whole days old a check-in is, answer true when it is more than 30 days old and should be pruned, and false when it is 30 days old or newer. A negative age, from a clock that ran ahead, is never pruned.\n\nExamples:\n- 0 gives false\n- 1 gives false\n- 7 gives false\n- 14 gives false\n- 21 gives false\n- 29 gives false\n- 30 gives false\n- 31 gives true\n- 32 gives true\n- 45 gives true\n- 60 gives true\n- 90 gives true\n- 131 gives true\n- 180 gives true\n- 230 gives true\n- 280 gives true\n- 330 gives true\n- 365 gives true\n- -1 gives false\n- -30 gives false\n- -70 gives false\n\nContext (Builder pre-file, behavior only): Peace's task (source: peace). Slice 1 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. On 2026-10-25 Peace asked the team to pick a real task itself (\"I don't can't you guys think of one?\"), and this is the one picked. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the scanner parts is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-expired.ts",
+     "sha256": "8f0ca719aae231a9af765d13eadd5e910305e584a3b0a725271ab6aaec922352"
+    },
+    {
+     "path": "src/health-expired.is-checkin-expired-40a7ddc.test.ts",
+     "sha256": "878aebf718fcd2edb88bf2661b08f2f615d255cb8cf57d965200c27a8ada407f"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 516,
+   "landed": "8dec076",
+   "rule": "public-derive-from-behavior-v2",
+   "title": "[health-part-state] partState: one-glance state word for a scanner part",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-part-state.ts` exporting `partState(silent: boolean, failed: boolean): string`.\n\nBehavior: the one-glance state word the health module shows for a scanner part. A part whose last check-in reported an error shows ERROR, even if it has also gone silent since. Otherwise a part that has gone silent shows SILENT. A part that is neither shows OK.\n\nExamples (silent, failed gives state):\n- false, false gives \"OK\"\n- true, false gives \"SILENT\"\n- false, true gives \"ERROR\"\n- true, true gives \"ERROR\"\n\nContext (Builder pre-file, behavior only): Peace's task (source: peace). Slice 1 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. On 2026-10-25 Peace asked the team to pick a real task itself (\"I don't can't you guys think of one?\"), and this is the one picked. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the scanner parts is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-part-state.ts",
+     "sha256": "6929910a2c6043ed69f935c5420618516929180f812ce741f7e4c127808df74c"
+    },
+    {
+     "path": "src/health-part-state.part-state-059fbe5.test.ts",
+     "sha256": "1f8c0596dd2cbd3f1ca3e2461a6464a33c8071dcf343267b73babcf32a4a5f8e"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 540,
+   "landed": "f31a68c",
+   "rule": "public-derive-from-behavior-v4",
+   "title": "[health-error-count] countErrorParts: how many scanner parts reported an error",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-error-count.ts` exporting `countErrorParts(states: string[]): number`.\n\nBehavior: the at-a-glance count of scanner parts whose last check-in reported an error. Given the state word of every part, answer how many of the words are exactly ERROR, in capitals. A part that has gone silent, shown as SILENT, is not an error: it is counted on its own, as a missing check-in, by a separate task. A state word the health module does not recognize, anything other than OK, SILENT or ERROR, such as WARN or a lower-case error, is never counted as an error either. An empty list gives 0.\n\nExamples (states gives count):\n- [] gives 0\n- [\"OK\"] gives 0\n- [\"ERROR\"] gives 1\n- [\"SILENT\"] gives 0\n- [\"WARN\", \"error\"] gives 0\n- [\"ERROR\", \"ERROR\", \"SILENT\", \"SILENT\"] gives 2\n- [\"OK\", \"WARN\", \"ERROR\", \"SILENT\", \"ERROR\", \"ERROR\"] gives 3\n\nPeace's answer to \"Should a part that's gone silent count the same as one with an error, or be counted separately?\" (Peace, Grok Bot chat with Builder, Oct 26 2026 1:30 PM MT): \"it shouldn’t be counted as an error because it something my be wrong with just the health check part but the actual part might still be working but it still should be something that the health check knows it’s missing when it doesn’t get reported so that we can check what is actually going wrong\"\n\nPeace's answer to \"If a part reports a state word the health module doesn't recognize, how should that be treated?\" (Peace, Grok Bot chat with Builder, Oct 26 2026 1:30 PM MT): \"it shouldn’t be anything negative the health module should take note of it and we can teach it what it means or if it’s not something we want we can make sure that report can’t happen again and have it report a better word for what’s wrong\"\n\nContext (Builder pre-file, ADD_FUNCTION over a list, public-derive-from-behavior-v4, behavior only): Team-picked task (Builder-drafted; not credited as source: peace unless Peace says so in his own words); the behavior follows Peace's own answers quoted above. Slice 2 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. A box dry-run of the derive step on the cleaned text of this issue (PeaceAI-Workspace main 7b7aabb, with v4 landed; PeaceSTOCKS main 8dec076; Node 20; public repos only, no private core, no model, nothing pushed) derived it under public-derive-from-behavior-v4; v1-v3 and v5 do not match a list header. The empty list example and the four-element example are the ones the rule's gates require; the others show Peace's answers: a silent part and an unrecognized word are not errors. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the health module is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-error-count.ts",
+     "sha256": "59f0027a80330b67d501e409ecb47077a234319b6ddf3e37e5ae72b3264a7dcc"
+    },
+    {
+     "path": "src/health-error-count.count-error-parts-35d5618.test.ts",
+     "sha256": "0bbcefd1144c900863939cf80302dc76dcb6b8de4d1884335d55be376cc0c914"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 541,
+   "landed": "ab2e425",
+   "rule": "public-derive-from-behavior-v4",
+   "title": "[health-missing-count] countMissingParts: how many scanner parts have gone silent",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-missing-count.ts` exporting `countMissingParts(states: string[]): number`.\n\nBehavior: the at-a-glance count of scanner parts whose check-in is missing because they have gone silent. Given the state word of every part, answer how many of the words are exactly SILENT, in capitals. A silent part is tracked as missing, not as an error: the part itself may still be working and only its check-in may be failing, so it is counted on its own so someone can check what is actually going wrong. Parts that reported an error, shown as ERROR, are counted by a separate task, and a state word the health module does not recognize, such as WARN or a lower-case silent, is never counted as missing. An empty list gives 0.\n\nExamples (states gives count):\n- [] gives 0\n- [\"OK\"] gives 0\n- [\"SILENT\"] gives 1\n- [\"ERROR\"] gives 0\n- [\"WARN\", \"silent\"] gives 0\n- [\"SILENT\", \"SILENT\", \"ERROR\", \"ERROR\"] gives 2\n- [\"OK\", \"WARN\", \"SILENT\", \"ERROR\", \"SILENT\", \"SILENT\"] gives 3\n\nPeace's answer to \"Should a part that's gone silent count the same as one with an error, or be counted separately?\" (Peace, Grok Bot chat with Builder, Oct 26 2026 1:30 PM MT): \"it shouldn’t be counted as an error because it something my be wrong with just the health check part but the actual part might still be working but it still should be something that the health check knows it’s missing when it doesn’t get reported so that we can check what is actually going wrong\"\n\nPeace's answer to \"If a part reports a state word the health module doesn't recognize, how should that be treated?\" (Peace, Grok Bot chat with Builder, Oct 26 2026 1:30 PM MT): \"it shouldn’t be anything negative the health module should take note of it and we can teach it what it means or if it’s not something we want we can make sure that report can’t happen again and have it report a better word for what’s wrong\"\n\nContext (Builder pre-file, ADD_FUNCTION over a list, public-derive-from-behavior-v4, behavior only): Team-picked task (Builder-drafted; not credited as source: peace unless Peace says so in his own words); the behavior follows Peace's own answers quoted above. Slice 2 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. A box dry-run of the derive step on the cleaned text of this issue (PeaceAI-Workspace main 7b7aabb, with v4 landed; PeaceSTOCKS main 8dec076; Node 20; public repos only, no private core, no model, nothing pushed) derived it under public-derive-from-behavior-v4; v1-v3 and v5 do not match a list header. The empty list example and the four-element example are the ones the rule's gates require; the others show Peace's answers: an error and an unrecognized word are not missing parts. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the health module is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-missing-count.ts",
+     "sha256": "f147041f11d0b2cfd86702adc1df934f8cfd6c99fe8e2f17d82ddd3a78f813cb"
+    },
+    {
+     "path": "src/health-missing-count.count-missing-parts-a5bcbb3.test.ts",
+     "sha256": "366d2e1088a09c19a0e9bbe967483578f196eb0b4d34cab353440bbbaf61c229"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 542,
+   "landed": "9369b28",
+   "rule": "public-derive-from-behavior-v1",
+   "title": "[health-no-response-line] noResponseLine: the message for a scanner part that has not answered the health check",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-no-response-line.ts` exporting `noResponseLine(part: string, requests: number): string`.\n\nBehavior: the message the health module shows for a scanner part it has heard nothing from. Given the part's name and how many times the health check has asked it for a check-in, the message is the words no response from, a space, the part name exactly as given, then a comma, a space, the words requested health check, a space, the number of requests, a space and then the fixed word time followed by a slash and the letter s, the same for every count. The part name is copied exactly as given, with nothing trimmed or changed, and the number is written exactly as given in plain digits, so only the number changes from one message to the next, and a number below zero, which should never happen, keeps its minus sign.\n\nExamples (part, requests gives message):\n- \"Daily Bars\", 45 gives \"no response from Daily Bars, requested health check 45 time/s\"\n- \"gap-refill\", 1 gives \"no response from gap-refill, requested health check 1 time/s\"\n- \"r2\", 0 gives \"no response from r2, requested health check 0 time/s\"\n- \"read-api \", 7 gives \"no response from read-api , requested health check 7 time/s\"\n- \"\", 5 gives \"no response from , requested health check 5 time/s\"\n- \"intraday2\", 1440 gives \"no response from intraday2, requested health check 1440 time/s\"\n- \"tenmin\", -1 gives \"no response from tenmin, requested health check -1 time/s\"\n\nPeace's answer to \"If no parts have reported at all, what should the health check say?\" (Peace, Grok Bot chat with Builder, Oct 26 2026 1:30 PM MT): \"something like - “no response from (what part), requested health check X times\"\n\nPeace's answer to the follow-up on whether a single request should read 1 times or 1 time (Peace, Grok Bot chat with Builder, Oct 26 2026 2:29 PM MT): \"have it with “time/s” just so it doesn’t have to change at all it can be a static word only the number before changes\"\n\nContext (Builder pre-file, ADD_FUNCTION, public-derive-from-behavior-v1 template join, behavior only): Team-picked task (Builder-drafted; not credited as source: peace unless Peace says so in his own words); the behavior follows Peace's own answers quoted above. Builder's choices, not Peace's: four parts of this behavior were decided by Builder and are not in Peace's words. First, Peace answered what the health check should say if no parts have reported at all; applying that answer as one message per silent part, built from that one part's name and its own request count, is Builder's reading of his answer. Second, an empty part name is copied as given, so the message reads no response from followed directly by the comma; Peace was not asked about an empty name. Third, a request count below zero keeps its minus sign instead of being refused or changed; Peace was not asked about a negative count. Also, a part name is never trimmed, so 'read-api ' keeps its trailing space in the message; Peace was not asked about this. Any of these can change if Peace says otherwise. Slice 2 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. A box dry-run of the derive step on the cleaned text of this issue body (PeaceAI-Workspace main f415aa2; PeaceSTOCKS main 8dec076; Node 20; public repos only, no private core, no model, nothing pushed) derived it under public-derive-from-behavior-v1, as a template join of the part name and the request count; v2 reported not needed because v1 already derives it. The examples at 0, 1, a negative count and 1440 requests are there because the rule's digits check requires them, and each part name example covers one character class the rule's character check requires. The body was edited on 2026-10-26 to use the fixed ending time/s from Peace's later answer quoted above, in place of times; the dry-run was redone on the edited text. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the health module is a separate task.\n\n",
+   "files": [
+    {
+     "path": "src/health-no-response-line.ts",
+     "sha256": "6c162e3a792d9847dc2f4d32bc26d268468ec0899276795bced7004dd1bd2e99"
+    },
+    {
+     "path": "src/health-no-response-line.no-response-line-9de04bf.test.ts",
+     "sha256": "7ccd946ed1c3cb4cf593e3d214c62808d1494b152e8dd0b2649a481309a35de9"
+    }
+   ],
+   "moduleExistedBefore": false
+  },
+  {
+   "issue": 543,
+   "landed": "212412a",
+   "rule": "public-derive-from-behavior-v4",
+   "title": "[health-expired-count] countExpiredCheckins: how many check-ins the prune step removes",
+   "body": "Target: PeaceG03/PeaceSTOCKS\n\nAdd a new module `src/health-expired-count.ts` exporting `countExpiredCheckins(ageDays: number[]): number`.\n\nBehavior: health check-ins are kept for one month, counted as 30 days. Given the age in whole days of every stored check-in, answer how many are more than 30 days old and should be pruned. A check-in exactly 30 days old is kept. A negative age, from a clock that ran ahead, is never pruned. An empty list gives 0.\n\nExamples (ageDays gives count):\n- [] gives 0\n- [30] gives 0\n- [31] gives 1\n- [29, 30, 31] gives 1\n- [-1, -30, 31] gives 1\n- [60, 90, 365] gives 3\n- [-70, 0, 30] gives 0\n\nContext (Builder pre-file, ADD_FUNCTION over a list, public-derive-from-behavior-v4, behavior only): Team-picked task (Builder-drafted; not credited as source: peace unless Peace says so in his own words). Slice 2 of Peace's scanner self-health-check system. Peace's spec (2026-10-22): each scanner part writes a small plain-text check-in (status, error, key facts) to one health module; the module flags parts that go silent, error, or report wrong facts, so anyone can see at a glance what is wrong; check-ins are kept for one month and a weekly check reviews that history; Dust is not used for the check-ins. Peace's answers of 2026-10-26 do not change this task. A box dry-run of the derive step on the cleaned text of this issue (PeaceAI-Workspace main 7b7aabb, with v4 landed; PeaceSTOCKS main 8dec076; Node 20; public repos only, no private core, no model, nothing pushed) derived it under public-derive-from-behavior-v4; v1-v3 and v5 do not match a list header. The examples were cut from 13 to 7; each shows one edge of the 30-day rule. This issue states only the wanted behavior and example cases; PeaceAI has to work out the implementation itself. Production safety: one new function in a new module plus one new test file under src/ only. Nothing imports it yet, so the running scanner, the scan and the ten-minute chain are unchanged. Wiring it into the health module is a separate task.\n",
+   "files": [
+    {
+     "path": "src/health-expired-count.ts",
+     "sha256": "d7402cb7c32c26b45918dfdb090eed10a46bc7bb3f24af4a3a6f224814223d1b"
+    },
+    {
+     "path": "src/health-expired-count.count-expired-checkins-d338d40.test.ts",
+     "sha256": "751e445cf2c3ea271ae9f00dc09d68a06b910641dc36f3f105b9e0fc9c50a11a"
+    }
+   ],
+   "moduleExistedBefore": false
+  }
+ ]
+}
