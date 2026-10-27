@@ -1,0 +1,11 @@
+{
+ "schema": "peaceai-judge-v2:v1",
+ "note": "Judge set v2 pins (peace-lm-judge-v2.yml). Built on the box from the same inputs with peaceai/bin/judge-v2-build.ts; the workflow must reproduce the items sha256 and counts, and judge364.py must reproduce the live model's AUC and its recorded v1 per-item aggregates. Lands under Results lm-judge-v2/ (new path; v1 is untouched).",
+ "sources": "peaceai/model/judge-v2-sources.json",
+ "sourcesSha256": "d451b0c888da109b9f58df8609fb4def410b7fecd31977e5b2c3f34185608314",
+ "out": "lm-judge-v2",
+ "items": { "sha256": "1deadaaea1992ad18e533595218c9c0953128615c18c9ce0d24dc58d505da2b8", "n": 230, "right": 73, "wrong": 157 },
+ "dropped": { "identity_indistinguishable": 134 },
+ "relabelled": { "rightToWrong": 69, "wrongToRight": 0 },
+ "live": { "version": "lm-v1-088073d41dbc", "auc": 0.175, "auc_ci95": [0.116, 0.237] }
+}
