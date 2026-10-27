@@ -128,7 +128,8 @@ test("M119: a builder-log row doc must be exactly line N of <sha>:<path> (corefr
 }));
 
 test("M119: the retrain workflow carries the Auditor's gate and lands in Results only, with no promotion", () => {
-  assert.match(WF, /^on:\n  workflow_dispatch:\n\npermissions: \{\}\n/m);
+  // M122: workflow_dispatch only, with one boolean input (dry_run; m122-lm-replay.test.ts pins what it does).
+  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n\npermissions: \{\}\n/m);
   assert.doesNotMatch(WF, /pull_request|workflow_run:|schedule:/);
   assert.doesNotMatch(WF, /upload-artifact|actions\/cache|download-artifact/, "no artifacts, no caches");
   assert.doesNotMatch(WF, /self-hosted/); assert.equal((WF.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 6);
@@ -152,8 +153,8 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   assert.match(WF, /ge "\$\(bpb live\)" "\$\(bpb model\)" \|\| \{ ok=false; why\+=\(setc_bpb\); \}/);
   // The judge scorer must reproduce the live model's recorded aggregates in the same run.
   assert.match(WF, /scores-live-recorded\.json[\s\S]*judge-live\.json[\s\S]*why\+=\(judge_scorer_not_reproduced\)/);
-  // Tuning: two sweep arms select by the corpus heldout validation loss only; the candidate is retrained to the selected step.
-  assert.deepEqual(CFG.finetune.sweep.lrs, [0.00005, 0.000025]); assert.equal(CFG.finetune.steps, 1200); assert.ok(CFG.finetune.patience > 0);
+  // Tuning: two sweep arms select by validation loss only (M122: over the replay corpus's pretrain-heldout windows); the candidate is retrained to the selected step.
+  assert.deepEqual(CFG.finetune.sweep.lrs, [0.00005, 0.000025]); assert.equal(CFG.finetune.steps, 300);  // M122: 300 (was 1200: ~25 passes over the unique content) assert.ok(CFG.finetune.patience > 0);
   for (const j of ["sweep-a", "sweep-b"]) {
     const job = WF.slice(WF.indexOf(`\n  ${j}:`), WF.indexOf("\n  finetune-eval-land:"));
     assert.ok(job.length > 100 && /lm-retrain-train\.sh/.test(job), `${j} exists and trains`);

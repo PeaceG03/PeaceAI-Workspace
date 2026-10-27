@@ -43,5 +43,5 @@ switch the gate off for itself. Today (lm-v1-088073d41dbc on v2): full 0.175 [0.
 
 ## Record
 `judge: {set, items, itemsSha256, resultsCommit, live, candidate, scorerReproducesLiveRecord, aucGate}` in the run
-record (schema peaceai-lm-retrain-record:v3); `aucGate` is judge_gate.py's output (configured, effective,
+record (schema peaceai-lm-retrain-record:v3; v4 since M122, which adds ftPrepare and replay and leaves `judge` unchanged); `aucGate` is judge_gate.py's output (configured, effective,
 hardEligible, blocks, both AUCs with intervals for both models).

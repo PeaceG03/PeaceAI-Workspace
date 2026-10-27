@@ -112,7 +112,7 @@ test("judge gate: the retrain wires judge_gate.py report-only and records both A
   assert.match(WF, /why\+=\(judge_scorer_not_reproduced\)/);
   assert.match(WF, /nonidentity: \.judge\.live\.nonidentity\.auc_exact, nonidentity95: \.judge\.live\.nonidentity\.auc_ci95/);
   assert.match(WF, /full95: \.judge\.candidate\.auc_ci95/);
-  assert.match(WF, /schema: "peaceai-lm-retrain-record:v3"/);
+  assert.match(WF, /schema: "peaceai-lm-retrain-record:v4"/);  // M122: v4 adds ftPrepare and replay (the judge fields are unchanged from v3)
   const spec = read("peaceai/spec/lm-retrain-judge-gate-v1.md");
   for (const s of ["REPORT-ONLY", "strictly above 0.5 on the full set AND on\n   the non-identity subset", "live (reference) model"]) assert.ok(spec.includes(s), s);
   for (const f of ["peaceai/model/judge_gate.py", "peaceai/spec/lm-retrain-judge-gate-v1.md", "peaceai/test/m121-judge-gate.test.ts"]) assert.ok(protectedReason(f), f);

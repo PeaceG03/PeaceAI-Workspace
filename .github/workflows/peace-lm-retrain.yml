@@ -12,9 +12,19 @@ name: peace-lm-retrain
 #       candidate until peaceai/model/judge_gate.py's promote-to-hard rule holds (live model's lower 95% bound above
 #       0.5 on both the full set and the non-identity subset; spec peaceai/spec/lm-retrain-judge-gate-v1.md).
 #       judge364.py must reproduce the live model's recorded judge aggregates in the run (blocking);
-#   tuning: two sweep arms (finetune.sweep.lrs) run up to finetune.steps with early stopping on validation loss over the
-#       corpus's own heldout split (carved from the training data; never set C v2 or the judge items; its sha256 is
-#       recorded); the arm/step with the lowest validation loss is re-trained to exactly that step as the candidate;
+#   tuning: two sweep arms (finetune.sweep.lrs) run up to finetune.steps with early stopping on validation loss over
+#       pretrain-heldout windows (finetune.valWindows docs of the replay corpus, one window per doc; never set C v2, the
+#       judge items or the fine-tune corpus; its sha256 is recorded); the arm/step with the lowest validation loss is
+#       re-trained to exactly that step as the candidate;
+#   forgetting fix (run 40375535718, set C v2 bpb 1.6506 -> 2.0670): the fine-tune pairs keep one version per (repo, path,
+#       function) and are split by file path (ft_prepare.py); finetune.replayFrac of every batch replays the live model's
+#       own pretrain train split (lm-retrain-replay.sh: rebuilt from the public ext manifest, must hash to
+#       replay.manifestSha256); the replay corpus is proven, by doc id and sha256, to overlap neither set C v2 nor the
+#       judge-v2 items before any training (replay_proof.py; refuses on any overlap);
+#   dry run (workflow_dispatch input dry_run=true): corpus-gate and both sweep arms run; each arm then prints ONLY the set
+#       C v2 bits/byte of every kept checkpoint and of the live model (lm-retrain-dryrun-score.sh, after training);
+#       finetune-eval-land, retrain-memcheck and record-memcheck are skipped, nothing is uploaded, and every Results write
+#       runs through lm-retrain-dryrun-guard.sh, which refuses unless DRY_RUN is exactly "false";
 #   (4) GitHub-hosted runners only; counts-only logs; no artifacts, no caches; model, scores and record land in the
 #       private Results repo only; the memcheck uses the strict 32-character rule (no pretrain-corpus proof attached);
 #   (5) no promotion: latest.json is never touched; promotion needs the Auditor's review of this run id and weights sha.
@@ -25,6 +35,11 @@ name: peace-lm-retrain
 # match their pins.
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "dry run: train both sweep arms, print only set C v2 bpb per checkpoint (and the live model's); no Results write"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -34,9 +49,11 @@ concurrency:
 
 env:
   CFG: peaceai/model/lm-retrain.json
+  DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
   RESULTS_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
     9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
+    d4d7c4614fc1c88d806ef66d4e813e8bc31f4ff1f3a89835b9e1efa304a60361  peaceai/bin/lm-retrain-dryrun-guard.sh
   CORE_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
     7e2650ddd67247f4a45a0968409e448fa00d3a66ee1acc9409c8c29aab018754  peaceai/bin/clone-core.sh
@@ -54,6 +71,8 @@ jobs:
       drops: ${{ steps.prove.outputs.drops }}
       manifest: ${{ steps.prove.outputs.manifest }}
       proof: ${{ steps.prove.outputs.proof }}
+      replay: ${{ steps.replay.outputs.replay }}
+      replayproof: ${{ steps.replay.outputs.replayproof }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,12 +131,22 @@ jobs:
           [ "${#b64}" -le 800000 ] || { echo "proof too large for a job output: refused"; exit 1; }
           echo "proof=$b64" >> "$GITHUB_OUTPUT"
           echo "fine-tune corpus PROVEN core-free: docs=$(jq '.files | length' "$P")"
+          jq -c '{docsIn, keys, olderVersionsDropped, heldoutSharedLineDropped, train, heldout, trainPaths, heldoutPaths}' "$W/ft-prepare.json"
+      - name: Build the replay corpus; prove (doc ids, sha256) no overlap with set C v2 or the judge-v2 items, before any training
+        id: replay
+        run: |
+          set -euo pipefail
+          W="$RUNNER_TEMP/w"
+          ./peaceai/bin/lm-retrain-replay.sh "$W" "$RUNNER_TEMP/items.json"
+          test "$(jq -r .ok "$W/replay-proof.json")" = true || { echo "replay overlap proof failed: refused"; exit 1; }
+          echo "replay=$(sha256sum "$W/replay/manifest.jsonl" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+          echo "replayproof=$(jq -r '[.trainIdsSha256, .valIdsSha256, .setcShaListSha256, .judgeItemsSha256] | join(",")' "$W/replay-proof.json")" >> "$GITHUB_OUTPUT"
       - name: Delete core, the corpus, the clones and the judge items
         if: always()
         run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/w" "$RUNNER_TEMP/stub" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/res" "$RUNNER_TEMP/drops.txt"
 
   sweep-a:
-    name: sweep arm a (finetune.sweep.lrs[0]; early stop on the corpus heldout split only)
+    name: sweep arm a (finetune.sweep.lrs[0]; early stop on pretrain-heldout windows only)
     needs: corpus-gate
     if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -156,6 +185,8 @@ jobs:
         env:
           DROPS: ${{ needs.corpus-gate.outputs.drops }}
           MANIFEST: ${{ needs.corpus-gate.outputs.manifest }}
+          REPLAY: ${{ needs.corpus-gate.outputs.replay }}
+          REPLAYPROOF: ${{ needs.corpus-gate.outputs.replayproof }}
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
         run: |
           set -euo pipefail
@@ -163,21 +194,30 @@ jobs:
           printf '%s' "$DROPS" | tr , '\n' > "$RUNNER_TEMP/drops.txt"
           ./peaceai/bin/lm-retrain-corpus.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/r/items.json" "$RUNNER_TEMP/drops.txt"
           test "$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)" = "$MANIFEST" || { echo "rebuilt corpus differs from the proven one: refused"; exit 1; }
+          ./peaceai/bin/lm-retrain-replay.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/r/items.json"
+          ./peaceai/bin/lm-retrain-replay-check.sh "$RUNNER_TEMP/w" "$REPLAY" "$REPLAYPROOF"
+          # set C v2 and the judge items are deleted before training (the dry run re-fetches set C only after training)
           rm -rf "$RUNNER_TEMP/w/srcroot" "$RUNNER_TEMP/w/setc" "$RUNNER_TEMP/r/items.json" "$RUNNER_TEMP/r/scores-live-recorded.json"
-      - name: Sweep arm (up to finetune.steps; early stop on validation loss over the corpus heldout split; losses only)
+      - name: Sweep arm (up to finetune.steps; replay share; early stop on validation loss over pretrain-heldout windows; losses only)
         id: arm
         env:
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
         run: |
           set -euo pipefail
           lr=$(jq -r ".finetune.sweep.lrs[$ARM]" "$CFG"); [ "$lr" != null ] || { echo "no sweep arm $ARM"; exit 1; }
-          ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/arm" "$lr" 0
+          if [ "$DRY_RUN" = true ]; then export KEEP_CHECKPOINTS=1; fi
+          ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/w/replay" "$RUNNER_TEMP/w/replay-dedup.json" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/arm" "$lr" 0
           echo "summary=$(jq -c --argjson arm "$ARM" '. + {arm: $arm}' "$RUNNER_TEMP/arm/summary.json")" >> "$GITHUB_OUTPUT"
+      - name: Dry run only - set C v2 bpb of every kept checkpoint and of the live model (after training; prints bpb only)
+        if: env.DRY_RUN == 'true'
+        env:
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: ./peaceai/bin/lm-retrain-dryrun-score.sh "$RUNNER_TEMP/arm" "$RUNNER_TEMP/r/live" "$ARM" "$(jq -r ".finetune.sweep.lrs[$ARM]" "$CFG")" "$RUNNER_TEMP/dry"
       - name: Delete the weights, the corpus and the judge items
         if: always()
-        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.*
+        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/dry" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.*
   sweep-b:
-    name: sweep arm b (finetune.sweep.lrs[1]; early stop on the corpus heldout split only)
+    name: sweep arm b (finetune.sweep.lrs[1]; early stop on pretrain-heldout windows only)
     needs: corpus-gate
     if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -216,6 +256,8 @@ jobs:
         env:
           DROPS: ${{ needs.corpus-gate.outputs.drops }}
           MANIFEST: ${{ needs.corpus-gate.outputs.manifest }}
+          REPLAY: ${{ needs.corpus-gate.outputs.replay }}
+          REPLAYPROOF: ${{ needs.corpus-gate.outputs.replayproof }}
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
         run: |
           set -euo pipefail
@@ -223,24 +265,33 @@ jobs:
           printf '%s' "$DROPS" | tr , '\n' > "$RUNNER_TEMP/drops.txt"
           ./peaceai/bin/lm-retrain-corpus.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/r/items.json" "$RUNNER_TEMP/drops.txt"
           test "$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)" = "$MANIFEST" || { echo "rebuilt corpus differs from the proven one: refused"; exit 1; }
+          ./peaceai/bin/lm-retrain-replay.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/r/items.json"
+          ./peaceai/bin/lm-retrain-replay-check.sh "$RUNNER_TEMP/w" "$REPLAY" "$REPLAYPROOF"
+          # set C v2 and the judge items are deleted before training (the dry run re-fetches set C only after training)
           rm -rf "$RUNNER_TEMP/w/srcroot" "$RUNNER_TEMP/w/setc" "$RUNNER_TEMP/r/items.json" "$RUNNER_TEMP/r/scores-live-recorded.json"
-      - name: Sweep arm (up to finetune.steps; early stop on validation loss over the corpus heldout split; losses only)
+      - name: Sweep arm (up to finetune.steps; replay share; early stop on validation loss over pretrain-heldout windows; losses only)
         id: arm
         env:
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
         run: |
           set -euo pipefail
           lr=$(jq -r ".finetune.sweep.lrs[$ARM]" "$CFG"); [ "$lr" != null ] || { echo "no sweep arm $ARM"; exit 1; }
-          ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/arm" "$lr" 0
+          if [ "$DRY_RUN" = true ]; then export KEEP_CHECKPOINTS=1; fi
+          ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/w/replay" "$RUNNER_TEMP/w/replay-dedup.json" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/arm" "$lr" 0
           echo "summary=$(jq -c --argjson arm "$ARM" '. + {arm: $arm}' "$RUNNER_TEMP/arm/summary.json")" >> "$GITHUB_OUTPUT"
+      - name: Dry run only - set C v2 bpb of every kept checkpoint and of the live model (after training; prints bpb only)
+        if: env.DRY_RUN == 'true'
+        env:
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: ./peaceai/bin/lm-retrain-dryrun-score.sh "$RUNNER_TEMP/arm" "$RUNNER_TEMP/r/live" "$ARM" "$(jq -r ".finetune.sweep.lrs[$ARM]" "$CFG")" "$RUNNER_TEMP/dry"
       - name: Delete the weights, the corpus and the judge items
         if: always()
-        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.*
+        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/dry" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.*
 
   finetune-eval-land:
     name: select the sweep arm, fine-tune the candidate from the live model, score both in this run, gate, land in Results
     needs: [corpus-gate, sweep-a, sweep-b]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     environment: peaceai-results
@@ -279,6 +330,8 @@ jobs:
           DROPS: ${{ needs.corpus-gate.outputs.drops }}
           MANIFEST: ${{ needs.corpus-gate.outputs.manifest }}
           PROOF: ${{ needs.corpus-gate.outputs.proof }}
+          REPLAY: ${{ needs.corpus-gate.outputs.replay }}
+          REPLAYPROOF: ${{ needs.corpus-gate.outputs.replayproof }}
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
         run: |
           set -euo pipefail
@@ -288,16 +341,18 @@ jobs:
           test "$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)" = "$MANIFEST" || { echo "rebuilt corpus differs from the proven one: refused"; exit 1; }
           printf '%s' "$PROOF" | base64 -d | gunzip | head -c 20000000 > "$RUNNER_TEMP/corefree-proof-finetune.json"
           test "$(jq -r .noCoreFiles "$RUNNER_TEMP/corefree-proof-finetune.json")" = PROVEN && test "$(jq -r .manifestSha256 "$RUNNER_TEMP/corefree-proof-finetune.json")" = "$MANIFEST" || { echo "proof does not match: refused"; exit 1; }
+          ./peaceai/bin/lm-retrain-replay.sh "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json"
+          ./peaceai/bin/lm-retrain-replay-check.sh "$RUNNER_TEMP/w" "$REPLAY" "$REPLAYPROOF"
           rm -rf "$RUNNER_TEMP/w/srcroot"
           jq -c '{docsIn, docsOut, overlapDocs, overlapDocsSetC, overlapDocsJudge, droppedByList, recheckOverlapDocs}' "$RUNNER_TEMP/w/dedup.json"
-      - name: Select the sweep arm by validation loss on the corpus heldout split (never set C v2 or the judge items)
+      - name: Select the sweep arm by validation loss on the pretrain-heldout windows (never set C v2, the judge items or the ft corpus)
         id: select
         env:
           SA: ${{ needs.sweep-a.outputs.summary }}
           SB: ${{ needs.sweep-b.outputs.summary }}
         run: |
           set -euo pipefail
-          vs=$(python3 peaceai/model/val_split.py --corpus "$RUNNER_TEMP/w/ft" --dedup "$RUNNER_TEMP/w/dedup.json")
+          vs=$(python3 peaceai/model/val_split.py --corpus "$RUNNER_TEMP/w/replay" --dedup "$RUNNER_TEMP/w/replay-dedup.json")
           python3 - "$CFG" "$vs" "$SA" "$SB" > "$RUNNER_TEMP/select.json" <<'PY'
           import json, sys
           cfg, vs = json.load(open(sys.argv[1])), json.loads(sys.argv[2])
@@ -310,6 +365,11 @@ jobs:
                   sys.exit("sweep arm is not the configured arm")
               if a["valSplit"] != vs:
                   sys.exit("sweep arm used a different validation split")
+              r = a.get("replay") or {}
+              if r.get("replayFrac") != ft["replayFrac"] or (r.get("val") or {}).get("windows") != ft["valWindows"] or (r.get("val") or {}).get("docs") != ft["valWindows"]:
+                  sys.exit("sweep arm used a different replay share or validation windows")
+          if len({json.dumps(a["replay"]["val"], sort_keys=True) for a in arms}) != 1:
+              sys.exit("sweep arms used different validation windows")
               if not (0 < a["bestStep"] <= ft["steps"]) or a["bestStep"] % ft["evalEvery"] and a["bestStep"] != ft["steps"]:
                   sys.exit("bad sweep best step")
           best = min(arms, key=lambda a: (a["bestVal"], a["bestStep"], a["arm"]))
@@ -328,8 +388,9 @@ jobs:
           set -euo pipefail
           py="$RUNNER_TEMP/venv/bin/python"
           [[ "$STEP" =~ ^[1-9][0-9]*$ ]] || { echo "bad selected step"; exit 1; }
-          ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/live" "$RUNNER_TEMP/ftwork" "$LR" "$STEP"
+          ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/w/replay" "$RUNNER_TEMP/w/replay-dedup.json" "$RUNNER_TEMP/live" "$RUNNER_TEMP/ftwork" "$LR" "$STEP"
           test "$(jq -c .valSplit "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -c .validationSplit "$RUNNER_TEMP/select.json")" || { echo "candidate used a different validation split: refused"; exit 1; }
+          test "$(jq -c .replay.val "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -c '.arms[0].replay.val' "$RUNNER_TEMP/select.json")" || { echo "candidate used different validation windows: refused"; exit 1; }
           cp "$RUNNER_TEMP/ftwork/summary.json" "$RUNNER_TEMP/candidate-train.json"
           "$py" peaceai/model/export.py --work "$RUNNER_TEMP/ftwork" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint checkpoint.npz > /dev/null
           cp "$RUNNER_TEMP/ftwork/metrics.jsonl" "$RUNNER_TEMP/model/ft-metrics.jsonl"; cp "$RUNNER_TEMP/w/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
@@ -337,9 +398,9 @@ jobs:
           # Provenance under .retrain (not the two-corpus field: that memcheck mode needs a pretrain-corpus proof this run cannot rebuild).
           fts=$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)
           jq --arg live "$(jq -r .live.version "$CFG")" --arg f "$fts" --arg l "$(jq -r .list.sha256 "$CFG")" --arg r "$GITHUB_RUN_ID" --arg s "$GITHUB_SHA" \
-            --slurpfile sel "$RUNNER_TEMP/select.json" \
+            --slurpfile sel "$RUNNER_TEMP/select.json" --arg rm "$(sha256sum "$RUNNER_TEMP/w/replay/manifest.jsonl" | cut -c1-64)" --argjson fr "$(jq .finetune.replayFrac "$CFG")" \
             '.retrain = {initFrom: $live, finetuneManifestSha256: $f, commitListSha256: $l, runId: $r, workspaceSha: $s,
-              validationSplitSha256: $sel[0].validationSplit.sha256, selected: $sel[0].selected}' "$RUNNER_TEMP/model/config.json" > "$RUNNER_TEMP/cfg.json" && mv "$RUNNER_TEMP/cfg.json" "$RUNNER_TEMP/model/config.json"
+              validationSplitSha256: $sel[0].validationSplit.sha256, selected: $sel[0].selected, replayManifestSha256: $rm, replayFrac: $fr}' "$RUNNER_TEMP/model/config.json" > "$RUNNER_TEMP/cfg.json" && mv "$RUNNER_TEMP/cfg.json" "$RUNNER_TEMP/model/config.json"
           rm -rf "$RUNNER_TEMP/ftwork"
           jq -r '"candidate \(.version) ctx=\(.ctx) params=\(.params) steps=\(.trained_steps)"' "$RUNNER_TEMP/model/config.json"
       - name: Score live and candidate in this run (same set C v2 byte slice, same judge v2 items, same code)
@@ -380,8 +441,10 @@ jobs:
             --slurpfile sel "$RUNNER_TEMP/select.json" --slurpfile ct "$RUNNER_TEMP/candidate-train.json" --arg scorer "$scorer" \
             --arg bl "$(bpb live)" --arg bm "$(bpb model)" --arg sl "$(sl live)" --arg sm "$(sl model)" --arg ok "$ok" --arg why "${why[*]:-}" \
             --arg proof "$(sha256sum "$RUNNER_TEMP/model/corefree-proof-finetune.json" | cut -c1-64)" \
-            '{schema: "peaceai-lm-retrain-record:v3", runId: $run, workspaceSha: $ws, live: $cfg[0].live.version, candidate: $v, candidateWeightsSha256: $w,
+            --slurpfile rp "$RUNNER_TEMP/w/replay-proof.json" --slurpfile fp "$RUNNER_TEMP/w/ft-prepare.json" \
+            '{schema: "peaceai-lm-retrain-record:v4", runId: $run, workspaceSha: $ws, live: $cfg[0].live.version, candidate: $v, candidateWeightsSha256: $w,
               commitList: $cfg[0].list, finetune: $cfg[0].finetune, dedup: $dd[0], finetuneCorefreeProofSha256: $proof,
+              ftPrepare: $fp[0], replay: {config: $cfg[0].replay, overlapProof: $rp[0]},
               validationSplit: $sel[0].validationSplit, sweep: $sel[0].arms, selected: $sel[0].selected, candidateTraining: $ct[0],
               setcV2: {maxBytes: $cfg[0].eval.setcMaxBytes, sliceSha256: {live: $sl, candidate: $sm}, bitsPerByte: {live: ($bl | tonumber), candidate: ($bm | tonumber)}},
               judge: {set: $cfg[0].eval.judgeSet, items: $cfg[0].eval.judgeItems, itemsSha256: $cfg[0].eval.judgeItemsSha256, resultsCommit: $jc,
@@ -409,7 +472,7 @@ jobs:
           PASS: ${{ steps.gate.outputs.pass }}
         run: |
           set -euo pipefail
-          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain candidate (run $GITHUB_RUN_ID)" \
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain candidate (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               v=$(jq -r .version "$MODEL_DIR/config.json")
               [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }
@@ -432,7 +495,7 @@ jobs:
   retrain-memcheck:
     name: verbatim memcheck of the landed candidate (strict 32-character rule; counts only)
     needs: [corpus-gate, finetune-eval-land]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.finetune-eval-land.outputs.version != ''
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.finetune-eval-land.outputs.version != '' && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     environment: peaceai-core
@@ -521,7 +584,7 @@ jobs:
   record-memcheck:
     name: record the memcheck in Results (append-only; no promotion)
     needs: [finetune-eval-land, retrain-memcheck]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.retrain-memcheck.outputs.memcheck != ''
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.retrain-memcheck.outputs.memcheck != '' && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: peaceai-results
@@ -555,7 +618,7 @@ jobs:
           MC_DIR: ${{ runner.temp }}/mc
         run: |
           set -euo pipefail
-          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain memcheck (run $GITHUB_RUN_ID)" \
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain memcheck (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               d="$RESULTS_DIR/models/lm/$V"; r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"
               test -d "$d" && test -d "$r" && test ! -e "$d/memcheck.json" && test ! -e "$r/memcheck.json"
