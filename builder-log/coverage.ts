@@ -62,7 +62,7 @@ export type OnMainChecker = (sha: string) => boolean;
 
 export { isCoverageNone, COVERAGE_NONE, COVERAGE_NONE_SEQS } from "./check.ts";
 
-const SOURCE_PEACE = /\(source:\s*peace\)/i;
+export const SOURCE_PEACE = /\(source:\s*peace\)/i;
 const PEACE_STOCKS_SHA = /PeaceSTOCKS@([0-9a-f]{7,40})/;
 
 export function parseLogEntries(logText: string): Entry[] {

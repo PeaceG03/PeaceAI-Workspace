@@ -36,6 +36,7 @@ jobs:
       # Empty unless the target is confirmed public and configured: later jobs never see a private target.
       issue: ${{ steps.target.outputs.run == 'true' && steps.pick.outputs.issue || '' }}
       source: ${{ steps.pick.outputs.source }}
+      body_sha256: ${{ steps.pick.outputs.body_sha256 }}
       target: ${{ steps.target.outputs.target }}
       is_default: ${{ steps.target.outputs.is_default }}
       install: ${{ steps.target.outputs.install }}
@@ -421,6 +422,7 @@ jobs:
       - name: Fetch the task text
         env:
           GH_TOKEN: ${{ github.token }}
+          ISSUE_PROVENANCE: "1" # M119: body revisions + label events and the labels at record time, for the task source
         run: ISSUE_JSON="$RUNNER_TEMP/issue.json" ./node_modules/.bin/tsx peaceai/bin/issue-fetch.ts
       - name: Python runtime for the LM shadow score (numpy only, hash-pinned)
         if: vars.PEACEAI_LM_SHADOW == 'true'

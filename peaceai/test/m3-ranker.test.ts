@@ -190,7 +190,7 @@ test("held-out eval: only 2+ eligible decided tasks count; none wrong counts as 
 test("sources: filter and weight by source; metrics split by source", () => {
   const tasks: FixtureTask[] = [
     ...trainIssues(10).map((issue) => ({ issue, pick: "tested" as const, source: "builder" as const })),
-    ...trainIssues(6, 500).map((issue) => ({ issue, pick: "tested" as const })),
+    ...trainIssues(6, 500).map((issue) => ({ issue, pick: "tested" as const, source: "peace" as const })),
     ...heldIssues(6).map((issue, i) => ({ issue, pick: "tested" as const, source: (i % 2 ? "builder" : "peace") as TaskSource })),
   ];
   const root = fixture(tasks);
@@ -205,8 +205,10 @@ test("sources: filter and weight by source; metrics split by source", () => {
   assert.equal(peaceOnly.metrics.status, "insufficient data");
   const weighted = pairsFor(examples.filter((x) => trainExclusion(x) === null), { builder: 0.5 });
   assert.ok(weighted.some((p) => p.weight === 0.5) && weighted.some((p) => p.weight === 1));
-  assert.equal(taskSource(["peace-task", "source:builder"]), "builder");
-  assert.equal(taskSource(["peace-task"]), "peace");
+  // M119: provenance (label + the body's credit line) decides the source; no credit line fails closed.
+  assert.equal(taskSource(["peace-task", "source:builder"], "Context (Builder pre-file): Peace's task (source: peace)."), "builder");
+  assert.equal(taskSource(["peace-task"], "Context (Builder pre-file): Peace's task (source: peace)."), "peace");
+  assert.equal(taskSource(["peace-task"], ""), "builder");
   const summary = writeSummary(root);
   assert.equal(summary.entries.filter((e) => e.source === "builder").length, 13);
   assert.ok("builder" in summary.agreementBySource && "peace" in summary.agreementBySource);
