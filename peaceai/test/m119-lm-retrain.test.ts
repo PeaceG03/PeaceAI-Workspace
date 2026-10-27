@@ -141,7 +141,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   for (const l of /LANDING_SHA256: \|-\n((?: {4}.+\n)+)/.exec(m49)![1]!.trim().split("\n")) assert.ok(WF.includes(l.trim()));
   for (const l of /LANDING_SHA256: \|-\n((?: {4}.+\n)+)/.exec(mc)![1]!.trim().split("\n")) assert.ok(WF.includes(l.trim()));
   // Gate 1 + 3: both models scored in this run on the same pinned slice and the same judge items; judge AUC recorded (report-only).
-  assert.match(WF, /for who in live model; do\n.*eval_c\.py --model "\$RUNNER_TEMP\/\$who"[^\n]*--max-bytes "\$mb"[\s\S]*?judge364\.py --model "\$RUNNER_TEMP\/\$who"/);
+  assert.match(WF, /whos=\(live\); \[ "\$CAND" = true \] && whos\+=\(model\)\n\s+for who in "\$\{whos\[@\]\}"; do\n.*eval_c\.py --model "\$RUNNER_TEMP\/\$who"[^\n]*--max-bytes "\$mb"[\s\S]*?judge364\.py --model "\$RUNNER_TEMP\/\$who"/);
   assert.match(WF, /\[ "\$\(sl live\)" = "\$want" \] && \[ "\$\(sl model\)" = "\$want" \]/);
   assert.doesNotMatch(WF, /float\(sys\.argv\[1\]\) >= float\(sys\.argv\[2\]\)/, "M123: no float comparison: the margin gate is exact (bpb_gate.py)");
   // Judge AUC is report-only (judge gate v1): judge_gate.py decides; it can block only under the promote-to-hard rule.

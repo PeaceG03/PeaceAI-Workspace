@@ -401,20 +401,32 @@ jobs:
                   sys.exit("sweep arm used a different replay share or validation windows")
               if a.get("mode") != mode or (mode == "pretrain" and r.get("ftRows") != 0):
                   sys.exit("sweep arm ran in a different mode")
-              if not (0 < a["bestStep"] <= ft["steps"]) or a["bestStep"] % ft["evalEvery"] and a["bestStep"] != ft["steps"]:
+              if a["bestStep"] == 0:
+                  # deadline-cut before its first evaluation after step 0: step 0 = the live weights (gain 0), never a candidate
+                  if not (a.get("deadlineCut") is True and a.get("noEvalAfterStep0") is True and (a.get("timing") or {}).get("timeCut") is True and a["bestVal"] == a["step0Val"]):
+                      sys.exit("bad sweep best step")
+              elif not (0 < a["bestStep"] <= ft["steps"]) or a["bestStep"] % ft["evalEvery"] and a["bestStep"] != ft["steps"]:
                   sys.exit("bad sweep best step")
           if len({json.dumps(a["replay"]["val"], sort_keys=True) for a in arms}) != 1:
               sys.exit("sweep arms used different validation windows")
           if len({json.dumps(a["replay"]["corpus"], sort_keys=True) for a in arms}) != 1:
               sys.exit("sweep arms used different replay corpora")
-          best = min(arms, key=lambda a: (a["bestVal"], a["bestStep"], a["arm"]))
-          print(json.dumps({"mode": mode, "validationSplit": vs, "arms": sorted(arms, key=lambda a: a["arm"]), "selected": {"arm": best["arm"], "lr": best["lr"], "step": best["bestStep"], "valLoss": best["bestVal"]},
+          real = [a for a in arms if a["bestStep"] > 0]
+          if real:
+              best = min(real, key=lambda a: (a["bestVal"], a["bestStep"], a["arm"]))
+              selected = {"arm": best["arm"], "lr": best["lr"], "step": best["bestStep"], "valLoss": best["bestVal"], "candidate": True}
+          else:  # every arm deadline-cut before its first evaluation after step 0: the selected step is 0 (the live weights)
+              selected = {"arm": None, "lr": None, "step": 0, "valLoss": min(a["step0Val"] for a in arms), "candidate": False, "result": "no candidate",
+                          "why": "every sweep arm was deadline-cut before its first evaluation after step 0; step 0 is the live weights (gain 0), so the margin gate fails by construction"}
+          print(json.dumps({"mode": mode, "validationSplit": vs, "arms": sorted(arms, key=lambda a: a["arm"]), "selected": selected,
                             "rule": ft["sweep"]["select"]}, sort_keys=True))
           PY
-          jq -c '{mode, validationSplit, selected, arms: [.arms[] | {arm, lr, step0Val, bestVal, bestStep, stoppedStep, earlyStop, stopReason: .timing.stopReason, timeCut: .timing.timeCut}]}' "$RUNNER_TEMP/select.json"
+          jq -c '{mode, validationSplit, selected, arms: [.arms[] | {arm, lr, step0Val, bestVal, bestStep, stoppedStep, earlyStop, stopReason: .timing.stopReason, timeCut: .timing.timeCut, deadlineCut}]}' "$RUNNER_TEMP/select.json"
+          echo "candidate=$(jq -r '.selected.candidate == true' "$RUNNER_TEMP/select.json")" >> "$GITHUB_OUTPUT"
           echo "lr=$(jq -r .selected.lr "$RUNNER_TEMP/select.json")" >> "$GITHUB_OUTPUT"
           echo "step=$(jq -r .selected.step "$RUNNER_TEMP/select.json")" >> "$GITHUB_OUTPUT"
       - name: Fine-tune the candidate from the live weights (selected lr, same schedule, stops at the selected step) and export
+        if: steps.select.outputs.candidate == 'true'
         env:
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
           LR: ${{ steps.select.outputs.lr }}
@@ -442,22 +454,36 @@ jobs:
           rm -rf "$RUNNER_TEMP/ftwork"
           jq -r '"candidate \(.version) ctx=\(.ctx) params=\(.params) steps=\(.trained_steps)"' "$RUNNER_TEMP/model/config.json"
       - name: Score live and candidate in this run (same set C v2 byte slice, same judge v2 items, same code)
+        env:
+          CAND: ${{ steps.select.outputs.candidate }}
         run: |
           set -euo pipefail
           py="$RUNNER_TEMP/venv/bin/python"; E="$RUNNER_TEMP/evals"; mkdir -p "$E"; mb=$(jq -r .eval.setcMaxBytes "$CFG")
-          for who in live model; do
+          # No candidate (every sweep arm deadline-cut at step 0): only the live model is scored; step 0 IS the live weights.
+          whos=(live); [ "$CAND" = true ] && whos+=(model)
+          for who in "${whos[@]}"; do
             "$py" peaceai/model/eval_c.py --model "$RUNNER_TEMP/$who" --corpus "$RUNNER_TEMP/w/setc" --max-bytes "$mb" --threads 4 > "$E/setc-$who.txt"
             cat "$E/setc-$who.txt"
             "$py" peaceai/model/judge364.py --model "$RUNNER_TEMP/$who" --items "$RUNNER_TEMP/items.json" --out "$E/judge-$who.json" --threads 4
           done
       - name: Gate (slice identical and pinned; 0 eval overlap; scorer reproduces the live record; candidate set C bpb <= live - eval.minBpbGain; judge AUC report-only)
         id: gate
+        env:
+          CAND: ${{ steps.select.outputs.candidate }}
         run: |
           set -euo pipefail
           E="$RUNNER_TEMP/evals"; want=$(jq -r .eval.setcSliceSha256 "$CFG")
-          sl() { sed -n 's/.* slice_sha256=\([0-9a-f]*\) .*/\1/p' "$E/setc-$1.txt"; }
-          bpb() { sed -n 's/.* bits_per_byte=\([0-9.]*\).*/\1/p' "$E/setc-$1.txt"; }
+          # No candidate (condition 4: every sweep arm deadline-cut before its first evaluation after step 0): the selected
+          # step is 0, i.e. the live weights, so "model" reads the live score (gain 0; the margin gate fails by construction),
+          # the gate records "no candidate", the run record still lands, and nothing is landed as a model or promoted.
+          nc=true; [ "$CAND" = true ] && nc=false
+          src() { if [ "$1" = model ] && [ "$nc" = true ]; then echo live; else echo "$1"; fi; }
+          sl() { sed -n 's/.* slice_sha256=\([0-9a-f]*\) .*/\1/p' "$E/setc-$(src "$1").txt"; }
+          bpb() { sed -n 's/.* bits_per_byte=\([0-9.]*\).*/\1/p' "$E/setc-$(src "$1").txt"; }
           ok=true; why=()
+          [ "$nc" = false ] || { ok=false; why+=(no_candidate); mkdir -p "$RUNNER_TEMP/model"
+            jq -n --slurpfile sel "$RUNNER_TEMP/select.json" '{noCandidate: true, mode: $sel[0].mode, stoppedStep: 0, bestStep: 0, replay: {corpus: $sel[0].arms[0].replay.corpus}}' > "$RUNNER_TEMP/candidate-train.json"
+            echo '{"summary": null}' > "$RUNNER_TEMP/judge-none.json"; echo '{"blocks": false, "effective": "no candidate"}' > "$E/judge-gate.json"; }
           [ "$(sl live)" = "$want" ] && [ "$(sl model)" = "$want" ] || { ok=false; why+=(slice); }
           [ "$(jq -r .recheckOverlapDocs "$RUNNER_TEMP/w/dedup.json")" = 0 ] || { ok=false; why+=(overlap); }
           # judge364.py must reproduce the live model's recorded per-item aggregates (Results lm-judge-v2/scores-<live>.json):
@@ -470,29 +496,33 @@ jobs:
           [ "$(jq -r .replay.corpus.docsSha256 "$RUNNER_TEMP/candidate-train.json")" = "$(jq -r .replayDocsSha256 "$RUNNER_TEMP/w/replay-proof.json")" ] || { ok=false; why+=(replay_corpus); }
           # Judge AUC: report-only. judge_gate.py makes it a hard gate only under the promote-to-hard rule (configured
           # "hard" AND the live model's lower 95% bound > 0.5 on both the full set and the non-identity subset).
-          python3 peaceai/model/judge_gate.py --mode "$(jq -r .eval.judgeAucGate "$CFG")" --live "$E/judge-live.json" --candidate "$E/judge-model.json" > "$E/judge-gate.json"
+          [ "$nc" = true ] || python3 peaceai/model/judge_gate.py --mode "$(jq -r .eval.judgeAucGate "$CFG")" --live "$E/judge-live.json" --candidate "$E/judge-model.json" > "$E/judge-gate.json"
           [ "$(jq -r .blocks "$E/judge-gate.json")" = false ] || { ok=false; why+=(judge_auc); }
           [ "$(jq -r .stoppedStep "$RUNNER_TEMP/candidate-train.json")" = "$(jq -r .selected.step "$RUNNER_TEMP/select.json")" ] || { ok=false; why+=(selected_step_not_reached); }
-          v=$(jq -r .version "$RUNNER_TEMP/model/config.json"); w=$(sha256sum "$RUNNER_TEMP/model/weights.npz" | cut -c1-64)
-          [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad candidate version"; exit 1; }
+          v=""; w=""; jmf="$RUNNER_TEMP/judge-none.json"
+          if [ "$nc" = false ]; then
+            v=$(jq -r .version "$RUNNER_TEMP/model/config.json"); w=$(sha256sum "$RUNNER_TEMP/model/weights.npz" | cut -c1-64); jmf="$E/judge-model.json"
+            [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad candidate version"; exit 1; }
+          fi
           jq -n --arg run "$GITHUB_RUN_ID" --arg ws "$GITHUB_SHA" --slurpfile cfg "$CFG" --slurpfile dd "$RUNNER_TEMP/w/dedup.json" \
-            --slurpfile jl "$E/judge-live.json" --slurpfile jm "$E/judge-model.json" --slurpfile jg "$E/judge-gate.json" --arg v "$v" --arg w "$w" \
+            --slurpfile jl "$E/judge-live.json" --slurpfile jm "$jmf" --slurpfile jg "$E/judge-gate.json" --arg v "$v" --arg w "$w" \
             --arg jc "$(cat "$RUNNER_TEMP/r/judge-commit.txt")" \
             --slurpfile sel "$RUNNER_TEMP/select.json" --slurpfile ct "$RUNNER_TEMP/candidate-train.json" --arg scorer "$scorer" \
             --arg bl "$(bpb live)" --arg bm "$(bpb model)" --arg sl "$(sl live)" --arg sm "$(sl model)" --arg ok "$ok" --arg why "${why[*]:-}" \
-            --arg proof "$(sha256sum "$RUNNER_TEMP/model/corefree-proof-finetune.json" | cut -c1-64)" \
+            --arg proof "$(sha256sum "$RUNNER_TEMP/corefree-proof-finetune.json" | cut -c1-64)" \
             --slurpfile rp "$RUNNER_TEMP/w/replay-proof.json" --slurpfile fp "$RUNNER_TEMP/w/ft-prepare.json" \
             --slurpfile rpl "$RUNNER_TEMP/w/replay-plan.json" --arg mode "$(jq -r .mode "$RUNNER_TEMP/select.json")" \
-            '{schema: "peaceai-lm-retrain-record:v5", runId: $run, workspaceSha: $ws, mode: $mode, live: $cfg[0].live.version, candidate: $v, candidateWeightsSha256: $w,
+            '{schema: "peaceai-lm-retrain-record:v5", runId: $run, workspaceSha: $ws, mode: $mode, live: $cfg[0].live.version, candidate: (if $v == "" then null else $v end), candidateWeightsSha256: (if $w == "" then null else $w end),
               commitList: $cfg[0].list, finetune: $cfg[0].finetune, training: $cfg[0][$mode], dedup: $dd[0], finetuneCorefreeProofSha256: $proof,
               ftPrepare: $fp[0], replay: {config: $cfg[0].replay, plan: $rpl[0], overlapProof: $rp[0],
                 corpus: {docsSha256: $rp[0].replayDocsSha256, docsBytes: $rp[0].replayDocsBytes, trainBytes: $rp[0].trainBytes, valBytes: $rp[0].valBytes}},
-              validationSplit: $sel[0].validationSplit, sweep: $sel[0].arms, selected: $sel[0].selected, candidateTraining: $ct[0],
+              validationSplit: $sel[0].validationSplit, sweep: $sel[0].arms, selected: $sel[0].selected, candidateTraining: (if $ct[0].noCandidate == true then null else $ct[0] end),
               setcV2: {maxBytes: $cfg[0].eval.setcMaxBytes, sliceSha256: {live: $sl, candidate: $sm}, bitsPerByte: {live: ($bl | tonumber), candidate: ($bm | tonumber)},
                 minBpbGain: $cfg[0].eval.minBpbGain, rule: $cfg[0].eval.minBpbGainRule},
               judge: {set: $cfg[0].eval.judgeSet, items: $cfg[0].eval.judgeItems, itemsSha256: $cfg[0].eval.judgeItemsSha256, resultsCommit: $jc,
                 live: $jl[0].summary, candidate: $jm[0].summary, scorerReproducesLiveRecord: ($scorer == "true"), aucGate: $jg[0]},
-              gate: {pass: ($ok == "true"), failed: ($why | split(" ") | map(select(. != "")))}, promoted: false,
+              gate: {pass: ($ok == "true"), failed: ($why | split(" ") | map(select(. != ""))),
+                result: (if $sel[0].selected.candidate == true then (if $ok == "true" then "pass" else "fail" end) else "no candidate" end)}, promoted: false,
               memcheck: (if $mode == "pretrain" then "pending (memcheck job: strict 32-character rule on the fine-tune corpus AND on the replay corpus; both must PASS)" else "pending (memcheck job, strict 32-character rule)" end)}' > "$E/record.json"
           jq -c '{mode, live, candidate, candidateWeightsSha256, validationSplitSha256: .validationSplit.sha256, selected, bpb: .setcV2.bitsPerByte,
             judgeAuc: {mode: .judge.aucGate.effective, hardEligible: .judge.aucGate.hardEligible,
@@ -500,7 +530,7 @@ jobs:
               candidate: {full: .judge.candidate.auc_exact, full95: .judge.candidate.auc_ci95, nonidentity: .judge.candidate.nonidentity.auc_exact, nonidentity95: .judge.candidate.nonidentity.auc_ci95}},
             overlapDocs: .dedup.overlapDocs, gate}' "$E/record.json"
           echo "pass=$ok" >> "$GITHUB_OUTPUT"
-          if [ "$ok" = true ]; then echo "version=$v" >> "$GITHUB_OUTPUT"; fi
+          if [ "$ok" = true ] && [ "$nc" = false ]; then echo "version=$v" >> "$GITHUB_OUTPUT"; fi
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail
@@ -518,8 +548,8 @@ jobs:
           set -euo pipefail
           ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain candidate (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
-              v=$(jq -r .version "$MODEL_DIR/config.json")
-              [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }
+              v=none; if [ "$PASS" = true ]; then v=$(jq -r .version "$MODEL_DIR/config.json")
+              [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }; fi
               if [ -n "$(find "$MODEL_DIR" "$EVALS" -type l)" ]; then echo "landing refused: symlink"; exit 1; fi
               r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"; test ! -e "$r"; mkdir -p "$r"; cp "$EVALS"/* "$r"/
               allowed=("runs/lm-retrain/$GITHUB_RUN_ID/")

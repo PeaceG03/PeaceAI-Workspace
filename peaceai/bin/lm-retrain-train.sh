@@ -17,6 +17,8 @@
 # limit never kills it with nothing written (on a time cut the run ends cleanly at the last completed step; summary.json
 # carries timing.timeCut and the validation-selected bestStep). summary.json also carries mode, batch, timing (seconds and
 # the stop reason) and replay.corpus {docsSha256, docsBytes, manifestSha256}: the replay corpus this run actually read.
+# A time cut (deadline / maxSeconds) before the first evaluation after step 0 still writes summary.json: deadlineCut true,
+# bestStep 0 (the live weights, gain 0; retrain_summary.py), so the select step records "no candidate" (never a promotion).
 # Needs PEACEAI_PYTHON (numpy).
 set -euo pipefail
 corpus="$1"; dedup="$2"; rcorpus="$3"; rdedup="$4"; live="$5"; work="$6"; lr="$7"; stop="$8"
@@ -58,7 +60,7 @@ if [ "$mode" = pretrain ]; then
   ! grep -q '^resumed' "$work/train.log" || { echo "pretrain mode: resumed optimizer state (fresh AdamW expected): refused"; exit 1; }
 fi
 jq -e '(.stopReason | type) == "string" and (.timeCut | type) == "boolean"' "$work/timing.json" > /dev/null || { echo "no timing record: refused"; exit 1; }
-"$py" peaceai/model/retrain_summary.py "$work/metrics.jsonl" "$lr" "$(f steps)" "$stop" "$(grep -c '(early stop)' "$work/train.log" || true)" "$vs" \
+"$py" peaceai/model/retrain_summary.py "$work/metrics.jsonl" "$lr" "$(f steps)" "$stop" "$(grep -c '(early stop)' "$work/train.log" || true)" "$vs" "$(jq -r .stopReason "$work/timing.json")" \
   | jq -c --slurpfile r "$work/replay.json" --slurpfile t "$work/timing.json" --arg mode "$mode" --argjson b "$batch" \
       --arg ds "$(sha256sum "$rcorpus/docs.jsonl" | cut -c1-64)" --argjson db "$(stat -c %s "$rcorpus/docs.jsonl")" --arg ms "$(sha256sum "$rcorpus/manifest.jsonl" | cut -c1-64)" \
       '. + {mode: $mode, batch: $b, timing: $t[0], replay: ($r[0] | {replayFrac, replayRows, ftRows, val} + {corpus: {docsSha256: $ds, docsBytes: $db, manifestSha256: $ms}})}' > "$work/summary.json"

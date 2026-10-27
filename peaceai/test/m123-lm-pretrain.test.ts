@@ -288,14 +288,80 @@ test("M123 lm-retrain-train.sh: pretrain mode reads .pretrain, takes every row f
   assert.match(runTrain(cwd, d, c, live, "x2", lr, "0", { MODE: "finetune" }).stdout, /lr is not a configured sweep arm: refused/);
   // pretrain mode needs the job clock (no deadline, no run)
   assert.match(runTrain(cwd, d, c, live, "x3", lr, "0", { MODE: "pretrain", JOB_START: undefined }).stdout, /pretrain mode needs JOB_START/);
-  // a job clock already past its budget: the run still ends cleanly at a deadline and writes its summary (or refuses with no step past 0)
+  // a job clock already past its budget: the run still ends cleanly at a deadline and writes its summary (step 0; see the no-candidate test)
   const late = runTrain(cwd, d, c, live, "late", lr, "0", { MODE: "pretrain", JOB_START: String(Math.floor(Date.now() / 1000) - CFG.pretrain.budget.sweepJobSeconds) });
-  assert.notEqual(late.status, 0, "no validation step after 0: no arm to select"); assert.equal(JSON.parse(readFileSync(join(d, "late", "timing.json"), "utf8")).stopReason, "deadline");
+  assert.equal(late.status, 0, late.stdout + late.stderr); assert.equal(JSON.parse(readFileSync(join(d, "late", "timing.json"), "utf8")).stopReason, "deadline");
   // default finetune mode is unchanged: model.batch, finetune.replayFrac 0.75, ft rows present, no deadline
   const f = runTrain(cwd, d, c, live, "fw", String(CFG.finetune.sweep.lrs[0]), "0", { MODE: "finetune" }); assert.equal(f.status, 0, f.stdout + f.stderr);
   const fs_ = JSON.parse(readFileSync(join(d, "fw", "summary.json"), "utf8"));
   assert.deepEqual([fs_.mode, fs_.batch, fs_.replay.replayFrac, fs_.replay.replayRows, fs_.replay.ftRows], ["finetune", 4, 0.75, 3, 1]);
   assert.doesNotMatch(readFileSync(join(d, "fw", "train.log"), "utf8"), /deadline/);
+}));
+
+// ---- condition 4: deadline cut before the first evaluation after step 0 -> record with "no candidate"
+const block = (text: string, start: string, end: RegExp) => { const i = text.indexOf(start); assert.ok(i >= 0, start); const rest = text.slice(i + start.length); const j = rest.search(end); return j < 0 ? rest : rest.slice(0, j); };
+const dedent = (t: string, n: number) => t.split("\n").map((l) => l.slice(Math.min(n, l.length - l.trimStart().length))).join("\n");
+const selectPy = () => dedent(block(job("finetune-eval-land"), "<<'PY'\n", /\n {10}PY\n/), 10);
+const gateRun = () => dedent(block(job("finetune-eval-land"), "        id: gate\n        env:\n          CAND: ${{ steps.select.outputs.candidate }}\n        run: |\n", /\n      - name: /), 10);
+
+test("M123 condition 4: a sweep arm deadline-cut before its first evaluation after step 0 still lands a record (deadline-cut, step 0, 'no candidate', gate fails, no promotion)", () => tmp((d) => {
+  // retrain_summary.py: only a time cut lets a step-0-only run through; any other stop reason is still refused
+  const rows = join(d, "m0.jsonl"); writeFileSync(rows, JSON.stringify({ step: 0, val_loss: 5.7 }) + "\n");
+  const sum = (reason?: string) => spawnSync(py, ["peaceai/model/retrain_summary.py", rows, "0.00015", "1200", "0", "0", '{"sha256":"x"}', ...(reason ? [reason] : [])], { cwd: repo, encoding: "utf8" });
+  for (const reason of ["deadline", "max_seconds"]) {
+    const r = sum(reason); assert.equal(r.status, 0, `${reason}: ${r.stderr}`);
+    const s = JSON.parse(r.stdout); assert.deepEqual([s.bestStep, s.bestVal, s.step0Val, s.deadlineCut, s.noEvalAfterStep0], [0, 5.7, 5.7, true, true]);
+  }
+  for (const reason of [undefined, "patience", "steps", "max_steps_this_run"]) assert.match(sum(reason).stderr, /no validation loss after step 0/, `${reason} refused`);
+  assert.match(sum("bogus").stderr, /unknown stop reason: refused/);
+  // end to end: both pretrain sweep arms start with the job clock past its budget, so the deadline cuts each before step 1
+  const c = replayFixture(d); const live = liveModel(d, c); const cwd = scratch(d, () => {});
+  const past = String(Math.floor(Date.now() / 1000) - CFG.pretrain.budget.sweepJobSeconds);
+  const arms = CFG.pretrain.sweep.lrs.map((lr: number, arm: number) => {
+    const r = runTrain(cwd, d, c, live, `cut${arm}`, String(lr), "0", { MODE: "pretrain", JOB_START: past }); assert.equal(r.status, 0, r.stdout + r.stderr);
+    const s = JSON.parse(readFileSync(join(d, `cut${arm}`, "summary.json"), "utf8"));
+    assert.deepEqual([s.timing.stopReason, s.timing.timeCut, s.deadlineCut, s.noEvalAfterStep0, s.bestStep, s.stoppedStep, s.bestVal === s.step0Val], ["deadline", true, true, true, 0, 0, true]);
+    return { ...s, arm };
+  });
+  // the workflow's select step (run as written): selected step 0, candidate false, result "no candidate"
+  writeFileSync(join(d, "select.py"), selectPy());
+  const sel = (as: unknown[]) => spawnSync("python3", [join(d, "select.py"), join(cwd, "peaceai/model/lm-retrain.json"), JSON.stringify(arms[0].valSplit), "pretrain", ...as.map((a) => JSON.stringify(a))], { encoding: "utf8" });
+  const so = sel(arms); assert.equal(so.status, 0, so.stderr); const select = JSON.parse(so.stdout);
+  assert.deepEqual([select.selected.step, select.selected.candidate, select.selected.result, select.selected.arm, select.selected.lr], [0, false, "no candidate", null, null]);
+  assert.deepEqual(select.arms.map((a: any) => [a.deadlineCut, a.bestStep]), [[true, 0], [true, 0]], "each arm marked deadline-cut at step 0");
+  // a step-0 best without the deadline-cut marks is still refused; one real arm next to a cut one is selected as before
+  assert.match(sel([{ ...arms[0], deadlineCut: false }, arms[1]]).stderr, /bad sweep best step/);
+  assert.match(sel([{ ...arms[0], timing: { ...arms[0].timing, timeCut: false } }, arms[1]]).stderr, /bad sweep best step/);
+  const realArm = { ...arms[1], bestStep: 2, bestVal: arms[1].step0Val - 0.01, deadlineCut: false, noEvalAfterStep0: false };
+  const mixed = JSON.parse(sel([arms[0], realArm]).stdout).selected; assert.deepEqual([mixed.arm, mixed.step, mixed.candidate], [1, 2, true]);
+  // the workflow's gate step (run as written) with no candidate: it writes the record, the gate fails, nothing is landed or promoted
+  const rt = join(d, "rt"); for (const x of ["evals", "w", "r"]) mkdirSync(join(rt, x), { recursive: true });
+  writeFileSync(join(rt, "select.json"), JSON.stringify(select));
+  writeFileSync(join(rt, "evals", "setc-live.txt"), `setc model=live slice_sha256=${CFG.eval.setcSliceSha256} bytes=1 bits_per_byte=1.6506\n`);
+  writeFileSync(join(rt, "evals", "judge-live.json"), JSON.stringify({ summary: { n: 1 } }));
+  writeFileSync(join(rt, "r", "scores-live-recorded.json"), "{}"); writeFileSync(join(rt, "r", "judge-commit.txt"), "0".repeat(40));
+  writeFileSync(join(rt, "w", "dedup.json"), JSON.stringify({ recheckOverlapDocs: 0 }));
+  const rc = arms[0].replay.corpus;
+  writeFileSync(join(rt, "w", "replay-proof.json"), JSON.stringify({ replayDocsSha256: rc.docsSha256, replayDocsBytes: rc.docsBytes, trainBytes: 1, valBytes: 1 }));
+  for (const f of ["w/ft-prepare.json", "w/replay-plan.json", "corefree-proof-finetune.json"]) writeFileSync(join(rt, f), "{}");
+  writeFileSync(join(rt, "out"), "");
+  const g = spawnSync("bash", ["-c", gateRun()], { cwd: repo, encoding: "utf8", env: env0({ RUNNER_TEMP: rt, CFG: "peaceai/model/lm-retrain.json", MODE: "pretrain", CAND: "false", GITHUB_OUTPUT: join(rt, "out"), GITHUB_RUN_ID: "1", GITHUB_SHA: "a".repeat(40) }) });
+  assert.equal(g.status, 0, g.stdout + g.stderr);
+  const rec = JSON.parse(readFileSync(join(rt, "evals", "record.json"), "utf8"));
+  assert.equal(rec.schema, "peaceai-lm-retrain-record:v5"); assert.equal(rec.mode, "pretrain");
+  assert.deepEqual([rec.gate.pass, rec.gate.result, rec.promoted, rec.candidate, rec.candidateWeightsSha256, rec.candidateTraining], [false, "no candidate", false, null, null, null]);
+  assert.ok(rec.gate.failed.includes("no_candidate") && rec.gate.failed.includes("setc_bpb"), "the margin gate fails by construction (gain 0)");
+  assert.deepEqual([rec.setcV2.bitsPerByte.live, rec.setcV2.bitsPerByte.candidate], [1.6506, 1.6506]);
+  assert.deepEqual([rec.selected.step, rec.selected.candidate], [0, false]); assert.deepEqual(rec.sweep.map((a: any) => [a.deadlineCut, a.bestStep]), [[true, 0], [true, 0]]);
+  const out = readFileSync(join(rt, "out"), "utf8"); assert.match(out, /^pass=false$/m); assert.doesNotMatch(out, /^version=/m, "no version: no model landed, no memcheck, no promotion");
+  // wiring: no candidate training without a candidate; landing a model needs PASS; the memcheck needs a version; latest.json never touched
+  const land = job("finetune-eval-land");
+  assert.match(land, /- name: Fine-tune the candidate [^\n]*\n\s+if: steps\.select\.outputs\.candidate == 'true'\n/);
+  assert.match(land, /echo "candidate=\$\(jq -r '\.selected\.candidate == true' "\$RUNNER_TEMP\/select\.json"\)" >> "\$GITHUB_OUTPUT"/);
+  assert.match(land, /v=none; if \[ "\$PASS" = true \]; then v=\$\(jq -r \.version "\$MODEL_DIR\/config\.json"\)/);
+  assert.match(land, /if \[ "\$PASS" = true \]; then d="\$RESULTS_DIR\/models\/lm\/\$v"/);
+  assert.match(job("retrain-memcheck"), /needs\.finetune-eval-land\.outputs\.version != ''/);
+  assert.doesNotMatch(WF, /latest\.json"?\s*(>|cp|mv)/);
 }));
 
 test("M123 lm-retrain-train.sh: pretrain mode refuses a run where any batch row came from the fine-tune corpus (ftRows != 0)", () => tmp((d) => {

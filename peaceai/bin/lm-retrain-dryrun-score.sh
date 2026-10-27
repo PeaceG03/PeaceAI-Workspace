@@ -29,7 +29,8 @@ for c in $(cd "$work" && ls ckpt-*.npz 2>/dev/null | sed 's/^ckpt-\([0-9]*\)\.np
   "$py" peaceai/model/export.py --work "$work" --out "$s/m" --threads 4 --checkpoint "ckpt-$c.npz" > /dev/null
   score "$s/m" "arm=$arm lr=$lr step=$c"; rm -rf "$s/m"; n=$((n + 1))
 done
-[ "$n" -gt 0 ] || { echo "dryrun-score: no kept checkpoints"; exit 1; }
+# A deadline-cut arm with no evaluation after step 0 has no kept checkpoint: the phase line is still printed (sizing).
+[ "$n" -gt 0 ] || [ "$(jq -r '.deadlineCut == true and .bestStep == 0' "$work/summary.json")" = true ] || { echo "dryrun-score: no kept checkpoints"; exit 1; }
 num='^[0-9]+([.][0-9]+)?$'
 read -r ps pt pe < <(jq -r '[.setupSeconds, .trainSeconds, .evalSeconds] | map(tostring) | join(" ")' "$work/timing.json")
 psc=$(( $(date +%s) - t_score )); pj=-1; [[ "${JOB_START-}" =~ ^[0-9]+$ ]] && pj=$(( $(date +%s) - JOB_START ))
