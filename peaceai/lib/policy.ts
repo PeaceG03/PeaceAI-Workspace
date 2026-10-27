@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 /** True when the task text asks for tests (and does not say "without tests"). */
 export function taskRequiresTests(text: string): boolean {
@@ -284,14 +284,71 @@ const VISIBLE_PEACE_MARK = /\(\s*source\s*:\s*peace\s*\)(?=\s*$|\.(?:\s|$))/i;
 /**
  * The credit line is a WHOLE-LINE match (Auditor, round 5). The single credit line (entity-decoded and normalized,
  * raw markup kept, trailing whitespace ignored) must either equal one of the 80 genuine credit lines exactly
- * (CREDIT_LINE_ALLOWLIST) or match the strict new-task template NEW_TASK_CREDIT_LINE, for example
- * `Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace).` Nothing else on the line is allowed,
- * before or after the mark ("Context (...): Actually Builder drafted it. Peace's task (source: peace)" is builder).
+ * (CREDIT_LINE_ALLOWLIST) or match the strict new-task template NEW_TASK_CREDIT_LINE. Nothing else on the line is
+ * allowed, before or after the mark ("Context (...): Actually Builder drafted it. Peace's task (source: peace)" is
+ * builder).
+ *
+ * The parenthetical is a fixed grammar (Auditor, after #544): `Builder pre-file, KIND` (KIND an upper-case family
+ * name such as ADD_FUNCTION), then optionally `, public-...-vN` (a derive template name, optionally followed by
+ * ` template join`), then optionally `, behavior only`. For example
+ * `Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2, behavior only): Peace's task (source: peace).`
+ * Free text in the parentheses (`Context (Builder drafted this, not Peace): ...`) no longer matches. Both name
+ * slots are CLOSED sets (Auditor, #546): KIND must be in CREDIT_KINDS (learned.ts RULE_KINDS, read from its source,
+ * plus the historical families of the genuine tasks) and the template must be in CREDIT_TEMPLATES (the name of an
+ * existing peaceai/rules/learned/<name>.json). CREDIT_SLOT_DENY stays as a backstop on both slots.
  */
-export const NEW_TASK_CREDIT_LINE = /^Context \([^)]*\): Peace's task \(source: peace\)\.?$/;
+export const NEW_TASK_CREDIT_LINE =
+  /^Context \(Builder pre-file, ([A-Z][A-Z0-9_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$/;
+/**
+ * Words that may not appear in the KIND or template-name slot of NEW_TASK_CREDIT_LINE (case-insensitive): longer
+ * words anywhere in the slot, short ones as a whole `_`/`-`-separated part. No genuine family or template name
+ * contains any of them.
+ */
+export const CREDIT_SLOT_DENY =
+  /builder|team|peace|draft|pick|chose|chosen|select|credit|source|idea|auditor|architect|agent|grok|withdr|nobody|someone|fake|(?:^|[-_])(?:not|non|no|never|us|we|bot|ours)(?=$|[-_])/i;
+/**
+ * The KIND slot's closed set: learned.ts RULE_KINDS, read from learned.ts's source text (importing it would make
+ * an import cycle: learned.ts reaches policy.ts), plus the historical families of the genuine tasks that are not
+ * rule kinds. The RULE_KINDS declaration must parse exactly (one `export const RULE_KINDS = ["A", ...] as const;`
+ * line of upper-case names); anything else, or an unreadable file, empties the whole set (fail closed).
+ */
+export const CREDIT_KINDS_HISTORICAL = ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"] as const;
+export function parseRuleKinds(source: string): string[] {
+  if (typeof source !== "string") return [];
+  const decl = source.match(/^export const RULE_KINDS = \[([^\]\n]*)\] as const;$/gm);
+  if (decl === null || decl.length !== 1) return [];
+  const body = /\[([^\]]*)\]/.exec(decl[0])![1]!;
+  if (!/^"[A-Z][A-Z0-9_]*"(?:, "[A-Z][A-Z0-9_]*")*$/.test(body)) return [];
+  return [...body.matchAll(/"([A-Z][A-Z0-9_]*)"/g)].map((x) => x[1]!);
+}
+function loadCreditKinds(): ReadonlySet<string> {
+  try {
+    const kinds = parseRuleKinds(readFileSync(new URL("./learned.ts", import.meta.url), "utf8"));
+    return new Set(kinds.length === 0 ? [] : [...kinds, ...CREDIT_KINDS_HISTORICAL]);
+  } catch {
+    return new Set();
+  }
+}
+export const CREDIT_KINDS: ReadonlySet<string> = loadCreditKinds();
+/** The template slot's closed set: the names of the existing peaceai/rules/learned/<name>.json files. */
+function loadCreditTemplates(): ReadonlySet<string> {
+  try {
+    return new Set(
+      readdirSync(new URL("../rules/learned/", import.meta.url))
+        .filter((f) => /^public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+\.json$/.test(f))
+        .map((f) => f.slice(0, -".json".length)),
+    );
+  } catch {
+    return new Set();
+  }
+}
+export const CREDIT_TEMPLATES: ReadonlySet<string> = loadCreditTemplates();
 export function creditLineAllowed(creditLine: string): boolean {
   const line = creditLine.trimEnd();
-  return CREDIT_LINES.has(line) || NEW_TASK_CREDIT_LINE.test(line);
+  if (CREDIT_LINES.has(line)) return true;
+  const m = NEW_TASK_CREDIT_LINE.exec(line);
+  if (m === null || !CREDIT_KINDS.has(m[1]!) || CREDIT_SLOT_DENY.test(m[1]!)) return false;
+  return m[2] === undefined || (CREDIT_TEMPLATES.has(m[2]) && !CREDIT_SLOT_DENY.test(m[2]));
 }
 
 /** The visible text of the body's single credit line, or null when there is not exactly one. */
