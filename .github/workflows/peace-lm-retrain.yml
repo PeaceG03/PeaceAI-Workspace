@@ -362,15 +362,9 @@ jobs:
           [ "$(sl live)" = "$want" ] && [ "$(sl model)" = "$want" ] || { ok=false; why+=(slice); }
           [ "$(jq -r .recheckOverlapDocs "$RUNNER_TEMP/w/dedup.json")" = 0 ] || { ok=false; why+=(overlap); }
           # judge364.py must reproduce the live model's recorded per-item aggregates (Results lm-judge-v2/scores-<live>.json):
-          # same keys, same token counts, every mean within 1e-4. Counts only are printed.
+          # same keys, same token counts, every mean within 1e-4 (peaceai/model/judge_repro.py, shared with peace-lm-judge-v2.yml). Counts only are printed.
           scorer=false
-          python3 -c '
-          import json, sys
-          rec, got = (json.load(open(f))["agg"] for f in sys.argv[1:3])
-          bad = sum(1 for k in set(rec) | set(got) if k not in rec or k not in got or rec[k]["tokens"] != got[k]["tokens"]
-                    or (rec[k]["mean"] is None) != (got[k]["mean"] is None) or (rec[k]["mean"] is not None and abs(rec[k]["mean"] - got[k]["mean"]) > 1e-4))
-          print(f"judge scorer reproduction: entries={len(rec)} differing={bad}")
-          sys.exit(1 if bad or not rec else 0)' "$RUNNER_TEMP/r/scores-live-recorded.json" "$E/judge-live.json" && scorer=true || { ok=false; why+=(judge_scorer_not_reproduced); }
+          python3 peaceai/model/judge_repro.py "$RUNNER_TEMP/r/scores-live-recorded.json" "$E/judge-live.json" && scorer=true || { ok=false; why+=(judge_scorer_not_reproduced); }
           ge() { python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' "$1" "$2"; }
           ge "$(bpb live)" "$(bpb model)" || { ok=false; why+=(setc_bpb); }
           # Judge AUC: report-only. judge_gate.py makes it a hard gate only under the promote-to-hard rule (configured

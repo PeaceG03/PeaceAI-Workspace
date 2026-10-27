@@ -10,8 +10,9 @@ name: peace-lm-judge-v2
 #   (3) peaceai/bin/judge-v2-build.ts rebuilds each item's v1 grid (must reproduce the v1 held-out counts), runs the
 #       upstream function on a wider grid from its own literals, drops items whose grid never shows that returning a
 #       parameter is wrong, and re-labels the rest; items sha256 and counts must equal peaceai/model/judge-v2.json;
-#   (4) judge364.py scores the live model on the v2 items; every kept item's aggregates must equal the live model's
-#       recorded v1 aggregates (item texts are unchanged), and the AUC must equal the pinned one;
+#   (4) judge364.py scores the live model on the v2 items; every kept item's aggregates must reproduce the live model's
+#       recorded v1 aggregates (item texts are unchanged; tokens equal, mean within 1e-4, as the retrain), and the AUC
+#       must equal the pinned one;
 #   (5) only lm-judge-v2/ lands (items.json, build.json, scores-<live>.json, README.md); the path must not exist yet.
 # Never: a retrain, a model change, latest.json, an artifact or a cache. Counts-only logs.
 on:
@@ -103,13 +104,16 @@ jobs:
           set -euo pipefail
           live=$(jq -r .live.version "$CFG")
           "$RUNNER_TEMP/venv/bin/python" peaceai/model/judge364.py --model "$RUNNER_TEMP/r/live" --items "$RUNNER_TEMP/v2/items.json" --out "$RUNNER_TEMP/v2/scores-$live.json" --threads 4
-          "$RUNNER_TEMP/venv/bin/python" - "$RUNNER_TEMP/v2/scores-$live.json" "$RUNNER_TEMP/r/scores-live-recorded.json" "$V2" <<'PY'
+          # Same rule as the retrain's scorer-repro check (peaceai/model/judge_repro.py): every kept item's key is in the
+          # recorded v1 aggregates, token counts are equal and every mean is within 1e-4. The largest drift is printed.
+          "$RUNNER_TEMP/venv/bin/python" peaceai/model/judge_repro.py "$RUNNER_TEMP/r/scores-live-recorded.json" "$RUNNER_TEMP/v2/scores-$live.json" --subset --drift \
+            || { echo "aggregates differ from the recorded v1 aggregates (tokens equal, mean within 1e-4): refused"; exit 1; }
+          # The AUC (3 dp), both 95% bounds (3 dp), n and the right / wrong counts must still equal the pins exactly.
+          "$RUNNER_TEMP/venv/bin/python" - "$RUNNER_TEMP/v2/scores-$live.json" "$V2" <<'PY'
           import json, sys
-          new, rec, pin = (json.load(open(p)) for p in sys.argv[1:4])
-          bad = [k for k, v in new["agg"].items() if rec["agg"].get(k) != v]
-          if bad: sys.exit(f"{len(bad)} aggregates differ from the recorded v1 aggregates: refused")
+          new, pin = (json.load(open(p)) for p in sys.argv[1:3])
           s = new["summary"]
-          if (s["auc_derived_right_vs_wrong_mean"], s["auc_ci95"], s["right"], s["wrong"]) != (pin["live"]["auc"], pin["live"]["auc_ci95"], pin["items"]["right"], pin["items"]["wrong"]):
+          if (s["auc_derived_right_vs_wrong_mean"], s["auc_ci95"], s["n"], s["right"], s["wrong"]) != (pin["live"]["auc"], pin["live"]["auc_ci95"], pin["items"]["n"], pin["items"]["right"], pin["items"]["wrong"]):
               sys.exit("live AUC on v2 differs from the pin: refused")
           print(f"live model on judge v2: n={s['n']} auc={s['auc_derived_right_vs_wrong_mean']} aggregates reproduced={len(new['agg'])}")
           PY
@@ -134,7 +138,7 @@ jobs:
           notes/lm-judge-eval $(jq -r .eval.judgeV1.commit "$CFG") (peaceai/lib/judge-grid.ts). Item texts and keys are the
           v1 texts; labels are re-computed on wider held-out grids from each upstream function's own behaviour; items whose
           grid never shows that returning a parameter is wrong are dropped (build.json lists each drop and its reason).
-          v1 labels are kept as labelV1. scores-$live.json: the live model on these items (same aggregates as v1).
+          v1 labels are kept as labelV1. scores-$live.json: the live model on these items (aggregates reproduce v1: tokens equal, mean within 1e-4).
           EOF
           ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "Judge set v2: lm-judge-v2/ (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
