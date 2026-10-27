@@ -3,7 +3,7 @@
 // peace-lm-judge-v2.yml lands the result under a NEW Results path only. Synthetic, self-written functions only.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -243,4 +243,56 @@ test("judge v2 workflow: dispatch only, free runner, pinned key scripts, new Res
 
 test("judge v2: the builder and its library are protected", () => {
   for (const p of ["peaceai/lib/judge-grid.ts", "peaceai/bin/judge-v2-build.ts", "peaceai/model/judge-v2.json", "peaceai/model/judge-v2-sources.json", ".github/workflows/peace-lm-judge-v2.yml"]) assert.ok(PROTECTED_SELF.some((x) => x.pattern.test(p)), p);
+});
+
+// Run 40467123898 refused 27 entries under exact float equality: judge364.py rounds each block's log-probability to
+// 4 dp, so a BLAS kernel difference (AVX-512 vs AVX2) moves logprob by 1e-4 and mean by ~1e-4 / tokens. The judge-v2
+// reproduction check now uses the retrain's scorer-repro rule exactly (tokens equal, mean within 1e-4), from one shared
+// script, and still pins the AUC, both 95% bounds, n and the counts exactly.
+const PY = process.env.PEACEAI_PYTHON ?? "python3";
+const MODEL = join(repo, "peaceai/model");
+function repro(rec: object, got: object, ...flags: string[]) {
+  const t = mkdtempSync(join(tmpdir(), "m120r-"));
+  try {
+    writeFileSync(join(t, "rec.json"), JSON.stringify({ agg: rec })); writeFileSync(join(t, "got.json"), JSON.stringify({ agg: got }));
+    const r = spawnSync(PY, [join(MODEL, "judge_repro.py"), join(t, "rec.json"), join(t, "got.json"), ...flags], { encoding: "utf8" });
+    return { code: r.status, out: r.stdout + r.stderr };
+  } finally { rmSync(t, { recursive: true, force: true }); }
+}
+const E = (logprob: number, tokens: number, mean: number | null = tokens ? Math.floor((logprob / tokens) * 1e6 + 0.5) / 1e6 : null) => ({ logprob, tokens, mean });
+const REC = { "f000:derived": E(-47.3581, 9), "f000:reference": E(-130.3032, 25), "f001:derived": E(-32.6113, 7), "f001:reference": E(-50.3942, 11) };
+
+test("M120 judge scorer reproduction: tokens equal and mean within 1e-4 pass; a token mismatch or a 1e-3 mean drift fails (judge_repro.py)", () => {
+  const ok = (got: object, ...f: string[]) => repro(REC, got, ...f).code === 0;
+  assert.ok(ok(REC), "identical");
+  assert.ok(ok({ ...REC, "f000:derived": { ...REC["f000:derived"], mean: REC["f000:derived"].mean! + 1e-6 } }), "1e-6 mean drift passes");
+  assert.ok(ok({ ...REC, "f001:derived": E(-32.6114, 7) }), "a 4-dp rounding flip (logprob 1e-4, mean 1.4e-5) passes");
+  assert.ok(ok({ ...REC, "f001:derived": { ...REC["f001:derived"], mean: REC["f001:derived"].mean! - 9.9e-5 } }), "just inside 1e-4 passes");
+  assert.ok(!ok({ ...REC, "f000:derived": { ...REC["f000:derived"], mean: REC["f000:derived"].mean! + 1e-3 } }), "1e-3 mean drift fails");
+  assert.ok(!ok({ ...REC, "f000:reference": { ...REC["f000:reference"], tokens: 26 } }), "a token mismatch fails");
+  assert.ok(!ok({ ...REC, "f000:derived": { ...REC["f000:derived"], mean: null } }), "a mean on one side only fails");
+  // the retrain compares equal key sets; judge v2 compares its kept items, each of which must be recorded
+  const sub = { "f000:derived": REC["f000:derived"], "f001:reference": REC["f001:reference"] };
+  assert.ok(!ok(sub), "retrain mode: a missing key fails");
+  assert.ok(ok(sub, "--subset"), "subset mode: kept items only");
+  assert.ok(!ok({ ...sub, "f999:derived": E(-1, 1) }, "--subset"), "subset mode: an unrecorded key fails");
+  assert.ok(!ok({ ...sub, "f001:reference": { ...REC["f001:reference"], tokens: 12 } }, "--subset"), "subset mode: a token mismatch fails");
+  assert.ok(!ok({}, "--subset") && repro({}, {}).code === 1, "no entries fails");
+  // the drift line reports the largest difference per field
+  const d = repro(REC, { ...REC, "f001:derived": E(-32.6114, 7) }, "--subset", "--drift");
+  assert.equal(d.code, 0);
+  assert.match(d.out, /judge scorer reproduction: entries=4 differing=0\njudge scorer drift: not_exactly_equal=1 max_abs_diff logprob=0\.0001 tokens=0 mean=1\.4e-05 /);
+  assert.match(repro(REC, REC).out, /^judge scorer reproduction: entries=4 differing=0\n$/, "without --drift only counts are printed (retrain)");
+});
+
+test("M120 both workflows use the one shared reproduction rule; judge v2 still pins AUC, both bounds, n and counts exactly", () => {
+  const RT = read(".github/workflows/peace-lm-retrain.yml");
+  assert.match(RT, /python3 peaceai\/model\/judge_repro\.py "\$RUNNER_TEMP\/r\/scores-live-recorded\.json" "\$E\/judge-live\.json" && scorer=true \|\| \{ ok=false; why\+=\(judge_scorer_not_reproduced\); \}/);
+  assert.match(WF, /"\$RUNNER_TEMP\/venv\/bin\/python" peaceai\/model\/judge_repro\.py "\$RUNNER_TEMP\/r\/scores-live-recorded\.json" "\$RUNNER_TEMP\/v2\/scores-\$live\.json" --subset --drift \\\n {12}\|\| \{ echo "aggregates differ from the recorded v1 aggregates \(tokens equal, mean within 1e-4\): refused"; exit 1; \}/);
+  for (const w of [RT, WF]) assert.doesNotMatch(w, /abs\(rec\[|rec\["agg"\]\.get\(k\) != v|1e-4\)\)/, "no inline copy of the rule");
+  assert.match(WF, /\(s\["auc_derived_right_vs_wrong_mean"\], s\["auc_ci95"\], s\["n"\], s\["right"\], s\["wrong"\]\) != \(pin\["live"\]\["auc"\], pin\["live"\]\["auc_ci95"\], pin\["items"\]\["n"\], pin\["items"\]\["right"\], pin\["items"\]\["wrong"\]\)/);
+  assert.ok(WF.indexOf("judge_repro.py") < WF.indexOf("live AUC on v2 differs") && WF.indexOf("live AUC on v2 differs") < WF.indexOf("results-write.sh \"Judge set v2"));
+  const src = read("peaceai/model/judge_repro.py");
+  assert.match(src, /^MEAN_TOL = 1e-4$/m);
+  assert.match(src, /r\["tokens"\] != g\["tokens"\]/);
 });
