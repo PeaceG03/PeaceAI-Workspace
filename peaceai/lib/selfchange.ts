@@ -77,6 +77,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /(^|\/)\.env(\.[^/]*)?$|(^|\/)approved\.json$|^peaceai\/read-only-ops\.json$|^peaceai\/results-repo\//i, why: "the stage-1 gaps the M106 cross-check found (stage 2 already closes them; Peace approved this re-pin 2026-10-25): .env files anywhere, any approved.json, the read-only-ops enable list and the Results-repo workflow templates (self-change-stage2.yml, rule-approval.yml/.mjs)" },
   { pattern: /^peaceai\/self\//i, why: "self-change records and configuration" },
   { pattern: /^builder-log\//i, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
+  { pattern: /^peaceai\/source-corrections\.jsonl$|^peaceai\/lib\/sourcecorrections\.ts$|^peaceai\/bin\/source-corrections-check\.ts$/i, why: "the add-only Results source corrections, read by records.ts and the ranker (M119)" },
 ];
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */

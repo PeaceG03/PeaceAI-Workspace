@@ -134,6 +134,13 @@ carry no credit line. Source: Peace, Auditor chat, Oct 16 2026 8:06 PM MT, reply
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.
 
+**Source corrections (add-only)**: Results task records are never edited or deleted. A record written with
+the wrong `source` is corrected by adding a line to `peaceai/source-corrections.jsonl` (`issue`, `runId`,
+`recorded: "peace"`, `source: "builder"`, `reason`); the readers (`taskEntry` for the summary, the ranker's
+`toExample`) apply it through `peaceai/lib/sourcecorrections.ts`. A correction can only lower a record to
+`builder`, never credit Peace. CI (builder-log job) checks the file is valid and that the base revision is a
+byte prefix of the head. The first seven (M119 audit, #544) are #513-#516 and #540-#541.
+
 ## Test-and-fix loop (M7)
 
 Inside Job B, for each candidate, within a budget (4 repair rounds, 5 minutes):
