@@ -86,7 +86,7 @@ export type DeriveNode =
 export interface DeriveFit { program: DeriveNode; size: number; expr: string }
 export type DeriveResult =
   | { ok: true; fit: DeriveFit; probes: DeriveValue[][]; searched: number }
-  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified" | "derive_unevidenced_form"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; questions?: DeriveQuestion[]; forms?: DeriveForm[]; searched: number };
+  | { ok: false; reason: "derive_no_fit" | "derive_ambiguous" | "derive_budget" | "derive_examples" | "derive_under_specified" | "derive_unevidenced_form" | "derive_expr_identity" | "derive_examples_uninformative"; detail?: string; gate?: DeriveGate; param?: string; alternatives?: DeriveFit[]; probe?: DeriveValue[]; questions?: DeriveQuestion[]; forms?: DeriveForm[]; searched: number };
 
 export const DERIVE_MAX_SIZE = 13;
 export const DERIVE_BUDGET = 4_000_000;
@@ -725,6 +725,8 @@ function domainProblem(input: DeriveInput, expr: string): DeriveGateProblem | nu
 export function deriveProgram(input: DeriveInput): DeriveResult {
   const r = deriveCandidate(input);
   if (!r.ok) return r;
+  const same = examplesIdentityProblem(input, r.fit);
+  if (same) return { ok: false, ...same, searched: r.searched };
   // Round 3 (Auditor ruling on 6f1ea5e): never emit a program that uses a form fewer than DERIVE_FORM_BAR replaying
   // upstream evidence entries show (counts read from the evidence file, the single source; see evidenceFormCounts).
   const types = input.params.map((p) => p.type);
@@ -743,6 +745,30 @@ export function deriveProgram(input: DeriveInput): DeriveResult {
     ok: false, reason: "derive_unevidenced_form", forms, searched: r.searched,
     detail: `the program that fits uses ${forms.map((f) => `the ${f} form (${DERIVE_FORM_TEXT[f]}; ${counts[f]} replaying upstream evidence entries${shapeText(f)})`).join(" and ")}; PeaceAI emits a form only once at least ${DERIVE_FORM_BAR} replaying upstream examples show it, so it does not write this one yet. Can the behavior be written without ${forms.length === 1 ? "that form" : "those forms"}?`,
   };
+}
+
+/**
+ * Identity gate (Auditor, after the identity-gap audit of 2026-10-26). The fitted program matches every example, so
+ * when every example's result equals one parameter's value unchanged, the examples cannot tell the wanted function
+ * from that parameter itself: `n`, `n + 0`, `s.slice(0)` or any body equal to the parameter on the examples all fit,
+ * and the witness gates can pass on a wide enough set (17 spread examples did). Whatever the fitted body, refuse it
+ * (`derive_expr_identity`, naming the parameter) and ask for an example whose result differs from that parameter.
+ * Also fail closed when every example gives one same result (`derive_examples_uninformative`): a program that reads
+ * a parameter yet gives one value on every example shows nothing the parameter changes. (A program that reads no
+ * parameter is already derive_no_fit, and derivedExprProblem refuses its compiled text as derive_expr_constant.)
+ * Null when neither holds.
+ */
+export function examplesIdentityProblem(input: Pick<DeriveInput, "params" | "examples">, fit: DeriveFit): { reason: "derive_expr_identity" | "derive_examples_uninformative"; param?: string; detail: string } | null {
+  const { params, examples } = input;
+  if (examples.length === 0) return null;
+  const i = params.findIndex((_, k) => examples.every((e) => e.out === e.args[k]));
+  if (i >= 0) {
+    const name = params[i]!.name;
+    return { reason: "derive_expr_identity", param: name, detail: `every example's result equals ${name} unchanged, so the program that fits (${fit.expr}) may just return ${name}; add an example whose result differs from ${name}` };
+  }
+  const out0 = examples[0]!.out;
+  if (examples.every((e) => e.out === out0)) return { reason: "derive_examples_uninformative", detail: `every example gives the same result (${JSON.stringify(out0)}), so the program that fits (${fit.expr}) is not shown to depend on any parameter; add an example with a different result` };
+  return null;
 }
 
 // ---- Forms and their upstream evidence (#491 round 3, Auditor ruling: narrow the rule to evidenced forms) ----
