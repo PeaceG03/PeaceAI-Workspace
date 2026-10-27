@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_KINDS, CREDIT_KINDS_HISTORICAL, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, CREDIT_SLOT_DENY, CREDIT_TEMPLATES, creditLineAllowed, creditTemplatesFrom, parseRuleKinds, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_KINDS, CREDIT_KINDS_HISTORICAL, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, CREDIT_SLOT_DENY, CREDIT_TEMPLATES, creditLineAllowed, creditTemplatesFrom, loadCreditKinds, parseRuleKinds, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -392,6 +392,13 @@ test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.
   assert.deepEqual(parseRuleKinds(decl), ["SET_LITERAL", "ADD_FUNCTION"]);
   for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", ...MORE] as const;', 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;', 'export const RULE_KINDS = [] as const;', 'export const RULE_KINDS = ["A","B"] as const;'])
     assert.deepEqual(parseRuleKinds(bad), [], bad);
+  // a failed RULE_KINDS parse at load time falls back ONLY to the 4 historical kinds (Auditor, after #546)
+  const HIST4 = ["DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING", "THROW_GUARD"];
+  for (const bad of ["", "const X = 1;", `${decl}\n${decl}`, 'export const RULE_KINDS = ["SET_LITERAL", "add_function"] as const;'])
+    assert.deepEqual([...loadCreditKinds(() => bad)].sort(), HIST4, bad);
+  assert.deepEqual([...loadCreditKinds(() => { throw new Error("ENOENT: learned.ts"); })].sort(), HIST4);
+  assert.deepEqual([...loadCreditKinds(() => decl)].sort(), [...HIST4, "ADD_FUNCTION", "SET_LITERAL"].sort());
+  assert.deepEqual([...loadCreditKinds()].sort(), [...CREDIT_KINDS].sort()); // the default reader is what loaded CREDIT_KINDS
   // re-verified: every genuine KIND and template is in the sets, and all 80 genuine lines stay peace
   for (const r of GENUINE_ROWS) {
     const m = /\(Builder pre-file, ([A-Z][A-Z0-9_]*), (public-[a-z0-9-]+)\):/.exec(r.line);

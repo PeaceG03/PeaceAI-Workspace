@@ -310,7 +310,8 @@ export const CREDIT_SLOT_DENY =
  * The KIND slot's closed set: learned.ts RULE_KINDS, read from learned.ts's source text (importing it would make
  * an import cycle: learned.ts reaches policy.ts), plus the historical families of the genuine tasks that are not
  * rule kinds. The RULE_KINDS declaration must parse exactly (one `export const RULE_KINDS = ["A", ...] as const;`
- * line of upper-case names); anything else, or an unreadable file, empties the whole set (fail closed).
+ * line of upper-case names); anything else, or an unreadable file, gives no rule kinds, so the set falls back to
+ * the four historical families only (Auditor, after #546).
  */
 export const CREDIT_KINDS_HISTORICAL = ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"] as const;
 export function parseRuleKinds(source: string): string[] {
@@ -321,13 +322,15 @@ export function parseRuleKinds(source: string): string[] {
   if (!/^"[A-Z][A-Z0-9_]*"(?:, "[A-Z][A-Z0-9_]*")*$/.test(body)) return [];
   return [...body.matchAll(/"([A-Z][A-Z0-9_]*)"/g)].map((x) => x[1]!);
 }
-function loadCreditKinds(): ReadonlySet<string> {
+/** The load-time KIND set: RULE_KINDS read through `readLearned` (learned.ts), plus the historical four always. */
+export function loadCreditKinds(readLearned: () => string = () => readFileSync(new URL("./learned.ts", import.meta.url), "utf8")): ReadonlySet<string> {
+  let kinds: string[] = [];
   try {
-    const kinds = parseRuleKinds(readFileSync(new URL("./learned.ts", import.meta.url), "utf8"));
-    return new Set(kinds.length === 0 ? [] : [...kinds, ...CREDIT_KINDS_HISTORICAL]);
+    kinds = parseRuleKinds(readLearned());
   } catch {
-    return new Set();
+    kinds = [];
   }
+  return new Set([...kinds, ...CREDIT_KINDS_HISTORICAL]);
 }
 export const CREDIT_KINDS: ReadonlySet<string> = loadCreditKinds();
 /**
