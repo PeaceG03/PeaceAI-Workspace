@@ -32,8 +32,8 @@ export const BUILDER_LABEL = "source:builder";
  * as PeaceG03, so the account says nothing about whose task it is, and body edits can't be attributed either.
  *
  * `peace` is an ALLOW-match: only when ALL of these hold, otherwise `builder` (fail closed):
- *  1. no `source:builder` label (compared trimmed and case-insensitive), and no raw HTML outside fenced code
- *     (hasRawHtml: `<` then a letter, `/`, `!` or `?`);
+ *  1. no `source:builder` label (compared trimmed and case-insensitive), and no raw HTML anywhere, fences
+ *     included (hasRawHtml: `<` then a letter, `/`, `!` or `?`, in the raw or normalized body);
  *  2. after HTML-entity decoding and normalization (zero-width characters removed, NFKC, unicode hyphens -> "-")
  *     and after stripping HTML comments, fenced and indented code, blockquote lines and the Examples block, the
  *     body has exactly ONE credit line (a top-level line starting `Context ...:`, or the older
@@ -147,28 +147,16 @@ export function stripNonCredit(normalized: string): string {
 }
 
 /**
- * Raw HTML fails closed (Auditor, round 4): outside fenced code blocks (``` or ~~~, an unclosed fence running to
- * the end, as GitHub renders it), any `<` followed by a letter, `/`, `!` or `?` makes the task builder. That
- * covers every tag (also one split over several lines, such as a multi-line `<a href=...>` or `<img alt=...>`),
- * comments, `<?...?>`, `<![CDATA[...]]>` and `<!DOCTYPE ...>`, so no attribute, comment or processing
- * instruction can carry or hide provenance. Entity-escaped text (`&lt;b>`) renders as text and is not HTML.
+ * Raw HTML fails closed (Auditor, rounds 4-5): any `<` followed by a letter, `/`, `!` or `?` ANYWHERE in the body,
+ * code fences included, makes the task builder. Fences are not exempt because what GitHub treats as a fence is
+ * subtle (a line "```a`" is no fence, since its info string holds a backtick, so a following `<div class="` opens
+ * an HTML block that swallows the credit line). That covers every tag, also one split over several lines,
+ * comments, `<?...?>`, `<![CDATA[...]]>` and `<!DOCTYPE ...>`. Write `&lt;` for a literal `<`. None of the 80
+ * genuine bodies, or any of their revisions, contains one (or a ``` fence).
  */
 const RAW_HTML_START = /<[A-Za-z/!?]/;
 export function hasRawHtml(text: string): boolean {
-  let fence: { char: string; len: number } | null = null;
-  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
-    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (fence) {
-      if (f && f[1]![0] === fence.char && f[1]!.length >= fence.len && /^ {0,3}(`{3,}|~{3,})\s*$/.test(line)) fence = null;
-      continue;
-    }
-    if (f) {
-      fence = { char: f[1]![0]!, len: f[1]!.length };
-      continue;
-    }
-    if (RAW_HTML_START.test(line)) return true;
-  }
-  return false;
+  return RAW_HTML_START.test(text);
 }
 
 /** The credit marker, as it must appear on the Context credit line. */

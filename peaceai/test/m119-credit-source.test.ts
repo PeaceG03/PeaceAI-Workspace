@@ -209,7 +209,7 @@ test("B2: entity-encoded contrary clauses and hidden entities give builder", () 
 });
 
 // Round 4 (Auditor NOT PASS at 40aaddb): allowlists instead of deny-lists.
-test("R4.1: raw HTML anywhere outside code fences gives builder", () => {
+test("R4.1/R5.1: raw HTML anywhere, code fences included, gives builder", () => {
   for (const extra of [
     '<a href="https://x"\n  title="(source: builder)">notes</a>', // multi-line <a href=...>
     "<img\n  alt='(source: peace)'\n  src=x.png>", // multi-line <img alt=...>
@@ -227,13 +227,22 @@ test("R4.1: raw HTML anywhere outside code fences gives builder", () => {
     assert.equal(src(issue(CTX_GENUINE, extra)), "builder", extra);
     assert.equal(src(issue(extra, CTX_GENUINE)), "builder", extra);
   }
-  // not HTML: inside a fenced block (closed or unclosed), entity-escaped, or < before a digit, space, = or -
-  for (const ok of [["```html", "<img alt=x>", "```"], ["~~~", "</div>", "~~~"], ["```", "<b>"], ["&lt;img alt=x>"], ["n < 5, n<=6, a <- b, x<3"]]) {
+  // inside fences too: what GitHub treats as a fence is subtle, so nothing is exempt
+  for (const fenced of [["```html", "<img alt=x>", "```"], ["~~~", "</div>", "~~~"], ["```", "<b>"], ["    <b>"]]) {
+    assert.equal(hasRawHtml(issue(CTX_GENUINE, ...fenced)), true, fenced.join("|"));
+    assert.equal(src(issue(CTX_GENUINE, ...fenced)), "builder", fenced.join("|"));
+  }
+  // the round-5 bypass: "```a`" is no fence (a backtick in the info string), so the HTML block that follows swallows
+  // the credit line; both the <div class=" and the <a href=" variants
+  assert.equal(src(["```a`", '<div class="', CTX_GENUINE, '">', "```", ...issue().split("\n")].join("\n")), "builder");
+  assert.equal(src(["```a`", '<a href="', CTX_GENUINE, '">x</a>', "```", ...issue().split("\n")].join("\n")), "builder");
+  assert.equal(src(issue(CTX_GENUINE, "```a`", '<div class="', "```")), "builder");
+  assert.equal(src(issue(CTX_GENUINE, "```a`", '<a href="', "```")), "builder");
+  // not HTML: entity-escaped, or < before a digit, space, = or -
+  for (const ok of [["&lt;img alt=x>"], ["n < 5, n<=6, a <- b, x<3"]]) {
     assert.equal(hasRawHtml(issue(CTX_GENUINE, ...ok)), false, ok.join("|"));
     assert.equal(src(issue(CTX_GENUINE, ...ok)), "peace", ok.join("|"));
   }
-  assert.equal(hasRawHtml("```\n<b>\n```\n<i>"), true); // after the fence closes
-  assert.equal(hasRawHtml("````\n```\n<b>\n````"), false); // a shorter fence does not close it
 });
 
 test("R4.2: only the pinned trailing texts may follow (source: peace).", () => {
