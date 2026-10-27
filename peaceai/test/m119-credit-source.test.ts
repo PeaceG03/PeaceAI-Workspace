@@ -138,7 +138,7 @@ test("BLOCKING 3: any non-peace (source ...: clause anywhere means builder", () 
 });
 
 // Round 3 (Auditor NOT PASS at a92d0b9).
-const CTX = "Context (Builder pre-file, behavior only): Peace's task";
+const CTX = "Context (Builder pre-file, ADD_FUNCTION, behavior only): Peace's task";
 test("B1: a mark hidden in link, image or HTML markup or struck through on the credit line gives builder", () => {
   for (const line of [
     `${CTX} [notes](https://x/a(source: peace)). Slice 3.`, // link URL with balanced parentheses
@@ -246,7 +246,7 @@ test("R4.1/R5.1: raw HTML anywhere, code fences included, gives builder", () => 
 
 test("R5.2: the credit line is a whole-line match: a genuine line or the strict new-task template", () => {
   // the template, decoded and normalized like the rest of the line; trailing whitespace ignored
-  for (const line of ["Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace)", "Context (x): Peace's task (source: peace).", "Context (): Peace's task (source: peace).  "])
+  for (const line of ["Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace)", "Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2): Peace's task (source: peace).", "Context (Builder pre-file, LOOP_FUNCTION, behavior only): Peace's task (source: peace).  "])
     assert.equal(src(issue(line)), "peace", line);
   assert.equal(src(issue("Context (...): Actually Builder drafted it. Peace's task (source: peace)")), "builder");
   for (const extra of [
@@ -284,7 +284,65 @@ test("R5.2: the credit line is a whole-line match: a genuine line or the strict 
   assert.equal(src(issue(`${CTX_GENUINE} ${lineOf(353).slice(lineOf(353).indexOf("(source: peace).") + 17)}`)), "builder");
   // every genuine line is allowed whole; the template regex is exactly as Auditor specified
   for (const r of GENUINE_ROWS) assert.equal(creditLineAllowed(r.line), true, String(r.issue));
-  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \([^)]*\): Peace's task \(source: peace\)\.?$`);
+  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \(Builder pre-file, ([A-Z][A-Z_]*)(?:, (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)(?: template join)?)?(?:, behavior only)?\): Peace's task \(source: peace\)\.?$`);
+});
+
+test("M119 follow-up: the template's parenthetical is a fixed grammar; a contradiction inside it gives builder", () => {
+  const T = (paren: string) => `Context (${paren}): Peace's task (source: peace).`;
+  // every slot combination of the grammar gives peace
+  for (const paren of [
+    "Builder pre-file, ADD_FUNCTION",
+    "Builder pre-file, TEST_CASE_EXISTING, public-test-case-existing-v6",
+    "Builder pre-file, DATE_FUNCTION, public-date-function-v1, behavior only",
+    "Builder pre-file, DERIVE, public-derive-from-behavior-v1 template join",
+    "Builder pre-file, DERIVE, public-derive-from-behavior-v1 template join, behavior only",
+    "Builder pre-file, COMPLEX_FUNCTION, behavior only",
+  ])
+    assert.equal(src(issue(T(paren))), "peace", paren);
+  // the genuine parentheticals in the template form: every KIND and template name of the 80 is accepted
+  for (const r of GENUINE_ROWS) {
+    const paren = /^(?:Context )?\((Builder pre-file, [^)]*)\):/.exec(r.line)![1]!;
+    if (/refile of/.test(paren)) continue; // #489/#490 (refile of #486/#487): free text, allowed only as their genuine lines
+    assert.equal(creditLineAllowed(T(paren)), true, `${r.issue}: ${paren}`);
+  }
+  // contradictions inside the parentheses: free text, or a slot that spells one
+  for (const paren of [
+    "Builder drafted this, not Peace",
+    "Builder pre-file, ADD_FUNCTION, not Peace's",
+    "Builder pre-file, ADD_FUNCTION, Builder drafted this",
+    "Builder pre-file, ADD_FUNCTION, behavior only, not Peace's",
+    "Builder pre-file, ADD_FUNCTION, behavior only; Builder's idea",
+    "Builder pre-file, NOT_PEACE",
+    "Builder pre-file, BUILDER_DRAFTED",
+    "Builder pre-file, TEAM_TASK",
+    "Builder pre-file, ADD_FUNCTION, public-builder-drafted-v1",
+    "Builder pre-file, ADD_FUNCTION, public-not-peaces-v1",
+    "Builder pre-file, ADD_FUNCTION, public-team-picked-v1",
+    "Builder pre-file, ADD_FUNCTION, public-credit-withdrawn-v1 template join",
+    "Builder pre-file, ADD_FUNCTION, public-add-function-v1, Auditor chose it",
+    "Builder pre-file, ADD_FUNCTION, not-peace",
+    "Builder pre-file, ADD_FUNCTION, builder-drafted",
+    "Builder pre-file, ADD_FUNCTION, public-add-function-v1 not template join",
+    "Builder pre-file, ADD_FUNCTION, behavior only, behavior only",
+    "Builder pre-file, add_function",
+    "Builder pre-file,  ADD_FUNCTION",
+    "Builder pre-file, ADD_FUNCTION (Builder's)",
+    "Builder pre-file",
+    "x",
+    "",
+  ])
+    assert.equal(src(issue(T(paren))), "builder", paren);
+  // a contradiction on a SEPARATE line: team-picked wording and contrary (source ...) clauses are caught by the
+  // deny-list backstop anywhere in the body ...
+  const OK = T("Builder pre-file, ADD_FUNCTION");
+  for (const other of [
+    "Team-picked task.", "Builder-picked.", "Picked by the team.", "We chose this one.", "Peace asked us to pick.",
+    "(source: builder)", "( source: builder)", "&#40;source: builder&#41;",
+  ])
+    for (const body of [issue(OK, other), issue(other, OK)]) assert.equal(src(body), "builder", other);
+  // ... while free prose on another line ("Builder drafted this, not Peace.") is out of scope for the parser: it
+  // still reads peace here, and is covered by Auditor's pre-filing review (README, PR #544 scope note).
+  assert.equal(src(issue(OK, "Builder drafted this, not Peace.")), "peace");
 });
 
 test("R5.2/R5.3: the whole-line allowlist is pinned, add-only and protected; one bad row or a sha mismatch allows nothing", async () => {

@@ -207,7 +207,7 @@ test("sources: filter and weight by source; metrics split by source", () => {
   assert.ok(weighted.some((p) => p.weight === 0.5) && weighted.some((p) => p.weight === 1));
   // M119: provenance (label + the body's credit line) decides the source; no credit line fails closed.
   assert.equal(taskSource(["peace-task", "source:builder"], "Context (Builder pre-file): Peace's task (source: peace)."), "builder");
-  assert.equal(taskSource(["peace-task"], "Context (Builder pre-file): Peace's task (source: peace)."), "peace");
+  assert.equal(taskSource(["peace-task"], "Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace)."), "peace");
   assert.equal(taskSource(["peace-task"], ""), "builder");
   const summary = writeSummary(root);
   assert.equal(summary.entries.filter((e) => e.source === "builder").length, 13);
