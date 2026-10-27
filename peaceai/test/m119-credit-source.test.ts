@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { SOURCE_PEACE } from "../../builder-log/coverage.ts";
 import {
-  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_TRAILING_ALLOWLIST, creditTrailingAllowed, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
+  BUILDER_LABEL, bodyAddOnlySinceLabel, bodyAtFirstLabel, CREDIT_LINE_ALLOWLIST, CREDIT_LINE_ALLOWLIST_SHA256, creditLineAllowed, NEW_TASK_CREDIT_LINE, parseCreditLineAllowlist, bodySha256, contextCreditLines, creditUnchangedSinceLabel, creditLineVisible, decodeEntities,
   hasRawHtml, hasUnknownEntity, normalizeProvenance, recordedTaskSource, SOURCE_PEACE_MARK, stripNonCredit, taskSource,
   TEAM_PICKED_MARK, visibleCreditText,
 } from "../lib/policy.ts";
@@ -25,17 +25,13 @@ const CTX_513 =
   "system. On 2026-10-25 Peace asked the team to pick a real task itself (\"I don't can't you guys think of one?\"), and " +
   "this is the one picked.";
 const BUILDER_LOG_TEAM = "Team-picked task PeaceAI-Workspace#513 (source: team-picked at Peace's request; spec and examples written by Builder)";
-// Round 4: text after the mark must be one of the pinned trailing texts, so the fixtures use the real ones.
-const trailingOf = (start: string): string => {
-  const t = CREDIT_TRAILING_ALLOWLIST.find((e) => e.startsWith(start));
-  assert.ok(t, start);
-  return t;
-};
-const T501 = trailingOf("The ten-minute chain stopped on R2_PUT_500 (run 39451888891) and R2_GET_500 (run 39467160610) because R2ObjectClient.request never retries; this is the status check");
-const T353 = trailingOf("The UTC date key `toISOString().slice(0, 10)` is written inline");
-const CTX_GENUINE = `Context (Builder pre-file, ADD_FUNCTION, public-add-function-v2): Peace's task (source: peace). ${T501}`;
+// Round 5: the credit line must be one of the 80 genuine whole lines (or the new-task template), so the fixtures
+// use the real lines.
+const GENUINE_ROWS = JSON.parse(readFileSync("peaceai/lib/credit-line-allowlist.json", "utf8")) as { issue: number; line: string }[];
+const lineOf = (n: number): string => GENUINE_ROWS.find((r) => r.issue === n)!.line;
+const CTX_GENUINE = lineOf(501); // "Context (Builder pre-file, ADD_FUNCTION, ...): Peace's task (source: peace). The ten-minute chain ..."
 // The older credit-line form (#353-#488), before the Context heading.
-const PREFILE_GENUINE = `(Builder pre-file, DATE_FUNCTION, public-date-function-v1): Peace's task (source: peace). ${T353}`;
+const PREFILE_GENUINE = lineOf(353);
 const CTX_NO_MARK = "Context (Builder pre-file, behavior only): Slice 3 of Peace's scanner self-health-check system.";
 const issue = (...parts: string[]) =>
   ["Target: PeaceG03/PeaceSTOCKS", "", "Add a new module `src/x.ts` exporting `f(n: number): number`.", "", "Examples:", "- 1 gives 1", "- 2 gives 2", "", ...parts].join("\n");
@@ -52,8 +48,11 @@ test("a team-picked issue filed by PeaceG03 (no source:builder label) records no
 test("the genuine credit line still records peace (both credit-line forms)", () => {
   assert.equal(src(GENUINE), "peace");
   assert.equal(src(issue(PREFILE_GENUINE)), "peace");
-  assert.equal(src(issue("Context: Peace's task (Source:  PEACE).")), "peace");
-  assert.equal(src(issue(`Context: Peace's task ( source : peace ). ${T353}`)), "peace");
+  assert.equal(src(issue("Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace).")), "peace"); // new-task template
+  // round 5: the template is strict (exact marker spelling, `Context (...):` heading, nothing else on the line)
+  assert.equal(src(issue("Context: Peace's task (source: peace).")), "builder");
+  assert.equal(src(issue("Context (x): Peace's task (Source:  PEACE).")), "builder");
+  assert.equal(src(issue("Context (x): Peace's task ( source : peace ).")), "builder");
 });
 
 test("BLOCKING 1: (source: peace) outside the credit line never gives peace", () => {
@@ -200,7 +199,7 @@ test("B2: entity-encoded contrary clauses and hidden entities give builder", () 
   assert.equal(src(issue(CTX_GENUINE, "(&sopf;ource: builder)")), "builder");
   // an encoded marker on the credit line is what GitHub renders, so it is the visible marker
   assert.equal(src(issue(`${CTX} &#40;source: peace&#41;.`)), "peace");
-  assert.equal(src(issue(`${CTX} &lpar;source&colon; peace&rpar;. ${T501}`)), "peace");
+  assert.equal(src(issue(`${CTX} &lpar;source&colon; peace&rpar;`)), "peace");
   // a semicolon-less reference is literal text when rendered: it is no credit, but it is a contrary clause
   assert.equal(src(issue(`${CTX} &#40source: peace). Slice 3.`)), "builder");
   assert.equal(decodeEntities("&#40;&lpar;&#x29;&rpar;&amp;lpar;&nosuch;"), "(())&lpar;&nosuch;");
@@ -245,7 +244,11 @@ test("R4.1/R5.1: raw HTML anywhere, code fences included, gives builder", () => 
   }
 });
 
-test("R4.2: only the pinned trailing texts may follow (source: peace).", () => {
+test("R5.2: the credit line is a whole-line match: a genuine line or the strict new-task template", () => {
+  // the template, decoded and normalized like the rest of the line; trailing whitespace ignored
+  for (const line of ["Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace)", "Context (x): Peace's task (source: peace).", "Context (): Peace's task (source: peace).  "])
+    assert.equal(src(issue(line)), "peace", line);
+  assert.equal(src(issue("Context (...): Actually Builder drafted it. Peace's task (source: peace)")), "builder");
   for (const extra of [
     "Actually Builder drafted it.",
     "This was Builder's idea, not Peace's.",
@@ -256,39 +259,67 @@ test("R4.2: only the pinned trailing texts may follow (source: peace).", () => {
     "Slice 3 of Peace's system.",
   ]) {
     assert.equal(src(issue(`${CTX} (source: peace). ${extra}`)), "builder", extra);
-    assert.equal(src(issue(`${CTX} (source: peace). ${T501} ${extra}`)), "builder", `after a pinned text: ${extra}`);
-    assert.equal(src(issue(`${CTX} (source: peace). ${extra} ${T501}`)), "builder", `before a pinned text: ${extra}`);
-    assert.equal(src(issue(`${CTX} (source: peace) ${extra}`)), "builder", `no sentence end: ${extra}`);
+    assert.equal(src(issue(`Context (x): ${extra} Peace's task (source: peace)`)), "builder", `before the mark: ${extra}`);
+    assert.equal(src(issue(`${CTX_GENUINE} ${extra}`)), "builder", `after a genuine line: ${extra}`);
+    assert.equal(src(issue(`${extra} ${CTX_GENUINE}`)), "builder", `before a genuine line: ${extra}`);
   }
-  // a pinned text must match exactly: one character changed, cut short, or two pinned texts joined
-  assert.equal(src(issue(`${CTX} (source: peace). ${T501.replace("status check", "status chock")}`)), "builder");
-  assert.equal(src(issue(`${CTX} (source: peace). ${T501.slice(0, -1)}`)), "builder");
-  assert.equal(src(issue(`${CTX} (source: peace). ${T501} ${T353}`)), "builder");
-  assert.equal(src(issue(`${CTX} (source: peace).  ${T501}`)), "builder"); // two spaces
-  // the mark exactly once on the line
-  assert.equal(creditTrailingAllowed(`${CTX} (source: peace). (source: peace).`), false);
-  // the end-of-line form new tasks use, and each pinned text, give peace
-  for (const end of ["", ".", ". ", "   "]) assert.equal(src(issue(`${CTX} (source: peace)${end}`)), "peace", JSON.stringify(end));
-  for (const t of CREDIT_TRAILING_ALLOWLIST) assert.equal(creditTrailingAllowed(`${CTX} (source: peace). ${t}`), true, t);
+  // template variants that are not the template
+  for (const line of [
+    "Context (x): Peace's task (source: peace)..",
+    "Context (x): Peace's task (source: peace). More.",
+    "Context (x) : Peace's task (source: peace).",
+    "Context (x):  Peace's task (source: peace).",
+    "Context (x): Peace\u2019s task (source: peace).",
+    "Context (x): peace's task (source: peace).",
+    "Context (x)(y): Peace's task (source: peace).",
+    "Context x: Peace's task (source: peace).",
+    "Context (Team-picked): Peace's task (source: peace).", // team wording: the deny-list backstop
+    "Context (source: builder): Peace's task (source: peace).",
+  ])
+    assert.equal(src(issue(line)), "builder", line);
+  // a genuine line must match exactly: one character changed, cut short, doubled space, another issue's tail joined
+  assert.equal(src(issue(CTX_GENUINE.replace("status check", "status chock"))), "builder");
+  assert.equal(src(issue(CTX_GENUINE.slice(0, -1))), "builder");
+  assert.equal(src(issue(CTX_GENUINE.replace(". ", ".  "))), "builder");
+  assert.equal(src(issue(`${CTX_GENUINE} ${lineOf(353).slice(lineOf(353).indexOf("(source: peace).") + 17)}`)), "builder");
+  // every genuine line is allowed whole; the template regex is exactly as Auditor specified
+  for (const r of GENUINE_ROWS) assert.equal(creditLineAllowed(r.line), true, String(r.issue));
+  assert.equal(NEW_TASK_CREDIT_LINE.source, String.raw`^Context \([^)]*\): Peace's task \(source: peace\)\.?$`);
 });
 
-test("R4.2: the trailing-text allowlist is pinned (80 genuine tasks, a protected file)", async () => {
+test("R5.2/R5.3: the whole-line allowlist is pinned, add-only and protected; one bad row or a sha mismatch allows nothing", async () => {
   const { createHash } = await import("node:crypto");
   const { protectedReason } = await import("../lib/selfchange.ts");
-  const FILE = "peaceai/lib/credit-trailing-allowlist.json";
-  assert.equal(createHash("sha256").update(readFileSync(FILE)).digest("hex"), "b3498f21fd467c5d526b61615ea76fb2f0b6f633d1c45e22c89bc67648582d4f");
-  const rows = JSON.parse(readFileSync(FILE, "utf8")) as { issue: number; trailing: string }[];
-  assert.deepEqual(rows.map((r) => r.issue), [
+  const FILE = "peaceai/lib/credit-line-allowlist.json";
+  const text = readFileSync(FILE, "utf8");
+  const sha = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
+  assert.equal(sha(text), "687e9b04ab7b18ca0f1fecae2955cb604c112b2965e806839ececcd348d05263");
+  assert.equal(CREDIT_LINE_ALLOWLIST_SHA256, sha(text)); // the runtime pin in policy.ts
+  // add-only: the 80 genuine rows stay first and unchanged
+  assert.deepEqual(GENUINE_ROWS.slice(0, 80).map((r) => r.issue), [
     ...[353, 354, 355, 356, 357, 358, 359, 370, 371, 372, 373, 374], ...Array.from({ length: 8 }, (_, i) => 390 + i), 399, 400, 401, 402, 403,
     ...Array.from({ length: 11 }, (_, i) => 415 + i), ...Array.from({ length: 11 }, (_, i) => 427 + i), ...Array.from({ length: 13 }, (_, i) => 443 + i),
     ...Array.from({ length: 18 }, (_, i) => 471 + i), 501, 502,
   ]);
-  assert.equal(CREDIT_TRAILING_ALLOWLIST.length, 80);
-  assert.equal(new Set(CREDIT_TRAILING_ALLOWLIST).size, 80);
-  assert.ok(Object.isFrozen(CREDIT_TRAILING_ALLOWLIST));
-  assert.equal(createHash("sha256").update(JSON.stringify(CREDIT_TRAILING_ALLOWLIST)).digest("hex"), "56e2f3c0484381fee00ea7d06459fb717b692ffea39109a04a0d795b1750d36e");
+  assert.equal(sha(JSON.stringify(GENUINE_ROWS.slice(0, 80))), "831d046312c416eb29a530f474d7510c0882aff2107637ba522a1b369887b70e");
+  assert.equal(CREDIT_LINE_ALLOWLIST.length, 80);
+  assert.equal(new Set(CREDIT_LINE_ALLOWLIST).size, 80);
+  assert.ok(Object.isFrozen(CREDIT_LINE_ALLOWLIST));
   assert.ok(protectedReason(FILE), FILE);
   assert.ok(protectedReason("peaceai/lib/policy.ts"));
+  // runtime sha256 check: the pinned file parses to 80 lines; any other text (even valid rows) allows nothing
+  assert.equal(parseCreditLineAllowlist(text).length, 80);
+  const appended = text.replace(/\n\]\n$/, ',\n  {"issue":999,"line":"Context (x): anything (source: peace)."}\n]\n');
+  assert.deepEqual(parseCreditLineAllowlist(appended), []);
+  assert.equal(parseCreditLineAllowlist(appended, sha(appended)).length, 81); // well formed once re-pinned
+  assert.deepEqual(parseCreditLineAllowlist(text, "0".repeat(64)), []);
+  // ONE malformed row empties the whole list (with a matching sha, so only the row check can refuse it)
+  const rows = JSON.parse(text) as unknown[];
+  for (const bad of [{ issue: 999 }, { issue: "999", line: "x" }, { issue: 999, line: "" }, { issue: 999, line: "x " }, { issue: 999, line: 7 }, { issue: 999, line: "x", extra: 1 }, null, "x", 999]) {
+    const t = JSON.stringify([...rows.slice(0, 40), bad, ...rows.slice(40)]);
+    assert.deepEqual(parseCreditLineAllowlist(t, sha(t)), [], JSON.stringify(bad));
+  }
+  for (const t of ["", "{}", "[]", "not json"]) assert.deepEqual(parseCreditLineAllowlist(t, sha(t)), [], t);
 });
 
 test("the source:builder label check is trimmed and case-insensitive", () => {

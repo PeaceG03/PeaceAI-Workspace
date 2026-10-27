@@ -39,8 +39,8 @@ export const BUILDER_LABEL = "source:builder";
  *     body has exactly ONE credit line (a top-level line starting `Context ...:`, or the older
  *     `(Builder pre-file, ...):` form), and that line's VISIBLE text (visibleCreditText: no link or image
  *     destinations, titles or alt text, no HTML tags or attributes, no struck-through, code or quoted spans)
- *     carries `(source: peace)` closing the credit clause, followed by nothing, `.`, or `. ` and one of the
- *     pinned trailing texts of the 80 genuine tasks (creditTrailingAllowed; new tasks end the line with the mark);
+ *     carries `(source: peace)` closing the credit clause, and the WHOLE line equals one of the 80 genuine credit
+ *     lines (CREDIT_LINE_ALLOWLIST) or matches the new-task template NEW_TASK_CREDIT_LINE (creditLineAllowed);
  *  3. every `(source ...:` clause anywhere in the normalized body (raw and entity-decoded), stripped regions included, is exactly
  *     `(source: peace)` (so `(source : builder)`, `( source: builder)` or a zero-width-split `source` all
  *     give builder);
@@ -277,24 +277,21 @@ export function visibleCreditText(line: string): string {
 /**
  * The credit marker as it must stand in the visible credit text: `(source: peace)` closing the credit clause,
  * followed only by the end of the line or a sentence end (`.` then a space or the end); anything glued to the
- * marker (`~~`, `)`, `'`, `*`, `]`, `>`) is not. What may follow the sentence end is allowlisted
- * (creditTrailingAllowed).
+ * marker (`~~`, `)`, `'`, `*`, `]`, `>`) is not. The whole line is allowlisted on top (creditLineAllowed).
  */
 const VISIBLE_PEACE_MARK = /\(\s*source\s*:\s*peace\s*\)(?=\s*$|\.(?:\s|$))/i;
 
 /**
- * Trailing text is allowlisted (Auditor, round 4). On the credit line (entity-decoded and normalized, raw
- * markup kept), `(source: peace)` must appear exactly once and be followed by nothing, by `.` alone, or by `. `
- * and one of CREDIT_TRAILING_ALLOWLIST exactly (trailing whitespace ignored). Anything else after the mark
- * ("Actually Builder drafted it.", "Not Peace's task.", "source=builder.") is builder. New tasks put the mark at
- * the end of the line, so the list never grows.
+ * The credit line is a WHOLE-LINE match (Auditor, round 5). The single credit line (entity-decoded and normalized,
+ * raw markup kept, trailing whitespace ignored) must either equal one of the 80 genuine credit lines exactly
+ * (CREDIT_LINE_ALLOWLIST) or match the strict new-task template NEW_TASK_CREDIT_LINE, for example
+ * `Context (Builder pre-file, ADD_FUNCTION): Peace's task (source: peace).` Nothing else on the line is allowed,
+ * before or after the mark ("Context (...): Actually Builder drafted it. Peace's task (source: peace)" is builder).
  */
-export function creditTrailingAllowed(creditLine: string): boolean {
-  const marks = [...creditLine.matchAll(new RegExp(SOURCE_PEACE_MARK.source, "gi"))];
-  if (marks.length !== 1) return false;
-  const after = creditLine.slice(marks[0]!.index! + marks[0]![0].length).trimEnd();
-  if (after === "" || after === ".") return true;
-  return after.startsWith(". ") && CREDIT_TRAILING.has(after.slice(2));
+export const NEW_TASK_CREDIT_LINE = /^Context \([^)]*\): Peace's task \(source: peace\)\.?$/;
+export function creditLineAllowed(creditLine: string): boolean {
+  const line = creditLine.trimEnd();
+  return CREDIT_LINES.has(line) || NEW_TASK_CREDIT_LINE.test(line);
 }
 
 /** The visible text of the body's single credit line, or null when there is not exactly one. */
@@ -314,7 +311,7 @@ export function taskSource(labels: readonly unknown[], body: unknown): "peace" |
   const credit = creditLineVisible(raw);
   if (credit === null || !VISIBLE_PEACE_MARK.test(credit)) return "builder";
   const lines = contextCreditLines(normalizeProvenance(decodeEntities(raw)));
-  return lines.length === 1 && creditTrailingAllowed(lines[0]!) ? "peace" : "builder";
+  return lines.length === 1 && creditLineAllowed(lines[0]!) ? "peace" : "builder";
 }
 
 /** sha256 (hex) of the issue body exactly as fetched (UTF-8); recorded in task.json as `bodySha256`. */
@@ -415,21 +412,36 @@ export function recordedTaskSource(
 }
 
 /**
- * The exact text after `(source: peace). ` on the credit lines of the 80 genuine Peace tasks (#353-#359,
- * #370-#374, #390-#397, #399-#403, #415-#425, #427-#437, #443-#455, #471-#488, #501, #502), one entry per
- * issue, taken from the bodies as GitHub serves them (entity-decoded, normalized). Stored in
- * `peaceai/lib/credit-trailing-allowlist.json` (PROTECTED_SELF; the m119 test pins its count and sha256). A file
- * that is missing or malformed allows nothing (fail closed). Add nothing: new tasks end the line with the mark.
+ * The 80 genuine Peace credit lines (#353-#359, #370-#374, #390-#397, #399-#403, #415-#425, #427-#437, #443-#455,
+ * #471-#488, #501, #502), whole, as GitHub serves them (entity-decoded, normalized), one `{issue, line}` row each
+ * in `peaceai/lib/credit-line-allowlist.json` (PROTECTED_SELF). Pinned and add-only: the file's sha256 must equal
+ * CREDIT_LINE_ALLOWLIST_SHA256 at run time, and every row must be well formed; a mismatch, or one malformed row,
+ * allows nothing (fail closed). The m119 test pins the same sha256 and the 80 genuine rows. New tasks use
+ * NEW_TASK_CREDIT_LINE instead of growing the list.
  */
-export const CREDIT_TRAILING_ALLOWLIST: readonly string[] = Object.freeze(loadTrailingAllowlist());
-function loadTrailingAllowlist(): string[] {
+export const CREDIT_LINE_ALLOWLIST_SHA256 = "687e9b04ab7b18ca0f1fecae2955cb604c112b2965e806839ececcd348d05263";
+export function parseCreditLineAllowlist(text: string, pinnedSha256: string = CREDIT_LINE_ALLOWLIST_SHA256): string[] {
+  if (typeof text !== "string" || createHash("sha256").update(text, "utf8").digest("hex") !== pinnedSha256) return [];
   try {
-    const rows: unknown = JSON.parse(readFileSync(new URL("./credit-trailing-allowlist.json", import.meta.url), "utf8"));
-    if (!Array.isArray(rows)) return [];
-    const out = rows.map((r) => (r && typeof r === "object" && Number.isInteger((r as { issue?: unknown }).issue) && typeof (r as { trailing?: unknown }).trailing === "string" ? (r as { trailing: string }).trailing : null));
-    return out.every((t): t is string => t !== null && t.length > 0) ? out : [];
+    const rows: unknown = JSON.parse(text);
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    const lines: string[] = [];
+    for (const r of rows) {
+      const row = r as { issue?: unknown; line?: unknown } | null;
+      if (!row || typeof row !== "object" || Object.keys(row).length !== 2 || !Number.isInteger(row.issue) || typeof row.line !== "string" || row.line === "" || row.line !== row.line.trimEnd()) return [];
+      lines.push(row.line);
+    }
+    return lines;
   } catch {
     return [];
   }
 }
-const CREDIT_TRAILING: ReadonlySet<string> = new Set(CREDIT_TRAILING_ALLOWLIST);
+function loadCreditLineAllowlist(): string[] {
+  try {
+    return parseCreditLineAllowlist(readFileSync(new URL("./credit-line-allowlist.json", import.meta.url), "utf8"));
+  } catch {
+    return [];
+  }
+}
+export const CREDIT_LINE_ALLOWLIST: readonly string[] = Object.freeze(loadCreditLineAllowlist());
+const CREDIT_LINES: ReadonlySet<string> = new Set(CREDIT_LINE_ALLOWLIST);
