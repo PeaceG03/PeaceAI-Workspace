@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { isCandidateIssue, labeledByOwner, pickNext, STATE, staleRunning, type LabelEvent, type QueueIssue } from "../lib/queue.ts";
-import { BUILDER_LABEL, taskSource } from "../lib/policy.ts";
+import { BUILDER_LABEL, bodySha256, taskSource } from "../lib/policy.ts";
 import { TASK_LABEL } from "../lib/trigger.ts";
 
 const repo = process.env.GITHUB_REPOSITORY ?? "";
@@ -18,7 +18,7 @@ const output = (pairs: Record<string, string | number>) => {
 
 const issues = jsonLines<QueueIssue>(
   gh("api", "--paginate", `repos/${repo}/issues?state=open&labels=${TASK_LABEL}&per_page=100`, "--jq",
-    '.[] | {number, state, author: .user.login, labels: [.labels[].name], isPullRequest: (.pull_request != null)} | tojson'),
+    '.[] | {number, state, author: .user.login, labels: [.labels[].name], isPullRequest: (.pull_request != null), body: (.body // "")} | tojson'),
 );
 
 if (mode === "count") {
@@ -50,5 +50,9 @@ for (const issue of issues.filter(isCandidateIssue).sort((a, b) => a.number - b.
 const picked = pickNext(issues, verified);
 if (picked !== null)
   gh("issue", "edit", String(picked), "--repo", repo, "--add-label", STATE.running, "--remove-label", STATE.queued);
-const source = picked === null ? "" : taskSource(issues.find((i) => i.number === picked)!.labels);
-output({ issue: picked ?? "", source, waiting: issues.filter(isCandidateIssue).length });
+// Provenance decides the source (labels and the issue body's credit line), never the filer account.
+const pickedIssue = picked === null ? null : issues.find((i) => i.number === picked)!;
+const source = pickedIssue === null ? "" : taskSource(pickedIssue.labels, pickedIssue.body);
+// M119: the sha256 of the body the source was decided on; Job C records builder if the body it fetches differs.
+const bodySha = pickedIssue === null ? "" : bodySha256(pickedIssue.body);
+output({ issue: picked ?? "", source, body_sha256: bodySha, waiting: issues.filter(isCandidateIssue).length });

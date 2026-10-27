@@ -13,6 +13,8 @@ export interface QueueIssue {
   author: string;
   labels: string[];
   isPullRequest: boolean;
+  /** Issue body (select only), for the task-source credit line. */
+  body?: string;
 }
 
 export interface LabelEvent {

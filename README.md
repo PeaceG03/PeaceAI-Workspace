@@ -76,8 +76,51 @@ whose candidates all make the same edit counts as a single-candidate task (`sing
 read as a fraction, are below 0.2 (about 20%). Held-out tasks are recorded and reviewed like any
 other but are never used for training; agreement is also reported for them separately.
 
-**Task source**: `source:builder` marks a `peace-task` opened by the Builder agent. The label is read
-when the task is picked and stored as `source` (`peace` | `builder`) in `task.json` and the summary.
+**Task source**: provenance decides it, never the filer account (Peace and Builder both file as PeaceG03, so
+neither the account nor who edited the body can be attributed). `peace` is an allow-match (`peaceai/lib/policy.ts`
+`taskSource`); anything else is `builder` (not Peace's):
+
+- no `source:builder` label (compared trimmed and case-insensitive);
+- **no raw HTML anywhere** in the raw or normalized body, code fences included: any `<` followed by a letter,
+  `/`, `!` or `?` gives builder (tags, also split over several lines, comments, `<?...?>`, `<![CDATA[...]]>`,
+  `<!DOCTYPE ...>`; three backticks followed by an info string holding a backtick is not a fence, so fences are never trusted); write `&lt;` for a literal `<`;
+- HTML entities (numeric and named) are decoded first (a named entity outside the known table gives builder),
+  then the body is normalized (zero-width characters removed, NFKC, unicode hyphens folded to `-`); HTML comments,
+  fenced and indented code, blockquote lines and the Examples block are stripped, and what is left has exactly
+  **one credit line**: a top-level line starting `Context (...):` (or the older `(Builder pre-file, ...):` form of
+  #353-#488);
+- the credit line's **visible text** carries `(source: peace)` closing the credit clause: link and image destinations, titles and alt text, HTML tags with all their
+  attributes, autolinks and bare URLs, code spans, quoted spans, and `~~` / `~` / `<del>` / `<s>` / `<strike>`
+  content don't count, and an unclosed construct hides the rest of the line;
+- the **whole credit line** (decoded, normalized, trailing spaces trimmed) is allowed: it either equals one of
+  the 80 genuine credit lines (#353-#502), pinned in `peaceai/lib/credit-line-allowlist.json` (protected,
+  add-only; its sha256 is checked at runtime against a constant in `policy.ts`, and a mismatch or one malformed
+  row allows nothing), or it matches the new-task template
+  `^Context \([^)]*\): Peace's task \(source: peace\)\.?$`. Anything else ("Context (...): Actually Builder
+  drafted it. Peace's task (source: peace)", text after the mark) gives builder. Contradictions on other lines of
+  the body are out of scope for the parser and are covered by Auditor's pre-filing review;
+- every `(source ...:` clause anywhere in the body, stripped regions included and with entities decoded, is
+  exactly `(source: peace)`; so `(source : builder)`, `( source: builder)`, a zero-width-split `source` or
+  `&#40;source: builder&#41;` give builder;
+- no team-picked wording anywhere (Team-picked / Teampicked / Builder-picked, chosen by the team, Peace asked us or
+  the team to pick, not credited as ...).
+
+It is decided at pick time and again by Job C, with the labels re-read at record time. Job C also requires that
+no `source:builder` label was ever added, and that the body is **add-only** since the issue's FIRST `peace-task`
+label event: the body revision then (the latest GitHub `userContentEdits` revision strictly before the label; an
+edit with the label's own timestamp gives builder) must have every line still present, unchanged and in order, at
+record time, and its credit line's visible text must be identical. Lines may be added (examples, notes); a removed,
+reworded or reordered line, a deleted revision or incomplete edit history gives builder. Job C stores `source` (`peace` | `builder`) and `bodySha256` (sha256 of the full body, for
+traceability) in `task.json`; a record without `source` reads as `builder`.
+
+**New tasks must always carry a credit line.** A task without one is recorded as `builder`, whoever filed it.
+Peace's own task uses the template line exactly: `Context (<kind>): Peace's task (source: peace).` (nothing
+else on that line; context goes on other lines; the genuine-line allowlist never grows); a team-picked task says
+so on that line (`Team-picked task (...; not credited as source: peace ...)`) and gets no `(source: peace)`.
+
+Ruling on older rows (builder-log, not this code): builder-log seq 98-122 (#233, #240, #248, #255, #259, #262,
+#288-#290, #293-#295, #297-#299, #301, #319, #329) stay credited as Peace's real tasks although those issue bodies
+carry no credit line. Source: Peace, Auditor chat, Oct 16 2026 8:06 PM MT, replying to the #329 question ('Go ahead that's fine'); relayed by Auditor; no public link. Their Results records say `source: "peace"`; no new task gets this exception.
 
 **Test tasks**: an issue title starting with `[test]` marks the records as test; they are excluded
 from training and agreement.
