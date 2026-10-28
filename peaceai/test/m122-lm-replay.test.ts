@@ -356,7 +356,11 @@ test("M122 replay pins: the source is the public ext manifest M37 trained on; it
   assert.ok(read("peaceai/test/m9.test.ts").includes(`--manifest-sha ${CFG.replay.source.sha256}`), "the same manifest sha m9 pins for peace-lm-train.yml");
   assert.equal(CFG.replay.manifestSha256, "6fc30d39a649601067a1ad8f74c10083993420db0abdbeb1ae8e72286fa19ab1");
   assert.equal(CFG.live.version, "lm-v1-088073d41dbc");
+  // Fix B: the replay base carries the same manifest and proof pins, and the restore reads it
+  assert.deepEqual([CFG.replayBase.version, CFG.replayBase.manifestSha256, CFG.replayBase.corefreeProofSha256], [CFG.live.version, CFG.replay.manifestSha256, CFG.live.corefreeProofSha256]);
   const live = read("peaceai/bin/lm-retrain-live.sh");
+  assert.match(live, /ms=\$\(jq -r \.replayBase\.manifestSha256 "\$cfg"\)/);
+  assert.match(live, /test "\$\(jq -r \.replay\.manifestSha256 "\$cfg"\)" = "\$ms"/);
   assert.match(live, /test "\$\(sha256sum "\$L\/manifest\.jsonl" \| cut -c1-64\)" = "\$ms"/, "Results' live manifest is the pin");
   assert.match(live, /noCoreFiles "\$L\/corefree-proof\.json"\)" = PROVEN && test "\$\(jq -r \.manifestSha256 "\$L\/corefree-proof\.json"\)" = "\$ms"/, "and is proven core-free");
   const have = spawnSync("git", ["-C", repo, "cat-file", "-e", `${CFG.replay.source.commit}:${CFG.replay.source.path}`]);

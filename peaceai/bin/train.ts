@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runTraining, buildExamples, type TrainOptions } from "../lib/ranker/pipeline.ts";
 import { stableJson, type TaskSource } from "../lib/records.ts";
-import { lmEvaluate } from "../lib/lm.ts";
+import { latestLmVersion, lmEvaluate } from "../lib/lm.ts";
 import { loadAll } from "../lib/store.ts";
 
 const root = resolve(process.env.RESULTS_DIR ?? "");
@@ -23,7 +23,8 @@ const { examples, superseded } = buildExamples(root, stored);
 const trained = runTraining(examples, superseded, options);
 const model = trained.model;
 // M9: the LM shadow score's held-out agreement and promotion rule, next to the M3 model's.
-const metrics = { ...trained.metrics, lm: lmEvaluate(stored) };
+// Fix B: judged for the model in models/lm/latest.json only (scores from any other or unversioned model do not count).
+const metrics = { ...trained.metrics, lm: lmEvaluate(stored, latestLmVersion(root)) };
 
 const dir = join(root, "models", metrics.version);
 mkdirSync(dir, { recursive: true });

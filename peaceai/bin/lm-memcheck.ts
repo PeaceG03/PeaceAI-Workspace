@@ -87,7 +87,7 @@ else {
         finetuneProof: json(ftProofText), finetuneProofSha256: ftProofText === null ? "" : h(ftProofText),
         liveManifest: liveManText === null ? null : { lines: liveManText.split("\n").filter(Boolean), manifestSha256: h(liveManText) },
         replay: pre, finetune: ft,
-        pins: { liveVersion: String(rc.live?.version ?? ""), liveProofSha256: String(rc.live?.corefreeProofSha256 ?? ""), liveManifestSha256: String(rc.replay?.manifestSha256 ?? ""), finetuneProofSha256: process.env.PEACEAI_LM_FT_PROOF_SHA256 ?? "" },
+        pins: { liveVersion: String(rc.replayBase?.version ?? ""), liveProofSha256: String(rc.replayBase?.corefreeProofSha256 ?? ""), liveManifestSha256: String(rc.replayBase?.manifestSha256 ?? ""), finetuneProofSha256: process.env.PEACEAI_LM_FT_PROOF_SHA256 ?? "" },
       });
       if (!pre.proves) d.reasons.push("pretrain:NOT_PROVEN"); if (!ft.proves) d.reasons.push("finetune:NOT_PROVEN");
       dual = { ok: d.reasons.length === 0, reasons: d.reasons, trainedOn: d.trainedOn, note: d.note };

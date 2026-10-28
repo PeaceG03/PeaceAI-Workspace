@@ -4,7 +4,7 @@ name: peace-lm-judge-v2
 # free GitHub-hosted minutes and land it in Results under a NEW path, lm-judge-v2/ (append-only; lm-judge/ on
 # notes/lm-judge-eval is never touched):
 #   (1) the v1 items (JUDGE_SET=v1), the live model and its recorded v1 judge aggregates are fetched (no write) and checked
-#       (peaceai/bin/lm-retrain-live.sh: live = latest.json, weights hash to the version, v1 item count pinned);
+#       (peaceai/bin/lm-retrain-live.sh: live = lm-retrain.json replayBase, never latest.json; weights hash to the version, v1 item count pinned);
 #   (2) each upstream function is read from its public repo at the head pinned in peaceai/model/judge-v2-sources.json
 #       (git output discarded, so a failed fetch prints only the refusal line, never a repo URL);
 #   (3) peaceai/bin/judge-v2-build.ts rebuilds each item's v1 grid (must reproduce the v1 held-out counts), runs the
@@ -58,7 +58,7 @@ jobs:
           S=$(jq -r .sources "$V2"); test "$S" = peaceai/model/judge-v2-sources.json || { echo "unexpected sources path"; exit 1; }
           test "$(sha256sum "$S" | cut -c1-64)" = "$(jq -r .sourcesSha256 "$V2")" || { echo "sources file differs from its pin: refused"; exit 1; }
           test "$(jq -r .v1.commit "$S")" = "$(jq -r .eval.judgeV1.commit "$CFG")" || { echo "sources are not for the pinned v1 judge commit: refused"; exit 1; }
-          test "$(jq -r .live.version "$V2")" = "$(jq -r .live.version "$CFG")" || { echo "v2 pins are not for the configured live model: refused"; exit 1; }
+          test "$(jq -r .live.version "$V2")" = "$(jq -r .replayBase.version "$CFG")" || { echo "v2 pins are not for the configured live model: refused"; exit 1; }
           test "$(jq -r .out "$V2")" = lm-judge-v2 || { echo "unexpected output path: refused"; exit 1; }
       - name: Verify the checkout and the key scripts before any key is used
         run: |
@@ -102,7 +102,7 @@ jobs:
       - name: Score the live model on the v2 items (must reproduce its recorded per-item aggregates and the pinned AUC)
         run: |
           set -euo pipefail
-          live=$(jq -r .live.version "$CFG")
+          live=$(jq -r .replayBase.version "$CFG")
           "$RUNNER_TEMP/venv/bin/python" peaceai/model/judge364.py --model "$RUNNER_TEMP/r/live" --items "$RUNNER_TEMP/v2/items.json" --out "$RUNNER_TEMP/v2/scores-$live.json" --threads 4
           # Same rule as the retrain's scorer-repro check (peaceai/model/judge_repro.py): every kept item's key is in the
           # recorded v1 aggregates, token counts are equal and every mean is within 1e-4. The largest drift is printed.
@@ -130,7 +130,7 @@ jobs:
           V2_DIR: ${{ runner.temp }}/v2
         run: |
           set -euo pipefail
-          live=$(jq -r .live.version "$CFG"); export live
+          live=$(jq -r .replayBase.version "$CFG"); export live
           cat > "$V2_DIR/README.md" <<EOF
           # LM judge set v2
 

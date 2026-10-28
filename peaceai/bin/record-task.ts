@@ -108,7 +108,7 @@ if (lmFlags(process.env).shadow) {
   lmStatus = lmShadow ? "recorded" : "none";
   if (lmShadow) {
     records.ranking.lmShadow = lmShadow;
-    const active = activeWithLm(process.env.PEACEAI_RANKER, lmEvaluate(loadAll(resultsRoot)).eligible, records.ranking.active ?? "deterministic");
+    const active = activeWithLm(process.env.PEACEAI_RANKER, lmEvaluate(loadAll(resultsRoot), lmShadow.model).eligible, records.ranking.active ?? "deterministic");
     if (active === "lm") {
       records.ranking.active = "lm";
       records.ranking.activeTop = lmShadow.top;
