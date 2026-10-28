@@ -374,7 +374,7 @@ test("M126 workflow: memcheck_only_run_id input, its checks, job conditions and 
   writeFileSync(join(resd, "models/lm/latest.json"), "{\"version\":\"x\"}\n");
   const l2 = L({ GITHUB_RUN_ID: "40700000003" }); assert.notEqual(l2.status, 0, "any other change staged (here latest.json): refused"); assert.match(l2.stdout, /landing refused/);
   // the shell wrapper: dry-run guard + deploy key + results-write, and the landed output only after it
-  assert.match(land, /if \[ -n "\$MCO" \]; then\n\s+\[\[ "\$MCO" =~ \^\[1-9\]\[0-9\]\{5,19\}\$ \]\] \|\| \{ echo "bad memcheck_only_run_id"; exit 1; \}\n\s+\.\/peaceai\/bin\/lm-retrain-dryrun-guard\.sh \.\/peaceai\/bin\/with-deploy-key\.sh \.\/peaceai\/bin\/results-write\.sh "LM retrain memcheck recheck of run \$MCO/);
+  assert.match(land, /if \[ -n "\$MCO" \]; then\n\s+\[\[ "\$MCO" =~ \^\[1-9\]\[0-9\]\{5,19\}\$ \]\] \|\| \{ echo "bad memcheck_only_run_id"; exit 1; \}\n\s+\.\/peaceai\/bin\/lm-retrain-dryrun-guard\.sh \.\/peaceai\/bin\/with-deploy-key\.sh \.\/peaceai\/bin\/results-write\.sh --sparse "\/runs\/lm-retrain\/\$MCO\/record\.json" --sparse "\/runs\/lm-retrain\/\$MCO\/memcheck-recheck-\$GITHUB_RUN_ID\.json" "LM retrain memcheck recheck of run \$MCO/);
   assert.match(land, /echo "landed=true" >> "\$GITHUB_OUTPUT"; rm -rf "\$RUNNER_TEMP\/mc"; exit 0\n\s*fi\n/);
   assert.match(rec, /\n      landed: \$\{\{ steps\.land\.outputs\.landed \}\}\n      status: \$\{\{ steps\.decode\.outputs\.status \}\}\n/);
   for (const l of WF.split("\n").filter((x) => x.includes("latest.json"))) assert.doesNotMatch(l, /cp |> |mv |tee /, "latest.json is never written");

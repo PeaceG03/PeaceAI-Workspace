@@ -112,7 +112,7 @@ env:
   MCO: ${{ inputs.memcheck_only_run_id || '' }}
   RESULTS_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
-    9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
+    da2a4c6e32d3f6dc2e5587767bf4e01885b37e4011ce3a223ea7493506600e42  peaceai/bin/results-write.sh
     d4d7c4614fc1c88d806ef66d4e813e8bc31f4ff1f3a89835b9e1efa304a60361  peaceai/bin/lm-retrain-dryrun-guard.sh
   CORE_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
@@ -305,7 +305,7 @@ jobs:
           w=null; [ -f "$STAGE/model/weights.npz" ] && w="\"$(sha256sum "$STAGE/model/weights.npz" | cut -c1-64)\""
           export SAVED=$(jq -nc --arg s "$(sha256sum "$STAGE/save.json" | cut -c1-64)" --argjson w "$w" '{saveSha256: $s, weightsSha256: $w}')
           st=0
-          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M125 LM retrain sweep arm $ARM (run $GITHUB_RUN_ID)" \
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse "/runs/lm-retrain/$GITHUB_RUN_ID/arms/$ARM/" "M125 LM retrain sweep arm $ARM (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               p="runs/lm-retrain/$GITHUB_RUN_ID/arms/$ARM/"; a="$RESULTS_DIR/$p"; test ! -e "$a"; mkdir -p "$a"; cp -R "$STAGE"/. "$a"
               if [ -n "$(find "$a" -type l)" ]; then echo "save refused: symlink"; exit 1; fi
@@ -419,7 +419,7 @@ jobs:
           w=null; [ -f "$STAGE/model/weights.npz" ] && w="\"$(sha256sum "$STAGE/model/weights.npz" | cut -c1-64)\""
           export SAVED=$(jq -nc --arg s "$(sha256sum "$STAGE/save.json" | cut -c1-64)" --argjson w "$w" '{saveSha256: $s, weightsSha256: $w}')
           st=0
-          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M125 LM retrain sweep arm $ARM (run $GITHUB_RUN_ID)" \
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse "/runs/lm-retrain/$GITHUB_RUN_ID/arms/$ARM/" "M125 LM retrain sweep arm $ARM (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               p="runs/lm-retrain/$GITHUB_RUN_ID/arms/$ARM/"; a="$RESULTS_DIR/$p"; test ! -e "$a"; mkdir -p "$a"; cp -R "$STAGE"/. "$a"
               if [ -n "$(find "$a" -type l)" ]; then echo "save refused: symlink"; exit 1; fi
@@ -688,7 +688,11 @@ jobs:
           PASS: ${{ steps.gate.outputs.pass }}
         run: |
           set -euo pipefail
-          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain candidate (run $GITHUB_RUN_ID)" \
+          # blobless sparse Results clone (Auditor, #564 follow-up): only this run's dir and, on PASS, the new model dir
+          sp=(--sparse "/runs/lm-retrain/$GITHUB_RUN_ID/")
+          if [ "$PASS" = true ]; then v=$(jq -r .version "$MODEL_DIR/config.json")
+            [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }; sp+=(--sparse "/models/lm/$v/"); fi
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "${sp[@]}" "M119 LM retrain candidate (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               v=none; if [ "$PASS" = true ]; then v=$(jq -r .version "$MODEL_DIR/config.json")
               [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }; fi
@@ -888,7 +892,7 @@ jobs:
           set -euo pipefail
           if [ -n "$MCO" ]; then
             [[ "$MCO" =~ ^[1-9][0-9]{5,19}$ ]] || { echo "bad memcheck_only_run_id"; exit 1; }
-            ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "LM retrain memcheck recheck of run $MCO (run $GITHUB_RUN_ID)" \
+            ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse "/runs/lm-retrain/$MCO/record.json" --sparse "/runs/lm-retrain/$MCO/memcheck-recheck-$GITHUB_RUN_ID.json" "LM retrain memcheck recheck of run $MCO (run $GITHUB_RUN_ID)" \
               bash -c 'set -euo pipefail
                 r="$RESULTS_DIR/runs/lm-retrain/$MCO"; f="$r/memcheck-recheck-$GITHUB_RUN_ID.json"
                 test -d "$r" && test -f "$r/record.json" && test ! -e "$f"
@@ -900,7 +904,7 @@ jobs:
                 test -z "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames --diff-filter=MDRT)" || { echo "landing refused: not append-only"; exit 1; }'
             echo "landed=true" >> "$GITHUB_OUTPUT"; rm -rf "$RUNNER_TEMP/mc"; exit 0
           fi
-          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain memcheck (run $GITHUB_RUN_ID)" \
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse "/models/lm/$V/" --sparse "/runs/lm-retrain/$GITHUB_RUN_ID/" "M119 LM retrain memcheck (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               d="$RESULTS_DIR/models/lm/$V"; r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"
               test -d "$d" && test -d "$r" && test ! -e "$d/memcheck.json" && test ! -e "$r/memcheck.json"
