@@ -42,6 +42,6 @@ cp "$d/model/config.json" "$d/model/weights.npz" "$d/model/eval.json" "$out/"; c
 [ "$(H "$out/weights.npz")" = "$w" ] || { echo "copied checkpoint sha256 mismatch: refused"; exit 1; }
 cp "$d/metrics.jsonl" "$met"
 jq -c --argjson step "$step" --slurpfile s "$st" --argjson a "$a" \
-  '. + {stoppedStep: $step, armStoppedStep: .stoppedStep, source: {kind: "sweep-arm", runId: $s[0].runId, arm: $a, weightsSha256: $s[0].weightsSha256, saveSha256: $s[0].saveSha256}}' "$sm" > "$ct"
+  '. + {stoppedStep: $step, armStoppedStep: .stoppedStep, source: {kind: "sweep-arm", runId: $s[0].runId, workspaceSha: $s[0].workspaceSha, arm: $a, weightsSha256: $s[0].weightsSha256, saveSha256: $s[0].saveSha256}}' "$sm" > "$ct"
 echo "candidate reused from sweep arm $a at the selected step (weights sha256 verified)"
 echo "reused=true" >> "$o"

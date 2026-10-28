@@ -112,6 +112,9 @@ function reuse(arms: string, dest: string, sel: string, d: string) {
   const r = sh("bash", ["peaceai/bin/lm-retrain-arm-reuse.sh", arms, dest, sel, fixture().live, join(rt, "model"), join(rt, "ct.json"), join(rt, "m.jsonl")], { GITHUB_OUTPUT: out, MODE });
   return { ...r, rt, out: readFileSync(out, "utf8") };
 }
+// Auditor (PR #564): the training and export code, hashed in this fixed sorted order (sha256sum lines, then sha256sum).
+const CODE_FILES = ["peaceai/model/export.py", "peaceai/model/lm.py", "peaceai/model/replay.py", "peaceai/model/retrain_summary.py", "peaceai/model/train.py", "peaceai/model/val_split.py"];
+const codeSha = (root: string) => createHash("sha256").update(CODE_FILES.map((p) => `${sha(join(root, p))}  ${p}\n`).join("")).digest("hex");
 const tmp = (fn: (d: string) => void) => { const d = mkdtempSync(join(tmpdir(), "m125t-")); try { fn(d); } finally { rmSync(d, { recursive: true, force: true }); } };
 const PRIVATE = /export function|return x \+/;
 
@@ -129,7 +132,7 @@ test("M125 save: each finished arm lands in Results runs/lm-retrain/<run>/arms/<
   assert.deepEqual(Object.keys(sv.files).sort(), ["metrics.jsonl", "model/config.json", "model/eval.json", "model/weights.npz", "summary.json"]);
   for (const [p, h] of Object.entries(sv.files)) assert.equal(sha(join(base, "0", p)), h, p);
   assert.deepEqual([sv.schema, sv.runId, sv.workspaceSha, sv.arm, sv.mode, sv.lr, sv.bestStep, sv.live, sv.finetuneManifestSha256], ["peaceai-lm-retrain-arm:v1", RUN, WS, 0, MODE, LRS[0], 1200, CFG.live.version, f.manifest]);
-  assert.equal(sv.tokenizerSha256, sha(join(f.live, "tokenizer.json"))); assert.equal(existsSync(join(base, "0", "model", "tokenizer.json")), false, "the live tokenizer is not duplicated");
+  assert.equal(sv.codeSha256, codeSha(repo)); assert.equal(sv.tokenizerSha256, sha(join(f.live, "tokenizer.json"))); assert.equal(existsSync(join(base, "0", "model", "tokenizer.json")), false, "the live tokenizer is not duplicated");
   const cfg = JSON.parse(readFileSync(join(base, "0", "model", "config.json"), "utf8"));
   assert.equal(cfg.trained_steps, 1200); assert.equal(cfg.version, `lm-v1-${sha(join(base, "0", "model", "weights.npz")).slice(0, 12)}`);
   assert.deepEqual(JSON.parse(readFileSync(join(base, "0", "summary.json"), "utf8")), JSON.parse(jobSummary(0)), "summary.json is exactly the job summary output");
@@ -196,7 +199,7 @@ test("M125 reuse: verified saved arms -> select -> the selected arm's checkpoint
   assert.equal(r.status, 0, r.stdout + r.stderr); assert.doesNotMatch(r.stdout, PRIVATE);
   for (const a of [0, 1]) {
     const st = JSON.parse(readFileSync(join(dest, `arm-${a}.status.json`), "utf8"));
-    assert.deepEqual([st.saved, st.reusable, st.weightsSha256, st.saveSha256, st.runId], [true, true, JSON.parse(v[a]!).weightsSha256, JSON.parse(v[a]!).saveSha256, RUN]);
+    assert.deepEqual([st.saved, st.reusable, st.weightsSha256, st.saveSha256, st.runId, st.workspaceSha], [true, true, JSON.parse(v[a]!).weightsSha256, JSON.parse(v[a]!).saveSha256, RUN, WS]);
   }
   const sel = select(dest, d); const s = JSON.parse(readFileSync(sel, "utf8"));
   assert.deepEqual([s.selected.arm, s.selected.step, s.selected.lr, s.selected.candidate], [0, 1200, LRS[0], true]);
@@ -207,7 +210,7 @@ test("M125 reuse: verified saved arms -> select -> the selected arm's checkpoint
   assert.equal(sha(join(u.rt, "model", "tokenizer.json")), sha(join(f.live, "tokenizer.json")));
   const ct = JSON.parse(readFileSync(join(u.rt, "ct.json"), "utf8"));
   assert.equal(ct.stoppedStep, s.selected.step, "the gate's selected_step_not_reached check holds");
-  assert.deepEqual(ct.source, { kind: "sweep-arm", runId: RUN, arm: 0, weightsSha256: w, saveSha256: JSON.parse(v[0]!).saveSha256 });
+  assert.deepEqual(ct.source, { kind: "sweep-arm", runId: RUN, workspaceSha: WS, arm: 0, weightsSha256: w, saveSha256: JSON.parse(v[0]!).saveSha256 });
   assert.equal(readFileSync(join(u.rt, "m.jsonl"), "utf8"), readFileSync(join(f.work[0]!, "metrics.jsonl"), "utf8"));
   // the export the arm saved is byte-identical to what the pre-M125 candidate path exports from the same checkpoint
   const again = join(d, "again"); execFileSync(py, ["peaceai/model/export.py", "--work", f.work[0]!, "--out", again, "--threads", "1", "--checkpoint", "best.npz"], { cwd: repo });
@@ -273,7 +276,7 @@ test("M125 resume: a failed run's saved arms -> verify -> select -> reuse, with 
   const sel = select(dest, d); const u = reuse(arms, dest, sel, d);
   assert.equal(u.status, 0, u.stdout); assert.match(u.out, /^reused=true$/m);
   assert.equal(sha(join(u.rt, "model", "weights.npz")), JSON.parse(v[0]!).weightsSha256);
-  assert.equal(JSON.parse(readFileSync(join(u.rt, "ct.json"), "utf8")).source.runId, RUN);
+  assert.deepEqual([JSON.parse(readFileSync(join(u.rt, "ct.json"), "utf8")).source.runId, JSON.parse(readFileSync(join(u.rt, "ct.json"), "utf8")).source.workspaceSha], [RUN, WS], "the source run and its workspace sha");
   const res = (mut: (a: string) => void, e: Record<string, string>, re: RegExp) => {
     const a = fetchArms(bare, d, RUN); mut(a); const x = verify(a, join(d, `r-${Math.random()}`), { GITHUB_RUN_ID: RUN2, RESUME: RUN, ...e });
     assert.equal(x.status, 1, x.stdout); assert.match(x.stdout, re);
@@ -329,3 +332,22 @@ const GUARD_SHA256 = "d4d7c4614fc1c88d806ef66d4e813e8bc31f4ff1f3a89835b9e1efa304
 test("M125 new files are protected", () => {
   for (const f of ["peaceai/bin/lm-retrain-arm-save.sh", "peaceai/bin/lm-retrain-arm-verify.sh", "peaceai/bin/lm-retrain-arm-reuse.sh", "peaceai/test/m125-lm-retrain-arm-reuse.test.ts"]) assert.ok(protectedReason(f), f);
 });
+
+test("M125 resume refuses when the training/export code changed since the saved run (codeSha256, Auditor PR #564)", () => tmp((d) => {
+  const bare = results(d); for (const a of [0, 1]) assert.equal(saveArm(d, bare, a).status, 0);
+  // the hashed list is explicit, sorted, and exactly the code lm-retrain-train.sh and export run
+  const vs = read("peaceai/bin/lm-retrain-arm-verify.sh");
+  assert.ok(vs.includes(`CODE_FILES=(${CODE_FILES.join(" ")})`)); assert.deepEqual([...CODE_FILES].sort(), CODE_FILES);
+  assert.match(vs, /codesha\(\) \{ sha256sum "\$\{CODE_FILES\[@\]\}" \| sha256sum \| cut -c1-64; \}/);
+  assert.equal(execFileSync("bash", ["peaceai/bin/lm-retrain-arm-verify.sh", "--code-sha"], { cwd: repo, encoding: "utf8" }).trim(), codeSha(repo));
+  for (const [f, re] of [["peaceai/model/train.py", /^import lm\b[\s\S]*^import replay\b/m], ["peaceai/model/export.py", /^import lm\b/m]] as const) assert.match(read(f), re, f);
+  for (const p of ["val_split.py", "train.py", "retrain_summary.py"]) assert.match(read("peaceai/bin/lm-retrain-train.sh"), new RegExp(`peaceai/model/${p.replace(".", "\\.")}`));
+  // a checkout whose train.py differs by one comment line: the same resume that passes on this checkout refuses there
+  const co = join(d, "checkout"); for (const p of ["peaceai/bin", "peaceai/model"]) cpSync(join(repo, p), join(co, p), { recursive: true });
+  const arms = fetchArms(bare, d, RUN);
+  const run = (cwd: string) => spawnSync("bash", ["peaceai/bin/lm-retrain-arm-verify.sh", arms, join(d, `v-${Math.random()}`)], { cwd, encoding: "utf8", env: env0({ MODE, MANIFEST: fixture().manifest, GITHUB_RUN_ID: RUN2, RESUME: RUN }) });
+  assert.equal(run(co).status, 0, "unchanged code resumes");
+  writeFileSync(join(co, "peaceai/model/train.py"), readFileSync(join(co, "peaceai/model/train.py"), "utf8") + "# changed\n");
+  assert.notEqual(codeSha(co), codeSha(repo));
+  const r = run(co); assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /saved arm 0: training\/export code differs from this checkout's \(codeSha256\): refused/);
+}));

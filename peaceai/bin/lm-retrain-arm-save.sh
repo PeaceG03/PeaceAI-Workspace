@@ -8,7 +8,7 @@
 # weights.npz, eval.json}: train.py's best.npz (the checkpoint at bestStep) exported by export.py, i.e. exactly what
 # finetune-eval-land's candidate re-train exports at the selected step. Refuses unless the export is at bestStep and the
 # tokenizer is the live one. <stage>/save.json (peaceai-lm-retrain-arm:v1) binds every file by sha256 to this run, arm,
-# mode, lr, live version, fine-tune manifest and training config (lm-retrain-arm-verify.sh checks all of it before use).
+# mode, lr, live version, fine-tune manifest, training config and training/export code (codeSha256) (lm-retrain-arm-verify.sh checks all of it before use).
 # Prints counts only. Needs PEACEAI_PYTHON (numpy), MODE, GITHUB_RUN_ID, GITHUB_SHA.
 set -euo pipefail
 work="$1"; live="$2"; ft="$3"; stage="$4"; arm="$5"
@@ -34,10 +34,10 @@ if [ "$best" -gt 0 ]; then
 fi
 if [ -n "$(find "$stage" -type l)" ]; then echo "symlink in stage: refused"; exit 1; fi
 files=$(cd "$stage" && find . -type f ! -name save.json | sed 's|^\./||' | LC_ALL=C sort | while IFS= read -r f; do jq -n --arg f "$f" --arg h "$(sha256sum "$f" | cut -c1-64)" '{($f): $h}'; done | jq -s 'add // {}')
-tc=$(./peaceai/bin/lm-retrain-arm-verify.sh --train-config-sha "$mode")
+tc=$(./peaceai/bin/lm-retrain-arm-verify.sh --train-config-sha "$mode"); code=$(./peaceai/bin/lm-retrain-arm-verify.sh --code-sha)
 jq -n --arg run "$GITHUB_RUN_ID" --arg ws "$GITHUB_SHA" --argjson arm "$arm" --arg mode "$mode" --argjson lr "$lr" --argjson best "$best" \
-  --arg live "$(jq -r .live.version "$cfg")" --arg ftm "$(sha256sum "$ft/manifest.jsonl" | cut -c1-64)" --arg tc "$tc" \
+  --arg live "$(jq -r .live.version "$cfg")" --arg ftm "$(sha256sum "$ft/manifest.jsonl" | cut -c1-64)" --arg tc "$tc" --arg code "$code" \
   --arg tok "$(sha256sum "$live/tokenizer.json" | cut -c1-64)" --argjson files "$files" \
   '{schema: "peaceai-lm-retrain-arm:v1", runId: $run, workspaceSha: $ws, arm: $arm, mode: $mode, lr: $lr, bestStep: $best, live: $live,
-    finetuneManifestSha256: $ftm, trainConfigSha256: $tc, tokenizerSha256: $tok, files: $files}' > "$stage/save.json"
+    finetuneManifestSha256: $ftm, trainConfigSha256: $tc, codeSha256: $code, tokenizerSha256: $tok, files: $files}' > "$stage/save.json"
 echo "arm $arm staged: files=$(jq '.files | length' "$stage/save.json") model=$([ "$best" -gt 0 ] && echo yes || echo no)"
