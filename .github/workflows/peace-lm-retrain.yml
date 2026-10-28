@@ -44,6 +44,18 @@ name: peace-lm-retrain
 #   bits/byte <= live - eval.minBpbGain (bpb_gate.py, decimal), at the validation-selected step; set C is the final gate
 #   only. Memcheck in pretrain mode: the strict fine-tune-corpus run AND a replay-corpus run, both required
 #   (memcheck_combine.py). Dry run (both modes): per-arm phase times (numbers) and set C bpb only; no Results write.
+# M125 durable sweep arms and candidate reuse (Peace 2026-10-28, after run 40624227227 lost ~10 h; Auditor's reuse idea):
+#   each sweep arm, as soon as it finishes and before select runs, stages its summary, losses and (bestStep > 0) the
+#   export of its best.npz (the checkpoint at its validation-selected step) with lm-retrain-arm-save.sh, and saves them in
+#   Results runs/lm-retrain/<run>/arms/<arm>/ (save.json binds every file by sha256; written only through the dry-run
+#   guard, path-allowlisted; the arm job's "saved" output carries {saveSha256, weightsSha256} only after the push).
+#   A save failure does not fail the arm (the run continues as before M125). finetune-eval-land fetches the saved arms
+#   (sparse, Results key), lm-retrain-arm-verify.sh checks them by sha256 against the arm jobs' outputs (a mismatch
+#   refuses), select runs on the verified summaries, and lm-retrain-arm-reuse.sh makes the selected arm's checkpoint the
+#   candidate (sha256, step, lr and the valSplit / replay.val / replay.corpus / mode identity checks; a mismatch refuses).
+#   An unsaved selected arm is re-trained (the pre-M125 path, 15300 s candidate deadline). Input resume_run_id (real runs
+#   only): the sweep is skipped and select, scoring and landing run on that run's saved arms (every arm must be saved and
+#   verify; run, mode, lr, live, fine-tune manifest and training config must equal this run's). No artifacts, no caches.
 # Jobs: corpus-gate (peaceai-core: core-free proof of the exact corpus, read-only keys) -> sweep-a, sweep-b (peaceai-core,
 # Results read key only; losses only) -> finetune-eval-land
 # (peaceai-results) -> retrain-memcheck (peaceai-core, read-only keys; LM job id pinned in lm.ts LM_JOB_WORKFLOWS) -> record-memcheck (peaceai-results).
@@ -63,6 +75,10 @@ on:
           - finetune
           - pretrain
         default: finetune
+      resume_run_id:
+        description: "real runs only: skip the sweep; select, score and land from this earlier run's sweep arms saved in Results (sha256-verified)"
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -74,6 +90,7 @@ env:
   CFG: peaceai/model/lm-retrain.json
   DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
   MODE: ${{ inputs.mode || 'finetune' }}
+  RESUME: ${{ inputs.resume_run_id || '' }}
   RESULTS_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
     9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
@@ -104,6 +121,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+      - name: Check the resume input (a run id; real runs only; never this run)
+        run: |
+          set -euo pipefail
+          [ -z "$RESUME" ] || { [[ "$RESUME" =~ ^[1-9][0-9]{5,19}$ ]] && [ "$DRY_RUN" = false ] && [ "$RESUME" != "$GITHUB_RUN_ID" ]; } || { echo "bad resume_run_id (needs a run id and a real run): refused"; exit 1; }
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - name: Verify the checkout and the key scripts before any key is used
@@ -170,16 +191,17 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/w" "$RUNNER_TEMP/stub" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/res" "$RUNNER_TEMP/drops.txt"
 
   sweep-a:
-    name: sweep arm a (<mode>.sweep.lrs[0]; early stop on pretrain-heldout windows only)
+    name: sweep arm a (<mode>.sweep.lrs[0]; early stop on pretrain-heldout windows only; saved in Results when it finishes)
     needs: corpus-gate
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.resume_run_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 330
-    environment: peaceai-core
+    environment: peaceai-results
     permissions:
       contents: read
     outputs:
       summary: ${{ steps.arm.outputs.summary }}
+      saved: ${{ steps.save.outputs.saved }}
     env:
       ARM: "0"
     steps:
@@ -196,16 +218,16 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
-      - name: Verify the checkout and the key scripts before any key is used
+      - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
           git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
           test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
-          printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
-      - name: Restore the live model and the judge items (read-only key; checked against latest.json and the weights sha)
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Restore the live model and the judge items (Results key, read only here; checked against latest.json and the weights sha)
         env:
-          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
         run: ./peaceai/bin/lm-retrain-live.sh "$RUNNER_TEMP/r"
       - name: Rebuild the exact proven corpus (same drops; manifest sha must equal the proven one)
         env:
@@ -235,6 +257,45 @@ jobs:
           if [ "$DRY_RUN" = true ]; then export KEEP_CHECKPOINTS=1; fi
           ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/w/replay" "$RUNNER_TEMP/w/replay-dedup.json" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/arm" "$lr" 0
           echo "summary=$(jq -c --argjson arm "$ARM" '. + {arm: $arm}' "$RUNNER_TEMP/arm/summary.json")" >> "$GITHUB_OUTPUT"
+      - name: Stage the finished arm for Results (real runs; summary, losses, best-step export; save.json binds every file by sha256; no key)
+        id: stage
+        if: env.DRY_RUN != 'true'
+        continue-on-error: true
+        env:
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: ./peaceai/bin/lm-retrain-arm-save.sh "$RUNNER_TEMP/arm" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/armsave" "$ARM"
+      - name: Verify the checkout and the landing scripts before the key is used
+        id: verify-save
+        if: env.DRY_RUN != 'true' && steps.stage.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Save the finished arm in Results before select runs (runs/lm-retrain/<run>/arms/<arm>/ only; a failed save is reported, the run continues)
+        id: save
+        if: env.DRY_RUN != 'true' && steps.stage.outcome == 'success' && steps.verify-save.outcome == 'success'
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          STAGE: ${{ runner.temp }}/armsave
+        run: |
+          set -euo pipefail
+          w=null; [ -f "$STAGE/model/weights.npz" ] && w="\"$(sha256sum "$STAGE/model/weights.npz" | cut -c1-64)\""
+          export SAVED=$(jq -nc --arg s "$(sha256sum "$STAGE/save.json" | cut -c1-64)" --argjson w "$w" '{saveSha256: $s, weightsSha256: $w}')
+          st=0
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M125 LM retrain sweep arm $ARM (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              p="runs/lm-retrain/$GITHUB_RUN_ID/arms/$ARM/"; a="$RESULTS_DIR/$p"; test ! -e "$a"; mkdir -p "$a"; cp -R "$STAGE"/. "$a"
+              if [ -n "$(find "$a" -type l)" ]; then echo "save refused: symlink"; exit 1; fi
+              git -C "$RESULTS_DIR" add -A
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                [ "${name:0:${#p}}" = "$p" ] || { echo "save refused: path outside this arm"; exit 1; }
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"
+              echo "saved=$SAVED" >> "$GITHUB_OUTPUT"' || st=$?
+          [ "$st" = 0 ] || echo "arm $ARM save failed (exit $st): not saved; the run continues and re-trains this arm's candidate if it is selected"
+          rm -rf "$STAGE"
       - name: Dry run only - set C v2 bpb of every kept checkpoint and of the live model (after training; prints bpb only)
         if: env.DRY_RUN == 'true'
         env:
@@ -242,18 +303,19 @@ jobs:
         run: ./peaceai/bin/lm-retrain-dryrun-score.sh "$RUNNER_TEMP/arm" "$RUNNER_TEMP/r/live" "$ARM" "$(jq -r .lr "$RUNNER_TEMP/arm/summary.json")" "$RUNNER_TEMP/dry"
       - name: Delete the weights, the corpus and the judge items
         if: always()
-        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/dry" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.*
+        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/armsave" "$RUNNER_TEMP/dry" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP"/peaceai-results.*
   sweep-b:
-    name: sweep arm b (<mode>.sweep.lrs[1]; early stop on pretrain-heldout windows only)
+    name: sweep arm b (<mode>.sweep.lrs[1]; early stop on pretrain-heldout windows only; saved in Results when it finishes)
     needs: corpus-gate
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.resume_run_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 330
-    environment: peaceai-core
+    environment: peaceai-results
     permissions:
       contents: read
     outputs:
       summary: ${{ steps.arm.outputs.summary }}
+      saved: ${{ steps.save.outputs.saved }}
     env:
       ARM: "1"
     steps:
@@ -270,16 +332,16 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
-      - name: Verify the checkout and the key scripts before any key is used
+      - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
           git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
           test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
-          printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
-      - name: Restore the live model and the judge items (read-only key; checked against latest.json and the weights sha)
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Restore the live model and the judge items (Results key, read only here; checked against latest.json and the weights sha)
         env:
-          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
         run: ./peaceai/bin/lm-retrain-live.sh "$RUNNER_TEMP/r"
       - name: Rebuild the exact proven corpus (same drops; manifest sha must equal the proven one)
         env:
@@ -309,6 +371,45 @@ jobs:
           if [ "$DRY_RUN" = true ]; then export KEEP_CHECKPOINTS=1; fi
           ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/w/replay" "$RUNNER_TEMP/w/replay-dedup.json" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/arm" "$lr" 0
           echo "summary=$(jq -c --argjson arm "$ARM" '. + {arm: $arm}' "$RUNNER_TEMP/arm/summary.json")" >> "$GITHUB_OUTPUT"
+      - name: Stage the finished arm for Results (real runs; summary, losses, best-step export; save.json binds every file by sha256; no key)
+        id: stage
+        if: env.DRY_RUN != 'true'
+        continue-on-error: true
+        env:
+          PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: ./peaceai/bin/lm-retrain-arm-save.sh "$RUNNER_TEMP/arm" "$RUNNER_TEMP/r/live" "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/armsave" "$ARM"
+      - name: Verify the checkout and the landing scripts before the key is used
+        id: verify-save
+        if: env.DRY_RUN != 'true' && steps.stage.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Save the finished arm in Results before select runs (runs/lm-retrain/<run>/arms/<arm>/ only; a failed save is reported, the run continues)
+        id: save
+        if: env.DRY_RUN != 'true' && steps.stage.outcome == 'success' && steps.verify-save.outcome == 'success'
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+          STAGE: ${{ runner.temp }}/armsave
+        run: |
+          set -euo pipefail
+          w=null; [ -f "$STAGE/model/weights.npz" ] && w="\"$(sha256sum "$STAGE/model/weights.npz" | cut -c1-64)\""
+          export SAVED=$(jq -nc --arg s "$(sha256sum "$STAGE/save.json" | cut -c1-64)" --argjson w "$w" '{saveSha256: $s, weightsSha256: $w}')
+          st=0
+          ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M125 LM retrain sweep arm $ARM (run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              p="runs/lm-retrain/$GITHUB_RUN_ID/arms/$ARM/"; a="$RESULTS_DIR/$p"; test ! -e "$a"; mkdir -p "$a"; cp -R "$STAGE"/. "$a"
+              if [ -n "$(find "$a" -type l)" ]; then echo "save refused: symlink"; exit 1; fi
+              git -C "$RESULTS_DIR" add -A
+              while IFS= read -r name; do [ -z "$name" ] && continue
+                [ "${name:0:${#p}}" = "$p" ] || { echo "save refused: path outside this arm"; exit 1; }
+              done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"
+              echo "saved=$SAVED" >> "$GITHUB_OUTPUT"' || st=$?
+          [ "$st" = 0 ] || echo "arm $ARM save failed (exit $st): not saved; the run continues and re-trains this arm's candidate if it is selected"
+          rm -rf "$STAGE"
       - name: Dry run only - set C v2 bpb of every kept checkpoint and of the live model (after training; prints bpb only)
         if: env.DRY_RUN == 'true'
         env:
@@ -316,12 +417,12 @@ jobs:
         run: ./peaceai/bin/lm-retrain-dryrun-score.sh "$RUNNER_TEMP/arm" "$RUNNER_TEMP/r/live" "$ARM" "$(jq -r .lr "$RUNNER_TEMP/arm/summary.json")" "$RUNNER_TEMP/dry"
       - name: Delete the weights, the corpus and the judge items
         if: always()
-        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/dry" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.*
+        run: rm -rf "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/arm" "$RUNNER_TEMP/armsave" "$RUNNER_TEMP/dry" "$RUNNER_TEMP/drops.txt" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP"/peaceai-results.*
 
   finetune-eval-land:
-    name: select the sweep arm, fine-tune the candidate from the live model, score both in this run, gate, land in Results
+    name: select the sweep arm, reuse its saved checkpoint (or re-train it from the live model), score both in this run, gate, land in Results
     needs: [corpus-gate, sweep-a, sweep-b]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.dry_run != true
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.corpus-gate.result == 'success' && ((inputs.resume_run_id == '' && needs.sweep-a.result == 'success' && needs.sweep-b.result == 'success') || (inputs.resume_run_id != '' && needs.sweep-a.result == 'skipped' && needs.sweep-b.result == 'skipped')) && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     environment: peaceai-results
@@ -377,22 +478,50 @@ jobs:
           ./peaceai/bin/lm-retrain-replay-check.sh "$RUNNER_TEMP/w" "$REPLAY" "$REPLAYPROOF"
           rm -rf "$RUNNER_TEMP/w/srcroot"
           jq -c '{docsIn, docsOut, overlapDocs, overlapDocsSetC, overlapDocsJudge, droppedByList, recheckOverlapDocs}' "$RUNNER_TEMP/w/dedup.json"
-      - name: Select the sweep arm by validation loss on the pretrain-heldout windows (never set C v2, the judge items or the ft corpus)
-        id: select
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Fetch the saved sweep arms from Results (sparse; this run's, or resume_run_id's)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          src="${RESUME:-$GITHUB_RUN_ID}"; [[ "$src" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "bad run id: refused"; exit 1; }
+          res="$RUNNER_TEMP/armres"; rm -rf "$res" "$RUNNER_TEMP/arms"; mkdir -p "$RUNNER_TEMP/arms"
+          ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$res"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone "/runs/lm-retrain/$src/arms/"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
+          if [ -d "$res/runs/lm-retrain/$src/arms" ]; then cp -R "$res/runs/lm-retrain/$src/arms/." "$RUNNER_TEMP/arms/"; fi
+          rm -rf "$res"; echo "saved arms fetched: $(find "$RUNNER_TEMP/arms" -mindepth 1 -maxdepth 1 | wc -l)"
+      - name: Verify the saved sweep arms by sha256 against the arm jobs' outputs (or, resuming, against their save records)
         env:
           SA: ${{ needs.sweep-a.outputs.summary }}
           SB: ${{ needs.sweep-b.outputs.summary }}
+          VA: ${{ needs.sweep-a.outputs.saved }}
+          VB: ${{ needs.sweep-b.outputs.saved }}
+          MANIFEST: ${{ needs.corpus-gate.outputs.manifest }}
+        run: ./peaceai/bin/lm-retrain-arm-verify.sh "$RUNNER_TEMP/arms" "$RUNNER_TEMP/armsv"
+      - name: Select the sweep arm by validation loss on the pretrain-heldout windows (never set C v2, the judge items or the ft corpus)
+        id: select
         run: |
           set -euo pipefail
           vs=$(python3 peaceai/model/val_split.py --corpus "$RUNNER_TEMP/w/replay" --dedup "$RUNNER_TEMP/w/replay-dedup.json")
           mode=$(./peaceai/bin/lm-retrain-mode.sh)
-          python3 peaceai/model/sweep_select.py "$CFG" "$vs" "$mode" "$SA" "$SB" > "$RUNNER_TEMP/select.json"
+          python3 peaceai/model/sweep_select.py "$CFG" "$vs" "$mode" "$(cat "$RUNNER_TEMP/armsv/arm-0.json")" "$(cat "$RUNNER_TEMP/armsv/arm-1.json")" > "$RUNNER_TEMP/select.json"
           jq -c '{mode, validationSplit, selected, arms: [.arms[] | {arm, lr, step0Val, bestVal, bestStep, stoppedStep, earlyStop, stopReason: .timing.stopReason, timeCut: .timing.timeCut, deadlineCut}]}' "$RUNNER_TEMP/select.json"
           echo "candidate=$(jq -r '.selected.candidate == true' "$RUNNER_TEMP/select.json")" >> "$GITHUB_OUTPUT"
           echo "lr=$(jq -r .selected.lr "$RUNNER_TEMP/select.json")" >> "$GITHUB_OUTPUT"
           echo "step=$(jq -r .selected.step "$RUNNER_TEMP/select.json")" >> "$GITHUB_OUTPUT"
-      - name: Fine-tune the candidate from the live weights (selected lr, same schedule, stops at the selected step) and export
+      - name: Reuse the selected sweep arm's saved checkpoint as the candidate (sha256 against the arm summary; same identity checks)
+        id: reuse
         if: steps.select.outputs.candidate == 'true'
+        run: ./peaceai/bin/lm-retrain-arm-reuse.sh "$RUNNER_TEMP/arms" "$RUNNER_TEMP/armsv" "$RUNNER_TEMP/select.json" "$RUNNER_TEMP/live" "$RUNNER_TEMP/model" "$RUNNER_TEMP/candidate-train.json" "$RUNNER_TEMP/cand-metrics.jsonl"
+      - name: Fine-tune the candidate from the live weights (selected lr, same schedule, stops at the selected step) and export
+        if: steps.select.outputs.candidate == 'true' && steps.reuse.outputs.reused != 'true'
         env:
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
           LR: ${{ steps.select.outputs.lr }}
@@ -408,7 +537,13 @@ jobs:
           test "$(jq -r .mode "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -r .mode "$RUNNER_TEMP/select.json")" || { echo "candidate ran in a different mode: refused"; exit 1; }
           cp "$RUNNER_TEMP/ftwork/summary.json" "$RUNNER_TEMP/candidate-train.json"
           "$py" peaceai/model/export.py --work "$RUNNER_TEMP/ftwork" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint checkpoint.npz > /dev/null
-          cp "$RUNNER_TEMP/ftwork/metrics.jsonl" "$RUNNER_TEMP/model/ft-metrics.jsonl"; cp "$RUNNER_TEMP/w/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
+          cp "$RUNNER_TEMP/ftwork/metrics.jsonl" "$RUNNER_TEMP/cand-metrics.jsonl"
+          rm -rf "$RUNNER_TEMP/ftwork"
+      - name: Candidate files and provenance (re-trained or reused)
+        if: steps.select.outputs.candidate == 'true'
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/cand-metrics.jsonl" "$RUNNER_TEMP/model/ft-metrics.jsonl"; cp "$RUNNER_TEMP/w/ft/manifest.jsonl" "$RUNNER_TEMP/model/ft-manifest.jsonl"
           cp "$RUNNER_TEMP/corefree-proof-finetune.json" "$RUNNER_TEMP/model/corefree-proof-finetune.json"
           # Provenance under .retrain (not the two-corpus field: that memcheck mode needs a pretrain-corpus proof this run cannot rebuild).
           fts=$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)
@@ -416,8 +551,8 @@ jobs:
             --slurpfile sel "$RUNNER_TEMP/select.json" --arg rm "$(sha256sum "$RUNNER_TEMP/w/replay/manifest.jsonl" | cut -c1-64)" --argjson fr "$(jq --arg m "$(jq -r .mode "$RUNNER_TEMP/select.json")" '.[$m].replayFrac' "$CFG")" \
             --slurpfile ct "$RUNNER_TEMP/candidate-train.json" \
             '.retrain = {mode: $sel[0].mode, initFrom: $live, finetuneManifestSha256: $f, commitListSha256: $l, runId: $r, workspaceSha: $s,
-              validationSplitSha256: $sel[0].validationSplit.sha256, selected: $sel[0].selected, replayManifestSha256: $rm, replayFrac: $fr, replayCorpus: $ct[0].replay.corpus}' "$RUNNER_TEMP/model/config.json" > "$RUNNER_TEMP/cfg.json" && mv "$RUNNER_TEMP/cfg.json" "$RUNNER_TEMP/model/config.json"
-          rm -rf "$RUNNER_TEMP/ftwork"
+              validationSplitSha256: $sel[0].validationSplit.sha256, selected: $sel[0].selected, replayManifestSha256: $rm, replayFrac: $fr, replayCorpus: $ct[0].replay.corpus,
+              candidateSource: ($ct[0].source // {kind: "retrained"})}' "$RUNNER_TEMP/model/config.json" > "$RUNNER_TEMP/cfg.json" && mv "$RUNNER_TEMP/cfg.json" "$RUNNER_TEMP/model/config.json"
           jq -r '"candidate \(.version) ctx=\(.ctx) params=\(.params) steps=\(.trained_steps)"' "$RUNNER_TEMP/model/config.json"
       - name: Score live and candidate in this run (same set C v2 byte slice, same judge v2 items, same code)
         env:
@@ -496,12 +631,13 @@ jobs:
             --arg bl "$(bpb live)" --arg bm "$(bpb model)" --arg sl "$(sl live)" --arg sm "$(sl model)" --arg ok "$ok" --arg why "${why[*]:-}" --arg sc "$sc" --arg cw "$cw" \
             --arg proof "$(sha256sum "$RUNNER_TEMP/corefree-proof-finetune.json" | cut -c1-64)" \
             --slurpfile rp "$RUNNER_TEMP/w/replay-proof.json" --slurpfile fp "$RUNNER_TEMP/w/ft-prepare.json" \
-            --slurpfile rpl "$RUNNER_TEMP/w/replay-plan.json" --arg mode "$(jq -r .mode "$RUNNER_TEMP/select.json")" \
+            --slurpfile rpl "$RUNNER_TEMP/w/replay-plan.json" --arg mode "$(jq -r .mode "$RUNNER_TEMP/select.json")" --arg rs "${RESUME-}" \
             '{schema: "peaceai-lm-retrain-record:v5", runId: $run, workspaceSha: $ws, mode: $mode, live: $cfg[0].live.version, candidate: (if $v == "" then null else $v end), candidateWeightsSha256: (if $w == "" then null else $w end),
               commitList: $cfg[0].list, finetune: $cfg[0].finetune, training: $cfg[0][$mode], dedup: $dd[0], finetuneCorefreeProofSha256: $proof,
               ftPrepare: $fp[0], replay: {config: $cfg[0].replay, plan: $rpl[0], overlapProof: $rp[0],
                 corpus: {docsSha256: $rp[0].replayDocsSha256, docsBytes: $rp[0].replayDocsBytes, trainBytes: $rp[0].trainBytes, valBytes: $rp[0].valBytes}},
               validationSplit: $sel[0].validationSplit, sweep: $sel[0].arms, selected: $sel[0].selected, candidateTraining: (if $ct[0].noCandidate == true then null else $ct[0] end),
+              candidateSource: (if $ct[0].noCandidate == true then null else ($ct[0].source // {kind: "retrained"}) end), resumeRunId: (if $rs == "" then null else $rs end),
               setcV2: {maxBytes: $cfg[0].eval.setcMaxBytes, sliceSha256: {live: $sl, candidate: $sm}, bitsPerByte: {live: (if $bl == "" then null else ($bl | tonumber) end), candidate: (if $bm == "" then null else ($bm | tonumber) end)},
                 minBpbGain: $cfg[0].eval.minBpbGain, rule: $cfg[0].eval.minBpbGainRule},
               judge: {set: $cfg[0].eval.judgeSet, items: $cfg[0].eval.judgeItems, itemsSha256: $cfg[0].eval.judgeItemsSha256, resultsCommit: $jc,
@@ -537,15 +673,18 @@ jobs:
               v=none; if [ "$PASS" = true ]; then v=$(jq -r .version "$MODEL_DIR/config.json")
               [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "landing refused: bad version"; exit 1; }; fi
               if [ -n "$(find "$MODEL_DIR" "$EVALS" -type l)" ]; then echo "landing refused: symlink"; exit 1; fi
-              r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"; test ! -e "$r"; mkdir -p "$r"; cp "$EVALS"/* "$r"/
+              r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"
+              if [ -e "$r" ]; then [ "$(ls -A "$r")" = arms ] || { echo "landing refused: run dir already holds more than the saved arms"; exit 1; }; fi
+              mkdir -p "$r"; for f in "$EVALS"/*; do test ! -e "$r/$(basename "$f")"; done; cp "$EVALS"/* "$r"/
               allowed=("runs/lm-retrain/$GITHUB_RUN_ID/")
               if [ "$PASS" = true ]; then d="$RESULTS_DIR/models/lm/$v"; test ! -e "$d"; mkdir -p "$d"; cp -P "$MODEL_DIR"/* "$d"/; allowed+=("models/lm/$v/"); fi
               git -C "$RESULTS_DIR" add -A
               while IFS= read -r name; do [ -z "$name" ] && continue
                 okp=false; for p in "${allowed[@]}"; do [ "${name:0:${#p}}" = "$p" ] && okp=true; done
+                a="runs/lm-retrain/$GITHUB_RUN_ID/arms/"; [ "${name:0:${#a}}" != "$a" ] || okp=false
                 [ "$okp" = true ] || { echo "landing refused: path outside the run record and model dir"; exit 1; }
               done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
-          rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/live" "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/evals" "$RUNNER_TEMP/select.json" "$RUNNER_TEMP/candidate-train.json"
+          rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/live" "$RUNNER_TEMP/r" "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP/evals" "$RUNNER_TEMP/select.json" "$RUNNER_TEMP/candidate-train.json" "$RUNNER_TEMP/arms" "$RUNNER_TEMP/armsv" "$RUNNER_TEMP/cand-metrics.jsonl"
       - name: Result (fail unless the gate passed)
         env:
           PASS: ${{ steps.gate.outputs.pass }}
@@ -555,7 +694,7 @@ jobs:
   retrain-memcheck:
     name: verbatim memcheck of the landed candidate (strict 32-character rule; pretrain mode adds the replay corpus; counts only)
     needs: [corpus-gate, finetune-eval-land]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.finetune-eval-land.outputs.version != '' && inputs.dry_run != true
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.corpus-gate.result == 'success' && needs.finetune-eval-land.result == 'success' && needs.finetune-eval-land.outputs.version != '' && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     environment: peaceai-core
@@ -665,7 +804,7 @@ jobs:
   record-memcheck:
     name: record the memcheck in Results (append-only; no promotion)
     needs: [finetune-eval-land, retrain-memcheck]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && needs.retrain-memcheck.outputs.memcheck != '' && inputs.dry_run != true
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.finetune-eval-land.result == 'success' && needs.retrain-memcheck.result == 'success' && needs.retrain-memcheck.outputs.memcheck != '' && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: peaceai-results
