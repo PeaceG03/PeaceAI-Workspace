@@ -183,7 +183,7 @@ test("M122 selection never reads set C: val loss depends only on the replay held
   const sel = WF.slice(WF.indexOf("      - name: Select the sweep arm"), WF.indexOf("      - name: Fine-tune the candidate")).split("\n").slice(1).join("\n");
   assert.ok(sel.length > 200);
   for (const [name, t] of [["train.py", read("peaceai/model/train.py")], ["replay.py", read("peaceai/model/replay.py")], ["val_split.py", read("peaceai/model/val_split.py")],
-    ["retrain_summary.py", read("peaceai/model/retrain_summary.py")], ["lm-retrain-train.sh", read("peaceai/bin/lm-retrain-train.sh")], ["select step", sel]] as const) {
+    ["retrain_summary.py", read("peaceai/model/retrain_summary.py")], ["sweep_select.py", read("peaceai/model/sweep_select.py")], ["lm-retrain-outcome.sh", read("peaceai/bin/lm-retrain-outcome.sh")], ["lm-retrain-train.sh", read("peaceai/bin/lm-retrain-train.sh")], ["select step", sel]] as const) {
     assert.doesNotMatch(code(t), /setc|set_c|heldout-c|items\.json|judge|eval_c/i, `${name} never reads set C or the judge items`);
   }
   assert.match(sel, /val_split\.py --corpus "\$RUNNER_TEMP\/w\/replay" --dedup "\$RUNNER_TEMP\/w\/replay-dedup\.json"/);

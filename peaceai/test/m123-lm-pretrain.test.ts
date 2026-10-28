@@ -101,8 +101,8 @@ test("M123 condition 1: mode is type: choice (default finetune), passed via env 
   for (const j of ["sweep-a", "sweep-b"]) assert.match(job(j), /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)\n\s+lr=\$\(jq -r --arg m "\$mode" --argjson a "\$ARM" '\.\[\$m\]\.sweep\.lrs\[\$a\]' "\$CFG"\)/, j);
   assert.doesNotMatch(WF, /\.finetune\.sweep\.lrs\[\$ARM\]/, "the arm lr follows the mode");
   const sel = job("finetune-eval-land");
-  assert.match(sel, /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)\n\s+python3 - "\$CFG" "\$vs" "\$mode"/);
-  assert.match(sel, /MODES = \("finetune", "pretrain"\)\n\s+cfg, vs, mode = [^\n]+\n\s+if mode not in MODES:\n\s+sys\.exit\("unknown retrain mode: refused"\)\n\s+ft = cfg\[mode\]/);
+  assert.match(sel, /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)\n\s+python3 peaceai\/model\/sweep_select\.py "\$CFG" "\$vs" "\$mode" "\$SA" "\$SB" > "\$RUNNER_TEMP\/select\.json"\n/);
+  assert.match(read("peaceai/model/sweep_select.py"), /\nMODES = \("finetune", "pretrain"\)\ncfg, vs, mode = [^\n]+\nif mode not in MODES:\n\s+sys\.exit\("unknown retrain mode: refused"\)\nft = cfg\[mode\]/);
   assert.match(job("retrain-memcheck"), /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)/);
 });
 
@@ -301,7 +301,8 @@ test("M123 lm-retrain-train.sh: pretrain mode reads .pretrain, takes every row f
 // ---- condition 4: deadline cut before the first evaluation after step 0 -> record with "no candidate"
 const block = (text: string, start: string, end: RegExp) => { const i = text.indexOf(start); assert.ok(i >= 0, start); const rest = text.slice(i + start.length); const j = rest.search(end); return j < 0 ? rest : rest.slice(0, j); };
 const dedent = (t: string, n: number) => t.split("\n").map((l) => l.slice(Math.min(n, l.length - l.trimStart().length))).join("\n");
-const selectPy = () => dedent(block(job("finetune-eval-land"), "<<'PY'\n", /\n {10}PY\n/), 10);
+// the select rule lives in one file, run by the select step and by retrain-outcome's dry-run pick (no inline copy left)
+const selectPy = () => { assert.doesNotMatch(WF, /<<'PY'/); assert.match(job("finetune-eval-land"), /python3 peaceai\/model\/sweep_select\.py /); return read("peaceai/model/sweep_select.py"); };
 const gateRun = () => dedent(block(job("finetune-eval-land"), "        id: gate\n        env:\n          CAND: ${{ steps.select.outputs.candidate }}\n        run: |\n", /\n      - name: /), 10);
 
 test("M123 condition 4: a sweep arm deadline-cut before its first evaluation after step 0 still lands a record (deadline-cut, step 0, 'no candidate', gate fails, no promotion)", () => tmp((d) => {
@@ -416,7 +417,7 @@ test("M123 record: schema v5 carries mode, the mode's training block, the replay
   assert.match(land, /training: \$cfg\[0\]\[\$mode\]/);
   assert.match(land, /--arg mode "\$\(jq -r \.mode "\$RUNNER_TEMP\/select\.json"\)"/);
   assert.match(land, /'\.retrain = \{mode: \$sel\[0\]\.mode, initFrom: \$live,[\s\S]*?replayCorpus: \$ct\[0\]\.replay\.corpus\}'/);
-  assert.match(land, /if a\.get\("mode"\) != mode or \(mode == "pretrain" and r\.get\("ftRows"\) != 0\):\n\s+sys\.exit\("sweep arm ran in a different mode"\)/);
+  assert.match(read("peaceai/model/sweep_select.py"), /if a\.get\("mode"\) != mode or \(mode == "pretrain" and r\.get\("ftRows"\) != 0\):\n\s+sys\.exit\("sweep arm ran in a different mode"\)/);
 });
 
 // ---- condition 5: memcheck
@@ -461,6 +462,95 @@ test("M123 dry run: phase times (numbers only) and set C bpb only; every Results
   for (const j of ["finetune-eval-land", "retrain-memcheck", "record-memcheck"]) assert.match(job(j), /\n    if: [^\n]*&& inputs\.dry_run != true\n/, `${j} skipped in a dry run (both modes)`);
 });
 
+// ---- outcome guard (run 40555453905: a pretrain dry run went green with select, memcheck and record all skipped; Auditor's design 2)
+// the two arm summaries of run 40555453905 exactly as its logs printed them
+const VS0 = { docs: 79, sha256: "197b70a7ace3ed92615ccada9526ed4168f316b2087fb3316e3b6286c08f0c7f", trainDocs: 42663 };
+const RP0 = { replayFrac: 1.0, replayRows: 16, ftRows: 0, val: { docs: 64, seed: "peaceai-val:v1", sha256: "9937aba9bf89cb034e67b459f382bbc4c32507998f820f870f572ec59580068d", windows: 64 },
+  corpus: { docsSha256: "4b1fb4b79a82fa7b1a863d93f014e788ad7ae11fc1885cd108c262248dc157e5", docsBytes: 69548335, manifestSha256: "1653700a29dd740a4ed8fb9f4303d657b26f37d52dee93a3489c9d4362f16d34" } };
+const ARM = (arm: number, lr: number, best: number, t: { evalSeconds: number; setupSeconds: number; trainSeconds: number }) => ({ bestStep: 1200, bestVal: best, deadlineCut: false, earlyStop: false, lr, noEvalAfterStep0: false, step0Val: 3.9159, steps: 1200, stopAt: 0, stoppedStep: 1200, valAtStop: best, valSplit: VS0, mode: "pretrain", batch: 16,
+  timing: { bestStep: 1200, ...t, steps: 1200, stopReason: "steps", stoppedStep: 1200, timeCut: false }, replay: RP0, arm });
+const SA0 = ARM(0, 0.00015, 3.5199, { evalSeconds: 160.6, setupSeconds: 26.2, trainSeconds: 8230.7 });
+const SB0 = ARM(1, 0.00006, 3.7027, { evalSeconds: 159.8, setupSeconds: 25.7, trainSeconds: 8178.2 });
+const outcome = (e: { DRY_RUN: string; SEL?: string; MC?: string; REC?: string; SA?: string; SB?: string; MODE?: string }) =>
+  spawnSync("bash", ["peaceai/bin/lm-retrain-outcome.sh"], { cwd: repo, encoding: "utf8", env: env0({ CFG: "peaceai/model/lm-retrain.json", MODE: "pretrain", SEL: "skipped", MC: "skipped", REC: "skipped", SA: JSON.stringify(SA0), SB: JSON.stringify(SB0), ...e }) });
+const ok0 = (r: ReturnType<typeof outcome>) => { assert.equal(r.status, 0, r.stdout + r.stderr); return r.stdout; };
+const red0 = (r: ReturnType<typeof outcome>, why: RegExp) => { assert.equal(r.status, 1, r.stdout + r.stderr); assert.match(r.stdout, why); assert.match(r.stdout, /: RED\n$/); };
+
+test("M123 outcome wiring: retrain-outcome is the last job, always(), needs every job, no secrets or environment, runs lm-retrain-outcome.sh", () => {
+  const o = job("retrain-outcome");
+  assert.ok(WF.trimEnd().endsWith(o.trimEnd()), "retrain-outcome is the last job");
+  assert.match(o, /\n    needs: \[corpus-gate, sweep-a, sweep-b, finetune-eval-land, retrain-memcheck, record-memcheck\]\n/);
+  assert.match(o, /\n    if: always\(\) && github\.repository == 'PeaceG03\/PeaceAI-Workspace' && github\.ref == 'refs\/heads\/main'\n/);
+  assert.doesNotMatch(o, /secrets\.|environment:|dry_run != true|DEPLOY_KEY/, "no key, no environment, never skipped in a dry run");
+  assert.match(o, /\n    permissions:\n      contents: read\n    steps:\n      - uses: actions\/checkout@[0-9a-f]{40} # v[0-9.]+\n        with:\n          persist-credentials: false\n/, "checkout only to run the shared select rule");
+  assert.match(o, /\n          SEL: \$\{\{ needs\.finetune-eval-land\.result \}\}\n          MC: \$\{\{ needs\.retrain-memcheck\.result \}\}\n          REC: \$\{\{ needs\.record-memcheck\.result \}\}\n          SA: \$\{\{ needs\.sweep-a\.outputs\.summary \}\}\n          SB: \$\{\{ needs\.sweep-b\.outputs\.summary \}\}\n        run: \.\/peaceai\/bin\/lm-retrain-outcome\.sh\n/);
+  const g = read("peaceai/bin/lm-retrain-outcome.sh");
+  assert.match(g, /\npick=\$\(python3 peaceai\/model\/sweep_select\.py "\$CFG" "\$vs" "\$mode" "\$\{arms\[@\]\}"\)/, "the dry-run pick runs the select step's own rule");
+  assert.match(g, /\nmode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)/);
+  assert.doesNotMatch(g.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{?MODE\b|bestVal|min\(|sort/, "no second copy of the select rule; MODE only via the allowlist script");
+  for (const j of ["sweep-a", "sweep-b"]) assert.match(job(j), /\n    outputs:\n      summary: \$\{\{ steps\.arm\.outputs\.summary \}\}\n/);
+});
+
+test("M123 outcome dry run: the 40555453905-shaped good dry run passes and prints the pick (arm a, step 1200)", () => {
+  const out = ok0(outcome({ DRY_RUN: "true" }));
+  assert.match(out, /^outcome dry_run=true select=skipped memcheck=skipped record=skipped$/m);
+  assert.match(out, /^dry-run pick arm=a \(index 0\) lr=0\.00015 step=1200 valLoss=3\.5199$/m);
+  // an early stop (train.py stopReason "patience") is a finished arm too; the lower loss wins whichever arm it is
+  const bEarly = { ...SB0, bestVal: 3.4, bestStep: 900, earlyStop: true, stoppedStep: 1100, timing: { ...SB0.timing, stopReason: "patience", stoppedStep: 1100, bestStep: 900 } };
+  assert.match(ok0(outcome({ DRY_RUN: "true", SB: JSON.stringify(bEarly) })), /^dry-run pick arm=b \(index 1\) lr=0\.00006 step=900 valLoss=3\.4$/m);
+});
+
+test("M123 outcome dry run: an arm with an empty or unparseable summary, or one that did not finish, is RED", () => {
+  red0(outcome({ DRY_RUN: "true", SB: "" }), /sweep arm b has an empty summary/);
+  red0(outcome({ DRY_RUN: "true", SA: "" }), /sweep arm a has an empty summary/);
+  red0(outcome({ DRY_RUN: "true", SA: "", SB: "" }), /sweep arm a has an empty summary/);
+  red0(outcome({ DRY_RUN: "true", SA: "{not json" }), /sweep arm a summary is not parseable/);
+  red0(outcome({ DRY_RUN: "true", SA: "[1]" }), /sweep arm a summary is not parseable/);
+  for (const reason of ["deadline", "max_seconds", "max_steps_this_run", "", "early-stop"]) {
+    const a = { ...SA0, timing: { ...SA0.timing, stopReason: reason } };
+    red0(outcome({ DRY_RUN: "true", SA: JSON.stringify(a) }), /sweep arm a stopped on '[^']*' \(not steps or patience\)/);
+  }
+  const noTiming: Record<string, unknown> = { ...SA0 }; delete noTiming.timing;
+  red0(outcome({ DRY_RUN: "true", SA: JSON.stringify(noTiming) }), /sweep arm a stopped on '' /);
+});
+
+test("M123 outcome dry run: a pick that is missing or cannot be computed is RED", () => {
+  // the select rule refuses: a different validation split, an arm that is not the configured arm, a missing arm index
+  red0(outcome({ DRY_RUN: "true", SB: JSON.stringify({ ...SB0, valSplit: { ...VS0, docs: 80 } }) }), /the select rule refused the sweep summaries/);
+  red0(outcome({ DRY_RUN: "true", SA: JSON.stringify({ ...SA0, lr: 0.001 }) }), /the select rule refused the sweep summaries/);
+  red0(outcome({ DRY_RUN: "true", SB: JSON.stringify({ ...SB0, arm: 0 }) }), /the select rule refused the sweep summaries/);
+  red0(outcome({ DRY_RUN: "true", SA: JSON.stringify({ ...SA0, bestStep: 0 }) }), /the select rule refused the sweep summaries/);
+  red0(outcome({ DRY_RUN: "true", SA: JSON.stringify({ ...SA0, replay: { ...RP0, ftRows: 3 } }) }), /the select rule refused the sweep summaries/);
+  red0(outcome({ DRY_RUN: "true", SA: JSON.stringify({ ...SA0, mode: "finetune" }) }), /the select rule refused the sweep summaries/);
+  red0(outcome({ DRY_RUN: "true", MODE: "scratch" }), /bad mode/);
+  // the select rule picks no candidate (every arm cut at step 0): no pick, RED (also caught by the stop reason)
+  const cut = (s: typeof SA0) => ({ ...s, bestStep: 0, bestVal: s.step0Val, deadlineCut: true, noEvalAfterStep0: true, stoppedStep: 0, timing: { ...s.timing, stopReason: "patience", timeCut: true, bestStep: 0, stoppedStep: 0 } });
+  red0(outcome({ DRY_RUN: "true", SA: JSON.stringify(cut(SA0)), SB: JSON.stringify(cut(SB0)) }), /the select rule picked no candidate/);
+});
+
+test("M123 outcome real run: green only if select, memcheck and record all succeeded; any skipped or failed is RED", () => {
+  assert.match(ok0(outcome({ DRY_RUN: "false", SEL: "success", MC: "success", REC: "success" })), /^real run: select, memcheck and record all succeeded$/m);
+  for (const [s, m, r] of [["skipped", "skipped", "skipped"], ["failure", "skipped", "skipped"], ["success", "skipped", "skipped"], ["success", "success", "skipped"],
+    ["success", "failure", "skipped"], ["success", "success", "failure"], ["skipped", "success", "success"], ["cancelled", "skipped", "skipped"], ["", "", ""]])
+    red0(outcome({ DRY_RUN: "false", SEL: s, MC: m, REC: r }), /real run: select, memcheck and record did not all run and succeed/);
+  // a real run never takes the dry-run path, even with good arm summaries
+  red0(outcome({ DRY_RUN: "false" }), /real run/);
+  for (const v of ["", "TRUE", "1", "False"]) red0(outcome({ DRY_RUN: v, SEL: "success", MC: "success", REC: "success" }), /DRY_RUN is neither true nor false/);
+});
+
+test("M123 outcome: the no-candidate record still lands (deadline before the first eval) before the gate result turns the run red", () => {
+  const f = job("finetune-eval-land");
+  const land = f.indexOf("      - name: Land the run record"), result = f.indexOf("      - name: Result (fail unless the gate passed)");
+  assert.ok(land > 0 && result > land, "the record lands before the gate result step");
+  assert.doesNotMatch(f.slice(land, result), /\n        if:/, "the record step is unconditional (no candidate included)");
+  assert.match(f, /result: \(if \$sel\[0\]\.selected\.candidate == true then \(if \$ok == "true" then "pass" else "fail" end\) else "no candidate" end\)/);
+  assert.match(read("peaceai/model/sweep_select.py"), /selected = \{"arm": None, "lr": None, "step": 0, [^\n]*"candidate": False, "result": "no candidate"/);
+  for (const s of ["Score live and candidate", "Gate (slice identical", "Verify the checkout and the landing scripts"]) {
+    const i = f.indexOf(`      - name: ${s}`); assert.ok(i > 0, s);
+    assert.doesNotMatch(f.slice(i, f.indexOf("\n      - name:", i + 10)), /\n        if:/, `${s} runs with no candidate`);
+  }
+});
+
 test("M123 new files are protected", () => {
-  for (const f of ["peaceai/bin/lm-retrain-mode.sh", "peaceai/model/bpb_gate.py", "peaceai/model/memcheck_combine.py", "peaceai/test/m123-lm-pretrain.test.ts", "peaceai/model/lm-retrain.json", "peaceai/bin/lm-retrain-train.sh", "peaceai/model/train.py"]) assert.ok(protectedReason(f), f);
+  for (const f of ["peaceai/bin/lm-retrain-outcome.sh", "peaceai/model/sweep_select.py", "peaceai/bin/lm-retrain-mode.sh", "peaceai/model/bpb_gate.py", "peaceai/model/memcheck_combine.py", "peaceai/test/m123-lm-pretrain.test.ts", "peaceai/model/lm-retrain.json", "peaceai/bin/lm-retrain-train.sh", "peaceai/model/train.py"]) assert.ok(protectedReason(f), f);
 });

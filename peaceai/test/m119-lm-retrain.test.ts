@@ -132,7 +132,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n\npermissions: \{\}\n/m);
   assert.doesNotMatch(WF, /pull_request|workflow_run:|schedule:/);
   assert.doesNotMatch(WF, /upload-artifact|actions\/cache|download-artifact/, "no artifacts, no caches");
-  assert.doesNotMatch(WF, /self-hosted/); assert.equal((WF.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 6);
+  assert.doesNotMatch(WF, /self-hosted/); assert.equal((WF.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 7); // 6 jobs + retrain-outcome (m123 pins it)
   // Every key-using step is directly preceded by the checkout / key-script verification.
   const steps = WF.split(/\n      - /);
   steps.forEach((s, i) => { if (/secrets\./.test(s)) assert.match(steps[i - 1]!, /^name: Verify the checkout/, `step before "${s.split("\n")[0]}" verifies the checkout`); });
