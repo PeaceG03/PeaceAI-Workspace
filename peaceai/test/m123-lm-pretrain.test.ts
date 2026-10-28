@@ -4,7 +4,7 @@
 // pretrain train split (replay.pretrainTrainMaxBytes, read in pretrain mode only), refuses unless ftRows == 0, starts a
 // fresh AdamW from the live weights, and ends cleanly before the job's time limit. Both modes: the set C v2 gate is
 // candidate <= live - eval.minBpbGain (exact), at the validation-selected step; set C is the final gate only. Pretrain
-// memcheck = the strict fine-tune-corpus run AND a replay-corpus run. Auditor conditions 1-5 are pinned below.
+// memcheck = a fine-tune-corpus run AND a replay-corpus run (two-corpus mode since run 40694718190). Auditor conditions 1-5 are pinned below.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -422,31 +422,39 @@ test("M123 record: schema v5 carries mode, the mode's training block, the replay
 });
 
 // ---- condition 5: memcheck
-test("M123 condition 5: pretrain memcheck keeps the strict fine-tune-corpus run AND adds a replay-corpus run; both must PASS", () => tmp((d) => {
+test("M123 condition 5 (run 40694718190, Auditor's ruling): pretrain memcheck = a fine-tune-corpus run AND a replay-corpus run, both in the two-corpus mode with both proofs; both must PASS", () => tmp((d) => {
   const mc = job("retrain-memcheck");
   const rb = mc.indexOf("lm-retrain-replay.sh"), del = mc.indexOf('rm -rf "$RUNNER_TEMP/w/srcroot" "$RUNNER_TEMP/w/setc" "$RUNNER_TEMP/items.json"');
   assert.ok(rb > 0 && rb < del, "the replay corpus is rebuilt and re-proven before set C and the judge items are deleted");
   assert.match(mc, /lm-retrain-replay-check\.sh "\$RUNNER_TEMP\/w" "\$REPLAY" "\$REPLAYPROOF"/);
   assert.match(mc, /\.retrain\.replayCorpus\.docsSha256/);
-  assert.match(mc, /PEACEAI_LM_CORPUS: \$\{\{ runner\.temp \}\}\/w\/ft\n/, "the strict fine-tune-corpus run is unchanged");
-  const ftRun = mc.indexOf("./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true"), rpRun = mc.indexOf('PEACEAI_LM_CORPUS="$RUNNER_TEMP/w/replay" ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true');
+  assert.match(mc, /PEACEAI_LM_CORPUS: \$\{\{ runner\.temp \}\}\/w\/ft\n/, "the fine-tune-corpus run comes first");
+  const pre = mc.slice(mc.indexOf("          else\n", mc.indexOf('if [ "$mode" = finetune ]; then')));
+  assert.match(pre, /export PEACEAI_LM_TRAIN_CORPUS="\$RUNNER_TEMP\/w\/replay" PEACEAI_LM_FT_CORPUS="\$RUNNER_TEMP\/w\/ft" PEACEAI_LM_RETRAIN_CFG="\$CFG" \\\n\s+PEACEAI_LM_LIVE_PROOF="\$RUNNER_TEMP\/live-proof\.json" PEACEAI_LM_LIVE_MANIFEST="\$RUNNER_TEMP\/w\/replay-live-manifest\.jsonl" \\\n\s+PEACEAI_LM_FT_PROOF_SHA256="\$\(cat "\$RUNNER_TEMP\/ft-proof-sha256"\)"\n/);
+  const ftRun = pre.indexOf("./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true"), rpRun = pre.indexOf('PEACEAI_LM_CORPUS="$RUNNER_TEMP/w/replay" ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true');
   assert.ok(ftRun > 0 && rpRun > ftRun, "both runs, fine-tune corpus first");
-  assert.match(mc, /if \[ "\$mode" = pretrain \]; then\n\s+mv "\$M" "\$RUNNER_TEMP\/memcheck-ft\.json"\n/);
-  assert.match(mc, /memcheck_combine\.py --ft "\$RUNNER_TEMP\/memcheck-ft\.json" --replay "\$RUNNER_TEMP\/memcheck-replay\.json" --out "\$M"/);
-  assert.equal((mc.match(/test "\$\(jq -r \.substringRule "\$M"\)" = strict/g) ?? []).length, 2, "strict rule checked on the ft run and on the combined record");
+  assert.equal((pre.match(/jq -e '\.coreFreeProofs \| type == "object"' "\$M" > \/dev\/null \|\| \{ echo "memcheck did not use the two-corpus mode: refused"; exit 1; \}/g) ?? []).length, 2, "each run must be two-corpus (a FAIL record is still recorded)");
+  assert.match(pre, /memcheck_combine\.py --ft "\$RUNNER_TEMP\/memcheck-ft\.json" --replay "\$RUNNER_TEMP\/memcheck-replay\.json" --out "\$M"/);
+  assert.match(pre, /jq -e '\.pretrainMemcheck\.twoCorpus == true' "\$M"/);
+  assert.doesNotMatch(pre, /= strict/, "pretrain mode never accepts the strict fallback");
   const comb = (ft: unknown, rp: unknown) => {
     writeFileSync(join(d, "a.json"), typeof ft === "string" ? ft : JSON.stringify(ft)); writeFileSync(join(d, "b.json"), typeof rp === "string" ? rp : JSON.stringify(rp));
     const r = spawnSync(py, ["peaceai/model/memcheck_combine.py", "--ft", join(d, "a.json"), "--replay", join(d, "b.json"), "--out", join(d, "o.json")], { cwd: repo, encoding: "utf8" });
     return { st: r.status, o: JSON.parse(readFileSync(join(d, "o.json"), "utf8")), out: r.stdout };
   };
-  const P = { schema: "peaceai-memcheck:vX", status: "PASS", substringRule: "strict", files: { "weights.npz": "ab" } }, F = { ...P, status: "FAIL" };
+  const CP = { ok: true, reasons: [], trainedOn: { pretrain: "1".repeat(64), finetune: "2".repeat(64) } };
+  const P = { schema: "peaceai-memcheck:vX", status: "PASS", substringRule: "core-free-64", coreFreeProofs: CP, files: { "weights.npz": "ab" } }, F = { ...P, status: "FAIL" };
   const ok = comb(P, P); assert.equal(ok.st, 0); assert.equal(ok.o.status, "PASS"); assert.equal(ok.o.schema, P.schema, "the ft record's schema and binding are kept"); assert.deepEqual(ok.o.files, P.files);
+  assert.equal(ok.o.substringRule, "core-free-64"); assert.equal(ok.o.pretrainMemcheck.schema, "peaceai-lm-retrain-memcheck-pretrain:v2"); assert.equal(ok.o.pretrainMemcheck.twoCorpus, true);
   assert.deepEqual(ok.o.pretrainMemcheck.runStatus, { ftCorpus: "PASS", replayCorpus: "PASS" }); assert.deepEqual(ok.o.pretrainMemcheck.replayCorpus, P);
-  for (const [why, a, b] of [["replay FAIL", P, F], ["ft FAIL", F, P], ["both FAIL", F, F], ["replay unreadable", P, "{"], ["replay not strict", P, { ...P, substringRule: "core-free-64" }], ["ft not strict", { ...P, substringRule: "core-free-64" }, P], ["replay null", P, "null"]] as const) {
+  const S = { schema: "peaceai-memcheck:vX", status: "PASS", substringRule: "strict", files: { "weights.npz": "ab" } };
+  const bad = { ...P, coreFreeProofs: { ...CP, ok: false, reasons: ["pretrain:MISSING_PROOF"] } };
+  for (const [why, a, b] of [["replay FAIL", P, F], ["ft FAIL", F, P], ["both FAIL", F, F], ["replay unreadable", P, "{"], ["replay strict", P, S], ["ft strict", S, P], ["both strict (old rule)", S, S],
+    ["replay proofs not ok", P, bad], ["ft proofs not ok", bad, P], ["replay without coreFreeProofs", P, (({ coreFreeProofs: _c, ...r }) => r)(P)], ["replay null", P, "null"]] as const) {
     const r = comb(a, b); assert.equal(r.st, 1, why); assert.equal(r.o.status, "FAIL", why);
   }
-  assert.equal(comb(P, { ...P, substringRule: "core-free-64" }).o.substringRule, "mixed");
-  assert.match(ok.out, /^memcheck pretrain status=PASS rule=strict ft=PASS replay=PASS\n$/);
+  assert.equal(comb(P, S).o.substringRule, "mixed"); assert.equal(comb(S, S).o.substringRule, "strict"); assert.equal(comb(S, S).o.pretrainMemcheck.twoCorpus, false);
+  assert.match(ok.out, /^memcheck pretrain status=PASS rule=core-free-64 ft=PASS replay=PASS\n$/);
 }));
 
 // ---- dry run, both modes
@@ -484,7 +492,7 @@ test("M123 outcome wiring: retrain-outcome is the last job, always(), needs ever
   assert.match(o, /\n    if: always\(\) && github\.repository == 'PeaceG03\/PeaceAI-Workspace' && github\.ref == 'refs\/heads\/main'\n/);
   assert.doesNotMatch(o, /secrets\.|environment:|dry_run != true|DEPLOY_KEY/, "no key, no environment, never skipped in a dry run");
   assert.match(o, /\n    permissions:\n      contents: read\n    steps:\n      - uses: actions\/checkout@[0-9a-f]{40} # v[0-9.]+\n        with:\n          persist-credentials: false\n/, "checkout only to run the shared select rule");
-  assert.match(o, /\n          SEL: \$\{\{ needs\.finetune-eval-land\.result \}\}\n          MC: \$\{\{ needs\.retrain-memcheck\.result \}\}\n          REC: \$\{\{ needs\.record-memcheck\.result \}\}\n          SA: \$\{\{ needs\.sweep-a\.outputs\.summary \}\}\n          SB: \$\{\{ needs\.sweep-b\.outputs\.summary \}\}\n        run: \.\/peaceai\/bin\/lm-retrain-outcome\.sh\n/);
+  assert.match(o, /\n          SEL: \$\{\{ needs\.finetune-eval-land\.result \}\}\n          MC: \$\{\{ needs\.retrain-memcheck\.result \}\}\n          REC: \$\{\{ needs\.record-memcheck\.result \}\}\n          REC_LANDED: \$\{\{ needs\.record-memcheck\.outputs\.landed \}\}\n          MC_STATUS: \$\{\{ needs\.record-memcheck\.outputs\.status \}\}\n          SA: \$\{\{ needs\.sweep-a\.outputs\.summary \}\}\n          SB: \$\{\{ needs\.sweep-b\.outputs\.summary \}\}\n        run: \.\/peaceai\/bin\/lm-retrain-outcome\.sh\n/);
   const g = read("peaceai/bin/lm-retrain-outcome.sh");
   assert.match(g, /\npick=\$\(python3 peaceai\/model\/sweep_select\.py "\$CFG" "\$vs" "\$mode" "\$\{arms\[@\]\}"\)/, "the dry-run pick runs the select step's own rule");
   assert.match(g, /\nmode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)/);

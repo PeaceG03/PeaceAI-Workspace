@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 # M123 retrain outcome (run 40555453905 follow-up; Auditor's design 2). The last job of peace-lm-retrain.yml, always().
 # env: DRY_RUN (exactly "true" or "false"), SEL / MC / REC (needs.<job>.result of finetune-eval-land, retrain-memcheck,
-# record-memcheck), SA / SB (the sweep arms' summary outputs), CFG, MODE (validated by lm-retrain-mode.sh).
-#   real run: exit 0 only if select, memcheck and record all succeeded.
+# record-memcheck), SA / SB (the sweep arms' summary outputs), CFG, MODE (validated by lm-retrain-mode.sh),
+# REC_LANDED ("true" once record-memcheck landed its record) and MC_STATUS (the recorded memcheck status), MCO (input
+# memcheck_only_run_id; empty unless memcheck-only).
+#   real run: exit 0 only if select, memcheck and record all succeeded. Run 40694718190: a record that landed with
+#             status FAIL prints "memcheck FAIL (record landed)" (still RED), not the generic "did not succeed".
+#   memcheck-only: exit 0 only if memcheck and record succeeded (select is skipped by design); same FAIL message.
 #   dry run:  exit 0 only if every sweep arm left a non-empty, parseable summary that stopped on "steps" or "patience"
 #             (train.py's early stop) and peaceai/model/sweep_select.py, the select step's own rule, picks a candidate
 #             arm/step; the pick is printed. Anything else exits 1.
 set -euo pipefail
 echo "outcome dry_run=${DRY_RUN:-} select=${SEL:-} memcheck=${MC:-} record=${REC:-}"
+[ -z "${MC_STATUS:-}${REC_LANDED:-}${MCO:-}" ] || echo "outcome recorded_status=${MC_STATUS:-} record_landed=${REC_LANDED:-} memcheck_only_run=${MCO:-}"
 red() { echo "$1: RED"; exit 1; }
+landed_fail() { [ "${MC:-}" = success ] && [ "${REC:-}" = failure ] && [ "${REC_LANDED:-}" = true ] && [ "${MC_STATUS:-}" = FAIL ]; }
 case "${DRY_RUN:-}" in
   false)
-    [ "${SEL:-}" = success ] && [ "${MC:-}" = success ] && [ "${REC:-}" = success ] || red "real run: select, memcheck and record did not all run and succeed"
-    echo "real run: select, memcheck and record all succeeded"; exit 0 ;;
+    if [ -n "${MCO:-}" ]; then
+      [[ "$MCO" =~ ^[1-9][0-9]{5,19}$ ]] || red "memcheck-only: bad run id"
+      [ "${SEL:-}" = skipped ] || red "memcheck-only (run $MCO): select was not skipped"
+      [ "${MC:-}" = success ] && [ "${REC:-}" = success ] && { echo "memcheck-only (run $MCO): memcheck PASS, recheck record landed (nothing promoted)"; exit 0; }
+      landed_fail && red "memcheck-only (run $MCO): memcheck FAIL (record landed)"
+      red "memcheck-only (run $MCO): memcheck and record did not both run and succeed"
+    fi
+    [ "${SEL:-}" = success ] && [ "${MC:-}" = success ] && [ "${REC:-}" = success ] && { echo "real run: select, memcheck and record all succeeded"; exit 0; }
+    [ "${SEL:-}" = success ] && landed_fail && red "real run: memcheck FAIL (record landed)"
+    red "real run: select, memcheck and record did not all run and succeed" ;;
   true) ;;
   *) red "DRY_RUN is neither true nor false" ;;
 esac

@@ -241,14 +241,16 @@ export function ftManifestEntryProblem(m: Record<string, unknown>): string | nul
 export const COREFREE_PROOF_SCHEMA = "peaceai-lm-corefree-proof:v1";
 export interface CoreFreeProofFile { doc: number; path: string; source: string; sha256: string; coreExact: boolean; coreNearMax: number }
 export interface CoreFreeProof { schema: string; model: string; noCoreFiles: string; manifestSha256: string; coreCommit: string; near: { method: string; threshold: number }; files: CoreFreeProofFile[] }
-export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string; docSha256?: ReadonlyMap<unknown, string> }): { ok: boolean; reason?: string } {
+export function validCoreFreeProof(proof: unknown, ctx: { modelId: string; manifest: readonly { doc: number; path: string; sha256?: string }[]; manifestSha256: string; docSha256?: ReadonlyMap<unknown, string> }, opts: { coreCommitOptional?: boolean } = {}): { ok: boolean; reason?: string } {
   const p = proof as CoreFreeProof | null;
   if (!p || typeof p !== "object") return { ok: false, reason: "MISSING" };
   if (p.schema !== COREFREE_PROOF_SCHEMA) return { ok: false, reason: "BAD_SCHEMA" };
   if (p.model !== ctx.modelId) return { ok: false, reason: "OTHER_MODEL" };
   if (p.noCoreFiles !== "PROVEN") return { ok: false, reason: "NOT_PROVEN" };
   if (p.manifestSha256 !== ctx.manifestSha256) return { ok: false, reason: "MANIFEST_MISMATCH" };
-  if (!/^[0-9a-f]{40}$/.test(p.coreCommit ?? "")) return { ok: false, reason: "NO_CORE_COMMIT" };
+  // Run 40694718190: only the retrain fine-tune proof may omit coreCommit (corpus-gate strips it: jq 'del(.coreCommit)');
+  // a coreCommit that is present must still be well formed.
+  if (!(opts.coreCommitOptional && !Object.hasOwn(p, "coreCommit")) && !/^[0-9a-f]{40}$/.test(p.coreCommit ?? "")) return { ok: false, reason: "NO_CORE_COMMIT" };
   const t = p.near?.threshold;
   if (typeof t !== "number" || !(t > 0 && t <= 0.8)) return { ok: false, reason: "BAD_NEAR_THRESHOLD" };
   if (!Array.isArray(p.files) || p.files.length !== ctx.manifest.length || ctx.manifest.length === 0) return { ok: false, reason: "FILE_COUNT" };
@@ -294,6 +296,79 @@ export function dualCoreFreeDecision(cfg: unknown, proofs: Record<CoreFreeStage,
     if (!v.ok) reasons.push(`${st}:${v.reason}`);
   }
   return { ok: reasons.length === 0, reasons, trainedOn: t };
+}
+
+/** Run 40694718190 (Auditor ruling): an LM retrain candidate trained in mode "pretrain" (continued pretraining of the
+ *  live model on the replay corpus only: lm-retrain-train.sh refuses ftRows != 0, so no fine-tune row is trained on;
+ *  the fine-tune corpus is still built, proven and bound, and stays a hard chain check, but explains no memcheck hit)
+ *  uses the two-corpus mode above, with no new rule. Its
+ *  landed config.json carries no trainedOn block (its sha256 is bound by the record), so each stage's trainedOn sha is
+ *  read from config.json retrain: pretrain = retrain.replayManifestSha256 (must equal retrain.replayCorpus.manifestSha256),
+ *  finetune = retrain.finetuneManifestSha256. null when absent, malformed or not a pretrain retrain. */
+export function retrainPretrainTrainedOn(cfg: unknown): Record<CoreFreeStage, string> | null {
+  const r = (cfg as { retrain?: Record<string, unknown> } | null)?.retrain;
+  if (!r || typeof r !== "object" || Array.isArray(r) || r.mode !== "pretrain") return null;
+  const p = r.replayManifestSha256, pc = (r.replayCorpus as { manifestSha256?: unknown } | undefined)?.manifestSha256, f = r.finetuneManifestSha256;
+  const hex = (x: unknown): x is string => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
+  if (!hex(p) || !hex(f) || p !== pc || p === f) return null;
+  return { pretrain: p, finetune: f };
+}
+/** corpus-gate's stub model id: the retrain fine-tune proof is written before any model exists (peace-lm-retrain.yml). */
+export const RETRAIN_FT_PROOF_MODEL = "lm-retrain-corpus";
+export interface RetrainChainPins { liveVersion: string; liveProofSha256: string; liveManifestSha256: string; finetuneProofSha256: string }
+export interface RetrainChainInput {
+  /** The live model's proof (Results models/lm/<live>/corefree-proof.json) and the sha256 of its bytes. */
+  pretrainProof: unknown; pretrainProofSha256: string;
+  /** The candidate's corefree-proof-finetune.json (from corpus-gate) and the sha256 of its bytes. */
+  finetuneProof: unknown; finetuneProofSha256: string;
+  /** The live training manifest, rebuilt in this run by replay_corpus.py plan (--manifest-out); null when missing. */
+  liveManifest: { lines: readonly string[]; manifestSha256: string } | null;
+  /** The replay corpus and the fine-tune corpus rebuilt in this run (manifest lines byte-for-byte). */
+  replay: CorpusForProof & { lines: readonly string[] }; finetune: CorpusForProof;
+  /** lm-retrain.json live.version / live.corefreeProofSha256 / replay.manifestSha256 and the run record's finetuneCorefreeProofSha256. */
+  pins: RetrainChainPins;
+}
+/** The proof chain for a pretrain-mode retrain candidate. Every link is checked against the corpora rebuilt in this run:
+ *  pretrain: the live model's proof (sha pinned) is valid for the full live manifest rebuilt here (sha pinned, 6fc30d39),
+ *    every replay manifest line is a line of it, every replay doc hashes to its entry, and the replay manifest is the
+ *    one the candidate trained on;
+ *  finetune: the corpus-gate proof (sha from the run record, corpus "finetune", stub model id) is valid for the
+ *    fine-tune manifest rebuilt here, which is the one the candidate trained on.
+ *  Anything missing or mismatched fails (the caller FAILs; never the strict fallback). The candidate's starting weights
+ *  (retrain.initFrom) vs the live model is a note only, never a check. */
+export function retrainPretrainChainDecision(cfg: unknown, x: RetrainChainInput): { ok: boolean; reasons: string[]; trainedOn: Record<CoreFreeStage, string> | null; note: { initFrom: unknown; liveVersion: string; checked: false } } {
+  const note = { initFrom: (cfg as { retrain?: { initFrom?: unknown } } | null)?.retrain?.initFrom ?? null, liveVersion: x.pins.liveVersion, checked: false as const };
+  const t = retrainPretrainTrainedOn(cfg);
+  if (!t) return { ok: false, reasons: ["NO_TRAINED_ON"], trainedOn: null, note };
+  const reasons: string[] = [];
+  const hex = (s: unknown) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s);
+  // pretrain (replay corpus)
+  const pp = x.pretrainProof as { corpus?: unknown } | null | undefined;
+  if (pp === null || pp === undefined || typeof pp !== "object") reasons.push("pretrain:MISSING_PROOF");
+  else if (pp.corpus !== undefined && pp.corpus !== null && pp.corpus !== "pretrain") reasons.push("pretrain:SWAPPED_PROOF");
+  else if (!hex(x.pins.liveProofSha256) || x.pretrainProofSha256 !== x.pins.liveProofSha256) reasons.push("pretrain:PROOF_SHA_MISMATCH");
+  else if (!x.liveManifest || !hex(x.pins.liveManifestSha256) || x.liveManifest.manifestSha256 !== x.pins.liveManifestSha256) reasons.push("pretrain:MANIFEST_MISMATCH");
+  else if (x.replay.manifestSha256 !== t.pretrain) reasons.push("pretrain:CORPUS_NOT_TRAINED_ON");
+  else {
+    let live: { doc: number; path: string; sha256?: string }[] | null;
+    try { live = x.liveManifest.lines.map((l) => JSON.parse(l)); } catch { live = null; }
+    const v = live ? validCoreFreeProof(pp, { modelId: x.pins.liveVersion, manifest: live, manifestSha256: x.liveManifest.manifestSha256 }) : { ok: false, reason: "BAD_MANIFEST" };
+    const proven = new Set(x.liveManifest.lines);
+    if (!v.ok) reasons.push(`pretrain:${v.reason}`);
+    else if (x.replay.lines.length === 0 || !x.replay.lines.every((l) => proven.has(l))) reasons.push("pretrain:NOT_IN_PROVEN_MANIFEST");
+    else if (!x.replay.manifest.every((m) => typeof m.sha256 === "string" && x.replay.docSha256.get(m.doc) === m.sha256)) reasons.push("pretrain:DOC_MISMATCH");
+  }
+  // finetune
+  const fp = x.finetuneProof as { corpus?: unknown } | null | undefined;
+  if (fp === null || fp === undefined || typeof fp !== "object") reasons.push("finetune:MISSING_PROOF");
+  else if (fp.corpus !== "finetune") reasons.push("finetune:SWAPPED_PROOF");
+  else if (!hex(x.pins.finetuneProofSha256) || x.finetuneProofSha256 !== x.pins.finetuneProofSha256) reasons.push("finetune:PROOF_SHA_MISMATCH");
+  else if (x.finetune.manifestSha256 !== t.finetune) reasons.push("finetune:CORPUS_NOT_TRAINED_ON");
+  else {
+    const v = validCoreFreeProof(fp, { modelId: RETRAIN_FT_PROOF_MODEL, manifest: x.finetune.manifest, manifestSha256: t.finetune, docSha256: x.finetune.docSha256 }, { coreCommitOptional: true });
+    if (!v.ok) reasons.push(`finetune:${v.reason}`);
+  }
+  return { ok: reasons.length === 0, reasons, trainedOn: t, note };
 }
 
 // ---- where the model may run

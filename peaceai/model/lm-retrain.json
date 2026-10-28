@@ -1,7 +1,7 @@
 {
  "schema": "peaceai-lm-retrain:m119",
  "note": "M119 (Builder + Auditor, free compute under Peace's 2026-10-25 rule). Used only by peace-lm-retrain.yml: fine-tune the live LM on the reviewed commit list, re-score live and candidate in the same run, land in Results only. No promotion; shadow mode unchanged.",
- "live": { "version": "lm-v1-088073d41dbc" },
+ "live": { "version": "lm-v1-088073d41dbc", "corefreeProofSha256": "24ffc77c1d49cd9b441d09613d799dc64b78a838c3c352fe470e7e3dab74281a" },
  "list": { "file": "peaceai/model/lm-retrain-commits.txt", "sha256": "6fe4978843cc3d9d5beea2296b28403185b4bf52dd25d482406fdb880946a312",
    "repos": { "PeaceG03/PeaceAI-Workspace": "34c44c1477a505b353d9881626d2795dd3a8fc82", "PeaceG03/PeaceSTOCKS": "8dec076346b89887708f2ffc44bc137201b5799f" } },
  "model": { "d_model": 320, "n_layer": 6, "n_head": 5, "ctx": 512, "vocab": 8192, "batch": 8 },

@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { indexGitTree, TEXT_EXT } from "../lib/coreindex.ts";
 import { addText, emptyIndex } from "../lib/coretext.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
-import { duplicateSampleIds, promptIdOf, COREFREE_MIN_RUN, docIdsMatch, dualCoreFreeDecision, isAsciiBlank, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
+import { duplicateSampleIds, promptIdOf, COREFREE_MIN_RUN, docIdsMatch, dualCoreFreeDecision, isAsciiBlank, retrainPretrainChainDecision, manifestProvesNoCore, MEMCHECK_SCHEMA, memcheckStatus, modelFileShas, runInfer, scanSamples, validCoreFreeProof, type PublicOnlyExemption, type Sample, type SampleScan } from "../lib/lm.ts";
 import type { ManifestEntry } from "../lib/lmcorpus.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
@@ -32,7 +32,12 @@ const trainCorpus = process.env.PEACEAI_LM_TRAIN_CORPUS ? resolve(process.env.PE
 // against BOTH corpora: PEACEAI_LM_TRAIN_CORPUS (pretrain) and PEACEAI_LM_FT_CORPUS (fine-tune), with both
 // per-corpus proofs required. Anything missing or mismatched: FAIL (blocks promotion), never the strict fallback.
 const ftCorpus = process.env.PEACEAI_LM_FT_CORPUS ? resolve(process.env.PEACEAI_LM_FT_CORPUS) : "";
-let dual: { ok: boolean; reasons: string[]; trainedOn: unknown } | null = null;
+// Run 40694718190 (Auditor ruling): a pretrain-mode retrain candidate (config.json retrain.mode "pretrain") always takes
+// this two-corpus mode (no FT corpus given: FAIL). Its pretrain link is the live model's proof
+// (PEACEAI_LM_LIVE_PROOF) for the live manifest rebuilt in this run (PEACEAI_LM_LIVE_MANIFEST); its fine-tune link is
+// the corpus-gate proof whose sha256 the run record holds (PEACEAI_LM_FT_PROOF_SHA256). Pins: lm-retrain.json.
+const retrainCfgPath = resolve(process.env.PEACEAI_LM_RETRAIN_CFG ?? join(import.meta.dirname, "..", "model", "lm-retrain.json"));
+let dual: { ok: boolean; reasons: string[]; trainedOn: unknown; note?: unknown } | null = null;
 let trainManifestSha = "";
 let noCoreProof = trainCorpus ? "PROVEN" : "NOT_GIVEN";
 let proofState = trainCorpus ? "INVALID:MISSING" : "NOT_GIVEN";
@@ -56,19 +61,43 @@ else {
   // invalid proof, a manifest that no longer proves it): the strict 32-character rule.
   let exempt: PublicOnlyExemption | null = null;
   const cfgNow = JSON.parse(readFileSync(join(modelDir, "config.json"), "utf8"));
+  const retrainPretrain = !("trainedOn" in cfgNow) && cfgNow?.retrain?.mode === "pretrain";
   if ("trainedOn" in cfgNow || ftCorpus) {
     const coreShas = new Set((tree.raw ?? []).filter((t) => !isAsciiBlank(t)).map((t) => h(t)));
     const load = (dir: string) => {
       const mText = readManifestBytes(dir, "manifest").toString("utf8"); // M51: one file or split parts, never both
       const man: (ManifestEntry & Record<string, unknown>)[] = mText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-      const docSha256 = new Map<unknown, string>(), ids: unknown[] = [], txt: string[] = [];
-      for (const l of readFileSync(join(dir, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); docSha256.set(d.doc, h(String(d.text))); ids.push(d.doc); txt.push(String(d.text)); }
+      const docSha256 = new Map<unknown, string>(), ids: unknown[] = [], txt: string[] = [], trainTxt: string[] = [];
+      const trainIds = new Set(man.filter((m) => m.split === "train").map((m) => m.doc));
+      for (const l of readFileSync(join(dir, "docs.jsonl"), "utf8").split("\n")) if (l) { const d = JSON.parse(l); docSha256.set(d.doc, h(String(d.text))); ids.push(d.doc); txt.push(String(d.text)); if (trainIds.has(d.doc)) trainTxt.push(String(d.text)); }
       const proves = docIdsMatch(man.map((m) => m.doc), ids) && manifestProvesNoCore(man, coreShas, CORE_SOURCE, docSha256) && (tree.raw ?? []).length > 0;
-      return { manifest: man, manifestSha256: h(mText), docSha256, txt, proves };
+      return { manifest: man, lines: mText.split("\n").filter(Boolean), manifestSha256: h(mText), docSha256, txt, trainTxt, proves };
     };
     const readProof = (st: string) => { try { return JSON.parse(readFileSync(join(modelDir, `corefree-proof-${st}.json`), "utf8")); } catch { return null; } };
+    const readFile = (p: string | undefined) => { try { return p ? readFileSync(resolve(p), "utf8") : null; } catch { return null; } };
     if (!trainCorpus || !ftCorpus) dual = { ok: false, reasons: [trainCorpus ? "FINETUNE_CORPUS_REQUIRED" : "PRETRAIN_CORPUS_REQUIRED"], trainedOn: null };
-    else {
+    else if (retrainPretrain) {
+      const pre = load(trainCorpus), ft = load(ftCorpus);
+      const json = (t: string | null) => { try { return t === null ? null : JSON.parse(t); } catch { return null; } };
+      const rc = json(readFile(retrainCfgPath)) ?? {};
+      const liveProofText = readFile(process.env.PEACEAI_LM_LIVE_PROOF), ftProofText = readFile(join(modelDir, "corefree-proof-finetune.json"));
+      const liveManText = readFile(process.env.PEACEAI_LM_LIVE_MANIFEST);
+      const d = retrainPretrainChainDecision(cfgNow, {
+        pretrainProof: json(liveProofText), pretrainProofSha256: liveProofText === null ? "" : h(liveProofText),
+        finetuneProof: json(ftProofText), finetuneProofSha256: ftProofText === null ? "" : h(ftProofText),
+        liveManifest: liveManText === null ? null : { lines: liveManText.split("\n").filter(Boolean), manifestSha256: h(liveManText) },
+        replay: pre, finetune: ft,
+        pins: { liveVersion: String(rc.live?.version ?? ""), liveProofSha256: String(rc.live?.corefreeProofSha256 ?? ""), liveManifestSha256: String(rc.replay?.manifestSha256 ?? ""), finetuneProofSha256: process.env.PEACEAI_LM_FT_PROOF_SHA256 ?? "" },
+      });
+      if (!pre.proves) d.reasons.push("pretrain:NOT_PROVEN"); if (!ft.proves) d.reasons.push("finetune:NOT_PROVEN");
+      dual = { ok: d.reasons.length === 0, reasons: d.reasons, trainedOn: d.trainedOn, note: d.note };
+      trainManifestSha = pre.manifestSha256; noCoreProof = dual.ok ? "PROVEN" : "NOT_PROVEN"; proofState = dual.ok ? "VALID" : `INVALID:${d.reasons.join(",")}`;
+      // The explanation corpus is only what the candidate was trained on and this run rebuilt: the replay corpus's
+      // train-split docs. Never the fine-tune corpus: pretrain mode trains on no fine-tune row (lm-retrain-train.sh
+      // refuses ftRows != 0), so its proof and trainedOn.finetune binding stay hard checks but its text explains
+      // nothing. Text from the live model's older corpus that is not rebuilt here stays unexplained.
+      if (dual.ok) exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex(pre.trainTxt), minRun: COREFREE_MIN_RUN };
+    } else {
       const pre = load(trainCorpus), ft = load(ftCorpus);
       const d = dualCoreFreeDecision(cfgNow, { pretrain: readProof("pretrain"), finetune: readProof("finetune") }, { pretrain: pre, finetune: ft });
       if (!pre.proves) d.reasons.push("pretrain:NOT_PROVEN"); if (!ft.proves) d.reasons.push("finetune:NOT_PROVEN");
@@ -77,6 +106,10 @@ else {
       if (dual.ok) exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex([...pre.txt, ...ft.txt]), minRun: COREFREE_MIN_RUN };
     }
     if (!dual.ok) reason = `COREFREE_PROOFS:${dual.reasons.join(",")}`;
+  } else if (retrainPretrain) {
+    // A pretrain-mode retrain candidate is never checked single-corpus or strict: without both corpora it FAILs.
+    dual = { ok: false, reasons: [trainCorpus ? "FINETUNE_CORPUS_REQUIRED" : "PRETRAIN_CORPUS_REQUIRED"], trainedOn: null };
+    reason = `COREFREE_PROOFS:${dual.reasons.join(",")}`;
   } else if (trainCorpus) {
     const tmText = readManifestBytes(trainCorpus, "manifest").toString("utf8"); // M51: one file or split parts, never both
     const tm: (ManifestEntry & Record<string, unknown>)[] = tmText.split("\n").filter(Boolean).map((l) => JSON.parse(l));
