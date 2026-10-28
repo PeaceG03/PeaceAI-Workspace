@@ -402,9 +402,9 @@ jobs:
           py="$RUNNER_TEMP/venv/bin/python"
           [[ "$STEP" =~ ^[1-9][0-9]*$ ]] || { echo "bad selected step"; exit 1; }
           ./peaceai/bin/lm-retrain-train.sh "$RUNNER_TEMP/w/ft" "$RUNNER_TEMP/w/dedup.json" "$RUNNER_TEMP/w/replay" "$RUNNER_TEMP/w/replay-dedup.json" "$RUNNER_TEMP/live" "$RUNNER_TEMP/ftwork" "$LR" "$STEP"
-          test "$(jq -c .valSplit "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -c .validationSplit "$RUNNER_TEMP/select.json")" || { echo "candidate used a different validation split: refused"; exit 1; }
-          test "$(jq -c .replay.val "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -c '.arms[0].replay.val' "$RUNNER_TEMP/select.json")" || { echo "candidate used different validation windows: refused"; exit 1; }
-          test "$(jq -c .replay.corpus "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -c '.arms[0].replay.corpus' "$RUNNER_TEMP/select.json")" || { echo "candidate used a different replay corpus: refused"; exit 1; }
+          test "$(jq -cS .valSplit "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -cS .validationSplit "$RUNNER_TEMP/select.json")" || { echo "candidate used a different validation split: refused"; exit 1; }
+          test "$(jq -cS .replay.val "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -cS '.arms[0].replay.val' "$RUNNER_TEMP/select.json")" || { echo "candidate used different validation windows: refused"; exit 1; }
+          test "$(jq -cS .replay.corpus "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -cS '.arms[0].replay.corpus' "$RUNNER_TEMP/select.json")" || { echo "candidate used a different replay corpus: refused"; exit 1; }
           test "$(jq -r .mode "$RUNNER_TEMP/ftwork/summary.json")" = "$(jq -r .mode "$RUNNER_TEMP/select.json")" || { echo "candidate ran in a different mode: refused"; exit 1; }
           cp "$RUNNER_TEMP/ftwork/summary.json" "$RUNNER_TEMP/candidate-train.json"
           "$py" peaceai/model/export.py --work "$RUNNER_TEMP/ftwork" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint checkpoint.npz > /dev/null
@@ -425,12 +425,28 @@ jobs:
         run: |
           set -euo pipefail
           py="$RUNNER_TEMP/venv/bin/python"; E="$RUNNER_TEMP/evals"; mkdir -p "$E"; mb=$(jq -r .eval.setcMaxBytes "$CFG")
+          # Scoring deadline (both modes, eval.scoringDeadlineRule): JOB_START + pretrain.budget.finalJobSeconds (this job's
+          # timeout) - eval.scoringReserveSeconds (kept for the gate and the landing). A scoring command still running at the
+          # deadline is killed (exit 124/137), its partial output removed, and scoring stops: the gate then lands a
+          # "no candidate" record (failed: scoring_deadline) and the job ends red. Any other scoring failure fails this step.
+          [[ "${JOB_START-}" =~ ^[1-9][0-9]{8,10}$ ]] || { echo "no job clock (JOB_START): refused"; exit 1; }
+          js=$(jq -r .pretrain.budget.finalJobSeconds "$CFG"); rs=$(jq -r .eval.scoringReserveSeconds "$CFG")
+          [[ "$js" =~ ^[1-9][0-9]*$ && "$rs" =~ ^[1-9][0-9]*$ ]] && [ "$rs" -lt "$js" ] || { echo "bad scoring budget: refused"; exit 1; }
+          dl=$((JOB_START + js - rs)); rm -f "$RUNNER_TEMP/scoring-cut.txt"
+          by_deadline() { local left=$((dl - $(date +%s))); [ "$left" -gt 0 ] || return 124; timeout -k 30 "$left" "$@"; }
           # No candidate (every sweep arm deadline-cut at step 0): only the live model is scored; step 0 IS the live weights.
           whos=(live); [ "$CAND" = true ] && whos+=(model)
           for who in "${whos[@]}"; do
-            "$py" peaceai/model/eval_c.py --model "$RUNNER_TEMP/$who" --corpus "$RUNNER_TEMP/w/setc" --max-bytes "$mb" --threads 4 > "$E/setc-$who.txt"
-            cat "$E/setc-$who.txt"
-            "$py" peaceai/model/judge364.py --model "$RUNNER_TEMP/$who" --items "$RUNNER_TEMP/items.json" --out "$E/judge-$who.json" --threads 4
+            st=0; by_deadline "$py" peaceai/model/eval_c.py --model "$RUNNER_TEMP/$who" --corpus "$RUNNER_TEMP/w/setc" --max-bytes "$mb" --threads 4 > "$E/setc-$who.txt" || st=$?
+            if [ "$st" = 0 ]; then
+              cat "$E/setc-$who.txt"
+              by_deadline "$py" peaceai/model/judge364.py --model "$RUNNER_TEMP/$who" --items "$RUNNER_TEMP/items.json" --out "$E/judge-$who.json" --threads 4 || st=$?
+            fi
+            if [ "$st" = 124 ] || [ "$st" = 137 ]; then
+              rm -f "$E/setc-$who.txt" "$E/judge-$who.json"; echo "$who" > "$RUNNER_TEMP/scoring-cut.txt"
+              echo "scoring deadline ($dl) reached while scoring $who: scoring stopped; no candidate; the record still lands and the job ends red"; break
+            fi
+            [ "$st" = 0 ] || { echo "scoring $who failed (exit $st)"; exit "$st"; }
           done
       - name: Gate (slice identical and pinned; 0 eval overlap; scorer reproduces the live record; candidate set C bpb <= live - eval.minBpbGain; judge AUC report-only)
         id: gate
@@ -447,8 +463,10 @@ jobs:
           sl() { sed -n 's/.* slice_sha256=\([0-9a-f]*\) .*/\1/p' "$E/setc-$(src "$1").txt"; }
           bpb() { sed -n 's/.* bits_per_byte=\([0-9.]*\).*/\1/p' "$E/setc-$(src "$1").txt"; }
           ok=true; why=()
+          # Scoring cut at the scoring deadline (Score step): no candidate, whatever was trained; the gate fails and the job ends red.
+          sc=false; cw=""; if [ -e "$RUNNER_TEMP/scoring-cut.txt" ]; then sc=true; nc=true; cw=$(head -c 16 "$RUNNER_TEMP/scoring-cut.txt" | tr -dc a-z); ok=false; why+=(scoring_deadline); fi
           [ "$nc" = false ] || { ok=false; why+=(no_candidate); mkdir -p "$RUNNER_TEMP/model"
-            jq -n --slurpfile sel "$RUNNER_TEMP/select.json" '{noCandidate: true, mode: $sel[0].mode, stoppedStep: 0, bestStep: 0, replay: {corpus: $sel[0].arms[0].replay.corpus}}' > "$RUNNER_TEMP/candidate-train.json"
+            [ -s "$RUNNER_TEMP/candidate-train.json" ] || jq -n --slurpfile sel "$RUNNER_TEMP/select.json" '{noCandidate: true, mode: $sel[0].mode, stoppedStep: 0, bestStep: 0, replay: {corpus: $sel[0].arms[0].replay.corpus}}' > "$RUNNER_TEMP/candidate-train.json"
             echo '{"summary": null}' > "$RUNNER_TEMP/judge-none.json"; echo '{"blocks": false, "effective": "no candidate"}' > "$E/judge-gate.json"; }
           [ "$(sl live)" = "$want" ] && [ "$(sl model)" = "$want" ] || { ok=false; why+=(slice); }
           [ "$(jq -r .recheckOverlapDocs "$RUNNER_TEMP/w/dedup.json")" = 0 ] || { ok=false; why+=(overlap); }
@@ -465,16 +483,17 @@ jobs:
           [ "$nc" = true ] || python3 peaceai/model/judge_gate.py --mode "$(jq -r .eval.judgeAucGate "$CFG")" --live "$E/judge-live.json" --candidate "$E/judge-model.json" > "$E/judge-gate.json"
           [ "$(jq -r .blocks "$E/judge-gate.json")" = false ] || { ok=false; why+=(judge_auc); }
           [ "$(jq -r .stoppedStep "$RUNNER_TEMP/candidate-train.json")" = "$(jq -r .selected.step "$RUNNER_TEMP/select.json")" ] || { ok=false; why+=(selected_step_not_reached); }
-          v=""; w=""; jmf="$RUNNER_TEMP/judge-none.json"
+          v=""; w=""; jmf="$RUNNER_TEMP/judge-none.json"; jlf="$E/judge-live.json"
+          if [ "$sc" = true ] && [ ! -s "$jlf" ]; then jlf="$RUNNER_TEMP/judge-none.json"; fi
           if [ "$nc" = false ]; then
             v=$(jq -r .version "$RUNNER_TEMP/model/config.json"); w=$(sha256sum "$RUNNER_TEMP/model/weights.npz" | cut -c1-64); jmf="$E/judge-model.json"
             [[ "$v" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad candidate version"; exit 1; }
           fi
           jq -n --arg run "$GITHUB_RUN_ID" --arg ws "$GITHUB_SHA" --slurpfile cfg "$CFG" --slurpfile dd "$RUNNER_TEMP/w/dedup.json" \
-            --slurpfile jl "$E/judge-live.json" --slurpfile jm "$jmf" --slurpfile jg "$E/judge-gate.json" --arg v "$v" --arg w "$w" \
+            --slurpfile jl "$jlf" --slurpfile jm "$jmf" --slurpfile jg "$E/judge-gate.json" --arg v "$v" --arg w "$w" \
             --arg jc "$(cat "$RUNNER_TEMP/r/judge-commit.txt")" \
             --slurpfile sel "$RUNNER_TEMP/select.json" --slurpfile ct "$RUNNER_TEMP/candidate-train.json" --arg scorer "$scorer" \
-            --arg bl "$(bpb live)" --arg bm "$(bpb model)" --arg sl "$(sl live)" --arg sm "$(sl model)" --arg ok "$ok" --arg why "${why[*]:-}" \
+            --arg bl "$(bpb live)" --arg bm "$(bpb model)" --arg sl "$(sl live)" --arg sm "$(sl model)" --arg ok "$ok" --arg why "${why[*]:-}" --arg sc "$sc" --arg cw "$cw" \
             --arg proof "$(sha256sum "$RUNNER_TEMP/corefree-proof-finetune.json" | cut -c1-64)" \
             --slurpfile rp "$RUNNER_TEMP/w/replay-proof.json" --slurpfile fp "$RUNNER_TEMP/w/ft-prepare.json" \
             --slurpfile rpl "$RUNNER_TEMP/w/replay-plan.json" --arg mode "$(jq -r .mode "$RUNNER_TEMP/select.json")" \
@@ -483,12 +502,13 @@ jobs:
               ftPrepare: $fp[0], replay: {config: $cfg[0].replay, plan: $rpl[0], overlapProof: $rp[0],
                 corpus: {docsSha256: $rp[0].replayDocsSha256, docsBytes: $rp[0].replayDocsBytes, trainBytes: $rp[0].trainBytes, valBytes: $rp[0].valBytes}},
               validationSplit: $sel[0].validationSplit, sweep: $sel[0].arms, selected: $sel[0].selected, candidateTraining: (if $ct[0].noCandidate == true then null else $ct[0] end),
-              setcV2: {maxBytes: $cfg[0].eval.setcMaxBytes, sliceSha256: {live: $sl, candidate: $sm}, bitsPerByte: {live: ($bl | tonumber), candidate: ($bm | tonumber)},
+              setcV2: {maxBytes: $cfg[0].eval.setcMaxBytes, sliceSha256: {live: $sl, candidate: $sm}, bitsPerByte: {live: (if $bl == "" then null else ($bl | tonumber) end), candidate: (if $bm == "" then null else ($bm | tonumber) end)},
                 minBpbGain: $cfg[0].eval.minBpbGain, rule: $cfg[0].eval.minBpbGainRule},
               judge: {set: $cfg[0].eval.judgeSet, items: $cfg[0].eval.judgeItems, itemsSha256: $cfg[0].eval.judgeItemsSha256, resultsCommit: $jc,
                 live: $jl[0].summary, candidate: $jm[0].summary, scorerReproducesLiveRecord: ($scorer == "true"), aucGate: $jg[0]},
               gate: {pass: ($ok == "true"), failed: ($why | split(" ") | map(select(. != ""))),
-                result: (if $sel[0].selected.candidate == true then (if $ok == "true" then "pass" else "fail" end) else "no candidate" end)}, promoted: false,
+                scoringDeadline: {cut: ($sc == "true"), during: (if $cw == "" then null else $cw end), reserveSeconds: $cfg[0].eval.scoringReserveSeconds},
+                result: (if $sc != "true" and $sel[0].selected.candidate == true then (if $ok == "true" then "pass" else "fail" end) else "no candidate" end)}, promoted: false,
               memcheck: (if $mode == "pretrain" then "pending (memcheck job: strict 32-character rule on the fine-tune corpus AND on the replay corpus; both must PASS)" else "pending (memcheck job, strict 32-character rule)" end)}' > "$E/record.json"
           jq -c '{mode, live, candidate, candidateWeightsSha256, validationSplitSha256: .validationSplit.sha256, selected, bpb: .setcV2.bitsPerByte,
             judgeAuc: {mode: .judge.aucGate.effective, hardEligible: .judge.aucGate.hardEligible,

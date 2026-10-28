@@ -24,5 +24,6 @@
  "dedup": { "window": 24, "shortMin": 8 },
  "eval": { "setcMaxBytes": 1000000, "setcSliceSha256": "0207960bae5ddc9548dda9d72103bdf483b6d50dbaefe71353c44a78f67683eb", "judgeSet": "v2", "judgeItems": "lm-judge-v2/items.json", "judgeRef": "main", "judgeItemsSha256": "1deadaaea1992ad18e533595218c9c0953128615c18c9ce0d24dc58d505da2b8", "judgeItemCount": 230, "judgeAucGate": "report-only",
   "minBpbGain": 0.005, "minBpbGainRule": "candidate set C v2 bits/byte <= live - minBpbGain (decimal arithmetic; bpb_gate.py), judged on the candidate retrained to the validation-selected step; set C is the final gate only",
+  "scoringReserveSeconds": 1200, "scoringDeadlineRule": "both modes: set C and judge scoring in finetune-eval-land must end by JOB_START + pretrain.budget.finalJobSeconds (the job timeout) - scoringReserveSeconds (time kept for the gate and the record landing); a scoring command still running at that deadline is killed and its partial output removed, scoring stops, the gate lands a no-candidate record (failed: scoring_deadline) and the job ends red",
   "judgeV1": { "items": "lm-judge/items.json", "ref": "notes/lm-judge-eval", "commit": "804a95675815d3d7965e95be8d9c368600863412", "itemsSha256": "38266eb85de963155781e43644f413ed5b97eb58f055d8fe5567e92b7ddcaaa0", "itemCount": 364 } }
 }

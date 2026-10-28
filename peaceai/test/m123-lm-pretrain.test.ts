@@ -543,7 +543,7 @@ test("M123 outcome: the no-candidate record still lands (deadline before the fir
   const land = f.indexOf("      - name: Land the run record"), result = f.indexOf("      - name: Result (fail unless the gate passed)");
   assert.ok(land > 0 && result > land, "the record lands before the gate result step");
   assert.doesNotMatch(f.slice(land, result), /\n        if:/, "the record step is unconditional (no candidate included)");
-  assert.match(f, /result: \(if \$sel\[0\]\.selected\.candidate == true then \(if \$ok == "true" then "pass" else "fail" end\) else "no candidate" end\)/);
+  assert.match(f, /result: \(if \$sc != "true" and \$sel\[0\]\.selected\.candidate == true then \(if \$ok == "true" then "pass" else "fail" end\) else "no candidate" end\)/);
   assert.match(read("peaceai/model/sweep_select.py"), /selected = \{"arm": None, "lr": None, "step": 0, [^\n]*"candidate": False, "result": "no candidate"/);
   for (const s of ["Score live and candidate", "Gate (slice identical", "Verify the checkout and the landing scripts"]) {
     const i = f.indexOf(`      - name: ${s}`); assert.ok(i > 0, s);
