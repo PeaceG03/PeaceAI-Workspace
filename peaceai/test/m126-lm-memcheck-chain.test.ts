@@ -4,7 +4,9 @@
 // manifest (pin lm-retrain.json live.corefreeProofSha256, manifest replay.manifestSha256) and the corpus-gate fine-tune
 // proof (the run record's finetuneCorefreeProofSha256). Anything missing or mismatched FAILs (never the strict
 // fallback); line, shingle and personal-info hits stay hard; no new rule or threshold. The starting-weights link is a
-// note only. Text of the live model's older corpus that this run did not rebuild is unexplained. Also: the
+// note only. Only the replay corpus's train docs explain a hit: fine-tune text never does (pretrain mode trains on
+// no fine-tune row, lm-retrain-train.sh ftRows == 0), though the fine-tune proof and binding stay hard checks.
+// Text of the live model's older corpus that this run did not rebuild is unexplained. Also: the
 // memcheck-only path (input memcheck_only_run_id: append a recheck record, promote nothing) and the outcome message
 // "memcheck FAIL (record landed)". Fixtures only: no real model, corpus or core is read.
 import assert from "node:assert/strict";
@@ -29,8 +31,8 @@ const LIVE = "lm-v1-0000000000aa", CAND = "lm-v1-000000000126", RUN = "406947181
 const SCHEMA = "peaceai-lm-corefree-proof:v1";
 
 // ---- fixture: core checkout, live manifest, replay corpus (a subset of it), fine-tune corpus, both proofs, model
-const secret = [0, 1, 2, 3].map((k) => `export const internalSecretRoutine${k} = (alpha${k}: number, beta${k}: string) => alpha${k} * ${k + 7} + beta${k}.length + ${k * 1000 + 17};`);
-const RUN_TRAIN = secret[0]!.slice(6, 86), RUN_HELD = secret[1]!.slice(6, 86), RUN_LIVE = secret[2]!.slice(6, 86), RUN_NONE = secret[3]!.slice(6, 86);
+const secret = [0, 1, 2, 3, 4].map((k) => `export const internalSecretRoutine${k} = (alpha${k}: number, beta${k}: string) => alpha${k} * ${k + 7} + beta${k}.length + ${k * 1000 + 17};`);
+const RUN_TRAIN = secret[0]!.slice(6, 86), RUN_HELD = secret[1]!.slice(6, 86), RUN_LIVE = secret[2]!.slice(6, 86), RUN_NONE = secret[3]!.slice(6, 86), RUN_FT = secret[4]!.slice(6, 86);
 const filler = (k: string, i: number) => Array.from({ length: 6 }, (_, j) => `export const ${k}Thing${i}_${j} = ${j};`).join("\n") + "\n";
 const ext = (doc: number, text: string, split: string) => ({ doc, stage: "pretrain", repo: "colinhacks/zod", commit: "c".repeat(40), license: "MIT", path: `src/z${doc}.ts`, sha256: H(text), bytes: Buffer.byteLength(text), origin: "external", split });
 const line = (o: object) => JSON.stringify(o);
@@ -54,7 +56,7 @@ function fixture(d: string) {
   const liveProof = { schema: SCHEMA, model: LIVE, noCoreFiles: "PROVEN", manifestSha256: H(liveMan), coreCommit: "a".repeat(40), corpus: null, near: { method: "minhash", threshold: 0.8 }, files: proofFiles(texts.map((t, i) => ({ doc: i, path: `src/z${i}.ts`, sha256: H(t) })), "colinhacks/zod") };
   const liveProofText = JSON.stringify(liveProof, null, 2) + "\n"; writeFileSync(join(d, "live-proof.json"), liveProofText);
   // fine-tune corpus (ft-pairs schema; no content sha in the manifest)
-  const ftTexts = [`function ftOne(a: number) {\n  return a + 1;\n}\n`, `function ftTwo(b: string) {\n  return b.trim();\n}\n`];
+  const ftTexts = [`function ftOne(a: number) {\n  return a + 1;\n}\nconst ftNote = \`${RUN_FT}\`;\n`, `function ftTwo(b: string) {\n  return b.trim();\n}\n`];
   const ftEnts = ftTexts.map((_, i) => ({ doc: i, split: i === 0 ? "train" : "heldout", repo: "PeaceG03/PeaceAI-Workspace", sha: "e".repeat(40), path: `peaceai/lib/f${i}.ts`, function: `ft${i}` }));
   const ft = join(d, "ft"); mkdirSync(ft);
   writeFileSync(join(ft, "docs.jsonl"), ftTexts.map((t, i) => line({ doc: i, text: t })).join("\n") + "\n");
@@ -100,12 +102,12 @@ test("M126 two-corpus memcheck: a valid chain PASSes with core-free-64; the star
   const o = f.run(); assert.equal(o.rep.status, "PASS"); assert.equal(o.rep.coreFreeProofs.note.initFrom, "lm-v1-ffffffffffff"); assert.equal(o.rep.coreFreeProofs.note.checked, false);
 }));
 
-test("M126 two-corpus memcheck: a 64+ core run is explained only by replay/fine-tune TRAIN docs rebuilt in this run; held-out, the live model's older corpus or nowhere = FAIL", () => tmp((d) => {
+test("M126 two-corpus memcheck: a 64+ core run is explained only by replay TRAIN docs rebuilt in this run; fine-tune train text (pretrain trains on no fine-tune row), held-out, the live model's older corpus or nowhere = FAIL", () => tmp((d) => {
   const f = fixture(d);
   const ok = f.run({ M126_SAMPLE: RUN_TRAIN }); assert.equal(ok.rep.status, "PASS", ok.r.stdout); assert.equal(ok.rep.scan.unexplainedHits, 0);
-  for (const [why, s] of [["held-out replay doc", RUN_HELD], ["live model's older corpus only (not rebuilt here)", RUN_LIVE], ["nowhere", RUN_NONE]] as const) {
+  for (const [why, s] of [["fine-tune TRAIN doc only (ftRows == 0 in pretrain mode)", RUN_FT], ["held-out replay doc", RUN_HELD], ["live model's older corpus only (not rebuilt here)", RUN_LIVE], ["nowhere", RUN_NONE]] as const) {
     const o = f.run({ M126_SAMPLE: s }); assert.equal(o.r.status, 1, why); assert.equal(o.rep.status, "FAIL", why);
-    assert.equal(o.rep.substringRule, "core-free-64", why); assert.ok(o.rep.scan.countedHits > 0, why);
+    assert.equal(o.rep.substringRule, "core-free-64", why); assert.equal(o.rep.coreFreeProofs.ok, true, `${why}: the chain itself is valid`); assert.ok(o.rep.scan.countedHits > 0, why);
   }
   // the strict rule (no proofs: an ordinary model) fails the same train-explained run: the chain is what explains it
   const cfgText = readFileSync(join(f.model, "config.json"), "utf8");

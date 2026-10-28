@@ -92,9 +92,11 @@ else {
       if (!pre.proves) d.reasons.push("pretrain:NOT_PROVEN"); if (!ft.proves) d.reasons.push("finetune:NOT_PROVEN");
       dual = { ok: d.reasons.length === 0, reasons: d.reasons, trainedOn: d.trainedOn, note: d.note };
       trainManifestSha = pre.manifestSha256; noCoreProof = dual.ok ? "PROVEN" : "NOT_PROVEN"; proofState = dual.ok ? "VALID" : `INVALID:${d.reasons.join(",")}`;
-      // The explanation corpus is only what the candidate was trained on and this run rebuilt: the replay and fine-tune
-      // train-split docs. Text from the live model's older corpus that is not rebuilt here stays unexplained.
-      if (dual.ok) exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex([...pre.trainTxt, ...ft.trainTxt]), minRun: COREFREE_MIN_RUN };
+      // The explanation corpus is only what the candidate was trained on and this run rebuilt: the replay corpus's
+      // train-split docs. Never the fine-tune corpus: pretrain mode trains on no fine-tune row (lm-retrain-train.sh
+      // refuses ftRows != 0), so its proof and trainedOn.finetune binding stay hard checks but its text explains
+      // nothing. Text from the live model's older corpus that is not rebuilt here stays unexplained.
+      if (dual.ok) exempt = { prompts: new Map(prompts.map((p) => [p.id, p.text])), trainingCorpus: buildSubstringIndex(pre.trainTxt), minRun: COREFREE_MIN_RUN };
     } else {
       const pre = load(trainCorpus), ft = load(ftCorpus);
       const d = dualCoreFreeDecision(cfgNow, { pretrain: readProof("pretrain"), finetune: readProof("finetune") }, { pretrain: pre, finetune: ft });

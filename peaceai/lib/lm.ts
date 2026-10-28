@@ -299,7 +299,9 @@ export function dualCoreFreeDecision(cfg: unknown, proofs: Record<CoreFreeStage,
 }
 
 /** Run 40694718190 (Auditor ruling): an LM retrain candidate trained in mode "pretrain" (continued pretraining of the
- *  live model on the replay corpus, then the fine-tune corpus) uses the two-corpus mode above, with no new rule. Its
+ *  live model on the replay corpus only: lm-retrain-train.sh refuses ftRows != 0, so no fine-tune row is trained on;
+ *  the fine-tune corpus is still built, proven and bound, and stays a hard chain check, but explains no memcheck hit)
+ *  uses the two-corpus mode above, with no new rule. Its
  *  landed config.json carries no trainedOn block (its sha256 is bound by the record), so each stage's trainedOn sha is
  *  read from config.json retrain: pretrain = retrain.replayManifestSha256 (must equal retrain.replayCorpus.manifestSha256),
  *  finetune = retrain.finetuneManifestSha256. null when absent, malformed or not a pretrain retrain. */
