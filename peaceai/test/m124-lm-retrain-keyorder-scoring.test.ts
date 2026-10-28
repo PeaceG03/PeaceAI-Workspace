@@ -135,6 +135,23 @@ test("M124 config: the scoring deadline is the job timeout minus a reserve kept 
   assert.doesNotMatch(s.replace(/by_deadline "\$py"/g, ""), /"\$py" peaceai\/model\/(eval_c|judge364)\.py/, "no scoring command outside the deadline");
 });
 
+test("M124 (b) pretrain candidate training stops by JOB_START + 15300 s: finalReserveSeconds 5700 = scoring reserve 1200 + 4500 for scoring", () => {
+  const b = CFG.pretrain.budget;
+  assert.equal(b.finalReserveSeconds, 5700);
+  assert.equal(b.finalReserveSeconds, CFG.eval.scoringReserveSeconds + 4500, "training reserve = gate/landing reserve + scoring time (set C live + candidate ~1900 s each, plus the judge set)");
+  assert.equal(b.finalJobSeconds - b.finalReserveSeconds, 15300, "candidate training deadline, seconds after JOB_START");
+  assert.match(b.rule, /finalReserveSeconds 5700 = eval\.scoringReserveSeconds \(1200, gate and landing\) \+ 4500 for scoring[^"]*JOB_START \+ 15300 s/);
+  // lm-retrain-train.sh computes the candidate (stop > 0) deadline as JOB_START + finalJobSeconds - finalReserveSeconds
+  const t = read("peaceai/bin/lm-retrain-train.sh");
+  assert.match(t, /else js=\$\(b finalJobSeconds\); rs=\$\(b finalReserveSeconds\); fi/); assert.match(t, /dl=\(--deadline "\$\(\(JOB_START \+ js - rs\)\)"\)/);
+  const sh = spawnSync("bash", ["-c", `cfg=peaceai/model/lm-retrain.json; JOB_START=1793172011; b() { jq -r --arg k "$1" '.pretrain.budget[$k]' "$cfg"; }\n${/(\s+else js=\$\(b finalJobSeconds\); rs=\$\(b finalReserveSeconds\); fi)/.exec(t)![1]!.replace(/^\s+else /, "").replace(/; fi$/, "")}\necho $((JOB_START + js - rs))`], { cwd: repo, encoding: "utf8" });
+  assert.equal(sh.stdout.trim(), String(1793172011 + 15300), sh.stderr);
+  // run 40624227227 (finetune-eval-land): JOB_START 1793172011, candidate summary printed 14846 s later: it fits, 454 s to spare
+  assert.ok(14846 <= b.finalJobSeconds - b.finalReserveSeconds);
+  // the candidate deadline leaves exactly the scoring budget plus the scoring reserve before the job timeout
+  assert.equal((b.finalJobSeconds - b.finalReserveSeconds) + 4500 + CFG.eval.scoringReserveSeconds, b.finalJobSeconds);
+});
+
 test("M124 scoring in time: both models scored, no cut marker, gate unchanged", () => tmp((d) => {
   const rt = fixture(d, true);
   const s = score(rt, true, { JOB_START: String(NOW()) }); assert.equal(s.status, 0, s.stdout + s.stderr);
