@@ -129,7 +129,7 @@ test("M119: a builder-log row doc must be exactly line N of <sha>:<path> (corefr
 
 test("M119: the retrain workflow carries the Auditor's gate and lands in Results only, with no promotion", () => {
   // M122: workflow_dispatch only, with a boolean dry_run input (m122-lm-replay.test.ts pins what it does); M123 adds the mode choice (m123 pins it).
-  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n\npermissions: \{\}\n/m);
+  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n      resume_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n\npermissions: \{\}\n/m);
   assert.doesNotMatch(WF, /pull_request|workflow_run:|schedule:/);
   assert.doesNotMatch(WF, /upload-artifact|actions\/cache|download-artifact/, "no artifacts, no caches");
   assert.doesNotMatch(WF, /self-hosted/); assert.equal((WF.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 7); // 6 jobs + retrain-outcome (m123 pins it)
@@ -159,7 +159,11 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   for (const j of ["sweep-a", "sweep-b"]) {
     const job = WF.slice(WF.indexOf(`\n  ${j}:`), WF.indexOf("\n  finetune-eval-land:"));
     assert.ok(job.length > 100 && /lm-retrain-train\.sh/.test(job), `${j} exists and trains`);
-    assert.doesNotMatch(job, /PEACEAI_RESULTS_DEPLOY_KEY|PEACEAI_CORE_DEPLOY_KEY|results-write\.sh/, `${j} only reads`);
+    // M125: the arms save their finished summary and best-step export in Results (runs/lm-retrain/<run>/arms/<arm>/ only,
+    // m125 pins the save); the core key never; the Results key only through the dry-run guard.
+    assert.doesNotMatch(job, /PEACEAI_CORE_DEPLOY_KEY|PEACEAI_RESULTS_READ_KEY/, `${j} never holds the core key`);
+    const end = job.slice(1).search(/\n  [a-z][\w-]*:\n/), own = end < 0 ? job : job.slice(0, end + 1);
+    assert.equal((own.match(/results-write\.sh/g) ?? []).length, 1, `${j} writes once (its arm save)`);
   }
   assert.match(WF, /needs: \[corpus-gate, sweep-a, sweep-b\]/);
   assert.match(WF, /why\+=\(selected_step_not_reached\)/);

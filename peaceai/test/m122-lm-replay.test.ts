@@ -215,7 +215,7 @@ test("M122 dry run: the guard refuses every Results write unless DRY_RUN is exac
   }
   const ok = guard({ DRY_RUN: "false" }); assert.equal(ok.status, 0); assert.equal(existsSync(marker), true, "a real run writes");
   // Workflow: the dry_run input, the DRY_RUN env, every results-write.sh call behind the guard, landing jobs skipped, no uploads.
-  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n\npermissions: \{\}\n/m);
+  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n      resume_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n\npermissions: \{\}\n/m);
   assert.match(WF, /\n  DRY_RUN: \$\{\{ inputs\.dry_run && 'true' \|\| 'false' \}\}\n/);
   const writes = WF.split("\n").filter((l) => l.includes("results-write.sh") && !l.includes("sha256") && !/^\s*#/.test(l) && !/  peaceai\/bin\/results-write\.sh$/.test(l));
   assert.ok(writes.length >= 2);

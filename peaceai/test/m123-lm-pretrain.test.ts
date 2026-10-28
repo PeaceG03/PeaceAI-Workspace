@@ -101,7 +101,7 @@ test("M123 condition 1: mode is type: choice (default finetune), passed via env 
   for (const j of ["sweep-a", "sweep-b"]) assert.match(job(j), /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)\n\s+lr=\$\(jq -r --arg m "\$mode" --argjson a "\$ARM" '\.\[\$m\]\.sweep\.lrs\[\$a\]' "\$CFG"\)/, j);
   assert.doesNotMatch(WF, /\.finetune\.sweep\.lrs\[\$ARM\]/, "the arm lr follows the mode");
   const sel = job("finetune-eval-land");
-  assert.match(sel, /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)\n\s+python3 peaceai\/model\/sweep_select\.py "\$CFG" "\$vs" "\$mode" "\$SA" "\$SB" > "\$RUNNER_TEMP\/select\.json"\n/);
+  assert.match(sel, /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)\n\s+python3 peaceai\/model\/sweep_select\.py "\$CFG" "\$vs" "\$mode" "\$\(cat "\$RUNNER_TEMP\/armsv\/arm-0\.json"\)" "\$\(cat "\$RUNNER_TEMP\/armsv\/arm-1\.json"\)" > "\$RUNNER_TEMP\/select\.json"\n/);
   assert.match(read("peaceai/model/sweep_select.py"), /\nMODES = \("finetune", "pretrain"\)\ncfg, vs, mode = [^\n]+\nif mode not in MODES:\n\s+sys\.exit\("unknown retrain mode: refused"\)\nft = cfg\[mode\]/);
   assert.match(job("retrain-memcheck"), /mode=\$\(\.\/peaceai\/bin\/lm-retrain-mode\.sh\)/);
 });
@@ -357,7 +357,8 @@ test("M123 condition 4: a sweep arm deadline-cut before its first evaluation aft
   const out = readFileSync(join(rt, "out"), "utf8"); assert.match(out, /^pass=false$/m); assert.doesNotMatch(out, /^version=/m, "no version: no model landed, no memcheck, no promotion");
   // wiring: no candidate training without a candidate; landing a model needs PASS; the memcheck needs a version; latest.json never touched
   const land = job("finetune-eval-land");
-  assert.match(land, /- name: Fine-tune the candidate [^\n]*\n\s+if: steps\.select\.outputs\.candidate == 'true'\n/);
+  assert.match(land, /- name: Fine-tune the candidate [^\n]*\n\s+if: steps\.select\.outputs\.candidate == 'true' && steps\.reuse\.outputs\.reused != 'true'\n/);
+  assert.match(land, /- name: Reuse the selected sweep arm[^\n]*\n\s+id: reuse\n\s+if: steps\.select\.outputs\.candidate == 'true'\n/);
   assert.match(land, /echo "candidate=\$\(jq -r '\.selected\.candidate == true' "\$RUNNER_TEMP\/select\.json"\)" >> "\$GITHUB_OUTPUT"/);
   assert.match(land, /v=none; if \[ "\$PASS" = true \]; then v=\$\(jq -r \.version "\$MODEL_DIR\/config\.json"\)/);
   assert.match(land, /if \[ "\$PASS" = true \]; then d="\$RESULTS_DIR\/models\/lm\/\$v"/);
@@ -416,7 +417,7 @@ test("M123 record: schema v5 carries mode, the mode's training block, the replay
   assert.match(land, /schema: "peaceai-lm-retrain-record:v5", runId: \$run, workspaceSha: \$ws, mode: \$mode,/);
   assert.match(land, /training: \$cfg\[0\]\[\$mode\]/);
   assert.match(land, /--arg mode "\$\(jq -r \.mode "\$RUNNER_TEMP\/select\.json"\)"/);
-  assert.match(land, /'\.retrain = \{mode: \$sel\[0\]\.mode, initFrom: \$live,[\s\S]*?replayCorpus: \$ct\[0\]\.replay\.corpus\}'/);
+  assert.match(land, /'\.retrain = \{mode: \$sel\[0\]\.mode, initFrom: \$live,[\s\S]*?replayCorpus: \$ct\[0\]\.replay\.corpus,\n\s+candidateSource: \(\$ct\[0\]\.source \/\/ \{kind: "retrained"\}\)\}'/);
   assert.match(read("peaceai/model/sweep_select.py"), /if a\.get\("mode"\) != mode or \(mode == "pretrain" and r\.get\("ftRows"\) != 0\):\n\s+sys\.exit\("sweep arm ran in a different mode"\)/);
 });
 
