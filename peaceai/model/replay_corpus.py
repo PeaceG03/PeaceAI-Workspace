@@ -17,8 +17,9 @@ Selection (deterministic, no RNG): key(doc) = sha256(salt + "\\n" + split + "\\n
   val:   split=heldout docs with bytes >= valMinBytes in key order, the first valDocs (spread over many docs and repos
          by construction; train.py takes one window per doc).
 Two offline steps around the fetch (model code never touches the network; lm-retrain-replay.sh fetches):
-  replay_corpus.py plan --mode <finetune|pretrain> --source <ext-manifest.jsonl> --config <lm-retrain.json> --plan <plan.jsonl> [--stats <json>]
-      checks both shas, selects, writes --stats {mode, trainCap, splitTrainDocs, splitTrainBytes, trainDocs, trainBytes,
+  replay_corpus.py plan --mode <finetune|pretrain> --source <ext-manifest.jsonl> --config <lm-retrain.json> --plan <plan.jsonl> [--stats <json>] [--manifest-out <file>]
+      checks both shas, selects, writes --manifest-out (the rebuilt live training manifest, the bytes whose sha256 is
+      replay.manifestSha256: the memcheck proof chain checks the live proof against it), --stats {mode, trainCap, splitTrainDocs, splitTrainBytes, trainDocs, trainBytes,
       fullTrainSplit, valDocs, valBytes} and one JSON line per selected doc {i, doc, repo, commit, path, sha256, pattern
       (the no-cone sparse-checkout pattern for exactly that path), line (the doc's manifest line, byte-identical)}.
   replay_corpus.py assemble --plan <plan.jsonl> --blobs <dir with one file per plan index> --out <dir>
@@ -127,6 +128,9 @@ def plan(a, rc):
     if a.stats:
         with open(a.stats, "w", encoding="utf-8") as f:
             json.dump(stats, f, sort_keys=True)
+    if a.manifest_out:  # run 40694718190: the rebuilt live manifest (sha256 already checked above) for the memcheck proof chain
+        with open(a.manifest_out, "wb") as f:
+            f.write(mbytes)
     print(f"replay mode={a.mode} train_cap={cap} full_train_split={str(stats['fullTrainSplit']).lower()} split_train_docs={stats['splitTrainDocs']} split_train_bytes={stats['splitTrainBytes']}")
     print(f"replay manifest sha256={rc['manifestSha256']} entries={len(entries)} train_docs={len(train)} train_bytes={sum(o['bytes'] for o, _ in train)} "
           f"val_docs={len(val)} val_bytes={sum(o['bytes'] for o, _ in val)} repos={len({o['repo'] for o, _ in train + val})} val_repos={len({o['repo'] for o, _ in val})}")
@@ -159,6 +163,7 @@ def main():
     p = sub.add_parser("plan")
     p.add_argument("--mode", required=True)  # checked against MODES in plan() (no argparse default: unset is refused)
     p.add_argument("--stats", default="")
+    p.add_argument("--manifest-out", default="")
     p.add_argument("--source", required=True)
     p.add_argument("--config", required=True)
     p.add_argument("--plan", required=True)

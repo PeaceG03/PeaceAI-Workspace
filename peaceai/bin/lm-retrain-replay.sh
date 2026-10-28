@@ -6,7 +6,8 @@
 # pretrain replay.pretrainTrainMaxBytes (the full train split; replay_corpus.py refuses if any train doc is left out).
 # 1. the public ext manifest at replay.source (anonymous partial fetch of the public Workspace repo; sha256-pinned);
 # 2. replay_corpus.py plan: rebuilds the live model's training manifest from it (must hash to replay.manifestSha256) and
-#    selects the replay train docs and the pretrain-heldout val docs; this script fetches them at their pinned commits;
+#    selects the replay train docs and the pretrain-heldout val docs (and keeps that rebuilt manifest as
+#    <work>/replay-live-manifest.jsonl for the memcheck proof chain); this script fetches them at their pinned commits;
 #    replay_corpus.py assemble checks each file's sha256 against the manifest;
 # 3. eval_dedup.py against set C v2 and the judge items (same window / exact / short rules as the fine-tune corpus;
 #    re-check must be 0) into <work>/replay, report <work>/replay-dedup.json;
@@ -25,8 +26,8 @@ git -C "$s" init -q; git -C "$s" remote add origin "https://github.com/$src_repo
 git -C "$s" fetch -q --depth 1 --filter=blob:none --no-tags origin "$src_commit"
 git -C "$s" show "$src_commit:$src_path" > "$work/replay-src.jsonl"
 plan="$work/replay-plan.jsonl"; blobs="$work/replay-blobs"; mkdir -p "$blobs" "$work/replay-git"
-rm -f "$work/replay-plan.json"
-"$py" peaceai/model/replay_corpus.py plan --mode "$mode" --source "$work/replay-src.jsonl" --config "$cfg" --plan "$plan" --stats "$work/replay-plan.json"
+rm -f "$work/replay-plan.json" "$work/replay-live-manifest.jsonl"
+"$py" peaceai/model/replay_corpus.py plan --mode "$mode" --source "$work/replay-src.jsonl" --config "$cfg" --plan "$plan" --stats "$work/replay-plan.json" --manifest-out "$work/replay-live-manifest.jsonl"
 # Fetch: per (repo, commit), an anonymous partial clone at the pinned commit with a no-cone sparse checkout of exactly the
 # planned paths; each planned blob is written to <blobs>/<plan index>; replay_corpus.py assemble checks every sha256.
 while IFS=$'\t' read -r repo commit; do

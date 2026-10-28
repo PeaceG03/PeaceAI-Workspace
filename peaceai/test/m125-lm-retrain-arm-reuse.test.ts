@@ -160,7 +160,7 @@ test("M125 save failures never fail the arm: a second save of the same arm, or a
     assert.match(t, /- name: Save the finished arm[^\n]*\n\s+id: save\n\s+if: env\.DRY_RUN != 'true' && steps\.stage\.outcome == 'success' && steps\.verify-save\.outcome == 'success'\n/);
     assert.ok(t.indexOf('echo "summary=') < t.indexOf("lm-retrain-arm-save.sh") && t.indexOf("lm-retrain-arm-save.sh") < t.indexOf("lm-retrain-dryrun-score.sh"), "saved right after the arm finishes");
     assert.match(t, /\n      summary: \$\{\{ steps\.arm\.outputs\.summary \}\}\n      saved: \$\{\{ steps\.save\.outputs\.saved \}\}\n/);
-    assert.match(t, /\n    if: github\.repository == 'PeaceG03\/PeaceAI-Workspace' && github\.ref == 'refs\/heads\/main' && inputs\.resume_run_id == ''\n/);
+    assert.match(t, /\n    if: github\.repository == 'PeaceG03\/PeaceAI-Workspace' && github\.ref == 'refs\/heads\/main' && inputs\.resume_run_id == '' && inputs\.memcheck_only_run_id == ''\n/);
     assert.match(t, /\n    environment: peaceai-results\n/, "the existing Results environment (no new secret or environment)");
     assert.match(t, /\|\| st=\$\?\n\s+\[ "\$st" = 0 \] \|\| echo "arm \$ARM save failed/);
   }
@@ -294,7 +294,7 @@ test("M125 resume: a failed run's saved arms -> verify -> select -> reuse, with 
 }));
 
 test("M125 workflow wiring: resume input, job conditions, fetch behind the checkout verification, no artifacts, outcome guard unchanged", () => {
-  assert.match(WF, /\n      resume_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n\npermissions: \{\}\n/);
+  assert.match(WF, /\n      resume_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n      memcheck_only_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n\npermissions: \{\}\n/);
   assert.match(WF, /\n  RESUME: \$\{\{ inputs\.resume_run_id \|\| '' \}\}\n/);
   assert.doesNotMatch(WF, /upload-artifact|download-artifact|actions\/cache/);
   // corpus-gate refuses a bad id, a dry-run resume and a self-resume
@@ -303,9 +303,9 @@ test("M125 workflow wiring: resume input, job conditions, fetch behind the check
   assert.deepEqual([run({ RESUME: "" }), run({ RESUME: RUN }), run({ RESUME: RUN, DRY_RUN: "true" }), run({ RESUME: RUN2 }), run({ RESUME: "1$(id)" }), run({ RESUME: "123" }), run({ RESUME: "", DRY_RUN: "true" })], [0, 0, 1, 1, 1, 1, 0]);
   // finetune-eval-land: a normal run needs both arms; a resume needs both skipped; memchecks run after it explicitly
   const land = job("finetune-eval-land");
-  assert.match(land, /\n    if: github\.repository == 'PeaceG03\/PeaceAI-Workspace' && github\.ref == 'refs\/heads\/main' && !cancelled\(\) && needs\.corpus-gate\.result == 'success' && \(\(inputs\.resume_run_id == '' && needs\.sweep-a\.result == 'success' && needs\.sweep-b\.result == 'success'\) \|\| \(inputs\.resume_run_id != '' && needs\.sweep-a\.result == 'skipped' && needs\.sweep-b\.result == 'skipped'\)\) && inputs\.dry_run != true\n/);
-  assert.match(job("retrain-memcheck"), /!cancelled\(\) && needs\.corpus-gate\.result == 'success' && needs\.finetune-eval-land\.result == 'success' && needs\.finetune-eval-land\.outputs\.version != '' && inputs\.dry_run != true\n/);
-  assert.match(job("record-memcheck"), /!cancelled\(\) && needs\.finetune-eval-land\.result == 'success' && needs\.retrain-memcheck\.result == 'success' && needs\.retrain-memcheck\.outputs\.memcheck != '' && inputs\.dry_run != true\n/);
+  assert.match(land, /\n    if: github\.repository == 'PeaceG03\/PeaceAI-Workspace' && github\.ref == 'refs\/heads\/main' && !cancelled\(\) && needs\.corpus-gate\.result == 'success' && inputs\.memcheck_only_run_id == '' && \(\(inputs\.resume_run_id == '' && needs\.sweep-a\.result == 'success' && needs\.sweep-b\.result == 'success'\) \|\| \(inputs\.resume_run_id != '' && needs\.sweep-a\.result == 'skipped' && needs\.sweep-b\.result == 'skipped'\)\) && inputs\.dry_run != true\n/);
+  assert.match(job("retrain-memcheck"), /!cancelled\(\) && needs\.corpus-gate\.result == 'success' && \(\(inputs\.memcheck_only_run_id == '' && needs\.finetune-eval-land\.result == 'success' && needs\.finetune-eval-land\.outputs\.version != ''\) \|\| \(inputs\.memcheck_only_run_id != '' && needs\.finetune-eval-land\.result == 'skipped'\)\) && inputs\.dry_run != true\n/);
+  assert.match(job("record-memcheck"), /!cancelled\(\) && \(\(inputs\.memcheck_only_run_id == '' && needs\.finetune-eval-land\.result == 'success'\) \|\| \(inputs\.memcheck_only_run_id != '' && needs\.finetune-eval-land\.result == 'skipped'\)\) && needs\.retrain-memcheck\.result == 'success' && needs\.retrain-memcheck\.outputs\.memcheck != '' && inputs\.dry_run != true\n/);
   // fetch -> verify -> select -> reuse -> (re-train only if not reused) -> provenance -> score
   const order = ["Fetch the saved sweep arms", "lm-retrain-arm-verify.sh", "sweep_select.py", "lm-retrain-arm-reuse.sh", "- name: Fine-tune the candidate", "- name: Candidate files and provenance", "- name: Score live and candidate"].map((s) => land.indexOf(s));
   assert.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1]!)), order.join(","));
@@ -314,7 +314,7 @@ test("M125 workflow wiring: resume input, job conditions, fetch behind the check
   // the provenance records where the candidate came from (additive, record schema still v5)
   assert.match(land, /candidateSource: \(\$ct\[0\]\.source \/\/ \{kind: "retrained"\}\)\}'/);
   assert.match(land, /candidateSource: \(if \$ct\[0\]\.noCandidate == true then null else \(\$ct\[0\]\.source \/\/ \{kind: "retrained"\}\) end\), resumeRunId: \(if \$rs == "" then null else \$rs end\),/);
-  // the outcome guard and the dry-run guard are unchanged (sha256 pins)
+  // the outcome guard and the dry-run guard are pinned (sha256; the outcome guard re-pinned in M126)
   assert.equal(sha(join(repo, "peaceai/bin/lm-retrain-outcome.sh")), OUTCOME_SHA256);
   assert.equal(sha(join(repo, "peaceai/bin/lm-retrain-dryrun-guard.sh")), GUARD_SHA256);
   assert.match(job("retrain-outcome"), /needs: \[corpus-gate, sweep-a, sweep-b, finetune-eval-land, retrain-memcheck, record-memcheck\]\n    if: always\(\)/);
@@ -326,7 +326,7 @@ test("M125 workflow wiring: resume input, job conditions, fetch behind the check
     assert.doesNotMatch(t, /\bcat "\$|jq [^\n]*"\$(S|sm)"\s*$|echo "\$S"/m, `${f} never prints a summary or file`);
   }
 });
-const OUTCOME_SHA256 = "16b81ef34d6e5d9879ab3e054ca768b3b5ef9e14acc6ea5906aea45fab643370";
+const OUTCOME_SHA256 = "f8c81ea77cd5c977690afffe56be7e122df5cb7b5b9cfb866cefa93087a33edf"; // M126 (run 40694718190): "memcheck FAIL (record landed)" and the memcheck-only branch (m126-lm-memcheck-chain.test.ts). Before: 16b81ef3...
 const GUARD_SHA256 = "d4d7c4614fc1c88d806ef66d4e813e8bc31f4ff1f3a89835b9e1efa304a60361";
 
 test("M125 new files are protected", () => {

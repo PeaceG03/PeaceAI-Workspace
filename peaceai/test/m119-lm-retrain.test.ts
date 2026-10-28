@@ -129,7 +129,7 @@ test("M119: a builder-log row doc must be exactly line N of <sha>:<path> (corefr
 
 test("M119: the retrain workflow carries the Auditor's gate and lands in Results only, with no promotion", () => {
   // M122: workflow_dispatch only, with a boolean dry_run input (m122-lm-replay.test.ts pins what it does); M123 adds the mode choice (m123 pins it).
-  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n      resume_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n\npermissions: \{\}\n/m);
+  assert.match(WF, /^on:\n  workflow_dispatch:\n    inputs:\n      dry_run:\n        description: "[^"\n]+"\n        type: boolean\n        default: false\n      mode:\n        description: "[^"\n]+"\n        type: choice\n        options:\n          - finetune\n          - pretrain\n        default: finetune\n      resume_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n      memcheck_only_run_id:\n        description: "[^"\n]+"\n        type: string\n        default: ""\n\npermissions: \{\}\n/m);
   assert.doesNotMatch(WF, /pull_request|workflow_run:|schedule:/);
   assert.doesNotMatch(WF, /upload-artifact|actions\/cache|download-artifact/, "no artifacts, no caches");
   assert.doesNotMatch(WF, /self-hosted/); assert.equal((WF.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 7); // 6 jobs + retrain-outcome (m123 pins it)
@@ -181,8 +181,12 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   assert.match(live, /lm-v1-\$\(sha256sum "\$L\/weights\.npz" \| cut -c1-12\)" = "\$live"/);
   assert.match(read("peaceai/bin/lm-retrain-corpus.sh"), /lm-retrain-headcheck\.sh/, "merged content is compared with the PR head in CI");
   const mcJob = WF.slice(WF.indexOf("\n  retrain-memcheck:"), WF.indexOf("\n  record-memcheck:"));
-  assert.doesNotMatch(mcJob, /PEACEAI_LM_TRAIN_CORPUS|PEACEAI_LM_FT_CORPUS/, "no training corpus given: the strict 32-character rule");
-  assert.match(mcJob, /substringRule "\$M"\)" = strict/);
+  // finetune mode: no training corpus given, the strict 32-character rule; pretrain mode (run 40694718190, Auditor's
+  // ruling): the two-corpus mode, both corpora exported only inside the pretrain branch
+  const ftBranch = mcJob.slice(mcJob.indexOf('if [ "$mode" = finetune ]; then'), mcJob.indexOf("          else\n", mcJob.indexOf('if [ "$mode" = finetune ]; then')));
+  assert.ok(ftBranch.length > 0); assert.doesNotMatch(ftBranch, /PEACEAI_LM_TRAIN_CORPUS|PEACEAI_LM_FT_CORPUS/, "finetune: no training corpus given");
+  assert.match(ftBranch, /substringRule "\$M"\)" = strict/);
+  assert.equal((mcJob.match(/PEACEAI_LM_TRAIN_CORPUS=/g) ?? []).length, 1);
   assert.doesNotMatch(WF, /trainedOn/);
   for (const f of [WF, read("peaceai/model/judge364.py"), read("peaceai/model/lm-retrain.json"), read("peaceai/model/judge_gate.py"), read("peaceai/spec/lm-retrain-judge-gate-v1.md")]) assert.doesNotMatch(f, /right from wrong|tell right|can tell|distinguish(es)? right/i, "no wording that either model tells right from wrong");
   // Gate 5: latest.json is only ever read; landings are path-checked to the run record and the model dir.

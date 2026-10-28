@@ -31,7 +31,8 @@ name: peace-lm-retrain
 #       Dry run: RED unless every sweep arm left a parseable summary that stopped on "steps" or "patience" (early stop)
 #       and peaceai/model/sweep_select.py (the select step's own rule) picks a candidate arm/step, which it prints;
 #   (4) GitHub-hosted runners only; counts-only logs; no artifacts, no caches; model, scores and record land in the
-#       private Results repo only; the memcheck uses the strict 32-character rule (no pretrain-corpus proof attached);
+#       private Results repo only; finetune mode: the memcheck uses the strict 32-character rule (no pretrain-corpus
+#       proof attached); pretrain mode: lm-memcheck.ts's two-corpus mode (see "Run 40694718190" below);
 #   (5) no promotion: latest.json is never touched; promotion needs the Auditor's review of this run id and weights sha.
 # M123 continued pretraining (workflow_dispatch input mode = finetune | pretrain, default finetune; passed only through the
 #   MODE env and validated by peaceai/bin/lm-retrain-mode.sh against that fixed allowlist): every schedule value is read
@@ -42,7 +43,7 @@ name: peace-lm-retrain
 #   cleanly at a wall-clock deadline inside the job limit (pretrain.budget) so a record is always written. The record
 #   (schema v5) carries the mode and the replay corpus sha256 and byte count used. Gate (both modes): candidate set C v2
 #   bits/byte <= live - eval.minBpbGain (bpb_gate.py, decimal), at the validation-selected step; set C is the final gate
-#   only. Memcheck in pretrain mode: the strict fine-tune-corpus run AND a replay-corpus run, both required
+#   only. Memcheck in pretrain mode: a fine-tune-corpus run AND a replay-corpus run, both required
 #   (memcheck_combine.py). Dry run (both modes): per-arm phase times (numbers) and set C bpb only; no Results write.
 # M125 durable sweep arms and candidate reuse (Peace 2026-10-28, after run 40624227227 lost ~10 h; Auditor's reuse idea):
 #   each sweep arm, as soon as it finishes and before select runs, stages its summary, losses and (bestStep > 0) the
@@ -56,6 +57,19 @@ name: peace-lm-retrain
 #   An unsaved selected arm is re-trained (the pre-M125 path, 15300 s candidate deadline). Input resume_run_id (real runs
 #   only): the sweep is skipped and select, scoring and landing run on that run's saved arms (every arm must be saved and
 #   verify; run, mode, lr, live, fine-tune manifest and training config must equal this run's). No artifacts, no caches.
+# Run 40694718190 follow-up (Auditor's ruling; the pretrain candidate lm-v1-858573767465 landed but its strict memcheck
+#   FAILed): (1) pretrain mode uses lm-memcheck.ts's existing two-corpus mode, no new rule: PEACEAI_LM_TRAIN_CORPUS = the
+#   replay corpus, PEACEAI_LM_FT_CORPUS = the fine-tune corpus, both rebuilt in the memcheck job; the replay link is the
+#   live model's corefree-proof.json (sha256 pinned, lm-retrain.json live.corefreeProofSha256) checked against the live
+#   training manifest rebuilt in the job (replay_corpus.py --manifest-out, sha256 = replay.manifestSha256), the fine-tune
+#   link is corpus-gate's proof (sha256 from the run record). Any missing or mismatched link: FAIL (never the strict
+#   fallback); line, shingle and personal-info hits stay hard. Initial weights vs the live model: a note, not a check.
+#   (2) memcheck-only (input memcheck_only_run_id, real runs only): corpus-gate rebuilds and proves the corpora; the sweep
+#   and finetune-eval-land are skipped; retrain-memcheck re-verifies that run's landed candidate (lm-retrain-memcheck-
+#   fetch.sh: weights vs the record, config/tokenizer/weights vs that run's first memcheck record) and runs the same
+#   memcheck; record-memcheck APPENDS runs/lm-retrain/<that run>/memcheck-recheck-<this run>.json only (path-allowlisted,
+#   never an existing file): nothing promoted, latest.json, record.json and memcheck.json untouched.
+#   (3) outcome: a landed FAIL record prints "memcheck FAIL (record landed)" (still RED).
 # Jobs: corpus-gate (peaceai-core: core-free proof of the exact corpus, read-only keys) -> sweep-a, sweep-b (peaceai-core,
 # Results read key only; losses only) -> finetune-eval-land
 # (peaceai-results) -> retrain-memcheck (peaceai-core, read-only keys; LM job id pinned in lm.ts LM_JOB_WORKFLOWS) -> record-memcheck (peaceai-results).
@@ -79,6 +93,10 @@ on:
         description: "real runs only: skip the sweep; select, score and land from this earlier run's sweep arms saved in Results (sha256-verified)"
         type: string
         default: ""
+      memcheck_only_run_id:
+        description: "real runs only: no training; re-run the memcheck on this earlier run's landed candidate and append a memcheck-recheck record under that run (no promotion)"
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -91,6 +109,7 @@ env:
   DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
   MODE: ${{ inputs.mode || 'finetune' }}
   RESUME: ${{ inputs.resume_run_id || '' }}
+  MCO: ${{ inputs.memcheck_only_run_id || '' }}
   RESULTS_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
     9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
@@ -125,6 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -z "$RESUME" ] || { [[ "$RESUME" =~ ^[1-9][0-9]{5,19}$ ]] && [ "$DRY_RUN" = false ] && [ "$RESUME" != "$GITHUB_RUN_ID" ]; } || { echo "bad resume_run_id (needs a run id and a real run): refused"; exit 1; }
+          [ -z "${MCO:-}" ] || { [[ "$MCO" =~ ^[1-9][0-9]{5,19}$ ]] && [ "$DRY_RUN" = false ] && [ -z "$RESUME" ] && [ "$MCO" != "$GITHUB_RUN_ID" ]; } || { echo "bad memcheck_only_run_id (needs a run id, a real run, no resume_run_id): refused"; exit 1; }
       - name: Install workspace tooling
         run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - name: Verify the checkout and the key scripts before any key is used
@@ -193,7 +213,7 @@ jobs:
   sweep-a:
     name: sweep arm a (<mode>.sweep.lrs[0]; early stop on pretrain-heldout windows only; saved in Results when it finishes)
     needs: corpus-gate
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.resume_run_id == ''
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.resume_run_id == '' && inputs.memcheck_only_run_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     environment: peaceai-results
@@ -307,7 +327,7 @@ jobs:
   sweep-b:
     name: sweep arm b (<mode>.sweep.lrs[1]; early stop on pretrain-heldout windows only; saved in Results when it finishes)
     needs: corpus-gate
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.resume_run_id == ''
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && inputs.resume_run_id == '' && inputs.memcheck_only_run_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     environment: peaceai-results
@@ -422,7 +442,7 @@ jobs:
   finetune-eval-land:
     name: select the sweep arm, reuse its saved checkpoint (or re-train it from the live model), score both in this run, gate, land in Results
     needs: [corpus-gate, sweep-a, sweep-b]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.corpus-gate.result == 'success' && ((inputs.resume_run_id == '' && needs.sweep-a.result == 'success' && needs.sweep-b.result == 'success') || (inputs.resume_run_id != '' && needs.sweep-a.result == 'skipped' && needs.sweep-b.result == 'skipped')) && inputs.dry_run != true
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.corpus-gate.result == 'success' && inputs.memcheck_only_run_id == '' && ((inputs.resume_run_id == '' && needs.sweep-a.result == 'success' && needs.sweep-b.result == 'success') || (inputs.resume_run_id != '' && needs.sweep-a.result == 'skipped' && needs.sweep-b.result == 'skipped')) && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     environment: peaceai-results
@@ -692,9 +712,9 @@ jobs:
           test "$PASS" = true || { echo "gate FAILED: record landed, candidate not landed"; exit 1; }
 
   retrain-memcheck:
-    name: verbatim memcheck of the landed candidate (strict 32-character rule; pretrain mode adds the replay corpus; counts only)
+    name: verbatim memcheck of the landed candidate (finetune - strict 32-character rule; pretrain - two-corpus mode, both proofs; counts only)
     needs: [corpus-gate, finetune-eval-land]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.corpus-gate.result == 'success' && needs.finetune-eval-land.result == 'success' && needs.finetune-eval-land.outputs.version != '' && inputs.dry_run != true
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.corpus-gate.result == 'success' && ((inputs.memcheck_only_run_id == '' && needs.finetune-eval-land.result == 'success' && needs.finetune-eval-land.outputs.version != '') || (inputs.memcheck_only_run_id != '' && needs.finetune-eval-land.result == 'skipped')) && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     environment: peaceai-core
@@ -702,6 +722,7 @@ jobs:
       contents: read
     outputs:
       memcheck: ${{ steps.mc.outputs.memcheck }}
+      version: ${{ steps.fetch.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -721,24 +742,29 @@ jobs:
           git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
           test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
           printf '%s\n' "$CORE_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
-      - name: Fetch the landed candidate and the judge items (read-only key, sparse)
+      - name: Fetch and verify the landed candidate, its run record and the live core-free proof; the judge items (read-only key, sparse)
+        id: fetch
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_READ_KEY }}
           V: ${{ needs.finetune-eval-land.outputs.version }}
         run: |
           set -euo pipefail
           [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_READ_KEY is not set: refused (fail closed)"; exit 1; }
-          [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
+          run="${MCO:-$GITHUB_RUN_ID}"; [ -n "$MCO" ] || [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
+          [[ "$run" =~ ^[1-9][0-9]{5,19}$ ]] || { echo "bad run id"; exit 1; }
           res="$RUNNER_TEMP/res"
           ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$res"
-          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone "/models/lm/$V/"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone "/runs/lm-retrain/$run/record.json" "/runs/lm-retrain/$run/memcheck.json"
           ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
-          if [ -n "$(find "$res/models/lm/$V" -type l)" ]; then echo "refused: symlink in model dir"; exit 1; fi
-          test "lm-v1-$(sha256sum "$res/models/lm/$V/weights.npz" | cut -c1-12)" = "$V" || { echo "weights do not hash to the version: refused"; exit 1; }
-          test "$(jq -r .retrain.runId "$res/models/lm/$V/config.json")" = "$GITHUB_RUN_ID" || { echo "model is not from this run: refused"; exit 1; }
-          mkdir -p "$RUNNER_TEMP/model"; cp "$res/models/lm/$V"/* "$RUNNER_TEMP/model/"; rm -rf "$res"
+          [ -n "$V" ] || V=$(jq -r '.candidate // ""' "$res/runs/lm-retrain/$run/record.json")
+          [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
+          live=$(jq -r .live.version "$CFG"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad live version"; exit 1; }
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout add "/models/lm/$V/" "/models/lm/$live/corefree-proof.json"
+          ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
+          MCO="$MCO" ./peaceai/bin/lm-retrain-memcheck-fetch.sh "$res" "$RUNNER_TEMP" "$run" "$V"
+          rm -rf "$res"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
           ./peaceai/bin/lm-retrain-judge.sh "$RUNNER_TEMP"
-          rm -f "$RUNNER_TEMP/model"/memcheck.json
       - name: Rebuild the exact training corpus (public prompts for the memcheck; pretrain mode also the replay corpus)
         env:
           DROPS: ${{ needs.corpus-gate.outputs.drops }}
@@ -773,7 +799,7 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_CORE_DEPLOY_KEY }}
         run: ./peaceai/bin/clone-core.sh "$RUNNER_TEMP/peaceai-core"
-      - name: Verbatim memcheck (strict 32-character rule, no training corpus given, counts only; pretrain mode adds a replay-corpus run)
+      - name: Verbatim memcheck (finetune - strict 32-character rule, no training corpus given; pretrain - two-corpus mode with both proofs, a fine-tune-corpus run and a replay-corpus run; counts only)
         id: mc
         env:
           PEACEAI_PYTHON: ${{ runner.temp }}/venv/bin/python
@@ -784,46 +810,67 @@ jobs:
         run: |
           set -euo pipefail
           mode=$(./peaceai/bin/lm-retrain-mode.sh)
-          ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true
-          M="$RUNNER_TEMP/model/memcheck.json"; test -f "$M" || { echo "no memcheck record"; exit 1; }
-          test "$(jq -r .substringRule "$M")" = strict || { echo "memcheck did not use the strict rule: refused"; exit 1; }
-          if [ "$mode" = pretrain ]; then
+          M="$RUNNER_TEMP/model/memcheck.json"
+          if [ "$mode" = finetune ]; then
+            ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true
+            test -f "$M" || { echo "no memcheck record"; exit 1; }
+            test "$(jq -r .substringRule "$M")" = strict || { echo "memcheck did not use the strict rule: refused"; exit 1; }
+          else
+            # two-corpus mode (lm-memcheck.ts PEACEAI_LM_TRAIN_CORPUS + PEACEAI_LM_FT_CORPUS); the proof chain is checked
+            # against the corpora and the live manifest rebuilt above; a broken link records FAIL (never the strict fallback)
+            export PEACEAI_LM_TRAIN_CORPUS="$RUNNER_TEMP/w/replay" PEACEAI_LM_FT_CORPUS="$RUNNER_TEMP/w/ft" PEACEAI_LM_RETRAIN_CFG="$CFG" \
+              PEACEAI_LM_LIVE_PROOF="$RUNNER_TEMP/live-proof.json" PEACEAI_LM_LIVE_MANIFEST="$RUNNER_TEMP/w/replay-live-manifest.jsonl" \
+              PEACEAI_LM_FT_PROOF_SHA256="$(cat "$RUNNER_TEMP/ft-proof-sha256")"
+            ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true
+            test -f "$M" || { echo "no memcheck record"; exit 1; }
+            jq -e '.coreFreeProofs | type == "object"' "$M" > /dev/null || { echo "memcheck did not use the two-corpus mode: refused"; exit 1; }
             mv "$M" "$RUNNER_TEMP/memcheck-ft.json"
             PEACEAI_LM_CORPUS="$RUNNER_TEMP/w/replay" ./node_modules/.bin/tsx peaceai/bin/lm-memcheck.ts || true
             test -f "$M" || { echo "no replay-corpus memcheck record"; exit 1; }
+            jq -e '.coreFreeProofs | type == "object"' "$M" > /dev/null || { echo "memcheck did not use the two-corpus mode: refused"; exit 1; }
             mv "$M" "$RUNNER_TEMP/memcheck-replay.json"
             python3 peaceai/model/memcheck_combine.py --ft "$RUNNER_TEMP/memcheck-ft.json" --replay "$RUNNER_TEMP/memcheck-replay.json" --out "$M" || true
-            test "$(jq -r .substringRule "$M")" = strict || { echo "memcheck did not use the strict rule: refused"; exit 1; }
+            jq -e '.pretrainMemcheck.twoCorpus == true' "$M" > /dev/null || { echo "combined memcheck is not two-corpus: refused"; exit 1; }
           fi
           b64=$(gzip -9c "$M" | base64 -w0); [ "${#b64}" -le 800000 ] || { echo "memcheck record too large for a job output: refused"; exit 1; }
           echo "memcheck=$b64" >> "$GITHUB_OUTPUT"
       - name: Delete core, the model and the corpus
         if: always()
-        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/model" "$RUNNER_TEMP/res" "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP"/memcheck-*.json
+        run: rm -rf "$RUNNER_TEMP/peaceai-core" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/model" "$RUNNER_TEMP/res" "$RUNNER_TEMP/w" "$RUNNER_TEMP/items.json" "$RUNNER_TEMP"/memcheck-*.json "$RUNNER_TEMP/live-proof.json" "$RUNNER_TEMP/ft-proof-sha256" "$RUNNER_TEMP/version"
 
   record-memcheck:
     name: record the memcheck in Results (append-only; no promotion)
     needs: [finetune-eval-land, retrain-memcheck]
-    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && needs.finetune-eval-land.result == 'success' && needs.retrain-memcheck.result == 'success' && needs.retrain-memcheck.outputs.memcheck != '' && inputs.dry_run != true
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main' && !cancelled() && ((inputs.memcheck_only_run_id == '' && needs.finetune-eval-land.result == 'success') || (inputs.memcheck_only_run_id != '' && needs.finetune-eval-land.result == 'skipped')) && needs.retrain-memcheck.result == 'success' && needs.retrain-memcheck.outputs.memcheck != '' && inputs.dry_run != true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: peaceai-results
     permissions:
       contents: read
+    outputs:
+      landed: ${{ steps.land.outputs.landed }}
+      status: ${{ steps.decode.outputs.status }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Decode the count-level memcheck record
+        id: decode
         env:
           MC: ${{ needs.retrain-memcheck.outputs.memcheck }}
-          V: ${{ needs.finetune-eval-land.outputs.version }}
+          V: ${{ needs.retrain-memcheck.outputs.version }}
         run: |
           set -euo pipefail
           [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
           mkdir -p "$RUNNER_TEMP/mc"; printf '%s' "$MC" | base64 -d | gunzip | head -c 5000000 > "$RUNNER_TEMP/mc/memcheck.json"
           jq -e .status "$RUNNER_TEMP/mc/memcheck.json" > /dev/null
           jq -r '"memcheck status=\(.status) rule=\(.substringRule)"' "$RUNNER_TEMP/mc/memcheck.json"
+          st=$(jq -r .status "$RUNNER_TEMP/mc/memcheck.json"); [[ "$st" =~ ^(PASS|FAIL)$ ]] || { echo "bad memcheck status"; exit 1; }
+          echo "status=$st" >> "$GITHUB_OUTPUT"
+          if [ -n "$MCO" ]; then  # memcheck-only: the recheck record names its source run, this run and the candidate
+            jq --arg src "$MCO" --arg run "$GITHUB_RUN_ID" --arg ws "$GITHUB_SHA" --arg v "$V" \
+              '. + {recheck: {sourceRunId: $src, recheckRunId: $run, workspaceSha: $ws, candidate: $v, promotes: false}}' "$RUNNER_TEMP/mc/memcheck.json" > "$RUNNER_TEMP/mc/recheck.json"
+          fi
       - name: Verify the checkout and the landing scripts before the key is used
         run: |
           set -euo pipefail
@@ -831,13 +878,28 @@ jobs:
           git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
           test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
           printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
-      - name: Land memcheck.json next to the run record and the candidate (latest.json untouched)
+      - name: Land memcheck.json next to the run record and the candidate (latest.json untouched; memcheck-only - append memcheck-recheck-<this run>.json under that run only)
+        id: land
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
-          V: ${{ needs.finetune-eval-land.outputs.version }}
+          V: ${{ needs.retrain-memcheck.outputs.version }}
           MC_DIR: ${{ runner.temp }}/mc
         run: |
           set -euo pipefail
+          if [ -n "$MCO" ]; then
+            [[ "$MCO" =~ ^[1-9][0-9]{5,19}$ ]] || { echo "bad memcheck_only_run_id"; exit 1; }
+            ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "LM retrain memcheck recheck of run $MCO (run $GITHUB_RUN_ID)" \
+              bash -c 'set -euo pipefail
+                r="$RESULTS_DIR/runs/lm-retrain/$MCO"; f="$r/memcheck-recheck-$GITHUB_RUN_ID.json"
+                test -d "$r" && test -f "$r/record.json" && test ! -e "$f"
+                cp "$MC_DIR/recheck.json" "$f"
+                git -C "$RESULTS_DIR" add -A
+                while IFS= read -r name; do [ -z "$name" ] && continue
+                  [ "$name" = "runs/lm-retrain/$MCO/memcheck-recheck-$GITHUB_RUN_ID.json" ] || { echo "landing refused: unexpected path"; exit 1; }
+                done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"
+                test -z "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames --diff-filter=MDRT)" || { echo "landing refused: not append-only"; exit 1; }'
+            echo "landed=true" >> "$GITHUB_OUTPUT"; rm -rf "$RUNNER_TEMP/mc"; exit 0
+          fi
           ./peaceai/bin/lm-retrain-dryrun-guard.sh ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh "M119 LM retrain memcheck (run $GITHUB_RUN_ID)" \
             bash -c 'set -euo pipefail
               d="$RESULTS_DIR/models/lm/$V"; r="$RESULTS_DIR/runs/lm-retrain/$GITHUB_RUN_ID"
@@ -847,6 +909,7 @@ jobs:
               while IFS= read -r name; do [ -z "$name" ] && continue
                 [ "$name" = "models/lm/$V/memcheck.json" ] || [ "$name" = "runs/lm-retrain/$GITHUB_RUN_ID/memcheck.json" ] || { echo "landing refused: unexpected path"; exit 1; }
               done <<< "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)"'
+          echo "landed=true" >> "$GITHUB_OUTPUT"
           rm -rf "$RUNNER_TEMP/mc"
       - name: Result (fail unless memcheck PASS; promotion still needs the Auditor's review of this run id and weights sha)
         env:
@@ -870,6 +933,8 @@ jobs:
           SEL: ${{ needs.finetune-eval-land.result }}
           MC: ${{ needs.retrain-memcheck.result }}
           REC: ${{ needs.record-memcheck.result }}
+          REC_LANDED: ${{ needs.record-memcheck.outputs.landed }}
+          MC_STATUS: ${{ needs.record-memcheck.outputs.status }}
           SA: ${{ needs.sweep-a.outputs.summary }}
           SB: ${{ needs.sweep-b.outputs.summary }}
         run: ./peaceai/bin/lm-retrain-outcome.sh
