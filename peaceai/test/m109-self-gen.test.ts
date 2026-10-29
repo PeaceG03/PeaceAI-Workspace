@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { generateStage2Proposal, genSnapshot, runGeneratorSandboxed, selfGenerateCore, SELF_GEN_SCHEMA } from "../lib/selfpropose.ts";
+import { generateStage2Proposal, genSnapshot, runGeneratorSandboxed, selfGenerateCore, SELF_GEN_GENERATOR, SELF_GEN_SCHEMA, verifySelfGenRecord } from "../lib/selfpropose.ts";
 import { NO_GENERATOR_MARK } from "../lib/selfchange.ts";
 
 const SENTINEL = "ANSWER_SENTINEL_7c41";
@@ -134,4 +134,36 @@ test("the skills are self-contained (shipped as source) and credit stays hard-re
   const s = selfGenerateCore.toString();
   for (const bad of [/\brequire\s*\(/, /\bimport\s*\(/, /\bprocess\b/, /\bfetch\b/, /\bglobalThis\b/]) assert.doesNotMatch(s, bad);
   assert.equal(NO_GENERATOR_MARK, "no credit: no generator run record");
+});
+
+// S2 (Auditor, Oct 29): a recorded generator run names its generator, carries its only inputs (task text + base), and
+// re-runs to the same record from those inputs alone, so a later credit rule can check it instead of trusting it.
+test("S2 record: names the generator and its inputs, and re-runs to the same record (tampering is caught)", () => {
+  const f = fixture();
+  const only = mkdtempSync(join(tmpdir(), "m109-only-"));
+  try {
+    const task = "docs: pre-#280 memcheck PASS on a core-free corpus is not evidence";
+    const r = generateStage2Proposal(f.dir, task, f.base);
+    assert.equal(r.generator, SELF_GEN_GENERATOR);
+    assert.deepEqual(r.inputs, { task, base: f.base });
+    assert.equal(generateStage2Proposal(f.dir, task, f.base, "() => ({ status: 'refused', skill: null, reason: 'x', files: [] })").generator, "custom (tests only)");
+    assert.deepEqual(verifySelfGenRecord(f.dir, r), []);
+    // reproduced from a base-only clone too (the answer commit is not needed to check the record)
+    git(only, "clone", "--quiet", "--no-local", "--single-branch", "--branch", "base", f.dir, ".");
+    assert.deepEqual(verifySelfGenRecord(only, JSON.parse(JSON.stringify(r))), []);
+    // a refusal record verifies the same way
+    assert.deepEqual(verifySelfGenRecord(f.dir, generateStage2Proposal(f.dir, "M59: listed loop-rule entry must admit as APPROVED", f.base)), []);
+    const t = (patch: Record<string, unknown>) => verifySelfGenRecord(f.dir, { ...r, ...patch });
+    assert.ok(t({ inputs: { task: task + " x", base: f.base } }).includes("taskSha256"), "task text swapped");
+    assert.ok(t({ diff: r.diff.replace("Pre-", "Post-") }).includes("diffSha256"), "diff edited");
+    assert.ok(t({ diffSha256: "0".repeat(64) }).includes("diffSha256"), "diff hash edited");
+    assert.ok(t({ generator: "hand" }).includes("generator"), "generator renamed");
+    assert.ok(t({ generatorSha256: "0".repeat(64) }).includes("rerun:generatorSha256"), "generator program hash edited");
+    assert.ok(t({ baseSha: f.landed }).includes("baseSha"), "base swapped");
+    assert.ok(t({ inputs: { task, base: f.landed }, baseSha: f.landed }).length > 0, "a run on the answer commit is not this run");
+    assert.ok(t({ status: "candidate", skill: "HAND" }).includes("rerun:skill"));
+    assert.ok(t({ note: "x" }).includes("extra:note"));
+    assert.deepEqual(verifySelfGenRecord(f.dir, null), ["schema"]);
+    assert.ok(verifySelfGenRecord(f.dir, { ...r, inputs: undefined }).includes("inputs"));
+  } finally { rmSync(f.dir, { recursive: true, force: true }); rmSync(only, { recursive: true, force: true }); }
 });

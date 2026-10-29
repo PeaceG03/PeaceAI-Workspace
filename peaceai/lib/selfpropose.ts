@@ -437,8 +437,15 @@ const GEN_MAX_TEXT = 512 * 1024;
 export interface GenSnapshot { baseSha: string; paths: string[]; files: Record<string, string> }
 export interface GenInput { task: string; baseSha: string; paths: string[]; files: Record<string, string> }
 export interface GenOutput { status: "candidate" | "refused"; skill: string | null; reason: string; files: { path: string; text: string }[] }
+/** Name of the only generator the CLI runs (S2: every record says which generator produced its proposal). */
+export const SELF_GEN_GENERATOR = "selfGenerateCore";
 export interface SelfGenRecord {
-  schema: typeof SELF_GEN_SCHEMA; taskSha256: string; baseSha: string; snapshotSha256: string; generatorSha256: string;
+  schema: typeof SELF_GEN_SCHEMA;
+  /** S2: which generator produced the proposal (name; `generatorSha256` pins the exact sandboxed program). */
+  generator: string;
+  /** S2: the run's ONLY inputs, kept so anyone can re-run it: the task text verbatim and the base commit (its tree via git objects). */
+  inputs: { task: string; base: string };
+  taskSha256: string; baseSha: string; snapshotSha256: string; generatorSha256: string;
   status: "candidate" | "refused" | "refused-by-check" | "error"; skill: string | null; reason: string;
   paths: string[]; candidateBlobs: Record<string, string>; diff: string; diffSha256: string; check: Stage2Check | null; createdAt: string;
 }
@@ -552,7 +559,8 @@ export function generateStage2Proposal(repo: string, task: string, baseSha: stri
   const snap = genSnapshot(repo, baseSha);
   const program = genProgram(coreSource);
   const rec: SelfGenRecord = {
-    schema: SELF_GEN_SCHEMA, taskSha256: sha256(task), baseSha, snapshotSha256: sha256(JSON.stringify(snap)), generatorSha256: sha256(program),
+    schema: SELF_GEN_SCHEMA, generator: coreSource === selfGenerateCore.toString() ? SELF_GEN_GENERATOR : "custom (tests only)",
+    inputs: { task, base: baseSha }, taskSha256: sha256(task), baseSha, snapshotSha256: sha256(JSON.stringify(snap)), generatorSha256: sha256(program),
     status: "error", skill: null, reason: "", paths: [], candidateBlobs: {}, diff: "", diffSha256: "", check: null, createdAt: new Date().toISOString(),
   };
   const run = runGeneratorSandboxed(coreSource, { task, baseSha, paths: snap.paths, files: snap.files } satisfies GenInput);
@@ -582,4 +590,29 @@ export function generateStage2Proposal(repo: string, task: string, baseSha: stri
   rec.check = checkStage2Proposal(rec.diff, { base: (p) => snap.files[p] ?? showAt(repo, baseSha)(p), cand: (p) => cand.get(p) ?? snap.files[p] ?? showAt(repo, baseSha)(p) }, neverZoneAtSha(repo, baseSha));
   rec.status = rec.check.ok ? "candidate" : "refused-by-check";
   return rec;
+}
+
+/**
+ * S2: re-run a recorded generator run from its own inputs and say where it differs (empty = reproduced exactly).
+ * Checks the record's internal hashes (task text, diff), that it names the CLI generator, and that a fresh sandboxed
+ * run on (inputs.task, inputs.base) gives the same record field for field (createdAt excepted). Fail closed: any
+ * malformed record or failed re-run is a mismatch. Credit stays refused; this is provenance only.
+ */
+export function verifySelfGenRecord(repo: string, recIn: unknown): string[] {
+  const bad: string[] = [];
+  const r = recIn as Partial<SelfGenRecord> | null;
+  if (!r || typeof r !== "object" || r.schema !== SELF_GEN_SCHEMA) return ["schema"];
+  if (r.generator !== SELF_GEN_GENERATOR) bad.push("generator");
+  const task = r.inputs && typeof r.inputs.task === "string" ? r.inputs.task : null;
+  const base = r.inputs && typeof r.inputs.base === "string" ? r.inputs.base : null;
+  if (task === null || base === null || !/^[0-9a-f]{40}$/.test(base)) return [...bad, "inputs"];
+  if (r.baseSha !== base) bad.push("baseSha");
+  if (r.taskSha256 !== sha256(task)) bad.push("taskSha256");
+  if (typeof r.diff !== "string" || r.diffSha256 !== (r.diff ? stage2DiffSha(r.diff) : "")) bad.push("diffSha256");
+  let fresh: SelfGenRecord;
+  try { fresh = generateStage2Proposal(repo, task, base); } catch (e) { return [...bad, `rerun: ${(e as Error).message.slice(0, 200)}`]; }
+  const keys = Object.keys(fresh).filter((k) => k !== "createdAt") as (keyof SelfGenRecord)[];
+  for (const k of keys) if (JSON.stringify(fresh[k]) !== JSON.stringify(r[k])) bad.push(`rerun:${k}`);
+  for (const k of Object.keys(r)) if (!(k in fresh)) bad.push(`extra:${k}`);
+  return [...new Set(bad)];
 }
