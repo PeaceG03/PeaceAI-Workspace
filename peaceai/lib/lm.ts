@@ -3,9 +3,9 @@
 // scoring for the shadow ranker, flags (both off by default) and the promotion rule.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { findCoreText, SHINGLE_LINE, type TextIndex } from "./coretext.ts";
 import { scanText } from "./leak.ts";
 import { coreSubstringWindows, countCoreSubstrings, indexHas, runsOf, type SubstringIndex } from "./substr.ts";
@@ -30,28 +30,100 @@ export function modelFileShas(dir: string): Record<string, string> | null {
   return Object.fromEntries(LM_FILES.map((f) => [f, sha256File(join(dir, f))]));
 }
 
-export type LoadRefusal = "MODEL_MISSING" | "MEMCHECK_MISSING" | "MEMCHECK_FAILED" | "MEMCHECK_STALE" | "CONFIG_INVALID";
+export type LoadRefusal = "MODEL_MISSING" | "MEMCHECK_MISSING" | "MEMCHECK_FAILED" | "MEMCHECK_STALE" | "CONFIG_INVALID" | "RECHECK_FAILED" | "RECHECK_INVALID";
 
-/** A model directory is usable only when memcheck.json is a PASS for exactly these files. */
+/** Fix B (Auditor, after recheck run 40766362070): deep JSON equality that ignores object key order (arrays keep
+ *  their order). Used wherever a trainedOn or files block is compared, so a reordered but equal block is equal and a
+ *  block with swapped values is not. */
+export function sameJson(a: unknown, b: unknown): boolean {
+  const canon = (x: unknown): unknown =>
+    Array.isArray(x) ? x.map(canon) : x !== null && typeof x === "object" ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, canon((x as Record<string, unknown>)[k])])) : x;
+  return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+}
+
+/** The pretrain-mode retrain memcheck schema a recheck must carry (memcheck_combine schema v2: twoCorpus required). */
+export const RETRAIN_PRETRAIN_MEMCHECK_SCHEMA_V2 = "peaceai-lm-retrain-memcheck-pretrain:v2";
+const RUN_ID = /^[1-9][0-9]{5,19}$/;
+const RECHECK_FILE = /^memcheck-recheck-([1-9][0-9]{5,19})\.json$/;
+const realDir = (p: string) => { try { const st = lstatSync(p); return st.isDirectory() && !st.isSymbolicLink(); } catch { return false; } };
+const realFile = (p: string) => { try { const st = lstatSync(p); return st.isFile() && !st.isSymbolicLink(); } catch { return false; } };
+
+/** Where a retrain model's run records live in the runtime layout: a model at <results>/models/lm/<version>/ has its
+ *  run at <results>/runs/lm-retrain/<config.json retrain.runId>/. null when the model is not in that layout, the run id
+ *  is malformed, or the run directory is missing or a symlink. */
+export function retrainRunDir(dir: string, version: string, runId: unknown): string | null {
+  const d = resolve(dir);
+  if (typeof runId !== "string" || !RUN_ID.test(runId) || basename(d) !== version || basename(dirname(d)) !== "lm" || basename(dirname(dirname(d))) !== "models") return null;
+  const run = join(dirname(dirname(dirname(d))), "runs", "lm-retrain", runId);
+  return realDir(run) ? run : null;
+}
+
+/** Fix B: a PASS recheck (peace-lm-retrain.yml memcheck_only_run_id, appended as runs/lm-retrain/<run>/memcheck-recheck-
+ *  <recheck run>.json) is accepted for a pretrain-mode retrain model only when every condition holds; anything else is
+ *  a refusal. "none": no recheck file in the run directory. A FAIL (or unreadable) recheck can never be outvoted by a PASS. */
+export function recheckDecision(runDir: string, cfg: { version: string; retrain?: { runId?: unknown } }, shas: Record<string, string>): "none" | "ok" | "RECHECK_FAILED" | "RECHECK_INVALID" {
+  let names: string[];
+  try { names = readdirSync(runDir).filter((n) => n.startsWith("memcheck-recheck-")).sort(); } catch { return "RECHECK_INVALID"; }
+  if (names.length === 0) return "none";
+  const runId = String(cfg.retrain?.runId ?? "");
+  const t = retrainPretrainTrainedOn(cfg);
+  const recs: { name: string; id: string; r: any }[] = [];
+  for (const name of names) {
+    const m = RECHECK_FILE.exec(name), p = join(runDir, name);
+    if (!m || !realFile(p)) return "RECHECK_FAILED"; // a malformed or linked recheck name fails closed
+    try { recs.push({ name, id: m[1]!, r: JSON.parse(readFileSync(p, "utf8")) }); } catch { return "RECHECK_FAILED"; }
+  }
+  const failed = (r: any): boolean => r === null || typeof r !== "object" || r.status !== "PASS"
+    || [r.pretrainMemcheck?.replayCorpus?.status, r.pretrainMemcheck?.runStatus?.ftCorpus, r.pretrainMemcheck?.runStatus?.replayCorpus].some((x) => x !== undefined && x !== "PASS");
+  if (recs.some(({ r }) => failed(r))) return "RECHECK_FAILED";
+  if (!t) return "RECHECK_INVALID";
+  const passes = (id: string, r: any): boolean => {
+    const pm = r.pretrainMemcheck, rc = pm?.replayCorpus, rk = r.recheck;
+    return r.schema === MEMCHECK_SCHEMA && r.substringRule === "core-free-64"
+      && pm?.schema === RETRAIN_PRETRAIN_MEMCHECK_SCHEMA_V2 && pm.twoCorpus === true
+      && pm.runStatus?.ftCorpus === "PASS" && pm.runStatus?.replayCorpus === "PASS"
+      && rc?.schema === MEMCHECK_SCHEMA && rc.substringRule === "core-free-64"
+      && r.coreFreeProofs?.ok === true && rc.coreFreeProofs?.ok === true
+      && sameJson(r.coreFreeProofs.trainedOn, t) && sameJson(rc.coreFreeProofs.trainedOn, t)
+      && sameJson(r.files, shas) && sameJson(rc.files, shas)
+      && r.model === cfg.version && rc.model === cfg.version && rk?.candidate === cfg.version
+      && String(rk?.sourceRunId ?? "") === runId && String(rk?.recheckRunId ?? "") === id;
+  };
+  return recs.some(({ id, r }) => passes(id, r)) ? "ok" : "RECHECK_INVALID";
+}
+
+/** A model directory is usable only when memcheck.json is a PASS for exactly these files, or (Fix B) when memcheck.json
+ *  binds exactly these files and a PASS recheck in the model's own retrain run directory accepts it (recheckDecision). */
 export function verifyModelDir(dir: string): { ok: true; version: string } | { ok: false; reason: LoadRefusal } {
   const shas = modelFileShas(dir);
   if (!shas) return { ok: false, reason: "MODEL_MISSING" };
-  let mc: { schema?: string; status?: string; files?: Record<string, string> };
+  let mc: { schema?: string; status?: string; files?: Record<string, string>; model?: unknown };
   try { mc = JSON.parse(readFileSync(join(dir, "memcheck.json"), "utf8")); } catch { return { ok: false, reason: "MEMCHECK_MISSING" }; }
-  if (mc.schema !== MEMCHECK_SCHEMA || mc.status !== "PASS") return { ok: false, reason: "MEMCHECK_FAILED" };
-  if (JSON.stringify(mc.files) !== JSON.stringify(shas)) return { ok: false, reason: "MEMCHECK_STALE" };
-  try {
-    const cfg = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
-    if (cfg.schema !== "peaceai-lm:v1" || !/^lm-v1-[0-9a-f]{12}$/.test(cfg.version)) return { ok: false, reason: "CONFIG_INVALID" };
-    // M52 (Architect (a)): a two-corpus model loads only when its memcheck recorded both core-free proofs valid for
-    // exactly the manifests the model says it trained on.
-    if ("trainedOn" in cfg) {
-      const t = trainedOnShas(cfg);
-      const d = (mc as { coreFreeProofs?: { ok?: boolean; trainedOn?: unknown } }).coreFreeProofs;
-      if (!t || d?.ok !== true || JSON.stringify(d.trainedOn) !== JSON.stringify(t)) return { ok: false, reason: "MEMCHECK_FAILED" };
-    }
+  if (mc === null || typeof mc !== "object" || mc.schema !== MEMCHECK_SCHEMA) return { ok: false, reason: "MEMCHECK_FAILED" };
+  let cfg: { schema?: unknown; version: string; retrain?: { runId?: unknown } };
+  try { cfg = JSON.parse(readFileSync(join(dir, "config.json"), "utf8")); } catch { cfg = { version: "" }; }
+  const cfgOk = cfg !== null && typeof cfg === "object" && cfg.schema === "peaceai-lm:v1" && /^lm-v1-[0-9a-f]{12}$/.test(String(cfg.version));
+  // A retrain model in the runtime layout: its run's rechecks are read whatever memcheck.json says (a FAIL refuses).
+  const runDir = cfgOk ? retrainRunDir(dir, cfg.version, cfg.retrain?.runId) : null;
+  const recheck = runDir ? recheckDecision(runDir, cfg, shas) : "none";
+  if (recheck === "RECHECK_FAILED") return { ok: false, reason: "RECHECK_FAILED" };
+  if (mc.status !== "PASS") {
+    if (recheck === "none") return { ok: false, reason: "MEMCHECK_FAILED" };
+    if (recheck !== "ok") return { ok: false, reason: recheck };
+    // The original memcheck record must still bind the same files (and name the same model).
+    if (!sameJson(mc.files, shas) || (mc.model !== undefined && mc.model !== cfg.version)) return { ok: false, reason: "MEMCHECK_STALE" };
     return { ok: true, version: cfg.version };
-  } catch { return { ok: false, reason: "CONFIG_INVALID" }; }
+  }
+  if (JSON.stringify(mc.files) !== JSON.stringify(shas)) return { ok: false, reason: "MEMCHECK_STALE" };
+  if (!cfgOk) return { ok: false, reason: "CONFIG_INVALID" };
+  // M52 (Architect (a)): a two-corpus model loads only when its memcheck recorded both core-free proofs valid for
+  // exactly the manifests the model says it trained on (key order ignored; swapped values refuse).
+  if ("trainedOn" in cfg) {
+    const t = trainedOnShas(cfg);
+    const d = (mc as { coreFreeProofs?: { ok?: boolean; trainedOn?: unknown } }).coreFreeProofs;
+    if (!t || d?.ok !== true || !sameJson(d.trainedOn, t)) return { ok: false, reason: "MEMCHECK_FAILED" };
+  }
+  return { ok: true, version: cfg.version };
 }
 
 // ---- memorization check
@@ -446,10 +518,22 @@ export function diffScoreItems(diff: string, maxBlocks = 8): { context: string; 
   return items;
 }
 
+/** Fix B: under PEACEAI_LM_SHADOW a refused model is logged once per process, as the refusal code only (no path, no
+ *  file content, no hash), so a silent "none" has a visible reason in the (public) Actions log. */
+export interface ShadowRefusalLog { env?: Record<string, string | undefined>; log?: (line: string) => void; state?: { logged: boolean } }
+const SHADOW_REFUSAL_STATE = { logged: false };
+export function logShadowRefusal(reason: LoadRefusal, o: ShadowRefusalLog = {}): boolean {
+  const state = o.state ?? SHADOW_REFUSAL_STATE;
+  if (!lmFlags(o.env ?? process.env).shadow || state.logged) return false;
+  state.logged = true;
+  (o.log ?? ((l: string) => console.log(l)))(`lm shadow: model refused reason=${reason}`);
+  return true;
+}
+
 /** LM shadow ranking over the distinct eligible edits: mean log-probability of the added lines, high first. */
-export function lmShadowRanking(modelDir: string, ranking: RankingRecord, diff: (id: string) => string): LmShadow | null {
+export function lmShadowRanking(modelDir: string, ranking: RankingRecord, diff: (id: string) => string, refusalLog: ShadowRefusalLog = {}): LmShadow | null {
   const ok = verifyModelDir(modelDir);
-  if (!ok.ok) return null;
+  if (!ok.ok) { logShadowRefusal(ok.reason, refusalLog); return null; }
   const ids = ranking.presentation.map((p) => p.id).sort();
   const items: { id: string; context: string; target: string }[] = [];
   for (const id of ids) diffScoreItems(diff(id)).forEach((it, k) => items.push({ id: `${id}#${k}`, ...it }));
@@ -468,7 +552,11 @@ export function lmShadowRanking(modelDir: string, ranking: RankingRecord, diff: 
 
 // ---- promotion (M3-style): shadow first; "lm" is active only with the variable AND the rule met
 
-export function lmEvaluate(stored: readonly StoredTask[]) {
+/** Fix B: only shadow scores from the model being judged count. Every recorded lmShadow carries its model version
+ *  (lmShadowRanking sets it from the verified model); a score from another model, or with no valid version, is not
+ *  counted. No valid version to judge: nothing counts. */
+export function lmEvaluate(stored: readonly StoredTask[], version: string | null) {
+  const judged = typeof version === "string" && /^lm-v1-[0-9a-f]{12}$/.test(version) ? version : null;
   const latest = new Map<number, StoredTask>();
   for (const t of stored) {
     const cur = latest.get(t.task.issue);
@@ -478,6 +566,7 @@ export function lmEvaluate(stored: readonly StoredTask[]) {
   for (const t of latest.values()) {
     const e = effectiveVerdict(t.verdicts);
     if (t.task.test || !t.task.heldOut || e.withdrawn || !e.pick.decided || !t.ranking.lmShadow || t.ranking.presentation.length < 2) continue;
+    if (judged === null || t.ranking.lmShadow.model !== judged) continue;
     tasks += 1;
     if (t.ranking.lmShadow.top === e.pick.candidateId) lmAgree += 1;
     if (t.ranking.rankerTop === e.pick.candidateId) baselineAgree += 1;
@@ -485,17 +574,24 @@ export function lmEvaluate(stored: readonly StoredTask[]) {
   const reasons: string[] = [];
   if (tasks < LM_PROMOTION_RULE.minHeldOutTasks) reasons.push(`held-out tasks with an LM score ${tasks} < ${LM_PROMOTION_RULE.minHeldOutTasks}`);
   if (!(lmAgree > baselineAgree)) reasons.push("LM does not beat the baseline on held-out");
-  return { rule: LM_PROMOTION_RULE, tasks, lmAgree, baselineAgree, eligible: reasons.length === 0, reasons };
+  if (judged === null) reasons.push("no model version to judge");
+  return { rule: LM_PROMOTION_RULE, version: judged, tasks, lmAgree, baselineAgree, eligible: reasons.length === 0, reasons };
 }
 
 export function activeWithLm(variable: string | undefined, lmEligible: boolean, current: "deterministic" | "model" | "lm"): "deterministic" | "model" | "lm" {
   return variable === "lm" && lmEligible ? "lm" : current;
 }
 
-/** The current model directory in a Results checkout (models/lm/latest.json), or null. */
-export function latestLmDir(resultsRoot: string): string | null {
+/** The current model version in a Results checkout (models/lm/latest.json .version), or null. */
+export function latestLmVersion(resultsRoot: string): string | null {
   try {
     const latest = JSON.parse(readFileSync(join(resultsRoot, "models", "lm", "latest.json"), "utf8"));
-    return /^lm-v1-[0-9a-f]{12}$/.test(latest.version ?? "") ? join(resultsRoot, "models", "lm", latest.version) : null;
+    return /^lm-v1-[0-9a-f]{12}$/.test(latest.version ?? "") ? latest.version : null;
   } catch { return null; }
+}
+
+/** The current model directory in a Results checkout (models/lm/latest.json), or null. */
+export function latestLmDir(resultsRoot: string): string | null {
+  const v = latestLmVersion(resultsRoot);
+  return v ? join(resultsRoot, "models", "lm", v) : null;
 }

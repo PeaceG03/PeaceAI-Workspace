@@ -4,10 +4,11 @@
 # and for the memcheck-only path (input memcheck_only_run_id: an already-landed candidate of an earlier run).
 #   [MCO=<run>] lm-retrain-memcheck-fetch.sh <results checkout> <out dir> <run id> [<version>]
 # Needs in the checkout: runs/lm-retrain/<run>/record.json, models/lm/<version>/ and, for a pretrain-mode candidate,
-# models/lm/<lm-retrain.json live.version>/corefree-proof.json. <version> empty: the record's candidate.
+# models/lm/<lm-retrain.json replayBase.version>/corefree-proof.json. <version> empty: the record's candidate.
 # Refuses unless: no symlinks; the record is this run's and names this candidate; the weights hash to the version and to
 # the record's candidateWeightsSha256; config.json retrain.runId is the run; the fine-tune proof hashes to the record's
-# finetuneCorefreeProofSha256; pretrain mode: the live proof hashes to lm-retrain.json live.corefreeProofSha256.
+# finetuneCorefreeProofSha256; pretrain mode: the replay base's proof hashes to lm-retrain.json replayBase.corefreeProofSha256
+# (Fix B: the replay base is pinned in the config, never read from latest.json).
 # Memcheck-only (MCO set, must equal <run>): the run's first memcheck record must exist and bind the same config,
 # tokenizer and weights sha256 (the only record of the config/tokenizer shas); without MCO it must not exist yet.
 # Writes <out>/model/ (the model files, no memcheck.json), <out>/live-proof.json (pretrain), <out>/ft-proof-sha256,
@@ -49,10 +50,10 @@ rm -rf "$out/model"; mkdir -p "$out/model"
 cp "$d/config.json" "$d/tokenizer.json" "$d/weights.npz" "$d/corefree-proof-finetune.json" "$out/model/"
 rm -f "$out/live-proof.json"
 if [ "$(jq -r .retrain.mode "$d/config.json")" = pretrain ]; then
-  live=$(jq -r .live.version "$cfg"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || no "bad live version"
+  live=$(jq -r .replayBase.version "$cfg"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || no "bad replay base version"
   lp="$res/models/lm/$live/corefree-proof.json"
   [ -f "$lp" ] && [ ! -L "$lp" ] || no "no live core-free proof"
-  test "$(s "$lp")" = "$(jq -r .live.corefreeProofSha256 "$cfg")" || no "live core-free proof differs from its pin"
+  test "$(s "$lp")" = "$(jq -r .replayBase.corefreeProofSha256 "$cfg")" || no "live core-free proof differs from its pin"
   cp "$lp" "$out/live-proof.json"
 fi
 printf '%s\n' "$fp" > "$out/ft-proof-sha256"; printf '%s\n' "$V" > "$out/version"

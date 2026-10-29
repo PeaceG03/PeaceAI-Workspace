@@ -175,9 +175,12 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   // Gate 2: dedup before training and 0 overlap after.
   assert.ok(WF.indexOf("lm-retrain-corpus.sh") > 0 && WF.indexOf("lm-retrain-corpus.sh") < WF.indexOf("lm-retrain-train.sh"));
   assert.match(WF, /recheckOverlapDocs "\$RUNNER_TEMP\/w\/dedup\.json"\)" = 0/);
-  // Gate 4: the live model is the one in latest.json with matching weights; strict memcheck rule.
+  // Gate 4: the live model is lm-retrain.json replayBase (Fix B: pinned in the config, never latest.json) with matching
+  // weights; strict memcheck rule.
   const live = read("peaceai/bin/lm-retrain-live.sh");
-  assert.match(live, /test "\$\(jq -r \.version "\$res\/models\/lm\/latest\.json"\)" = "\$live"/);
+  assert.match(live, /live=\$\(jq -r \.replayBase\.version "\$cfg"\)/);
+  assert.match(live, /test "\$\(jq -r \.live\.version "\$cfg"\)" = "\$live"/);
+  assert.doesNotMatch(live.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /latest\.json/, "the restore never reads latest.json");
   assert.match(live, /lm-v1-\$\(sha256sum "\$L\/weights\.npz" \| cut -c1-12\)" = "\$live"/);
   assert.match(read("peaceai/bin/lm-retrain-corpus.sh"), /lm-retrain-headcheck\.sh/, "merged content is compared with the PR head in CI");
   const mcJob = WF.slice(WF.indexOf("\n  retrain-memcheck:"), WF.indexOf("\n  record-memcheck:"));
