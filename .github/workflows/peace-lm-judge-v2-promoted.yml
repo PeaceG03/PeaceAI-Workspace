@@ -1,0 +1,115 @@
+name: peace-lm-judge-v2-promoted
+
+# Judge v2 promoted pin (Auditor, after #571): score the PROMOTED model (Results models/lm/latest.json; pinned in
+# peaceai/model/judge-v2.json promoted and lm-retrain.json promoted) on the existing judge v2 items, and land its scores
+# as ONE new Results file, lm-judge-v2/scores-<promoted>.json. Separate from peace-lm-judge-v2.yml, whose live pin stays
+# tied to lm-retrain.json replayBase:
+#   (1) the pins: judge-v2.json promoted {version, runId, recordSha256} must equal lm-retrain.json promoted;
+#   (2) peaceai/bin/lm-judge-v2-promoted.sh (fetch only) runs lm-retrain-promoted.sh (latest.json must name the version;
+#       the run record must hash to its pin), then, at that same Results commit, restores the model by its weights sha256
+#       (promoted.weightsSha256; never lm-retrain-live.sh), the run's recorded judge-model.json (judgeModelSha256), the
+#       record's judge.candidate and the v2 items, and refuses if the target file already exists;
+#   (3) judge364.py (the checked scorer) rescores the model; judge_repro.py requires per-item agreement with the run's
+#       judge-model.json (same keys, tokens equal, mean within 1e-4); judge_promoted_check.py requires the AUC, both 95%
+#       bounds, n and the counts to equal the pin AND the record's judge.candidate exactly;
+#   (4) only lm-judge-v2/scores-<promoted>.json lands: a new file (refused if it exists; latest.json re-checked in the
+#       landing clone); nothing else is written, modified or deleted.
+# Report-only: no retrain, no gate, no model change, no latest.json write, no artifact or cache. Counts-only logs.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-lm-judge-v2
+  cancel-in-progress: false
+
+env:
+  CFG: peaceai/model/lm-retrain.json
+  V2: peaceai/model/judge-v2.json
+  RESULTS_SHA256: |-
+    bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+    da2a4c6e32d3f6dc2e5587767bf4e01885b37e4011ce3a223ea7493506600e42  peaceai/bin/results-write.sh
+    750354a113e846a7d2ebbd23837357ec4bc5b1a0830f6e0ab6a525ddb105e65f  peaceai/bin/lm-retrain-promoted.sh
+    54cd9d00ae7bd8afd196ee1a1fbe4543b01471ecacd06cb51e78eb1b1d13144a  peaceai/bin/lm-retrain-judge.sh
+    df51f8b4f855a4f7c08013dc47a62ad4c484dede4571cd866e3622b732cd19a2  peaceai/bin/lm-judge-v2-promoted.sh
+
+jobs:
+  score-promoted-land:
+    name: score the promoted model on judge v2 (must reproduce its run's scores), land lm-judge-v2/scores-<promoted>.json only
+    if: github.repository == 'PeaceG03/PeaceAI-Workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: peaceai-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install hash-pinned numpy
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Check the promoted pins against the retrain config (judge-v2.json promoted = lm-retrain.json promoted; live stays the replay base)
+        run: |
+          set -euo pipefail
+          for k in version runId recordSha256; do
+            test "$(jq -r --arg k "$k" '.promoted[$k] // "" | tostring' "$V2")" = "$(jq -r --arg k "$k" '.promoted[$k] // "" | tostring' "$CFG")" || { echo "judge-v2.json promoted.$k is not lm-retrain.json promoted.$k: refused"; exit 1; }
+          done
+          test "$(jq -r .live.version "$V2")" = "$(jq -r .replayBase.version "$CFG")" || { echo "v2 pins are not for the configured live model: refused"; exit 1; }
+          test "$(jq -r .promoted.version "$V2")" != "$(jq -r .live.version "$V2")" || { echo "promoted is the live (replay base) model: refused"; exit 1; }
+          test "$(jq -r .out "$V2")" = lm-judge-v2 || { echo "unexpected output path: refused"; exit 1; }
+          test "$(jq -r .eval.judgeAucGate "$CFG")" = report-only || { echo "the retrain judge gate is not report-only: refused"; exit 1; }
+      - name: Verify the checkout and the key scripts before any key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Restore the promoted model by its weights sha256, its run's recorded judge scores and the v2 items (fetch only)
+        env:
+          # The peaceai-results environment holds only the Results deploy key; this step only clones and fetches with it.
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_DEPLOY_KEY is not set: refused (fail closed)"; exit 1; }
+          ./peaceai/bin/lm-judge-v2-promoted.sh "$RUNNER_TEMP/p"
+      - name: Rescore the promoted model on the v2 items (per-item agreement with the run's judge-model.json; AUC and CI exactly the pin and the record)
+        run: |
+          set -euo pipefail
+          pv=$(jq -r .promoted.version "$V2"); P="$RUNNER_TEMP/p"; mkdir -p "$RUNNER_TEMP/out"
+          "$RUNNER_TEMP/venv/bin/python" peaceai/model/judge364.py --model "$P/model" --items "$P/items.json" --out "$RUNNER_TEMP/out/scores-$pv.json" --threads 4
+          # The retrain's scorer-repro rule, all keys (not --subset): the same 2 x n keys, tokens equal, every mean within 1e-4.
+          "$RUNNER_TEMP/venv/bin/python" peaceai/model/judge_repro.py "$P/scores-recorded.json" "$RUNNER_TEMP/out/scores-$pv.json" --drift \
+            || { echo "per-item scores differ from the run's judge-model.json (tokens equal, mean within 1e-4): refused"; exit 1; }
+          "$RUNNER_TEMP/venv/bin/python" peaceai/model/judge_promoted_check.py "$RUNNER_TEMP/out/scores-$pv.json" "$V2" "$P/record-judge.json"
+      - name: Verify the checkout and the landing scripts before the key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
+      - name: Land lm-judge-v2/scores-<promoted>.json in Results (one new file only; nothing else changes)
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          pv=$(jq -r .promoted.version "$V2"); [[ "$pv" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad promoted version: refused"; exit 1; }
+          T="lm-judge-v2/scores-$pv.json"; test "$(jq -r .promoted.scores "$V2")" = "$T" || { echo "unexpected scores path: refused"; exit 1; }
+          SC="$RUNNER_TEMP/out/scores-$pv.json"; test -s "$SC" || { echo "no rescored file: refused"; exit 1; }
+          export pv T SC
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse "/$T" --sparse "/models/lm/latest.json" "Judge v2: $T (promoted model, run $GITHUB_RUN_ID)" \
+            bash -c 'set -euo pipefail
+              t="$RESULTS_DIR/$T"
+              test ! -e "$t" || { echo "$T already exists: refused (never touch an existing scores file)"; exit 1; }
+              test "$(jq -r .version "$RESULTS_DIR/models/lm/latest.json")" = "$pv" || { echo "Results latest.json no longer names $pv: refused"; exit 1; }
+              mkdir -p "$(dirname "$t")"; cp "$SC" "$t"
+              git -C "$RESULTS_DIR" add -A
+              test "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames)" = "$T" || { echo "landing refused: exactly one path, $T"; exit 1; }
+              test "$(git -C "$RESULTS_DIR" diff --cached --name-only --no-renames --diff-filter=A)" = "$T" || { echo "landing refused: only a new file"; exit 1; }'
+      - name: Delete the model, the scores and the clones
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/p" "$RUNNER_TEMP/out" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP"/peaceai-results.*
