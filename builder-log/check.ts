@@ -291,22 +291,59 @@ export function peaceAiShaLandings(entries: readonly Entry[]): { seq: number; la
 }
 
 /**
- * Fail-closed: each PeaceAI repo@sha must resolve true via `resolve`. Lookup errors and false both become errs.
+ * A failed GitHub lookup. `stop` marks responses after which every further call would fail the same way (403/429:
+ * rate limit or a refused token), so the caller stops instead of hammering the API. The message carries the HTTP
+ * status and, for 403/429, the rate-limit headers, so a failing check says why it failed.
+ */
+export class LookupError extends Error {
+  constructor(message: string, readonly stop: boolean) {
+    super(message);
+    this.name = "LookupError";
+  }
+}
+
+/**
+ * Fail-closed: each PeaceAI repo@sha must resolve true via `resolve`. Lookup errors and false both become errs, and
+ * each lookup error names its cause. After a LookupError with `stop` (403/429) no further lookups are made: one error
+ * names the cause and how many landings were left unverified (still a failure).
  * Injectable so unit tests can stub the GitHub API (no network).
  */
 export async function verifyPeaceAiShas(entries: readonly Entry[], resolve: ShaResolver): Promise<string[]> {
   const errs: string[] = [];
-  for (const hit of peaceAiShaLandings(entries)) {
+  const hits = peaceAiShaLandings(entries);
+  for (let k = 0; k < hits.length; k++) {
+    const hit = hits[k]!;
     let ok = false;
     try {
       ok = await resolve(hit.repo, hit.sha);
-    } catch {
-      errs.push(`seq ${hit.seq}: ${hit.label}@${hit.sha} lookup failed (fail closed)`);
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      errs.push(`seq ${hit.seq}: ${hit.label}@${hit.sha} lookup failed (fail closed): ${why}`);
+      if (err instanceof LookupError && err.stop) {
+        const left = hits.length - k - 1;
+        errs.push(`lookups stopped after ${why}: ${left} more repo@sha landing${left === 1 ? "" : "s"} not verified (fail closed)`);
+        break;
+      }
       continue;
     }
     if (!ok) errs.push(`seq ${hit.seq}: ${hit.label}@${hit.sha} does not exist`);
   }
   return errs;
+}
+
+/** HTTP status plus, for 403/429, GitHub's rate-limit headers (remaining, reset as UTC time, retry-after). */
+export function describeHttpFailure(res: { status: number; headers: { get(name: string): string | null } }): string {
+  const bits = [`HTTP ${res.status}`];
+  if (res.status === 403 || res.status === 429) {
+    const remaining = res.headers.get("x-ratelimit-remaining");
+    const reset = res.headers.get("x-ratelimit-reset");
+    const retry = res.headers.get("retry-after");
+    if (remaining !== null) bits.push(`x-ratelimit-remaining ${remaining}`);
+    if (reset !== null && /^\d{1,12}$/.test(reset)) bits.push(`x-ratelimit-reset ${new Date(Number(reset) * 1000).toISOString()}`);
+    if (retry !== null) bits.push(`retry-after ${retry}`);
+    if (res.status === 429 || remaining === "0" || retry !== null) bits.push("(rate limited)");
+  }
+  return bits.join(" ");
 }
 
 /** GitHub Commits API resolver using a token (contents:read is enough for public + this-repo commits). */
@@ -324,7 +361,7 @@ export function makeGithubShaResolver(token: string, fetchImpl: typeof fetch = f
     });
     if (res.status === 200) return true;
     if (res.status === 404) return false;
-    throw new Error(`HTTP ${res.status}`);
+    throw new LookupError(describeHttpFailure(res), res.status === 403 || res.status === 429);
   };
 }
 

@@ -447,6 +447,44 @@ test("CI guard: each Workspace list entry must trace to PeaceG03's exact comment
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("CI guard: a gh failure names a fixed cause; after a rate limit it stops calling gh and still fails", () => {
+  const dir = scratch();
+  try {
+    const list = join(dir, "approved.json");
+    const base = withEntry({ schema: APPROVED_SCHEMA, rules: [] }, entry(PUBLIC_SHA));
+    const ids = ["public-set-literal-v2", "public-set-literal-v3"];
+    let two = base;
+    ids.forEach((id, k) => {
+      const commentId = 124 + k;
+      two = withEntry(two, entry(PUBLIC_SHA, { id, approval: { ...entry(PUBLIC_SHA).approval, commentId, url: ENTRY_URL.replace("-123", `-${commentId}`) } }));
+    });
+    writeFileSync(list, JSON.stringify(two));
+    const calls = join(dir, "calls");
+    const fake = (stderr: string) => {
+      const f = join(dir, "gh");
+      writeFileSync(f, `#!/usr/bin/env node
+require("node:fs").appendFileSync(${JSON.stringify(calls)}, "x\\n");
+process.stderr.write(${JSON.stringify(stderr)});
+process.exit(1);
+`);
+      chmodSync(f, 0o755);
+      rmSync(calls, { force: true });
+      return f;
+    };
+    const run = (stderr: string) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: "main", PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: dir, PEACEAI_GH: fake(stderr) } });
+    const rl = run("gh: API rate limit exceeded for installation ID 9. (HTTP 403)\n");
+    assert.equal(rl.status, 1, rl.stdout + rl.stderr);
+    assert.equal(readFileSync(calls, "utf8").split("\n").filter(Boolean).length, 1, "one gh call, then stop");
+    assert.match(rl.stdout, /APPROVED LIST FAIL public-set-literal-v1: approval comment or issue not readable \(rate limited \(HTTP 403\)\)/);
+    assert.match(rl.stdout, /APPROVED LIST FAIL rate limited: GitHub API rate limit hit; 2 more entries not checked \(fail closed\)/);
+    assert.ok(!/installation ID/.test(rl.stdout + rl.stderr), "gh stderr is never printed");
+    const nf = run("gh: Not Found (HTTP 404)\n");
+    assert.equal(nf.status, 1);
+    assert.equal(readFileSync(calls, "utf8").split("\n").filter(Boolean).length, 3, "a 404 does not stop the other entries");
+    assert.equal((nf.stdout.match(/not readable \(HTTP 404\)/g) ?? []).length, 3);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 // ---- proposals and the leak gate
 
 test("proposal leak gate: a public body with links passes; core text, core paths or personal info fail", () => {

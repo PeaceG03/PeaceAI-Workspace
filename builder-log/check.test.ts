@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { appendOnly, COVERAGE_NONE_SEQS, LOG_PATH, peaceAiShaLandings, validateCoverageNoneSeqs, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
+import { appendOnly, COVERAGE_NONE_SEQS, LOG_PATH, makeGithubShaResolver, peaceAiShaLandings, validateCoverageNoneSeqs, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
 
 const ok = {
   seq: 1, date: "2026-10-13", time: "01:05", asked: "Fix the typecheck failure", changed: "PeaceSTOCKS@369f6ea",
@@ -89,6 +89,56 @@ test("verifyPeaceAiShas: injectable resolver; made-up sha fails closed", async (
   assert.deepEqual(ok, ["seq 2: PeaceSTOCKS@deadbee does not exist"]);
   const boom = await verifyPeaceAiShas(entries, async () => { throw new Error("network"); });
   assert.ok(boom.some((e) => /lookup failed \(fail closed\)/.test(e)));
+});
+
+test("verify-shas: lookup errors name the HTTP status; 403/429 stops further calls; still fails closed", async () => {
+  const entries = [1, 2, 3, 4].map((seq) => ({
+    seq, date: "2026-10-13", time: `01:0${seq}`, asked: "fixture asked text here",
+    changed: `PeaceSTOCKS@${"abcdef"}${seq}, PeaceAI-Workspace@${"abcdef"}${seq}`, why: "fixture why text here",
+    skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI",
+  })) as Entry[];
+  entries.push({ ...entries[0]!, seq: 5, time: "01:05" });
+  type Reply = { status: number; headers?: Record<string, string> };
+  const stub = (replies: (n: number) => Reply) => {
+    const urls: string[] = [];
+    const f = (async (url: string) => {
+      urls.push(url);
+      const r = replies(urls.length);
+      const h = new Headers(r.headers ?? {});
+      return { status: r.status, headers: h } as Response;
+    }) as unknown as typeof fetch;
+    return { urls, resolver: makeGithubShaResolver("t", f) };
+  };
+  // 8 distinct repo@sha (seq 5 repeats seq 1): deduped, so 8 calls when all pass.
+  const all = stub(() => ({ status: 200 }));
+  assert.deepEqual(await verifyPeaceAiShas(entries, all.resolver), []);
+  assert.equal(all.urls.length, 8, "identical repo@sha looked up once");
+  // Primary rate limit on the 3rd call: one cause line, one stop line, no more calls.
+  const reset = 1793293612;
+  const rl = stub((n) => (n < 3 ? { status: 200 } : { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) } }));
+  const errs = await verifyPeaceAiShas(entries, rl.resolver);
+  assert.equal(rl.urls.length, 3, "stops after the rate-limit response");
+  assert.equal(errs.length, 2, errs.join("\n"));
+  assert.match(errs[0]!, /^seq 2: PeaceSTOCKS@abcdef2 lookup failed \(fail closed\): HTTP 403 x-ratelimit-remaining 0 x-ratelimit-reset 2026-10-29T\d\d:\d\d:\d\d\.000Z \(rate limited\)$/);
+  assert.match(errs[1]!, /^lookups stopped after HTTP 403 .*\(rate limited\): 5 more repo@sha landings not verified \(fail closed\)$/);
+  // Secondary limit (429 + retry-after) also stops; a plain 403 (no limit headers) stops but is not called a rate limit.
+  const sec = stub(() => ({ status: 429, headers: { "retry-after": "60" } }));
+  const secErrs = await verifyPeaceAiShas(entries, sec.resolver);
+  assert.equal(sec.urls.length, 1);
+  assert.match(secErrs[0]!, /HTTP 429 retry-after 60 \(rate limited\)$/);
+  const denied = await verifyPeaceAiShas(entries, stub(() => ({ status: 403 })).resolver);
+  assert.match(denied[0]!, /lookup failed \(fail closed\): HTTP 403$/);
+  assert.equal(denied.length, 2);
+  // A 500 names its status, is not a stop: every landing is still tried and each fails closed.
+  const five = stub(() => ({ status: 500 }));
+  const fiveErrs = await verifyPeaceAiShas(entries, five.resolver);
+  assert.equal(five.urls.length, 8);
+  assert.equal(fiveErrs.length, 8);
+  assert.ok(fiveErrs.every((e) => /lookup failed \(fail closed\): HTTP 500$/.test(e)));
+  // A thrown network error keeps its message and fails closed.
+  const net = await verifyPeaceAiShas(entries, async () => { throw new Error("fetch failed"); });
+  assert.equal(net.length, 8);
+  assert.match(net[0]!, /lookup failed \(fail closed\): fetch failed$/);
 });
 
 test("optional coverage:none is accepted; other coverage values and key orders are refused", () => {

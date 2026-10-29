@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NOREPLY_FROM, patchCommentBody, sha256 } from "../peaceai/lib/patch.ts";
 import type { Entry } from "./check.ts";
-import { GRANDFATHERED, RIGHT_REPLY, issueOf, makeGhDeps, traceAll, traceErrors, traceLine, type PullView, type ResultsView, type TraceDeps } from "./trace.ts";
+import { GRANDFATHERED, NOT_ATTEMPTED, RIGHT_REPLY, issueOf, lookupCause, makeGhDeps, traceAll, traceErrors, traceLine, type PullView, type ResultsView, type TraceDeps } from "./trace.ts";
 
 const DIFF = "diff --git a/x.ts b/x.ts\nindex 0000000..1111111 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1,2 @@\n a\n+b\n";
 const PATCH = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\n${NOREPLY_FROM}\nSubject: [PATCH] t\n\n---\n${DIFF}`;
@@ -69,6 +69,39 @@ test("non-bot / target mismatch / lookup failures fail closed", async () => {
   const d = deps();
   assert.equal((await traceLine(e, { ...d, results: async () => { throw new Error("403"); } }))[0]!.code, "T_RESULTS_UNREADABLE");
   assert.equal((await traceLine(e, { ...d, botComments: async () => { throw new Error("x"); } }))[0]!.code, "T_LOOKUP_FAILED");
+});
+
+test("lookup failures name a fixed cause; after a rate limit no further GitHub lookups are made (fail closed)", async () => {
+  // Fixed text only: the status and "rate limited", never the raw gh stderr.
+  assert.equal(lookupCause(new Error("gh api repos/x failed: gh: API rate limit exceeded for installation ID 9. (HTTP 403)")), "rate limited (HTTP 403)");
+  assert.equal(lookupCause(new Error("gh api x failed: You have exceeded a secondary rate limit")), "rate limited");
+  assert.equal(lookupCause(new Error("gh api x failed: gh: Not Found (HTTP 404)")), "HTTP 404");
+  assert.equal(lookupCause(new Error("secret text")), "");
+  const e = line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1");
+  const d = deps();
+  assert.equal((await traceLine(e, { ...d, botComments: async () => { throw new Error("x"); } }))[0]!.detail, "issue comments lookup failed", "no cause: unchanged text");
+  const entries = [1, 2, 3, 4].map((k) => line(`PeaceAI-Workspace#50${k}, PeaceSTOCKS@abcdef${k}`, 900 + k));
+  let calls = 0;
+  const rows = await traceAll(entries, {
+    ...d,
+    botComments: async (n) => {
+      calls += 1;
+      if (n === 501) return [comment()];
+      throw new Error("gh api repos/x failed: gh: API rate limit exceeded for installation ID 9. (HTTP 403)");
+    },
+  });
+  assert.equal(calls, 2, "stops calling GitHub after the rate-limited lookup");
+  assert.deepEqual(rows.map((r) => [r.status, r.code ?? "", r.detail.replace(/^.*?failed: /, "")]), [
+    ["ok", "", "candidate-1 run 7, Results verified, tree t1"],
+    ["fail", "T_LOOKUP_FAILED", "rate limited (HTTP 403)"],
+    ["fail", "T_LOOKUP_FAILED", NOT_ATTEMPTED],
+    ["fail", "T_LOOKUP_FAILED", NOT_ATTEMPTED],
+  ]);
+  assert.equal(traceErrors(entries, rows).filter((x) => x.startsWith("T_LOOKUP_FAILED")).length, 3, "every unverified landing still fails");
+  // A non-rate-limit error (e.g. 404) does not stop later lookups.
+  let n404 = 0;
+  await traceAll(entries, { ...d, botComments: async () => { n404 += 1; throw new Error("gh: Not Found (HTTP 404)"); } });
+  assert.equal(n404, 4);
 });
 
 test("public mode (results null) still checks comment, self-hash and tree, and says so", async () => {

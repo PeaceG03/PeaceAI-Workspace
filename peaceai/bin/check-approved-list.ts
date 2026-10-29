@@ -21,7 +21,17 @@ const rulesDir = resolve(process.env.PEACEAI_RULES_DIR ?? "peaceai/rules/learned
 const gh = process.env.PEACEAI_GH ?? "gh";
 // maxBuffer: a branch compare carries every file's patch; past the 1 MiB default execFileSync throws (ENOBUFS) and
 // the branch check failed closed on a large but legitimate diff (#491 round 4: 1.1 MB). Still fails closed on any gh error.
-const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 }));
+// stderr is captured (never printed) so a failure can name a fixed cause: the HTTP status, and whether it was a rate limit.
+const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 }));
+let rateLimited = false;
+const cause = (err: unknown): string => {
+  const text = String((err as { stderr?: unknown })?.stderr ?? "");
+  const status = /\(HTTP (\d{3})\)/.exec(text)?.[1];
+  const limited = /rate limit/i.test(text);
+  if (limited) rateLimited = true;
+  const c = limited ? `rate limited${status ? ` (HTTP ${status})` : ""}` : status ? `HTTP ${status}` : "";
+  return c ? ` (${c})` : "";
+};
 
 let failures = 0;
 const fail = (id: string, why: string) => { failures += 1; console.log(`APPROVED LIST FAIL ${id}: ${why}`); };
@@ -40,21 +50,24 @@ if (branch && branch !== "main" && !/^\d+\/merge$/.test(branch)) {
     const files = ((cmp.files as { filename: string }[] | undefined) ?? []).map((f) => f.filename);
     const why = branchProblem(branch, files, Number(cmp.ahead_by));
     if (why) fail(`branch ${branch}`, why);
-  } catch { fail(`branch ${branch}`, "cannot compare the branch with main"); }
+  } catch (err) { fail(`branch ${branch}`, `cannot compare the branch with main${cause(err)}`); }
 }
 const load = loadApprovedList(listPath);
 if (!load.ok) {
   console.log(`APPROVED LIST FAIL ${load.reason}`);
   process.exit(1);
 }
+let notChecked = 0;
 for (const e of load.list.rules) {
   if (e.source === "results") { console.log(`APPROVED LIST NOTE ${e.id}: Results approval (private), attestation ${e.attestation!.commit.slice(0, 12)}`); continue; }
+  // After a rate limit every further call fails the same way: stop calling, still fail (counted below).
+  if (rateLimited) { notChecked += 1; continue; }
   let comment: Record<string, unknown>;
   let issue: Record<string, unknown>;
   try {
     comment = api(`repos/${e.approval.repo}/issues/comments/${e.approval.commentId}`);
     issue = api(`repos/${e.approval.repo}/issues/${e.approval.issue}`);
-  } catch { fail(e.id, "approval comment or issue not readable"); continue; }
+  } catch (err) { fail(e.id, `approval comment or issue not readable${cause(err)}`); continue; }
   const user = (comment.user as { login?: string } | undefined)?.login;
   const cmd = APPROVE_COMMAND.exec(String(comment.body ?? "").replace(/\r\n/g, "\n"));
   if (user !== "PeaceG03" || comment.author_association !== "OWNER") fail(e.id, "comment author is not PeaceG03 (OWNER)");
@@ -69,5 +82,6 @@ for (const e of load.list.rules) {
     else console.log(`APPROVED LIST OK ${e.id}`);
   }
 }
+if (notChecked > 0) fail("rate limited", `GitHub API rate limit hit; ${notChecked} more entr${notChecked === 1 ? "y" : "ies"} not checked (fail closed)`);
 if (failures > 0) process.exit(1);
 console.log(`APPROVED LIST PASS rules=${load.list.rules.length}`);
