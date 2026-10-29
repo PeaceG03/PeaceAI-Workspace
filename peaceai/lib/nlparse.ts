@@ -17,6 +17,7 @@ import { TEST_TRIGGER } from "./learned-test.ts";
 import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { EXISTING_EDIT_TRIGGER } from "./learned-edit-existing.ts";
 import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER } from "./learned-derive.ts";
+import { DERIVE_WIRE_TRIGGER } from "./derive-wire.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
 import { IMPORT_EDIT_V2_TRIGGER } from "./import-edit-v2.ts";
@@ -111,6 +112,8 @@ export const LEARNED_CANONICAL = {
   deriveList: { re: new RegExp(DERIVE_LIST_TRIGGER, "imu"), kind: "DERIVE_FROM_BEHAVIOR", family: null },
   // M114: public-derive-from-behavior-v5, a string parser (its own "string parser" phrasing, either placement).
   deriveString: { re: new RegExp(DERIVE_STRING_TRIGGER, "imu"), kind: "DERIVE_FROM_BEHAVIOR", family: null },
+  // G18: public-derive-wire-v1 (kind EXISTING_EDIT) derives a try / catch wrap ("in the existing function f in src/x.ts, handle a failing call").
+  deriveWire: { re: new RegExp(DERIVE_WIRE_TRIGGER, "imu"), kind: "EXISTING_EDIT", family: null },
 } as const satisfies Record<string, { re: RegExp; kind: string; family: Family | null }>;
 export type LearnedTriggerName = keyof typeof LEARNED_CANONICAL;
 const CANONICAL: readonly RegExp[] = [...PLAIN_CANONICAL, ...Object.values(LEARNED_CANONICAL).map((t) => t.re)];

@@ -131,7 +131,7 @@ export function behaviorCodeProblem(text: string): string | null {
   return null;
 }
 /** Outside the header, behavior and examples: no strong code markers either (a route to copy code would be refused anyway). */
-const STRONG_CODE = /=>|===|!==|&&|\|\||\breturn\b|\breturning\b|\bwith body:|\bMath\.|\bconst |\blet |\bfunction\s*\(|\breplace statement\b/;
+export const STRONG_CODE = /=>|===|!==|&&|\|\||\breturn\b|\breturning\b|\bwith body:|\bMath\.|\bconst |\blet |\bfunction\s*\(|\breplace statement\b/;
 
 export interface DeriveTask { fn: string; file: string; params: DeriveParam[]; ret: DeriveType; behavior: string; examples: DeriveExample[] }
 export type DeriveParse = { task: DeriveTask } | { reason: string };

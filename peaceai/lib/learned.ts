@@ -13,7 +13,8 @@ import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, validTestExistingParams } from "./learned-test-existing.ts";
-import { existingEditDetail, EXISTING_EDIT_TRIGGER, validExistingEditParams } from "./learned-edit-existing.ts";
+import { existingEditDetail, EXISTING_EDIT_TRIGGER, isWireParams, validExistingEditParams } from "./learned-edit-existing.ts";
+import { deriveWireDetail } from "./derive-wire.ts";
 import { COMPLEX_OPTIONAL_VOCAB, COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
@@ -348,7 +349,8 @@ export function pathExistsIn(repo: string, tracked: readonly string[]): (path: s
 export function applyRule(spec: RuleSpec, objective: string, files: readonly SourceFile[], isTest?: (path: string) => boolean, repo?: string, why?: Refusal, exists?: (path: string) => boolean, scan?: readonly SourceFile[], raw?: string): LearnedEdit | null {
   // Auditor #466 (c), option A: `scan` (repoFileLists' scan list, denied files included) reaches only the
   // TEST_CASE_EXISTING static shared-binding scan; every rule still reads, targets and edits `files` alone.
-  // M114: `raw` (the issue text before cleaning) reaches only the v5 string-parser derive rule (its example strings).
+  // M114: `raw` (the issue text before cleaning) reaches only the v5 string-parser derive rule (its example strings)
+  // and, G18, the derive-wire rule (rawIssueProblem: no fenced or indented code in the raw issue).
   const edit = applyRuleInner(spec, objective, files, isTest, repo, why, scan, raw);
   if (!edit) {
     // M76: Job A hands the rules only in-scope files, so a Workspace task naming a protected (or out-of-zone) file
@@ -448,7 +450,8 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
     // M98 (public-existing-function-edit-v1): one statement inside an existing function / class method, with a new
     // fake-driven test; the engine refuses with a code (whyReason keeps only the code and a plain identifier).
     try {
-      const r = existingEditDetail(spec.trigger, spec.params, objective, files, isTest);
+      // G18 (public-derive-wire-v1): a derive-wire spec (its own params, all or none) derives the edit itself
+      const r = isWireParams(spec.params) ? deriveWireDetail(spec.trigger, spec.params, objective, files, isTest, raw) : existingEditDetail(spec.trigger, spec.params, objective, files, isTest);
       if (!r.edit) { if (why) why.reason = whyReason(r.reason ?? "edit_refused"); return null; }
       if (repo && deniedEditPath(repo, [r.edit.path])) { if (why) why.reason = "denied_path"; return null; }
       return r.edit;
