@@ -29,7 +29,7 @@ env:
   V2: peaceai/model/judge-v2.json
   RESULTS_SHA256: |-
     bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
-    9792d4139f7d878c71496a7f865799cfd48ef4f0bfd49a080d7ff4f8e167ff61  peaceai/bin/results-write.sh
+    da2a4c6e32d3f6dc2e5587767bf4e01885b37e4011ce3a223ea7493506600e42  peaceai/bin/results-write.sh
 
 jobs:
   build-score-land:
