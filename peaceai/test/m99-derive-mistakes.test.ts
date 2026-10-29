@@ -15,6 +15,8 @@ import { buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, deriveReviewNote, parseD
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { LEDGER } from "./m99-derive-mistakes-replay.ts";
 
+const REPLAY = new URL("./m99-derive-mistakes-replay.ts", import.meta.url).href;
+
 test("mistakes ledger: shape, and every Auditor counterexample so far is in it", () => {
   assert.equal(LEDGER.schema, "peaceai-derive-mistakes:v1");
   assert.match(LEDGER.note, /11 blocking\) describes seed 100 only/);
@@ -46,7 +48,8 @@ test("mistakes ledger: replayed, no entry is accepted wrong; each refuses and as
   const shards = Array.from({ length: REPLAY_WORKERS }, (_, w) => LEDGER.entries.map((_, i) => i).filter((i) => i % REPLAY_WORKERS === w));
   const done = await Promise.all(shards.map((ids) => new Promise<{ i: number; id: string; err: string | null }[]>((res, rej) => {
     const got: { i: number; id: string; err: string | null }[] = [];
-    const w = new Worker(new URL("./m99-derive-mistakes-replay.ts", import.meta.url), { workerData: { m99Replay: ids } });
+    // ts-worker.mjs registers tsx inside the worker (Node 20 does not apply the inherited loader to a .ts worker entry).
+    const w = new Worker(new URL("./ts-worker.mjs", import.meta.url), { workerData: { tsEntry: REPLAY, m99Replay: ids } });
     w.on("message", (m) => got.push(m)); w.on("error", rej); w.on("exit", (code) => (code === 0 ? res(got) : rej(new Error(`replay worker exited ${code}`))));
   })));
   const all = done.flat().sort((a, b) => a.i - b.i);
