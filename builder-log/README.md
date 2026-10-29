@@ -120,3 +120,32 @@ public-derive-from-behavior-v2 (approved via #518, landed as #519 2e04d3d) was t
 runs were approved by Builder under Peace's standing permission, after Auditor PASS; after Auditor byte-check PASS PeaceAI's verdict
 PRs PeaceSTOCKS#73/#72/#74/#75 were squash-merged as 24025a3, f01a60d, 6cdbc2b and 8dec076 (rows in merge order). Coverage stays
 91/222 (41.0%).
+
+## S3 Builder catch-up (2026-10-28)
+
+Seq 282-333 log the 52 Builder PRs merged on PeaceAI-Workspace main from #462 through #574 (2026-10-22 04:06 to 2026-10-28 22:58
+MT), dated by merge time (MT), one row per PR, each `PEACEAI_SELF_CHANGE` (`missing skill`) with `coverage: "none"`. The `why` names
+what PeaceAI lacked, checked per file against `computeNeverZone` / `stage2ZoneRefusal` (peaceai/lib/selfchange.ts) on main 807ba1e:
+
+- **46 rows** touch the stage-2 never-zone (NEVER_ZONE paths or their import/script closure), so PeaceAI may not even propose them.
+  The `why` lists the first never-zone areas hit (workflows, peaceai/bin/*.sh, peaceai/model/, peaceai/rules/, self-change rules, ...).
+- **6 rows** (#507, #527, #528, #538, #551, #555) are tests-only changes under peaceai/test/, outside the never-zone. Stage 2 could
+  take that path, but it is OFF (`peaceai/self/stage2.json`), there is no generator (`self-change credit2` refuses: no generator run
+  record), and stage-2 grading needs every new test to fail on the base, which a tests-only change cannot do.
+
+Not logged as separate rows (M88 precedent): #490 and #525, which only recorded existing rows and re-pinned the coverage test, and
+the bot's approve-rule landings (#468, #470, #499, #519, #524, #534, #539). #503 is logged because it also changed check.ts. The PeaceSTOCKS health tasks Builder translated into
+peace-task issues (#540-#543, #548, #557, #559, #561, #565, #566, #570) get no Builder row: the log has no row kind for writing a
+task spec (seq 278-281 record that only as provenance on PeaceAI's landing rows). Their PeaceAI landing rows are a separate log PR.
+
+Coverage: the numerator is unchanged and the denominator grows by 52, so the official figure becomes 91/274 (33.2%) from
+2026-10-28 (89/226 on 2026-10-22). The secondary figure excluding PEACEAI_SELF_CHANGE stays 91/130.
+
+## Try PeaceAI first (team rule, Auditor ruling 2026-10-28)
+
+Every PeaceAI-Workspace or PeaceSTOCKS coding task Builder would write is first filed as a peace-task issue for PeaceAI. Builder
+writes the code only after PeaceAI refuses it for a named reason (a Job A refusal line, `derive_no_fit`, a never-zone refusal and so
+on). That refusal is logged as a gap row: a Builder row with `missing skill <SKILL>` whose `changed` names the peace-task issue
+(`PeaceAI-Workspace#<N>`) and whose `why` quotes the refusal reason and the run id (`refused <reason> in run <id>`); the Builder code
+that follows is its own row as before. Ops with no code edit (OPS_ACTION) are not peace-tasks. The rule is not CI-enforced: the log
+cannot see whether an issue was filed first, so Auditor checks it at review.
