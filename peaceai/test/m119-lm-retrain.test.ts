@@ -351,8 +351,8 @@ export function resultsReadOnlyProblems(text: string): string[] {
   return out;
 }
 
-test("M119 restore and judge-fetch scripts only read Results: no git push, no Results write inside lm-retrain-live.sh or lm-retrain-judge.sh (Auditor follow-up)", () => {
-  for (const f of ["peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-judge.sh"]) {
+test("M119 restore and judge-fetch scripts only read Results: no git push, no Results write inside lm-retrain-live.sh, lm-retrain-judge.sh or lm-retrain-promoted.sh (Auditor follow-up; M129 promoted pin)", () => {
+  for (const f of ["peaceai/bin/lm-retrain-live.sh", "peaceai/bin/lm-retrain-judge.sh", "peaceai/bin/lm-retrain-promoted.sh"]) {
     const text = read(f);
     assert.deepEqual(resultsReadOnlyProblems(text), [], f);
     assert.match(shellWords(text).code, /with-deploy-key\.sh git (clone|-C "\$res" (fetch|sparse-checkout|checkout))/, `${f}: the key is used to read`);
