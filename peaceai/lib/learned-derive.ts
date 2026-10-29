@@ -24,7 +24,7 @@ import { NEW_MODULE_PATH, PROTECTED_MODULE, PROTECTED_NAMES, safeBody } from "./
 import { importStyle } from "./learned-test.ts";
 import { isExcludedSource, loadClosure, loadProblem } from "./learned-edit-existing.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
-import { compileList, deriveListProgram, formatListType, isListType, lexListValues, listExprProblem, listIndex, listLit, listLitValue, listProbeTable, parseListType, LIST_MAX_PARAMS, type ListArg, type ListExample, type ListParam, type ListParamType } from "./derive-list.ts";
+import { compileList, deriveListProgram, formatListType, hasNonFinite, isListType, lexListValues, listExprProblem, listIndex, listLit, listLitValue, listProbeTable, parseListType, LIST_MAX_PARAMS, type ListArg, type ListExample, type ListParam, type ListParamType } from "./derive-list.ts";
 import { compileStr, deriveStringProgram, lexStrValues, strExprProblem, strLit, strLitValue, strProbeTable, STR_MAX_PARAMS, type StrArg, type StrExample, type StrOut, type StrParam, type StrRet } from "./derive-string.ts";
 import { cleanIssueText } from "./taskmap.ts";
 import ts from "typescript";
@@ -42,6 +42,11 @@ export const DERIVE_VOCAB: Record<(typeof DERIVE_PARAM_KEYS)[number], readonly s
 };
 export function validDeriveParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
   if (minedFrom !== "public" || Object.keys(p).sort().join(",") !== [...DERIVE_PARAM_KEYS].join(",")) return false;
+  // G17: public-derive-from-behavior-v6 is the one pair dsl typed-dsl-v6-nonfinite + placement
+  // new-or-existing-module-v6 (never one without the other); its other params come from DERIVE_VOCAB.
+  if (p.dsl === DERIVE_NONFINITE_DSL || p.placement === DERIVE_NONFINITE_PLACEMENT) {
+    return p.dsl === DERIVE_NONFINITE_DSL && p.placement === DERIVE_NONFINITE_PLACEMENT && DERIVE_PARAM_KEYS.every((k) => k === "dsl" || k === "placement" || (typeof p[k] === "string" && DERIVE_VOCAB[k].includes(p[k] as string)));
+  }
   // M114: public-derive-from-behavior-v5 is the one pair dsl typed-dsl-v5-strings + placement
   // new-or-existing-module-v5 (never one without the other); its other params come from DERIVE_VOCAB.
   if (p.dsl === DERIVE_STRING_DSL || p.placement === DERIVE_STRING_PLACEMENT) {
@@ -82,6 +87,16 @@ export const DERIVE_LIST_TRIGGER = String.raw`^(?:add (?:a )?new module (?<file>
 /** M113: the placement and dsl of public-derive-from-behavior-v4 (bound to DERIVE_LIST_TRIGGER in runDeriveRule). */
 export const DERIVE_LIST_PLACEMENT = "new-or-existing-module";
 export const DERIVE_LIST_DSL = "typed-dsl-v4-lists";
+/**
+ * G17 (public-derive-from-behavior-v6): v4's header (DERIVE_LIST_TRIGGER) and list search, for tasks whose examples
+ * hold NaN, Infinity or -Infinity (written exactly so, as numbers in a list or as a number argument or result). Such
+ * a task is derive_examples under v4; a task with no such value is not_needed under v6, so the two never both
+ * answer one task. The search adds Number.isFinite(E) / !Number.isFinite(E) predicates when an example element
+ * shows a non-finite value, and the generated test asserts the examples as written (node:assert/strict compares
+ * with Object.is, so NaN equals NaN).
+ */
+export const DERIVE_NONFINITE_PLACEMENT = "new-or-existing-module-v6";
+export const DERIVE_NONFINITE_DSL = "typed-dsl-v6-nonfinite";
 /**
  * M114 (public-derive-from-behavior-v5): the header line of a STRING PARSER. Its own words ("string parser"), so it
  * never matches a v1-v4 header and none of theirs matches it; the first parameter is the text (a string), at most one
@@ -366,6 +381,8 @@ export function buildDeriveEdit(params: Record<string, unknown>, task: DeriveTas
 export function runDeriveRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }, raw?: string): DeriveEdit | null {
   // M114: a v5 (string parser) spec has its own trigger, placement and dsl, all three together; nothing below sees one.
   if (trigger === DERIVE_STRING_TRIGGER || params.placement === DERIVE_STRING_PLACEMENT || params.dsl === DERIVE_STRING_DSL) return runDeriveStringRule(trigger, params, objective, files, isTest, why, raw);
+  // G17: a v6 (non-finite examples) spec has v4's trigger with its own placement and dsl; nothing below sees one.
+  if (params.placement === DERIVE_NONFINITE_PLACEMENT || params.dsl === DERIVE_NONFINITE_DSL) return runDeriveNonFiniteRule(trigger, params, objective, files, isTest, why);
   // M113: a v4 (list) spec has its own trigger, placement and dsl, all three together; nothing below sees one.
   if (trigger === DERIVE_LIST_TRIGGER || params.placement === DERIVE_LIST_PLACEMENT || params.dsl === DERIVE_LIST_DSL) return runDeriveListRule(trigger, params, objective, files, isTest, why);
   // M112: the placement and the trigger go together (new-module: DERIVE_TRIGGER; end-of-existing-module:
@@ -517,7 +534,7 @@ export function attachDeriveNotes(
   candidates: readonly { id: string; transformations: readonly string[] }[],
   diffs: ReadonlyMap<string, string>,
   notes: Map<string, string>,
-  note: (diff: string) => string | null = (d) => deriveReviewNote(d) ?? deriveListReviewNote(d) ?? deriveStringReviewNote(d),
+  note: (diff: string) => string | null = (d) => deriveReviewNote(d) ?? deriveListReviewNote(d) ?? deriveStringReviewNote(d) ?? deriveNonFiniteReviewNote(d),
 ): string[] {
   const ids: string[] = [];
   for (const c of candidates) {
@@ -560,7 +577,7 @@ function splitTop(sig: string): string[] {
 }
 
 /** The v4 task: the header (DERIVE_LIST_TRIGGER), the Behavior: prose and the Examples: bullets with list literals. */
-export function parseDeriveListTask(objective: string): { task: DeriveListTask } | { reason: string } {
+export function parseDeriveListTask(objective: string, nonFinite = false): { task: DeriveListTask } | { reason: string } {
   const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
   const re = new RegExp(DERIVE_LIST_TRIGGER, "i");
   const heads = lines.map((l, i) => (re.test(l) ? i : -1)).filter((i) => i >= 0);
@@ -594,7 +611,7 @@ export function parseDeriveListTask(objective: string): { task: DeriveListTask }
   const examples: ListExample[] = [];
   let k = eIdx[0]! + 1;
   for (; k < lines.length && BULLET.test(lines[k]!); k++) {
-    const v = lexListValues(lines[k]!.replace(BULLET, ""));
+    const v = lexListValues(lines[k]!.replace(BULLET, ""), nonFinite);
     if (!v || v.values.length !== params.length) return { reason: "derive_examples" };
     examples.push({ args: v.values, out: v.out });
   }
@@ -611,6 +628,18 @@ export function parseDeriveListTask(objective: string): { task: DeriveListTask }
 /** The v4 edit: the same placement checks as v1 (new module) or v3 (append), the list search, the emit checks. */
 export function buildDeriveListEdit(params: Record<string, unknown>, task: DeriveListTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), derive: typeof deriveListProgram = deriveListProgram): DeriveBuild {
   if (params.dsl !== DERIVE_LIST_DSL || params.placement !== DERIVE_LIST_PLACEMENT || !validDeriveParams(params, "public")) return { reason: "derive_params" };
+  return buildListEditWith(task, files, isTest, derive, false);
+}
+/** G17: the v6 edit, exactly v4's (placement, search, emit checks, test) with non-finite example values allowed. */
+export function buildDeriveNonFiniteEdit(params: Record<string, unknown>, task: DeriveListTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), derive: typeof deriveListProgram = deriveListProgram): DeriveBuild {
+  if (params.dsl !== DERIVE_NONFINITE_DSL || params.placement !== DERIVE_NONFINITE_PLACEMENT || !validDeriveParams(params, "public")) return { reason: "derive_params" };
+  // v4 answers every task without a non-finite example value (decision #466: a widening is a new version).
+  if (!hasNonFinite(task.examples)) return { reason: "not_needed" };
+  // The emitted predicate calls Number.isFinite, so no name may shadow Number.
+  if (task.fn === "Number" || task.params.some((p) => p.name === "Number")) return { reason: "derive_reserved_name" };
+  return buildListEditWith(task, files, isTest, derive, true);
+}
+function buildListEditWith(task: DeriveListTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean, derive: typeof deriveListProgram, nonFinite: boolean): DeriveBuild {
   const path = task.file;
   const dir = path.slice(0, path.lastIndexOf("/") + 1);
   if (!NEW_MODULE_PATH.test(path) || PROTECTED_MODULE.test(path) || isTest(path) || /\.d\.ts$/.test(path) || /\.(test|spec)\./.test(path)) return { reason: "derive_path" };
@@ -626,7 +655,7 @@ export function buildDeriveListEdit(params: Record<string, unknown>, task: Deriv
     if (files.some((f) => f.path.toLowerCase() === path.toLowerCase())) return { reason: "derive_module_exists" };
   }
   // PeaceAI's own list search writes the body from the examples alone (the behavior prose is not an input).
-  const r = derive({ params: task.params, ret: task.ret, examples: task.examples });
+  const r = derive(nonFinite ? { params: task.params, ret: task.ret, examples: task.examples, nonFinite: true } : { params: task.params, ret: task.ret, examples: task.examples });
   if (!r.ok) {
     // List-valued questions do not fit the scalar question line (refusal-reason.ts); they stay in `detail`.
     const asks = r.questions?.length ? ` Asked: ${r.questions.map((q) => `${task.fn}(${q.at.map((a) => listLit(a)).join(", ")}) gives ${q.answers.map((a) => listLit(a)).join(" or ")}?`).join(" ")}` : "";
@@ -636,18 +665,20 @@ export function buildDeriveListEdit(params: Record<string, unknown>, task: Deriv
   const names = task.params.map((p) => p.name);
   const expr = compileList(r.program, names, listIndex(task.params));
   if (expr.length > DERIVE_MAX_EXPR_CHARS) return { reason: "derive_emit_size" };
-  const exprProblem = listExprProblem(expr, task.params, task.ret);
+  const exprProblem = listExprProblem(expr, task.params, task.ret, nonFinite);
   if (exprProblem) return { reason: exprProblem };
   const sig = task.params.map((p) => `${p.name}: ${formatListType(p.type)}`).join(", ");
   const fnText = `export function ${task.fn}(${sig}): ${formatListType(task.ret)} {\n  return ${expr};\n}\n`;
-  if (derivedListModuleProblem(fnText)) return { reason: "derive_expr_parse" };
+  if (listModuleProblemWith(fnText, nonFinite)) return { reason: "derive_expr_parse" };
   const content = target ? `${target.content}\n${fnText}` : fnText;
-  if (target) { const p = derivedListAppendProblem(target.content, content); if (p) return { reason: p }; }
+  if (target) { const p = nonFinite ? derivedNonFiniteAppendProblem(target.content, content) : derivedListAppendProblem(target.content, content); if (p) return { reason: p }; }
   const call = (args: readonly ListArg[]) => `${task.fn}(${args.map((a, i) => listLit(a, task.params[i]!.type)).join(", ")})`;
   const assertFn = isListType(task.ret) ? "assert.deepEqual" : "assert.equal";
   const exampleLines = task.examples.map((ex) => `  ${assertFn}(${call(ex.args)}, ${listLit(ex.out, task.ret)});`);
   const stem = path.slice(dir.length).replace(/\.ts$/, "");
-  const id7 = createHash("sha256").update(JSON.stringify([task.file, task.fn, sig, formatListType(task.ret), task.examples])).digest("hex").slice(0, 7);
+  // G17: JSON writes NaN and both infinities as null, so v6 hashes them by name (v4's hash is unchanged).
+  const exKey = nonFinite ? JSON.stringify(task.examples, (_k, v: unknown) => (typeof v === "number" && !Number.isFinite(v) ? `#${String(v)}` : v)) : null;
+  const id7 = createHash("sha256").update(nonFinite ? `${JSON.stringify([task.file, task.fn, sig, formatListType(task.ret)])}${exKey}` : JSON.stringify([task.file, task.fn, sig, formatListType(task.ret), task.examples])).digest("hex").slice(0, 7);
   const testPath = `${dir}${stem}.${slug(task.fn)}-${id7}.test.ts`;
   if (files.some((f) => f.path.toLowerCase() === testPath.toLowerCase())) return { reason: "new_test_path_exists" };
   const spec = `./${stem}${importStyle(files, isTest) === "ts" ? ".ts" : ""}`;
@@ -663,6 +694,16 @@ export function buildDeriveListEdit(params: Record<string, unknown>, task: Deriv
   ].join("\n");
   const extra = [{ path: testPath, content: test, create: true as const }];
   return { edit: target ? { path, content, extra, selfGrade: true } : { path, content, create: true, extra, selfGrade: true }, expr, size: r.size };
+}
+
+/** Job A entry for v6 (G17): v4's trigger with the v6 placement and dsl; refusal code in `why.reason`. */
+export function runDeriveNonFiniteRule(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string; questions?: string }): DeriveEdit | null {
+  if (trigger !== DERIVE_LIST_TRIGGER || params.placement !== DERIVE_NONFINITE_PLACEMENT || params.dsl !== DERIVE_NONFINITE_DSL) { if (why) why.reason = "derive_params"; return null; }
+  const parsed = parseDeriveListTask(objective, true);
+  if ("reason" in parsed) { if (why && parsed.reason !== "derive_trigger") why.reason = parsed.reason; return null; }
+  const built = buildDeriveNonFiniteEdit(params, parsed.task, files, isTest);
+  if ("reason" in built) { if (why) why.reason = built.reason; return null; }
+  return built.edit;
 }
 
 /** Job A entry for v4: the trigger, placement and dsl must be the v4 triple; refusal code in `why.reason`. */
@@ -694,6 +735,13 @@ function listSignature(f: ts.FunctionDeclaration, sf: ts.SourceFile): { params: 
  * types are v4 types in their canonical spelling and whose expression passes listExprProblem. Null when clean.
  */
 export function derivedListModuleProblem(content: string): string | null {
+  return listModuleProblemWith(content, false);
+}
+/** G17: Job B re-check of a v6 module: v4's, with the Number.isFinite predicates allowed and Number never a name. */
+export function derivedNonFiniteModuleProblem(content: string): string | null {
+  return listModuleProblemWith(content, true);
+}
+function listModuleProblemWith(content: string, nonFinite: boolean): string | null {
   const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || sf.statements.length !== 1) return "derive_module_shape";
   const f = sf.statements[0]!;
@@ -706,29 +754,37 @@ export function derivedListModuleProblem(content: string): string | null {
   // `__proto__` would reach the prototype; `length` / `toString` shadow what the list reads).
   const badField = (t: ListParamType) => isListType(t) && typeof t.list === "object" && t.list.fields.some((x) => LIST_FIELD_DENY.has(x.name) || DERIVE_RESERVED_NAMES.has(x.name) || PROTECTED_NAMES.test(x.name));
   const names = [f.name.text, ...sig.params.map((x) => x.name)];
-  if (names.some((n) => DERIVE_RESERVED_NAMES.has(n) || PROTECTED_NAMES.test(n)) || sig.params.some((x) => badField(x.type)) || badField(sig.ret)) return "derive_reserved_name";
+  if (names.some((n) => DERIVE_RESERVED_NAMES.has(n) || PROTECTED_NAMES.test(n) || (nonFinite && n === "Number")) || sig.params.some((x) => badField(x.type)) || badField(sig.ret)) return "derive_reserved_name";
   const expr = st[0]!.expression.getText(sf);
   if (expr.length > DERIVE_MAX_EXPR_CHARS) return "derive_emit_size";
-  return listExprProblem(expr, sig.params, sig.ret);
+  return listExprProblem(expr, sig.params, sig.ret, nonFinite);
 }
 /** M113: the v4 append is add-only, exactly as v3's (derivedAppendProblem), with a v4 module as the block. */
 export function derivedListAppendProblem(before: string, after: string): string | null {
   return appendProblemWith(before, after, derivedListModuleProblem);
 }
+/** G17: the v6 append is add-only, exactly as v4's, with a v6 module as the block. */
+export function derivedNonFiniteAppendProblem(before: string, after: string): string | null {
+  return appendProblemWith(before, after, derivedNonFiniteModuleProblem);
+}
 
 /** The v4 rule's operation id prefix (`learned:<rule id>@<spec sha>`). */
 export const DERIVE_LIST_OPERATION = "learned:public-derive-from-behavior-v4@";
+/** G17: the v6 rule's operation id prefix. */
+export const DERIVE_NONFINITE_OPERATION = "learned:public-derive-from-behavior-v6@";
 /**
  * Auditor #523 B2: Job B's re-check of a derive candidate's module, keyed on the candidate's rule id. A v4 candidate
  * is re-checked as a v4 list module only, a v5 candidate (M114) as a v5 string module only; every other derive
  * candidate (v1, v2, v3) exactly as before M113.
  */
 export function deriveModuleRecheck(operationId: unknown, real: string): string | null {
+  if (typeof operationId === "string" && operationId.startsWith(DERIVE_NONFINITE_OPERATION)) return derivedNonFiniteModuleProblem(real);
   if (typeof operationId === "string" && operationId.startsWith(DERIVE_STRING_OPERATION)) return derivedStringModuleProblem(real);
   return typeof operationId === "string" && operationId.startsWith(DERIVE_LIST_OPERATION) ? derivedListModuleProblem(real) : derivedModuleProblem(real);
 }
 /** The same for an append (v3 / v4 / v5): add-only, the block re-checked by the candidate's own rule. */
 export function deriveAppendRecheck(operationId: unknown, before: string, after: string): string | null {
+  if (typeof operationId === "string" && operationId.startsWith(DERIVE_NONFINITE_OPERATION)) return derivedNonFiniteAppendProblem(before, after);
   if (typeof operationId === "string" && operationId.startsWith(DERIVE_STRING_OPERATION)) return derivedStringAppendProblem(before, after);
   return typeof operationId === "string" && operationId.startsWith(DERIVE_LIST_OPERATION) ? derivedListAppendProblem(before, after) : derivedAppendProblem(before, after);
 }
@@ -739,10 +795,20 @@ export function deriveAppendRecheck(operationId: unknown, before: string, after:
  * `assert.equal(...)` (scalar result) lines; PeaceAI derives again and shows the note only for the exact expression.
  */
 export function deriveListReviewNote(diff: string, derive: typeof deriveListProgram = deriveListProgram): string | null {
+  return listReviewNoteWith(diff, derive, false);
+}
+/**
+ * G17: the v6 review note, rebuilt from the diff alone exactly as v4's, reading NaN / Infinity / -Infinity in the
+ * test literals and deriving with non-finite values allowed. Null for a diff whose examples hold none.
+ */
+export function deriveNonFiniteReviewNote(diff: string, derive: typeof deriveListProgram = deriveListProgram): string | null {
+  return listReviewNoteWith(diff, derive, true);
+}
+function listReviewNoteWith(diff: string, derive: typeof deriveListProgram, nonFinite: boolean): string | null {
   const files = createdFiles(diff);
   const tests = files.filter((f) => /\.test\.ts$/.test(f.path));
   const mods = [...files.filter((f) => !/\.test\.ts$/.test(f.path)), ...appendedBlocks(diff).filter((f) => !/\.test\.ts$/.test(f.path))];
-  if (diff.split(/^diff --git /m).length - 1 !== 2 || tests.length !== 1 || mods.length !== 1 || derivedListModuleProblem(mods[0]!.content) !== null) return null;
+  if (diff.split(/^diff --git /m).length - 1 !== 2 || tests.length !== 1 || mods.length !== 1 || listModuleProblemWith(mods[0]!.content, nonFinite) !== null) return null;
   const sf = ts.createSourceFile("m.ts", mods[0]!.content, ts.ScriptTarget.Latest, true);
   const f = sf.statements[0] as ts.FunctionDeclaration;
   const fn = f.name!.text;
@@ -757,17 +823,17 @@ export function deriveListReviewNote(diff: string, derive: typeof deriveListProg
     if (t.statements.length !== 1 || !st || !ts.isExpressionStatement(st) || !ts.isCallExpression(st.expression)) return null;
     const [call, wantV, ...rest] = st.expression.arguments;
     if (st.expression.expression.getText(t) !== want || !call || !wantV || rest.length || !ts.isCallExpression(call) || call.expression.getText(t) !== fn || call.arguments.length !== sig.params.length) return null;
-    const args = call.arguments.map(listLitValue);
-    const out = listLitValue(wantV);
+    const args = call.arguments.map((a) => listLitValue(a, nonFinite));
+    const out = listLitValue(wantV, nonFinite);
     if (out === undefined || args.some((a) => a === undefined)) return null;
     examples.push({ args: args as ListArg[], out: out as ListArg });
   }
-  if (!examples.length) return null;
-  const input = { params: sig.params, ret: sig.ret, examples };
+  if (!examples.length || (nonFinite && !hasNonFinite(examples))) return null;
+  const input = nonFinite ? { params: sig.params, ret: sig.ret, examples, nonFinite: true } : { params: sig.params, ret: sig.ret, examples };
   const r = derive(input);
   if (!r.ok || compileList(r.program, sig.params.map((p) => p.name), listIndex(sig.params)) !== expr) return null;
   const rows = listProbeTable(r.program, input, DERIVE_NOTE_ROWS).map((row) => `${fn}(${row.args.map((a) => listLit(a)).join(", ")}) = ${listLit(row.out)}`);
-  return [`Derived by PeaceAI from the ${examples.length} examples (DERIVE_FROM_BEHAVIOR v4, list input). Expression and probe inputs the examples do not show:`, "", "```text", `return ${expr};`, "", ...rows, "```"].join("\n");
+  return [`Derived by PeaceAI from the ${examples.length} examples (DERIVE_FROM_BEHAVIOR ${nonFinite ? "v6, list input with non-finite numbers" : "v4, list input"}). Expression and probe inputs the examples do not show:`, "", "```text", `return ${expr};`, "", ...rows, "```"].join("\n");
 }
 
 // M114: public-derive-from-behavior-v5, string parsers (peaceai/lib/derive-string.ts holds the search).

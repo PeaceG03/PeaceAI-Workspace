@@ -40,6 +40,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-derive-from-behavior-v3": "DERIVE_FROM_BEHAVIOR", // M112: append to an existing module; same kind
   "public-derive-from-behavior-v4": "DERIVE_FROM_BEHAVIOR", // M113: list inputs; same kind
   "public-derive-from-behavior-v5": "DERIVE_FROM_BEHAVIOR", // M114: string parsers; same kind
+  "public-derive-from-behavior-v6": "DERIVE_FROM_BEHAVIOR", // G17: list inputs with NaN / Infinity / -Infinity examples; same kind
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */
