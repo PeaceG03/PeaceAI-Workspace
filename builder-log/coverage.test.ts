@@ -31,6 +31,7 @@ import {
   isWorkspaceRealTask,
   makeWorkspaceProofChecker,
   WORKSPACE_LANDING_SINCE,
+  WS_PROOF,
   workspaceRefusal,
   workspaceTouchRefusal,
   type DeriveRunFacts,
@@ -118,7 +119,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/226 on 2026-10-22, 91/276 today (S3 catch-up seq 282-333 + seq 334-335 for #575/#578; team-picked health landings seq 278-281 and 336-349 earn no credit) with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/226 on 2026-10-22, 91/276 today (S3 catch-up seq 282-333 + seq 334-335 for #575/#578; team-picked health landings seq 278-281 and 336-349 and Workspace self-edit seq 350 earn no credit) with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -243,6 +244,27 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
     const r = coverageReport(text, asOf, { onMain });
     assert.deepEqual([r.allTime.peaceaiAble, r.allTime.builderTasks, r.allTime.percent], [able, tasks, percent], asOf);
     assert.deepEqual([r.excludingSelfChange.allTime.peaceaiAble, r.excludingSelfChange.allTime.builderTasks], [91, 130], asOf);
+  }
+  // First Workspace self-edit (seq 350, team-picked #584 on DERIVE_FROM_BEHAVIOR v4, derive run 40908656541, landed 2026-10-29
+  // 10:40 MT via verdict PR PeaceAI-Workspace#587 as 9cb4213): by PeaceAI with a well-formed ws-proof clause, but team-picked, not
+  // "(source: peace)", so neither real-task path counts it (workspaceRefusal stops at W_NOT_SOURCE_PEACE before any lookup) and
+  // it is not a Builder row: 91/276 and the secondary 91/130 stay on 2026-10-29.
+  const selfEdit = parseLogEntries(text).find((x) => x.seq === 350)!;
+  assert.equal(selfEdit.by, "PeaceAI");
+  assert.equal(selfEdit.skill, "DERIVE_FROM_BEHAVIOR");
+  assert.equal(selfEdit.changed, "PeaceAI-Workspace#584, PeaceAI-Workspace@9cb4213");
+  assert.match(selfEdit.asked, /\(source: team-picked;/);
+  assert.doesNotMatch(selfEdit.asked, /\(source: peace\)/);
+  assert.deepEqual([...selfEdit.why.matchAll(WS_PROOF)].map((m) => m.slice(1)), [
+    ["40908656541", "candidate-1", "3331e541a19def65bacf58d6c6fa0e791ea58087d50159aefa5e42a2be418ce0", "6502241639"],
+  ]);
+  assert.equal(isPeaceRealTask(selfEdit, onMain), false);
+  assert.equal(workspaceRefusal(selfEdit, null), "W_NOT_SOURCE_PEACE");
+  assert.equal(isWorkspaceRealTask(selfEdit, null), false);
+  {
+    const r = coverageReport(text, "2026-10-29", { onMain });
+    assert.deepEqual([r.allTime.peaceaiAble, r.allTime.builderTasks, r.allTime.percent], [91, 276, 33]);
+    assert.deepEqual([r.excludingSelfChange.allTime.peaceaiAble, r.excludingSelfChange.allTime.builderTasks], [91, 130]);
   }
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/187 (133 + 52 S3 rows + seq 334-335).
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
