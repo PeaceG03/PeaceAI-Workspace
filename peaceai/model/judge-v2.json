@@ -7,5 +7,9 @@
  "items": { "sha256": "1deadaaea1992ad18e533595218c9c0953128615c18c9ce0d24dc58d505da2b8", "n": 230, "right": 73, "wrong": 157 },
  "dropped": { "identity_indistinguishable": 134 },
  "relabelled": { "rightToWrong": 69, "wrongToRight": 0 },
- "live": { "version": "lm-v1-088073d41dbc", "auc": 0.175, "auc_ci95": [0.116, 0.237] }
+ "live": { "version": "lm-v1-088073d41dbc", "auc": 0.175, "auc_ci95": [0.116, 0.237] },
+ "promoted": { "version": "lm-v1-858573767465", "runId": "40694718190", "weightsSha256": "858573767465fbede9c9f1ea0d1e6a3e8c8830c70a07ff358c74783a26119255",
+   "recordSha256": "56a1636fa9f6ffe9fd48205945815b92b601340cc55499f376399de4ad4e935c", "judgeModelSha256": "2dc1e6706f70c659925add3f40b402cd130df9970d2230ae0445d46faa61731d",
+   "auc": 0.298, "auc_ci95": [0.227, 0.374], "scores": "lm-judge-v2/scores-lm-v1-858573767465.json",
+   "note": "Judge v2 pins for the promoted model (Results latest.json, 0d86e8c), separate from live, which stays tied to lm-retrain.json replayBase. auc and auc_ci95 are exactly the record's judge.candidate (runs/lm-retrain/<runId>/record.json, pinned by recordSha256); judgeModelSha256 pins that run's per-item scores (judge-model.json). peace-lm-judge-v2-promoted.yml restores the model by weightsSha256 (never through lm-retrain-live.sh), requires Results latest.json and lm-retrain.json promoted to name this version, rescores it with judge364.py on the v2 items, requires per-item agreement with judgeModelSha256 (judge_repro.py) and auc, auc_ci95, n and the counts to equal this pin and the record exactly, and lands only <scores>, a new file. Report-only: the retrain judge gate is unchanged. Re-pin with any later promotion." }
 }
