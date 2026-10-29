@@ -128,14 +128,54 @@ export async function traceLine(e: Entry, deps: TraceDeps): Promise<TraceRow[]> 
   return rows;
 }
 
+export const NOT_ATTEMPTED = "not attempted after a GitHub API rate limit";
+
+/**
+ * Fixed-text cause of a gh lookup failure (never the raw error text: output stays codes and fixed details only).
+ * gh ends an API error with "(HTTP nnn)"; GitHub's primary and secondary limits both say "rate limit".
+ */
+export function lookupCause(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.startsWith(NOT_ATTEMPTED)) return NOT_ATTEMPTED;
+  const status = /\(HTTP (\d{3})\)/.exec(msg)?.[1];
+  if (/rate limit/i.test(msg)) return `rate limited${status ? ` (HTTP ${status})` : ""}`;
+  return status ? `HTTP ${status}` : "";
+}
+const because = (err: unknown): string => {
+  const c = lookupCause(err);
+  return c ? `: ${c}` : "";
+};
+/**
+ * After the first rate-limited GitHub lookup, every later GitHub lookup fails at once (fail closed) instead of
+ * spending ~150 more calls that would fail the same way. Local git deps (trees, stack) are untouched.
+ */
+export function stopAfterRateLimit(deps: TraceDeps): TraceDeps {
+  let hit = false;
+  const guard = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => async (...a: A): Promise<R> => {
+    if (hit) throw new Error(NOT_ATTEMPTED);
+    try {
+      return await f(...a);
+    } catch (err) {
+      if (lookupCause(err).startsWith("rate limited")) hit = true;
+      throw err;
+    }
+  };
+  return {
+    ...deps,
+    botComments: guard((issue: number) => deps.botComments(issue)),
+    results: deps.results && guard((issue: number) => deps.results!(issue)),
+    ...(deps.pullRequest ? { pullRequest: guard((repo: string, n: number) => deps.pullRequest!(repo, n)) } : {}),
+    ...(deps.verdictPulls ? { verdictPulls: guard((repo: string, issue: number) => deps.verdictPulls!(repo, issue)) } : {}),
+  };
+}
+
 async function traceOne(seq: number, landing: string, repo: string, sha: string, issue: number, deps: TraceDeps, why = ""): Promise<TraceRow> {
   const fail = (code: TraceCode, detail: string): TraceRow => ({ seq, landing, issue, status: "fail", code, detail });
   let bodies: string[];
   try {
     bodies = await deps.botComments(issue);
   } catch (err) {
-    void err;
-    return fail("T_LOOKUP_FAILED", "issue comments lookup failed");
+    return fail("T_LOOKUP_FAILED", `issue comments lookup failed${because(err)}`);
   }
   const posted = bodies.filter((b) => b.replace(/\r\n/g, "\n").startsWith(PATCH_MARKER + "\n")).pop();
   if (!posted) {
@@ -211,8 +251,7 @@ async function traceByBranch(seq: number, landing: string, repo: string, sha: st
       if (br && Number(br[1]) === issue && pr.merged && pr.mergeCommit !== null && pr.mergeCommit.startsWith(sha)) hits.push(n);
     }
   } catch (err) {
-    void err;
-    return fail("T_LOOKUP_FAILED", `verdict branch lookup for #${issue} failed`);
+    return fail("T_LOOKUP_FAILED", `verdict branch lookup for #${issue} failed${because(err)}`);
   }
   if (hits.length === 0) return fail("T_PR_MISMATCH", `no verdict branch PR for #${issue} is merged as ${sha}`);
   if (hits.length > 1) return fail("T_PR_MISMATCH", `${hits.length} verdict branch PRs for #${issue} are merged as ${sha}`);
@@ -236,8 +275,7 @@ async function tracePr(seq: number, landing: string, repo: string, sha: string, 
   try {
     pr = await deps.pullRequest(repo, n);
   } catch (err) {
-    void err;
-    return fail("T_LOOKUP_FAILED", `${label}#${n} lookup failed`);
+    return fail("T_LOOKUP_FAILED", `${label}#${n} lookup failed${because(err)}`);
   }
   if (!pr.merged || !pr.mergeCommit || !pr.mergeCommit.startsWith(sha)) return fail("T_PR_MISMATCH", `${label}#${n} is not merged as ${sha}`);
   const br = PR_BRANCH.exec(pr.headRef);
@@ -276,7 +314,8 @@ async function tracePr(seq: number, landing: string, repo: string, sha: string, 
 
 export async function traceAll(entries: readonly Entry[], deps: TraceDeps): Promise<TraceRow[]> {
   const rows: TraceRow[] = [];
-  for (const e of entries) if (e.by === "PeaceAI") rows.push(...(await traceLine(e, deps)));
+  const guarded = stopAfterRateLimit(deps);
+  for (const e of entries) if (e.by === "PeaceAI") rows.push(...(await traceLine(e, guarded)));
   return rows;
 }
 
@@ -421,6 +460,8 @@ async function main(): Promise<void> {
   for (const r of rows) console.log(`| ${r.seq} | ${r.landing} | ${r.issue ? `#${r.issue}` : "-"} | ${r.status} | ${r.code ?? ""} | ${r.detail.replace(/\|/g, "\\|")} |`);
   for (const e of untraced) console.log(`| ${e.seq} | (no repo@sha landing) | - | no landing | | ${e.changed.replace(/\|/g, "\\|")} |`);
   const errs = traceErrors(entries, rows);
+  const skipped = rows.filter((r) => r.detail.endsWith(`: ${NOT_ATTEMPTED}`)).length;
+  if (skipped) errs.unshift(`T_LOOKUP_FAILED: GitHub API rate limit hit; ${skipped} later landing lookup${skipped === 1 ? "" : "s"} not attempted (fail closed)`);
   if (errs.length) {
     console.error(errs.join("\n"));
     process.exit(1);
