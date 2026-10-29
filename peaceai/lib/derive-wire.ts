@@ -73,11 +73,11 @@ export function parseWireTask(trigger: string, objective: string): WireTask | { 
 // ---------------------------------------------------------------------------------------------------------------
 // the examples as scenarios
 // ---------------------------------------------------------------------------------------------------------------
-type ErrorInfo = { message: string; code?: string; name?: string; cause?: { code?: string; name?: string; message?: string } };
+export type ErrorInfo = { message: string; code?: string; name?: string; cause?: { code?: string; name?: string; message?: string } };
 type Injected = { owner: string; outcomes: ts.Expression[] };
 interface Scenario { bullet: number; call: ts.CallExpression; kind: "resolves" | "returns" | "rejects" | "throws"; message: string | null; inject: Map<string, Injected[]> }
 
-const outcomesOf = (e: ts.Expression): ts.Expression[] | null => {
+export const outcomesOf = (e: ts.Expression): ts.Expression[] | null => {
   const n = callName(e);
   if (n === "sequence" && ts.isCallExpression(e)) return [...e.arguments];
   return n && OUTCOMES.has(n) ? [e] : null;
@@ -92,7 +92,7 @@ const fieldsOf = (e: ts.Expression | undefined): Omit<ErrorInfo, "message"> => {
   }
   return out as Omit<ErrorInfo, "message">;
 };
-const failureOf = (o: ts.Expression): ErrorInfo | null => {
+export const failureOf = (o: ts.Expression): ErrorInfo | null => {
   const n = callName(o);
   if ((n !== "rejects" && n !== "throws") || !ts.isCallExpression(o) || !o.arguments[0] || !ts.isStringLiteral(o.arguments[0])) return null;
   return { message: o.arguments[0].text, ...fieldsOf(o.arguments[1]) };
@@ -116,7 +116,7 @@ function entryParams(sf: ts.SourceFile, call: ts.CallExpression): { ctor: string
 }
 
 /** Every injected outcome fake an expect call reaches, by the key (or parameter name) it is injected under. */
-function injections(call: ts.CallExpression, fakes: ReadonlyMap<string, ts.Expression>, sf: ts.SourceFile, bullet: number): Map<string, Injected[]> {
+export function injections(call: ts.CallExpression, fakes: ReadonlyMap<string, ts.Expression>, sf: ts.SourceFile, bullet: number): Map<string, Injected[]> {
   const out = new Map<string, Injected[]>();
   const add = (k: string, v: Injected) => out.set(k, [...(out.get(k) ?? []), v]);
   const fromObject = (o: ts.ObjectLiteralExpression, owner: string, depth: number): void => {
@@ -204,25 +204,25 @@ function paramValue(sf: ts.SourceFile, t: Target, call: ts.CallExpression, index
 // ---------------------------------------------------------------------------------------------------------------
 // the search
 // ---------------------------------------------------------------------------------------------------------------
-const calleeName = (c: ts.CallExpression): string | null => {
+export const calleeName = (c: ts.CallExpression): string | null => {
   const e = c.expression;
   return ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.name) ? e.name.text : null;
 };
 /** Calls of a statement (never inside a nested function or class). */
-const callsIn = (s: ts.Node): ts.CallExpression[] => {
+export const callsIn = (s: ts.Node): ts.CallExpression[] => {
   const out: ts.CallExpression[] = [];
   const v = (n: ts.Node): void => { if (n !== s && (ts.isFunctionLike(n) || ts.isClassLike(n))) return; if (ts.isCallExpression(n)) out.push(n); ts.forEachChild(n, v); };
   v(s);
   return out;
 };
-const insideTry = (s: ts.Node, root: ts.Node): boolean => { for (let p = s.parent; p && p !== root; p = p.parent) if (ts.isTryStatement(p) || ts.isCatchClause(p)) return true; return false; };
+export const insideTry = (s: ts.Node, root: ts.Node): boolean => { for (let p = s.parent; p && p !== root; p = p.parent) if (ts.isTryStatement(p) || ts.isCatchClause(p)) return true; return false; };
 const insideLoop = (s: ts.Node, root: ts.Node): boolean => { for (let p = s.parent; p && p !== root; p = p.parent) if (ts.isForOfStatement(p) || ts.isForStatement(p) || ts.isForInStatement(p) || ts.isWhileStatement(p) || ts.isDoStatement(p)) return true; return false; };
 
 export type WireCandidate = { kind: "continue" } | { kind: "rethrow"; helper: string; args: string[] };
 export type WireDerivation = { site: string; candidate: WireCandidate; oldText: string; newText: string; formatted: (indent: string) => string } | { reason: string; detail?: string };
 
 const argText = (a: string): string => (a.startsWith("param:") ? a.slice(6) : WIRE_ARG_FORMS.find((f) => f.id === a)!.text);
-const argValue = (a: string, e: ErrorInfo, params: ReadonlyMap<string, string | null>): string | null => {
+export const argValue = (a: string, e: ErrorInfo, params: ReadonlyMap<string, string | null>): string | null => {
   switch (a) {
     case "message": return e.message;
     case "name": return e.name ?? "Error";

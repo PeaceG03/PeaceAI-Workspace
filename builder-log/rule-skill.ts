@@ -42,6 +42,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-derive-from-behavior-v5": "DERIVE_FROM_BEHAVIOR", // M114: string parsers; same kind
   "public-derive-from-behavior-v6": "DERIVE_FROM_BEHAVIOR", // G17: list inputs with NaN / Infinity / -Infinity examples; same kind
   "public-derive-wire-v1": "EXISTING_FUNCTION_EDIT", // G18: a derived try / catch wrap; same skill as M98
+  "public-derive-wire-v2": "EXISTING_FUNCTION_EDIT", // G18 v2: a derived bounded retry or recorded skip; same skill as M98
 };
 
 /** Reviewed exemptions: seq -> reason (reported, never silent). */
