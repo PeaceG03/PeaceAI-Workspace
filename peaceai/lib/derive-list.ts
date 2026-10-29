@@ -60,13 +60,24 @@ export type ListRecord = { readonly [k: string]: DeriveValue };
 export type ListElem = DeriveValue | ListRecord;
 export type ListArg = DeriveValue | readonly ListElem[];
 export interface ListExample { args: ListArg[]; out: ListArg }
-export interface ListInput { params: ListParam[]; ret: ListParamType; examples: ListExample[]; maxCandidates?: number; maxEvals?: number }
+export interface ListInput {
+  params: ListParam[]; ret: ListParamType; examples: ListExample[]; maxCandidates?: number; maxEvals?: number;
+  /**
+   * G17 (public-derive-from-behavior-v6, rule param dsl typed-dsl-v6-nonfinite only): a number value in the examples
+   * may also be NaN, Infinity or -Infinity, and when an example element is one of them the predicates
+   * Number.isFinite(E) / !Number.isFinite(E) join the search. Off (the default, v4): examples, search, gates and
+   * refusals are unchanged.
+   */
+  nonFinite?: boolean;
+}
 
 export type ListPred =
   | { op: "le" | "ge" | "eqn"; f: string | null; c: number }
   | { op: "lep" | "gep" | "ltp" | "gtp" | "eqp" | "nep"; f: string | null; p: number }
   | { op: "is" | "not"; f: string | null }
-  | { op: "eqs" | "nes"; f: string | null; s: string };
+  | { op: "eqs" | "nes"; f: string | null; s: string }
+  /** G17 (v6 only): Number.isFinite(E) / !Number.isFinite(E). */
+  | { op: "fin" | "nfin"; f: string | null };
 export type ListProgram =
   | { op: "length" }
   | { op: "count" | "filter" | "some" | "every"; pred: ListPred }
@@ -97,6 +108,13 @@ export const LIST_MAX_EVALS = 40_000_000;
 export const LIST_MAX_PROBES = 60_000;
 const MAX_INT = 1e12;
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && Math.abs(v) <= MAX_INT;
+/** G17: NaN, Infinity or -Infinity (an example value only v6 accepts). */
+export const isNonFinite = (v: unknown): v is number => typeof v === "number" && !Number.isFinite(v);
+/** G17: whether any example argument, element, record field or result holds NaN, Infinity or -Infinity. */
+export function hasNonFinite(examples: readonly ListExample[]): boolean {
+  const walk = (v: unknown): boolean => (Array.isArray(v) ? v.some(walk) : v && typeof v === "object" ? Object.values(v).some(walk) : isNonFinite(v));
+  return examples.some((e) => e.args.some(walk) || walk(e.out));
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Types
@@ -139,22 +157,30 @@ export function parseListType(text: string): ListParamType | null {
   return { list: { fields } };
 }
 
-const scalarOk = (v: unknown, t: DeriveType): boolean =>
-  t === "number" ? isInt(v) : t === "string" ? typeof v === "string" && v.length <= DERIVE_MAX_STRING : typeof v === "boolean";
-function elemOk(v: unknown, t: ListElemType): boolean {
-  if (typeof t === "string") return scalarOk(v, t);
+const scalarOk = (v: unknown, t: DeriveType, nonFinite = false): boolean =>
+  t === "number" ? isInt(v) || (nonFinite && isNonFinite(v)) : t === "string" ? typeof v === "string" && v.length <= DERIVE_MAX_STRING : typeof v === "boolean";
+function elemOk(v: unknown, t: ListElemType, nonFinite = false): boolean {
+  if (typeof t === "string") return scalarOk(v, t, nonFinite);
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   const keys = Object.keys(v);
-  return keys.length === t.fields.length && t.fields.every((f) => Object.prototype.hasOwnProperty.call(v, f.name) && scalarOk((v as ListRecord)[f.name], f.type));
+  return keys.length === t.fields.length && t.fields.every((f) => Object.prototype.hasOwnProperty.call(v, f.name) && scalarOk((v as ListRecord)[f.name], f.type, nonFinite));
 }
-/** A value matches a declared type (lists: at most LIST_MAX_ELEMS elements of the element type). */
-export function valueOk(v: unknown, t: ListParamType): boolean {
-  if (!isListType(t)) return scalarOk(v, t);
-  return Array.isArray(v) && v.length <= LIST_MAX_ELEMS && v.every((e) => elemOk(e, t.list));
+/**
+ * A value matches a declared type (lists: at most LIST_MAX_ELEMS elements of the element type). A number is an
+ * integer; with `nonFinite` (G17, v6 only) it may also be NaN, Infinity or -Infinity.
+ */
+export function valueOk(v: unknown, t: ListParamType, nonFinite = false): boolean {
+  if (!isListType(t)) return scalarOk(v, t, nonFinite);
+  return Array.isArray(v) && v.length <= LIST_MAX_ELEMS && v.every((e) => elemOk(e, t.list, nonFinite));
 }
 
-/** Canonical JSON of a value (record keys sorted), for comparing and grouping. */
+/**
+ * Canonical JSON of a value (record keys sorted), for comparing and grouping. G17: NaN, Infinity and -Infinity are
+ * their own keys (JSON would write all three as null), so two values have one key exactly when Object.is holds,
+ * except 0 and -0 (one key, as before; the examples never write -0).
+ */
 export function valueKey(v: unknown): string {
+  if (isNonFinite(v)) return String(v);
   if (Array.isArray(v)) return `[${v.map(valueKey).join(",")}]`;
   if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${valueKey((v as ListRecord)[k])}`).join(",")}}`;
   return JSON.stringify(v);
@@ -180,6 +206,8 @@ export function evalPred(p: ListPred, x: ListElem, args: readonly ListArg[]): bo
     case "not": return e !== true;
     case "eqs": return e === p.s;
     case "nes": return e !== p.s;
+    case "fin": return Number.isFinite(e);
+    case "nfin": return !Number.isFinite(e);
   }
 }
 export function evalList(prog: ListProgram, args: readonly ListArg[], li: number): ListArg {
@@ -198,7 +226,7 @@ export function evalList(prog: ListProgram, args: readonly ListArg[], li: number
     case "pluck": return (prog.pred ? L.filter((x) => evalPred(prog.pred!, x, args)) : L).map((x) => get(x, prog.f));
   }
 }
-const predSize = (p: ListPred): number => (p.op === "is" ? 1 : p.op === "not" || p.op === "nes" || p.op === "nep" ? 3 : 2);
+const predSize = (p: ListPred): number => (p.op === "is" ? 1 : p.op === "not" || p.op === "nes" || p.op === "nep" || p.op === "nfin" ? 3 : 2);
 export function listSize(prog: ListProgram): number {
   switch (prog.op) {
     case "length": return 1;
@@ -219,6 +247,7 @@ export function predOk(p: ListPred, params: readonly ListParam[]): boolean {
     case "eqp": case "nep": return t !== "boolean" && params[p.p]?.type === t;
     case "is": case "not": return t === "boolean";
     case "eqs": case "nes": return t === "string" && typeof p.s === "string" && p.s.length <= DERIVE_MAX_STRING;
+    case "fin": case "nfin": return t === "number";
   }
 }
 /** The program's result type over these parameters, or null when it is ill typed. */
@@ -271,6 +300,8 @@ function compilePred(p: ListPred, v: string, names: readonly string[]): string {
     case "not": return `!${e}`;
     case "eqs": return `${e} === ${JSON.stringify(p.s)}`;
     case "nes": return `${e} !== ${JSON.stringify(p.s)}`;
+    case "fin": return `Number.isFinite(${e})`;
+    case "nfin": return `!Number.isFinite(${e})`;
   }
 }
 /** The program as one TypeScript expression over the parameters. */
@@ -293,7 +324,7 @@ export function compileList(prog: ListProgram, names: readonly string[], li: num
 }
 
 /** Decompiles an expression the compiler could have written back into the DSL (loosely; the caller recompiles). */
-function decompile(e: ts.Expression, names: readonly string[], li: number): ListProgram | null {
+function decompile(e: ts.Expression, names: readonly string[], li: number, nonFinite = false): ListProgram | null {
   const L = names[li]!;
   const isL = (n: ts.Node) => ts.isIdentifier(n) && n.text === L;
   const arrowBody = (n: ts.Node | undefined, arity: number): ts.Expression | null =>
@@ -303,7 +334,16 @@ function decompile(e: ts.Expression, names: readonly string[], li: number): List
   const num = (n: ts.Expression): number | undefined =>
     ts.isNumericLiteral(n) ? Number(n.text) : ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand) ? -Number(n.operand.text) : undefined;
   const param = (n: ts.Expression): number => (ts.isIdentifier(n) ? names.indexOf(n.text) : -1);
+  // G17 (v6 only): `Number.isFinite(E)`, the one global call a v6 predicate makes (a parameter named Number would
+  // shadow it, so then it is never read back).
+  const fin = (n: ts.Expression): string | null | undefined =>
+    nonFinite && !names.includes("Number") && ts.isCallExpression(n) && n.arguments.length === 1 && !n.questionDotToken && ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === "Number" && n.expression.name.text === "isFinite" ? field(n.arguments[0]!) : undefined;
   const pred = (b: ts.Expression): ListPred | null => {
+    if (nonFinite) {
+      const g = fin(b);
+      if (g !== undefined) return { op: "fin", f: g };
+      if (ts.isPrefixUnaryExpression(b) && b.operator === ts.SyntaxKind.ExclamationToken) { const h = fin(b.operand); if (h !== undefined) return { op: "nfin", f: h }; }
+    }
     if (ts.isPrefixUnaryExpression(b) && b.operator === ts.SyntaxKind.ExclamationToken) { const f = field(b.operand); return f === undefined ? null : { op: "not", f }; }
     if (ts.isBinaryExpression(b)) {
       const op = b.operatorToken.kind, l = b.left, r = b.right;
@@ -399,32 +439,32 @@ function decompile(e: ts.Expression, names: readonly string[], li: number): List
  * The emit and Job B check of a list expression: it parses as one expression, decompiles into a well-typed v4
  * program over these parameters whose type is `ret`, and recompiles to exactly the same text. Null when clean.
  */
-export function listExprProblem(text: string, params: readonly ListParam[], ret: ListParamType): string | null {
+export function listExprProblem(text: string, params: readonly ListParam[], ret: ListParamType, nonFinite = false): string | null {
   const names = params.map((p) => p.name);
   const li = listIndex(params);
   if (li < 0 || params.filter((p) => isListType(p.type)).length !== 1 || params.length > LIST_MAX_PARAMS) return "derive_list_signature";
   const sf = ts.createSourceFile("e.ts", `(${text});`, ts.ScriptTarget.Latest, true);
   const st = sf.statements[0];
   if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || sf.statements.length !== 1 || !st || !ts.isExpressionStatement(st) || !ts.isParenthesizedExpression(st.expression)) return "derive_expr_parse";
-  const prog = exactProgram(st.expression.expression, text, names, li);
+  const prog = exactProgram(st.expression.expression, text, names, li, nonFinite);
   if (!prog) return "derive_list_expr";
   const t = listProgramType(prog, params);
   if (!t || !sameType(t, ret)) return "derive_list_expr";
   return null;
 }
 /** The decompiled program (max or min for a reduce) whose recompiled text is exactly `text`, or null. */
-function exactProgram(e: ts.Expression, text: string, names: readonly string[], li: number): ListProgram | null {
-  const prog = decompile(e, names, li);
+function exactProgram(e: ts.Expression, text: string, names: readonly string[], li: number, nonFinite = false): ListProgram | null {
+  const prog = decompile(e, names, li, nonFinite);
   if (!prog) return null;
   const variants: ListProgram[] = prog.op === "max" ? [prog, { ...prog, op: "min" }] : [prog];
   return variants.find((p) => compileList(p, names, li) === text) ?? null;
 }
 /** The program behind an emitted expression (null unless listExprProblem passes). */
-export function decompileList(text: string, params: readonly ListParam[], ret: ListParamType): ListProgram | null {
-  if (listExprProblem(text, params, ret)) return null;
+export function decompileList(text: string, params: readonly ListParam[], ret: ListParamType, nonFinite = false): ListProgram | null {
+  if (listExprProblem(text, params, ret, nonFinite)) return null;
   const sf = ts.createSourceFile("e.ts", `(${text});`, ts.ScriptTarget.Latest, true);
   const e = ((sf.statements[0] as ts.ExpressionStatement).expression as ts.ParenthesizedExpression).expression;
-  return exactProgram(e, text, params.map((p) => p.name), listIndex(params));
+  return exactProgram(e, text, params.map((p) => p.name), listIndex(params), nonFinite);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -439,8 +479,8 @@ export function listExamplesProblem(input: ListInput): string | null {
   const seen = new Map<string, string>();
   for (const ex of examples) {
     if (ex.args.length !== params.length) return "arity";
-    if (ex.args.some((a, i) => !valueOk(a, params[i]!.type))) return "arg_type";
-    if (!valueOk(ex.out, ret)) return "out_type";
+    if (ex.args.some((a, i) => !valueOk(a, params[i]!.type, !!input.nonFinite))) return "arg_type";
+    if (!valueOk(ex.out, ret, !!input.nonFinite)) return "out_type";
     const k = valueKey(ex.args), o = valueKey(ex.out);
     if (seen.has(k) && seen.get(k) !== o) return "contradiction";
     seen.set(k, o);
@@ -464,10 +504,13 @@ export function listCandidates(input: ListInput): ListProgram[] {
     const vals = els.map((x) => get(x, f));
     if (t === "boolean") preds.push({ op: "is", f }, { op: "not", f });
     if (t === "number") {
-      const seenN = uniq(vals as number[]).sort((a, b) => a - b);
+      // Cuts and equalities come from the integer values only (G17: a NaN or an infinity is never a constant).
+      const seenN = uniq((vals as number[]).filter(isInt)).sort((a, b) => a - b);
       const cs = uniq(seenN.flatMap((v) => [v - 1, v, v + 1])).filter(isInt).sort((a, b) => a - b);
       for (const c of cs) preds.push({ op: "le", f, c }, { op: "ge", f, c });
       for (const c of seenN) preds.push({ op: "eqn", f, c });
+      // G17 (v6 only): the finite test, when an example element shows this field NaN, Infinity or -Infinity.
+      if (input.nonFinite && vals.some(isNonFinite)) preds.push({ op: "fin", f }, { op: "nfin", f });
     }
     if (t === "string") for (const s of uniq(vals as string[]).sort()) preds.push({ op: "eqs", f, s }, { op: "nes", f, s });
     for (const [p, q] of params.entries()) {
@@ -502,6 +545,8 @@ export function listProbes(input: ListInput): ListArg[][] | null {
   const numGrid = numsSeen.length ? uniq(numsSeen.flatMap((v) => [v - 1, v, v + 1])).filter(isInt) : [0, 1];
   const lo = Math.min(...numGrid), hi = Math.max(...numGrid);
   numGrid.push(lo - DERIVE_FAR, hi + DERIVE_FAR, 0);
+  // G17 (v6 only): when the examples hold a non-finite number, every number slot is also probed with all three.
+  if (input.nonFinite && hasNonFinite(examples)) numGrid.push(NaN, Infinity, -Infinity);
   const strsSeen = uniq([...els.flatMap((x) => fieldsOf(elem).map((f) => get(x, f)).filter((v): v is string => typeof v === "string")), ...examples.flatMap((e) => e.args.filter((v): v is string => typeof v === "string"))]);
   const strGrid = uniq(["", ...strsSeen, "zz probe"]);
   const grid = (t: DeriveType): DeriveValue[] => (t === "number" ? uniq(numGrid) : t === "string" ? strGrid : [false, true]);
@@ -563,11 +608,12 @@ export function listGateProblem(input: ListInput, prog: ListProgram): { gate: Li
   const seed = seedProblem(input, prog);
   if (seed) return seed;
   // Threshold edges and far sides, as offsets from the edge (constant or the scalar parameter).
+  // G17: a NaN or an infinity (element or scalar) is no evidence for an edge or a far side.
   const off = (q: { x: ListElem; args: readonly ListArg[] }): number | null => {
     const e = get(q.x, pred.f);
-    if (typeof e !== "number") return null;
+    if (typeof e !== "number" || !Number.isFinite(e)) return null;
     if (pred.op === "le" || pred.op === "ge" || pred.op === "eqn") return e - pred.c;
-    if (pred.op === "lep" || pred.op === "gep" || pred.op === "ltp" || pred.op === "gtp") return e - (q.args[pred.p] as number);
+    if (pred.op === "lep" || pred.op === "gep" || pred.op === "ltp" || pred.op === "gtp") { const t = q.args[pred.p] as number; return Number.isFinite(t) ? e - t : null; }
     return null;
   };
   if (pred.op === "le" || pred.op === "ge" || pred.op === "eqn" || pred.op === "lep" || pred.op === "gep" || pred.op === "ltp" || pred.op === "gtp") {
@@ -719,7 +765,7 @@ export function listLit(v: ListArg | ListElem, t?: ListParamType | ListElemType)
 }
 
 type Tok = { k: "v"; v: DeriveValue } | { k: "id"; v: string } | { k: "p"; v: "[" | "]" | "{" | "}" | ":" | "," } | { k: "gives" };
-function tokens(text: string): Tok[] | null {
+function tokens(text: string, nonFinite = false): Tok[] | null {
   const toks: Tok[] = [];
   let s = text.trim().replace(/\.$/, "");
   while (s.length) {
@@ -727,6 +773,8 @@ function tokens(text: string): Tok[] | null {
     if ((m = /^"([ !#-[\]-~]*)"/.exec(s))) toks.push({ k: "v", v: m[1]! });
     else if ((m = /^-?(?:0|[1-9]\d{0,11})(?![\w.])/.exec(s))) toks.push({ k: "v", v: Number(m[0]) });
     else if ((m = /^(?:true|false)\b/.exec(s))) toks.push({ k: "v", v: m[0] === "true" });
+    // G17 (v6 only): NaN, Infinity and -Infinity are number values, exactly so spelled.
+    else if (nonFinite && (m = /^(?:NaN|-?Infinity)(?![\w$])/.exec(s))) toks.push({ k: "v", v: Number(m[0]) });
     else if ((m = /^gives\b/.exec(s))) toks.push({ k: "gives" });
     else if ((m = /^[A-Za-z_$][\w$]{0,63}/.exec(s))) toks.push({ k: "id", v: m[0] });
     else if ((m = /^[[\]{}:,]/.exec(s))) toks.push({ k: "p", v: m[0] as "[" });
@@ -740,8 +788,8 @@ function tokens(text: string): Tok[] | null {
  * Scalars as in v1 (integers, true / false, double-quoted strings), lists in brackets (at most one level), records
  * in braces with bare field names and scalar values. Null when the line is anything else.
  */
-export function lexListValues(text: string): { values: ListArg[]; out: ListArg } | null {
-  const toks = tokens(text);
+export function lexListValues(text: string, nonFinite = false): { values: ListArg[]; out: ListArg } | null {
+  const toks = tokens(text, nonFinite);
   if (!toks) return null;
   let i = 0;
   const peek = () => toks[i];
@@ -789,8 +837,13 @@ export function lexListValues(text: string): { values: ListArg[]; out: ListArg }
   return { values, out };
 }
 
-/** Reads a test-file literal back (the inverse of listLit), or undefined for anything else. */
-export function listLitValue(e: ts.Expression): ListArg | ListElem | undefined {
+/**
+ * Reads a test-file literal back (the inverse of listLit), or undefined for anything else. With `nonFinite` (G17, v6
+ * only) the identifiers NaN and Infinity and `-Infinity` read as those numbers.
+ */
+export function listLitValue(e: ts.Expression, nonFinite = false): ListArg | ListElem | undefined {
+  if (nonFinite && ts.isIdentifier(e) && (e.text === "NaN" || e.text === "Infinity")) return Number(e.text);
+  if (nonFinite && ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isIdentifier(e.operand) && e.operand.text === "Infinity") return -Infinity;
   if (ts.isNumericLiteral(e)) return Number(e.text);
   if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(e.operand)) return -Number(e.operand.text);
   if (ts.isStringLiteral(e)) return e.text;
@@ -798,14 +851,14 @@ export function listLitValue(e: ts.Expression): ListArg | ListElem | undefined {
   if (e.kind === ts.SyntaxKind.FalseKeyword) return false;
   if (ts.isArrayLiteralExpression(e)) {
     const xs: ListElem[] = [];
-    for (const x of e.elements) { const v = listLitValue(x); if (v === undefined || Array.isArray(v)) return undefined; xs.push(v as ListElem); }
+    for (const x of e.elements) { const v = listLitValue(x, nonFinite); if (v === undefined || Array.isArray(v)) return undefined; xs.push(v as ListElem); }
     return xs;
   }
   if (ts.isObjectLiteralExpression(e)) {
     const r: Record<string, DeriveValue> = {};
     for (const p of e.properties) {
       if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name) || Object.prototype.hasOwnProperty.call(r, p.name.text)) return undefined;
-      const v = listLitValue(p.initializer);
+      const v = listLitValue(p.initializer, nonFinite);
       if (v === undefined || typeof v === "object") return undefined;
       r[p.name.text] = v;
     }

@@ -1,0 +1,22 @@
+{
+ "id": "public-derive-from-behavior-v6",
+ "kind": "DERIVE_FROM_BEHAVIOR",
+ "shape": "DERIVE_FROM_BEHAVIOR",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list (not in approved.json until Peace posts /approve-rule on its proposal issue)",
+ "engine": "v4's list search (peaceai/lib/derive-list.ts) with a nonFinite flag, reached through the same rule kind in peaceai/lib/learned-derive.ts, bound to v4's DERIVE_LIST_TRIGGER with the params dsl typed-dsl-v6-nonfinite and placement new-or-existing-module-v6 (all three or derive_params). An example number (a list element, a record field, the scalar parameter or the result) may also be written NaN, Infinity or -Infinity. Values are compared by a key under which NaN, Infinity and -Infinity are each their own value (Object.is, as node:assert/strict compares; v4 read all three as null). The search adds Number.isFinite(E) and !Number.isFinite(E) as predicates for a field whose example elements show a non-finite value, probes every number slot also with NaN, Infinity and -Infinity, and never counts a non-finite value as edge or far-side evidence. The generated test asserts the examples as written (assert.equal / assert.deepEqual from node:assert/strict). Job B (test-candidates.ts) re-checks a v6 candidate by its own operation id with the v6 checks (Number.isFinite is the one global it may call; Number is never a name); v1-v5 candidates exactly as before",
+ "scope": "a v4-shaped issue (either header; one list parameter of numbers, strings, booleans or simple records plus at most one number or string parameter) whose Examples hold at least one NaN, Infinity or -Infinity; a task with none is not_needed (v4 answers it), so v4 and v6 never both answer one task. The Behavior paragraph still may not name NaN, Infinity or Number (it can say 'not a finite number')",
+ "refusals": "not_needed (no non-finite example value); derive_reserved_name (the function or a parameter named Number, besides v4's); every v4 refusal (derive_examples, derive_signature, derive_under_specified_*, derive_no_fit, derive_ambiguous with asked rows, derive_budget, derive_list_expr, derive_params, the v1/v3 path and append refusals, new_test_path_exists)",
+ "evidence": {
+  "note": "The spec's evidence block is v4's mining (the list shape is unchanged). No upstream evidence specific to non-finite examples has been gathered yet; that is phase 2 of GAPS G17, before /approve-rule.",
+  "qualifies": false
+ },
+ "limits": "Phase 1 only (GAPS G17): the scalar engines (v1-v3) and v5 still refuse non-finite examples; there is no finite guard on the scalar parameter alone (only on list elements or their fields); record results and calls to other modules (G16) are out of scope, so the weekly-review wiring task is still refused. -0 is never written in an example and shares 0's key. Every limit of v4 applies.",
+ "learned": "peaceai/rules/learned/public-derive-from-behavior-v6.json",
+ "tests": [
+  "peaceai/test/m136-derive-nonfinite.test.ts",
+  "peaceai/test/m113-derive-list-inputs.test.ts",
+  "peaceai/test/m99-derive-from-behavior.test.ts"
+ ],
+ "untouched": "public-derive-from-behavior-v1 to -v5: same specs (hashes pinned in their tests), triggers, search, gates and refusals; v6 shares v4's trigger but a v4 spec never sees a v6 placement/dsl and vice versa, and every flag-gated change in derive-list.ts is off for v4; approved.json"
+}
