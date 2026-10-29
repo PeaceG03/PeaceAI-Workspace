@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { compileList, deriveListProgram, evalList, hasNonFinite, lexListValues, listLit, valueKey, valueOk, type ListArg, type ListParam } from "../lib/derive-list.ts";
+import { compileList, deriveListProgram, evalList, hasNonFinite, lexListValues, listLit, parseListType, valueKey, valueOk, type ListArg, type ListParam } from "../lib/derive-list.ts";
 import { DERIVE_LIST_TRIGGER, DERIVE_LIST_OPERATION, DERIVE_NONFINITE_DSL, DERIVE_NONFINITE_OPERATION, DERIVE_NONFINITE_PLACEMENT, deriveAppendRecheck, deriveListReviewNote, deriveModuleRecheck, deriveNonFiniteReviewNote, derivedListModuleProblem, derivedNonFiniteModuleProblem, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
 import { specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { DERIVE_NONFINITE_PHRASING, phrasingFor } from "../lib/propose.ts";
@@ -170,4 +170,41 @@ test("the flag is off by default: v4 search, probes and programs are unchanged f
   assert.deepEqual(b, a);
   assert.ok(a.ok);
   assert.equal(compileList(a.program, ["xs"], 0), "xs.filter((x) => 100 <= x).length");
+});
+
+// ---- G17 phase 2: upstream evidence, every recorded function re-derived from its recorded example lines ----
+test("evidence: each upstream function re-derives (v6) to its recorded expression or refusal; the max / min wrong on NaN stay disclosed; the spec counts only the 0-wrong ones", () => {
+  type Fn = { repo: string; commit: string; license: string; fn: string; set: string; params: { name: string; type: string }[]; ret: string; examples: string[]; expr?: string; refused?: string; outOfVocabulary?: boolean; wrongOnNaN?: boolean; heldOut?: { right: number; wrong: number; nonFinite: number }; wrongAt?: string[] };
+  const ev = JSON.parse(read("peaceai/rules/proposals/m136-derive-nonfinite-evidence.json")) as { schema: string; functions: Fn[] };
+  assert.equal(ev.schema, "peaceai-m136-derive-nonfinite-evidence:v1");
+  const m113 = JSON.parse(read("peaceai/rules/proposals/m113-derive-list-evidence.json")) as { functions: { repo: string; commit: string; fn: string; sha256: string }[] };
+  let held = 0, nonFinite = 0;
+  for (const f of ev.functions) {
+    assert.ok(["MIT", "Apache-2.0", "ISC"].includes(f.license), `${f.repo}: ${f.license}`);
+    assert.ok(["v4-upstream", "non-finite-upstream"].includes(f.set), f.fn);
+    if (f.set === "v4-upstream") assert.ok(m113.functions.some((g) => g.repo === f.repo && g.commit === f.commit && g.fn === f.fn && g.sha256 === (f as unknown as { sha256: string }).sha256), `${f.fn} is M113's`);
+    const params = f.params.map((p) => ({ name: p.name, type: parseListType(p.type)! }));
+    const ret = parseListType(f.ret)!;
+    assert.ok(params.every((p) => p.type) && ret, f.fn);
+    const examples = f.examples.map((l) => { const v = lexListValues(l, true); assert.ok(v, `${f.fn}: ${l}`); return { args: v.values, out: v.out }; });
+    assert.ok(hasNonFinite(examples), `${f.fn}: a v6 task holds a non-finite example`);
+    const r = deriveListProgram({ params, ret, examples, nonFinite: true });
+    if (f.expr) {
+      assert.ok(r.ok, `${f.repo} ${f.fn}: ${!r.ok && r.reason}`);
+      assert.equal(compileList(r.program, params.map((p) => p.name), params.findIndex((p) => typeof p.type === "object")), f.expr, f.fn);
+      if (f.wrongOnNaN) {
+        assert.ok(f.heldOut!.wrong > 0 && f.wrongAt!.length > 0 && f.wrongAt!.every((w) => /NaN/.test(w)), f.fn);
+        assert.match(f.expr, /\.reduce\(\(n, x, i\) => \(i === 0 \|\|/, `${f.fn}: only max / min are wrong`);
+      } else { assert.equal(f.heldOut?.wrong, 0, f.fn); held += f.heldOut!.right; nonFinite += f.heldOut!.nonFinite; }
+    } else assert.ok(!r.ok && r.reason === f.refused, `${f.fn}: ${r.ok ? "derived" : r.reason}`);
+  }
+  const right = ev.functions.filter((f) => f.expr && !f.wrongOnNaN);
+  assert.deepEqual([ev.functions.length, ev.functions.filter((f) => f.expr).length, right.length, ev.functions.filter((f) => f.wrongOnNaN).length], [24, 19, 14, 5]);
+  assert.deepEqual([held, nonFinite], [3565, 1799]);
+  assert.ok(right.some((f) => /Number\.isFinite/.test(f.expr!)) && ev.functions.filter((f) => f.set === "non-finite-upstream").length === 4);
+  assert.deepEqual(V6.evidence, { commits: 14, files: 14, hunks: 14, repos: [...new Set(right.map((f) => f.repo))].sort() });
+  const prop = JSON.parse(read("peaceai/rules/proposals/public-derive-from-behavior-v6.json")) as { evidence: { file: string; qualifies: boolean; examples: number; derived: number; right: number; wrongOnNaN: number } };
+  assert.equal(prop.evidence.file, "peaceai/rules/proposals/m136-derive-nonfinite-evidence.json");
+  assert.deepEqual([prop.evidence.examples, prop.evidence.derived, prop.evidence.right, prop.evidence.wrongOnNaN], [24, 19, 14, 5]);
+  assert.equal(prop.evidence.qualifies, false, "five in-vocabulary max / min derivations are wrong on NaN rows: not until v6 asks for a NaN row");
 });

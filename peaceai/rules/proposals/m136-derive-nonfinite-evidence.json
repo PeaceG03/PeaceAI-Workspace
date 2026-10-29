@@ -1,0 +1,1240 @@
+{
+ "schema": "peaceai-m136-derive-nonfinite-evidence:v1",
+ "note": "M136 evidence for public-derive-from-behavior-v6 (G17 phase 2): 24 upstream TypeScript functions over one array parameter from 21 MIT / Apache-2.0 / ISC repos, run on examples whose numbers include NaN, Infinity and -Infinity. Two sets. (a) v4-upstream: the 20 of M113's 28 upstream functions that read a number (the other 8 read only strings or booleans, so no v6 task can be written for them), same commit, path, file sha256 and license as in m113-derive-list-evidence.json. (b) non-finite-upstream: 4 new functions found by GitHub code search for exported one-expression functions over an array parameter that call Number.isFinite / isFinite / isNaN (3,761 distinct files from 24 searches fetched at their default branch and screened; 40 matches outside BigNumber helpers sat in an exported declaration; after dropping nested local helpers, bodies or types outside v6 (sort, Set, map to a computed value, BigNumber strings, nested arrays) and repos without a MIT / Apache-2.0 / ISC license (unlicensed or AGPL), 4 remain; each is then pinned to the repo's HEAD commit at fetch time). zkwokleung/chart-quest compact takes (number | null)[]; it is typed number[] here, which drops the null case as M113 drops optional fields. Examples are the upstream function run on a seeded grid (seed 136, 48 rows of lists of length 0-6; numbers from -150..150 plus NaN, Infinity and -Infinity; strings from M113's per-field literals). The first 6 rows train, extended only by PeaceAI's own refusals the way an issue author would (as M113; an asked row is answered by the upstream function), at most 40 rows. Every training slice holds a non-finite value. Held out: the other grid rows plus every v6 probe list not in the training rows. Results: 14 derive and are right on every held-out row (3565 rows, 1799 of them with a non-finite value, 0 wrong): sum (7), sum of kept (3), filter (1), filter Number.isFinite (2), some !Number.isFinite (1). 5 derive a max / min program that fits every example but is WRONG on 11 held-out rows each (wrongOnNaN): the upstream bodies use Math.max(...xs) / Math.min(...xs), which give NaN when a list holds NaN, while v6's max / min program skips NaN; no training row showed a NaN in a non-empty list, and no v6 gate or probe asked for one, because no rival program in the DSL propagates NaN. 5 are refused: runtimeTotal (`movie.runtime || 0` maps NaN to 0, outside the DSL) derive_no_fit; maxNumber and max (`Math.max(max, value)` seeded with 0, NaN-propagating) derive_no_fit; hasError (`errorCount > 0`) derive_ambiguous after 40 rows, though v4 derives it on integers; calcActiveSum (outOfVocabulary: a kept-by-flag sum that also skips non-finite credits, two conditions) derive_no_fit. The rule's evidence block counts the 14 functions that derive with 0 wrong (14 repos). Examples are stored as issue lines (`ARGS gives OUT`, read back by lexListValues with the v6 flag) since JSON has no NaN. The evidence test re-derives each entry from its recorded lines; no third-party code is run by the test.",
+ "functions": [
+  {
+   "repo": "Senryoku/Draftmancer",
+   "commit": "c757d1b73c370f88135cb699091f58d8fc3a094b",
+   "path": "src/utils.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "577eda60a1d3b0e4f478562d82f4a9512a5785e5",
+   "sha256": "46a694a95a01ffa4046f4bec85b42d287c5445605032fe4b5f5d5d4bb727d7f0",
+   "upstream": "export function sum(arr: number[]): number {\n\treturn arr.reduce((a, b) => a + b, 0);\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "zkywsg/Daily-LLM",
+   "commit": "20e367c0996c141b9c95713a44fdc9ed33069ebf",
+   "path": "web/src/components/node/golden/gin/lib/data.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "2b149bb11b7d8fa0e537494928a40a4dcdf96d87",
+   "sha256": "4202d37355aaad3d67396b2640e4424472bb4021e52bec51dc3b583eaa8d6b1d",
+   "upstream": "export function sum(xs: number[]): number {\n  return xs.reduce((a, b) => a + b, 0);\n}",
+   "params": [
+    {
+     "name": "xs",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "xs.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "jrmybtlr/usemods",
+   "commit": "6487b4172ecfe6c10ef15da8b1c154e262a0c8ac",
+   "path": "src/numbers.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "a9cfca2ebe0d4c68305028273518c599e931bed2",
+   "sha256": "76a66f4bcf1d1e63ffff2f79a94dabb4a39c85a53d7e35294fc4d4bd8d4d8490",
+   "upstream": "export function sum(numbers: number[]): number {\n  return numbers.reduce((a, b) => a + b, 0)\n}",
+   "params": [
+    {
+     "name": "numbers",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "numbers.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "Sage-Future/fatebook",
+   "commit": "ba7e89c790afd4532bc8e157d9c9c46fc0b4222f",
+   "path": "lib/_utils_common.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "b91e98a666154d1741c582bd7f0f679058503b56",
+   "sha256": "c9bb558a23870deb1b4af6f402e588435ffe66c15f7515a12429800c99ebfd39",
+   "upstream": "export function sum(arr: number[]) {\n  return arr.reduce((acc, curr) => acc + curr, 0)\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "tobe-fe-dalao/fastool",
+   "commit": "a1bf817a65077bc65cfef8738ef512441a62fee6",
+   "path": "src/array/index.ts",
+   "fn": "sum",
+   "license": "Apache-2.0",
+   "fileBlob": "6ff6aeec1d1555888fca614437e40586e3d083a7",
+   "sha256": "b3a7850f99d76509c83fe0d82d95db22a57e9e5deab153b71f583e85fcec30f0",
+   "upstream": "export function sum(arr: number[]): number {\n  return arr.reduce((acc, cur) => acc + cur, 0);\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "imMamdouhaboammar/riqor",
+   "commit": "7ffdd6a1cce88941edf82425e13ee8b6cc362ca3",
+   "path": "src/runner.ts",
+   "fn": "total",
+   "license": "MIT",
+   "fileBlob": "075c0303653e219b5f0a883a77f417ffe143f890",
+   "sha256": "08d74074e960814d2ee9f6bb11cea01ac6220cf16bcf2f59171089be9c7bbda5",
+   "upstream": "const total = (numbers: number[]) => numbers.reduce((sum, number) => sum + number, 0);",
+   "params": [
+    {
+     "name": "numbers",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "numbers.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "samuelmtimbo/unit",
+   "commit": "7d55830db7e7ccee5fe259d261a2618f5888f8a6",
+   "path": "src/util/array/index.ts",
+   "fn": "sum",
+   "license": "MIT",
+   "fileBlob": "8047297f3b91e985edd07edfdb130601ce886fe4",
+   "sha256": "590b2b24d9c186f418992cea4d3306b8784cfd038ed7fd131cc9440052ac4a95",
+   "upstream": "export function sum(array: number[]): number {\n  return array.reduce((acc, value) => acc + value, 0)\n}",
+   "params": [
+    {
+     "name": "array",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 105",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "array.reduce((n, x) => n + x, 0)",
+   "shape": "sum",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "Laksh-star/mcp-server-tmdb",
+   "commit": "c220c632686b5cde9d6e5ad77ea10e9efe04e616",
+   "path": "src/collection-gap.ts",
+   "fn": "runtimeTotal",
+   "license": "MIT",
+   "fileBlob": "d34fec8c256ce0c7cf10a2f676b5407ac42a9ae5",
+   "sha256": "04962e3e4d803f473281d1b9bcb460f6048dd0fb33962f77aec26113e112013c",
+   "upstream": "function runtimeTotal(movies: FranchiseMovie[]): number {\n  return movies.reduce((sum, movie) => sum + (movie.runtime || 0), 0);\n}",
+   "params": [
+    {
+     "name": "movies",
+     "type": "{ runtime: number }[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[{ runtime: 1 }, { runtime: 101 }, { runtime: 3 }] gives 105",
+    "[] gives 0",
+    "[{ runtime: 1 }] gives 1",
+    "[{ runtime: -Infinity }, { runtime: 101 }] gives -Infinity",
+    "[{ runtime: -2 }, { runtime: Infinity }, { runtime: -150 }, { runtime: 30 }] gives Infinity",
+    "[{ runtime: NaN }] gives 0",
+    "[{ runtime: -Infinity }, { runtime: NaN }, { runtime: 3 }, { runtime: -Infinity }, { runtime: 150 }] gives -Infinity",
+    "[{ runtime: 1 }, { runtime: -1 }] gives 0",
+    "[{ runtime: -Infinity }, { runtime: 2 }, { runtime: -Infinity }, { runtime: 7 }, { runtime: Infinity }, { runtime: 1 }] gives NaN",
+    "[{ runtime: 1 }, { runtime: 1 }, { runtime: 99 }] gives 101",
+    "[{ runtime: 30 }, { runtime: 150 }, { runtime: 99 }] gives 279",
+    "[] gives 0",
+    "[{ runtime: 3 }] gives 3",
+    "[{ runtime: 150 }, { runtime: -101 }] gives 49",
+    "[{ runtime: 0 }, { runtime: -101 }, { runtime: Infinity }, { runtime: 1 }] gives Infinity",
+    "[{ runtime: -101 }] gives -101",
+    "[{ runtime: NaN }, { runtime: 150 }, { runtime: Infinity }, { runtime: -40 }, { runtime: 1 }] gives Infinity",
+    "[{ runtime: 3 }, { runtime: -40 }] gives -37",
+    "[{ runtime: 150 }, { runtime: 0 }, { runtime: 7 }, { runtime: -2 }, { runtime: -101 }, { runtime: 3 }] gives 57",
+    "[{ runtime: -1 }, { runtime: -2 }, { runtime: 3 }] gives 0",
+    "[{ runtime: -Infinity }, { runtime: -40 }, { runtime: 1 }] gives -Infinity",
+    "[] gives 0",
+    "[{ runtime: 2 }] gives 2",
+    "[{ runtime: 0 }, { runtime: 3 }] gives 3",
+    "[{ runtime: 3 }, { runtime: 30 }, { runtime: 101 }, { runtime: 30 }] gives 164",
+    "[{ runtime: NaN }] gives 0",
+    "[{ runtime: -101 }, { runtime: -40 }, { runtime: 7 }, { runtime: 101 }, { runtime: 99 }] gives 66",
+    "[{ runtime: -101 }, { runtime: -101 }] gives -202",
+    "[{ runtime: Infinity }, { runtime: NaN }, { runtime: 101 }, { runtime: 0 }, { runtime: 3 }, { runtime: 30 }] gives Infinity",
+    "[{ runtime: 150 }, { runtime: -101 }, { runtime: 3 }] gives 52",
+    "[{ runtime: -Infinity }, { runtime: 150 }, { runtime: Infinity }] gives NaN",
+    "[] gives 0",
+    "[{ runtime: NaN }] gives 0",
+    "[{ runtime: 150 }, { runtime: -1 }] gives 149",
+    "[{ runtime: NaN }, { runtime: 3 }, { runtime: -1 }, { runtime: -101 }] gives -99",
+    "[{ runtime: 0 }] gives 0",
+    "[{ runtime: 3 }, { runtime: -Infinity }, { runtime: Infinity }, { runtime: 2 }, { runtime: 7 }] gives NaN",
+    "[{ runtime: 150 }, { runtime: -150 }] gives 0",
+    "[{ runtime: 7 }, { runtime: 7 }, { runtime: 0 }, { runtime: -40 }, { runtime: -101 }, { runtime: 101 }] gives -26",
+    "[{ runtime: 150 }, { runtime: 3 }, { runtime: -40 }] gives 113"
+   ],
+   "addedForGates": [
+    "derive_no_fit: next grid row [{ runtime: -Infinity }, { runtime: NaN }, { runtime: 3 }, { runtime: -Infinity }, { runtime: 150 }] gives -Infinity",
+    "derive_no_fit: next grid row [{ runtime: 1 }, { runtime: -1 }] gives 0",
+    "derive_no_fit: next grid row [{ runtime: -Infinity }, { runtime: 2 }, { runtime: -Infinity }, { runtime: 7 }, { runtime: Infinity }, { runtime: 1 }] gives NaN",
+    "derive_no_fit: next grid row [{ runtime: 1 }, { runtime: 1 }, { runtime: 99 }] gives 101",
+    "derive_no_fit: next grid row [{ runtime: 30 }, { runtime: 150 }, { runtime: 99 }] gives 279",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [{ runtime: 3 }] gives 3",
+    "derive_no_fit: next grid row [{ runtime: 150 }, { runtime: -101 }] gives 49",
+    "derive_no_fit: next grid row [{ runtime: 0 }, { runtime: -101 }, { runtime: Infinity }, { runtime: 1 }] gives Infinity",
+    "derive_no_fit: next grid row [{ runtime: -101 }] gives -101",
+    "derive_no_fit: next grid row [{ runtime: NaN }, { runtime: 150 }, { runtime: Infinity }, { runtime: -40 }, { runtime: 1 }] gives Infinity",
+    "derive_no_fit: next grid row [{ runtime: 3 }, { runtime: -40 }] gives -37",
+    "derive_no_fit: next grid row [{ runtime: 150 }, { runtime: 0 }, { runtime: 7 }, { runtime: -2 }, { runtime: -101 }, { runtime: 3 }] gives 57",
+    "derive_no_fit: next grid row [{ runtime: -1 }, { runtime: -2 }, { runtime: 3 }] gives 0",
+    "derive_no_fit: next grid row [{ runtime: -Infinity }, { runtime: -40 }, { runtime: 1 }] gives -Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [{ runtime: 2 }] gives 2",
+    "derive_no_fit: next grid row [{ runtime: 0 }, { runtime: 3 }] gives 3",
+    "derive_no_fit: next grid row [{ runtime: 3 }, { runtime: 30 }, { runtime: 101 }, { runtime: 30 }] gives 164",
+    "derive_no_fit: next grid row [{ runtime: NaN }] gives 0",
+    "derive_no_fit: next grid row [{ runtime: -101 }, { runtime: -40 }, { runtime: 7 }, { runtime: 101 }, { runtime: 99 }] gives 66",
+    "derive_no_fit: next grid row [{ runtime: -101 }, { runtime: -101 }] gives -202",
+    "derive_no_fit: next grid row [{ runtime: Infinity }, { runtime: NaN }, { runtime: 101 }, { runtime: 0 }, { runtime: 3 }, { runtime: 30 }] gives Infinity",
+    "derive_no_fit: next grid row [{ runtime: 150 }, { runtime: -101 }, { runtime: 3 }] gives 52",
+    "derive_no_fit: next grid row [{ runtime: -Infinity }, { runtime: 150 }, { runtime: Infinity }] gives NaN",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [{ runtime: NaN }] gives 0",
+    "derive_no_fit: next grid row [{ runtime: 150 }, { runtime: -1 }] gives 149",
+    "derive_no_fit: next grid row [{ runtime: NaN }, { runtime: 3 }, { runtime: -1 }, { runtime: -101 }] gives -99",
+    "derive_no_fit: next grid row [{ runtime: 0 }] gives 0",
+    "derive_no_fit: next grid row [{ runtime: 3 }, { runtime: -Infinity }, { runtime: Infinity }, { runtime: 2 }, { runtime: 7 }] gives NaN",
+    "derive_no_fit: next grid row [{ runtime: 150 }, { runtime: -150 }] gives 0",
+    "derive_no_fit: next grid row [{ runtime: 7 }, { runtime: 7 }, { runtime: 0 }, { runtime: -40 }, { runtime: -101 }, { runtime: 101 }] gives -26",
+    "derive_no_fit: next grid row [{ runtime: 150 }, { runtime: 3 }, { runtime: -40 }] gives 113"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example"
+  },
+  {
+   "repo": "Khushi-50/OS-Simulator",
+   "commit": "aa6e08b87931f12cbd4d750acf61f277e78285ad",
+   "path": "web/src/lib/memory.ts",
+   "fn": "totalFree",
+   "license": "MIT",
+   "fileBlob": "97e0d6a2e1d38d024e43de3128153030416ecca5",
+   "sha256": "a4ef1280401cabbc941dd274f722279d79a6b5c9d481398f11c5d518aefefb25",
+   "upstream": "export function totalFree(blocks: MemoryBlock[]): number {\n  return blocks.filter((b) => b.pid === -1).reduce((s, b) => s + b.size, 0);\n}",
+   "params": [
+    {
+     "name": "blocks",
+     "type": "{ pid: number; size: number }[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[{ pid: 1, size: 101 }, { pid: 3, size: 1 }, { pid: -Infinity, size: 101 }] gives 0",
+    "[] gives 0",
+    "[{ pid: -2, size: Infinity }] gives 0",
+    "[{ pid: -150, size: 30 }, { pid: NaN, size: -Infinity }] gives 0",
+    "[{ pid: NaN, size: 3 }, { pid: -Infinity, size: 150 }, { pid: 1, size: -1 }, { pid: -Infinity, size: 2 }] gives 0",
+    "[{ pid: -Infinity, size: 7 }] gives 0",
+    "[{ pid: Infinity, size: 1 }, { pid: 1, size: 1 }, { pid: 99, size: 30 }, { pid: 150, size: 99 }, { pid: 3, size: 150 }] gives 0",
+    "[{ pid: -101, size: 0 }, { pid: -101, size: Infinity }] gives 0",
+    "[{ pid: 1, size: -101 }, { pid: NaN, size: 150 }, { pid: Infinity, size: -40 }, { pid: 1, size: 3 }, { pid: -40, size: 150 }, { pid: 0, size: 7 }] gives 0",
+    "[{ pid: -2, size: -101 }, { pid: 3, size: -1 }, { pid: -2, size: 3 }] gives 0",
+    "[{ pid: -Infinity, size: -40 }, { pid: 1, size: 2 }, { pid: 0, size: 3 }] gives 0",
+    "[] gives 0",
+    "[{ pid: 3, size: 30 }] gives 0",
+    "[{ pid: 101, size: 30 }, { pid: NaN, size: -101 }] gives 0",
+    "[{ pid: -40, size: 7 }, { pid: 101, size: 99 }, { pid: -101, size: -101 }, { pid: Infinity, size: NaN }] gives 0",
+    "[{ pid: 101, size: 0 }] gives 0",
+    "[{ pid: 3, size: 30 }, { pid: 150, size: -101 }, { pid: 3, size: -Infinity }, { pid: 150, size: Infinity }, { pid: NaN, size: 150 }] gives 0",
+    "[{ pid: -1, size: NaN }, { pid: 3, size: -1 }] gives NaN",
+    "[{ pid: -101, size: 0 }, { pid: 3, size: -Infinity }, { pid: Infinity, size: 2 }, { pid: 7, size: 150 }, { pid: -150, size: 7 }, { pid: 7, size: 0 }] gives 0",
+    "[{ pid: -40, size: -101 }, { pid: 101, size: 150 }, { pid: 3, size: -40 }] gives 0",
+    "[{ pid: -2, size: -2 }, { pid: 3, size: Infinity }, { pid: -101, size: NaN }] gives 0",
+    "[] gives 0",
+    "[{ pid: NaN, size: 99 }] gives 0",
+    "[{ pid: -2, size: -2 }, { pid: 7, size: NaN }] gives 0",
+    "[{ pid: 1, size: NaN }, { pid: 3, size: -Infinity }, { pid: -1, size: -150 }, { pid: 99, size: Infinity }] gives -150",
+    "[{ pid: -1, size: NaN }, { pid: -1, size: -150 }] gives NaN",
+    "[{ pid: -1, size: 101 }] gives 101"
+   ],
+   "addedForGates": [
+    "derive_examples: next grid row [{ pid: Infinity, size: 1 }, { pid: 1, size: 1 }, { pid: 99, size: 30 }, { pid: 150, size: 99 }, { pid: 3, size: 150 }] gives 0",
+    "derive_examples: next grid row [{ pid: -101, size: 0 }, { pid: -101, size: Infinity }] gives 0",
+    "derive_examples: next grid row [{ pid: 1, size: -101 }, { pid: NaN, size: 150 }, { pid: Infinity, size: -40 }, { pid: 1, size: 3 }, { pid: -40, size: 150 }, { pid: 0, size: 7 }] gives 0",
+    "derive_examples: next grid row [{ pid: -2, size: -101 }, { pid: 3, size: -1 }, { pid: -2, size: 3 }] gives 0",
+    "derive_examples: next grid row [{ pid: -Infinity, size: -40 }, { pid: 1, size: 2 }, { pid: 0, size: 3 }] gives 0",
+    "derive_examples: next grid row [] gives 0",
+    "derive_examples: next grid row [{ pid: 3, size: 30 }] gives 0",
+    "derive_examples: next grid row [{ pid: 101, size: 30 }, { pid: NaN, size: -101 }] gives 0",
+    "derive_examples: next grid row [{ pid: -40, size: 7 }, { pid: 101, size: 99 }, { pid: -101, size: -101 }, { pid: Infinity, size: NaN }] gives 0",
+    "derive_examples: next grid row [{ pid: 101, size: 0 }] gives 0",
+    "derive_examples: next grid row [{ pid: 3, size: 30 }, { pid: 150, size: -101 }, { pid: 3, size: -Infinity }, { pid: 150, size: Infinity }, { pid: NaN, size: 150 }] gives 0",
+    "derive_examples: next grid row [{ pid: -1, size: NaN }, { pid: 3, size: -1 }] gives NaN",
+    "derive_under_specified_branch: next grid row [{ pid: -101, size: 0 }, { pid: 3, size: -Infinity }, { pid: Infinity, size: 2 }, { pid: 7, size: 150 }, { pid: -150, size: 7 }, { pid: 7, size: 0 }] gives 0",
+    "derive_under_specified_branch: next grid row [{ pid: -40, size: -101 }, { pid: 101, size: 150 }, { pid: 3, size: -40 }] gives 0",
+    "derive_under_specified_branch: next grid row [{ pid: -2, size: -2 }, { pid: 3, size: Infinity }, { pid: -101, size: NaN }] gives 0",
+    "derive_under_specified_branch: next grid row [] gives 0",
+    "derive_under_specified_branch: next grid row [{ pid: NaN, size: 99 }] gives 0",
+    "derive_under_specified_branch: next grid row [{ pid: -2, size: -2 }, { pid: 7, size: NaN }] gives 0",
+    "derive_under_specified_branch: next grid row [{ pid: 1, size: NaN }, { pid: 3, size: -Infinity }, { pid: -1, size: -150 }, { pid: 99, size: Infinity }] gives -150",
+    "derive_under_specified_kept (two grid elements where x.pid === -1): [{ pid: -1, size: NaN }, { pid: -1, size: -150 }] gives NaN",
+    "derive_under_specified_seed: [{ pid: -1, size: 101 }] gives 101"
+   ],
+   "expr": "blocks.filter((x) => x.pid === -1).reduce((n, x) => n + x.size, 0)",
+   "shape": "sum-eqn",
+   "heldOut": {
+    "right": 1702,
+    "wrong": 0,
+    "nonFinite": 1004
+   }
+  },
+  {
+   "repo": "kanylbullen/xupersplit",
+   "commit": "a4001cb8cba2539b22c42fb889462de4c254c88f",
+   "path": "src/lib/money.ts",
+   "fn": "totalSpent",
+   "license": "MIT",
+   "fileBlob": "da65d583016eb7cd6ce1a0fd9cb9f43426b14093",
+   "sha256": "d14ed3d03c05b1d77e1f70b5d2f7a90411f4b364910dabc24f3a13b6bbb19386",
+   "upstream": "export function totalSpent(entries: Entry[]): number {\n  return entries\n    .filter((e) => e.kind === \"expense\")\n    .reduce((sum, e) => sum + e.amount_cents, 0);\n}",
+   "params": [
+    {
+     "name": "entries",
+     "type": "{ kind: string; amount_cents: number }[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[{ kind: \"settlement\", amount_cents: 101 }, { kind: \"settlement\", amount_cents: 1 }, { kind: \"refund\", amount_cents: 101 }] gives 0",
+    "[] gives 0",
+    "[{ kind: \"expense\", amount_cents: Infinity }] gives Infinity",
+    "[{ kind: \"expense\", amount_cents: 30 }, { kind: \"refund\", amount_cents: -Infinity }] gives 30",
+    "[{ kind: \"refund\", amount_cents: 3 }, { kind: \"refund\", amount_cents: 150 }, { kind: \"settlement\", amount_cents: -1 }, { kind: \"refund\", amount_cents: 2 }] gives 0",
+    "[{ kind: \"refund\", amount_cents: 7 }] gives 0",
+    "[{ kind: \"expense\", amount_cents: Infinity }, { kind: \"expense\", amount_cents: 30 }] gives Infinity",
+    "[{ kind: \"expense\", amount_cents: -102 }] gives -102"
+   ],
+   "addedForGates": [
+    "derive_under_specified_kept (two grid elements where x.kind === \"expense\"): [{ kind: \"expense\", amount_cents: Infinity }, { kind: \"expense\", amount_cents: 30 }] gives Infinity",
+    "derive_under_specified_seed: [{ kind: \"expense\", amount_cents: -102 }] gives -102"
+   ],
+   "expr": "entries.filter((x) => x.kind === \"expense\").reduce((n, x) => n + x.amount_cents, 0)",
+   "shape": "sum-eqs",
+   "heldOut": {
+    "right": 210,
+    "wrong": 0,
+    "nonFinite": 63
+   }
+  },
+  {
+   "repo": "jessicacarinejc/contacerta",
+   "commit": "e46eafa015412fa5b072cc6d6790f929b93b2845",
+   "path": "src/lib/finance.ts",
+   "fn": "totalBalance",
+   "license": "MIT",
+   "fileBlob": "eadd453bdf3127a31407ed68dcdebd65af6c5bc1",
+   "sha256": "83dad865941c265c3e811b8d67467955b2a711a56f20997f885c3a50da7de029",
+   "upstream": "export const totalBalance = (accounts: Account[]) =>\n  accounts.filter((item) => item.active).reduce((sum, item) => sum + item.balance, 0);",
+   "params": [
+    {
+     "name": "accounts",
+     "type": "{ active: boolean; balance: number }[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[{ active: true, balance: 101 }, { active: false, balance: 1 }, { active: false, balance: 101 }] gives 101",
+    "[] gives 0",
+    "[{ active: true, balance: Infinity }] gives Infinity",
+    "[{ active: true, balance: 30 }, { active: false, balance: -Infinity }] gives 30",
+    "[{ active: false, balance: 3 }, { active: false, balance: 150 }, { active: true, balance: -1 }, { active: false, balance: 2 }] gives -1",
+    "[{ active: false, balance: 7 }] gives 0",
+    "[{ active: true, balance: 101 }, { active: true, balance: Infinity }] gives Infinity",
+    "[{ active: true, balance: -102 }] gives -102"
+   ],
+   "addedForGates": [
+    "derive_under_specified_kept (two grid elements where x.active): [{ active: true, balance: 101 }, { active: true, balance: Infinity }] gives Infinity",
+    "derive_under_specified_seed: [{ active: true, balance: -102 }] gives -102"
+   ],
+   "expr": "accounts.filter((x) => x.active).reduce((n, x) => n + x.balance, 0)",
+   "shape": "sum-is",
+   "heldOut": {
+    "right": 203,
+    "wrong": 0,
+    "nonFinite": 62
+   }
+  },
+  {
+   "repo": "christophehurpeau/check-package-dependencies",
+   "commit": "ef1da88ec4a35f8a54e6bc8f492147116db5e61a",
+   "path": "src/cli.ts",
+   "fn": "hasError",
+   "license": "ISC",
+   "fileBlob": "01b6334826d9f6e9c5c28dff1e471df32a9ac61b",
+   "sha256": "c4c0b1755d6bc66adcb10620a33cbc90fe06e6fc97745edf40c449b9778fea76",
+   "upstream": "export function hasError(results: ESLintNamespace.LintResult[]): boolean {\n  return results.some((result) => result.errorCount > 0);\n}",
+   "params": [
+    {
+     "name": "results",
+     "type": "{ errorCount: number }[]"
+    }
+   ],
+   "ret": "boolean",
+   "set": "v4-upstream",
+   "examples": [
+    "[{ errorCount: 1 }, { errorCount: 101 }, { errorCount: 3 }] gives true",
+    "[] gives false",
+    "[{ errorCount: 1 }] gives true",
+    "[{ errorCount: -Infinity }, { errorCount: 101 }] gives true",
+    "[{ errorCount: -2 }, { errorCount: Infinity }, { errorCount: -150 }, { errorCount: 30 }] gives true",
+    "[{ errorCount: NaN }] gives false",
+    "[{ errorCount: -151 }] gives false",
+    "[{ errorCount: -150 }] gives false",
+    "[{ errorCount: -149 }] gives false",
+    "[{ errorCount: -148 }] gives false",
+    "[{ errorCount: -147 }] gives false",
+    "[{ errorCount: -146 }] gives false",
+    "[{ errorCount: -145 }] gives false",
+    "[{ errorCount: -144 }] gives false",
+    "[{ errorCount: -143 }] gives false",
+    "[{ errorCount: -142 }] gives false",
+    "[{ errorCount: -141 }] gives false",
+    "[{ errorCount: -140 }] gives false",
+    "[{ errorCount: -139 }] gives false",
+    "[{ errorCount: -138 }] gives false",
+    "[{ errorCount: -137 }] gives false",
+    "[{ errorCount: -136 }] gives false",
+    "[{ errorCount: -135 }] gives false",
+    "[{ errorCount: -134 }] gives false",
+    "[{ errorCount: -133 }] gives false",
+    "[{ errorCount: -132 }] gives false",
+    "[{ errorCount: -131 }] gives false",
+    "[{ errorCount: -130 }] gives false",
+    "[{ errorCount: -129 }] gives false",
+    "[{ errorCount: -128 }] gives false",
+    "[{ errorCount: -127 }] gives false",
+    "[{ errorCount: -126 }] gives false",
+    "[{ errorCount: -125 }] gives false",
+    "[{ errorCount: -124 }] gives false",
+    "[{ errorCount: -123 }] gives false",
+    "[{ errorCount: -122 }] gives false",
+    "[{ errorCount: -121 }] gives false",
+    "[{ errorCount: -120 }] gives false",
+    "[{ errorCount: -119 }] gives false",
+    "[{ errorCount: -118 }] gives false"
+   ],
+   "addedForGates": [
+    "derive_ambiguous: [{ errorCount: -151 }] gives false",
+    "derive_ambiguous: [{ errorCount: -150 }] gives false",
+    "derive_ambiguous: [{ errorCount: -149 }] gives false",
+    "derive_ambiguous: [{ errorCount: -148 }] gives false",
+    "derive_ambiguous: [{ errorCount: -147 }] gives false",
+    "derive_ambiguous: [{ errorCount: -146 }] gives false",
+    "derive_ambiguous: [{ errorCount: -145 }] gives false",
+    "derive_ambiguous: [{ errorCount: -144 }] gives false",
+    "derive_ambiguous: [{ errorCount: -143 }] gives false",
+    "derive_ambiguous: [{ errorCount: -142 }] gives false",
+    "derive_ambiguous: [{ errorCount: -141 }] gives false",
+    "derive_ambiguous: [{ errorCount: -140 }] gives false",
+    "derive_ambiguous: [{ errorCount: -139 }] gives false",
+    "derive_ambiguous: [{ errorCount: -138 }] gives false",
+    "derive_ambiguous: [{ errorCount: -137 }] gives false",
+    "derive_ambiguous: [{ errorCount: -136 }] gives false",
+    "derive_ambiguous: [{ errorCount: -135 }] gives false",
+    "derive_ambiguous: [{ errorCount: -134 }] gives false",
+    "derive_ambiguous: [{ errorCount: -133 }] gives false",
+    "derive_ambiguous: [{ errorCount: -132 }] gives false",
+    "derive_ambiguous: [{ errorCount: -131 }] gives false",
+    "derive_ambiguous: [{ errorCount: -130 }] gives false",
+    "derive_ambiguous: [{ errorCount: -129 }] gives false",
+    "derive_ambiguous: [{ errorCount: -128 }] gives false",
+    "derive_ambiguous: [{ errorCount: -127 }] gives false",
+    "derive_ambiguous: [{ errorCount: -126 }] gives false",
+    "derive_ambiguous: [{ errorCount: -125 }] gives false",
+    "derive_ambiguous: [{ errorCount: -124 }] gives false",
+    "derive_ambiguous: [{ errorCount: -123 }] gives false",
+    "derive_ambiguous: [{ errorCount: -122 }] gives false",
+    "derive_ambiguous: [{ errorCount: -121 }] gives false",
+    "derive_ambiguous: [{ errorCount: -120 }] gives false",
+    "derive_ambiguous: [{ errorCount: -119 }] gives false",
+    "derive_ambiguous: [{ errorCount: -118 }] gives false"
+   ],
+   "refused": "derive_ambiguous",
+   "detail": "6 programs fit every example and disagree: results.some((x) => -117 <= x.errorCount) | results.some((x) => -3 <= x.errorCount) | results.some((x) => -2 <= x.errorCount)"
+  },
+  {
+   "repo": "Kamino-Finance/kliquidity-sdk",
+   "commit": "369ed3ffd62338539a9beb4147d411a21489fd35",
+   "path": "src/utils/utils.ts",
+   "fn": "stripTwapZeros",
+   "license": "Apache-2.0",
+   "fileBlob": "a875b3a840c05e1ba91cdf71e7e99a3a48be6973",
+   "sha256": "51450d43c73393fbe94873d2835ae4d62d222700e77f4143398b0934bf40959c",
+   "upstream": "export function stripTwapZeros(chain: number[]): number[] {\n  return chain.filter((component) => component > 0);\n}",
+   "params": [
+    {
+     "name": "chain",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number[]",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives [1, 101, 3]",
+    "[] gives []",
+    "[1] gives [1]",
+    "[-Infinity, 101] gives [101]",
+    "[-2, Infinity, -150, 30] gives [Infinity, 30]",
+    "[NaN] gives []",
+    "[-1] gives []",
+    "[0] gives []"
+   ],
+   "addedForGates": [
+    "derive_ambiguous: [-1] gives []",
+    "derive_ambiguous: [0] gives []"
+   ],
+   "expr": "chain.filter((x) => 1 <= x)",
+   "shape": "filter-ge",
+   "heldOut": {
+    "right": 160,
+    "wrong": 0,
+    "nonFinite": 70
+   }
+  },
+  {
+   "repo": "pmndrs/glyph",
+   "commit": "4e25a96a57462fef5ad0d19065a822695b480f60",
+   "path": "benches/src/benchmark/product-result.ts",
+   "fn": "capturedMaximum",
+   "license": "MIT",
+   "fileBlob": "e4969f1311d7c5b4b27f2ac987584133e72ad652",
+   "sha256": "b56156134d97d0f5539fef52e63d6722de650291fd0d5892c66f4510dadae312",
+   "upstream": "function capturedMaximum(values: readonly number[]): number {\n  return values.length === 0 ? 0 : Math.max(...values);\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 101",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives 101",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN",
+    "[-Infinity] gives -Infinity"
+   ],
+   "addedForGates": [
+    "derive_under_specified_seed: [-Infinity] gives -Infinity"
+   ],
+   "expr": "values.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+   "shape": "max",
+   "heldOut": {
+    "right": 117,
+    "wrong": 11,
+    "nonFinite": 59
+   },
+   "wrongAt": [
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[-101, NaN] gives NaN"
+   ],
+   "wrongOnNaN": true
+  },
+  {
+   "repo": "pmndrs/glyph",
+   "commit": "4e25a96a57462fef5ad0d19065a822695b480f60",
+   "path": "benches/src/benchmark/product-result.ts",
+   "fn": "capturedMinimum",
+   "license": "MIT",
+   "fileBlob": "e4969f1311d7c5b4b27f2ac987584133e72ad652",
+   "sha256": "b56156134d97d0f5539fef52e63d6722de650291fd0d5892c66f4510dadae312",
+   "upstream": "function capturedMinimum(values: readonly number[]): number {\n  return values.length === 0 ? 0 : Math.min(...values);\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 1",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives -150",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "values.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
+   "shape": "min",
+   "heldOut": {
+    "right": 118,
+    "wrong": 11,
+    "nonFinite": 60
+   },
+   "wrongAt": [
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[-101, NaN] gives NaN"
+   ],
+   "wrongOnNaN": true
+  },
+  {
+   "repo": "AGI-is-going-to-arrive/Antigravity-Context-Window-Monitor",
+   "commit": "9eaefb23a86e0b19d78a692222b657104c04ec02",
+   "path": "src/gm/tracker.ts",
+   "fn": "max",
+   "license": "MIT",
+   "fileBlob": "89c83cfc542b7c509504147561b6dd05980afa57",
+   "sha256": "0157cee55b55f683ced6e653e3101145f56ea98db315f017d83325db94e53379",
+   "upstream": "const max = (arr: number[]) => arr.length ? Math.max(...arr) : 0;",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 101",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives 101",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN",
+    "[-Infinity] gives -Infinity"
+   ],
+   "addedForGates": [
+    "derive_under_specified_seed: [-Infinity] gives -Infinity"
+   ],
+   "expr": "arr.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+   "shape": "max",
+   "heldOut": {
+    "right": 117,
+    "wrong": 11,
+    "nonFinite": 59
+   },
+   "wrongAt": [
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[-101, NaN] gives NaN"
+   ],
+   "wrongOnNaN": true
+  },
+  {
+   "repo": "AGI-is-going-to-arrive/Antigravity-Context-Window-Monitor",
+   "commit": "9eaefb23a86e0b19d78a692222b657104c04ec02",
+   "path": "src/gm/tracker.ts",
+   "fn": "min",
+   "license": "MIT",
+   "fileBlob": "89c83cfc542b7c509504147561b6dd05980afa57",
+   "sha256": "0157cee55b55f683ced6e653e3101145f56ea98db315f017d83325db94e53379",
+   "upstream": "const min = (arr: number[]) => arr.length ? Math.min(...arr) : 0;",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 1",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives -Infinity",
+    "[-2, Infinity, -150, 30] gives -150",
+    "[NaN] gives NaN"
+   ],
+   "addedForGates": [],
+   "expr": "arr.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
+   "shape": "min",
+   "heldOut": {
+    "right": 118,
+    "wrong": 11,
+    "nonFinite": 60
+   },
+   "wrongAt": [
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[-101, NaN] gives NaN"
+   ],
+   "wrongOnNaN": true
+  },
+  {
+   "repo": "zkywsg/Daily-LLM",
+   "commit": "20e367c0996c141b9c95713a44fdc9ed33069ebf",
+   "path": "web/src/components/node/golden/gin/lib/data.ts",
+   "fn": "max",
+   "license": "MIT",
+   "fileBlob": "2b149bb11b7d8fa0e537494928a40a4dcdf96d87",
+   "sha256": "4202d37355aaad3d67396b2640e4424472bb4021e52bec51dc3b583eaa8d6b1d",
+   "upstream": "export function max(xs: number[]): number {\n  return xs.length === 0 ? 0 : Math.max(...xs);\n}",
+   "params": [
+    {
+     "name": "xs",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 101",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives 101",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN",
+    "[-Infinity] gives -Infinity"
+   ],
+   "addedForGates": [
+    "derive_under_specified_seed: [-Infinity] gives -Infinity"
+   ],
+   "expr": "xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+   "shape": "max",
+   "heldOut": {
+    "right": 117,
+    "wrong": 11,
+    "nonFinite": 59
+   },
+   "wrongAt": [
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[-101, NaN] gives NaN"
+   ],
+   "wrongOnNaN": true
+  },
+  {
+   "repo": "steipete/ReleaseBar",
+   "commit": "1fa6b29cad1301297773f61953b4fe71b3eb305d",
+   "path": "src/app-format.ts",
+   "fn": "maxNumber",
+   "license": "MIT",
+   "fileBlob": "a8927ea05210656bb25511aeb2d679d5af26ca6d",
+   "sha256": "62bed2ab87e59bfcfb39516baa779b15f2f75c970d07d1be6334678f57841ed5",
+   "upstream": "export function maxNumber(values: number[]): number {\n  return values.reduce((max, value) => Math.max(max, value), 0);\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 101",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives 101",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN",
+    "[-Infinity] gives 0",
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives 1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "[1, 1, 99] gives 99",
+    "[30, 150, 99] gives 150",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives 150",
+    "[0, -101, Infinity, 1] gives Infinity",
+    "[-101] gives 0",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives 3",
+    "[150, 0, 7, -2, -101, 3] gives 150",
+    "[-1, -2, 3] gives 3",
+    "[-Infinity, -40, 1] gives 1",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 3",
+    "[3, 30, 101, 30] gives 101",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives 101",
+    "[-101, -101] gives 0",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[150, -101, 3] gives 150",
+    "[-Infinity, 150, Infinity] gives Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives 150",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "[150, -150] gives 150",
+    "[7, 7, 0, -40, -101, 101] gives 101"
+   ],
+   "addedForGates": [
+    "derive_under_specified_seed: [-Infinity] gives 0",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives 1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 99",
+    "derive_no_fit: next grid row [30, 150, 99] gives 150",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives 150",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [-101] gives 0",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives 3",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-1, -2, 3] gives 3",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives 1",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 3",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 101",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives 101",
+    "derive_no_fit: next grid row [-101, -101] gives 0",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives 150",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "derive_no_fit: next grid row [150, -150] gives 150",
+    "derive_no_fit: next grid row [7, 7, 0, -40, -101, 101] gives 101"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example"
+  },
+  {
+   "repo": "vilterp/datalog-ts",
+   "commit": "47f814baa01277ff2ac2a3d7f07c9a4d2831dee5",
+   "path": "util/util.ts",
+   "fn": "max",
+   "license": "MIT",
+   "fileBlob": "8ce47c1991edb8a3540e00b8b2f7da91aad8d75e",
+   "sha256": "4de1dae1862bef37aa5169b2f698dbb02cd10fff9224126750e8d1311d5188d0",
+   "upstream": "export function max(numbers: number[]): number {\n  return numbers.reduce((prev, cur) => Math.max(prev, cur), 0);\n}",
+   "params": [
+    {
+     "name": "numbers",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number",
+   "set": "v4-upstream",
+   "examples": [
+    "[1, 101, 3] gives 101",
+    "[] gives 0",
+    "[1] gives 1",
+    "[-Infinity, 101] gives 101",
+    "[-2, Infinity, -150, 30] gives Infinity",
+    "[NaN] gives NaN",
+    "[-Infinity] gives 0",
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives 1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "[1, 1, 99] gives 99",
+    "[30, 150, 99] gives 150",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives 150",
+    "[0, -101, Infinity, 1] gives Infinity",
+    "[-101] gives 0",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives 3",
+    "[150, 0, 7, -2, -101, 3] gives 150",
+    "[-1, -2, 3] gives 3",
+    "[-Infinity, -40, 1] gives 1",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 3",
+    "[3, 30, 101, 30] gives 101",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives 101",
+    "[-101, -101] gives 0",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[150, -101, 3] gives 150",
+    "[-Infinity, 150, Infinity] gives Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives 150",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "[150, -150] gives 150",
+    "[7, 7, 0, -40, -101, 101] gives 101"
+   ],
+   "addedForGates": [
+    "derive_under_specified_seed: [-Infinity] gives 0",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives 1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 99",
+    "derive_no_fit: next grid row [30, 150, 99] gives 150",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives 150",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [-101] gives 0",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives 3",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-1, -2, 3] gives 3",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives 1",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 3",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 101",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives 101",
+    "derive_no_fit: next grid row [-101, -101] gives 0",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives 150",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "derive_no_fit: next grid row [150, -150] gives 150",
+    "derive_no_fit: next grid row [7, 7, 0, -40, -101, 101] gives 101"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example"
+  },
+  {
+   "repo": "EkaEva/CamForge",
+   "commit": "ea1961a763ffa39617fcc8fe81ef95c95e9d557b",
+   "path": "src/utils/array.ts",
+   "fn": "filterFinite",
+   "license": "MIT",
+   "fileBlob": "8f5906e0fd2d076355c84241a5b01b1c4b180ff5",
+   "sha256": "e7b1aa1bb27ec6b91d30954e00fb9b5c439575201559b7d2de048bcda736d429",
+   "upstream": "export function filterFinite(arr: number[]): number[] {\n  return arr.filter(isFinite);\n}",
+   "params": [
+    {
+     "name": "arr",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number[]",
+   "set": "non-finite-upstream",
+   "examples": [
+    "[1, 101, 3] gives [1, 101, 3]",
+    "[] gives []",
+    "[1] gives [1]",
+    "[-Infinity, 101] gives [101]",
+    "[-2, Infinity, -150, 30] gives [-2, -150, 30]",
+    "[NaN] gives []"
+   ],
+   "addedForGates": [],
+   "expr": "arr.filter((x) => Number.isFinite(x))",
+   "shape": "filter-fin",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "senad-d/DrawMe",
+   "commit": "a246575724b799c08b65b8f8a9e9c93d4b48b7f7",
+   "path": "src/geometry.ts",
+   "fn": "hasInvalidNumber",
+   "license": "MIT",
+   "fileBlob": "e26a4bd0c29b206f653e17ac245f3ca9433eb7d8",
+   "sha256": "8f66eca6ccf989fa506cab46da3944591975249a759c23d6f280fe65ae69b73f",
+   "upstream": "export function hasInvalidNumber(values: number[]): boolean {\n  return values.some((value) => !Number.isFinite(value));\n}",
+   "params": [
+    {
+     "name": "values",
+     "type": "number[]"
+    }
+   ],
+   "ret": "boolean",
+   "set": "non-finite-upstream",
+   "examples": [
+    "[1, 101, 3] gives false",
+    "[] gives false",
+    "[1] gives false",
+    "[-Infinity, 101] gives true",
+    "[-2, Infinity, -150, 30] gives true",
+    "[NaN] gives true"
+   ],
+   "addedForGates": [],
+   "expr": "values.some((x) => !Number.isFinite(x))",
+   "shape": "some-nfin",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "zkwokleung/chart-quest",
+   "commit": "fea9a968d8ac67dccdf4966374624e3b6ec879bf",
+   "path": "lib/ta/autocorr.ts",
+   "fn": "compact",
+   "license": "MIT",
+   "fileBlob": "e267ff543bdf3bc8cb0744d71ce3eaddc3450e4f",
+   "sha256": "d7b4f9869dbaf75ed4fa6452efbf53adda182e72dbe6fa6637ca966b7ac64eef",
+   "upstream": "export function compact(xs: readonly (number | null)[]): number[] {\n  return xs.filter((x): x is number => x !== null && Number.isFinite(x));\n}",
+   "params": [
+    {
+     "name": "xs",
+     "type": "number[]"
+    }
+   ],
+   "ret": "number[]",
+   "set": "non-finite-upstream",
+   "examples": [
+    "[1, 101, 3] gives [1, 101, 3]",
+    "[] gives []",
+    "[1] gives [1]",
+    "[-Infinity, 101] gives [101]",
+    "[-2, Infinity, -150, 30] gives [-2, -150, 30]",
+    "[NaN] gives []"
+   ],
+   "addedForGates": [],
+   "expr": "xs.filter((x) => Number.isFinite(x))",
+   "shape": "filter-fin",
+   "heldOut": {
+    "right": 129,
+    "wrong": 0,
+    "nonFinite": 60
+   }
+  },
+  {
+   "repo": "byebye-code/88code-status-vscode-extension",
+   "commit": "ef3b2798ab1720b2433cb5570ae8040e3082865c",
+   "path": "src/calc.ts",
+   "fn": "calcActiveSum",
+   "license": "MIT",
+   "fileBlob": "ccb74819533f1a73caca57c80304710449bee022",
+   "sha256": "6ed4df61bf98b86852b4d81338041872785498fe47b6a4b797fb1c1fc2c0606e",
+   "upstream": "export function calcActiveSum(subs: Subscription[]): number {\n  return subs\n    .filter((s) => s.isActive)\n    .reduce((sum, s) => sum + (Number.isFinite(s.currentCredits) ? s.currentCredits : 0), 0);\n}",
+   "params": [
+    {
+     "name": "subs",
+     "type": "{ isActive: boolean; currentCredits: number }[]"
+    }
+   ],
+   "ret": "number",
+   "set": "non-finite-upstream",
+   "examples": [
+    "[{ isActive: true, currentCredits: 101 }, { isActive: false, currentCredits: 1 }, { isActive: false, currentCredits: 101 }] gives 101",
+    "[] gives 0",
+    "[{ isActive: true, currentCredits: Infinity }] gives 0",
+    "[{ isActive: true, currentCredits: 30 }, { isActive: false, currentCredits: -Infinity }] gives 30",
+    "[{ isActive: false, currentCredits: 3 }, { isActive: false, currentCredits: 150 }, { isActive: true, currentCredits: -1 }, { isActive: false, currentCredits: 2 }] gives -1",
+    "[{ isActive: false, currentCredits: 7 }] gives 0",
+    "[{ isActive: false, currentCredits: 1 }, { isActive: true, currentCredits: 1 }, { isActive: false, currentCredits: 30 }, { isActive: false, currentCredits: 99 }, { isActive: true, currentCredits: 150 }] gives 151",
+    "[{ isActive: true, currentCredits: 0 }, { isActive: true, currentCredits: Infinity }] gives 0",
+    "[{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 150 }, { isActive: false, currentCredits: -40 }, { isActive: true, currentCredits: 3 }, { isActive: true, currentCredits: 150 }, { isActive: true, currentCredits: 7 }] gives 59",
+    "[{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: -1 }, { isActive: true, currentCredits: 3 }] gives -98",
+    "[{ isActive: false, currentCredits: -40 }, { isActive: true, currentCredits: 2 }, { isActive: true, currentCredits: 3 }] gives 5",
+    "[] gives 0",
+    "[{ isActive: false, currentCredits: 30 }] gives 0",
+    "[{ isActive: false, currentCredits: 30 }, { isActive: false, currentCredits: -101 }] gives 0",
+    "[{ isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 99 }, { isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: NaN }] gives -94",
+    "[{ isActive: false, currentCredits: 0 }] gives 0",
+    "[{ isActive: true, currentCredits: 30 }, { isActive: false, currentCredits: -101 }, { isActive: false, currentCredits: -Infinity }, { isActive: false, currentCredits: Infinity }, { isActive: false, currentCredits: 150 }] gives 30",
+    "[{ isActive: true, currentCredits: NaN }, { isActive: false, currentCredits: -1 }] gives 0",
+    "[{ isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: -Infinity }, { isActive: false, currentCredits: 2 }, { isActive: false, currentCredits: 150 }, { isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 0 }] gives 7",
+    "[{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 150 }, { isActive: true, currentCredits: -40 }] gives -141",
+    "[{ isActive: true, currentCredits: -2 }, { isActive: false, currentCredits: Infinity }, { isActive: true, currentCredits: NaN }] gives -2",
+    "[] gives 0",
+    "[{ isActive: false, currentCredits: 99 }] gives 0",
+    "[{ isActive: true, currentCredits: -2 }, { isActive: false, currentCredits: NaN }] gives -2",
+    "[{ isActive: true, currentCredits: NaN }, { isActive: false, currentCredits: -Infinity }, { isActive: true, currentCredits: -150 }, { isActive: false, currentCredits: Infinity }] gives -150",
+    "[{ isActive: true, currentCredits: -150 }] gives -150",
+    "[{ isActive: true, currentCredits: 1 }, { isActive: false, currentCredits: -150 }, { isActive: false, currentCredits: 30 }, { isActive: false, currentCredits: 0 }, { isActive: true, currentCredits: -101 }] gives -100",
+    "[{ isActive: true, currentCredits: 2 }, { isActive: false, currentCredits: 7 }] gives 2",
+    "[{ isActive: false, currentCredits: 0 }, { isActive: false, currentCredits: NaN }, { isActive: false, currentCredits: 2 }, { isActive: true, currentCredits: 7 }, { isActive: true, currentCredits: -1 }, { isActive: false, currentCredits: -2 }] gives 6",
+    "[{ isActive: true, currentCredits: 101 }, { isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 2 }] gives 108",
+    "[{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: -40 }, { isActive: false, currentCredits: 1 }] gives -101",
+    "[] gives 0",
+    "[{ isActive: false, currentCredits: 0 }] gives 0",
+    "[{ isActive: false, currentCredits: 99 }, { isActive: false, currentCredits: -40 }] gives 0",
+    "[{ isActive: true, currentCredits: Infinity }, { isActive: false, currentCredits: NaN }, { isActive: true, currentCredits: 99 }, { isActive: true, currentCredits: -101 }] gives -2",
+    "[{ isActive: true, currentCredits: 0 }] gives 0",
+    "[{ isActive: false, currentCredits: -150 }, { isActive: false, currentCredits: -2 }, { isActive: false, currentCredits: 7 }, { isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 30 }] gives 7",
+    "[{ isActive: false, currentCredits: Infinity }, { isActive: false, currentCredits: 3 }] gives 0",
+    "[{ isActive: false, currentCredits: -150 }, { isActive: true, currentCredits: -150 }, { isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: 3 }, { isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: 2 }] gives -150",
+    "[{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 30 }, { isActive: true, currentCredits: 2 }] gives -99"
+   ],
+   "addedForGates": [
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 1 }, { isActive: true, currentCredits: 1 }, { isActive: false, currentCredits: 30 }, { isActive: false, currentCredits: 99 }, { isActive: true, currentCredits: 150 }] gives 151",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 0 }, { isActive: true, currentCredits: Infinity }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 150 }, { isActive: false, currentCredits: -40 }, { isActive: true, currentCredits: 3 }, { isActive: true, currentCredits: 150 }, { isActive: true, currentCredits: 7 }] gives 59",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: -1 }, { isActive: true, currentCredits: 3 }] gives -98",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: -40 }, { isActive: true, currentCredits: 2 }, { isActive: true, currentCredits: 3 }] gives 5",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 30 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 30 }, { isActive: false, currentCredits: -101 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 99 }, { isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: NaN }] gives -94",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 0 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 30 }, { isActive: false, currentCredits: -101 }, { isActive: false, currentCredits: -Infinity }, { isActive: false, currentCredits: Infinity }, { isActive: false, currentCredits: 150 }] gives 30",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: NaN }, { isActive: false, currentCredits: -1 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: -Infinity }, { isActive: false, currentCredits: 2 }, { isActive: false, currentCredits: 150 }, { isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 0 }] gives 7",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 150 }, { isActive: true, currentCredits: -40 }] gives -141",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -2 }, { isActive: false, currentCredits: Infinity }, { isActive: true, currentCredits: NaN }] gives -2",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 99 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -2 }, { isActive: false, currentCredits: NaN }] gives -2",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: NaN }, { isActive: false, currentCredits: -Infinity }, { isActive: true, currentCredits: -150 }, { isActive: false, currentCredits: Infinity }] gives -150",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -150 }] gives -150",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 1 }, { isActive: false, currentCredits: -150 }, { isActive: false, currentCredits: 30 }, { isActive: false, currentCredits: 0 }, { isActive: true, currentCredits: -101 }] gives -100",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 2 }, { isActive: false, currentCredits: 7 }] gives 2",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 0 }, { isActive: false, currentCredits: NaN }, { isActive: false, currentCredits: 2 }, { isActive: true, currentCredits: 7 }, { isActive: true, currentCredits: -1 }, { isActive: false, currentCredits: -2 }] gives 6",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 101 }, { isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 2 }] gives 108",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: -40 }, { isActive: false, currentCredits: 1 }] gives -101",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 0 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: 99 }, { isActive: false, currentCredits: -40 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: Infinity }, { isActive: false, currentCredits: NaN }, { isActive: true, currentCredits: 99 }, { isActive: true, currentCredits: -101 }] gives -2",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: 0 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: -150 }, { isActive: false, currentCredits: -2 }, { isActive: false, currentCredits: 7 }, { isActive: true, currentCredits: 7 }, { isActive: false, currentCredits: 30 }] gives 7",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: Infinity }, { isActive: false, currentCredits: 3 }] gives 0",
+    "derive_no_fit: next grid row [{ isActive: false, currentCredits: -150 }, { isActive: true, currentCredits: -150 }, { isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: 3 }, { isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: 2 }] gives -150",
+    "derive_no_fit: next grid row [{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 30 }, { isActive: true, currentCredits: 2 }] gives -99"
+   ],
+   "outOfVocabulary": true,
+   "refused": "derive_no_fit",
+   "detail": "none of 164 programs fits every example"
+  }
+ ]
+}
