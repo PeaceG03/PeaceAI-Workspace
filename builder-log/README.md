@@ -160,3 +160,20 @@ on). That refusal is logged as a gap row: a Builder row with `missing skill <SKI
 (`PeaceAI-Workspace#<N>`) and whose `why` quotes the refusal reason and the run id (`refused <reason> in run <id>`); the Builder code
 that follows is its own row as before. Ops with no code edit (OPS_ACTION) are not peace-tasks. The rule is not CI-enforced: the log
 cannot see whether an issue was filed first, so Auditor checks it at review.
+
+## Scanner health-check slices 2-3 landings (2026-10-29)
+
+Seq 336-349 record the 14 team-picked health-check tasks PeaceAI landed on PeaceSTOCKS from 2026-10-26 15:31 to 2026-10-29 00:33
+MT, one row per task in merge order, dated by merge time (MT): slice 2 #540 (countErrorParts), #541 (countMissingParts), #542
+(noResponseLine), #543 (countExpiredCheckins); slice 3 #548 (weeklyExpected), #557 (missedCheckins), #559 (checkinLine), #561
+(countWrongFacts), #565 (countErrorMessage), #566 (errorCountLine), #570 (gotWorse), #573 (gotBetter), #577 (weekChange) and #579
+(likelyCheckFault). Provenance: Builder drafted each spec (slice 2 from Peace's own answers in Builder chat; slice 3 from Builder's
+design, which Peace approved on 2026-10-26), PeaceAI derived each body (DERIVE_FROM_BEHAVIOR: public-derive-from-behavior-v1, v2
+for #577, v4 for #540/#541/#543/#561/#565) and Peace gave each `/verdict A right`. Like seq 278-281 the rows say
+`source: team-picked`, not `(source: peace)`, so they earn no real-task credit; #540/#541 were first recorded as source=peace in
+Results and are corrected to builder add-only in `peaceai/source-corrections.jsonl` (M119, seq 311-312). Each `why` names the derive run, the sha256 of its Results
+`candidate-1.diff`, the review and verdict comment ids and the verdict PR. Trace check (2026-10-29): for every row
+`git diff --full-index <PR base> <PR head>` and `<merge>^1 <merge>` hash to the candidate-1.diff sha256, and
+`trace.ts --results-dir` and `rule-skill.ts` pass on all 14. Landings via verdict PRs PeaceSTOCKS#76-#79 and #81-#90 (squash merges
+f31a68c, ab2e425, 9369b28, 212412a, df72ffa, b95f468, e047d8b, 2a7742a, c7cc530, f9aa25b, 74c214a, cf521a8, 3f3fbdc, 24eac89);
+PeaceSTOCKS#80 does not exist. Coverage stays 91/276 (33.0%) from 2026-10-29; the secondary figure stays 91/130.
