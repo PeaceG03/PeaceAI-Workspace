@@ -10,7 +10,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { compileList, deriveListProgram, evalList, hasNonFinite, lexListValues, listLit, parseListType, valueKey, valueOk, type ListArg, type ListParam } from "../lib/derive-list.ts";
+import { compileList, deriveListProgram, evalList, evalNonFiniteTwin, hasNonFinite, lexListValues, listLit, nonFiniteProbes, nonFiniteTwins, valueKey, valueOk, type ListArg, type ListParam } from "../lib/derive-list.ts";
+import { M136_EVIDENCE, m136Grid, rerunEntry, upstreamFn, type M136Entry } from "./m136-evidence-run.ts";
 import { DERIVE_LIST_TRIGGER, DERIVE_LIST_OPERATION, DERIVE_NONFINITE_DSL, DERIVE_NONFINITE_OPERATION, DERIVE_NONFINITE_PLACEMENT, deriveAppendRecheck, deriveListReviewNote, deriveModuleRecheck, deriveNonFiniteReviewNote, derivedListModuleProblem, derivedNonFiniteModuleProblem, runDeriveRule, validDeriveParams } from "../lib/learned-derive.ts";
 import { specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { DERIVE_NONFINITE_PHRASING, phrasingFor } from "../lib/propose.ts";
@@ -172,39 +173,139 @@ test("the flag is off by default: v4 search, probes and programs are unchanged f
   assert.equal(compileList(a.program, ["xs"], 0), "xs.filter((x) => 100 <= x).length");
 });
 
-// ---- G17 phase 2: upstream evidence, every recorded function re-derived from its recorded example lines ----
-test("evidence: each upstream function re-derives (v6) to its recorded expression or refusal; the max / min wrong on NaN stay disclosed; the spec counts only the 0-wrong ones", () => {
-  type Fn = { repo: string; commit: string; license: string; fn: string; set: string; params: { name: string; type: string }[]; ret: string; examples: string[]; expr?: string; refused?: string; outOfVocabulary?: boolean; wrongOnNaN?: boolean; heldOut?: { right: number; wrong: number; nonFinite: number }; wrongAt?: string[] };
-  const ev = JSON.parse(read("peaceai/rules/proposals/m136-derive-nonfinite-evidence.json")) as { schema: string; functions: Fn[] };
+// ---- G17 gate fix: the non-finite twins ----
+const N = (rows: (number[])[], f: (xs: number[]) => number | boolean | number[]) => rows.map((xs) => ({ args: [xs] as ListArg[], out: f(xs) as ListArg }));
+const derive6 = (examples: ReturnType<typeof N>, ret: "number" | "boolean" | { list: "number" } = "number") => deriveListProgram({ nonFinite: true, params: XS, ret, examples });
+/** Math.max / Math.min as the 5 upstream bodies use them (0 for the empty list). */
+const mathMax = (xs: number[]) => (xs.length === 0 ? 0 : Math.max(...xs));
+const mathMin = (xs: number[]) => (xs.length === 0 ? 0 : Math.min(...xs));
+/** The DSL's own reduce max (keeps the running max; a NaN first element stays). */
+const reduceMax = (xs: number[]) => xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0);
+// The 5 upstream training slices from #596 (the first rows each derived a wrong max / min from).
+const MAX_ROWS = [[1, 101, 3], [], [1], [-Infinity, 101], [-2, Infinity, -150, 30], [NaN], [-Infinity]];
+const MIN_ROWS = [[1, 101, 3], [], [1], [-Infinity, 101], [-2, Infinity, -150, 30], [NaN], [150, -1]];
+
+test("nonfinite gate: a max / min whose examples never show NaN after the first element is refused with a NaN row to answer", () => {
+  for (const [rows, f, op] of [[MAX_ROWS, mathMax, "max"], [MIN_ROWS, mathMin, "min"]] as const) {
+    const r = derive6(N(rows, f));
+    assert.ok(!r.ok && r.reason === "derive_under_specified" && r.gate === "nonfinite", `${op}: ${JSON.stringify(r)}`);
+    const q = r.questions![0]!;
+    const L = q.at[0] as number[];
+    assert.ok(L.length >= 2 && L.slice(1).some(Number.isNaN), `${op} asks for NaN after the first element: ${listLit(L)}`);
+    assert.ok(Object.is(f(L), NaN), "upstream answers NaN");
+    // Answered by the upstream function, no v6 program fits: refused, never a wrong derivation.
+    const after = derive6([...N(rows, f), { args: [L], out: f(L) }]);
+    assert.ok(!after.ok && after.reason === "derive_no_fit", `${op}: ${JSON.stringify(after)}`);
+  }
+  // Through the rule: the refusal is derive_under_specified_nonfinite, the asked row in the detail.
+  const text = issue("Add a new module `src/peak.ts` exporting `peak(xs: number[]): number`.", "the largest count in the list, zero for an empty list.", MAX_ROWS.map((xs) => `${listLit(xs)} gives ${listLit(mathMax(xs))}`));
+  const why: { reason?: string; questions?: string } = {};
+  const e = runDeriveRule(V6.trigger, V6.params, objective(text), FILES, isTest, why as never);
+  assert.equal(e, null);
+  assert.match(why.reason ?? "", /^derive_under_specified_nonfinite: xs$/);
+});
+
+test("nonfinite gate: a function that really is the DSL's reduce max derives once its examples pin NaN first and later", () => {
+  const rows = [...MAX_ROWS, [NaN, 4], [4, NaN, 2]];
+  const r = derive6(N(rows, reduceMax));
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(compileList(r.program, ["xs"], 0), "xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)");
+  // Without the NaN-later row the NaN-propagating reading still fits: asked, not accepted.
+  const short = derive6(N([...MAX_ROWS, [NaN, 4]], reduceMax));
+  assert.ok(!short.ok && short.gate === "nonfinite", JSON.stringify(short));
+  // Without the NaN-first row a skip-NaN reading fits: asked too.
+  const short2 = derive6(N([...MAX_ROWS.filter((xs) => !(xs.length === 1 && Number.isNaN(xs[0]))), [4, NaN, 2], [Infinity]], reduceMax));
+  assert.ok(!short2.ok && short2.gate === "nonfinite", JSON.stringify(short2));
+});
+
+test("nonfinite gate: comparisons with NaN (x >= c vs !(x < c)) and NaN-only / empty lists", () => {
+  // keep 1 <= x: no NaN element in the examples, so `!(x < 1)` (keeps NaN) also fits: asked.
+  const rows = [[1, 2, 3], [], [0, Infinity], [-Infinity, 4, 5], [-150, 150, 101], [2, 2], [0], [-101, 1, 101]];
+  const ge = (xs: number[]) => xs.filter((x) => x >= 1);
+  const r = derive6(N(rows, ge), { list: "number" });
+  assert.ok(!r.ok && r.gate === "nonfinite", JSON.stringify(r));
+  const L = r.questions![0]!.at[0] as number[];
+  assert.ok(L.some(Number.isNaN), listLit(L));
+  // Answered `x >= 1` (NaN dropped): derives `1 <= x`; answered `!(x < 1)` (NaN kept): no v6 program, refused.
+  const yes = derive6([...N(rows, ge), { args: [L], out: ge(L) }], { list: "number" });
+  assert.ok(yes.ok && compileList(yes.program, ["xs"], 0) === "xs.filter((x) => 1 <= x)", JSON.stringify(yes));
+  const notLt = (xs: number[]) => xs.filter((x) => !(x < 1));
+  const no = derive6([...N(rows, notLt), { args: [L], out: notLt(L) }], { list: "number" });
+  assert.ok(!no.ok, JSON.stringify(no));
+  // A NaN-only list is probed, and a NaN-only example pins it: sum of [NaN, NaN] is NaN, the empty list 0.
+  const sum = (xs: number[]) => xs.reduce((n, x) => n + x, 0);
+  const s = derive6(N([[1, 2, 3], [], [NaN, NaN], [Infinity, -Infinity], [4, NaN], [-150, 101], [-150, -101], [150, 101]], sum));
+  assert.ok(s.ok && compileList(s.program, ["xs"], 0) === "xs.reduce((n, x) => n + x, 0)", JSON.stringify(s));
+  const probes = nonFiniteProbes({ nonFinite: true, params: XS, ret: "number", examples: N([[1, 2, 3], [], [NaN]], sum) }, { op: "sum", f: null, pred: null })!;
+  assert.ok(probes.some((a) => valueKey(a) === valueKey([[NaN, NaN]])) && probes.some((a) => valueKey(a) === valueKey([[]])), "NaN-only and empty lists are probed");
+  // A sum that skips NaN: the plain sum no longer fits, and the kept-sum cuts that skip NaN stay rivals (asked, not guessed).
+  const skip = (xs: number[]) => sum(xs.filter((x) => !Number.isNaN(x)));
+  const k = derive6(N([[1, 2, 3], [], [NaN, NaN], [Infinity, 5], [4, NaN], [-150, 101], [-150, -101], [150, 101]], skip));
+  assert.ok(!k.ok && k.reason === "derive_ambiguous", JSON.stringify(k));
+  // One NaN-only list rules out the skip-NaN and skip-non-finite readings of a plain sum.
+  const one = derive6(N([[1, 2, 3], [], [Infinity, 5], [-150, 101], [-150, -101], [150, 101], [NaN]], sum));
+  assert.ok(one.ok && compileList(one.program, ["xs"], 0) === "xs.reduce((n, x) => n + x, 0)", JSON.stringify(one));
+});
+
+test("nonfinite gate: twins are v6 only; v4 search, gates and results are unchanged", () => {
+  // The same finite examples as a v4 task and as a flagged search: identical (the gate needs a non-finite example).
+  const ex = N([[1, 2, 3], [], [200, 300, 5], [150], [-300, 101], [6], [100, 99]], (xs) => xs.filter((x) => x >= 100).length);
+  assert.deepEqual(deriveListProgram({ params: XS, ret: "number", examples: ex, nonFinite: true }), deriveListProgram({ params: XS, ret: "number", examples: ex }));
+  // v4 refuses the max examples the gate asks about at derive_examples (it never reads NaN), as before.
+  assert.equal((deriveListProgram({ params: XS, ret: "number", examples: N(MAX_ROWS, mathMax) }) as { reason?: string }).reason, "derive_examples");
+  assert.deepEqual(nonFiniteTwins({ op: "length" }, XS), []);
+  assert.deepEqual(nonFiniteTwins({ op: "max", f: null, empty: 0 }, XS), ["skip-nan", "skip-nonfinite", "nan-poison"]);
+  assert.deepEqual(nonFiniteTwins({ op: "filter", pred: { op: "ge", f: null, c: 1 } }, XS), ["nan-true", "skip-nan", "skip-nonfinite"]);
+  assert.ok(Object.is(evalNonFiniteTwin({ op: "max", f: null, empty: 0 }, "nan-poison", [[1, NaN, 3]], XS), NaN));
+  assert.equal(evalNonFiniteTwin({ op: "max", f: null, empty: 0 }, "skip-nan", [[NaN, 1]], XS), 1);
+  assert.deepEqual(evalNonFiniteTwin({ op: "filter", pred: { op: "ge", f: null, c: 1 } }, "nan-true", [[NaN, 0, 2]], XS), [NaN, 2]);
+});
+
+// ---- G17 phase 2 + gate fix: upstream evidence, every record recomputed from the committed seed-136 generator ----
+test("evidence: the committed generator reproduces every record (training rows, asked rows, derivation or refusal, held-out counts) and the totals", () => {
+  type Fn = M136Entry & { repo: string; commit: string; license: string; set: string; sha256: string; expr?: string; refused?: string; outOfVocabulary?: boolean; heldOut?: { right: number; wrong: number; nonFinite: number }; addedForGates: string[]; examples: string[]; wrongAt?: string[]; beforeNonFiniteGate?: { expr: string; heldOut: { right: number; wrong: number; nonFinite: number }; wrongAt: string[] } };
+  const ev = JSON.parse(read(M136_EVIDENCE)) as { schema: string; functions: Fn[] };
   assert.equal(ev.schema, "peaceai-m136-derive-nonfinite-evidence:v1");
   const m113 = JSON.parse(read("peaceai/rules/proposals/m113-derive-list-evidence.json")) as { functions: { repo: string; commit: string; fn: string; sha256: string }[] };
-  let held = 0, nonFinite = 0;
+  let held = 0, nonFinite = 0, wrong = 0;
   for (const f of ev.functions) {
     assert.ok(["MIT", "Apache-2.0", "ISC"].includes(f.license), `${f.repo}: ${f.license}`);
     assert.ok(["v4-upstream", "non-finite-upstream"].includes(f.set), f.fn);
-    if (f.set === "v4-upstream") assert.ok(m113.functions.some((g) => g.repo === f.repo && g.commit === f.commit && g.fn === f.fn && g.sha256 === (f as unknown as { sha256: string }).sha256), `${f.fn} is M113's`);
-    const params = f.params.map((p) => ({ name: p.name, type: parseListType(p.type)! }));
-    const ret = parseListType(f.ret)!;
-    assert.ok(params.every((p) => p.type) && ret, f.fn);
+    if (f.set === "v4-upstream") assert.ok(m113.functions.some((g) => g.repo === f.repo && g.commit === f.commit && g.fn === f.fn && g.sha256 === f.sha256), `${f.fn} is M113's`);
+    const r = rerunEntry(f);
+    assert.deepEqual(r.examples, f.examples, `${f.fn}: training rows`);
+    assert.deepEqual(r.addedForGates, f.addedForGates, `${f.fn}: asked rows`);
+    assert.equal(r.expr, f.expr, `${f.fn}: expression`);
+    assert.equal(r.refused, f.refused, `${f.fn}: refusal`);
+    assert.deepEqual(r.heldOut, f.heldOut, `${f.fn}: held-out counts`);
+    assert.deepEqual(r.wrongAt, f.wrongAt, f.fn);
     const examples = f.examples.map((l) => { const v = lexListValues(l, true); assert.ok(v, `${f.fn}: ${l}`); return { args: v.values, out: v.out }; });
     assert.ok(hasNonFinite(examples), `${f.fn}: a v6 task holds a non-finite example`);
-    const r = deriveListProgram({ params, ret, examples, nonFinite: true });
-    if (f.expr) {
-      assert.ok(r.ok, `${f.repo} ${f.fn}: ${!r.ok && r.reason}`);
-      assert.equal(compileList(r.program, params.map((p) => p.name), params.findIndex((p) => typeof p.type === "object")), f.expr, f.fn);
-      if (f.wrongOnNaN) {
-        assert.ok(f.heldOut!.wrong > 0 && f.wrongAt!.length > 0 && f.wrongAt!.every((w) => /NaN/.test(w)), f.fn);
-        assert.match(f.expr, /\.reduce\(\(n, x, i\) => \(i === 0 \|\|/, `${f.fn}: only max / min are wrong`);
-      } else { assert.equal(f.heldOut?.wrong, 0, f.fn); held += f.heldOut!.right; nonFinite += f.heldOut!.nonFinite; }
-    } else assert.ok(!r.ok && r.reason === f.refused, `${f.fn}: ${r.ok ? "derived" : r.reason}`);
+    if (r.heldOut) { held += r.heldOut.right; nonFinite += r.heldOut.nonFinite; wrong += r.heldOut.wrong; }
+    if (f.beforeNonFiniteGate) {
+      assert.ok(f.refused && f.addedForGates.some((a) => a.startsWith("derive_under_specified_nonfinite: ")), `${f.fn}: refused after the asked NaN row`);
+      assert.equal(f.beforeNonFiniteGate.heldOut.wrong, 11);
+      assert.ok(f.beforeNonFiniteGate.wrongAt.every((w) => /NaN/.test(w)), f.fn);
+    }
   }
-  const right = ev.functions.filter((f) => f.expr && !f.wrongOnNaN);
-  assert.deepEqual([ev.functions.length, ev.functions.filter((f) => f.expr).length, right.length, ev.functions.filter((f) => f.wrongOnNaN).length], [24, 19, 14, 5]);
-  assert.deepEqual([held, nonFinite], [3565, 1799]);
+  const right = ev.functions.filter((f) => f.expr);
+  assert.deepEqual([ev.functions.length, right.length, ev.functions.filter((f) => f.refused).length, ev.functions.filter((f) => f.beforeNonFiniteGate).length], [24, 14, 10, 5]);
+  assert.deepEqual([held, nonFinite, wrong], [4355, 2589, 0]);
   assert.ok(right.some((f) => /Number\.isFinite/.test(f.expr!)) && ev.functions.filter((f) => f.set === "non-finite-upstream").length === 4);
   assert.deepEqual(V6.evidence, { commits: 14, files: 14, hunks: 14, repos: [...new Set(right.map((f) => f.repo))].sort() });
-  const prop = JSON.parse(read("peaceai/rules/proposals/public-derive-from-behavior-v6.json")) as { evidence: { file: string; qualifies: boolean; examples: number; derived: number; right: number; wrongOnNaN: number } };
-  assert.equal(prop.evidence.file, "peaceai/rules/proposals/m136-derive-nonfinite-evidence.json");
-  assert.deepEqual([prop.evidence.examples, prop.evidence.derived, prop.evidence.right, prop.evidence.wrongOnNaN], [24, 19, 14, 5]);
-  assert.equal(prop.evidence.qualifies, false, "five in-vocabulary max / min derivations are wrong on NaN rows: not until v6 asks for a NaN row");
+  const prop = JSON.parse(read("peaceai/rules/proposals/public-derive-from-behavior-v6.json")) as { evidence: { file: string; qualifies: boolean; examples: number; derived: number; right: number; wrongOnNaN: number; refused: number; heldOut: number; heldOutNonFinite: number } };
+  assert.equal(prop.evidence.file, M136_EVIDENCE);
+  assert.deepEqual([prop.evidence.examples, prop.evidence.derived, prop.evidence.right, prop.evidence.wrongOnNaN, prop.evidence.refused, prop.evidence.heldOut, prop.evidence.heldOutNonFinite], [24, 14, 14, 0, 10, held, nonFinite]);
+  assert.equal(prop.evidence.qualifies, false, "v6 has no evidence bar of its own yet; only 3 of the 14 use a non-finite test themselves");
+});
+
+test("evidence generator: the seed-136 grid is deterministic and holds every non-finite value", () => {
+  const e: M136Entry = { fn: "sum", upstream: "function sum(xs: number[]): number { return xs.reduce((a, b) => a + b, 0); }", params: [{ name: "xs", type: "number[]" }], ret: "number" };
+  const g1 = m136Grid(e), g2 = m136Grid(e);
+  assert.equal(g1.length, 48);
+  assert.equal(valueKey(g1), valueKey(g2));
+  const flat = g1.flatMap((a) => a[0] as number[]);
+  assert.ok(flat.some(Number.isNaN) && flat.includes(Infinity) && flat.includes(-Infinity));
+  assert.ok(Object.is(upstreamFn(e)([1, NaN]), NaN));
+  assert.throws(() => upstreamFn({ ...e, upstream: "function sum(xs: number[]): number { return process.exit(1); }" })([1]), /process is not defined/);
 });
