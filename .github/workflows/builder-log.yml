@@ -35,16 +35,24 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./node_modules/.bin/tsx peaceai/bin/source-corrections-check.ts --base "$BASE_SHA"
-      - name: PeaceAI repo@sha landings exist
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./node_modules/.bin/tsx builder-log/check.ts --verify-shas
       - name: Clone PeaceSTOCKS anonymously (outside the workspace)
         run: git clone --quiet https://github.com/PeaceG03/PeaceSTOCKS.git "$RUNNER_TEMP/stocks"
+      # GITHUB_TOKEN quota (#590 follow-up): every repo@sha is resolved in the anonymous PeaceSTOCKS clone and this
+      # full-history checkout, with no API calls and no token. Only commits reachable from the repo's refs count.
+      - name: PeaceAI repo@sha landings exist (local clones, no API calls)
+        run: ./node_modules/.bin/tsx builder-log/check.ts --verify-shas --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks"
+      # On a pull request only the appended rows are traced (trace.ts planTrace: full trace if the base log is not a
+      # byte prefix or any trace code, dependency or this workflow changed). On push to main in this repository the
+      # results-crosscheck job runs the full trace with Results (a superset of this public trace), so this step is
+      # skipped there; anywhere else (a fork's main) it runs in full.
       - name: PeaceAI landings trace to verdict patches (public part; Results verified by the results-crosscheck job on main)
+        if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'PeaceG03/PeaceAI-Workspace') }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./node_modules/.bin/tsx builder-log/trace.ts --no-results --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then mode=(--new-rows-since "$BASE_SHA"); else mode=(); fi
+          ./node_modules/.bin/tsx builder-log/trace.ts --no-results "${mode[@]}" --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: PeaceAI vs Builder coverage
         env:
           PEACESTOCKS_CLONE: ${{ runner.temp }}/stocks

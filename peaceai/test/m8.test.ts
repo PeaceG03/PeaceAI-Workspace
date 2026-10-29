@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { admitRules, APPROVED_SCHEMA, loadApprovedList, validateList, withEntry, type ApprovalEntry } from "../lib/approved.ts";
 import { attestationFor, entryFromAttestation, validateWorkspaceApproval, type CommentEvent } from "../lib/approval.ts";
@@ -483,6 +483,96 @@ process.exit(1);
     assert.equal(readFileSync(calls, "utf8").split("\n").filter(Boolean).length, 3, "a 404 does not stop the other entries");
     assert.equal((nf.stdout.match(/not readable \(HTTP 404\)/g) ?? []).length, 3);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("CI guard off main: unchanged approvals vs main's commit skip the API; any change to the list, a spec or checker code runs the full check", () => {
+  const dir = scratch();
+  try {
+    const ws = join(dir, "ws");
+    const learned = join(ws, "peaceai/rules/learned");
+    mkdirSync(learned, { recursive: true });
+    mkdirSync(join(ws, "src"));
+    writeFileSync(join(learned, `${PUBLIC.id}.json`), JSON.stringify(PUBLIC));
+    const list = join(ws, "peaceai/rules/approved.json");
+    writeFileSync(list, JSON.stringify(withEntry({ schema: APPROVED_SCHEMA, rules: [] }, entry(PUBLIC_SHA))));
+    git(ws, "init", "-q");
+    commitAll(ws, "main");
+    const main = git(ws, "rev-parse", "HEAD").trim();
+    writeFileSync(join(ws, "src/x.ts"), "export const x = 1;\n");
+    commitAll(ws, "unrelated change");
+    const calls = join(dir, "calls");
+    // A gh that would fail every call (rate limited) and logs each one: the local path must make none.
+    const deadGh = join(dir, "gh-dead");
+    writeFileSync(deadGh, `#!/usr/bin/env node
+require("node:fs").appendFileSync(${JSON.stringify(calls)}, "x\\n");
+process.stderr.write("gh: API rate limit exceeded (HTTP 403)\\n");
+process.exit(1);
+`);
+    chmodSync(deadGh, 0o755);
+    const forgedComment = { user: { login: "someone" }, author_association: "NONE", body: `/approve-rule ${PUBLIC_SHA}`, html_url: ENTRY_URL, issue_url: "https://api.github.com/repos/PeaceG03/PeaceAI-Workspace/issues/50" };
+    const issue = { labels: [{ name: "rule-proposal" }], body: ev().issueBody };
+    const n = () => (existsSync(calls) ? readFileSync(calls, "utf8").split("\n").filter(Boolean).length : 0);
+    const run = (o: { base?: string; ref?: string; gh?: string; rules?: string } = {}) => {
+      rmSync(calls, { force: true });
+      return spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: ws, encoding: "utf8", env: {
+        ...process.env, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: o.ref ?? "12/merge", PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: o.rules ?? learned,
+        PEACEAI_VERIFIED_BASE: o.base ?? main, PEACEAI_GH: o.gh ?? deadGh,
+      } });
+    };
+    const local = run();
+    assert.equal(local.status, 0, local.stdout + local.stderr);
+    assert.equal(n(), 0, "no API call when the approvals are main's");
+    assert.match(local.stdout, new RegExp(`APPROVED LIST OK-LOCAL ${PUBLIC.id}: list and spec identical to main ${main.slice(0, 12)}`));
+    assert.match(local.stdout, /APPROVED LIST PASS rules=1 \(approvals unchanged from main [0-9a-f]{12}: checked locally\)/);
+    // On main itself, without a base, with a malformed or unknown base, or a rules dir outside the repo: full check
+    // (here the dead gh makes it fail closed, proving the API path ran).
+    for (const o of [{ ref: "main" }, { base: "" }, { base: "main" }, { base: "f".repeat(40) }, { rules: join(dir, "elsewhere") }]) {
+      if (o.rules) { mkdirSync(o.rules, { recursive: true }); writeFileSync(join(o.rules, `${PUBLIC.id}.json`), JSON.stringify(PUBLIC)); }
+      const r = run(o);
+      assert.equal(r.status, 1, JSON.stringify(o));
+      assert.ok(n() > 0, `API used: ${JSON.stringify(o)}`);
+      assert.ok(!/OK-LOCAL/.test(r.stdout));
+    }
+    // A forged approval: the PR adds an entry whose "approval" is someone else's comment. The list differs from
+    // main, so the full API check runs and rejects it.
+    const other = spec({ id: "public-set-literal-v9" });
+    writeFileSync(join(learned, `${other.id}.json`), JSON.stringify(other));
+    writeFileSync(list, JSON.stringify(withEntry(withEntry({ schema: APPROVED_SCHEMA, rules: [] }, entry(PUBLIC_SHA)), entry(specHash(other), { id: other.id, approval: { ...entry(PUBLIC_SHA).approval, commentId: 999, url: ENTRY_URL.replace("-123", "-999") } }))));
+    commitAll(ws, "forged approval");
+    const forged = run({ gh: fakeGh(dir, forgedComment, issue) });
+    assert.equal(forged.status, 1);
+    assert.match(forged.stdout, /APPROVED LIST FAIL public-set-literal-v9: comment author is not PeaceG03 \(OWNER\)/);
+    assert.ok(!/OK-LOCAL/.test(forged.stdout));
+    git(ws, "reset", "-q", "--hard", "HEAD~1");
+    // A spec edited under an unchanged list: full check (and the hash check fails it either way).
+    writeFileSync(join(learned, `${PUBLIC.id}.json`), JSON.stringify(spec({ params: { contexts: ["object-property"], kinds: ["string"] } })));
+    commitAll(ws, "spec edit");
+    const specEdit = run();
+    assert.equal(specEdit.status, 1);
+    assert.ok(n() > 0 && !/OK-LOCAL/.test(specEdit.stdout));
+    git(ws, "reset", "-q", "--hard", "HEAD~1");
+    // Checker code, its libraries, dependencies or the workflow changed: full check.
+    for (const p of ["peaceai/lib/approval.ts", "peaceai/bin/check-approved-list.ts", "package.json", "package-lock.json", "tsconfig.json", ".github/workflows/ci.yml"]) {
+      mkdirSync(join(ws, dirname(p)), { recursive: true });
+      writeFileSync(join(ws, p), p.endsWith(".json") ? '{"changed":true}\n' : "// changed\n");
+      commitAll(ws, `touch ${p}`);
+      const r = run();
+      assert.equal(r.status, 1, p);
+      assert.ok(n() > 0 && !/OK-LOCAL/.test(r.stdout), p);
+      git(ws, "reset", "-q", "--hard", "HEAD~1");
+    }
+    assert.equal(run().status, 0, "back to main's approvals: local again");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("workflow: tamper-proof fetches main anonymously on pull requests only and hands its sha to M8", () => {
+  const ci = readFileSync(join(repo, ".github/workflows/ci.yml"), "utf8");
+  const job = ci.slice(ci.indexOf("  tamper-proof:"));
+  const fetch = job.slice(job.indexOf("- name: Fetch main anonymously"), job.indexOf("- name: Every approved learned rule"));
+  assert.match(fetch, /if: github\.event_name == 'pull_request'/);
+  assert.match(fetch, /git fetch --quiet --no-tags --depth=1 "https:\/\/github\.com\/\$REPO\.git" main/);
+  assert.ok(!/TOKEN/.test(fetch), "anonymous fetch: no token");
+  assert.match(job, /PEACEAI_VERIFIED_BASE: \$\{\{ steps\.main\.outputs\.sha \}\}\n\s+run: \.\/node_modules\/\.bin\/tsx peaceai\/bin\/check-approved-list\.ts/);
 });
 
 // ---- proposals and the leak gate

@@ -319,14 +319,80 @@ export async function traceAll(entries: readonly Entry[], deps: TraceDeps): Prom
   return rows;
 }
 
-/** Errors: every failing row, plus any grandfather entry that names no landing line (stale list). */
-export function traceErrors(entries: readonly Entry[], rows: readonly TraceRow[]): string[] {
+/**
+ * Errors: every failing row, plus any grandfather entry that names no landing line (stale list). The stale-list
+ * check needs every row, so a new-rows-only PR trace (`full` false) skips it; the full traces on main run it.
+ */
+export function traceErrors(entries: readonly Entry[], rows: readonly TraceRow[], full = true): string[] {
   const errs = rows.filter((r) => r.status === "fail").map((r) => `${r.code}: seq ${r.seq} ${r.landing}${r.issue ? ` (#${r.issue})` : ""}: ${r.detail}`);
+  if (!full) return errs;
   for (const s of Object.keys(GRANDFATHERED).map(Number)) {
     if (!rows.some((r) => r.seq === s && r.status === "grandfathered")) errs.push(`T_STALE_GRANDFATHER: seq ${s} is not a by:PeaceAI landing line`);
   }
   void entries;
   return errs;
+}
+
+// ---- PR mode: trace only the rows a PR appends (#590 follow-up: GITHUB_TOKEN quota). ----
+
+/**
+ * Paths whose change can alter a trace verdict: this checker and every module it imports (builder-log/check.ts,
+ * peaceai/lib; trace.test.ts walks the import graph and pins it inside this list), the TypeScript configs, the
+ * dependency set and the workflow. A path ending in "/" is a prefix. builder-log/tasks.jsonl is the data and is
+ * handled row by row; README/coverage edits in a log PR do not touch the trace.
+ */
+export const TRACE_CODE_PATHS: readonly string[] = [
+  "builder-log/trace.ts",
+  "builder-log/check.ts",
+  "builder-log/tsconfig.json",
+  "peaceai/lib/",
+  "tsconfig.json",
+  "package.json",
+  "package-lock.json",
+  ".github/workflows/builder-log.yml",
+];
+
+const LOG_FILE = "builder-log/tasks.jsonl";
+
+export type TracePlan = { full: true; reason: string } | { full: false; afterSeq: number };
+
+/**
+ * PR trace plan. Rows already on the base were traced by main's own full runs (the Results cross-check, on every
+ * push to main), and the PR cannot change them (append-only, checked in the same job). So a PR traces only its
+ * appended rows, unless anything is uncertain: an unreadable base log, a head log that does not start with the
+ * base log byte for byte, an unknown change list, or any change to trace code. Each of those traces in full.
+ */
+export function planTrace(baseLog: string | null, headLog: string, changed: readonly string[] | null): TracePlan {
+  if (baseLog === null) return { full: true, reason: "base log unreadable" };
+  if (!headLog.startsWith(baseLog)) return { full: true, reason: "head log does not extend the base log" };
+  if (changed === null) return { full: true, reason: "changed paths unknown" };
+  const code = changed.find((p) => p !== LOG_FILE && TRACE_CODE_PATHS.some((c) => (c.endsWith("/") ? p.startsWith(c) : p === c)));
+  if (code !== undefined) return { full: true, reason: `trace code changed (${code})` };
+  let afterSeq = 0;
+  for (const l of baseLog.split("\n")) {
+    if (!l.trim()) continue;
+    let seq: unknown;
+    try {
+      seq = (JSON.parse(l) as Entry).seq;
+    } catch {
+      return { full: true, reason: "base log does not parse" };
+    }
+    if (typeof seq !== "number" || !Number.isInteger(seq)) return { full: true, reason: "base log has a row without an integer seq" };
+    afterSeq = Math.max(afterSeq, seq);
+  }
+  return { full: false, afterSeq };
+}
+
+/** git facts for planTrace: base log text (null if absent) and the paths changed from base to HEAD (null on error). */
+export function gitPlanInputs(dir: string, base: string): { baseLog: string | null; changed: string[] | null } {
+  const run = (args: string[]) => spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (!/^[0-9a-f]{40}$/.test(base)) return { baseLog: null, changed: null };
+  const show = run(["show", `${base}:${LOG_FILE}`]);
+  const diff = run(["diff", "--no-renames", "--name-only", "-z", base, "HEAD", "--"]);
+  return {
+    baseLog: show.status === 0 ? show.stdout : null,
+    changed: diff.status === 0 ? diff.stdout.split("\0").filter(Boolean) : null,
+  };
 }
 
 // ---- Real deps (gh CLI + local git clones). ----
@@ -439,7 +505,8 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
 // Default reads Results through gh (box). CI: PR job runs --no-results (the Results key is main-only and
 // every row says "Results NOT checked"); the push-to-main job clones Results read-only and passes --results-dir.
 async function main(): Promise<void> {
-  const entries = readFileSync(new URL("./tasks.jsonl", import.meta.url), "utf8")
+  const headLog = readFileSync(new URL("./tasks.jsonl", import.meta.url), "utf8");
+  const all = headLog
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l) as Entry);
@@ -454,12 +521,21 @@ async function main(): Promise<void> {
   if (!clones[WORKSPACE]) clones[WORKSPACE] = fileURLToPath(new URL("..", import.meta.url));
   const ri = process.argv.indexOf("--results-dir");
   const results = process.argv.includes("--no-results") ? null : ri > 0 ? { dir: process.argv[ri + 1]! } : "gh";
+  // --new-rows-since <base sha> (PR job): trace only the appended rows when planTrace allows it.
+  const ni = process.argv.indexOf("--new-rows-since");
+  let plan: TracePlan = { full: true, reason: "full trace requested" };
+  if (ni > 0) {
+    const inputs = gitPlanInputs(clones[WORKSPACE]!, process.argv[ni + 1] ?? "");
+    plan = planTrace(inputs.baseLog, headLog, inputs.changed);
+  }
+  const entries = plan.full ? all : all.filter((e) => e.seq > plan.afterSeq);
+  console.log(plan.full ? `Trace mode: full (${plan.reason}).\n` : `Trace mode: rows after seq ${plan.afterSeq} only (${entries.length} new; rows up to ${plan.afterSeq} are traced in full on every push to main).\n`);
   const rows = await traceAll(entries, makeGhDeps(clones, results));
   const untraced = entries.filter((e) => e.by === "PeaceAI" && !rows.some((r) => r.seq === e.seq));
   console.log("| seq | landing | issue | status | code | detail |\n|---|---|---|---|---|---|");
   for (const r of rows) console.log(`| ${r.seq} | ${r.landing} | ${r.issue ? `#${r.issue}` : "-"} | ${r.status} | ${r.code ?? ""} | ${r.detail.replace(/\|/g, "\\|")} |`);
   for (const e of untraced) console.log(`| ${e.seq} | (no repo@sha landing) | - | no landing | | ${e.changed.replace(/\|/g, "\\|")} |`);
-  const errs = traceErrors(entries, rows);
+  const errs = traceErrors(entries, rows, plan.full);
   const skipped = rows.filter((r) => r.detail.endsWith(`: ${NOT_ATTEMPTED}`)).length;
   if (skipped) errs.unshift(`T_LOOKUP_FAILED: GitHub API rate limit hit; ${skipped} later landing lookup${skipped === 1 ? "" : "s"} not attempted (fail closed)`);
   if (errs.length) {

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
-import { appendOnly, COVERAGE_NONE_SEQS, LOG_PATH, makeGithubShaResolver, peaceAiShaLandings, validateCoverageNoneSeqs, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
+import { appendOnly, COVERAGE_NONE_SEQS, LOG_PATH, makeGitShaResolver, makeGithubShaResolver, parseClones, peaceAiShaLandings, validateCoverageNoneSeqs, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
 
 const ok = {
   seq: 1, date: "2026-10-13", time: "01:05", asked: "Fix the typecheck failure", changed: "PeaceSTOCKS@369f6ea",
@@ -183,4 +186,81 @@ test("PeaceAI proof wording without coverage:none fails unless grandfathered; wi
     ),
     "no coverage wording also requires the field",
   );
+});
+
+// ---- --verify-shas with local clones (#590 follow-up: no GitHub API calls) ----
+
+const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+function repoWithCommit(): { dir: string; sha: string } {
+  const dir = mkdtempSync(join(tmpdir(), "blog-git-"));
+  git(dir, "init", "-q");
+  writeFileSync(join(dir, "a.txt"), "a\n");
+  git(dir, "add", "a.txt");
+  git(dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "c");
+  return { dir, sha: git(dir, "rev-parse", "HEAD") };
+}
+const fabricate = (sha: string) => (sha[0] === "0" ? "1" : "0") + sha.slice(1, 7);
+
+test("git resolver: a real commit passes; a fabricated sha or a non-commit fails; a missing or unreadable clone fails closed", async () => {
+  const { dir, sha } = repoWithCommit();
+  try {
+    const r = makeGitShaResolver({ "PeaceG03/PeaceSTOCKS": dir });
+    assert.equal(await r("PeaceG03/PeaceSTOCKS", sha.slice(0, 7)), true);
+    assert.equal(await r("PeaceG03/PeaceSTOCKS", sha), true);
+    const fake = fabricate(sha);
+    assert.equal(await r("PeaceG03/PeaceSTOCKS", fake), false);
+    // A blob id exists as an object but is not a commit: not a landing.
+    assert.equal(await r("PeaceG03/PeaceSTOCKS", git(dir, "rev-parse", "HEAD:a.txt")), false);
+    // The resolver plugs into the same verifier: a fabricated landing is an error.
+    const e = (changed: string) => ({ ...ok, changed, by: "PeaceAI" }) as Entry;
+    assert.deepEqual(await verifyPeaceAiShas([e(`PeaceSTOCKS@${sha.slice(0, 7)}`)], r), []);
+    assert.deepEqual(await verifyPeaceAiShas([e(`PeaceSTOCKS@${fake}`)], r), [`seq 1: PeaceSTOCKS@${fake} does not exist`]);
+    // No clone for the repo, or a directory that is not a git clone: lookup error -> fail closed.
+    const noClone = await verifyPeaceAiShas([e("PeaceAI-Workspace@abcdef1")], r);
+    assert.equal(noClone.length, 1);
+    assert.match(noClone[0]!, /lookup failed \(fail closed\): no local clone for PeaceG03\/PeaceAI-Workspace/);
+    const empty = mkdtempSync(join(tmpdir(), "blog-empty-"));
+    try {
+      const bad = await verifyPeaceAiShas([e(`PeaceSTOCKS@${sha.slice(0, 7)}`)], makeGitShaResolver({ "PeaceG03/PeaceSTOCKS": empty }));
+      assert.match(bad[0] ?? "", /lookup failed \(fail closed\): clone for PeaceG03\/PeaceSTOCKS is not readable/);
+    } finally { rmSync(empty, { recursive: true, force: true }); }
+    // A malformed sha never reaches git as an option.
+    assert.throws(() => r("PeaceG03/PeaceSTOCKS", "--all"), /malformed sha/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("check.ts --verify-shas --clone: CLI passes a real landing and fails a fabricated one with no token and no gh", () => {
+  const { dir: stocks, sha } = repoWithCommit();
+  const ws = mkdtempSync(join(tmpdir(), "blog-ws-"));
+  try {
+    mkdirSync(join(ws, "builder-log"));
+    const row = (changed: string) => line({ ...ok, changed, by: "PeaceAI" });
+    const run = () => spawnSync(resolve(import.meta.dirname, "../node_modules/.bin/tsx"), [resolve(import.meta.dirname, "check.ts"), "--verify-shas", "--clone", `PeaceG03/PeaceSTOCKS=${stocks}`], {
+      cwd: ws, encoding: "utf8", env: { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", PATH: "/usr/bin:/bin" },
+    });
+    writeFileSync(join(ws, "builder-log/tasks.jsonl"), row(`PeaceSTOCKS@${sha.slice(0, 7)}`));
+    const good = run();
+    assert.equal(good.status, 0, good.stdout + good.stderr);
+    assert.match(good.stdout, /repo@sha verified \(local clones, no API calls\)/);
+    const fake = fabricate(sha);
+    writeFileSync(join(ws, "builder-log/tasks.jsonl"), row(`PeaceSTOCKS@${fake}`));
+    const bad = run();
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, new RegExp(`seq 1: PeaceSTOCKS@${fake} does not exist`));
+  } finally {
+    rmSync(stocks, { recursive: true, force: true });
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("parseClones reads repeated --clone owner/repo=DIR pairs", () => {
+  assert.deepEqual(parseClones(["--verify-shas", "--clone", "PeaceG03/PeaceSTOCKS=/s", "--clone", "PeaceG03/PeaceAI-Workspace=/w", "--clone"]), { "PeaceG03/PeaceSTOCKS": "/s", "PeaceG03/PeaceAI-Workspace": "/w" });
+});
+
+test("workflow: the builder-log job verifies shas in local clones with no token", () => {
+  const wf = readFileSync(resolve(import.meta.dirname, "../.github/workflows/builder-log.yml"), "utf8");
+  const step = wf.slice(wf.indexOf("- name: PeaceAI repo@sha landings exist"), wf.indexOf("- name: PeaceAI landings trace"));
+  assert.match(step, /check\.ts --verify-shas --clone "PeaceG03\/PeaceSTOCKS=\$RUNNER_TEMP\/stocks"/);
+  assert.ok(!/TOKEN/.test(step), "no token in the verify step");
+  assert.ok(wf.indexOf("Clone PeaceSTOCKS anonymously") < wf.indexOf("- name: PeaceAI repo@sha landings exist"), "clone before verify");
 });

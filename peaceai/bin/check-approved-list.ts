@@ -7,8 +7,14 @@
 // sha, attestation path for the pinned hash, Results issue and comment id matching the comment URL).
 // On a branch, the diff against main is checked too: an approval branch (peaceai-approve-rule/*) may change
 // only the approved list, one commit ahead; any other branch may not change the list at all.
+// Off main (pull requests), PEACEAI_VERIFIED_BASE may name main's commit (the tamper-proof job fetches it
+// anonymously): when the approved list, the spec files, this checker, its libraries, the dependency set and the
+// workflow are byte-identical to that commit, every Workspace entry is one main already verified with the full
+// API check (the PR that added it ran this check in full, and every push to main runs it in full), so each
+// entry's spec hash is re-checked locally and the two comment/issue API calls are skipped. Any difference, an
+// unreadable base, or a run on main itself means the full API check.
 // Prints fixed strings and ids only.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadApprovedList } from "../lib/approved.ts";
@@ -32,6 +38,19 @@ const cause = (err: unknown): string => {
   const c = limited ? `rate limited${status ? ` (HTTP ${status})` : ""}` : status ? `HTTP ${status}` : "";
   return c ? ` (${c})` : "";
 };
+
+/** Paths whose bytes decide this check's verdict (besides the list, the specs and the GitHub comments). */
+const M8_INPUT_PATHS = ["peaceai/lib/", "peaceai/bin/check-approved-list.ts", "package.json", "package-lock.json", "tsconfig.json", ".github/workflows/ci.yml"];
+const onMain = !process.env.GITHUB_HEAD_REF && (process.env.GITHUB_REF_NAME ?? "") === "main";
+const verifiedBase = (() => {
+  const base = process.env.PEACEAI_VERIFIED_BASE ?? "";
+  if (onMain || !/^[0-9a-f]{40}$/.test(base)) return null;
+  const git = (...a: string[]) => spawnSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (git("cat-file", "-e", `${base}^{commit}`).status !== 0) return null;
+  // Exit 0 = no difference; 1 = differences; anything else (path outside the repo, bad object) = unknown. Only 0 skips.
+  const d = git("diff", "--quiet", "--no-renames", base, "HEAD", "--", listPath, rulesDir, ...M8_INPUT_PATHS);
+  return d.status === 0 ? base : null;
+})();
 
 let failures = 0;
 const fail = (id: string, why: string) => { failures += 1; console.log(`APPROVED LIST FAIL ${id}: ${why}`); };
@@ -60,6 +79,12 @@ if (!load.ok) {
 let notChecked = 0;
 for (const e of load.list.rules) {
   if (e.source === "results") { console.log(`APPROVED LIST NOTE ${e.id}: Results approval (private), attestation ${e.attestation!.commit.slice(0, 12)}`); continue; }
+  if (verifiedBase) {
+    const specPath = join(rulesDir, `${e.id}.json`);
+    if (!existsSync(specPath) || specHash(JSON.parse(readFileSync(specPath, "utf8"))) !== e.sha256) fail(e.id, "spec file does not hash to the pinned hash");
+    else console.log(`APPROVED LIST OK-LOCAL ${e.id}: list and spec identical to main ${verifiedBase.slice(0, 12)}, whose approval was verified via the API`);
+    continue;
+  }
   // After a rate limit every further call fails the same way: stop calling, still fail (counted below).
   if (rateLimited) { notChecked += 1; continue; }
   let comment: Record<string, unknown>;
@@ -84,4 +109,4 @@ for (const e of load.list.rules) {
 }
 if (notChecked > 0) fail("rate limited", `GitHub API rate limit hit; ${notChecked} more entr${notChecked === 1 ? "y" : "ies"} not checked (fail closed)`);
 if (failures > 0) process.exit(1);
-console.log(`APPROVED LIST PASS rules=${load.list.rules.length}`);
+console.log(`APPROVED LIST PASS rules=${load.list.rules.length}${verifiedBase ? ` (approvals unchanged from main ${verifiedBase.slice(0, 12)}: checked locally)` : ""}`);
