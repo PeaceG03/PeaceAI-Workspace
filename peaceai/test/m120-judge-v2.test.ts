@@ -239,7 +239,7 @@ test("judge v2: the sources file holds commit ids and integers only, keyed to th
   assert.equal(H(readFileSync(join(repo, PIN.sources))), PIN.sourcesSha256);
   assert.equal(PIN.items.n, PIN.items.right + PIN.items.wrong);
   assert.equal(PIN.items.n + Object.values(PIN.dropped as Record<string, number>).reduce((a, b) => a + b, 0), SRC.v1.count);
-  assert.equal(PIN.live.version, CFG.live.version);
+  assert.equal(PIN.live.version, CFG.replayBase.version);
   assert.match(PIN.items.sha256, /^[0-9a-f]{64}$/);
 });
 

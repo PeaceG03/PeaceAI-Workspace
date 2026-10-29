@@ -355,9 +355,9 @@ test("M122 replay pins: the source is the public ext manifest M37 trained on; it
   assert.equal(CFG.replay.source.sha256, "040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af");
   assert.ok(read("peaceai/test/m9.test.ts").includes(`--manifest-sha ${CFG.replay.source.sha256}`), "the same manifest sha m9 pins for peace-lm-train.yml");
   assert.equal(CFG.replay.manifestSha256, "6fc30d39a649601067a1ad8f74c10083993420db0abdbeb1ae8e72286fa19ab1");
-  assert.equal(CFG.live.version, "lm-v1-088073d41dbc");
+  assert.equal(CFG.replayBase.version, "lm-v1-088073d41dbc"); assert.equal("live" in CFG, false, "the live entry is retired (m131)");
   // Fix B: the replay base carries the same manifest and proof pins, and the restore reads it
-  assert.deepEqual([CFG.replayBase.version, CFG.replayBase.manifestSha256, CFG.replayBase.corefreeProofSha256], [CFG.live.version, CFG.replay.manifestSha256, CFG.live.corefreeProofSha256]);
+  assert.deepEqual([CFG.replayBase.version, CFG.replayBase.manifestSha256, CFG.replayBase.corefreeProofSha256], ["lm-v1-088073d41dbc", CFG.replay.manifestSha256, "24ffc77c1d49cd9b441d09613d799dc64b78a838c3c352fe470e7e3dab74281a"]);
   const live = read("peaceai/bin/lm-retrain-live.sh");
   assert.match(live, /ms=\$\(jq -r \.replayBase\.manifestSha256 "\$cfg"\)/);
   assert.match(live, /test "\$\(jq -r \.replay\.manifestSha256 "\$cfg"\)" = "\$ms"/);

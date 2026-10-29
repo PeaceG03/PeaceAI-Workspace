@@ -397,7 +397,7 @@ export interface RetrainChainInput {
   liveManifest: { lines: readonly string[]; manifestSha256: string } | null;
   /** The replay corpus and the fine-tune corpus rebuilt in this run (manifest lines byte-for-byte). */
   replay: CorpusForProof & { lines: readonly string[] }; finetune: CorpusForProof;
-  /** lm-retrain.json live.version / live.corefreeProofSha256 / replay.manifestSha256 and the run record's finetuneCorefreeProofSha256. */
+  /** lm-retrain.json replayBase.version / replayBase.corefreeProofSha256 / replayBase.manifestSha256 and the run record's finetuneCorefreeProofSha256. */
   pins: RetrainChainPins;
 }
 /** The proof chain for a pretrain-mode retrain candidate. Every link is checked against the corpora rebuilt in this run:

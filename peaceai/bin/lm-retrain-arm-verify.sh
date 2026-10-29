@@ -3,7 +3,9 @@
 # lm-retrain-arm-save.sh in each sweep job) before finetune-eval-land uses them. No key here (the fetch is a separate,
 # key-using step). Counts only on stdout.
 #   lm-retrain-arm-verify.sh --train-config-sha <mode>
-#       prints the sha256 of the training identity: lm-retrain.json {model, live, replay, dedup, <mode> minus budget/note}
+#       prints the sha256 of the training identity: lm-retrain.json {model, live, replay, dedup, <mode> minus budget/note},
+#       where live is {version, corefreeProofSha256} of replayBase (the retired top-level live entry had exactly these
+#       values, so the identity, and every saved arm's trainConfigSha256, is unchanged by its removal)
 #   lm-retrain-arm-verify.sh --code-sha
 #       prints the sha256 of the training and export code (Auditor, PR #564): `sha256sum` of exactly CODE_FILES, in this
 #       fixed sorted order (lm-retrain-train.sh runs val_split.py, train.py and retrain_summary.py; train.py imports lm
@@ -26,7 +28,7 @@
 #   refuses (exit 1).
 set -euo pipefail
 cfg=peaceai/model/lm-retrain.json
-tcsha() { jq -cS --arg m "$1" '{model, live, replay, dedup, train: (.[$m] | del(.budget, .note))}' "$cfg" | sha256sum | cut -c1-64; }
+tcsha() { jq -cS --arg m "$1" '{model, live: {version: .replayBase.version, corefreeProofSha256: .replayBase.corefreeProofSha256}, replay, dedup, train: (.[$m] | del(.budget, .note))}' "$cfg" | sha256sum | cut -c1-64; }
 CODE_FILES=(peaceai/model/export.py peaceai/model/lm.py peaceai/model/replay.py peaceai/model/retrain_summary.py peaceai/model/train.py peaceai/model/val_split.py)
 codesha() { sha256sum "${CODE_FILES[@]}" | sha256sum | cut -c1-64; }
 if [ "${1-}" = --code-sha ]; then codesha; exit 0; fi
@@ -44,7 +46,7 @@ if [ -n "${RESUME-}" ]; then
 fi
 n=$(jq -r --arg m "$mode" '.[$m].sweep.lrs | length' "$cfg"); [ "$n" = 2 ] || { echo "expected 2 sweep arms: refused"; exit 1; }
 sums=("${SA-}" "${SB-}"); saves=("${VA-}" "${VB-}")
-tc=$(tcsha "$mode"); code=$(codesha); live=$(jq -r .live.version "$cfg")
+tc=$(tcsha "$mode"); code=$(codesha); live=$(jq -r .replayBase.version "$cfg")
 mkdir -p "$dest"
 for i in 0 1; do
   d="$arms/$i"; st="$dest/arm-$i.status.json"; lr=$(jq -r --arg m "$mode" --argjson a "$i" '.[$m].sweep.lrs[$a]' "$cfg")
