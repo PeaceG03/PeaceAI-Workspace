@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m132-neverzone-sets:v1",
- "note": "computeNeverZone on main 807ba1e: before = pre-ruling raw mention scan, after = M132 (comments/prose/upstream coordinates and the #136 EDITABLE_PATHS grant do not count). Sorted.",
+ "note": "computeNeverZone on main 807ba1e: before = pre-ruling raw mention scan, after = M132 (comments/prose/upstream coordinates and the #136 EDITABLE_PATHS grant do not count). Sorted. S2 (2026-10-29): plus the committed stage-2 generator run record under peaceai/self/gen-records/ (never-zone by its path, in both sets).",
  "before": [
   ".github/CODEOWNERS",
   ".github/workflows/builder-log.yml",
@@ -367,6 +367,7 @@
   "peaceai/self-tests/helpers/dates.ts",
   "peaceai/self-tests/helpers/text.ts",
   "peaceai/self/approvers.json",
+  "peaceai/self/gen-records/2026-10-29-docs-stage-2-generator-run-record.json",
   "peaceai/self/stage2.json",
   "peaceai/targets.json",
   "peaceai/test/m104-ternary-keys.test.ts",
@@ -779,6 +780,7 @@
   "peaceai/self-tests/helpers/dates.ts",
   "peaceai/self-tests/helpers/text.ts",
   "peaceai/self/approvers.json",
+  "peaceai/self/gen-records/2026-10-29-docs-stage-2-generator-run-record.json",
   "peaceai/self/stage2.json",
   "peaceai/targets.json",
   "peaceai/test/m104-ternary-keys.test.ts",
