@@ -41,7 +41,7 @@ test("M129 config: a pinned promoted entry (858573, its record sha, set C 1.5282
   assert.match(CFG.promoted.note, /1\.5282 - 0\.005 = 1\.5232/);
   assert.deepEqual([CFG.replayBase.version, CFG.replayBase.manifestSha256, CFG.replayBase.corefreeProofSha256],
     ["lm-v1-088073d41dbc", "6fc30d39a649601067a1ad8f74c10083993420db0abdbeb1ae8e72286fa19ab1", "24ffc77c1d49cd9b441d09613d799dc64b78a838c3c352fe470e7e3dab74281a"], "training, restoring and replay stay on the replay base");
-  assert.equal(CFG.live.version, CFG.replayBase.version); assert.notEqual(CFG.promoted.version, CFG.replayBase.version);
+  assert.equal("live" in CFG, false, "the live entry is retired (m131)"); assert.notEqual(CFG.promoted.version, CFG.replayBase.version);
   assert.equal(CFG.eval.minBpbGain, 0.005, "the same margin as today");
 });
 

@@ -171,7 +171,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   assert.match(train, /val_split\.py/); const code = (t: string) => t.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
   assert.doesNotMatch(code(train) + code(vs.replace(/^"""[\s\S]*?"""/m, "")), /setc|items\.json|judge|eval_c/i, "validation never touches set C or the judge items");
   assert.match(vs, /heldout/); assert.match(WF, /validationSplitSha256/);
-  assert.equal(CFG.eval.setcMaxBytes, 1000000); assert.equal(CFG.eval.judgeItemCount, 230); assert.equal(CFG.live.version, "lm-v1-088073d41dbc");
+  assert.equal(CFG.eval.setcMaxBytes, 1000000); assert.equal(CFG.eval.judgeItemCount, 230); assert.equal(CFG.replayBase.version, "lm-v1-088073d41dbc"); assert.equal("live" in CFG, false, "the live entry is retired (m131)");
   // Gate 2: dedup before training and 0 overlap after.
   assert.ok(WF.indexOf("lm-retrain-corpus.sh") > 0 && WF.indexOf("lm-retrain-corpus.sh") < WF.indexOf("lm-retrain-train.sh"));
   assert.match(WF, /recheckOverlapDocs "\$RUNNER_TEMP\/w\/dedup\.json"\)" = 0/);
@@ -179,7 +179,7 @@ test("M119: the retrain workflow carries the Auditor's gate and lands in Results
   // weights; strict memcheck rule.
   const live = read("peaceai/bin/lm-retrain-live.sh");
   assert.match(live, /live=\$\(jq -r \.replayBase\.version "\$cfg"\)/);
-  assert.match(live, /test "\$\(jq -r \.live\.version "\$cfg"\)" = "\$live"/);
+  assert.match(live, /jq -e 'has\("live"\) \| not' "\$cfg" > \/dev\/null \|\| \{ echo "lm-retrain\.json has the retired live entry \(the replay base is replayBase\): refused"; exit 1; \}/);
   assert.doesNotMatch(live.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /latest\.json/, "the restore never reads latest.json");
   assert.match(live, /lm-v1-\$\(sha256sum "\$L\/weights\.npz" \| cut -c1-12\)" = "\$live"/);
   assert.match(read("peaceai/bin/lm-retrain-corpus.sh"), /lm-retrain-headcheck\.sh/, "merged content is compared with the PR head in CI");

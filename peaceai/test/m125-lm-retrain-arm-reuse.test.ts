@@ -131,7 +131,7 @@ test("M125 save: each finished arm lands in Results runs/lm-retrain/<run>/arms/<
   const sv = JSON.parse(readFileSync(join(base, "0", "save.json"), "utf8"));
   assert.deepEqual(Object.keys(sv.files).sort(), ["metrics.jsonl", "model/config.json", "model/eval.json", "model/weights.npz", "summary.json"]);
   for (const [p, h] of Object.entries(sv.files)) assert.equal(sha(join(base, "0", p)), h, p);
-  assert.deepEqual([sv.schema, sv.runId, sv.workspaceSha, sv.arm, sv.mode, sv.lr, sv.bestStep, sv.live, sv.finetuneManifestSha256], ["peaceai-lm-retrain-arm:v1", RUN, WS, 0, MODE, LRS[0], 1200, CFG.live.version, f.manifest]);
+  assert.deepEqual([sv.schema, sv.runId, sv.workspaceSha, sv.arm, sv.mode, sv.lr, sv.bestStep, sv.live, sv.finetuneManifestSha256], ["peaceai-lm-retrain-arm:v1", RUN, WS, 0, MODE, LRS[0], 1200, CFG.replayBase.version, f.manifest]);
   assert.equal(sv.codeSha256, codeSha(repo)); assert.equal(sv.tokenizerSha256, sha(join(f.live, "tokenizer.json"))); assert.equal(existsSync(join(base, "0", "model", "tokenizer.json")), false, "the live tokenizer is not duplicated");
   const cfg = JSON.parse(readFileSync(join(base, "0", "model", "config.json"), "utf8"));
   assert.equal(cfg.trained_steps, 1200); assert.equal(cfg.version, `lm-v1-${sha(join(base, "0", "model", "weights.npz")).slice(0, 12)}`);

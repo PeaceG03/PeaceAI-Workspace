@@ -205,7 +205,7 @@ test("Fix B item 3: the retrain restore uses lm-retrain.json replayBase, never l
   // the real config: replayBase is the existing live model with its existing manifest and proof pins
   assert.deepEqual(CFG.replayBase && [CFG.replayBase.version, CFG.replayBase.manifestSha256, CFG.replayBase.corefreeProofSha256],
     ["lm-v1-088073d41dbc", "6fc30d39a649601067a1ad8f74c10083993420db0abdbeb1ae8e72286fa19ab1", "24ffc77c1d49cd9b441d09613d799dc64b78a838c3c352fe470e7e3dab74281a"]);
-  assert.equal(CFG.replayBase.manifestSha256, CFG.replay.manifestSha256); assert.equal(CFG.live.version, CFG.replayBase.version);
+  assert.equal(CFG.replayBase.manifestSha256, CFG.replay.manifestSha256); assert.equal("live" in CFG, false, "the live entry is retired (m131)");
   // the judge-v2 live AUC pin is unchanged and still names the replay base
   const V2 = JSON.parse(readFileSync(join(repo, "peaceai/model/judge-v2.json"), "utf8"));
   assert.deepEqual(V2.live, { version: "lm-v1-088073d41dbc", auc: 0.175, auc_ci95: [0.116, 0.237] });
@@ -233,13 +233,15 @@ test("Fix B item 3: the retrain restore uses lm-retrain.json replayBase, never l
     const r = spawnSync("bash", ["peaceai/bin/lm-retrain-live.sh", dest], { cwd, encoding: "utf8", env: { ...process.env, DEPLOY_KEY: "fixture-not-a-key", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${bare}.insteadOf`, GIT_CONFIG_VALUE_0: "git@github.com:PeaceG03/PeaceAI-Results.git", GIT_TERMINAL_PROMPT: "0" } });
     return { st: r.status, out: r.stdout + r.stderr, dest };
   };
-  const base = { ...CFG, live: { ...CFG.live, version: BASE }, replay: { ...CFG.replay, manifestSha256: H(man) }, replayBase: { version: BASE, manifestSha256: H(man), corefreeProofSha256: H(proof) } };
+  const base = { ...CFG, replay: { ...CFG.replay, manifestSha256: H(man) }, replayBase: { version: BASE, manifestSha256: H(man), corefreeProofSha256: H(proof) } };
   const ok = run(base);
   assert.equal(ok.st, 0, ok.out); assert.match(ok.out, new RegExp(`live model ${BASE} restored`));
   assert.equal(readFileSync(join(ok.dest, "judged"), "utf8"), `${BASE}\n`, "judged and scored as the replay base, not latest.json's version");
   assert.equal(readFileSync(join(ok.dest, "live/weights.npz"), "utf8"), w);
   const no = (why: string, cfg: any, msg: RegExp) => { const r = run(cfg); assert.notEqual(r.st, 0, `${why}: ${r.out}`); assert.match(r.out, msg, why); };
-  no("live.version is not replayBase.version", { ...base, live: { ...base.live, version: "lm-v1-858573767465" } }, /live\.version is not replayBase\.version/);
+  // the retired live entry, reintroduced: refused whether it names another model or the replay base itself
+  no("live entry naming another model", { ...base, live: { version: "lm-v1-858573767465", corefreeProofSha256: H(proof) } }, /has the retired live entry/);
+  no("live entry naming the replay base", { ...base, live: { version: BASE, corefreeProofSha256: H(proof) } }, /has the retired live entry/);
   no("replay base proof pin differs", { ...base, replayBase: { ...base.replayBase, corefreeProofSha256: "0".repeat(64) } }, /core-free proof differs from its pin/);
   no("replay.manifestSha256 differs from the replay base's", { ...base, replay: { ...base.replay, manifestSha256: "0".repeat(64) } }, /replay\.manifestSha256 is not replayBase\.manifestSha256/);
   no("no replay base", { ...base, replayBase: undefined }, /bad replay base version/);

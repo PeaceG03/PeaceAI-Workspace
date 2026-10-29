@@ -4,7 +4,7 @@
 # Writes <dest>/live/{config.json,tokenizer.json,weights.npz}, <dest>/items.json and <dest>/scores-live-recorded.json (the
 # live model's recorded judge aggregates, which judge364.py must reproduce in the run). The model restored is lm-retrain.json
 # replayBase.version (Fix B: pinned in the config, separate from Results latest.json, which this script never reads).
-# Refuses unless live.version is replayBase.version, its weights hash to its version, its shape equals the config and the
+# Refuses if lm-retrain.json still has the retired top-level live entry (replayBase is the only pin), and unless its weights hash to its version, its shape equals the config and the
 # judge item count is the pinned one, and unless its training manifest is replayBase.manifestSha256 (= replay.manifestSha256)
 # with a PROVEN core-free proof whose bytes hash to replayBase.corefreeProofSha256 (the replay corpus is drawn from that
 # manifest). Counts only on stdout.
@@ -12,7 +12,7 @@ set -euo pipefail
 dest="$1"; cfg=peaceai/model/lm-retrain.json
 [ -n "${DEPLOY_KEY:-}" ] || { echo "no Results key: refused (fail closed)"; exit 1; }
 live=$(jq -r .replayBase.version "$cfg"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad replay base version"; exit 1; }
-test "$(jq -r .live.version "$cfg")" = "$live" || { echo "live.version is not replayBase.version: refused"; exit 1; }
+jq -e 'has("live") | not' "$cfg" > /dev/null || { echo "lm-retrain.json has the retired live entry (the replay base is replayBase): refused"; exit 1; }
 res="$dest/res"; rm -rf "$res"; mkdir -p "$dest"
 ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$res"
 ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout set --no-cone "/models/lm/$live/"
