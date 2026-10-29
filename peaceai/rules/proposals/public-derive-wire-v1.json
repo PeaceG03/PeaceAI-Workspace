@@ -1,0 +1,22 @@
+{
+ "id": "public-derive-wire-v1",
+ "kind": "EXISTING_EDIT",
+ "shape": "EXISTING_FUNCTION_EDIT",
+ "status": "proposal-off-wired",
+ "flag": "none; Job A only via the hash-pinned approved list (not in approved.json until Peace posts /approve-rule on its proposal issue)",
+ "engine": "peaceai/lib/derive-wire.ts derives the edit (the site, the catch, the helper and its arguments) from the issue's Behavior paragraph and data-described fakes / expects; it is reached through the EXISTING_EDIT kind in peaceai/lib/learned.ts when the spec carries the wire vocabulary (fakes recorded-object-literal-v1-error-fields, match derived-unique-call-site-v1, statements derived-try-catch-wrap-v1; all or none). The derived edit then passes the M98 gate (peaceai/lib/learned-edit-existing.ts gateSuppliedEdit in wire mode) and the Job B static check (gradeExistingEditProblem), where the closed wire catch is recognized structurally (wireEditShape) and the capability check runs with the catch replaced by `throw error;`. The generated test uses the M98 fake harness plus failure fields (message, name, code, cause {code, name, message}).",
+ "scope": "one own awaited or returned statement of an existing exported function or class method that calls the failing fake's key, not already inside a try; the catch is `continue;` (site inside a loop of the target, every failing example settles normally) or a rethrow `new Error(H(args), { cause: error })` with H an exported string-line helper of the same module (1-4 string params, a single return of a + chain) and each argument one of error.message / .name / .code / .cause.code / .cause.name / .cause.message or a string parameter of the target. Exactly one candidate must fit every failing example.",
+ "refusals": "wire_trigger, wire_sections, wire_examples, wire_behavior_code (code anywhere in the issue, including fenced / indented / HTML-comment code), wire_params, wire_target, wire_site_none, wire_site_ambiguous, wire_site_unawaited, wire_fake_ambiguous, wire_fake_shared, wire_no_failing_example, wire_not_needed, wire_retry_not_in_v1 (outside a loop, a failing fake expected to be called more than once, or a fake that fails and then answers while its example expects to settle normally), wire_no_fit, wire_ambiguous, wire_search_too_large, wire_shape, target_file_not_found, and every M98 gate refusal (edit_*)",
+ "evidence": {
+  "note": "The spec's evidence block is M98's mining (the edit shape is the same: one statement of an existing function, graded by a new fake-driven test). No upstream evidence specific to derived try / catch wraps has been gathered yet; this is a team-picked skill (GAPS G18) and earns no coverage credit.",
+  "qualifies": false
+ },
+ "limits": "No retry in v1 (refused as wire_retry_not_in_v1; each attempt would need its own signing, timeout and backoff clock; see peaceai/spec/derive-wire-v1.md). No helpers imported from other modules, no new helper, no wrapping of a declaration (const x = await ...), no finally, no logging, no catch that returns a value. One site per task. The failing fake must drive exactly one call in its example (a shared fake is refused).",
+ "learned": "peaceai/rules/learned/public-derive-wire-v1.json",
+ "tests": [
+  "peaceai/test/m137-derive-wire.test.ts",
+  "peaceai/test/m98-existing-function-edit.test.ts",
+  "peaceai/test/m98-confinement.test.ts"
+ ],
+ "untouched": "public-existing-function-edit-v1 (M98): same spec, trigger, params and gate; every task is still refused with edit_splice_disabled, and an edit that is not a wire edit is graded exactly as before (the wire harness and failure fields are refused for it). DERIVE_FROM_BEHAVIOR v1-v6: unchanged (only STRONG_CODE is now exported). approved.json, workflows, credit, gate and stage2 code"
+}

@@ -48,7 +48,7 @@ export type Read = (rel: string) => string | null;
 
 /** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
 export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  return minedFrom === "public" && okParams(p as Record<string, string | string[]>);
+  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -166,7 +166,9 @@ function topDeclared(sts: readonly ts.Statement[]): Set<string> {
  * function or class declarations, no while/do/for(;;)/for-in/switch/labels, no `var`, no template literals, no
  * `delete`, no `arguments`. Names and globals are checked by the hermetic walk on the edited module.
  */
-export function newGrammarProblem(sts: readonly ts.Statement[], isAsync: boolean): string | null {
+/** `inLoop` (G18 wire mode only): NEW replaces a statement inside a loop, so a bare `continue` may appear; the wire
+ * shape check (wireCatchOf) then proves the site really is inside a loop of the target. M98 always passes false. */
+export function newGrammarProblem(sts: readonly ts.Statement[], isAsync: boolean, inLoop = false): string | null {
   let bad: string | null = null;
   const stmt = (s: ts.Statement, loop: boolean): void => {
     if (bad) return;
@@ -208,7 +210,7 @@ export function newGrammarProblem(sts: readonly ts.Statement[], isAsync: boolean
     };
     v(e);
   };
-  for (const s of sts) stmt(s, false);
+  for (const s of sts) stmt(s, inLoop);
   return bad;
 }
 
@@ -223,8 +225,18 @@ export function splitBody(body: string): { oldText: string; newText: string } | 
   return hits.length === 1 ? hits[0]! : null;
 }
 
+/** G18: the site is inside a loop statement of the target body (never across a nested function). */
+function siteInLoop(site: ts.Node, body: ts.Node): boolean {
+  for (let p = site.parent; p && p !== body; p = p.parent) {
+    if (isFunctionLike(p)) return false;
+    if (ts.isForOfStatement(p) || ts.isForStatement(p) || ts.isForInStatement(p) || ts.isWhileStatement(p) || ts.isDoStatement(p)) return true;
+  }
+  return false;
+}
+
 /** G1: apply the replacement; null unless OLD matches exactly one own statement and the result parses. */
-export function editStatement(path: string, text: string, target: string, oldText: string, newText: string): { content: string; target: Target } | null {
+// G18 `wire`: a bare `continue` in NEW is allowed only when the matched site sits in a loop of the target (M98: never).
+export function editStatement(path: string, text: string, target: string, oldText: string, newText: string, wire = false): { content: string; target: Target } | null {
   if (oldText.length > MAX_OLD_CHARS || newText.length > MAX_NEW_CHARS || sameCode(oldText, newText)) return null;
   const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
   if (diag(sf)) return null;
@@ -234,10 +246,11 @@ export function editStatement(path: string, text: string, target: string, oldTex
   const oldSts = parseStatements(oldText), newSts = parseStatements(newText);
   if (!oldSts || oldSts.length !== 1 || !newSts || newSts.length < 1 || newSts.length > MAX_NEW_STATEMENTS) return null;
   if (!OLD_KINDS.has(oldSts[0]!.kind)) return null;
-  if (newGrammarProblem(newSts, isAsync)) return null;
+  if (!wire && newGrammarProblem(newSts, isAsync)) return null;
   const matches = ownStatements(t.node.body).filter((s) => sameCode(s.getText(sf), oldText));
   if (matches.length !== 1) return null;
   const site = matches[0]!;
+  if (wire && newGrammarProblem(newSts, isAsync, siteInLoop(site, t.node.body))) return null;
   // every name OLD declares stays declared at NEW's top level (later statements keep resolving)
   const declared = topDeclared(oldSts), kept = topDeclared(newSts);
   if ([...declared].some((n) => !kept.has(n))) return null;
@@ -1193,12 +1206,12 @@ export function reachProblem(c: Closure, modPath: string, entry: Entry | FnEntry
 // ---------------------------------------------------------------------------------------------------------------
 // G2: the fake-driven test (fakes: recorded-object-literal-v1; test: new-file-fake-driven)
 // ---------------------------------------------------------------------------------------------------------------
-const OUTCOMES = new Set(["resolves", "returns", "rejects", "throws"]);
+export const OUTCOMES: ReadonlySet<string> = new Set(["resolves", "returns", "rejects", "throws"]);
 const ISO_Z = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 export const MAX_ARRAY_ITEMS = 50;
 export const MAX_STRING_CHARS = 400;
 
-function parseExpression(text: string): ts.Expression | null {
+export function parseExpression(text: string): ts.Expression | null {
   if (text.includes("\n") || hasComment(text)) return null;
   const sf = ts.createSourceFile("e.ts", `(${text});`, ts.ScriptTarget.Latest, true);
   if (diag(sf) || sf.statements.length !== 1 || !ts.isExpressionStatement(sf.statements[0]!)) return null;
@@ -1206,9 +1219,9 @@ function parseExpression(text: string): ts.Expression | null {
   return ts.isParenthesizedExpression(e) ? e.expression : null;
 }
 
-type Ctx = { fakes: Map<string, ts.Expression> };
+type Ctx = { fakes: Map<string, ts.Expression>; wire?: boolean };
 const literalString = (e: ts.Expression): string | null => (ts.isStringLiteral(e) && e.text.length <= MAX_STRING_CHARS && !REFLECTION.has(e.text) ? e.text : null);
-const callName = (e: ts.Expression): string | null => (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && !e.typeArguments && !e.questionDotToken ? e.expression.text : null);
+export const callName = (e: ts.Expression): string | null => (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && !e.typeArguments && !e.questionDotToken ? e.expression.text : null);
 
 /** Data values: literals, arrays, objects (plain keys), bytes("t"), date("ISO-Z"), response(status[, "body"[, {headers}]]), earlier fake names. Emitted as TS, or null. */
 function emitData(e: ts.Expression, c: Ctx, opts: { fakes: boolean; response: boolean }): string | null {
@@ -1273,10 +1286,13 @@ function emitOutcomes(e: ts.Expression, c: Ctx): string | null {
     const xs = e.arguments.map((x) => emitOutcomes(x, c));
     return xs.every((x) => x !== null) ? xs.join(", ") : null;
   }
-  if (!OUTCOMES.has(name) || e.arguments.length > 1) return null;
+  // G18: in the derive-wire language only, rejects / throws take a second argument, the error's fields (wireErrorFields)
+  if (!OUTCOMES.has(name) || e.arguments.length > (c.wire && (name === "rejects" || name === "throws") ? 2 : 1)) return null;
   if (name === "rejects" || name === "throws") {
-    if (e.arguments.length !== 1 || literalString(e.arguments[0]!) === null) return null;
-    return `{ kind: "${name}", value: () => (${JSON.stringify((e.arguments[0] as ts.StringLiteral).text)}) }`;
+    if (e.arguments.length < 1 || literalString(e.arguments[0]!) === null) return null;
+    const fields = e.arguments.length === 2 ? wireErrorFields(e.arguments[1]!) : null;
+    if (e.arguments.length === 2 && fields === null) return null;
+    return `{ kind: "${name}", value: () => (${JSON.stringify((e.arguments[0] as ts.StringLiteral).text)})${fields === null ? "" : `, error: () => (${fields})`} }`;
   }
   const v = e.arguments.length ? emitData(e.arguments[0]!, c, { fakes: true, response: true }) : "undefined";
   return v === null ? null : `{ kind: "${name}", value: () => (${v}) }`;
@@ -1338,7 +1354,7 @@ function emitCall(e: ts.Expression, c: Ctx, fakeKeys: Map<string, Set<string> | 
 }
 
 /** The unique split of `text` at `sep` where both sides satisfy `ok`. */
-function uniqueSplit<T>(text: string, sep: string, ok: (l: string, r: string) => T | null): T | null {
+export function uniqueSplit<T>(text: string, sep: string, ok: (l: string, r: string) => T | null): T | null {
   const hits: T[] = [];
   for (let i = text.indexOf(sep); i !== -1; i = text.indexOf(sep, i + 1)) {
     const r = ok(text.slice(0, i).trim(), text.slice(i + sep.length).trim());
@@ -1354,10 +1370,10 @@ export interface FakeTest { decls: string[]; checks: string[]; calls: CallShape[
  * `- expect CALL rejects with "MSG"` / `- expect CALL throws "MSG"` / `- expect NAME[.k] is called N times`.
  * Every `- fake ` / `- expect ` line must parse; at least one CALL expectation; at most MAX_BULLETS bullets.
  */
-export function parseFakeTest(lines: readonly string[]): FakeTest | null {
+export function parseFakeTest(lines: readonly string[], opts: { wire?: boolean } = {}): FakeTest | null {
   const bullets = lines.filter((l) => /^- (?:fake|expect) /.test(l));
   if (!bullets.length || bullets.length > MAX_BULLETS) return null;
-  const c: Ctx = { fakes: new Map() };
+  const c: Ctx = { fakes: new Map(), wire: !!opts.wire };
   const fakeKeys = new Map<string, Set<string> | null>();
   const decls: string[] = [], checks: string[] = [], calls: CallShape[] = [];
   const names = new Set<string>();
@@ -1365,7 +1381,7 @@ export function parseFakeTest(lines: readonly string[]): FakeTest | null {
     let m = /^- fake ([A-Za-z][\w$]*) = (.+)$/.exec(b);
     if (m) {
       const name = m[1]!;
-      if (c.fakes.has(name) || ["assert", "test", "fakeFn", "settle", "settleSync", "bytes", "date", "response"].includes(name) || GLOBAL_OK[name]) return null;
+      if (c.fakes.has(name) || ["assert", "test", "fakeFn", "settle", "settleSync", "bytes", "date", "response", "failure"].includes(name) || GLOBAL_OK[name]) return null;
       const e = parseExpression(m[2]!);
       if (!e) return null;
       const f = emitFake(e, c) ?? ((d) => (d === null ? null : { code: d, keys: ts.isObjectLiteralExpression(e) ? new Set(e.properties.map((p) => ((p as ts.PropertyAssignment).name as ts.Identifier).text)) : null }))(emitData(e, c, { fakes: true, response: false }));
@@ -1449,7 +1465,7 @@ function settleSync(run: () => unknown): Settled {
 }
 `;
 
-export function emitFakeTest(modPath: string, testPath: string, title: string, t: FakeTest, style: "ts" | "none"): string {
+export function emitFakeTest(modPath: string, testPath: string, title: string, t: FakeTest, style: "ts" | "none", harness: string = FAKE_HARNESS): string {
   const dir = testPath.slice(0, testPath.lastIndexOf("/") + 1);
   const rel = modPath.startsWith(dir) ? `./${modPath.slice(dir.length)}` : null;
   if (!rel) throw new Error("test outside module dir");
@@ -1461,7 +1477,7 @@ export function emitFakeTest(modPath: string, testPath: string, title: string, t
     `import test from "node:test";`,
     `import { ${[...t.names].sort().join(", ")} } from ${JSON.stringify(spec)};`,
     ``,
-    FAKE_HARNESS,
+    harness,
     `test(${JSON.stringify(title)}, async () => {`,
     ...t.decls,
     ...t.checks,
@@ -1579,21 +1595,29 @@ const editablePath = (path: string, isTest: (p: string) => boolean): boolean =>
   !isTest(path) && !isExcludedSource(path) && /^src\/[\w./-]+\.ts$/.test(path) && !path.endsWith(".d.ts") && !PROTECTED_SELF.some((p) => p.pattern.test(path));
 
 /** Every gate for ONE statement edit (oldText -> newText) of `target` in `filePath`; lines[0] is the header line. */
-function gateSuppliedEdit(target: string, filePath: string, split: { oldText: string; newText: string }, lines: readonly string[], files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): { edit: ExistingEdit | null; reason: string | null } {
+function gateSuppliedEdit(target: string, filePath: string, split: { oldText: string; newText: string }, lines: readonly string[], files: readonly { path: string; content: string }[], isTest: (p: string) => boolean, wire = false): { edit: ExistingEdit | null; reason: string | null } {
   const no = (reason: string) => ({ edit: null, reason });
   const g = { target };
   const heads = [lines[0]!];
   const file = files.find((f) => f.path === filePath);
   if (!file || !editablePath(file.path, isTest)) return no("edit_path");
-  if (newGrammarProblem(parseStatements(split.newText) ?? [], true)) return no("edit_new_grammar");
+  if (newGrammarProblem(parseStatements(split.newText) ?? [], true, wire)) return no("edit_new_grammar");
   // every bullet must be a fake or an expect bullet: a stray check is refused, never silently dropped
   if (lines.some((l) => /^[-*+•] /.test(l) && !/^- (?:fake|expect) /.test(l))) return no("edit_test_grammar");
-  const edited = editStatement(file.path, file.content, g.target!, split.oldText, split.newText);
+  const edited = editStatement(file.path, file.content, g.target!, split.oldText, split.newText, wire);
   if (!edited) return no("edit_site");
   // Auditor #489: the edit may not introduce any new capability (global I/O, reflection, `as any`) the base lacked.
   const baseTarget = findTarget(ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true), g.target!);
-  if (baseTarget) { const cap = capabilityDelta(baseTarget.node, edited.target.node); if (cap) return no(cap); }
-  const fakeTest = parseFakeTest(lines);
+  // G18: a derived wire edit must have the wire shape; its capability delta is taken with the catch as `throw error;`
+  let capTarget: Target | null = edited.target;
+  if (wire) {
+    const shape = wireEditShape(file.path, file.content, edited.content, g.target!);
+    if (!shape) return no("wire_shape");
+    capTarget = findTarget(ts.createSourceFile(file.path, shape.stripped, ts.ScriptTarget.Latest, true), g.target!);
+    if (!capTarget) return no("wire_shape");
+  }
+  if (baseTarget) { const cap = capabilityDelta(baseTarget.node, capTarget.node); if (cap) return no(cap); }
+  const fakeTest = parseFakeTest(lines, { wire });
   if (!fakeTest) return no("edit_test_grammar");
   const read: Read = (rel) => { const f = files.find((x) => x.path === rel); return f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null; };
   const before = hermeticProblem(file.path, read, fakeTest.calls, g.target!);
@@ -1606,7 +1630,9 @@ function gateSuppliedEdit(target: string, filePath: string, split: { oldText: st
   const id7 = createHash("sha256").update(`${heads[0]}\n${lines.filter((l) => /^- (?:fake|expect) /.test(l)).join("\n")}`).digest("hex").slice(0, 7);
   const testPath = `${dir}${stem}.${existingEditSlug(g.target!)}-${id7}.test.ts`;
   if (files.some((f) => f.path === testPath)) return no("new_test_path_exists");
-  const content = emitFakeTest(file.path, testPath, `PeaceAI M98: ${g.target} in ${file.path} (statement edit, injected fakes)`, fakeTest, importStyle(files, isTest));
+  const content = wire
+    ? emitFakeTest(file.path, testPath, `PeaceAI G18 derive-wire: ${g.target} in ${file.path} (derived try / catch, injected fakes)`, fakeTest, importStyle(files, isTest), WIRE_FAKE_HARNESS)
+    : emitFakeTest(file.path, testPath, `PeaceAI M98: ${g.target} in ${file.path} (statement edit, injected fakes)`, fakeTest, importStyle(files, isTest));
   return { edit: { path: file.path, content: edited.content, extra: [{ path: testPath, content, create: true }], selfGrade: true }, reason: null };
 }
 
@@ -1653,18 +1679,18 @@ export function editConfinedTarget(path: string, baseText: string, realText: str
   return findTarget(b, t) ? t : null;
 }
 
-const HARNESS_HEAD = (spec: string, names: string): string => `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { ${names} } from ${JSON.stringify(spec)};\n\n${FAKE_HARNESS}`;
+const HARNESS_HEAD = (spec: string, names: string, harness: string = FAKE_HARNESS): string => `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { ${names} } from ${JSON.stringify(spec)};\n\n${harness}`;
 
 /** Data as emitted (emitData's output language), checked on the graded test. */
-function emittedDataOk(e: ts.Expression, decls: ReadonlySet<string>): boolean {
+function emittedDataOk(e: ts.Expression, decls: ReadonlySet<string>, wire = false): boolean {
   const x = e;
   if (ts.isStringLiteral(x)) return x.text.length <= MAX_STRING_CHARS && !REFLECTION.has(x.text);
   if (ts.isNumericLiteral(x)) return true;
   if (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(x.operand)) return true;
   if (x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword) return true;
   if (ts.isIdentifier(x)) return x.text === "undefined" || decls.has(x.text);
-  if (ts.isArrayLiteralExpression(x)) return x.elements.length <= MAX_ARRAY_ITEMS && x.elements.every((y) => !ts.isSpreadElement(y) && !ts.isOmittedExpression(y) && emittedDataOk(y, decls));
-  if (ts.isObjectLiteralExpression(x)) return x.properties.length <= MAX_ARRAY_ITEMS && x.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && !REFLECTION.has(p.name.text) && (emittedDataOk(p.initializer, decls) || emittedFakeFn(p.initializer, decls)));
+  if (ts.isArrayLiteralExpression(x)) return x.elements.length <= MAX_ARRAY_ITEMS && x.elements.every((y) => !ts.isSpreadElement(y) && !ts.isOmittedExpression(y) && emittedDataOk(y, decls, wire));
+  if (ts.isObjectLiteralExpression(x)) return x.properties.length <= MAX_ARRAY_ITEMS && x.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && !REFLECTION.has(p.name.text) && (emittedDataOk(p.initializer, decls, wire) || emittedFakeFn(p.initializer, decls, wire)));
   if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "encode" && ts.isNewExpression(x.expression.expression) && ts.isIdentifier(x.expression.expression.expression) && x.expression.expression.expression.text === "TextEncoder" && !(x.expression.expression.arguments?.length) && x.arguments.length === 1 && ts.isStringLiteral(x.arguments[0]!)) return true;
   if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "Date") return x.arguments?.length === 1 && ts.isStringLiteral(x.arguments[0]!) && ISO_Z.test(x.arguments[0].text);
   if (ts.isNewExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "Response") {
@@ -1674,12 +1700,14 @@ function emittedDataOk(e: ts.Expression, decls: ReadonlySet<string>): boolean {
   }
   return false;
 }
-function emittedFakeFn(e: ts.Expression, decls: ReadonlySet<string>): boolean {
+function emittedFakeFn(e: ts.Expression, decls: ReadonlySet<string>, wire = false): boolean {
   if (!ts.isCallExpression(e) || !ts.isIdentifier(e.expression) || e.expression.text !== "fakeFn" || e.arguments.length !== 1 || !ts.isArrayLiteralExpression(e.arguments[0]!)) return false;
   const os = e.arguments[0].elements;
   return os.length >= 1 && os.length <= 8 && os.every((o) => {
-    if (!ts.isObjectLiteralExpression(o) || o.properties.length !== 2) return false;
-    const [k, v] = o.properties;
+    // G18: a third property `error: () => ({ ..fields })` only in the derive-wire harness, on rejects / throws only
+    if (!ts.isObjectLiteralExpression(o) || !(o.properties.length === 2 || (wire && o.properties.length === 3))) return false;
+    const [k, v, f] = o.properties;
+    if (f && !(ts.isPropertyAssignment(f) && ts.isIdentifier(f.name) && f.name.text === "error" && ts.isArrowFunction(f.initializer) && !f.initializer.parameters.length && ts.isParenthesizedExpression(f.initializer.body) && emittedErrorFieldsOk(f.initializer.body.expression) && k && ts.isPropertyAssignment(k) && ts.isStringLiteral(k.initializer) && (k.initializer.text === "rejects" || k.initializer.text === "throws"))) return false;
     if (!k || !v || !ts.isPropertyAssignment(k) || !ts.isPropertyAssignment(v) || !ts.isIdentifier(k.name) || k.name.text !== "kind" || !ts.isStringLiteral(k.initializer) || !OUTCOMES.has(k.initializer.text)) return false;
     if (!ts.isIdentifier(v.name) || v.name.text !== "value" || !ts.isArrowFunction(v.initializer) || v.initializer.parameters.length || !ts.isParenthesizedExpression(v.initializer.body)) return false;
     return emittedDataOk(v.initializer.body.expression, decls);
@@ -1690,7 +1718,7 @@ function emittedFakeFn(e: ts.Expression, decls: ReadonlySet<string>): boolean {
  * Re-read a graded M98 test: the fixed import lines and harness, then ONE `test(..)` whose body is only fake
  * declarations (in the emitted language) and the emitted assertions. Returns the calls with their injections.
  */
-export function gradedTestCalls(testPath: string, content: string, modPath: string): CallShape[] | null {
+export function gradedTestCalls(testPath: string, content: string, modPath: string, wire = false): CallShape[] | null {
   const dir = testPath.slice(0, testPath.lastIndexOf("/") + 1);
   if (!modPath.startsWith(dir)) return null;
   const sf = ts.createSourceFile(testPath, content, ts.ScriptTarget.Latest, true);
@@ -1702,7 +1730,8 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
   if (spec !== rel && spec !== rel.replace(/\.ts$/, "")) return null;
   const names = imp.importClause.namedBindings.elements.map((e) => (e.propertyName ? "" : e.name.text));
   if (names.some((n) => !n)) return null;
-  const head = HARNESS_HEAD(spec, names.join(", "));
+  // G18: a derive-wire edit's test carries the wire harness (error fields); every other test the M98 harness, byte for byte
+  const head = HARNESS_HEAD(spec, names.join(", "), wire ? WIRE_FAKE_HARNESS : FAKE_HARNESS);
   if (!content.startsWith(head)) return null;
   const restSf = ts.createSourceFile(testPath, content.slice(head.length), ts.ScriptTarget.Latest, true);
   if (diag(restSf) || restSf.statements.length !== 1) return null;
@@ -1722,7 +1751,7 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
   const argsOf = (xs: readonly ts.Expression[]): Injection["args"] | null => {
     const out: Injection["args"] = [];
     for (const x of xs) {
-      if (!ts.isAsExpression(x) || x.type.kind !== ts.SyntaxKind.NeverKeyword || !emittedDataOk(x.expression, decls)) return null;
+      if (!ts.isAsExpression(x) || x.type.kind !== ts.SyntaxKind.NeverKeyword || !emittedDataOk(x.expression, decls, wire)) return null;
       out.push(injOf(x.expression));
     }
     return out;
@@ -1733,7 +1762,7 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
       const d = s.declarationList.declarations[0]!;
       if (!ts.isIdentifier(d.name) || !d.initializer || d.type || decls.has(d.name.text) || names.includes(d.name.text)) return null;
       const init = d.initializer;
-      if (!(emittedFakeFn(init, decls) || emittedDataOk(init, decls))) return null;
+      if (!(emittedFakeFn(init, decls, wire) || emittedDataOk(init, decls, wire))) return null;
       keysOf.set(d.name.text, ts.isObjectLiteralExpression(init) ? new Set(init.properties.filter((p) => ts.isPropertyAssignment(p) && p.initializer.kind !== ts.SyntaxKind.NullKeyword).map((p) => ((p as ts.PropertyAssignment).name as ts.Identifier).text)) : null);
       decls.add(d.name.text);
       continue;
@@ -1789,9 +1818,14 @@ export function gradeExistingEditProblem(modPath: string, baseText: string, real
   const btNode = findTarget(ts.createSourceFile(modPath, baseText, ts.ScriptTarget.Latest, true), target);
   const rtNode = findTarget(ts.createSourceFile(modPath, realText, ts.ScriptTarget.Latest, true), target);
   if (!btNode || !rtNode) return "edit_not_confined";
-  const capB = capabilityDelta(btNode.node, rtNode.node);
+  // G18: a derive-wire edit (one own statement wrapped in try / catch, the catch in the closed wire grammar) is checked
+  // with its catch replaced by `throw error;` (wireEditShape); every other edit exactly as before.
+  const wire = wireEditShape(modPath, baseText, realText, target);
+  const capNode = wire ? findTarget(ts.createSourceFile(modPath, wire.stripped, ts.ScriptTarget.Latest, true), target) : rtNode;
+  if (!capNode) return "edit_not_confined";
+  const capB = capabilityDelta(btNode.node, capNode.node);
   if (capB) return capB;
-  const calls = gradedTestCalls(testPath, testContent, modPath);
+  const calls = gradedTestCalls(testPath, testContent, modPath, !!wire);
   if (!calls) return "edit_test_shape";
   const after = hermeticProblem(modPath, read, calls, target, { path: modPath, content: realText });
   if (typeof after === "string") return after;
@@ -1804,4 +1838,233 @@ export function gradeExistingEditProblem(modPath: string, baseText: string, real
 export function existingEditReads(modPath: string, read: Read): string[] | null {
   const c = loadClosure(modPath, read);
   return typeof c === "string" ? null : [...c.files.keys()].sort();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G18 (public-derive-wire-v1, kind EXISTING_EDIT): the shared Job A / Job B pieces of a DERIVED try / catch wrap.
+//
+// The search (which statement, which catch) lives in derive-wire.ts. Here: the spec vocabulary, the closed catch grammar
+// (WIRE_ARG_FORMS, an eligible string-line helper), the structural recognizer both jobs use (wireEditShape), the wire
+// fake language (a rejects / throws outcome may carry the error's fields: code, name, cause { code, name, message })
+// and its fixed harness. A wire edit is gated with its catch replaced by `throw error;` (the try wrapper and the added
+// `await` add nothing), and the catch itself must match the grammar exactly, so the inserted code can only call an
+// existing, pure, string-concatenating helper of the same module with fixed reads of the caught error.
+// ---------------------------------------------------------------------------------------------------------------
+/** The derive-wire spec's params: the M98 keys, three of them with their own one-value vocabulary (all or none). */
+export const WIRE_VOCAB: Record<(typeof EXISTING_EDIT_PARAM_KEYS)[number], readonly string[]> = {
+  fakes: ["recorded-object-literal-v1-error-fields"],
+  grading: ["self-fail-before-pass-after-assertions"],
+  io: ["injected-only-v1"],
+  match: ["derived-unique-call-site-v1"],
+  paths: ["in-scope-source"],
+  statements: ["derived-try-catch-wrap-v1"],
+  target: ["named-function-or-class-method"],
+  test: ["new-file-fake-driven"],
+};
+export function isWireParams(p: Record<string, unknown>): boolean {
+  return Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && WIRE_VOCAB[k].length === 1 && WIRE_VOCAB[k].includes(p[k] as string));
+}
+
+/**
+ * The fixed reads of a caught `error` a derived catch may pass to the helper (G21: message, name, code, cause.code,
+ * cause.name, cause.message). Each is total: a thrown non-Error, null or primitive gives "" (or String(error) for the
+ * message), never a TypeError. `id` is how Job A's search names them; the text is what is inserted.
+ */
+export const WIRE_ARG_FORMS: readonly { id: string; text: string }[] = [
+  { id: "message", text: "error instanceof Error ? error.message : String(error)" },
+  { id: "name", text: 'error instanceof Error ? error.name : ""' },
+  { id: "code", text: 'String((error as { code?: unknown } | null)?.code ?? "")' },
+  { id: "cause.code", text: 'String((error as { cause?: { code?: unknown } } | null)?.cause?.code ?? "")' },
+  { id: "cause.name", text: 'String((error as { cause?: { name?: unknown } } | null)?.cause?.name ?? "")' },
+  { id: "cause.message", text: 'String((error as { cause?: { message?: unknown } } | null)?.cause?.message ?? "")' },
+];
+
+/** An error's fields in the wire fake language: { code?, name?, cause?: { code?, name?, message? } }, string literals only, non-empty. */
+const WIRE_FIELDS = new Set(["code", "name", "cause"]);
+const WIRE_CAUSE_FIELDS = new Set(["code", "name", "message"]);
+function fieldsObject(e: ts.Expression, allowed: ReadonlySet<string>, nested: boolean): string | null {
+  if (!ts.isObjectLiteralExpression(e) || !e.properties.length) return null;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const p of e.properties) {
+    if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name) || !allowed.has(p.name.text) || seen.has(p.name.text)) return null;
+    seen.add(p.name.text);
+    if (p.name.text === "cause" && !nested) { const c = fieldsObject(p.initializer, WIRE_CAUSE_FIELDS, true); if (c === null) return null; out.push(`cause: ${c}`); continue; }
+    const v = literalString(p.initializer);
+    if (v === null) return null;
+    out.push(`${p.name.text}: ${JSON.stringify(v)}`);
+  }
+  return `{ ${out.join(", ")} }`;
+}
+export function wireErrorFields(e: ts.Expression): string | null { return fieldsObject(e, WIRE_FIELDS, false); }
+/** The emitted fields object, re-read on the graded test (same shape). */
+function emittedErrorFieldsOk(e: ts.Expression): boolean { return wireErrorFields(e) !== null; }
+
+/** The fixed harness of a derive-wire test (the M98 harness plus error fields; Job B checks it byte for byte). */
+export const WIRE_FAKE_HARNESS = `// G18 (public-derive-wire-v1): every collaborator is a recorded, injected object-literal fake; a rejects / throws
+// outcome may carry the error's fields (code, name, cause); the test reads no clock, environment, network, timer or
+// global, and each outcome is captured, so a pre-edit failure is an assertion failure.
+type ErrorFields = { code?: string; name?: string; cause?: { code?: string; name?: string; message?: string } };
+type Outcome = { kind: "resolves" | "returns" | "rejects" | "throws"; value: () => unknown; error?: () => ErrorFields };
+type Fake = ((...args: unknown[]) => unknown) & { calls: unknown[][] };
+function failure(o: Outcome): Error {
+  const f: ErrorFields = o.error ? o.error() : {};
+  const e = f.cause === undefined ? new Error(String(o.value())) : new Error(String(o.value()), { cause: f.cause });
+  if (f.code !== undefined) Object.assign(e, { code: f.code });
+  if (f.name !== undefined) e.name = f.name;
+  return e;
+}
+function fakeFn(outcomes: Outcome[]): Fake {
+  const calls: unknown[][] = [];
+  const fn = (...args: unknown[]): unknown => {
+    calls.push(args);
+    const o = outcomes[Math.min(calls.length, outcomes.length) - 1]!;
+    if (o.kind === "returns") return o.value();
+    if (o.kind === "resolves") return Promise.resolve(o.value());
+    if (o.kind === "rejects") return Promise.reject(failure(o));
+    throw failure(o);
+  };
+  return Object.assign(fn, { calls });
+}
+type Settled = { ok: true; value: unknown } | { ok: false; message: string };
+async function settle(run: () => unknown): Promise<Settled> {
+  try {
+    return { ok: true, value: await run() };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+function settleSync(run: () => unknown): Settled {
+  try {
+    return { ok: true, value: run() };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+`;
+
+/** A string-line helper: `export function H(a: string, ..): string { return EXPR; }` (1-4 string params), EXPR string literals and params joined by `+`. */
+export interface WireHelper { name: string; params: string[]; expr: ts.Expression }
+export function wireHelper(sf: ts.SourceFile, name: string): WireHelper | null {
+  const decls = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === name);
+  if (decls.length !== 1) return null;
+  const f = decls[0]!;
+  if (!f.body || f.asteriskToken || f.typeParameters || !(ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword) || (ts.getModifiers(f) ?? []).some((m) => m.kind === ts.SyntaxKind.AsyncKeyword || m.kind === ts.SyntaxKind.DeclareKeyword)) return null;
+  if (!f.type || f.type.kind !== ts.SyntaxKind.StringKeyword || f.parameters.length < 1 || f.parameters.length > 4) return null;
+  const params: string[] = [];
+  for (const p of f.parameters) {
+    if (!ts.isIdentifier(p.name) || p.initializer || p.questionToken || p.dotDotDotToken || !p.type || p.type.kind !== ts.SyntaxKind.StringKeyword) return null;
+    params.push(p.name.text);
+  }
+  if (new Set(params).size !== params.length || f.body.statements.length !== 1) return null;
+  const r = f.body.statements[0]!;
+  if (!ts.isReturnStatement(r) || !r.expression) return null;
+  const ok = (e: ts.Expression): boolean => {
+    if (ts.isParenthesizedExpression(e)) return ok(e.expression);
+    if (ts.isStringLiteral(e)) return true;
+    if (ts.isIdentifier(e)) return params.includes(e.text);
+    return ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken && ok(e.left) && ok(e.right);
+  };
+  return ok(r.expression) ? { name, params, expr: r.expression } : null;
+}
+/** The helper's value for string arguments (it only concatenates string literals and its string parameters). */
+export function evalWireHelper(h: WireHelper, args: readonly string[]): string {
+  const ev = (e: ts.Expression): string => {
+    if (ts.isParenthesizedExpression(e)) return ev(e.expression);
+    if (ts.isStringLiteral(e)) return e.text;
+    if (ts.isIdentifier(e)) return args[h.params.indexOf(e.text)]!;
+    const b = e as ts.BinaryExpression;
+    return ev(b.left) + ev(b.right);
+  };
+  return ev(h.expr);
+}
+
+const declaresName = (root: ts.Node, name: string): boolean => {
+  let hit = false;
+  const v = (n: ts.Node): void => {
+    if (hit) return;
+    const nm = (n as { name?: ts.Node }).name;
+    if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n) || ts.isBindingElement(n) || ts.isImportSpecifier(n) || ts.isImportClause(n) || ts.isNamespaceImport(n) || ts.isEnumDeclaration(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n) || ts.isModuleDeclaration(n) || ts.isImportEqualsDeclaration(n)) && nm && ts.isIdentifier(nm) && nm.text === name) { hit = true; return; }
+    ts.forEachChild(n, v);
+  };
+  v(root);
+  return hit;
+};
+
+/** The catch of a wire edit: `catch { continue; }` (inside a loop of the target) or `catch (error) { throw new Error(H(args), { cause: error }); }`. */
+export type WireCatch = { kind: "continue" } | { kind: "rethrow"; helper: string; args: string[] };
+function wireCatchOf(sf: ts.SourceFile, t: Target, tr: ts.TryStatement): WireCatch | string {
+  const cc = tr.catchClause!;
+  const body = cc.block.statements;
+  if (body.length !== 1) return "wire_catch_grammar";
+  const st = body[0]!;
+  if (ts.isContinueStatement(st)) {
+    if (cc.variableDeclaration || st.label) return "wire_catch_grammar";
+    for (let p: ts.Node = tr.parent; p && p !== t.node; p = p.parent) {
+      if (isFunctionLike(p)) return "wire_catch_grammar";
+      if (ts.isForOfStatement(p) || ts.isForStatement(p) || ts.isForInStatement(p) || ts.isWhileStatement(p) || ts.isDoStatement(p)) return { kind: "continue" };
+    }
+    return "wire_catch_grammar";
+  }
+  const v = cc.variableDeclaration;
+  if (!v || !ts.isIdentifier(v.name) || v.name.text !== "error" || v.type || v.initializer) return "wire_catch_grammar";
+  if (!ts.isThrowStatement(st) || !ts.isNewExpression(st.expression)) return "wire_catch_grammar";
+  const ne = st.expression;
+  if (!ts.isIdentifier(ne.expression) || ne.expression.text !== "Error" || ne.typeArguments || ne.arguments?.length !== 2) return "wire_catch_grammar";
+  const [msg, opts] = ne.arguments;
+  if (!opts || !ts.isObjectLiteralExpression(opts) || opts.properties.length !== 1) return "wire_catch_grammar";
+  const cp = opts.properties[0]!;
+  if (!ts.isPropertyAssignment(cp) || !ts.isIdentifier(cp.name) || cp.name.text !== "cause" || !ts.isIdentifier(cp.initializer) || cp.initializer.text !== "error") return "wire_catch_grammar";
+  if (!msg || !ts.isCallExpression(msg) || !ts.isIdentifier(msg.expression) || msg.typeArguments || msg.questionDotToken) return "wire_catch_grammar";
+  const helper = wireHelper(sf, msg.expression.text);
+  if (!helper || helper.name === (t.kind === "function" ? t.name : "") || msg.arguments.length !== helper.params.length) return "wire_catch_helper";
+  const stringParams = t.node.parameters.filter((p) => ts.isIdentifier(p.name) && p.type?.kind === ts.SyntaxKind.StringKeyword).map((p) => (p.name as ts.Identifier).text);
+  const args: string[] = [];
+  for (const a of msg.arguments) {
+    const form = WIRE_ARG_FORMS.find((f) => sameCode(a.getText(sf), f.text));
+    if (form) { args.push(form.id); continue; }
+    if (ts.isIdentifier(a) && stringParams.includes(a.text)) { args.push(`param:${a.text}`); continue; }
+    return "wire_catch_grammar";
+  }
+  // the global Error and the helper are what they look like: neither is re-bound in the module or the target
+  if (declaresName(sf, "Error") || declaresName(t.node, helper.name) || t.node.parameters.some((p) => declaresName(p, "error"))) return "wire_catch_shadow";
+  return { kind: "rethrow", helper: helper.name, args };
+}
+
+/**
+ * Job A and Job B: is the change from `baseText` to `realText` a wire edit of `target`? Exactly one own statement of
+ * the real target is a `try { S' } catch .. { .. }` (no finally) such that putting S back (S' is S, or `return await X`
+ * for the base's `return X`) gives the base file token for token. Null when the edit is not a try wrap (then it is an
+ * ordinary M98 edit, as is a wrap whose catch is outside the wire grammar); else the shape, with
+ * `stripped` = the real text whose catch is `catch (error) { throw error; }` (what the capability delta is taken on).
+ */
+export function wireEditShape(path: string, baseText: string, realText: string, target: string): { stripped: string; catch: WireCatch; site: string } | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, target);
+  if (!t?.node.body) return null;
+  const baseTokens = codeTokens(baseText);
+  const same = (text: string): boolean => { const x = codeTokens(text); return x.length === baseTokens.length && x.every((k, i) => k === baseTokens[i]); };
+  const hits: { tr: ts.TryStatement; inner: string }[] = [];
+  for (const s of ownStatements(t.node.body)) {
+    if (!ts.isTryStatement(s) || !s.catchClause || s.finallyBlock || s.tryBlock.statements.length !== 1) continue;
+    const inner = s.tryBlock.statements[0]!;
+    const forms = [inner.getText(sf)];
+    if (ts.isReturnStatement(inner) && inner.expression && ts.isAwaitExpression(inner.expression)) forms.push(`return ${inner.expression.expression.getText(sf)};`);
+    for (const f of forms) if (same(realText.slice(0, s.getStart(sf)) + f + realText.slice(s.getEnd()))) { hits.push({ tr: s, inner: f }); break; }
+  }
+  if (hits.length !== 1) return null;
+  const { tr, inner } = hits[0]!;
+  // a wrap whose catch is outside the wire grammar is not a wire edit: it stays an ordinary M98 edit (generic gates,
+  // M98 harness), so this recognizer never loosens or changes how a non-wire edit is checked
+  const c = wireCatchOf(sf, t, tr);
+  if (typeof c === "string") return null;
+  const cc = tr.catchClause!;
+  const stripped = realText.slice(0, cc.getStart(sf)) + "catch (error) { throw error; }" + realText.slice(cc.getEnd());
+  return { stripped, catch: c, site: inner };
+}
+
+/** Job A: gate ONE derived wire edit (the derive-wire search's oldText -> newText) through every M98 gate, wire harness. */
+export function gateWireEdit(target: string, filePath: string, split: { oldText: string; newText: string }, lines: readonly string[], files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): { edit: ExistingEdit | null; reason: string | null } {
+  return gateSuppliedEdit(target, filePath, split, lines, files, isTest, true);
 }
