@@ -290,8 +290,52 @@ jobs:
         with:
           name: peaceai-chosen
           path: ${{ runner.temp }}/chosen
-      - name: Open a PR for the chosen candidate
+      # Same hash and stale-base rules as the target-pr job: never open a Workspace PR built on an old base.
+      - name: Check the chosen diff hash (Workspace PR)
+        id: wshash
         if: steps.guard.outputs.open_pr == 'true'
+        env:
+          DIFF_SHA: ${{ needs.record.outputs.diff_sha256 }}
+        run: |
+          set -euo pipefail
+          got="$(sha256sum "$RUNNER_TEMP/chosen/chosen.diff" | awk '{print $1}')"
+          if ! [[ "$DIFF_SHA" =~ ^[0-9a-f]{64}$ ]] || [ "$got" != "$DIFF_SHA" ]; then
+            echo "refused: chosen diff hash does not match the Results record"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+      - name: Stale-base check (Workspace PR)
+        id: wsstale
+        if: steps.guard.outputs.open_pr == 'true' && steps.wshash.outputs.ok == 'true'
+        env:
+          TARGET: ${{ github.repository }}
+          BASE_SHA: ${{ needs.record.outputs.base_sha }}
+          CHOSEN_DIR: ${{ runner.temp }}/chosen
+          BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+          VERDICT_COMMENT_ID: ${{ needs.parse.outputs.comment_id }}
+          VERDICT_SOURCE: ${{ needs.parse.outputs.source }}
+        run: tools/node_modules/.bin/tsx tools/peaceai/bin/verdict-stale.ts
+      - name: Post the Workspace regrade request
+        if: steps.wsstale.outputs.stale == 'true' && steps.wsstale.outputs.ok == 'true'
+        env:
+          BODY_FILE: ${{ runner.temp }}/regrade-comment.md
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY_FILE"
+      - name: Re-queue the Workspace regrade (pending carry)
+        if: steps.wsstale.outputs.stale == 'true' && steps.wsstale.outputs.ok == 'true' && needs.parse.outputs.source == 'comment'
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label peaceai:done >/dev/null
+          gh workflow run peace-task.yml --repo "$GITHUB_REPOSITORY" --ref main
+      - name: Workspace stale base without a regrade request (fail closed)
+        if: steps.wsstale.outputs.stale == 'error' || (steps.wsstale.outputs.stale == 'true' && steps.wsstale.outputs.ok != 'true')
+        env:
+          REASON: ${{ steps.wsstale.outputs.reason }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Verdict recorded: $LABEL right. No PR opened: stale base, ${REASON:-regrade-request-failed}."
+          exit 1
+      - name: Open a PR for the chosen candidate
+        if: steps.guard.outputs.open_pr == 'true' && steps.wshash.outputs.ok == 'true' && steps.wsstale.outputs.stale == 'false'
         working-directory: work
         env:
           # Self-edit (#575): the PR body carries the ws-proof clause a builder-log row needs, from trusted outputs only.
