@@ -1,7 +1,10 @@
 // PeaceAI vs Builder coverage: live-proven only (PeaceAI + repo@sha / validated LIVE_PROVEN_SINCE).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import {
   appendOnly,
@@ -25,6 +28,14 @@ import {
   EXCL_SELF_LABEL,
   isPeaceRealTask,
   isProofOrNoCoverage,
+  isWorkspaceRealTask,
+  makeWorkspaceProofChecker,
+  WORKSPACE_LANDING_SINCE,
+  workspaceRefusal,
+  workspaceTouchRefusal,
+  type DeriveRunFacts,
+  type WorkspaceLandingFacts,
+  type WorkspaceProofChecker,
   LIVE_LANDING,
   liveProvenSkills,
   parseLogEntries,
@@ -465,4 +476,176 @@ test("secondary figure excludes PEACEAI_SELF_CHANGE, is labelled, and never repl
   const real = coverageReport(text, "2026-10-16");
   assert.ok(real.excludingSelfChange.allTime.builderTasks < real.allTime.builderTasks);
   assert.equal(real.excludingSelfChange.allTime.peaceaiAble, real.allTime.peaceaiAble);
+});
+
+// ---- PeaceAI-Workspace landings (Auditor ruling (a)) ----
+
+const WS_DIFF = "diff --git a/docs/ws-note.md b/docs/ws-note.md\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n";
+const WS_DIFF_SHA = createHash("sha256").update(WS_DIFF, "utf8").digest("hex");
+const wsRow = (over: Partial<Fields> = {}): string =>
+  line({
+    seq: 1,
+    date: "2026-10-29",
+    time: "10:00",
+    asked: "Peace's task PeaceAI-Workspace#950 (source: peace): add a docs note",
+    changed: "PeaceAI-Workspace#950, PeaceAI-Workspace@abc1234",
+    why: `PeaceAI derived and landed it; ws-proof: run 111 candidate-1 diff-sha256 ${WS_DIFF_SHA} verdict 555`,
+    skill: "DERIVE_FROM_BEHAVIOR",
+    mark: "PeaceAI-able today",
+    by: "PeaceAI",
+    ...over,
+  });
+const wsVerdict = (over: Record<string, unknown> = {}) =>
+  ({ schema: "peaceai.verdict.v1", issue: 950, runId: "111", commentId: "555", recordedAt: "2026-10-29T16:00:00Z", label: "A", candidateId: "candidate-1", verdict: "right", ...over }) as never;
+const emptyZone = () => ({ why: new Map<string, string>(), shadows: new Set<string>() });
+type FakeOver = { derive?: Partial<DeriveRunFacts> | null; landing?: Partial<WorkspaceLandingFacts> | null };
+const fakeWs = (o: FakeOver = {}): WorkspaceProofChecker => ({
+  derive: (issue, runId, cand) =>
+    o.derive === null || issue !== 950 || runId !== "111" || cand !== "candidate-1"
+      ? null
+      : { latestRunId: "111", target: "PeaceG03/PeaceAI-Workspace", source: "peace", candidate: { eligible: true, operationId: "learned:public-derive-from-behavior-v2@x" }, candidateDiffSha256: WS_DIFF_SHA, candidateDiff: WS_DIFF, verdicts: [wsVerdict()], ...o.derive },
+  landing: (sha) =>
+    o.landing === null || sha !== "abc1234"
+      ? null
+      : { onMain: true, appliedTree: "t1", landingTree: "t1", touched: [{ path: "docs/ws-note.md", status: "A" }], zone: emptyZone(), ...o.landing },
+});
+const wsEntry = (over: Partial<Fields> = {}) => parseLogEntries(wsRow(over) + "\n")[0]!;
+
+test("Workspace landing: counts only with the full PeaceSTOCKS-equivalent proof (positive case)", () => {
+  assert.equal(validateLog(wsRow() + "\n").length, 0, "the proof row is a valid log row");
+  assert.equal(workspaceRefusal(wsEntry(), fakeWs()), null);
+  assert.equal(isWorkspaceRealTask(wsEntry(), fakeWs()), true);
+  const r = coverageReport(wsRow() + "\n", "2026-10-29", { workspace: fakeWs() });
+  assert.equal(r.allTime.peaceaiAble, 1);
+  assert.equal(r.allTime.builderTasks, 1);
+  assert.equal(coverageReport(wsRow() + "\n", "2026-10-29").allTime.peaceaiAble, 0, "no checker: fail closed");
+});
+
+test("Workspace landing negatives: hash mismatch, not on main, missing verdict, protected/never-zone path, Builder row, dry run, live proof", () => {
+  const no = (code: string, e: ReturnType<typeof wsEntry>, chk: WorkspaceProofChecker | null) => {
+    assert.equal(workspaceRefusal(e, chk), code);
+    assert.equal(isWorkspaceRealTask(e, chk), false);
+  };
+  // Hash mismatch: the clause's sha256 is not the recorded candidate diff, or the recorded bytes differ.
+  no("W_HASH_MISMATCH", wsEntry({ why: `ws-proof: run 111 candidate-1 diff-sha256 ${"0".repeat(64)} verdict 555` }), fakeWs());
+  no("W_HASH_MISMATCH", wsEntry(), fakeWs({ derive: { candidateDiff: WS_DIFF + " " } }));
+  // Landing tree is not the candidate applied to the parent (not byte-identical).
+  no("W_TREE_MISMATCH", wsEntry(), fakeWs({ landing: { appliedTree: "t2" } }));
+  no("W_TREE_MISMATCH", wsEntry(), fakeWs({ landing: { appliedTree: null } }));
+  // Sha not on Workspace main.
+  no("W_NOT_ON_MAIN", wsEntry(), fakeWs({ landing: { onMain: false } }));
+  // Verdict missing / not Peace's standing pick / names another comment.
+  no("W_NO_VERDICT", wsEntry(), fakeWs({ derive: { verdicts: [] } }));
+  no("W_NO_VERDICT", wsEntry(), fakeWs({ derive: { verdicts: [wsVerdict({ verdict: "wrong", candidateId: null, label: "none" })] } }));
+  no("W_NO_VERDICT", wsEntry(), fakeWs({ derive: { verdicts: [wsVerdict(), wsVerdict({ commentId: "556", recordedAt: "2026-10-29T17:00:00Z", verdict: "unsure", label: "none", candidateId: null })] } }));
+  no("W_NO_VERDICT", wsEntry({ why: `ws-proof: run 111 candidate-1 diff-sha256 ${WS_DIFF_SHA} verdict 999` }), fakeWs());
+  // Protected / never-zone path touched.
+  no("W_PROTECTED", wsEntry(), fakeWs({ landing: { touched: [{ path: "docs/ws-note.md", status: "A" }, { path: ".github/workflows/x.yml", status: "A" }] } }));
+  no("W_PROTECTED", wsEntry(), fakeWs({ landing: { touched: [{ path: "builder-log/coverage.ts", status: "M" }] } }));
+  no("W_PROTECTED", wsEntry(), fakeWs({ landing: { touched: [{ path: "src/text.test.ts", status: "M" }] } }));
+  no("W_PROTECTED", wsEntry(), fakeWs({ landing: { touched: [{ path: "src/text.ts", status: "M" }], zone: { why: new Map([["src/text.ts", "imported by never-zone file x"]]), shadows: new Set() } } }));
+  no("W_PROTECTED", wsEntry(), fakeWs({ landing: { touched: [{ path: "src/new.ts", status: "A" }], zone: { why: new Map(), shadows: new Set(["src/new.ts"]) } } }));
+  // Builder-authored rows (and Builder PRs logged before the cutoff, e.g. seq 221-225) never count.
+  no("W_NOT_PEACEAI", wsEntry({ by: "Builder" }), fakeWs());
+  no("W_BEFORE_SINCE", wsEntry({ date: "2026-10-28", time: "23:59" }), fakeWs());
+  assert.ok("2026-10-28 23:59" < WORKSPACE_LANDING_SINCE);
+  // Dry run asked for / dry-run derive (no Results record for the run) / superseded run / not a learned candidate.
+  no("W_DRY_RUN", wsEntry({ asked: "Peace's task PeaceAI-Workspace#950 (source: peace): dry run of the derive" }), fakeWs());
+  no("W_NO_DERIVE_RUN", wsEntry(), fakeWs({ derive: null }));
+  no("W_NO_DERIVE_RUN", wsEntry(), fakeWs({ derive: { latestRunId: "112" } }));
+  no("W_NOT_REAL_DERIVE", wsEntry(), fakeWs({ derive: { candidate: { eligible: true, operationId: "supplied:hand" } } }));
+  no("W_NOT_REAL_DERIVE", wsEntry(), fakeWs({ derive: { target: "PeaceG03/PeaceSTOCKS" } }));
+  // Live proof / coverage:none.
+  no("W_COVERAGE_NONE", wsEntry({ coverage: "none", why: `live proof row; ws-proof: run 111 candidate-1 diff-sha256 ${WS_DIFF_SHA} verdict 555` }), fakeWs());
+  // Shape: no proof clause, no source tag, two landings, a PeaceSTOCKS landing mixed in, no checker, checker throws.
+  no("W_NO_PROOF", wsEntry({ why: "PeaceAI derived and landed it, trust me" }), fakeWs());
+  no("W_NOT_SOURCE_PEACE", wsEntry({ asked: "Peace's task PeaceAI-Workspace#950: add a docs note" }), fakeWs());
+  no("W_LANDING", wsEntry({ changed: "PeaceAI-Workspace#950, PeaceAI-Workspace@abc1234, PeaceAI-Workspace@abc1235" }), fakeWs());
+  no("W_LANDING", wsEntry({ changed: "PeaceAI-Workspace#950, PeaceAI-Workspace@abc1234, PeaceSTOCKS@abc1236" }), fakeWs());
+  no("W_NO_CHECKER", wsEntry(), null);
+  no("W_LOOKUP_FAILED", wsEntry(), { derive: () => { throw new Error("results missing"); }, landing: () => null });
+  no("W_LOOKUP_FAILED", wsEntry(), fakeWs({ landing: null }));
+});
+
+test("workspaceTouchRefusal: new docs and new src modules/tests pass; protected, never-zone, existing tests and shadows refuse", () => {
+  assert.equal(workspaceTouchRefusal("docs/ws-note.md", "A", emptyZone()), null);
+  assert.equal(workspaceTouchRefusal("src/brand-new.ts", "A", emptyZone()), null);
+  assert.equal(workspaceTouchRefusal("src/brand-new.test.ts", "A", emptyZone()), null);
+  assert.match(workspaceTouchRefusal("src/theme.test.ts", "M", emptyZone()) ?? "", /existing test/);
+  assert.match(workspaceTouchRefusal("peaceai/lib/derive.ts", "M", emptyZone()) ?? "", /protected|never-zone/);
+  assert.match(workspaceTouchRefusal("package.json", "M", emptyZone()) ?? "", /protected|never-zone/);
+});
+
+test("Workspace landing with real git + Results dirs: byte-identical landing counts; altered landing or protected path refuses", () => {
+  const root = mkdtempSync(join(tmpdir(), "cov-ws-test-"));
+  try {
+    const repo = join(root, "ws"), results = join(root, "results");
+    const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@e", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@e", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", env }).trim();
+    mkdirSync(repo);
+    git("init", "-q", "-b", "main");
+    writeFileSync(join(repo, "README.md"), "hello\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const land = (files: Record<string, string>, extra: Record<string, string> = {}) => {
+      git("checkout", "-q", "main");
+      git("checkout", "-q", "-b", `c${Math.random().toString(36).slice(2)}`);
+      for (const [f, t] of Object.entries(files)) { mkdirSync(dirname(join(repo, f)), { recursive: true }); writeFileSync(join(repo, f), t); }
+      git("add", "-A");
+      const diff = execFileSync("git", ["-C", repo, "diff", "--cached", "--binary", "--full-index", "--no-color", "--no-ext-diff", "--no-renames"], { encoding: "utf8", env });
+      for (const [f, t] of Object.entries(extra)) writeFileSync(join(repo, f), t);
+      git("add", "-A");
+      git("commit", "-qm", "landing");
+      const sha = git("rev-parse", "HEAD");
+      git("checkout", "-q", "main");
+      git("merge", "-q", "--ff-only", sha);
+      return { diff, sha };
+    };
+    const record = (issue: number, run: string, diff: string) => {
+      const d = join(results, "tasks", String(issue), run);
+      mkdirSync(join(d, "candidates"), { recursive: true });
+      mkdirSync(join(d, "verdicts"), { recursive: true });
+      writeFileSync(join(d, "task.json"), JSON.stringify({ issue, runId: run, source: "peace", target: "PeaceG03/PeaceAI-Workspace" }));
+      writeFileSync(join(d, "ranking.json"), JSON.stringify({ candidates: [{ id: "candidate-1", eligible: true, operationId: "learned:public-derive-from-behavior-v2@x" }] }));
+      writeFileSync(join(d, "candidates", "candidate-1.diff"), diff);
+      writeFileSync(join(d, "verdicts", "555.json"), JSON.stringify(wsVerdict({ issue, runId: run })));
+      return createHash("sha256").update(diff, "utf8").digest("hex");
+    };
+    const row = (issue: number, run: string, sha: string, diffSha: string) =>
+      wsEntry({ asked: `Peace's task PeaceAI-Workspace#${issue} (source: peace): docs`, changed: `PeaceAI-Workspace#${issue}, PeaceAI-Workspace@${sha}`, why: `ws-proof: run ${run} candidate-1 diff-sha256 ${diffSha} verdict 555` });
+    const chk = makeWorkspaceProofChecker(repo, results);
+
+    const good = land({ "docs/ws-note.md": "a note\n" });
+    assert.equal(workspaceRefusal(row(950, "111", good.sha, record(950, "111", good.diff)), chk), null);
+
+    const altered = land({ "docs/ws-two.md": "two\n" }, { "README.md": "edited by hand\n" });
+    assert.equal(workspaceRefusal(row(951, "112", altered.sha, record(951, "112", altered.diff)), chk), "W_TREE_MISMATCH");
+
+    const prot = land({ ".github/workflows/x.yml": "on: push\n" });
+    assert.equal(workspaceRefusal(row(952, "113", prot.sha, record(952, "113", prot.diff)), chk), "W_PROTECTED");
+
+    git("checkout", "-q", "-b", "side");
+    const off = land({ "docs/ws-off.md": "off\n" });
+    git("reset", "-q", "--hard", "HEAD~1");
+    assert.equal(workspaceRefusal(row(953, "114", off.sha, record(953, "114", off.diff)), chk), "W_NOT_ON_MAIN");
+
+    record(950, "120", good.diff);
+    assert.equal(workspaceRefusal(row(950, "111", good.sha, createHash("sha256").update(good.diff, "utf8").digest("hex")), chk), "W_NO_DERIVE_RUN", "superseded by a later run");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("real log: the Workspace path changes nothing today (91/222); seq 221-225 never count even with an accept-all checker", () => {
+  const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
+  const acceptAll: WorkspaceProofChecker = {
+    derive: (_i, runId, cand) => ({ latestRunId: runId, target: "PeaceG03/PeaceAI-Workspace", source: "peace", candidate: { eligible: true, operationId: "learned:x" }, candidateDiffSha256: null, candidateDiff: null, verdicts: [wsVerdict({ runId, candidateId: cand })] }),
+    landing: () => ({ onMain: true, appliedTree: "t", landingTree: "t", touched: [{ path: "docs/x.md", status: "A" }], zone: emptyZone() }),
+  };
+  const onMain = () => true;
+  const base = coverageReport(text, "2026-10-28", { onMain });
+  const withWs = coverageReport(text, "2026-10-28", { onMain, workspace: acceptAll });
+  assert.equal(withWs.allTime.peaceaiAble, base.allTime.peaceaiAble);
+  assert.equal(withWs.allTime.builderTasks, base.allTime.builderTasks);
+  for (const e of parseLogEntries(text)) assert.equal(isWorkspaceRealTask(e, acceptAll), false, `seq ${e.seq} must not count`);
 });

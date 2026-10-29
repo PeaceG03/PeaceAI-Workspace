@@ -26,6 +26,11 @@ CI (`.github/workflows/builder-log.yml`) checks the schema and that the file at 
 
 - **Builder rows:** countable only with a **live-proven** skill and a non-`missing skill` mark (Auditor #216: history keeps the mark).
 - **PeaceAI real tasks** count in **both** the numerator and the denominator when all of: `by: PeaceAI`, asked contains `(source: peace)`, `PeaceSTOCKS@<sha>` is an ancestor of PeaceSTOCKS main, and the entry is not `coverage: "none"`. New proof rows set that optional trailing field (validated by `check.ts`). Historical PeaceAI rows whose prose already says live proof / proof A / no coverage (seqs **28, 30, 31, 35, 59, 60, 85–87, 97, 99, 101**) are listed in `COVERAGE_NONE_SEQS` instead of rewriting the append-only log. New PeaceAI rows with that wording must set the field or `validateLog` fails. Sha-on-main is checked via `PEACESTOCKS_CLONE` (`git merge-base --is-ancestor`); without a clone the check **fails closed** (no real-task credit).
+- **PeaceAI-Workspace real tasks** (Auditor ruling (a), 2026-10-28) count the same way, only with the same proof as a PeaceSTOCKS landing, checked by `isWorkspaceRealTask` in `coverage.ts` (fail closed):
+  - the row: `by: PeaceAI`, `(source: peace)` in asked, not `coverage: "none"`, asked does not say dry run, dated at or after `WORKSPACE_LANDING_SINCE` (**2026-10-29 00:00 MT**, so seq 221-225 and every Builder-written PR stay at 0: no backdating), exactly one `PeaceAI-Workspace#N` and one `PeaceAI-Workspace@<sha>` in `changed` and no `PeaceSTOCKS@`, and exactly one proof clause in `why`: `ws-proof: run <runId> candidate-<n> diff-sha256 <64 hex> verdict <commentId>`;
+  - the derive run (Results `tasks/<N>/<runId>/`, read-only): the latest run for the issue, target PeaceAI-Workspace, task source `peace`, the candidate eligible with a `learned:` operation, sha256 of its recorded diff bytes equal to the clause, and Peace's recorded verdict `<commentId>` = `right` on that candidate and still the standing pick (`effectiveVerdict`). A dry or practice derive writes no Results task record, so it cannot be named;
+  - the landing (Workspace clone): `<sha>` is an ancestor of main, the candidate diff applied to `<sha>^1` gives exactly `<sha>`'s tree (byte-identical), and no touched path is stage-1 protected (`selfProtectedReason`, incl. `builder-log/`, `.github/`, `peaceai/`), an existing test, a `NEVER_ZONE` pattern, in `computeNeverZone(<sha>^1)`, or a new file shadowing a never-zone import.
+  - Inputs: `WORKSPACE_CLONE` (on main) and `PEACEAI_RESULTS_DIR`. Without both, Workspace landings get no credit (the `builder-log` job sets neither today, so its summary counts none).
 - A skill is live-proven if (a) the log has a `by: PeaceAI` entry with a `PeaceSTOCKS@<sha>` or `PeaceAI-Workspace@<sha>` landing on/before the asOf date, or (b) it is listed in `LIVE_PROVEN_SINCE` in `check.ts`.
 - Every `LIVE_PROVEN_SINCE` entry must name a builder-log `seq` that backs it (`by: PeaceAI`, same skill, `repo@sha` in `changed`). `check.ts` / `validateLog` fail if a map entry is unbacked.
 - Approved-but-unproven skills (`APPROVED_SINCE` only) do **not** count toward Builder rows.
@@ -65,7 +70,8 @@ seq 96 is a PeaceAI landing with its own row; 2f1ff83 is the merge of PeaceSTOCK
 
 Seq 221-225 record Peace's self-zone tasks #399-#403 (public-test-case-existing-v1), landed by PeaceAI through bot verdict PRs #406-#410
 (merge commits 4eb6818, 4d187f8, 9af05b4, 4a69bef, c2c10e1). The Workspace verdict reply names no PR URL, so trace.ts reports them as
-GRANDFATHERED T_NO_PATCH_COMMENT (like seq 124). coverage.ts counts PeaceSTOCKS landings only, so they do not change the figure (39/170).
+GRANDFATHERED T_NO_PATCH_COMMENT (like seq 124). coverage.ts counts PeaceSTOCKS landings only, so they do not change the figure (39/170). The 2026-10-28 Workspace path does not count them
+either: they predate `WORKSPACE_LANDING_SINCE` and carry no `ws-proof:` clause.
 
 ## Batch v7 PeaceSTOCKS landings (2026-10-21)
 
