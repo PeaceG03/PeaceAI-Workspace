@@ -118,7 +118,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/226 on 2026-10-22, 91/274 today (S3 catch-up seq 282-333) with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/226 on 2026-10-22, 91/276 today (S3 catch-up seq 282-333 + seq 334-335 for #575/#578) with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -209,11 +209,15 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
   assert.equal(r22.allTime.percent, 39.4);
   // S1/S2 (seq 276-277, #501/#502 on public-derive-from-behavior-v1, DERIVE_FROM_BEHAVIOR, landed 2026-10-24 22:07 MT through
   // verdict PRs PeaceSTOCKS#70/#71 as merge commits d6f3da9 and 0bbb039): +2 PeaceAI real tasks -> 91/222.
-  // + the S3 catch-up's 52 Builder rows (seq 282-333), denominator only: 91/274. The numerator and the secondary figure
-  // excluding PEACEAI_SELF_CHANGE (91/130) do not move.
+  // + the S3 catch-up's 52 Builder rows (seq 282-333), denominator only: 91/274 (33.2%). The numerator and the secondary
+  // figure excluding PEACEAI_SELF_CHANGE (91/130) do not move.
+  // + seq 334 (#575, merged 2026-10-28 23:46 MT) and seq 335 (#578, merged 2026-10-29 00:09 MT), Builder
+  // PEACEAI_SELF_CHANGE rows, denominator only: 91/275 (33.1%) on 2026-10-28 and 91/276 (33%) from 2026-10-29.
+  assert.equal(coverageReport(text, "2026-10-28", { onMain }).allTime.builderTasks, 275);
+  assert.equal(coverageReport(text, "2026-10-28", { onMain }).allTime.percent, 33.1);
   assert.equal(today.allTime.peaceaiAble, 91);
-  assert.equal(today.allTime.builderTasks, 274);
-  assert.equal(today.allTime.percent, 33.2);
+  assert.equal(today.allTime.builderTasks, 276);
+  assert.equal(today.allTime.percent, 33);
   assert.equal(today.excludingSelfChange.allTime.peaceaiAble, 91);
   assert.equal(today.excludingSelfChange.allTime.builderTasks, 130);
   // Health-check slice 1 (seq 278-281, team-picked #513-#516 on DERIVE_FROM_BEHAVIOR v1/v1/v1/v2, landed 2026-10-26 01:09 MT
@@ -223,9 +227,9 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
     const e = parseLogEntries(text).find((x) => x.seq === seq)!;
     assert.equal(isPeaceRealTask(e, onMain), false);
   }
-  // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/185 (133 + 52 S3 rows).
+  // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/187 (133 + 52 S3 rows + seq 334-335).
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
-  assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 185);
+  assert.equal(coverageReport(text, denverYmd()).allTime.builderTasks, 187);
 });
 
 test("unbacked LIVE_PROVEN_SINCE entry fails validation", () => {
@@ -636,7 +640,7 @@ test("Workspace landing with real git + Results dirs: byte-identical landing cou
   }
 });
 
-test("real log: the Workspace path changes nothing today (91/222); seq 221-225 never count even with an accept-all checker", () => {
+test("real log: the Workspace path changes nothing today (still 91 in the numerator); seq 221-225 never count even with an accept-all checker", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   const acceptAll: WorkspaceProofChecker = {
     derive: (_i, runId, cand) => ({ latestRunId: runId, target: "PeaceG03/PeaceAI-Workspace", source: "peace", candidate: { eligible: true, operationId: "learned:x" }, candidateDiffSha256: null, candidateDiff: null, verdicts: [wsVerdict({ runId, candidateId: cand })] }),

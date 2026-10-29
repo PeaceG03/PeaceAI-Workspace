@@ -39,11 +39,11 @@ Also noted: no genuine PeaceSTOCKS target for `public-complex-calls-v1` (it only
 
 # Ranked gap list (S3, 2026-10-28)
 
-Built from `tasks.jsonl` entries 1-333. Count = entries marked `missing skill <SKILL>`, as written at the time (append-only; marks are not rewritten; retags not applied).
+Built from `tasks.jsonl` entries 1-335. Count = entries marked `missing skill <SKILL>`, as written at the time (append-only; marks are not rewritten; retags not applied).
 
 | rank | skill | entries | learnable as a PeaceAI edit kind | seqs |
 |---:|---|---:|---|---|
-| 1 | PEACEAI_SELF_CHANGE | 144 | no (protected by design); see the split below | 2-68 (25), 146-212, 282-333 |
+| 1 | PEACEAI_SELF_CHANGE | 146 | no (protected by design); see the split below | 2-68 (25), 146-212, 282-335 |
 | 2 | OPS_ACTION | 13 | no (no code edit) | 1, 3, 5, 14, 32, 36, 48, 56, 62, 63, 64, 65, 73 |
 | 3 | COMPLEX_FUNCTION | 9 | approved since (loop-free v1) | 8, 12, 17, 19, 22, 70, 71, 77, 78 |
 | 4 | WORKFLOW_JOB | 6 | approved since (v1) | 15, 20, 24, 72, 214, 215 |
@@ -55,17 +55,17 @@ Built from `tasks.jsonl` entries 1-333. Count = entries marked `missing skill <S
 | 10 | CHECK_OBJECT_LITERAL_ARGS | 1 | approved since (objargs) | 25 |
 | 10 | IMPORT_EDIT | 1 | approved since (v2) | 6 |
 
-The S3 rows (282-333) are all PEACEAI_SELF_CHANGE and split by what PeaceAI would need:
+The S3 rows (282-335, incl. 334-335 for #575/#578) are all PEACEAI_SELF_CHANGE and split by what PeaceAI would need:
 
 | need | rows | seqs |
 |---|---:|---|
-| self-change inside the stage-2 never-zone (selfchange.ts NEVER_ZONE or its closure); not proposable at all | 46 | 282-295, 297-302, 305-309, 311-316, 318-320, 322-333 |
+| self-change inside the stage-2 never-zone (selfchange.ts NEVER_ZONE or its closure); not proposable at all | 48 | 282-295, 297-302, 305-309, 311-316, 318-320, 322-335 |
 | a stage-2 generator plus the stage-2 flag ON, and a grading path for tests-only changes (new tests cannot fail on the base) | 6 | 296, 303, 304, 310, 317, 321 |
 
-Most-hit never-zone areas in the 46 rows: workflows and their run closure (LM retrain/judge: peaceai/model/, peaceai/bin/*.sh, .github),
+Most-hit never-zone areas in the 48 rows: workflows and their run closure (LM retrain/judge: peaceai/model/, peaceai/bin/*.sh, .github),
 the learned-rule records under peaceai/rules/ (every new derive/test-existing rule version), and the self-change rules themselves
 (stage-2 work). The smallest unlock is the 6 tests-only rows: they need the generator and flag, not a never-zone change.
 
-`coverage.ts` applies retags and live-proof, so its "Top missing skills" differs from this marks-as-written table: on 2026-10-28 it reads
-PEACEAI_SELF_CHANGE 144, OPS_ACTION 13, WORKFLOW_JOB 6, LOOP_FUNCTION 5, ENV_FIX 4, METHOD_GUARD 2, MODIFY_LOGIC 2, TSCONFIG_SCRIPT 2,
+`coverage.ts` applies retags and live-proof, so its "Top missing skills" differs from this marks-as-written table: on 2026-10-29 it reads
+PEACEAI_SELF_CHANGE 146, OPS_ACTION 13, WORKFLOW_JOB 6, LOOP_FUNCTION 5, ENV_FIX 4, METHOD_GUARD 2, MODIFY_LOGIC 2, TSCONFIG_SCRIPT 2,
 WORKFLOW_STEP 2, CHECK_OBJECT_LITERAL_ARGS 1.

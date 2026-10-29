@@ -147,6 +147,11 @@ task spec (seq 278-281 record that only as provenance on PeaceAI's landing rows)
 Coverage: the numerator is unchanged and the denominator grows by 52, so the official figure becomes 91/274 (33.2%) from
 2026-10-28 (89/226 on 2026-10-22). The secondary figure excluding PEACEAI_SELF_CHANGE stays 91/130.
 
+Seq 334-335 log the two Builder PRs merged after the catch-up was written, in the same style: #575 (2026-10-28 23:46 MT, Workspace
+landing proof in coverage.ts; never-zone: builder-log/) and #578 (2026-10-29 00:09 MT, M132 name-mention narrowing; never-zone: the
+self-change rules and a peaceai/ data file). Both are denominator only: 91/275 (33.1%) on 2026-10-28 and 91/276 (33.0%) from
+2026-10-29. The secondary figure stays 91/130.
+
 ## Try PeaceAI first (team rule, Auditor ruling 2026-10-28)
 
 Every PeaceAI-Workspace or PeaceSTOCKS coding task Builder would write is first filed as a peace-task issue for PeaceAI. Builder
