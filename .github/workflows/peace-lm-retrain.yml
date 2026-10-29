@@ -60,8 +60,8 @@ name: peace-lm-retrain
 # Run 40694718190 follow-up (Auditor's ruling; the pretrain candidate lm-v1-858573767465 landed but its strict memcheck
 #   FAILed): (1) pretrain mode uses lm-memcheck.ts's existing two-corpus mode, no new rule: PEACEAI_LM_TRAIN_CORPUS = the
 #   replay corpus, PEACEAI_LM_FT_CORPUS = the fine-tune corpus, both rebuilt in the memcheck job; the replay link is the
-#   live model's corefree-proof.json (sha256 pinned, lm-retrain.json live.corefreeProofSha256) checked against the live
-#   training manifest rebuilt in the job (replay_corpus.py --manifest-out, sha256 = replay.manifestSha256), the fine-tune
+#   live model's corefree-proof.json (sha256 pinned, lm-retrain.json replayBase.corefreeProofSha256) checked against the live
+#   training manifest rebuilt in the job (replay_corpus.py --manifest-out, sha256 = replayBase.manifestSha256), the fine-tune
 #   link is corpus-gate's proof (sha256 from the run record). Any missing or mismatched link: FAIL (never the strict
 #   fallback); line, shingle and personal-info hits stay hard. Initial weights vs the live model: a note, not a check.
 #   (2) memcheck-only (input memcheck_only_run_id, real runs only): corpus-gate rebuilds and proves the corpora; the sweep
@@ -245,7 +245,7 @@ jobs:
           git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
           test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
           printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
-      - name: Restore the live model and the judge items (Results key, read only here; checked against latest.json and the weights sha)
+      - name: Restore the live model and the judge items (Results key, read only here; lm-retrain.json replayBase, never latest.json; weights sha checked)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
         run: ./peaceai/bin/lm-retrain-live.sh "$RUNNER_TEMP/r"
@@ -359,7 +359,7 @@ jobs:
           git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
           test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
           printf '%s\n' "$RESULTS_SHA256" | sha256sum -c --quiet - || { echo "landing script hash mismatch: key refused"; exit 1; }
-      - name: Restore the live model and the judge items (Results key, read only here; checked against latest.json and the weights sha)
+      - name: Restore the live model and the judge items (Results key, read only here; lm-retrain.json replayBase, never latest.json; weights sha checked)
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
         run: ./peaceai/bin/lm-retrain-live.sh "$RUNNER_TEMP/r"
@@ -567,7 +567,7 @@ jobs:
           cp "$RUNNER_TEMP/corefree-proof-finetune.json" "$RUNNER_TEMP/model/corefree-proof-finetune.json"
           # Provenance under .retrain (not the two-corpus field: that memcheck mode needs a pretrain-corpus proof this run cannot rebuild).
           fts=$(sha256sum "$RUNNER_TEMP/w/ft/manifest.jsonl" | cut -c1-64)
-          jq --arg live "$(jq -r .live.version "$CFG")" --arg f "$fts" --arg l "$(jq -r .list.sha256 "$CFG")" --arg r "$GITHUB_RUN_ID" --arg s "$GITHUB_SHA" \
+          jq --arg live "$(jq -r .replayBase.version "$CFG")" --arg f "$fts" --arg l "$(jq -r .list.sha256 "$CFG")" --arg r "$GITHUB_RUN_ID" --arg s "$GITHUB_SHA" \
             --slurpfile sel "$RUNNER_TEMP/select.json" --arg rm "$(sha256sum "$RUNNER_TEMP/w/replay/manifest.jsonl" | cut -c1-64)" --argjson fr "$(jq --arg m "$(jq -r .mode "$RUNNER_TEMP/select.json")" '.[$m].replayFrac' "$CFG")" \
             --slurpfile ct "$RUNNER_TEMP/candidate-train.json" \
             '.retrain = {mode: $sel[0].mode, initFrom: $live, finetuneManifestSha256: $f, commitListSha256: $l, runId: $r, workspaceSha: $s,
@@ -652,7 +652,7 @@ jobs:
             --arg proof "$(sha256sum "$RUNNER_TEMP/corefree-proof-finetune.json" | cut -c1-64)" \
             --slurpfile rp "$RUNNER_TEMP/w/replay-proof.json" --slurpfile fp "$RUNNER_TEMP/w/ft-prepare.json" \
             --slurpfile rpl "$RUNNER_TEMP/w/replay-plan.json" --arg mode "$(jq -r .mode "$RUNNER_TEMP/select.json")" --arg rs "${RESUME-}" \
-            '{schema: "peaceai-lm-retrain-record:v5", runId: $run, workspaceSha: $ws, mode: $mode, live: $cfg[0].live.version, candidate: (if $v == "" then null else $v end), candidateWeightsSha256: (if $w == "" then null else $w end),
+            '{schema: "peaceai-lm-retrain-record:v5", runId: $run, workspaceSha: $ws, mode: $mode, live: $cfg[0].replayBase.version, candidate: (if $v == "" then null else $v end), candidateWeightsSha256: (if $w == "" then null else $w end),
               commitList: $cfg[0].list, finetune: $cfg[0].finetune, training: $cfg[0][$mode], dedup: $dd[0], finetuneCorefreeProofSha256: $proof,
               ftPrepare: $fp[0], replay: {config: $cfg[0].replay, plan: $rpl[0], overlapProof: $rp[0],
                 corpus: {docsSha256: $rp[0].replayDocsSha256, docsBytes: $rp[0].replayDocsBytes, trainBytes: $rp[0].trainBytes, valBytes: $rp[0].valBytes}},
@@ -762,7 +762,7 @@ jobs:
           ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
           [ -n "$V" ] || V=$(jq -r '.candidate // ""' "$res/runs/lm-retrain/$run/record.json")
           [[ "$V" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad version"; exit 1; }
-          live=$(jq -r .live.version "$CFG"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad live version"; exit 1; }
+          live=$(jq -r .replayBase.version "$CFG"); [[ "$live" =~ ^lm-v1-[0-9a-f]{12}$ ]] || { echo "bad replay base version"; exit 1; }
           ./peaceai/bin/with-deploy-key.sh git -C "$res" sparse-checkout add "/models/lm/$V/" "/models/lm/$live/corefree-proof.json"
           ./peaceai/bin/with-deploy-key.sh git -C "$res" checkout --quiet
           MCO="$MCO" ./peaceai/bin/lm-retrain-memcheck-fetch.sh "$res" "$RUNNER_TEMP" "$run" "$V"

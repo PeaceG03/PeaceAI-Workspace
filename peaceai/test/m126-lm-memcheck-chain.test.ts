@@ -1,7 +1,7 @@
 // M126 (run 40694718190 follow-up; Peace 2026-10-28, Auditor's ruling): the pretrain retrain memcheck uses the EXISTING
 // two-corpus mode of lm-memcheck.ts (PEACEAI_LM_TRAIN_CORPUS = the replay corpus, PEACEAI_LM_FT_CORPUS = the fine-tune
 // corpus), with both proofs verified against the manifests rebuilt in that run: the live model's proof for the live
-// manifest (pin lm-retrain.json live.corefreeProofSha256, manifest replay.manifestSha256) and the corpus-gate fine-tune
+// manifest (pin lm-retrain.json replayBase.corefreeProofSha256, manifest replayBase.manifestSha256; Fix B) and the corpus-gate fine-tune
 // proof (the run record's finetuneCorefreeProofSha256). Anything missing or mismatched FAILs (never the strict
 // fallback); line, shingle and personal-info hits stay hard; no new rule or threshold. The starting-weights link is a
 // note only. Only the replay corpus's train docs explain a hit: fine-tune text never does (pretrain mode trains on
@@ -66,7 +66,7 @@ function fixture(d: string) {
   const cfg = { version: CAND, retrain: { mode: "pretrain", runId: RUN, initFrom: LIVE, finetuneManifestSha256: H(ftMan), replayManifestSha256: H(rpMan), replayCorpus: { manifestSha256: H(rpMan), docsSha256: H(readFileSync(join(rp, "docs.jsonl"))) } } };
   writeFileSync(join(model, "config.json"), JSON.stringify(cfg)); writeFileSync(join(model, "tokenizer.json"), "{}"); writeFileSync(join(model, "weights.npz"), "w");
   const ftProofText = JSON.stringify(ftProof) + "\n"; writeFileSync(join(model, "corefree-proof-finetune.json"), ftProofText);
-  const rc = { live: { version: LIVE, corefreeProofSha256: H(liveProofText) }, replay: { manifestSha256: H(liveMan) } };
+  const rc = { replayBase: { version: LIVE, corefreeProofSha256: H(liveProofText), manifestSha256: H(liveMan) } };
   writeFileSync(join(d, "rc.json"), JSON.stringify(rc));
   // fake inference: core/public prompts continue with "x"; the empty prompts (no prompt text to explain anything)
   // continue with $SAMPLE
@@ -144,9 +144,9 @@ test("M126 two-corpus memcheck: a missing proof, a mismatched manifest or a wron
   fail("live manifest missing", { PEACEAI_LM_LIVE_MANIFEST: undefined }, /pretrain:MANIFEST_MISMATCH/);
   writeFileSync(join(d, "lm2.jsonl"), f.liveMan + line(ext(9, "x\n", "train")) + "\n");
   fail("live manifest rebuilt differently", { PEACEAI_LM_LIVE_MANIFEST: join(d, "lm2.jsonl") }, /pretrain:MANIFEST_MISMATCH/);
-  writeFileSync(join(d, "rc2.json"), JSON.stringify({ live: { version: LIVE, corefreeProofSha256: H(f.liveProofText) }, replay: { manifestSha256: "6".repeat(64) } }));
+  writeFileSync(join(d, "rc2.json"), JSON.stringify({ replayBase: { version: LIVE, corefreeProofSha256: H(f.liveProofText), manifestSha256: "6".repeat(64) } }));
   fail("live manifest pin differs", { PEACEAI_LM_RETRAIN_CFG: join(d, "rc2.json") }, /pretrain:MANIFEST_MISMATCH/);
-  writeFileSync(join(d, "rc3.json"), JSON.stringify({ live: { version: LIVE, corefreeProofSha256: "2".repeat(64) }, replay: { manifestSha256: H(f.liveMan) } }));
+  writeFileSync(join(d, "rc3.json"), JSON.stringify({ replayBase: { version: LIVE, corefreeProofSha256: "2".repeat(64), manifestSha256: H(f.liveMan) } }));
   fail("live proof pin differs", { PEACEAI_LM_RETRAIN_CFG: join(d, "rc3.json") }, /pretrain:PROOF_SHA_MISMATCH/);
   fail("retrain cfg missing", { PEACEAI_LM_RETRAIN_CFG: join(d, "none.json") }, /pretrain:PROOF_SHA_MISMATCH/);
   fail("fine-tune proof sha differs from the record's", { PEACEAI_LM_FT_PROOF_SHA256: "3".repeat(64) }, /finetune:PROOF_SHA_MISMATCH/);
@@ -161,7 +161,7 @@ test("M126 two-corpus memcheck: a missing proof, a mismatched manifest or a wron
   const ftAsPre = JSON.stringify({ ...f.ftProof, corpus: "pretrain" }) + "\n";
   fail("a fine-tune proof labelled pretrain", { PEACEAI_LM_FT_PROOF_SHA256: H(ftAsPre) }, /finetune:SWAPPED_PROOF/, swap(ftp, ftAsPre));
   const otherLive = JSON.stringify({ ...f.liveProof, model: "lm-v1-0000000000bb" }, null, 2) + "\n"; writeFileSync(join(d, "other.json"), otherLive);
-  writeFileSync(join(d, "rc4.json"), JSON.stringify({ live: { version: LIVE, corefreeProofSha256: H(otherLive) }, replay: { manifestSha256: H(f.liveMan) } }));
+  writeFileSync(join(d, "rc4.json"), JSON.stringify({ replayBase: { version: LIVE, corefreeProofSha256: H(otherLive), manifestSha256: H(f.liveMan) } }));
   fail("a live proof for another model", { PEACEAI_LM_LIVE_PROOF: join(d, "other.json"), PEACEAI_LM_RETRAIN_CFG: join(d, "rc4.json") }, /pretrain:OTHER_MODEL/);
   const badCommit = JSON.stringify({ ...f.ftProof, coreCommit: "zz" }) + "\n";
   fail("a fine-tune proof with a malformed coreCommit", { PEACEAI_LM_FT_PROOF_SHA256: H(badCommit) }, /finetune:NO_CORE_COMMIT/, swap(ftp, badCommit));
@@ -274,7 +274,7 @@ function results(d: string, o: { mcFirst?: boolean | object; mode?: string } = {
   const r = join(res, "runs/lm-retrain", RUN); mkdirSync(r, { recursive: true });
   writeFileSync(join(r, "record.json"), JSON.stringify({ runId: Number(RUN), candidate: V, candidateWeightsSha256: ws, finetuneCorefreeProofSha256: H(fp), memcheck: "pending" }));
   if (o.mcFirst !== false) writeFileSync(join(r, "memcheck.json"), JSON.stringify(typeof o.mcFirst === "object" ? o.mcFirst : { status: "FAIL", model: V, files: { "config.json": H(cfg), "tokenizer.json": H(tok), "weights.npz": ws } }));
-  writeFileSync(join(d, "rc.json"), JSON.stringify({ live: { version: LIVE, corefreeProofSha256: H(lp) } }));
+  writeFileSync(join(d, "rc.json"), JSON.stringify({ replayBase: { version: LIVE, corefreeProofSha256: H(lp) } }));
   return { res, V, ws, m, r, fp, lp, cfg, tok };
 }
 const fetch = (d: string, res: string, run: string, V = "", e: Record<string, string> = {}) => {
