@@ -1,11 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import ts from "typescript";
 import { NOREPLY_FROM, patchCommentBody, sha256 } from "../peaceai/lib/patch.ts";
 import type { Entry } from "./check.ts";
-import { GRANDFATHERED, NOT_ATTEMPTED, RIGHT_REPLY, issueOf, lookupCause, makeGhDeps, traceAll, traceErrors, traceLine, type PullView, type ResultsView, type TraceDeps } from "./trace.ts";
+import { GRANDFATHERED, gitPlanInputs, NOT_ATTEMPTED, planTrace, TRACE_CODE_PATHS, RIGHT_REPLY, issueOf, lookupCause, makeGhDeps, traceAll, traceErrors, traceLine, type PullView, type ResultsView, type TraceDeps } from "./trace.ts";
 
 const DIFF = "diff --git a/x.ts b/x.ts\nindex 0000000..1111111 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1,2 @@\n a\n+b\n";
 const PATCH = `From ${"a".repeat(40)} Mon Sep 17 00:00:00 2001\n${NOREPLY_FROM}\nSubject: [PATCH] t\n\n---\n${DIFF}`;
@@ -297,4 +299,102 @@ test("M89: grandfathered 221-225 stay exempt and are reported, not re-traced", a
   for (const s of [221, 222, 223, 224, 225]) assert.match(GRANDFATHERED[s]!, /^T_NO_PATCH_COMMENT: #\d+ is a Workspace self-zone task/);
   const rows = await traceAll([{ ...wsLine(), seq: 221 }], wsDeps());
   assert.equal(rows[0]!.status, "grandfathered");
+});
+
+// ---- PR mode: only appended rows (#590 follow-up: GITHUB_TOKEN quota) ----
+
+const jl = (...es: Entry[]) => es.map((e) => JSON.stringify(e) + "\n").join("");
+const BASE_LOG = jl(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 910), line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 911));
+
+test("planTrace: a log-only append traces rows after the base's last seq; anything uncertain traces in full", () => {
+  const head = BASE_LOG + jl(line("PeaceAI-Workspace#501, PeaceSTOCKS@1234567", 912));
+  const logOnly = ["builder-log/tasks.jsonl", "builder-log/README.md", "builder-log/coverage.test.ts"];
+  assert.deepEqual(planTrace(BASE_LOG, head, logOnly), { full: false, afterSeq: 911 });
+  assert.deepEqual(planTrace(null, head, logOnly), { full: true, reason: "base log unreadable" });
+  assert.deepEqual(planTrace(BASE_LOG, head, null), { full: true, reason: "changed paths unknown" });
+  // An edited, removed or reordered base row (the append-only step fails these too) traces everything.
+  assert.equal(planTrace(BASE_LOG, BASE_LOG.replace("abcdef1", "abcdef2") + head.slice(BASE_LOG.length), logOnly).full, true);
+  assert.equal(planTrace(BASE_LOG, jl(line("PeaceAI-Workspace#500, PeaceSTOCKS@abcdef1", 911)), logOnly).full, true);
+  assert.equal(planTrace("{not json\n", "{not json\n", logOnly).full, true);
+  for (const p of ["builder-log/trace.ts", "builder-log/check.ts", "builder-log/tsconfig.json", "peaceai/lib/patch.ts", "peaceai/lib/new/x.ts", "package.json", "package-lock.json", "tsconfig.json", ".github/workflows/builder-log.yml"])
+    assert.deepEqual(planTrace(BASE_LOG, head, [...logOnly, p]), { full: true, reason: `trace code changed (${p})` }, p);
+  assert.equal(planTrace(BASE_LOG, head, [...logOnly, "src/x.ts", "peaceai/bin/gate.ts", ".github/workflows/ci.yml"]).full, false);
+});
+
+test("PR mode: a fabricated or forged appended row is still traced and still fails; the stale-grandfather check stays on main", async () => {
+  const head = BASE_LOG + jl(line("PeaceAI-Workspace#777, PeaceSTOCKS@1234567", 912));
+  const plan = planTrace(BASE_LOG, head, ["builder-log/tasks.jsonl"]);
+  assert.equal(plan.full, false);
+  const all = head.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
+  const picked = plan.full ? all : all.filter((e) => e.seq > plan.afterSeq);
+  assert.deepEqual(picked.map((e) => e.seq), [912]);
+  const errs = traceErrors(picked, await traceAll(picked, deps()), false);
+  assert.equal(errs.length, 1);
+  assert.match(errs[0]!, /^T_NO_PATCH_COMMENT: seq 912 /);
+  // A forged comment (patch bytes tampered after the hash was posted) on a new row fails as it does in full mode.
+  const forged = comment().replace("+b\n", "+c\n");
+  const r2 = await traceAll([line("PeaceAI-Workspace#500, PeaceSTOCKS@1234567", 912)], deps({ comments: { 500: [forged] } }));
+  assert.match(traceErrors([], r2, false)[0] ?? "", /^T_HASH_MISMATCH: seq 912 /);
+  // full=false only drops the stale-grandfather check (it needs every row); full=true keeps it.
+  assert.ok(Object.keys(GRANDFATHERED).length > 0);
+  assert.ok(traceErrors([], [], true).some((e) => /T_STALE_GRANDFATHER/.test(e)));
+  assert.deepEqual(traceErrors([], [], false), []);
+});
+
+test("gitPlanInputs: base log and changed paths from git; a bad or non-sha base gives nulls (-> full trace)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-plan-"));
+  const g = (...a: string[]) => execFileSync("git", a, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    g("init", "-q");
+    mkdirSync(join(dir, "builder-log"));
+    writeFileSync(join(dir, "builder-log/tasks.jsonl"), BASE_LOG);
+    g("add", "-A");
+    g("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "base");
+    const base = g("rev-parse", "HEAD");
+    writeFileSync(join(dir, "builder-log/tasks.jsonl"), BASE_LOG + jl(line("PeaceAI-Workspace#501, PeaceSTOCKS@1234567", 912)));
+    writeFileSync(join(dir, "builder-log/trace.ts"), "// changed\n");
+    g("add", "-A");
+    g("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "head");
+    assert.deepEqual(gitPlanInputs(dir, base), { baseLog: BASE_LOG, changed: ["builder-log/tasks.jsonl", "builder-log/trace.ts"] });
+    assert.equal(planTrace(BASE_LOG, BASE_LOG, gitPlanInputs(dir, base).changed).full, true, "trace.ts changed -> full");
+    assert.deepEqual(gitPlanInputs(dir, "f".repeat(40)), { baseLog: null, changed: null });
+    assert.deepEqual(gitPlanInputs(dir, "HEAD~1"), { baseLog: null, changed: null }, "only a full sha is accepted");
+    assert.deepEqual(gitPlanInputs(dir, "--output=/dev/null"), { baseLog: null, changed: null });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("TRACE_CODE_PATHS covers trace.ts's whole relative import graph", () => {
+  const root = resolve(import.meta.dirname, "..");
+  const seen = new Set<string>();
+  const walk = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    // The TypeScript scanner lists real import/export/require/import() specifiers only (not strings in code).
+    for (const { fileName } of ts.preProcessFile(readFileSync(file, "utf8"), true, true).importedFiles) {
+      if (!fileName.startsWith(".")) continue; // node: builtins and packages: covered by package(-lock).json
+      const raw = resolve(dirname(file), fileName);
+      const next = [raw, raw.replace(/\.js$/, ".ts"), `${raw}.ts`, join(raw, "index.ts")].find((c) => existsSync(c) && /\.[cm]?[jt]s$/.test(c));
+      assert.ok(next, `${relative(root, file)} imports ${fileName}`);
+      walk(next);
+    }
+  };
+  walk(join(root, "builder-log/trace.ts"));
+  assert.ok(seen.size > 5);
+  for (const f of seen) {
+    const p = relative(root, f);
+    assert.ok(TRACE_CODE_PATHS.some((c) => (c.endsWith("/") ? p.startsWith(c) : p === c)), `${p} must be in TRACE_CODE_PATHS`);
+  }
+});
+
+test("workflow: PR trace uses --new-rows-since the PR base; main push skips the public trace only where results-crosscheck runs", () => {
+  const wf = readFileSync(resolve(import.meta.dirname, "../.github/workflows/builder-log.yml"), "utf8");
+  const cross = /results-crosscheck:[\s\S]*?\n {4}if: (.+)\n/.exec(wf)?.[1];
+  assert.equal(cross, "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'PeaceG03/PeaceAI-Workspace'");
+  const step = wf.slice(wf.indexOf("- name: PeaceAI landings trace to verdict patches (public part"), wf.indexOf("- name: PeaceAI vs Builder coverage"));
+  assert.ok(step.includes(`if: \${{ !(${cross}) }}`), "exact negation of the crosscheck condition");
+  assert.match(step, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.match(step, /if \[ "\$GITHUB_EVENT_NAME" = pull_request \]; then mode=\(--new-rows-since "\$BASE_SHA"\)/);
+  const crossJob = wf.slice(wf.indexOf("results-crosscheck:"));
+  assert.match(crossJob, /trace\.ts --results-dir "\$RUNNER_TEMP\/results" --clone/);
+  assert.ok(!/new-rows-since/.test(crossJob), "main's Results trace is always full");
 });

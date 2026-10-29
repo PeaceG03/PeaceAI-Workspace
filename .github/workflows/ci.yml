@@ -63,9 +63,23 @@ jobs:
         run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
       - name: Same read-only tools as Job B
         run: chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
+      # GITHUB_TOKEN quota (#590 follow-up): on a pull request, main's commit is fetched anonymously (no token, no API
+      # call). If the approved list, specs, checker, libraries, dependencies and this workflow are byte-identical to
+      # it, M8 re-hashes each spec locally and skips the per-entry API reads main already did. A failed fetch leaves
+      # the output empty: the full API check runs. Pushes to main always run the full check.
+      - name: Fetch main anonymously (pull requests only)
+        id: main
+        if: github.event_name == 'pull_request'
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          if git fetch --quiet --no-tags --depth=1 "https://github.com/$REPO.git" main; then
+            echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+          fi
       - name: Every approved learned rule traces to Peace's /approve-rule comment; list changes only via approval branches (M8)
         env:
           GH_TOKEN: ${{ github.token }}
+          PEACEAI_VERIFIED_BASE: ${{ steps.main.outputs.sha }}
         run: ./node_modules/.bin/tsx peaceai/bin/check-approved-list.ts
       - name: A malicious candidate cannot forge its recorded result
         env:

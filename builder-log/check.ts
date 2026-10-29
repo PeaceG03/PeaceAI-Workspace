@@ -1,7 +1,10 @@
 // Builder task log validator: schema per line + append-only against a base revision.
-// Usage: tsx builder-log/check.ts [--base <git-rev>] [--verify-shas]
-import { execFileSync } from "node:child_process";
+// Usage: tsx builder-log/check.ts [--base <git-rev>] [--verify-shas [--clone owner/repo=DIR ...]]
+// --verify-shas with --clone resolves every repo@sha in local git clones (no GitHub API calls; CI). Without
+// --clone it uses the GitHub Commits API with GITHUB_TOKEN (box use).
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export const LOG_PATH = "builder-log/tasks.jsonl";
 
@@ -365,6 +368,41 @@ export function makeGithubShaResolver(token: string, fetchImpl: typeof fetch = f
   };
 }
 
+/**
+ * Local-clone resolver: repo@sha exists iff it names a commit in that repo's clone. A full clone holds only
+ * objects reachable from the repo's branches and tags, so this is at least as strict as the Commits API (which
+ * also answers 200 for fork-network and unmerged pull-request commits). Uses no API quota. Fails closed: a repo
+ * without a clone, a clone git cannot read, or an ambiguous short sha is a lookup error.
+ */
+export function makeGitShaResolver(clones: Readonly<Record<string, string>>): ShaResolver {
+  const checked = new Set<string>();
+  return (repo, sha) => {
+    const dir = clones[repo];
+    if (!dir) throw new Error(`no local clone for ${repo}`);
+    if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("malformed sha");
+    if (!checked.has(dir)) {
+      const ok = spawnSync("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"], { encoding: "utf8" });
+      if (ok.status !== 0) throw new Error(`clone for ${repo} is not readable`);
+      checked.add(dir);
+    }
+    const r = spawnSync("git", ["-C", dir, "rev-parse", "--verify", "--end-of-options", `${sha}^{commit}`], { encoding: "utf8" });
+    if (r.status === 0) return true;
+    if (/ambiguous/i.test(r.stderr)) throw new Error(`short sha ${sha} is ambiguous in ${repo}`);
+    return false;
+  };
+}
+
+/** `--clone owner/repo=DIR` pairs (repeatable). */
+export function parseClones(argv: readonly string[]): Record<string, string> {
+  const clones: Record<string, string> = {};
+  argv.forEach((a, k) => {
+    if (a !== "--clone") return;
+    const [repo, dir] = (argv[k + 1] ?? "").split("=");
+    if (repo && dir) clones[repo] = dir;
+  });
+  return clones;
+}
+
 function baseText(rev: string): string {
   try {
     return execFileSync("git", ["show", `${rev}:${LOG_PATH}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
@@ -382,8 +420,16 @@ async function main(): Promise<void> {
   if (i > 0) errs.push(...appendOnly(baseText(process.argv[i + 1]!), head));
   if (errs.length === 0 && process.argv.includes("--verify-shas")) {
     const entries = head.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
-    const token = process.env.GITHUB_TOKEN ?? "";
-    errs.push(...(await verifyPeaceAiShas(entries, makeGithubShaResolver(token))));
+    const clones = parseClones(process.argv);
+    let resolver: ShaResolver;
+    if (Object.keys(clones).length) {
+      // This checkout is the Workspace clone unless one is given (CI checks out with full history).
+      clones[LANDING_REPOS["PeaceAI-Workspace"]] ??= fileURLToPath(new URL("..", import.meta.url));
+      resolver = makeGitShaResolver(clones);
+    } else {
+      resolver = makeGithubShaResolver(process.env.GITHUB_TOKEN ?? "");
+    }
+    errs.push(...(await verifyPeaceAiShas(entries, resolver)));
   }
   if (errs.length) {
     for (const e of errs) console.error(`builder-log: ${e}`);
@@ -391,7 +437,7 @@ async function main(): Promise<void> {
   }
   const bits = [`${head.split("\n").length - 1} entries OK`];
   if (i > 0) bits.push("append-only vs base");
-  if (process.argv.includes("--verify-shas")) bits.push("PeaceAI repo@sha verified");
+  if (process.argv.includes("--verify-shas")) bits.push(`PeaceAI repo@sha verified (${process.argv.includes("--clone") ? "local clones, no API calls" : "GitHub API"})`);
   console.log(`builder-log: ${bits.join("; ")}`);
 }
 
