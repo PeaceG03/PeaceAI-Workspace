@@ -177,3 +177,17 @@ Results and are corrected to builder add-only in `peaceai/source-corrections.jso
 `trace.ts --results-dir` and `rule-skill.ts` pass on all 14. Landings via verdict PRs PeaceSTOCKS#76-#79 and #81-#90 (squash merges
 f31a68c, ab2e425, 9369b28, 212412a, df72ffa, b95f468, e047d8b, 2a7742a, c7cc530, f9aa25b, 74c214a, cf521a8, 3f3fbdc, 24eac89);
 PeaceSTOCKS#80 does not exist. Coverage stays 91/276 (33.0%) from 2026-10-29; the secondary figure stays 91/130.
+
+## First Workspace self-edit landing (2026-10-29)
+
+Seq 350 records the first PeaceAI task whose target was PeaceAI's own repository, PeaceAI-Workspace#584 (`doneTitles`). This is a
+narrow first step, not a general self-editing ability: it adds one new, unprotected module `src/task-done-titles.ts` and its new
+test file only. Nothing under `peaceai/`, no workflow, gate, rule or existing file is touched, and nothing imports the new module.
+Editing PeaceAI's protected code still needs stage 2 and Peace's flag (stage 2 stays OFF). Provenance: Builder picked the task and
+drafted the spec and 7 examples, PeaceAI derived the body (DERIVE_FROM_BEHAVIOR: public-derive-from-behavior-v4@6edd341f, derive
+run 40908656541, review 6502003017) and Peace gave `/verdict A right` (6502241639). The verdict job opened PeaceAI-Workspace#587
+with the built-in token; it was squash-merged at 2026-10-29 10:40 MT as 9cb4213, and `git diff --full-index 9cb4213^1 9cb4213`
+hashes to the Results `candidate-1.diff` sha256 `3331e541...8ce0`. The row carries the #575 `ws-proof:` clause, but it is
+team-picked (`source: team-picked`, not `(source: peace)`; the Results task.json also says `source: builder`), so it earns no
+credit: `workspaceRefusal` stops at `W_NOT_SOURCE_PEACE`, and coverage stays 91/276 (33.0%) on 2026-10-29; the secondary figure
+stays 91/130. A Workspace landing earns credit only when Peace picks the task himself.
