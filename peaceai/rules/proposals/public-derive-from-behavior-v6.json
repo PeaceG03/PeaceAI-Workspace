@@ -8,8 +8,17 @@
  "scope": "a v4-shaped issue (either header; one list parameter of numbers, strings, booleans or simple records plus at most one number or string parameter) whose Examples hold at least one NaN, Infinity or -Infinity; a task with none is not_needed (v4 answers it), so v4 and v6 never both answer one task. The Behavior paragraph still may not name NaN, Infinity or Number (it can say 'not a finite number')",
  "refusals": "not_needed (no non-finite example value); derive_reserved_name (the function or a parameter named Number, besides v4's); every v4 refusal (derive_examples, derive_signature, derive_under_specified_*, derive_no_fit, derive_ambiguous with asked rows, derive_budget, derive_list_expr, derive_params, the v1/v3 path and append refusals, new_test_path_exists)",
  "evidence": {
-  "note": "The spec's evidence block is v4's mining (the list shape is unchanged). No upstream evidence specific to non-finite examples has been gathered yet; that is phase 2 of GAPS G17, before /approve-rule.",
-  "qualifies": false
+  "examples": 24,
+  "derived": 19,
+  "right": 14,
+  "wrongOnNaN": 5,
+  "refused": 5,
+  "repos": 21,
+  "file": "peaceai/rules/proposals/m136-derive-nonfinite-evidence.json",
+  "method": "upstream evidence for list functions on examples holding NaN / Infinity / -Infinity: M113's 20 number-reading upstream functions plus 4 new Number.isFinite / isFinite functions (GitHub code search, MIT / Apache-2.0 / ISC only), each re-derived by the v6 search from a seeded grid slice (seed 136) plus only the rows its refusals asked for (answered by the upstream function) and checked against the upstream function on every held-out grid and probe row",
+  "origin": "external-licensed",
+  "qualifies": false,
+  "note": "Does not qualify yet. 14 derive with 0 wrong on 3565 held-out rows (1799 with a non-finite value), and the spec's evidence block now counts those 14 (it was v4's mining). But 5 upstream max / min functions (Math.max(...xs) / Math.min(...xs)) derive a v6 max / min program that fits every example and is wrong on 11 held-out rows each: Math.max gives NaN for a list holding NaN, the v6 program skips NaN, and no v6 gate or probe asks for a NaN row because no rival in the DSL propagates NaN. That is a wrong answer inside v6's own vocabulary, so /approve-rule should wait for a v6 fix (for example a gate that refuses a max / min until an example shows a NaN in a non-empty list) and a re-run of this evidence. Only 4 permissively licensed upstream functions use Number.isFinite in v6's types (3 derive; 1 is out of vocabulary and refused). See the note in the evidence file."
  },
  "limits": "Phase 1 only (GAPS G17): the scalar engines (v1-v3) and v5 still refuse non-finite examples; there is no finite guard on the scalar parameter alone (only on list elements or their fields); record results and calls to other modules (G16) are out of scope, so the weekly-review wiring task is still refused. -0 is never written in an example and shares 0's key. Every limit of v4 applies.",
  "learned": "peaceai/rules/learned/public-derive-from-behavior-v6.json",
