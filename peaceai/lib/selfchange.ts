@@ -499,7 +499,79 @@ function resolutionCandidates(from: string, spec: string): string[] {
   const p = parts.join("/");
   return [...new Set([p, p.replace(/\.js$/, ".ts"), p.replace(/\.mjs$/, ".mts"), p.replace(/\.cjs$/, ".cts"), `${p}.ts`, `${p}.mts`, `${p}.js`, `${p}.mjs`, `${p}.json`, `${p}/index.ts`, `${p}/index.js`])];
 }
-export function computeNeverZone(tracked: readonly string[], read: (p: string) => string | null): NeverZoneSet {
+/**
+ * Auditor ruling (name mentions, after #575): a mention pulls a path into the never-zone only when the mentioning file
+ * reads, hashes, pins or runs it (as tamper-proof or a scope rule does), never for a name in prose, a note or a
+ * proposal record. So the text the SCRIPT_REF scan sees drops, and only drops, what cannot do any of those:
+ *   - code (.ts/.js family): comments (the program is printed without them); `/// <reference path>` is kept, tsc reads it;
+ *   - .sh / .yml / .yaml: full-line `#` comments (shell and YAML ignore them);
+ *   - .json: values under a prose key (note, notes, why, description, comment, summary), and, in a record scoped to
+ *     ANOTHER repository by its own "repo" field (proposal / evidence coordinates of upstream code), src/ paths, which
+ *     name that repository's file, not ours. PeaceAI's own trees (peaceai/, builder-log/) still count there (fixtures).
+ * Everything else counts, string literals and command lines included, and unparsable JSON is scanned whole (fail closed).
+ */
+export const NEVER_ZONE_SELF_REPO = "PeaceG03/PeaceAI-Workspace";
+const PROSE_KEYS = new Set(["note", "notes", "why", "description", "comment", "summary"]);
+const REPO_FIELD = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const FOREIGN_OK = /^(?:peaceai|builder-log)\//;
+const mentionPrinter = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
+/**
+ * Auditor ruling (after M132 table): the #136-approved allowlist of files learned rules MAY edit
+ * (`EDITABLE_PATHS["PeaceG03/PeaceAI-Workspace"]` in learned-body.ts) is a grant, not a read / hash / pin / run, so
+ * that one mention alone does not pull its entries into the never-zone. Narrow on purpose: only this file, only the
+ * top-level `export const EDITABLE_PATHS = { ... }` object, only the property keyed by this repository, and only when
+ * its value is a plain array of plain string literals (anything else: nothing is exempt, fail closed). Every other
+ * mention in learned-body.ts (other repositories' entries, any other string) and every other file still counts.
+ */
+export const EDITABLE_ALLOWLIST_FILE = "peaceai/lib/learned-body.ts";
+function editableAllowlistEntries(sf: ts.SourceFile): ts.StringLiteral[] {
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || d.name.text !== "EDITABLE_PATHS" || !d.initializer) continue;
+      let init: ts.Expression = d.initializer;
+      while (ts.isAsExpression(init) || ts.isSatisfiesExpression(init) || ts.isParenthesizedExpression(init)) init = init.expression;
+      if (!ts.isObjectLiteralExpression(init)) return [];
+      const props = init.properties.filter((p) => ts.isPropertyAssignment(p) && (ts.isStringLiteral(p.name) || ts.isIdentifier(p.name)) && p.name.text === NEVER_ZONE_SELF_REPO) as ts.PropertyAssignment[];
+      if (props.length !== 1 || !ts.isArrayLiteralExpression(props[0]!.initializer)) return [];
+      const els = props[0]!.initializer.elements;
+      return els.every((e) => ts.isStringLiteral(e)) ? [...els] as ts.StringLiteral[] : [];
+    }
+  }
+  return [];
+}
+export function mentionSegments(path: string, text: string): string[] {
+  if (CODE_FILE.test(path)) {
+    const kind = /\.(mjs|cjs|js)$/.test(path) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+    let sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
+    const skip = path === EDITABLE_ALLOWLIST_FILE ? editableAllowlistEntries(sf) : [];
+    if (skip.length) {
+      let t = text;
+      for (const n of [...skip].sort((a, b) => b.getStart(sf) - a.getStart(sf))) t = t.slice(0, n.getStart(sf)) + '""' + t.slice(n.end);
+      sf = ts.createSourceFile(path, t, ts.ScriptTarget.Latest, true, kind);
+    }
+    return [mentionPrinter.printFile(sf), ...sf.referencedFiles.map((r) => r.fileName)];
+  }
+  if (/\.(sh|ya?ml)$/.test(path)) return [text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")];
+  if (!/\.json$/.test(path)) return [];
+  let doc: unknown;
+  try { doc = JSON.parse(text); } catch { return [text]; }
+  const out: string[] = [];
+  const walk = (v: unknown, foreign: boolean): void => {
+    if (typeof v === "string") { if (!foreign) out.push(v); else for (const m of v.matchAll(SCRIPT_REF)) if (FOREIGN_OK.test(m[0])) out.push(m[0]); return; }
+    if (Array.isArray(v)) { for (const x of v) walk(x, foreign); return; }
+    if (v === null || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    const r = o["repo"];
+    const f = typeof r === "string" && REPO_FIELD.test(r) ? r !== NEVER_ZONE_SELF_REPO : foreign;
+    for (const [k, x] of Object.entries(o)) { out.push(k); if (!PROSE_KEYS.has(k)) walk(x, f); }
+  };
+  walk(doc, false);
+  return out;
+}
+/** The pre-ruling scan (every SCRIPT_REF in the raw text of code, .sh, .yml and .json): kept only so a test can list what the ruling took out. */
+export const rawMentionSegments = (path: string, text: string): string[] => (CODE_FILE.test(path) || /\.(sh|ya?ml|json)$/.test(path) ? [text] : []);
+export function computeNeverZone(tracked: readonly string[], read: (p: string) => string | null, segments: (path: string, text: string) => string[] = mentionSegments): NeverZoneSet {
   const files = new Set(tracked);
   const why = new Map<string, string>();
   const shadows = new Set<string>();
@@ -519,7 +591,7 @@ export function computeNeverZone(tracked: readonly string[], read: (p: string) =
       const hit = cands.find((c) => files.has(c));
       if (hit) add(hit, `never-zone: imported by ${f}`);
     }
-    if (CODE_FILE.test(f) || /\.(sh|ya?ml|json)$/.test(f)) for (const m of text.matchAll(SCRIPT_REF)) add(m[0], `never-zone: run or named by ${f}`);
+    for (const seg of segments(f, text)) for (const m of seg.matchAll(SCRIPT_REF)) add(m[0], `never-zone: run or named by ${f}`);
   }
   return { why, shadows };
 }
