@@ -293,9 +293,21 @@ jobs:
       - name: Open a PR for the chosen candidate
         if: steps.guard.outputs.open_pr == 'true'
         working-directory: work
+        env:
+          # Self-edit (#575): the PR body carries the ws-proof clause a builder-log row needs, from trusted outputs only.
+          RUN_ID: ${{ needs.record.outputs.run_id }}
+          DIFF_SHA: ${{ needs.record.outputs.diff_sha256 }}
+          COMMENT_ID: ${{ needs.parse.outputs.comment_id }}
         run: |
           set -euo pipefail
           case "$CANDIDATE" in candidate-[0-9]*) ;; *) echo "bad candidate id"; exit 1 ;; esac
+          case "$RUN_ID" in *[!0-9]*|"") echo "bad run id"; exit 1 ;; esac
+          case "$COMMENT_ID" in *[!0-9]*|"") echo "bad comment id"; exit 1 ;; esac
+          # Same rule as the target PR job: the PR carries exactly the candidate bytes Results recorded, or no PR.
+          got="$(sha256sum "$RUNNER_TEMP/chosen/chosen.diff" | awk '{print $1}')"
+          if ! [[ "$DIFF_SHA" =~ ^[0-9a-f]{64}$ ]] || [ "$got" != "$DIFF_SHA" ]; then
+            echo "refused: chosen diff hash does not match the Results record"; exit 1
+          fi
           branch="peace-task/issue-${ISSUE_NUMBER}-${CANDIDATE}-$(openssl rand -hex 4)"
           git checkout -q -b "$branch"
           # Auditor (#107, change 5): .github/workflows/** never goes through PeaceAI's push path.
@@ -309,7 +321,7 @@ jobs:
           git push -q origin "HEAD:refs/heads/$branch"
           gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
             --title "PeaceAI task #${ISSUE_NUMBER} (owner-chosen candidate)" \
-            --body "Candidate chosen by owner review on #${ISSUE_NUMBER}."
+            --body "$(printf 'Candidate chosen by owner review on #%s.\n\nws-proof: run %s %s diff-sha256 %s verdict %s\n' "$ISSUE_NUMBER" "$RUN_ID" "$CANDIDATE" "$DIFF_SHA" "$COMMENT_ID")"
           # PRs opened with the Actions token do not trigger pull_request workflows; run the checks here.
           gh workflow run leak-check.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"

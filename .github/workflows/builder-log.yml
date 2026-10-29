@@ -69,6 +69,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          # #575: the Workspace proof checker needs each landing's first parent and `merge-base --is-ancestor <sha> HEAD`.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -97,6 +99,14 @@ jobs:
         run: ./node_modules/.bin/tsx builder-log/trace.ts --results-dir "$RUNNER_TEMP/results" --clone "PeaceG03/PeaceSTOCKS=$RUNNER_TEMP/stocks" >> "$GITHUB_STEP_SUMMARY"
       - name: Rule-skill cross-check against Results
         run: ./node_modules/.bin/tsx builder-log/rule-skill.ts --results-dir "$RUNNER_TEMP/results" --ci >> "$GITHUB_STEP_SUMMARY"
+      # #575: the only place both inputs exist. Workspace landings count only here (Results-verified ws-proof); the
+      # builder-log job above has no Results and keeps counting none (fail closed). Codes and counts only.
+      - name: PeaceAI vs Builder coverage (Workspace landings verified against Results)
+        env:
+          PEACESTOCKS_CLONE: ${{ runner.temp }}/stocks
+          WORKSPACE_CLONE: ${{ github.workspace }}
+          PEACEAI_RESULTS_DIR: ${{ runner.temp }}/results
+        run: ./node_modules/.bin/tsx builder-log/coverage.ts >> "$GITHUB_STEP_SUMMARY"
       - name: Delete the Results clone
         if: always()
         run: rm -rf "$RUNNER_TEMP/results" "$RUNNER_TEMP"/peaceai-ssh.* "$RUNNER_TEMP/stocks"
