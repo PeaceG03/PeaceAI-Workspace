@@ -118,7 +118,7 @@ test("invalid asOf refused; validateLog on the real log enforces LIVE_PROVEN_SIN
   assert.deepEqual(validateLog(readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8")), []);
 });
 
-test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/226 on 2026-10-22, 91/276 today (S3 catch-up seq 282-333 + seq 334-335 for #575/#578) with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
+test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2026-10-20, 61/192 as of 2026-10-21 and 74/205 then 89/226 on 2026-10-22, 91/276 today (S3 catch-up seq 282-333 + seq 334-335 for #575/#578; team-picked health landings seq 278-281 and 336-349 earn no credit) with PeaceAI real tasks (98/100/102-105, batch 106-115, 118, 122, 126-132, 134-138, 139-145, 226-236, 237-247, 248-260, 261-275, 276-277) + Builder rows incl. the seq 146-220 catch-up; seq 97/99/101 coverage:none allowlist; METHOD_GUARD 71/77 stay missing", () => {
   const text = readFileSync(resolve(import.meta.dirname, "tasks.jsonl"), "utf8");
   assert.deepEqual(validateLog(text), []);
   assert.equal(LIVE_PROVEN_SINCE.WORKFLOW_STEP.seq, 85);
@@ -226,6 +226,23 @@ test("real log: 20/143 as of 2026-10-16, 32/159 as of 2026-10-17, 39/169 as of 2
   for (const seq of [278, 279, 280, 281]) {
     const e = parseLogEntries(text).find((x) => x.seq === seq)!;
     assert.equal(isPeaceRealTask(e, onMain), false);
+  }
+  // Health-check slices 2-3 (seq 336-349, team-picked #540-#543, #548, #557, #559, #561, #565, #566, #570, #573, #577, #579
+  // on DERIVE_FROM_BEHAVIOR v1/v2/v4, landed 2026-10-26 15:31 to 2026-10-29 00:33 MT through verdict PRs PeaceSTOCKS#76-#79 and
+  // #81-#90 as f31a68c to 24eac89): team-picked like seq 278-281, not "(source: peace)", so they earn no real-task credit and
+  // are not Builder rows: the denominator does not move either. 91/276 (33%) and the secondary 91/130 stay, 2026-10-26..28 too.
+  const health = parseLogEntries(text).filter((x) => x.seq >= 336 && x.seq <= 349);
+  assert.equal(health.length, 14);
+  for (const e of health) {
+    assert.equal(e.by, "PeaceAI");
+    assert.equal(e.skill, "DERIVE_FROM_BEHAVIOR");
+    assert.match(e.changed, /^PeaceAI-Workspace#\d+, PeaceSTOCKS@[0-9a-f]{7}$/);
+    assert.equal(isPeaceRealTask(e, onMain), false);
+  }
+  for (const [asOf, able, tasks, percent] of [["2026-10-26", 91, 254, 35.8], ["2026-10-27", 91, 266, 34.2], ["2026-10-28", 91, 275, 33.1], ["2026-10-29", 91, 276, 33]] as const) {
+    const r = coverageReport(text, asOf, { onMain });
+    assert.deepEqual([r.allTime.peaceaiAble, r.allTime.builderTasks, r.allTime.percent], [able, tasks, percent], asOf);
+    assert.deepEqual([r.excludingSelfChange.allTime.peaceaiAble, r.excludingSelfChange.allTime.builderTasks], [91, 130], asOf);
   }
   // Fail closed without an onMain checker: PeaceAI real tasks drop out → back to Builder-only 2/187 (133 + 52 S3 rows + seq 334-335).
   assert.equal(coverageReport(text, denverYmd()).allTime.peaceaiAble, 2);
