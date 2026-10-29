@@ -87,7 +87,8 @@ export type ListProgram =
   | { op: "label"; pred: ListPred; yes: string; no: string }
   | { op: "pluck"; f: string; pred: ListPred | null };
 
-export type ListGate = "empty" | "many" | "unread" | "branch" | "kept" | "seed" | "edge" | "far";
+/** G17: "nonfinite" is v6 only (nonFiniteProblem); v4 never returns it. */
+export type ListGate = "empty" | "many" | "unread" | "branch" | "kept" | "seed" | "edge" | "far" | "nonfinite";
 export interface ListQuestion { at: ListArg[]; answers: ListArg[] }
 export type ListResult =
   | { ok: true; program: ListProgram; size: number; fits: number; searched: number }
@@ -211,6 +212,10 @@ export function evalPred(p: ListPred, x: ListElem, args: readonly ListArg[]): bo
   }
 }
 export function evalList(prog: ListProgram, args: readonly ListArg[], li: number): ListArg {
+  return evalListWith(prog, args, li, evalPred);
+}
+/** evalList with the predicate read by `evalPred` (G17: a non-finite twin reads it its own way). */
+function evalListWith(prog: ListProgram, args: readonly ListArg[], li: number, evalPred: (p: ListPred, x: ListElem, args: readonly ListArg[]) => boolean): ListArg {
   const L = args[li] as readonly ListElem[];
   switch (prog.op) {
     case "length": return L.length;
@@ -682,6 +687,124 @@ function oneElement(input: ListInput, prog: Extract<ListProgram, { op: "max" | "
   return { a, v: evalList(prog, a, li) as number };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// G17 (v6 only): the non-finite twins
+//
+// The ambiguity check compares programs inside the DSL, and the DSL holds one reading of each comparison and each
+// max / min. On finite inputs that is no loss, but on NaN, Infinity and -Infinity ordinary TypeScript spellings of
+// the same behavior part ways: `x >= 3` and `!(x < 3)` differ on NaN, `Math.max(...xs)` gives NaN for any NaN while
+// the DSL's reduce keeps its running max, and a body may leave NaN or every non-finite element out first. A v6 program
+// that fits every example is accepted only when every such twin that also fits every example agrees with it on every
+// twin probe; else derive_under_specified_nonfinite with the row that tells them apart (answered like any asked row).
+// A twin is never emitted: it only stands for a function the examples have not ruled out.
+
+/** A reading of a program that agrees with it on every finite input. */
+export type NonFiniteTwin = "nan-true" | "skip-nan" | "skip-nonfinite" | "nan-poison";
+const CMP_OPS: ReadonlySet<string> = new Set(["le", "ge", "lep", "gep", "ltp", "gtp"]);
+const nanOf = (v: unknown): boolean => typeof v === "number" && Number.isNaN(v);
+/** The number fields (null: the element itself) a program reads: its summed / compared / kept field and its predicate's. */
+function numberFieldsRead(prog: ListProgram, params: readonly ListParam[]): (string | null)[] {
+  const elem = elemOf(params);
+  const fs: (string | null)[] = [];
+  if ("f" in prog && prog.f !== undefined) fs.push(prog.f);
+  const p = predOf(prog);
+  if (p) fs.push(p.f);
+  return [...new Set(fs)].filter((f) => valueType(elem, f) === "number");
+}
+/** The twins of a program (none for a program that reads no number). */
+export function nonFiniteTwins(prog: ListProgram, params: readonly ListParam[]): NonFiniteTwin[] {
+  const fs = numberFieldsRead(prog, params);
+  const p = predOf(prog);
+  const out: NonFiniteTwin[] = [];
+  if (p && (CMP_OPS.has(p.op) || ((p.op === "eqp" || p.op === "nep") && valueType(elemOf(params), p.f) === "number"))) out.push("nan-true");
+  if (fs.length) out.push("skip-nan", "skip-nonfinite");
+  if (prog.op === "sum" || prog.op === "max" || prog.op === "min") out.push("nan-poison");
+  return out;
+}
+/** A twin's result. */
+export function evalNonFiniteTwin(prog: ListProgram, twin: NonFiniteTwin, args: readonly ListArg[], params: readonly ListParam[]): ListArg {
+  const li = listIndex(params);
+  const L = args[li] as readonly ListElem[];
+  const fs = numberFieldsRead(prog, params);
+  switch (twin) {
+    case "nan-true":
+      // `!(x < c)` for `c <= x` and so on: a comparison with a NaN side holds; `x === t` / `x !== t` as Object.is.
+      return evalListWith(prog, args, li, (p, x, a) => {
+        const e = get(x, p.f), t = "c" in p ? p.c : "p" in p ? a[p.p] : undefined;
+        if (CMP_OPS.has(p.op) && (nanOf(e) || nanOf(t))) return true;
+        if ((p.op === "eqp" || p.op === "nep") && nanOf(e) && nanOf(t)) return p.op === "eqp";
+        return evalPred(p, x, a);
+      });
+    case "skip-nan": case "skip-nonfinite": {
+      const drop = (v: unknown) => (twin === "skip-nan" ? nanOf(v) : typeof v === "number" && !Number.isFinite(v));
+      const a = [...args];
+      a[li] = L.filter((x) => !fs.some((f) => drop(get(x, f))));
+      return evalList(prog, a, li);
+    }
+    case "nan-poison":
+      return L.some((x) => fs.some((f) => nanOf(get(x, f)))) ? NaN : evalList(prog, args, li);
+  }
+}
+const TWIN_TEXT: Record<NonFiniteTwin, string> = {
+  "nan-true": "the same program where a comparison with NaN holds (as `!(x < c)` reads `c <= x`)",
+  "skip-nan": "the same program over the list with its NaN elements left out",
+  "skip-nonfinite": "the same program over the list with its non-finite elements left out",
+  "nan-poison": "NaN whenever the list holds a NaN (as Math.max(...xs) / Math.min(...xs) and a plain sum do)",
+};
+/**
+ * The twin probes: v4's probe lists, plus, for each example, each number field the program reads and each of NaN,
+ * Infinity and -Infinity, an element holding that value appended to and prepended to the example list, alone and
+ * twice (so a NaN-only list is probed), and each number scalar argument set to it. Null past LIST_MAX_PROBES.
+ */
+export function nonFiniteProbes(input: ListInput, prog: ListProgram): ListArg[][] | null {
+  const base = listProbes(input);
+  if (!base) return null;
+  const { params, examples } = input;
+  const li = listIndex(params);
+  const fs = numberFieldsRead(prog, params);
+  const first = elemsOfExamples(examples, li)[0];
+  const out = [...base];
+  for (const e of examples) {
+    const L = e.args[li] as readonly ListElem[];
+    const x0 = L[0] ?? first;
+    for (const v of [NaN, Infinity, -Infinity]) {
+      if (x0 !== undefined) for (const f of fs) {
+        const x: ListElem = f === null ? v : { ...(x0 as ListRecord), [f]: v };
+        for (const l of [[...L, x], [x, ...L], [x], [x, x]]) { const a = [...e.args]; a[li] = l; out.push(a); }
+      }
+      for (const [i, p] of params.entries()) if (i !== li && p.type === "number") { const a = [...e.args]; a[i] = v; out.push(a); }
+    }
+    if (out.length > LIST_MAX_PROBES) return null;
+  }
+  return [...new Map(out.map((a) => [valueKey(a), a])).values()];
+}
+/** The nonfinite gate (G17, v6 only): a twin that fits every example and disagrees with the program somewhere. */
+export function nonFiniteProblem(input: ListInput, prog: ListProgram): { gate: ListGate; param?: string; detail: string; questions?: ListQuestion[] } | null {
+  const { params, examples } = input;
+  const li = listIndex(params);
+  const twins = nonFiniteTwins(prog, params).filter((t) => examples.every((e) => sameOut(evalNonFiniteTwin(prog, t, e.args, params), e.out)));
+  if (!twins.length) return null;
+  const name = numberFieldsRead(prog, params)[0] ?? params[li]!.name;
+  const probes = nonFiniteProbes(input, prog);
+  if (!probes) return { gate: "nonfinite", param: name, detail: `more than ${LIST_MAX_PROBES} probe lists` };
+  const names = params.map((p) => p.name);
+  const len = (a: readonly ListArg[]) => (a[li] as readonly ListElem[]).length;
+  for (const t of twins) {
+    let k = -1, ours: ListArg = 0, theirs: ListArg = 0;
+    for (const [i, a] of probes.entries()) {
+      const o = evalList(prog, a, li), w = evalNonFiniteTwin(prog, t, a, params);
+      if (sameOut(o, w) || (k >= 0 && len(a) >= len(probes[k]!))) continue;
+      k = i; ours = o; theirs = w;
+    }
+    if (k < 0) continue;
+    return {
+      gate: "nonfinite", param: name, questions: [{ at: probes[k]!, answers: [ours, theirs] }],
+      detail: `the examples also fit ${TWIN_TEXT[t]}, which differs from \`${compileList(prog, names, li)}\` on a non-finite value; add the asked row`,
+    };
+  }
+  return null;
+}
+
 /** Derives the list program, or refuses (see the head of this file). */
 export function deriveListProgram(input: ListInput): ListResult {
   const maxC = input.maxCandidates ?? LIST_MAX_CANDIDATES, maxE = input.maxEvals ?? LIST_MAX_EVALS;
@@ -746,7 +869,9 @@ export function deriveListProgram(input: ListInput): ListResult {
     }
   }
   const prog = fits[0]!;
-  const gate = listGateProblem(input, prog);
+  // G17 (v6 only): after every v4 gate, the non-finite twins (nonFiniteProblem), when the examples hold a non-finite
+  // value (as the extra probes; a v6 task always does). Off for v4.
+  const gate = listGateProblem(input, prog) ?? (input.nonFinite && hasNonFinite(input.examples) ? nonFiniteProblem(input, prog) : null);
   if (gate) return { ok: false, reason: "derive_under_specified", gate: gate.gate, ...(gate.param ? { param: gate.param } : {}), detail: gate.detail, ...(gate.questions ? { questions: gate.questions } : {}), searched: cands.length };
   return { ok: true, program: prog, size: listSize(prog), fits: fits.length, searched: cands.length };
 }

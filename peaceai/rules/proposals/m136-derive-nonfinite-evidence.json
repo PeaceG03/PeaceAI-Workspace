@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m136-derive-nonfinite-evidence:v1",
- "note": "M136 evidence for public-derive-from-behavior-v6 (G17 phase 2): 24 upstream TypeScript functions over one array parameter from 21 MIT / Apache-2.0 / ISC repos, run on examples whose numbers include NaN, Infinity and -Infinity. Two sets. (a) v4-upstream: the 20 of M113's 28 upstream functions that read a number (the other 8 read only strings or booleans, so no v6 task can be written for them), same commit, path, file sha256 and license as in m113-derive-list-evidence.json. (b) non-finite-upstream: 4 new functions found by GitHub code search for exported one-expression functions over an array parameter that call Number.isFinite / isFinite / isNaN (3,761 distinct files from 24 searches fetched at their default branch and screened; 40 matches outside BigNumber helpers sat in an exported declaration; after dropping nested local helpers, bodies or types outside v6 (sort, Set, map to a computed value, BigNumber strings, nested arrays) and repos without a MIT / Apache-2.0 / ISC license (unlicensed or AGPL), 4 remain; each is then pinned to the repo's HEAD commit at fetch time). zkwokleung/chart-quest compact takes (number | null)[]; it is typed number[] here, which drops the null case as M113 drops optional fields. Examples are the upstream function run on a seeded grid (seed 136, 48 rows of lists of length 0-6; numbers from -150..150 plus NaN, Infinity and -Infinity; strings from M113's per-field literals). The first 6 rows train, extended only by PeaceAI's own refusals the way an issue author would (as M113; an asked row is answered by the upstream function), at most 40 rows. Every training slice holds a non-finite value. Held out: the other grid rows plus every v6 probe list not in the training rows. Results: 14 derive and are right on every held-out row (3565 rows, 1799 of them with a non-finite value, 0 wrong): sum (7), sum of kept (3), filter (1), filter Number.isFinite (2), some !Number.isFinite (1). 5 derive a max / min program that fits every example but is WRONG on 11 held-out rows each (wrongOnNaN): the upstream bodies use Math.max(...xs) / Math.min(...xs), which give NaN when a list holds NaN, while v6's max / min program skips NaN; no training row showed a NaN in a non-empty list, and no v6 gate or probe asked for one, because no rival program in the DSL propagates NaN. 5 are refused: runtimeTotal (`movie.runtime || 0` maps NaN to 0, outside the DSL) derive_no_fit; maxNumber and max (`Math.max(max, value)` seeded with 0, NaN-propagating) derive_no_fit; hasError (`errorCount > 0`) derive_ambiguous after 40 rows, though v4 derives it on integers; calcActiveSum (outOfVocabulary: a kept-by-flag sum that also skips non-finite credits, two conditions) derive_no_fit. The rule's evidence block counts the 14 functions that derive with 0 wrong (14 repos). Examples are stored as issue lines (`ARGS gives OUT`, read back by lexListValues with the v6 flag) since JSON has no NaN. The evidence test re-derives each entry from its recorded lines; no third-party code is run by the test.",
+ "note": "M136 evidence for public-derive-from-behavior-v6 (G17 phase 2): 24 upstream TypeScript functions over one array parameter from 21 MIT / Apache-2.0 / ISC repos, run on examples whose numbers include NaN, Infinity and -Infinity. Two sets. (a) v4-upstream: the 20 of M113's 28 upstream functions that read a number (the other 8 read only strings or booleans, so no v6 task can be written for them), same commit, path, file sha256 and license as in m113-derive-list-evidence.json. (b) non-finite-upstream: 4 new functions found by GitHub code search for exported one-expression functions over an array parameter that call Number.isFinite / isFinite / isNaN (3,761 distinct files from 24 searches fetched at their default branch and screened; 40 matches outside BigNumber helpers sat in an exported declaration; after dropping nested local helpers, bodies or types outside v6 (sort, Set, map to a computed value, BigNumber strings, nested arrays) and repos without a MIT / Apache-2.0 / ISC license (unlicensed or AGPL), 4 remain; each is then pinned to the repo's HEAD commit at fetch time). zkwokleung/chart-quest compact takes (number | null)[]; it is typed number[] here, which drops the null case as M113 drops optional fields. Examples are the upstream function run on a seeded grid (seed 136, 48 rows of lists of length 0-6; numbers from -150..150 plus NaN, Infinity and -Infinity; strings from M113's per-field literals). The first 6 rows train, extended only by PeaceAI's own refusals the way an issue author would (as M113; an asked row is answered by the upstream function), at most 40 rows. Every training slice holds a non-finite value. Held out: the other grid rows plus every v6 probe list and every non-finite twin probe (nonFiniteProbes) not in the training rows. Re-run (G17 gate fix): the grid generator and the check are committed as peaceai/test/m136-evidence-run.ts (seed 136; regenerate with node_modules/.bin/tsx peaceai/test/m136-evidence-run.ts), and the evidence test recomputes every record and the totals from it. Results: 14 derive and are right on every held-out row (4355 rows, 2589 of them with a non-finite value, 0 wrong): sum (7), sum of kept (3), filter (1), filter Number.isFinite (2), some !Number.isFinite (1). 10 are refused, 0 derive wrong. The 5 upstream max / min functions over Math.max(...xs) / Math.min(...xs) (pmndrs/glyph capturedMaximum / capturedMinimum, Antigravity max / min, Daily-LLM max) derived a v6 max / min program that skips NaN and was wrong on 11 held-out rows each before the fix (kept in beforeNonFiniteGate: same generator at 1402d72 gives 3565 / 1799 and 5 x 11 wrong); v6's nonfinite gate now finds that the NaN-propagating reading also fits their examples, asks for a row with NaN after the first element (derive_under_specified_nonfinite), the upstream answer NaN rules out every DSL program, and they are refused derive_no_fit. The other 5 refusals are unchanged: runtimeTotal (`movie.runtime || 0` maps NaN to 0, outside the DSL) derive_no_fit; maxNumber and max (`Math.max(max, value)` seeded with 0, NaN-propagating) derive_no_fit; hasError (`errorCount > 0`) derive_ambiguous after 40 rows, though v4 derives it on integers; calcActiveSum (outOfVocabulary: a kept-by-flag sum that also skips non-finite credits, two conditions) derive_no_fit. The rule's evidence block counts the 14 functions that derive (14 repos). Examples are stored as issue lines (`ARGS gives OUT`, read back by lexListValues with the v6 flag) since JSON has no NaN. The evidence test runs each recorded upstream body (a pure one-expression function, transpiled and run in a node:vm context holding only Math, Number, Boolean, isFinite and isNaN) to recompute the held-out counts.",
  "functions": [
   {
    "repo": "Senryoku/Draftmancer",
@@ -31,9 +31,9 @@
    "expr": "arr.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -65,9 +65,9 @@
    "expr": "xs.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -99,9 +99,9 @@
    "expr": "numbers.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -133,9 +133,9 @@
    "expr": "arr.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -167,9 +167,9 @@
    "expr": "arr.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -201,9 +201,9 @@
    "expr": "numbers.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -235,9 +235,9 @@
    "expr": "array.reduce((n, x) => n + x, 0)",
    "shape": "sum",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -410,9 +410,9 @@
    "expr": "blocks.filter((x) => x.pid === -1).reduce((n, x) => n + x.size, 0)",
    "shape": "sum-eqn",
    "heldOut": {
-    "right": 1702,
+    "right": 2085,
     "wrong": 0,
-    "nonFinite": 1004
+    "nonFinite": 1387
    }
   },
   {
@@ -432,6 +432,13 @@
    ],
    "ret": "number",
    "set": "v4-upstream",
+   "strings": {
+    "kind": [
+     "expense",
+     "settlement",
+     "refund"
+    ]
+   },
    "examples": [
     "[{ kind: \"settlement\", amount_cents: 101 }, { kind: \"settlement\", amount_cents: 1 }, { kind: \"refund\", amount_cents: 101 }] gives 0",
     "[] gives 0",
@@ -440,18 +447,22 @@
     "[{ kind: \"refund\", amount_cents: 3 }, { kind: \"refund\", amount_cents: 150 }, { kind: \"settlement\", amount_cents: -1 }, { kind: \"refund\", amount_cents: 2 }] gives 0",
     "[{ kind: \"refund\", amount_cents: 7 }] gives 0",
     "[{ kind: \"expense\", amount_cents: Infinity }, { kind: \"expense\", amount_cents: 30 }] gives Infinity",
-    "[{ kind: \"expense\", amount_cents: -102 }] gives -102"
+    "[{ kind: \"expense\", amount_cents: -102 }] gives -102",
+    "[{ kind: \"expense\", amount_cents: NaN }] gives NaN",
+    "[{ kind: \"settlement\", amount_cents: NaN }] gives 0"
    ],
    "addedForGates": [
     "derive_under_specified_kept (two grid elements where x.kind === \"expense\"): [{ kind: \"expense\", amount_cents: Infinity }, { kind: \"expense\", amount_cents: 30 }] gives Infinity",
-    "derive_under_specified_seed: [{ kind: \"expense\", amount_cents: -102 }] gives -102"
+    "derive_under_specified_seed: [{ kind: \"expense\", amount_cents: -102 }] gives -102",
+    "derive_under_specified_nonfinite: [{ kind: \"expense\", amount_cents: NaN }] gives NaN",
+    "derive_under_specified_nonfinite: [{ kind: \"settlement\", amount_cents: NaN }] gives 0"
    ],
    "expr": "entries.filter((x) => x.kind === \"expense\").reduce((n, x) => n + x.amount_cents, 0)",
    "shape": "sum-eqs",
    "heldOut": {
-    "right": 210,
+    "right": 308,
     "wrong": 0,
-    "nonFinite": 63
+    "nonFinite": 161
    }
   },
   {
@@ -479,18 +490,22 @@
     "[{ active: false, balance: 3 }, { active: false, balance: 150 }, { active: true, balance: -1 }, { active: false, balance: 2 }] gives -1",
     "[{ active: false, balance: 7 }] gives 0",
     "[{ active: true, balance: 101 }, { active: true, balance: Infinity }] gives Infinity",
-    "[{ active: true, balance: -102 }] gives -102"
+    "[{ active: true, balance: -102 }] gives -102",
+    "[{ active: true, balance: NaN }] gives NaN",
+    "[{ active: false, balance: NaN }] gives 0"
    ],
    "addedForGates": [
     "derive_under_specified_kept (two grid elements where x.active): [{ active: true, balance: 101 }, { active: true, balance: Infinity }] gives Infinity",
-    "derive_under_specified_seed: [{ active: true, balance: -102 }] gives -102"
+    "derive_under_specified_seed: [{ active: true, balance: -102 }] gives -102",
+    "derive_under_specified_nonfinite: [{ active: true, balance: NaN }] gives NaN",
+    "derive_under_specified_nonfinite: [{ active: false, balance: NaN }] gives 0"
    ],
    "expr": "accounts.filter((x) => x.active).reduce((n, x) => n + x.balance, 0)",
    "shape": "sum-is",
    "heldOut": {
-    "right": 203,
+    "right": 292,
     "wrong": 0,
-    "nonFinite": 62
+    "nonFinite": 151
    }
   },
   {
@@ -625,9 +640,9 @@
    "expr": "chain.filter((x) => 1 <= x)",
    "shape": "filter-ge",
    "heldOut": {
-    "right": 160,
+    "right": 180,
     "wrong": 0,
-    "nonFinite": 70
+    "nonFinite": 90
    }
   },
   {
@@ -654,24 +669,92 @@
     "[-Infinity, 101] gives 101",
     "[-2, Infinity, -150, 30] gives Infinity",
     "[NaN] gives NaN",
-    "[-Infinity] gives -Infinity"
+    "[-Infinity] gives -Infinity",
+    "[1, NaN] gives NaN",
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives 1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "[1, 1, 99] gives 99",
+    "[30, 150, 99] gives 150",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives 150",
+    "[0, -101, Infinity, 1] gives Infinity",
+    "[-101] gives -101",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives 3",
+    "[150, 0, 7, -2, -101, 3] gives 150",
+    "[-1, -2, 3] gives 3",
+    "[-Infinity, -40, 1] gives 1",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 3",
+    "[3, 30, 101, 30] gives 101",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives 101",
+    "[-101, -101] gives -101",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[150, -101, 3] gives 150",
+    "[-Infinity, 150, Infinity] gives Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives 150",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "[150, -150] gives 150"
    ],
    "addedForGates": [
-    "derive_under_specified_seed: [-Infinity] gives -Infinity"
+    "derive_under_specified_seed: [-Infinity] gives -Infinity",
+    "derive_under_specified_nonfinite: [1, NaN] gives NaN",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives 1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 99",
+    "derive_no_fit: next grid row [30, 150, 99] gives 150",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives 150",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [-101] gives -101",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives 3",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-1, -2, 3] gives 3",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives 1",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 3",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 101",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives 101",
+    "derive_no_fit: next grid row [-101, -101] gives -101",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives 150",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "derive_no_fit: next grid row [150, -150] gives 150"
    ],
-   "expr": "values.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
-   "shape": "max",
-   "heldOut": {
-    "right": 117,
-    "wrong": 11,
-    "nonFinite": 59
-   },
-   "wrongAt": [
-    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
-    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
-    "[-101, NaN] gives NaN"
-   ],
-   "wrongOnNaN": true
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example",
+   "beforeNonFiniteGate": {
+    "expr": "values.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+    "heldOut": {
+     "right": 117,
+     "wrong": 11,
+     "nonFinite": 59
+    },
+    "wrongAt": [
+     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+     "[-101, NaN] gives NaN"
+    ]
+   }
   },
   {
    "repo": "pmndrs/glyph",
@@ -696,22 +779,93 @@
     "[1] gives 1",
     "[-Infinity, 101] gives -Infinity",
     "[-2, Infinity, -150, 30] gives -150",
-    "[NaN] gives NaN"
-   ],
-   "addedForGates": [],
-   "expr": "values.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
-   "shape": "min",
-   "heldOut": {
-    "right": 118,
-    "wrong": 11,
-    "nonFinite": 60
-   },
-   "wrongAt": [
+    "[NaN] gives NaN",
+    "[1, NaN] gives NaN",
     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives -1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives -Infinity",
+    "[1, 1, 99] gives 1",
+    "[30, 150, 99] gives 30",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives -101",
+    "[0, -101, Infinity, 1] gives -101",
+    "[-101] gives -101",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives -40",
+    "[150, 0, 7, -2, -101, 3] gives -101",
+    "[-1, -2, 3] gives -2",
+    "[-Infinity, -40, 1] gives -Infinity",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 0",
+    "[3, 30, 101, 30] gives 3",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives -101",
+    "[-101, -101] gives -101",
     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
-    "[-101, NaN] gives NaN"
+    "[150, -101, 3] gives -101",
+    "[-Infinity, 150, Infinity] gives -Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives -1",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives -Infinity",
+    "[150, -150] gives -150",
+    "[7, 7, 0, -40, -101, 101] gives -101"
    ],
-   "wrongOnNaN": true
+   "addedForGates": [
+    "derive_under_specified_nonfinite: [1, NaN] gives NaN",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives -1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives -Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 1",
+    "derive_no_fit: next grid row [30, 150, 99] gives 30",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives -101",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives -101",
+    "derive_no_fit: next grid row [-101] gives -101",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives -40",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives -101",
+    "derive_no_fit: next grid row [-1, -2, 3] gives -2",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives -Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 0",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 3",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives -101",
+    "derive_no_fit: next grid row [-101, -101] gives -101",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives -101",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives -Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives -1",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives -Infinity",
+    "derive_no_fit: next grid row [150, -150] gives -150",
+    "derive_no_fit: next grid row [7, 7, 0, -40, -101, 101] gives -101"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example",
+   "beforeNonFiniteGate": {
+    "expr": "values.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
+    "heldOut": {
+     "right": 118,
+     "wrong": 11,
+     "nonFinite": 60
+    },
+    "wrongAt": [
+     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+     "[-101, NaN] gives NaN"
+    ]
+   }
   },
   {
    "repo": "AGI-is-going-to-arrive/Antigravity-Context-Window-Monitor",
@@ -737,24 +891,92 @@
     "[-Infinity, 101] gives 101",
     "[-2, Infinity, -150, 30] gives Infinity",
     "[NaN] gives NaN",
-    "[-Infinity] gives -Infinity"
+    "[-Infinity] gives -Infinity",
+    "[1, NaN] gives NaN",
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives 1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "[1, 1, 99] gives 99",
+    "[30, 150, 99] gives 150",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives 150",
+    "[0, -101, Infinity, 1] gives Infinity",
+    "[-101] gives -101",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives 3",
+    "[150, 0, 7, -2, -101, 3] gives 150",
+    "[-1, -2, 3] gives 3",
+    "[-Infinity, -40, 1] gives 1",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 3",
+    "[3, 30, 101, 30] gives 101",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives 101",
+    "[-101, -101] gives -101",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[150, -101, 3] gives 150",
+    "[-Infinity, 150, Infinity] gives Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives 150",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "[150, -150] gives 150"
    ],
    "addedForGates": [
-    "derive_under_specified_seed: [-Infinity] gives -Infinity"
+    "derive_under_specified_seed: [-Infinity] gives -Infinity",
+    "derive_under_specified_nonfinite: [1, NaN] gives NaN",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives 1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 99",
+    "derive_no_fit: next grid row [30, 150, 99] gives 150",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives 150",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [-101] gives -101",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives 3",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-1, -2, 3] gives 3",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives 1",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 3",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 101",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives 101",
+    "derive_no_fit: next grid row [-101, -101] gives -101",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives 150",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "derive_no_fit: next grid row [150, -150] gives 150"
    ],
-   "expr": "arr.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
-   "shape": "max",
-   "heldOut": {
-    "right": 117,
-    "wrong": 11,
-    "nonFinite": 59
-   },
-   "wrongAt": [
-    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
-    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
-    "[-101, NaN] gives NaN"
-   ],
-   "wrongOnNaN": true
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example",
+   "beforeNonFiniteGate": {
+    "expr": "arr.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+    "heldOut": {
+     "right": 117,
+     "wrong": 11,
+     "nonFinite": 59
+    },
+    "wrongAt": [
+     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+     "[-101, NaN] gives NaN"
+    ]
+   }
   },
   {
    "repo": "AGI-is-going-to-arrive/Antigravity-Context-Window-Monitor",
@@ -779,22 +1001,93 @@
     "[1] gives 1",
     "[-Infinity, 101] gives -Infinity",
     "[-2, Infinity, -150, 30] gives -150",
-    "[NaN] gives NaN"
-   ],
-   "addedForGates": [],
-   "expr": "arr.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
-   "shape": "min",
-   "heldOut": {
-    "right": 118,
-    "wrong": 11,
-    "nonFinite": 60
-   },
-   "wrongAt": [
+    "[NaN] gives NaN",
+    "[1, NaN] gives NaN",
     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives -1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives -Infinity",
+    "[1, 1, 99] gives 1",
+    "[30, 150, 99] gives 30",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives -101",
+    "[0, -101, Infinity, 1] gives -101",
+    "[-101] gives -101",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives -40",
+    "[150, 0, 7, -2, -101, 3] gives -101",
+    "[-1, -2, 3] gives -2",
+    "[-Infinity, -40, 1] gives -Infinity",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 0",
+    "[3, 30, 101, 30] gives 3",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives -101",
+    "[-101, -101] gives -101",
     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
-    "[-101, NaN] gives NaN"
+    "[150, -101, 3] gives -101",
+    "[-Infinity, 150, Infinity] gives -Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives -1",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives -Infinity",
+    "[150, -150] gives -150",
+    "[7, 7, 0, -40, -101, 101] gives -101"
    ],
-   "wrongOnNaN": true
+   "addedForGates": [
+    "derive_under_specified_nonfinite: [1, NaN] gives NaN",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives -1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives -Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 1",
+    "derive_no_fit: next grid row [30, 150, 99] gives 30",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives -101",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives -101",
+    "derive_no_fit: next grid row [-101] gives -101",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives -40",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives -101",
+    "derive_no_fit: next grid row [-1, -2, 3] gives -2",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives -Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 0",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 3",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives -101",
+    "derive_no_fit: next grid row [-101, -101] gives -101",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives -101",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives -Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives -1",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives -Infinity",
+    "derive_no_fit: next grid row [150, -150] gives -150",
+    "derive_no_fit: next grid row [7, 7, 0, -40, -101, 101] gives -101"
+   ],
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example",
+   "beforeNonFiniteGate": {
+    "expr": "arr.reduce((n, x, i) => (i === 0 || x <= n ? x : n), 0)",
+    "heldOut": {
+     "right": 118,
+     "wrong": 11,
+     "nonFinite": 60
+    },
+    "wrongAt": [
+     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+     "[-101, NaN] gives NaN"
+    ]
+   }
   },
   {
    "repo": "zkywsg/Daily-LLM",
@@ -820,24 +1113,92 @@
     "[-Infinity, 101] gives 101",
     "[-2, Infinity, -150, 30] gives Infinity",
     "[NaN] gives NaN",
-    "[-Infinity] gives -Infinity"
+    "[-Infinity] gives -Infinity",
+    "[1, NaN] gives NaN",
+    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "[1, -1] gives 1",
+    "[-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "[1, 1, 99] gives 99",
+    "[30, 150, 99] gives 150",
+    "[] gives 0",
+    "[3] gives 3",
+    "[150, -101] gives 150",
+    "[0, -101, Infinity, 1] gives Infinity",
+    "[-101] gives -101",
+    "[NaN, 150, Infinity, -40, 1] gives NaN",
+    "[3, -40] gives 3",
+    "[150, 0, 7, -2, -101, 3] gives 150",
+    "[-1, -2, 3] gives 3",
+    "[-Infinity, -40, 1] gives 1",
+    "[] gives 0",
+    "[2] gives 2",
+    "[0, 3] gives 3",
+    "[3, 30, 101, 30] gives 101",
+    "[NaN] gives NaN",
+    "[-101, -40, 7, 101, 99] gives 101",
+    "[-101, -101] gives -101",
+    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "[150, -101, 3] gives 150",
+    "[-Infinity, 150, Infinity] gives Infinity",
+    "[] gives 0",
+    "[NaN] gives NaN",
+    "[150, -1] gives 150",
+    "[NaN, 3, -1, -101] gives NaN",
+    "[0] gives 0",
+    "[3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "[150, -150] gives 150"
    ],
    "addedForGates": [
-    "derive_under_specified_seed: [-Infinity] gives -Infinity"
+    "derive_under_specified_seed: [-Infinity] gives -Infinity",
+    "derive_under_specified_nonfinite: [1, NaN] gives NaN",
+    "derive_no_fit: next grid row [-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+    "derive_no_fit: next grid row [1, -1] gives 1",
+    "derive_no_fit: next grid row [-Infinity, 2, -Infinity, 7, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [1, 1, 99] gives 99",
+    "derive_no_fit: next grid row [30, 150, 99] gives 150",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [3] gives 3",
+    "derive_no_fit: next grid row [150, -101] gives 150",
+    "derive_no_fit: next grid row [0, -101, Infinity, 1] gives Infinity",
+    "derive_no_fit: next grid row [-101] gives -101",
+    "derive_no_fit: next grid row [NaN, 150, Infinity, -40, 1] gives NaN",
+    "derive_no_fit: next grid row [3, -40] gives 3",
+    "derive_no_fit: next grid row [150, 0, 7, -2, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-1, -2, 3] gives 3",
+    "derive_no_fit: next grid row [-Infinity, -40, 1] gives 1",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [2] gives 2",
+    "derive_no_fit: next grid row [0, 3] gives 3",
+    "derive_no_fit: next grid row [3, 30, 101, 30] gives 101",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [-101, -40, 7, 101, 99] gives 101",
+    "derive_no_fit: next grid row [-101, -101] gives -101",
+    "derive_no_fit: next grid row [Infinity, NaN, 101, 0, 3, 30] gives NaN",
+    "derive_no_fit: next grid row [150, -101, 3] gives 150",
+    "derive_no_fit: next grid row [-Infinity, 150, Infinity] gives Infinity",
+    "derive_no_fit: next grid row [] gives 0",
+    "derive_no_fit: next grid row [NaN] gives NaN",
+    "derive_no_fit: next grid row [150, -1] gives 150",
+    "derive_no_fit: next grid row [NaN, 3, -1, -101] gives NaN",
+    "derive_no_fit: next grid row [0] gives 0",
+    "derive_no_fit: next grid row [3, -Infinity, Infinity, 2, 7] gives Infinity",
+    "derive_no_fit: next grid row [150, -150] gives 150"
    ],
-   "expr": "xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
-   "shape": "max",
-   "heldOut": {
-    "right": 117,
-    "wrong": 11,
-    "nonFinite": 59
-   },
-   "wrongAt": [
-    "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
-    "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
-    "[-101, NaN] gives NaN"
-   ],
-   "wrongOnNaN": true
+   "refused": "derive_no_fit",
+   "detail": "none of 160 programs fits every example",
+   "beforeNonFiniteGate": {
+    "expr": "xs.reduce((n, x, i) => (i === 0 || n <= x ? x : n), 0)",
+    "heldOut": {
+     "right": 117,
+     "wrong": 11,
+     "nonFinite": 59
+    },
+    "wrongAt": [
+     "[-Infinity, NaN, 3, -Infinity, 150] gives NaN",
+     "[Infinity, NaN, 101, 0, 3, 30] gives NaN",
+     "[-101, NaN] gives NaN"
+    ]
+   }
   },
   {
    "repo": "steipete/ReleaseBar",
@@ -1064,9 +1425,9 @@
    "expr": "arr.filter((x) => Number.isFinite(x))",
    "shape": "filter-fin",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -1098,9 +1459,9 @@
    "expr": "values.some((x) => !Number.isFinite(x))",
    "shape": "some-nfin",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -1132,9 +1493,9 @@
    "expr": "xs.filter((x) => Number.isFinite(x))",
    "shape": "filter-fin",
    "heldOut": {
-    "right": 129,
+    "right": 149,
     "wrong": 0,
-    "nonFinite": 60
+    "nonFinite": 80
    }
   },
   {
@@ -1232,9 +1593,9 @@
     "derive_no_fit: next grid row [{ isActive: false, currentCredits: -150 }, { isActive: true, currentCredits: -150 }, { isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: 3 }, { isActive: true, currentCredits: 0 }, { isActive: false, currentCredits: 2 }] gives -150",
     "derive_no_fit: next grid row [{ isActive: true, currentCredits: -101 }, { isActive: false, currentCredits: 30 }, { isActive: true, currentCredits: 2 }] gives -99"
    ],
-   "outOfVocabulary": true,
    "refused": "derive_no_fit",
-   "detail": "none of 164 programs fits every example"
+   "detail": "none of 164 programs fits every example",
+   "outOfVocabulary": true
   }
  ]
 }
