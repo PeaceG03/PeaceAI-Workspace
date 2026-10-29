@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m132-neverzone-sets:v1",
- "note": "computeNeverZone on main 807ba1e: before = pre-ruling raw mention scan, after = M132 (comments/prose/upstream coordinates and the #136 EDITABLE_PATHS grant do not count). Sorted. S2 (2026-10-29): plus the committed stage-2 generator run record under peaceai/self/gen-records/ (never-zone by its path, in both sets). G17 (2026-10-29): plus public-derive-from-behavior-v6's learned spec and proposal record (never-zone as every rule spec and proposal) and the test its proposal names, in both sets. G17 phase 2 (2026-10-29): plus the v6 evidence file m136-derive-nonfinite-evidence.json (read by the m136 test its proposal names), in both sets. G18 (2026-10-29): plus public-derive-wire-v1's learned spec and proposal record (never-zone as every rule spec and proposal) and the files its proposal names (lib/derive-wire.ts, test/m137-derive-wire.test.ts, test/m98-confinement.test.ts), in both sets.",
+ "note": "computeNeverZone on main 807ba1e: before = pre-ruling raw mention scan, after = M132 (comments/prose/upstream coordinates and the #136 EDITABLE_PATHS grant do not count). Sorted. S2 (2026-10-29): plus the committed stage-2 generator run record under peaceai/self/gen-records/ (never-zone by its path, in both sets). G17 (2026-10-29): plus public-derive-from-behavior-v6's learned spec and proposal record (never-zone as every rule spec and proposal) and the test its proposal names, in both sets. G17 phase 2 (2026-10-29): plus the v6 evidence file m136-derive-nonfinite-evidence.json (read by the m136 test its proposal names), in both sets. G18 (2026-10-29): plus public-derive-wire-v1's learned spec and proposal record (never-zone as every rule spec and proposal) and the files its proposal names (lib/derive-wire.ts, test/m137-derive-wire.test.ts, test/m98-confinement.test.ts), in both sets. G17 gate fix (2026-10-29): plus the seed-136 evidence generator and check m136-evidence-run.ts (imported by the m136 test), in both sets.",
  "before": [
   ".github/CODEOWNERS",
   ".github/workflows/builder-log.yml",
@@ -384,6 +384,7 @@
   "peaceai/test/m12-test-rule.test.ts",
   "peaceai/test/m13-throw-guard.test.ts",
   "peaceai/test/m136-derive-nonfinite.test.ts",
+  "peaceai/test/m136-evidence-run.ts",
   "peaceai/test/m137-derive-wire.test.ts",
   "peaceai/test/m14-test-append.test.ts",
   "peaceai/test/m15-add-function.test.ts",
@@ -806,6 +807,7 @@
   "peaceai/test/m12-test-rule.test.ts",
   "peaceai/test/m13-throw-guard.test.ts",
   "peaceai/test/m136-derive-nonfinite.test.ts",
+  "peaceai/test/m136-evidence-run.ts",
   "peaceai/test/m137-derive-wire.test.ts",
   "peaceai/test/m14-test-append.test.ts",
   "peaceai/test/m15-add-function.test.ts",
