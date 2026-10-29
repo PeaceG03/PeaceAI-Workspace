@@ -23,13 +23,20 @@
 //            the id names the run that made the record (read with GET only), Auditor `/auditor-pass <id> <sha>` and
 //            Peace `/verdict <id> <sha> right`. Prints only; never posts, applies, pushes or merges.
 //   credit2  always refuses: no generator run record exists yet (limit 5 needs provenance, a later PR).
+// M109 generator (no candidate code runs; writes nothing but the record):
+//   generate2 --task-file FILE --base SHA [--repo DIR] [--out FILE]   PeaceAI writes a stage-2 proposal from the task
+//            text ONLY plus the base commit's tree (skills run sandboxed: no fs, no child processes, empty env), then
+//            the stage-2 check runs on the canonical diff -> a peaceai-self-gen:v1 record (and <out>.patch for a
+//            candidate). Exit 0 candidate, 2 refused. Never credit (credit2 still refuses).
+//   verify2 --record FILE [--repo DIR]   S2: re-run a generate2 record from its own inputs (task text + base tree) and
+//            check it reproduces field for field (createdAt excepted). Exit 0 reproduced, 3 differs. Never credit.
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record, type Stage2RunFacts } from "../lib/selfchange.ts";
-import { prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
+import { generateStage2Proposal, verifySelfGenRecord, prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
 
 const argv = process.argv.slice(2);
 const mode = argv[0];
@@ -76,6 +83,22 @@ if (mode === "propose") {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(rec, null, 1) + "\n", { flag: "wx" });
   die(rec.status === "awaiting-review" ? 0 : 3, `self-change stage2 record id=${rec.id} status=${rec.status} phases=${rec.phases.map((p) => `${p.phase}:${p.ran ? "ran" : "missing"}${p.leftovers ? `,leftovers=${p.leftovers}` : ""}`).join(" ")}`);
+} else if (mode === "generate2") {
+  const base = opt("base") ?? "";
+  if (!/^[0-9a-f]{40}$/.test(base) || !opt("task-file")) die(1, "usage: generate2 --task-file FILE --base <40-hex sha> [--repo DIR] [--out FILE]");
+  const rec = generateStage2Proposal(resolve(opt("repo") ?? "."), readFileSync(resolve(opt("task-file")!), "utf8"), base);
+  const out = opt("out");
+  if (out) {
+    mkdirSync(dirname(resolve(out)), { recursive: true });
+    writeFileSync(resolve(out), JSON.stringify(rec, null, 1) + "\n", { flag: "wx" });
+    if (rec.diff) writeFileSync(resolve(out) + ".patch", rec.diff, { flag: "wx" });
+  }
+  die(rec.status === "candidate" ? 0 : 2, `self-change generate2 status=${rec.status} skill=${rec.skill ?? "-"} base=${base.slice(0, 12)} generator=${rec.generatorSha256.slice(0, 12)} diff=${rec.diffSha256.slice(0, 12) || "-"} reason=${rec.reason}${rec.check && !rec.check.ok ? `\n${rec.check.refusals.map((r) => `  ${r.path}: ${r.reason}`).join("\n")}` : ""}`);
+} else if (mode === "verify2") {
+  if (!opt("record")) die(1, "usage: verify2 --record FILE [--repo DIR]");
+  const rec = JSON.parse(readFileSync(resolve(opt("record")!), "utf8")) as { generator?: string; baseSha?: string; diffSha256?: string; status?: string };
+  const bad = verifySelfGenRecord(resolve(opt("repo") ?? "."), rec);
+  die(bad.length ? 3 : 0, `self-change verify2 ${bad.length ? `DIFFERS (${bad.join(", ")})` : "reproduced"} generator=${rec.generator ?? "-"} base=${String(rec.baseSha ?? "").slice(0, 12)} status=${rec.status ?? "-"} diff=${String(rec.diffSha256 ?? "").slice(0, 12) || "-"}`);
 } else if (mode === "credit2") {
   // Auditor #504 blocker 4: no credit without a recorded generator run (task text only, output hash bound). None exists.
   const rec = JSON.parse(readFileSync(resolve(opt("record") ?? ""), "utf8")) as Stage2Record;
@@ -178,4 +201,4 @@ if (mode === "propose") {
   });
   if (bad.length) die(3, `self-change rollback id=${rec.id} INCOMPLETE paths=${bad.length}`);
   die(0, `self-change rollback id=${rec.id} branch=${branch} reverts=${of!.slice(0, 12)} head=${git(repo, "rev-parse", "HEAD").slice(0, 12)} (open it as a normal PR)`);
-} else die(1, "usage: self-change.ts propose|decide|rollback|prepare2|run2|record2|decide2|credit2");
+} else die(1, "usage: self-change.ts propose|decide|rollback|prepare2|run2|record2|decide2|credit2|generate2|verify2");

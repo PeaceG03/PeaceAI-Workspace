@@ -1,0 +1,32 @@
+{
+ "schema": "peaceai-self-gen:v1",
+ "generator": "selfGenerateCore",
+ "inputs": {
+  "task": "docs: stage-2 generator run record",
+  "base": "5830467b30edee7fff2b266e431fa248529e7a3c"
+ },
+ "taskSha256": "aa9a01110c383f4f57d8c5b2288351fff17e2c559cdad71280f6ad483e03b79d",
+ "baseSha": "5830467b30edee7fff2b266e431fa248529e7a3c",
+ "snapshotSha256": "f711ab2cb2ff3124d525ffc8c0d96202b32ecedb3eb8e7cffba5db7dab8b85f6",
+ "generatorSha256": "38742bf8f245f1e258fe8908844b5531c2a24ba136fecc4872d5684b8d041904",
+ "status": "candidate",
+ "skill": "DOC_PAGE_STUB",
+ "reason": "new root doc page from the task title",
+ "paths": [
+  "docs/stage-2-generator-run-record.md"
+ ],
+ "candidateBlobs": {
+  "docs/stage-2-generator-run-record.md": "e4e047a79f103d1c49a2e44c13958a0f7de78529"
+ },
+ "diff": "diff --git a/docs/stage-2-generator-run-record.md b/docs/stage-2-generator-run-record.md\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..e4e047a79f103d1c49a2e44c13958a0f7de78529\n--- /dev/null\n+++ b/docs/stage-2-generator-run-record.md\n@@ -0,0 +1,3 @@\n+# Stage-2 generator run record\n+\n+Stage-2 generator run record.\n",
+ "diffSha256": "d22a886ea60816be6f5082abe224a64cb55f5abb865ea3815192c94b530b3ca6",
+ "check": {
+  "ok": true,
+  "refusals": [],
+  "paths": [
+   "docs/stage-2-generator-run-record.md"
+  ],
+  "newTests": []
+ },
+ "createdAt": "2026-10-29T08:22:49.015Z"
+}
