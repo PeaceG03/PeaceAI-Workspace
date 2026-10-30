@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-m143-search-fixtures:v1",
- "note": "Fixture repos for the M143 code search and read tools (peaceai/lib/codesearch.ts, peaceai/test/m143-codesearch*.test.ts). Each bundle is a verbatim copy of the listed files at the pinned commit (MIT, see THIRD_PARTY_NOTICES). Chosen because neither repo is in PeaceAI's LM training manifest (peaceai/model/ext-manifest, checked by the m143 test) nor in the plan-mode task-set candidates (unjs/*, developit/mitt, toss/es-toolkit as of 2026-10-30). Not a learned rule and not a proposal: an evidence record for copied fixtures only.",
+ "note": "Fixture repos for the M143 code search and read tools (the m143 tests). Each bundle is a verbatim copy of the listed files at the pinned commit (MIT, see THIRD_PARTY_NOTICES). Chosen because neither repo is in PeaceAI's LM training manifest (peaceai/model/ext-manifest, checked by the m143 test) nor in the plan-mode task-set candidates (unjs/*, developit/mitt, toss/es-toolkit as of 2026-10-30). Not a learned rule and not a proposal: an evidence record for copied fixtures only.",
  "examples": [
   {
    "repo": "mesqueeb/is-what",
