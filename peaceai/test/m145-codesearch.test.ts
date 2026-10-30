@@ -76,8 +76,25 @@ test("M145: the fixture bundles are verbatim, pinned, MIT, outside the LM traini
   // Wider exclusion (the plan-mode rule): no other tracked file names the repo, so it is not in any model/*.json
   // repo list, learned-rule evidence or proposal; and it is none of the plan-mode public task repos.
   for (const b of Object.values(BUNDLES)) {
-    const g = spawnSync("git", ["grep", "-il", "-F", "-e", b.repo.split("/")[1]!, "--", ".", ":!peaceai/test/m145-*", ":!peaceai/test/fixtures/m145-search", ":!peaceai/rules/proposals/m145-search-fixtures-evidence.json", ":!THIRD_PARTY_NOTICES"], { cwd: root, encoding: "utf8" });
+    const g = spawnSync("git", ["grep", "-il", "-F", "-e", b.repo.split("/")[1]!, "--", ".", ":!peaceai/test/m145-*", ":!peaceai/test/fixtures/m145-search", ":!peaceai/rules/proposals/m145-search-fixtures-evidence.json", ":!THIRD_PARTY_NOTICES", ":!peaceai/lib/nlpairs.ts", ":!peaceai/test/m147-nl-pairs.test.ts", ":!peaceai/model/nl-pairs-exclusions-*.txt", ":!peaceai/spec/nl-pairs-v1.md"], { cwd: root, encoding: "utf8" });
     assert.equal(g.status, 1, `${b.repo} is named elsewhere in the repo: ${g.stdout}${g.stderr}`); // git grep: 1 = no match
+  }
+  // #636 names the fixture repos only to keep them OUT of the LM pairs: nlpairs.ts lists them in its built-in
+  // exclusion and m147 tests that exclusion. Those two files are skipped above, so require that every such mention is an exclusion.
+  const nl = readFileSync(resolve(root, "peaceai/lib/nlpairs.ts"), "utf8");
+  const ex = /BUILTIN_EXCLUDED_NAMES[^=]*=\s*\[([^\]]*)\]/.exec(nl);
+  assert.ok(ex, "nlpairs.ts BUILTIN_EXCLUDED_NAMES found");
+  for (const b of Object.values(BUNDLES)) {
+    const n = b.repo.split("/")[1]!.toLowerCase();
+    assert.ok(ex![1]!.toLowerCase().includes(`"${n}"`), `${b.repo} is in the nl-pairs built-in exclusion`);
+    const lines = nl.toLowerCase().split("\n").filter((l) => l.includes(n));
+    assert.deepEqual(lines.length, 1, `${b.repo} is named in nlpairs.ts only inside BUILTIN_EXCLUDED_NAMES`);
+    for (const f of readdirSync(resolve(root, "peaceai/model")).filter((x) => /^nl-pairs-exclusions-.*\.txt$/.test(x))) {
+      const hits = readFileSync(resolve(root, "peaceai/model", f), "utf8").toLowerCase().split("\n").filter((l) => l.includes(n));
+      assert.deepEqual(hits, [`*/${n}`], `${f} names ${b.repo} only as an exclusion line`);
+    }
+    const spec = readFileSync(resolve(root, "peaceai/spec/nl-pairs-v1.md"), "utf8").toLowerCase().split("\n").filter((l) => l.includes(n));
+    assert.ok(spec.length === 1 && spec[0]!.includes("fixtures by repo name"), `nl-pairs-v1.md names ${b.repo} only in its exclusion sentence`);
   }
   const planMode = ["valibot", "superstruct", "p-queue", "remeda", "neverthrow", "defu", "destr", "scule", "ohash", "yup", "kysely", "ufo", "mitt", "es-toolkit"];
   for (const b of Object.values(BUNDLES)) assert.ok(!planMode.includes(b.repo.split("/")[1]!.toLowerCase()), `${b.repo} is a plan-mode task repo`);
