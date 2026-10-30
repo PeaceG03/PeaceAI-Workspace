@@ -18,7 +18,7 @@ import { readManifestBytes } from "../lib/manifestparts.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
-import { loadClosure as loadClosure520, loadProblem as loadProblem520 } from "../lib/learned-edit-existing.ts";
+import { importTimeProblem as importTimeProblem520, loadClosure as loadClosure520, loadProblem as loadProblem520 } from "../lib/learned-edit-existing.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -905,5 +905,222 @@ test("Auditor #520 ruling near miss: a guarded global bound anywhere, or reached
   ]) {
     assert.equal(one520(ok + fn(body)), NO520, body);
     assert.equal(one520("import { evil } from \"./evil.ts\";\n" + ok + "export const Z = evil;\n", { "src/evil.ts": fn(body) }), NO520, `imported ${body}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Auditor #520 follow-up (G25+, w03): (i) a computed key at load stays refused by strictInert (no ElementAccess case),
+// and (ii) the one recipes.ts shape Object.fromEntries(C.map((p) => [p.a, p.b])) is admitted under the four conditions.
+// Each near miss sits next to its admitted sibling, so every test below fails with recipeVersionsForm reverted.
+/** A module with C (FEATURE_RECIPES) and V (FEATURE_RECIPE_VERSIONS); every part replaceable for the near misses. */
+const REC520 = (o: { decl?: string; elems?: string[]; wrap?: (a: string) => string; versions?: string } = {}): string => {
+  const elems = o.elems ?? ["{ featureId: \"A\", version: \"1\", requiredInputs: [\"close\"], lookback: 5, shift: -1 }", "{ \"featureId\": \"B\", version: \"2\", requiredInputs: [], lookback: 20, shift: 0 }"];
+  const arr = `[\n  ${elems.join(",\n  ")},\n]`;
+  return `${o.decl ?? "const C: readonly { featureId: string; version: string }[] ="} ${(o.wrap ?? ((a) => `${a} as const`))(arr)};\n`
+    + `const V = ${o.versions ?? "Object.fromEntries(C.map((p) => [p.featureId, p.version]))"};\n`;
+};
+const recOne = (o: Parameters<typeof REC520>[0], more: Record<string, string> = {}): string | null => one520(REC520(o) + "export const W = V;\n", more);
+
+test("Auditor #520 follow-up (i): a top-level computed key next to an admitted shape is refused", () => {
+  const ok = "const E = new TextEncoder();\n";
+  assert.equal(one520(ok + "export const W = E;\n"), null);
+  // the hermetic walk refuses the computed access first; strictInert (importTimeProblem) refuses it on its own as well
+  const strict = (src: string): string | null => { const c = loadClosure520("src/m.ts", (p) => (p === "src/m.ts" ? src + TAIL520 : null)); return typeof c === "string" ? c : importTimeProblem520(c); };
+  for (const k of ["__proto__", "length"]) { // any non-literal key, not only __proto__
+    const src = ok + `const k = "${k}";\nconst P = [][k];\nexport const W = [E, P];\n`;
+    assert.equal(one520(src), "edit_computed_access", k);
+    assert.equal(strict(src), NO520, k);
+  }
+  assert.equal(strict(ok + "export const W = E;\n"), null);
+  // and next to the recipes shape
+  const rec = REC520() + "const k = \"__proto__\";\nconst P = [][k];\nexport const W = [V, P];\n";
+  assert.equal(one520(rec), "edit_computed_access");
+  assert.equal(strict(rec), NO520);
+  assert.equal(strict(REC520() + "export const W = V;\n"), null);
+  assert.equal(one520(REC520() + "export const W = V;\n"), null);
+});
+
+test("Auditor #520 follow-up (ii): the real PeaceSTOCKS c617e63 recipes.ts shape is admitted", () => {
+  const files = {
+    "src/m.ts": "import { FEATURE_RECIPE_VERSIONS } from \"./recipes\";\nexport function f(): number {\n  return Object.keys(FEATURE_RECIPE_VERSIONS).length;\n}\n",
+    "src/contracts.ts": "export interface FeatureRecipe {\n  readonly featureId: string;\n  readonly version: string;\n  readonly requiredInputs: readonly string[];\n  readonly method: string;\n  readonly lookback: number;\n  readonly minimumHistory: number;\n  readonly precision: string;\n  readonly missingDataBehavior: string;\n}\n",
+    "src/recipes.ts": [
+      "import type { FeatureRecipe } from \"./contracts\";",
+      "",
+      "export const FEATURE_RECIPES: readonly FeatureRecipe[] = [",
+      "  {",
+      "    featureId: \"RETURN_5D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\"],",
+      "    method: \"close[t]/close[t-5]-1\",",
+      "    lookback: 5,",
+      "    minimumHistory: 6,",
+      "    precision: \"source-close\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "  {",
+      "    featureId: \"RETURN_20D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\"],",
+      "    method: \"close[t]/close[t-20]-1\",",
+      "    lookback: 20,",
+      "    minimumHistory: 21,",
+      "    precision: \"source-close\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "  {",
+      "    featureId: \"MOMENTUM_60D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\"],",
+      "    method: \"close[t]/close[t-60]-1\",",
+      "    lookback: 60,",
+      "    minimumHistory: 61,",
+      "    precision: \"source-close\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "  {",
+      "    featureId: \"VOLATILITY_20D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\"],",
+      "    method: \"sample-stdev(daily-close-returns,20)*sqrt(252)\",",
+      "    lookback: 20,",
+      "    minimumHistory: 22,",
+      "    precision: \"double\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "  {",
+      "    featureId: \"DRAWDOWN_60D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\"],",
+      "    method: \"close[t]/max(close[t-60:t])-1\",",
+      "    lookback: 60,",
+      "    minimumHistory: 61,",
+      "    precision: \"source-close\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "  {",
+      "    featureId: \"AVG_DOLLAR_VOLUME_20D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\", \"volume\"],",
+      "    method: \"mean(close*volume,20)\",",
+      "    lookback: 20,",
+      "    minimumHistory: 20,",
+      "    precision: \"double\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "  {",
+      "    featureId: \"RELATIVE_STRENGTH_MARKET_20D\",",
+      "    version: \"1\",",
+      "    requiredInputs: [\"close\", \"benchmarkClose\"],",
+      "    method: \"asset-return-20d - benchmark-return-20d\",",
+      "    lookback: 20,",
+      "    minimumHistory: 21,",
+      "    precision: \"double\",",
+      "    missingDataBehavior: \"null\",",
+      "  },",
+      "] as const;",
+      "",
+      "export const FEATURE_RECIPE_VERSIONS = Object.fromEntries(",
+      "  FEATURE_RECIPES.map((recipe) => [recipe.featureId, recipe.version]),",
+      ");",
+      "",
+    ].join("\n"),
+  };
+  assert.equal(gate520(files), null);
+  assert.equal(recOne({}), null);
+  assert.equal(recOne({ wrap: (a) => `${a} satisfies readonly object[]` }), null);
+  assert.equal(recOne({ wrap: (a) => `${a} as const satisfies readonly object[]` }), null);
+  assert.equal(recOne({ wrap: (a) => a }), null);
+});
+
+test("Auditor #520 follow-up (ii) 1 near miss: an object (or non-string) value in the nested array, or deeper nesting, is refused", () => {
+  assert.equal(recOne({}), null);
+  for (const v of ["[{ a: \"x\" }]", "[\"close\", 1]", "[[\"close\"]]", "{ a: \"x\" }", "`close`", "-\"1\"", "true", "null", "1n", "/x/", "(\"close\")", "[\"a\", ...[\"b\"]]", "[,\"a\"]", "\"a\" + \"b\""]) {
+    assert.equal(recOne({ elems: [`{ featureId: "A", version: "1", requiredInputs: ${v} }`] }), NO520, v);
+  }
+  assert.equal(recOne({ elems: ["[\"A\", \"1\"]"] }), NO520); // elements must be object literals
+  assert.equal(recOne({ elems: ["({ featureId: \"A\", version: \"1\" })"] }), NO520); // nothing wraps an element
+});
+
+test("Auditor #520 follow-up (ii) 1 near miss: a computed, spread, shorthand, method, getter or __proto__ property is refused", () => {
+  assert.equal(recOne({}), null);
+  for (const e of [
+    "{ [\"featureId\"]: \"A\", version: \"1\" }",
+    "{ ...{ featureId: \"A\" }, version: \"1\" }",
+    "{ featureId: \"A\", version }",
+    "{ featureId: \"A\", version: \"1\", m() { return 1; } }",
+    "{ featureId: \"A\", get version() { return \"1\"; } }",
+    "{ featureId: \"A\", version: \"1\", __proto__: null }",
+    "{ featureId: \"A\", version: \"1\", 7: \"x\" }",
+  ]) assert.equal(one520("const version = \"1\";\n" + REC520({ elems: [e] }) + "export const W = [V, version];\n"), NO520, e);
+});
+
+test("Auditor #520 follow-up (ii) 2 near miss: only the type annotation, as const and satisfies may wrap C", () => {
+  assert.equal(recOne({}), null);
+  for (const w of [(a: string) => `(${a})`, (a: string) => `${a} as readonly { featureId: string; version: string }[]`, (a: string) => `<const>${a}`, (a: string) => `${a}!`, (a: string) => `Object.freeze(${a})`, (a: string) => `(${a} as const)`]) {
+    assert.equal(recOne({ wrap: w }), NO520, w("[]"));
+  }
+});
+
+test("Auditor #520 follow-up (ii) 3 near miss: a non-plain arrow, a second parameter, another read or call is refused", () => {
+  assert.equal(recOne({}), null);
+  for (const v of [
+    "Object.fromEntries(C.map((p, i) => [p.featureId, p.version]))",
+    "Object.fromEntries(C.map((p) => ([p.featureId, p.version])))",
+    "Object.fromEntries(C.map((p) => { return [p.featureId, p.version]; }))",
+    "Object.fromEntries(C.map(function (p) { return [p.featureId, p.version]; }))",
+    "Object.fromEntries(C.map(async (p) => [p.featureId, p.version]))",
+    "Object.fromEntries(C.map(({ featureId, version }) => [featureId, version]))",
+    "Object.fromEntries(C.map((p = C[0]!) => [p.featureId, p.version]))",
+    "Object.fromEntries(C.map((...p) => [p[0], p[1]]))",
+    "Object.fromEntries(C.map((p) => [p.featureId, p.version, p.lookback]))",
+    "Object.fromEntries(C.map((p) => [p?.featureId, p.version]))",
+    "Object.fromEntries(C.map((p) => [p[\"featureId\"], p.version]))",
+    "Object.fromEntries(C.map((p) => [p.featureId, String(p.version)]))",
+    "Object.fromEntries(C.map((p) => [C[0]!.featureId, p.version]))",
+    "Object.fromEntries(C.map((p) => [p.featureId, p.missing]))", // a key not every element has
+    "Object.fromEntries(C.map((p) => [p.featureId, p.version]), 1)",
+    "Object.fromEntries(C.map((p) => [p.featureId, p.version], C))",
+    "Object.fromEntries(C?.map((p) => [p.featureId, p.version]))",
+    "Object?.fromEntries(C.map((p) => [p.featureId, p.version]))",
+    "Object.fromEntries(C.filter((p) => [p.featureId, p.version]))",
+    "Object.entries(C.map((p) => [p.featureId, p.version]))",
+    "Object.fromEntries([...C].map((p) => [p.featureId, p.version]))",
+    "Object.fromEntries(C.slice().map((p) => [p.featureId, p.version]))",
+  ]) assert.equal(recOne({ versions: v }), NO520, v);
+  // a key only some elements have
+  assert.equal(recOne({ elems: ["{ featureId: \"A\", version: \"1\" }", "{ featureId: \"B\" }"] }), NO520);
+});
+
+test("Auditor #520 follow-up (ii) 3/4 near miss: C declared with let, imported, or written anywhere in the closure is refused", () => {
+  assert.equal(recOne({}), null);
+  assert.notEqual(recOne({ decl: "let C =" }), null);
+  assert.notEqual(recOne({ decl: "var C =" }), null);
+  // C imported from another module (even a literal-only const there)
+  assert.equal(one520("import { C } from \"./c.ts\";\nconst V = Object.fromEntries(C.map((p) => [p.featureId, p.version]));\nexport const W = V;\n", { "src/c.ts": "export " + REC520().split("\nconst V")[0] + "\n" }), NO520);
+  const fn = (body: string) => `export function evil(): void {\n  ${body}\n}\n`;
+  for (const body of [
+    "(C as any)[0].version = \"2\";",
+    "(C[0] as any).version += \"x\";",
+    "delete (C[0] as any).version;",
+    "(C as any).length = 0;",
+    "Object.assign(C[0] as object, { version: \"2\" });",
+    "Object.defineProperty(C, \"0\", { value: 1 });",
+    "Reflect.set(C, \"0\", 1);",
+    "let x: unknown; for ((C as any)[0] of [1]) x = 1; void x;",
+  ]) {
+    assert.equal(one520(REC520() + "export const W = V;\n" + fn(body)), NO520, body);
+  }
+  // a write through an importer of C
+  assert.equal(one520("import { V } from \"./r.ts\";\nimport { evil } from \"./evil.ts\";\nexport const W = [V, evil];\n", { "src/r.ts": "export " + REC520().replace("const V", "export const V"), "src/evil.ts": "import { C } from \"./r.ts\";\n" + fn("(C as any)[0].version = \"2\";") }), "edit_module_load:src/r.ts");
+  assert.equal(one520("import { V } from \"./r.ts\";\nimport { ok } from \"./ok.ts\";\nexport const W = [V, ok];\n", { "src/r.ts": "export " + REC520().replace("const V", "export const V"), "src/ok.ts": "import { C } from \"./r.ts\";\n" + "export function ok(): string {\n  return C[0]!.version;\n}\n" }), null);
+});
+
+test("Auditor #520 follow-up (ii): Object and Array keep the binding, write and escape guards for the recipes shape", () => {
+  assert.equal(recOne({}), null);
+  assert.equal(one520("const Object = { fromEntries: (x: unknown) => x };\n" + REC520() + "export const W = V;\n"), NO520);
+  const fn = (body: string) => `export function evil(): void {\n  ${body}\n}\n`;
+  for (const body of ["(Array.prototype as any).map = () => [];", "(Object as any).fromEntries = () => ({});", "const A = Array as any; A.prototype.map = 1;", "(globalThis as any).Object = 1;"]) {
+    assert.equal(one520(REC520() + "export const W = V;\n" + fn(body)), NO520, body);
   }
 });
