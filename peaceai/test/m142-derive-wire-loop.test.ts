@@ -86,7 +86,7 @@ export async function catchUpSessions(missed: string[], scanner: { run(session: 
 }
 `;
 
-test("the spec: EXISTING_EDIT with its own loop vocabulary and trigger, valid, not approved, team-picked, no credit; phrasing", () => {
+test("the spec: EXISTING_EDIT with its own loop vocabulary and trigger, valid, approved only as its exact sha, team-picked, no credit; phrasing", () => {
   assert.equal(LOOP.id, "public-derive-wire-loop-v1");
   assert.equal(LOOP.kind, "EXISTING_EDIT");
   assert.equal(LOOP.trigger, DERIVE_WIRE_LOOP_TRIGGER);
@@ -96,9 +96,21 @@ test("the spec: EXISTING_EDIT with its own loop vocabulary and trigger, valid, n
   // public-derive-wire-v2 is unchanged: its trigger and the sha Peace approved on #613
   assert.equal(WIRE2.trigger, DERIVE_WIRE_V2_TRIGGER);
   assert.equal(specHash(WIRE2), "e9e6d7e10e0195850f6e29f13e92c803424fafc94c280e4fe7ea10ace311bc28");
+  // Holds before and after its approval lands (the #626 lesson). Not listed: the id and sha appear nowhere in approved.json.
+  // Listed: once, as this exact spec sha, by Peace on a Workspace issue, and it admits.
   const approvedText = read("peaceai/rules/approved.json");
-  assert.ok(!approvedText.includes(LOOP.id) && !approvedText.includes(specHash(LOOP)), "waits for /approve-rule or /auditor-approve-rule");
-  assert.ok(!admitRules([LOOP], loadApprovedList(join(repo, "peaceai/rules/approved.json"))).some((a) => a.decision === "APPROVED"));
+  const listed = (JSON.parse(approvedText) as { rules: { id: string; sha256: string; approval: { author: string; repo: string } }[] }).rules.filter((r) => r.id === LOOP.id);
+  const loopDecisions = admitRules([LOOP], loadApprovedList(join(repo, "peaceai/rules/approved.json"))).filter((a) => a.id === LOOP.id).map((a) => a.decision);
+  if (listed.length === 0) {
+    assert.ok(!approvedText.includes(LOOP.id) && !approvedText.includes(specHash(LOOP)), "waits for /approve-rule or /auditor-approve-rule");
+    assert.ok(!loopDecisions.includes("APPROVED"), "not listed: never APPROVED");
+  } else {
+    assert.equal(listed.length, 1, "listed once");
+    assert.equal(listed[0]!.sha256, specHash(LOOP), "approved as the exact spec sha");
+    assert.equal(listed[0]!.sha256, "04f01ffd6d6c0e1097c1fc0eefb25b62d120aeebf5cfac84516698f450b9d74a", "the sha this PR proposes");
+    assert.deepEqual([listed[0]!.approval.author, listed[0]!.approval.repo], ["PeaceG03", "PeaceG03/PeaceAI-Workspace"]);
+    assert.deepEqual(loopDecisions, ["APPROVED"], "a listed loop entry must admit (exact sha)");
+  }
   const prop = JSON.parse(read("peaceai/rules/proposals/public-derive-wire-loop-v1.json")) as { status: string; teamPicked: boolean; credit: number; evidence: { qualifies: boolean }; tests: string[] };
   assert.equal(prop.status, "proposal-off-wired");
   assert.equal(prop.teamPicked, true);
@@ -324,4 +336,50 @@ test("Job B grades the created module end to end: the new test fails on the stub
   const t = jobB(FILES, TASK, (e) => e.content.replace("    reports.push(report);\n", "    reports.push(report);\n    reports.push(report);\n"));
   assert.match(t.log, /existing_edit_static=not-test-only/);
   assert.notEqual(t.res.testGrading?.verdict, "COUNTS");
+});
+
+// Job A (bin/generate.ts) end to end: the loop spec's module is NEW, so generate.ts must let an EXISTING_EDIT with the loop
+// params through its new-module gate (the G28 generate.ts change). Without it, the candidate is dropped and none is made.
+test("Job A: an approved loop spec makes one candidate that creates the module and its test (generate.ts new-module gate)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m142a-"));
+  try {
+    const ws = join(dir, "ws");
+    for (const f of FILES) { mkdirSync(join(ws, f.path, ".."), { recursive: true }); writeFileSync(join(ws, f.path), f.content); }
+    writeFileSync(join(ws, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true, allowImportingTsExtensions: true }, include: ["src"] }));
+    writeFileSync(join(ws, "package.json"), JSON.stringify({ name: "m142", private: true, type: "module" }));
+    writeFileSync(join(ws, ".gitignore"), "node_modules\n");
+    symlinkSync(join(repo, "node_modules"), join(ws, "node_modules"));
+    const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=PeaceG03", "-c", `user.email=${PEACE_AUTHOR}`, ...a], { cwd: ws, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    git("init", "-q", "-b", "main"); git("add", "-A"); git("commit", "-qm", "base");
+    const kernel = join(dir, "fake-kernel.cjs");
+    writeFileSync(kernel, `const crypto = require("node:crypto");
+exports.NATIVE_CODE_SYNTHESIS_PROTOCOL_VERSION = "x";
+exports.sourceFingerprint = (p, c) => crypto.createHash("sha256").update(p + "\\0" + c).digest("hex");
+exports.PeaceAINativeCodeSynthesizer = class { synthesize() { return { status: "INSUFFICIENT" }; } };
+exports.parsePlanSteps = () => null;
+`);
+    const rules = join(dir, "rules");
+    mkdirSync(rules);
+    writeFileSync(join(rules, `${LOOP.id}.json`), JSON.stringify(LOOP));
+    // a fixture-local approval list (the repo's approved.json is never read or written here)
+    const list = join(dir, "approved.json");
+    writeFileSync(list, JSON.stringify({ schema: APPROVED_SCHEMA, rules: [{ id: LOOP.id, sha256: specHash(LOOP), source: "workspace", approval: { url: "https://github.com/PeaceG03/PeaceAI-Workspace/issues/40#issuecomment-123", commentId: 123, issue: 40, repo: "PeaceG03/PeaceAI-Workspace", author: "PeaceG03", approvedAt: "2026-10-11T00:00:00Z" } }] }));
+    const out = join(dir, "out");
+    const r = spawnSync(tsx, [join(repo, "peaceai/bin/generate.ts")], {
+      cwd: repo, encoding: "utf8", timeout: 300_000,
+      env: { ...process.env, PEACEAI_NL_PARSE: "off", PEACEAI_KERNEL_BUNDLE: kernel, PEACEAI_OUT_DIR: out, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: "PeaceG03/PeaceAI-Workspace", ISSUE_NUMBER: "9", ISSUE_TITLE: "loop task", ISSUE_BODY: TASK, PEACEAI_RULES_DIR: rules, PEACEAI_APPROVED_LIST: list },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const summary = JSON.parse(readFileSync(join(out, "summary.json"), "utf8")) as { candidates: { file: string; transformations: string[]; operationId: string; selfGrade?: boolean }[] };
+    assert.equal(summary.candidates.length, 1, r.stdout);
+    const c = summary.candidates[0]!;
+    assert.deepEqual(c.transformations, ["LEARNED_EXISTING_EDIT"]);
+    assert.equal(c.operationId, `learned:${LOOP.id}@${specHash(LOOP)}`);
+    assert.equal(c.selfGrade, true);
+    const diff = readFileSync(join(out, c.file), "utf8");
+    assert.doesNotMatch(diff, /^-(?!--)/m, "no removed line: only new files");
+    assert.match(diff, /^--- \/dev\/null\n\+\+\+ b\/src\/catch-up\.ts$/m, "creates the module");
+    assert.match(diff, /^--- \/dev\/null\n\+\+\+ b\/src\/catch-up\.[a-z0-9-]+\.test\.ts$/m, "and its new test");
+    assert.ok(diff.includes(EXPECTED.split("\n").map((l) => `+${l}`).slice(0, -1).join("\n")), "the module is the derived one");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
