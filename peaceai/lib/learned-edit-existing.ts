@@ -482,6 +482,109 @@ function strictInert(c: Closure, e: ts.Expression): boolean {
   }
   // Auditor #520 ruling (G25+): six exact load-time constant shapes (loadConstForm), only on an unshadowed, unwritten global
   if (loadConstForm(c, x)) return true;
+  // Auditor #520 ruling (G25+, w03, recipes.ts): Object.fromEntries(C.map((p) => [p.a, p.b])) over a literal-only const C
+  if (recipeVersionsForm(c, x)) return true;
+  return false;
+}
+
+/**
+ * Auditor #520 ruling (G25+, w03): the one PeaceSTOCKS recipes.ts shape
+ *   export const FEATURE_RECIPE_VERSIONS = Object.fromEntries(FEATURE_RECIPES.map((recipe) => [recipe.featureId, recipe.version]));
+ * admitted only when, matched by AST shape:
+ *  1. C (FEATURE_RECIPES) is a top-level `const` of the SAME module (not imported), whose initializer is an array literal
+ *     of plain object literals; every property is a non-computed identifier or string-literal key (not __proto__) whose
+ *     value is a string literal, a numeric literal (optionally with a leading minus) or an array of string literals only.
+ *     No spread, shorthand, method, getter / setter, hole or deeper nesting.
+ *  2. Only type syntax may wrap that array: the declaration's type annotation, `as const` and `satisfies T` (unwrapped);
+ *     nothing else (no parens, `!`, `<T>x` or `as T`).
+ *  3. The initializer is exactly Object.fromEntries(C.map((p) => [p.a, p.b])): plain non-optional calls and members, one
+ *     plain parameter (no default, rest or pattern; a type annotation is allowed), a non-async arrow whose body is that
+ *     two-element array literal itself, each element a plain non-optional `p.k` read with k an identifier key that EVERY
+ *     element of C has, and C never written (assigned, ++ / --, deleted, a for-in / for-of or destructuring target, or the
+ *     first argument of defineProperty / assign / setPrototypeOf / Reflect.*) anywhere in the closure, through any member.
+ *  Object and Array keep the load-const binding, write and escape guards (loadConstForm's).
+ */
+function recipeVersionsForm(c: Closure, x: ts.Expression): boolean {
+  const plainCall = (e: ts.Expression, name: string): e is ts.CallExpression & { expression: ts.PropertyAccessExpression } =>
+    ts.isCallExpression(e) && !e.questionDotToken && !e.typeArguments && e.arguments.length === 1 && ts.isPropertyAccessExpression(e.expression)
+    && !e.expression.questionDotToken && ts.isIdentifier(e.expression.name) && e.expression.name.text === name;
+  if (!plainCall(x, "fromEntries") || !ts.isIdentifier(x.expression.expression) || x.expression.expression.text !== "Object") return false;
+  const m = x.arguments[0]!;
+  if (!plainCall(m, "map") || !ts.isIdentifier(m.expression.expression)) return false;
+  const cId = m.expression.expression;
+  // 3: the arrow
+  const fn = m.arguments[0]!;
+  if (!ts.isArrowFunction(fn) || fn.typeParameters || (ts.getModifiers(fn) ?? []).length || fn.parameters.length !== 1) return false;
+  const prm = fn.parameters[0]!;
+  if (!ts.isIdentifier(prm.name) || prm.initializer || prm.dotDotDotToken || prm.questionToken) return false;
+  if (!ts.isArrayLiteralExpression(fn.body) || fn.body.elements.length !== 2) return false;
+  const pSym = c.checker.getSymbolAtLocation(prm.name);
+  const keys: string[] = [];
+  for (const el of fn.body.elements) {
+    if (!ts.isPropertyAccessExpression(el) || el.questionDotToken || !ts.isIdentifier(el.name) || !ts.isIdentifier(el.expression)) return false;
+    if (!pSym || c.checker.getSymbolAtLocation(el.expression) !== pSym) return false;
+    keys.push(el.name.text);
+  }
+  // 1: C is a module-local top-level const (an imported C resolves through an alias symbol and is refused)
+  const cSym = c.checker.getSymbolAtLocation(cId);
+  if (!cSym || cSym.flags & ts.SymbolFlags.Alias) return false;
+  const d = cSym.valueDeclaration;
+  if (!d || !ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name) || d.getSourceFile() !== x.getSourceFile() || cSym.declarations?.length !== 1) return false;
+  if ((d.parent.flags & ts.NodeFlags.BlockScoped) !== ts.NodeFlags.Const || !ts.isVariableStatement(d.parent.parent) || !ts.isSourceFile(d.parent.parent.parent)) return false;
+  // 2: only `as const` and `satisfies T` may wrap the array literal
+  let init = d.initializer;
+  while (init && (ts.isSatisfiesExpression(init) || (ts.isAsExpression(init) && ts.isTypeReferenceNode(init.type) && ts.isIdentifier(init.type.typeName) && init.type.typeName.text === "const" && !init.type.typeArguments))) init = init.expression;
+  if (!init || !ts.isArrayLiteralExpression(init)) return false;
+  const value = (v: ts.Expression): boolean => ts.isStringLiteral(v) || ts.isNumericLiteral(v)
+    || (ts.isPrefixUnaryExpression(v) && v.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(v.operand))
+    || (ts.isArrayLiteralExpression(v) && v.elements.every((s) => ts.isStringLiteral(s)));
+  for (const el of init.elements) {
+    if (!ts.isObjectLiteralExpression(el)) return false;
+    const names = new Set<string>();
+    for (const p of el.properties) {
+      if (!ts.isPropertyAssignment(p) || !(ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) || p.name.text === "__proto__" || names.has(p.name.text) || !value(p.initializer)) return false;
+      names.add(p.name.text);
+    }
+    if (!keys.every((k) => names.has(k))) return false;
+  }
+  if (recipeConstWritten(c, cSym)) return false;
+  // Object and Array: the load-const guards (any guarded binding, write or alias escape in the closure refuses)
+  return ![...LOAD_CONST_GLOBALS, "globalThis"].some((g) => closureBinds(c, g)) && !loadConstGlobalsWritten(c) && !loadConstGlobalsEscape(c);
+}
+
+/** True when some module of the closure writes to the const `sym` or anything reached from it (see recipeVersionsForm 3). */
+function recipeConstWritten(c: Closure, sym: ts.Symbol): boolean {
+  const isC = (n: ts.Node): boolean => {
+    if (!ts.isIdentifier(n)) return false;
+    let s = ts.isShorthandPropertyAssignment(n.parent) && n.parent.name === n ? c.checker.getShorthandAssignmentValueSymbol(n.parent) : c.checker.getSymbolAtLocation(n);
+    if (s && s.flags & ts.SymbolFlags.Alias) s = c.checker.getAliasedSymbol(s);
+    return s === sym;
+  };
+  const mentions = (n: ts.Node): boolean => { let hit = false; const w = (q: ts.Node): void => { if (hit) return; if (isC(q)) hit = true; else q.forEachChild(w); }; w(n); return hit; };
+  const rooted = (e: ts.Expression): boolean => {
+    let t = unwrap(e);
+    while (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) t = unwrap(t.expression);
+    return ts.isIdentifier(t) ? isC(t) : mentions(e); // a destructuring target or a computed root: any mention refuses
+  };
+  const WRITE_CALL_NAMES = new Set(["defineProperty", "defineProperties", "assign", "setPrototypeOf", "set", "deleteProperty"]);
+  for (const sf of c.files.values()) {
+    let hit = false;
+    const walk = (n: ts.Node): void => {
+      if (hit) return;
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && rooted(n.left)) { hit = true; return; }
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) && rooted(n.operand)) { hit = true; return; }
+      if (ts.isDeleteExpression(n) && rooted(n.expression)) { hit = true; return; }
+      if ((ts.isForInStatement(n) || ts.isForOfStatement(n)) && !ts.isVariableDeclarationList(n.initializer) && rooted(n.initializer as ts.Expression)) { hit = true; return; }
+      if (ts.isCallExpression(n) && n.arguments[0] && rooted(n.arguments[0])) {
+        const callee = unwrap(n.expression);
+        const nm = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : null;
+        if (nm !== null && WRITE_CALL_NAMES.has(nm)) { hit = true; return; }
+      }
+      n.forEachChild(walk);
+    };
+    walk(sf);
+    if (hit) return true;
+  }
   return false;
 }
 
