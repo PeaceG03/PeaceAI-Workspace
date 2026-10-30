@@ -38,12 +38,19 @@ test("M145: results are deterministic (two fresh opens give identical JSON)", ()
   }
 });
 
-test("M145: the module only reads (fs reads only, no process, network, eval, dynamic import or require)", () => {
+test("M145: the module only reads (fs reads only; one sandboxed regex child; no network, eval, dynamic import or require)", () => {
   const src = readFileSync(resolve(root, "peaceai/lib/codesearch.ts"), "utf8");
   const imports = [...src.matchAll(/^import\s+(.*?)\s+from\s+"([^"]+)";$/gm)].map((m) => [m[2], m[1]]);
-  assert.deepEqual(imports.map((i) => i[0]), ["node:fs", "node:path", "typescript", "./symbols.ts"]);
-  assert.equal(imports[0]![1], "{ readdirSync, readFileSync, realpathSync, statSync }");
-  const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  assert.deepEqual(imports.map((i) => i[0]), ["node:child_process", "node:fs", "node:path", "typescript", "./symbols.ts"]);
+  assert.equal(imports[0]![1], "{ spawnSync }");
+  assert.equal(imports[1]![1], "{ readdirSync, readFileSync, realpathSync, statSync }");
+  // The one process: the regex matcher child (node -e REGEX_CHILD, empty env, data on stdin, killed at the deadline).
+  const child = /^const REGEX_CHILD = `([^`]*)`;$/m.exec(src);
+  assert.ok(child, "REGEX_CHILD");
+  assert.doesNotMatch(child![1]!, /require|import|process\.(?!std(?:in|out)\b)|eval|Function|fetch|\bfs\b/);
+  assert.equal([...src.matchAll(/spawnSync\(/g)].length, 1);
+  assert.match(src, /spawnSync\(process\.execPath, \["-e", REGEX_CHILD\], \{\n\s+input: JSON\.stringify\(\{ pattern, flags, lines, max \}\), encoding: "utf8", env: \{\}, maxBuffer: 64 << 20, killSignal: "SIGKILL",\n\s+timeout: LIMITS\.regexMs,/);
+  const code = src.replace(/^const REGEX_CHILD = `[^`]*`;$/m, "").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/import \{ spawnSync \} from "node:child_process";|spawnSync\(process\.execPath, \["-e", REGEX_CHILD\]/g, "");
   for (const bad of [/\bwrite\w*Sync?\b/i, /\bappend\w*\b/i, /\b(?:mkdir|rmdir|rm|unlink|rename|copyFile|symlink|chmod|chown|utimes|truncate)\w*\(/, /child_process|\bspawn\w*\(|(?<![.\w])exec\w*\(/, /\beval\s*\(|new Function\b|\brequire\s*\(/, /\bimport\s*\(/, /\bfetch\s*\(|node:https?|node:net/, /process\.(?:chdir|env|exit)/, /createProgram|createLanguageService|transpile/]) assert.doesNotMatch(code, bad, String(bad));
 });
 

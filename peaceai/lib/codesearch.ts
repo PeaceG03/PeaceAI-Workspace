@@ -4,17 +4,22 @@
 // a line range), testsFor (related tests by import graph and naming) and relevant (ranked files for a request
 // broken into action / target / limits / doneCheck slots).
 //
-// Safety: deterministic (sorted walks, no clocks, no randomness, no network, no model calls); read-only (the only
-// fs calls are readdir / realpath / stat / readFile); never executes repo code (files are parsed with
+// Safety: deterministic (sorted walks, no randomness, no network, no model calls; the one clock is the regex
+// deadline below); read-only (the only fs calls are readdir / realpath / stat / readFile); never executes repo code (files are parsed with
 // ts.createSourceFile only, nothing is imported, required or run); never reads outside the repo root (every path is
 // normalized, refused if absolute or escaping, and its realpath must stay under the root's realpath; symlinks are
 // never followed by the walk); never reads .git internals or gitignored files (so an ignored .env stays unread).
+// Regex grep: a static filter cannot recognize every catastrophic pattern ((a|a)+$, (a|aa)*b and backreferences
+// pass any simple check), so the nested-quantifier check is only a fast pre-filter and every regex search runs in a
+// child process (node -e, empty env, lines on stdin) that is SIGKILLed at LIMITS.regexMs (refuse regex_timeout).
+// A bad .gitignore pattern (e.g. the class [z-a]) skips that one rule instead of failing the walk.
 // Definitions, references, BM25 text ranking and the objective resolver (resolveTargets) reuse M6's index
 // (symbols.ts); this module adds the import / export binding graph that M6 does not keep. symbols.ts itself is
 // not edited: its content is pinned by sha256 in model/heldout.json and it is in the m96 protected closure.
 //
 // Each safety or relevance filter is a single line tagged "filter:<id>". The m145 mutation test deletes each tagged
 // line in turn and requires a behavior test to fail, so no filter is untested.
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, posix, resolve, sep } from "node:path";
 import ts from "typescript";
@@ -32,6 +37,8 @@ export const LIMITS = {
   grepHits: 500,
   grepLineChars: 1_000,
   patternChars: 200,
+  /** Hard wall-clock deadline for one regex grep call (the matcher runs in a child process killed at the deadline). */
+  regexMs: 2_000,
   relevant: 15,
 } as const;
 
@@ -73,6 +80,8 @@ function globToRegex(glob: string): string {
   return out;
 }
 
+const validRegex = (src: string): boolean => { try { new RegExp(src); return true; } catch { return false; } };
+
 /** Parses one .gitignore (git's rules: last match wins, "!" re-includes, trailing "/" = directories only). */
 export function parseGitignore(text: string, base: string): IgnoreRule[] {
   const rules: IgnoreRule[] = [];
@@ -88,9 +97,41 @@ export function parseGitignore(text: string, base: string): IgnoreRule[] {
     const anchored = line.includes("/");
     line = line.replace(/^\//, "");
     if (!line) continue;
-    rules.push({ base, re: new RegExp(`^${globToRegex(line)}$`), negate, dirOnly, anchored });
+    // A bad character class (e.g. [z-a]) makes that one rule invalid; skip it, never fail the whole walk.
+    const src = `^${globToRegex(line)}$`;
+    if (!validRegex(src)) continue; // filter:gitignore-bad-rule
+    rules.push({ base, re: new RegExp(src), negate, dirOnly, anchored });
   }
   return rules;
+}
+
+/** Literal search (the pattern is escaped, so matching is linear): [line index, column] of the first `max` hits. */
+function literalMatch(pattern: string, flags: string, lines: readonly string[], max: number): [number, number][] {
+  const re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), flags);
+  const out: [number, number][] = [];
+  for (let k = 0; k < lines.length && out.length < max; k++) { const m = re.exec(lines[k]!); if (m) out.push([k, m.index]); }
+  return out;
+}
+
+// The regex matcher's child: plain JS, reads {pattern, flags, lines, max} on stdin, prints [[k, column]...]. It gets
+// an empty environment, no file or network access is needed, and it is SIGKILLed at the deadline.
+const REGEX_CHILD = `let b="";process.stdin.setEncoding("utf8");process.stdin.on("data",d=>b+=d);process.stdin.on("end",()=>{const q=JSON.parse(b);const re=new RegExp(q.pattern,q.flags);const o=[];for(let k=0;k<q.lines.length&&o.length<q.max;k++){const m=re.exec(q.lines[k]);if(m)o.push([k,m.index]);}process.stdout.write(JSON.stringify(o));});`;
+
+/**
+ * Regex search under a hard deadline. A user pattern can backtrack exponentially and a static filter cannot catch
+ * every such pattern, so matching runs in a child process that is killed at LIMITS.regexMs (refuse regex_timeout).
+ */
+function regexMatch(pattern: string, flags: string, lines: readonly string[], max: number): [number, number][] | Refusal {
+  const r = spawnSync(process.execPath, ["-e", REGEX_CHILD], {
+    input: JSON.stringify({ pattern, flags, lines, max }), encoding: "utf8", env: {}, maxBuffer: 64 << 20, killSignal: "SIGKILL",
+    timeout: LIMITS.regexMs, // filter:regex-deadline
+  });
+  if (r.error?.message.includes("ETIMEDOUT") || r.signal === "SIGKILL") return refuse("regex_timeout"); // filter:regex-timeout
+  if (r.status !== 0) return refuse("regex_failed");
+  try {
+    const o = JSON.parse(r.stdout) as unknown;
+    return Array.isArray(o) && o.every((x) => Array.isArray(x) && Number.isInteger(x[0]) && Number.isInteger(x[1])) ? (o as [number, number][]) : refuse("regex_failed");
+  } catch { return refuse("regex_failed"); }
 }
 
 function ignoredBy(rules: readonly IgnoreRule[], path: string, isDir: boolean): boolean {
@@ -317,17 +358,18 @@ export function openRepo(rootDir: string): CodeRepo {
     grep(pattern, opts = {}) {
       if (typeof pattern !== "string" || !pattern) return refuse("empty_pattern");
       if (pattern.length > LIMITS.patternChars) return refuse("pattern_too_long");
-      let re: RegExp;
+      const flags = opts.ignoreCase ? "i" : "";
       if (opts.regex) {
+        // A fast pre-filter only: no static check can catch every catastrophic pattern ((a|a)+$, (a|aa)*b and
+        // backreferences pass it), so every regex search also runs under the hard deadline in regexMatch below.
         if (/\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/.test(pattern)) return refuse("regex_nested_quantifier"); // filter:redos
-        try { re = new RegExp(pattern, opts.ignoreCase ? "gi" : "g"); } catch { return refuse("bad_regex"); }
-      } else re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), opts.ignoreCase ? "gi" : "g");
+        try { new RegExp(pattern, flags); } catch { return refuse("bad_regex"); }
+      }
       let under = "";
       if (opts.under !== undefined) { const r = safeRel(opts.under); if (typeof r !== "string") return r; under = r; }
       const limit = clampInt(opts.limit, 1, LIMITS.grepHits, 200);
-      const hits: GrepHit[] = [];
+      const cands: { path: string; line: number; text: string }[] = [];
       let searched = 0;
-      let truncated = false;
       for (const p of walk().files) {
         if (under && p !== under && !p.startsWith(`${under}/`)) continue;
         const text = readText(p);
@@ -337,15 +379,13 @@ export function openRepo(rootDir: string): CodeRepo {
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i]!;
           if (line.length > LIMITS.grepLineChars) continue; // filter:long-line
-          re.lastIndex = 0;
-          const m = re.exec(line);
-          if (!m) continue;
-          if (hits.length >= limit) { truncated = true; break; }
-          hits.push({ path: p, line: i + 1, column: m.index + 1, text: line.trim().slice(0, 300) });
+          cands.push({ path: p, line: i + 1, text: line });
         }
-        if (truncated) break;
       }
-      return { ok: true, hits, truncated, filesSearched: searched };
+      const found = opts.regex ? regexMatch(pattern, flags, cands.map((c) => c.text), limit + 1) : literalMatch(pattern, flags, cands.map((c) => c.text), limit + 1);
+      if (!Array.isArray(found)) return found;
+      const hits: GrepHit[] = found.slice(0, limit).map(([k, col]) => ({ path: cands[k]!.path, line: cands[k]!.line, column: col + 1, text: cands[k]!.text.trim().slice(0, 300) }));
+      return { ok: true, hits, truncated: found.length > limit, filesSearched: searched };
     },
 
     symbol(name) {
