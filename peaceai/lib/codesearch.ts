@@ -1,4 +1,4 @@
-// M143 (step 2 of the general coding-agent roadmap, Oct 30 2026): read-only code search and read tools PeaceAI uses
+// M145 (step 2 of the general coding-agent roadmap, Oct 30 2026): read-only code search and read tools PeaceAI uses
 // to find the files that matter in a TypeScript repo it has never seen. Tools: tree (respects .gitignore), grep
 // (literal or regex), symbol (definitions, references, imports and re-exports, default vs named), read (a file or
 // a line range), testsFor (related tests by import graph and naming) and relevant (ranked files for a request
@@ -13,7 +13,7 @@
 // (symbols.ts); this module adds the import / export binding graph that M6 does not keep. symbols.ts itself is
 // not edited: its content is pinned by sha256 in model/heldout.json and it is in the m96 protected closure.
 //
-// Each safety or relevance filter is a single line tagged "filter:<id>". The m143 mutation test deletes each tagged
+// Each safety or relevance filter is a single line tagged "filter:<id>". The m145 mutation test deletes each tagged
 // line in turn and requires a behavior test to fail, so no filter is untested.
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, posix, resolve, sep } from "node:path";

@@ -1,8 +1,8 @@
-// M143 behavior cases for the code search tools, as data so the mutation test can replay them against each
+// M145 behavior cases for the code search tools, as data so the mutation test can replay them against each
 // mutant of peaceai/lib/codesearch.ts. Each case throws (node:assert) on failure.
 import assert from "node:assert/strict";
 import type * as CodeSearch from "../lib/codesearch.ts";
-import type { Ctx } from "./m143-fixtures.ts";
+import type { Ctx } from "./m145-fixtures.ts";
 
 type Lib = typeof CodeSearch;
 export interface Case { id: string; run: (lib: Lib, ctx: Ctx) => void }

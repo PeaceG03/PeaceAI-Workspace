@@ -1,4 +1,4 @@
-// M143 fixture helper: unpacks the vendored bundles (peaceai/test/fixtures/m143-search/*.bundle.txt, verbatim
+// M145 fixture helper: unpacks the vendored bundles (peaceai/test/fixtures/m145-search/*.bundle.txt, verbatim
 // upstream files, see THIRD_PARTY_NOTICES) and builds the synthetic near-miss / escape repo, all under one
 // os.tmpdir() scratch directory the caller removes. Nothing is written inside this repository.
 import { createHash } from "node:crypto";
@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, sy
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
-export const BUNDLE_DIR = resolve(import.meta.dirname, "fixtures/m143-search");
+export const BUNDLE_DIR = resolve(import.meta.dirname, "fixtures/m145-search");
 export const BUNDLES = {
   isWhat: { repo: "mesqueeb/is-what", commit: "864e944abd8eb6f6356de03ff67339c71440d6bb", file: "mesqueeb__is-what-864e944abd8e.bundle.txt" },
   cbw: { repo: "dsherret/code-block-writer", commit: "96de18325769606589307281ce355f18eca830b2", file: "dsherret__code-block-writer-96de18325769.bundle.txt" },
@@ -87,7 +87,7 @@ export function buildNearMiss(root: string, outside: string) {
 export interface Ctx { base: string; isWhat: string; cbw: string; near: string; outside: string }
 
 export function setup(): Ctx {
-  const base = mkdtempSync(join(tmpdir(), "peaceai-m143-"));
+  const base = mkdtempSync(join(tmpdir(), "peaceai-m145-"));
   const ctx: Ctx = { base, isWhat: join(base, "is-what"), cbw: join(base, "code-block-writer"), near: join(base, "near"), outside: join(base, "outside") };
   unpack(BUNDLES.isWhat.file, ctx.isWhat);
   unpack(BUNDLES.cbw.file, ctx.cbw);

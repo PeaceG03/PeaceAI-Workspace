@@ -1,5 +1,5 @@
-// M143 mutation check: every safety or relevance filter in peaceai/lib/codesearch.ts is a single line tagged
-// "// filter:<id>". For each one, this test deletes that line, loads the mutant from a temp dir and runs the M143
+// M145 mutation check: every safety or relevance filter in peaceai/lib/codesearch.ts is a single line tagged
+// "// filter:<id>". For each one, this test deletes that line, loads the mutant from a temp dir and runs the M145
 // cases against it. At least one case must fail with an assertion (not a crash), so no filter is untested.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,8 +8,8 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { CASES } from "./m143-codesearch-cases.ts";
-import { setup, teardown, type Ctx } from "./m143-fixtures.ts";
+import { CASES } from "./m145-codesearch-cases.ts";
+import { setup, teardown, type Ctx } from "./m145-fixtures.ts";
 
 const libDir = resolve(import.meta.dirname, "../lib");
 const source = readFileSync(join(libDir, "codesearch.ts"), "utf8");
@@ -19,7 +19,7 @@ const filters = lines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ i
 
 let ctx: Ctx;
 let dir: string;
-before(() => { ctx = setup(); dir = mkdtempSync(join(tmpdir(), "peaceai-m143-mut-")); });
+before(() => { ctx = setup(); dir = mkdtempSync(join(tmpdir(), "peaceai-m145-mut-")); });
 after(() => { teardown(ctx); rmSync(dir, { recursive: true, force: true }); });
 
 function rewriteImports(text: string): string {
@@ -29,7 +29,7 @@ function rewriteImports(text: string): string {
     .replace(/from "typescript"/, `from ${JSON.stringify(pathToFileURL(tsPath).href)}`);
 }
 
-test("M143 mutation: the filter tags are unique and cover the safety filters", () => {
+test("M145 mutation: the filter tags are unique and cover the safety filters", () => {
   const ids = filters.map((f) => f.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate filter id");
   for (const need of ["absolute", "dotdot", "realpath", "git-real", "read-realpath", "symlink-walk", "gitignore", "read-listed", "binary", "redos"]) {
@@ -37,7 +37,7 @@ test("M143 mutation: the filter tags are unique and cover the safety filters", (
   }
 });
 
-test("M143 mutation: the unmutated copy passes every case (the harness itself is sound)", async () => {
+test("M145 mutation: the unmutated copy passes every case (the harness itself is sound)", async () => {
   const file = join(dir, "control.ts");
   writeFileSync(file, rewriteImports(source));
   const mod = await import(pathToFileURL(file).href);
@@ -45,7 +45,7 @@ test("M143 mutation: the unmutated copy passes every case (the harness itself is
 });
 
 for (const f of filters) {
-  test(`M143 mutation: deleting filter:${f.id} makes a case fail`, async () => {
+  test(`M145 mutation: deleting filter:${f.id} makes a case fail`, async () => {
     const mutant = lines.filter((_, i) => i !== f.line).join("\n");
     const file = join(dir, `mutant-${f.id}.ts`);
     writeFileSync(file, rewriteImports(mutant));

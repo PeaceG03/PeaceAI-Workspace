@@ -1,6 +1,6 @@
 {
- "schema": "peaceai-m143-search-fixtures:v1",
- "note": "Fixture repos for the M143 code search and read tools (the m143 tests). Each bundle is a verbatim copy of the listed files at the pinned commit (MIT, see THIRD_PARTY_NOTICES). Chosen because neither repo is in PeaceAI's LM training manifest (peaceai/model/ext-manifest, checked by the m143 test) nor in the plan-mode task-set candidates (unjs/*, developit/mitt, toss/es-toolkit as of 2026-10-30). Not a learned rule and not a proposal: an evidence record for copied fixtures only.",
+ "schema": "peaceai-m145-search-fixtures:v1",
+ "note": "Fixture repos for the M145 code search and read tools (the m145 tests). Each bundle is a verbatim copy of the listed files at the pinned commit (MIT, see THIRD_PARTY_NOTICES). Chosen because neither repo is in PeaceAI's LM training manifest (peaceai/model/ext-manifest, checked by the m145 test) nor in the plan-mode task-set candidates (unjs/*, developit/mitt, toss/es-toolkit as of 2026-10-30). Not a learned rule and not a proposal: an evidence record for copied fixtures only.",
  "examples": [
   {
    "repo": "mesqueeb/is-what",
@@ -8,7 +8,7 @@
    "spdx": "MIT",
    "licenseFile": "LICENSE",
    "licenseSha256": "c1c7c66a0baef8fd308e2665face6a688acf492654c0a636f97381dd905e2919",
-   "fixture": "peaceai/test/fixtures/m143-search/mesqueeb__is-what-864e944abd8e.bundle.txt",
+   "fixture": "peaceai/test/fixtures/m145-search/mesqueeb__is-what-864e944abd8e.bundle.txt",
    "files": [
     ".gitignore",
     "LICENSE",
@@ -67,7 +67,7 @@
    "spdx": "MIT",
    "licenseFile": "LICENSE",
    "licenseSha256": "2a49a9d804d106920672538670a7e132662fe5b38a7e02e19293ba6516af8be2",
-   "fixture": "peaceai/test/fixtures/m143-search/dsherret__code-block-writer-96de18325769.bundle.txt",
+   "fixture": "peaceai/test/fixtures/m145-search/dsherret__code-block-writer-96de18325769.bundle.txt",
    "files": [
     ".gitignore",
     "LICENSE",
