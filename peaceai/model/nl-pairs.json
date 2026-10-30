@@ -1,0 +1,82 @@
+{
+ "schema": "peaceai-nl-pairs:v1",
+ "note": "M147 (general-agent roadmap step 4): English-to-code pairs (pr: PR title+description -> merged diff; commit: commit message -> diff; jsdoc: doc comment + signature -> body) for the next LM retrain's fine-tune corpus. Permissive TypeScript repos only, licence pinned per repo at its commit. Built on the box by peaceai/bin/nl-pairs-corpus.sh with a REQUIRED exclusion file (Auditor's hidden-half repos); only sha256s and counts are committed (nl-pairs-manifest/, nl-pairs-summary.json). No retrain, no promotion, latest.json untouched.",
+ "repos": [
+  {
+   "name": "sindresorhus/ky",
+   "commit": "3541888878c4d303a8bc2ad61815f4e048f55a5d",
+   "spdx": "MIT",
+   "licenseFile": "license",
+   "licenseSha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
+  },
+  {
+   "name": "pmndrs/zustand",
+   "commit": "382d29c485e67018c06e75ec7235130d0968522c",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "c1e6e266563517467b1bf874817d23e426f3149252bd7d42758cd697514b8417"
+  },
+  {
+   "name": "colinhacks/zod",
+   "commit": "2554b70c3d4a80273381e61d527d820720626440",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8"
+  },
+  {
+   "name": "honojs/hono",
+   "commit": "17ad0e21f5a91c939eeafa3df05793a8ea60f016",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "a6ab98e5c77b9070c443eaff2ff81034a6f8cc05a7524d5098eb0f24defa0115"
+  },
+  {
+   "name": "mobxjs/mobx",
+   "commit": "b05f0dea1a68856ba2b420671fb4201e5fad58c9",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "8fc7f323662b01cdbfcae37b82644cfb52dceb3101afb2ce8c50c78b0fb47d42"
+  },
+  {
+   "name": "reduxjs/redux-toolkit",
+   "commit": "0fd611cc79d44990ac9a040dec4d5cb446233440",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE",
+   "licenseSha256": "49784961ec6c4941437b7a2c54d8977d0528076a9e7c73dd40f7d0942b8f106d"
+  },
+  {
+   "name": "remix-run/react-router",
+   "commit": "4e6ff03752ac96d0de3e8052d9d9ba3037e45b6d",
+   "spdx": "MIT",
+   "licenseFile": "LICENSE.md",
+   "licenseSha256": "77c9ee6a9c5d5782fb0c50b50d101189116314c14f7df0a1b0d385fc96a7ba49"
+  },
+  {
+   "name": "ReactiveX/rxjs",
+   "commit": "54796b38a57e6309f9861e174737479bb3f63f61",
+   "spdx": "Apache-2.0",
+   "licenseFile": "LICENSE.txt",
+   "licenseSha256": "2f96f49a79f813444ba50b90b6f7da3c67c5ab65685391cf08c95c767e649a64"
+  }
+ ],
+ "caps": {
+  "maxBytes": 2000000,
+  "perKindBytes": {
+   "pr": 800000,
+   "commit": 600000,
+   "jsdoc": 600000
+  },
+  "maxPrPages": 3,
+  "maxCommits": 600,
+  "maxDiffBytes": 8000,
+  "maxDiffFiles": 6,
+  "maxPromptChars": 1500,
+  "minPromptChars": 20,
+  "maxBodyChars": 3000
+ },
+ "capsNote": "maxBytes 2,000,000 sits inside the retrain's replay.trainMaxBytes (6,000,000) and is far under the pretrain split (78,555,701): at finetune.steps 300 x batch 8 x ctx 512 with replayFrac 0.75 the fine-tune side sees ~307k tokens (~1 MB), so 2 MB is about two passes at most. Each (repo, kind) gets an equal share of its kind's budget.",
+ "salt": "peaceai-nl-pairs:v1",
+ "screenedOut": {
+  "note": "screened and NOT pinned (no pair may come from them): date-fns/date-fns has no licence file at the repo root (license_missing); isaacs/node-lru-cache is Blue Oak (license_not_permissive); immerjs/immer is reported as JavaScript; the plan-only task repos, unjs/ufo, toss/es-toolkit and the #635 fixtures are excluded in code (nlpairs.ts BUILTIN_EXCLUDED_*), set C v2 repos and PeaceG03 repos by configProblems."
+ }
+}

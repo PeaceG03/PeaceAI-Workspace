@@ -1,0 +1,141 @@
+{
+ "schema": "peaceai-nl-pairs-summary:v1",
+ "manifestSha256": "3decc18d645015d8bccb66058f8ffd1eb65df18a574b537b82318c7a28ddf295",
+ "configSha256": "2c22db057620ad73a0de9f308b704b325f98b8e86b71cd8404a9fe876d3174de",
+ "exclusionsSha256": "2549f48e3ca233b0793ef4e7434ee7cee0a2eb09c30e5d9991536c347b31c731",
+ "pairs": 603,
+ "bytes": 1361255,
+ "byKind": {
+  "pr": {
+   "pairs": 193,
+   "bytes": 612276,
+   "train": 193,
+   "heldout": 0
+  },
+  "commit": {
+   "pairs": 223,
+   "bytes": 520056,
+   "train": 223,
+   "heldout": 0
+  },
+  "jsdoc": {
+   "pairs": 187,
+   "bytes": 228923,
+   "train": 187,
+   "heldout": 0
+  }
+ },
+ "byRepo": {
+  "ReactiveX/rxjs": {
+   "license": "Apache-2.0",
+   "pr": 27,
+   "commit": 23,
+   "jsdoc": 64
+  },
+  "colinhacks/zod": {
+   "license": "MIT",
+   "pr": 11,
+   "commit": 36,
+   "jsdoc": 16
+  },
+  "honojs/hono": {
+   "license": "MIT",
+   "pr": 26,
+   "commit": 27,
+   "jsdoc": 41
+  },
+  "mobxjs/mobx": {
+   "license": "MIT",
+   "pr": 32,
+   "commit": 36,
+   "jsdoc": 19
+  },
+  "pmndrs/zustand": {
+   "license": "MIT",
+   "pr": 35,
+   "commit": 28,
+   "jsdoc": 0
+  },
+  "reduxjs/redux-toolkit": {
+   "license": "MIT",
+   "pr": 21,
+   "commit": 34,
+   "jsdoc": 2
+  },
+  "remix-run/react-router": {
+   "license": "MIT",
+   "pr": 21,
+   "commit": 24,
+   "jsdoc": 36
+  },
+  "sindresorhus/ky": {
+   "license": "MIT",
+   "pr": 20,
+   "commit": 15,
+   "jsdoc": 9
+  }
+ },
+ "build": {
+  "candidates": 1925,
+  "kept": 677,
+  "ghCalls": 24,
+  "drops": {
+   "cap_repo_kind": 1231,
+   "commit_chore": 441,
+   "commit_is_pr_merge": 1320,
+   "commit_parents": 1,
+   "diff_too_large": 257,
+   "diff_too_many_files": 213,
+   "dup_diff": 14,
+   "dup_text": 3,
+   "english_short": 82,
+   "file_excluded-dir": 8,
+   "file_generated-path": 3,
+   "file_nested_license": 1005,
+   "file_personal-info": 21,
+   "file_secret": 15,
+   "file_too-large": 2,
+   "generated_path": 21,
+   "no_code_files": 1653,
+   "path_leak": 2,
+   "pr_merge_not_on_pinned_line": 195
+  }
+ },
+ "ftPrepare": {
+  "docsIn": 677,
+  "olderVersionsDropped": 0,
+  "heldoutSharedLineDropped": 71,
+  "docsOut": 606,
+  "train": 606,
+  "heldout": 0
+ },
+ "evalDedup": {
+  "window": 24,
+  "shortMin": 8,
+  "evalItemsExactOnly": 178,
+  "docsIn": 606,
+  "docsOut": 603,
+  "overlapDocs": 3,
+  "overlapDocsSetC": 3,
+  "overlapDocsJudge": 0,
+  "byMethod": {
+   "setc_exact": 0,
+   "setc_window": 2,
+   "setc_short": 1,
+   "judge_exact": 0,
+   "judge_window": 0,
+   "judge_short": 0
+  },
+  "evalItemsHit": {
+   "setc": 187,
+   "judge": 0
+  },
+  "evalItems": {
+   "setc": 6870,
+   "judge": 920
+  },
+  "droppedByList": 0,
+  "recheckOverlapDocs": 0,
+  "trainDocsOut": 603
+ }
+}

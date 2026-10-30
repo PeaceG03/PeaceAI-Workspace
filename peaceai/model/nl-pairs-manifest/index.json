@@ -1,0 +1,12 @@
+{
+ "schema": "peaceai-manifest-parts:v1",
+ "combinedSha256": "3decc18d645015d8bccb66058f8ffd1eb65df18a574b537b82318c7a28ddf295",
+ "bytes": 281776,
+ "parts": [
+  {
+   "name": "part-000.jsonl",
+   "sha256": "3decc18d645015d8bccb66058f8ffd1eb65df18a574b537b82318c7a28ddf295",
+   "bytes": 281776
+  }
+ ]
+}

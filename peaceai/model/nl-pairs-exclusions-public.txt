@@ -1,0 +1,17 @@
+# M147 public exclusion file (the Builder-visible half). Format: one `owner/repo` or `*/name` per line.
+# Auditor runs the build with the hidden-half file instead (same format); its sha256 lands in the manifest header.
+unjs/defu
+unjs/destr
+unjs/scule
+unjs/ohash
+jquense/yup
+kysely-org/kysely
+ianstormtaylor/superstruct
+open-circle/valibot
+sindresorhus/p-queue
+remeda/remeda
+supermacro/neverthrow
+unjs/ufo
+toss/es-toolkit
+*/is-what
+*/code-block-writer
