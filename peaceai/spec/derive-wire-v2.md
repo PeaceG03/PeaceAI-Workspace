@@ -109,3 +109,37 @@ last failure is the original error. No new list, no logging call, no failures-in
 The issue must fit the 2000-character objective after cleaning (`MAX_OBJECTIVE_CHARS`); a longer one is refused as
 `wire_task_truncated` rather than derived from the bullets that survived the cut. Markdown cleaning turns a trailing
 underscore into a space, so a filter word is written without one (`starts with R2`, not `R2_`).
+
+## G29: "handle a failing call" on a retried method (public-derive-wire-rethrow-v1)
+
+A third ask on the same engine (`deriveRethrow` in `peaceai/lib/derive-wire-v2.ts`), under its OWN spec
+`public-derive-wire-rethrow-v1` (params: the v2 vocabulary with `statements: derived-rethrow-at-retry-limit-v2`;
+trigger: v1's header form with the ask `handle a failing call`). public-derive-wire-v2's spec, trigger and approved
+sha stay byte for byte; v1 (unapproved) keeps its own trigger and never reaches this code.
+
+- Site: the target must be a class method that is already the v2 retry template (`retryLoopOf`: the whole body is the
+  loop, the catch is exactly `if (!A(attempt + 1)) throw error; await this.sleep(D(attempt, B)); continue;`). Anything
+  else is `wire_rethrow_site` (retry it first). The template's final `throw error;` is the only thing that changes.
+- Edit (`rethrowEdit`): that throw becomes v1's closed rethrow `throw new Error(H(args), { cause: error });`, inline
+  when the line fits 120 characters, else v1's multi-line layout in a block. H is one exported string-line helper
+  (`wireHelper`) of the in-scope source, imported with one new single-name import in the repo's import style when it
+  lives in another module. args are closed reads of the caught error (message, name, code, cause.code, cause.name, and the G29-only
+  network filter `message.network`: the error's message only when it is fetch's own `fetch failed` or the error is
+  named `TimeoutError` / `AbortError`, else the error's name, so a URL-, key- or host-bearing message never reaches
+  the new message; `RETHROW_ARG_FORMS`) or string parameters of the method (one hop through the entry the example calls). The cause's
+  message is never passed (Auditor #601: `wire_cause_message` when only it would fit); the cause's name only when no
+  failing example's cause has a code (`wire_cause_name`).
+- Examples: each one is simulated through the template as it stands (its S / A / D helpers, local or imported). Counts
+  and sleep arguments must be what the template already does. A failing example's last try must end in a failure and
+  the example must expect a rejection (an answer after every try failed is `wire_rethrow_swallow`: G26, a failure is
+  never swallowed and no bare `continue` is ever written). At least one failing example pins the site fake's call
+  count at the limit (`wire_rethrow_unpinned`) and at least one example ends in an answer, unchanged
+  (`wire_rethrow_answer_unpinned`). If the original error already gives every expected message: `wire_not_needed`.
+  Exactly one (H, args) fits, else `wire_no_fit` / `wire_ambiguous` / `wire_search_too_large`.
+  Examples that fail only with network words fit both the raw message and the filter (`wire_ambiguous`): an issue
+  that wants the filter pins it with a failing example whose message is not a network word (for w02r, one that
+  carries the account URL and expects only the error's name).
+- Job B: `rethrowEditShape` reads the holes off the graded file, rebuilds the edit from the base with `rethrowEdit` and
+  requires it token for token; the hermetic walk runs before and after with the template's timeout signal taken out.
+  A graded rethrow that passes the cause's message is refused by name. All of v2's guards stay on (code anywhere in
+  the issue, the 2000-character objective cut).

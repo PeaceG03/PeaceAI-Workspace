@@ -173,7 +173,7 @@ function scenariosOf(bullets: readonly string[], sf: ts.SourceFile): { scenarios
 }
 
 /** The value a string parameter of the target has in one scenario: a literal argument of the expect call, or one hop through the entry. */
-function paramValue(sf: ts.SourceFile, t: Target, call: ts.CallExpression, index: number): string | null {
+export function paramValue(sf: ts.SourceFile, t: Target, call: ts.CallExpression, index: number): string | null {
   const lit = (args: readonly ts.Expression[]) => { const a = args[index]; return a && ts.isStringLiteral(a) ? a.text : null; };
   const callee = call.expression;
   let entry: ts.FunctionLikeDeclaration | undefined;

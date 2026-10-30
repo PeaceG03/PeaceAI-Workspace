@@ -50,7 +50,7 @@ export type Read = (rel: string) => string | null;
 
 /** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
 export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p) || isWire2Params(p));
+  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p) || isWire2Params(p) || isWire2RethrowParams(p));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1834,6 +1834,20 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
  * Returns null when gradable, else a refusal code. `read` reads repo-relative non-test source files of the graded tree.
  */
 export function gradeExistingEditProblem(modPath: string, baseText: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
+  // G29: a rethrow at the retry limit of a v2 retry template (rethrowEditShape: rebuilt from the base token for token;
+  // a cause-message rethrow is refused by name), hermetic walk on the template with its timeout signal taken out,
+  // before and after, the test in the v2 language. Any other edit is checked exactly as before.
+  const rethrow = rethrowEditShape(modPath, baseText, realText, read);
+  if (typeof rethrow === "string") return rethrow;
+  if (rethrow) {
+    const tcalls = gradedTestCalls(testPath, testContent, modPath, true, true);
+    if (!tcalls) return "edit_test_shape";
+    const ta = hermeticProblem(modPath, read, tcalls, rethrow.target, { path: modPath, content: rethrow.stripped });
+    if (typeof ta === "string") return ta;
+    const tb = hermeticProblem(modPath, read, tcalls, rethrow.target, { path: modPath, content: rethrow.baseStripped });
+    if (typeof tb === "string") return tb;
+    return ta.targetReached && tb.targetReached ? null : "edit_test_unreached";
+  }
   const target = editConfinedTarget(modPath, baseText, realText);
   if (!target) {
     // G18 v2: a retry edit also adds the sleep seam and helper imports, so it is not confined to one unit; it is
@@ -2579,4 +2593,191 @@ export function recordEditShape(path: string, baseText: string, realText: string
   if (rebuilt === null || !sameCode(rebuilt, realText)) return null;
   const cc = tr.catchClause!;
   return { stripped: realText.slice(0, cc.getStart(sf)) + "catch (error) { throw error; }" + realText.slice(cc.getEnd()), holes };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G29 (public-derive-wire-rethrow-v1, kind EXISTING_EDIT; peaceai/spec/derive-wire-v2.md "handle a failing call"):
+// the shared Job A / Job B pieces of ONE more derived edit on a method that is ALREADY the v2 retry template
+// (retryEdit's output). Only the template's final `throw error;` (the failure left after the last allowed try) is
+// replaced with v1's closed rethrow `throw new Error(H(args), { cause: error });`: H an existing string-line helper
+// (wireHelper) of this module or of one relative module it is imported from, the args closed error reads
+// (RETHROW_ARG_IDS: never cause.message, Auditor #601) or string parameters of the target. Nothing else changes: a
+// status answer is returned exactly as before, a failure a later try recovers from is unchanged, and the catch never
+// goes on without a throw (G26). Its own spec (statements "derived-rethrow-at-retry-limit-v2") keeps
+// public-derive-wire-v2's spec, trigger and hash byte for byte.
+// ---------------------------------------------------------------------------------------------------------------
+export const WIRE2_RETHROW_VOCAB: Record<(typeof EXISTING_EDIT_PARAM_KEYS)[number], readonly string[]> = { ...WIRE2_VOCAB, statements: ["derived-rethrow-at-retry-limit-v2"] };
+export function isWire2RethrowParams(p: Record<string, unknown>): boolean {
+  return Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && WIRE2_RETHROW_VOCAB[k].length === 1 && WIRE2_RETHROW_VOCAB[k].includes(p[k] as string));
+}
+/** The error's message only when it is one of the runtime's own network words (fetch's "fetch failed", a timeout or an
+ *  abort), else the error's name: a message that may carry a URL, a key or a host never reaches the thrown message. */
+export const RETHROW_NETWORK_MESSAGE = 'error instanceof Error ? (error.message === "fetch failed" || error.name === "TimeoutError" || error.name === "AbortError" ? error.message : error.name) : "Error"';
+/** The error reads a G29 rethrow may pass (Auditor #601: the cause's code or name, never the cause's message). */
+export const RETHROW_ARG_FORMS: readonly { id: string; text: string }[] = [...WIRE_ARG_FORMS.filter((f) => f.id !== "cause.message"), { id: "message.network", text: RETHROW_NETWORK_MESSAGE }];
+export const RETHROW_ARG_IDS: readonly string[] = RETHROW_ARG_FORMS.map((f) => f.id);
+/** The holes of a G29 rethrow edit. `import`: the helper taken from another module (specifier as written), else null. */
+export interface RethrowHoles { target: string; helper: string; args: string[]; import: { name: string; from: string } | null }
+
+/** The v2 retry template as it stands in a method (retryEdit's output), read structurally; null when it is not. */
+export interface RetryLoop { tr: ts.TryStatement; guard: ts.IfStatement; throwStmt: ts.ThrowStatement; site: string; status: string; allowed: string; delay: string; baseMs: number; timeoutMs: number; signal: ts.CallExpression }
+export function retryLoopOf(sf: ts.SourceFile, t: Target): RetryLoop | null {
+  if (t.kind !== "method" || !t.node.body || !t.node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) || t.node.body.statements.length !== 1) return null;
+  const loop = t.node.body.statements[0]!;
+  if (!ts.isForStatement(loop) || loop.condition || loop.initializer?.getText(sf) !== "let attempt = 0" || loop.incrementor?.getText(sf) !== "attempt += 1" || !ts.isBlock(loop.statement)) return null;
+  const ls = loop.statement.statements;
+  if (ls.length < 4) return null;
+  const [decl, tr, tail, wait] = ls.slice(-4) as [ts.Statement, ts.Statement, ts.Statement, ts.Statement];
+  const prefix = ls.slice(0, -4);
+  if (!sameCode(decl.getText(sf), "let response;") || !ts.isTryStatement(tr) || !tr.catchClause || tr.finallyBlock || !ts.isIfStatement(tail) || tail.elseStatement) return null;
+  if (prefix.some((s) => hasKind(s, [ts.SyntaxKind.ReturnStatement, ts.SyntaxKind.AwaitExpression, ts.SyntaxKind.YieldExpression, ts.SyntaxKind.TryStatement, ts.SyntaxKind.ThrowStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForOfStatement, ts.SyntaxKind.ForInStatement, ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement, ts.SyntaxKind.FunctionExpression, ts.SyntaxKind.ArrowFunction, ts.SyntaxKind.ClassExpression, ts.SyntaxKind.ContinueStatement, ts.SyntaxKind.BreakStatement]) || ["attempt", "response", "error"].some((n) => declaresName(s, n)))) return null;
+  // the try: `response = await this.SITE(a, { .., signal: AbortSignal.timeout(N) });`
+  if (tr.tryBlock.statements.length !== 1) return null;
+  const a = tr.tryBlock.statements[0]!;
+  if (!ts.isExpressionStatement(a) || !ts.isBinaryExpression(a.expression) || a.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken || a.expression.left.getText(sf) !== "response" || !ts.isAwaitExpression(a.expression.right) || !ts.isCallExpression(a.expression.right.expression)) return null;
+  const siteCall = a.expression.right.expression;
+  if (!ts.isPropertyAccessExpression(siteCall.expression) || siteCall.expression.expression.kind !== ts.SyntaxKind.ThisKeyword || siteCall.questionDotToken || siteCall.typeArguments || siteCall.arguments.length !== 2) return null;
+  const site = siteCall.expression.name.text;
+  const opts = siteCall.arguments[1]!;
+  const sig = ts.isObjectLiteralExpression(opts) ? opts.properties[opts.properties.length - 1] : undefined;
+  if (!sig || !ts.isPropertyAssignment(sig) || !ts.isIdentifier(sig.name) || sig.name.text !== "signal" || !ts.isCallExpression(sig.initializer) || sig.initializer.arguments.length !== 1 || !ts.isNumericLiteral(sig.initializer.arguments[0]!) || !sameCode(sig.initializer.expression.getText(sf), "AbortSignal.timeout")) return null;
+  const timeoutMs = Number((sig.initializer.arguments[0] as ts.NumericLiteral).text);
+  // the catch: exactly `if (!A(attempt + 1)) throw error; await this.sleep(D(attempt, B)); continue;`
+  const cv = tr.catchClause.variableDeclaration;
+  if (!cv || !ts.isIdentifier(cv.name) || cv.name.text !== "error" || cv.type || cv.initializer) return null;
+  const cs = tr.catchClause.block.statements;
+  if (cs.length !== 3) return null;
+  const [guard, sleep, cont] = cs as unknown as [ts.Statement, ts.Statement, ts.Statement];
+  if (!ts.isIfStatement(guard) || guard.elseStatement || !ts.isThrowStatement(guard.thenStatement) || !ts.isContinueStatement(cont) || cont.label) return null;
+  const g = guard.expression;
+  if (!ts.isPrefixUnaryExpression(g) || g.operator !== ts.SyntaxKind.ExclamationToken || !ts.isCallExpression(g.operand) || !ts.isIdentifier(g.operand.expression)) return null;
+  const allowed = g.operand.expression.text;
+  if (!sameCode(guard.getText(sf), `if (!${allowed}(attempt + 1)) throw error;`)) return null;
+  if (!ts.isExpressionStatement(sleep) || !ts.isAwaitExpression(sleep.expression) || !ts.isCallExpression(sleep.expression.expression)) return null;
+  const sc = sleep.expression.expression;
+  const dc = sc.arguments[0];
+  if (sc.arguments.length !== 1 || !dc || !ts.isCallExpression(dc) || !ts.isIdentifier(dc.expression) || dc.arguments.length !== 2 || !ts.isNumericLiteral(dc.arguments[1]!)) return null;
+  const delay = dc.expression.text, baseMs = Number((dc.arguments[1] as ts.NumericLiteral).text);
+  const waitText = `await this.sleep(${delay}(attempt, ${baseMs}));`;
+  if (!sameCode(sleep.getText(sf), waitText) || !sameCode(wait.getText(sf), waitText)) return null;
+  // the tail: `if (!S(response.status) || !A(attempt + 1)) return response;`
+  const te = tail.expression;
+  const sl = ts.isBinaryExpression(te) && ts.isPrefixUnaryExpression(te.left) && ts.isCallExpression(te.left.operand) && ts.isIdentifier(te.left.operand.expression) ? te.left.operand.expression.text : null;
+  if (!sl || !sameCode(tail.getText(sf), `if (!${sl}(response.status) || !${allowed}(attempt + 1)) return response;`)) return null;
+  if ([sl, allowed, delay].some((n) => declaresName(t.node, n) || declaresName(t.classNode, n))) return null;
+  return { tr, guard, throwStmt: guard.thenStatement, site, status: sl, allowed, delay, baseMs, timeoutMs, signal: sig.initializer };
+}
+
+const rethrowArgText = (a: string): string | null => (a.startsWith("param:") ? a.slice(6) : RETHROW_ARG_FORMS.find((f) => f.id === a)?.text ?? null);
+const stringParamsOf = (t: Target): string[] => t.node.parameters.filter((p) => ts.isIdentifier(p.name) && p.type?.kind === ts.SyntaxKind.StringKeyword && !p.questionToken && !p.dotDotDotToken).map((p) => (p.name as ts.Identifier).text);
+
+/** Build the G29 rethrow edit of a base whose target is the v2 retry template, or null. */
+export function rethrowEdit(path: string, baseText: string, h: RethrowHoles): string | null {
+  const sf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, h.target);
+  if (!t || t.kind !== "method") return null;
+  const loop = retryLoopOf(sf, t);
+  if (!loop) return null;
+  if (!/^[A-Za-z_$][\w$]*$/.test(h.helper) || h.args.length < 1 || h.args.length > 4) return null;
+  const sp = stringParamsOf(t);
+  const texts = h.args.map((a) => (a.startsWith("param:") && !sp.includes(a.slice(6)) ? null : rethrowArgText(a)));
+  if (texts.some((x) => x === null)) return null;
+  // the global Error / String and the helper are what they look like: none is re-bound in the module, class or target
+  if (declaresName(sf, "Error") || declaresName(sf, "String") || declaresName(t.node, h.helper) || declaresName(t.classNode, h.helper) || t.node.parameters.some((p) => declaresName(p, "error"))) return null;
+  const local = topDeclares(sf, h.helper);
+  if (local === (h.import !== null)) return null;
+  if (local && !wireHelper(sf, h.helper)) return null;
+  if (local && wireHelper(sf, h.helper)!.params.length !== h.args.length) return null;
+  const splices: Splice[] = [];
+  if (h.import) {
+    if (h.import.name !== h.helper || !/^\.{1,2}\/[\w./-]+$/.test(h.import.from)) return null;
+    const imps = sf.statements.filter((s): s is ts.ImportDeclaration => ts.isImportDeclaration(s));
+    if (imps.some((s) => ts.isStringLiteral(s.moduleSpecifier) && s.moduleSpecifier.text === h.import!.from)) return null;
+    const line = `import { ${h.helper} } from ${JSON.stringify(h.import.from)};`;
+    const at = imps.length ? imps[imps.length - 1]!.getEnd() : 0;
+    splices.push({ start: at, end: at, text: imps.length ? `\n${line}` : `${line}\n` });
+  }
+  const throwText = `throw new Error(${h.helper}(${texts.join(", ")}), { cause: error });`;
+  const i3 = lineIndent(baseText, loop.guard.getStart(sf));
+  const head = `if (!${loop.allowed}(attempt + 1))`;
+  if (`${i3}${head} ${throwText}`.length <= 120) splices.push({ start: loop.throwStmt.getStart(sf), end: loop.throwStmt.getEnd(), text: throwText });
+  else {
+    // v1's multi-line rethrow layout, inside a block of the guard
+    const step = i3.slice(lineIndent(baseText, loop.tr.getStart(sf)).length) || "  ";
+    const i4 = i3 + step;
+    const text = [`${head} {`, `${i4}throw new Error(`, `${i4}  ${h.helper}(`, ...texts.map((a, j) => `${i4}    ${a}${j < texts.length - 1 ? "," : ""}`), `${i4}  ),`, `${i4}  { cause: error }`, `${i4});`, `${i3}}`].join("\n");
+    splices.push({ start: loop.guard.getStart(sf), end: loop.guard.getEnd(), text });
+  }
+  return applySplices(baseText, splices);
+}
+
+/**
+ * Job A and Job B: is `realText` the G29 rethrow edit of `baseText`? The holes are read off the real tree (the one
+ * class method whose body is the retry loop, its guard's `throw new Error(H(args), { cause: error })`), the edit is
+ * rebuilt from the base with rethrowEdit and must match token for token; H must be a string-line helper (wireHelper)
+ * of this module or of the relative module it is imported from (`read`). A rethrow that passes the cause's message is
+ * refused by name ("wire_cause_message", Auditor #601). `stripped` / `baseStripped`: the real / base text with the
+ * template's per-attempt `AbortSignal.timeout(N)` replaced by `undefined`, for the hermetic walks.
+ */
+export function rethrowEditShape(path: string, baseText: string, realText: string, read: Read): { target: string; stripped: string; baseStripped: string; holes: RethrowHoles } | string | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  const bsf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf) || diag(bsf)) return null;
+  const hits: string[] = [];
+  for (const st of bsf.statements) {
+    if (!ts.isClassDeclaration(st) || !st.name) continue;
+    for (const m of st.members) if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) { const t = findTarget(bsf, `${st.name.text}.${m.name.text}`); if (t && retryLoopOf(bsf, t)) hits.push(`${st.name.text}.${m.name.text}`); }
+  }
+  if (hits.length !== 1) return null;
+  const target = hits[0]!;
+  const bt = findTarget(bsf, target)!, bl = retryLoopOf(bsf, bt)!;
+  const rt = findTarget(sf, target);
+  if (!rt?.node.body || rt.node.body.statements.length !== 1 || !ts.isForStatement(rt.node.body.statements[0]!)) return null;
+  const rloop = rt.node.body.statements[0] as ts.ForStatement;
+  if (!ts.isBlock(rloop.statement)) return null;
+  const rls = rloop.statement.statements;
+  const rtr = rls[rls.length - 3];
+  if (!rtr || !ts.isTryStatement(rtr) || !rtr.catchClause) return null;
+  const guard = rtr.catchClause.block.statements[0];
+  if (!guard || !ts.isIfStatement(guard)) return null;
+  const th = ts.isBlock(guard.thenStatement) && guard.thenStatement.statements.length === 1 ? guard.thenStatement.statements[0]! : guard.thenStatement;
+  if (!ts.isThrowStatement(th) || !ts.isNewExpression(th.expression)) return null;
+  const ne = th.expression;
+  if (!ts.isIdentifier(ne.expression) || ne.expression.text !== "Error" || ne.typeArguments || ne.arguments?.length !== 2) return null;
+  const msg = ne.arguments[0]!;
+  if (!ts.isCallExpression(msg) || !ts.isIdentifier(msg.expression) || msg.typeArguments || msg.questionDotToken) return null;
+  const helper = msg.expression.text;
+  const sp = stringParamsOf(rt);
+  const args: string[] = [];
+  for (const a of msg.arguments) {
+    if (sameCode(a.getText(sf), WIRE_ARG_FORMS.find((f) => f.id === "cause.message")!.text)) return "wire_cause_message";
+    const form = RETHROW_ARG_FORMS.find((f) => sameCode(a.getText(sf), f.text));
+    if (form) { args.push(form.id); continue; }
+    if (ts.isIdentifier(a) && sp.includes(a.text)) { args.push(`param:${a.text}`); continue; }
+    return null;
+  }
+  let imp: RethrowHoles["import"] = null;
+  if (topDeclares(bsf, helper)) { if (!wireHelper(bsf, helper)) return null; }
+  else {
+    const d = sf.statements.find((s): s is ts.ImportDeclaration => ts.isImportDeclaration(s) && !!s.importClause?.namedBindings && ts.isNamedImports(s.importClause.namedBindings) && s.importClause.namedBindings.elements.length === 1 && s.importClause.namedBindings.elements[0]!.name.text === helper && !s.importClause.namedBindings.elements[0]!.propertyName && !s.importClause.name && !s.importClause.isTypeOnly);
+    if (!d || !ts.isStringLiteral(d.moduleSpecifier)) return null;
+    const from = d.moduleSpecifier.text;
+    const rel = normalizeRel(path.slice(0, path.lastIndexOf("/") + 1), from);
+    const relTs = rel === null ? null : rel.endsWith(".ts") ? rel : `${rel}.ts`;
+    const src = relTs === null ? null : read(relTs);
+    const wh = src === null ? null : wireHelper(ts.createSourceFile(relTs!, src, ts.ScriptTarget.Latest, true), helper);
+    if (!wh || wh.params.length !== args.length) return null;
+    imp = { name: helper, from };
+  }
+  const holes: RethrowHoles = { target, helper, args, import: imp };
+  const rebuilt = rethrowEdit(path, baseText, holes);
+  if (rebuilt === null || !sameCode(rebuilt, realText)) return null;
+  // the real file is the rebuilt template token for token, so its signal is where the template puts it
+  const strip = (text: string, s: ts.SourceFile, sig: ts.CallExpression): string => text.slice(0, sig.getStart(s)) + "undefined" + text.slice(sig.getEnd());
+  const rsig = ((rtr.tryBlock.statements[0] as ts.ExpressionStatement).expression as ts.BinaryExpression).right as ts.AwaitExpression;
+  const rcall = rsig.expression as ts.CallExpression;
+  const ropts = rcall.arguments[1] as ts.ObjectLiteralExpression;
+  const rsigCall = (ropts.properties[ropts.properties.length - 1] as ts.PropertyAssignment).initializer as ts.CallExpression;
+  return { target, stripped: strip(realText, sf, rsigCall), baseStripped: strip(baseText, bsf, bl.signal), holes };
 }

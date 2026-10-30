@@ -13,7 +13,7 @@ import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, validTestExistingParams } from "./learned-test-existing.ts";
-import { existingEditDetail, EXISTING_EDIT_TRIGGER, isWire2Params, isWireParams, validExistingEditParams } from "./learned-edit-existing.ts";
+import { existingEditDetail, EXISTING_EDIT_TRIGGER, isWire2Params, isWire2RethrowParams, isWireParams, validExistingEditParams } from "./learned-edit-existing.ts";
 import { deriveWireDetail } from "./derive-wire.ts";
 import { deriveWireV2Detail } from "./derive-wire-v2.ts";
 import { COMPLEX_OPTIONAL_VOCAB, COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
@@ -453,7 +453,7 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
     try {
       // G18 (public-derive-wire-v1): a derive-wire spec (its own params, all or none) derives the edit itself
       // G18 v2 (public-derive-wire-v2): its own params derive a bounded retry or a filtered, recorded skip
-      const r = isWireParams(spec.params) ? deriveWireDetail(spec.trigger, spec.params, objective, files, isTest, raw) : isWire2Params(spec.params) ? deriveWireV2Detail(spec.trigger, spec.params, objective, files, isTest, raw) : existingEditDetail(spec.trigger, spec.params, objective, files, isTest);
+      const r = isWireParams(spec.params) ? deriveWireDetail(spec.trigger, spec.params, objective, files, isTest, raw) : isWire2Params(spec.params) || isWire2RethrowParams(spec.params) ? deriveWireV2Detail(spec.trigger, spec.params, objective, files, isTest, raw) : existingEditDetail(spec.trigger, spec.params, objective, files, isTest);
       if (!r.edit) { if (why) why.reason = whyReason(r.reason ?? "edit_refused"); return null; }
       if (repo && deniedEditPath(repo, [r.edit.path])) { if (why) why.reason = "denied_path"; return null; }
       return r.edit;
