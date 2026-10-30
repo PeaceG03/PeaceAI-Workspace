@@ -879,3 +879,31 @@ test("Auditor #520 ruling near miss: a shadowed or written global is refused any
   }
   assert.equal(one520("const M = Uint8Array.from([1]);\nexport const W = M;\n" + fn("const o = { from: 1 };\n  o.from = 2;")), null);
 });
+
+test("Auditor #520 ruling near miss: a guarded global bound anywhere, or reached through an alias, is refused", () => {
+  const ok = "const E = new TextEncoder();\nexport const W = E;\n";
+  // a binding of ANY of the guarded names refuses, not only of the global this shape uses
+  for (const g of ["Object", "Buffer", "Uint8Array", "DataView", "ArrayBuffer", "TextDecoder", "Array"]) assert.equal(one520(`const ${g} = 1;\n${ok}export const Z = ${g};\n`), NO520, g);
+  // self / window are ordinary local names in PeaceSTOCKS (scan-yield.ts, tenmin-daily-liquid.ts)
+  assert.equal(one520(`${ok}export function g(self: number): number {\n  const window = self + 1;\n  return window;\n}\n`), null);
+  // plain reads of a global's statics and prototype methods stay admitted
+  assert.equal(one520(`${ok}export function g(x: unknown): string {\n  return Object.prototype.toString.call(x) + String(x instanceof Uint8Array) + typeof Buffer + Object.keys({}).length;\n}\n`), null);
+  const fn = (body: string) => `export function evil(): void {\n  ${body}\n}\n`;
+  for (const body of [
+    "const P = TextEncoder.prototype as any; P.encode = () => 1;",
+    "const G = globalThis as any; G.TextEncoder = 1;",
+    "const T = TextEncoder as any; T.prototype.encode = 1;",
+    "const { prototype } = TextEncoder as any; prototype.encode = 1;",
+    "const T = (globalThis as any).TextEncoder; T.x = 1;",
+    "(Object as any)[\"defineProperty\"](TextEncoder.prototype, \"encode\", { value: 1 });",
+    "const d = Object.defineProperty; d(TextEncoder.prototype, \"encode\", { value: 1 });",
+    "const e = new TextEncoder() as any; e.constructor.prototype.encode = 1;",
+    "const e = new TextEncoder() as any; Object.getPrototypeOf(e).encode = 1;",
+    "const e = new TextEncoder() as any; e.__proto__.encode = 1;",
+    "const e = new TextEncoder() as any; e[\"constructor\"].x = 1;",
+    "const f = (x: unknown): void => { void x; }; f(Buffer);",
+  ]) {
+    assert.equal(one520(ok + fn(body)), NO520, body);
+    assert.equal(one520("import { evil } from \"./evil.ts\";\n" + ok + "export const Z = evil;\n", { "src/evil.ts": fn(body) }), NO520, `imported ${body}`);
+  }
+});

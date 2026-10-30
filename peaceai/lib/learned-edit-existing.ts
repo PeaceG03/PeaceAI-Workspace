@@ -530,7 +530,95 @@ function loadConstForm(c: Closure, x: ts.Expression): boolean {
     if ((x as ts.CallExpression).arguments.length === 1 && lit((x as ts.CallExpression).arguments[0], "str") && litArray(recv, "str")) uses = ["Array"];
   }
   if (!uses) return false;
-  return !uses.some((g) => closureBinds(c, g)) && !loadConstGlobalsWritten(c);
+  // Auditor #520 (b): a binding of ANY guarded global anywhere in the closure refuses, not only of the ones this shape uses
+  return ![...LOAD_CONST_GLOBALS, "globalThis"].some((g) => closureBinds(c, g)) && !loadConstGlobalsWritten(c) && !loadConstGlobalsEscape(c);
+}
+const LOAD_CONST_GUARDED: readonly string[] = [...LOAD_CONST_GLOBALS, "globalThis", "global", "self", "window"];
+
+/**
+ * Auditor #520 (b), alias half: a write is only seen when it is rooted at a guarded name, so a guarded global (or its
+ * prototype) must never reach a value another name can hold. True (refuse) when some module of the closure:
+ *  - uses a guarded name other than as `new X(...)`, a plain `X.m` read (m not prototype / constructor / __proto__ /
+ *    getPrototypeOf, and for globalThis / global / self / window m not itself a guarded name), `X.prototype.m` read,
+ *    `v instanceof X`, `typeof X` or in a type;
+ *  - reads `.prototype` on any receiver other than as `R.prototype.m`;
+ *  - mentions `__proto__` or `getPrototypeOf` at all, as a plain member, a string key or a name;
+ *  - writes (assignment, ++ / --, delete, defineProperty / assign / setPrototypeOf / Reflect.*) to a target whose access
+ *    chain passes through `.prototype`, `.constructor` or `__proto__`, on any receiver.
+ */
+function loadConstGlobalsEscape(c: Closure): boolean {
+  const guarded = new Set<string>(LOAD_CONST_GUARDED);
+  const hostNames = new Set(["globalThis", "global", "self", "window"]);
+  const banned = new Set(["prototype", "constructor", "__proto__", "getPrototypeOf"]);
+  const outer = (n: ts.Node): ts.Node => {
+    let o = n;
+    while (o.parent && (ts.isParenthesizedExpression(o.parent) || ts.isAsExpression(o.parent) || ts.isNonNullExpression(o.parent) || ts.isTypeAssertionExpression(o.parent) || ts.isSatisfiesExpression(o.parent))) o = o.parent;
+    return o;
+  };
+  const isPlainMember = (q: ts.Node, o: ts.Node): q is ts.PropertyAccessExpression => ts.isPropertyAccessExpression(q) && q.expression === o && ts.isIdentifier(q.name);
+  /** `R.prototype` used only as the receiver of a further plain `.m` read (m not banned). */
+  const protoOk = (pa: ts.PropertyAccessExpression): boolean => {
+    const o = outer(pa);
+    const q = o.parent;
+    return !!q && isPlainMember(q, o) && !banned.has(q.name.text);
+  };
+  const chainHas = (e: ts.Expression): boolean => {
+    let t: ts.Expression = e;
+    for (;;) {
+      t = unwrap(t);
+      if (ts.isPropertyAccessExpression(t)) { if (banned.has(t.name.text)) return true; t = t.expression; continue; }
+      if (ts.isElementAccessExpression(t)) { const a = unwrap(t.argumentExpression); if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && banned.has(a.text)) return true; t = t.expression; continue; }
+      return false;
+    }
+  };
+  const WRITE_CALL_NAMES = new Set(["defineProperty", "defineProperties", "assign", "setPrototypeOf", "set", "deleteProperty"]);
+  const isNameNotRef = (n: ts.Identifier): boolean => {
+    const p = n.parent;
+    return (ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n) || (ts.isMethodDeclaration(p) && p.name === n)
+      || (ts.isPropertyDeclaration(p) && p.name === n) || (ts.isPropertySignature(p) && p.name === n) || (ts.isMethodSignature(p) && p.name === n)
+      || (ts.isGetAccessor(p) && p.name === n) || (ts.isSetAccessor(p) && p.name === n) || (ts.isQualifiedName(p) && p.right === n)
+      || (ts.isBindingElement(p) && p.propertyName === n) || (ts.isImportSpecifier(p) && p.propertyName === n) || ts.isExportSpecifier(p)
+      || ts.isLabeledStatement(p) || ts.isBreakOrContinueStatement(p) || (ts.isEnumMember(p) && p.name === n) || isBindingName(n);
+  };
+  /** The name resolves to no declaration in the closure (a global: `self` / `window` may be ordinary local names). */
+  const isGlobalRef = (n: ts.Identifier): boolean => {
+    const sym = ts.isShorthandPropertyAssignment(n.parent) && n.parent.name === n ? c.checker.getShorthandAssignmentValueSymbol(n.parent) : c.checker.getSymbolAtLocation(n);
+    return !sym?.declarations?.some((d) => closureFileOf(c, d));
+  };
+  for (const sf of c.files.values()) {
+    let hit = false;
+    const walk = (n: ts.Node): void => {
+      if (hit) return;
+      if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return; // types run nothing
+      if (ts.isIdentifier(n)) {
+        if ((n.text === "__proto__" || n.text === "getPrototypeOf")) { hit = true; return; }
+        if (guarded.has(n.text) && !isNameNotRef(n) && isGlobalRef(n)) {
+          const o = outer(n);
+          const q = o.parent;
+          const ok = (ts.isNewExpression(q) && q.expression === o)
+            || (isPlainMember(q, o) && (q.name.text === "prototype" ? protoOk(q) : !banned.has(q.name.text) && !(hostNames.has(n.text) && guarded.has(q.name.text))))
+            || (ts.isBinaryExpression(q) && q.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword && q.right === o)
+            || ts.isTypeOfExpression(q);
+          if (!ok) { hit = true; return; }
+        }
+      }
+      if (ts.isPropertyAccessExpression(n) && n.name.text === "prototype" && !protoOk(n)) { hit = true; return; }
+      if (ts.isElementAccessExpression(n)) { const a = unwrap(n.argumentExpression); if ((ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) && banned.has(a.text)) { hit = true; return; } }
+      if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) && (n.text === "__proto__" || n.text === "getPrototypeOf")) { hit = true; return; }
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && chainHas(n.left)) { hit = true; return; }
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) && chainHas(n.operand)) { hit = true; return; }
+      if (ts.isDeleteExpression(n) && chainHas(n.expression)) { hit = true; return; }
+      if (ts.isCallExpression(n) && n.arguments[0] && chainHas(n.arguments[0])) {
+        const callee = unwrap(n.expression);
+        const nm = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : null;
+        if (nm === null || WRITE_CALL_NAMES.has(nm)) { hit = true; return; }
+      }
+      n.forEachChild(walk);
+    };
+    walk(sf);
+    if (hit) return true;
+  }
+  return false;
 }
 
 /** True when some module of the closure writes (assigns, ++ / --, deletes, defineProperty / assign / setPrototypeOf / Reflect.*) to a LOAD_CONST_GLOBALS name, anything rooted at one (its prototype, a static) or to globalThis / global / self / window. */
