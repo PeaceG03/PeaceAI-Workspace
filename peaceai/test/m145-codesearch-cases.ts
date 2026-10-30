@@ -1,6 +1,8 @@
 // M145 behavior cases for the code search tools, as data so the mutation test can replay them against each
 // mutant of peaceai/lib/codesearch.ts. Each case throws (node:assert) on failure.
 import assert from "node:assert/strict";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type * as CodeSearch from "../lib/codesearch.ts";
 import type { Ctx } from "./m145-fixtures.ts";
 
@@ -10,6 +12,11 @@ export interface Case { id: string; run: (lib: Lib, ctx: Ctx) => void }
 const ok = <T extends { ok: boolean }>(r: T | { ok: false; reason: string }): Extract<T, { ok: true }> => {
   assert.equal(r.ok, true, `refused: ${(r as { reason?: string }).reason}`);
   return r as Extract<T, { ok: true }>;
+};
+/** Builds a small scratch repo under ctx.base once (later runs leave it untouched, so the write-nothing snapshot holds). */
+const scratch = (dir: string, files: Record<string, string>): string => {
+  if (!existsSync(dir)) { mkdirSync(dir, { recursive: true }); for (const [p, c] of Object.entries(files)) writeFileSync(join(dir, p), c); }
+  return dir;
 };
 const reason = (r: { ok: boolean; reason?: string }) => (r.ok ? "ok" : r.reason);
 
@@ -99,6 +106,32 @@ export const CASES: Case[] = [
       assert.equal(reason(r.grep("([a-z]*)*x", { regex: true })), "regex_nested_quantifier");
       assert.equal(reason(r.grep("(", { regex: true })), "bad_regex");
       assert.deepEqual(ok(lib.openRepo(ctx.near).grep("LONGMARK")).hits, []);
+    },
+  },
+  {
+    id: "grep: catastrophic regexes ((a|a)+$, (a|aa)*b, a backreference) are refused at the hard deadline, not hung",
+    run(lib, ctx) {
+      const dir = scratch(join(ctx.base, "redos"), { "a.ts": `const s = "${"a".repeat(40)}!";\nconst t = "abc";\n` });
+      const r = lib.openRepo(dir);
+      for (const p of ["(a|a)+$", "(a|aa)*b", "(a)(?:\\1|a)+$"]) {
+        const t0 = Date.now();
+        assert.equal(reason(r.grep(p, { regex: true })), "regex_timeout", p);
+        const ms = Date.now() - t0;
+        assert.ok(ms >= lib.LIMITS.regexMs - 100 && ms < lib.LIMITS.regexMs + 3_000, `${p} took ${ms} ms`);
+      }
+      // A safe regex in the same repo still works (the deadline is per call), including a benign backreference.
+      assert.deepEqual(ok(r.grep("(b)\\1*c", { regex: true })).hits.map((h) => h.line), [2]);
+    },
+  },
+  {
+    id: "a bad .gitignore character class ([z-a]) skips that rule only; the other rules still apply",
+    run(lib, ctx) {
+      assert.doesNotThrow(() => lib.parseGitignore("[z-a]\n*.log\n", ""));
+      assert.equal(lib.parseGitignore("[z-a]\n*.log\n", "").length, 1);
+      const dir = scratch(join(ctx.base, "badignore"), { ".gitignore": "[z-a]\n*.log\n", "x.log": "x\n", "z.ts": "export const z = 1;\n" });
+      let t: ReturnType<ReturnType<Lib["openRepo"]>["tree"]> | undefined;
+      assert.doesNotThrow(() => { t = lib.openRepo(dir).tree(); });
+      assert.deepEqual(ok(t!).files, [".gitignore", "z.ts"]);
     },
   },
   // ------------------------------------------------------------- symbol
