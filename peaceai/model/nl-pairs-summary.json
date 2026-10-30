@@ -1,8 +1,8 @@
 {
  "schema": "peaceai-nl-pairs-summary:v1",
- "manifestSha256": "3decc18d645015d8bccb66058f8ffd1eb65df18a574b537b82318c7a28ddf295",
+ "manifestSha256": "98177320163d0cad6407f6b4fc7e24a42aa55cea70c6049cdc33668d165a5e05",
  "configSha256": "2c22db057620ad73a0de9f308b704b325f98b8e86b71cd8404a9fe876d3174de",
- "exclusionsSha256": "2549f48e3ca233b0793ef4e7434ee7cee0a2eb09c30e5d9991536c347b31c731",
+ "exclusionsSha256": "dbd0be3de5de3f12e6bd30a87422f9fb7ca0ffa7a2640f04a66615b87aac7d23",
  "pairs": 603,
  "bytes": 1361255,
  "byKind": {
@@ -79,6 +79,9 @@
   "candidates": 1925,
   "kept": 677,
   "ghCalls": 24,
+  "repoMetaCalls": 8,
+  "exclusionFileEntries": 30,
+  "exclusionFileHashes": 15,
   "drops": {
    "cap_repo_kind": 1231,
    "commit_chore": 441,

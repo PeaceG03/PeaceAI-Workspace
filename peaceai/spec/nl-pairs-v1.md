@@ -24,11 +24,26 @@ refused by the config check.
 * Built in (`nlpairs.ts`): the 11 public plan-only task repos, `unjs/ufo`, `toss/es-toolkit`, and the #635 search
   fixtures by repo name (`*/is-what`, `*/code-block-writer`).
 * Required exclusion file (`--exclusions <file>`; the build refuses without it, or when it is empty or malformed).
-  Format: one `owner/repo` or `*/name` per line, `#` comments, case-insensitive. Auditor passes the hidden-half list;
-  Builder never sees it. Its sha256 is recorded in the build report and in the manifest header.
-* A config repo on the list refuses the whole build with `config_repo_excluded count=N` (never the name).
-* A pair whose raw text names an excluded repo is dropped (`mentions_excluded_repo`).
-* `peaceai/model/nl-pairs-exclusions-public.txt` is the Builder-visible file the committed manifest was built with.
+  Format: one entry per line, `#` comments, case-insensitive:
+  * `owner/repo`;
+  * `*/name` (any owner);
+  * `sha256:<64 hex>`: the sha256 of the lowercased `owner/repo`, so the hidden half is applied without naming it.
+    A short, long, non-hex or bare hash line refuses (`exclusions_bad_line`).
+  Its sha256 is recorded in the build report and in the manifest header.
+* A config repo on the list (by name or by hash) refuses the whole build with `config_repo_excluded count=N`.
+  The repo is never named.
+* Forks and mirrors: one `repos/{owner}/{repo}` call per pinned repo reads `fork`, `parent` and `source`. If the parent
+  or the source is excluded by name or hash, or a fork has neither, the build refuses with
+  `config_repo_excluded count=N`. A failed call refuses (`repo_meta_<cause>`). The names stay in memory only.
+* A pair whose raw text names an excluded repo is dropped:
+  * by name: `mentions_excluded_repo`;
+  * by hash: `hidden_name_drop`. The text checked is the PR title and body, the commit message, the diff, and the
+    doc comment with its function. Every adjacent pair of segments of every slash-joined token is hashed, which
+    covers a bare `owner/repo`, a `github.com/owner/repo` URL or git remote (`.git` stripped) and an npm `@scope/name`.
+    Only the count is logged (`hidden_name_drop count=N`).
+* `peaceai/model/nl-pairs-exclusions-public.txt` is the Builder-visible name list.
+* `peaceai/model/nl-pairs-exclusions-hidden-hashes.txt` is that file verbatim plus Auditor's 15 hash lines. The
+  committed manifest and summary are built with it.
 
 ## Filters
 

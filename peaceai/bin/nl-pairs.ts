@@ -14,8 +14,8 @@ import { pathLeakKinds } from "../lib/extcorpus.ts";
 import { readManifestBytes, writeParts } from "../lib/manifestparts.ts";
 import {
   CHORE_SUBJECT, NL_KINDS, NL_MANIFEST_SCHEMA, cleanPatch, configProblems, diffFileProblem, extFileExclusionFor, ghCause, isExcludedRepo,
-  jsdocFunctions, licenseDirsOf, licenseProblem, mentionsExcluded, pairText, parseExclusions, scrubCode, scrubEnglish, selectCapped, sha256,
-  type Candidate, type NlConfig, type NlKind,
+  forkHits, jsdocFunctions, licenseDirsOf, licenseProblem, mentionsExcluded, namesHashedRepo, pairText, parseExclusions, scrubCode, scrubEnglish, selectCapped, sha256,
+  type Candidate, type NlConfig, type NlKind, type RepoMeta,
 } from "../lib/nlpairs.ts";
 
 const MODEL = new URL("../model/", import.meta.url).pathname;
@@ -41,6 +41,20 @@ const probs = configProblems(cfg, setC, retrain.replay.trainMaxBytes);
 if (probs.length) refuse(probs.join(","));
 const hits = cfg.repos.filter((r) => isExcludedRepo(r.name, ex)).length;
 if (hits) refuse(`config_repo_excluded count=${hits}`); // count only: the hidden list's entries are never named
+// forks and mirrors: one repos/{owner}/{repo} call per pinned repo; the parent and source names stay in memory only and
+// are never printed or written (a hit is a count). Any failure fails closed.
+{
+  const metas: RepoMeta[] = [];
+  for (const r of cfg.repos) {
+    const m = spawnSync("gh", ["api", "-X", "GET", `repos/${r.name}`, "--jq", "{fork: .fork, parent: (.parent.full_name // null), source: (.source.full_name // null)}"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (m.status !== 0) refuse(`repo_meta_${ghCause(m.stderr ?? "").code}`);
+    try { const j = JSON.parse(m.stdout); metas.push({ fork: j.fork === true, parent: typeof j.parent === "string" ? j.parent : null, source: typeof j.source === "string" ? j.source : null }); }
+    catch { refuse("repo_meta_bad_json"); }
+  }
+  const fh = forkHits(metas, ex);
+  if (fh) refuse(`config_repo_excluded count=${fh}`);
+  console.log(`nl-pairs repo meta checked repos=${metas.length} forks=${metas.filter((m) => m.fork).length}`);
+}
 let onlySet: Set<string> | null = null;
 if (only !== null) {
   const lines = readManifestBytes(only, "nl-pairs-manifest").toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
@@ -102,6 +116,7 @@ for (const r of cfg.repos) {
     const d = diffOf(base, sha);
     if (typeof d === "string") { drop(d); return; }
     if (mentionsExcluded(englishRaw + "\n" + d.code, ex)) { drop("mentions_excluded_repo"); return; }
+    if (namesHashedRepo(englishRaw + "\n" + d.code, ex)) { drop("hidden_name_drop"); return; }
     let english = scrubEnglish(englishRaw);
     if (english === null) { drop("english_leak"); return; }
     if (english.length < cfg.caps.minPromptChars) { drop("english_short"); return; }
@@ -149,6 +164,7 @@ for (const r of cfg.repos) {
     if (pathLeakKinds(path).length) { drop("path_leak"); continue; }
     for (const f of jsdocFunctions(path, text, 30, 4000)) {
       if (mentionsExcluded(f.span, ex)) { drop("mentions_excluded_repo"); continue; }
+      if (namesHashedRepo(f.span, ex)) { drop("hidden_name_drop"); continue; }
       const code = scrubCode(f.span);
       if (code === null) { drop("code_leak"); continue; }
       cands.push({ kind: "jsdoc", repo: r.name, sha: r.commit, ref: `${path}#${f.name}`, path, english: f.doc, code, text: pairText("jsdoc", "", code) });
@@ -172,9 +188,10 @@ const lic = new Map(cfg.repos.map((r) => [r.name, r.spdx]));
 writeFileSync(join(out!, "docs.jsonl"), chosen.map((c, i) => JSON.stringify({ doc: i, text: c.text }) + "\n").join(""));
 writeFileSync(join(out!, "manifest.jsonl"), chosen.map((c, i) => JSON.stringify({ doc: i, split: "train", repo: c.repo, sha: c.sha, path: c.path, function: c.kind === "jsdoc" ? c.ref.slice(c.ref.lastIndexOf("#") + 1) : `${c.kind}:${c.ref}`, kind: c.kind, ref: c.ref, license: lic.get(c.repo), englishSha256: sha256(c.english), codeSha256: sha256(c.code) }) + "\n").join(""));
 const byKind = Object.fromEntries(NL_KINDS.map((k) => [k, { pairs: chosen.filter((c) => c.kind === k).length, bytes: chosen.filter((c) => c.kind === k).reduce((s, c) => s + Buffer.byteLength(c.text), 0) }]));
-const rep = { schema: "peaceai-nl-pairs-build:v1", configSha256: sha256(cfgBuf), exclusionsSha256: ex.fileSha256, exclusionFileEntries: ex.fileEntries, ghCalls,
+const rep = { schema: "peaceai-nl-pairs-build:v1", configSha256: sha256(cfgBuf), exclusionsSha256: ex.fileSha256, exclusionFileEntries: ex.fileEntries, exclusionFileHashes: ex.hashes.size, ghCalls, repoMetaCalls: cfg.repos.length,
   candidates: cands.length, kept: chosen.length, byKind, candidatesByRepo: repoStats, drops: Object.fromEntries(Object.entries(drops).sort()) };
 writeFileSync(join(out!, "build-report.json"), JSON.stringify(rep, null, 1) + "\n");
+console.log(`hidden_name_drop count=${drops.hidden_name_drop ?? 0}`);
 console.log(`nl-pairs built candidates=${cands.length} kept=${chosen.length} ${NL_KINDS.map((k) => `${k}=${byKind[k]!.pairs}`).join(" ")} ghCalls=${ghCalls} drops=${Object.entries(drops).sort().map(([k, v]) => `${k}:${v}`).join(",")}`);
 
 function writeManifest(finalDir: string, workDir: string): void {
@@ -199,7 +216,7 @@ function writeManifest(finalDir: string, workDir: string): void {
     pairs: man.length, bytes: bytes(() => true),
     byKind: Object.fromEntries(NL_KINDS.map((k) => [k, { pairs: count((m) => m.kind === k), bytes: bytes((m) => m.kind === k), train: count((m) => m.kind === k && m.split === "train"), heldout: count((m) => m.kind === k && m.split === "heldout") }])),
     byRepo: Object.fromEntries([...new Set(man.map((m) => m.repo as string))].sort().map((r) => [r, { license: man.find((m) => m.repo === r).license, ...Object.fromEntries(NL_KINDS.map((k) => [k, count((m) => m.repo === r && m.kind === k)])) }])),
-    build: { candidates: build.candidates, kept: build.kept, ghCalls: build.ghCalls, drops: build.drops },
+    build: { candidates: build.candidates, kept: build.kept, ghCalls: build.ghCalls, repoMetaCalls: build.repoMetaCalls, exclusionFileEntries: build.exclusionFileEntries, exclusionFileHashes: build.exclusionFileHashes, drops: build.drops },
     ftPrepare: Object.fromEntries(["docsIn", "olderVersionsDropped", "heldoutSharedLineDropped", "docsOut", "train", "heldout"].map((k) => [k, prep[k]])),
     evalDedup: Object.fromEntries(Object.entries(dd).filter(([k, v]) => typeof v === "number" || (v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "number")))) };
   writeFileSync(join(MODEL, "nl-pairs-summary.json"), JSON.stringify(sum, null, 1) + "\n");

@@ -27,28 +27,51 @@ export const BUILTIN_EXCLUDED_REPOS: readonly string[] = [
 ];
 export const BUILTIN_EXCLUDED_NAMES: readonly string[] = ["is-what", "code-block-writer"];
 
-export interface Exclusions { repos: Set<string>; names: Set<string>; fileSha256: string; fileEntries: number }
+export interface Exclusions { repos: Set<string>; names: Set<string>; hashes: Set<string>; fileSha256: string; fileEntries: number }
+type ExSets = Pick<Exclusions, "repos" | "names" | "hashes">;
 /** The required exclusion file (Auditor supplies the hidden-half list here; Builder never sees it). Text, one entry
- * per line: `owner/repo` or `*\/name` (any owner); blank lines and `#` comments allowed. Matching is case-insensitive.
- * Any other line, or no entry at all, refuses (null + code), so a truncated or wrong file never runs. */
+ * per line: `owner/repo`, `*\/name` (any owner), or `sha256:<64 hex>` (the sha256 of the lowercased `owner/repo`, so
+ * the hidden half can be applied without naming it); blank lines and `#` comments allowed. Matching is
+ * case-insensitive. Any other line (a short or non-hex hash included), or no entry at all, refuses (code), so a
+ * truncated or wrong file never runs. */
 export function parseExclusions(buf: Buffer | null): Exclusions | { code: string } {
   if (buf === null) return { code: "exclusions_missing" };
   const repos = new Set(BUILTIN_EXCLUDED_REPOS.map((r) => r.toLowerCase())), names = new Set(BUILTIN_EXCLUDED_NAMES.map((n) => n.toLowerCase()));
+  const hashes = new Set<string>();
   let n = 0;
   for (const raw of buf.toString("utf8").split(/\r?\n/)) {
     const l = raw.replace(/#.*$/, "").trim();
     if (!l) continue;
+    if (/^sha256:/i.test(l)) {
+      const h = /^sha256:([0-9a-fA-F]{64})$/.exec(l); // m147-guard:hash-line-shape
+      if (!h) return { code: "exclusions_bad_line" };
+      hashes.add(h[1]!.toLowerCase()); n++; continue;
+    }
     const m = /^([\w.-]+|\*)\/([\w.-]+)$/.exec(l);
     if (!m) return { code: "exclusions_bad_line" };
     if (m[1] === "*") names.add(m[2]!.toLowerCase()); else repos.add(l.toLowerCase());
     n++;
   }
   if (n === 0) return { code: "exclusions_empty" };
-  return { repos, names, fileSha256: sha256(buf), fileEntries: n };
+  return { repos, names, hashes, fileSha256: sha256(buf), fileEntries: n };
 }
-export function isExcludedRepo(repo: string, ex: Pick<Exclusions, "repos" | "names">): boolean {
+export function isExcludedRepo(repo: string, ex: ExSets): boolean {
   const r = repo.toLowerCase();
+  if (ex.hashes.has(sha256(r))) return true; // m147-guard:repo-hash
   return ex.repos.has(r) || ex.names.has(r.split("/")[1] ?? "");
+}
+/** GitHub's fork metadata of one pinned repo (repos/{owner}/{repo}: fork, parent.full_name, source.full_name). */
+export interface RepoMeta { fork: boolean; parent: string | null; source: string | null }
+/** How many pinned repos are forks or mirrors of an excluded repo: the parent or the source (the root of the fork
+ * network) is excluded by name or by hash. A fork flag without a parent fails closed (counted). */
+export function forkHits(metas: readonly RepoMeta[], ex: ExSets): number {
+  let n = 0;
+  for (const m of metas) {
+    if (m.fork && !m.parent && !m.source) { n++; continue; } // m147-guard:fork-no-parent
+    if (m.parent && isExcludedRepo(m.parent, ex)) { n++; continue; } // m147-guard:fork-parent
+    if (m.source && isExcludedRepo(m.source, ex)) { n++; continue; } // m147-guard:fork-source
+  }
+  return n;
 }
 /** A pair whose text names an excluded repo (owner/repo, or a github path to it) is dropped: no vendored or ported
  * copy of a task repo rides in through another repo's PR. Checked on the raw text, before URL scrubbing. */
@@ -56,6 +79,31 @@ export function mentionsExcluded(text: string, ex: Pick<Exclusions, "repos" | "n
   const t = text.toLowerCase();
   for (const r of ex.repos) if (t.includes(r)) return true;
   for (const n of ex.names) if (new RegExp(`[\\w.-]+/${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w.-])`).test(t)) return true;
+  return false;
+}
+/** Every candidate `owner/repo` a text could name: each adjacent pair of segments of each slash-joined token, so a
+ * bare `owner/repo`, a `github.com/owner/repo/...` URL (and an scp-style git remote, `.git` stripped) and an npm-style
+ * `@scope/name` all yield it. A leading `@`, trailing dots and a `.git` suffix are stripped. Linear: a split on one
+ * character class, no backtracking pattern. */
+export function repoTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const piece of text.toLowerCase().split(/[^\w.@:/-]+/)) {
+    if (!piece.includes("/")) continue;
+    const segs = piece.split("/").map((s) => s.slice(s.lastIndexOf(":") + 1).replace(/^@+/, "").replace(/\.+$/, "")); // m147-guard:token-clean
+    for (let i = 0; i + 1 < segs.length; i++) {
+      const a = segs[i]!, b = segs[i + 1]!;
+      if (!a || !b) continue;
+      out.add(`${a}/${b}`);
+      if (b.endsWith(".git")) out.add(`${a}/${b.slice(0, -4)}`);
+    }
+  }
+  return out;
+}
+/** A pair whose text (diff, PR text, commit message or doc comment) names a hash-listed repo in any of those forms.
+ * The caller logs a count only (hidden_name_drop), never the text or the token. */
+export function namesHashedRepo(text: string, ex: Pick<Exclusions, "hashes">): boolean {
+  if (ex.hashes.size === 0) return false;
+  for (const tok of repoTokens(text)) if (ex.hashes.has(sha256(tok))) return true; // m147-guard:text-hash
   return false;
 }
 
@@ -78,7 +126,7 @@ export function configProblems(c: any, setCRepos: readonly string[], replayMaxBy
     if (typeof r.licenseFile !== "string" || !r.licenseFile || !HEX64.test(r.licenseSha256 ?? "")) p.push("repo_license_pin");
     if (/^peaceg03\//i.test(r.name)) p.push("repo_owner_peaceg03");
     if (setCRepos.some((s) => s.toLowerCase() === r.name.toLowerCase())) p.push("repo_set_c");
-    if (isExcludedRepo(r.name, { repos: new Set(BUILTIN_EXCLUDED_REPOS.map((x) => x.toLowerCase())), names: new Set(BUILTIN_EXCLUDED_NAMES) })) p.push("repo_builtin_excluded");
+    if (isExcludedRepo(r.name, { repos: new Set(BUILTIN_EXCLUDED_REPOS.map((x) => x.toLowerCase())), names: new Set(BUILTIN_EXCLUDED_NAMES), hashes: new Set() })) p.push("repo_builtin_excluded");
   }
   const k = c.caps;
   const pos = (v: unknown) => Number.isInteger(v) && (v as number) > 0;

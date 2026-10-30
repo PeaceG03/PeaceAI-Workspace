@@ -59,6 +59,33 @@ function runCases(m: Mod): string[] {
   ok("ex-builtin-fixture-names", () => "repos" in ex && m.isExcludedRepo("mesqueeb/is-what", ex) && m.isExcludedRepo("dsherret/code-block-writer", ex) && m.isExcludedRepo("fork/is-what", ex));
   ok("ex-not-excluded", () => "repos" in ex && !m.isExcludedRepo("honojs/hono", ex) && !m.isExcludedRepo("unjs/defu-like", ex));
   ok("ex-mention", () => "repos" in ex && m.mentionsExcluded("port of <github>/UNJS/defu merge", ex) && m.mentionsExcluded("copied from someone/is-what", ex) && !m.mentionsExcluded("uses defu() here", ex));
+  // hash lines (synthetic names only): sha256 of the lowercased owner/repo; the hex may be any case
+  const SYN = "SynthOwner/Synth-Repo", SYNH = H(SYN.toLowerCase());
+  const hx = m.parseExclusions(Buffer.from(`# hashes\nsha256:${SYNH.toUpperCase()}\nsha256:${H("synth-b/other-lib")}\nplain-owner/plain-repo\n`));
+  ok("ex-hash-parse", () => "hashes" in hx && hx.hashes.size === 2 && hx.fileEntries === 3 && hx.hashes.has(SYNH));
+  ok("ex-hash-repo-any-case", () => "hashes" in hx && m.isExcludedRepo("synthowner/synth-repo", hx) && m.isExcludedRepo("SYNTHOWNER/SYNTH-REPO", hx) && m.isExcludedRepo("Synth-B/Other-Lib", hx));
+  ok("ex-hash-name-lines-still-work", () => "hashes" in hx && m.isExcludedRepo("Plain-Owner/plain-repo", hx) && m.isExcludedRepo("unjs/defu", hx));
+  ok("ex-hash-near-miss", () => "hashes" in hx && !m.isExcludedRepo("synthowner/synth-repo2", hx) && !m.isExcludedRepo("other/synth-repo", hx) && !m.isExcludedRepo("synthowner/synth-rep", hx));
+  const bad = (t: string) => (m.parseExclusions(Buffer.from(t)) as { code?: string }).code === "exclusions_bad_line";
+  ok("ex-hash-malformed", () => bad(`sha256:${SYNH.slice(1)}\n`) && bad(`sha256:${SYNH}0\n`) && bad(`sha256:${"g".repeat(64)}\n`) && bad("sha256:\n") && bad(`sha256: ${SYNH}\n`) && bad(`sha256:${SYNH}:x\n`));
+  ok("ex-bare-hex-refused", () => bad(`${SYNH}\n`));
+  // forks and mirrors
+  const md = (fork: boolean, parent: string | null, source: string | null) => ({ fork, parent, source });
+  ok("fork-parent-hash", () => "hashes" in hx && m.forkHits([md(true, "SYNTHOWNER/synth-repo", "root/clean-lib")], hx) === 1);
+  ok("fork-source-hash", () => "hashes" in hx && m.forkHits([md(true, "mid/clean-fork", "synthowner/Synth-Repo")], hx) === 1);
+  ok("fork-parent-name", () => "hashes" in hx && m.forkHits([md(true, "plain-owner/plain-repo", "plain-owner/plain-repo"), md(true, "x/y", "unjs/defu")], hx) === 2);
+  ok("fork-no-parent-fails-closed", () => "hashes" in hx && m.forkHits([md(true, null, null)], hx) === 1);
+  ok("fork-clean-kept", () => "hashes" in hx && m.forkHits([md(false, null, null), md(true, "synthowner/synth-repo2", "root/clean-lib")], hx) === 0);
+  // pair text naming a hash-listed repo
+  const nh = (t: string) => "hashes" in hx && m.namesHashedRepo(t, hx);
+  ok("text-hash-url", () => nh("ported from https://github.com/SynthOwner/Synth-Repo/pull/12 last week") && nh("see <github.com/synthowner/synth-repo>"));
+  ok("text-hash-bare", () => nh("Port of synthowner/synth-repo's parser.") && nh("(SynthOwner/Synth-Repo)"));
+  ok("text-hash-scope", () => nh(`import x from "@synthowner/synth-repo";`) && nh("bump @Synth-B/other-lib to 2.0"));
+  ok("text-hash-git-remote", () => nh("git" + "@github.com:SynthOwner/Synth-Repo.git") && nh("https://github.com/synthowner/synth-repo.git"));
+  ok("text-hash-in-diff", () => nh("+// adapted from synthowner/synth-repo (MIT)\n+export const a = 1\n"));
+  ok("text-hash-near-miss-kept", () => !nh("synthowner/synth-repo-two and other/synth-repo") && !nh("uses synth-repo() and synthowner") && !nh("synthowner/synth-repository") && !nh("src/a.ts b/c.ts"));
+  ok("text-hash-empty-list", () => !m.namesHashedRepo("synthowner/synth-repo", { hashes: new Set() }));
+  ok("text-tokens", () => { const t = m.repoTokens("a https://github.com/O/R/x @s/n git" + "@h.com:p/q.git"); return t.has("o/r") && t.has("r/x") && t.has("s/n") && t.has("p/q") && t.has("p/q.git"); });
   // scrubbing
   ok("scrub-url", () => m.scrubEnglish("Fixes the bug, see https://example.org/issues/1?a=b and www.foo.dev/x")?.includes("http") === false && !/www\./.test(m.scrubEnglish("see www.foo.dev/x") ?? "www."));
   ok("scrub-md-link", () => m.scrubEnglish("Read [the docs](https://x.dev/a) first please") === "Read the docs first please");
@@ -138,7 +165,22 @@ test("m147: mutation check: each broken filter fails at least one case", async (
     ["builtin exclusion not checked", `p.push("repo_builtin_excluded");`, `void 0;`],
     ["repo-kind share not capped", `if ((used.get(k) ?? 0) + b > share)`, `if (false)`],
     ["gh rate limit not detected", `const rateLimited = /rate limit/i.test(stderr);`, `const rateLimited = false;`],
+    ["hash line shape not checked", `const h = /^sha256:([0-9a-fA-F]{64})$/.exec(l);`, `const h = /^sha256:(.*)$/.exec(l);`],
+    ["hash lines ignored", `hashes.add(h[1]!.toLowerCase()); n++; continue;`, `n++; continue;`],
+    ["hash hex case kept", `hashes.add(h[1]!.toLowerCase());`, `hashes.add(h[1]!);`],
+    ["repo hash not checked", `if (ex.hashes.has(sha256(r))) return true;`, ``],
+    ["repo hash case-sensitive", `const r = repo.toLowerCase();\n  if (ex.hashes.has(sha256(r)))`, `const r = repo.toLowerCase();\n  if (ex.hashes.has(sha256(repo)))`],
+    ["fork without parent accepted", `if (m.fork && !m.parent && !m.source) { n++; continue; }`, ``],
+    ["fork parent not checked", `if (m.parent && isExcludedRepo(m.parent, ex)) { n++; continue; }`, ``],
+    ["fork source not checked", `if (m.source && isExcludedRepo(m.source, ex)) { n++; continue; }`, ``],
+    ["text hash not checked", `for (const tok of repoTokens(text)) if (ex.hashes.has(sha256(tok))) return true;`, ``],
+    ["token cleanup skipped", `.map((s) => s.slice(s.lastIndexOf(":") + 1).replace(/^@+/, "").replace(/\\.+$/, ""))`, ``],
+    [".git suffix kept", `if (b.endsWith(".git")) out.add(\`\${a}/\${b.slice(0, -4)}\`);`, ``],
   ];
+  // every guard tagged m147-guard:<name> in the lib has a mutant on its line
+  const tagged = src.split("\n").filter((l) => /\/\/ m147-guard:[\w-]+/.test(l));
+  assert.ok(tagged.length >= 7);
+  for (const l of tagged) assert.ok(mutants.some(([, from]) => from.split("\n").some((f) => f.trim() && l.includes(f.trim()))), `untested guard: ${/m147-guard:([\w-]+)/.exec(l)![1]}`);
   const dir = mkdtempSync(join(tmpdir(), "m147-mut-"));
   try {
     for (const [name, from, to] of mutants) {
@@ -160,6 +202,14 @@ test("m147: the committed config pins only permissive TypeScript repos, none exc
   for (const r of real.BUILTIN_EXCLUDED_REPOS) assert.ok(pub.repos.has(r.toLowerCase()));
   for (const n of real.BUILTIN_EXCLUDED_NAMES) assert.ok(pub.names.has(n));
   assert.equal(real.BUILTIN_EXCLUDED_REPOS.length, 13);
+  // the combined file: the public file verbatim, then sha256 lines only (no hidden name is ever committed)
+  const pubTxt = read("peaceai/model/nl-pairs-exclusions-public.txt"), comb = read("peaceai/model/nl-pairs-exclusions-hidden-hashes.txt");
+  assert.ok(comb.startsWith(pubTxt));
+  const extra = comb.slice(pubTxt.length).split("\n").map((l) => l.replace(/#.*$/, "").trim()).filter(Boolean);
+  assert.equal(extra.length, 15); for (const l of extra) assert.match(l, /^sha256:[0-9a-f]{64}$/);
+  const cx = real.parseExclusions(Buffer.from(comb));
+  assert.ok("hashes" in cx && cx.hashes.size === 15);
+  for (const r of CFG.repos) assert.equal(real.isExcludedRepo(r.name, cx), false, "config repo is excluded");
   assert.ok(CFG.caps.maxBytes <= RETRAIN.replay.trainMaxBytes);
 });
 
@@ -182,6 +232,14 @@ test("m147: the build refuses without the exclusion file, with a bad one, and wh
     r = run("--exclusions", join(dir, "hit.txt"), ...base);
     assert.equal(r.status, 1); assert.match(r.stdout, /^nl-pairs refused: config_repo_excluded count=1$/m);
     assert.ok(!r.stdout.includes(CFG.repos[1].name), "the hit is never named");
+    const hh = H(CFG.repos[3].name.toLowerCase());
+    writeFileSync(join(dir, "hit3.txt"), `some/other\nsha256:${hh.toUpperCase()}\n`);
+    r = run("--exclusions", join(dir, "hit3.txt"), ...base);
+    assert.equal(r.status, 1); assert.match(r.stdout, /^nl-pairs refused: config_repo_excluded count=1$/m);
+    assert.ok(!r.stdout.toLowerCase().includes(CFG.repos[3].name.toLowerCase()) && !r.stdout.toLowerCase().includes(hh), "the hash hit is never named");
+    writeFileSync(join(dir, "bad2.txt"), `some/other\nsha256:${hh.slice(2)}\n`);
+    r = run("--exclusions", join(dir, "bad2.txt"), ...base);
+    assert.equal(r.status, 1); assert.match(r.stdout, /^nl-pairs refused: exclusions_bad_line$/m);
     writeFileSync(join(dir, "hit2.txt"), `*/${CFG.repos[2].name.split("/")[1]}\n`);
     r = run("--exclusions", join(dir, "hit2.txt"), ...base);
     assert.equal(r.status, 1); assert.match(r.stdout, /config_repo_excluded count=1/);
@@ -192,13 +250,15 @@ test("m147: the build refuses without the exclusion file, with a bad one, and wh
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("m147: the committed manifest is sha256s only, built with the public exclusion file, and matches the summary", () => {
+test("m147: the committed manifest is sha256s only, built with the combined public + hidden-hash exclusion file, and matches the summary", () => {
   const lines = readManifestBytes(join(repo, "peaceai/model"), "nl-pairs-manifest").toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const [head, ...ents] = lines;
   const S = JSON.parse(read("peaceai/model/nl-pairs-summary.json"));
   assert.equal(head.schema, real.NL_MANIFEST_SCHEMA);
   assert.equal(head.configSha256, H(readFileSync(join(repo, "peaceai/model/nl-pairs.json"))));
-  assert.equal(head.exclusionsSha256, H(readFileSync(join(repo, "peaceai/model/nl-pairs-exclusions-public.txt"))));
+  assert.equal(head.exclusionsSha256, H(readFileSync(join(repo, "peaceai/model/nl-pairs-exclusions-hidden-hashes.txt"))));
+  assert.equal(S.exclusionsSha256, head.exclusionsSha256);
+  assert.equal(S.build.exclusionFileHashes, 15); assert.equal(S.build.repoMetaCalls, CFG.repos.length);
   assert.equal(head.entries, ents.length); assert.equal(S.pairs, ents.length);
   const names = new Map(CFG.repos.map((r: { name: string; spdx: string }) => [r.name, r.spdx]));
   const keys = ["doc", "kind", "split", "repo", "sha", "ref", "path", "license", "textSha256", "bytes", "englishSha256", "codeSha256"];
