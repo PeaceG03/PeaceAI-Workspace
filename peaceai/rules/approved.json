@@ -166,6 +166,20 @@
       }
     },
     {
+      "id": "public-derive-wire-rethrow-v1",
+      "sha256": "24755d1d4c5d9e5c0dcf21f7fd38be9f3759d0ac04613ec3e6b5b7b5ce4f809b",
+      "source": "auditor-approve-rule",
+      "delegatedBy": "owner",
+      "approval": {
+        "url": "https://github.com/PeaceG03/PeaceAI-Workspace/issues/625#issuecomment-6526796029",
+        "commentId": 6526796029,
+        "issue": 625,
+        "repo": "PeaceG03/PeaceAI-Workspace",
+        "author": "PeaceG03",
+        "approvedAt": "2026-10-30T15:40:01Z"
+      }
+    },
+    {
       "id": "public-derive-wire-v2",
       "sha256": "e9e6d7e10e0195850f6e29f13e92c803424fafc94c280e4fe7ea10ace311bc28",
       "source": "workspace",
