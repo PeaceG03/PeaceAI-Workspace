@@ -451,11 +451,15 @@ test("Auditor #489: grading never runs an EXISTING_EDIT splice unconfined — st
   const p1 = loop.indexOf("result.originalSuitePassed = m98"), p2 = loop.indexOf("else if (m98) {");
   assert.ok(gate > 0 && gate < tc && tc < p1 && p1 < p2, "static gate precedes typecheck and every execution pass");
   assert.match(loop.slice(gate, tc), /continue;/, "a refused edit is never run");
-  // pass 1 for M98: confined only, and an unconfinable related test fails the candidate (never falls back to unconfined)
+  // pass 1 for M98: confined only; an unconfinable related test is never run on the edit, and (W619) with any of them the
+  // candidate fails closed unless MIN_CONFINED_JUDGED confined tests judge it (never falls back to unconfined)
   const pass1 = loop.slice(p1, loop.indexOf(";\n", p1));
-  assert.match(pass1, /m98Unconfinable === 0 && /);
+  assert.match(pass1, /: m98Judgeable && judged\.every\(\(path\) => runConfinedSuite\(/);
+  assert.match(loop, /const m98Judgeable = m98Unconfinable === 0 \|\| judged\.length >= MIN_CONFINED_JUDGED;/);
+  assert.match(src, /const MIN_CONFINED_JUDGED = 2;/);
   assert.ok(pass1.indexOf("runConfinedSuite(") > 0 && pass1.indexOf("runConfinedSuite(") < pass1.indexOf(": targetConfig.originalSuite"), "M98 branch uses runConfinedSuite");
-  assert.match(loop, /const judged = m98\s*\? related\.filter\(\(path\) => runConfinedSuite\(/);
+  assert.match(loop, /if \(m98\) \{\s*for \(const path of related\) \{\s*if \(judged\.length >= RELATED_LIMIT\) break;\s*probed\+\+;\s*if \(runConfinedSuite\(tree, \[path\], RELATED_TIMEOUT_MS\)\) judged\.push\(path\);/);
+  assert.match(loop, /const m98Unconfinable = m98 && targetConfig\.originalSuite === "related" \? probed - judged\.length : 0;/);
   const rc = src.slice(src.indexOf("function runConfinedSuite("));
   const rcBody = rc.slice(0, rc.indexOf("\n}\n"));
   assert.match(rcBody, /"--permission"/);
