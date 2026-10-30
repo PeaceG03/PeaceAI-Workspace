@@ -25,14 +25,20 @@
 // re-recognition, capability delta, hermetic walk before and after, test shape), then graded as every EXISTING_EDIT.
 import ts from "typescript";
 import { rawIssueProblem } from "./learned-derive.ts";
-import { argValue, failureOf, injections, parseWireTask, type ErrorInfo, WIRE_MAX_CANDIDATES, calleeName, callsIn, insideTry } from "./derive-wire.ts";
-import { editablePath, emitFakeTest, evalNumHelper, existingEditSlug, findTarget, gradeExistingEditProblem, injectedKeyOf, isExcludedSource, isWire2Params, numHelper, ownStatements, parseExpression, parseFakeTest, recordEdit, recordLists, recordSite, retryEdit, uniqueSplit, WIRE_ARG_FORMS, WIRE_FAKE_HARNESS, type ExistingEdit, type NumHelper, type Read, type RecordHoles, type RetryHoles } from "./learned-edit-existing.ts";
+import { argValue, failureOf, injections, paramValue, parseWireTask, type ErrorInfo, WIRE_MAX_CANDIDATES, calleeName, callsIn, insideTry } from "./derive-wire.ts";
+import { editablePath, emitFakeTest, evalNumHelper, evalWireHelper, existingEditSlug, findTarget, gradeExistingEditProblem, injectedKeyOf, isExcludedSource, isWire2Params, isWire2RethrowParams, numHelper, ownStatements, parseExpression, parseFakeTest, recordEdit, recordLists, recordSite, RETHROW_ARG_IDS, rethrowEdit, retryEdit, retryLoopOf, uniqueSplit, WIRE_ARG_FORMS, WIRE_FAKE_HARNESS, wireHelper, type ExistingEdit, type NumHelper, type Read, type RecordHoles, type RethrowHoles, type RetryHoles, type WireHelper } from "./learned-edit-existing.ts";
 import { importStyle } from "./learned-test.ts";
 import { MAX_OBJECTIVE_CHARS } from "./taskmap.ts";
 import { createHash } from "node:crypto";
 
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
 export const DERIVE_WIRE_V2_TRIGGER = String.raw`^in the existing (?:function (?<fn>${NAME})|method (?<method>${NAME}) of class (?<cls>${NAME})) in (?<file>src\/[\w./-]+\.ts) ?, (?<ask>retry a failing call|record a failing call and go on) ?\.?$`;
+/**
+ * G29 (public-derive-wire-rethrow-v1): its own spec and trigger (v1's header form, ask "handle a failing call"), so
+ * public-derive-wire-v2's spec, trigger and approved hash stay byte for byte. It is reached only with the rethrow
+ * vocabulary (isWire2RethrowParams); v1 (unapproved) keeps its own trigger and never reaches this code.
+ */
+export const DERIVE_WIRE_V2_RETHROW_TRIGGER = String.raw`^in the existing (?:function (?<fn>${NAME})|method (?<method>${NAME}) of class (?<cls>${NAME})) in (?<file>src\/[\w./-]+\.ts) ?, (?<ask>handle a failing call) ?\.?$`;
 const RETRY_MAX_ATTEMPTS = 12;
 
 type Value = string | number | boolean | null | Value[] | { [k: string]: Value };
@@ -108,7 +114,7 @@ const relSpec = (from: string, to: string, style: "ts" | "none"): string => {
 
 const prose = (behavior: string, re: RegExp): number[] => [...behavior.matchAll(re)].map((m) => Number(m[1]) * (/^s/i.test(m[2]!) ? 1000 : 1));
 
-export type V2Derivation = { kind: "retry"; holes: RetryHoles } | { kind: "record"; holes: RecordHoles };
+export type V2Derivation = { kind: "retry"; holes: RetryHoles } | { kind: "record"; holes: RecordHoles } | { kind: "rethrow"; holes: RethrowHoles };
 type Refusal = { reason: string; detail?: string };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -229,6 +235,10 @@ function hasSeam(c: ts.CallExpression, fn: ts.FunctionLikeDeclaration): boolean 
 }
 // ---------------------------------------------------------------------------------------------------------------
 const readValue = (id: string, e: ErrorInfo): string => argValue(id, e, new Map())!;
+/** argValue plus the G29-only network-message read (RETHROW_NETWORK_MESSAGE, simulated on the example's error). */
+const NETWORK_WORDS = new Set(["TimeoutError", "AbortError"]);
+const rethrowArgValue = (a: string, e: ErrorInfo, params: ReadonlyMap<string, string | null>): string | null =>
+  a === "message.network" ? (e.message === "fetch failed" || NETWORK_WORDS.has(e.name ?? "Error") ? e.message : e.name ?? "Error") : argValue(a, e, params);
 function deriveRecord(task: { target: string; file: string; behavior: string; bullets: string[] }, files: readonly { path: string; content: string }[]): V2Derivation | Refusal {
   const file = files.find((f) => f.path === task.file)!;
   const sf = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true);
@@ -328,11 +338,131 @@ function deriveRecord(task: { target: string; file: string; behavior: string; bu
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// G29: rethrow at the retry limit ("handle a failing call" on a method that is already the v2 retry template)
+// ---------------------------------------------------------------------------------------------------------------
+/** A pure numeric helper the template names: declared in the module, or the single-name relative import of it. */
+function templateHelper(sf: ts.SourceFile, path: string, name: string, files: readonly { path: string; content: string }[]): NumHelper | null {
+  const local = numHelper(sf, name);
+  if (local) return local;
+  const d = sf.statements.find((s): s is ts.ImportDeclaration => ts.isImportDeclaration(s) && !!s.importClause?.namedBindings && ts.isNamedImports(s.importClause.namedBindings) && !s.importClause.isTypeOnly && s.importClause.namedBindings.elements.some((e) => e.name.text === name && !e.propertyName));
+  if (!d || !ts.isStringLiteral(d.moduleSpecifier) || !/^\.{1,2}\//.test(d.moduleSpecifier.text)) return null;
+  const parts = path.split("/").slice(0, -1);
+  for (const seg of d.moduleSpecifier.text.split("/")) { if (seg === "." || !seg) continue; if (seg === "..") { if (!parts.length) return null; parts.pop(); } else parts.push(seg); }
+  const rel = parts.join("/");
+  const f = files.find((x) => x.path === (rel.endsWith(".ts") ? rel : `${rel}.ts`));
+  return f ? numHelper(ts.createSourceFile(f.path, f.content, ts.ScriptTarget.Latest, true), name) : null;
+}
+
+/** Every exported string-line helper (wireHelper) of the in-scope source, with the module it lives in. */
+function stringHelperPool(files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): { h: WireHelper; path: string }[] {
+  const out: { h: WireHelper; path: string }[] = [];
+  for (const f of files) {
+    if (isTest(f.path) || isExcludedSource(f.path) || !/^src\/[\w./-]+\.ts$/.test(f.path) || f.path.endsWith(".d.ts")) continue;
+    const sf = ts.createSourceFile(f.path, f.content, ts.ScriptTarget.Latest, true);
+    for (const s of sf.statements) if (ts.isFunctionDeclaration(s) && s.name) { const h = wireHelper(sf, s.name.text); if (h) out.push({ h, path: f.path }); }
+  }
+  return out.sort((a, b) => (a.path + a.h.name < b.path + b.h.name ? -1 : 1));
+}
+
+function deriveRethrow(task: { target: string; file: string; behavior: string; bullets: string[] }, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): V2Derivation | Refusal {
+  const file = files.find((f) => f.path === task.file)!;
+  const sf = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true);
+  const t = findTarget(sf, task.target);
+  if (!t?.node.body) return { reason: "wire_target" };
+  if (t.kind !== "method") return { reason: "wire_rethrow_target" };
+  // the target must already be the v2 retry template; its one `throw error;` (the failure left after the last
+  // allowed try) is the only site. A method without it is refused (retry it first: "retry a failing call").
+  const loop = retryLoopOf(sf, t);
+  if (!loop) return { reason: "wire_rethrow_site" };
+  const key = injectedKeyOf(sf, t.classNode, loop.site);
+  if (!key) return { reason: "wire_retry_seam" };
+  const S = templateHelper(sf, file.path, loop.status, files), A = templateHelper(sf, file.path, loop.allowed, files), D = templateHelper(sf, file.path, loop.delay, files);
+  if (!S || !A || !D || S.returns !== "boolean" || S.params.length !== 1 || A.returns !== "boolean" || A.params.length !== 1 || D.returns !== "number" || D.params.length !== 2) return { reason: "wire_rethrow_site" };
+  const policy: Policy = { retryStatus: (x) => evalNumHelper(S, [x]) === true, allowed: (n) => evalNumHelper(A, [n]) === true, delay: (a) => evalNumHelper(D, [a, loop.baseMs]) as number };
+  const ex = examplesOf(task.bullets, sf);
+  if (!ex || !ex.expects.length) return { reason: "wire_examples" };
+  const sp = t.node.parameters.map((p, i) => ({ p, i })).filter(({ p }) => ts.isIdentifier(p.name) && p.type?.kind === ts.SyntaxKind.StringKeyword && !p.questionToken && !p.dotDotDotToken);
+  // every example run through the template as it stands: the counts must be what the template already does
+  type Failing = { e: ErrorInfo; message: string | null; kind: Expect["kind"]; params: Map<string, string | null> };
+  const failing: Failing[] = [];
+  let answered = 0, pinnedAtLimit = 0;
+  for (const e of ex.expects) {
+    const s = e.inject.get(key) ?? [];
+    if (s.length > 1) return { reason: "wire_fake_ambiguous" };
+    if (!s.length) continue;
+    const outs = s[0]!.outcomes.map(outcomeOf);
+    if (outs.some((o) => o === null)) return { reason: "wire_retry_examples" };
+    const sl = e.inject.get("sleep") ?? [];
+    if (sl.length > 1) return { reason: "wire_fake_ambiguous" };
+    for (const o of [s[0]!.owner, sl[0]?.owner].filter((x): x is string => !!x)) if ((ex.uses.get(o) ?? 0) > 1) return { reason: "wire_fake_shared" };
+    const sim = simulate(policy, outs as Outcome[]);
+    if (!sim) return { reason: "wire_retry_examples" };
+    const owner = s[0]!.owner, sleepOwner = sl[0]?.owner ?? null;
+    if (ex.counts.has(owner) && ex.counts.get(owner) !== sim.calls) return { reason: "wire_no_fit", detail: "count" };
+    if (sleepOwner && ex.counts.has(sleepOwner) && ex.counts.get(sleepOwner) !== sim.sleeps.length) return { reason: "wire_no_fit", detail: "sleep" };
+    if (sleepOwner && ex.args.has(sleepOwner) && JSON.stringify(ex.args.get(sleepOwner)) !== JSON.stringify(sim.sleeps.map((d) => [d]))) return { reason: "wire_no_fit", detail: "sleep" };
+    if (!sleepOwner && sim.sleeps.length) return { reason: "wire_no_fit", detail: "sleep" }; // a retry with no injected sleep would wait for real
+    const last = s[0]!.outcomes[Math.min(sim.calls, s[0]!.outcomes.length) - 1]!;
+    const fail = failureOf(last);
+    if (!fail) { answered += 1; continue; } // the last try got an answer: the template returns it, unchanged
+    // a failure left after the last try may not be swallowed (G26): its example must expect a rejection
+    if (e.kind !== "rejects" && e.kind !== "throws") return { reason: "wire_rethrow_swallow" };
+    if (ex.counts.get(owner) === sim.calls) pinnedAtLimit += 1;
+    failing.push({ e: fail, message: e.message, kind: e.kind, params: new Map(sp.map(({ p, i }) => [(p.name as ts.Identifier).text, paramValue(sf, t, e.call, i)])) });
+  }
+  if (!failing.length) return { reason: "wire_no_failing_example" };
+  // the examples must pin the call count at the retry limit and show an answer the edit leaves alone
+  if (!pinnedAtLimit) return { reason: "wire_rethrow_unpinned" };
+  if (!answered) return { reason: "wire_rethrow_answer_unpinned" };
+  if (failing.every((f) => f.message === f.e.message)) return { reason: "wire_not_needed" };
+  if (failing.some((f) => f.message === null)) return { reason: "wire_no_fit" };
+  // the search: every string-line helper of the in-scope source x every argument tuple of the closed pool
+  const helpers = stringHelperPool(files, isTest);
+  const argPool = (ids: readonly string[]) => [...ids, ...sp.map(({ p }) => `param:${(p.name as ts.Identifier).text}`)];
+  const search = (ids: readonly string[]): { h: { h: WireHelper; path: string }; args: string[] }[] | "too_large" => {
+    const pool = argPool(ids);
+    const fits: { h: { h: WireHelper; path: string }; args: string[] }[] = [];
+    let tried = 0;
+    for (const h of helpers) {
+      const n = h.h.params.length;
+      const idx = new Array<number>(n).fill(0);
+      for (;;) {
+        if (++tried > WIRE_MAX_CANDIDATES) return "too_large";
+        const args = idx.map((j) => pool[j]!);
+        if (failing.every((f) => { const vals = args.map((a) => rethrowArgValue(a, f.e, f.params)); return vals.every((v) => v !== null) && evalWireHelper(h.h, vals as string[]) === f.message; })) fits.push({ h, args });
+        let d = n - 1;
+        while (d >= 0 && ++idx[d]! === pool.length) { idx[d] = 0; d -= 1; }
+        if (d < 0) break;
+      }
+    }
+    return fits;
+  };
+  const found0 = search(RETHROW_ARG_IDS);
+  if (found0 === "too_large") return { reason: "wire_search_too_large" };
+  // Auditor #601: the cause's name only where the cause has no code
+  const found = found0.filter((x) => !(x.args.includes("cause.name") && failing.some((f) => f.e.cause?.code !== undefined)));
+  if (!found.length) {
+    const leak = search(WIRE_ARG_FORMS.map((f) => f.id));
+    if (leak !== "too_large" && leak.some((x) => x.args.includes("cause.message"))) return { reason: "wire_cause_message" };
+    // Auditor #623: the error's plain message is never passed (uncontrolled text at a network site); only the filter
+    if (leak !== "too_large" && leak.some((x) => x.args.includes("message"))) return { reason: "wire_message_unfiltered" };
+    if (found0.length) return { reason: "wire_cause_name" };
+    return { reason: "wire_no_fit" };
+  }
+  if (found.length > 1) return { reason: "wire_ambiguous", detail: String(found.length) };
+  const { h, args } = found[0]!;
+  const srcRel = files.some((f) => !isTest(f.path) && /^import [^;]*? from "\.{1,2}\//m.test(f.content));
+  const style = srcRel ? importStyle(files, (p) => !isTest(p)) : importStyle(files, isTest);
+  return { kind: "rethrow", holes: { target: task.target, helper: h.h.name, args, import: h.path === file.path ? null : { name: h.h.name, from: relSpec(file.path, h.path, style) } } };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // entry
 // ---------------------------------------------------------------------------------------------------------------
 export function deriveWireV2Detail(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), raw?: string): { edit: ExistingEdit | null; reason: string | null; derivation?: V2Derivation; detail?: string } {
   const no = (reason: string, detail?: string) => ({ edit: null, reason, ...(detail ? { detail } : {}) });
-  if (!isWire2Params(params) || trigger !== DERIVE_WIRE_V2_TRIGGER) return no("wire_params");
+  const rethrowSpec = isWire2RethrowParams(params) && trigger === DERIVE_WIRE_V2_RETHROW_TRIGGER;
+  if (!rethrowSpec && (!isWire2Params(params) || trigger !== DERIVE_WIRE_V2_TRIGGER)) return no("wire_params");
   if (raw !== undefined && rawIssueProblem(raw)) return no("wire_behavior_code");
   // the objective is cut at MAX_OBJECTIVE_CHARS: a task that reaches it may have lost bullets, so it is refused, not half-read
   if (objective.length >= MAX_OBJECTIVE_CHARS) return no("wire_task_truncated");
@@ -342,9 +472,9 @@ export function deriveWireV2Detail(trigger: string, params: Record<string, unkno
   const file = files.find((f) => f.path === task.file);
   if (!file) return no("target_file_not_found");
   if (!editablePath(file.path, isTest)) return no("edit_path");
-  const d = ask.startsWith("retry") ? deriveRetry(task, files, isTest) : deriveRecord(task, files);
+  const d = rethrowSpec ? deriveRethrow(task, files, isTest) : ask.startsWith("retry") ? deriveRetry(task, files, isTest) : deriveRecord(task, files);
   if ("reason" in d) return no(d.reason, d.detail);
-  const content = d.kind === "retry" ? retryEdit(file.path, file.content, d.holes) : recordEdit(file.path, file.content, d.holes);
+  const content = d.kind === "retry" ? retryEdit(file.path, file.content, d.holes) : d.kind === "record" ? recordEdit(file.path, file.content, d.holes) : rethrowEdit(file.path, file.content, d.holes);
   if (content === null) return no("wire_shape");
   const fakeTest = parseFakeTest(task.bullets, { wire: true, calledWith: true });
   if (!fakeTest) return no("edit_test_grammar");
@@ -353,7 +483,7 @@ export function deriveWireV2Detail(trigger: string, params: Record<string, unkno
   const id7 = createHash("sha256").update(`${task.header}\n${task.bullets.join("\n")}`).digest("hex").slice(0, 7);
   const testPath = `${dir}${stem}.${existingEditSlug(task.target)}-${id7}.test.ts`;
   if (files.some((f) => f.path === testPath)) return no("new_test_path_exists");
-  const test = emitFakeTest(file.path, testPath, `PeaceAI G18 derive-wire v2: ${task.target} in ${file.path} (derived ${d.kind === "retry" ? "retry" : "recorded skip"}, injected fakes)`, fakeTest, importStyle(files, isTest), WIRE_FAKE_HARNESS);
+  const test = emitFakeTest(file.path, testPath, `PeaceAI G18 derive-wire v2: ${task.target} in ${file.path} (derived ${d.kind === "retry" ? "retry" : d.kind === "record" ? "recorded skip" : "rethrow at the retry limit"}, injected fakes)`, fakeTest, importStyle(files, isTest), WIRE_FAKE_HARNESS);
   // the gate: Job B's own static check on the derived tree (shape re-recognised, capability delta, hermetic walk
   // before and after, the test in the v2 language)
   const read: Read = (rel) => (rel === file.path ? content : ((f) => (f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null))(files.find((x) => x.path === rel)));
