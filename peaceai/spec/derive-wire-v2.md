@@ -123,23 +123,26 @@ sha stay byte for byte; v1 (unapproved) keeps its own trigger and never reaches 
 - Edit (`rethrowEdit`): that throw becomes v1's closed rethrow `throw new Error(H(args), { cause: error });`, inline
   when the line fits 120 characters, else v1's multi-line layout in a block. H is one exported string-line helper
   (`wireHelper`) of the in-scope source, imported with one new single-name import in the repo's import style when it
-  lives in another module. args are closed reads of the caught error (message, name, code, cause.code, cause.name, and the G29-only
+  lives in another module. args are closed reads of the caught error (name, code, cause.code, cause.name, and the G29-only
   network filter `message.network`: the error's message only when it is fetch's own `fetch failed` or the error is
   named `TimeoutError` / `AbortError`, else the error's name, so a URL-, key- or host-bearing message never reaches
-  the new message; `RETHROW_ARG_FORMS`) or string parameters of the method (one hop through the entry the example calls). The cause's
-  message is never passed (Auditor #601: `wire_cause_message` when only it would fit); the cause's name only when no
-  failing example's cause has a code (`wire_cause_name`).
+  the new message; `RETHROW_ARG_FORMS`) or string parameters of the method (one hop through the entry the example calls).
+  `message.network` is the only read of the error's message: the plain `message` read is not in the pool, because the
+  template always wraps a network call whose message is uncontrolled text (Auditor #623: `wire_message_unfiltered`
+  when only it would fit). The cause's message is never passed (Auditor #601: `wire_cause_message` when only it would
+  fit); the cause's name only when no failing example's cause has a code (`wire_cause_name`).
 - Examples: each one is simulated through the template as it stands (its S / A / D helpers, local or imported). Counts
   and sleep arguments must be what the template already does. A failing example's last try must end in a failure and
   the example must expect a rejection (an answer after every try failed is `wire_rethrow_swallow`: G26, a failure is
   never swallowed and no bare `continue` is ever written). At least one failing example pins the site fake's call
   count at the limit (`wire_rethrow_unpinned`) and at least one example ends in an answer, unchanged
   (`wire_rethrow_answer_unpinned`). If the original error already gives every expected message: `wire_not_needed`.
-  Exactly one (H, args) fits, else `wire_no_fit` / `wire_ambiguous` / `wire_search_too_large`.
-  Examples that fail only with network words fit both the raw message and the filter (`wire_ambiguous`): an issue
-  that wants the filter pins it with a failing example whose message is not a network word (for w02r, one that
-  carries the account URL and expects only the error's name).
+  Exactly one (H, args) fits, else `wire_no_fit` / `wire_ambiguous` / `wire_search_too_large`. With the plain message
+  out of the pool, examples that fail only with network words fit the filter alone; an example whose message is not a
+  network word (for w02r, one that carries the account URL and expects only the error's name) still pins the filter's
+  else branch.
 - Job B: `rethrowEditShape` reads the holes off the graded file, rebuilds the edit from the base with `rethrowEdit` and
   requires it token for token; the hermetic walk runs before and after with the template's timeout signal taken out.
-  A graded rethrow that passes the cause's message is refused by name. All of v2's guards stay on (code anywhere in
+  A graded rethrow that passes the cause's message (`wire_cause_message`) or the error's plain message
+  (`wire_message_unfiltered`) is refused by name. All of v2's guards stay on (code anywhere in
   the issue, the 2000-character objective cut).

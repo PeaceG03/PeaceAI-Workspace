@@ -125,7 +125,7 @@ test("the spec: its own id, vocabulary and trigger; v2's spec and approved sha u
   assert.ok(isWire2Params(WIRE2.params) && !isWire2RethrowParams(WIRE2.params));
   assert.equal(WIRE2.trigger, DERIVE_WIRE_V2_TRIGGER);
   assert.equal(specHash(WIRE2), "e9e6d7e10e0195850f6e29f13e92c803424fafc94c280e4fe7ea10ace311bc28", "v2 keeps the sha Peace approved on #613");
-  assert.deepEqual(RETHROW_ARG_IDS, ["message", "name", "code", "cause.code", "cause.name", "message.network"], "never the cause's message (Auditor #601)");
+  assert.deepEqual(RETHROW_ARG_IDS, ["name", "code", "cause.code", "cause.name", "message.network"], "never the cause's message (Auditor #601), never the plain message (Auditor #623)");
   // not approved by this change: it waits for /auditor-approve-rule (or /approve-rule) on its own proposal issue
   const approvedText = read("peaceai/rules/approved.json");
   const listed = (JSON.parse(approvedText) as { rules: { id: string; sha256: string }[] }).rules.filter((r) => r.id === SPEC.id);
@@ -209,7 +209,7 @@ test("derive: one fit (the imported helper, the method and the network-only mess
   } finally { done(); }
 });
 
-test("refusals: a swallow (G26), a cause-message fit (#601), a cause name next to a code, not needed, no retry template, unpinned", () => {
+test("refusals: a swallow (G26), a cause-message fit (#601), a plain-message fit (#623), a cause name next to a code, not needed, no retry template, unpinned", () => {
   const only = (ex: string[], behavior = BEHAVIOR) => derive(issue(HEAD, behavior, ex), FILES).reason;
   // every try failed and the example expects an answer: that would swallow the failure; refused, never `continue`
   assert.equal(only(['fake fetchA = rejects("fetch failed")', 'fake clockA = returns("t")', "fake sleepA = resolves(null)", `expect ${C("A")}.get("day") resolves to 0`, "expect fetchA is called 3 times", ...ANSWER_EX]), "wire_rethrow_swallow");
@@ -233,16 +233,21 @@ test("refusals: a swallow (G26), a cause-message fit (#601), a cause name next t
   assert.equal(derive(TASK, [...FILES.filter((f) => f.path !== "src/client.ts"), { path: "src/client.ts", content: CLIENT }]).reason, "wire_rethrow_site");
   // a template whose catch already goes on without a throw is not the template either
   assert.equal(derive(TASK, FILES.map((f) => (f.path === "src/client.ts" ? { ...f, content: f.content.replace("if (!retryAllowed(attempt + 1)) throw error;", "if (!retryAllowed(attempt + 1)) continue;") } : f))).reason, "wire_rethrow_site");
-  // without a URL-bearing (or other non-network) failing example the raw message and the filter both fit: refused
-  assert.deepEqual(((r) => [r.reason, r.detail])(derive(issue(HEAD, BEHAVIOR, [...FAIL_EX("A", 'rejects("fetch failed")', "REQUEST_FAILED:GET:fetch failed", 3), ...ANSWER_EX]), FILES)), ["wire_ambiguous", "2"]);
-  // an example that wants the URL-bearing message itself fits only the raw message read
-  assert.equal((derive(issue(HEAD, BEHAVIOR, [...FAIL_EX("A", 'rejects("fetch failed")', "REQUEST_FAILED:GET:fetch failed", 3), ...FAIL_EX("U", 'rejects("bad https://acct.example.com", { name: "TypeError" })', "REQUEST_FAILED:GET:bad https://acct.example.com", 3).slice(0, 4), ...ANSWER_EX]), FILES).derivation as { holes: { args: string[] } } | undefined)?.holes.args[1], "message");
+  // the plain message is not in the pool (Auditor #623): network-word-only examples fit the filter alone, no ambiguity
+  const net = derive(issue(HEAD, BEHAVIOR, [...FAIL_EX("A", 'rejects("fetch failed")', "REQUEST_FAILED:GET:fetch failed", 3), ...ANSWER_EX]), FILES);
+  assert.equal(net.reason, null);
+  assert.deepEqual((net.derivation as { holes: { args: string[] } } | undefined)?.holes.args, ["param:method", "message.network"]);
+  // an example that wants the URL-bearing message itself fits only the plain message read: refused by name, never derived
+  const raw = derive(issue(HEAD, BEHAVIOR, [...FAIL_EX("A", 'rejects("fetch failed")', "REQUEST_FAILED:GET:fetch failed", 3), ...FAIL_EX("U", 'rejects("bad https://acct.example.com", { name: "TypeError" })', "REQUEST_FAILED:GET:bad https://acct.example.com", 3).slice(0, 4), ...ANSWER_EX]), FILES);
+  assert.deepEqual([raw.reason, raw.edit], ["wire_message_unfiltered", null]);
+  // the same with only a non-network failing example (only the plain message fits): refused by name
+  assert.equal(only([...FAIL_EX("U", 'rejects("bad https://acct.example.com", { name: "TypeError" })', "REQUEST_FAILED:GET:bad https://acct.example.com", 3), ...ANSWER_EX]), "wire_message_unfiltered");
   // v2's guards stay on: code in the issue, the objective cut
   assert.equal(only(EXAMPLES, BEHAVIOR + " Use throw new Error(x, { cause: error })."), "wire_behavior_code");
   assert.equal(only(EXAMPLES, BEHAVIOR + " Every storage failure the scanner sees starts with the same word.".repeat(30)), "wire_task_truncated");
 });
 
-test("Job B's own recognizer: the derived edit grades; a bare continue or a cause-message rethrow is refused", () => {
+test("Job B's own recognizer: the derived edit grades; a bare continue, a cause-message or a plain-message rethrow is refused", () => {
   const r = derive(TASK, FILES);
   assert.ok(r.edit);
   const reader = (content: string) => (rel: string) => (rel === "src/client.ts" ? content : FILES.find((f) => f.path === rel)?.content ?? null);
@@ -254,6 +259,11 @@ test("Job B's own recognizer: the derived edit grades; a bare continue or a caus
   const leak = r.edit.content.replace(RETHROW_NETWORK_MESSAGE, 'String((error as { cause?: { message?: unknown } } | null)?.cause?.message ?? "")');
   assert.notEqual(leak, r.edit.content);
   assert.equal(gradeExistingEditProblem("src/client.ts", RETRIED, leak, test0.path, test0.content, reader(leak)), "wire_cause_message");
+  // a hand-made plain-message rethrow is refused by name too (Auditor #623: only the network filter reads the message)
+  const unfiltered = r.edit.content.replace(RETHROW_NETWORK_MESSAGE, "error instanceof Error ? error.message : String(error)");
+  assert.notEqual(unfiltered, r.edit.content);
+  assert.equal(rethrowEditShape("src/client.ts", RETRIED, unfiltered, reader(unfiltered)), "wire_message_unfiltered");
+  assert.equal(gradeExistingEditProblem("src/client.ts", RETRIED, unfiltered, test0.path, test0.content, reader(unfiltered)), "wire_message_unfiltered");
   // a bare catch-continue in place of the throw is no rethrow edit: it is not confined to the grammar and is refused
   const swallow = RETRIED.replace("if (!retryAllowed(attempt + 1)) throw error;", "if (!retryAllowed(attempt + 1)) continue;");
   assert.equal(rethrowEditShape("src/client.ts", RETRIED, swallow, reader(swallow)), null);

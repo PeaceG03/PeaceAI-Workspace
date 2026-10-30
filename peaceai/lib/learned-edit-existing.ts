@@ -1835,7 +1835,7 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
  */
 export function gradeExistingEditProblem(modPath: string, baseText: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
   // G29: a rethrow at the retry limit of a v2 retry template (rethrowEditShape: rebuilt from the base token for token;
-  // a cause-message rethrow is refused by name), hermetic walk on the template with its timeout signal taken out,
+  // a cause-message or plain-message rethrow is refused by name), hermetic walk on the template with its timeout signal taken out,
   // before and after, the test in the v2 language. Any other edit is checked exactly as before.
   const rethrow = rethrowEditShape(modPath, baseText, realText, read);
   if (typeof rethrow === "string") return rethrow;
@@ -2601,10 +2601,10 @@ export function recordEditShape(path: string, baseText: string, realText: string
 // (retryEdit's output). Only the template's final `throw error;` (the failure left after the last allowed try) is
 // replaced with v1's closed rethrow `throw new Error(H(args), { cause: error });`: H an existing string-line helper
 // (wireHelper) of this module or of one relative module it is imported from, the args closed error reads
-// (RETHROW_ARG_IDS: never cause.message, Auditor #601) or string parameters of the target. Nothing else changes: a
-// status answer is returned exactly as before, a failure a later try recovers from is unchanged, and the catch never
-// goes on without a throw (G26). Its own spec (statements "derived-rethrow-at-retry-limit-v2") keeps
-// public-derive-wire-v2's spec, trigger and hash byte for byte.
+// (RETHROW_ARG_IDS: never cause.message, Auditor #601; never the plain message, only the network filter, #623) or
+// string parameters of the target. Nothing else changes: a status answer is returned exactly as before, a failure a
+// later try recovers from is unchanged, and the catch never goes on without a throw (G26). Its own spec (statements
+// "derived-rethrow-at-retry-limit-v2") keeps public-derive-wire-v2's spec, trigger and hash byte for byte.
 // ---------------------------------------------------------------------------------------------------------------
 export const WIRE2_RETHROW_VOCAB: Record<(typeof EXISTING_EDIT_PARAM_KEYS)[number], readonly string[]> = { ...WIRE2_VOCAB, statements: ["derived-rethrow-at-retry-limit-v2"] };
 export function isWire2RethrowParams(p: Record<string, unknown>): boolean {
@@ -2613,8 +2613,10 @@ export function isWire2RethrowParams(p: Record<string, unknown>): boolean {
 /** The error's message only when it is one of the runtime's own network words (fetch's "fetch failed", a timeout or an
  *  abort), else the error's name: a message that may carry a URL, a key or a host never reaches the thrown message. */
 export const RETHROW_NETWORK_MESSAGE = 'error instanceof Error ? (error.message === "fetch failed" || error.name === "TimeoutError" || error.name === "AbortError" ? error.message : error.name) : "Error"';
-/** The error reads a G29 rethrow may pass (Auditor #601: the cause's code or name, never the cause's message). */
-export const RETHROW_ARG_FORMS: readonly { id: string; text: string }[] = [...WIRE_ARG_FORMS.filter((f) => f.id !== "cause.message"), { id: "message.network", text: RETHROW_NETWORK_MESSAGE }];
+/** The error reads a G29 rethrow may pass (Auditor #601: the cause's code or name, never the cause's message; Auditor
+ *  #623: never the error's plain message either, since the retry template always wraps a network call whose message is
+ *  uncontrolled text, so `message.network` is the only message read). */
+export const RETHROW_ARG_FORMS: readonly { id: string; text: string }[] = [...WIRE_ARG_FORMS.filter((f) => f.id !== "message" && f.id !== "cause.message"), { id: "message.network", text: RETHROW_NETWORK_MESSAGE }];
 export const RETHROW_ARG_IDS: readonly string[] = RETHROW_ARG_FORMS.map((f) => f.id);
 /** The holes of a G29 rethrow edit. `import`: the helper taken from another module (specifier as written), else null. */
 export interface RethrowHoles { target: string; helper: string; args: string[]; import: { name: string; from: string } | null }
@@ -2717,7 +2719,8 @@ export function rethrowEdit(path: string, baseText: string, h: RethrowHoles): st
  * class method whose body is the retry loop, its guard's `throw new Error(H(args), { cause: error })`), the edit is
  * rebuilt from the base with rethrowEdit and must match token for token; H must be a string-line helper (wireHelper)
  * of this module or of the relative module it is imported from (`read`). A rethrow that passes the cause's message is
- * refused by name ("wire_cause_message", Auditor #601). `stripped` / `baseStripped`: the real / base text with the
+ * refused by name ("wire_cause_message", Auditor #601), and so is one that passes the error's plain message
+ * ("wire_message_unfiltered", Auditor #623: only the network filter `message.network` may read it). `stripped` / `baseStripped`: the real / base text with the
  * template's per-attempt `AbortSignal.timeout(N)` replaced by `undefined`, for the hermetic walks.
  */
 export function rethrowEditShape(path: string, baseText: string, realText: string, read: Read): { target: string; stripped: string; baseStripped: string; holes: RethrowHoles } | string | null {
@@ -2752,6 +2755,7 @@ export function rethrowEditShape(path: string, baseText: string, realText: strin
   const args: string[] = [];
   for (const a of msg.arguments) {
     if (sameCode(a.getText(sf), WIRE_ARG_FORMS.find((f) => f.id === "cause.message")!.text)) return "wire_cause_message";
+    if (sameCode(a.getText(sf), WIRE_ARG_FORMS.find((f) => f.id === "message")!.text)) return "wire_message_unfiltered";
     const form = RETHROW_ARG_FORMS.find((f) => sameCode(a.getText(sf), f.text));
     if (form) { args.push(form.id); continue; }
     if (ts.isIdentifier(a) && sp.includes(a.text)) { args.push(`param:${a.text}`); continue; }

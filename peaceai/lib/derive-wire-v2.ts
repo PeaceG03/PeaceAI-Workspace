@@ -444,6 +444,8 @@ function deriveRethrow(task: { target: string; file: string; behavior: string; b
   if (!found.length) {
     const leak = search(WIRE_ARG_FORMS.map((f) => f.id));
     if (leak !== "too_large" && leak.some((x) => x.args.includes("cause.message"))) return { reason: "wire_cause_message" };
+    // Auditor #623: the error's plain message is never passed (uncontrolled text at a network site); only the filter
+    if (leak !== "too_large" && leak.some((x) => x.args.includes("message"))) return { reason: "wire_message_unfiltered" };
     if (found0.length) return { reason: "wire_cause_name" };
     return { reason: "wire_no_fit" };
   }
