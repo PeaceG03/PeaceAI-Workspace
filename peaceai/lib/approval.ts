@@ -69,7 +69,7 @@ export const AUDITOR_DELEGABLE_KINDS: ReadonlySet<string> = new Set([
 /**
  * Words a delegated rule's spec may not name (case-insensitive, anywhere outside evidence.repos): never-zone and
  * protected paths, workflows, the leak / tamper / test gates, credit, tokens and secrets, the verdict, the
- * auditor-pass and approve-rule paths, stage 2 and self-change.
+ * delegated-verdict and approve-rule paths, stage 2 and self-change.
  */
 export const AUDITOR_DENY_TERMS = /\.github|workflow|peaceai\/|never-?zone|protected|codeowners|leak|tamper|\bgates?\b|test:self|secret|token|credential|password|deploy.?key|credit|coverage|verdict|auditor|approve|approval|stage-?2|self-?change|package\.json|tsconfig|\.ya?ml\b|\.env\b|npmrc|results/i;
 
