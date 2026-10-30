@@ -20,6 +20,7 @@ import { DERIVE_WIRE_TRIGGER, deriveWireDetail } from "../lib/derive-wire.ts";
 import { DERIVE_WIRE_V2_TRIGGER, deriveWireV2Detail } from "../lib/derive-wire-v2.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { isWire2Params, isWireParams } from "../lib/learned-edit-existing.ts";
+import { gradeExistingEditProblem, RECORD_LEAK_READS, recordEditShape, recordLeakReason } from "../lib/learned-edit-existing.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
 import { nlDecision } from "../lib/nlparse.ts";
 import { DERIVE_WIRE2_PHRASING, DERIVE_WIRE_PHRASING, phrasingFor } from "../lib/propose.ts";
@@ -151,6 +152,14 @@ const SKIP_TYPEERROR = [
   "expect scannerB.run is called 1 time",
 ];
 const SKIP = issue(SKIP_HEAD, SKIP_BEHAVIOR, [...SKIP_OK, ...SKIP_TYPEERROR]);
+// G31 (Auditor, Oct 30): SKIP's record is the plain message, now refused by name; the recorded skip is the name record
+const SKIP_NAMED_BEHAVIOR = "when the scan of one day fails with an error whose message starts with R2 the day and the error's name, never its message, are recorded in the run's errors and catch-up moves on to the next day, and that day is not marked done. Any other failure, such as a TypeError, is not swallowed: it stops the run.";
+const SKIP_NAMED_OK = [
+  'fake scannerA = { run: sequence(rejects("R2 object https://bars.example.com/2026-10-01.json?part=1 is not JSON", { name: "SyntaxError" }), resolves({ stored: 5 })) }',
+  'expect catchUp(["2026-10-01", "2026-10-02"], scannerA) resolves to { done: ["2026-10-02:5"], errors: [{ day: "2026-10-01", error: "SyntaxError" }] }',
+  "expect scannerA.run is called 2 times",
+];
+const SKIP_NAMED = issue(SKIP_HEAD, SKIP_NAMED_BEHAVIOR, [...SKIP_NAMED_OK, ...SKIP_TYPEERROR]);
 
 /** Write the derived tree to a temp dir and import the edited module (the derived code is run, not only read). */
 async function load<T>(files: { path: string; content: string }[], edit: { path: string; content: string }): Promise<{ mod: T; done: () => void }> {
@@ -287,12 +296,14 @@ test("retry twins: a no-op, retry-every-response or no-limit program that fits t
 });
 
 test("recorded skip: a matching failure is recorded and the day is not marked done; a TypeError propagates (no v1 continue form)", async () => {
-  const r = derive(SKIP, CATCHUP_FILES);
+  // G31 (Auditor, Oct 30): a record of the plain message is refused by name, never emitted
+  assert.deepEqual(((x) => [x.reason, x.edit])(derive(SKIP, CATCHUP_FILES)), ["wire_message_unfiltered", null]);
+  const r = derive(SKIP_NAMED, CATCHUP_FILES);
   assert.ok(r.edit, `${r.reason} ${r.detail ?? ""}`);
-  assert.deepEqual(r.derivation, { kind: "record", holes: { target: "catchUp", site: "const report = await scanner.run(day);", filter: { read: "message", op: "prefix", lit: "R2" }, list: "errors", record: { kind: "object", fields: [["day", "item"], ["error", "message"]] } } });
+  assert.deepEqual(r.derivation, { kind: "record", holes: { target: "catchUp", site: "const report = await scanner.run(day);", filter: { read: "message", op: "prefix", lit: "R2" }, list: "errors", record: { kind: "object", fields: [["day", "item"], ["error", "name"]] } } });
   // G26: every catch v2 writes re-throws what it does not match and records what it skips
   const c = r.edit.content;
-  assert.match(c, /catch \(error\) \{\n\s+if \(!\(\(error instanceof Error \? error\.message : String\(error\)\)\.startsWith\("R2"\)\)\) throw error;\n\s+errors\.push\(\{ day: day, error: error instanceof Error \? error\.message : String\(error\) \}\);\n\s+continue;\n\s+\}/);
+  assert.match(c, /catch \(error\) \{\n\s+if \(!\(\(error instanceof Error \? error\.message : String\(error\)\)\.startsWith\("R2"\)\)\) throw error;\n\s+errors\.push\(\{ day: day, error: error instanceof Error \? error\.name : "" \}\);\n\s+continue;\n\s+\}/);
   assert.doesNotMatch(c, /catch\s*\{\s*continue;\s*\}/);
   type Out = { done: string[]; errors: { day: string; error: string }[] };
   const { mod, done } = await load<{ catchUp(days: string[], s: { run(d: string): Promise<{ stored: number }> }): Promise<Out> }>(CATCHUP_FILES, r.edit);
@@ -300,8 +311,10 @@ test("recorded skip: a matching failure is recorded and the day is not marked do
     const seen: string[] = [];
     const scanner = (fail: Record<string, Error>) => ({ run: async (d: string) => { seen.push(d); if (fail[d]) throw fail[d]; return { stored: 7 }; } });
     // a skipped day leaves its recorded error and is not marked done; the next days still run
-    const out = await mod.catchUp(["d1", "d2", "d3"], scanner({ d1: new Error("R2_GET_503"), d3: new Error("R2_PUT_500", { cause: new Error("fetch failed") }) }));
-    assert.deepEqual(out, { done: ["d2:7"], errors: [{ day: "d1", error: "R2_GET_503" }, { day: "d3", error: "R2_PUT_500" }] });
+    const leaky = Object.assign(new Error("R2 object https://acct123.r2.cloudflarestorage.com/bars/d3?part=2 is not JSON"), { name: "SyntaxError" });
+    const out = await mod.catchUp(["d1", "d2", "d3"], scanner({ d1: new Error("R2_GET_503"), d3: leaky }));
+    assert.deepEqual(out, { done: ["d2:7"], errors: [{ day: "d1", error: "Error" }, { day: "d3", error: "SyntaxError" }] });
+    assert.ok(!JSON.stringify(out).includes("https://") && !JSON.stringify(out).includes("acct123"), "the URL-bearing message is never recorded");
     assert.deepEqual(seen, ["d1", "d2", "d3"]);
     // a non-matching error (a TypeError from a bug) propagates unchanged and is not swallowed
     const bug = new TypeError("Cannot read properties of undefined");
@@ -338,7 +351,7 @@ test("recorded skip refusals: unpinned filter or skip, no seam, a site without i
 });
 
 /** Run Job B (bin/test-candidates.ts) on a fixture repo with the derived candidate, under a fixture-local approval list. */
-function jobB(files: { path: string; content: string }[], body: string) {
+function jobB(files: { path: string; content: string }[], body: string, tamper?: (content: string) => string) {
   const dir = mkdtempSync(join(tmpdir(), "m138-"));
   try {
     const ws = join(dir, "ws");
@@ -353,7 +366,7 @@ function jobB(files: { path: string; content: string }[], body: string) {
     const why: { reason?: string } = {};
     const e = applyRule(WIRE2, objective(body), files, isTest, undefined, why, () => false, undefined, body);
     assert.ok(e, why.reason);
-    writeFileSync(join(ws, e.path), e.content);
+    writeFileSync(join(ws, e.path), tamper ? tamper(e.content) : e.content);
     for (const x of e.extra ?? []) writeFileSync(join(ws, x.path), x.content);
     git("add", "-N", "--", ...(e.extra ?? []).map((x) => x.path));
     const diff = git("diff", "--no-color", "--full-index", "--no-renames");
@@ -375,7 +388,7 @@ function jobB(files: { path: string; content: string }[], body: string) {
 }
 
 test("Job B grades both derived edits end to end: the new fake test fails on the base, passes on the edit; the original suite passes", { skip: Number(process.versions.node.split(".")[0]) < 22 && "needs Node >= 22" }, () => {
-  for (const [files, body] of [[CLIENT_FILES, RETRY], [[...CATCHUP_FILES, { path: "src/catch-up.test.ts", content: CATCHUP_TEST }], SKIP]] as const) {
+  for (const [files, body] of [[CLIENT_FILES, RETRY], [[...CATCHUP_FILES, { path: "src/catch-up.test.ts", content: CATCHUP_TEST }], SKIP_NAMED]] as const) {
     const { res, log } = jobB([...files], body);
     assert.equal(res.applied, true, log);
     assert.equal(res.originalSuitePassed, true, log);
@@ -386,3 +399,90 @@ test("Job B grades both derived edits end to end: the new fake test fails on the
     assert.equal(res.typecheckPassed, true, log);
   }
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// G31 (Auditor, Oct 30, w02b): the filtered per-day record. The record holds the loop item and closed reads only (name,
+// code, cause.code, cause.name: RETHROW_ARG_IDS without the network filter); the plain message and the cause's
+// message are refused by name in Job A and in Job B. The filter may read the message (it only decides). Never a bare
+// continue (G26): the skip is always recorded.
+// ---------------------------------------------------------------------------------------------------------------
+const NAME_TEXT = 'error instanceof Error ? error.name : ""';
+const MESSAGE_TEXT = "error instanceof Error ? error.message : String(error)";
+const CAUSE_MESSAGE_TEXT = 'String((error as { cause?: { message?: unknown } } | null)?.cause?.message ?? "")';
+
+test("G31: the record refusals are named and ordered (the cause's message first); the v2 spec and sha are unchanged", () => {
+  assert.deepEqual(RECORD_LEAK_READS.map(([r, why]) => `${r}:${why}`), ["cause.message:wire_cause_message", "message:wire_message_unfiltered"]);
+  assert.equal(recordLeakReason({ kind: "object", fields: [["day", "item"], ["error", "name"]] }), null);
+  for (const v of ["code", "cause.code", "cause.name", "item"]) assert.equal(recordLeakReason({ kind: "line", value: v }), null, v);
+  assert.equal(recordLeakReason({ kind: "line", value: "message" }), "wire_message_unfiltered");
+  assert.equal(recordLeakReason({ kind: "object", fields: [["day", "item"], ["error", "cause.message"]] }), "wire_cause_message");
+  assert.equal(recordLeakReason({ kind: "object", fields: [["a", "message"], ["b", "cause.message"]] }), "wire_cause_message");
+  // an allow-list, not a deny-list: only the item and RETHROW_ARG_IDS' closed reads; any other read is refused
+  for (const v of ["stack", "toString", "cause", "message.raw"]) assert.equal(recordLeakReason({ kind: "line", value: v }), "wire_record_unfiltered", v);
+  assert.equal(recordLeakReason({ kind: "object", fields: [["day", "item"], ["error", "stack"]] }), "wire_record_unfiltered");
+  assert.equal(recordLeakReason({ kind: "line", value: "message.network" }), null, "message.network is a RETHROW_ARG_IDS read");
+  assert.equal(specHash(WIRE2), "e9e6d7e10e0195850f6e29f13e92c803424fafc94c280e4fe7ea10ace311bc28", "v2 keeps the sha Peace approved on #613");
+  assert.match(read("peaceai/spec/derive-wire-v2.md"), /G31/);
+});
+
+test("G31 Job A: a record that needs the plain message or the cause's message is refused by name; a name record derives; never a bare continue", () => {
+  const only = (ok: string[], behavior = SKIP_NAMED_BEHAVIOR) => derive(issue(SKIP_HEAD, behavior, [...ok, ...SKIP_TYPEERROR]), CATCHUP_FILES);
+  const ok = (outcome: string, recorded: string) => [
+    `fake scannerA = { run: sequence(${outcome}, resolves({ stored: 5 })) }`,
+    `expect catchUp(["2026-10-01", "2026-10-02"], scannerA) resolves to { done: ["2026-10-02:5"], errors: [{ day: "2026-10-01", error: ${JSON.stringify(recorded)} }] }`,
+    "expect scannerA.run is called 2 times",
+  ];
+  // an example that wants the URL-bearing message itself: only the plain message fits; refused, no edit
+  const raw = only(ok('rejects("R2 object https://bars.example.com/k?part=1 is not JSON", { name: "SyntaxError" })', "R2 object https://bars.example.com/k?part=1 is not JSON"));
+  assert.deepEqual([raw.reason, raw.edit], ["wire_message_unfiltered", null]);
+  // only the cause's message gives the recorded text: refused by name
+  const cause = only(ok('rejects("R2_GET_503", { cause: { message: "socket hang up at https://bars.example.com" } })', "socket hang up at https://bars.example.com"));
+  assert.deepEqual([cause.reason, cause.edit], ["wire_cause_message", null]);
+  // the closed reads still derive: the code, the cause's code, the name
+  const code = only(ok('rejects("R2_GET_503", { code: "E503" })', "E503"));
+  assert.deepEqual((code.derivation as { holes: RecordHolesLike } | undefined)?.holes.record, { kind: "object", fields: [["day", "item"], ["error", "code"]] });
+  const ccode = only(ok('rejects("R2_GET_503", { cause: { code: "ECONNRESET" } })', "ECONNRESET"));
+  assert.deepEqual((ccode.derivation as { holes: RecordHolesLike } | undefined)?.holes.record, { kind: "object", fields: [["day", "item"], ["error", "cause.code"]] });
+  // the derived skip is always recorded, never a bare continue (G26), and the record text never reads a message
+  const r = derive(SKIP_NAMED, CATCHUP_FILES);
+  assert.ok(r.edit);
+  const recordLine = r.edit.content.split("\n").find((l) => l.includes("errors.push("))!;
+  assert.equal(recordLine.trim(), `errors.push({ day: day, error: ${NAME_TEXT} });`);
+  assert.doesNotMatch(recordLine, /message/);
+  assert.doesNotMatch(r.edit.content, /catch\s*(\(\s*\w*\s*\))?\s*\{\s*continue;\s*\}/);
+});
+type RecordHolesLike = { record: unknown };
+
+test("G31 Job B: the graded tree is refused by name for a plain-message or cause-message record (the w02b cc85cc94 form); a bare continue is refused", () => {
+  const r = derive(SKIP_NAMED, CATCHUP_FILES);
+  assert.ok(r.edit);
+  const test0 = r.edit.extra[0]!;
+  const reader = (content: string) => (rel: string) => (rel === "src/catch-up.ts" ? content : null);
+  const grade = (content: string) => gradeExistingEditProblem("src/catch-up.ts", CATCHUP, content, test0.path, test0.content, reader(content));
+  assert.equal(grade(r.edit.content), null, "the name record grades");
+  const plain = r.edit.content.replace(NAME_TEXT, MESSAGE_TEXT);
+  assert.notEqual(plain, r.edit.content);
+  assert.ok(recordEditShape("src/catch-up.ts", CATCHUP, plain, "catchUp"), "still the v2 record form");
+  assert.equal(grade(plain), "wire_message_unfiltered");
+  const caused = r.edit.content.replace(NAME_TEXT, CAUSE_MESSAGE_TEXT);
+  assert.equal(grade(caused), "wire_cause_message");
+  // a line record of the message (a string list) is refused the same way
+  const lineBase = CATCHUP.replace("const errors: { day: string; error: string }[] = [];", "const errors: string[] = [];").replace("errors: { day: string; error: string }[] }>", "errors: string[] }>");
+  const lineReal = r.edit.content.replace("const errors: { day: string; error: string }[] = [];", "const errors: string[] = [];").replace("errors: { day: string; error: string }[] }>", "errors: string[] }>").replace(`{ day: day, error: ${NAME_TEXT} }`, MESSAGE_TEXT);
+  assert.equal(recordEditShape("src/catch-up.ts", lineBase, lineReal, "catchUp")?.holes.record.kind, "line");
+  assert.equal(gradeExistingEditProblem("src/catch-up.ts", lineBase, lineReal, test0.path, test0.content, reader(lineReal)), "wire_message_unfiltered");
+  // a bare catch-continue (no filter, no record) is not the record form and is refused (G26)
+  const bare = CATCHUP.replace("    const report = await scanner.run(day);\n", "    let report;\n    try {\n      report = await scanner.run(day);\n    } catch {\n      continue;\n    }\n");
+  assert.equal(recordEditShape("src/catch-up.ts", CATCHUP, bare, "catchUp"), null);
+  assert.notEqual(grade(bare), null);
+});
+
+test("G31 Job B end to end (the name record COUNTS above): the same candidate with the plain-message record is refused before any code runs", { skip: Number(process.versions.node.split(".")[0]) < 22 && "needs Node >= 22" }, () => {
+  const files = [...CATCHUP_FILES, { path: "src/catch-up.test.ts", content: CATCHUP_TEST }];
+  const { res, log } = jobB(files, SKIP_NAMED, (c) => c.replace(NAME_TEXT, MESSAGE_TEXT));
+  assert.equal(res.testGrading.verdict, "UNGRADABLE", log);
+  assert.equal(res.testGrading.afterFix, false, log);
+  assert.match(log, /grading: existing-edit static refusal wire_message_unfiltered\n.*existing_edit_static=not-test-only/);
+  assert.doesNotMatch(log, /https:\/\//);
+});
+
