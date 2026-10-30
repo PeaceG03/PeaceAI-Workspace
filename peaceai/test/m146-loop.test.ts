@@ -104,3 +104,19 @@ test("M146: selfpropose.ts (the stage-2 isolation) and the plan-only files are u
   for (const f of ["peaceai/lib/plan.ts", "peaceai/lib/plangrade.ts", "peaceai/lib/planrun.ts", "peaceai/bin/plan-only.ts", "peaceai/plan/runs.jsonl"])
     assert.equal(execFileSync("git", ["diff", base, "HEAD", "--", f], { cwd: root, encoding: "utf8" }), "", `${f} unchanged (the plan-only files are #634's)`);
 });
+
+test("M146: the committed loop log is valid and add-only against its git history", () => {
+  const path = resolve(root, LOOP_LOG);
+  const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+  assert.equal("problem" in parseLoopLog(text), false, JSON.stringify(parseLoopLog(text)));
+  let revs: string[] = [];
+  try { revs = execFileSync("git", ["log", "--format=%H", "--", LOOP_LOG], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").filter(Boolean).reverse(); } catch { revs = []; }
+  let prev = "";
+  for (const rev of revs) {
+    let cur = "";
+    try { cur = execFileSync("git", ["show", `${rev}:${LOOP_LOG}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { cur = ""; }
+    assert.equal(loopAddOnlyProblem(prev, cur), null, `add-only at ${rev.slice(0, 10)}`);
+    prev = cur;
+  }
+  assert.equal(loopAddOnlyProblem(prev, text), null, "working tree extends the last commit");
+});
