@@ -146,3 +146,52 @@ sha stay byte for byte; v1 (unapproved) keeps its own trigger and never reaches 
   A graded rethrow that passes the cause's message (`wire_cause_message`) or the error's plain message
   (`wire_message_unfiltered`) is refused by name. All of v2's guards stay on (code anywhere in
   the issue, the 2000-character objective cut).
+
+## G28: go over a list in a new module (public-derive-wire-loop-v1)
+
+A separate spec (its own id, trigger and vocabulary; v2's spec, trigger and sha are unchanged) for the extraction step
+the w02 seam decision above asks for: a NEW module whose one async function goes over a list with an injected
+collaborator. Team-picked, `proposal-off-wired`, `qualifies: false`, credit 0, not in `approved.json`.
+
+- Header (`DERIVE_WIRE_LOOP_TRIGGER`, also the nlparse `deriveWireLoop` entry, so this header alone is no longer
+  NO_FAMILY): `add a new module src/x.ts exporting async F(LIST: string[], C: { M(ITEM: string[, K: "LIT"]..):
+  Promise<T> }) that returns the R and an E list of { f: string; .. }.` Each literal argument is the one value of a
+  string-literal type and is written in the Behavior paragraph (`wire_loop_literal_unstated`). `T` is the one exported
+  interface or type alias of that name in the in-scope source (`wire_loop_type_missing` / `wire_loop_type_ambiguous`),
+  imported type-only in the repo's import style.
+- `Behavior:` plain words with one stop sentence from a closed set: `stops right after a report whose C[ or whose C]`,
+  `C` = `FIELD WORDS is WORD` (a non-optional string field of `T`, or a string-literal union holding `WORD`) or
+  `FIELD WORDS mention(s) WORD` (a non-optional string-array field: some entry includes `WORD`); the field is the
+  words in camelCase (`wire_loop_stop_unstated` / `wire_loop_stop_field`).
+- Template (`loopModule`), nothing else:
+
+      import type { T } from "SPEC";
+
+      export async function F(LIST: string[], C: { M(ITEM: string, ..): Promise<T> }): Promise<{ R: T[]; E: {..}[] }> {
+        const R: T[] = [];
+        const E: {..}[] = [];
+        for (const ITEM of LIST) {
+          const X = await C.M(ITEM, "LIT", ..);
+          R.push(X);
+          if (STOP) break;
+        }
+        return { R, E };
+      }
+
+  The stop runs after the push or before it; the examples choose (exactly one fits, else `wire_no_fit` /
+  `wire_ambiguous`), and a never-stop and a stop-at-the-first program must each miss them (`wire_twin_fits`).
+- Examples: every expect calls `F` directly with a list literal and one fake of `C` whose method only resolves, each
+  report carrying every stop field with its JS type (`wire_loop_entry` / `wire_loop_examples`); one run must end early
+  by the stop and one must go over its whole list of 2+ items, each with its call count (`wire_loop_stop_unpinned` /
+  `wire_loop_full_unpinned`).
+- No failure is handled: the error list is declared and stays empty, no error is read, a failing call propagates. So no
+  error message is emitted (Auditor, #623 (2)). The per-item catch is v2's record ask on the module afterwards (the
+  module is exactly the seam `recordEdit` needs); that record ask stores the read message, see GAPS.
+- Job A: `deriveWireLoopDetail`, then the fake test, then `gradeLoopModuleProblem`; the candidate creates the module
+  (`create: true`, allowed in generate.ts for this spec only). Job B (operationId `learned:public-derive-wire-loop-v1@`
+  only): the diff creates exactly one source module absent at base plus one test; `loopModuleShape` rebuilds it from its
+  holes byte for byte, `loopTypeProblem` re-checks the stop fields against `T` on the graded tree, the hermetic walk runs
+  on the module and its stub. The before-run source is the type-default stub (`loopStub`: same import and signature,
+  `return { R: [], E: [] };`), which must fail by assertions only; then the stub is removed.
+- Limits: one function, one list, one method call per item, at most two stop clauses, no helper and no new type. A stop
+  clause no example exercises is pinned by the prose and the type of `T` only.

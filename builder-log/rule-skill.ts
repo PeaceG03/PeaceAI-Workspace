@@ -43,6 +43,7 @@ export const RULE_SKILL: Readonly<Record<string, string>> = {
   "public-derive-from-behavior-v6": "DERIVE_FROM_BEHAVIOR", // G17: list inputs with NaN / Infinity / -Infinity examples; same kind
   "public-derive-wire-v1": "EXISTING_FUNCTION_EDIT", // G18: a derived try / catch wrap; same skill as M98
   "public-derive-wire-v2": "EXISTING_FUNCTION_EDIT", // G18 v2: a derived bounded retry or recorded skip; same skill as M98
+  "public-derive-wire-loop-v1": "EXISTING_FUNCTION_EDIT", // G28: a derived loop over a list in a new module; same skill as M98
   "public-derive-wire-rethrow-v1": "EXISTING_FUNCTION_EDIT", // G29: a derived rethrow at the v2 retry limit; same skill as M98
 };
 

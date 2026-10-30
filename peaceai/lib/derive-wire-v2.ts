@@ -21,12 +21,18 @@
 //       hold a skipped item with its record AND a non-matching error that propagates (G26: v1's bare
 //       `catch { continue; }` swallowed everything and left no record; it is never used here).
 //
+//   G28 "go over a list" (public-derive-wire-loop-v1, its own spec and trigger; deriveWireLoopDetail below): a NEW
+//       module whose one async function goes over a string-list parameter in order, calls the injected
+//       collaborator's one method per item (its literal-typed arguments passed as their one value, each stated in the
+//       prose), pushes every report to a list, and stops where the prose says (one or two clauses from a closed set,
+//       their fields checked against the repo's declared report type, the placement fitted to the examples).
+//
 // The derived edit is gated by Job B's own static check (gradeExistingEditProblem: retryEditShape / recordEditShape
 // re-recognition, capability delta, hermetic walk before and after, test shape), then graded as every EXISTING_EDIT.
 import ts from "typescript";
 import { rawIssueProblem } from "./learned-derive.ts";
 import { argValue, failureOf, injections, paramValue, parseWireTask, type ErrorInfo, WIRE_MAX_CANDIDATES, calleeName, callsIn, insideTry } from "./derive-wire.ts";
-import { editablePath, emitFakeTest, evalNumHelper, evalWireHelper, existingEditSlug, findTarget, gradeExistingEditProblem, injectedKeyOf, isExcludedSource, isWire2Params, isWire2RethrowParams, numHelper, ownStatements, parseExpression, parseFakeTest, recordEdit, recordLists, recordSite, RETHROW_ARG_IDS, rethrowEdit, retryEdit, retryLoopOf, uniqueSplit, WIRE_ARG_FORMS, WIRE_FAKE_HARNESS, wireHelper, type ExistingEdit, type NumHelper, type Read, type RecordHoles, type RethrowHoles, type RetryHoles, type WireHelper } from "./learned-edit-existing.ts";
+import { editablePath, emitFakeTest, evalNumHelper, evalWireHelper, existingEditSlug, findTarget, gradeExistingEditProblem, injectedKeyOf, isExcludedSource, isWire2Params, isWire2RethrowParams, numHelper, ownStatements, parseExpression, parseFakeTest, recordEdit, recordLists, recordSite, RETHROW_ARG_IDS, rethrowEdit, retryEdit, retryLoopOf, uniqueSplit, WIRE_ARG_FORMS, WIRE_FAKE_HARNESS, wireHelper, type ExistingEdit, type NumHelper, type Read, type RecordHoles, type RethrowHoles, type RetryHoles, type WireHelper, gradeLoopModuleProblem, isWireLoopParams, loopModule, loopTypeProblem, type LoopHoles, type LoopStop } from "./learned-edit-existing.ts";
 import { importStyle } from "./learned-test.ts";
 import { MAX_OBJECTIVE_CHARS } from "./taskmap.ts";
 import { createHash } from "node:crypto";
@@ -496,4 +502,173 @@ export function runDeriveWireV2Rule(trigger: string, params: Record<string, unkn
   const r = deriveWireV2Detail(trigger, params, objective, files, isTest, raw);
   if (!r.edit && why) why.reason = r.reason ?? "wire_refused";
   return r.edit;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G28: "go over a list" in a new module (public-derive-wire-loop-v1)
+// ---------------------------------------------------------------------------------------------------------------
+export const DERIVE_WIRE_LOOP_TRIGGER = String.raw`^add a new module (?<file>src\/[\w./-]+\.ts) exporting async (?<fn>${NAME})\((?<sig>[^\n]{1,400})\) that returns the (?<rkey>${NAME}) and an? (?<ekey>${NAME}) list of \{ (?<efields>[^{}\n]{1,200}) \} ?\.?$`;
+/** The stop sentence of the Behavior prose: "stops right after a report whose C[ or whose C]", C = "FIELD WORDS is WORD" / "FIELD WORDS mention(s) WORD". */
+const STOP_SENTENCE = /\bstops (?:right )?after an? [a-z]{1,30} whose (.{1,300}?)(?:,|\.(?:\s|$)|$)/i;
+const STOP_CLAUSE = /^(?<f>[a-z]{1,30}(?: [a-z]{1,30}){0,3}) (?:is (?<eq>[A-Za-z0-9_-]{1,80})|mentions? (?<inc>[A-Za-z0-9_-]{1,80}))$/;
+const camel = (words: string): string => words.split(" ").map((w, i) => (i ? w[0]!.toUpperCase() + w.slice(1) : w)).join("");
+const canon = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+
+type LoopRefusal = { reason: string; detail?: string };
+type LoopTask = { fn: string; file: string; header: string; behavior: string; bullets: string[]; sig: string; rkey: string; ekey: string; efields: string };
+/** The header's signature: `LIST: string[], C: { M(ITEM: string[, K: "LIT"]..): Promise<T> }`; the error record's fields: `f: string; ..`. */
+function loopSignature(t: LoopTask): Omit<LoopHoles, "rfrom" | "stop" | "placement"> | LoopRefusal {
+  const sf = ts.createSourceFile("h.ts", `declare function f(${t.sig}): void;\ntype E = { ${t.efields} };`, ts.ScriptTarget.Latest, true);
+  const [fd, ed] = sf.statements;
+  if ((sf as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics.length || sf.statements.length !== 2 || !fd || !ts.isFunctionDeclaration(fd) || !ed || !ts.isTypeAliasDeclaration(ed)) return { reason: "wire_loop_signature" };
+  const [p0, p1] = fd.parameters;
+  if (fd.parameters.length !== 2 || !p0 || !p1 || !ts.isIdentifier(p0.name) || !ts.isIdentifier(p1.name) || p0.questionToken || p1.questionToken) return { reason: "wire_loop_signature" };
+  if (!p0.type || !ts.isArrayTypeNode(p0.type) || p0.type.elementType.kind !== ts.SyntaxKind.StringKeyword) return { reason: "wire_loop_signature", detail: "list" };
+  if (!p1.type || !ts.isTypeLiteralNode(p1.type) || p1.type.members.length !== 1) return { reason: "wire_loop_signature", detail: "collaborator" };
+  const ms = p1.type.members[0]!;
+  if (!ts.isMethodSignature(ms) || !ts.isIdentifier(ms.name) || ms.questionToken || ms.typeParameters || !ms.parameters.length || !ms.type) return { reason: "wire_loop_signature", detail: "collaborator" };
+  const [m0, ...rest] = ms.parameters;
+  if (!m0 || !ts.isIdentifier(m0.name) || m0.type?.kind !== ts.SyntaxKind.StringKeyword) return { reason: "wire_loop_signature", detail: "item" };
+  const args: { name: string; lit: string }[] = [];
+  for (const p of rest) {
+    if (!ts.isIdentifier(p.name) || p.questionToken || !p.type || !ts.isLiteralTypeNode(p.type) || !ts.isStringLiteral(p.type.literal)) return { reason: "wire_loop_signature", detail: "argument" };
+    args.push({ name: p.name.text, lit: p.type.literal.text });
+  }
+  const rt = ms.type;
+  if (!ts.isTypeReferenceNode(rt) || !ts.isIdentifier(rt.typeName) || rt.typeName.text !== "Promise" || rt.typeArguments?.length !== 1) return { reason: "wire_loop_signature", detail: "returns" };
+  const inner = rt.typeArguments[0]!;
+  if (!ts.isTypeReferenceNode(inner) || !ts.isIdentifier(inner.typeName) || inner.typeArguments) return { reason: "wire_loop_signature", detail: "returns" };
+  if (!ts.isTypeLiteralNode(ed.type)) return { reason: "wire_loop_errors" };
+  const efields: string[] = [];
+  for (const m of ed.type.members) {
+    if (!ts.isPropertySignature(m) || !ts.isIdentifier(m.name) || m.questionToken || m.type?.kind !== ts.SyntaxKind.StringKeyword) return { reason: "wire_loop_errors" };
+    efields.push(m.name.text);
+  }
+  if (!efields.length || efields.length > 3) return { reason: "wire_loop_errors" };
+  return { fn: t.fn, list: p0.name.text, coll: p1.name.text, method: ms.name.text, item: m0.name.text, args, rtype: inner.typeName.text, rkey: t.rkey, ekey: t.ekey, efields };
+}
+
+/** The in-scope source module that declares the exported report type T (exactly one). */
+function reportTypeModule(name: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): string | LoopRefusal {
+  const hits: string[] = [];
+  const decl = new RegExp(String.raw`^export (?:interface ${name}\b|type ${name}\s*=)`, "m");
+  for (const f of files) if (!isTest(f.path) && !isExcludedSource(f.path) && /^src\/[\w./-]+\.ts$/.test(f.path) && !f.path.endsWith(".d.ts") && decl.test(f.content)) hits.push(f.path);
+  if (!hits.length) return { reason: "wire_loop_type_missing" };
+  if (hits.length > 1) return { reason: "wire_loop_type_ambiguous", detail: String(hits.length) };
+  return hits[0]!;
+}
+
+function deriveLoop(t: LoopTask, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): { holes: LoopHoles } | LoopRefusal {
+  const sig = loopSignature(t);
+  if ("reason" in sig) return sig;
+  // every literal the collaborator is passed is stated in the prose (the one value its type allows)
+  const words = new Set(t.behavior.split(/\s+/).map((w) => w.replace(/^[,.:()]+|[,.:()]+$/g, "")).filter(Boolean));
+  if (!sig.args.every((a) => words.has(a.lit))) return { reason: "wire_loop_literal_unstated" };
+  const tm = reportTypeModule(sig.rtype, files, isTest);
+  if (typeof tm !== "string") return tm;
+  // the stop condition: the prose's one stop sentence, one or two clauses from the closed set
+  const ss = [...t.behavior.matchAll(new RegExp(STOP_SENTENCE.source, "gi"))];
+  if (ss.length !== 1) return { reason: "wire_loop_stop_unstated" };
+  const parts = ss[0]![1]!.split(/ or whose /i);
+  if (parts.length > 2) return { reason: "wire_loop_stop_unstated" };
+  const stop: LoopStop[] = [];
+  for (const p of parts) {
+    const m = STOP_CLAUSE.exec(p.trim());
+    if (!m) return { reason: "wire_loop_stop_unstated" };
+    stop.push({ field: camel(m.groups!.f!.toLowerCase()), op: m.groups!.eq ? "is" : "mentions", word: m.groups!.eq ?? m.groups!.inc! });
+  }
+  // the module's own import style: the repo's source imports when it has relative ones, else its tests' style
+  const srcRel = files.some((f) => !isTest(f.path) && /^import [^;]*? from "\.{1,2}\//m.test(f.content));
+  const style = srcRel ? importStyle(files, (p) => !isTest(p)) : importStyle(files, isTest);
+  const base: Omit<LoopHoles, "placement"> = { ...sig, rfrom: relSpec(t.file, tm, style), stop };
+  const read: Read = (rel) => ((f) => (f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null))(files.find((x) => x.path === rel));
+  const draft = loopModule({ ...base, placement: "after" });
+  if (draft === null) return { reason: "wire_loop_signature", detail: "names" };
+  const tp = loopTypeProblem({ ...base, placement: "after" }, t.file, read);
+  if (tp) return { reason: tp };
+  // the examples: each expect calls the function directly with a list literal and one collaborator fake whose method
+  // only resolves (this ask handles no failure: the error list stays empty); its value is { R: [..], E: [] }
+  const sf = ts.createSourceFile(t.file, draft, ts.ScriptTarget.Latest, true);
+  const ex = examplesOf(t.bullets, sf);
+  if (!ex || !ex.expects.length) return { reason: "wire_examples" };
+  type Run = { items: string[]; outs: Value[]; owner: string; want: Value | undefined };
+  const runs: Run[] = [];
+  for (const e of ex.expects) {
+    if (e.kind !== "resolves" || !ts.isIdentifier(e.call.expression) || e.call.expression.text !== t.fn || e.call.arguments.length !== 2) return { reason: "wire_loop_entry" };
+    const items = valueOf(e.call.arguments[0]!);
+    if (!Array.isArray(items) || !items.every((x) => typeof x === "string")) return { reason: "wire_loop_entry" };
+    const s = e.inject.get(sig.method) ?? [];
+    if (s.length !== 1 || ![...e.inject.keys()].every((k) => k === sig.method)) return { reason: "wire_fake_ambiguous" };
+    if ((ex.uses.get(s[0]!.owner.split(".")[0]!) ?? ex.uses.get(s[0]!.owner) ?? 0) > 1) return { reason: "wire_fake_shared" };
+    const outs: Value[] = [];
+    for (const o of s[0]!.outcomes) {
+      if (!ts.isCallExpression(o) || !ts.isIdentifier(o.expression) || o.expression.text !== "resolves" || o.arguments.length !== 1) return { reason: "wire_loop_examples", detail: "outcome" };
+      const v = valueOf(o.arguments[0]!);
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { reason: "wire_loop_examples", detail: "outcome" };
+      // every stop field is in every report with its JS type (a string / a string array)
+      for (const c of stop) { const f = v[c.field]; if (c.op === "is" ? typeof f !== "string" : !Array.isArray(f) || !f.every((x) => typeof x === "string")) return { reason: "wire_loop_examples", detail: c.field }; }
+      outs.push(v);
+    }
+    runs.push({ items: items as string[], outs, owner: s[0]!.owner, want: e.value });
+  }
+  if (!runs.length) return { reason: "wire_examples" };
+  const stopOf = (v: Value): boolean => stop.some((c) => { const f = (v as { [k: string]: Value })[c.field]; return c.op === "is" ? f === c.word : (f as string[]).some((x) => x.includes(c.word)); });
+  type Program = { stopAt: (v: Value) => boolean; placement: "after" | "before" };
+  const sim = (p: Program, r: Run): { reports: Value[]; calls: number } => {
+    const reports: Value[] = [];
+    let calls = 0;
+    for (let i = 0; i < r.items.length; i++) {
+      const v = r.outs[Math.min(i, r.outs.length - 1)]!;
+      calls++;
+      if (p.placement === "before" && p.stopAt(v)) break;
+      reports.push(v);
+      if (p.placement === "after" && p.stopAt(v)) break;
+    }
+    return { reports, calls };
+  };
+  const fits = (p: Program): boolean => runs.every((r) => {
+    const s = sim(p, r);
+    if (canon(r.want) !== canon({ [sig.rkey]: s.reports, [sig.ekey]: [] })) return false;
+    const n = ex.counts.get(r.owner);
+    return n === undefined || n === s.calls;
+  });
+  // pins: a run the stop ends early, a run that goes over its whole list (2+ items), each with its call count
+  if (!runs.some((r) => ex.counts.has(r.owner) && sim({ stopAt: stopOf, placement: "after" }, r).calls < r.items.length)) return { reason: "wire_loop_stop_unpinned" };
+  if (!runs.some((r) => ex.counts.has(r.owner) && r.items.length >= 2 && sim({ stopAt: stopOf, placement: "after" }, r).calls === r.items.length)) return { reason: "wire_loop_full_unpinned" };
+  const found = (["after", "before"] as const).filter((placement) => fits({ stopAt: stopOf, placement }));
+  if (!found.length) return { reason: "wire_no_fit" };
+  if (found.length > 1) return { reason: "wire_ambiguous", detail: String(found.length) };
+  // twins: a program that never stops, or stops after the first item, must miss the examples
+  for (const [name, p] of [["never-stop", { stopAt: () => false, placement: found[0]! }], ["stop-first", { stopAt: () => true, placement: "after" }]] as [string, Program][]) if (fits(p)) return { reason: "wire_twin_fits", detail: name };
+  return { holes: { ...base, placement: found[0]! } };
+}
+
+/** G28 entry (public-derive-wire-loop-v1): derive the new module and its fake-driven test, gated by Job B's static check. */
+export function deriveWireLoopDetail(trigger: string, params: Record<string, unknown>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p), raw?: string): { edit: ExistingEdit | null; reason: string | null; holes?: LoopHoles; detail?: string } {
+  const no = (reason: string, detail?: string) => ({ edit: null, reason, ...(detail ? { detail } : {}) });
+  if (!isWireLoopParams(params) || trigger !== DERIVE_WIRE_LOOP_TRIGGER) return no("wire_params");
+  if (raw !== undefined && rawIssueProblem(raw)) return no("wire_behavior_code");
+  if (objective.length >= MAX_OBJECTIVE_CHARS) return no("wire_task_truncated");
+  const task = parseWireTask(trigger, objective);
+  if ("reason" in task) return no(task.reason);
+  const g = new RegExp(trigger, "i").exec(task.header)!.groups!;
+  const file = task.file;
+  if (!editablePath(file, isTest)) return no("edit_path");
+  if (files.some((f) => f.path === file)) return no("wire_loop_module_exists");
+  const d = deriveLoop({ fn: task.target, file, header: task.header, behavior: task.behavior, bullets: task.bullets, sig: g.sig!, rkey: g.rkey!, ekey: g.ekey!, efields: g.efields! }, files, isTest);
+  if ("reason" in d) return no(d.reason, d.detail);
+  const content = loopModule(d.holes);
+  if (content === null) return no("wire_shape");
+  const fakeTest = parseFakeTest(task.bullets, { wire: true, calledWith: true });
+  if (!fakeTest) return no("edit_test_grammar");
+  const dir = file.slice(0, file.lastIndexOf("/") + 1);
+  const stem = file.slice(dir.length).replace(/\.ts$/, "");
+  const id7 = createHash("sha256").update(`${task.header}\n${task.bullets.join("\n")}`).digest("hex").slice(0, 7);
+  const testPath = `${dir}${stem}.${existingEditSlug(task.target)}-${id7}.test.ts`;
+  if (files.some((f) => f.path === testPath)) return no("new_test_path_exists");
+  const test = emitFakeTest(file, testPath, `PeaceAI G28 derive-wire loop: ${task.target} in ${file} (derived loop over a list, injected fakes)`, fakeTest, importStyle(files, isTest), WIRE_FAKE_HARNESS);
+  const read: Read = (rel) => (rel === file ? content : ((f) => (f && !isTest(rel) && !isExcludedSource(rel) ? f.content : null))(files.find((x) => x.path === rel)));
+  const jb = gradeLoopModuleProblem(file, content, testPath, test, read);
+  if (jb) return { ...no(jb), holes: d.holes };
+  return { edit: { path: file, content, create: true, extra: [{ path: testPath, content: test, create: true }], selfGrade: true }, reason: null, holes: d.holes };
 }

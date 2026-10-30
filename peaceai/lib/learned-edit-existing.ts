@@ -45,12 +45,12 @@ export const MAX_BULLETS_V2 = 32;
 export const MAX_MODULES = 40;
 export const MAX_UNITS = 800;
 
-export interface ExistingEdit { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true }
+export interface ExistingEdit { path: string; content: string; create?: true; extra: { path: string; content: string; create: true }[]; selfGrade: true }
 export type Read = (rel: string) => string | null;
 
 /** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
 export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p) || isWire2Params(p) || isWire2RethrowParams(p));
+  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p) || isWire2Params(p) || isWire2RethrowParams(p) || isWireLoopParams(p));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2784,4 +2784,221 @@ export function rethrowEditShape(path: string, baseText: string, realText: strin
   const ropts = rcall.arguments[1] as ts.ObjectLiteralExpression;
   const rsigCall = (ropts.properties[ropts.properties.length - 1] as ts.PropertyAssignment).initializer as ts.CallExpression;
   return { target, stripped: strip(realText, sf, rsigCall), baseStripped: strip(baseText, bsf, bl.signal), holes };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G28 (public-derive-wire-loop-v1, kind EXISTING_EDIT): "go over a list" in a NEW module. The shared Job A / Job B
+// pieces: the spec vocabulary, the one closed template (loopModule), its structural recognizer (loopModuleShape), the
+// type check of the stop condition against the repo's declared report type (loopTypeProblem), the type-default stub
+// the before-run uses (loopStub) and the Job B static gate (gradeLoopModuleProblem).
+//
+//   import type { T } from "SPEC";
+//
+//   export async function F(LIST: string[], C: { M(ITEM: string[, K: "LIT"]..): Promise<T> }): Promise<{ R: T[]; E: { f: string; .. }[] }> {
+//     const R: T[] = [];
+//     const E: { f: string; .. }[] = [];
+//     for (const ITEM of LIST) {
+//       const X = await C.M(ITEM[, "LIT"]..);
+//       R.push(X);                    (after: stop right after the report; before: the stop line comes first)
+//       if (STOP) break;
+//     }
+//     return { R, E };
+//   }
+//
+// STOP: one or two clauses joined with `||`, each `X.FIELD === "WORD"` (a string field of T) or
+// `X.FIELD.some((entry) => entry.includes("WORD"))` (a string-array field of T). The holes are names from the issue
+// header, words of the Behavior prose and fields of T; the error list E is declared and stays empty (no error is read,
+// so no error message can reach it). Job B re-recognises the template exactly (holes read off the graded file,
+// rebuilt with loopModule, byte for byte) and re-checks T's fields.
+// ---------------------------------------------------------------------------------------------------------------
+export const WIRE_LOOP_VOCAB: Record<(typeof EXISTING_EDIT_PARAM_KEYS)[number], readonly string[]> = {
+  fakes: ["recorded-object-literal-v2-error-fields-call-args"],
+  grading: ["self-fail-before-pass-after-assertions"],
+  io: ["injected-only-v2-loop"],
+  match: ["derived-stop-condition-v1"],
+  paths: ["in-scope-source-new-module"],
+  statements: ["derived-loop-over-list-new-module-v1"],
+  target: ["new-module-async-function"],
+  test: ["new-file-fake-driven"],
+};
+export function isWireLoopParams(p: Record<string, unknown>): boolean {
+  return Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && WIRE_LOOP_VOCAB[k].length === 1 && WIRE_LOOP_VOCAB[k].includes(p[k] as string));
+}
+
+export type LoopStop = { field: string; op: "is" | "mentions"; word: string };
+export interface LoopHoles {
+  fn: string; list: string; coll: string; method: string; item: string;
+  /** the collaborator's parameters after the item: each a one-value string literal type, passed as that value */
+  args: { name: string; lit: string }[];
+  rtype: string; rfrom: string; rkey: string; ekey: string; efields: string[];
+  stop: LoopStop[];
+  placement: "after" | "before";
+}
+const LOOP_NAME = /^[A-Za-z_$][\w$]{0,60}$/;
+const LOOP_WORD = /^[A-Za-z0-9_-]{1,80}$/;
+const LOOP_LIT = /^[\x20-\x21\x23-\x5b\x5d-\x7e]{1,80}$/;
+const JS_RESERVED = new Set("break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof new null return super switch this throw true try typeof var void while with yield let static implements interface package private protected public await async of type".split(" "));
+/** The one local the loop names its report: the singular of R (`reports` -> `report`), else `result`. */
+export const loopLocal = (h: Pick<LoopHoles, "rkey">): string => (h.rkey.length > 1 && h.rkey.endsWith("s") && !h.rkey.endsWith("ss") ? h.rkey.slice(0, -1) : "result");
+const loopStopText = (s: LoopStop, local: string): string => (s.op === "is" ? `${local}.${s.field} === ${JSON.stringify(s.word)}` : `${local}.${s.field}.some((entry) => entry.includes(${JSON.stringify(s.word)}))`);
+const loopHolesOk = (h: LoopHoles): boolean => {
+  const names = [h.fn, h.list, h.coll, h.method, h.item, h.rtype, h.rkey, h.ekey, loopLocal(h), ...h.args.map((a) => a.name), ...h.efields, ...h.stop.map((s) => s.field)];
+  if (!names.every((n) => LOOP_NAME.test(n) && !JS_RESERVED.has(n) && !REFLECTION.has(n))) return false;
+  // the bound names are distinct (and never the stop callback's `entry`)
+  const bound = [h.fn, h.list, h.coll, h.item, h.rtype, h.rkey, h.ekey, loopLocal(h), "entry", ...h.args.map((a) => a.name)];
+  if (new Set(bound).size !== bound.length) return false;
+  if (!h.efields.length || h.efields.length > 3 || new Set(h.efields).size !== h.efields.length) return false;
+  if (h.args.length > 3 || !h.args.every((a) => LOOP_LIT.test(a.lit))) return false;
+  if (!h.stop.length || h.stop.length > 2 || !h.stop.every((s) => LOOP_WORD.test(s.word) && (s.op === "is" || s.op === "mentions"))) return false;
+  return /^\.{1,2}\/(?:[\w.-]+\/)*[\w.-]+$/.test(h.rfrom) && (h.placement === "after" || h.placement === "before");
+};
+const loopHead = (h: LoopHoles): { imp: string; sig: string; etype: string } => {
+  const etype = `{ ${h.efields.map((f) => `${f}: string`).join("; ")} }`;
+  const mparams = [`${h.item}: string`, ...h.args.map((a) => `${a.name}: ${JSON.stringify(a.lit)}`)].join(", ");
+  const sig = `export async function ${h.fn}(${h.list}: string[], ${h.coll}: { ${h.method}(${mparams}): Promise<${h.rtype}> }): Promise<{ ${h.rkey}: ${h.rtype}[]; ${h.ekey}: ${etype}[] }> {`;
+  return { imp: `import type { ${h.rtype} } from ${JSON.stringify(h.rfrom)};`, sig, etype };
+};
+/** Build the G28 module text from its holes, or null. */
+export function loopModule(h: LoopHoles): string | null {
+  if (!loopHolesOk(h)) return null;
+  const { imp, sig, etype } = loopHead(h);
+  const local = loopLocal(h);
+  const push = `    ${h.rkey}.push(${local});`;
+  const stop = `    if (${h.stop.map((s) => loopStopText(s, local)).join(" || ")}) break;`;
+  const text = [
+    imp,
+    ``,
+    sig,
+    `  const ${h.rkey}: ${h.rtype}[] = [];`,
+    `  const ${h.ekey}: ${etype}[] = [];`,
+    `  for (const ${h.item} of ${h.list}) {`,
+    `    const ${local} = await ${h.coll}.${h.method}(${[h.item, ...h.args.map((a) => JSON.stringify(a.lit))].join(", ")});`,
+    ...(h.placement === "after" ? [push, stop] : [stop, push]),
+    `  }`,
+    `  return { ${h.rkey}, ${h.ekey} };`,
+    `}`,
+    ``,
+  ].join("\n");
+  return diag(ts.createSourceFile("m.ts", text, ts.ScriptTarget.Latest, true)) ? null : text;
+}
+/** The type-default stub of the same module (same import and signature, empty lists): Job B's before-run source. */
+export function loopStub(h: LoopHoles): string | null {
+  if (!loopHolesOk(h)) return null;
+  const { imp, sig } = loopHead(h);
+  return [imp, ``, sig, `  return { ${h.rkey}: [], ${h.ekey}: [] };`, `}`, ``].join("\n");
+}
+
+/** Job A and Job B: the holes of a G28 module, read off its text and rebuilt with loopModule byte for byte, or null. */
+export function loopModuleShape(path: string, realText: string): LoopHoles | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  if (diag(sf) || sf.statements.length !== 2) return null;
+  const [imp, fnd] = sf.statements;
+  if (!imp || !ts.isImportDeclaration(imp) || !imp.importClause?.isTypeOnly || !ts.isStringLiteral(imp.moduleSpecifier)) return null;
+  const nb = imp.importClause.namedBindings;
+  if (!nb || !ts.isNamedImports(nb) || nb.elements.length !== 1 || nb.elements[0]!.propertyName) return null;
+  if (!fnd || !ts.isFunctionDeclaration(fnd) || !fnd.name || !fnd.body || fnd.parameters.length !== 2) return null;
+  const [p0, p1] = fnd.parameters;
+  if (!p0 || !p1 || !ts.isIdentifier(p0.name) || !ts.isIdentifier(p1.name) || !p1.type || !ts.isTypeLiteralNode(p1.type) || p1.type.members.length !== 1) return null;
+  const ms = p1.type.members[0]!;
+  if (!ts.isMethodSignature(ms) || !ts.isIdentifier(ms.name) || !ms.parameters.length) return null;
+  const mps = ms.parameters.map((p) => (ts.isIdentifier(p.name) ? { name: p.name.text, lit: p.type && ts.isLiteralTypeNode(p.type) && ts.isStringLiteral(p.type.literal) ? p.type.literal.text : null } : null));
+  if (mps.some((x) => x === null) || mps.slice(1).some((x) => x!.lit === null)) return null;
+  const st = fnd.body.statements;
+  if (st.length !== 4) return null;
+  const [d0, d1, loop, ret] = st;
+  const declName = (s: ts.Statement | undefined): { name: string; type: ts.TypeNode } | null => (s && ts.isVariableStatement(s) && s.declarationList.declarations.length === 1 && ts.isIdentifier(s.declarationList.declarations[0]!.name) && s.declarationList.declarations[0]!.type ? { name: (s.declarationList.declarations[0]!.name as ts.Identifier).text, type: s.declarationList.declarations[0]!.type! } : null);
+  const r = declName(d0), e = declName(d1);
+  if (!r || !e || !ts.isArrayTypeNode(e.type) || !ts.isTypeLiteralNode(e.type.elementType)) return null;
+  const efields = e.type.elementType.members.map((m) => (ts.isPropertySignature(m) && ts.isIdentifier(m.name) ? m.name.text : ""));
+  if (!loop || !ts.isForOfStatement(loop) || !ts.isBlock(loop.statement) || loop.statement.statements.length !== 3 || !ret) return null;
+  const [l0, l1, l2] = loop.statement.statements;
+  const ifs = [l1, l2].find((x) => !!x && ts.isIfStatement(x)) as ts.IfStatement | undefined;
+  if (!l0 || !ifs) return null;
+  const local = declName(l0)?.name ?? (l0 && ts.isVariableStatement(l0) && ts.isIdentifier(l0.declarationList.declarations[0]!.name) ? l0.declarationList.declarations[0]!.name.text : null);
+  if (!local) return null;
+  const clauses: ts.Expression[] = [];
+  const split = (x: ts.Expression): void => { if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.BarBarToken) { split(x.left); split(x.right); } else clauses.push(x); };
+  split(ifs.expression);
+  const stop: LoopStop[] = [];
+  for (const c of clauses) {
+    if (ts.isBinaryExpression(c) && c.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken && ts.isPropertyAccessExpression(c.left) && ts.isStringLiteral(c.right)) { stop.push({ field: c.left.name.text, op: "is", word: c.right.text }); continue; }
+    if (ts.isCallExpression(c) && ts.isPropertyAccessExpression(c.expression) && ts.isPropertyAccessExpression(c.expression.expression) && c.arguments.length === 1) {
+      const cb = c.arguments[0]!;
+      const inner = ts.isArrowFunction(cb) && ts.isCallExpression(cb.body) ? cb.body : null;
+      if (inner && inner.arguments.length === 1 && ts.isStringLiteral(inner.arguments[0]!)) { stop.push({ field: c.expression.expression.name.text, op: "mentions", word: inner.arguments[0]!.text }); continue; }
+    }
+    return null;
+  }
+  const init = loop.initializer;
+  if (!ts.isVariableDeclarationList(init) || init.declarations.length !== 1 || !ts.isIdentifier(init.declarations[0]!.name)) return null;
+  const h: LoopHoles = {
+    fn: fnd.name.text, list: p0.name.text, coll: p1.name.text, method: ms.name.text, item: init.declarations[0]!.name.text,
+    args: mps.slice(1).map((x) => ({ name: x!.name, lit: x!.lit! })),
+    rtype: nb.elements[0]!.name.text, rfrom: imp.moduleSpecifier.text, rkey: r.name, ekey: e.name, efields, stop,
+    placement: ifs === l2 ? "after" : "before",
+  };
+  // the method's first parameter is the loop item; the template rebuilt from the holes must be the file, byte for byte
+  if (mps[0]!.name !== h.item || mps[0]!.lit !== null) return null;
+  return loopModule(h) === realText ? h : null;
+}
+
+/** The report type T the module imports must declare every stop field: `is` a string (or a string-literal union holding the word), `mentions` a string array. */
+export function loopTypeProblem(h: LoopHoles, modPath: string, read: Read): string | null {
+  const typePath = resolveRelative(modPath, h.rfrom, read);
+  const text = typePath ? read(typePath) : null;
+  if (!typePath || text === null) return "wire_loop_type_missing";
+  const sf = ts.createSourceFile(typePath, text, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return "wire_loop_type_missing";
+  const exported = (s: ts.Statement) => !!(s as ts.HasModifiers).modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  const decls = sf.statements.filter((s): s is ts.InterfaceDeclaration | ts.TypeAliasDeclaration => (ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s)) && s.name.text === h.rtype);
+  if (decls.length !== 1 || !exported(decls[0]!)) return "wire_loop_type_missing";
+  const d = decls[0]!;
+  const members = ts.isInterfaceDeclaration(d) ? d.members : ts.isTypeLiteralNode(d.type) ? d.type.members : null;
+  if (!members || (ts.isInterfaceDeclaration(d) && d.heritageClauses?.length) || d.typeParameters?.length) return "wire_loop_type_shape";
+  const lits = (t: ts.TypeNode): string[] | null => {
+    if (ts.isLiteralTypeNode(t) && ts.isStringLiteral(t.literal)) return [t.literal.text];
+    if (ts.isUnionTypeNode(t)) { const xs = t.types.map(lits); return xs.every((x) => x !== null) ? xs.flat() as string[] : null; }
+    if (ts.isParenthesizedTypeNode(t)) return lits(t.type);
+    return null;
+  };
+  for (const s of h.stop) {
+    const ps = members.filter((m): m is ts.PropertySignature => ts.isPropertySignature(m) && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && m.name.text === s.field);
+    if (ps.length !== 1 || ps[0]!.questionToken || !ps[0]!.type) return "wire_loop_stop_field";
+    let t: ts.TypeNode = ps[0]!.type;
+    if (s.op === "mentions") {
+      if (ts.isTypeOperatorNode(t) && t.operator === ts.SyntaxKind.ReadonlyKeyword) t = t.type;
+      if (!ts.isArrayTypeNode(t) || t.elementType.kind !== ts.SyntaxKind.StringKeyword) return "wire_loop_stop_field";
+      continue;
+    }
+    if (t.kind === ts.SyntaxKind.StringKeyword) continue;
+    if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && !t.typeArguments) {
+      const name = t.typeName.text;
+      const al = sf.statements.filter((x): x is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(x) && x.name.text === name);
+      if (al.length !== 1) return "wire_loop_stop_field";
+      t = al[0]!.type;
+    }
+    const ls = lits(t);
+    if (!ls || !ls.includes(s.word)) return "wire_loop_stop_field";
+  }
+  return null;
+}
+
+/**
+ * Job B static gate of a G28 candidate (the module is NEW: there is no base text). The module must be exactly the
+ * template (loopModuleShape), T must declare the stop fields (loopTypeProblem), the test must be the v2 fake-driven
+ * test of the module, and the module must stay hermetic for the test's calls on the graded source AND on its
+ * type-default stub (loopStub, the before-run source), the target reached in both.
+ */
+export function gradeLoopModuleProblem(modPath: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
+  const h = loopModuleShape(modPath, realText);
+  if (!h) return "edit_not_confined";
+  const tp = loopTypeProblem(h, modPath, read);
+  if (tp) return tp;
+  const calls = gradedTestCalls(testPath, testContent, modPath, true, true);
+  if (!calls) return "edit_test_shape";
+  const after = hermeticProblem(modPath, read, calls, h.fn, { path: modPath, content: realText });
+  if (typeof after === "string") return after;
+  const before = hermeticProblem(modPath, read, calls, h.fn, { path: modPath, content: loopStub(h)! });
+  if (typeof before === "string") return before;
+  return after.targetReached && before.targetReached ? null : "edit_test_unreached";
 }

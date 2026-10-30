@@ -18,7 +18,7 @@ import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { EXISTING_EDIT_TRIGGER } from "./learned-edit-existing.ts";
 import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER } from "./learned-derive.ts";
 import { DERIVE_WIRE_TRIGGER } from "./derive-wire.ts";
-import { DERIVE_WIRE_V2_TRIGGER } from "./derive-wire-v2.ts";
+import { DERIVE_WIRE_LOOP_TRIGGER, DERIVE_WIRE_V2_TRIGGER } from "./derive-wire-v2.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
 import { IMPORT_EDIT_V2_TRIGGER } from "./import-edit-v2.ts";
@@ -118,6 +118,9 @@ export const LEARNED_CANONICAL = {
   // G18 v2: public-derive-wire-v2 (kind EXISTING_EDIT) derives a bounded retry ("..., retry a failing call") or a
   // filtered, recorded skip in a loop ("..., record a failing call and go on").
   deriveWire2: { re: new RegExp(DERIVE_WIRE_V2_TRIGGER, "imu"), kind: "EXISTING_EDIT", family: null },
+  // G28: public-derive-wire-loop-v1 (kind EXISTING_EDIT) derives a new module that goes over a list ("add a new module
+  // src/x.ts exporting async f(list: string[], c: { m(..): Promise<T> }) that returns the R and an E list of { .. }").
+  deriveWireLoop: { re: new RegExp(DERIVE_WIRE_LOOP_TRIGGER, "imu"), kind: "EXISTING_EDIT", family: null },
 } as const satisfies Record<string, { re: RegExp; kind: string; family: Family | null }>;
 export type LearnedTriggerName = keyof typeof LEARNED_CANONICAL;
 const CANONICAL: readonly RegExp[] = [...PLAIN_CANONICAL, ...Object.values(LEARNED_CANONICAL).map((t) => t.re)];
