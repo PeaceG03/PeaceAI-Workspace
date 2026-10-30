@@ -11692,3 +11692,63 @@ Apache License
    See the License for the specific language governing permissions and
    limitations under the License.
 ---- end ----
+
+==============================================================================
+repo: mesqueeb/is-what
+license: MIT (LICENSE, sha256 of trimmed text c1c7c66a0baef8fd308e2665face6a688acf492654c0a636f97381dd905e2919)
+fixtures (commit path):
+  864e944abd8eb6f6356de03ff67339c71440d6bb peaceai/test/fixtures/m143-search/mesqueeb__is-what-864e944abd8e.bundle.txt
+license URL: https://github.com/mesqueeb/is-what/blob/864e944abd8eb6f6356de03ff67339c71440d6bb/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2018 Luca Ban - Mesqueeb
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: dsherret/code-block-writer
+license: MIT (LICENSE, sha256 of trimmed text 2a49a9d804d106920672538670a7e132662fe5b38a7e02e19293ba6516af8be2)
+fixtures (commit path):
+  96de18325769606589307281ce355f18eca830b2 peaceai/test/fixtures/m143-search/dsherret__code-block-writer-96de18325769.bundle.txt
+license URL: https://github.com/dsherret/code-block-writer/blob/96de18325769606589307281ce355f18eca830b2/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-2024 David Sherret
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
