@@ -27,11 +27,15 @@ const LOOP = approved.some((s) => s.id === "public-loop-function-v1") ? "public-
 // M74 (#338/#342): public-date-function-v1 (COMPLEX_FUNCTION, own "add date function" trigger) reports task_unparsed too.
 // M85 (#380): public-complex-calls-v1 reports task_unparsed on a guard task (its trigger is "add complex function"),
 // so once that approval is on the list it takes a slot in the capped line and env-fix-v2 drops off the end.
+// #614: public-derive-wire-v2 (EXISTING_EDIT, own "retry a failing call" / "record a failing call" trigger) reports a real
+// reason, wire_trigger, on a guard task, so once its approval (#613) is on the list it sorts before every task_unparsed entry
+// and the last task_unparsed entry drops off the capped line. Rules listed in REASON report that code instead of task_unparsed.
 // Entries sort by id, real reasons before task_unparsed, and formatRefusals keeps at most MAX_ENTRIES=5 (intentional truncation).
-const REPORTING = new Set(["public-complex-calls-v1", "public-complex-function-v1", "public-date-function-v1", "public-env-fix-v1", "public-env-fix-v2", "public-import-edit-v2", "public-loop-function-v1", "public-loop-function-v2", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1", "public-tsconfig-script-v1", "public-workflow-job-v1"]);
+const REASON = new Map<string, string>([["public-derive-wire-v2", "wire_trigger"]]);
+const REPORTING = new Set(["public-complex-calls-v1", "public-complex-function-v1", "public-date-function-v1", "public-derive-wire-v2", "public-env-fix-v1", "public-env-fix-v2", "public-import-edit-v2", "public-loop-function-v1", "public-loop-function-v2", "public-method-guard-v1", "public-throw-guard-top-v1", "public-throw-guard-v1", "public-tsconfig-script-v1", "public-workflow-job-v1"]);
 const expected = (top: string | null) =>
   approved.map((s) => s.id).filter((id) => REPORTING.has(id)).sort()
-    .flatMap((id) => (id === "public-throw-guard-top-v1" ? (top === null ? [] : [`${id}=${top}`]) : [`${id}=task_unparsed`]))
+    .flatMap((id) => (id === "public-throw-guard-top-v1" ? (top === null ? [] : [`${id}=${top}`]) : [`${id}=${REASON.get(id) ?? "task_unparsed"}`]))
     .sort((a, b) => Number(a.endsWith("=task_unparsed")) - Number(b.endsWith("=task_unparsed"))) // real reasons first (stable)
     .slice(0, 5).join("; ");
 const isTest = (p: string) => p.endsWith(".test.ts");

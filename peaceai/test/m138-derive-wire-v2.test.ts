@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { APPROVED_SCHEMA } from "../lib/approved.ts";
+import { admitRules, APPROVED_SCHEMA, loadApprovedList } from "../lib/approved.ts";
 import { DERIVE_WIRE_TRIGGER, deriveWireDetail } from "../lib/derive-wire.ts";
 import { DERIVE_WIRE_V2_TRIGGER, deriveWireV2Detail } from "../lib/derive-wire-v2.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
@@ -160,15 +160,28 @@ async function load<T>(files: { path: string; content: string }[], edit: { path:
   return { mod, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-test("the spec: EXISTING_EDIT with the v2 vocabulary, its own trigger, valid, NOT in approved.json, no credit; phrasing", () => {
+test("the spec: EXISTING_EDIT with the v2 vocabulary, its own trigger, valid, approved only as #613's exact sha, no credit; phrasing", () => {
   assert.equal(WIRE2.id, "public-derive-wire-v2");
   assert.equal(WIRE2.kind, "EXISTING_EDIT");
   assert.equal(WIRE2.trigger, DERIVE_WIRE_V2_TRIGGER);
   assert.equal(validateSpec(WIRE2), true);
   assert.ok(isWire2Params(WIRE2.params) && !isWireParams(WIRE2.params));
   assert.ok(isWireParams(WIRE1.params) && !isWire2Params(WIRE1.params), "v1 keeps its own vocabulary");
-  const approved = read("peaceai/rules/approved.json");
-  assert.ok(!approved.includes(WIRE2.id) && !approved.includes(specHash(WIRE2)), "derive-wire v2 waits for /approve-rule");
+  // #614: holds before and after the /approve-rule landing. Not listed: the id and sha appear nowhere in approved.json.
+  // Listed: exactly one entry, with this spec's exact sha and Peace's #613 approval, and it admits as APPROVED.
+  const approvedText = read("peaceai/rules/approved.json");
+  const listed = (JSON.parse(approvedText) as { rules: { id: string; sha256: string; approval: { issue: number; author: string; repo: string } }[] }).rules.filter((r) => r.id === WIRE2.id);
+  const wireDecisions = admitRules([WIRE2], loadApprovedList(join(repo, "peaceai/rules/approved.json"))).filter((a) => a.spec?.id === WIRE2.id).map((a) => a.decision);
+  if (listed.length === 0) {
+    assert.ok(!approvedText.includes(WIRE2.id) && !approvedText.includes(specHash(WIRE2)), "derive-wire v2 waits for /approve-rule");
+    assert.ok(!wireDecisions.includes("APPROVED"), "not listed: never APPROVED");
+  } else {
+    assert.equal(listed.length, 1, "listed once");
+    assert.equal(listed[0]!.sha256, specHash(WIRE2), "approved as the exact spec sha");
+    assert.equal(listed[0]!.sha256, "e9e6d7e10e0195850f6e29f13e92c803424fafc94c280e4fe7ea10ace311bc28", "the sha Peace approved on #613");
+    assert.deepEqual([listed[0]!.approval.issue, listed[0]!.approval.author, listed[0]!.approval.repo], [613, "PeaceG03", "PeaceG03/PeaceAI-Workspace"]);
+    assert.deepEqual(wireDecisions, ["APPROVED"], "a listed wire-v2 entry must admit (exact sha)");
+  }
   const prop = JSON.parse(read("peaceai/rules/proposals/public-derive-wire-v2.json")) as { status: string; evidence: { qualifies: boolean } };
   assert.equal(prop.status, "proposal-off-wired");
   assert.equal(prop.evidence.qualifies, false);
