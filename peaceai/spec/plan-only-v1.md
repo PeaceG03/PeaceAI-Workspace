@@ -2,7 +2,7 @@
 
 Status: draft for Auditor review (Builder, 2026-10-30). Code: `peaceai/lib/plan.ts` (planner, task files, training
 check), `peaceai/lib/plangrade.ts` (grader, public log), `peaceai/lib/planrun.ts` + `peaceai/bin/plan-only.ts`
-(runner). Tests: `peaceai/test/m142-plan-only.test.ts`.
+(runner). Tests: `peaceai/test/m144-plan-only.test.ts`.
 
 ## Why
 
@@ -60,7 +60,7 @@ file in `peaceai/rules`. Over-inclusive on purpose (a held-out or refused repo a
 unreadable list refuses the whole run: `TRAINING_LIST_UNREADABLE`).
 
 - The runner refuses a task whose repo is in that set (`TRAINING_OVERLAP`) before fetching anything.
-- m142 re-checks every public task live, so a future source or rule that names a public task repo fails CI.
+- m144 re-checks every public task live, so a future source or rule that names a public task repo fails CI.
 - Consequence: PeaceSTOCKS and the Workspace are training sources, so the "few PeaceSTOCKS tasks" asked for are not
   in v1. unjs/ufo and toss/es-toolkit were dropped too (named as rule evidence).
 - Future retrain sources: before any retrain, the new source list is checked against the FULL task-set repo list,
@@ -69,7 +69,7 @@ unreadable list refuses the whole run: `TRAINING_LIST_UNREADABLE`).
 
 ## Locked and logged
 
-`peaceai/plan/runs.jsonl` is add-only (every committed version is a byte prefix of the next; m142 walks the git
+`peaceai/plan/runs.jsonl` is add-only (every committed version is a byte prefix of the next; m144 walks the git
 history). `plan-only.ts lock <file>` appends a lock row (`peaceai-plan-lock:v1`: set, sha256 of the file bytes, task
 count). `plan-only.ts run <file>` refuses unless that sha's lock row is in the COMMITTED log at HEAD
 (`TASK_FILE_UNLOCKED`), so a file is pinned in history before any run and any edit to it needs a new lock. Each task

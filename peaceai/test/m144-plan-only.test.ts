@@ -1,4 +1,4 @@
-// M142 PLAN-ONLY mode v1 (peaceai/spec/plan-only-v1.md): task-file validation, the training-data exclusion
+// M144 PLAN-ONLY mode v1 (peaceai/spec/plan-only-v1.md): task-file validation, the training-data exclusion
 // (Auditor's condition), the lock requirement, the planner's can-do / missing marking on a fixture repository, the
 // grader's math, the public log's row validator (no URL, no free text) and its add-only rule. Offline: the fetcher is
 // a fixture, so no test touches the network.
@@ -43,9 +43,9 @@ const fixtureFetcher = (files = FIXTURE, head = H40, dirty = false): Fetcher => 
   fetches++;
   return { head, files: files.filter((f) => /\.tsx?$/.test(f.path)), read: (p) => files.find((f) => f.path === p)?.content ?? null, unchanged: () => !dirty, close: () => {} } satisfies Checkout;
 };
-const opts = (over: Record<string, unknown> = {}) => ({ root: repo, fetcher: fixtureFetcher(), outDir: mkdtempSync(join(tmpdir(), "m142-out-")), rules: approvedRules(repo), training: new Set<string>(), ...over });
+const opts = (over: Record<string, unknown> = {}) => ({ root: repo, fetcher: fixtureFetcher(), outDir: mkdtempSync(join(tmpdir(), "m144-out-")), rules: approvedRules(repo), training: new Set<string>(), ...over });
 
-test("M142: the public task file is valid, pinned, permissive, and about 8-12 tasks with no repo or org dominating", () => {
+test("M144: the public task file is valid, pinned, permissive, and about 8-12 tasks with no repo or org dominating", () => {
   assert.equal(taskFileProblem(publicFile), null);
   assert.equal(publicFile.set, "public");
   assert.ok(publicFile.tasks.length >= 8 && publicFile.tasks.length <= 12);
@@ -62,7 +62,7 @@ test("M142: the public task file is valid, pinned, permissive, and about 8-12 ta
   assert.equal(/[^\x00-\x7f]/.test(publicText), false, "ASCII only");
 });
 
-test("M142 (Auditor's condition): no public task repo is in PeaceAI's training lists, checked live", () => {
+test("M144 (Auditor's condition): no public task repo is in PeaceAI's training lists, checked live", () => {
   const { repos, sources } = trainingRepos(repo);
   assert.ok(sources > 10 && repos.size > 40, "the training lists were read");
   for (const id of ["peaceg03/peacestocks", "peaceg03/peaceai-workspace"]) assert.ok(repos.has(id), `${id} is a training source`);
@@ -74,8 +74,8 @@ test("M142 (Auditor's condition): no public task repo is in PeaceAI's training l
   for (const t of publicFile.tasks) assert.equal(Object.prototype.hasOwnProperty.call(loadTargets().targets, t.repo), false);
 });
 
-test("M142: the training check fails closed on an unreadable list", () => {
-  const root = mkdtempSync(join(tmpdir(), "m142-train-"));
+test("M144: the training check fails closed on an unreadable list", () => {
+  const root = mkdtempSync(join(tmpdir(), "m144-train-"));
   try {
     mkdirSync(join(root, "peaceai/model"), { recursive: true });
     writeFileSync(join(root, "peaceai/model/sources.json"), JSON.stringify({ sources: [{ name: "Some-Org/Some-Repo" }] }));
@@ -85,7 +85,7 @@ test("M142: the training check fails closed on an unreadable list", () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("M142: the runner refuses a task whose repo is in the training lists, before fetching anything", () => {
+test("M144: the runner refuses a task whose repo is in the training lists, before fetching anything", () => {
   fetches = 0;
   const r = runTask(fixtureTask({ repo: "PeaceG03/PeaceSTOCKS" }), "public", "c".repeat(64), opts({ training: trainingRepos(repo).repos }));
   assert.equal(r.row.code, "TRAINING_OVERLAP");
@@ -95,8 +95,8 @@ test("M142: the runner refuses a task whose repo is in the training lists, befor
   assert.equal(r2.row.code, "TRAINING_OVERLAP", "case-insensitive");
 });
 
-test("M142: a task file runs only when its sha256 lock row is in the committed log", () => {
-  const dir = mkdtempSync(join(tmpdir(), "m142-lock-"));
+test("M144: a task file runs only when its sha256 lock row is in the committed log", () => {
+  const dir = mkdtempSync(join(tmpdir(), "m144-lock-"));
   try {
     const file: PlanTaskFile = { schema: "peaceai-plan-tasks:v1", set: "hidden", tasks: [fixtureTask()] };
     const path = join(dir, "never-seen.json");
@@ -125,7 +125,7 @@ test("M142: a task file runs only when its sha256 lock row is in the committed l
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("M142: the planner finds the files, marks missing steps by capability, and never claims an unverified can-do", () => {
+test("M144: the planner finds the files, marks missing steps by capability, and never claims an unverified can-do", () => {
   const plan = planTask("fixture-clamp", fixtureTask().request, { repo: "example-org/fixture-lib", files: FIXTURE.filter((f) => f.path.endsWith(".ts")), rules: approvedRules(repo), model: null, testCommand: "vitest run" });
   assert.deepEqual(plan.files.map((f) => [f.path, f.role]), [["src/range.ts", "source"], ["test/range.test.ts", "test"]]);
   assert.deepEqual(plan.steps.map((s) => s.action), ["edit-source", "edit-test", "run-tests"]);
@@ -142,7 +142,7 @@ test("M142: the planner finds the files, marks missing steps by capability, and 
   assert.equal(none.steps.find((s) => s.action === "add-test")!.missing, "add-test-file");
 });
 
-test("M142: plan-only changes nothing in the target; a changed checkout is TARGET_CHANGED", () => {
+test("M144: plan-only changes nothing in the target; a changed checkout is TARGET_CHANGED", () => {
   const ok = runTask(fixtureTask(), "public", "c".repeat(64), opts());
   assert.equal(ok.row.code, "OK");
   assert.equal(runTask(fixtureTask(), "public", "c".repeat(64), opts({ fetcher: fixtureFetcher(FIXTURE, H40, true) })).row.code, "TARGET_CHANGED");
@@ -150,7 +150,7 @@ test("M142: plan-only changes nothing in the target; a changed checkout is TARGE
   assert.equal(runTask(fixtureTask({ licenseSha256: "e".repeat(64) }), "public", "c".repeat(64), opts()).row.code, "LICENSE_CHANGED");
 });
 
-test("M142: grader math (step share, can-do accuracy, own and team shares)", () => {
+test("M144: grader math (step share, can-do accuracy, own and team shares)", () => {
   const task = fixtureTask();
   const step = (action: Plan["steps"][number]["action"], file: string | null, status: "can-do" | "missing", rule: string | null = null) => ({ n: 0, action, file, symbol: null, status, rule, objective: rule ? "obj" : null, missing: status === "missing" ? ("locate-code" as const) : null });
   const plan = (steps: Plan["steps"], files: string[], tests: string[]): Plan => ({ schema: "peaceai-plan:v1", planner: "plan-only-v1", taskId: task.id, understanding: { clauses: 1, intents: [], parse: "x", anchors: [] }, files: files.map((path) => ({ path, role: "source", reason: "" })), steps, tests: { files: tests, command: null } });
@@ -173,7 +173,7 @@ test("M142: grader math (step share, can-do accuracy, own and team shares)", () 
   assert.equal(gradePlan(plan([], [], []), task, [], []).canDoAccuracy, null);
 });
 
-test("M142: log rows carry fixed codes and numbers only (no URL, no message text)", () => {
+test("M144: log rows carry fixed codes and numbers only (no URL, no message text)", () => {
   const good = { schema: RUN_SCHEMA, at: "2026-10-30T00:00:00Z", set: "public", taskFileSha256: "c".repeat(64), taskKey: "0123456789abcdef", repo: "o/r", commit: H40, workspace: H40, planner: "plan-only-v1", plannerSha256: "f".repeat(64), planSha256: null, code: "FETCH_FAILED", grade: null };
   assert.equal(logRowProblem(good), null);
   assert.equal(logRowProblem({ ...good, code: "fatal: could not read from https://github.com/o/r" }), "code");
@@ -184,7 +184,7 @@ test("M142: log rows carry fixed codes and numbers only (no URL, no message text
   assert.equal(logRowProblem({ ...good, planner: "see https://x" }), "planner");
 });
 
-test("M142: the committed run log is valid and add-only against its git history", () => {
+test("M144: the committed run log is valid and add-only against its git history", () => {
   const text = read(RUN_LOG);
   const p = parseLog(text);
   assert.equal("problem" in p, false, JSON.stringify(p));
