@@ -2,6 +2,9 @@ name: peace-approve-rule
 
 # M8: the ONLY writer of peaceai/rules/approved.json (also under CODEOWNERS).
 #  - workspace: Peace's `/approve-rule <hash>` comment on a Workspace rule-proposal issue (public rules).
+#  - auditor: the delegated `/auditor-approve-rule <id> <hash>` on a Builder (source:builder) rule-proposal issue
+#    (Peace, 2026-10-30 ~12:47 AM MT). Team-picked, 0-credit public rules only; one new entry with source
+#    auditor-approve-rule and delegatedBy owner, never an owner approval. Builder never posts it.
 #  - results-read + results-write: approvals of core-mined rules happen on private PeaceAI-Results issues;
 #    the Results workflow (peaceai/results-repo/) validates the comment there and writes an attestation.
 #    This sync reads the attestations (results-read), checks the core spec hash against a core checkout
@@ -100,6 +103,81 @@ jobs:
             body="Nothing to record."
           else
             body="Approval not recorded (${REASON:-NOT_LANDED}). Usage: \`/approve-rule <sha256 from this proposal>\`, by PeaceG03."
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body"
+
+  auditor:
+    name: delegated approval of a public rule (Workspace /auditor-approve-rule)
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.repository == 'PeaceG03/PeaceAI-Workspace' &&
+      github.event.issue.pull_request == null &&
+      contains(github.event.issue.labels.*.name, 'rule-proposal') &&
+      contains(github.event.issue.labels.*.name, 'source:builder') &&
+      github.event.comment.user.login == 'PeaceG03' &&
+      startsWith(github.event.comment.body, '/auditor-approve-rule')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      changed: ${{ steps.approve.outputs.changed }}
+      rule: ${{ steps.approve.outputs.rules }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install workspace tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+      - name: List every rule-proposal issue (exactly one may exist per rule id)
+        run: gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues?labels=rule-proposal&state=all&per_page=100" | jq -c 'flatten(1)' > "$RUNNER_TEMP/proposals.json"
+      - name: Validate the delegated approval against the proposal, the spec on main and the delegation limits
+        id: approve
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
+          PEACEAI_PROPOSALS_FILE: ${{ runner.temp }}/proposals.json
+          PEACEAI_MESSAGE_FILE: ${{ runner.temp }}/approval-message.txt
+        run: ./node_modules/.bin/tsx peaceai/bin/approve-rule.ts auditor
+      - name: Hand the list change to the landing job
+        if: steps.approve.outputs.changed == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/landing"
+          cp peaceai/rules/approved.json "$RUNNER_TEMP/landing/approved.json"
+          cp "$RUNNER_TEMP/approval-message.txt" "$RUNNER_TEMP/landing/approval-message.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.approve.outputs.changed == 'true'
+        with:
+          name: peaceai-landing
+          path: ${{ runner.temp }}/landing
+          retention-days: 1
+          if-no-files-found: error
+      - name: Report on the proposal issue
+        if: always()
+        env:
+          OK: ${{ steps.approve.outputs.ok }}
+          REASON: ${{ steps.approve.outputs.reason }}
+          CHANGED: ${{ steps.approve.outputs.changed }}
+        run: |
+          case "$REASON" in ''|[A-Z_]*) ;; *) REASON=UNKNOWN ;; esac
+          if [ "$OK" = "true" ] && [ "$CHANGED" = "true" ]; then
+            body="Delegated approval validated (auditor-approve-rule, delegatedBy owner; not an owner approval, 0 credit). The landing job opens the list PR and merges it after the required checks. Peace can revert it."
+          else
+            body="Delegated approval not recorded (${REASON:-NOT_LANDED}). Usage: \`/auditor-approve-rule <rule id> <sha256 from this proposal>\`."
           fi
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body"
 
@@ -251,11 +329,12 @@ jobs:
     # the PR, dispatches the required checks on that branch, polls the head commit's check-runs and
     # squash-merges. No artifact upload here. On a push_proof dispatch it only tries (and must fail) to push main.
     name: land the re-verified list by PR
-    needs: [workspace, results-reverify]
+    needs: [workspace, auditor, results-reverify]
     if: >-
       always() && github.ref == 'refs/heads/main' &&
       (inputs.push_proof == true ||
-       needs.workspace.outputs.changed == 'true' || needs.results-reverify.outputs.changed == 'true')
+       needs.workspace.outputs.changed == 'true' || needs.auditor.outputs.changed == 'true' ||
+       needs.results-reverify.outputs.changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 60  # #286: dispatched checks (<=25 min) + held-run approval wait (<=25 min)
     permissions:
@@ -287,6 +366,20 @@ jobs:
           set -euo pipefail
           cp "$RUNNER_TEMP/landing/approved.json" peaceai/rules/approved.json
           ./node_modules/.bin/tsx peaceai/bin/check-approved-list.ts
+      - name: Delegated approval only - the list to land is main's list plus exactly that one entry
+        if: needs.auditor.outputs.changed == 'true' && inputs.push_proof != true
+        id: append
+        env:
+          PEACEAI_AUDITOR_RULE: ${{ needs.auditor.outputs.rule }}
+        run: |
+          set -euo pipefail
+          git show HEAD:peaceai/rules/approved.json > "$RUNNER_TEMP/main-approved.json"
+          PEACEAI_MAIN_LIST="$RUNNER_TEMP/main-approved.json" ./node_modules/.bin/tsx peaceai/bin/approve-rule.ts check-append
+      - name: Fail closed unless it is exactly one append
+        if: needs.auditor.outputs.changed == 'true' && inputs.push_proof != true && steps.append.outputs.ok != 'true'
+        run: |
+          echo "the delegated approval is not exactly one append to main's list; nothing is landed"
+          exit 1
       - name: Land the list change (token branch push, PR, dispatched required checks, squash merge), or the push proof
         env:
           PUSH_PROOF: ${{ inputs.push_proof == true }}

@@ -252,6 +252,33 @@ every core-sourced entry must carry a well-formed attestation reference (full Re
 path for the pinned hash, Results issue and comment id matching the URL); an approval branch may change only
 the list (one commit ahead of main), and any other branch may not change the list at all.
 
+**Delegated approval (`/auditor-approve-rule`).** Peace, Oct 30, 2026, ~12:47 AM MT: "Yes I want it handed off
+to you and auditor as well the only input I should be giving is the end goal or a direction and things like that".
+The Auditor may comment `/auditor-approve-rule <rule id> <sha256>` on a Builder rule proposal. The `auditor` job in
+`peace-approve-rule.yml` (`approve-rule.ts auditor`, `validateAuditorApproval` in `peaceai/lib/approval.ts`) refuses
+it, writing nothing, unless all of these hold:
+
+- the issue is labelled `rule-proposal` and `source:builder`; the comment is by PeaceG03 (OWNER) in this repository;
+- its marker (`source=public`) pins that id and hash, and the spec JSON in its body hashes to the sha (`BODY_SPEC_MISMATCH`);
+- `peaceai/rules/learned/<id>.json` on `main` hashes to the sha; the id is not in `approved.json` at all (`ALREADY_LISTED`);
+- exactly one rule-proposal issue (any state) carries a marker for that id, and it is this one (`PROPOSAL_NOT_UNIQUE`);
+- `peaceai/rules/proposals/<id>.json` on `main` has `"teamPicked": true` and `"credit": 0` (`NOT_TEAM_PICKED`);
+- the kind edits only a target repo's source and tests (`AUDITOR_DELEGABLE_KINDS`; workflow, env, tsconfig and package
+  kinds are `KIND_NOT_DELEGABLE`), and the spec names none of: never-zone or protected paths, workflows, the leak /
+  tamper / test gates, credit or coverage, tokens, secrets or keys, the verdict, auditor-pass, approve-rule or
+  approval paths, stage 2 or self-change, package / tsconfig / yml / env files (`TOUCHES_PROTECTED`).
+
+The entry it adds has `source: "auditor-approve-rule"` and `delegatedBy: "owner"`. It is never an owner approval:
+it earns no credit (`creditTemplatesFrom` skips it, and `builder-log/rule-skill.ts` refuses a by:PeaceAI landing
+from it), `check-approved-list.ts` lists it apart (`APPROVED LIST DELEGATED`, `PASS ... owner=N delegated=K`) and
+re-reads its comment, labels, proposals, record and limits on every run. The landing job re-checks that the list
+to land is `main`'s list plus exactly that one entry (`approve-rule.ts check-append`) before `approve-rule-pr.sh`,
+which merges only after `leak-check`, `tamper-proof` and `tests` pass; on an approval branch `tamper-proof` checks
+the same. The hourly catch-up never lands a delegated entry (`NOT_WORKSPACE`). Peace can revert one with a
+`peaceai-revert-auditor-rule/<id>` branch whose only change removes that entry (one commit, list only; he merges it).
+Builder never posts `/auditor-approve-rule`. All agents comment as PeaceG03, so the workflow cannot tell who
+posted it; the checks above are what keep it narrow. Peace's own `/approve-rule` is unchanged.
+
 **Enforcement** (`peaceai/lib/approved.ts`, Job A in `peaceai/bin/generate.ts`): every spec is admitted
 only if the list is present and valid, names its id, and pins its exact hash. Otherwise it is refused
 (`NOT_APPROVED`, `HASH_CHANGED`, `SPEC_INVALID`, `LIST_MISSING`, `LIST_CORRUPT`) and produces no candidate.

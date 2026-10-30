@@ -8,10 +8,19 @@ export const APPROVER = "PeaceG03";
 const HEX64 = /^[0-9a-f]{64}$/;
 const COMMENT_URL = /^https:\/\/github\.com\/PeaceG03\/(PeaceAI-Workspace|PeaceAI-Results)\/issues\/([1-9][0-9]*)#issuecomment-([1-9][0-9]*)$/;
 
+/**
+ * Delegated approval (Peace, 2026-10-30 ~12:47 AM MT): `/auditor-approve-rule <id> <sha256>` on a Builder rule
+ * proposal adds an entry with this source and `delegatedBy: "owner"`. It is never an owner approval, earns no
+ * credit, is listed apart in check-approved-list's summary, and Peace can revert it (peaceai-revert-auditor-rule/<id>).
+ */
+export const AUDITOR_SOURCE = "auditor-approve-rule" as const;
+
 export interface ApprovalEntry {
   id: string;
   sha256: string;
-  source: "workspace" | "results";
+  source: "workspace" | "results" | typeof AUDITOR_SOURCE;
+  /** Delegated entries only: who delegated the decision (always the owner). Never present on owner entries. */
+  delegatedBy?: "owner";
   approval: { url: string; commentId: number; issue: number; repo: "PeaceG03/PeaceAI-Workspace" | "PeaceG03/PeaceAI-Results"; author: typeof APPROVER; approvedAt: string };
   /** Results approvals only: the Results commit holding the workflow-written attestation. */
   attestation?: { commit: string; path: string };
@@ -23,18 +32,21 @@ export function validateEntry(e: unknown): e is ApprovalEntry {
   const x = e as Record<string, unknown>;
   const a = x.approval as Record<string, unknown> | undefined;
   if (typeof x.id !== "string" || !RULE_ID.test(x.id) || typeof x.sha256 !== "string" || !HEX64.test(x.sha256)) return false;
-  if (x.source !== "workspace" && x.source !== "results") return false;
+  if (x.source !== "workspace" && x.source !== "results" && x.source !== AUDITOR_SOURCE) return false;
+  // Delegated entries carry delegatedBy "owner"; owner entries never carry it.
+  if ((x.source === AUDITOR_SOURCE) !== (x.delegatedBy !== undefined) || (x.delegatedBy !== undefined && x.delegatedBy !== "owner")) return false;
   if (!a || typeof a.url !== "string" || a.author !== APPROVER || typeof a.approvedAt !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(a.approvedAt)) return false;
   const m = COMMENT_URL.exec(a.url);
   if (!m || a.commentId !== Number(m[3]) || a.issue !== Number(m[2]) || a.repo !== `PeaceG03/${m[1]}`) return false;
-  if ((x.source === "workspace") !== (m[1] === "PeaceAI-Workspace")) return false;
-  if (x.source === "workspace" && !x.id.startsWith("public-")) return false; // core rules are approved in Results only
+  const publicSource = x.source === "workspace" || x.source === AUDITOR_SOURCE;
+  if (publicSource !== (m[1] === "PeaceAI-Workspace")) return false;
+  if (publicSource && !x.id.startsWith("public-")) return false; // core rules are approved in Results only
   if (x.source === "results" && !x.id.startsWith("core-")) return false; // Results approves core-mined rules only
   if (x.source === "results") {
     const t = x.attestation as Record<string, unknown> | undefined;
     if (!t || typeof t.commit !== "string" || !/^[0-9a-f]{40}$/.test(t.commit) || t.path !== `rules/approvals/${x.sha256}.json`) return false;
   } else if (x.attestation !== undefined) return false;
-  return Object.keys(x).every((k) => ["id", "sha256", "source", "approval", "attestation"].includes(k));
+  return Object.keys(x).every((k) => ["id", "sha256", "source", "delegatedBy", "approval", "attestation"].includes(k));
 }
 
 export function validateList(o: unknown): o is ApprovedList {
@@ -67,7 +79,7 @@ export function admitRules(specs: readonly unknown[], load: ListLoad): Admission
     const entry = load.list.rules.find((r) => r.id === raw.id);
     if (!entry) return { id, decision: "NOT_APPROVED" as const, spec: null };
     if (entry.sha256 !== specHash(raw)) return { id, decision: "HASH_CHANGED" as const, spec: null };
-    if ((entry.source === "workspace") !== (raw.minedFrom === "public")) return { id, decision: "NOT_APPROVED" as const, spec: null };
+    if ((entry.source === "workspace" || entry.source === AUDITOR_SOURCE) !== (raw.minedFrom === "public")) return { id, decision: "NOT_APPROVED" as const, spec: null };
     return { id, decision: "APPROVED" as const, spec: raw };
   });
 }
