@@ -1,14 +1,14 @@
 // M146: PeaceAI's sandboxed test-and-fix loop (peaceai/lib/loop.ts) on tiny synthetic task repos, its log rows in the
-// plan-only add-only log, and static checks that it reuses the stage-2 isolation and never pushes or self-targets.
+// loop's own add-only log (the lock is read from the plan-only log), and static checks that it reuses the stage-2 isolation and never pushes or self-targets.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { join, resolve } from "node:path";
 import * as lib from "../lib/loop.ts";
-import { LOOP_SCHEMA, loopRowProblem, type LoopRow } from "../lib/looprow.ts";
-import { addOnlyProblem, logRowProblem, parseLog, RUN_LOG } from "../lib/plangrade.ts";
+import { LOOP_LOG, LOOP_SCHEMA, loopAddOnlyProblem, loopRowProblem, parseLoopLog, type LoopRow } from "../lib/looprow.ts";
+import { logRowProblem, RUN_LOG } from "../lib/plangrade.ts";
 import { lockRow } from "../lib/planrun.ts";
 import { CASES } from "./m146-loop-cases.ts";
 import { CALC_FIXED, setup, teardown, type Ctx } from "./m146-fixtures.ts";
@@ -33,9 +33,9 @@ const sampleRow = (over: Partial<LoopRow> = {}): LoopRow => ({
   result: "fail", attemptCodes: [["TEST_FAIL"], ["TEST_FAIL", "TIMEOUT"]], tests: { total: 3, passedByPeaceAI: 1, filledByTeam: 2 }, ...over,
 });
 
-test("M146: loop rows: fixed keys, codes and numbers only; hidden rows name no repo; plangrade accepts them in the log", () => {
+test("M146: loop rows: fixed keys, codes and numbers only; hidden rows name no repo; they live in the loop log, never the plan-only log", () => {
   assert.equal(loopRowProblem(sampleRow()), null);
-  assert.equal(logRowProblem(sampleRow()), null);
+  assert.equal(logRowProblem(sampleRow()), "schema", "the plan-only validator is unchanged and refuses loop rows");
   const { repo: _r, commit: _c, ...hidden } = sampleRow({ set: "hidden" });
   assert.equal(loopRowProblem(hidden), null);
   const bad: [Partial<LoopRow> | Record<string, unknown>, string][] = [
@@ -53,8 +53,11 @@ test("M146: loop rows: fixed keys, codes and numbers only; hidden rows name no r
   ];
   for (const [over, want] of bad) assert.equal(loopRowProblem({ ...sampleRow(), ...over }), want, JSON.stringify(over));
   const log = JSON.stringify(sampleRow()) + "\n" + JSON.stringify(hidden) + "\n";
-  assert.ok(!("problem" in parseLog(log)));
-  assert.equal(addOnlyProblem("", log), null);
+  assert.ok(!("problem" in parseLoopLog(log)));
+  assert.equal(loopAddOnlyProblem("", log), null);
+  assert.equal(loopAddOnlyProblem(log, JSON.stringify(sampleRow()) + "\n"), "rewritten");
+  assert.deepEqual(parseLoopLog(log.slice(0, -1)), { problem: "no_final_newline", line: 2 });
+  assert.deepEqual(parseLoopLog(log + JSON.stringify({ ...sampleRow(), message: "x" }) + "\n"), { problem: "loop_keys", line: 3 });
 });
 
 test("M146: runLoopFile: the task file must be locked in the COMMITTED log; any path (Auditor's hidden one) works; rows are appended add-only", () => {
@@ -68,12 +71,14 @@ test("M146: runLoopFile: the task file must be locked in the COMMITTED log; any 
   writeFileSync(join(ctx.root, RUN_LOG), JSON.stringify(lockRow(text)) + "\n");
   assert.equal(lib.runLoopFile(hiddenFile, o).code, "TASK_FILE_UNLOCKED", "a lock only in the working tree does not count");
   g("add", "-A"); g("commit", "-q", "-m", "lock");
-  const before = readFileSync(join(ctx.root, RUN_LOG), "utf8");
+  const planLog = readFileSync(join(ctx.root, RUN_LOG), "utf8");
+  const before = existsSync(join(ctx.root, LOOP_LOG)) ? readFileSync(join(ctx.root, LOOP_LOG), "utf8") : "";
   const r = lib.runLoopFile(hiddenFile, o);
   assert.equal(r.code, "OK");
   assert.equal(r.results.length, 1);
-  const after = readFileSync(join(ctx.root, RUN_LOG), "utf8");
-  assert.equal(addOnlyProblem(before, after), null);
+  const after = readFileSync(join(ctx.root, LOOP_LOG), "utf8");
+  assert.equal(loopAddOnlyProblem(before, after), null);
+  assert.equal(readFileSync(join(ctx.root, RUN_LOG), "utf8"), planLog, "the plan-only log is untouched");
   const row = JSON.parse(after.trim().split("\n").pop()!) as LoopRow;
   assert.equal(row.set, "hidden");
   assert.ok(!("repo" in row) && !after.includes("m146-fixture") && !after.includes("calc"), "the hidden row names nothing");
@@ -91,9 +96,11 @@ test("M146: static: the loop reuses selfpropose.ts guardedRun + stage2CandUid un
   assert.equal(JSON.parse(readFileSync(resolve(root, "peaceai/self/stage2.json"), "utf8")).enabled, false, "the stage-2 self-change flag stays off");
 });
 
-test("M146: selfpropose.ts (the stage-2 isolation) is unchanged on this branch", (t) => {
+test("M146: selfpropose.ts (the stage-2 isolation) and the plan-only files are unchanged on this branch", (t) => {
   let base = "";
   try { base = execFileSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* shallow CI checkout */ }
   if (!base) { t.skip("no origin/main here (shallow checkout)"); return; }
   assert.equal(execFileSync("git", ["diff", base, "HEAD", "--", "peaceai/lib/selfpropose.ts"], { cwd: root, encoding: "utf8" }), "", "selfpropose.ts unchanged");
+  for (const f of ["peaceai/lib/plan.ts", "peaceai/lib/plangrade.ts", "peaceai/lib/planrun.ts", "peaceai/bin/plan-only.ts", "peaceai/plan/runs.jsonl"])
+    assert.equal(execFileSync("git", ["diff", base, "HEAD", "--", f], { cwd: root, encoding: "utf8" }), "", `${f} unchanged (the plan-only files are #634's)`);
 });

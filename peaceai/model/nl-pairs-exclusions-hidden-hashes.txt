@@ -1,0 +1,33 @@
+# M147 public exclusion file (the Builder-visible half). Format: one `owner/repo` or `*/name` per line.
+# Auditor runs the build with the hidden-half file instead (same format); its sha256 lands in the manifest header.
+unjs/defu
+unjs/destr
+unjs/scule
+unjs/ohash
+jquense/yup
+kysely-org/kysely
+ianstormtaylor/superstruct
+open-circle/valibot
+sindresorhus/p-queue
+remeda/remeda
+supermacro/neverthrow
+unjs/ufo
+toss/es-toolkit
+*/is-what
+*/code-block-writer
+# Hidden half (Auditor): sha256 of the lowercased owner/repo, one per line. Names are never committed.
+sha256:08eff2e7422b4365220cb5662d35305f64733fcf3bc7bf497fbe6891b69bbd40
+sha256:0dda9c519d7b410bfe38a5b5261b62498792ba4db851aef11006c48fc0e71713
+sha256:127f5d77f0712a1e99e70d85362922a9abce935353b93cea02f59ea85997cc38
+sha256:51896d1bfadc3af21a6e385203fe1952db242d06f61e4aa64824899dd2a3d95c
+sha256:57e3301aa7f3aea3da7b69c629723206c7860e23b528f5dc2f43b28fbd116fb4
+sha256:8e951e8e7527661b4f85bdc041b2d4c55b1314ec6999d2e616ba95c4b1a663cf
+sha256:b058e8a34db78f89a81bc1254990e0c95a59ad33fc9bfaaa30a1ac9096117f48
+sha256:b88c907d039fe729b4bf89d98bc2c6f98140e10c275ec436a81782afcadb73eb
+sha256:c73969b6c024f27b4fc09f764525623cb3abad72924de654068b728d56622cd2
+sha256:dc34fe3bcc7b19d0edea462a931f8d7a4e1c257100c1eb5057cf8982f5887a63
+sha256:dd95e57485fa24546fa23831d1650570d5acbc513e492a73fa58d19d6ffbf6d8
+sha256:e38bd0fc4ca4c9554280afbfdeb328a7315cbd78d8fce90ab25958c7dc03d704
+sha256:ecf140292f10d5f580000147deb237e59826788dfde968a920cb3d9649dee951
+sha256:ed4b6259290346bb07198b5d4230377806e36d9642c12bb1279695a2454f52be
+sha256:f117ce0cc8f6107669843243e1866a5219528727ceb500c9adf3745367c8f153

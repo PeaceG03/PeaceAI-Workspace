@@ -1,21 +1,26 @@
 // PLAN-ONLY mode v1: grading a plan against the task's reference change, and the add-only public run log
 // (peaceai/plan/runs.jsonl). See peaceai/spec/plan-only-v1.md.
 //
-// Score, per task:
-//   stepShare      = required reference steps the plan matched / required steps  (did he plan the right work)
+// Grader v2 (plan-grade-v2, after Auditor's FAIL of #634 at b90cddd: v1 inflated the score). Per task:
+//   score          = matched work steps / max(required work steps, planned work steps). Work steps are the source
+//                    and test steps (edit/add-source, edit/add-test); run-tests is NOT in it. Dividing by the larger
+//                    count penalizes extra or wrong steps as well as missed ones (a padded plan scores lower).
+//   runTests       = 1 when the plan has a run-tests step AND names a reference test file or the task's exact test
+//                    command, else 0. Reported on its own, never folded into score.
 //   canDoAccuracy  = can-do claims that were verified / can-do claims             (null when he claimed none)
-//   ownShare       = required steps he matched AND could do (verified) / required steps
-//   teamShare      = 1 - ownShare: the steps the team has to fill by teaching skills, credited to the team
-// A plan step matches a reference step when the action class agrees (source: edit/add-source; test: edit/add-test;
-// run-tests) and the file is the same (run-tests matches by presence). A can-do claim is verified by re-running the
+//   ownShare       = matched work steps he could do (verified) / max(required, planned)
+//   teamShare      = 1 - ownShare: the work the team has to fill by teaching skills, credited to the team
+// A plan step matches a reference step when the action class agrees (source: edit/add-source; test: edit/add-test)
+// and the file is the same; each reference step matches at most once. A can-do claim is verified by re-running the
 // named approved rule on that file (the rule must still be approved and still produce an edit of that file) and by
 // the step matching a reference step; run-tests is verified only for a targets.json repo.
+// On the public half this is a DEVELOPMENT score (the planner was built while reading the public wording). The
+// headline score is the hidden half's, on real issue text.
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { applyRule, specHash, type RuleSpec, type SourceFile } from "./learned.ts";
 import { loadTargets } from "./target.ts";
-import { LOOP_SCHEMA, loopRowProblem } from "./looprow.ts";
 import { isTestPath, sha256, type Plan, type PlanStep, type PlanTask, type RefStep, type StepAction } from "./plan.ts";
 
 export const RUN_SCHEMA = "peaceai-plan-run:v1" as const;
@@ -27,13 +32,22 @@ export type RunCode = (typeof RUN_CODES)[number];
 
 const cls = (a: StepAction): "source" | "test" | "run" => (a === "run-tests" ? "run" : a.endsWith("-test") ? "test" : "source");
 
+export const GRADER_VERSION = "plan-grade-v2" as const;
+
 export interface Grade {
+  /** Reference work steps (source + test), plan work steps, and how many matched. */
   required: number;
+  planned: number;
   matched: number;
-  stepShare: number;
+  /** matched / max(required, planned). The headline number (a development score on the public half). */
+  score: number;
+  recall: number;
+  precision: number;
   fileRecall: number;
   filePrecision: number;
   testRecall: number;
+  /** 1 or 0: run-tests planned with a reference test file or the task's exact test command named. */
+  runTests: number;
   canDoClaimed: number;
   canDoVerified: number;
   canDoAccuracy: number | null;
@@ -62,16 +76,21 @@ export function verifyCanDo(step: PlanStep, task: Pick<PlanTask, "repo">, rules:
 }
 
 export function gradePlan(plan: Plan, task: PlanTask, rules: readonly RuleSpec[], files: readonly SourceFile[]): Grade {
-  const ref = task.reference.steps;
+  const ref = task.reference.steps.filter((r) => r.action !== "run-tests");
+  const work = plan.steps.filter((p) => p.action !== "run-tests");
   const used = new Set<number>();
   let matched = 0;
   let own = 0;
   let claimed = 0;
   let verified = 0;
   for (const p of plan.steps) {
+    if (p.status !== "can-do") continue;
+    claimed++;
+    if (p.action === "run-tests" && verifyCanDo(p, task, rules, files)) verified++;
+  }
+  for (const p of work) {
     const ok = p.status === "can-do" && verifyCanDo(p, task, rules, files);
     const i = ref.findIndex((r, j) => !used.has(j) && stepMatches(p, r));
-    if (p.status === "can-do") claimed++;
     if (i >= 0) {
       used.add(i);
       matched++;
@@ -83,18 +102,25 @@ export function gradePlan(plan: Plan, task: PlanTask, rules: readonly RuleSpec[]
   const hit = [...planFiles].filter((p) => refFiles.has(p)).length;
   const testHit = task.tests.files.filter((p) => plan.tests.files.includes(p)).length;
   const required = ref.length;
+  const planned = work.length;
+  const denom = Math.max(required, planned, 1);
+  const runTests = plan.steps.some((s) => s.action === "run-tests") && (testHit > 0 || (plan.tests.command !== null && plan.tests.command === task.tests.command)) ? 1 : 0;
   return {
     required,
+    planned,
     matched,
-    stepShare: r3(matched / required),
+    score: r3(matched / denom),
+    recall: r3(required ? matched / required : 0),
+    precision: r3(planned ? matched / planned : 0),
     fileRecall: r3(hit / refFiles.size),
     filePrecision: r3(planFiles.size ? hit / planFiles.size : 0),
     testRecall: r3(testHit / task.tests.files.length),
+    runTests,
     canDoClaimed: claimed,
     canDoVerified: verified,
     canDoAccuracy: claimed ? r3(verified / claimed) : null,
-    ownShare: r3(own / required),
-    teamShare: r3(1 - own / required),
+    ownShare: r3(own / denom),
+    teamShare: r3(1 - own / denom),
     missing: plan.steps.filter((s) => s.status === "missing").length,
   };
 }
@@ -116,6 +142,8 @@ export interface RunRow {
   planner: string;
   plannerSha256: string;
   planSha256: string | null;
+  /** Grader version. Absent on the rows written before plan-grade-v2 (those used the v1 grade shape). */
+  grader?: typeof GRADER_VERSION;
   code: RunCode;
   grade: Grade | null;
 }
@@ -126,7 +154,9 @@ export const taskKey = (fileSha: string, id: string): string => sha256(`${fileSh
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const H40 = /^[0-9a-f]{40}$/;
 const H64 = /^[0-9a-f]{64}$/;
-const GRADE_KEYS = ["required", "matched", "stepShare", "fileRecall", "filePrecision", "testRecall", "canDoClaimed", "canDoVerified", "canDoAccuracy", "ownShare", "teamShare", "missing"];
+/** v1 rows (no `grader` key, written at 7329fb9 / b90cddd) keep their shape; they are history, not rewritten. */
+const GRADE_KEYS_V1 = ["required", "matched", "stepShare", "fileRecall", "filePrecision", "testRecall", "canDoClaimed", "canDoVerified", "canDoAccuracy", "ownShare", "teamShare", "missing"];
+const GRADE_KEYS_V2 = ["required", "planned", "matched", "score", "recall", "precision", "fileRecall", "filePrecision", "testRecall", "runTests", "canDoClaimed", "canDoVerified", "canDoAccuracy", "ownShare", "teamShare", "missing"];
 
 /** Validates one log row. Fixed keys and shapes only: no URL, no message text can fit anywhere. */
 export function logRowProblem(o: unknown): string | null {
@@ -140,9 +170,8 @@ export function logRowProblem(o: unknown): string | null {
     if (keys.sort().join(",") !== "at,schema,set,taskFileSha256,tasks") return "lock_keys";
     return Number.isInteger(r.tasks) && r.tasks > 0 ? null : "lock_tasks";
   }
-  if (r.schema === LOOP_SCHEMA) return loopRowProblem(r); // M146: loop rows (peaceai/lib/looprow.ts)
   if (r.schema !== RUN_SCHEMA) return "schema";
-  const allowed = new Set(["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commit", "workspace", "planner", "plannerSha256", "planSha256", "code", "grade"]);
+  const allowed = new Set(["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commit", "workspace", "planner", "plannerSha256", "planSha256", "grader", "code", "grade"]);
   if (keys.some((k) => !allowed.has(k))) return "run_keys";
   if (typeof r.taskKey !== "string" || !/^[0-9a-f]{16}$/.test(r.taskKey)) return "task_key";
   if (r.set === "hidden" && ("repo" in r || "commit" in r)) return "hidden_names_repo";
@@ -151,11 +180,13 @@ export function logRowProblem(o: unknown): string | null {
   if (typeof r.planner !== "string" || !/^[a-z0-9-]{1,40}$/.test(r.planner)) return "planner";
   if (typeof r.plannerSha256 !== "string" || !H64.test(r.plannerSha256)) return "planner_sha";
   if (!(r.planSha256 === null || (typeof r.planSha256 === "string" && H64.test(r.planSha256)))) return "plan_sha";
+  if ("grader" in r && r.grader !== GRADER_VERSION) return "grader";
   if (!(RUN_CODES as readonly string[]).includes(r.code)) return "code";
   if (r.code === "OK" ? !r.grade : r.grade !== null) return "grade_presence";
   if (r.grade) {
     const g = r.grade as Record<string, unknown>;
-    if (Object.keys(g).sort().join(",") !== [...GRADE_KEYS].sort().join(",")) return "grade_keys";
+    const want = "grader" in r ? GRADE_KEYS_V2 : GRADE_KEYS_V1;
+    if (Object.keys(g).sort().join(",") !== [...want].sort().join(",")) return "grade_keys";
     if (!Object.entries(g).every(([k, v]) => (k === "canDoAccuracy" && v === null) || (typeof v === "number" && Number.isFinite(v) && v >= 0))) return "grade_values";
   }
   return null;

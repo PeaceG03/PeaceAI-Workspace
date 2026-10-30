@@ -57,14 +57,17 @@ where the candidate uid exists; the CI tools job has none, so there they are ski
 
 ## Log and scoring
 
-Same log as plan-only: `peaceai/plan/runs.jsonl`, add-only, a task file must be locked in the COMMITTED log first
+Own add-only log: `peaceai/plan/loop-runs.jsonl`. The task file must be locked in the COMMITTED plan-only log
+(`peaceai/plan/runs.jsonl`, `plan-only.ts lock`) first
 (`TASK_FILE_UNLOCKED` otherwise), any task file path works (the Auditor's hidden file), the same training-exclusion
 and license rules. One `peaceai-plan-loop:v1` row per task:
 `attempts`, `maxAttempts`, `result` (pass / fail / refused), `code`, `attemptCodes` (per attempt: `TEST_FAIL`,
 `TIMEOUT`, `LEFTOVERS`, `TAMPERED`, `NO_TESTS_RAN`), and `tests` = `{ total, passedByPeaceAI, filledByTeam }` for the
 team's tests on the last attempt (null if no attempt ran). Rows carry codes and numbers only: no test names, no
 failure text, no file content. Hidden-set rows also carry no repo or commit. Failing test names stay local, in
-`.peaceai-out/loop/<taskKey>.json`. `plangrade.ts` validates loop rows with `loopRowProblem` (one line hook).
+`.peaceai-out/loop/<taskKey>.json`. `looprow.ts` validates loop rows (`loopRowProblem`, `parseLoopLog`,
+`loopAddOnlyProblem`). The plan-only files (`plangrade.ts`, `planrun.ts`, `runs.jsonl`) are not edited, so the
+planner fingerprint (`plannerSha256`) is unchanged by the loop.
 
 ## v1 limits
 

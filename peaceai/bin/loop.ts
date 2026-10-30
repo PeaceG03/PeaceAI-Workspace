@@ -2,7 +2,7 @@
 //   tsx peaceai/bin/loop.ts run <taskfile> [--max N]
 // The task file must be locked in the committed plan log (plan-only.ts lock). Candidate code runs only as the
 // stage-2 candidate uid named by PEACEAI_STAGE2_CAND; without it every task is refused (CAND_UID_*). Appends one
-// loop row per task to peaceai/plan/runs.jsonl. Prints codes and numbers only; a hidden-set line names no task.
+// loop row per task to peaceai/plan/loop-runs.jsonl. Prints codes and numbers only; a hidden-set line names no task.
 import { MAX_ATTEMPTS, runLoopFile } from "../lib/loop.ts";
 
 const args = process.argv.slice(2);

@@ -1,10 +1,13 @@
-// M146 (step 3 of the general coding-agent roadmap): the loop row of the plan-only add-only log
-// (peaceai/plan/runs.jsonl). No imports, so plangrade.ts can validate loop rows without a cycle. See
+// M146 (step 3 of the general coding-agent roadmap): the loop's own add-only log (peaceai/plan/loop-runs.jsonl) and its
+// row. Loop rows live in their own log so the plan-only files (plangrade.ts, planrun.ts, runs.jsonl) stay as #634 merged
+// them; the task-file lock is still read from runs.jsonl. No imports. See
 // peaceai/spec/loop-v1.md. A loop row has fixed keys and shapes only: a task key, codes and numbers (plus the repo and
 // commit for the public set). No test name, path, URL or message text can fit anywhere.
 
 export const LOOP_SCHEMA = "peaceai-plan-loop:v1" as const;
 export const LOOP_VERSION = "loop-v1" as const;
+/** The loop's add-only log (repo-relative). */
+export const LOOP_LOG = "peaceai/plan/loop-runs.jsonl";
 /** Task-level outcome codes (the one `code` of a row). Never message text. */
 export const LOOP_CODES = [
   // stopped: pass, or the attempt limit
@@ -60,7 +63,7 @@ const H40 = /^[0-9a-f]{40}$/;
 const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commit", "workspace", "loop", "loopSha256", "proposer", "lm", "code", "maxAttempts", "attempts", "result", "attemptCodes", "tests"];
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
-/** Validates one loop row (null = fine). Called by plangrade.logRowProblem for rows of LOOP_SCHEMA. */
+/** Validates one loop row (null = fine). */
 export function loopRowProblem(o: unknown): string | null {
   if (!o || typeof o !== "object" || Array.isArray(o)) return "not_object";
   const r = o as Record<string, any>;
@@ -96,4 +99,26 @@ export function loopRowProblem(o: unknown): string | null {
   if (r.code === "PASS" && (r.tests === null || r.tests.filledByTeam !== 0 || r.tests.total === 0)) return "pass_tests";
   if (r.attempts > 0 && r.tests === null) return "tests_presence";
   return null;
+}
+
+/** Parses loop-log text; returns rows or the first problem (as a code with its 1-based line). */
+export function parseLoopLog(text: string): { rows: LoopRow[] } | { problem: string; line: number } {
+  const rows: LoopRow[] = [];
+  const lines = text.split("\n");
+  if (text.length && !text.endsWith("\n")) return { problem: "no_final_newline", line: lines.length };
+  for (let i = 0; i < lines.length - 1; i++) {
+    let o: unknown;
+    try { o = JSON.parse(lines[i]!); } catch { return { problem: "json", line: i + 1 }; }
+    const p = loopRowProblem(o);
+    if (p) return { problem: p, line: i + 1 };
+    rows.push(o as LoopRow);
+  }
+  return { rows };
+}
+
+/** Add-only: the older loop-log text must be a byte prefix of the newer one (and both must parse). */
+export function loopAddOnlyProblem(older: string, newer: string): string | null {
+  if (!newer.startsWith(older)) return "rewritten";
+  const p = parseLoopLog(newer);
+  return "problem" in p ? `row:${p.problem}` : null;
 }

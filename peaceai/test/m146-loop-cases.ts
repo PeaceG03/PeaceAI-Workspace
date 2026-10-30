@@ -7,6 +7,7 @@ import { basename, join } from "node:path";
 import type * as Loop from "../lib/loop.ts";
 import { loopRowProblem } from "../lib/looprow.ts";
 import { RUN_LOG } from "../lib/plangrade.ts";
+import { LOOP_LOG } from "../lib/looprow.ts";
 import type { PlanTask } from "../lib/plan.ts";
 import { CALC_FIXED, CALC_WRONG, FLAG_FIXED, SECRET_NAME, type Ctx } from "./m146-fixtures.ts";
 
@@ -170,6 +171,7 @@ export const CASES: Case[] = [
       assert.equal(r.results.length, 0);
       assert.equal(calls.n, 0, "nothing proposed");
       assert.equal(readFileSync(join(root, RUN_LOG), "utf8"), "", "nothing appended");
+      assert.ok(!existsSync(join(root, LOOP_LOG)), "no loop row");
       assert.ok(!existsSync(join(root, "out")), "nothing written");
     },
   },

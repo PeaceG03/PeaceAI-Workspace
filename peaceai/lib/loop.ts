@@ -31,8 +31,8 @@ import { openRepo } from "./codesearch.ts";
 import { applyRule, specHash, type RuleSpec } from "./learned.ts";
 import { loadModel } from "./nlparse.ts";
 import { approvedRules, isTestPath, planTask, PLAN_LICENSES, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanTask, type PlanTaskFile } from "./plan.ts";
-import { committedLog, isLocked, logRowProblem, RUN_LOG, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, LOOP_SCHEMA, LOOP_VERSION, type AttemptCode, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { committedLog, isLocked, taskKey } from "./plangrade.ts";
+import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA, loopRowProblem, LOOP_VERSION, type AttemptCode, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -329,7 +329,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
 
 // ---- a task file
 
-/** Runs the loop on every task of a task file locked in the committed log; appends one loop row per task. */
+/** Runs the loop on every task of a task file locked in the committed plan-only log (runs.jsonl); appends one loop row per task to loop-runs.jsonl. */
 export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" | "TASK_FILE_UNLOCKED" | "TASK_FILE_INVALID" | "TRAINING_LIST_UNREADABLE"; results: LoopResult[] } {
   const root = opts.root ?? ROOT;
   const text = readFileSync(path, "utf8");
@@ -350,9 +350,9 @@ export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" 
   for (const task of parsed.tasks) {
     // a fresh proposer state per task
     const r = runLoopTask(task, parsed.set, fileSha, { ...o, proposer: opts.proposer ?? rulesProposer(o.rules) });
-    if (logRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
+    if (loopRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
     results.push(r);
-    appendFileSync(join(root, RUN_LOG), JSON.stringify(r.row) + "\n");
+    appendFileSync(join(root, LOOP_LOG), JSON.stringify(r.row) + "\n");
     writeFileSync(join(outDir, `${r.row.taskKey}.json`), JSON.stringify({ row: r.row, attempts: r.attempts, context: r.context, plan: r.plan }, null, 1) + "\n");
   }
   return { code: "OK", results };

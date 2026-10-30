@@ -13,14 +13,16 @@ try {
   } else {
     const { code, rows } = runFile(file);
     if (code !== "OK") { console.log(`refused ${code}`); process.exit(1); }
+    // Public half: a DEVELOPMENT score (the planner was built while reading the public wording). Hidden half: the score.
+    const label = rows[0]?.set === "public" ? "devScore" : "score";
     for (const r of rows) {
       const g = r.grade;
       const id = r.set === "public" ? `${r.repo}@${r.commit!.slice(0, 10)}` : r.taskKey;
-      console.log(`${id} ${r.code}` + (g ? ` steps=${g.matched}/${g.required} stepShare=${g.stepShare} files=${g.fileRecall}/${g.filePrecision} tests=${g.testRecall} canDo=${g.canDoVerified}/${g.canDoClaimed} own=${g.ownShare} team=${g.teamShare}` : ""));
+      console.log(`${id} ${r.code}` + (g ? ` ${label}=${g.score} work=${g.matched}/max(${g.required},${g.planned}) recall=${g.recall} precision=${g.precision} runTests=${g.runTests} files=${g.fileRecall}/${g.filePrecision} tests=${g.testRecall} canDo=${g.canDoVerified}/${g.canDoClaimed} own=${g.ownShare} team=${g.teamShare}` : ""));
     }
     const ok = rows.filter((r) => r.grade);
-    const mean = (k: "stepShare" | "ownShare" | "teamShare") => (ok.length ? (ok.reduce((s, r) => s + r.grade![k], 0) / ok.length).toFixed(3) : "n/a");
-    console.log(`tasks=${rows.length} graded=${ok.length} meanStepShare=${mean("stepShare")} meanOwnShare=${mean("ownShare")} meanTeamShare=${mean("teamShare")}`);
+    const mean = (k: "score" | "runTests" | "ownShare" | "teamShare") => (ok.length ? (ok.reduce((s, r) => s + r.grade![k], 0) / ok.length).toFixed(3) : "n/a");
+    console.log(`grader=${rows[0]?.grader ?? "n/a"} tasks=${rows.length} graded=${ok.length} mean ${label}=${mean("score")} runTests=${mean("runTests")} ownShare=${mean("ownShare")} teamShare=${mean("teamShare")}`);
   }
 } catch (e) {
   console.log(`refused ${e instanceof RunError ? e.code : "TASK_FILE_INVALID"}`);
