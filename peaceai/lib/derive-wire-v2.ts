@@ -333,8 +333,12 @@ function deriveRecord(task: { target: string; file: string; behavior: string; bu
     if (ok) found.push({ target: task.target, site: siteText, filter, list, record });
   }
   if (!found.length) return { reason: "wire_no_fit" };
-  if (found.length > 1) return { reason: "wire_ambiguous", detail: String(found.length) };
-  return { kind: "record", holes: found[0]! };
+  // G31 (Auditor, Oct 30): a record never holds the plain message or the cause's message; a fit that needs one is
+  // refused by name (recordFilteredFits), never emitted
+  const kept = recordFilteredFits(found);
+  if (typeof kept === "string") return { reason: kept };
+  if (kept.length > 1) return { reason: "wire_ambiguous", detail: String(kept.length) };
+  return { kind: "record", holes: kept[0]! };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -496,4 +500,17 @@ export function runDeriveWireV2Rule(trigger: string, params: Record<string, unkn
   const r = deriveWireV2Detail(trigger, params, objective, files, isTest, raw);
   if (!r.edit && why) why.reason = r.reason ?? "wire_refused";
   return r.edit;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G31 (Auditor, Oct 30, w02b): the filtered per-day record. The fits that record only the loop item and closed reads
+// with no free text (name, code, cause.code, cause.name) are kept; when none is left, the refused read is named
+// (wire_cause_message before wire_message_unfiltered). Job B refuses the same records (recordLeakReason).
+// ---------------------------------------------------------------------------------------------------------------
+import { RECORD_LEAK_READS, recordLeakReason } from "./learned-edit-existing.ts";
+function recordFilteredFits(found: readonly RecordHoles[]): RecordHoles[] | string {
+  const kept = found.filter((h) => recordLeakReason(h.record) === null);
+  if (kept.length) return kept;
+  const reasons = new Set(found.map((h) => recordLeakReason(h.record)!));
+  return RECORD_LEAK_READS.map(([, reason]) => reason).find((r) => reasons.has(r)) ?? "wire_record_unfiltered";
 }

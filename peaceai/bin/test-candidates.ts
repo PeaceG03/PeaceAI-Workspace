@@ -472,7 +472,10 @@ function existingEditStatic(tree: string, files: ReturnType<typeof parseDiff>, n
   try { baseText = git(repo, "show", `${base}:${modPath}`); } catch { return "revert-failed"; }
   if (real === null || test === null) return "not-applied";
   const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
-  if (gradeExistingEditProblem(modPath, baseText, real, testPath, test, read) !== null) return "not-test-only";
+  // G31: the static refusal is logged by its fixed code only (wire_message_unfiltered / wire_cause_message for a record
+  // that would hold the error's free text); never the candidate's text
+  const staticProblem = gradeExistingEditProblem(modPath, baseText, real, testPath, test, read);
+  if (staticProblem !== null) { console.log(`grading: existing-edit static refusal ${staticProblem}`); return "not-test-only"; }
   const reads = existingEditReads(modPath, read);
   if (!reads) return "module-imports-repo-files";
   return { modPath, reads };

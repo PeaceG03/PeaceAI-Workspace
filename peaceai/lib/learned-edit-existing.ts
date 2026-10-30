@@ -1872,6 +1872,10 @@ export function gradeExistingEditProblem(modPath: string, baseText: string, real
   // G18 v2: a recorded-skip edit (filter, record, continue; recordEditShape) likewise, with the v2 test language
   const wire = wireEditShape(modPath, baseText, realText, target) ?? recordEditShape(modPath, baseText, realText, target);
   const v2 = !!wire && !("catch" in wire);
+  // G31 (Auditor, Oct 30, w02b): a recorded-skip record that holds the plain message or the cause's message is refused
+  // by name (the filter may still read the message: it only decides, it is never stored)
+  const recordLeak = wire && "holes" in wire ? recordLeakReason(wire.holes.record) : null;
+  if (recordLeak) return recordLeak;
   const capNode = wire ? findTarget(ts.createSourceFile(modPath, wire.stripped, ts.ScriptTarget.Latest, true), target) : rtNode;
   if (!capNode) return "edit_not_confined";
   const capB = capabilityDelta(btNode.node, capNode.node);
@@ -2784,4 +2788,26 @@ export function rethrowEditShape(path: string, baseText: string, realText: strin
   const ropts = rcall.arguments[1] as ts.ObjectLiteralExpression;
   const rsigCall = (ropts.properties[ropts.properties.length - 1] as ts.PropertyAssignment).initializer as ts.CallExpression;
   return { target, stripped: strip(realText, sf, rsigCall), baseStripped: strip(baseText, bsf, bl.signal), holes };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G31 (Auditor, Oct 30, w02b; peaceai/spec/derive-wire-v2.md "G31"): the public-derive-wire-v2 recorded-skip RECORD is
+// built only from the closed reads that carry no free text of the error. PeaceSTOCKS is public and a per-day catch
+// catches more than the R2 errors request() already cleaned (Massive, fetch, parse errors), whose messages can carry
+// URLs or query strings. So a record value is the loop item or one of RETHROW_ARG_IDS' closed reads (name, code,
+// cause.code, cause.name); the plain message and the cause's message are refused by name, in Job A (deriveRecord) and
+// in Job B (gradeExistingEditProblem on the graded tree), as wire_message_unfiltered and wire_cause_message are for
+// the G29 rethrow. The filter is unchanged (it may read the message: a boolean that decides record-or-rethrow, never
+// stored). The v2 spec JSON and its approved sha are unchanged; this narrows what its record ask may emit.
+// ---------------------------------------------------------------------------------------------------------------
+/** The record reads that are refused, in the order they are reported (the cause's message first, as for G29). */
+export const RECORD_LEAK_READS: readonly (readonly [string, string])[] = [["cause.message", "wire_cause_message"], ["message", "wire_message_unfiltered"]];
+/** The refusal for a record that is not built only from the loop item and RETHROW_ARG_IDS' closed reads, or null. An
+ *  allow-list: the two message reads are refused by name (the cause's message first); any other read that is not the
+ *  item or a RETHROW_ARG_IDS id (a read added to WIRE_ARG_FORMS later, say) is refused wire_record_unfiltered. */
+export function recordLeakReason(r: RecordHoles["record"]): string | null {
+  const values: string[] = r.kind === "line" ? [r.value] : r.fields.map(([, v]) => v);
+  for (const [read, reason] of RECORD_LEAK_READS) if (values.includes(read)) return reason;
+  if (!values.every((v) => v === "item" || RETHROW_ARG_IDS.includes(v))) return "wire_record_unfiltered";
+  return null;
 }

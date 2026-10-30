@@ -146,3 +146,33 @@ sha stay byte for byte; v1 (unapproved) keeps its own trigger and never reaches 
   A graded rethrow that passes the cause's message (`wire_cause_message`) or the error's plain message
   (`wire_message_unfiltered`) is refused by name. All of v2's guards stay on (code anywhere in
   the issue, the 2000-character objective cut).
+
+## G31: the recorded skip records no free text of the error (Auditor, Oct 30 2026, w02b)
+
+PeaceSTOCKS is public, and a per-day catch-up loop catches more than the R2 errors `request()` already cleaned:
+Massive, fetch and parse errors come through the same catch, and their messages can carry URLs or query strings. So
+the **record** of a recorded skip is built only from the loop item and the closed reads that carry no free text of the
+error: `name`, `code`, `cause.code`, `cause.name` (the RETHROW_ARG_IDS shape of G29, without its network filter, which
+the record ask does not need). The plain message and the cause's message are refused by name, in both jobs:
+
+- **Job A** (`deriveRecord`): the record search is unchanged; a fit whose record reads the message or the cause's
+  message is dropped. When no fit is left, the refusal names the read: `wire_cause_message` (the cause's message),
+  else `wire_message_unfiltered` (the plain message). It is never emitted and never falls back to a bare `continue`.
+- **Job B** (`gradeExistingEditProblem` on the graded tree, run by `bin/test-candidates.ts` before any candidate code):
+  a v2 recorded-skip edit (`recordEditShape`) whose record holds either read is refused with the same codes
+  (`recordLeakReason`); test-candidates logs the fixed code (`grading: existing-edit static refusal <code>`) and grades
+  the candidate `not-test-only`.
+
+The check is an allow-list: a record value must be the loop item or a RETHROW_ARG_IDS id; any other read (one added to
+the error reads later, say) is refused `wire_record_unfiltered`. The record search offers only the error reads, so
+`message.network` (allowed, but not offered) is never derived as a record.
+
+The **filter** is unchanged: it may read the message (`startsWith("R2")`), because it is a boolean that decides record
+or rethrow and is never stored. G26 holds as before: what the filter does not match is re-thrown, and every skip is
+recorded (the day stays in the record, now with the error's name, so the health check still sees it).
+
+The v2 spec JSON and its approved sha (`e9e6d7e1...`, #613) are unchanged; this narrows what the record ask may emit.
+An existing v2 record task whose examples record the message (m138's `SKIP`) is now refused `wire_message_unfiltered`;
+the same task recording the error's name derives (m138's `SKIP_NAMED`). Neither PeaceSTOCKS transient classifier reads
+this record: `isTransientHistoryError` (src/tenmin-history.ts) reads the ten-minute history loop's own caught message,
+and `isTransientFailure` (src/tenmin-redispatch.ts) reads the ten-minute run outcome's reason.
