@@ -1,0 +1,694 @@
+{
+ "schema": "peaceai-plan-tasks:v1",
+ "set": "public",
+ "note": "Public half of the PLAN-ONLY v1 task set. Requests are written by Builder in plain words; references are the real merged changes. Repos checked absent from PeaceAI training lists (trainingRepos) at workspaceCommit.",
+ "tasks": [
+  {
+   "id": "defu-proto-defaults",
+   "repo": "unjs/defu",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "46231df5a7733c3f52f11b71f3df61813007745b62b09031acfb45fb42d75082",
+   "commit": "d3ef16dabe861713192ba8679c5db8e0ac143f9b",
+   "request": "Merging a JSON-parsed object that carries a `__proto__` key lets that key override the defaults: `defu(JSON.parse('{\"__proto__\":{\"isAdmin\":true}}'), { isAdmin: false })` returns an object with `isAdmin` true. The defaults must win; a `__proto__` key in the input must never pollute or override them. Fix the merge and add a regression test.",
+   "tests": {
+    "command": "pnpm vitest run test/defu.test.ts",
+    "files": [
+     "test/defu.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 156,
+     "merge": "3942bfbbcaa72084bd4284846c83bd61ed7c8b29"
+    },
+    "files": [
+     {
+      "path": "src/defu.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/defu.test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/defu.ts",
+      "symbols": [
+       "_defu"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/defu.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "destr-numeric-strings",
+   "repo": "unjs/destr",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "46231df5a7733c3f52f11b71f3df61813007745b62b09031acfb45fb42d75082",
+   "commit": "37210516ccef951dcc870f17a5abee52122a3122",
+   "request": "`destr` does not turn some numeric strings into numbers: strings with many decimal places and strings in scientific notation such as `9e2` or `9e-2` come back as strings. They should be parsed as numbers like other numeric strings. Fix the detection and add tests for decimals and exponents.",
+   "tests": {
+    "command": "pnpm vitest run test/index.test.ts",
+    "files": [
+     "test/index.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 94,
+     "merge": "d9ba16d7ad5c3afb6d8c8e84f6d24dba616013fe"
+    },
+    "files": [
+     {
+      "path": "src/index.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/index.test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/index.ts",
+      "symbols": [
+       "JsonSigRx"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/index.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "scule-is-uppercase",
+   "repo": "unjs/scule",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "46231df5a7733c3f52f11b71f3df61813007745b62b09031acfb45fb42d75082",
+   "commit": "d2c281f10e12b8e33a2ed6ef3630eeb54de7de7c",
+   "request": "`splitByCase('new-name-value', ['_'])` splits the string in the wrong places, because characters such as `-` are treated as uppercase letters. `isUppercase` should only be true for a character that differs from its lowercase form. Fix it and add a test for this case.",
+   "tests": {
+    "command": "pnpm vitest run test/scule.test.ts",
+    "files": [
+     "test/scule.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 71,
+     "merge": "57cfd1528a03720392604a2e582782fc481657dd"
+    },
+    "files": [
+     {
+      "path": "src/index.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/scule.test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/index.ts",
+      "symbols": [
+       "isUppercase"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/scule.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "ohash-diff-falsy",
+   "repo": "unjs/ohash",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "46231df5a7733c3f52f11b71f3df61813007745b62b09031acfb45fb42d75082",
+   "commit": "1d9402ecaa40b2e20ab1fd58bd67de9b2d5a46b9",
+   "request": "`diff` reports no changes when a value changes to or from a falsy primitive: `diff(true, false)` and `diff('value', null)` both return an empty list. Falsy primitives must be hashed and compared like any other value. Fix the diff utility and add tests.",
+   "tests": {
+    "command": "pnpm vitest run test/utils.test.ts",
+    "files": [
+     "test/utils.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 196,
+     "merge": "a5004f7175236d7d44864e77bc7ce20a93b77130"
+    },
+    "files": [
+     {
+      "path": "src/utils/diff.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/utils.test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/utils/diff.ts",
+      "symbols": [
+       "_toHashedObject"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/utils.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "yup-string-not-required",
+   "repo": "jquense/yup",
+   "license": "MIT",
+   "licensePath": "LICENSE.md",
+   "licenseSha256": "89ae1a9d73f2eb3948e37c810309ccc04e5c2c81cb83618df6bb6429d73d9fc1",
+   "commit": "6250a14fa4ab761bc258f3d1cb0993a2374eaefa",
+   "request": "`string().required().notRequired()` still fails validation for `undefined` and for the empty string: calling `notRequired` on a string schema does not actually remove the required check. After `notRequired()` both values should be valid. Fix the string schema and add a test.",
+   "tests": {
+    "command": "yarn testonly test/string.ts",
+    "files": [
+     "test/string.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 1824,
+     "merge": "dcb4b6381eac21f8f28297066e71920a788c8a47"
+    },
+    "files": [
+     {
+      "path": "src/string.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/string.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/string.ts",
+      "symbols": [
+       "notRequired"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/string.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "kysely-pg-destroy-acquire",
+   "repo": "kysely-org/kysely",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "f70408a03a6ae16b093ae84757bd813f861124e851efc7a17c3cb29ff247ff54",
+   "commit": "9db0d49a1ffc0fd54ec035bb24b8bb9b3c3db163",
+   "request": "With the Postgres dialect, calling `db.destroy()` while a query is still acquiring a connection from the pool can hang: the pool client acquired after destroy is never released. When the driver finds it was destroyed while acquiring, it should release the client and fail the query. Fix the Postgres driver and add a node test for destroy during acquire.",
+   "tests": {
+    "command": "pnpm run build && pnpm run test:node:build && pnpm run test:node:run (needs the Postgres service from docker-compose)",
+    "files": [
+     "test/node/src/destroy.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 2088,
+     "merge": "af446a052fb2a7ce9323dc32391cf71fa34b9214"
+    },
+    "files": [
+     {
+      "path": "src/dialect/postgres/postgres-driver.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/node/src/destroy.test.ts",
+      "change": "add"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/dialect/postgres/postgres-driver.ts",
+      "symbols": [
+       "acquireConnection"
+      ]
+     },
+     {
+      "action": "add-test",
+      "file": "test/node/src/destroy.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "kysely-mssql-json-escape",
+   "repo": "kysely-org/kysely",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "f70408a03a6ae16b093ae84757bd813f861124e851efc7a17c3cb29ff247ff54",
+   "commit": "e78d3750e5673828697511abb2d4517d0da30f8f",
+   "request": "The MSSQL `jsonBuildObject` helper builds JSON by string concatenation without escaping, so object keys or values containing double quotes, backslashes, control characters or text like `\",\"x\":\"y` produce broken or injected JSON. Keys and values must be JSON-escaped. Fix the MSSQL helper and add JSON tests that round-trip such keys and values.",
+   "tests": {
+    "command": "pnpm build && pnpm test:node:build && pnpm test:node:run (needs the MSSQL service from docker-compose)",
+    "files": [
+     "test/node/src/json.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 2079,
+     "merge": "e1b4a392c1e90a83e29ec8bd7479459465a0ef42"
+    },
+    "files": [
+     {
+      "path": "src/helpers/mssql.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/node/src/json.test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/helpers/mssql.ts",
+      "symbols": [
+       "jsonBuildObject"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/node/src/json.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "superstruct-coerce-undefined",
+   "repo": "ianstormtaylor/superstruct",
+   "license": "MIT",
+   "licensePath": "License.md",
+   "licenseSha256": "0f644bc01d85e4b1958bdfe5a851704bd886404c78188d4d6fba43dc8293bc91",
+   "commit": "7973400cd04d8ad92bbdc2b6f35acbfb3c934079",
+   "request": "`create` drops a key that is present in the input when its coercion returns `undefined`: the result object no longer has the key at all. A key that was present should stay present with the value `undefined`. Fix the validation runner and add a test.",
+   "tests": {
+    "command": "yarn build:cjs && yarn test:mocha",
+    "files": [
+     "test/api/create.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 1126,
+     "merge": "198beffd1fa61739833fdcbefd90ef1d5804100c"
+    },
+    "files": [
+     {
+      "path": "src/utils.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/api/create.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/utils.ts",
+      "symbols": [
+       "run"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/api/create.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "valibot-ulid-first-char",
+   "repo": "open-circle/valibot",
+   "license": "MIT",
+   "licensePath": "LICENSE.md",
+   "licenseSha256": "1ca6c9ca372cffe26c313464b9d9f0aef2417b27b2bad20396f4769005122d4d",
+   "commit": "5e449cdab745a6816c9e23931877cdaddcb1dfd6",
+   "request": "The `ulid` validation accepts ULIDs whose first character is 8 through Z, but a valid ULID can only start with 0 through 7 (anything higher overflows the 48-bit timestamp). Tighten the ULID pattern and add test cases for the first character.",
+   "tests": {
+    "command": "cd library && pnpm vitest run src/actions/ulid/ulid.test.ts",
+    "files": [
+     "library/src/actions/ulid/ulid.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 1498,
+     "merge": "1c4983f7f70f59a1095018296f9d6e4eb46b43e5"
+    },
+    "files": [
+     {
+      "path": "library/src/actions/ulid/ulid.test.ts",
+      "change": "modify"
+     },
+     {
+      "path": "library/src/regex.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "library/src/regex.ts",
+      "symbols": [
+       "ULID_REGEX"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "library/src/actions/ulid/ulid.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": [
+     "library/CHANGELOG.md"
+    ]
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "p-queue-idle-event",
+   "repo": "sindresorhus/p-queue",
+   "license": "MIT",
+   "licensePath": "license",
+   "licenseSha256": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+   "commit": "db1d98f880c16a458299a15255539635cbed0a00",
+   "request": "Add an `idle` event to the queue: it should be emitted every time the queue becomes empty and all running tasks have finished, like `onIdle` but as an event. Document it in the readme and add tests.",
+   "tests": {
+    "command": "npm run build && npx ava test/test.ts",
+    "files": [
+     "test/test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 109,
+     "merge": "54a017b3eb38008258141b8008c043076500666a"
+    },
+    "files": [
+     {
+      "path": "source/index.ts",
+      "change": "modify"
+     },
+     {
+      "path": "test/test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "source/index.ts",
+      "symbols": [
+       "PQueue",
+       "_resolvePromises"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "test/test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": [
+     "readme.md"
+    ]
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "remeda-zip-empty",
+   "repo": "remeda/remeda",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "acf30083045d768ce20640237313ee31a45d548d66ef76df5bb5fb0745479535",
+   "commit": "6d956a9682a4a8ff0514a826fabfcec5b5259336",
+   "request": "In data-last form, `zip` and `zipWith` give the wrong result when the second array is empty: `pipe([1, 2], zip([]))` should return an empty array. Fix the lazy implementations of both functions and add tests for the empty case.",
+   "tests": {
+    "command": "cd packages/remeda && npx vitest run src/zip.test.ts src/zipWith.test.ts",
+    "files": [
+     "packages/remeda/src/zip.test.ts",
+     "packages/remeda/src/zipWith.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 1420,
+     "merge": "870135729da0427895af8cba11efd5b4ea6bbeb5"
+    },
+    "files": [
+     {
+      "path": "packages/remeda/src/zip.test.ts",
+      "change": "modify"
+     },
+     {
+      "path": "packages/remeda/src/zip.ts",
+      "change": "modify"
+     },
+     {
+      "path": "packages/remeda/src/zipWith.test.ts",
+      "change": "modify"
+     },
+     {
+      "path": "packages/remeda/src/zipWith.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "packages/remeda/src/zip.ts",
+      "symbols": [
+       "lazyImplementation"
+      ]
+     },
+     {
+      "action": "edit-source",
+      "file": "packages/remeda/src/zipWith.ts",
+      "symbols": [
+       "lazyImplementation"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "packages/remeda/src/zip.test.ts"
+     },
+     {
+      "action": "edit-test",
+      "file": "packages/remeda/src/zipWith.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": []
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  },
+  {
+   "id": "neverthrow-async-throwable",
+   "repo": "supermacro/neverthrow",
+   "license": "MIT",
+   "licensePath": "LICENSE",
+   "licenseSha256": "3f4f7f9d7c4a9965aeef4a9c95de38f73ecbab96bed68d320a224a74dfcaa973",
+   "commit": "64cf6b58f449f685a497dabad342e4cf79490652",
+   "request": "Add `ResultAsync.fromThrowable`: it wraps an async function that may throw or reject and returns a function that gives a `ResultAsync`, with an optional error mapper. Also export it from the package index as `fromAsyncThrowable`, document it in the README and add tests.",
+   "tests": {
+    "command": "npx jest tests/index.test.ts",
+    "files": [
+     "tests/index.test.ts"
+    ]
+   },
+   "reference": {
+    "from": {
+     "pr": 528,
+     "merge": "2333199683ebd74b0b68f786b1874ae2d7568303"
+    },
+    "files": [
+     {
+      "path": "src/index.ts",
+      "change": "modify"
+     },
+     {
+      "path": "src/result-async.ts",
+      "change": "modify"
+     },
+     {
+      "path": "tests/index.test.ts",
+      "change": "modify"
+     }
+    ],
+    "steps": [
+     {
+      "action": "edit-source",
+      "file": "src/result-async.ts",
+      "symbols": [
+       "ResultAsync",
+       "fromThrowable"
+      ]
+     },
+     {
+      "action": "edit-source",
+      "file": "src/index.ts",
+      "symbols": [
+       "fromAsyncThrowable"
+      ]
+     },
+     {
+      "action": "edit-test",
+      "file": "tests/index.test.ts"
+     },
+     {
+      "action": "run-tests",
+      "file": null
+     }
+    ],
+    "docs": [
+     "README.md"
+    ]
+   },
+   "trainingCheck": {
+    "workspaceCommit": "d2c10875a5c9d191ecae8684bab4490b7b182ef7",
+    "sources": 130,
+    "inTraining": false
+   }
+  }
+ ]
+}
