@@ -78,6 +78,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/self\//i, why: "self-change records and configuration" },
   { pattern: /^builder-log\//i, why: "the Builder task log and its validator (append-only, PR-reviewed; M21)" },
   { pattern: /^peaceai\/source-corrections\.jsonl$|^peaceai\/lib\/sourcecorrections\.ts$|^peaceai\/bin\/source-corrections-check\.ts$/i, why: "the add-only Results source corrections, read by records.ts and the ranker (M119)" },
+  { pattern: /^peaceai\/lib\/nlpairs\.ts$|^peaceai\/bin\/nl-pairs\.ts$|^peaceai\/bin\/nl-pairs-corpus\.sh$|^peaceai\/model\/nl-pairs\.json$|^peaceai\/model\/nl-pairs-summary\.json$|^peaceai\/model\/nl-pairs-exclusions-public\.txt$|^peaceai\/model\/nl-pairs-exclusions-hidden-hashes\.txt$|^peaceai\/model\/nl-pairs-manifest\/|^peaceai\/spec\/nl-pairs-v1\.md$|^peaceai\/test\/m147-nl-pairs\.test\.ts$/i, why: "the M147 English-to-code pair data: licence, exclusion-file and scrub filters, the sha256 manifest, spec and test (training data selection)" },
 ];
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */
