@@ -417,6 +417,10 @@ test("G31: the record refusals are named and ordered (the cause's message first)
   assert.equal(recordLeakReason({ kind: "line", value: "message" }), "wire_message_unfiltered");
   assert.equal(recordLeakReason({ kind: "object", fields: [["day", "item"], ["error", "cause.message"]] }), "wire_cause_message");
   assert.equal(recordLeakReason({ kind: "object", fields: [["a", "message"], ["b", "cause.message"]] }), "wire_cause_message");
+  // an allow-list, not a deny-list: only the item and RETHROW_ARG_IDS' closed reads; any other read is refused
+  for (const v of ["stack", "toString", "cause", "message.raw"]) assert.equal(recordLeakReason({ kind: "line", value: v }), "wire_record_unfiltered", v);
+  assert.equal(recordLeakReason({ kind: "object", fields: [["day", "item"], ["error", "stack"]] }), "wire_record_unfiltered");
+  assert.equal(recordLeakReason({ kind: "line", value: "message.network" }), null, "message.network is a RETHROW_ARG_IDS read");
   assert.equal(specHash(WIRE2), "e9e6d7e10e0195850f6e29f13e92c803424fafc94c280e4fe7ea10ace311bc28", "v2 keeps the sha Peace approved on #613");
   assert.match(read("peaceai/spec/derive-wire-v2.md"), /G31/);
 });

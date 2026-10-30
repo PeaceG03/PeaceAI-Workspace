@@ -2802,9 +2802,12 @@ export function rethrowEditShape(path: string, baseText: string, realText: strin
 // ---------------------------------------------------------------------------------------------------------------
 /** The record reads that are refused, in the order they are reported (the cause's message first, as for G29). */
 export const RECORD_LEAK_READS: readonly (readonly [string, string])[] = [["cause.message", "wire_cause_message"], ["message", "wire_message_unfiltered"]];
-/** The refusal for a record built from a refused read, or null. */
+/** The refusal for a record that is not built only from the loop item and RETHROW_ARG_IDS' closed reads, or null. An
+ *  allow-list: the two message reads are refused by name (the cause's message first); any other read that is not the
+ *  item or a RETHROW_ARG_IDS id (a read added to WIRE_ARG_FORMS later, say) is refused wire_record_unfiltered. */
 export function recordLeakReason(r: RecordHoles["record"]): string | null {
   const values: string[] = r.kind === "line" ? [r.value] : r.fields.map(([, v]) => v);
   for (const [read, reason] of RECORD_LEAK_READS) if (values.includes(read)) return reason;
+  if (!values.every((v) => v === "item" || RETHROW_ARG_IDS.includes(v))) return "wire_record_unfiltered";
   return null;
 }

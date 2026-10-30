@@ -512,5 +512,5 @@ function recordFilteredFits(found: readonly RecordHoles[]): RecordHoles[] | stri
   const kept = found.filter((h) => recordLeakReason(h.record) === null);
   if (kept.length) return kept;
   const reasons = new Set(found.map((h) => recordLeakReason(h.record)!));
-  return RECORD_LEAK_READS.map(([, reason]) => reason).find((r) => reasons.has(r))!;
+  return RECORD_LEAK_READS.map(([, reason]) => reason).find((r) => reasons.has(r)) ?? "wire_record_unfiltered";
 }

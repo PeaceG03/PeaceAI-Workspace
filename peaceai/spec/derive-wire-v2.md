@@ -163,6 +163,10 @@ the record ask does not need). The plain message and the cause's message are ref
   (`recordLeakReason`); test-candidates logs the fixed code (`grading: existing-edit static refusal <code>`) and grades
   the candidate `not-test-only`.
 
+The check is an allow-list: a record value must be the loop item or a RETHROW_ARG_IDS id; any other read (one added to
+the error reads later, say) is refused `wire_record_unfiltered`. The record search offers only the error reads, so
+`message.network` (allowed, but not offered) is never derived as a record.
+
 The **filter** is unchanged: it may read the message (`startsWith("R2")`), because it is a boolean that decides record
 or rethrow and is never stored. G26 holds as before: what the filter does not match is re-thrown, and every skip is
 recorded (the day stays in the record, now with the error's name, so the health check still sees it).
