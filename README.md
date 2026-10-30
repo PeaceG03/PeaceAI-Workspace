@@ -86,6 +86,14 @@ task to Auditor (2026-10-29). Auditor may reply:
   retrain. It opens no Workspace PR and writes no carry-forward verdict. The PR body and reply say
   `auditor-pass`. The owner can still withdraw or override it with `/verdict`.
 
+  **An auditor pass never overrides Peace.** It is refused (`owner-decided`, nothing written) when the
+  attempt already has any owner verdict other than `unsure`, and readers ignore any auditor-pass row
+  that comes after an owner `right` or `wrong` (so replayed Results cannot override him either). Only one
+  auditor pass per attempt (`already-passed`), so a repeated pass can never open a second PR. The
+  class label is recorded at intake (`auditorPassClass` in `task.json`, from the labels re-read when the
+  task is recorded); a pass under a different class, or on a task recorded with no class, is refused
+  (`class-mismatch`): the label has to be on the issue before the derive run records it.
+
   **scanner-wiring** (Peace, 2026-10-30): the same command on a `peace-task` labelled
   `scanner-wiring` (exactly one of the two class labels) covers Builder-filed PeaceSTOCKS tasks that
   edit existing `src/` files. Same scope, sha and 0-credit rules; the diff may only modify existing

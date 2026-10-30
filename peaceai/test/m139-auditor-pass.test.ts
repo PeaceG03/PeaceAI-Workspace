@@ -17,7 +17,7 @@ import type { SummaryCandidate } from "../lib/gate.ts";
 import { planPr } from "../lib/prguard.ts";
 import type { CandidateResult } from "../lib/rank.ts";
 import { toExample, trainExclusion, isEvalExample } from "../lib/ranker/pipeline.ts";
-import { buildRecords, buildSummary, effectiveVerdict, stableJson, taskEntry, type VerdictRecord } from "../lib/records.ts";
+import { buildRecords, buildSummary, effectiveVerdict, stableJson, taskEntry, VERDICT_SCHEMA, type VerdictRecord } from "../lib/records.ts";
 import { loadTargets } from "../lib/target.ts";
 import { parseVerdict } from "../lib/verdict.ts";
 import { taskDir, writeNew } from "../lib/store.ts";
@@ -178,8 +178,10 @@ test("(4) credit: the owner can still withdraw or override an auditor pass; an o
   const confirmed = effectiveVerdict([row("706", 1, "A", top, "right", true), row("707", 2, "A", top, "right")]);
   assert.equal(confirmed.delegated, false);
   assert.equal(taskEntry(r.task, r.ranking, [row("706", 1, "A", top, "right", true), row("707", 2, "A", top, "right")]).trainable, true);
-  // A later auditor pass after an owner pick takes the pick and drops it out of owner tallies again.
-  assert.equal(effectiveVerdict([row("708", 1, "A", top, "right"), row("709", 2, "A", top, "right", true)]).delegated, true);
+  // An auditor pass after an owner pick never overrides him: it is ignored (replayed old Results included).
+  const after = effectiveVerdict([row("708", 1, "A", top, "right"), row("709", 2, "A", top, "right", true)]);
+  assert.equal(after.delegated, false);
+  assert.deepEqual(after.pick, { decided: true, candidateId: top });
 });
 
 test("(4) credit: builder-log coverage refuses an auditor-pass verdict as Workspace proof (W_NO_VERDICT)", () => {
@@ -200,15 +202,19 @@ test("(4) credit: builder-log coverage refuses an auditor-pass verdict as Worksp
 });
 
 // ---------- record-verdict end to end (fake Results checkout) ----------
-function results(o: { source?: "builder" | "peace"; target?: string; diff?: string } = {}) {
+function results(o: { source?: "builder" | "peace"; target?: string; diff?: string; cls?: "scanner-helper" | "scanner-wiring" | null; verdicts?: VerdictRecord[] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "m139-"));
   const r = buildRecords(
-    { issue: 606, runId: "41003947137", recordedAt: "2026-10-30T05:00:00Z", baseSha: "d".repeat(40), title: "incompleteNames", body: "", source: o.source ?? "builder", target: o.target ?? STOCKS },
+    {
+      issue: 606, runId: "41003947137", recordedAt: "2026-10-30T05:00:00Z", baseSha: "d".repeat(40), title: "incompleteNames", body: "", source: o.source ?? "builder", target: o.target ?? STOCKS,
+      ...(o.cls === null ? {} : { auditorPassClass: o.cls ?? "scanner-helper" }),
+    },
     [sc("candidate-1", 5)], [res("candidate-1", 5)], "s");
   const dir = taskDir(root, 606, "41003947137");
   writeNew(join(dir, "task.json"), stableJson(o.source === undefined ? r.task : { ...r.task, source: o.source }));
   writeNew(join(dir, "ranking.json"), stableJson(r.ranking));
   writeNew(join(dir, "candidates", "candidate-1.diff"), o.diff ?? GOOD);
+  for (const v of o.verdicts ?? []) writeNew(join(dir, "verdicts", `${v.commentId}.json`), stableJson(v));
   return { root, dir };
 }
 function record(root: string, env: Record<string, string>) {
@@ -379,7 +385,7 @@ test("wiring diff: delete, rename, mode change, binary and a repeated path are r
 });
 
 test("wiring record: accepted as right with delegatedBy owner (scanner-wiring class), 0 credit; wrong scope refuses and writes nothing", () => {
-  const { root, dir } = results({ diff: WIRING });
+  const { root, dir } = results({ diff: WIRING, cls: "scanner-wiring" });
   try {
     const out = record(root, { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-wiring" });
     assert.equal(out.status, "recorded");
@@ -401,9 +407,9 @@ test("wiring record: accepted as right with delegatedBy owner (scanner-wiring cl
     assert.equal(existsSync(join(h.dir, "verdicts")), false);
   } finally { rmSync(h.root, { recursive: true, force: true }); }
   const cases: [string, ReturnType<typeof results>, Record<string, string>, string][] = [
-    ["wiring sha mismatch", results({ diff: WIRING }), { ...AP(sha(GOOD)), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "sha-mismatch"],
-    ["wiring protected path", results({ diff: edit("peaceai/lib/x.ts", "a", "b") }), { ...AP(sha(edit("peaceai/lib/x.ts", "a", "b"))), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "path-protected"],
-    ["wiring intake source peace", results({ diff: WIRING, source: "peace" }), { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "not-source-builder"],
+    ["wiring sha mismatch", results({ diff: WIRING, cls: "scanner-wiring" }), { ...AP(sha(GOOD)), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "sha-mismatch"],
+    ["wiring protected path", results({ diff: edit("peaceai/lib/x.ts", "a", "b"), cls: "scanner-wiring" }), { ...AP(sha(edit("peaceai/lib/x.ts", "a", "b"))), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "path-protected"],
+    ["wiring intake source peace", results({ diff: WIRING, source: "peace", cls: "scanner-wiring" }), { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "not-source-builder"],
     ["unknown class from the parse job", results({ diff: WIRING }), { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-anything" }, "not-scoped"],
   ];
   for (const [name, { root: r, dir: d }, env, reason] of cases) {
@@ -434,4 +440,112 @@ test("wiring parse job: labels pick the class, and the scope output names it", (
   assert.deepEqual(run(["peace-task", "scanner-helper"]), { ok: "true", scope: "scanner-helper", refusal: "" });
   assert.equal(run(["peace-task"]).ok, "false");
   assert.equal(run(["peace-task", "scanner-helper", "scanner-wiring"]).refusal, REFUSAL_TEXT["ambiguous-class"]);
+});
+
+// ---------- Auditor FAIL at 11948581 (Oct 30): an auditor pass never overrides Peace ----------
+const vrow = (commentId: string, at: string, label: string, verdict: "right" | "wrong" | "unsure", auditor = false, candidateId: string | null = label === "none" ? null : "candidate-1"): VerdictRecord => ({
+  schema: VERDICT_SCHEMA, issue: 606, runId: "41003947137", commentId, recordedAt: at, label: label === "none" ? null : label, candidateId, verdict,
+  ...(auditor ? { source: "auditor-pass" as const, delegatedBy: "owner (scanner-helper class)" as const, diffSha256: sha(GOOD) } : {}),
+});
+
+test("owner first: owner wrong, B right or none wrong, then /auditor-pass -> owner-decided, nothing written", () => {
+  for (const [name, prior] of [
+    ["owner A wrong", [vrow("100", "2026-10-30T05:10:00Z", "A", "wrong")]],
+    ["owner B right", [vrow("101", "2026-10-30T05:10:00Z", "B", "right", false, "candidate-2")]],
+    ["owner none wrong", [vrow("102", "2026-10-30T05:10:00Z", "none", "wrong")]],
+    ["owner right then unsure (withdrawn)", [vrow("103", "2026-10-30T05:10:00Z", "A", "right"), vrow("104", "2026-10-30T05:11:00Z", "A", "unsure")]],
+  ] as const) {
+    const { root, dir } = results({ verdicts: [...prior] });
+    try {
+      const before = readdirSync(join(dir, "verdicts")).sort();
+      const out = record(root, AP());
+      assert.equal(out.status, "auditor-pass-refused", name);
+      assert.equal(out.reason, "owner-decided", name);
+      assert.equal(out.refusal, REFUSAL_TEXT["owner-decided"], name);
+      assert.deepEqual(readdirSync(join(dir, "verdicts")).sort(), before, name);
+      assert.equal(existsSync(join(root, "index.jsonl")), false, name);
+      assert.equal(existsSync(join(root, "chosen")), false, name);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+  // An owner `unsure` alone is not a decision: the pass is still accepted.
+  const u = results({ verdicts: [vrow("105", "2026-10-30T05:10:00Z", "A", "unsure")] });
+  try { assert.equal(record(u.root, AP()).status, "recorded"); } finally { rmSync(u.root, { recursive: true, force: true }); }
+});
+
+test("owner first, replayed Results: effectiveVerdict ignores a delegated row after an owner decision", () => {
+  const ownerWrong = vrow("200", "2026-10-30T05:10:00Z", "A", "wrong");
+  const ownerB = vrow("201", "2026-10-30T05:10:00Z", "B", "right", false, "candidate-2");
+  const ownerNone = vrow("202", "2026-10-30T05:10:00Z", "none", "wrong");
+  const pass = vrow("299", "2026-10-30T05:30:00Z", "A", "right", true);
+  const a = effectiveVerdict([ownerWrong, pass]);
+  assert.equal(a.delegated, false);
+  assert.deepEqual(a.pick, { decided: false, candidateId: null }, "owner A wrong; the later pass does not pick A");
+  assert.equal(a.latest?.commentId, "200");
+  const b = effectiveVerdict([ownerB, pass]);
+  assert.deepEqual(b.pick, { decided: true, candidateId: "candidate-2" });
+  assert.equal(b.delegated, false);
+  const n = effectiveVerdict([ownerNone, pass]);
+  assert.deepEqual(n.pick, { decided: true, candidateId: null });
+  assert.equal(n.delegated, false);
+});
+
+test("auditor-pass first, then the owner's verdict: the owner wins (right, wrong, none wrong)", () => {
+  const pass = vrow("300", "2026-10-30T05:10:00Z", "A", "right", true);
+  assert.deepEqual(effectiveVerdict([pass, vrow("301", "2026-10-30T05:20:00Z", "B", "right", false, "candidate-2")]).pick, { decided: true, candidateId: "candidate-2" });
+  assert.equal(effectiveVerdict([pass, vrow("301", "2026-10-30T05:20:00Z", "B", "right", false, "candidate-2")]).delegated, false);
+  const w = effectiveVerdict([pass, vrow("302", "2026-10-30T05:20:00Z", "A", "wrong")]);
+  assert.deepEqual(w.pick, { decided: false, candidateId: null });
+  assert.equal(w.delegated, false);
+  assert.deepEqual(effectiveVerdict([pass, vrow("303", "2026-10-30T05:20:00Z", "none", "wrong")]).pick, { decided: true, candidateId: null });
+  // And a second pass after the owner's verdict is ignored too.
+  const again = effectiveVerdict([pass, vrow("304", "2026-10-30T05:20:00Z", "B", "right", false, "candidate-2"), vrow("305", "2026-10-30T05:30:00Z", "A", "right", true)]);
+  assert.deepEqual(again.pick, { decided: true, candidateId: "candidate-2" });
+  assert.equal(again.delegated, false);
+  // The owner's /verdict is always recorded on top of an auditor pass (the owner path has no such refusal).
+  const { root, dir } = results({ verdicts: [pass] });
+  try {
+    const out = record(root, { COMMENT_BODY: "/verdict none wrong" });
+    assert.equal(out.status, "recorded");
+    assert.equal(out.source, "owner");
+    assert.equal(readdirSync(join(dir, "verdicts")).length, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("one auditor pass per attempt: a second /auditor-pass on the same candidate is refused, so no second PR can open", () => {
+  const { root, dir } = results({ verdicts: [vrow("400", "2026-10-30T05:10:00Z", "A", "right", true)] });
+  try {
+    const out = record(root, AP());
+    assert.equal(out.status, "auditor-pass-refused");
+    assert.equal(out.reason, "already-passed");
+    assert.equal(readdirSync(join(dir, "verdicts")).length, 1);
+    assert.equal(existsSync(join(root, "chosen")), false, "no chosen diff is handed to the PR jobs");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  // The PR jobs only run on status recorded (the respond job reads it); and even then prguard would not open a
+  // second PR while one already holds the candidate.
+  assert.match(wf, /needs\.record\.outputs\.status == 'recorded'|status == 'recorded'/);
+  const p = planPr({ label: "A", verdict: "right", candidateId: "candidate-1" }, [{ number: 7, candidateId: "candidate-1" }]);
+  assert.equal(p.open, false);
+});
+
+test("intake class: recorded from the labels at intake; a mismatch (or none recorded) is refused", () => {
+  const r = buildRecords({ issue: 1, runId: "1", recordedAt: "2026-10-30T05:00:00Z", baseSha: "d".repeat(40), title: "t", body: "", auditorPassClass: "scanner-wiring" }, [sc("candidate-1", 5)], [res("candidate-1", 5)], "s");
+  assert.equal(r.task.auditorPassClass, "scanner-wiring");
+  const bogus = buildRecords({ issue: 1, runId: "1", recordedAt: "2026-10-30T05:00:00Z", baseSha: "d".repeat(40), title: "t", body: "", auditorPassClass: "x" as never }, [sc("candidate-1", 5)], [res("candidate-1", 5)], "s");
+  assert.equal("auditorPassClass" in bogus.task, false);
+  for (const [name, cls, scope, diff] of [
+    ["helper intake, wiring post", "scanner-helper", "scanner-wiring", WIRING],
+    ["wiring intake, helper post", "scanner-wiring", "scanner-helper", GOOD],
+    ["no class at intake", null, "scanner-helper", GOOD],
+  ] as const) {
+    const { root, dir } = results({ cls, diff });
+    try {
+      const out = record(root, { ...AP(sha(diff)), AUDITOR_PASS_SCOPE: scope });
+      assert.equal(out.reason, "class-mismatch", name);
+      assert.equal(existsSync(join(dir, "verdicts")), false, name);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+  // record-task.ts writes the class from the re-read labels (exactly one class label; both or neither -> absent).
+  const src = readFileSync("peaceai/bin/record-task.ts", "utf8");
+  assert.match(src, /\.\.\.auditorPassClassAtIntake\(issue\.labels\)/);
+  assert.match(src, /auditorPassClass\(names\)\.cls/);
 });

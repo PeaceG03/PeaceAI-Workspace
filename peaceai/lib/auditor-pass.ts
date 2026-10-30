@@ -153,7 +153,25 @@ export function checkWiringDiff(diff: string, postedSha: string, rules?: PathRul
 export const checkDiffFor = (c: AuditorPassClass, diff: string, postedSha: string, rules?: PathRules): DiffRefusal | null =>
   c === SCANNER_WIRING_LABEL ? checkWiringDiff(diff, postedSha, rules) : checkHelperDiff(diff, postedSha, rules);
 
-export type RecordRefusal = DiffRefusal | "wrong-target" | "not-source-builder" | "unknown-label" | "diff-missing" | "not-scoped";
+export type RecordRefusal =
+  | DiffRefusal | "wrong-target" | "not-source-builder" | "unknown-label" | "diff-missing" | "not-scoped"
+  | "owner-decided" | "already-passed" | "class-mismatch";
+
+/**
+ * Prior rows on the attempt, checked before anything else is read: any owner verdict other than `unsure` means Peace
+ * decided, and an auditor pass never overrides him; and only one auditor pass per attempt (so a repeated
+ * /auditor-pass is refused in the record job and can never reach the PR jobs to open a second PR).
+ */
+export function priorRowsRefusal(verdicts: readonly { source?: string; verdict: string }[]): RecordRefusal | null {
+  if (verdicts.some((v) => v.source === undefined && v.verdict !== "unsure")) return "owner-decided";
+  if (verdicts.some((v) => v.source !== undefined)) return "already-passed";
+  return null;
+}
+
+/** Intake class (task.json `auditorPassClass`, from the labels at record time) must equal the class posted under. */
+export function classRefusal(task: { auditorPassClass?: string }, cls: AuditorPassClass): RecordRefusal | null {
+  return task.auditorPassClass === cls ? null : "class-mismatch";
+}
 
 /** Task-record scope, checked in the record job against Results (the derive run's own record). */
 export function taskScopeRefusal(task: { source?: string; target?: string }): RecordRefusal | null {
@@ -172,6 +190,9 @@ export const REFUSAL_TEXT: Record<RecordRefusal | ScopeRefusal | "malformed", st
   "path-protected": "Auditor pass not recorded: the candidate touches a protected path (peaceai/, .github/, workflows, CODEOWNERS, package or dot files).",
   "not-edit-or-add": "Auditor pass not recorded: the candidate deletes, renames, copies or re-modes a file, or has a binary or unreadable section; only edits and new regular files under src/ are allowed.",
   "not-scoped": "Auditor pass not recorded: the scope check did not run.",
+  "owner-decided": "Auditor pass not recorded: Peace already gave a verdict on this review; an auditor pass never overrides him.",
+  "already-passed": "Auditor pass not recorded: this review already has an auditor pass; only one is allowed per attempt.",
+  "class-mismatch": "Auditor pass not recorded: the class label now on the issue does not match the class recorded at intake (or none was recorded).",
   "wrong-target": "Auditor pass not recorded: this task's target is not a delegated target (PeaceG03/PeaceSTOCKS).",
   "not-source-builder": "Auditor pass not recorded: the task's intake did not record `source: builder`.",
   "unknown-label": "Auditor pass not recorded: that letter is not a candidate in the latest review.",

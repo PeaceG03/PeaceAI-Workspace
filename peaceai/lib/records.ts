@@ -46,6 +46,11 @@ export interface TaskRecord {
   target?: string;
   /** M18: this attempt re-grades a chosen candidate of an earlier attempt on a newer base (fresh grade). */
   regradeOf?: RegradeOf;
+  /**
+   * Auditor-pass class the issue labels named at intake (exactly one of `scanner-helper` / `scanner-wiring`).
+   * Absent = none (or both). An `/auditor-pass` is refused unless its class equals this recorded one.
+   */
+  auditorPassClass?: "scanner-helper" | "scanner-wiring";
 }
 
 export type TaskSource = "peace" | "builder";
@@ -156,6 +161,7 @@ export interface TaskInputs {
   bodySha256?: string;
   target?: string;
   regradeOf?: RegradeOf;
+  auditorPassClass?: "scanner-helper" | "scanner-wiring";
 }
 
 /**
@@ -252,6 +258,7 @@ export function buildRecords(
       ...(typeof task.bodySha256 === "string" && /^[0-9a-f]{64}$/.test(task.bodySha256) ? { bodySha256: task.bodySha256 } : {}),
       ...(task.target ? { target: task.target } : {}),
       ...(task.regradeOf ? { regradeOf: { ...task.regradeOf } } : {}),
+      ...(task.auditorPassClass === "scanner-helper" || task.auditorPassClass === "scanner-wiring" ? { auditorPassClass: task.auditorPassClass } : {}),
     },
     ranking: {
       schema: RANKING_SCHEMA,
@@ -328,6 +335,8 @@ export interface EffectiveVerdict {
  *   pick and latest are cleared and the issue is excluded until the next decisive verdict;
  * - `<letter> wrong` on any other letter becomes `latest` and leaves the pick as it is;
  * - any other `<letter> unsure` is only a label for that candidate: nothing changes.
+ * An auditor pass never overrides Peace: a delegated row that comes after any owner `right` or `wrong` row is
+ * ignored entirely (record-verdict.ts refuses such a pass with `owner-decided`; this covers replayed old Results).
  */
 export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveVerdict {
   const ordered = orderVerdicts(verdicts);
@@ -335,7 +344,10 @@ export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveV
   let pick = { decided: false, candidateId: null as string | null };
   let withdrawn = false;
   let delegated = false;
+  let ownerDecided = false;
   for (const v of ordered) {
+    if (isDelegatedVerdict(v) && ownerDecided) continue;
+    if (!isDelegatedVerdict(v) && v.verdict !== "unsure") ownerDecided = true;
     if (withdraws(v, pick)) {
       latest = null;
       pick = { decided: false, candidateId: null };

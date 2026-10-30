@@ -8,7 +8,7 @@ import { appendIndex, latestAttempt, taskDir, writeNew, writeSummary } from "../
 import { loadTargets } from "../lib/target.ts";
 import { parseVerdict, type VerdictCommand } from "../lib/verdict.ts";
 import {
-  AUDITOR_PASS_SOURCE, checkDiffFor, delegatedByFor, isAuditorPassClass, parseAuditorPass, REFUSAL_TEXT, taskScopeRefusal, type RecordRefusal,
+  AUDITOR_PASS_SOURCE, checkDiffFor, classRefusal, delegatedByFor, priorRowsRefusal, isAuditorPassClass, parseAuditorPass, REFUSAL_TEXT, taskScopeRefusal, type RecordRefusal,
 } from "../lib/auditor-pass.ts";
 import { existsSync } from "node:fs";
 
@@ -73,7 +73,8 @@ if (auditorPass) {
   // Fail closed before anything is written: the derive run's own record must be a source: builder task on a
   // scanner-helper target, and the candidate's recorded diff must hash to the posted sha and only add one new
   // module plus one new test under src/ that the target allows.
-  const scope = taskScopeRefusal(attempt.task);
+  // Peace first: any owner verdict other than unsure on this attempt, or an earlier auditor pass, refuses.
+  const scope = priorRowsRefusal(attempt.verdicts) ?? taskScopeRefusal(attempt.task) ?? classRefusal(attempt.task, apClass as Parameters<typeof classRefusal>[1]);
   const diffPath = join(taskDir(root, issue, attempt.task.runId), "candidates", `${shown!.id}.diff`);
   const rules = loadTargets().targets[attempt.task.target ?? ""];
   const reason = scope
