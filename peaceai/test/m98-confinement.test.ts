@@ -23,7 +23,7 @@ const MOD = "export function f(n: number): number {\n  return n + 1;\n}\n";
 const TSCONFIG = JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true, allowImportingTsExtensions: true }, include: ["src"] });
 const permission = Number(process.versions.node.split(".")[0]) >= 22;
 
-function runConfinedFixture(target: string, escape: "edit" | "base" | "never" = "edit") {
+function runConfinedFixture(target: string, escape: "edit" | "base" | "never" = "edit", extraTests: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "m98c-"));
   try {
     const ws = join(dir, "ws"), marker = join(dir, "escaped.txt");
@@ -31,6 +31,7 @@ function runConfinedFixture(target: string, escape: "edit" | "base" | "never" = 
     writeFileSync(join(ws, "src/m.ts"), MOD);
     // the existing test: passes on the base (f(1) === 2); on the edit it tries to write outside the scratch dir
     writeFileSync(join(ws, "src/m.test.ts"), `import test from "node:test";\nimport { writeFileSync } from "node:fs";\nimport { f } from "./m.ts";\ntest("orig", () => {\n  if (${escape === "edit" ? "f(1) === 3" : escape === "base" ? "f(1) === 2" : "f(1) === 3 && f(0) === 0"}) writeFileSync(${JSON.stringify(marker)}, "escaped");\n});\n`);
+    for (const [path, content] of Object.entries(extraTests)) writeFileSync(join(ws, path), content);
     writeFileSync(join(ws, "tsconfig.json"), TSCONFIG);
     writeFileSync(join(ws, "package.json"), JSON.stringify({ name: "m98c", private: true, type: "module" }));
     writeFileSync(join(ws, ".gitignore"), "node_modules\n");
@@ -92,4 +93,43 @@ test("Auditor #489: related mode judges an M98 candidate's related tests CONFINE
   assert.match(log, /related_tests=1 judged=0 confined=1 unconfinable=1/);
   assert.equal(escaped, false, "the related test wrote outside its scratch dir while judged on the base (ran unconfined)");
   assert.equal(res.originalSuitePassed, false, log);
+});
+
+// W619 (#619 derive run 41063057390): PeaceSTOCKS related tests that spawn zstd or read .github/ can't pass confined even
+// on the base. They are never run on the edit (still never unconfined); the harness takes the next related tests that
+// do pass confined, and judges the edit with them when at least MIN_CONFINED_JUDGED (2) remain.
+const SPAWNS = `import test from "node:test";\nimport { execFileSync } from "node:child_process";\nimport { f } from "./m.ts";\ntest("spawns", () => { execFileSync("true"); if (f(1) < 0) throw new Error("x"); });\n`;
+const CONFINED_OK = `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "./m.ts";\ntest("ok", () => { assert.equal(f(0) > 0, true); });\n`;
+const BREAKS_ON_EDIT = `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "./m.ts";\ntest("pins", () => { assert.equal(f(1), 2); });\n`;
+
+test("W619: a related test that can't pass confined on the base is skipped when enough confined tests judge the edit", { skip: !permission && "needs Node >= 22 (--permission)" }, () => {
+  const { res, escaped, log } = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", { "src/m.a-spawn.test.ts": SPAWNS, "src/m.b-ok.test.ts": CONFINED_OK });
+  assert.match(log, /related_tests=3 judged=2 confined=1 unconfinable=1 pool=3 judgeable=true/);
+  assert.equal(res.applied, true, log);
+  assert.equal(escaped, false);
+  assert.equal(res.originalSuitePassed, true, log);
+});
+
+test("W619: the pool is probed past unconfinable tests up to RELATED_LIMIT judged; a judged test the edit breaks still fails it", { skip: !permission && "needs Node >= 22 (--permission)" }, () => {
+  const extra = { "src/m.a-spawn.test.ts": SPAWNS, "src/m.b-spawn.test.ts": SPAWNS, "src/m.c-ok.test.ts": CONFINED_OK, "src/m.d-ok.test.ts": CONFINED_OK, "src/m.e-pins.test.ts": BREAKS_ON_EDIT, "src/m.f-ok.test.ts": CONFINED_OK };
+  const { res, escaped, log } = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", extra);
+  // m.a, m.b unconfinable; m.c, m.d, m.e (passes on the base), m.f judged = RELATED_LIMIT 4; m.test.ts never probed
+  assert.match(log, /related_tests=6 judged=4 confined=1 unconfinable=2 pool=7 judgeable=true/);
+  assert.equal(res.applied, true, log);
+  assert.equal(escaped, false);
+  assert.equal(res.originalSuitePassed, false, log);
+  // control: the same pool with m.e passing on the edit too passes, so the failure above is the broken judged test
+  const ok = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", { ...extra, "src/m.e-pins.test.ts": CONFINED_OK });
+  assert.match(ok.log, /related_tests=6 judged=4 confined=1 unconfinable=2 pool=7 judgeable=true/);
+  assert.equal(ok.res.originalSuitePassed, true, ok.log);
+});
+
+test("W619: with unconfinable related tests, fewer than 2 confined judged tests fails closed (0 and 1)", { skip: !permission && "needs Node >= 22 (--permission)" }, () => {
+  const none = runConfinedFixture("PeaceG03/PeaceSTOCKS", "base", { "src/m.a-spawn.test.ts": SPAWNS });
+  assert.match(none.log, /related_tests=2 judged=0 confined=1 unconfinable=2 pool=2 judgeable=false/);
+  assert.equal(none.escaped, false);
+  assert.equal(none.res.originalSuitePassed, false, none.log);
+  const one = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", { "src/m.a-spawn.test.ts": SPAWNS });
+  assert.match(one.log, /related_tests=2 judged=1 confined=1 unconfinable=1 pool=2 judgeable=false/);
+  assert.equal(one.res.originalSuitePassed, false, one.log);
 });

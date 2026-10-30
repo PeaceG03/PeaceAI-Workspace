@@ -28,6 +28,16 @@ const resultsFile = resolve(process.env.PEACEAI_RESULTS_FILE ?? "");
 const repo = resolve(process.env.PEACEAI_WORKSPACE_DIR ?? process.cwd());
 const STEP_TIMEOUT_MS = 120_000;
 const RELATED_TIMEOUT_MS = 60_000;
+/**
+ * W619 (Auditor #489 follow-up): an EXISTING_EDIT (M98) candidate's related tests are judged only if they pass CONFINED
+ * on the base. Many existing tests can't (they spawn a binary, read a file outside src/), so the harness probes up to
+ * RELATED_POOL related tests, in the same order, and keeps the first RELATED_LIMIT that pass confined on the base. A
+ * probed test that fails confined on the base never runs on the edit (so candidate code still never runs unconfined)
+ * and counts as unconfinable; with any unconfinable test the candidate needs at least MIN_CONFINED_JUDGED judged tests,
+ * so it fails closed when too few confined tests remain to judge it.
+ */
+const RELATED_POOL = 12;
+const MIN_CONFINED_JUDGED = 2;
 const RELATED_LIMIT = 4;
 
 // M5: per-target scope and original-suite mode.
@@ -739,21 +749,29 @@ for (const candidate of selected) {
     const tsc = join(tree, "node_modules", ".bin", "tsc");
     const baseTests = [...baseFiles].filter((path) => scope.isSource(path) && scope.isTest(path)).sort();
     const touched = files.map((f) => f.newPath ?? "").filter((p) => p && !scope.isTest(p));
+    const m98 = !!candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
     const related =
       targetConfig.originalSuite === "related"
-        ? relatedTests(touched, baseTests.map((path) => ({ path, content: git(repo, "show", `${summary.baseSha}:${path}`) })), RELATED_LIMIT)
+        ? relatedTests(touched, baseTests.map((path) => ({ path, content: git(repo, "show", `${summary.baseSha}:${path}`) })), m98 ? RELATED_POOL : RELATED_LIMIT)
         : [];
     // "related" mode: each related existing test runs on the untouched base first; only those that pass
     // there are judged on the candidate (a regression fails it). Base failures are environment noise.
     // Auditor #489: an EXISTING_EDIT candidate's original suite runs confined (runConfinedSuite), so its related tests
-    // are judged by a CONFINED run on the base. A related test that can't pass confined even on the base can't be run
-    // on the edit at all (never unconfined), so the candidate's original suite fails closed.
-    const m98 = !!candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
-    const judged = m98
-      ? related.filter((path) => runConfinedSuite(tree, [path], RELATED_TIMEOUT_MS))
-      : related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
-    const m98Unconfinable = m98 && targetConfig.originalSuite === "related" ? related.length - judged.length : 0;
-    if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${related.length} judged=${judged.length}${m98 ? ` confined=1 unconfinable=${m98Unconfinable}` : ""}`);
+    // are judged by a CONFINED run on the base. A related test that can't pass confined even on the base is never run
+    // on the edit (never unconfined); W619: the pool is probed until RELATED_LIMIT confined tests are judged, and with
+    // any unconfinable test the original suite fails closed unless at least MIN_CONFINED_JUDGED tests judge the edit.
+    const judged: string[] = [];
+    let probed = 0;
+    if (m98) {
+      for (const path of related) {
+        if (judged.length >= RELATED_LIMIT) break;
+        probed++;
+        if (runConfinedSuite(tree, [path], RELATED_TIMEOUT_MS)) judged.push(path);
+      }
+    } else judged.push(...related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS)));
+    const m98Unconfinable = m98 && targetConfig.originalSuite === "related" ? probed - judged.length : 0;
+    const m98Judgeable = m98Unconfinable === 0 || judged.length >= MIN_CONFINED_JUDGED;
+    if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${m98 ? probed : related.length} judged=${judged.length}${m98 ? ` confined=1 unconfinable=${m98Unconfinable} pool=${related.length} judgeable=${m98Judgeable}` : ""}`);
     const digestBefore = digestProtected ? protectedDigest(tree) : "";
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", diffPath])) continue;
     if (!runTrusted(tree, "git", ["apply", "--whitespace=nowarn", diffPath])) continue;
@@ -794,9 +812,9 @@ for (const candidate of selected) {
     // An appended test file runs in pass 1 exactly as it is on the base (its new cases parked).
     for (const path of appended) writeFileSync(join(tree, path), git(repo, "show", `${summary.baseSha}:${path}`));
     result.originalSuitePassed = m98
-      ? m98Unconfinable === 0 && (targetConfig.originalSuite === "full"
+      ? (targetConfig.originalSuite === "full"
         ? baseTests.length > 0 && runConfinedSuite(tree, baseTests)
-        : judged.every((path) => runConfinedSuite(tree, [path], RELATED_TIMEOUT_MS)))
+        : m98Judgeable && judged.every((path) => runConfinedSuite(tree, [path], RELATED_TIMEOUT_MS)))
       : targetConfig.originalSuite === "full"
         ? baseTests.length > 0 && runCandidate(tree, tsx, ["--test", ...baseTests])
         : judged.every((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS));
