@@ -46,20 +46,32 @@ export function selectSources(
 
 /**
  * Existing tests related to the touched source files: tests whose name starts with a touched file's stem,
- * or that import a touched module. At most `limit`, sorted.
+ * or that import a touched module. At most `limit`, sorted (with `ownFirst`: the touched modules' own tests first).
  */
-export function relatedTests(touched: readonly string[], tests: readonly SourceFile[], limit = 6): string[] {
+export function relatedTests(touched: readonly string[], tests: readonly SourceFile[], limit = 6, options: { ownFirst?: boolean } = {}): string[] {
   const stems = touched.map((p) => p.replace(/\.ts$/, ""));
-  const hits = tests.filter((t) =>
-    stems.some((stem) => {
-      const base = posix.basename(stem);
-      if (posix.dirname(t.path) === posix.dirname(stem) && posix.basename(t.path).startsWith(`${base}.`)) return true;
-      if (posix.dirname(t.path) === posix.dirname(stem) && posix.basename(t.path).startsWith(`${base}-`)) return true;
-      const rel = posix.relative(posix.dirname(t.path), stem).replace(/^(?!\.)/, "./");
-      return new RegExp(`from\\s+["']${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\.ts|\\.js)?["']`).test(t.content);
-    }),
-  );
-  return hits.map((t) => t.path).sort().slice(0, limit);
+  const hits = tests.filter((t) => stems.some((stem) => isOwnTest(t.path, stem) || importsStem(t, stem)));
+  const sorted = hits.map((t) => t.path).sort();
+  // W619 (Auditor #620 follow-up): with ownFirst, the touched module's own test files (same directory,
+  // `<stem>.*` / `<stem>-*`) come first, before importers, so a pool cut never drops the direct tests.
+  // Stable: each group keeps the sorted order.
+  const ordered = options.ownFirst
+    ? [...sorted.filter((path) => stems.some((stem) => isOwnTest(path, stem))), ...sorted.filter((path) => !stems.some((stem) => isOwnTest(path, stem)))]
+    : sorted;
+  return ordered.slice(0, limit);
+}
+
+/** A test file in the touched module's directory whose name starts with `<stem>.` or `<stem>-`. */
+function isOwnTest(path: string, stem: string): boolean {
+  if (posix.dirname(path) !== posix.dirname(stem)) return false;
+  const base = posix.basename(stem);
+  const name = posix.basename(path);
+  return name.startsWith(`${base}.`) || name.startsWith(`${base}-`);
+}
+
+function importsStem(t: SourceFile, stem: string): boolean {
+  const rel = posix.relative(posix.dirname(t.path), stem).replace(/^(?!\.)/, "./");
+  return new RegExp(`from\\s+["']${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\.ts|\\.js)?["']`).test(t.content);
 }
 
 /**

@@ -6,7 +6,7 @@
 // test fails if its branch in bin/test-candidates.ts falls back to the unconfined runner (verified by mutation).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -27,6 +27,9 @@ function runConfinedFixture(target: string, escape: "edit" | "base" | "never" = 
   const dir = mkdtempSync(join(tmpdir(), "m98c-"));
   try {
     const ws = join(dir, "ws"), marker = join(dir, "escaped.txt");
+    // the harness's own TMPDIR is fixture-private, so leftover confined scratch dirs can be seen after the run
+    const harnessTmp = join(dir, "harness-tmp");
+    mkdirSync(harnessTmp);
     mkdirSync(join(ws, "src"), { recursive: true });
     writeFileSync(join(ws, "src/m.ts"), MOD);
     // the existing test: passes on the base (f(1) === 2); on the edit it tries to write outside the scratch dir
@@ -58,11 +61,11 @@ function runConfinedFixture(target: string, escape: "edit" | "base" | "never" = 
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
     const p = spawnSync(tsx, [join(repo, "peaceai/bin/test-candidates.ts")], {
       cwd: repo, encoding: "utf8",
-      env: { ...env, PEACEAI_IN_DIR: inDir, PEACEAI_RESULTS_FILE: resultsFile, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: target, PEACEAI_SANDBOX_USER: "", PEACEAI_REQUIRE_SANDBOX: "", PEACEAI_APPROVED_LIST: list },
+      env: { ...env, PEACEAI_IN_DIR: inDir, PEACEAI_RESULTS_FILE: resultsFile, PEACEAI_WORKSPACE_DIR: ws, PEACEAI_TARGET: target, PEACEAI_SANDBOX_USER: "", PEACEAI_REQUIRE_SANDBOX: "", PEACEAI_APPROVED_LIST: list, TMPDIR: harnessTmp },
     });
     assert.equal(p.status, 0, p.stderr);
     const res = JSON.parse(readFileSync(resultsFile, "utf8")).results[0];
-    return { res, escaped: existsSync(marker), log: p.stdout };
+    return { res, escaped: existsSync(marker), log: p.stdout, leftovers: readdirSync(harnessTmp).filter((n) => n.startsWith("peaceai-confined-")) };
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
@@ -132,4 +135,43 @@ test("W619: with unconfinable related tests, fewer than 2 confined judged tests 
   const one = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", { "src/m.a-spawn.test.ts": SPAWNS });
   assert.match(one.log, /related_tests=2 judged=1 confined=1 unconfinable=1 pool=2 judgeable=false/);
   assert.equal(one.res.originalSuitePassed, false, one.log);
+});
+
+// W619 follow-ups (Auditor #620): the edited module's own tests are probed first, and every confined run gets a fresh
+// TMPDIR/TMP/TEMP/HOME scratch dir (outside the tree) that is removed after the run.
+test("W619 follow-up: related mode orders the edited module's own tests before importers", { skip: !permission && "needs Node >= 22 (--permission)" }, () => {
+  // src/a-imp.test.ts imports ./m.ts and sorts before src/m.*; it must come after the own tests
+  const { res, log } = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", { "src/a-imp.test.ts": CONFINED_OK, "src/m.b-ok.test.ts": CONFINED_OK, "src/m-c.test.ts": CONFINED_OK });
+  assert.match(log, /related_pool=src\/m-c\.test\.ts,src\/m\.b-ok\.test\.ts,src\/m\.test\.ts,src\/a-imp\.test\.ts judged_tests=src\/m-c\.test\.ts,src\/m\.b-ok\.test\.ts,src\/m\.test\.ts,src\/a-imp\.test\.ts/);
+  assert.equal(res.originalSuitePassed, true, log);
+});
+
+const TMP_PROBE = `import test from "node:test";
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { f } from "./m.ts";
+test("tmp", () => {
+  const t = resolve(tmpdir());
+  assert.equal(process.env.TMP, process.env.TMPDIR);
+  assert.equal(process.env.TEMP, process.env.TMPDIR);
+  assert.equal(process.env.HOME, process.env.TMPDIR);
+  assert.equal(t.startsWith(resolve(process.cwd()) + "/"), false);
+  assert.equal(existsSync(join(t, "seen")), false);
+  writeFileSync(join(t, "seen"), "1");
+  const d = mkdtempSync(join(t, "probe-"));
+  writeFileSync(join(d, "a"), "b");
+  assert.equal(readFileSync(join(d, "a"), "utf8"), "b");
+  assert.equal(f(0) > 0, true);
+});
+`;
+
+test("W619 follow-up: a confined test gets a fresh writable TMPDIR/TMP/TEMP/HOME outside the tree, removed after the run", { skip: !permission && "needs Node >= 22 (--permission)" }, () => {
+  // judged on the base, then run on the edit: "seen" must be absent both times (fresh per run); mkdtemp(tmpdir()) works
+  const { res, log, leftovers } = runConfinedFixture("PeaceG03/PeaceSTOCKS", "never", { "src/m.tmp.test.ts": TMP_PROBE });
+  assert.match(log, /related_tests=2 judged=2 confined=1 unconfinable=0 pool=2 judgeable=true/);
+  assert.equal(res.applied, true, log);
+  assert.equal(res.originalSuitePassed, true, log);
+  assert.deepEqual(leftovers, [], "confined scratch dirs were left behind");
 });
