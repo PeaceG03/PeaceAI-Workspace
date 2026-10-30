@@ -447,7 +447,7 @@ test("Job B code: gradeExistingEdit runs before gradeSelf, needs 1 source + 1 te
 test("Auditor #489: grading never runs an EXISTING_EDIT splice unconfined — static gate before any run, original suite + new test under --permission", () => {
   const src = read("peaceai/bin/test-candidates.ts");
   const loop = src.slice(src.indexOf("for (const candidate of selected) {"));
-  const gate = loop.indexOf("existingEditStatic(tree, files, newTests)"), tc = loop.indexOf("result.typecheckPassed = runCandidate(");
+  const gate = loop.indexOf("existingEditStatic(tree, files, newTests, wireLoop)") /* G28: wireLoop is true only for public-derive-wire-loop-v1 */, tc = loop.indexOf("result.typecheckPassed = runCandidate(");
   const p1 = loop.indexOf("result.originalSuitePassed = m98"), p2 = loop.indexOf("else if (m98) {");
   assert.ok(gate > 0 && gate < tc && tc < p1 && p1 < p2, "static gate precedes typecheck and every execution pass");
   assert.match(loop.slice(gate, tc), /continue;/, "a refused edit is never run");

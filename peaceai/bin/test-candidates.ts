@@ -17,7 +17,7 @@ import { assertionFailuresOnly } from "../lib/learned-body.ts";
 import { appendTargetProblem, deriveAppendRecheck, deriveModuleRecheck } from "../lib/learned-derive.ts";
 import { dateTestProblem, envArgProblem, existingTargetRefusal, mapSetTestProblem, moduleReadClosure, regularFileReader, repoFileLists, voidTestProblem } from "../lib/learned-test-existing.ts";
 import { BROKEN_TYPE_LINE, workflowScript } from "../lib/learned-workflow.ts";
-import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, isExcludedSource } from "../lib/learned-edit-existing.ts";
+import { EXISTING_EDIT_ENV_RUNS, existingEditReads, gradeExistingEditProblem, gradeLoopModuleProblem, isExcludedSource, loopModuleShape, loopStub } from "../lib/learned-edit-existing.ts";
 import { relatedTests } from "../lib/sources.ts";
 import { buildIndex } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
@@ -460,12 +460,31 @@ function gradeExisting(tree: string, files: ReturnType<typeof parseDiff>, newTes
  * applied tree. test-candidates runs it BEFORE any candidate code executes (typecheck aside), so an EXISTING_EDIT
  * candidate that fails it is never run at all — not in the original suite, not as a new test.
  */
-function existingEditStatic(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[]): { modPath: string; reads: string[] } | TestGrading["reason"] {
+function existingEditStatic(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], loop = false): { modPath: string; reads: string[]; stub?: string } | TestGrading["reason"] {
   const base = summary.baseSha;
   const source = files.filter((f) => !f.isNew && f.newPath && f.oldPath === f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
   const tests = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && scope.isTest(f.newPath)).map((f) => f.newPath!);
-  if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return "not-test-only";
   const regular = regularFileReader(tree);
+  // G28 (public-derive-wire-loop-v1 only): the candidate CREATES its module (there is no base text) and one new test;
+  // the module must be exactly the loop template (gradeLoopModuleProblem) and its before-run source is the template's
+  // type-default stub (loopStub), never the missing module (a load error is not an assertion failure)
+  if (loop) {
+    const created = files.filter((f) => f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
+    if (source.length !== 0 || created.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return "not-test-only";
+    const modPath = created[0]!, testPath = tests[0]!;
+    const real = regular(modPath), test = regular(testPath);
+    if (real === null || test === null) return "not-applied";
+    try { git(repo, "cat-file", "-e", `${base}:${modPath}`); return "not-test-only"; } catch { /* new at the base: expected */ }
+    const read = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
+    if (gradeLoopModuleProblem(modPath, real, testPath, test, read) !== null) return "not-test-only";
+    const h = loopModuleShape(modPath, real);
+    const stub = h ? loopStub(h) : null;
+    const reads = existingEditReads(modPath, read);
+    if (!reads) return "module-imports-repo-files";
+    if (!stub) return "not-test-only";
+    return { modPath, reads, stub };
+  }
+  if (source.length !== 1 || tests.length !== 1 || files.length !== 2 || newTests.length !== 1 || newTests[0] !== tests[0]) return "not-test-only";
   const modPath = source[0]!, testPath = tests[0]!;
   const real = regular(modPath), test = regular(testPath);
   let baseText: string;
@@ -478,15 +497,19 @@ function existingEditStatic(tree: string, files: ReturnType<typeof parseDiff>, n
   return { modPath, reads };
 }
 
-function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean): TestGrading {
+function gradeExistingEdit(tree: string, files: ReturnType<typeof parseDiff>, newTests: readonly string[], afterFix: boolean, loop = false): TestGrading {
   const base = summary.baseSha;
   const ungradable = (reason: TestGrading["reason"]): TestGrading => ({ fixSha: base, afterFix, beforeFix: null, verdict: "UNGRADABLE", reason });
-  const st = existingEditStatic(tree, files, newTests);
+  const st = existingEditStatic(tree, files, newTests, loop);
   if (typeof st !== "object" || st === null) return ungradable(st);
   const { modPath, reads } = st;
   if (afterFix) for (const env of EXISTING_EDIT_ENV_RUNS) if (!runExistingTests(tree, newTests, reads, false, undefined, env).ok) return ungradable("real-not-stable");
-  if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", modPath])) return ungradable("revert-failed");
+  // G28: a created module goes back to the template's type-default stub (same import and signature, empty lists) for
+  // the before-run, then is removed; every other EXISTING_EDIT goes back to the base text
+  if (st.stub !== undefined) { try { writeFileSync(join(tree, modPath), st.stub); } catch { return ungradable("revert-failed"); } }
+  else if (!runTrusted(tree, "git", ["checkout", "-q", base, "--", modPath])) return ungradable("revert-failed");
   const run = runExistingTests(tree, newTests, reads, false, undefined, EXISTING_EDIT_ENV_RUNS[0]);
+  if (st.stub !== undefined) rmSync(join(tree, modPath), { force: true });
   console.log(`grading: existing-edit (module ${modPath}; ${reads.length} load-closure files; before-run ok: ${run.ok})`);
   if (!run.ok && !assertionFailuresOnly(run.out)) return ungradable("before-not-assertion");
   return { fixSha: base, afterFix, beforeFix: run.ok, verdict: gradingVerdict(afterFix, run.ok), reason: null };
@@ -765,6 +788,8 @@ for (const candidate of selected) {
     const baseTests = [...baseFiles].filter((path) => scope.isSource(path) && scope.isTest(path)).sort();
     const touched = files.map((f) => f.newPath ?? "").filter((p) => p && !scope.isTest(p));
     const m98 = !!candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
+    // G28: the derive-wire loop spec's candidate creates its module (graded by the loop branch of existingEditStatic)
+    const wireLoop = m98 && typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-derive-wire-loop-v1@");
     const related =
       targetConfig.originalSuite === "related"
         ? relatedTests(touched, baseTests.map((path) => ({ path, content: git(repo, "show", `${summary.baseSha}:${path}`) })), m98 ? RELATED_POOL : RELATED_LIMIT, { ownFirst: m98 })
@@ -818,7 +843,7 @@ for (const candidate of selected) {
     // Auditor #489: the EXISTING_EDIT static gate (capability delta, hermetic walk, closure) runs on the applied tree
     // BEFORE any candidate code executes; a refused edit is never run (every pass stays false, grading stays UNGRADABLE).
     if (m98) {
-      const st = existingEditStatic(tree, files, newTests);
+      const st = existingEditStatic(tree, files, newTests, wireLoop);
       if (typeof st !== "object" || st === null) { console.log(`${candidate.id} existing_edit_static=${st}`); continue; }
     }
     result.typecheckPassed = runCandidate(tree, tsc, ["-p", "tsconfig.json", "--noEmit"]);
@@ -847,7 +872,7 @@ for (const candidate of selected) {
     // closed if the closure can't be resolved (gradeExistingEdit would reject such a module anyway).
     if (newTests.length === 0) result.newTestsPassed = true;
     else if (m98) {
-      const srcFiles = files.filter((f) => !f.isNew && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
+      const srcFiles = files.filter((f) => (wireLoop ? f.isNew : !f.isNew) && f.newPath && scope.isSource(f.newPath) && !scope.isTest(f.newPath) && !isExcludedSource(f.newPath)).map((f) => f.newPath!);
       const regular = (rel: string): string | null => { try { const pth = join(tree, rel); if (!lstatSync(pth).isFile() || relative(tree, realpathSync(pth)).startsWith("..")) return null; return readFileSync(pth, "utf8"); } catch { return null; } };
       const rd = (rel: string): string | null => (scope.isSource(rel) && !scope.isTest(rel) && !isExcludedSource(rel) ? regular(rel) : null);
       const reads = srcFiles.length === 1 ? existingEditReads(srcFiles[0]!, rd) : null;
@@ -859,7 +884,7 @@ for (const candidate of selected) {
     if (candidate.selfGrade && candidate.transformations.includes("LEARNED_TEST_EXISTING")) result.testGrading = gradeExisting(tree, files, newTests, result.newTestsPassed, tsx, typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v2@") || candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v3@") || candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v4@") || candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v5@") || candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && (candidate.operationId.startsWith("learned:public-test-case-existing-v6@") || candidate.operationId.startsWith("learned:public-test-case-existing-v7@")), typeof candidate.operationId === "string" && candidate.operationId.startsWith("learned:public-test-case-existing-v7@"));
     // M98 (public-existing-function-edit-v1): a statement edit inside an existing function / method, graded by its
     // fake-driven test (gradeExistingEdit: confined edit, hermetic re-check on the graded tree, zone + locale runs).
-    else if (candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT")) result.testGrading = gradeExistingEdit(tree, files, newTests, result.newTestsPassed);
+    else if (candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT")) result.testGrading = gradeExistingEdit(tree, files, newTests, result.newTestsPassed, wireLoop);
     else if (candidate.selfGrade) result.testGrading = gradeSelf(tree, files, newTests, result.newTestsPassed, tsx, candidate.transformations.includes("LEARNED_ADD_FUNCTION") || candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR"), candidate.transformations.includes("LEARNED_ADD_WORKFLOW_STEP"), candidate.transformations.includes("LEARNED_DERIVE_FROM_BEHAVIOR") && { operationId: candidate.operationId }, candidate.transformations.includes("LEARNED_REPLACE_EXPRESSION"));
     // M72: and after every pass (repair, type check, suites, grading) the protected files are still unchanged.
     if (digestProtected && protectedDigest(tree) !== digestBefore) {

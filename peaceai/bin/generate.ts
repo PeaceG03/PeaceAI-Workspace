@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { admitRules, loadApprovedList } from "../lib/approved.ts";
 import { parseDiff } from "../lib/diff.ts";
 import { rawIssueProblem } from "../lib/learned-derive.ts";
+import { isWireLoopParams } from "../lib/learned-edit-existing.ts";
 import { applyRule, pathExistsIn, specHash, type LearnedEdit } from "../lib/learned.ts";
 import { formatRefusals, type RuleRefusal, validQuestionLine } from "../lib/refusal-reason.ts";
 import { safeNewModuleOnDisk } from "../lib/learned-function.ts";
@@ -294,7 +295,8 @@ for (const a of planSteps ? [] : admissions) {
   if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); if (why.questions && !ruleQuestions) ruleQuestions = why.questions; continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
-  const newModule = !!(edit.create && edit.selfGrade && edit.extra && (a.spec.kind === "ADD_FUNCTION" || a.spec.kind === "DERIVE_FROM_BEHAVIOR") && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
+  // G28: or the derive-wire loop spec (EXISTING_EDIT with its own params), whose module is new.
+  const newModule = !!(edit.create && edit.selfGrade && edit.extra && (a.spec.kind === "ADD_FUNCTION" || a.spec.kind === "DERIVE_FROM_BEHAVIOR" || (a.spec.kind === "EXISTING_EDIT" && isWireLoopParams(a.spec.params))) && !edit.fixSha && !baseFiles.has(edit.path) && scope.isSource(edit.path) && !scope.isTest(edit.path) && safeNewModuleOnDisk(repo, edit.path));
   // M80: TEST_CASE_EXISTING creates exactly ONE new test file (never an existing path) and nothing else: no source
   // edit, no extra file, no fix commit. Job B grades it fix-free (passes today, fails with the function stubbed).
   const existingTest = a.spec.kind === "TEST_EXISTING";
