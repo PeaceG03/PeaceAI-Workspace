@@ -9,8 +9,9 @@
 // ts.createSourceFile only, nothing is imported, required or run); never reads outside the repo root (every path is
 // normalized, refused if absolute or escaping, and its realpath must stay under the root's realpath; symlinks are
 // never followed by the walk); never reads .git internals or gitignored files (so an ignored .env stays unread).
-// Definitions, references and BM25 text ranking reuse M6's index (symbols.ts); this module adds the import /
-// export binding graph that M6 does not keep.
+// Definitions, references, BM25 text ranking and the objective resolver (resolveTargets) reuse M6's index
+// (symbols.ts); this module adds the import / export binding graph that M6 does not keep. symbols.ts itself is
+// not edited: its content is pinned by sha256 in model/heldout.json and it is in the m96 protected closure.
 //
 // Each safety or relevance filter is a single line tagged "filter:<id>". The m143 mutation test deletes each tagged
 // line in turn and requires a behavior test to fail, so no filter is untested.
