@@ -13,6 +13,7 @@ import { buildRecords, stableJson } from "../lib/records.ts";
 import { bodySha256, recordedTaskSource } from "../lib/policy.ts";
 import { isRepaired, validateRepairRecord, type StoredRepairRecord } from "../lib/repairrecord.ts";
 import { appendIndex, loadAll, taskDir, writeNew, writeSummary } from "../lib/store.ts";
+import { auditorPassClass } from "../lib/auditor-pass.ts";
 
 const env = (name: string) => {
   const value = process.env[name];
@@ -68,6 +69,11 @@ const regrade = regradeRaw ? { regradeOf: regradeRaw } : {};
 const issueNumber = Number(issue.number);
 // M5: the target is recorded with the task; the verdict job opens the PR there.
 const targetName = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(process.env.TASK_TARGET ?? "") ? process.env.TASK_TARGET! : "";
+function auditorPassClassAtIntake(labels: unknown): { auditorPassClass?: "scanner-helper" | "scanner-wiring" } {
+  const names = Array.isArray(labels) ? labels.filter((l): l is string => typeof l === "string") : [];
+  const c = auditorPassClass(names).cls;
+  return c ? { auditorPassClass: c } : {};
+}
 const records = buildRecords(
   {
     issue: issueNumber,
@@ -82,6 +88,8 @@ const records = buildRecords(
     bodySha256: bodySha256(issue.body),
     ...(targetName ? { target: targetName } : {}),
     ...regrade,
+    // Auditor-pass class named by the labels re-read here (exactly one of scanner-helper / scanner-wiring).
+    ...auditorPassClassAtIntake(issue.labels),
   },
   summary.candidates,
   results,

@@ -18,7 +18,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { effectiveVerdict, type VerdictRecord } from "../peaceai/lib/records.ts";
+import { effectiveVerdict, isDelegatedVerdict, type VerdictRecord } from "../peaceai/lib/records.ts";
 import { computeNeverZone, NEVER_ZONE, type NeverZoneSet } from "../peaceai/lib/selfchange.ts";
 import { selfProtectedReason } from "../peaceai/lib/self-zone.ts";
 import {
@@ -286,7 +286,8 @@ export function workspaceRefusal(e: Entry, chk?: WorkspaceProofChecker | null): 
       return "W_HASH_MISMATCH";
     const pick = effectiveVerdict(d.verdicts).pick;
     const named = d.verdicts.find((v) => v.commentId === commentId);
-    if (!pick.decided || pick.candidateId !== candidateId || !named || named.verdict !== "right" || named.candidateId !== candidateId || named.runId !== runId)
+    // Peace's own verdict only: an auditor-pass (owner-delegated) row or pick never counts (0 credit).
+        if (!pick.decided || effectiveVerdict(d.verdicts).delegated || pick.candidateId !== candidateId || !named || isDelegatedVerdict(named) || named.verdict !== "right" || named.candidateId !== candidateId || named.runId !== runId)
       return "W_NO_VERDICT";
     const l = chk.landing(shas[0]!, d.candidateDiff);
     if (!l) return "W_LOOKUP_FAILED";

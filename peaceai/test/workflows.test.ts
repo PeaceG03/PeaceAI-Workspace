@@ -38,7 +38,7 @@ test("untrusted text reaches steps only through env, never inside run scripts", 
     const text = read(f);
     for (const line of text.split("\n")) {
       if (/github\.event\.(issue|pull_request|comment)\.(title|body)|head_ref|pull_request\.head\.ref/.test(line))
-        assert.match(line, /^\s+[A-Z_]+: \$\{\{|^\s+startsWith\(github\.event\.comment\.body, '\/(verdict|approve-rule)'\)$/, `${f}: ${line.trim()}`);
+        assert.match(line, /^\s+[A-Z_]+: \$\{\{|^\s+startsWith\(github\.event\.comment\.body, '\/(verdict|approve-rule|auditor-pass)'\)$/, `${f}: ${line.trim()}`);
     }
     for (const block of text.split(/\n\s+run: \|?/).slice(1)) {
       const script = block.split(/\n\s{6}- |\n {2}[a-z]/)[0]!;

@@ -565,7 +565,7 @@ export function lmEvaluate(stored: readonly StoredTask[], version: string | null
   let tasks = 0, lmAgree = 0, baselineAgree = 0;
   for (const t of latest.values()) {
     const e = effectiveVerdict(t.verdicts);
-    if (t.task.test || !t.task.heldOut || e.withdrawn || !e.pick.decided || !t.ranking.lmShadow || t.ranking.presentation.length < 2) continue;
+    if (t.task.test || !t.task.heldOut || e.delegated || e.withdrawn || !e.pick.decided || !t.ranking.lmShadow || t.ranking.presentation.length < 2) continue;
     if (judged === null || t.ranking.lmShadow.model !== judged) continue;
     tasks += 1;
     if (t.ranking.lmShadow.top === e.pick.candidateId) lmAgree += 1;

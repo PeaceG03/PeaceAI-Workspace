@@ -68,6 +68,42 @@ rows in time order (then comment id), using only the issue's latest attempt:
 Branches are `peace-task/issue-<n>-<candidate>-<hex>`, so an open PR never holds a candidate other
 than the counted `right` pick.
 
+**Auditor pass (scanner-helper and scanner-wiring tasks only).** Peace delegated the verdict on one narrow class of
+task to Auditor (2026-10-29). Auditor may reply:
+
+- `/auditor-pass <letter> <candidate diff sha256>`: counts as `<letter> right` and opens the target PR,
+  but only when all of these hold (otherwise nothing is written to Results and the reply says why):
+  - the issue carries both the `peace-task` and `scanner-helper` labels;
+  - the derive run's recorded task says `source: builder` and the target is `PeaceG03/PeaceSTOCKS`;
+  - the sha256 is that of the recorded candidate diff, byte for byte (64 lowercase hex);
+  - the diff only adds two new files under `src/`: one module and one `.test.ts`, with no edit, delete
+    or rename of an existing file, no workflow, `peaceai/` or package file, and no path the target denies.
+
+  The row is written as `right` with `source: auditor-pass` and `delegatedBy: owner (scanner-helper
+  class)`. It is **not** an owner verdict and gives **0 credit**: it backs the PR pick only, and is
+  left out of agreement, training, held-out evaluation, owner verdict counts in `summary.json`
+  (counted separately as `delegatedPickTasks`), Builder-log Workspace proof and the post-verdict
+  retrain. It opens no Workspace PR and writes no carry-forward verdict. The PR body and reply say
+  `auditor-pass`. The owner can still withdraw or override it with `/verdict`.
+
+  **An auditor pass never overrides Peace.** It is refused (`owner-decided`, nothing written) when the
+  attempt already has any owner verdict other than `unsure`, and readers ignore any auditor-pass row
+  that comes after an owner `right` or `wrong` (so replayed Results cannot override him either). Only one
+  auditor pass per attempt (`already-passed`), so a repeated pass can never open a second PR. The
+  class label is recorded at intake (`auditorPassClass` in `task.json`, from the labels re-read when the
+  task is recorded); a pass under a different class, or on a task recorded with no class, is refused
+  (`class-mismatch`): the label has to be on the issue before the derive run records it.
+
+  **scanner-wiring** (Peace, 2026-10-30): the same command on a `peace-task` labelled
+  `scanner-wiring` (exactly one of the two class labels) covers Builder-filed PeaceSTOCKS tasks that
+  edit existing `src/` files. Same scope, sha and 0-credit rules; the diff may only modify existing
+  regular files or add new ones under `src/` (no delete, rename, mode change or binary), never a
+  protected path (`peaceai/`, `.github/`, workflows or any `.yml`, `CODEOWNERS`, package, tsconfig or
+  dot files) and nothing the target denies. Recorded with `delegatedBy: owner (scanner-wiring class)`.
+
+  Both Auditor and Builder comment as `PeaceG03`, so the workflow cannot tell them apart: the gate
+  relies on the agents' rules (Auditor alone posts `/auditor-pass`; Builder never does).
+
 **Agreement** compares the ranker's blind top pick with that pick. It counts only the latest attempt
 per issue, only tasks with two or more **distinct** eligible edits, and excludes test tasks. A task
 whose candidates all make the same edit counts as a single-candidate task (`singleEditTasks` in the summary).
@@ -521,7 +557,7 @@ all check the variable; a cancelled run leaves its issue `peaceai:running`, whic
   pre-push hook and the M9 memcheck's core index) skips a file only when its path is listed AND its bytes match
   the pin; changed content, another path, or a malformed allowlist means it is indexed as private again.
 - `ci` runs the type check, the `src` tests, the tooling tests and the tamper-proof check.
-- `peace-verdict` records `/verdict` comments (see above).
+- `peace-verdict` records `/verdict` comments, and `/auditor-pass` on scanner-helper and scanner-wiring tasks (see above).
 - `key-proof` (manual, owner only) proves each deploy key has exactly the access it should.
 - **Local pre-push hook** (box clones): `peaceai/bin/install-pre-push.sh <core-dir>` (or
   `PEACEAI_CORE_DIR`) installs a git `pre-push` hook. Before any push it scans **every commit being

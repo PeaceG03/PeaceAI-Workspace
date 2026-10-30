@@ -22,6 +22,8 @@ export interface Example {
   test: boolean;
   heldOut: boolean;
   withdrawn: boolean;
+  /** The pick is an auditor-pass (owner-delegated), not an owner verdict. Absent = owner pick or none. */
+  delegated?: boolean;
   decided: boolean;
   pick: string | null;
   eligible: string[];
@@ -29,7 +31,7 @@ export interface Example {
   features: CandidateFeatures[]; // distinct eligible edits only (M4.1)
 }
 
-export type Exclusion = "test" | "held-out" | "withdrawn" | "undecided" | "picked-none" | "pick-not-eligible" | "under-2-eligible" | "superseded";
+export type Exclusion = "test" | "held-out" | "delegated" | "withdrawn" | "undecided" | "picked-none" | "pick-not-eligible" | "under-2-eligible" | "superseded";
 
 /** The latest attempt per issue, as examples. Older attempts are superseded and never used. */
 export function buildExamples(root: string, stored: readonly StoredTask[]): { examples: Example[]; superseded: number } {
@@ -60,6 +62,8 @@ export function toExample(task: TaskRecord, ranking: RankingRecord, e: ReturnTyp
     test: task.test,
     heldOut: task.heldOut,
     withdrawn: e.withdrawn,
+    // An auditor-pass pick (owner-delegated, scanner-helper class) is not an owner label: never trained or evaluated on.
+    ...(e.delegated ? { delegated: true } : {}),
     decided: e.pick.decided,
     pick: e.pick.candidateId,
     eligible: eligible.map((c) => c.id),
@@ -76,6 +80,7 @@ export function trainExclusion(x: Example): Exclusion | null {
 }
 
 function labelExclusion(x: Example): Exclusion | null {
+  if (x.delegated === true) return "delegated";
   if (x.withdrawn) return "withdrawn";
   if (!x.decided) return "undecided";
   if (x.pick === null) return "picked-none";
@@ -86,7 +91,7 @@ function labelExclusion(x: Example): Exclusion | null {
 
 /** Held-out evaluation set: held-out, non-test, decided (incl. `none wrong`), 2+ eligible, not withdrawn. */
 export function isEvalExample(x: Example): boolean {
-  return !x.test && x.heldOut && !x.withdrawn && x.decided && x.eligible.length >= 2;
+  return !x.test && x.heldOut && x.delegated !== true && !x.withdrawn && x.decided && x.eligible.length >= 2;
 }
 
 export interface TrainOptions {
