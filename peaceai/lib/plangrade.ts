@@ -15,6 +15,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { applyRule, specHash, type RuleSpec, type SourceFile } from "./learned.ts";
 import { loadTargets } from "./target.ts";
+import { LOOP_SCHEMA, loopRowProblem } from "./looprow.ts";
 import { isTestPath, sha256, type Plan, type PlanStep, type PlanTask, type RefStep, type StepAction } from "./plan.ts";
 
 export const RUN_SCHEMA = "peaceai-plan-run:v1" as const;
@@ -139,6 +140,7 @@ export function logRowProblem(o: unknown): string | null {
     if (keys.sort().join(",") !== "at,schema,set,taskFileSha256,tasks") return "lock_keys";
     return Number.isInteger(r.tasks) && r.tasks > 0 ? null : "lock_tasks";
   }
+  if (r.schema === LOOP_SCHEMA) return loopRowProblem(r); // M146: loop rows (peaceai/lib/looprow.ts)
   if (r.schema !== RUN_SCHEMA) return "schema";
   const allowed = new Set(["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commit", "workspace", "planner", "plannerSha256", "planSha256", "code", "grade"]);
   if (keys.some((k) => !allowed.has(k))) return "run_keys";
