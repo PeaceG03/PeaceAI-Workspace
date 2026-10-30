@@ -2929,6 +2929,35 @@ export function sizesListEdit(path: string, baseText: string, h: SizesListHoles)
 }
 
 /**
+ * G19+: where the per-attempt `AbortSignal.timeout(N)` of a v2 retry template sits, for the hermetic walk only: the
+ * template as v2 writes it, or the same template after public-derive-wire-rethrow-v1 replaced its final `throw error;`
+ * with ONE `throw new Error(H(..), { cause: error });` (PeaceSTOCKS c617e63). The rethrow is put back to `throw error;`
+ * and the result must be the v2 template (retryLoopOf); the catch comes after the try, so the signal's offsets are the
+ * same in both texts. Nothing of the rethrow (its helper or its arguments) is read; null when it is neither.
+ */
+export function sizesRetrySignalOf(path: string, sf: ts.SourceFile, t: Target): { start: number; end: number } | null {
+  const l = retryLoopOf(sf, t);
+  if (l) return { start: l.signal.getStart(sf), end: l.signal.getEnd() };
+  if (t.kind !== "method" || !t.node.body || t.node.body.statements.length !== 1) return null;
+  const loop = t.node.body.statements[0]!;
+  if (!ts.isForStatement(loop) || !ts.isBlock(loop.statement) || loop.statement.statements.length < 4) return null;
+  const tr = loop.statement.statements[loop.statement.statements.length - 3]!;
+  if (!ts.isTryStatement(tr) || !tr.catchClause || tr.catchClause.block.statements.length !== 3) return null;
+  const guard = tr.catchClause.block.statements[0]!;
+  if (!ts.isIfStatement(guard) || guard.elseStatement || !ts.isBlock(guard.thenStatement) || guard.thenStatement.statements.length !== 1) return null;
+  const th = guard.thenStatement.statements[0]!;
+  if (!ts.isThrowStatement(th) || !th.expression || !ts.isNewExpression(th.expression) || !ts.isIdentifier(th.expression.expression) || th.expression.expression.text !== "Error") return null;
+  const args = th.expression.arguments ?? [];
+  if (args.length !== 2 || !ts.isCallExpression(args[0]!) || !ts.isIdentifier(args[0]!.expression) || !sameCode(args[1]!.getText(sf), "{ cause: error }")) return null;
+  const back = applySplices(sf.text, [{ start: guard.thenStatement.getStart(sf), end: guard.thenStatement.getEnd(), text: "throw error;" }]);
+  const bsf = ts.createSourceFile(path, back, ts.ScriptTarget.Latest, true);
+  const bt = findTarget(bsf, `${t.cls}.${t.name}`);
+  const bl = bt ? retryLoopOf(bsf, bt) : null;
+  if (!bl || bl.signal.getEnd() > guard.thenStatement.getStart(sf)) return null;
+  return { start: bl.signal.getStart(bsf), end: bl.signal.getEnd() };
+}
+
+/**
  * Job A and Job B: is `realText` the "list the sizes too" edit of `baseText`? The holes are read off the real tree
  * (the one class method of the base that is a paging key listing, the new sibling's name, tags and fields), the edit is
  * rebuilt with sizesListEdit and must match token for token. `stripped`: the real text with every v2 retry template's
@@ -2962,9 +2991,9 @@ export function sizesListEditShape(path: string, baseText: string, realText: str
   const rebuilt = sizesListEdit(path, baseText, holes);
   if (rebuilt === null || !sameCode(rebuilt, realText)) return null;
   // every v2 retry template of the class (the listing's request) with its per-attempt timeout signal taken out
-  const sigs: ts.CallExpression[] = [];
-  for (const m of rcls.members) if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) { const t = findTarget(sf, `${bt.cls}.${m.name.text}`); const l = t ? retryLoopOf(sf, t) : null; if (l) sigs.push(l.signal); }
-  const stripped = applySplices(realText, sigs.map((s) => ({ start: s.getStart(sf), end: s.getEnd(), text: "undefined" })));
+  const sigs: { start: number; end: number }[] = [];
+  for (const m of rcls.members) if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) { const t = findTarget(sf, `${bt.cls}.${m.name.text}`); const l = t ? sizesRetrySignalOf(path, sf, t) : null; if (l) sigs.push(l); }
+  const stripped = applySplices(realText, sigs.map((s) => ({ ...s, text: "undefined" })));
   return { target, method, stripped, holes };
 }
 

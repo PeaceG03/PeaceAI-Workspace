@@ -193,3 +193,9 @@ keep their spec files, triggers and approved shas byte for byte; derive-wire-v2.
 Front door (G19+): with the NL parse on, both asks are canonical text through their own named trigger
 `LEARNED_CANONICAL.deriveWireSizes` (kind EXISTING_EDIT, M75); before EXISTING_EDIT is approved they are refused
 RULE_NOT_APPROVED, and the rule itself still adds nothing until public-derive-wire-sizes-v1 is in approved.json.
+
+On a retry request after rethrow-v1 (G19+, PeaceSTOCKS c617e63): the hermetic walk of "list the sizes too" takes the
+per-attempt `AbortSignal.timeout(N)` out of every v2 retry template of the class, including one whose final
+`throw error;` rethrow-v1 replaced with ONE `throw new Error(H(..), { cause: error });` (`sizesRetrySignalOf`: the
+rethrow is put back to `throw error;` and the result must be the v2 template; nothing of the rethrow is read). Any
+other final throw keeps the signal, and the walk refuses it (`edit_io_global`), as before.

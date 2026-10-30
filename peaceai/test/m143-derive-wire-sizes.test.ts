@@ -12,12 +12,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import ts from "typescript";
 import { auditorPolicyProblem, teamPickedProblem } from "../lib/approval.ts";
 import { admitRules, APPROVED_SCHEMA, loadApprovedList } from "../lib/approved.ts";
 import { DERIVE_WIRE_SIZES_TRIGGER, deriveWireSizesDetail } from "../lib/derive-wire-sizes.ts";
 import { DERIVE_WIRE_V2_RETHROW_TRIGGER, DERIVE_WIRE_V2_TRIGGER, deriveWireV2Detail } from "../lib/derive-wire-v2.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
-import { gradeExistingEditProblem, gradeSizesProblem, isWire2Params, isWire2RethrowParams, isWireParams, isWireSizesParams, sizesListEditShape, sizesUseEditShape } from "../lib/learned-edit-existing.ts";
+import { findTarget, gradeExistingEditProblem, gradeSizesProblem, sizesRetrySignalOf, isWire2Params, isWire2RethrowParams, isWireParams, isWireSizesParams, sizesListEditShape, sizesUseEditShape } from "../lib/learned-edit-existing.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
 import { LEARNED_CANONICAL, parseTask } from "../lib/nlparse.ts";
 import { DERIVE_WIRE_SIZES_PHRASING, phrasingFor } from "../lib/propose.ts";
@@ -113,6 +114,7 @@ export class Meter {
 `;
 const STORE_TEST = `import assert from "node:assert/strict";
 import test from "node:test";
+import ts from "typescript";
 import { StoreClient } from "./store.ts";
 
 test("list pages to the end", async () => {
@@ -440,4 +442,57 @@ test("nlparse: both sizes asks are canonical once EXISTING_EDIT is approved, RUL
     assert.equal(off.status, "unsure");
     if (off.status === "unsure") assert.equal(off.reason, "RULE_NOT_APPROVED");
   }
+});
+
+// G19+ on PeaceSTOCKS main (c617e63): the listing's request is the v2 retry template, and rethrow-v1 has since replaced
+// its final `throw error;` with `throw new Error(H(..), { cause: error });`. The hermetic walk takes the per-attempt
+// timeout signal out of either form (nothing of the rethrow is read); any other final throw keeps the signal, which
+// the walk refuses (edit_io_global), as before.
+const RETRY_REQ = `  private async request(method: string, url: string): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      const stamp = method + ":" + this.now();
+      let response;
+      try {
+        response = await this.fetchImpl("/" + this.config.bucket + url, { method, stamp, signal: AbortSignal.timeout(30000) });
+      } catch (error) {
+        if (!retryAllowed(attempt + 1)) throw error;
+        await this.sleep(retryDelayMs(attempt, 500));
+        continue;
+      }
+      if (!retryStatus(response.status) || !retryAllowed(attempt + 1)) return response;
+      await this.sleep(retryDelayMs(attempt, 500));
+    }
+  }
+`;
+const RETRY_STORE = (req: string) => STORE
+  .replace("function xmlText(", "function retryAllowed(attempts: number): boolean {\n  return attempts < 3;\n}\n\nfunction retryDelayMs(attempt: number, baseMs: number): number {\n  return baseMs * (attempt + 1);\n}\n\nfunction retryStatus(status: number): boolean {\n  return status >= 500;\n}\n\nfunction requestFailure(method: string, detail: string): string {\n  return \"STORE_\" + method + \"_FAILED: \" + detail;\n}\n\nfunction xmlText(")
+  .replaceAll("init: { method: string; stamp: string }", "init: { method: string; stamp: string; signal?: AbortSignal }")
+  .replace("  now?: () => string;\n}", "  now?: () => string;\n  sleep?: (ms: number) => Promise<void>;\n}")
+  .replace("  private readonly now: () => string;\n", "  private readonly now: () => string;\n  private readonly sleep: (ms: number) => Promise<void>;\n")
+  .replace("    this.now = config.now ?? (() => \"1970-01-01\");\n", "    this.now = config.now ?? (() => \"1970-01-01\");\n    this.sleep = config.sleep ?? (async () => undefined);\n")
+  .replace(/  private async request\([\s\S]*?\n  }\n/, req);
+const RETHROWN = RETRY_REQ.replace("        if (!retryAllowed(attempt + 1)) throw error;\n", "        if (!retryAllowed(attempt + 1)) {\n          throw new Error(requestFailure(method, error instanceof Error ? error.name : \"Error\"), { cause: error });\n        }\n");
+const OTHER = RETRY_REQ.replace("        if (!retryAllowed(attempt + 1)) throw error;\n", "        if (!retryAllowed(attempt + 1)) {\n          throw new Error(\"STORE_REQUEST_FAILED\", { cause: error });\n        }\n");
+
+test("list the sizes too on a v2 retry request, before and after rethrow-v1: the timeout signal is taken out for the walk only", async () => {
+  assert.notEqual(RETHROWN, RETRY_REQ);
+  assert.notEqual(OTHER, RETRY_REQ);
+  const at = (text: string) => { const sf = ts.createSourceFile("src/store.ts", text, ts.ScriptTarget.Latest, true); const t = findTarget(sf, "StoreClient.request"); assert.ok(t); return sizesRetrySignalOf("src/store.ts", sf, t); };
+  for (const req of [RETRY_REQ, RETHROWN]) {
+    const store = RETRY_STORE(req);
+    assert.ok(store.includes("AbortSignal.timeout(30000)") && store.includes(req));
+    const sig = at(store);
+    assert.ok(sig, "the signal is found");
+    assert.equal(store.slice(sig.start, sig.end), "AbortSignal.timeout(30000)");
+    const files = BASE.map((f) => (f.path === "src/store.ts" ? { ...f, content: store } : f));
+    const r = derive(TASK_A, files);
+    assert.ok(r.edit, r.reason ?? "");
+    // the request (and its rethrow) is unchanged: only the sibling and the optional member are added
+    assert.ok(r.edit.content.includes(req));
+    assert.equal(gradeSizesProblem("src/store.ts", store, r.edit.content, r.edit.extra[0]!.path, r.edit.extra[0]!.content, reader(files, r.edit)), "ok");
+  }
+  // any other final throw is not the rethrow-v1 form: the signal stays and the walk refuses it, as before
+  const other = RETRY_STORE(OTHER);
+  assert.equal(at(other), null);
+  assert.match(derive(TASK_A, BASE.map((f) => (f.path === "src/store.ts" ? { ...f, content: other } : f))).reason ?? "", /^edit_io_global/);
 });
