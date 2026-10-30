@@ -18,6 +18,7 @@ import { readManifestBytes } from "../lib/manifestparts.ts";
 import { LEARNED_CANONICAL } from "../lib/nlparse.ts";
 import { phrasingFor } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
+import { loadClosure as loadClosure520, loadProblem as loadProblem520 } from "../lib/learned-edit-existing.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -750,4 +751,159 @@ test("m98b stack: no stack read on any receiver, however written", () => {
   ];
   for (const [nw, tk] of cases) assert.deepEqual(mbJobs(nw), [`edit_not_allowlisted:${tk}`, `edit_not_allowlisted:${tk}`], nw);
   assert.deepEqual(mbJobs("const e = new Error(\"x\"); return e.message.length + n + 1;"), ["ACCEPTED", "JOBB-OK"]);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Auditor #520 ruling (G25+, w03): six exact load-time constant shapes are admitted by the module-load gate (Job A and
+// Job B share loadProblem). Each near miss is refused next to its admitted sibling, so every test below fails with the
+// gate change reverted (the sibling is then refused too).
+const gate520 = (files: Record<string, string>, entry = "src/m.ts"): string | null => {
+  const c = loadClosure520(entry, (p) => files[p] ?? null);
+  return typeof c === "string" ? c : loadProblem520(c, entry);
+};
+const TAIL520 = "export function f(): number {\n  return 1;\n}\n";
+const one520 = (pre: string, more: Record<string, string> = {}): string | null => gate520({ "src/m.ts": pre + TAIL520, ...more });
+const NO520 = "edit_module_load:src/m.ts";
+
+test("Auditor #520 ruling: the real PeaceSTOCKS 102f627 load-time constants (reply-dust.ts, reply-dust-dictionary.ts, dust.ts) are admitted", () => {
+  const files = {
+    "src/m.ts": "import { REPLY_DUST_FALLBACK_VERSION, enc } from \"./reply-dust.ts\";\nimport { MAGIC_LEN } from \"./dust.ts\";\nimport { DICT } from \"./reply-dust-dictionary.ts\";\nexport function f(): number {\n  return REPLY_DUST_FALLBACK_VERSION + enc().length + MAGIC_LEN + DICT.length;\n}\n",
+    "src/reply-dust.ts": [
+      "export const REPLY_DUST_VERSION = 1;",
+      "export const REPLY_DUST_FALLBACK_VERSION = 0x80 | REPLY_DUST_VERSION;",
+      "const ZSTD_MAGIC = Uint8Array.from([0x28, 0xb5, 0x2f, 0xfd]);",
+      "const floatView = new DataView(new ArrayBuffer(8));",
+      "const utf8 = new TextEncoder();",
+      "const fromUtf8 = new TextDecoder(\"utf-8\", { fatal: true });",
+      "export function enc(): Uint8Array {",
+      "  floatView.setFloat64(0, 1);",
+      "  return fromUtf8.decode(utf8.encode(\"x\")) === \"x\" ? ZSTD_MAGIC : new Uint8Array(0);",
+      "}",
+      "",
+    ].join("\n"),
+    "src/dust.ts": "const MAGIC = Buffer.from([0x44, 0x55, 0x53, 0x54, 0x56, 0x31, 0x00, 0x00]);\nexport const MAGIC_LEN = 8;\nexport function magic(): number {\n  return MAGIC.length;\n}\n",
+    "src/reply-dust-dictionary.ts": "export const REPLY_DUST_V1_DICTIONARY_BASE64 = [\n  \"N6Qw7EMGhQlMEBBm\",\n  \"wMfWjJC995YypfMC\",\n].join(\"\");\nexport const DICT = \"d\";\n",
+  };
+  assert.equal(gate520(files), null);
+  // utf8 label and fatal: false, a string-keyed fatal, << >> & ^ and a chained numeric const are the same shapes
+  assert.equal(one520("const D = new TextDecoder(\"utf8\", { \"fatal\": false });\nconst A = 1 << 4;\nconst B = (A >> 1) & 0xff ^ 3;\nconst E = new DataView(new ArrayBuffer(1024));\nexport const G = [D, B, E];\n"), null);
+});
+
+test("Auditor #520 ruling near miss: a non-literal argument is refused (ArrayBuffer size, from() source, bitwise operand)", () => {
+  assert.equal(one520("const V = new DataView(new ArrayBuffer(8));\nexport const W = V;\n"), null);
+  assert.equal(one520("const N = 8;\nconst V = new DataView(new ArrayBuffer(N));\nexport const W = V;\n"), NO520);
+  assert.equal(one520("const M = Uint8Array.from([1, 2]);\nexport const W = M;\n"), null);
+  assert.equal(one520("const A = [1, 2];\nconst M = Uint8Array.from(A);\nexport const W = M;\n"), NO520);
+  assert.equal(one520("const M = Buffer.from([1, 2], (x: number) => x);\nexport const W = M;\n"), NO520); // a mapFn / second argument
+  assert.equal(one520("const M = Uint8Array.from([1, -2]);\nexport const W = M;\n"), NO520); // numeric literals only
+  assert.equal(one520("const X = 1;\nconst F = 0x80 | X;\nexport const W = F;\n"), null);
+  assert.equal(one520("let X = 1;\nconst F = 0x80 | X;\nexport const W = F;\n"), "edit_hidden_state"); // mutable module state: the hermetic walk refuses first
+  assert.equal(one520("const X = \"1\";\nconst F = 0x80 | X;\nexport const W = F;\n"), NO520); // not a numeric const
+  assert.equal(one520("const F = 1n | 2n;\nexport const W = F;\n"), NO520); // BigInt is not numeric here
+  assert.equal(one520("const F = 1 >>> 2;\nexport const W = F;\n"), NO520); // >>> is not in the ruling
+  assert.equal(one520("const E = new TextEncoder();\nexport const W = E;\n"), null);
+  assert.equal(one520("const E = new TextEncoder(\"utf-8\" as never);\nexport const W = E;\n"), NO520);
+});
+
+test("Auditor #520 ruling near miss: a computed member is refused (from, join, fatal key)", () => {
+  assert.equal(one520("const M = Uint8Array[\"from\"]([1, 2]);\nexport const W = M;\n"), "edit_io_global:Uint8Array"); // computed access on a global: the hermetic walk refuses first
+  assert.equal(one520("const M = Buffer?.from([1, 2]);\nexport const W = M;\n"), NO520);
+  assert.equal(one520("const S = [\"a\", \"b\"][\"join\"](\"\");\nexport const W = S;\n"), NO520);
+  assert.equal(one520("const S = [\"a\", \"b\"].join(\"\");\nexport const W = S;\n"), null);
+  assert.equal(one520("const K = \"fatal\";\nconst D = new TextDecoder(\"utf-8\", { [K]: true });\nexport const W = D;\n"), NO520);
+  assert.equal(one520("const D = new TextDecoder(\"utf-8\", { fatal: true, ignoreBOM: true });\nexport const W = D;\n"), NO520);
+});
+
+test("Auditor #520 ruling near miss: a spread is refused (from() source array, join receiver, TextDecoder options)", () => {
+  assert.equal(one520("const A = [1, 2] as const;\nconst M = Uint8Array.from([...A]);\nexport const W = M;\n"), NO520);
+  assert.equal(one520("const A = [\"a\"] as const;\nconst S = [...A].join(\"\");\nexport const W = S;\n"), NO520);
+  assert.equal(one520("const O = { fatal: true };\nconst D = new TextDecoder(\"utf-8\", { ...O });\nexport const W = D;\n"), NO520);
+  assert.equal(one520("const D = new TextDecoder(\"utf-8\", { fatal: true });\nexport const W = D;\n"), null);
+});
+
+test("Auditor #520 ruling near miss: a call inside the array is refused", () => {
+  assert.equal(one520("const g = (): number => 1;\nconst M = Uint8Array.from([1, g()]);\nexport const W = M;\n"), NO520);
+  assert.equal(one520("const M = Buffer.from([0x44, Number(\"1\")]);\nexport const W = M;\n"), NO520);
+  assert.equal(one520("const S = [\"a\", String(1)].join(\"\");\nexport const W = S;\n"), NO520);
+  assert.equal(one520("const M = Buffer.from([0x44, 0x55]);\nexport const W = M;\n"), null);
+});
+
+test("Auditor #520 ruling near miss: an oversized (or non-integer) ArrayBuffer is refused", () => {
+  assert.equal(one520("const V = new DataView(new ArrayBuffer(1024));\nexport const W = V;\n"), null);
+  assert.equal(one520("const V = new DataView(new ArrayBuffer(1025));\nexport const W = V;\n"), NO520);
+  assert.equal(one520("const V = new DataView(new ArrayBuffer(1e9));\nexport const W = V;\n"), NO520);
+  assert.equal(one520("const V = new DataView(new ArrayBuffer(8.5));\nexport const W = V;\n"), NO520);
+  assert.equal(one520("const V = new DataView(new ArrayBuffer(8), 0);\nexport const W = V;\n"), NO520);
+  assert.equal(one520("const V = new ArrayBuffer(8);\nexport const W = V;\n"), NO520); // only inside new DataView(...)
+});
+
+test("Auditor #520 ruling near miss: a TextDecoder with a variable (or other) label is refused", () => {
+  assert.equal(one520("const D = new TextDecoder(\"utf-8\", { fatal: true });\nexport const W = D;\n"), null);
+  assert.equal(one520("const L = \"utf-8\";\nconst D = new TextDecoder(L, { fatal: true });\nexport const W = D;\n"), NO520);
+  assert.equal(one520("const D = new TextDecoder(\"latin1\", { fatal: true });\nexport const W = D;\n"), NO520);
+  assert.equal(one520("const F = true;\nconst D = new TextDecoder(\"utf-8\", { fatal: F });\nexport const W = D;\n"), NO520);
+  assert.equal(one520("const D = new TextDecoder(\"utf-8\");\nexport const W = D;\n"), NO520);
+});
+
+test("Auditor #520 ruling near miss: join with a non-literal separator is refused", () => {
+  assert.equal(one520("const S = [\"a\", \"b\"].join(\",\");\nexport const W = S;\n"), null);
+  assert.equal(one520("const SEP = \",\";\nconst S = [\"a\", \"b\"].join(SEP);\nexport const W = S;\n"), NO520);
+  assert.equal(one520("const S = [\"a\", \"b\"].join(`${1}`);\nexport const W = S;\n"), NO520);
+  assert.equal(one520("const S = [\"a\", \"b\"].join();\nexport const W = S;\n"), NO520);
+  assert.equal(one520("const S = [\"a\", 1].join(\"\");\nexport const W = S;\n"), NO520); // string literals only
+});
+
+test("Auditor #520 ruling near miss: a shadowed or written global is refused anywhere in the closure", () => {
+  const ok = "const E = new TextEncoder();\nexport const W = E;\n";
+  assert.equal(one520(ok), null);
+  // a local, a parameter or an imported binding of a relied-on global, in this or any imported module
+  assert.equal(one520("class TextEncoder { encode(): number { return 1; } }\n" + ok), NO520);
+  assert.equal(one520("import { TextEncoder } from \"./te.ts\";\n" + ok, { "src/te.ts": "export class TextEncoder {}\n" }), NO520);
+  assert.equal(one520("import { y } from \"./dep.ts\";\nconst M = Buffer.from([1]);\nexport const W = [M, y];\n", { "src/dep.ts": "export function y(Buffer: number): number {\n  return Buffer;\n}\n" }), NO520);
+  assert.equal(one520("const Array = 1;\nconst S = [\"a\"].join(\"\");\nexport const W = [S, Array];\n"), NO520);
+  // a write to the global, a static, its prototype or globalThis, even inside a function never run at load
+  const fn = (body: string) => `export function evil(): void {\n  ${body}\n}\n`;
+  for (const body of [
+    "(Uint8Array as any).from = () => 1;",
+    "(Array.prototype as any).join = () => \"x\";",
+    "(TextDecoder.prototype as any).decode = () => \"x\";",
+    "(globalThis as any).TextEncoder = class {};",
+    "(globalThis as any).other = 1;",
+    "Object.defineProperty(DataView.prototype, \"x\", { value: 1 });",
+    "Object.assign(Buffer, { from: () => 1 });",
+    "Reflect.set(globalThis, \"x\", 1);",
+    "delete (ArrayBuffer as any).prototype;",
+  ]) {
+    assert.equal(one520("const M = Uint8Array.from([1]);\nexport const W = M;\n" + fn(body)), NO520, body);
+    assert.equal(one520("import { evil } from \"./evil.ts\";\nconst M = Uint8Array.from([1]);\nexport const W = [M, evil];\n", { "src/evil.ts": fn(body) }), NO520, `imported ${body}`);
+  }
+  assert.equal(one520("const M = Uint8Array.from([1]);\nexport const W = M;\n" + fn("const o = { from: 1 };\n  o.from = 2;")), null);
+});
+
+test("Auditor #520 ruling near miss: a guarded global bound anywhere, or reached through an alias, is refused", () => {
+  const ok = "const E = new TextEncoder();\nexport const W = E;\n";
+  // a binding of ANY of the guarded names refuses, not only of the global this shape uses
+  for (const g of ["Object", "Buffer", "Uint8Array", "DataView", "ArrayBuffer", "TextDecoder", "Array"]) assert.equal(one520(`const ${g} = 1;\n${ok}export const Z = ${g};\n`), NO520, g);
+  // self / window are ordinary local names in PeaceSTOCKS (scan-yield.ts, tenmin-daily-liquid.ts)
+  assert.equal(one520(`${ok}export function g(self: number): number {\n  const window = self + 1;\n  return window;\n}\n`), null);
+  // plain reads of a global's statics and prototype methods stay admitted
+  assert.equal(one520(`${ok}export function g(x: unknown): string {\n  return Object.prototype.toString.call(x) + String(x instanceof Uint8Array) + typeof Buffer + Object.keys({}).length;\n}\n`), null);
+  const fn = (body: string) => `export function evil(): void {\n  ${body}\n}\n`;
+  for (const body of [
+    "const P = TextEncoder.prototype as any; P.encode = () => 1;",
+    "const G = globalThis as any; G.TextEncoder = 1;",
+    "const T = TextEncoder as any; T.prototype.encode = 1;",
+    "const { prototype } = TextEncoder as any; prototype.encode = 1;",
+    "const T = (globalThis as any).TextEncoder; T.x = 1;",
+    "(Object as any)[\"defineProperty\"](TextEncoder.prototype, \"encode\", { value: 1 });",
+    "const d = Object.defineProperty; d(TextEncoder.prototype, \"encode\", { value: 1 });",
+    "const e = new TextEncoder() as any; e.constructor.prototype.encode = 1;",
+    "const e = new TextEncoder() as any; Object.getPrototypeOf(e).encode = 1;",
+    "const e = new TextEncoder() as any; e.__proto__.encode = 1;",
+    "const e = new TextEncoder() as any; e[\"constructor\"].x = 1;",
+    "const f = (x: unknown): void => { void x; }; f(Buffer);",
+  ]) {
+    assert.equal(one520(ok + fn(body)), NO520, body);
+    assert.equal(one520("import { evil } from \"./evil.ts\";\n" + ok + "export const Z = evil;\n", { "src/evil.ts": fn(body) }), NO520, `imported ${body}`);
+  }
 });
