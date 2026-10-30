@@ -356,7 +356,10 @@ test("M119 follow-up (#546): both name slots are closed sets: KIND from learned.
   assert.deepEqual([...CREDIT_KINDS_HISTORICAL], ["THROW_GUARD", "DATE_FUNCTION", "LOOP_FUNCTION", "TEST_CASE_EXISTING"]);
   assert.deepEqual(parseRuleKinds(readFileSync("peaceai/lib/learned.ts", "utf8")), [...RULE_KINDS]);
   // the template set is exactly the rule files on disk that are also in approved.json (Auditor, after #546)
-  const approvedIds = new Set((JSON.parse(readFileSync("peaceai/rules/approved.json", "utf8")).rules as { id: string }[]).map((r) => r.id));
+  // a delegated /auditor-approve-rule entry earns no credit, so it is never a template (#626, policy.ts creditTemplatesFrom)
+  const approvedRules = JSON.parse(readFileSync("peaceai/rules/approved.json", "utf8")).rules as { id: string; source?: string }[];
+  const approvedIds = new Set(approvedRules.filter((r) => r.source !== "auditor-approve-rule").map((r) => r.id));
+  for (const r of approvedRules) if (r.source === "auditor-approve-rule") assert.equal(CREDIT_TEMPLATES.has(r.id), false, `${r.id}: delegated, 0 credit`);
   assert.deepEqual([...CREDIT_TEMPLATES].sort(), readdirSync("peaceai/rules/learned").filter((f) => f.startsWith("public-") && f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => approvedIds.has(id)).sort());
   // every RULE_KIND, every historical family and every rule file gives peace in the template
   for (const k of CREDIT_KINDS) assert.equal(src(issue(T(`Builder pre-file, ${k}`))), "peace", k);
