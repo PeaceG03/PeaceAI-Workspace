@@ -55,8 +55,17 @@ const OP = /^learned:([a-z0-9-]+)@[0-9a-f]{64}$/;
 /** Rule ids of the candidates chosen `right` on an issue (null = lookup failed). */
 export type RuleLookup = (issue: number) => string[] | null;
 
-/** ci: errors name builder-log skills only, never learned rule ids (public CI step summary). */
-export function checkRuleSkills(entries: readonly Entry[], lookup: RuleLookup, opts: { ci?: boolean } = {}): string[] {
+/** Rule ids approved by delegation (approved.json entries with source auditor-approve-rule): they earn no credit. */
+export function delegatedRules(approvedText: string | null): ReadonlySet<string> {
+  try {
+    const l = JSON.parse(approvedText ?? "") as { rules?: { id?: unknown; source?: unknown }[] };
+    return new Set((l.rules ?? []).filter((r) => r?.source === "auditor-approve-rule" && typeof r.id === "string").map((r) => r.id as string));
+  } catch { return new Set(); }
+}
+
+/** ci: errors name builder-log skills only, never learned rule ids (public CI step summary).
+ *  delegated: a by:PeaceAI landing from a rule approved by /auditor-approve-rule is an error (0 credit). */
+export function checkRuleSkills(entries: readonly Entry[], lookup: RuleLookup, opts: { ci?: boolean; delegated?: ReadonlySet<string> } = {}): string[] {
   const errs: string[] = [];
   for (const e of entries) {
     if (e.by !== "PeaceAI" || !LIVE_LANDING_REF.test(e.changed)) continue;
@@ -65,6 +74,7 @@ export function checkRuleSkills(entries: readonly Entry[], lookup: RuleLookup, o
     if (issue === null) { errs.push(`seq ${e.seq}: no single PeaceAI-Workspace#N to find the producing rule`); continue; }
     const rules = lookup(issue);
     if (rules === null || rules.length === 0) { errs.push(`seq ${e.seq}: no chosen candidate rule for #${issue} (fail closed)`); continue; }
+    if (rules.some((r) => opts.delegated?.has(r))) { errs.push(`seq ${e.seq}: #${issue}'s landed candidate came from a delegated (auditor-approve-rule) rule, which earns no credit`); continue; }
     const skills = [...new Set(rules.map((r) => RULE_SKILL[r] ?? (opts.ci ? "unknown rule" : `unknown rule ${r}`)))];
     if (skills.length !== 1) { errs.push(`seq ${e.seq}: #${issue} chosen candidates map to several skills: ${skills.join(", ")}`); continue; }
     if (skills[0] !== e.skill) errs.push(opts.ci ? `seq ${e.seq}: skill ${e.skill} but #${issue}'s landed candidate's skill is ${skills[0]}` : `seq ${e.seq}: skill ${e.skill} but #${issue}'s landed candidate came from ${rules.join(", ")} (${skills[0]})`);
@@ -105,7 +115,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const i = process.argv.indexOf("--results-dir");
   if (i < 0 || !process.argv[i + 1]) { console.error("rule-skill: --results-dir <PeaceAI-Results clone> is required"); process.exit(2); }
   const entries = readFileSync(LOG_PATH, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry);
-  const errs = checkRuleSkills(entries, resultsDirLookup(process.argv[i + 1]!), { ci: process.argv.includes("--ci") });
+  let approvedText: string | null = null;
+  try { approvedText = readFileSync(new URL("../peaceai/rules/approved.json", import.meta.url), "utf8"); } catch { /* no list: nothing delegated */ }
+  const errs = checkRuleSkills(entries, resultsDirLookup(process.argv[i + 1]!), { ci: process.argv.includes("--ci"), delegated: delegatedRules(approvedText) });
   for (const e of errs) console.error(`rule-skill: ${e}`);
   for (const [s, r] of Object.entries(RULE_SKILL_EXEMPT)) console.log(`rule-skill: seq ${s} exempt: ${r}`);
   if (errs.length) process.exit(1);

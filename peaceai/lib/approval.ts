@@ -1,8 +1,8 @@
 // M8: validation for the approval write path. Pure functions; the workflow passes GitHub's event data
 // (via env only) and the repository files. An agent never calls this to approve: only Peace's
 // `/approve-rule <hash>` comment, delivered by GitHub to the workflow, can produce a list entry.
-import { APPROVER, validateEntry, validateList, withEntry, type ApprovalEntry, type ApprovedList } from "./approved.ts";
-import { specHash, validateSpec } from "./learned.ts";
+import { APPROVER, AUDITOR_SOURCE, validateEntry, validateList, withEntry, type ApprovalEntry, type ApprovedList } from "./approved.ts";
+import { canonicalJson, specHash, validateSpec } from "./learned.ts";
 import { parseMarker, parseSpecBlock } from "./propose.ts";
 
 export const PROPOSAL_LABEL = "rule-proposal";
@@ -45,6 +45,130 @@ export function validateWorkspaceApproval(ev: CommentEvent, specFile: unknown, c
     approval: { url: ev.url, commentId: ev.commentId, issue: ev.issue, repo: "PeaceG03/PeaceAI-Workspace", author: APPROVER, approvedAt: ev.createdAt.replace(/\.\d+Z$/, "Z") },
   };
   return validateEntry(entry) ? { ok: true, entry } : { ok: false, reason: "BAD_EVENT" };
+}
+
+// ---- Delegated approval: `/auditor-approve-rule <id> <sha256>` (Peace, 2026-10-30 ~12:47 AM MT: "Yes I want it
+// handed off to you and auditor as well the only input I should be giving is the end goal or a direction and things
+// like that"). It adds an entry with source "auditor-approve-rule" and delegatedBy "owner": never an owner approval,
+// no credit (policy.ts creditTemplatesFrom and builder-log/rule-skill.ts skip it), listed apart by
+// check-approved-list.ts, revertible by Peace (revertProblem below). Peace's own /approve-rule above is unchanged.
+// Every agent posts as PeaceG03 (one shared login), so the workflow cannot tell the Auditor's comment from
+// another agent's: Builder must never post it, and what keeps it narrow is the checks below, not the author.
+
+export const AUDITOR_APPROVE_COMMAND = /^\/auditor-approve-rule (public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+) ([0-9a-f]{64})\s*$/;
+/** The proposal issue must be Builder's: the same label policy.ts calls BUILDER_LABEL. */
+export const SOURCE_BUILDER_LABEL = "source:builder";
+/**
+ * Kinds whose edits stay inside a target repo's source and tests. Anything else (workflow steps or jobs,
+ * env / secret config, tsconfig or package scripts, a kind added later) is never delegable (fail closed).
+ */
+export const AUDITOR_DELEGABLE_KINDS: ReadonlySet<string> = new Set([
+  "ADD_FUNCTION", "ADD_TEST_CASE", "ADD_THROW_GUARD", "COMPLEX_FUNCTION", "DERIVE_FROM_BEHAVIOR", "EXISTING_EDIT",
+  "IMPORT_EDIT_V2", "METHOD_GUARD", "REPLACE_EXPRESSION", "SET_LITERAL", "TEST_EXISTING",
+]);
+/**
+ * Words a delegated rule's spec may not name (case-insensitive, anywhere outside evidence.repos): never-zone and
+ * protected paths, workflows, the leak / tamper / test gates, credit, tokens and secrets, the verdict, the
+ * delegated-verdict and approve-rule paths, stage 2 and self-change.
+ */
+export const AUDITOR_DENY_TERMS = /\.github|workflow|peaceai\/|never-?zone|protected|codeowners|leak|tamper|\bgates?\b|test:self|secret|token|credential|password|deploy.?key|credit|coverage|verdict|auditor|approve|approval|stage-?2|self-?change|package\.json|tsconfig|\.ya?ml\b|\.env\b|npmrc|results/i;
+
+export type AuditorRefusal =
+  | Refusal | "NOT_SOURCE_BUILDER" | "ID_NOT_PROPOSAL" | "BODY_SPEC_MISMATCH" | "ALREADY_LISTED" | "PROPOSAL_NOT_UNIQUE"
+  | "NOT_TEAM_PICKED" | "KIND_NOT_DELEGABLE" | "TOUCHES_PROTECTED";
+
+/** Why a spec is outside what the Auditor may approve (null = inside). */
+export function auditorPolicyProblem(spec: unknown): "KIND_NOT_DELEGABLE" | "TOUCHES_PROTECTED" | null {
+  const s = (spec ?? {}) as Record<string, unknown>;
+  if (typeof s.kind !== "string" || !AUDITOR_DELEGABLE_KINDS.has(s.kind)) return "KIND_NOT_DELEGABLE";
+  const scan: Record<string, unknown> = { ...s };
+  if (s.evidence && typeof s.evidence === "object") {
+    const ev = { ...(s.evidence as Record<string, unknown>) };
+    delete ev.repos; // public repo names (owner/name), not paths this rule edits
+    scan.evidence = ev;
+  }
+  return AUDITOR_DENY_TERMS.test(canonicalJson(scan)) ? "TOUCHES_PROTECTED" : null;
+}
+
+/** The proposal record on main (peaceai/rules/proposals/<id>.json) must say team-picked and 0 credit, as fields. */
+export function teamPickedProblem(id: string, record: unknown): boolean {
+  const r = (record ?? {}) as Record<string, unknown>;
+  return !(r.id === id && r.teamPicked === true && r.credit === 0);
+}
+
+/** Rule-proposal issues as listed by the API (any state): number and body. */
+export interface ProposalIssue { number: number; body: string; isPull: boolean }
+
+/**
+ * Validates `/auditor-approve-rule <id> <sha256>` against the proposal issue, the spec in its body, the spec file on
+ * main, the proposal record on main, every rule-proposal issue (exactly one for the id) and the current list.
+ */
+export function validateAuditorApproval(
+  ev: CommentEvent,
+  files: { spec: unknown; record: unknown },
+  proposals: readonly ProposalIssue[],
+  current: readonly ApprovalEntry[],
+): { ok: true; entry: ApprovalEntry } | { ok: false; reason: AuditorRefusal } {
+  const no = (reason: AuditorRefusal) => ({ ok: false as const, reason });
+  if (!ev.labels.includes(PROPOSAL_LABEL)) return no("NOT_A_PROPOSAL");
+  if (!ev.labels.includes(SOURCE_BUILDER_LABEL)) return no("NOT_SOURCE_BUILDER");
+  const cmd = AUDITOR_APPROVE_COMMAND.exec(ev.body.replace(/\r\n/g, "\n"));
+  if (!cmd) return no("BAD_COMMAND");
+  const [, id, sha] = cmd as unknown as [string, string, string];
+  if (ev.author !== APPROVER) return no("WRONG_AUTHOR");
+  if (ev.association !== "OWNER") return no("NOT_OWNER");
+  if (ev.repo !== "PeaceG03/PeaceAI-Workspace") return no("WRONG_SOURCE");
+  const marker = parseMarker(ev.issueBody);
+  if (!marker) return no("NO_MARKER");
+  if (marker.source !== "public") return no("WRONG_SOURCE");
+  if (marker.id !== id) return no("ID_NOT_PROPOSAL");
+  if (marker.sha256 !== sha) return no("HASH_NOT_PROPOSAL");
+  const body = parseSpecBlock(ev.issueBody);
+  if (!validateSpec(body) || body.id !== id || body.minedFrom !== "public" || specHash(body) !== sha) return no("BODY_SPEC_MISMATCH");
+  if (files.spec === null || files.spec === undefined) return no("SPEC_MISSING");
+  if (!validateSpec(files.spec) || files.spec.id !== id || files.spec.minedFrom !== "public") return no("SPEC_INVALID");
+  if (specHash(files.spec) !== sha) return no("SPEC_HASH_MISMATCH");
+  if (current.some((e) => e.id === id)) return no("ALREADY_LISTED");
+  const same = proposals.filter((p) => !p.isPull && parseMarker(p.body)?.id === id);
+  if (same.length !== 1 || same[0]!.number !== ev.issue) return no("PROPOSAL_NOT_UNIQUE");
+  if (teamPickedProblem(id, files.record)) return no("NOT_TEAM_PICKED");
+  const policy = auditorPolicyProblem(files.spec);
+  if (policy) return no(policy);
+  const entry: ApprovalEntry = {
+    id, sha256: sha, source: AUDITOR_SOURCE, delegatedBy: "owner",
+    approval: { url: ev.url, commentId: ev.commentId, issue: ev.issue, repo: "PeaceG03/PeaceAI-Workspace", author: APPROVER, approvedAt: ev.createdAt.replace(/\.\d+Z$/, "Z") },
+  };
+  return validateEntry(entry) ? { ok: true, entry } : no("BAD_EVENT");
+}
+
+/**
+ * (d) The landing re-check: the list to land equals main's list plus exactly one new entry, the delegated entry for
+ * `id`; nothing else added, removed, re-pinned or reordered beyond withEntry's sort. null = fine.
+ */
+export function oneAppendProblem(mainList: unknown, landing: unknown, id: string): string | null {
+  if (!validateList(mainList) || !validateList(landing)) return "list invalid";
+  const added = landing.rules.filter((r) => !mainList.rules.some((m) => JSON.stringify(m) === JSON.stringify(r)));
+  const kept = mainList.rules.filter((m) => landing.rules.some((r) => JSON.stringify(m) === JSON.stringify(r)));
+  if (kept.length !== mainList.rules.length) return "an existing entry was changed or removed";
+  if (added.length !== 1 || landing.rules.length !== mainList.rules.length + 1) return "not exactly one new entry";
+  const e = added[0]!;
+  if (e.id !== id || e.source !== AUDITOR_SOURCE || e.delegatedBy !== "owner") return "the new entry is not the delegated entry for this id";
+  if (mainList.rules.some((m) => m.id === id)) return "the id is already listed";
+  if (JSON.stringify(withEntry(mainList, e)) !== JSON.stringify(landing)) return "the list is not main's list plus this one entry";
+  return null;
+}
+
+/** Peace's revert of a delegated entry lands from this branch prefix; Peace merges it (no workflow does). */
+export const REVERT_BRANCH = /^peaceai-revert-auditor-rule\/(public-[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+)$/;
+/** A revert branch's list must be main's list minus exactly that one delegated entry (null = fine). */
+export function revertProblem(branch: string, mainList: unknown, headList: unknown): string | null {
+  const m = REVERT_BRANCH.exec(branch);
+  if (!m) return "not a revert branch";
+  if (!validateList(mainList) || !validateList(headList)) return "list invalid";
+  const target = mainList.rules.find((r) => r.id === m[1]);
+  if (!target || target.source !== AUDITOR_SOURCE) return "the id is not a delegated (auditor-approve-rule) entry on main";
+  const rest = mainList.rules.filter((r) => r !== target);
+  return JSON.stringify(rest) === JSON.stringify(headList.rules) ? null : "the list is not main's list minus that one delegated entry";
 }
 
 /** What the Results approval workflow writes (rules/approvals/<sha>.json in PeaceAI-Results). */
@@ -171,6 +295,12 @@ export function attestationProblem(raw: unknown): string | null {
 /** An approval PR (or any PR) diff check: files changed against main on this branch. */
 export function branchProblem(branch: string, files: readonly string[], aheadBy: number): string | null {
   const touchesList = files.includes(LIST_PATH);
+  // A revert branch may change only the list, one commit ahead; check-approved-list.ts also checks its content (revertProblem).
+  if (REVERT_BRANCH.test(branch)) {
+    if (files.length !== 1 || !touchesList) return "revert branch changes files other than the approved list";
+    if (aheadBy !== 1) return "revert branch must be exactly one commit ahead of main";
+    return null;
+  }
   if (branch.startsWith(APPROVAL_BRANCH_PREFIX)) {
     if (files.length !== 1 || !touchesList) return "approval branch changes files other than the approved list";
     if (aheadBy !== 1) return "approval branch must be exactly one commit ahead of main";
@@ -185,7 +315,7 @@ export function approvalMessage(added: readonly ApprovalEntry[]): string {
   return [
     `approve learned rule${added.length > 1 ? "s" : ""}: ${added.map((e) => e.id).join(", ")}`,
     "",
-    ...added.flatMap((e) => [`Rule: ${e.id}`, `SHA-256: ${e.sha256}`, `Approval: ${e.approval.url}`, `Approval-Author: ${e.approval.author}`, ...(e.attestation ? [`Attestation: PeaceG03/PeaceAI-Results@${e.attestation.commit}:${e.attestation.path}`] : []), ""]),
+    ...added.flatMap((e) => [`Rule: ${e.id}`, `SHA-256: ${e.sha256}`, `Approval: ${e.approval.url}`, `Approval-Author: ${e.approval.author}`, ...(e.source === AUDITOR_SOURCE ? ["Approval-Source: auditor-approve-rule (delegated by the owner; not an owner approval; 0 credit)"] : []), ...(e.attestation ? [`Attestation: PeaceG03/PeaceAI-Results@${e.attestation.commit}:${e.attestation.path}`] : []), ""]),
     "Written by the peace-approve-rule workflow from the approval comment(s) above.",
   ].join("\n");
 }

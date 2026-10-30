@@ -335,7 +335,8 @@ export function loadCreditKinds(readLearned: () => string = () => readFileSync(n
 export const CREDIT_KINDS: ReadonlySet<string> = loadCreditKinds();
 /**
  * The template slot's closed set (Auditor, after #546): ids that exist on disk as peaceai/rules/learned/<id>.json
- * AND are listed in peaceai/rules/approved.json. An approved.json that does not parse as
+ * AND are listed in peaceai/rules/approved.json as an owner approval (a delegated `auditor-approve-rule` entry earns
+ * no credit and never counts here). An approved.json that does not parse as
  * `{schema: "peaceai-approved-rules:v1", rules: [{id: string, ...}, ...]}` approves nothing (fail closed).
  */
 export function creditTemplatesFrom(ruleFiles: readonly string[], approvedText: string | null): ReadonlySet<string> {
@@ -345,6 +346,8 @@ export function creditTemplatesFrom(ruleFiles: readonly string[], approvedText: 
     if (!list || list.schema !== "peaceai-approved-rules:v1" || !Array.isArray(list.rules)) return new Set();
     for (const r of list.rules) {
       if (!r || typeof r !== "object" || typeof (r as { id?: unknown }).id !== "string") return new Set();
+      // A delegated /auditor-approve-rule entry earns no credit: it never fills the credit template slot.
+      if ((r as { source?: unknown }).source === "auditor-approve-rule") continue;
       approved.add((r as { id: string }).id);
     }
   } catch {

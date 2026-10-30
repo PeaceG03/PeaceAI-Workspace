@@ -181,7 +181,7 @@ test("workflow: nothing pushes to main; the sync verifies core, then re-verifies
   for (const s of order) { const i = reverify.indexOf(s); assert.ok(i > at, `${s} in order`); at = i; }
   assert.ok(!/approve-rule-pr\.sh|contents: write|PEACEAI_APPROVE_PUSH_KEY/.test(reverify));
   assert.doesNotMatch(land, /environment:|secrets\./);
-  assert.match(land, /needs: \[workspace, results-reverify\]/);
+  assert.match(land, /needs: \[workspace, auditor, results-reverify\]/); // M140: the delegated /auditor-approve-rule job lands through the same job
   assert.match(land, /needs\.results-reverify\.outputs\.changed == 'true'/);
   assert.ok(land.indexOf("check-approved-list.ts") < land.indexOf("approve-rule-pr.sh"));
   assert.equal((wf.match(/approve-rule-pr\.sh/g) ?? []).length, 1, "only results-land lands changes");
