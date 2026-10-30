@@ -68,7 +68,7 @@ rows in time order (then comment id), using only the issue's latest attempt:
 Branches are `peace-task/issue-<n>-<candidate>-<hex>`, so an open PR never holds a candidate other
 than the counted `right` pick.
 
-**Auditor pass (scanner-helper tasks only).** Peace delegated the verdict on one narrow class of
+**Auditor pass (scanner-helper and scanner-wiring tasks only).** Peace delegated the verdict on one narrow class of
 task to Auditor (2026-10-29). Auditor may reply:
 
 - `/auditor-pass <letter> <candidate diff sha256>`: counts as `<letter> right` and opens the target PR,
@@ -85,6 +85,13 @@ task to Auditor (2026-10-29). Auditor may reply:
   (counted separately as `delegatedPickTasks`), Builder-log Workspace proof and the post-verdict
   retrain. It opens no Workspace PR and writes no carry-forward verdict. The PR body and reply say
   `auditor-pass`. The owner can still withdraw or override it with `/verdict`.
+
+  **scanner-wiring** (Peace, 2026-10-30): the same command on a `peace-task` labelled
+  `scanner-wiring` (exactly one of the two class labels) covers Builder-filed PeaceSTOCKS tasks that
+  edit existing `src/` files. Same scope, sha and 0-credit rules; the diff may only modify existing
+  regular files or add new ones under `src/` (no delete, rename, mode change or binary), never a
+  protected path (`peaceai/`, `.github/`, workflows or any `.yml`, `CODEOWNERS`, package, tsconfig or
+  dot files) and nothing the target denies. Recorded with `delegatedBy: owner (scanner-wiring class)`.
 
   Both Auditor and Builder comment as `PeaceG03`, so the workflow cannot tell them apart: the gate
   relies on the agents' rules (Auditor alone posts `/auditor-pass`; Builder never does).
@@ -542,7 +549,7 @@ all check the variable; a cancelled run leaves its issue `peaceai:running`, whic
   pre-push hook and the M9 memcheck's core index) skips a file only when its path is listed AND its bytes match
   the pin; changed content, another path, or a malformed allowlist means it is indexed as private again.
 - `ci` runs the type check, the `src` tests, the tooling tests and the tamper-proof check.
-- `peace-verdict` records `/verdict` comments, and `/auditor-pass` on scanner-helper tasks (see above).
+- `peace-verdict` records `/verdict` comments, and `/auditor-pass` on scanner-helper and scanner-wiring tasks (see above).
 - `key-proof` (manual, owner only) proves each deploy key has exactly the access it should.
 - **Local pre-push hook** (box clones): `peaceai/bin/install-pre-push.sh <core-dir>` (or
   `PEACEAI_CORE_DIR`) installs a git `pre-push` hook. Before any push it scans **every commit being

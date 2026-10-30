@@ -1,8 +1,8 @@
 name: peace-verdict
 
 # Owner verdicts on a PeaceAI review: "/verdict <letter> right|wrong|unsure" or "/verdict none wrong|unsure".
-# Delegated (Peace, Oct 29 2026, scanner-helper class only): Auditor's "/auditor-pass <letter> <candidate diff sha256>"
-# on a `scanner-helper` peace-task is recorded as a `right` with source auditor-pass (lib/auditor-pass.ts). It is never
+# Delegated (Peace, Oct 29 2026 scanner-helper; Oct 30 2026 scanner-wiring): Auditor's "/auditor-pass <letter> <candidate diff sha256>"
+# on a `scanner-helper` or `scanner-wiring` peace-task is recorded as a `right` with source auditor-pass (lib/auditor-pass.ts). It is never
 # an owner verdict (0 credit, no owner tallies). Every agent comments as PeaceG03, so this workflow cannot tell
 # Auditor from Builder: the gate relies on the agents' rules (Auditor alone posts /auditor-pass, Builder never does).
 on:
@@ -41,7 +41,7 @@ jobs:
       issues: write
     outputs:
       ok: ${{ steps.parse.outputs.ok == 'true' || steps.appass.outputs.ok == 'true' }}
-      # verdict = the owner's /verdict (or its carry); auditor-pass = the delegated scanner-helper pass.
+      # verdict = the owner's /verdict (or its carry); auditor-pass = the delegated scanner-helper / scanner-wiring pass.
       kind: ${{ steps.src.outputs.kind }}
       ap_scope: ${{ steps.appass.outputs.scope }}
       issue: ${{ steps.src.outputs.issue }}
@@ -93,7 +93,7 @@ jobs:
         run: |
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "Verdict not recorded. Usage: \`/verdict <letter> right|wrong|unsure\` or \`/verdict none wrong|unsure\`."
-      # Auditor pass: parse it and check the issue is a `scanner-helper` peace-task (labels from the event payload).
+      # Auditor pass: parse it and check the issue is a `scanner-helper` or `scanner-wiring` peace-task (labels from the event payload).
       # The record job re-checks the task's recorded source (builder), target and candidate diff against Results.
       - name: Parse auditor pass and check its scope
         id: appass
@@ -130,6 +130,7 @@ jobs:
       status: ${{ steps.record.outputs.status }}
       refusal: ${{ steps.record.outputs.refusal }}
       source: ${{ steps.record.outputs.source }}
+      delegated_by: ${{ steps.record.outputs.delegated_by }}
       label: ${{ steps.record.outputs.label }}
       verdict: ${{ steps.record.outputs.verdict }}
       candidate: ${{ steps.record.outputs.candidate }}
@@ -206,6 +207,7 @@ jobs:
       WITHDREW: ${{ needs.record.outputs.withdrew }}
       EXTERNAL: ${{ needs.record.outputs.external }}
       VERDICT_FROM: ${{ needs.record.outputs.source }}
+      DELEGATED_BY: ${{ needs.record.outputs.delegated_by }}
     outputs:
       target_pr: ${{ steps.external.outputs.target_pr }}
       target_patch: ${{ steps.external.outputs.target_patch }}
@@ -281,7 +283,8 @@ jobs:
           REPLY: ${{ steps.guard.outputs.reply }}
         run: |
           if [ "$VERDICT_FROM" = "auditor-pass" ]; then
-            REPLY="$(printf 'Auditor pass (delegated by the owner for the scanner-helper class; not an owner verdict, 0 credit).\n%s' "$REPLY")"
+            case "$DELEGATED_BY" in "owner (scanner-helper class)"|"owner (scanner-wiring class)") ;; *) echo "bad delegation"; exit 1 ;; esac
+            REPLY="$(printf 'Auditor pass (delegated by the %s; not an owner verdict, 0 credit).\n%s' "$DELEGATED_BY" "$REPLY")"
           fi
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY"
       # M5: the task's diffs apply to another target repository. PRs there need that target's write
@@ -442,6 +445,7 @@ jobs:
       DIFF_SHA: ${{ needs.record.outputs.diff_sha256 }}
       BASE_SHA: ${{ needs.record.outputs.base_sha }}
       VERDICT_FROM: ${{ needs.record.outputs.source }}
+      DELEGATED_BY: ${{ needs.record.outputs.delegated_by }}
       COMMENT_ID: ${{ needs.parse.outputs.comment_id }}
     steps:
       - name: Fail closed without a write token
@@ -576,7 +580,8 @@ jobs:
           if [ "$VERDICT_FROM" = "auditor-pass" ]; then
             case "$COMMENT_ID" in *[!0-9]*|"") echo "bad comment id"; exit 1 ;; esac
             title="PeaceAI task PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER} (auditor-pass candidate)"
-            body="$(printf 'Candidate accepted by Auditor pass on PeaceG03/PeaceAI-Workspace#%s (not an owner verdict: delegated by the owner for the scanner-helper class only, 0 credit).\n\nauditor-pass: %s diff-sha256 %s comment %s source auditor-pass delegatedBy owner (scanner-helper class)\n' "$ISSUE_NUMBER" "$CANDIDATE" "$DIFF_SHA" "$COMMENT_ID")"
+            case "$DELEGATED_BY" in "owner (scanner-helper class)"|"owner (scanner-wiring class)") ;; *) echo "bad delegation"; exit 1 ;; esac
+            body="$(printf 'Candidate accepted by Auditor pass on PeaceG03/PeaceAI-Workspace#%s (not an owner verdict: delegated by the %s only, 0 credit).\n\nauditor-pass: %s diff-sha256 %s comment %s source auditor-pass delegatedBy %s\n' "$ISSUE_NUMBER" "$DELEGATED_BY" "$CANDIDATE" "$DIFF_SHA" "$COMMENT_ID" "$DELEGATED_BY")"
           else
             title="PeaceAI task PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER} (owner-chosen candidate)"
             body="Candidate chosen by owner review on PeaceG03/PeaceAI-Workspace#${ISSUE_NUMBER}."
@@ -590,7 +595,8 @@ jobs:
           REPLY: ${{ steps.guard.outputs.reply }}
         run: |
           if [ "$VERDICT_FROM" = "auditor-pass" ]; then
-            REPLY="$(printf 'Auditor pass (delegated by the owner for the scanner-helper class; not an owner verdict, 0 credit).\n%s' "$REPLY")"
+            case "$DELEGATED_BY" in "owner (scanner-helper class)"|"owner (scanner-wiring class)") ;; *) echo "bad delegation"; exit 1 ;; esac
+            REPLY="$(printf 'Auditor pass (delegated by the %s; not an owner verdict, 0 credit).\n%s' "$DELEGATED_BY" "$REPLY")"
           fi
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$REPLY${pr_url:+ $pr_url}"
 

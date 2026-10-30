@@ -284,8 +284,8 @@ export interface VerdictRecord {
    * excluded from agreement, training and every other owner-verdict tally (EffectiveVerdict.delegated).
    */
   source?: "auditor-pass";
-  /** With source auditor-pass: the delegation it acts under, always "owner (scanner-helper class)". */
-  delegatedBy?: "owner (scanner-helper class)";
+  /** With source auditor-pass: the delegation it acts under (the scanner-helper or scanner-wiring class). */
+  delegatedBy?: "owner (scanner-helper class)" | "owner (scanner-wiring class)";
   /** With source auditor-pass: the candidate diff sha256 Auditor posted, re-checked against the recorded diff. */
   diffSha256?: string;
 }

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  AUDITOR_PASS_DELEGATED_BY, AUDITOR_PASS_SOURCE, auditorPassScope, checkHelperDiff, parseAuditorPass, REFUSAL_TEXT, taskScopeRefusal,
+  AUDITOR_PASS_DELEGATED_BY, AUDITOR_PASS_SOURCE, auditorPassClass, auditorPassScope, checkHelperDiff, checkWiringDiff, parseAuditorPass, REFUSAL_TEXT, taskScopeRefusal,
 } from "../lib/auditor-pass.ts";
 import type { SummaryCandidate } from "../lib/gate.ts";
 import { planPr } from "../lib/prguard.ts";
@@ -302,7 +302,8 @@ test("workflow: /verdict trigger unchanged; /auditor-pass reaches the parse job 
 
 test("workflow: the target PR body and reply say auditor-pass; no Workspace PR, carry or retrain from an auditor pass", () => {
   assert.match(wf, /\(auditor-pass candidate\)/);
-  assert.match(wf, /auditor-pass: %s diff-sha256 %s comment %s source auditor-pass delegatedBy owner \(scanner-helper class\)/);
+  assert.match(wf, /auditor-pass: %s diff-sha256 %s comment %s source auditor-pass delegatedBy %s/);
+  assert.equal([...wf.matchAll(/case "\$DELEGATED_BY" in "owner \(scanner-helper class\)"\|"owner \(scanner-wiring class\)"\) ;; \*\) echo "bad delegation"; exit 1 ;; esac/g)].length, 3);
   assert.match(wf, /not an owner verdict, 0 credit/);
   assert.match(wf, /refused: only an owner verdict opens a Workspace PR/);
   assert.equal([...wf.matchAll(/VERDICT_SOURCE: \$\{\{ needs\.parse\.outputs\.kind == 'auditor-pass' && 'auditor-pass' \|\| needs\.parse\.outputs\.source \}\}/g)].length, 2, "target-pr and target-patch stale steps (the Workspace path never runs for an auditor pass)");
@@ -321,4 +322,116 @@ test("simulated PR body via prguard: the reply still names the letter so builder
   const p = planPr({ label: "A", verdict: "right", candidateId: "candidate-1" }, []);
   assert.equal(p.open, true);
   assert.match(p.reply, /Opening a PR for A\.$/);
+});
+
+// ---------- scanner-wiring (Peace, 2026-10-30 ~12:47 AM MT): edits of existing src/ files ----------
+const edit = (path: string, minus: string, plus: string) =>
+  `diff --git a/${path} b/${path}\nindex 1a2b3c4..5d6e7f8 100644\n--- a/${path}\n+++ b/${path}\n@@ -1,2 +1,2 @@\n import { x } from "./x";\n-${minus}\n+${plus}\n`;
+const WIRING = edit("src/intraday.ts", "export const scan = () => [];", "export const scan = () => incompleteNames([]);") + MODULE;
+
+test("wiring scope: scanner-wiring is its own class; both labels at once is refused; neither label is refused", () => {
+  assert.deepEqual(auditorPassClass(["peace-task", "scanner-wiring"]), { cls: "scanner-wiring", refusal: null });
+  assert.deepEqual(auditorPassClass(["peace-task", "scanner-helper"]), { cls: "scanner-helper", refusal: null });
+  assert.equal(auditorPassClass(["peace-task", "scanner-helper", "scanner-wiring"]).refusal, "ambiguous-class");
+  assert.equal(auditorPassClass(["peace-task", "scanner-wirin"]).refusal, "not-scanner-helper", "wrong label");
+  assert.equal(auditorPassClass(["scanner-wiring"]).refusal, "not-peace-task");
+});
+
+test("wiring diff: edits of existing src/ files (plus new src/ files) with the posted sha are accepted", () => {
+  assert.equal(checkWiringDiff(WIRING, sha(WIRING), RULES), null);
+  const one = edit("src/scanner.ts", "a();", "b();");
+  assert.equal(checkWiringDiff(one, sha(one), RULES), null);
+  // The stricter helper check still refuses the same bytes (an edit is not a helper).
+  assert.equal(checkHelperDiff(WIRING, sha(WIRING), RULES), "not-new-file");
+});
+
+test("wiring diff: sha mismatch is refused", () => {
+  assert.equal(checkWiringDiff(WIRING, sha(GOOD), RULES), "sha-mismatch");
+  assert.equal(checkWiringDiff(WIRING, "A".repeat(64), RULES), "sha-mismatch");
+});
+
+test("wiring diff: protected paths are refused (peaceai/, .github/, workflows, CODEOWNERS, package and dot files)", () => {
+  for (const p of ["peaceai/lib/records.ts", ".github/workflows/ci.yml", "src/.github/workflows/x.yml", "CODEOWNERS", "src/CODEOWNERS", "docs/CODEOWNERS",
+    "package.json", "src/package.json", "tsconfig.json", "src/peaceai/x.ts", "src/.env", "src/config.yml"]) {
+    const d = edit(p, "a", "b");
+    assert.equal(checkWiringDiff(d, sha(d), RULES), "path-protected", p);
+  }
+  for (const p of ["scripts/x.ts", "x.ts", "lib/x.ts"]) {
+    const d = edit(p, "a", "b");
+    assert.equal(checkWiringDiff(d, sha(d), RULES), "path-not-src", p);
+  }
+  for (const p of ["src/host.ts", "src/scheduler.ts", "src/token-store.ts", "src/fixtures/a.ts"]) {
+    const d = edit(p, "a", "b");
+    assert.equal(checkWiringDiff(d, sha(d), RULES), "path-denied", p);
+  }
+});
+
+test("wiring diff: delete, rename, mode change, binary and a repeated path are refused", () => {
+  const del = "diff --git a/src/a.ts b/src/a.ts\ndeleted file mode 100644\nindex 2e6f7fb..0000000\n--- a/src/a.ts\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-x\n";
+  const ren = "diff --git a/src/a.ts b/src/b.ts\nsimilarity index 100%\nrename from src/a.ts\nrename to src/b.ts\n";
+  const mode = "diff --git a/src/a.ts b/src/a.ts\nold mode 100644\nnew mode 100755\n";
+  const modeEdit = "diff --git a/src/a.ts b/src/a.ts\nindex 1a2b3c4..5d6e7f8 100755\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n";
+  const bin = "diff --git a/src/a.ts b/src/a.ts\nindex 1a2b3c4..5d6e7f8 100644\nBinary files a/src/a.ts and b/src/a.ts differ\n";
+  const twice = edit("src/a.ts", "a", "b") + edit("src/a.ts", "b", "c");
+  for (const [n, d, r] of [["delete", del, "not-edit-or-add"], ["rename", ren, "unparsable-diff"], ["mode", mode, "not-edit-or-add"], ["mode on edit", modeEdit, "not-edit-or-add"],
+    ["binary", bin, "not-edit-or-add"], ["repeated path", twice, "unparsable-diff"], ["empty", "", "unparsable-diff"]] as const)
+    assert.equal(checkWiringDiff(d, sha(d), RULES), r, n);
+});
+
+test("wiring record: accepted as right with delegatedBy owner (scanner-wiring class), 0 credit; wrong scope refuses and writes nothing", () => {
+  const { root, dir } = results({ diff: WIRING });
+  try {
+    const out = record(root, { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-wiring" });
+    assert.equal(out.status, "recorded");
+    assert.equal(out.source, "auditor-pass");
+    assert.equal(out.delegated_by, "owner (scanner-wiring class)");
+    const v = JSON.parse(readFileSync(join(dir, "verdicts", "6515151128.json"), "utf8"));
+    assert.equal(v.delegatedBy, "owner (scanner-wiring class)");
+    const summary = JSON.parse(readFileSync(join(root, "summary.json"), "utf8"));
+    assert.equal(summary.delegatedPickTasks, 1);
+    assert.equal(summary.reviewedTasks, 0);
+    assert.equal(summary.trainableTasks, 0);
+    assert.deepEqual(summary.agreement, { counted: 0, agree: 0, rate: null });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  // The same edit diff under the helper scope is refused (classes do not leak into each other).
+  const h = results({ diff: WIRING });
+  try {
+    const out = record(h.root, AP(sha(WIRING)));
+    assert.equal(out.reason, "not-new-file");
+    assert.equal(existsSync(join(h.dir, "verdicts")), false);
+  } finally { rmSync(h.root, { recursive: true, force: true }); }
+  const cases: [string, ReturnType<typeof results>, Record<string, string>, string][] = [
+    ["wiring sha mismatch", results({ diff: WIRING }), { ...AP(sha(GOOD)), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "sha-mismatch"],
+    ["wiring protected path", results({ diff: edit("peaceai/lib/x.ts", "a", "b") }), { ...AP(sha(edit("peaceai/lib/x.ts", "a", "b"))), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "path-protected"],
+    ["wiring intake source peace", results({ diff: WIRING, source: "peace" }), { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-wiring" }, "not-source-builder"],
+    ["unknown class from the parse job", results({ diff: WIRING }), { ...AP(sha(WIRING)), AUDITOR_PASS_SCOPE: "scanner-anything" }, "not-scoped"],
+  ];
+  for (const [name, { root: r, dir: d }, env, reason] of cases) {
+    try {
+      const out = record(r, env);
+      assert.equal(out.status, "auditor-pass-refused", name);
+      assert.equal(out.reason, reason, name);
+      assert.equal(existsSync(join(d, "verdicts")), false, name);
+      assert.equal(existsSync(join(r, "index.jsonl")), false, name);
+    } finally { rmSync(r, { recursive: true, force: true }); }
+  }
+});
+
+test("wiring parse job: labels pick the class, and the scope output names it", () => {
+  const run = (labels: string[]) => {
+    const dir = mkdtempSync(join(tmpdir(), "m139-"));
+    try {
+      const f = join(dir, "o");
+      writeFileSync(f, "");
+      const p = spawnSync(join("node_modules", ".bin", "tsx"), ["peaceai/bin/parse-auditor-pass.ts"], {
+        encoding: "utf8", env: { PATH: process.env.PATH!, GITHUB_OUTPUT: f, COMMENT_BODY: `/auditor-pass A ${sha(WIRING)}`, ISSUE_LABELS: JSON.stringify(labels) },
+      });
+      assert.equal(p.status, 0, p.stderr);
+      return Object.fromEntries(readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  assert.deepEqual(run(["peace-task", "scanner-wiring"]), { ok: "true", scope: "scanner-wiring", refusal: "" });
+  assert.deepEqual(run(["peace-task", "scanner-helper"]), { ok: "true", scope: "scanner-helper", refusal: "" });
+  assert.equal(run(["peace-task"]).ok, "false");
+  assert.equal(run(["peace-task", "scanner-helper", "scanner-wiring"]).refusal, REFUSAL_TEXT["ambiguous-class"]);
 });

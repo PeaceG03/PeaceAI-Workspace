@@ -8,7 +8,7 @@ import { appendIndex, latestAttempt, taskDir, writeNew, writeSummary } from "../
 import { loadTargets } from "../lib/target.ts";
 import { parseVerdict, type VerdictCommand } from "../lib/verdict.ts";
 import {
-  AUDITOR_PASS_DELEGATED_BY, AUDITOR_PASS_SOURCE, checkHelperDiff, parseAuditorPass, REFUSAL_TEXT, SCANNER_HELPER_LABEL, taskScopeRefusal, type RecordRefusal,
+  AUDITOR_PASS_SOURCE, checkDiffFor, delegatedByFor, isAuditorPassClass, parseAuditorPass, REFUSAL_TEXT, taskScopeRefusal, type RecordRefusal,
 } from "../lib/auditor-pass.ts";
 import { existsSync } from "node:fs";
 
@@ -28,7 +28,7 @@ const root = resolve(process.env.RESULTS_DIR ?? "");
 const issue = Number(process.env.ISSUE_NUMBER);
 const commentId = String(process.env.COMMENT_ID ?? "");
 const recordedAt = String(process.env.COMMENT_CREATED_AT ?? "");
-// Two commands reach this recorder: the owner's `/verdict` (default) and, for scanner-helper tasks only,
+// Two commands reach this recorder: the owner's `/verdict` (default) and, for scanner-helper and scanner-wiring tasks only,
 // Auditor's `/auditor-pass <letter> <diff sha256>` (VERDICT_KIND=auditor-pass; lib/auditor-pass.ts).
 const auditorPass = process.env.VERDICT_KIND === "auditor-pass";
 const body = process.env.COMMENT_BODY ?? "";
@@ -46,9 +46,11 @@ if (!command || !/^\d{1,20}$/.test(commentId) || !/^\d{4}-\d\d-\d\dT/.test(recor
   process.exit(0);
 }
 // The parse job checked the issue labels; it hands over its scope result, and nothing else stands in for it.
-if (auditorPass && process.env.AUDITOR_PASS_SCOPE !== SCANNER_HELPER_LABEL) {
+const apClass = process.env.AUDITOR_PASS_SCOPE;
+if (auditorPass && !isAuditorPassClass(apClass)) {
   refuse("not-scoped");
 }
+const delegatedBy = auditorPass && isAuditorPassClass(apClass) ? delegatedByFor(apClass) : null;
 const attempt = latestAttempt(root, issue);
 if (!attempt) {
   out({ status: "no-task" });
@@ -75,7 +77,7 @@ if (auditorPass) {
   const diffPath = join(taskDir(root, issue, attempt.task.runId), "candidates", `${shown!.id}.diff`);
   const rules = loadTargets().targets[attempt.task.target ?? ""];
   const reason = scope
-    ?? (!existsSync(diffPath) || !rules ? "diff-missing" : checkHelperDiff(readFileSync(diffPath, "utf8"), postedSha, rules));
+    ?? (!existsSync(diffPath) || !rules ? "diff-missing" : checkDiffFor(apClass as Parameters<typeof checkDiffFor>[0], readFileSync(diffPath, "utf8"), postedSha, rules));
   if (reason) refuse(reason);
 }
 const record: VerdictRecord = {
@@ -88,7 +90,7 @@ const record: VerdictRecord = {
   candidateId: shown?.id ?? null,
   verdict,
   // Recorded as what it is: a delegated pass, never disguised as the owner's own verdict.
-  ...(auditorPass ? { source: AUDITOR_PASS_SOURCE, delegatedBy: AUDITOR_PASS_DELEGATED_BY, diffSha256: postedSha } : {}),
+  ...(delegatedBy ? { source: AUDITOR_PASS_SOURCE, delegatedBy, diffSha256: postedSha } : {}),
 };
 // Did this verdict withdraw the standing pick? (Same rule as effectiveVerdict.)
 const withdrew = withdraws(record, effectiveVerdict(attempt.verdicts).pick);
@@ -96,7 +98,7 @@ const dir = taskDir(root, issue, attempt.task.runId);
 writeNew(join(dir, "verdicts", `${commentId}.json`), stableJson(record));
 appendIndex(root, {
   type: "verdict", issue, runId: attempt.task.runId, commentId, at: recordedAt, label, verdict,
-  ...(auditorPass ? { source: AUDITOR_PASS_SOURCE, delegatedBy: AUDITOR_PASS_DELEGATED_BY } : {}),
+  ...(delegatedBy ? { source: AUDITOR_PASS_SOURCE, delegatedBy } : {}),
 });
 writeSummary(root);
 
@@ -116,7 +118,7 @@ const diffSha256 = chosen ? createHash("sha256").update(readFileSync(chosen)).di
 if (auditorPass && diffSha256 !== postedSha) throw new Error("auditor-pass: chosen diff does not match the posted sha");
 out({
   status: "recorded", label: label ?? "none", verdict, candidate: shown?.id ?? "", withdrew: String(withdrew),
-  source: auditorPass ? AUDITOR_PASS_SOURCE : "owner",
+  source: auditorPass ? AUDITOR_PASS_SOURCE : "owner", delegated_by: delegatedBy ?? "",
   test: String(attempt.task.test), base_sha: attempt.task.baseSha, chosen_diff: chosen, diff_sha256: diffSha256, run_id: attempt.task.runId,
   ...targetOutputs(attempt.task.target),
 });
