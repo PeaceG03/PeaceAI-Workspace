@@ -480,8 +480,104 @@ function strictInert(c: Closure, e: ts.Expression): boolean {
     if (a.length !== 1 || !ts.isArrayLiteralExpression(arr) || !strictInert(c, arr)) return false;
     return x.expression.text === "Set" || arr.elements.every((el) => { const pair = unwrap(el); return ts.isArrayLiteralExpression(pair) && pair.elements.length === 2; });
   }
+  // Auditor #520 ruling (G25+): six exact load-time constant shapes (loadConstForm), only on an unshadowed, unwritten global
+  if (loadConstForm(c, x)) return true;
   return false;
 }
+
+/**
+ * Auditor #520 ruling (G25+, w03): the load-time constant shapes PeaceSTOCKS uses, matched by exact AST shape (never
+ * text), every argument a literal or an accepted const:
+ *   new DataView(new ArrayBuffer(N))         N an integer literal 0..1024
+ *   Uint8Array.from([n, ...]) / Buffer.from([n, ...])   numeric literals only; no mapFn, no second argument
+ *   new TextEncoder()                         no arguments
+ *   new TextDecoder("utf-8" | "utf8", { fatal: true | false })   literal key, literal value
+ *   [s, ...].join(s)                          string literals only, a plain (non-computed, non-?.) member
+ * (the bitwise | & ^ << >> numeric form is in numericAtLoad). Each shape is refused when any module of the closure binds
+ * a global it relies on (LOAD_CONST_GLOBALS) or writes to it, to its prototype or to globalThis (loadConstGlobalsWritten).
+ */
+const LOAD_CONST_GLOBALS = ["Uint8Array", "Buffer", "DataView", "ArrayBuffer", "TextEncoder", "TextDecoder", "Object", "Array"] as const;
+function loadConstForm(c: Closure, x: ts.Expression): boolean {
+  const lit = (e: ts.Expression | undefined, k: "num" | "str"): boolean => !!e && (k === "num" ? ts.isNumericLiteral(e) : ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e));
+  const litArray = (e: ts.Expression | undefined, k: "num" | "str"): boolean => !!e && ts.isArrayLiteralExpression(e) && e.elements.every((el) => lit(el, k));
+  const plainNew = (e: ts.Expression, name: string): e is ts.NewExpression => ts.isNewExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === name;
+  const plainCall = (e: ts.Expression, obj: string | null, name: string): e is ts.CallExpression =>
+    ts.isCallExpression(e) && !e.questionDotToken && ts.isPropertyAccessExpression(e.expression) && !e.expression.questionDotToken && ts.isIdentifier(e.expression.name) && e.expression.name.text === name
+    && (obj === null ? true : ts.isIdentifier(e.expression.expression) && e.expression.expression.text === obj);
+  let uses: readonly string[] | null = null;
+  if (plainNew(x, "DataView")) {
+    const a = x.arguments ?? [];
+    const inner = a.length === 1 ? a[0]! : null;
+    if (inner && plainNew(inner, "ArrayBuffer") && (inner.arguments ?? []).length === 1) {
+      const n = inner.arguments![0]!;
+      if (ts.isNumericLiteral(n) && /^[0-9]+$/.test(n.text) && Number(n.text) <= 1024) uses = ["DataView", "ArrayBuffer"];
+    }
+  } else if (plainCall(x, "Uint8Array", "from") || plainCall(x, "Buffer", "from")) {
+    const obj = ((x as ts.CallExpression).expression as ts.PropertyAccessExpression).expression as ts.Identifier;
+    if ((x as ts.CallExpression).arguments.length === 1 && litArray((x as ts.CallExpression).arguments[0], "num")) uses = [obj.text, "Array"];
+  } else if (plainNew(x, "TextEncoder")) {
+    if ((x.arguments ?? []).length === 0) uses = ["TextEncoder"];
+  } else if (plainNew(x, "TextDecoder")) {
+    const a = x.arguments ?? [];
+    const o = a[1];
+    if (a.length === 2 && ts.isStringLiteral(a[0]!) && (a[0].text === "utf-8" || a[0].text === "utf8") && o && ts.isObjectLiteralExpression(o) && o.properties.length === 1) {
+      const p = o.properties[0]!;
+      if (ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === "fatal"
+        && (p.initializer.kind === ts.SyntaxKind.TrueKeyword || p.initializer.kind === ts.SyntaxKind.FalseKeyword)) uses = ["TextDecoder", "Object"];
+    }
+  } else if (plainCall(x, null, "join")) {
+    const recv = ((x as ts.CallExpression).expression as ts.PropertyAccessExpression).expression;
+    if ((x as ts.CallExpression).arguments.length === 1 && lit((x as ts.CallExpression).arguments[0], "str") && litArray(recv, "str")) uses = ["Array"];
+  }
+  if (!uses) return false;
+  return !uses.some((g) => closureBinds(c, g)) && !loadConstGlobalsWritten(c);
+}
+
+/** True when some module of the closure writes (assigns, ++ / --, deletes, defineProperty / assign / setPrototypeOf / Reflect.*) to a LOAD_CONST_GLOBALS name, anything rooted at one (its prototype, a static) or to globalThis / global / self / window. */
+function loadConstGlobalsWritten(c: Closure): boolean {
+  const guarded = new Set<string>([...LOAD_CONST_GLOBALS, "globalThis", "global", "self", "window"]);
+  const mentions = (n: ts.Node): boolean => { let hit = false; const w = (m: ts.Node): void => { if (hit) return; if (ts.isIdentifier(m) && guarded.has(m.text) && !(ts.isPropertyAccessExpression(m.parent) && m.parent.name === m)) hit = true; else m.forEachChild(w); }; w(n); return hit; };
+  const rootHit = (e: ts.Expression): boolean => {
+    let t = unwrap(e);
+    while (ts.isPropertyAccessExpression(t) || ts.isElementAccessExpression(t)) t = unwrap(t.expression);
+    if (ts.isIdentifier(t)) return guarded.has(t.text);
+    return mentions(e); // a destructuring pattern or a computed root: any guarded name in it refuses
+  };
+  const WRITE_CALLS = new Set(["Object.defineProperty", "Object.defineProperties", "Object.assign", "Object.setPrototypeOf", "Reflect.set", "Reflect.defineProperty", "Reflect.setPrototypeOf", "Reflect.deleteProperty"]);
+  for (const sf of c.files.values()) {
+    let hit = false;
+    const walk = (n: ts.Node): void => {
+      if (hit) return;
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && rootHit(n.left)) { hit = true; return; }
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) && rootHit(n.operand)) { hit = true; return; }
+      if (ts.isDeleteExpression(n) && rootHit(n.expression)) { hit = true; return; }
+      if ((ts.isForInStatement(n) || ts.isForOfStatement(n)) && !ts.isVariableDeclarationList(n.initializer) && rootHit(n.initializer as ts.Expression)) { hit = true; return; }
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(n.expression.expression) && WRITE_CALLS.has(`${n.expression.expression.text}.${n.expression.name.text}`) && n.arguments[0] && rootHit(n.arguments[0])) { hit = true; return; }
+      n.forEachChild(walk);
+    };
+    walk(sf);
+    if (hit) return true;
+  }
+  return false;
+}
+
+/**
+ * Auditor #520 ruling (G25+): a number built at load by | & ^ << >> from numeric literals (or -/+ a numeric literal) and
+ * names of top-level consts in the closure that are themselves such numbers. BigInt literals are not numeric here.
+ */
+function numericAtLoad(c: Closure, e: ts.Expression, depth: number): boolean {
+  if (depth > 32) return false;
+  const x = unwrap(e);
+  if (ts.isNumericLiteral(x)) return true;
+  if (ts.isPrefixUnaryExpression(x) && (x.operator === ts.SyntaxKind.MinusToken || x.operator === ts.SyntaxKind.PlusToken) && ts.isNumericLiteral(unwrap(x.operand))) return true;
+  if (ts.isBinaryExpression(x) && BITWISE_LOAD_OPS.includes(x.operatorToken.kind)) return numericAtLoad(c, x.left, depth + 1) && numericAtLoad(c, x.right, depth + 1);
+  if (ts.isIdentifier(x)) {
+    const d = closureDecl(c, x);
+    return !!d && ts.isVariableDeclaration(d) && !!d.initializer && ts.isIdentifier(d.name) && (d.parent.flags & ts.NodeFlags.BlockScoped) === ts.NodeFlags.Const && ts.isSourceFile(d.parent.parent.parent) && numericAtLoad(c, d.initializer, depth + 1);
+  }
+  return false;
+}
+const BITWISE_LOAD_OPS: readonly ts.SyntaxKind[] = [ts.SyntaxKind.BarToken, ts.SyntaxKind.AmpersandToken, ts.SyntaxKind.CaretToken, ts.SyntaxKind.LessThanLessThanToken, ts.SyntaxKind.GreaterThanGreaterThanToken];
 
 /** A primitive value whose evaluation runs no user code: a literal, or + - * / % ** / an untagged template over such values or names of primitive top-level consts. */
 function primitiveAtLoad(c: Closure, e: ts.Expression, depth: number): boolean {
@@ -496,6 +592,8 @@ function primitiveAtLoad(c: Closure, e: ts.Expression, depth: number): boolean {
     const d = closureDecl(c, x);
     return !!d && ts.isVariableDeclaration(d) && !!d.initializer && ts.isIdentifier(d.name) && (d.parent.flags & ts.NodeFlags.BlockScoped) === ts.NodeFlags.Const && ts.isSourceFile(d.parent.parent.parent) && primitiveAtLoad(c, d.initializer, depth + 1);
   }
+  // Auditor #520 ruling (G25+): | & ^ << >> over numeric literals / numeric consts only
+  if (ts.isBinaryExpression(x) && BITWISE_LOAD_OPS.includes(x.operatorToken.kind)) return numericAtLoad(c, x, depth);
   return false;
 }
 
