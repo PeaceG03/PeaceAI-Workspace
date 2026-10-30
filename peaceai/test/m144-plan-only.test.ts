@@ -116,6 +116,7 @@ test("M144: a task file runs only when its sha256 lock row is in the committed l
     assert.equal(out.code, "OK");
     assert.equal(out.rows.length, 1);
     assert.equal(out.rows[0]!.code, "OK");
+    assert.equal(out.rows[0]!.grader, "plan-grade-v2");
     assert.equal("repo" in out.rows[0]!, false);
     assert.equal("commit" in out.rows[0]!, false);
     assert.equal(out.rows[0]!.taskKey, taskKey(fileSha, "fixture-clamp"));
@@ -150,27 +151,55 @@ test("M144: plan-only changes nothing in the target; a changed checkout is TARGE
   assert.equal(runTask(fixtureTask({ licenseSha256: "e".repeat(64) }), "public", "c".repeat(64), opts()).row.code, "LICENSE_CHANGED");
 });
 
-test("M144: grader math (step share, can-do accuracy, own and team shares)", () => {
-  const task = fixtureTask();
-  const step = (action: Plan["steps"][number]["action"], file: string | null, status: "can-do" | "missing", rule: string | null = null) => ({ n: 0, action, file, symbol: null, status, rule, objective: rule ? "obj" : null, missing: status === "missing" ? ("locate-code" as const) : null });
-  const plan = (steps: Plan["steps"], files: string[], tests: string[]): Plan => ({ schema: "peaceai-plan:v1", planner: "plan-only-v1", taskId: task.id, understanding: { clauses: 1, intents: [], parse: "x", anchors: [] }, files: files.map((path) => ({ path, role: "source", reason: "" })), steps, tests: { files: tests, command: null } });
-  const g = gradePlan(plan([step("edit-source", "src/range.ts", "missing"), step("edit-test", "test/wrong.test.ts", "missing"), step("run-tests", null, "can-do", "pipeline:job-b-tests")], ["src/range.ts", "test/wrong.test.ts"], ["test/wrong.test.ts"]), task, [], []);
-  assert.equal(g.required, 3);
-  assert.equal(g.matched, 2);
-  assert.equal(g.stepShare, 0.667);
+// Grader v2 (plan-grade-v2): Auditor FAILed v1 at b90cddd for inflating the score.
+const gTask = fixtureTask();
+const gStep = (action: Plan["steps"][number]["action"], file: string | null, status: "can-do" | "missing", rule: string | null = null) => ({ n: 0, action, file, symbol: null, status, rule, objective: rule ? "obj" : null, missing: status === "missing" ? ("locate-code" as const) : null });
+const gPlan = (steps: Plan["steps"], files: string[], tests: string[], command: string | null = null): Plan => ({ schema: "peaceai-plan:v1", planner: "plan-only-v1", taskId: gTask.id, understanding: { clauses: 1, intents: [], parse: "x", anchors: [] }, files: files.map((path) => ({ path, role: "source", reason: "" })), steps, tests: { files: tests, command } });
+const EXACT = gPlan([gStep("edit-source", "src/range.ts", "missing"), gStep("edit-test", "test/range.test.ts", "missing"), gStep("run-tests", null, "missing")], ["src/range.ts", "test/range.test.ts"], ["test/range.test.ts"]);
+
+test("M144: grader math (score over work steps, run-tests apart, can-do accuracy, own and team shares)", () => {
+  const g = gradePlan(gPlan([gStep("edit-source", "src/range.ts", "missing"), gStep("edit-test", "test/wrong.test.ts", "missing"), gStep("run-tests", null, "can-do", "pipeline:job-b-tests")], ["src/range.ts", "test/wrong.test.ts"], ["test/wrong.test.ts"]), gTask, [], []);
+  assert.equal(g.required, 2, "run-tests is not a work step");
+  assert.equal(g.planned, 2);
+  assert.equal(g.matched, 1);
+  assert.equal(g.score, 0.5);
+  assert.equal(g.recall, 0.5);
+  assert.equal(g.precision, 0.5);
   assert.equal(g.fileRecall, 0.5);
   assert.equal(g.filePrecision, 0.5);
   assert.equal(g.testRecall, 0);
+  assert.equal(g.runTests, 0, "run-tests without a reference test file or the task's command earns nothing");
   assert.equal(g.canDoClaimed, 1);
   assert.equal(g.canDoVerified, 0, "run-tests is verified only for a targets.json repo");
   assert.equal(g.canDoAccuracy, 0);
   assert.equal(g.ownShare, 0);
   assert.equal(g.teamShare, 1);
+  const e = gradePlan(EXACT, gTask, [], []);
+  assert.deepEqual([e.score, e.recall, e.precision, e.runTests], [1, 1, 1, 1], "names a reference test file");
+  const cmd = gradePlan(gPlan([gStep("run-tests", null, "missing")], [], [], gTask.tests.command), gTask, [], []);
+  assert.equal(cmd.runTests, 1, "or the task's exact test command");
   // A can-do naming a rule that is not approved (or does not edit that file) is not verified.
-  const g2 = gradePlan(plan([step("edit-source", "src/range.ts", "can-do", "nope@" + "0".repeat(64))], ["src/range.ts"], []), task, approvedRules(repo), FIXTURE);
+  const g2 = gradePlan(gPlan([gStep("edit-source", "src/range.ts", "can-do", "nope@" + "0".repeat(64))], ["src/range.ts"], []), gTask, approvedRules(repo), FIXTURE);
   assert.equal(g2.canDoVerified, 0);
   assert.equal(g2.canDoAccuracy, 0);
-  assert.equal(gradePlan(plan([], [], []), task, [], []).canDoAccuracy, null);
+  assert.equal(gradePlan(gPlan([], [], []), gTask, [], []).canDoAccuracy, null);
+});
+
+test("M144: a padded plan (extra files and steps) scores strictly lower than the exact plan", () => {
+  const exact = gradePlan(EXACT, gTask, [], []);
+  const padded = gradePlan(gPlan([...EXACT.steps, gStep("edit-source", "src/greet.ts", "missing"), gStep("edit-source", "src/index.ts", "missing"), gStep("edit-test", "test/other.test.ts", "missing")], ["src/range.ts", "test/range.test.ts", "src/greet.ts", "src/index.ts", "test/other.test.ts"], ["test/range.test.ts", "test/other.test.ts"]), gTask, [], []);
+  assert.equal(padded.matched, exact.matched, "same right steps");
+  assert.ok(padded.score < exact.score, `padded ${padded.score} < exact ${exact.score}`);
+  assert.equal(padded.score, 0.4);
+  assert.ok(padded.filePrecision < exact.filePrecision);
+});
+
+test("M144: a run-tests-only plan scores 0", () => {
+  const g = gradePlan(gPlan([gStep("run-tests", null, "missing")], [], []), gTask, [], []);
+  assert.equal(g.score, 0);
+  assert.equal(g.matched, 0);
+  assert.equal(g.ownShare, 0);
+  assert.equal(g.runTests, 0);
 });
 
 test("M144: log rows carry fixed codes and numbers only (no URL, no message text)", () => {
@@ -182,6 +211,12 @@ test("M144: log rows carry fixed codes and numbers only (no URL, no message text
   assert.equal(logRowProblem({ ...good, set: "hidden" }), "hidden_names_repo");
   assert.equal(logRowProblem({ ...good, code: "OK" }), "grade_presence");
   assert.equal(logRowProblem({ ...good, planner: "see https://x" }), "planner");
+  assert.equal(logRowProblem({ ...good, grader: "plan-grade-v2" }), null);
+  assert.equal(logRowProblem({ ...good, grader: "v9 see https://x" }), "grader");
+  // A v2 row must carry the v2 grade shape; an old v1-shaped grade only without the grader key.
+  const v1Grade = { required: 3, matched: 2, stepShare: 0.667, fileRecall: 1, filePrecision: 1, testRecall: 1, canDoClaimed: 0, canDoVerified: 0, canDoAccuracy: null, ownShare: 0, teamShare: 1, missing: 3 };
+  assert.equal(logRowProblem({ ...good, code: "OK", grade: v1Grade }), null);
+  assert.equal(logRowProblem({ ...good, code: "OK", grade: v1Grade, grader: "plan-grade-v2" }), "grade_keys");
 });
 
 test("M144: the committed run log is valid and add-only against its git history", () => {
@@ -189,6 +224,11 @@ test("M144: the committed run log is valid and add-only against its git history"
   const p = parseLog(text);
   assert.equal("problem" in p, false, JSON.stringify(p));
   assert.ok(isLocked(text, sha256(publicText)), "the public task file is locked");
+  // The public set has been run under the current grader (old v1 rows stay as history).
+  if (!("problem" in p)) {
+    const v2 = p.rows.filter((r) => r.schema === RUN_SCHEMA && r.grader === "plan-grade-v2" && r.taskFileSha256 === sha256(publicText));
+    assert.ok(v2.length >= publicFile.tasks.length, "a plan-grade-v2 run of the public set is logged");
+  }
   assert.equal(addOnlyProblem("a\n", "b\na\n"), "rewritten");
   let revs: string[] = [];
   try { revs = execFileSync("git", ["log", "--format=%H", "--", RUN_LOG], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").filter(Boolean).reverse(); } catch { revs = []; }

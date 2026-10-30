@@ -82,11 +82,28 @@ Codes: `OK`, `TASK_FILE_UNLOCKED`, `TASK_FILE_INVALID`, `TASK_INVALID`, `LICENSE
 
 Follow-up: a CI job that checks the add-only rule on every PR (workflows are protected, so it is proposed separately).
 
-## Grading
+## Grading (grader plan-grade-v2)
 
-A plan step matches a reference step when the action class agrees (source / test / run-tests) and the file is the
-same. Per task: `stepShare` = matched / required; `fileRecall`, `filePrecision`, `testRecall`; `canDoClaimed`,
-`canDoVerified` (the named rule is still approved and, re-run on that file, still edits it, and the step matched;
-run-tests only for a targets.json repo); `canDoAccuracy` = verified / claimed (null when none claimed); `ownShare` =
-matched and verified / required; `teamShare` = 1 - ownShare, credited to the team. Planner changes are never tuned on
-the hidden half; the public half is for development and the hidden half for the score.
+Auditor FAILed the first grader (v1, rows without a `grader` key) at b90cddd because it inflated the score: the
+run-tests step was free credit and the step share was recall only. v2:
+
+- Work steps are the source and test steps (`edit-source`, `add-source`, `edit-test`, `add-test`). A plan step
+  matches a reference step when the action class agrees (source / test) and the file is the same; each reference
+  step matches at most once.
+- Headline per task: `score` = matched / max(required, planned) over work steps. Chosen over F1 because it is one
+  simple ratio that drops for every missed step AND every extra or wrong step (a padded plan scores strictly lower
+  than the exact plan; m144 checks this). `recall` and `precision` are reported beside it.
+- `runTests` (0 or 1) is reported on its own and never folded into `score`: 1 only when the plan has a run-tests
+  step and names a reference test file or the task's exact test command. A run-tests-only plan scores 0.
+- `fileRecall`, `filePrecision`, `testRecall`; `canDoClaimed`, `canDoVerified` (the named rule is still approved
+  and, re-run on that file, still edits it, and the step matched; run-tests only for a targets.json repo);
+  `canDoAccuracy` = verified / claimed (null when none claimed); `ownShare` = matched and verified work steps /
+  max(required, planned); `teamShare` = 1 - ownShare, credited to the team.
+
+Which number counts: on the public half the score is a DEVELOPMENT score only. The planner was built while reading
+the public wording (written by Builder), so it says how the code behaves, not how well PeaceAI plans. The headline
+score is the hidden half's (Auditor's tasks, real issue text), run by Auditor. The runner prints `devScore` for a
+public file and `score` for a hidden one. Planner changes are never tuned on the hidden half.
+
+Log rows written by v2 carry `"grader": "plan-grade-v2"` and the v2 grade shape; the v1 rows stay in the add-only
+log unchanged and are told apart by the missing `grader` key.

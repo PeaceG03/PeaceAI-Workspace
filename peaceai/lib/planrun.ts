@@ -9,7 +9,7 @@ import { loadModel } from "./nlparse.ts";
 import { buildIndex, MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 import type { RuleSpec } from "./learned.ts";
 import { approvedRules, planTask, PLAN_LICENSES, PLANNER_VERSION, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanTask, type PlanTaskFile } from "./plan.ts";
-import { committedLog, gradePlan, isLocked, LOCK_SCHEMA, logRowProblem, RUN_LOG, RUN_SCHEMA, taskKey, type Grade, type LockRow, type RunCode, type RunRow } from "./plangrade.ts";
+import { committedLog, GRADER_VERSION, gradePlan, isLocked, LOCK_SCHEMA, logRowProblem, RUN_LOG, RUN_SCHEMA, taskKey, type Grade, type LockRow, type RunCode, type RunRow } from "./plangrade.ts";
 
 export const ROOT = join(import.meta.dirname, "../..");
 const now = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -76,7 +76,7 @@ export function runTask(task: PlanTask, set: "public" | "hidden", fileSha: strin
   const base = { schema: RUN_SCHEMA, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id) } as const;
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
-  const row = (code: RunCode, plan: Plan | null, grade: Grade | null): RunRow => ({ ...base, ...names, workspace, planner: PLANNER_VERSION, plannerSha256: plannerSha256(), planSha256: plan ? sha256(JSON.stringify(plan)) : null, code, grade });
+  const row = (code: RunCode, plan: Plan | null, grade: Grade | null): RunRow => ({ ...base, ...names, workspace, planner: PLANNER_VERSION, plannerSha256: plannerSha256(), planSha256: plan ? sha256(JSON.stringify(plan)) : null, grader: GRADER_VERSION, code, grade });
   if (taskProblem(task)) return { row: row("TASK_INVALID", null, null), plan: null };
   if (!(PLAN_LICENSES as readonly string[]).includes(task.license)) return { row: row("LICENSE_NOT_ALLOWED", null, null), plan: null };
   if (o.training.has(task.repo.toLowerCase())) return { row: row("TRAINING_OVERLAP", null, null), plan: null };
