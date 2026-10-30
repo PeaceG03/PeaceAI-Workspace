@@ -203,6 +203,8 @@ export const CASES: Case[] = [
     run(lib, ctx) {
       const r = ok(lib.openRepo(ctx.near).relevant({ action: "fix", target: "parseCount should reject NaN", doneCheck: "test/core.test.ts passes" }));
       assert.equal(r.files[0]!.path, "src/core.ts");
+      const m6 = ok(lib.openRepo(ctx.near).relevant({ action: "change", target: "the class TextWriter" }));
+      assert.ok(m6.files[0]!.reasons.includes("M6 target: class TextWriter"), "M6 resolveTargets is one of the signals");
       const dist = r.files.findIndex((f) => f.path === "dist/core.d.ts");
       assert.ok(dist === -1 || dist > r.files.findIndex((f) => f.path === "src/use-barrel.ts"), "generated copy ranks below real importers");
       assert.ok(!r.files.some((f) => lib.isTestPath(f.path)), "no tests among edit candidates");

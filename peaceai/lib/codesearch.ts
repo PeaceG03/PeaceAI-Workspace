@@ -17,7 +17,7 @@
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, posix, resolve, sep } from "node:path";
 import ts from "typescript";
-import { buildIndex, definitions, references, search as bm25, MAX_INDEX_FILE_BYTES, type RepoIndex, type SymbolKind } from "./symbols.ts";
+import { buildIndex, definitions, references, resolveTargets, search as bm25, MAX_INDEX_FILE_BYTES, type RepoIndex, type SymbolKind } from "./symbols.ts";
 
 export const CODESEARCH_SCHEMA = "peaceai-codesearch:v1";
 export const TOOL_NAMES = ["tree", "grep", "symbol", "read", "tests_for", "relevant"] as const;
@@ -463,6 +463,9 @@ export function openRepo(rootDir: string): CodeRepo {
           if (sym.ok) for (const s of sym.imports) bump(s.path, 2, `imports ${id}`);
         }
       }
+      // M6's objective resolver (symbols.ts resolveTargets): named files, "function x" / "type x" phrasings, single
+      // PascalCase words and "the config", each only when it resolves to exactly one non-test definition.
+      for (const t of resolveTargets(ix, target, isTestPath)) { bump(t.path, 6, `M6 target: ${t.reason}`); targetHits++; }
       for (const lit of quoted(target)) {
         const g = repo.grep(lit, { limit: 50 });
         if (g.ok) for (const p of new Set(g.hits.map((h) => h.path))) { bump(p, 4, `contains "${lit.slice(0, 40)}"`); targetHits++; }

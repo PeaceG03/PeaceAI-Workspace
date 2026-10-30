@@ -2,6 +2,7 @@
 // never trained on (mesqueeb/is-what, dsherret/code-block-writer) and a synthetic near-miss / escape repo.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import * as lib from "../lib/codesearch.ts";
@@ -46,7 +47,7 @@ test("M143: the module only reads (fs reads only, no process, network, eval, dyn
   for (const bad of [/\bwrite\w*Sync?\b/i, /\bappend\w*\b/i, /\b(?:mkdir|rmdir|rm|unlink|rename|copyFile|symlink|chmod|chown|utimes|truncate)\w*\(/, /child_process|\bspawn\w*\(|(?<![.\w])exec\w*\(/, /\beval\s*\(|new Function\b|\brequire\s*\(/, /\bimport\s*\(/, /\bfetch\s*\(|node:https?|node:net/, /process\.(?:chdir|env|exit)/, /createProgram|createLanguageService|transpile/]) assert.doesNotMatch(code, bad, String(bad));
 });
 
-test("M143: the fixture bundles are verbatim, pinned, MIT, and not in PeaceAI's LM training manifest", () => {
+test("M143: the fixture bundles are verbatim, pinned, MIT, outside the LM training and learned-rule repo sets and the plan-mode task repos", () => {
   const names = readdirSync(BUNDLE_DIR).sort();
   assert.deepEqual(names, [BUNDLES.cbw.file, BUNDLES.isWhat.file].sort());
   const ev = JSON.parse(readFileSync(resolve(root, "peaceai/rules/proposals/m143-search-fixtures-evidence.json"), "utf8")) as { examples: { repo: string; commit: string; fixture: string; files: string[] }[] };
@@ -65,4 +66,12 @@ test("M143: the fixture bundles are verbatim, pinned, MIT, and not in PeaceAI's 
     for (const line of readFileSync(resolve(dir, f), "utf8").split("\n")) { const m = /"repo":"([^"]+)"/.exec(line); if (m) trained.add(m[1]!.toLowerCase()); }
   assert.ok(trained.size >= 30, "manifest read");
   for (const b of Object.values(BUNDLES)) assert.ok(!trained.has(b.repo.toLowerCase()), `${b.repo} is in the LM training manifest`);
+  // Wider exclusion (the plan-mode rule): no other tracked file names the repo, so it is not in any model/*.json
+  // repo list, learned-rule evidence or proposal; and it is none of the plan-mode public task repos.
+  for (const b of Object.values(BUNDLES)) {
+    const g = spawnSync("git", ["grep", "-il", "-F", "-e", b.repo.split("/")[1]!, "--", ".", ":!peaceai/test/m143-*", ":!peaceai/test/fixtures/m143-search", ":!peaceai/rules/proposals/m143-search-fixtures-evidence.json", ":!THIRD_PARTY_NOTICES"], { cwd: root, encoding: "utf8" });
+    assert.equal(g.status, 1, `${b.repo} is named elsewhere in the repo: ${g.stdout}${g.stderr}`); // git grep: 1 = no match
+  }
+  const planMode = ["valibot", "superstruct", "p-queue", "remeda", "neverthrow", "defu", "destr", "scule", "ohash", "yup", "kysely", "ufo", "mitt", "es-toolkit"];
+  for (const b of Object.values(BUNDLES)) assert.ok(!planMode.includes(b.repo.split("/")[1]!.toLowerCase()), `${b.repo} is a plan-mode task repo`);
 });
