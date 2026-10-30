@@ -277,7 +277,21 @@ export interface VerdictRecord {
   label: string | null;
   candidateId: string | null;
   verdict: VerdictValue;
+  /**
+   * Who gave it. Absent = the owner's own `/verdict` (every record before the field, and every owner verdict now).
+   * `auditor-pass`: Auditor's `/auditor-pass` on a scanner-helper task (lib/auditor-pass.ts), a `right` the owner
+   * delegated for that class only. It opens the PR like a `right`, but is never an owner verdict: 0 credit, and
+   * excluded from agreement, training and every other owner-verdict tally (EffectiveVerdict.delegated).
+   */
+  source?: "auditor-pass";
+  /** With source auditor-pass: the delegation it acts under, always "owner (scanner-helper class)". */
+  delegatedBy?: "owner (scanner-helper class)";
+  /** With source auditor-pass: the candidate diff sha256 Auditor posted, re-checked against the recorded diff. */
+  diffSha256?: string;
 }
+
+/** True for a row that is not the owner's own verdict (any non-absent source fails closed as delegated). */
+export const isDelegatedVerdict = (v: Pick<VerdictRecord, "source">): boolean => v.source !== undefined;
 
 /** Verdict rows in the order they were given (raw rows stay append-only; this only orders them). */
 export function orderVerdicts(verdicts: readonly VerdictRecord[]): VerdictRecord[] {
@@ -294,9 +308,16 @@ export interface EffectiveVerdict {
   pick: { decided: boolean; candidateId: string | null };
   /** True after a withdrawal with no decisive verdict since: excluded from training and agreement. */
   withdrawn: boolean;
-  /** Raw counts, for reporting only. */
+  /**
+   * True when the standing pick came from a delegated row (an auditor-pass), not from the owner. Such a pick
+   * still backs the PR route, but it is never an owner verdict: every tally (agreement, training, LM evaluation,
+   * builder-log coverage) must treat the task as having no owner pick.
+   */
+  delegated: boolean;
+  /** Raw counts, for reporting only. `total` and `unsure` count owner rows only; `delegatedRows` counts the rest. */
   total: number;
   unsure: number;
+  delegatedRows: number;
 }
 
 /**
@@ -313,21 +334,24 @@ export function effectiveVerdict(verdicts: readonly VerdictRecord[]): EffectiveV
   let latest: VerdictRecord | null = null;
   let pick = { decided: false, candidateId: null as string | null };
   let withdrawn = false;
+  let delegated = false;
   for (const v of ordered) {
     if (withdraws(v, pick)) {
       latest = null;
       pick = { decided: false, candidateId: null };
       withdrawn = true;
+      delegated = false;
       continue;
     }
     if (v.verdict === "unsure") continue;
     latest = v;
-    if (v.verdict === "right" && v.candidateId) pick = { decided: true, candidateId: v.candidateId };
-    else if (v.verdict === "wrong" && v.candidateId === null) pick = { decided: true, candidateId: null };
+    if (v.verdict === "right" && v.candidateId) { pick = { decided: true, candidateId: v.candidateId }; delegated = isDelegatedVerdict(v); }
+    else if (v.verdict === "wrong" && v.candidateId === null) { pick = { decided: true, candidateId: null }; delegated = isDelegatedVerdict(v); }
     if (pick.decided) withdrawn = false;
   }
-  const unsure = ordered.filter((v) => v.verdict === "unsure").length;
-  return { latest, pick, withdrawn, total: ordered.length, unsure };
+  const owner = ordered.filter((v) => !isDelegatedVerdict(v));
+  const unsure = owner.filter((v) => v.verdict === "unsure").length;
+  return { latest, pick, withdrawn, delegated, total: owner.length, unsure, delegatedRows: ordered.length - owner.length };
 }
 
 /**
@@ -364,6 +388,8 @@ export interface TaskEntry {
   verdicts: number;
   unsure: number;
   withdrawn: boolean;
+  /** The standing pick is an auditor-pass (owner-delegated, scanner-helper class): no owner credit, no tallies. */
+  delegatedPick: boolean;
   latestVerdict: { label: string | null; candidateId: string | null; verdict: VerdictValue } | null;
   agree: boolean | null; // null when not comparable
   countsTowardAgreement: boolean;
@@ -375,7 +401,8 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
   const pick = effective.pick;
   const eligible = ranking.candidates.filter((c) => c.eligible).length;
   const distinctEdits = distinctEligible(ranking).length;
-  const comparable = pick.decided && distinctEdits >= 2;
+  // An auditor-pass pick is not the owner's: never compared (agreement) and never trained on.
+  const comparable = pick.decided && !effective.delegated && distinctEdits >= 2;
   return {
     issue: task.issue,
     runId: task.runId,
@@ -389,16 +416,17 @@ export function taskEntry(task: TaskRecord, ranking: RankingRecord, verdicts: re
     eligible,
     distinctEdits,
     rankerTop: ranking.rankerTop,
-    peacePick: pick.candidateId,
-    decided: pick.decided,
+    peacePick: effective.delegated ? null : pick.candidateId,
+    decided: pick.decided && !effective.delegated,
     verdicts: effective.total,
     unsure: effective.unsure,
     withdrawn: effective.withdrawn,
-    latestVerdict: effective.latest ? { label: effective.latest.label, candidateId: effective.latest.candidateId, verdict: effective.latest.verdict } : null,
+    delegatedPick: effective.delegated,
+    latestVerdict: effective.latest && !isDelegatedVerdict(effective.latest) ? { label: effective.latest.label, candidateId: effective.latest.candidateId, verdict: effective.latest.verdict } : null,
     agree: comparable ? pick.candidateId === ranking.rankerTop : null,
     countsTowardAgreement: comparable && !task.test,
     // Latest decisive verdict still standing (not withdrawn). The M3 ranker additionally needs a pairable pick.
-    trainable: !task.test && !task.heldOut && pick.decided,
+    trainable: !task.test && !task.heldOut && pick.decided && !effective.delegated,
   };
 }
 
@@ -432,6 +460,8 @@ export function buildSummary(input: readonly TaskEntry[]) {
     agreementHeldOut: score(sorted.filter((e) => e.heldOut)),
     agreementBySource: { peace: score(sorted.filter((e) => e.source === "peace")), builder: score(sorted.filter((e) => e.source === "builder")) },
     withdrawnTasks: real.filter((e) => e.withdrawn).length,
+    // Auditor-pass picks (owner-delegated, scanner-helper class): listed for honesty, counted in no owner tally.
+    delegatedPickTasks: real.filter((e) => e.delegatedPick).length,
     singleEditTasks: real.filter((e) => e.distinctEdits === 1).length,
     entries: sorted,
   };
