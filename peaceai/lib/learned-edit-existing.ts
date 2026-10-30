@@ -40,6 +40,8 @@ export const MAX_OLD_CHARS = 400;
 export const MAX_NEW_CHARS = 600;
 export const MAX_NEW_STATEMENTS = 4;
 export const MAX_BULLETS = 16;
+/** G18 v2 (calledWith language only): a retry example needs its own site, clock and sleep fakes plus their counts. */
+export const MAX_BULLETS_V2 = 32;
 export const MAX_MODULES = 40;
 export const MAX_UNITS = 800;
 
@@ -48,7 +50,7 @@ export type Read = (rel: string) => string | null;
 
 /** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
 export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
-  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p));
+  return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p) || isWire2Params(p));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1370,9 +1372,9 @@ export interface FakeTest { decls: string[]; checks: string[]; calls: CallShape[
  * `- expect CALL rejects with "MSG"` / `- expect CALL throws "MSG"` / `- expect NAME[.k] is called N times`.
  * Every `- fake ` / `- expect ` line must parse; at least one CALL expectation; at most MAX_BULLETS bullets.
  */
-export function parseFakeTest(lines: readonly string[], opts: { wire?: boolean } = {}): FakeTest | null {
+export function parseFakeTest(lines: readonly string[], opts: { wire?: boolean; calledWith?: boolean } = {}): FakeTest | null {
   const bullets = lines.filter((l) => /^- (?:fake|expect) /.test(l));
-  if (!bullets.length || bullets.length > MAX_BULLETS) return null;
+  if (!bullets.length || bullets.length > (opts.calledWith ? MAX_BULLETS_V2 : MAX_BULLETS)) return null;
   const c: Ctx = { fakes: new Map(), wire: !!opts.wire };
   const fakeKeys = new Map<string, Set<string> | null>();
   const decls: string[] = [], checks: string[] = [], calls: CallShape[] = [];
@@ -1404,6 +1406,18 @@ export function parseFakeTest(lines: readonly string[], opts: { wire?: boolean }
         if (!fn || !(OUTCOMES.has(fn) || fn === "sequence")) return null;
       } else if (!(callName(fake) && (OUTCOMES.has(callName(fake)!) || callName(fake) === "sequence"))) return null;
       checks.push(`  assert.equal(${m[1]}${m[2] ? `.${m[2]}` : ""}.calls.length, ${Number(m[3])});`);
+      continue;
+    }
+    // G18 v2 (derive-wire v2 only): `- expect NAME is called with [a, ..], [b, ..]`: the recorded argument lists, data only
+    m = opts.calledWith ? /^([A-Za-z][\w$]*) is called with (\[.*\])$/.exec(rest) : null;
+    if (m) {
+      const fake = c.fakes.get(m[1]!);
+      if (!fake || !(callName(fake) && (OUTCOMES.has(callName(fake)!) || callName(fake) === "sequence"))) return null;
+      const e = parseExpression(`[${m[2]!}]`);
+      if (!e || !ts.isArrayLiteralExpression(e) || !e.elements.length || !e.elements.every((x) => ts.isArrayLiteralExpression(x))) return null;
+      const v = emitData(e, c, { fakes: false, response: false });
+      if (v === null) return null;
+      checks.push(`  assert.deepEqual(${m[1]}.calls, ${v});`);
       continue;
     }
     const outcome = (sep: string, kind: "resolves" | "returns" | "rejects" | "throws") => uniqueSplit(rest, sep, (l, r) => {
@@ -1591,7 +1605,7 @@ export function analyzeSuppliedEdit(trigger: string, params: Record<string, stri
   return gateSuppliedEdit(g.target!, g.file!, split, [heads[0]!, ...lines.filter((l) => l !== heads[0])], files, isTest);
 }
 
-const editablePath = (path: string, isTest: (p: string) => boolean): boolean =>
+export const editablePath = (path: string, isTest: (p: string) => boolean): boolean =>
   !isTest(path) && !isExcludedSource(path) && /^src\/[\w./-]+\.ts$/.test(path) && !path.endsWith(".d.ts") && !PROTECTED_SELF.some((p) => p.pattern.test(path));
 
 /** Every gate for ONE statement edit (oldText -> newText) of `target` in `filePath`; lines[0] is the header line. */
@@ -1718,7 +1732,7 @@ function emittedFakeFn(e: ts.Expression, decls: ReadonlySet<string>, wire = fals
  * Re-read a graded M98 test: the fixed import lines and harness, then ONE `test(..)` whose body is only fake
  * declarations (in the emitted language) and the emitted assertions. Returns the calls with their injections.
  */
-export function gradedTestCalls(testPath: string, content: string, modPath: string, wire = false): CallShape[] | null {
+export function gradedTestCalls(testPath: string, content: string, modPath: string, wire = false, calledWith = false): CallShape[] | null {
   const dir = testPath.slice(0, testPath.lastIndexOf("/") + 1);
   if (!modPath.startsWith(dir)) return null;
   const sf = ts.createSourceFile(testPath, content, ts.ScriptTarget.Latest, true);
@@ -1781,6 +1795,14 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
       continue;
     }
     if (callee.name.text !== "deepEqual" || c.arguments.length !== 2) return null;
+    // G18 v2: NAME.calls, [[data, ..], ..] (only in a derive-wire v2 test)
+    if (calledWith) {
+      const [cl, cr] = c.arguments;
+      if (cl && ts.isPropertyAccessExpression(cl) && cl.name.text === "calls" && ts.isIdentifier(cl.expression)) {
+        if (!decls.has(cl.expression.text) || !cr || !ts.isArrayLiteralExpression(cr) || !cr.elements.every((x) => ts.isArrayLiteralExpression(x)) || !emittedDataOk(cr, new Set())) return null;
+        continue;
+      }
+    }
     const [l, r] = c.arguments;
     const run = l && ts.isAwaitExpression(l) ? l.expression : l;
     if (!run || !ts.isCallExpression(run) || !ts.isIdentifier(run.expression) || !(run.expression.text === "settle" ? l !== run : run.expression.text === "settleSync" && l === run) || run.arguments.length !== 1) return null;
@@ -1813,19 +1835,34 @@ export function gradedTestCalls(testPath: string, content: string, modPath: stri
  */
 export function gradeExistingEditProblem(modPath: string, baseText: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
   const target = editConfinedTarget(modPath, baseText, realText);
-  if (!target) return "edit_not_confined";
+  if (!target) {
+    // G18 v2: a retry edit also adds the sleep seam and helper imports, so it is not confined to one unit; it is
+    // graded only when it is EXACTLY the retry template rebuilt from the base (retryEditShape), hermetic walk on the
+    // template with its per-attempt timeout signal taken out, before and after
+    const retry = retryEditShape(modPath, baseText, realText, read);
+    if (!retry) return "edit_not_confined";
+    const rcalls = gradedTestCalls(testPath, testContent, modPath, true, true);
+    if (!rcalls) return "edit_test_shape";
+    const ra = hermeticProblem(modPath, read, rcalls, retry.target, { path: modPath, content: retry.stripped });
+    if (typeof ra === "string") return ra;
+    const rb = hermeticProblem(modPath, read, rcalls, retry.target, { path: modPath, content: baseText });
+    if (typeof rb === "string") return rb;
+    return ra.targetReached && rb.targetReached ? null : "edit_test_unreached";
+  }
   // Auditor #489: re-run the capability-delta gate on the graded tree (base vs edited target unit).
   const btNode = findTarget(ts.createSourceFile(modPath, baseText, ts.ScriptTarget.Latest, true), target);
   const rtNode = findTarget(ts.createSourceFile(modPath, realText, ts.ScriptTarget.Latest, true), target);
   if (!btNode || !rtNode) return "edit_not_confined";
   // G18: a derive-wire edit (one own statement wrapped in try / catch, the catch in the closed wire grammar) is checked
   // with its catch replaced by `throw error;` (wireEditShape); every other edit exactly as before.
-  const wire = wireEditShape(modPath, baseText, realText, target);
+  // G18 v2: a recorded-skip edit (filter, record, continue; recordEditShape) likewise, with the v2 test language
+  const wire = wireEditShape(modPath, baseText, realText, target) ?? recordEditShape(modPath, baseText, realText, target);
+  const v2 = !!wire && !("catch" in wire);
   const capNode = wire ? findTarget(ts.createSourceFile(modPath, wire.stripped, ts.ScriptTarget.Latest, true), target) : rtNode;
   if (!capNode) return "edit_not_confined";
   const capB = capabilityDelta(btNode.node, capNode.node);
   if (capB) return capB;
-  const calls = gradedTestCalls(testPath, testContent, modPath, !!wire);
+  const calls = gradedTestCalls(testPath, testContent, modPath, !!wire, v2);
   if (!calls) return "edit_test_shape";
   const after = hermeticProblem(modPath, read, calls, target, { path: modPath, content: realText });
   if (typeof after === "string") return after;
@@ -2067,4 +2104,479 @@ export function wireEditShape(path: string, baseText: string, realText: string, 
 /** Job A: gate ONE derived wire edit (the derive-wire search's oldText -> newText) through every M98 gate, wire harness. */
 export function gateWireEdit(target: string, filePath: string, split: { oldText: string; newText: string }, lines: readonly string[], files: readonly { path: string; content: string }[], isTest: (p: string) => boolean): { edit: ExistingEdit | null; reason: string | null } {
   return gateSuppliedEdit(target, filePath, split, lines, files, isTest, true);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G18 derive-wire v2 (public-derive-wire-v2, kind EXISTING_EDIT): the shared Job A / Job B pieces of two more
+// DERIVED edits (the search lives in derive-wire-v2.ts; peaceai/spec/derive-wire-v2.md).
+//
+//   retry           the target method's body becomes ONE fixed loop: each attempt re-runs the base statements before
+//                   the site (so it signs again: fresh `now()`), calls the site with its own per-attempt timeout
+//                   signal, and retries only (a) a rejected call (network error / timeout) or (b) a response whose
+//                   status the existing status predicate S accepts, while the existing limit predicate A allows
+//                   (A(failed tries)), waiting the existing delay D(attempt, base) through an injected `sleep`.
+//                   A class with a config-object constructor gets the `sleep` seam in the existing `P.k ?? default`
+//                   pattern (one optional config member, one field, one constructor line) when it has none.
+//   recorded skip   one awaited call statement inside a for-of loop of the target (an expression statement, or a
+//                   `const X = await ..` declaration, hoisted to `let X;`) is wrapped so that a failure the filter
+//                   matches is RECORDED (pushed to an existing local list of the target) and the loop goes on, and
+//                   every other failure is RE-THROWN (G26: v1's bare `catch { continue; }` swallowed every error and
+//                   left no record; v2 never emits it).
+//
+// Both are recognized STRUCTURALLY: Job B extracts the holes from the graded tree, rebuilds the edit from the base and
+// the holes with the same builder, and requires the graded file token for token. The holes are names (existing pure
+// numeric helpers, an existing field, an existing local list), numbers stated in the issue prose, and closed-set error
+// reads (WIRE_ARG_FORMS) compared with literals from the examples; nothing else can enter.
+// ---------------------------------------------------------------------------------------------------------------
+export const WIRE2_VOCAB: Record<(typeof EXISTING_EDIT_PARAM_KEYS)[number], readonly string[]> = {
+  fakes: ["recorded-object-literal-v2-error-fields-call-args"],
+  grading: ["self-fail-before-pass-after-assertions"],
+  io: ["injected-only-v2-template-timeout"],
+  match: ["derived-unique-call-site-v2"],
+  paths: ["in-scope-source"],
+  statements: ["derived-retry-or-recorded-skip-v2"],
+  target: ["named-function-or-class-method"],
+  test: ["new-file-fake-driven"],
+};
+export function isWire2Params(p: Record<string, unknown>): boolean {
+  return Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && WIRE2_VOCAB[k].length === 1 && WIRE2_VOCAB[k].includes(p[k] as string));
+}
+
+/** An existing pure numeric helper: `export function H(a: number[, b: number]): number | boolean { return EXPR; }`, EXPR over its params, number literals and arithmetic / comparison / logic / ternary only. */
+export interface NumHelper { name: string; params: string[]; returns: "number" | "boolean"; expr: ts.Expression }
+const NUM_OPS = new Set([ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken]);
+export function numHelper(sf: ts.SourceFile, name: string): NumHelper | null {
+  const decls = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === name);
+  if (decls.length !== 1) return null;
+  const f = decls[0]!;
+  const mods = ts.getModifiers(f) ?? [];
+  if (!f.body || f.asteriskToken || f.typeParameters || !mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) || mods.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword || m.kind === ts.SyntaxKind.DeclareKeyword || m.kind === ts.SyntaxKind.DefaultKeyword)) return null;
+  const returns = f.type?.kind === ts.SyntaxKind.NumberKeyword ? "number" : f.type?.kind === ts.SyntaxKind.BooleanKeyword ? "boolean" : null;
+  if (!returns || f.parameters.length < 1 || f.parameters.length > 2) return null;
+  const params: string[] = [];
+  for (const p of f.parameters) {
+    if (!ts.isIdentifier(p.name) || p.initializer || p.questionToken || p.dotDotDotToken || p.type?.kind !== ts.SyntaxKind.NumberKeyword) return null;
+    params.push(p.name.text);
+  }
+  if (new Set(params).size !== params.length || f.body.statements.length !== 1) return null;
+  const r = f.body.statements[0]!;
+  if (!ts.isReturnStatement(r) || !r.expression) return null;
+  const ok = (e: ts.Expression): boolean => {
+    if (ts.isParenthesizedExpression(e)) return ok(e.expression);
+    if (ts.isNumericLiteral(e)) return Number.isFinite(Number(e.text));
+    if (ts.isIdentifier(e)) return params.includes(e.text);
+    if (ts.isPrefixUnaryExpression(e)) return (e.operator === ts.SyntaxKind.ExclamationToken || e.operator === ts.SyntaxKind.MinusToken) && ok(e.operand);
+    if (ts.isConditionalExpression(e)) return ok(e.condition) && ok(e.whenTrue) && ok(e.whenFalse);
+    return ts.isBinaryExpression(e) && NUM_OPS.has(e.operatorToken.kind) && ok(e.left) && ok(e.right);
+  };
+  return ok(r.expression) ? { name, params, returns, expr: r.expression } : null;
+}
+export function evalNumHelper(h: NumHelper, args: readonly number[]): number | boolean {
+  const ev = (e: ts.Expression): number | boolean => {
+    if (ts.isParenthesizedExpression(e)) return ev(e.expression);
+    if (ts.isNumericLiteral(e)) return Number(e.text);
+    if (ts.isIdentifier(e)) return args[h.params.indexOf(e.text)]!;
+    if (ts.isPrefixUnaryExpression(e)) { const v = ev(e.operand); return e.operator === ts.SyntaxKind.ExclamationToken ? !v : -(v as number); }
+    if (ts.isConditionalExpression(e)) return ev(e.condition) ? ev(e.whenTrue) : ev(e.whenFalse);
+    const b = e as ts.BinaryExpression;
+    const l = ev(b.left);
+    if (b.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return l ? ev(b.right) : l;
+    if (b.operatorToken.kind === ts.SyntaxKind.BarBarToken) return l ? l : ev(b.right);
+    const x = l as number, y = ev(b.right) as number;
+    switch (b.operatorToken.kind) {
+      case ts.SyntaxKind.PlusToken: return x + y;
+      case ts.SyntaxKind.MinusToken: return x - y;
+      case ts.SyntaxKind.AsteriskToken: return x * y;
+      case ts.SyntaxKind.SlashToken: return x / y;
+      case ts.SyntaxKind.PercentToken: return x % y;
+      case ts.SyntaxKind.LessThanToken: return x < y;
+      case ts.SyntaxKind.LessThanEqualsToken: return x <= y;
+      case ts.SyntaxKind.GreaterThanToken: return x > y;
+      case ts.SyntaxKind.GreaterThanEqualsToken: return x >= y;
+      case ts.SyntaxKind.EqualsEqualsEqualsToken: return x === y;
+      default: return x !== y;
+    }
+  };
+  return ev(h.expr);
+}
+
+const lineIndent = (text: string, pos: number): string => /^[ \t]*/.exec(text.slice(text.lastIndexOf("\n", pos - 1) + 1))![0];
+const topDeclares = (sf: ts.SourceFile, name: string): boolean => sf.statements.some((s) => declaresName(s, name));
+type Splice = { start: number; end: number; text: string };
+const applySplices = (text: string, xs: Splice[]): string => [...xs].sort((a, b) => b.start - a.start).reduce((t, x) => t.slice(0, x.start) + x.text + t.slice(x.end), text);
+/** A root identifier every assignment in `stmts` writes through, or null (`init.body = ..` -> init). */
+const assignRoots = (stmts: readonly ts.Statement[]): (string | null)[] => {
+  const out: (string | null)[] = [];
+  const rootOf = (e: ts.Expression): string | null => (ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e) ? rootOf(e.expression) : ts.isParenthesizedExpression(e) ? rootOf(e.expression) : null);
+  const v = (n: ts.Node): void => {
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) out.push(rootOf(n.left));
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) out.push(rootOf(n.operand));
+    ts.forEachChild(n, v);
+  };
+  stmts.forEach(v);
+  return out;
+};
+const hasKind = (n: ts.Node, kinds: readonly ts.SyntaxKind[]): boolean => { let hit = false; const v = (x: ts.Node): void => { if (hit) return; if (kinds.includes(x.kind)) { hit = true; return; } ts.forEachChild(x, v); }; v(n); return hit; };
+
+/** The holes of a v2 retry edit. `imports`: helpers taken from another module (name -> specifier as written). */
+export interface RetryHoles { target: string; site: string; status: string; allowed: string; delay: string; timeoutMs: number; baseMs: number; imports: { name: string; from: string }[] }
+export const RETRY_SLEEP_TYPE = "(ms: number) => Promise<void>";
+export const RETRY_SLEEP_DEFAULT = "((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))";
+
+/** The class's config-injection seam: `constructor(P: I)` / `constructor(private readonly P: I)` with I a module interface and at least one `this.k = P.k ?? E;`. */
+function configSeam(sf: ts.SourceFile, cls: ts.ClassDeclaration): { ctor: ts.ConstructorDeclaration; param: string; iface: ts.InterfaceDeclaration; fields: Map<string, string> } | null {
+  const ctors = cls.members.filter((m): m is ts.ConstructorDeclaration => ts.isConstructorDeclaration(m));
+  if (ctors.length !== 1 || !ctors[0]!.body || ctors[0]!.parameters.length !== 1) return null;
+  const ctor = ctors[0]!;
+  const p = ctor.parameters[0]!;
+  if (!ts.isIdentifier(p.name) || !p.type || !ts.isTypeReferenceNode(p.type) || !ts.isIdentifier(p.type.typeName) || p.type.typeArguments || p.initializer || p.questionToken) return null;
+  const ifName = p.type.typeName.text;
+  const ifs = sf.statements.filter((s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === ifName);
+  if (ifs.length !== 1 || ifs[0]!.heritageClauses || ifs[0]!.typeParameters || !ifs[0]!.members.length) return null;
+  const fields = new Map<string, string>();
+  for (const s of ctor.body!.statements) {
+    if (!ts.isExpressionStatement(s) || !ts.isBinaryExpression(s.expression) || s.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) continue;
+    const { left, right } = s.expression;
+    if (!ts.isPropertyAccessExpression(left) || left.expression.kind !== ts.SyntaxKind.ThisKeyword || !ts.isBinaryExpression(right) || right.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken) continue;
+    const r = right.left;
+    if (ts.isPropertyAccessExpression(r) && ts.isIdentifier(r.expression) && r.expression.text === p.name.text) fields.set(left.name.text, r.name.text);
+  }
+  return fields.size ? { ctor, param: p.name.text, iface: ifs[0]!, fields } : null;
+}
+/** The config key a field of the target's class is injected under (`this.F = P.K ?? E`), or null. */
+export function injectedKeyOf(sf: ts.SourceFile, cls: ts.ClassDeclaration, field: string): string | null {
+  return configSeam(sf, cls)?.fields.get(field) ?? null;
+}
+
+/** Build the v2 retry edit of the base file, or null when the base does not have the retry shape. */
+export function retryEdit(path: string, baseText: string, h: RetryHoles): string | null {
+  const sf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, h.target);
+  if (!t || t.kind !== "method" || !t.node.body || !t.node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) return null;
+  if (!Number.isInteger(h.timeoutMs) || h.timeoutMs < 1 || h.timeoutMs > 600000 || !Number.isInteger(h.baseMs) || h.baseMs < 0 || h.baseMs > 600000) return null;
+  const stmts = t.node.body.statements;
+  const last = stmts[stmts.length - 1];
+  if (!last || !ts.isReturnStatement(last) || !last.expression || !ts.isCallExpression(last.expression)) return null;
+  const call = last.expression;
+  const callee = call.expression;
+  if (!ts.isPropertyAccessExpression(callee) || callee.expression.kind !== ts.SyntaxKind.ThisKeyword || callee.name.text !== h.site || call.questionDotToken || call.typeArguments) return null;
+  if (call.arguments.length < 1 || call.arguments.length > 2 || (call.arguments.length === 2 && !ts.isIdentifier(call.arguments[1]!))) return null;
+  const prefix = stmts.slice(0, -1);
+  // the base statements re-run on every attempt: no other exit, no await / yield / try / throw, and they write only
+  // through their own locals (a re-run may not touch a parameter, `this` or module state twice)
+  if (prefix.some((s) => hasKind(s, [ts.SyntaxKind.ReturnStatement, ts.SyntaxKind.AwaitExpression, ts.SyntaxKind.YieldExpression, ts.SyntaxKind.TryStatement, ts.SyntaxKind.ThrowStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForOfStatement, ts.SyntaxKind.ForInStatement, ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement, ts.SyntaxKind.FunctionExpression, ts.SyntaxKind.ArrowFunction, ts.SyntaxKind.ClassExpression]))) return null;
+  const locals = new Set<string>();
+  for (const s of prefix) if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) locals.add(d.name.text);
+  if (assignRoots(prefix).some((r) => r === null || !locals.has(r))) return null;
+  if (["attempt", "response", "error"].some((n) => declaresName(t.node, n))) return null;
+  const helperNames = [h.status, h.allowed, h.delay];
+  if (helperNames.some((n) => declaresName(t.node, n) || declaresName(t.classNode, n))) return null;
+  // the helpers: declared in this module, or imported by this edit (one new single-name import per helper)
+  const importNames = new Set(h.imports.map((x) => x.name));
+  if (importNames.size !== h.imports.length || h.imports.some((x) => !helperNames.includes(x.name) || !/^\.{1,2}\/[\w./-]+$/.test(x.from))) return null;
+  for (const n of new Set(helperNames)) {
+    const local = topDeclares(sf, n);
+    if (local === importNames.has(n)) return null;
+    if (local && !numHelper(sf, n)) return null;
+  }
+  const splices: Splice[] = [];
+  // imports: after the last import declaration (or at the top), one line each, in the order given
+  if (h.imports.length) {
+    const imps = sf.statements.filter((s) => ts.isImportDeclaration(s));
+    if (h.imports.some((x) => imps.some((s) => ts.isStringLiteral((s as ts.ImportDeclaration).moduleSpecifier) && ((s as ts.ImportDeclaration).moduleSpecifier as ts.StringLiteral).text === x.from))) return null;
+    const lines = h.imports.map((x) => `import { ${x.name} } from ${JSON.stringify(x.from)};`).join("\n");
+    const at = imps.length ? imps[imps.length - 1]!.getEnd() : 0;
+    splices.push({ start: at, end: at, text: imps.length ? `\n${lines}` : `${lines}\n` });
+  }
+  // the sleep seam
+  const cls = t.classNode;
+  const hasSleep = cls.members.some((m) => m.name && ts.isIdentifier(m.name) && m.name.text === "sleep");
+  if (hasSleep) {
+    const f = cls.members.find((m): m is ts.PropertyDeclaration => ts.isPropertyDeclaration(m) && ts.isIdentifier(m.name) && m.name.text === "sleep");
+    const seam = configSeam(sf, cls);
+    if (!f || !f.type || !sameCode(f.type.getText(sf), RETRY_SLEEP_TYPE) || seam?.fields.get("sleep") !== "sleep") return null;
+  } else {
+    const seam = configSeam(sf, cls);
+    if (!seam || seam.iface.members.some((m) => m.name && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name)) && m.name.text === "sleep")) return null;
+    if (declaresName(seam.ctor, "ms") || declaresName(seam.ctor, "done")) return null;
+    const props = cls.members.filter((m) => ts.isPropertyDeclaration(m));
+    if (!props.length) return null;
+    const lastMember = seam.iface.members[seam.iface.members.length - 1]!;
+    splices.push({ start: lastMember.getEnd(), end: lastMember.getEnd(), text: `\n${lineIndent(baseText, lastMember.getStart(sf))}sleep?: ${RETRY_SLEEP_TYPE};` });
+    const lastProp = props[props.length - 1]!;
+    splices.push({ start: lastProp.getEnd(), end: lastProp.getEnd(), text: `\n${lineIndent(baseText, lastProp.getStart(sf))}private readonly sleep: ${RETRY_SLEEP_TYPE};` });
+    const cs = seam.ctor.body!.statements;
+    const lastCs = cs[cs.length - 1]!;
+    splices.push({ start: lastCs.getEnd(), end: lastCs.getEnd(), text: `\n${lineIndent(baseText, lastCs.getStart(sf))}this.sleep = ${seam.param}.sleep ?? ${RETRY_SLEEP_DEFAULT};` });
+  }
+  // the method body
+  const body = t.node.body;
+  const i0 = lineIndent(baseText, t.node.getStart(sf));
+  const i1 = lineIndent(baseText, stmts[0]!.getStart(sf));
+  const step = i1.slice(i0.length) || "  ";
+  const i2 = i1 + step, i3 = i2 + step;
+  const shift = (text: string): string => text.split("\n").map((l) => (l.trim() ? `${step}${l}` : l)).join("\n");
+  const pre = prefix.length ? shift(baseText.slice(baseText.lastIndexOf("\n", prefix[0]!.getStart(sf) - 1) + 1, prefix[prefix.length - 1]!.getEnd())) : "";
+  const signal = `signal: AbortSignal.timeout(${h.timeoutMs})`;
+  const args = call.arguments.length === 2 ? `${call.arguments[0]!.getText(sf)}, { ...${call.arguments[1]!.getText(sf)}, ${signal} }` : `${call.arguments[0]!.getText(sf)}, { ${signal} }`;
+  const wait = `await this.sleep(${h.delay}(attempt, ${h.baseMs}));`;
+  const text = [
+    "{",
+    `${i1}for (let attempt = 0; ; attempt += 1) {`,
+    ...(pre ? [pre] : []),
+    `${i2}let response;`,
+    `${i2}try {`,
+    `${i3}response = await this.${h.site}(${args});`,
+    `${i2}} catch (error) {`,
+    `${i3}if (!${h.allowed}(attempt + 1)) throw error;`,
+    `${i3}${wait}`,
+    `${i3}continue;`,
+    `${i2}}`,
+    `${i2}if (!${h.status}(response.status) || !${h.allowed}(attempt + 1)) return response;`,
+    `${i2}${wait}`,
+    `${i1}}`,
+    `${i0}}`,
+  ].join("\n");
+  splices.push({ start: body.getStart(sf), end: body.getEnd(), text });
+  return applySplices(baseText, splices);
+}
+
+/**
+ * Job A and Job B: is `realText` the v2 retry edit of `baseText`? The holes are read off the real tree, the edit is
+ * rebuilt from the base with retryEdit, and the real file must match it token for token; each helper must be an
+ * existing pure numeric helper (numHelper) of this module or of the relative module it is imported from (`read`).
+ * `stripped` is the real text with the per-attempt `AbortSignal.timeout(N)` (the template's only timer) replaced by
+ * `undefined`, for the hermetic walk; every other token of the real edit is walked as is.
+ */
+export function retryEditShape(path: string, baseText: string, realText: string, read: Read): { target: string; stripped: string; holes: RetryHoles } | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const hits: { cls: string; m: ts.MethodDeclaration; loop: ts.ForStatement }[] = [];
+  for (const st of sf.statements) {
+    if (!ts.isClassDeclaration(st) || !st.name) continue;
+    for (const m of st.members) {
+      if (!ts.isMethodDeclaration(m) || !m.body || !ts.isIdentifier(m.name) || m.body.statements.length !== 1) continue;
+      const loop = m.body.statements[0]!;
+      if (ts.isForStatement(loop) && !loop.condition && loop.initializer?.getText(sf) === "let attempt = 0" && loop.incrementor?.getText(sf) === "attempt += 1") hits.push({ cls: st.name.text, m, loop });
+    }
+  }
+  if (hits.length !== 1) return null;
+  const { cls, m, loop } = hits[0]!;
+  if (!ts.isBlock(loop.statement)) return null;
+  const ls = loop.statement.statements;
+  const tr = ls[ls.length - 3];
+  const tail = ls[ls.length - 2];
+  if (!tr || !ts.isTryStatement(tr) || !tr.catchClause || !tail || !ts.isIfStatement(tail)) return null;
+  const a = tr.tryBlock.statements[0];
+  if (!a || !ts.isExpressionStatement(a) || !ts.isBinaryExpression(a.expression) || !ts.isAwaitExpression(a.expression.right) || !ts.isCallExpression(a.expression.right.expression)) return null;
+  const siteCall = a.expression.right.expression;
+  if (!ts.isPropertyAccessExpression(siteCall.expression)) return null;
+  const site = siteCall.expression.name.text;
+  const opts = siteCall.arguments[siteCall.arguments.length - 1];
+  const sig = opts && ts.isObjectLiteralExpression(opts) ? opts.properties[opts.properties.length - 1] : undefined;
+  if (!sig || !ts.isPropertyAssignment(sig) || !ts.isCallExpression(sig.initializer) || sig.initializer.getText(sf).replace(/\d+/, "") !== "AbortSignal.timeout()" || !ts.isNumericLiteral(sig.initializer.arguments[0]!)) return null;
+  const timeoutMs = Number((sig.initializer.arguments[0] as ts.NumericLiteral).text);
+  const c0 = tr.catchClause.block.statements[0], c1 = tr.catchClause.block.statements[1];
+  const calleeOf = (e: ts.Expression | undefined): ts.CallExpression | null => {
+    let x = e;
+    while (x && (ts.isPrefixUnaryExpression(x) || ts.isAwaitExpression(x) || ts.isParenthesizedExpression(x))) x = ts.isPrefixUnaryExpression(x) ? x.operand : x.expression;
+    return x && ts.isCallExpression(x) ? x : null;
+  };
+  const allowedCall = c0 && ts.isIfStatement(c0) ? calleeOf(c0.expression) : null;
+  const sleepCall = c1 && ts.isExpressionStatement(c1) ? calleeOf(c1.expression) : null;
+  const delayCall = sleepCall ? calleeOf(sleepCall.arguments[0]) : null;
+  const statusCall = ts.isBinaryExpression(tail.expression) ? calleeOf(tail.expression.left) : null;
+  const nameOf = (c: ts.CallExpression | null): string | null => (c && ts.isIdentifier(c.expression) ? c.expression.text : null);
+  const allowed = nameOf(allowedCall), delay = nameOf(delayCall), status = nameOf(statusCall);
+  const baseArg = delayCall?.arguments[1];
+  if (!allowed || !delay || !status || !baseArg || !ts.isNumericLiteral(baseArg)) return null;
+  const bsf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(bsf)) return null;
+  const imports: { name: string; from: string }[] = [];
+  const dir = path.slice(0, path.lastIndexOf("/") + 1);
+  for (const n of [...new Set([status, allowed, delay])]) {
+    if (topDeclares(bsf, n)) { if (!numHelper(bsf, n)) return null; continue; }
+    const imp = sf.statements.find((s): s is ts.ImportDeclaration => ts.isImportDeclaration(s) && !!s.importClause?.namedBindings && ts.isNamedImports(s.importClause.namedBindings) && s.importClause.namedBindings.elements.length === 1 && s.importClause.namedBindings.elements[0]!.name.text === n && !s.importClause.namedBindings.elements[0]!.propertyName && !s.importClause.name && !s.importClause.isTypeOnly);
+    if (!imp || !ts.isStringLiteral(imp.moduleSpecifier)) return null;
+    const from = imp.moduleSpecifier.text;
+    const rel = normalizeRel(dir, from);
+    const src = rel === null ? null : read(rel) ?? read(`${rel}.ts`);
+    if (src === null || !numHelper(ts.createSourceFile(rel!, src, ts.ScriptTarget.Latest, true), n)) return null;
+    imports.push({ name: n, from });
+  }
+  // the imports are listed in the order they appear in the real file
+  imports.sort((x, y) => realText.indexOf(`import { ${x.name} } from`) - realText.indexOf(`import { ${y.name} } from`));
+  const holes: RetryHoles = { target: `${cls}.${m.name.getText(sf)}`, site, status, allowed, delay, timeoutMs, baseMs: Number(baseArg.text), imports };
+  const rebuilt = retryEdit(path, baseText, holes);
+  if (rebuilt === null || !sameCode(rebuilt, realText)) return null;
+  const stripped = realText.slice(0, sig.initializer.getStart(sf)) + "undefined" + realText.slice(sig.initializer.getEnd());
+  return { target: holes.target, stripped, holes };
+}
+const normalizeRel = (dir: string, spec: string): string | null => {
+  const parts = dir.split("/").filter(Boolean);
+  for (const seg of spec.split("/")) {
+    if (seg === "." || seg === "") continue;
+    if (seg === "..") { if (!parts.length) return null; parts.pop(); } else parts.push(seg);
+  }
+  const p = parts.join("/");
+  return /^src\/[\w./-]+$/.test(p) ? (p.endsWith(".ts") ? p : p) : null;
+};
+
+/** The holes of a v2 recorded-skip edit. */
+export type RecordValue = string; // a WIRE_ARG_FORMS id, or "item" (the loop variable)
+export interface RecordHoles { target: string; site: string; filter: { read: string; op: "eq" | "prefix"; lit: string }; list: string; record: { kind: "line"; value: RecordValue } | { kind: "object"; fields: [string, RecordValue][] } }
+export const recordFilterText = (f: RecordHoles["filter"]): string => {
+  const r = WIRE_ARG_FORMS.find((x) => x.id === f.read)!.text;
+  return f.op === "eq" ? `(${r}) === ${JSON.stringify(f.lit)}` : `(${r}).startsWith(${JSON.stringify(f.lit)})`;
+};
+const recordValueText = (v: RecordValue, item: string): string => (v === "item" ? item : WIRE_ARG_FORMS.find((x) => x.id === v)!.text);
+export const recordText = (r: RecordHoles["record"], item: string): string => (r.kind === "line" ? recordValueText(r.value, item) : `{ ${r.fields.map(([k, v]) => `${k}: ${recordValueText(v, item)}`).join(", ")} }`);
+
+/** The site's own loop (a for-of with a `const NAME` binding, the site directly in its block) and the list declaration. */
+export function recordSite(sf: ts.SourceFile, t: Target, siteText: string): { site: ts.Statement; loop: ts.ForOfStatement; item: string; decl: { name: string; type: string | null; call: string } | null; awaited: string } | null {
+  if (!t.node.body) return null;
+  const sites = ownStatements(t.node.body).filter((s) => sameCode(s.getText(sf), siteText));
+  if (sites.length !== 1) return null;
+  const site = sites[0]!;
+  const block = site.parent;
+  if (!ts.isBlock(block) || !ts.isForOfStatement(block.parent) || block.parent.awaitModifier) return null;
+  const loop = block.parent;
+  const init = loop.initializer;
+  if (!ts.isVariableDeclarationList(init) || !(init.flags & ts.NodeFlags.Const) || init.declarations.length !== 1 || !ts.isIdentifier(init.declarations[0]!.name)) return null;
+  for (let p: ts.Node = site.parent; p && p !== t.node.body; p = p.parent) if (ts.isTryStatement(p) || ts.isCatchClause(p) || isFunctionLike(p)) return null;
+  const item = (init.declarations[0]!.name as ts.Identifier).text;
+  if (ts.isExpressionStatement(site) && ts.isAwaitExpression(site.expression)) return { site, loop, item, decl: null, awaited: site.expression.expression.getText(sf) };
+  if (ts.isVariableStatement(site) && site.declarationList.flags & ts.NodeFlags.Const && site.declarationList.declarations.length === 1) {
+    const d = site.declarationList.declarations[0]!;
+    if (!ts.isIdentifier(d.name) || !d.initializer || !ts.isAwaitExpression(d.initializer)) return null;
+    // a hoisted `let X;` without a type is typed from its assignment; refuse a later use inside a nested function
+    if (!d.type) {
+      const name = d.name.text;
+      let bad = false;
+      const v = (n: ts.Node, inFn: boolean): void => { if (bad) return; if (inFn && ts.isIdentifier(n) && n.text === name) { bad = true; return; } ts.forEachChild(n, (c) => v(c, inFn || isFunctionLike(c))); };
+      for (const s of block.statements.slice(block.statements.indexOf(site) + 1)) v(s, false);
+      if (bad) return null;
+    }
+    return { site, loop, item, decl: { name: d.name.text, type: d.type ? d.type.getText(sf) : null, call: d.initializer.expression.getText(sf) }, awaited: d.initializer.expression.getText(sf) };
+  }
+  return null;
+}
+/** A list the record may go to: an own top-level `const L: string[] = []` / `const L: { k: string; .. }[] = []` of the target, before the loop. */
+export function recordLists(sf: ts.SourceFile, t: Target, loop: ts.Node): { name: string; fields: string[] | null }[] {
+  const out: { name: string; fields: string[] | null }[] = [];
+  for (const s of t.node.body!.statements) {
+    if (s.getStart(sf) >= loop.getStart(sf) || !ts.isVariableStatement(s) || !(s.declarationList.flags & ts.NodeFlags.Const)) continue;
+    for (const d of s.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || !d.type || !ts.isArrayTypeNode(d.type) || !d.initializer || !ts.isArrayLiteralExpression(d.initializer) || d.initializer.elements.length) continue;
+      const el = d.type.elementType;
+      if (el.kind === ts.SyntaxKind.StringKeyword) { out.push({ name: d.name.text, fields: null }); continue; }
+      if (!ts.isTypeLiteralNode(el) || !el.members.length || el.members.length > 3) continue;
+      const fs: string[] = [];
+      for (const m of el.members) if (ts.isPropertySignature(m) && ts.isIdentifier(m.name) && !m.questionToken && m.type?.kind === ts.SyntaxKind.StringKeyword && !REFLECTION.has(m.name.text)) fs.push(m.name.text);
+      if (fs.length === el.members.length && new Set(fs).size === fs.length) out.push({ name: d.name.text, fields: fs });
+    }
+  }
+  return out;
+}
+
+/** Build the v2 recorded-skip edit, or null. */
+export function recordEdit(path: string, baseText: string, h: RecordHoles): string | null {
+  const sf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, h.target);
+  if (!t?.node.body || !t.node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) return null;
+  const s = recordSite(sf, t, h.site);
+  if (!s) return null;
+  const lists = recordLists(sf, t, s.loop).filter((l) => l.name === h.list);
+  if (lists.length !== 1) return null;
+  const list = lists[0]!;
+  if (h.record.kind === "line" ? list.fields !== null : list.fields === null || list.fields.join(",") !== h.record.fields.map(([k]) => k).join(",")) return null;
+  const values = h.record.kind === "line" ? [h.record.value] : h.record.fields.map(([, v]) => v);
+  if (!values.every((v) => v === "item" || WIRE_ARG_FORMS.some((f) => f.id === v)) || !WIRE_ARG_FORMS.some((f) => f.id === h.filter.read) || h.filter.lit.length < 1 || h.filter.lit.length > 80) return null;
+  if (declaresName(t.node, "error") || declaresName(sf, "Error") || declaresName(sf, "String")) return null;
+  const i1 = lineIndent(baseText, s.site.getStart(sf));
+  const step = i1.slice(lineIndent(baseText, s.loop.getStart(sf)).length) || "  ";
+  const i2 = i1 + step;
+  const inner = s.decl ? `${s.decl.name} = await ${s.decl.call};` : `await ${s.awaited};`;
+  const text = [
+    ...(s.decl ? [`let ${s.decl.name}${s.decl.type ? `: ${s.decl.type}` : ""};`, `${i1}try {`] : ["try {"]),
+    `${i2}${inner}`,
+    `${i1}} catch (error) {`,
+    `${i2}if (!(${recordFilterText(h.filter)})) throw error;`,
+    `${i2}${h.list}.push(${recordText(h.record, s.item)});`,
+    `${i2}continue;`,
+    `${i1}}`,
+  ].join("\n");
+  return baseText.slice(0, s.site.getStart(sf)) + text + baseText.slice(s.site.getEnd());
+}
+
+/**
+ * Job A and Job B: is `realText` the v2 recorded-skip edit of `target` in `baseText`? The holes are read off the real
+ * catch (filter, list, record) and site, the edit is rebuilt with recordEdit and must match token for token.
+ * `stripped`: the real text with that catch as `catch (error) { throw error; }` (the capability delta is taken on it,
+ * as for v1); the hermetic walk runs on the real text.
+ */
+export function recordEditShape(path: string, baseText: string, realText: string, target: string): { stripped: string; holes: RecordHoles } | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, target);
+  if (!t?.node.body) return null;
+  const hits: { tr: ts.TryStatement; holes: RecordHoles }[] = [];
+  for (const s of ownStatements(t.node.body)) {
+    if (!ts.isTryStatement(s) || !s.catchClause || s.finallyBlock || s.tryBlock.statements.length !== 1 || s.catchClause.block.statements.length !== 3) continue;
+    const [c0, c1, c2] = s.catchClause.block.statements;
+    if (!c0 || !c1 || !c2 || !ts.isIfStatement(c0) || !ts.isExpressionStatement(c1) || !ts.isContinueStatement(c2) || c2.label) continue;
+    const inner = s.tryBlock.statements[0]!;
+    let site: string | null = null;
+    if (ts.isExpressionStatement(inner) && ts.isAwaitExpression(inner.expression)) site = inner.getText(sf);
+    else if (ts.isExpressionStatement(inner) && ts.isBinaryExpression(inner.expression) && inner.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(inner.expression.left) && ts.isAwaitExpression(inner.expression.right)) {
+      const block = s.parent;
+      const prev = ts.isBlock(block) ? block.statements[block.statements.indexOf(s) - 1] : undefined;
+      if (!prev || !ts.isVariableStatement(prev) || prev.declarationList.declarations.length !== 1) continue;
+      const d = prev.declarationList.declarations[0]!;
+      if (!ts.isIdentifier(d.name) || d.name.text !== inner.expression.left.text || d.initializer) continue;
+      site = `const ${d.name.text}${d.type ? `: ${d.type.getText(sf)}` : ""} = ${inner.expression.right.getText(sf)};`;
+    }
+    if (!site) continue;
+    // the list and record: `L.push(R);`
+    const push = c1.expression;
+    if (!ts.isCallExpression(push) || !ts.isPropertyAccessExpression(push.expression) || push.expression.name.text !== "push" || !ts.isIdentifier(push.expression.expression) || push.arguments.length !== 1) continue;
+    const list = push.expression.expression.text;
+    const loopItem = (() => { for (let p: ts.Node = s.parent; p && p !== t.node.body; p = p.parent) if (ts.isForOfStatement(p) && ts.isVariableDeclarationList(p.initializer) && ts.isIdentifier(p.initializer.declarations[0]!.name)) return p.initializer.declarations[0]!.name.text; return null; })();
+    if (!loopItem) continue;
+    const valueOf = (e: ts.Expression): RecordValue | null => (ts.isIdentifier(e) && e.text === loopItem ? "item" : WIRE_ARG_FORMS.find((f) => sameCode(e.getText(sf), f.text))?.id ?? null);
+    const r = push.arguments[0]!;
+    let record: RecordHoles["record"] | null = null;
+    if (ts.isObjectLiteralExpression(r)) {
+      const fields: [string, RecordValue][] = [];
+      for (const p of r.properties) { const v = ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) ? valueOf(p.initializer) : null; if (!v) { fields.length = 0; break; } fields.push([(p.name as ts.Identifier).text, v]); }
+      if (fields.length === r.properties.length && fields.length) record = { kind: "object", fields };
+    } else { const v = valueOf(r); if (v) record = { kind: "line", value: v }; }
+    if (!record) continue;
+    // the filter: `if (!(F)) throw error;` with F one recordFilterText
+    if (!ts.isThrowStatement(c0.thenStatement) || c0.elseStatement) continue;
+    const ft = c0.expression;
+    if (!ts.isPrefixUnaryExpression(ft) || ft.operator !== ts.SyntaxKind.ExclamationToken || !ts.isParenthesizedExpression(ft.operand)) continue;
+    const f = ft.operand.expression;
+    let filter: RecordHoles["filter"] | null = null;
+    const litOf = (e: ts.Expression | undefined): string | null => (e && ts.isStringLiteral(e) ? e.text : null);
+    if (ts.isBinaryExpression(f) && f.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken && ts.isParenthesizedExpression(f.left)) {
+      const read = WIRE_ARG_FORMS.find((x) => sameCode(f.left.getText(sf), `(${x.text})`));
+      const lit = litOf(f.right);
+      if (read && lit !== null) filter = { read: read.id, op: "eq", lit };
+    } else if (ts.isCallExpression(f) && ts.isPropertyAccessExpression(f.expression) && f.expression.name.text === "startsWith" && f.arguments.length === 1) {
+      const read = WIRE_ARG_FORMS.find((x) => sameCode(f.expression.getText(sf).replace(/\.startsWith$/, ""), `(${x.text})`));
+      const lit = litOf(f.arguments[0]);
+      if (read && lit !== null) filter = { read: read.id, op: "prefix", lit };
+    }
+    if (!filter) continue;
+    hits.push({ tr: s, holes: { target, site, filter, list, record } });
+  }
+  if (hits.length !== 1) return null;
+  const { tr, holes } = hits[0]!;
+  const rebuilt = recordEdit(path, baseText, holes);
+  if (rebuilt === null || !sameCode(rebuilt, realText)) return null;
+  const cc = tr.catchClause!;
+  return { stripped: realText.slice(0, cc.getStart(sf)) + "catch (error) { throw error; }" + realText.slice(cc.getEnd()), holes };
 }

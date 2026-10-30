@@ -130,3 +130,10 @@ Examples:
 
 DERIVE_FROM_BEHAVIOR v1-v6 outputs over the health3 and scanner drafts are byte-identical before and after this change
 (the box harness, run on two PeaceSTOCKS bases). The only change to `learned-derive.ts` is `export` on `STRONG_CODE`.
+
+## G26: the continue form and scanner per-day wiring
+
+The bare `catch { continue; }` above swallows every error (a `TypeError` included) and leaves no record. It is **not
+allowed for scanner per-day / per-session wiring** (Auditor, Oct 29 2026): such wiring uses derive-wire v2's filtered,
+recorded skip (`peaceai/spec/derive-wire-v2.md`), which re-throws every non-matching error and records each skipped
+item. v1's behavior and output are unchanged.
