@@ -150,6 +150,25 @@ test("relatedTests: same-stem tests and importers of the touched module", () => 
   assert.deepEqual(relatedTests(["src/dust.ts"], tests, 2), ["src/dust-edge.test.ts", "src/dust.test.ts"]);
 });
 
+test("relatedTests ownFirst (W619): the touched module's own tests come first, stable, before importers; the cut keeps them", () => {
+  const tests = [
+    { path: "src/a-uses.test.ts", content: 'import { x } from "./dust.ts";' },
+    { path: "src/b-uses.test.ts", content: 'import { x } from "./dust.ts";' },
+    { path: "src/dust.test.ts", content: "" },
+    { path: "src/dust.r2-x.test.ts", content: "" },
+    { path: "src/dust-edge.test.ts", content: "" },
+    { path: "src/lib/dust.test.ts", content: 'import { x } from "../dust.ts";' },
+    { path: "src/dustbin.test.ts", content: "" },
+  ];
+  // default order is unchanged (sorted); ownFirst puts dust-edge / dust.r2-x / dust.test first, then importers sorted
+  assert.deepEqual(relatedTests(["src/dust.ts"], tests), ["src/a-uses.test.ts", "src/b-uses.test.ts", "src/dust-edge.test.ts", "src/dust.r2-x.test.ts", "src/dust.test.ts", "src/lib/dust.test.ts"]);
+  assert.deepEqual(relatedTests(["src/dust.ts"], tests, 6, { ownFirst: true }), ["src/dust-edge.test.ts", "src/dust.r2-x.test.ts", "src/dust.test.ts", "src/a-uses.test.ts", "src/b-uses.test.ts", "src/lib/dust.test.ts"]);
+  assert.deepEqual(relatedTests(["src/dust.ts"], tests, 2), ["src/a-uses.test.ts", "src/b-uses.test.ts"]);
+  assert.deepEqual(relatedTests(["src/dust.ts"], tests, 2, { ownFirst: true }), ["src/dust-edge.test.ts", "src/dust.r2-x.test.ts"]);
+  // a same-named test in another directory is an importer here, not an own test
+  assert.deepEqual(relatedTests(["src/lib/dust.ts"], [{ path: "src/dust.test.ts", content: 'import { x } from "./lib/dust.ts";' }, { path: "src/lib/dust.test.ts", content: "" }], 6, { ownFirst: true }), ["src/lib/dust.test.ts", "src/dust.test.ts"]);
+});
+
 // ---------- records and review ----------
 test("records carry the target; the review names a non-default target", () => {
   const records = buildRecords(

@@ -107,9 +107,12 @@ function runCandidateCapture(cwd: string, command: string, args: string[], timeo
  * Auditor #489: the ORIGINAL-SUITE step for an EXISTING_EDIT (M98) candidate runs under the Node permission model too
  * (it imports the edited module, so it would otherwise execute the splice unconfined). Each test file runs directly in
  * its own confined process (not under `--test`, whose children would not inherit the flags): fs reads limited to the
- * tree's `src/`, the package.json chain and node_modules; fs read+write only in a per-run scratch dir that is also
- * TMPDIR/HOME; no child_process, no addons, no wasi; workers only for tsx's loader. A test that can't run confined
- * fails (fail closed) — the caller decides which tests that applies to (see judgedConfined).
+ * tree's `src/`, the package.json chain and node_modules; fs read+write only in a fresh per-run scratch dir that is
+ * also TMPDIR/TMP/TEMP/HOME; no child_process, no addons, no wasi; workers only for tsx's loader. A test that can't
+ * run confined fails (fail closed) — the caller decides which tests that applies to (see judgedConfined).
+ * W619 (Auditor #620 follow-up): the scratch dir is made fresh for EACH test-file run (so a base run leaves nothing
+ * for the candidate run of the same test) and removed right after it; it lives under the sandbox root, never inside
+ * the tree, so it can't reach git apply, the protected digest or any tree walk.
  */
 function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP_TIMEOUT_MS): boolean {
   if (tests.length === 0) return true;
@@ -118,17 +121,29 @@ function runConfinedSuite(tree: string, tests: readonly string[], timeout = STEP
   const realTree = realpathSync(tree);
   const pkgs = new Set<string>([join(realTree, "package.json")]);
   for (const t of tests) { let d = dirname(t); while (d !== "." && d !== "/" && d !== "") { pkgs.add(join(realTree, d, "package.json")); d = dirname(d); } }
-  // Unsandboxed (dev) runs get their own scratch dir; sandboxed runs reuse the sandbox user's private home.
-  const scratch = sandboxUser ? sandboxHome : mkdtempSync(join(tmpdir(), "peaceai-confined-"));
-  try {
-    for (const t of tests) {
+  for (const t of tests) {
+    const scratch = confinedScratch(realTree);
+    try {
       const args = ["--permission", `--allow-fs-read=${join(realTree, "src")}`, ...[...pkgs].sort().map((p) => `--allow-fs-read=${p}`), `--allow-fs-read=${modules}`, `--allow-fs-read=${scratch}`, `--allow-fs-write=${scratch}`, "--allow-worker", "--import", loader, "--test-reporter=tap", t];
-      if (!runCandidateCapture(tree, process.execPath, args, timeout, { TSX_DISABLE_CACHE: "1", TMPDIR: scratch, HOME: scratch }).ok) return false;
+      if (!runCandidateCapture(tree, process.execPath, args, timeout, { TSX_DISABLE_CACHE: "1", TMPDIR: scratch, TMP: scratch, TEMP: scratch, HOME: scratch }).ok) return false;
+    } finally {
+      removeConfinedScratch(scratch);
     }
-    return true;
-  } finally {
-    if (!sandboxUser) rmSync(scratch, { recursive: true, force: true });
   }
+  return true;
+}
+
+/** A fresh 0700 scratch dir under the sandbox root (owned by the sandbox user when sandboxed), outside the tree. */
+function confinedScratch(realTree: string): string {
+  const scratch = realpathSync(mkdtempSync(join(sandboxUser ? sandboxRoot : tmpdir(), "peaceai-confined-")));
+  if (scratch === realTree || scratch.startsWith(`${realTree}/`)) { rmSync(scratch, { recursive: true, force: true }); throw new Error("confined scratch inside the tree"); }
+  if (sandboxUser) execFileSync("sudo", ["-n", "chown", sandboxUser, scratch]);
+  return scratch;
+}
+
+function removeConfinedScratch(scratch: string): void {
+  if (sandboxUser) spawnSync("sudo", ["-n", "rm", "-rf", scratch], { stdio: "ignore" });
+  else rmSync(scratch, { recursive: true, force: true });
 }
 
 /**
@@ -752,7 +767,7 @@ for (const candidate of selected) {
     const m98 = !!candidate.selfGrade && candidate.transformations.includes("LEARNED_EXISTING_EDIT");
     const related =
       targetConfig.originalSuite === "related"
-        ? relatedTests(touched, baseTests.map((path) => ({ path, content: git(repo, "show", `${summary.baseSha}:${path}`) })), m98 ? RELATED_POOL : RELATED_LIMIT)
+        ? relatedTests(touched, baseTests.map((path) => ({ path, content: git(repo, "show", `${summary.baseSha}:${path}`) })), m98 ? RELATED_POOL : RELATED_LIMIT, { ownFirst: m98 })
         : [];
     // "related" mode: each related existing test runs on the untouched base first; only those that pass
     // there are judged on the candidate (a regression fails it). Base failures are environment noise.
@@ -771,6 +786,7 @@ for (const candidate of selected) {
     } else judged.push(...related.filter((path) => runCandidate(tree, tsx, ["--test", path], RELATED_TIMEOUT_MS)));
     const m98Unconfinable = m98 && targetConfig.originalSuite === "related" ? probed - judged.length : 0;
     const m98Judgeable = m98Unconfinable === 0 || judged.length >= MIN_CONFINED_JUDGED;
+    if (m98 && targetConfig.originalSuite === "related") console.log(`${candidate.id} related_pool=${related.join(",")} judged_tests=${judged.join(",")}`);
     if (targetConfig.originalSuite === "related") console.log(`${candidate.id} related_tests=${m98 ? probed : related.length} judged=${judged.length}${m98 ? ` confined=1 unconfinable=${m98Unconfinable} pool=${related.length} judgeable=${m98Judgeable}` : ""}`);
     const digestBefore = digestProtected ? protectedDigest(tree) : "";
     if (!runTrusted(tree, "git", ["apply", "--check", "--whitespace=nowarn", diffPath])) continue;
