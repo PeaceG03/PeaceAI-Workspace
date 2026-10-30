@@ -21,6 +21,7 @@ import { EXISTING_EDIT_TRIGGER } from "../lib/learned-edit-existing.ts";
 import { DERIVE_APPEND_TRIGGER, DERIVE_LIST_TRIGGER, DERIVE_STRING_TRIGGER, DERIVE_TRIGGER } from "../lib/learned-derive.ts";
 import { DERIVE_WIRE_TRIGGER } from "../lib/derive-wire.ts";
 import { DERIVE_WIRE_V2_TRIGGER } from "../lib/derive-wire-v2.ts";
+import { DERIVE_WIRE_SIZES_TRIGGER } from "../lib/derive-wire-sizes.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const KINDS: Record<LearnedTriggerName, string> = {
@@ -34,6 +35,7 @@ const KINDS: Record<LearnedTriggerName, string> = {
   deriveString: "DERIVE_FROM_BEHAVIOR",
   deriveWire: "EXISTING_EDIT",
   deriveWire2: "EXISTING_EDIT",
+  deriveWireSizes: "EXISTING_EDIT",
 };
 const ENGINE: Partial<Record<LearnedTriggerName, string>> = {
   testCase: TEST_TRIGGER, throwGuard: GUARD_TRIGGER, addFunction: FUNCTION_TRIGGER, workflowStep: WORKFLOW_TRIGGER, replaceExpression: REPLACE_TRIGGER,
@@ -45,6 +47,7 @@ const ENGINE: Partial<Record<LearnedTriggerName, string>> = {
   deriveString: DERIVE_STRING_TRIGGER,
   deriveWire: DERIVE_WIRE_TRIGGER,
   deriveWire2: DERIVE_WIRE_V2_TRIGGER,
+  deriveWireSizes: DERIVE_WIRE_SIZES_TRIGGER,
 };
 
 test("every learned trigger is keyed by name with its pinned kind, and each name maps to its own engine trigger", () => {

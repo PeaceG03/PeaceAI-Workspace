@@ -147,6 +147,59 @@ sha stay byte for byte; v1 (unapproved) keeps its own trigger and never reaches 
   (`wire_message_unfiltered`) is refused by name. All of v2's guards stay on (code anywhere in
   the issue, the 2000-character objective cut).
 
+## G19+: "list the sizes too" and "use the list sizes" (public-derive-wire-sizes-v1)
+
+Two more asks on the v2 task language (header naming an existing class method, a `Behavior:` paragraph in plain
+words, `Examples:` bullets in the v2 data grammar, no code anywhere, v1's anti-copy guards), under their OWN spec
+`public-derive-wire-sizes-v1` (params: the v2 vocabulary with `match: derived-unique-list-site-v1` and
+`statements: derived-list-sizes-v1`; trigger: the method header form with the ask `list the sizes too` or
+`use the list sizes`). The engine is `peaceai/lib/derive-wire-sizes.ts`; the closed templates and Job B's recognizers
+are the G19+ block of `peaceai/lib/learned-edit-existing.ts`. public-derive-wire-v2 and public-derive-wire-rethrow-v1
+keep their spec files, triggers and approved shas byte for byte; derive-wire-v2.ts and derive-wire.ts are unchanged.
+
+- List the sizes too (`sizesListEdit`): the target must be a paging key listing (`pagingListOf`: async, returns
+  `Promise<string[]>`, one `const L: string[] = []`, exactly one `L.push(...[...X.matchAll(/<T>([^<]+)<\/T>/gu)]
+  .map((match) => DEC(match[1] ?? "")).filter(Boolean))` with DEC a module function, one `return L.sort()`, one
+  `P_${status}` error, and a member of the one in-file interface the class implements). PeaceAI adds the sibling N
+  right after it: the listing's own body (same requests, signing, retries and errors) with only the collect step and
+  the sort replaced. Each element E gives `{ K: DEC(key), S: Number(size) }`, the size tag F read as 1 to 15 digits;
+  an element without its size fails the call with `P_SIZE_MISSING` (never a silent 0); an element without a key is
+  dropped (the key listing's own filter); the result is sorted by key. The interface gains `N?(..)`, OPTIONAL, so other
+  implementers and fakes stay valid. N is the one new method every example calls; E, F, K and S are the one fit of the
+  examples' pages (the first COUNT pages of the one response fake) and expected entries.
+- Use the list sizes (`sizesUseEdit`): the target lists keys with `const KEYS = await R.L(literals)` and then reads
+  every key whole only for its length (`(await R.G(item))?.byteLength ?? 0` in a for-of over KEYS). N is the one
+  OPTIONAL member of R's declared interface (this module or one relative import) with L's parameters, typed
+  `Promise<{ K: string; S: number }[]>`. When R has N, the keys and sizes come from that one call
+  (`Number(sizeOf.get(item))`: the keys are N's own keys, so there is no fallback branch on that arm); without N the
+  method is unchanged, read for read. No catch is added: a failing N fails the call (G26).
+- No clause unpinned (Auditor #629): every clause the templates write must change some example's outcome when taken
+  out, else `sizes_clause_unpinned` with the clause: `size-missing` (a rejecting example whose page holds an element
+  without its size), `empty-key` (an answered example whose page holds an element without a key), `sort` (an
+  answered example whose elements arrive out of key order), and for use `no-sized-listing` (an answered example
+  without N whose L and G calls are both counted at least once).
+- Other refusals by name: `sizes_calls_unpinned` (the page requests are not counted: a request per key would fit),
+  `sizes_download` (the per-key read is allowed), `sizes_silent_zero` (a missing size would only fit as 0),
+  `sizes_swallow` (a failing page or N answered with a result), `sizes_no_listing` (land list the sizes too first),
+  `sizes_target`, `sizes_list_site`, `sizes_use_site`, `sizes_receiver`, `sizes_entry`, `sizes_exists`,
+  `sizes_examples`, `sizes_fields`, `sizes_fake_ambiguous`, `sizes_pages_unpinned`, `sizes_unpinned`, `sizes_no_fit`,
+  `sizes_ambiguous`, `sizes_search_too_large`, `sizes_shape`, `sizes_test_entry`, plus v2's parse and anti-copy
+  refusals (`wire_task_truncated` at the 2000-character objective cut).
+- Job B: `sizesListEditShape` / `sizesUseEditShape` read the holes off the graded file, rebuild the edit from the base
+  and require it token for token; the hermetic walk runs after (list: the base has no such method, so every graded
+  call must be N, else `sizes_test_entry`) or before and after (use), with the retry template's per-attempt timeout
+  signal taken out. Nothing in either template reads, records or rethrows error text.
+
+Front door (G19+): with the NL parse on, both asks are canonical text through their own named trigger
+`LEARNED_CANONICAL.deriveWireSizes` (kind EXISTING_EDIT, M75); before EXISTING_EDIT is approved they are refused
+RULE_NOT_APPROVED, and the rule itself still adds nothing until public-derive-wire-sizes-v1 is in approved.json.
+
+On a retry request after rethrow-v1 (G19+, PeaceSTOCKS c617e63): the hermetic walk of "list the sizes too" takes the
+per-attempt `AbortSignal.timeout(N)` out of every v2 retry template of the class, including one whose final
+`throw error;` rethrow-v1 replaced with ONE `throw new Error(H(..), { cause: error });` (`sizesRetrySignalOf`: the
+rethrow is put back to `throw error;` and the result must be the v2 template; nothing of the rethrow is read). Any
+other final throw keeps the signal, and the walk refuses it (`edit_io_global`), as before.
+
 ## G31: the recorded skip records no free text of the error (Auditor, Oct 30 2026, w02b)
 
 PeaceSTOCKS is public, and a per-day catch-up loop catches more than the R2 errors `request()` already cleaned:

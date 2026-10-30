@@ -16,6 +16,8 @@ import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, vali
 import { existingEditDetail, EXISTING_EDIT_TRIGGER, isWire2Params, isWire2RethrowParams, isWireParams, validExistingEditParams } from "./learned-edit-existing.ts";
 import { deriveWireDetail } from "./derive-wire.ts";
 import { deriveWireV2Detail } from "./derive-wire-v2.ts";
+import { deriveWireSizesDetail } from "./derive-wire-sizes.ts";
+import { isWireSizesParams } from "./learned-edit-existing.ts";
 import { COMPLEX_OPTIONAL_VOCAB, COMPLEX_PARAM_KEYS, COMPLEX_TRIGGER, COMPLEX_VOCAB, runComplexRule } from "./learned-complex.ts";
 import { lstatSync } from "node:fs";
 import { loadTargets, scopeOf } from "./target.ts";
@@ -453,6 +455,13 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
     try {
       // G18 (public-derive-wire-v1): a derive-wire spec (its own params, all or none) derives the edit itself
       // G18 v2 (public-derive-wire-v2): its own params derive a bounded retry or a filtered, recorded skip
+      // G19+ (public-derive-wire-sizes-v1): its own params derive a sized listing or sizes taken from the listing
+      if (isWireSizesParams(spec.params)) {
+        const z = deriveWireSizesDetail(spec.trigger, spec.params, objective, files, isTest, raw);
+        if (!z.edit) { if (why) why.reason = whyReason(z.reason ?? "edit_refused"); return null; }
+        if (repo && deniedEditPath(repo, [z.edit.path])) { if (why) why.reason = "denied_path"; return null; }
+        return z.edit;
+      }
       const r = isWireParams(spec.params) ? deriveWireDetail(spec.trigger, spec.params, objective, files, isTest, raw) : isWire2Params(spec.params) || isWire2RethrowParams(spec.params) ? deriveWireV2Detail(spec.trigger, spec.params, objective, files, isTest, raw) : existingEditDetail(spec.trigger, spec.params, objective, files, isTest);
       if (!r.edit) { if (why) why.reason = whyReason(r.reason ?? "edit_refused"); return null; }
       if (repo && deniedEditPath(repo, [r.edit.path])) { if (why) why.reason = "denied_path"; return null; }

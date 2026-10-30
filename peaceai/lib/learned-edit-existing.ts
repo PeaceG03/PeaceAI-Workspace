@@ -50,6 +50,7 @@ export type Read = (rel: string) => string | null;
 
 /** Spec validation (learned.ts validateSpec): public-mined, exactly the param keys, each its one vocabulary value. */
 export function validExistingEditParams(p: Record<string, unknown>, minedFrom: unknown): boolean {
+  if (minedFrom === "public" && isWireSizesParams(p)) return true; // G19+ (public-derive-wire-sizes-v1)
   return minedFrom === "public" && (okParams(p as Record<string, string | string[]>) || isWireParams(p) || isWire2Params(p) || isWire2RethrowParams(p));
 }
 
@@ -2025,6 +2026,9 @@ export function gradeExistingEditProblem(modPath: string, baseText: string, real
   // before and after, the test in the v2 language. Any other edit is checked exactly as before.
   const rethrow = rethrowEditShape(modPath, baseText, realText, read);
   if (typeof rethrow === "string") return rethrow;
+  // G19+: a "list the sizes too" / "use the list sizes" edit, rebuilt from the base token for token (gradeSizesProblem)
+  const sizes = rethrow ? null : gradeSizesProblem(modPath, baseText, realText, testPath, testContent, read);
+  if (sizes !== null) return sizes === "ok" ? null : sizes;
   if (rethrow) {
     const tcalls = gradedTestCalls(testPath, testContent, modPath, true, true);
     if (!tcalls) return "edit_test_shape";
@@ -2974,6 +2978,332 @@ export function rethrowEditShape(path: string, baseText: string, realText: strin
   const ropts = rcall.arguments[1] as ts.ObjectLiteralExpression;
   const rsigCall = (ropts.properties[ropts.properties.length - 1] as ts.PropertyAssignment).initializer as ts.CallExpression;
   return { target, stripped: strip(realText, sf, rsigCall), baseStripped: strip(baseText, bsf, bl.signal), holes };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// G19+ (public-derive-wire-sizes-v1, kind EXISTING_EDIT; peaceai/spec/derive-wire-v2.md, section G19+): the shared
+// Job A / Job B pieces of TWO more derived edits, each one closed template whose holes the search in
+// derive-wire-sizes.ts fills from the module and the examples:
+//
+//   "list the sizes too" (sizesListEdit) on a class method that pages a listing and collects keys with ONE
+//       `L.push(...[...X.matchAll(/<T>([^<]+)<\/T>/gu)].map((match) => DEC(match[1] ?? "")).filter(Boolean))` and
+//       returns `L.sort()` (pagingListOf): a sibling method N is added right after it, the SAME body with only the
+//       collect step and the sort replaced, so it pages, signs, retries and fails exactly as the list does; each
+//       element E of a page becomes `{ K: DEC(key), S: Number(size) }`, a missing or non-digit size fails the call
+//       with the list's own error prefix (`P_SIZE_MISSING`, never a silent 0), and the result is sorted by key the
+//       way the list is. The interface the class implements gets the OPTIONAL member, so other implementers and
+//       fakes stay valid. E, the size tag and K / S are pinned by the examples (exactly one fit).
+//   "use the list sizes" (sizesUseEdit) on a method that lists keys once and then reads every key whole only to
+//       take its length (`const V = (await R.G(item))?.byteLength ?? 0;` in a for-of over the listed keys): when the
+//       receiver has the optional sized listing N, the keys and sizes come from that one listing (no read per key);
+//       without it the method is unchanged, read for read (both arms pinned by an example). No catch is added: a failing listing still fails the
+//       call (G26; a measuring failure that should not fail a run is a separate, recorded decision).
+//
+// No error text is recorded or re-thrown by either template (the only new throw is a fixed code). Job B
+// re-recognizes each edit by rebuilding it from the base token for token (sizesListEditShape / sizesUseEditShape).
+// ---------------------------------------------------------------------------------------------------------------
+export const WIRE_SIZES_VOCAB: Record<(typeof EXISTING_EDIT_PARAM_KEYS)[number], readonly string[]> = { ...WIRE2_VOCAB, match: ["derived-unique-list-site-v1"], statements: ["derived-list-sizes-v1"] };
+export function isWireSizesParams(p: Record<string, unknown>): boolean {
+  return Object.keys(p).sort().join(",") === [...EXISTING_EDIT_PARAM_KEYS].join(",") && EXISTING_EDIT_PARAM_KEYS.every((k) => typeof p[k] === "string" && WIRE_SIZES_VOCAB[k].length === 1 && WIRE_SIZES_VOCAB[k].includes(p[k] as string));
+}
+const SIZES_IDENT = /^[A-Za-z][A-Za-z0-9]{0,39}$/;
+const SIZES_TAG = /^[A-Za-z][A-Za-z0-9]{0,31}$/;
+/** The holes of a "list the sizes too" edit. */
+export interface SizesListHoles { target: string; method: string; container: string; size: string; keyField: string; sizeField: string }
+/** A paging key listing as it stands (see the block comment), read structurally; null when it is not one. */
+export interface PagingList { decl: ts.VariableStatement; list: string; push: ts.ExpressionStatement; xml: string; keyTag: string; decode: string; ret: ts.ReturnStatement; prefix: string; iface: ts.InterfaceDeclaration; member: ts.MethodSignature }
+export function pagingListOf(sf: ts.SourceFile, t: Target): PagingList | null {
+  if (t.kind !== "method" || !t.node.body || !t.node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) || t.node.asteriskToken || t.node.typeParameters) return null;
+  if (!t.node.type || !sameCode(t.node.type.getText(sf), "Promise<string[]>")) return null;
+  const stmts = t.node.body.statements;
+  const decls = stmts.filter((s): s is ts.VariableStatement => ts.isVariableStatement(s) && !!(s.declarationList.flags & ts.NodeFlags.Const) && s.declarationList.declarations.length === 1 && ts.isIdentifier(s.declarationList.declarations[0]!.name) && !!s.declarationList.declarations[0]!.type && sameCode(s.declarationList.declarations[0]!.type!.getText(sf), "string[]") && !!s.declarationList.declarations[0]!.initializer && sameCode(s.declarationList.declarations[0]!.initializer!.getText(sf), "[]"));
+  if (decls.length !== 1) return null;
+  const decl = decls[0]!;
+  const list = (decl.declarationList.declarations[0]!.name as ts.Identifier).text;
+  const pushes: ts.ExpressionStatement[] = [], rets: ts.ReturnStatement[] = [], prefixes: string[] = [];
+  let other = false;
+  const v = (n: ts.Node): void => {
+    if (ts.isFunctionLike(n) && n !== t.node && !ts.isArrowFunction(n)) { other = true; return; }
+    if (ts.isExpressionStatement(n) && ts.isCallExpression(n.expression) && ts.isPropertyAccessExpression(n.expression.expression) && ts.isIdentifier(n.expression.expression.expression) && n.expression.expression.expression.text === list) {
+      if (n.expression.expression.name.text === "push") { pushes.push(n); return; }
+    }
+    if (ts.isReturnStatement(n)) { rets.push(n); }
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Error" && n.arguments?.length === 1 && ts.isTemplateExpression(n.arguments[0]!)) {
+      const te = n.arguments[0] as ts.TemplateExpression;
+      const m = /^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)_$/.exec(te.head.text);
+      if (m && te.templateSpans.length === 1 && te.templateSpans[0]!.literal.text === "" && ts.isPropertyAccessExpression(te.templateSpans[0]!.expression) && te.templateSpans[0]!.expression.name.text === "status") prefixes.push(m[1]!);
+    }
+    ts.forEachChild(n, v);
+  };
+  v(t.node.body);
+  if (other || pushes.length !== 1 || rets.length !== 1 || prefixes.length !== 1) return null;
+  const push = pushes[0]!, ret = rets[0]!;
+  if (!ret.expression || !sameCode(ret.expression.getText(sf), `${list}.sort()`)) return null;
+  // the collect step: L.push(...[...X.matchAll(/<T>([^<]+)<\/T>/gu)].map((match) => DEC(match[1] ?? "")).filter(Boolean))
+  const pc = push.expression as ts.CallExpression;
+  if (pc.arguments.length !== 1 || !ts.isSpreadElement(pc.arguments[0]!)) return null;
+  const f = (pc.arguments[0] as ts.SpreadElement).expression;
+  if (!ts.isCallExpression(f) || !ts.isPropertyAccessExpression(f.expression) || f.expression.name.text !== "filter" || f.arguments.length !== 1 || f.arguments[0]!.getText(sf) !== "Boolean") return null;
+  const mp = f.expression.expression;
+  if (!ts.isCallExpression(mp) || !ts.isPropertyAccessExpression(mp.expression) || mp.expression.name.text !== "map" || mp.arguments.length !== 1) return null;
+  const arr = mp.expression.expression;
+  if (!ts.isArrayLiteralExpression(arr) || arr.elements.length !== 1 || !ts.isSpreadElement(arr.elements[0]!)) return null;
+  const ma = (arr.elements[0] as ts.SpreadElement).expression;
+  if (!ts.isCallExpression(ma) || !ts.isPropertyAccessExpression(ma.expression) || ma.expression.name.text !== "matchAll" || !ts.isIdentifier(ma.expression.expression) || ma.arguments.length !== 1 || !ts.isRegularExpressionLiteral(ma.arguments[0]!)) return null;
+  const xml = ma.expression.expression.text;
+  const re = /^\/<([A-Za-z][A-Za-z0-9]{0,31})>\(\[\^<\]\+\)<\\\/\1>\/gu$/.exec(ma.arguments[0]!.getText(sf));
+  if (!re) return null;
+  const keyTag = re[1]!;
+  const fn = mp.arguments[0]!;
+  if (!ts.isArrowFunction(fn) || fn.parameters.length !== 1 || !ts.isCallExpression(fn.body) || !ts.isIdentifier(fn.body.expression)) return null;
+  const decode = fn.body.expression.text;
+  if (!sameCode(fn.getText(sf), `(match) => ${decode}(match[1] ?? "")`)) return null;
+  // DEC: a module function of this file (not a parameter / local / import), so the sized listing decodes keys alike
+  if (!sf.statements.some((s) => ts.isFunctionDeclaration(s) && s.name?.text === decode && !!s.body) || declaresName(t.node, decode) || declaresName(t.classNode, decode)) return null;
+  // the interface the class implements, in this file, with the listing's own member
+  const impl = t.classNode.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ImplementsKeyword);
+  if (!impl || impl.types.length !== 1 || !ts.isIdentifier(impl.types[0]!.expression) || impl.types[0]!.typeArguments) return null;
+  const iname = impl.types[0]!.expression.text;
+  const ifs = sf.statements.filter((s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === iname);
+  if (ifs.length !== 1 || ifs[0]!.typeParameters || ifs[0]!.heritageClauses) return null;
+  const members = ifs[0]!.members.filter((m): m is ts.MethodSignature => ts.isMethodSignature(m) && ts.isIdentifier(m.name) && m.name.text === t.name);
+  if (members.length !== 1 || members[0]!.questionToken) return null;
+  return { decl, list, push, xml, keyTag, decode, ret, prefix: prefixes[0]!, iface: ifs[0]!, member: members[0]! };
+}
+const memberNamed = (cls: ts.ClassDeclaration | ts.InterfaceDeclaration, name: string): boolean => (cls.members as ts.NodeArray<ts.ClassElement | ts.TypeElement>).some((m) => !!m.name && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name) || ts.isPrivateIdentifier(m.name)) && m.name.text === name);
+
+/** Build the "list the sizes too" edit of a base whose target is a paging key listing, or null. */
+export function sizesListEdit(path: string, baseText: string, h: SizesListHoles): string | null {
+  const sf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, h.target);
+  if (!t || t.kind !== "method") return null;
+  const p = pagingListOf(sf, t);
+  if (!p) return null;
+  if (![h.method, h.keyField, h.sizeField].every((x) => SIZES_IDENT.test(x)) || ![h.container, h.size].every((x) => SIZES_TAG.test(x)) || h.keyField === h.sizeField) return null;
+  if (h.container === p.keyTag || h.size === p.keyTag || h.container === h.size) return null;
+  if (memberNamed(t.classNode, h.method) || memberNamed(p.iface, h.method)) return null;
+  // the template's own names are what they look like: not re-bound in the method or the module
+  if (["entries", "entry", "a", "b"].some((n) => declaresName(t.node, n)) || ["Number", "Boolean", "Error"].some((n) => declaresName(sf, n))) return null;
+  const type = `{ ${h.keyField}: string; ${h.sizeField}: number }[]`;
+  const ind = lineIndent(baseText, p.push.getStart(sf));
+  const step = "  ";
+  const m0 = t.node.getStart(sf), m1 = t.node.getEnd();
+  const rel = (n: ts.Node): { start: number; end: number } => ({ start: n.getStart(sf) - m0, end: n.getEnd() - m0 });
+  const declType = p.decl.declarationList.declarations[0]!.type!;
+  const collect = [
+    `const entries = [...${p.xml}.matchAll(/<${h.container}>([\\s\\S]*?)<\\/${h.container}>/gu)].map((match) => ({`,
+    `${ind}${step}${h.keyField}: ${p.decode}(/<${p.keyTag}>([^<]+)<\\/${p.keyTag}>/u.exec(match[1] ?? "")?.[1] ?? ""),`,
+    `${ind}${step}${h.sizeField}: Number(/<${h.size}>(\\d{1,15})<\\/${h.size}>/u.exec(match[1] ?? "")?.[1] ?? "NaN"),`,
+    `${ind}}));`,
+    `${ind}if (entries.some((entry) => !Number.isSafeInteger(entry.${h.sizeField}))) throw new Error(${JSON.stringify(`${p.prefix}_SIZE_MISSING`)});`,
+    `${ind}${p.list}.push(...entries.filter((entry) => Boolean(entry.${h.keyField})));`,
+  ].join("\n");
+  const method = t.node.getText(sf);
+  const inner: Splice[] = [
+    { ...rel(t.node.name), text: h.method },
+    { ...rel(t.node.type!), text: `Promise<${type}>` },
+    { ...rel(declType), text: type },
+    { ...rel(p.push), text: collect },
+    { ...rel(p.ret.expression!), text: `${p.list}.sort((a, b) => (a.${h.keyField} < b.${h.keyField} ? -1 : a.${h.keyField} > b.${h.keyField} ? 1 : 0))` },
+  ];
+  const sibling = applySplices(method, inner);
+  const mind = lineIndent(baseText, t.node.getStart(sf));
+  const iind = lineIndent(baseText, p.member.getStart(sf));
+  const params = p.member.parameters.map((x) => x.getText(sf)).join(", ");
+  const doc = `/** Every key under the prefix (all pages) with its size in bytes, from the listing alone, sorted by key. */`;
+  return applySplices(baseText, [
+    { start: m1, end: m1, text: `\n\n${mind}${sibling}` },
+    { start: p.member.getEnd(), end: p.member.getEnd(), text: `\n${iind}${doc}\n${iind}${h.method}?(${params}): Promise<${type}>;` },
+  ]);
+}
+
+/**
+ * G19+: where the per-attempt `AbortSignal.timeout(N)` of a v2 retry template sits, for the hermetic walk only: the
+ * template as v2 writes it, or the same template after public-derive-wire-rethrow-v1 replaced its final `throw error;`
+ * with ONE `throw new Error(H(..), { cause: error });` (PeaceSTOCKS c617e63). The rethrow is put back to `throw error;`
+ * and the result must be the v2 template (retryLoopOf); the catch comes after the try, so the signal's offsets are the
+ * same in both texts. Nothing of the rethrow (its helper or its arguments) is read; null when it is neither.
+ */
+export function sizesRetrySignalOf(path: string, sf: ts.SourceFile, t: Target): { start: number; end: number } | null {
+  const l = retryLoopOf(sf, t);
+  if (l) return { start: l.signal.getStart(sf), end: l.signal.getEnd() };
+  if (t.kind !== "method" || !t.node.body || t.node.body.statements.length !== 1) return null;
+  const loop = t.node.body.statements[0]!;
+  if (!ts.isForStatement(loop) || !ts.isBlock(loop.statement) || loop.statement.statements.length < 4) return null;
+  const tr = loop.statement.statements[loop.statement.statements.length - 3]!;
+  if (!ts.isTryStatement(tr) || !tr.catchClause || tr.catchClause.block.statements.length !== 3) return null;
+  const guard = tr.catchClause.block.statements[0]!;
+  if (!ts.isIfStatement(guard) || guard.elseStatement || !ts.isBlock(guard.thenStatement) || guard.thenStatement.statements.length !== 1) return null;
+  const th = guard.thenStatement.statements[0]!;
+  if (!ts.isThrowStatement(th) || !th.expression || !ts.isNewExpression(th.expression) || !ts.isIdentifier(th.expression.expression) || th.expression.expression.text !== "Error") return null;
+  const args = th.expression.arguments ?? [];
+  if (args.length !== 2 || !ts.isCallExpression(args[0]!) || !ts.isIdentifier(args[0]!.expression) || !sameCode(args[1]!.getText(sf), "{ cause: error }")) return null;
+  const back = applySplices(sf.text, [{ start: guard.thenStatement.getStart(sf), end: guard.thenStatement.getEnd(), text: "throw error;" }]);
+  const bsf = ts.createSourceFile(path, back, ts.ScriptTarget.Latest, true);
+  const bt = findTarget(bsf, `${t.cls}.${t.name}`);
+  const bl = bt ? retryLoopOf(bsf, bt) : null;
+  if (!bl || bl.signal.getEnd() > guard.thenStatement.getStart(sf)) return null;
+  return { start: bl.signal.getStart(bsf), end: bl.signal.getEnd() };
+}
+
+/**
+ * Job A and Job B: is `realText` the "list the sizes too" edit of `baseText`? The holes are read off the real tree
+ * (the one class method of the base that is a paging key listing, the new sibling's name, tags and fields), the edit is
+ * rebuilt with sizesListEdit and must match token for token. `stripped`: the real text with every v2 retry template's
+ * per-attempt `AbortSignal.timeout(N)` in the class replaced by `undefined`, for the hermetic walk.
+ */
+export function sizesListEditShape(path: string, baseText: string, realText: string): { target: string; method: string; stripped: string; holes: SizesListHoles } | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  const bsf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf) || diag(bsf)) return null;
+  const hits: Target[] = [];
+  for (const st of bsf.statements) {
+    if (!ts.isClassDeclaration(st) || !st.name) continue;
+    for (const m of st.members) if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) { const t = findTarget(bsf, `${st.name.text}.${m.name.text}`); if (t && pagingListOf(bsf, t)) hits.push(t); }
+  }
+  if (hits.length !== 1 || hits[0]!.kind !== "method") return null;
+  const bt = hits[0]! as Extract<Target, { kind: "method" }>;
+  const target = `${bt.cls}.${bt.name}`;
+  const rcls = sf.statements.find((s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && s.name?.text === bt.cls);
+  if (!rcls) return null;
+  const at = rcls.members.findIndex((m) => ts.isMethodDeclaration(m) && ts.isIdentifier(m.name) && m.name.text === bt.name);
+  const sib = rcls.members[at + 1];
+  if (at < 0 || !sib || !ts.isMethodDeclaration(sib) || !ts.isIdentifier(sib.name) || !sib.body) return null;
+  const method = sib.name.text;
+  // the fields and tags as the sibling writes them
+  const text = sib.getText(sf);
+  const ty = /^async [A-Za-z][A-Za-z0-9]*\([^)]*\): Promise<\{ ([A-Za-z][A-Za-z0-9]*): string; ([A-Za-z][A-Za-z0-9]*): number \}\[\]>/.exec(text.replace(/\s+/g, " "));
+  const ct = /\.matchAll\(\/<([A-Za-z][A-Za-z0-9]*)>\(\[\\s\\S\]\*\?\)<\\\/\1>\/gu\)/.exec(text);
+  const sz = /Number\(\/<([A-Za-z][A-Za-z0-9]*)>\(\\d\{1,15\}\)<\\\/\1>\/u\.exec/.exec(text);
+  if (!ty || !ct || !sz) return null;
+  const holes: SizesListHoles = { target, method, container: ct[1]!, size: sz[1]!, keyField: ty[1]!, sizeField: ty[2]! };
+  const rebuilt = sizesListEdit(path, baseText, holes);
+  if (rebuilt === null || !sameCode(rebuilt, realText)) return null;
+  // every v2 retry template of the class (the listing's request) with its per-attempt timeout signal taken out
+  const sigs: { start: number; end: number }[] = [];
+  for (const m of rcls.members) if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) { const t = findTarget(sf, `${bt.cls}.${m.name.text}`); const l = t ? sizesRetrySignalOf(path, sf, t) : null; if (l) sigs.push(l); }
+  const stripped = applySplices(realText, sigs.map((s) => ({ ...s, text: "undefined" })));
+  return { target, method, stripped, holes };
+}
+
+/** The holes of a "use the list sizes" edit. */
+export interface SizesUseHoles { target: string; sized: string; keyField: string; sizeField: string }
+/** The site of a "use the list sizes" edit as it stands in the base, read structurally; null when it is not one. */
+export interface SizesUseSite { keysDecl: ts.VariableStatement; keys: string; recv: string; list: string; args: string; argv: string[]; loop: ts.ForOfStatement; item: string; read: ts.VariableStatement; size: string; get: string; prop: string }
+export function sizesUseSiteOf(sf: ts.SourceFile, t: Target): SizesUseSite | null {
+  if (!t.node.body || !t.node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) || t.node.asteriskToken) return null;
+  const stmts = t.node.body.statements;
+  const sites: SizesUseSite[] = [];
+  for (const [i, s] of stmts.entries()) {
+    // const KEYS = await R.L(ARGS);   R: `this.F` or a parameter
+    if (!ts.isVariableStatement(s) || !(s.declarationList.flags & ts.NodeFlags.Const) || s.declarationList.declarations.length !== 1) continue;
+    const d = s.declarationList.declarations[0]!;
+    if (!ts.isIdentifier(d.name) || d.type || !d.initializer || !ts.isAwaitExpression(d.initializer) || !ts.isCallExpression(d.initializer.expression)) continue;
+    const c = d.initializer.expression;
+    if (!ts.isPropertyAccessExpression(c.expression) || c.questionDotToken || c.typeArguments || !c.arguments.every((a) => ts.isStringLiteral(a))) continue;
+    const r = c.expression.expression;
+    const recvOk = (ts.isPropertyAccessExpression(r) && r.expression.kind === ts.SyntaxKind.ThisKeyword && ts.isIdentifier(r.name)) || (ts.isIdentifier(r) && t.node.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === r.text));
+    if (!recvOk) continue;
+    const keys = d.name.text, recv = r.getText(sf), list = c.expression.name.text, args = c.arguments.map((a) => a.getText(sf)).join(", ");
+    // a later top-level for-of over KEYS whose body reads every key whole only for its length, once
+    for (const l of stmts.slice(i + 1)) {
+      if (!ts.isForOfStatement(l) || l.awaitModifier || !ts.isIdentifier(l.expression) || l.expression.text !== keys || !ts.isVariableDeclarationList(l.initializer) || !(l.initializer.flags & ts.NodeFlags.Const) || l.initializer.declarations.length !== 1 || !ts.isIdentifier(l.initializer.declarations[0]!.name) || !ts.isBlock(l.statement)) continue;
+      const item = (l.initializer.declarations[0]!.name as ts.Identifier).text;
+      for (const b of l.statement.statements) {
+        if (!ts.isVariableStatement(b) || b.declarationList.declarations.length !== 1) continue;
+        const bd = b.declarationList.declarations[0]!;
+        if (!ts.isIdentifier(bd.name) || bd.type || !bd.initializer) continue;
+        const m = /^\(await (.+)\.([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\)\?\.(byteLength|length) \?\? 0$/.exec(bd.initializer.getText(sf).replace(/\s+/g, " "));
+        if (!m || m[1] !== recv || m[3] !== item || m[2] === list) continue;
+        if (!sameCode(bd.initializer.getText(sf), `(await ${recv}.${m[2]}(${item}))?.${m[4]} ?? 0`)) continue;
+        sites.push({ keysDecl: s, keys, recv, list, args, argv: c.arguments.map((a) => (a as ts.StringLiteral).text), loop: l, item, read: b, size: bd.name.text, get: m[2]!, prop: m[4]! });
+      }
+    }
+  }
+  return sites.length === 1 ? sites[0]! : null;
+}
+
+/** Build the "use the list sizes" edit, or null. */
+export function sizesUseEdit(path: string, baseText: string, h: SizesUseHoles): string | null {
+  const sf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf)) return null;
+  const t = findTarget(sf, h.target);
+  if (!t) return null;
+  const s = sizesUseSiteOf(sf, t);
+  if (!s) return null;
+  if (![h.sized, h.keyField, h.sizeField].every((x) => SIZES_IDENT.test(x)) || h.keyField === h.sizeField || h.sized === s.list || h.sized === s.get) return null;
+  if (["sized", "sizeOf", "entry"].some((n) => declaresName(t.node, n)) || ["Map", "Number"].some((n) => declaresName(sf, n))) return null;
+  // the sized listing is not already used by the method
+  if (new RegExp(`\\.${h.sized}\\b`).test(t.node.getText(sf))) return null;
+  const ind = lineIndent(baseText, s.keysDecl.getStart(sf));
+  const head = [
+    `const sized = ${s.recv}.${h.sized} ? await ${s.recv}.${h.sized}(${s.args}) : undefined;`,
+    `${ind}const ${s.keys} = sized ? sized.map((entry) => entry.${h.keyField}) : await ${s.recv}.${s.list}(${s.args});`,
+    `${ind}const sizeOf = new Map<string, number>(sized?.map((entry) => [entry.${h.keyField}, entry.${h.sizeField}]));`,
+  ].join("\n");
+  const kw = s.read.declarationList.flags & ts.NodeFlags.Const ? "const" : "let";
+  const rind = lineIndent(baseText, s.read.getStart(sf));
+  // the keys ARE the sized listing's keys, so every key has its size: read with Number(..), no fallback branch that no
+  // example could reach (Auditor #629: no clause unpinned; a key without a size can only be NaN, never a silent 0)
+  const one = `${kw} ${s.size} = sized ? Number(sizeOf.get(${s.item})) : ((await ${s.recv}.${s.get}(${s.item}))?.${s.prop} ?? 0);`;
+  const read = `${rind}${one}`.length <= 120 ? one : [`${kw} ${s.size} = sized`, `${rind}  ? Number(sizeOf.get(${s.item}))`, `${rind}  : ((await ${s.recv}.${s.get}(${s.item}))?.${s.prop} ?? 0);`].join("\n");
+  return applySplices(baseText, [
+    { start: s.keysDecl.getStart(sf), end: s.keysDecl.getEnd(), text: head },
+    { start: s.read.getStart(sf), end: s.read.getEnd(), text: read },
+  ]);
+}
+
+/** Job A and Job B: is `realText` the "use the list sizes" edit of `baseText`? Holes read off the real tree, rebuilt with sizesUseEdit, token for token. */
+export function sizesUseEditShape(path: string, baseText: string, realText: string): { target: string; holes: SizesUseHoles } | null {
+  const sf = ts.createSourceFile(path, realText, ts.ScriptTarget.Latest, true);
+  const bsf = ts.createSourceFile(path, baseText, ts.ScriptTarget.Latest, true);
+  if (diag(sf) || diag(bsf)) return null;
+  const hits: string[] = [];
+  for (const st of bsf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name) { const t = findTarget(bsf, st.name.text); if (t && sizesUseSiteOf(bsf, t)) hits.push(st.name.text); }
+    if (!ts.isClassDeclaration(st) || !st.name) continue;
+    for (const m of st.members) if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) { const t = findTarget(bsf, `${st.name.text}.${m.name.text}`); if (t && sizesUseSiteOf(bsf, t)) hits.push(`${st.name.text}.${m.name.text}`); }
+  }
+  for (const target of hits) {
+    const rt = findTarget(sf, target);
+    const first = rt?.node.body?.statements.find((x) => ts.isVariableStatement(x) && /^const sized = /.test(x.getText(sf)));
+    if (!rt || !first) continue;
+    const m = /^const sized = .+\.([A-Za-z][A-Za-z0-9]*) \? await /.exec(first.getText(sf).replace(/\s+/g, " "));
+    const all = rt.node.body!.getText(sf).replace(/\s+/g, " ");
+    const f = /sized\?\.map\(\(entry\) => \[entry\.([A-Za-z][A-Za-z0-9]*), entry\.([A-Za-z][A-Za-z0-9]*)\]\)/.exec(all);
+    if (!m || !f) continue;
+    const holes: SizesUseHoles = { target, sized: m[1]!, keyField: f[1]!, sizeField: f[2]! };
+    const rebuilt = sizesUseEdit(path, baseText, holes);
+    if (rebuilt !== null && sameCode(rebuilt, realText)) return { target, holes };
+  }
+  return null;
+}
+
+/** Job B for the two G19+ edits (null: not a G19+ edit, checked as before; else a refusal code or "ok"). */
+export function gradeSizesProblem(modPath: string, baseText: string, realText: string, testPath: string, testContent: string, read: Read): string | null {
+  const ls = sizesListEditShape(modPath, baseText, realText);
+  if (ls) {
+    const calls = gradedTestCalls(testPath, testContent, modPath, true, true);
+    if (!calls) return "edit_test_shape";
+    // every graded call is the NEW sibling (the base has no such method, so there is no walk before; the sibling is
+    // the base listing's own body rebuilt token for token with the closed collect step, and it is walked after)
+    if (!calls.every((c) => c.entry.kind === "new" && c.entry.method === ls.method)) return "sizes_test_entry";
+    const a = hermeticProblem(modPath, read, calls, `${ls.target.split(".")[0]}.${ls.method}`, { path: modPath, content: ls.stripped });
+    if (typeof a === "string") return a;
+    return a.targetReached ? "ok" : "edit_test_unreached";
+  }
+  const us = sizesUseEditShape(modPath, baseText, realText);
+  if (us) {
+    const calls = gradedTestCalls(testPath, testContent, modPath, true, true);
+    if (!calls) return "edit_test_shape";
+    const a = hermeticProblem(modPath, read, calls, us.target, { path: modPath, content: realText });
+    if (typeof a === "string") return a;
+    const b = hermeticProblem(modPath, read, calls, us.target, { path: modPath, content: baseText });
+    if (typeof b === "string") return b;
+    return a.targetReached && b.targetReached ? "ok" : "edit_test_unreached";
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
