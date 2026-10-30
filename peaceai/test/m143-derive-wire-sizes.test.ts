@@ -19,6 +19,7 @@ import { DERIVE_WIRE_V2_RETHROW_TRIGGER, DERIVE_WIRE_V2_TRIGGER, deriveWireV2Det
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { gradeExistingEditProblem, gradeSizesProblem, isWire2Params, isWire2RethrowParams, isWireParams, isWireSizesParams, sizesListEditShape, sizesUseEditShape } from "../lib/learned-edit-existing.ts";
 import { PEACE_AUTHOR } from "../lib/minetest.ts";
+import { LEARNED_CANONICAL, parseTask } from "../lib/nlparse.ts";
 import { DERIVE_WIRE_SIZES_PHRASING, phrasingFor } from "../lib/propose.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
 
@@ -425,4 +426,18 @@ test("every other named refusal is reached", () => {
   const old = t.content.replaceAll(".listSizes(", ".list(");
   assert.notEqual(old, t.content);
   assert.equal(gradeSizesProblem("src/store.ts", STORE, a.content, t.path, old, reader(BASE, a)), "sizes_test_entry");
+});
+
+// G19+ Job A front door: with the NL parse on, both asks are canonical text (the rule's own trigger, keyed by name, M75)
+// once the kind EXISTING_EDIT is approved, and RULE_NOT_APPROVED before; the rule itself still needs its own approval.
+test("nlparse: both sizes asks are canonical once EXISTING_EDIT is approved, RULE_NOT_APPROVED before", () => {
+  assert.equal(LEARNED_CANONICAL.deriveWireSizes.kind, "EXISTING_EDIT");
+  assert.equal(LEARNED_CANONICAL.deriveWireSizes.re.source, new RegExp(DERIVE_WIRE_SIZES_TRIGGER, "imu").source);
+  for (const body of [issue(HEAD_A, BEHAVIOR_A, EX_A), issue(HEAD_B, BEHAVIOR_B, EX_B)]) {
+    const parse = (kinds: string[]) => parseTask({ title: cleanIssueText({ title: "wire task", body: "" } as never), body: cleanIssueText({ title: "", body } as never) }, { model: null, approvedKinds: new Set(kinds) });
+    assert.equal(parse(["EXISTING_EDIT"]).status, "canonical");
+    const off = parse([]);
+    assert.equal(off.status, "unsure");
+    if (off.status === "unsure") assert.equal(off.reason, "RULE_NOT_APPROVED");
+  }
 });

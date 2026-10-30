@@ -189,3 +189,7 @@ keep their spec files, triggers and approved shas byte for byte; derive-wire-v2.
   and require it token for token; the hermetic walk runs after (list: the base has no such method, so every graded
   call must be N, else `sizes_test_entry`) or before and after (use), with the retry template's per-attempt timeout
   signal taken out. Nothing in either template reads, records or rethrows error text.
+
+Front door (G19+): with the NL parse on, both asks are canonical text through their own named trigger
+`LEARNED_CANONICAL.deriveWireSizes` (kind EXISTING_EDIT, M75); before EXISTING_EDIT is approved they are refused
+RULE_NOT_APPROVED, and the rule itself still adds nothing until public-derive-wire-sizes-v1 is in approved.json.
