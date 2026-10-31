@@ -1,7 +1,7 @@
 // M153 PLAN-ONLY v3 (peaceai/spec/plan-only-v3.md): the planner's admit cases on three code shapes and a refused near
 // miss per rule (m153-cases.ts); a mutation check (every `rule:<id>` line of lib/plan3.ts has a mutant that removes
 // it, and each mutant must fail at least one case); a generality check (plan3.ts names no task, task repository,
-// task file or project); the can-do claim verified by the unchanged grader; and the runner: v1 stays runnable (the default is v3, M154),
+// task file or project); the can-do claim verified by the unchanged grader; and the runner: v1 stays runnable (the default: v3 per M154, v4 since the switch after #658),
 // v1's and v2's fingerprints are unchanged, and v3 rows pass the same log validator. Offline.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

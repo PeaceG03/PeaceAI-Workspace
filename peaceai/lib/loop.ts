@@ -385,7 +385,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if (!prepared) return done("PROPOSER_FAILED"); // m152-guard:prepare-failed
     }
     // 4. the proposals. (M164) a throwing next() is the proposer's failure, not the fetch's: a fixed code, the error
-    // itself is dropped (as prepare's)
+    // itself is dropped (as prepare's); so is a next() that returns no proposal at all (undefined or another non-object,
+    // which would otherwise throw on the `in` check below and land on the catch-all FETCH_FAILED)
     const feedback: Feedback[] = [];
     const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
       try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
@@ -393,6 +394,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const p = ask(attempt);
       if (p === null) return done("PROPOSER_FAILED"); // m164-guard:next-failed
+      if (typeof p !== "object") return done("PROPOSER_FAILED"); // m164-guard:next-empty
       if ("refuse" in p) return done(p.refuse);
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);

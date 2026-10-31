@@ -188,7 +188,7 @@ anything else (`hidden_detail`).
 ## Planner (M162)
 
 The loop plans with whichever planner `peaceai/lib/plandefault.ts` `selectPlanner` picks, never a planner of its own
-choosing: no flag = `selectPlanner`'s default (`plan-only-v3` since #650, see `plan-default.md`), and
+choosing: no flag = `selectPlanner`'s default (`plan-only-v4` since the switch after #658, `plan-only-v3` from #650 before; see `plan-default.md`), and
 `tsx peaceai/bin/loop.ts run <taskfile> --planner v1|v2|v3|v4` (or the full `plan-only-vN` name) picks another. Any other
 value is refused `PLANNER_UNKNOWN` (exit 2; `runLoopFile` returns the same code) before the task file is read or a
 row is written. `bin/loop.ts`'s summary line (the loop scorecard printout) starts with `planner=<name>`. The
@@ -201,8 +201,8 @@ same list as plandefault's `PLANNERS`) and `plannerSha256` (that planner's own f
 the keys, or a v1 / v2 row with them, is `loop_keys`. Existing v1 and v2 rows keep validating as before (the log
 stays add-only). No planner file is edited, so no planner fingerprint moves.
 
-Tests: `peaceai/test/m162-loop-planner.test.ts` (cases in `m162-cases.ts`: the default row is v3 with v3's digest and
-the loop used v3's plan; near miss: v1 / v2 / v4 are honoured with their own digests; near-miss names `V3`, ` v3`, `v5`,
+Tests: `peaceai/test/m162-loop-planner.test.ts` (cases in `m162-cases.ts`: the default row is v4 with v4's digest and
+the loop used v4's plan; near miss: v1 / v2 / v3 are honoured with their own digests; near-miss names `V3`, ` v3`, `v5`,
 empty, `__proto__` are unknown; `runLoopFile` refuses an unknown flag without a row; the row validator; static
 checks on loop.ts and bin/loop.ts). `m162-mutation.test.ts` deletes each `// m162-guard:<id>` line and applies fixed
 semantic mutants (a hard-coded v1 planner, a v1 default, a dropped flag, a bypassed selectPlanner, one digest for

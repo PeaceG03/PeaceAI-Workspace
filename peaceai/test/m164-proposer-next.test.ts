@@ -1,5 +1,5 @@
-// M164 (part A): a proposer whose next() throws ends the task PROPOSER_FAILED (a fixed code, the error text dropped),
-// at the first attempt or a later one, instead of landing on the loop's catch-all FETCH_FAILED. Behavior cases live in
+// M164 (part A): a proposer whose next() throws, or returns no proposal (undefined; Auditor's #658 note), ends the task
+// PROPOSER_FAILED (a fixed code, the error text dropped), at the first attempt or a later one, instead of landing on the loop's catch-all FETCH_FAILED. Behavior cases live in
 // m164-loop-cases.ts (they need the stage-2 candidate uid; without it they assert the CAND_UID_* refusal); this file
 // adds static checks and a mutation check: the guard line in peaceai/lib/loop.ts is tagged "// m164-guard:<id>" (a
 // separate tag, so the m146 and m152 guard lists are unchanged); each mutant is written to a temp dir and the cases
@@ -33,17 +33,17 @@ after(() => { teardown(ctx); rmSync(dir, { recursive: true, force: true }); });
 
 for (const c of CASES) test(`M164: ${c.id}`, () => c.run({ prop, loop }, ctx));
 
-test("M164: every next() goes through one helper whose catch keeps no error (no binding), and a null is PROPOSER_FAILED", () => {
+test("M164: every next() goes through one helper whose catch keeps no error (no binding); a null or a non-object is PROPOSER_FAILED", () => {
   const calls = [...loopSource.matchAll(/o\.proposer\.next\(/g)];
   assert.equal(calls.length, 1, "one next() call site");
   const helper = /const ask = \(attempt: number\)[^\n]*\n\s*try \{ return o\.proposer\.next\(\{[^\n]*\}\); \} catch \{ return null; \}\n/;
   assert.match(loopSource, helper, "the next() call is wrapped in a catch with no binding");
-  assert.match(loopSource, /const p = ask\(attempt\);\n\s*if \(p === null\) return done\("PROPOSER_FAILED"\); \/\/ m164-guard:next-failed\n/);
+  assert.match(loopSource, /const p = ask\(attempt\);\n\s*if \(p === null\) return done\("PROPOSER_FAILED"\); \/\/ m164-guard:next-failed\n\s*if \(typeof p !== "object"\) return done\("PROPOSER_FAILED"\); \/\/ m164-guard:next-empty\n\s*if \("refuse" in p\)/);
   assert.ok(LOOP_CODES.includes("PROPOSER_FAILED" as never));
 });
 
 test("M164 mutation: the guard tags are unique and cover the guard", () => {
-  assert.deepEqual(guards.map((g) => g.id), ["next-failed"]);
+  assert.deepEqual(guards.map((g) => g.id), ["next-failed", "next-empty"]);
 });
 
 function rewrite(text: string): string {
@@ -86,6 +86,7 @@ const swap = (find: string, replace: string): string => {
 const MUTANTS: [string, string][] = [
   ...guards.map((g) => [`drop-${g.id}`, loopLines.filter((_, i) => i !== g.line).join("\n")] as [string, string]),
   ["code-fetch-failed", swap('if (p === null) return done("PROPOSER_FAILED");', 'if (p === null) return done("FETCH_FAILED");')],
+  ["empty-code-fetch-failed", swap('if (typeof p !== "object") return done("PROPOSER_FAILED");', 'if (typeof p !== "object") return done("FETCH_FAILED");')],
   ["catch-rethrows", swap("attempt, feedback, baseline }); } catch { return null; }", "attempt, feedback, baseline }); } catch (e) { throw e; }")],
 ];
 for (const [id, text] of MUTANTS) {

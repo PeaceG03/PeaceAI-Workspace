@@ -1,5 +1,5 @@
 // M162: the loop and its CLI (bin/loop.ts, the public-set loop scorecard) pick the planner only through
-// lib/plandefault.ts selectPlanner (default plan-only-v3 per #650), never a hard-coded v1, and record the planner and
+// lib/plandefault.ts selectPlanner (default plan-only-v4 since the switch after #658; plan-only-v3 per #650 before), never a hard-coded v1, and record the planner and
 // its plannerSha256 in every row. Behavior cases live in m162-cases.ts (replayed against mutants by
 // m162-mutation.test.ts); this file adds static checks.
 import { after, before, test } from "node:test";

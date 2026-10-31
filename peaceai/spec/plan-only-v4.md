@@ -1,14 +1,19 @@
 # PLAN-ONLY mode v4 (planner `plan-only-v4`)
 
-Status: EXPERIMENTAL (Builder, 2026-10-31). v3 stays the default (`peaceai/lib/plandefault.ts`, see
-`plan-default.md`) and its files are byte-identical (plannerSha256 f4999797...). v4 runs via
-`peaceai/bin/plan.ts run --planner=v4 <taskfile>`, `peaceai/bin/plan-only-v4.ts run <taskfile>`, or the loop's
-`--planner v4`. Evidence: development set and synthetic fixtures only; v4 has NOT been run on the hidden half.
+Status: DEFAULT (Builder, 2026-10-31; switched in `peaceai/lib/plandefault.ts` after #658, see `plan-default.md`).
+It landed EXPERIMENTAL in #658 (M164). Evidence for the default: hidden 0.337 vs 0.287, gain on 3 of 20 tasks (Auditor, 20/20 graded at
+eb4d135, plannerSha256 b667d518...: v4 mean 0.337, runTests 0.450; v3 rerun 0.287, runTests 0.300; v1 0.229, runTests
+0.350; per task v4 wins 3, loses 0, ties 17). The margin rests on 3 tasks out of 20. v4's files are byte-identical to
+what the Auditor scored. v3 (the previous default) is byte-identical too (plannerSha256 f4999797...) and stays
+selectable. v4 runs via `peaceai/bin/plan.ts run <taskfile>` (default), `--planner=v4`,
+`peaceai/bin/plan-only-v4.ts run <taskfile>`, or the loop with no `--planner` (or `--planner v4`).
 
 Files: `peaceai/lib/plan4.ts` (planner: a copy of plan3.ts plus one rule), `peaceai/lib/plan4run.ts` (runner: a copy
 of plan3run.ts with v4's planner), `peaceai/bin/plan-only-v4.ts` (CLI). `plannerSha256V4` = sha256 over the bytes of
 `lib/plan4.ts`, `lib/plangrade.ts` and `lib/plan4run.ts`, in that order (same construction as v3 with v4's files).
 Grader `plan-grade-v2` is unchanged. No protected file is added or changed.
+The header comments of `plan4.ts` and `plan4run.ts` still read EXPERIMENTAL: both files are hashed into
+`plannerSha256V4`, so they stay byte-identical to what the Auditor scored (as `plan3.ts` kept its header in #650).
 
 ## Why v4 (what was wrong with v3's run-tests)
 
@@ -49,12 +54,13 @@ Development split (12 public tasks, planned and graded offline; dev scores are d
 v4 gains 2 tasks and loses none; the other 10 plans' test files are identical. Synthetic (m164 fixtures, 7 tasks: 3
 where the team's test is named after the stated function, 4 near misses where it is not): runTests v3 3/7, v4 7/7.
 All 45 M153 cases (v3's rules on three code shapes) hold on v4. The hidden-half effect is unknown: the dev gain rests
-on 2 tasks, and v2 (1.000 dev, 0.223 hidden) shows how far dev can mislead. A default switch needs a hidden run.
+on 2 tasks, and v2 (1.000 dev, 0.223 hidden) shows how far dev can mislead. (The hidden run came later and is in
+the Status line above.)
 
 ## Tests
 
 `peaceai/test/m164-plan-v4.test.ts` (+ `m164-cases.ts`, `m164-fixtures.ts`): plan4.ts equals plan3.ts outside the
 renames and the rule block (so M153's mutants keep covering every inherited line); every M153 case holds on v4; an
 admit case and a refused near miss per new rule; a mutation check (each new tagged rule removed must fail a case);
-a generality check; the synthetic runTests before/after; the wiring (v4 selectable and EXPERIMENTAL, v3 default and
+a generality check; the synthetic runTests before/after; the wiring (v4 selectable and the default, v3 selectable and
 byte-identical, own digest) and the runner's rows.
