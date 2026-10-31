@@ -13,7 +13,8 @@ jobs:
   tests:
     name: tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # about 16 min on main; the mutation suites (m150, m151, m156) grow it, so leave headroom.
+    timeout-minutes: 40
     permissions:
       contents: read
     steps:
