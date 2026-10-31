@@ -1,7 +1,6 @@
 // PLAN-ONLY mode v1: the runner. Locks a task file (by sha256, in the add-only log) and runs a locked one.
 // The task file can be any path, including one the Builder has never seen (Auditor's hidden half): the runner only
 // needs its bytes, and what it logs about a hidden task is a key, codes and numbers. See peaceai/spec/plan-only-v1.md.
-// Since v2 it runs either planner (`planner` option; default v1, unchanged); see peaceai/spec/plan-only-v2.md.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +9,6 @@ import { loadModel } from "./nlparse.ts";
 import { buildIndex, MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 import type { RuleSpec } from "./learned.ts";
 import { approvedRules, planTask, PLAN_LICENSES, PLANNER_VERSION, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanTask, type PlanTaskFile } from "./plan.ts";
-import { planTaskV2, PLANNER_V2, repoFromFiles, type PlanV2 } from "./plan2.ts";
-import { openRepo } from "./codesearch.ts";
 import { committedLog, GRADER_VERSION, gradePlan, isLocked, LOCK_SCHEMA, logRowProblem, RUN_LOG, RUN_SCHEMA, taskKey, type Grade, type LockRow, type RunCode, type RunRow } from "./plangrade.ts";
 
 export const ROOT = join(import.meta.dirname, "../..");
@@ -19,9 +16,7 @@ const now = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const git = (cwd: string, ...a: string[]): string => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }).trim();
 
 /** A read-only view of the target at the pinned commit. `unchanged` proves plan-only wrote nothing to it. */
-export interface Checkout { head: string; files: IndexFile[]; read(path: string): string | null; unchanged(): boolean; close(): void; /** The checkout's directory, when it has one (v2 searches it read-only). */ dir?: string }
-export const PLANNERS = [PLANNER_VERSION, PLANNER_V2] as const;
-export type PlannerId = (typeof PLANNERS)[number];
+export interface Checkout { head: string; files: IndexFile[]; read(path: string): string | null; unchanged(): boolean; close(): void }
 export type Fetcher = (repo: string, commit: string) => Checkout;
 
 /** Shallow-fetches exactly the pinned commit into a fresh temp dir (removed on close). */
@@ -39,7 +34,6 @@ export const gitFetcher: Fetcher = (repo, commit) => {
       if (Buffer.byteLength(content) <= MAX_INDEX_FILE_BYTES) files.push({ path: p, content });
     }
     return {
-      dir,
       head: git(dir, "rev-parse", "HEAD"),
       files,
       read: (p) => { try { return readFileSync(join(dir, p), "utf8"); } catch { return null; } },
@@ -54,10 +48,8 @@ export const gitFetcher: Fetcher = (repo, commit) => {
 
 export class RunError extends Error { constructor(readonly code: RunCode) { super(code); } }
 
-/** v1's digest covers plan.ts, plangrade.ts, planrun.ts (as before); v2's adds plan2.ts. */
-export function plannerSha256(planner: PlannerId = PLANNER_VERSION): string {
-  const files = ["lib/plan.ts", "lib/plangrade.ts", "lib/planrun.ts", ...(planner === PLANNER_V2 ? ["lib/plan2.ts"] : [])];
-  return sha256(files.map((f) => readFileSync(join(ROOT, "peaceai", f), "utf8")).join("\0"));
+export function plannerSha256(): string {
+  return sha256(["lib/plan.ts", "lib/plangrade.ts", "lib/planrun.ts"].map((f) => readFileSync(join(ROOT, "peaceai", f), "utf8")).join("\0"));
 }
 
 export function lockRow(fileText: string): LockRow {
@@ -76,18 +68,15 @@ export interface RunOptions {
   committed?: string;
   rules?: RuleSpec[];
   training?: Set<string>;
-  /** Which planner plans (default plan-only-v1). */
-  planner?: PlannerId;
 }
-export interface TaskResult { row: RunRow; plan: Plan | PlanV2 | null }
+export interface TaskResult { row: RunRow; plan: Plan | null }
 
 /** Plans and grades one task. Never throws: every failure is a row with a fixed code. */
-export function runTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<RunOptions, "committed" | "planner">> & { planner?: PlannerId }): TaskResult {
-  const planner: PlannerId = o.planner ?? PLANNER_VERSION;
+export function runTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<RunOptions, "committed">>): TaskResult {
   const base = { schema: RUN_SCHEMA, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id) } as const;
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
-  const row = (code: RunCode, plan: Plan | PlanV2 | null, grade: Grade | null): RunRow => ({ ...base, ...names, workspace, planner, plannerSha256: plannerSha256(planner), planSha256: plan ? sha256(JSON.stringify(plan)) : null, grader: GRADER_VERSION, code, grade });
+  const row = (code: RunCode, plan: Plan | null, grade: Grade | null): RunRow => ({ ...base, ...names, workspace, planner: PLANNER_VERSION, plannerSha256: plannerSha256(), planSha256: plan ? sha256(JSON.stringify(plan)) : null, grader: GRADER_VERSION, code, grade });
   if (taskProblem(task)) return { row: row("TASK_INVALID", null, null), plan: null };
   if (!(PLAN_LICENSES as readonly string[]).includes(task.license)) return { row: row("LICENSE_NOT_ALLOWED", null, null), plan: null };
   if (o.training.has(task.repo.toLowerCase())) return { row: row("TRAINING_OVERLAP", null, null), plan: null };
@@ -99,17 +88,11 @@ export function runTask(task: PlanTask, set: "public" | "hidden", fileSha: strin
     if (lic === null || sha256(lic) !== task.licenseSha256) return { row: row("LICENSE_CHANGED", null, null), plan: null };
     let testCommand: string | null = null;
     try { testCommand = JSON.parse(co.read("package.json") ?? "{}").scripts?.test ?? null; } catch { testCommand = null; }
-    let plan: Plan | PlanV2;
-    const ctx = { repo: task.repo, files: co.files, rules: o.rules, model: loadModel(), testCommand };
-    try {
-      if (planner === PLANNER_V2) {
-        const tmp = co.dir ? null : repoFromFiles(co.files); // a fetcher with no directory (test fixtures)
-        try { plan = planTaskV2(task.id, task.request, ctx, tmp ? tmp.code : openRepo(co.dir!)); } finally { tmp?.close(); }
-      } else plan = planTask(task.id, task.request, ctx, buildIndex(co.files));
-    } catch { return { row: row("PLAN_FAILED", null, null), plan: null }; }
+    let plan: Plan;
+    try { plan = planTask(task.id, task.request, { repo: task.repo, files: co.files, rules: o.rules, model: loadModel(), testCommand }, buildIndex(co.files)); }
+    catch { return { row: row("PLAN_FAILED", null, null), plan: null }; }
     if (!co.unchanged()) return { row: row("TARGET_CHANGED", plan, null), plan };
-    // The grader reads only steps (action, file, status, rule, objective) and tests: fields v1 and v2 share.
-    const grade = gradePlan(plan as Plan, task, o.rules, co.files);
+    const grade = gradePlan(plan, task, o.rules, co.files);
     return { row: row("OK", plan, grade), plan };
   } catch (e) {
     return { row: row(e instanceof RunError ? e.code : "FETCH_FAILED", null, null), plan: null };
@@ -129,7 +112,7 @@ export function runFile(path: string, opts: RunOptions = {}): { code: RunCode; r
   if (taskFileProblem(parsed)) return { code: "TASK_FILE_INVALID", rows: [] };
   let training = opts.training;
   if (!training) { try { training = trainingRepos(root).repos; } catch { return { code: "TRAINING_LIST_UNREADABLE", rows: [] }; } }
-  const o = { root, fetcher: opts.fetcher ?? gitFetcher, outDir: opts.outDir ?? join(root, ".peaceai-out/plan"), rules: opts.rules ?? approvedRules(root), training, planner: opts.planner ?? PLANNER_VERSION };
+  const o = { root, fetcher: opts.fetcher ?? gitFetcher, outDir: opts.outDir ?? join(root, ".peaceai-out/plan"), rules: opts.rules ?? approvedRules(root), training };
   mkdirSync(o.outDir, { recursive: true });
   const rows: RunRow[] = [];
   for (const task of parsed.tasks) {

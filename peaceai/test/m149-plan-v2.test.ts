@@ -10,8 +10,9 @@ import test, { after } from "node:test";
 import { pathToFileURL } from "node:url";
 import { approvedRules, PLANNER_VERSION, sha256, type Plan, type PlanTask, type PlanTaskFile } from "../lib/plan.ts";
 import * as plan2 from "../lib/plan2.ts";
-import { gradePlan, logRowProblem } from "../lib/plangrade.ts";
+import { gradePlan, logRowProblem, parseLog, RUN_LOG } from "../lib/plangrade.ts";
 import { plannerSha256, runTask, type Checkout, type Fetcher } from "../lib/planrun.ts";
+import { plannerSha256V2, runTaskV2 } from "../lib/plan2run.ts";
 import { loadModel } from "../lib/nlparse.ts";
 import { loadTargets } from "../lib/target.ts";
 import { CASES, planOn, type CaseCtx, type PlannerModule } from "./m149-cases.ts";
@@ -98,18 +99,30 @@ test("M149: the one can-do claim is verified by the unchanged grader (the rule r
   assert.equal(g.runTests, 1);
 });
 
-test("M149 runner: v1 stays the default; v2 rows carry their own id and digest and pass the log validator", () => {
+/** v1's fingerprint on main (sha256 of plan.ts, plangrade.ts, planrun.ts at 4d0ea69; the same at 94c444a and 62de1df).
+ *  Add-only: if v1 is ever changed on purpose, add the new value with its own comment, never edit this one. */
+const MAIN_V1_PLANNER_SHA256 = "275e559b93822a74c461970d122b9c27233d034c0839b04d599d7c112e7aedeb";
+
+test("M149: v1's plannerSha256 on this branch equals main's, and the latest v1 rows (public and hidden) carry it", () => {
+  assert.equal(plannerSha256(), MAIN_V1_PLANNER_SHA256, "plan.ts, plangrade.ts or planrun.ts changed: v1 rows would lose their fingerprint");
+  const log = parseLog(readFileSync(join(repo, RUN_LOG), "utf8"));
+  assert.ok("rows" in log, "committed log parses");
+  const rows = log.rows.filter((r: any) => r.planner === PLANNER_VERSION && r.grader === "plan-grade-v2") as any[];
+  for (const set of ["public", "hidden"]) assert.equal(rows.filter((r) => r.set === set).at(-1)?.plannerSha256, MAIN_V1_PLANNER_SHA256, `latest v1 ${set} row`);
+  assert.notEqual(plannerSha256V2(), MAIN_V1_PLANNER_SHA256);
+});
+
+test("M149 runner: v1 rows come from planrun.ts unchanged; v2 rows from plan2run.ts carry their own id and digest and pass the log validator", () => {
   const fetcher: Fetcher = () => ({ head: H40, files: KIT.filter((f) => /\.tsx?$/.test(f.path)), read: (p) => KIT.find((f) => f.path === p)?.content ?? null, unchanged: () => true, close: () => {} } satisfies Checkout);
   const o = { root: repo, fetcher, outDir: dir, rules: ctx.rules, training: new Set<string>() };
   const fileSha = sha256("m149");
   const v1 = runTask(kitTask(), "public", fileSha, o);
-  const v2 = runTask(kitTask(), "public", fileSha, { ...o, planner: plan2.PLANNER_V2 });
+  const v2 = runTaskV2(kitTask(), "public", fileSha, o);
   assert.equal(v1.row.planner, PLANNER_VERSION);
-  assert.equal(v1.row.plannerSha256, plannerSha256());
+  assert.equal(v1.row.plannerSha256, MAIN_V1_PLANNER_SHA256);
   assert.equal(v2.row.planner, "plan-only-v2");
-  assert.equal(v2.row.plannerSha256, plannerSha256(plan2.PLANNER_V2));
-  assert.notEqual(v1.row.plannerSha256, v2.row.plannerSha256);
+  assert.equal(v2.row.plannerSha256, plannerSha256V2());
   for (const r of [v1.row, v2.row]) { assert.equal(r.code, "OK"); assert.equal(logRowProblem(r), null); }
   assert.equal(v2.row.grade!.canDoVerified, 1);
-  assert.equal((v2.plan as plan2.PlanV2).missingSkills.includes("extend-existing-test"), true);
+  assert.equal(v2.plan!.missingSkills.includes("extend-existing-test"), true);
 });

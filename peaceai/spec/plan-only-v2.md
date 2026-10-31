@@ -1,8 +1,9 @@
 # PLAN-ONLY mode v2 (planner `plan-only-v2`)
 
 Status: draft for Auditor review (Builder, 2026-10-30). Code: `peaceai/lib/plan2.ts` (planner). Runner:
-`peaceai/lib/planrun.ts` + `peaceai/bin/plan-only.ts` gain a planner option (`run <taskfile> --planner plan-only-v2`);
-the default stays `plan-only-v1`, byte-for-byte the same planner. Grader `plan-grade-v2` (`plangrade.ts`) is
+`peaceai/lib/plan2run.ts` (new), reached by `peaceai/bin/plan-only.ts run <taskfile> --planner plan-only-v2`; the
+default stays `plan-only-v1`, and v1's files (plan.ts, plangrade.ts, planrun.ts) are byte-identical to main, so v1's
+`plannerSha256` is unchanged. Grader `plan-grade-v2` (`plangrade.ts`) is
 unchanged. Tests: `peaceai/test/m149-plan-v2.test.ts` (+ `m149-cases.ts`, `m149-fixtures.ts`).
 
 ## Why
@@ -65,8 +66,14 @@ is the measure. The component-noun list and the stemmer are general English, not
 
 ## Runner changes
 
-- `Checkout.dir`: the git checkout directory (v2 searches it read-only; `unchanged()` still proves nothing was
-  written). A fetcher without a directory (test fixtures) gets a temp copy of its files, removed after planning.
-- `plannerSha256(planner)`: v1 covers plan.ts, plangrade.ts, planrun.ts as before (its value changes because
-  planrun.ts changed); v2 adds plan2.ts. Rows carry `planner` = `plan-only-v1` | `plan-only-v2`; old rows are untouched
-  (add-only log).
+- `peaceai/lib/planrun.ts` is NOT changed (byte-identical to main), so v1's `plannerSha256` (sha256 of plan.ts,
+  plangrade.ts, planrun.ts) keeps its value `275e559b...7aedeb` and every v1 row, public and hidden, keeps its
+  fingerprint. M149 asserts this against main's value and against the latest committed v1 rows.
+- `peaceai/lib/plan2run.ts`: v2's runner. Same lock check, task/licence/training/pinned-commit checks, codes, grader,
+  row validator and add-only log as v1 (it imports `RunError`, `ROOT`, `Checkout` from planrun.ts and the shared
+  checks from plan.ts / plangrade.ts). Its own git fetcher is v1's plus the checkout directory, which v2 searches
+  read-only (`unchanged()` still proves nothing was written). A fetcher without a directory (test fixtures) gets a
+  temp copy of its files, removed after planning.
+- `plannerSha256V2()`: sha256 of plan2.ts, plangrade.ts, plan2run.ts. Rows carry `planner` = `plan-only-v2`.
+- `peaceai/bin/plan-only.ts`: `--planner plan-only-v1|plan-only-v2` (default v1, which calls planrun.ts exactly as
+  before); v2 dispatches to plan2run.ts.
