@@ -177,6 +177,21 @@ export function tasksetContainment(text: string, refs: TasksetRefs): number {
   return sh.length ? hit / sh.length : 0;
 }
 
+/** The repo label --build-refs --tree gives every file of a local tree: no owner/repo is read, written or named. */
+export const LOCAL_TREE_REPO = "local/tree";
+/** A refs row is usable when it comes from a local tree (any directory, unnamed) or from a repo named in the public
+ * exclusion set. A repo that is only hash-listed is never accepted by name. */
+export function refsRowOk(repo: string, ex: ExSets): boolean {
+  if (repo === LOCAL_TREE_REPO) return true; // m150-guard:refs-local-tree
+  return ex.repos.has(repo.toLowerCase()); // m150-guard:refs-public
+}
+/** Check-only (--report-only): the taskset_near_dup test alone over an already-cleaned corpus, counts only. */
+export function tasksetReport(texts: readonly string[], refs: TasksetRefs, maxContainment: number): { docs: number; taskset_near_dup: number } {
+  let hits = 0;
+  for (const t of texts) if (tasksetContainment(t, refs) >= maxContainment) hits++; // m150-guard:report-near
+  return { docs: texts.length, taskset_near_dup: hits };
+}
+
 // ---- split at function / class boundaries
 const parseOk = (sf: ts.SourceFile) => ((sf as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics ?? []).length === 0;
 function isUnit(s: ts.Statement): boolean {
