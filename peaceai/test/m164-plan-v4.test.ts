@@ -3,7 +3,8 @@
 // every M153 case still holds on v4; the new rule's admit cases and refused near misses (m164-cases.ts) on synthetic
 // fixtures; a mutation check over the new `rule:<id>` tags; a generality check (plan4.ts and plan4run.ts name no
 // task, task repository, task file or project); the synthetic runTests before (v3) and after (v4); and the wiring:
-// v4 is selectable and EXPERIMENTAL, v3 stays the default with its digest, v4 rows have their own id and digest and
+// v4 is selectable (the DEFAULT since the switch after #658; EXPERIMENTAL when M164 landed), v3 stays selectable with
+// its digest, v4 rows have their own id and digest and
 // pass the log validator. Offline.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -138,15 +139,16 @@ test("M164: synthetic runTests before (v3) and after (v4): v4 gets every task v3
   assert.deepEqual(v4, [1, 1, 1, 1, 1, 1, 1], "v4 (after)");
 });
 
-test("M164 wiring: v4 is selectable and EXPERIMENTAL, v3 stays the default; v4 has its own digest over its own files", () => {
-  assert.equal(DEFAULT_PLANNER, "plan-only-v3");
-  assert.equal(selectPlanner(undefined)?.name, "plan-only-v3");
-  for (const f of ["v4", "plan-only-v4"]) assert.deepEqual(selectPlanner(f), { name: "plan-only-v4", module: "../lib/plan4run.ts", run: "runFileV4", status: "EXPERIMENTAL" });
-  assert.equal(PLANNERS["plan-only-v4"].status, "EXPERIMENTAL");
+test("M164 wiring: v4 is selectable and the default, v3 stays selectable; v4 has its own digest over its own files", () => {
+  assert.equal(DEFAULT_PLANNER, "plan-only-v4");
+  assert.equal(selectPlanner(undefined)?.name, "plan-only-v4");
+  assert.deepEqual(selectPlanner("v3"), { name: "plan-only-v3", module: "../lib/plan3run.ts", run: "runFileV3", status: "RUNNABLE" });
+  for (const f of ["v4", "plan-only-v4"]) assert.deepEqual(selectPlanner(f), { name: "plan-only-v4", module: "../lib/plan4run.ts", run: "runFileV4", status: "DEFAULT" });
+  assert.equal(PLANNERS["plan-only-v4"].status, "DEFAULT");
   const expect = sha256(["lib/plan4.ts", "lib/plangrade.ts", "lib/plan4run.ts"].map((f) => readFileSync(join(repo, "peaceai", f), "utf8")).join("\0"));
   assert.equal(plannerSha256V4(), expect);
   assert.notEqual(plannerSha256V4(), plannerSha256V3());
-  assert.equal(plannerSha256V3(), "f49997972d7aaea495257366ac4b1f8587619099b695869753531f6c72198f35", "v3 (the default) is byte-identical");
+  assert.equal(plannerSha256V3(), "f49997972d7aaea495257366ac4b1f8587619099b695869753531f6c72198f35", "v3 (the previous default) is byte-identical");
   const cli = readFileSync(join(repo, "peaceai/bin/plan-only-v4.ts"), "utf8");
   assert.match(cli, /import\("\.\.\/lib\/plan4run\.ts"\)/);
   assert.ok(!/plan3run|runFileV3/.test(cli), "v4's CLI runs v4 only");

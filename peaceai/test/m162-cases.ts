@@ -1,5 +1,5 @@
 // M162 behavior cases: the loop picks its planner only through lib/plandefault.ts selectPlanner (no flag = the default,
-// plan-only-v3 per #650), runs that planner, and records the planner and its plannerSha256 in every row (row schema
+// plan-only-v4 since the switch after #658; v3 per #650 before), runs that planner, and records the planner and its plannerSha256 in every row (row schema
 // peaceai-plan-loop:v3). As data, so m162-mutation.test.ts can replay them against mutants of loop.ts / looprow.ts.
 // The fixture is M152's tiny synthetic node:test repo (not modeled on any scorecard task). The cases that look at the
 // plan itself run the real loop to the baseline and need the stage-2 candidate uid; without it they assert the
@@ -42,17 +42,17 @@ function checkRow(l: Libs, ctx: M152Ctx, r: Loop.LoopResult, name: string, plans
 
 export const CASES: Case[] = [
   {
-    id: "default: with no planner the loop takes selectPlanner's default (plan-only-v3), runs it and records it with its digest",
+    id: "default: with no planner the loop takes selectPlanner's default (plan-only-v4), runs it and records it with its digest",
     run(l, ctx) {
       const s = spy();
-      checkRow(l, ctx, l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), taskOpts(ctx, s.p)), "plan-only-v3", s.plans);
-      assert.equal(l.loop.loopPlanner(undefined), "plan-only-v3");
+      checkRow(l, ctx, l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), taskOpts(ctx, s.p)), "plan-only-v4", s.plans);
+      assert.equal(l.loop.loopPlanner(undefined), "plan-only-v4");
     },
   },
   {
     id: "near miss: every planner selectPlanner knows is honoured (v1 / v2 / v3 / v4), each with its own plannerSha256",
     run(l, ctx) {
-      for (const name of ["plan-only-v1", "plan-only-v2", "plan-only-v4"] as const) {
+      for (const name of ["plan-only-v1", "plan-only-v2", "plan-only-v3"] as const) {
         const s = spy();
         checkRow(l, ctx, l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), { ...taskOpts(ctx, s.p), planner: name }), name, s.plans);
       }
@@ -88,9 +88,9 @@ export const CASES: Case[] = [
       assert.deepEqual(v1.results.map((x) => [x.row.planner, x.row.plannerSha256]), [["plan-only-v1", plannerSha256()]]);
       const def = l.loop.runLoopFile(file, opts(undefined));
       assert.equal(def.code, "OK");
-      assert.deepEqual(def.results.map((x) => [x.row.planner, x.row.plannerSha256]), [["plan-only-v3", plannerSha256V3()]]);
+      assert.deepEqual(def.results.map((x) => [x.row.planner, x.row.plannerSha256]), [["plan-only-v4", plannerSha256V4()]]);
       const rows = read().trim().split("\n").slice(-2).map((x) => JSON.parse(x) as Row.LoopRow);
-      assert.deepEqual(rows.map((r) => r.planner), ["plan-only-v1", "plan-only-v3"], "the appended rows say which planner ran");
+      assert.deepEqual(rows.map((r) => r.planner), ["plan-only-v1", "plan-only-v4"], "the appended rows say which planner ran");
     },
   },
   {

@@ -1,5 +1,6 @@
 // M154 PLAN-ONLY default planner (peaceai/spec/plan-default.md): the default is decided only in lib/plandefault.ts and
-// is plan-only-v3; v1/v2/v3 stay selectable; near-miss flags are refused; v1/v2/v3 plannerSha256 are unchanged; the
+// is plan-only-v4 (since the switch after #658; v3 from #650); v1/v2/v3/v4 stay selectable; near-miss flags are refused;
+// v1/v2/v3/v4 plannerSha256 are unchanged; the
 // entry point bin/plan.ts routes through selectPlanner; and a mutation check (each mutant of plandefault.ts, loaded
 // from a temp copy, must fail at least one check). Offline.
 import assert from "node:assert/strict";
@@ -13,6 +14,7 @@ import * as real from "../lib/plandefault.ts";
 import { plannerSha256 } from "../lib/planrun.ts";
 import { plannerSha256V2 } from "../lib/plan2run.ts";
 import { plannerSha256V3 } from "../lib/plan3run.ts";
+import { plannerSha256V4 } from "../lib/plan4run.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const SRC = readFileSync(join(repo, "peaceai/lib/plandefault.ts"), "utf8");
@@ -21,34 +23,37 @@ const SRC = readFileSync(join(repo, "peaceai/lib/plandefault.ts"), "utf8");
 const V1 = "275e559b93822a74c461970d122b9c27233d034c0839b04d599d7c112e7aedeb";
 const V2 = "fae6c0c489dcd18acf968706dcaa7bc0643a01f9375ee85b09747745cc697227";
 const V3 = "f49997972d7aaea495257366ac4b1f8587619099b695869753531f6c72198f35";
+/** v4 as the Auditor scored it on the hidden half (eb4d135); the default switch must not move it. */
+const V4 = "b667d518936d28723e4c6eecf12fd9d784febbf22804a3622362819f604c2c7c";
 
 type M = typeof real;
 /** Every check on a plandefault module; returns the failures (empty = pass). */
 function problems(m: M): string[] {
   const out: string[] = [];
   const ck = (ok: boolean, why: string) => { if (!ok) out.push(why); };
-  ck(m.DEFAULT_PLANNER === "plan-only-v3", "default is v3");
+  ck(m.DEFAULT_PLANNER === "plan-only-v4", "default is v4");
   const d = m.selectPlanner(undefined);
-  ck(d?.name === "plan-only-v3" && d.module === "../lib/plan3run.ts" && d.run === "runFileV3" && d.status === "DEFAULT", "no flag -> v3 runner");
+  ck(d?.name === "plan-only-v4" && d.module === "../lib/plan4run.ts" && d.run === "runFileV4" && d.status === "DEFAULT", "no flag -> v4 runner");
   for (const [f, n, mod, run] of [["v1", "plan-only-v1", "../lib/planrun.ts", "runFile"], ["v2", "plan-only-v2", "../lib/plan2run.ts", "runFileV2"], ["v3", "plan-only-v3", "../lib/plan3run.ts", "runFileV3"], ["v4", "plan-only-v4", "../lib/plan4run.ts", "runFileV4"]] as const) {
     for (const flag of [f, n]) { const e = m.selectPlanner(flag); ck(e?.name === n && e.module === mod && e.run === run, `--planner=${flag} -> ${n}`); }
   }
   // Near misses: close to a valid name but not one.
   for (const bad of ["", "V3", "v3 ", " v3", "v5", "v0", "plan-only", "plan-only-v5", "V4", "plan-only-V3", "3", "toString", "__proto__", "constructor"]) ck(m.selectPlanner(bad) === null, `refuses ${JSON.stringify(bad)}`);
-  ck(Object.values(m.PLANNERS).filter((e) => e.status === "DEFAULT").length === 1 && m.PLANNERS["plan-only-v3"].status === "DEFAULT", "exactly one DEFAULT, v3");
+  ck(Object.values(m.PLANNERS).filter((e) => e.status === "DEFAULT").length === 1 && m.PLANNERS["plan-only-v4"]?.status === "DEFAULT", "exactly one DEFAULT, v4");
   ck(m.PLANNERS["plan-only-v1"].status === "RUNNABLE" && m.PLANNERS["plan-only-v2"].status === "EXPERIMENTAL", "v1 RUNNABLE, v2 EXPERIMENTAL");
-  ck(m.PLANNERS["plan-only-v4"]?.status === "EXPERIMENTAL", "v4 EXPERIMENTAL (M164: dev evidence only)");
+  ck(m.PLANNERS["plan-only-v3"].status === "RUNNABLE", "v3 RUNNABLE (the previous default, still selectable)");
   return out;
 }
 
-test("M154: the default planner is plan-only-v3; v1/v2/v3 selectable; near-miss flags refused", () => {
+test("M154: the default planner is plan-only-v4; v1/v2/v3/v4 selectable; near-miss flags refused", () => {
   assert.deepEqual(problems(real), []);
 });
 
-test("M154: v1, v2 and v3 keep their plannerSha256 (a default change touches no planner file)", () => {
+test("M154: v1, v2, v3 and v4 keep their plannerSha256 (a default change touches no planner file)", () => {
   assert.equal(plannerSha256(), V1);
   assert.equal(plannerSha256V2(), V2);
   assert.equal(plannerSha256V3(), V3);
+  assert.equal(plannerSha256V4(), V4, "v4 is the planner the Auditor scored at eb4d135");
   const v1cli = readFileSync(join(repo, "peaceai/bin/plan-only.ts"), "utf8");
   assert.ok(!/plandefault|plan3|plan-only-v3/.test(v1cli), "bin/plan-only.ts is still v1 only");
 });
@@ -69,12 +74,16 @@ test("M154: bin/plan.ts routes through selectPlanner and refuses an unknown plan
 });
 
 const MUTANTS: [string, string, string][] = [
-  ["default -> v1", 'DEFAULT_PLANNER: PlannerName = "plan-only-v3"', 'DEFAULT_PLANNER: PlannerName = "plan-only-v1"'],
-  ["default -> v2", 'DEFAULT_PLANNER: PlannerName = "plan-only-v3"', 'DEFAULT_PLANNER: PlannerName = "plan-only-v2"'],
+  ["default -> v1", 'DEFAULT_PLANNER: PlannerName = "plan-only-v4"', 'DEFAULT_PLANNER: PlannerName = "plan-only-v1"'],
+  ["default -> v2", 'DEFAULT_PLANNER: PlannerName = "plan-only-v4"', 'DEFAULT_PLANNER: PlannerName = "plan-only-v2"'],
+  ["default -> v3 (the previous default)", 'DEFAULT_PLANNER: PlannerName = "plan-only-v4"', 'DEFAULT_PLANNER: PlannerName = "plan-only-v3"'],
+  ["v4 runner swapped", 'module: "../lib/plan4run.ts", run: "runFileV4"', 'module: "../lib/plan3run.ts", run: "runFileV3"'],
+  ["v4 status", 'run: "runFileV4", status: "DEFAULT"', 'run: "runFileV4", status: "EXPERIMENTAL"'],
+  ["v4 alias dropped", 'v4: "plan-only-v4",', ""],
   ["no-flag ignores default", "if (flag === undefined) return PLANNERS[DEFAULT_PLANNER];", 'if (flag === undefined) return PLANNERS["plan-only-v1"];'],
   ["v3 runner swapped", 'module: "../lib/plan3run.ts", run: "runFileV3"', 'module: "../lib/planrun.ts", run: "runFile"'],
   ["v1 runner swapped", 'module: "../lib/planrun.ts", run: "runFile",', 'module: "../lib/plan3run.ts", run: "runFileV3",'],
-  ["v3 status", 'run: "runFileV3", status: "DEFAULT"', 'run: "runFileV3", status: "RUNNABLE"'],
+  ["v3 status DEFAULT", 'run: "runFileV3", status: "RUNNABLE"', 'run: "runFileV3", status: "DEFAULT"'],
   ["v1 status DEFAULT", 'run: "runFile", status: "RUNNABLE"', 'run: "runFile", status: "DEFAULT"'],
   ["v1 alias dropped", 'v1: "plan-only-v1", ', ""],
   ["v2 alias -> v3", 'v2: "plan-only-v2"', 'v2: "plan-only-v3"'],

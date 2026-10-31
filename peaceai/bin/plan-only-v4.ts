@@ -1,6 +1,6 @@
 // PLAN-ONLY mode v4 CLI (planner plan-only-v4, see peaceai/spec/plan-only-v4.md).
 //   tsx peaceai/bin/plan-only-v4.ts run <taskfile>   plan (v4) + grade every task of a file locked in the committed log
-// EXPERIMENTAL: v3 stays the default (bin/plan.ts with no flag). Locking stays with v1's CLI (tsx peaceai/bin/plan-only.ts lock
+// v4 is the DEFAULT planner (bin/plan.ts with no flag runs it). Locking stays with v1's CLI (tsx peaceai/bin/plan-only.ts lock
 // <taskfile>); a file locked once serves every planner. v1's, v2's and v3's CLIs and runners are untouched.
 // Prints codes and numbers only. For a hidden-set file it prints nothing that names a task.
 import { typescriptEntry, useTypescript } from "../lib/tsresolve.ts";

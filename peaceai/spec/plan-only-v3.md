@@ -1,10 +1,11 @@
 # PLAN-ONLY mode v3 (planner `plan-only-v3`)
 
-Status: DEFAULT (Builder, 2026-10-30; switched in `peaceai/lib/plandefault.ts`, see `peaceai/spec/plan-default.md`).
+Status: RUNNABLE, no longer the default (Builder, 2026-10-31; the default was v3 from #650 and moved to v4 after
+#658 in `peaceai/lib/plandefault.ts`, see `peaceai/spec/plan-default.md`: hidden 0.337 vs 0.287, gain on 3 of 20 tasks).
 Files byte-identical to #649 (plannerSha256 f4999797...); v1 (plannerSha256 275e559b...) and v2 (fae6c0c4...) are
-unchanged and still runnable. v3 runs via `peaceai/bin/plan.ts run <taskfile>` (default) or `peaceai/bin/plan-only-v3.ts`.
+unchanged and still runnable. v3 runs via `peaceai/bin/plan.ts run --planner=v3 <taskfile>` or `peaceai/bin/plan-only-v3.ts`.
 Hidden half (Auditor, 20/20 graded, v3 at c4dd914, plannerSha256 f4999797...): v3 mean 0.287 (runTests 0.300);
-v1 0.229 (runTests 0.350); v2 0.223 (runTests 0.250). The evidence for the default is 20 hidden tasks with a noisy
+v1 0.229 (runTests 0.350); v2 0.223 (runTests 0.250). The evidence for v3's default (#650) was 20 hidden tasks with a noisy
 +0.058 margin over v1. Dev 0.681 is not proof (v2 scored 1.000 on dev and 0.223 hidden). runTests is BELOW v1's even
 though v3 always plans a test step: the planned test commands likely do not match what the tasks expect. Grader
 `plan-grade-v2` (`plangrade.ts`) is unchanged.
