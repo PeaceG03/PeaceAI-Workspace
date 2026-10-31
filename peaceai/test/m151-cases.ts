@@ -250,9 +250,10 @@ export const CASES: Case[] = [
     run(l) {
       const ok = YARN_OK;
       assert.equal(l.deps.yarnLockAllowed(ok), true);
+      assert.equal(l.deps.yarnLockAllowed(ok.replaceAll(REG, "https://registry.yarnpkg.com/")), true, "the yarn mirror host is allowed (Auditor ruling)");
+      assert.equal(l.deps.yarnLockAllowed(ok.replace(`  integrity ${INT}\n`, "")), true, "yarn v1: the #sha1 on the resolved url stands in for integrity");
       const bad: [string, string][] = [
-        ["the yarnpkg mirror host (only " + REG + ")", ok.replaceAll(REG, "https://registry.yarnpkg.com/")],
-        ["no integrity", ok.replace(`  integrity ${INT}\n`, "")],
+        ["no integrity and no #sha1", ok.replace(`  integrity ${INT}\n\n"w@`, `\n"w@`)],
         ["git spec behind a registry url", ok.replace('"a@^1.0.0"', '"a@git+https://github.com/o/a.git"')],
         ["file spec", ok.replace('"a@^1.0.0"', '"a@file:../a"')],
         ["link outside the repo", ok.replace('"w@link:packages/w"', '"w@link:../w"')],
@@ -270,6 +271,87 @@ export const CASES: Case[] = [
         let ran = 0;
         assert.deepEqual(l.deps.installDeps(d, fake as never, cache, { tool: ctx.tool, onInstall: () => { ran++; } }), { refuse: "DEPS_NONREGISTRY" });
         assert.equal(ran, 0);
+      });
+    },
+  },
+  // ---- the lockfile scan, round 3 (Auditor FAIL b273f29): layouts pnpm / yarn / npm read differently from a naive scan
+  {
+    id: "lockfile scan (pnpm subset): flow at the top levels, other indent steps, escapes, anchors / aliases / tags / merge keys, duplicate keys -> refused even when the content looks fine",
+    run(l) {
+      const ok = PNPM_OK;
+      const head = "lockfileVersion: '9.0'\n\n";
+      const bad: [string, string][] = [
+        // Auditor's bypasses, verbatim
+        ["flow mapping on the header line (Auditor)", head + "packages: {'a@1.0.0': {resolution: {tarball: 'https://evil.example/a.tgz'}}}\n"],
+        ["4-space entry with escapes (Auditor)", head + 'packages:\n\n    "a@1.0.0":\n        "resoluti\\x6fn": {"tarb\\x61ll": "https\\x3a//evil.example/a.tgz"}\n'],
+        ["escapes at the usual indent", ok.replace(`    resolution: {integrity: ${INT}}\n    hasBin`, `    "resoluti\\x6fn": {integrity: ${INT}}\n    resolution: {integrity: ${INT}}\n    hasBin`)],
+        // the same layouts with harmless content: only the layout rule refuses these
+        ["flow mapping on the header line, registry content", head + `packages: {'a@1.0.0': {resolution: {integrity: ${INT}}}}\n`],
+        ["4-space indent steps, registry content", ok.split("\n").map((x) => x.replace(/^( +)/, (sp) => sp + sp)).join("\n")],
+        ["an escape in a double-quoted value", ok.replace("specifier: ^2.0.0", 'specifier: "^2.0.\\x30"')],
+        ["an anchor", ok.replace("        version: 2.0.0", "        version: &v 2.0.0")],
+        ["an alias", ok.replace("        version: 2.0.0", "        version: *v")],
+        ["a tag", ok.replace("        version: 2.0.0", "        version: !!str 2.0.0")],
+        ["a merge key", ok.replace("    hasBin: true", "    hasBin: true\n    <<: {dev: true}")],
+        ["a duplicate key", ok.replace("    hasBin: true", "    hasBin: true\n    hasBin: true")],
+        ["a duplicate resolution, the second from another host", ok.replace("    hasBin: true", "    hasBin: true\n    resolution: {integrity: " + INT + ", tarball: https://evil.example/b.tgz}")],
+        ["a block scalar", ok.replace("    hasBin: true", "    hasBin: |\n      true")],
+        ["an inline comment", ok.replace("    hasBin: true", "    hasBin: true # x")],
+        ["a tab", ok.replace("    hasBin: true", "    hasBin:\ttrue")],
+        ["a second document", ok + "---\npackages: {}\n"],
+      ];
+      for (const [why, text] of bad) { assert.notEqual(text, ok, why); assert.equal(l.deps.pnpmLockAllowed(text), false, why); }
+      assert.equal(l.deps.pnpmLockAllowed(ok.replace("    hasBin: true", "    hasBin: true\n    engines: {node: '>=18'}\n    cpu: [x64]\n    transitivePeerDependencies:\n      - supports-color")), true, "the flow / sequence forms pnpm writes are fine");
+    },
+  },
+  {
+    id: "lockfile scan (yarn v1): a duplicate or quoted field, another or look-alike host, http, an upper-case host, no hash -> refused",
+    run(l) {
+      const ok = YARN_OK;
+      const good = `  resolved "${REG}a/-/a-1.1.0.tgz#${"0".repeat(40)}"`;
+      const Y = "https://registry.yarnpkg.com/";
+      const bad: [string, string][] = [
+        ["a duplicate resolved, the last from another host (yarn reads the last)", ok.replace(good, `${good}\n  resolved "https://evil.example/a.tgz"`)],
+        ["a duplicate resolved, both fine", ok.replace(good, `${good}\n${good}`)],
+        ["a quoted field name", ok.replace(good, `${good}\n  "resolved" "https://evil.example/a.tgz"`)],
+        ["a field with a colon", ok.replace(good, good.replace("  resolved ", "  resolved: "))],
+        ["a look-alike yarn host", ok.replace(`"${REG}a/`, `"https://registry.yarnpkg.com.evil.example/a/`)],
+        ["http yarn host", ok.replace(`"${REG}a/`, `"http://registry.yarnpkg.com/a/`)],
+        ["upper-case yarn host", ok.replace(`"${REG}a/`, `"https://REGISTRY.YARNPKG.COM/a/`)],
+        ["yarn host, no integrity and no #sha1", ok.replaceAll(REG, Y).replace(`#${"0".repeat(40)}`, "").replace(`  integrity ${INT}\n`, "")],
+        ["yarn host, a short sha1", ok.replaceAll(REG, Y).replace(`#${"0".repeat(40)}`, `#${"0".repeat(39)}`).replace(`  integrity ${INT}\n`, "")],
+      ];
+      for (const [why, text] of bad) { assert.notEqual(text, ok, why); assert.equal(l.deps.yarnLockAllowed(text), false, why); }
+    },
+  },
+  {
+    id: "lockfile scan (root): npm-shrinkwrap.json + package-lock.json -> refused; every other lockfile at the root is scanned too; a lockfile over the cap -> DEPS_TOO_LARGE",
+    run(l, ctx) {
+      const npmOk = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT } } });
+      const npmBad = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: "1.0.0", resolved: "https://evil.example/a.tgz", integrity: INT } } });
+      const at = (files: Record<string, string>) => { const d = plain(dir(ctx, "root"), { "package.json": pkgJson({}), ...files }); const p = l.deps.pickLockfile(d); assert.ok(!("refuse" in p)); return { d, p }; };
+      const sw = at({ "npm-shrinkwrap.json": npmOk });
+      assert.equal(sw.p.lockfile, "npm-shrinkwrap.json", "a shrinkwrap alone is the lockfile");
+      assert.equal(l.deps.lockfileAllowed(sw.d, sw.p), true);
+      const both = at({ "npm-shrinkwrap.json": npmOk, "package-lock.json": npmOk });
+      assert.equal(l.deps.lockfileAllowed(both.d, both.p), false, "both npm lockfiles (even both fine): refused");
+      const evilSw = at({ "npm-shrinkwrap.json": npmBad, "package-lock.json": npmOk });
+      assert.equal(l.deps.lockfileAllowed(evilSw.d, evilSw.p), false, "the shrinkwrap npm ci would read is not trusted");
+      const other = at({ "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9" }), "pnpm-lock.yaml": PNPM_OK, "yarn.lock": YARN_OK.replace(`"${REG}a/`, '"https://evil.example/a/') });
+      assert.equal(other.p.pm, "pnpm");
+      assert.equal(l.deps.lockfileAllowed(other.d, other.p), false, "a bad lockfile next to the picked one: refused");
+      const fine = at({ "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9" }), "pnpm-lock.yaml": PNPM_OK, "yarn.lock": YARN_OK });
+      assert.equal(l.deps.lockfileAllowed(fine.d, fine.p), true);
+      assert.equal(l.deps.LOCK_MAX_BYTES, 64 * 1024 * 1024);
+      const big = plain(dir(ctx, "root"), { "package.json": pkgJson({}), "package-lock.json": npmOk });
+      assert.deepEqual(l.deps.pickLockfile(big, npmOk.length - 1), { refuse: "DEPS_TOO_LARGE" }, "over the cap: refused before it is read");
+      assert.ok(!("refuse" in l.deps.pickLockfile(big, npmOk.length)));
+      const side = plain(dir(ctx, "root"), { "package.json": pkgJson({}), "package-lock.json": npmOk, "yarn.lock": YARN_OK });
+      assert.deepEqual(l.deps.pickLockfile(side, npmOk.length + 1), { refuse: "DEPS_TOO_LARGE" }, "the cap holds for every lockfile at the root");
+      const fake = { name: "m151-no-such-user", uid: 2_000_000_000 };
+      withCache(l, ctx, (cache) => {
+        const d = repo(dir(ctx, "big"), { "package.json": pkgJson({ test: "vitest run" }, VDEP), "package-lock.json": npmOk });
+        assert.deepEqual(l.deps.installDeps(d, fake as never, cache, { tool: ctx.tool, lockMaxBytes: 16 }), { refuse: "DEPS_TOO_LARGE" });
       });
     },
   },

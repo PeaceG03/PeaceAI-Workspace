@@ -6,10 +6,11 @@
 //      yarn install --frozen-lockfile), install scripts off (--ignore-scripts), as the stage-2 candidate uid with
 //      `env -i` and a private HOME/cache, in a per-run staging dir (never the copy, never a shared cache), with a
 //      deadline and a size cap. Package-manager config files that can redirect the registry or run code (.npmrc,
-//      .yarnrc*, .pnpmfile.*) are removed from the staging tree first, and the lockfile is scanned first: every
-//      package must come from https://registry.npmjs.org/ with an integrity hash (git, remote-tarball, file: and
-//      outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace / link entries inside the repo are
-//      allowed); npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
+//      .yarnrc*, .pnpmfile.*) are removed from the staging tree first, and every root lockfile is scanned first
+//      (size-capped; both npm lockfiles at once refused; pnpm parsed as a plain YAML subset, yarn fields strict): every
+//      package must come from https://registry.npmjs.org/ (yarn v1: or registry.yarnpkg.com) with an integrity hash
+//      (git, remote-tarball, file: and outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace /
+//      link entries inside the repo are allowed); npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
 //      as the candidate uid WITH network (registry only by config; it runs no package code: scripts off, no
 //      pnpmfile). Every candidate-uid process is killed right after the install. Tests never get network. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
 //      sha256 (+ package manager and manifests) inside one run dir only, removed with the run.
@@ -102,10 +103,16 @@ const LOCKFILES: [string, PackageManager][] = [["pnpm-lock.yaml", "pnpm"], ["pac
 /** Default package-manager versions by lockfile format, when package.json pins none. */
 const PNPM_BY_LOCK: [RegExp, string][] = [[/^lockfileVersion: '?9\./m, "9.15.9"], [/^lockfileVersion: '?6\./m, "8.15.9"], [/^lockfileVersion: '?5\./m, "7.33.7"]];
 
+/** Lockfiles larger than this are refused (DEPS_TOO_LARGE) before any is read. */
+export const LOCK_MAX_BYTES = 64 * 1024 * 1024;
+/** The lockfiles at the repo root (regular files only: a symlinked lockfile is not copied to the install tree). */
+const presentLockfiles = (root: string): [string, PackageManager][] => LOCKFILES.filter(([f]) => existsSync(join(root, f)) && lstatSync(join(root, f)).isFile());
+
 /** The lockfile at the repo root and the package manager that reads it (packageManager pins the version). */
-export function pickLockfile(root: string): LockPick | { refuse: DepsCode } {
-  const present = LOCKFILES.filter(([f]) => existsSync(join(root, f)) && lstatSync(join(root, f)).isFile());
+export function pickLockfile(root: string, maxBytes: number = LOCK_MAX_BYTES): LockPick | { refuse: DepsCode } {
+  const present = presentLockfiles(root);
   if (!present.length) return { refuse: "DEPS_NO_LOCKFILE" }; // guard:deps-lockfile
+  if (present.some(([f]) => lstatSync(join(root, f)).size > maxBytes)) return { refuse: "DEPS_TOO_LARGE" }; // guard:lock-size
   const pmField = String(readJson(join(root, "package.json"))?.packageManager ?? "");
   const m = /^(npm|pnpm|yarn)@(\d{1,3}\.\d{1,3}\.\d{1,3})(?:\+[a-z0-9]+\.[0-9a-f]+)?$/.exec(pmField);
   const [lockfile, pm] = (m && present.find(([, pm]) => pm === m[1])) || present[0] || ["package-lock.json", "npm" as const];
@@ -139,6 +146,16 @@ const registryOk = (resolved: unknown, integrity: unknown): boolean => {
   if (typeof resolved !== "string") return false;
   const u = resolved.replace(/#[0-9a-f]{40}$/, ""); // yarn v1 appends the tarball sha1
   return u.startsWith(REGISTRY) && !/[\s\\?#]|\.\.|\/\//.test(u.slice(REGISTRY.length)) && integrityOk(integrity);
+};
+/** yarn v1 only: the yarn mirror of the same registry is allowed too (Auditor ruling, M151 r3). */
+export const YARN_REGISTRIES = [REGISTRY, "https://registry.yarnpkg.com/"] as const;
+/** A yarn v1 entry: an allowed registry host, a plain tarball path, and integrity (or, without it, the #sha1 yarn checks). */
+const yarnSourceOk = (resolved: unknown, integrity: unknown): boolean => {
+  if (typeof resolved !== "string") return false;
+  const m = /^(.*?)(?:#([0-9a-f]{40}))?$/.exec(resolved)!;
+  const host = YARN_REGISTRIES.find((h) => m[1]!.startsWith(h));
+  if (!host || /[\s\\?#]|\.\.|\/\//.test(m[1]!.slice(host.length))) return false;
+  return integrity === undefined ? m[2] !== undefined : integrityOk(integrity);
 };
 /** A repo-relative path (from `base`, repo-relative) that stays inside the repo. */
 export function insideRepo(base: string, rel: unknown): boolean {
@@ -178,69 +195,198 @@ export function npmLockAllowed(text: string): boolean {
 }
 
 const unquote = (s: string): string => s.trim().replace(/^(['"])(.*)\1$/, "$2");
-const PNPM_RES = /^\s+resolution: \{integrity: sha(?:1|256|384|512)-[A-Za-z0-9+/]+={0,2}(?:, tarball: https:\/\/registry\.npmjs\.org\/[^\s,{}]+)?\}\s*$/;
-/** pnpm-lock.yaml (v5 / v6 / v9), read line by line in the fixed layout pnpm writes; anything unexpected is refused. */
-export function pnpmLockAllowed(text: string): boolean {
-  let section = "";
-  let importer = ".";
-  let entry: string | null = null;
-  let res = 0;
-  const entryOk = () => section !== "packages" || entry === null || res === 1;
-  for (const line of text.split(/\r?\n/)) {
-    if (/^\S/.test(line) && !line.startsWith("#")) {
-      if (!entryOk()) return false;
-      section = /^([A-Za-z]+):/.exec(line)?.[1] ?? "?";
-      entry = null; importer = ".";
-      continue;
-    }
-    const key = /^ {2}('[^']*'|"[^"]*"|[^\s'"#][^:]*?):(?:\s|$)/.exec(line)?.[1];
-    if (key !== undefined && section === "importers") importer = unquote(key);
-    if (key !== undefined && (section === "packages" || section === "snapshots") && unquote(key).includes(":")) return false; // guard:lock-pnpm-key
-    if (key !== undefined && section === "packages") {
-      if (!entryOk()) return false; // guard:lock-pnpm-missing
-      entry = unquote(key); res = 0;
-    }
-    if (section === "packages" && /^\s+resolution:/.test(line)) {
-      res++;
-      if (!PNPM_RES.test(line)) return false; // guard:lock-pnpm-res
-      continue;
-    }
-    if (section === "packages" && /^ {4}deprecated: /.test(line)) continue; // free text (a notice), never read as a source
-    // values only (a dependency name such as "simple-git" is a key, never a source)
-    const kv = /^\s*(?:-\s+)?('[^']*'|"[^"]*"|[^\s'"][^:]*?):(?:\s+(.*))?$/.exec(line);
-    const val = kv ? kv[2] ?? "" : line;
-    for (const m of val.matchAll(/(?:^|[\s{,'"])link:([^\s'",}]*)/g)) if (!insideRepo(importer, m[1])) return false; // guard:lock-pnpm-link
-    if (/:\/\/|(?:^|[\s{,'"@])(?:file|git|git\+[a-z]+|github|gitlab|bitbucket|gist|tarball):/.test(val)) return false; // guard:lock-pnpm-url
-  }
-  return entryOk();
+
+// ---- pnpm-lock.yaml: a parser for the plain subset of YAML pnpm writes, then structural checks
+// Block mappings and sequences with 2-space steps, one-level flow collections at depth >= 2, single-line plain /
+// single-quoted / escape-free double-quoted scalars, whole-line comments. Anything else (flow at the top levels,
+// nested flow, escapes, anchors / aliases / tags / merge keys, other indent steps, duplicate keys, block or
+// multi-line scalars, inline comments, documents, tabs, odd line breaks) is refused: within the subset every YAML
+// parser (pnpm's included) reads the same tree, so the checks below see what pnpm will install.
+type YNode = string | YNode[] | { [k: string]: YNode };
+const FAIL = Symbol("yaml");
+const ymap = (): { [k: string]: YNode } => Object.create(null);
+const isYMap = (x: unknown): x is { [k: string]: YNode } => typeof x === "object" && x !== null && !Array.isArray(x);
+
+/** One scalar token (already cut out of its line or flow), or FAIL. */
+function yScalar(t: string, flowCtx: boolean): string | typeof FAIL {
+  if (!t) return FAIL;
+  if (/^[&*!]/.test(t) || t === "<<") return FAIL; // guard:lock-pnpm-anchor
+  if (t[0] === '"' && t.includes("\\")) return FAIL; // guard:lock-pnpm-esc
+  if (t[0] === "'") return /^'(?:[^']|'')*'$/.test(t) ? t.slice(1, -1).replace(/''/g, "'") : FAIL;
+  if (t[0] === '"') return /^"[^"]*"$/.test(t) ? t.slice(1, -1) : FAIL;
+  if (/^[-?:](?:\s|$)|^[|>%@`{}[\],#"']/.test(t) || /:(?:\s|$)|\s#|\s$/.test(t) || (flowCtx && /[{}[\],]/.test(t))) return FAIL;
+  return t;
 }
 
-/** yarn.lock v1 (berry is refused earlier). */
+/** A one-line flow collection ({a: b, c: d} / [a, b]); nesting is parsed (the subset check refuses it first). */
+function yFlow(s: string): YNode | typeof FAIL {
+  let i = 0;
+  const ws = () => { while (s[i] === " ") i++; };
+  const tok = (): string | typeof FAIL => {
+    ws();
+    const at = i;
+    if (s[i] === "'") { for (i++; i < s.length; i++) if (s[i] === "'") { if (s[i + 1] === "'") { i++; continue; } i++; return yScalar(s.slice(at, i), true); } return FAIL; }
+    if (s[i] === '"') { i = s.indexOf('"', i + 1); if (i < 0) return FAIL; i++; return yScalar(s.slice(at, i), true); }
+    while (i < s.length && !/[,{}[\]]/.test(s[i]!) && !(s[i] === ":" && (s[i + 1] === " " || s[i + 1] === undefined))) i++;
+    return yScalar(s.slice(at, i).trimEnd(), true);
+  };
+  const node = (): YNode | typeof FAIL => {
+    ws();
+    const open = s[i];
+    if (open !== "{" && open !== "[") return tok();
+    i++;
+    const out: YNode = open === "{" ? ymap() : [];
+    const close = open === "{" ? "}" : "]";
+    ws();
+    if (s[i] === close) { i++; return out; }
+    for (;;) {
+      if (Array.isArray(out)) { const v = node(); if (v === FAIL) return FAIL; out.push(v); }
+      else {
+        const k = tok(); if (k === FAIL) return FAIL;
+        ws(); if (s[i] !== ":") return FAIL; i++;
+        const v = node(); if (v === FAIL || Object.hasOwn(out, k)) return FAIL;
+        out[k] = v;
+      }
+      ws();
+      if (s[i] === ",") { i++; continue; }
+      if (s[i] === close) { i++; return out; }
+      return FAIL;
+    }
+  };
+  const r = node();
+  ws();
+  return r !== FAIL && i === s.length ? r : FAIL;
+}
+
+/** pnpm-lock.yaml text -> tree, or null when the text is outside the plain subset. */
+export function pnpmParse(text: string): { [k: string]: YNode } | null {
+  if (/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f\u0085\u2028\u2029\ufeff]/.test(text)) return null;
+  const lines = text.split(/\r?\n/);
+  if (lines.some((l) => l.includes("\r"))) return null;
+  const root = ymap();
+  const frames: { indent: number; node: YNode[] | { [k: string]: YNode } }[] = [{ indent: 0, node: root }];
+  let pending: { indent: number; map: { [k: string]: YNode }; key: string } | null = null;
+  const value = (v: string, indent: number): YNode | typeof FAIL => {
+    const flow = v[0] === "{" || v[0] === "[";
+    if (flow && v !== "{}" && v !== "[]" && (indent < 4 || /[{[]/.test(v.slice(1)))) return FAIL; // guard:lock-pnpm-flow
+    return flow ? yFlow(v) : yScalar(v, false);
+  };
+  for (const line of lines) {
+    if (/^ *(?:#.*)?$/.test(line)) continue;
+    const indent = line.length - line.trimStart().length;
+    const c = line.slice(indent);
+    if (pending && indent > pending.indent) {
+      if (indent !== pending.indent + 2) return null; // guard:lock-pnpm-indent
+      const child: YNode[] | { [k: string]: YNode } = /^-(?: |$)/.test(c) ? [] : ymap();
+      pending.map[pending.key] = child;
+      frames.push({ indent, node: child });
+      pending = null;
+    } else {
+      pending = null;
+      while (frames.length > 1 && frames[frames.length - 1]!.indent > indent) frames.pop();
+      if (frames[frames.length - 1]!.indent !== indent) return null;
+    }
+    const top = frames[frames.length - 1]!.node;
+    if (Array.isArray(top)) {
+      const m = /^- (.+)$/.exec(c);
+      if (!m) return null;
+      const v = value(m[1]!.trim(), indent);
+      if (v === FAIL) return null;
+      top.push(v);
+      continue;
+    }
+    const m = /^('(?:[^']|'')*'|"[^"]*"|[^'"][^:]*?):(?: +(.*))?$/.exec(c);
+    if (!m) return null;
+    const k = yScalar(m[1]!, false);
+    if (k === FAIL) return null;
+    if (Object.hasOwn(top, k)) return null; // guard:lock-pnpm-dup
+    const rest = (m[2] ?? "").trim();
+    if (!rest) { top[k] = ""; pending = { indent, map: top, key: k }; continue; }
+    const v = value(rest, indent);
+    if (v === FAIL) return null;
+    top[k] = v;
+  }
+  return root;
+}
+
+const PNPM_URL = /:\/\/|(?:^|[\s{,'"@])(?:file|git|git\+[a-z]+|github|gitlab|bitbucket|gist|tarball):/;
+/** pnpm-lock.yaml (v5 / v6 / v9): parsed (plain subset only), then every package must resolve by integrity only. */
+export function pnpmLockAllowed(text: string): boolean {
+  const doc = pnpmParse(text);
+  if (!doc) return false;
+  for (const sec of ["packages", "snapshots"]) {
+    const m = doc[sec];
+    if (m === undefined || m === "") continue;
+    if (!isYMap(m)) return false;
+    for (const [k, v] of Object.entries(m)) {
+      if (k.includes(":")) return false; // guard:lock-pnpm-key
+      if (sec === "snapshots") continue;
+      if (!isYMap(v)) return false;
+      const res = v.resolution;
+      if (res === undefined) return false; // guard:lock-pnpm-missing
+      const resOk = res === undefined || isYMap(res) && Object.keys(res).every((x) => x === "integrity" || x === "tarball") && integrityOk(res.integrity)
+        && (res.tarball === undefined || registryOk(res.tarball, res.integrity));
+      if (!resOk) return false; // guard:lock-pnpm-res
+    }
+  }
+  // every value (never a key: a dependency name such as "simple-git" is not a source); deprecated notices are free text,
+  // resolutions were checked above
+  const walk = (n: YNode, path: string[]): boolean => {
+    if (typeof n !== "string") return (Array.isArray(n) ? n.map((x, i) => [String(i), x] as const) : Object.entries(n)).every(([k, x]) => walk(x, [...path, k]));
+    if (path[0] === "packages" && path.length >= 3 && (path[2] === "deprecated" || path[2] === "resolution")) return true; // checked above
+    const importer = path[0] === "importers" ? path[1]! : ".";
+    for (const m of n.matchAll(/(?:^|[\s{,'"])link:([^\s'",}]*)/g)) if (!insideRepo(importer, m[1])) return false; // guard:lock-pnpm-link
+    if (PNPM_URL.test(n)) return false; // guard:lock-pnpm-url
+    return true;
+  };
+  return walk(doc, []);
+}
+
+/** yarn.lock v1 (berry is refused earlier): fields at 2 spaces, dependency maps at 4; no duplicate or quoted field. */
 export function yarnLockAllowed(text: string): boolean {
-  const blocks: { specs: string[]; fields: string[] }[] = [];
-  for (const line of text.split(/\r?\n/)) {
+  const blocks: { specs: string[]; fields: Map<string, string | null>; inMap: boolean }[] = [];
+  const lines = text.split(/\r?\n/);
+  if (lines.some((l) => /[\r\t]/.test(l))) return false;
+  for (const line of lines) {
     if (!line.trim() || line.startsWith("#")) continue;
-    if (/^\S/.test(line)) { if (!line.endsWith(":")) return false; blocks.push({ specs: line.slice(0, -1).split(/,\s*/).map(unquote), fields: [] }); continue; }
-    if (!blocks.length) return false;
-    blocks[blocks.length - 1]!.fields.push(line);
+    if (/^\S/.test(line)) { if (!line.endsWith(":")) return false; blocks.push({ specs: line.slice(0, -1).split(/,\s*/).map(unquote), fields: new Map(), inMap: false }); continue; }
+    const b = blocks[blocks.length - 1];
+    if (!b) return false;
+    if (/^ {4}\S/.test(line)) { if (!b.inMap || !/^ {4}("[^"\\]*"|[^\s"]+) ("[^"\\]*"|[^\s"]+)$/.test(line)) return false; continue; }
+    const m = /^ {2}([A-Za-z][A-Za-z0-9]*)(?: ("[^"\\]*"|[^\s"]+)|:)$/.exec(line);
+    if (!m) return false; // guard:lock-yarn-field
+    if (!m) continue; // (unreachable while the guard above stands)
+    if (b.fields.has(m[1]!)) return false; // guard:lock-yarn-dup
+    b.fields.set(m[1]!, m[2] ?? null);
+    b.inMap = m[2] === undefined;
   }
   for (const b of blocks) {
     const ranges = b.specs.map((s) => s.slice(s.indexOf("@", 1) + 1));
-    const field = (name: string) => b.fields.find((f) => f.startsWith(`  ${name} `))?.slice(name.length + 3);
+    const field = (name: string) => { const v = b.fields.get(name); return v === undefined || v === null ? undefined : unquote(v); };
     const resolved = field("resolved");
     const links = ranges.every((r) => r.startsWith("link:") && insideRepo(".", r.slice(5)));
     if (ranges.some((r) => r.includes(":") && !r.startsWith("npm:") && !(r.startsWith("link:") && insideRepo(".", r.slice(5))))) return false; // guard:lock-yarn-spec
     if (links && resolved === undefined) continue;
-    if (!registryOk(resolved === undefined ? undefined : unquote(resolved), field("integrity"))) return false; // guard:lock-yarn
+    if (!yarnSourceOk(resolved, field("integrity"))) return false; // guard:lock-yarn
   }
   return true;
 }
 
-/** Every package in the lockfile comes from the registry with an integrity hash, or is a workspace / link entry inside the repo. */
-export function lockfileAllowed(root: string, p: LockPick): boolean {
+const scanLock = (root: string, f: string, pm: PackageManager): boolean => {
   let text: string;
-  try { text = readFileSync(join(root, p.lockfile), "utf8"); } catch { return false; }
-  return p.pm === "npm" ? npmLockAllowed(text) : p.pm === "pnpm" ? pnpmLockAllowed(text) : yarnLockAllowed(text);
+  try { text = readFileSync(join(root, f), "utf8"); } catch { return false; }
+  return pm === "npm" ? npmLockAllowed(text) : pm === "pnpm" ? pnpmLockAllowed(text) : yarnLockAllowed(text);
+};
+/**
+ * Every package in the lockfile comes from the registry with an integrity hash, or is a workspace / link entry
+ * inside the repo. Every other lockfile at the root is scanned too (npm also reads yarn.lock), and a repo with both
+ * npm-shrinkwrap.json and package-lock.json is refused (npm ci would read the shrinkwrap; no guessing).
+ */
+export function lockfileAllowed(root: string, p: LockPick): boolean {
+  const present = presentLockfiles(root);
+  if (present.some(([f]) => f === "npm-shrinkwrap.json") && present.some(([f]) => f === "package-lock.json")) return false; // guard:lock-npm-both
+  for (const [f, pm] of present) if (f !== p.lockfile && !scanLock(root, f, pm)) return false; // guard:lock-all
+  return scanLock(root, p.lockfile, p.pm);
 }
 
 /** Package-manager config files that can redirect the registry or run code at install time. */
@@ -257,6 +403,8 @@ export interface DepsOptions {
   onInstall?: (key: string) => void;
   /** Extra variables for the install env (tests only; still under env -i). */
   extraEnv?: Record<string, string>;
+  /** Tests only: a lower lockfile size cap (bytes; never above LOCK_MAX_BYTES). */
+  lockMaxBytes?: number;
   /** Tests only: the argv that gives the installed tree back to the runner (default sudo -n chown -R). */
   chown?: ((owner: string, dir: string) => string[]) | null;
 }
@@ -312,12 +460,12 @@ export function treeBytes(p: string): number {
  * read-only to the candidate; the isolation also mounts /tmp read-only). Returns null on success or a fixed DEPS_* code.
  */
 export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o: DepsOptions = {}): { pm: PackageManager } | { refuse: DepsCode } {
-  const lock = pickLockfile(copyDir);
+  const lock = pickLockfile(copyDir, Math.min(o.lockMaxBytes ?? LOCK_MAX_BYTES, LOCK_MAX_BYTES));
   if ("refuse" in lock) return lock;
   if (!lockfileAllowed(copyDir, lock)) return { refuse: "DEPS_NONREGISTRY" }; // guard:deps-nonregistry
   const files = listed(copyDir);
   const manifests = files.filter((f) => posix.basename(f) === "package.json" || f === "pnpm-workspace.yaml").sort();
-  const key = sha256([lock.pm, lock.version ?? "", sha256(readFileSync(join(copyDir, lock.lockfile))), ...manifests.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`)].join("\n"));
+  const key = sha256([lock.pm, lock.version ?? "", ...presentLockfiles(copyDir).map(([f]) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`), ...manifests.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`)].join("\n"));
   let hit = cache.entries.get(key);
   if (!hit) {
     hit = install(copyDir, files, lock, cand, cache, key, o);

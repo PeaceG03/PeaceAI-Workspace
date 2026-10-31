@@ -34,19 +34,36 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
 
 ## Install safety (binding)
 
-- Lockfile scan first (`lockfileAllowed`, fail closed): every package entry must be a tarball under
+- Lockfile scan first (`lockfileAllowed`, fail closed). Every lockfile at the repo root (pnpm-lock.yaml,
+  package-lock.json, npm-shrinkwrap.json, yarn.lock; regular files only) is scanned with its own rules, not just the
+  one picked (npm also reads yarn.lock). A repo with both npm-shrinkwrap.json and package-lock.json is refused (npm ci
+  reads the shrinkwrap; we do not guess which one). Any root lockfile over 64 MiB (`LOCK_MAX_BYTES`) ->
+  `DEPS_TOO_LARGE` before any lockfile is read. Every package entry must be a tarball under
   `https://registry.npmjs.org/` with an integrity hash (sha512 / sha384 / sha256 / sha1 SRI). Allowed otherwise only:
   workspace package dirs and link entries whose target stays inside the repo, and npm entries bundled inside their
   parent's (registry) tarball (`inBundle` / `bundled`, no `resolved` of their own). Everything else is refused with
   `DEPS_NONREGISTRY` before the candidate uid runs anything: git deps (any form), remote tarballs on any other host
   (even with an integrity hash), `file:` deps, links or install locations outside the repo, registry entries with
-  no integrity, an unparseable lockfile. npm: `packages` (v2/v3) and `dependencies` (v1, also read when a v2 file
-  has both). pnpm (v5/v6/v9): every `packages` entry has exactly one `resolution: {integrity: ...}` (optionally with a
-  registry `tarball:`); no package / snapshot key with a protocol; every `link:` resolves inside the repo from its
-  importer dir; no value anywhere with a URL, `file:`, `git...:` or `tarball:` (the free-text `deprecated:` notice is
-  skipped). yarn classic: every entry's specs have no protocol except `npm:` aliases and in-repo `link:`; every
-  non-link entry has a registry `resolved` and an `integrity`. Note: yarn classic lockfiles usually point at
-  `https://registry.yarnpkg.com/`; those are refused by this rule (see v2 limits).
+  no integrity, an unparseable lockfile.
+  - npm: `packages` (v2/v3) and `dependencies` (v1, also read when a v2 file has both), parsed as JSON. Directory
+    links (`link: true`, which `--allow-file=none` does not block) must point inside the repo.
+  - pnpm (v5/v6/v9): parsed by a small parser for the plain YAML subset pnpm writes (no YAML library is a pinned
+    dependency of this repo): block maps / sequences with 2-space indent steps, one-level flow collections only at
+    depth >= 2 (`{integrity: ...}`, `[x64]`), single-line plain / single-quoted / escape-free double-quoted scalars,
+    whole-line comments. Refused as outside the subset: flow at the top two levels or nested flow, any other indent
+    step, a backslash in a double-quoted scalar, anchors / aliases / tags (`&`, `*`, `!`) and merge keys (`<<`),
+    duplicate keys, block or multi-line scalars, inline comments, more than one document, tabs, CR, NEL / LS / PS and
+    other control characters. Inside the subset YAML has one reading, so pnpm sees the same tree (checked against
+    js-yaml on the dev-set lockfiles: identical trees). Then, structurally: every `packages` entry has a
+    `resolution` that is exactly `{integrity}` or `{integrity, tarball}` with a registry tarball; no package /
+    snapshot key with a protocol; every `link:` resolves inside the repo from its importer dir; no other value with a
+    URL, `file:`, `git...:` or `tarball:` (the free-text `deprecated:` notice is skipped).
+  - yarn classic: fields at 2 spaces as `name value` or `name:` (dependency maps at 4); a quoted or colon-form field
+    name, a duplicate field in a block (yarn keeps the last), or any other line shape is refused. Specs have no
+    protocol except `npm:` aliases and in-repo `link:`; every non-link entry's `resolved` is a plain tarball path
+    under `https://registry.npmjs.org/` or `https://registry.yarnpkg.com/` (exact host, https, lower case; Auditor
+    ruling) with an `integrity` line, or, without one, the `#<40-hex sha1>` fragment yarn v1 checks the tarball
+    against. Any other host or no hash stays `DEPS_NONREGISTRY`.
 - npm also gets `--allow-git=none --allow-remote=none --allow-file=none` (npm 11 defaults these to `all`), so npm
   itself refuses git / url / file deps even if the scan missed one.
 - Runs as the stage-2 candidate uid (`sudo -n -u <cand>`; the same separate no-sudo uid as the test runs), under
@@ -69,7 +86,7 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
 - Caps: deadline (default 600 s) -> `DEPS_TIMEOUT`; installed bytes over the cap (default 1.5 GiB, inode-deduped) ->
   `DEPS_TOO_LARGE`; any other failure -> `DEPS_INSTALL_FAILED`. Codes only, never package-manager output (its output
   is discarded).
-- Cache: keyed by sha256 of (package manager, version, lockfile sha256, every package.json / pnpm-workspace.yaml
+- Cache: keyed by sha256 of (package manager, version, every root lockfile's sha256, every package.json / pnpm-workspace.yaml
   sha256), inside one run's cache dir only (`openDepsCache`, newest 2 kept); the dir is removed when the run ends.
   Nothing is shared between runs or with any global cache. `--deps-dir /abs/dir` (default `os.tmpdir()`) picks where
   the run's cache dir is made; it must allow exec (native addons) and be traversable by the candidate uid.
@@ -84,11 +101,14 @@ Fail closed: no report -> `fail 1`; failed suites with no failed test -> counted
 `success: false` with no failure -> `fail 1`. vitest >= 3.1 is retried once with `--configLoader runner` when no
 report was written (the default config loader writes a temp file beside the config, and the copy is read-only).
 
-Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (31: runner-other, service, runner-dep,
+Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (41: runner-other, service, runner-dep,
 deps-lockfile, deps-nonregistry, deps-npm-allow, deps-pnpmfile, deps-frozen, deps-ignore-scripts, deps-config,
-deps-registry, deps-env-i, deps-cand, deps-kill, deps-chown, deps-timeout, deps-size, lock-npm-key, lock-link,
-lock-npm, lock-npm-v1, lock-pnpm-key, lock-pnpm-missing, lock-pnpm-res, lock-pnpm-link, lock-pnpm-url,
-lock-yarn-spec, lock-yarn, shim-report, shim-suites, shim-exit). Each has a refused near-miss case. The m151
+deps-registry, deps-env-i, deps-cand, deps-kill, deps-chown, deps-timeout, deps-size, lock-size, lock-npm-both,
+lock-all, lock-npm-key, lock-link, lock-npm, lock-npm-v1, lock-pnpm-anchor, lock-pnpm-esc, lock-pnpm-flow,
+lock-pnpm-indent, lock-pnpm-dup, lock-pnpm-key, lock-pnpm-missing, lock-pnpm-res, lock-pnpm-link, lock-pnpm-url,
+lock-yarn-field, lock-yarn-dup, lock-yarn-spec, lock-yarn, shim-report, shim-suites, shim-exit). Each has a refused
+near-miss case; the layout guards also have a near miss whose content is harmless, so only the layout rule refuses
+it. The m151
 mutation test deletes each in turn (with a loop.ts that imports the mutant) and requires a case to fail with an
 assertion. deps-cand / deps-config / deps-registry / deps-env-i / deps-kill / deps-chown / deps-timeout / deps-size
 need the candidate uid and sudo: where those are missing, their mutants and the install cases (`needsCand`) are
@@ -116,8 +136,8 @@ anything else (`hidden_detail`).
   the candidate.
 - The install is a second place where the candidate uid runs a process, and that process (the package manager) has
   network. Package code is not run there (see Install safety); it first runs inside the test isolation (no network).
-- yarn classic lockfiles that use the `registry.yarnpkg.com` mirror or lack integrity lines are refused
-  (`DEPS_NONREGISTRY`); allowing that mirror would be a separate, reviewed change.
+- pnpm lockfiles outside the plain YAML subset (hand-edited, or written by a future pnpm in another style) are
+  refused (`DEPS_NONREGISTRY`) rather than parsed.
 - One package per task; no service-backed suites; no yarn berry; no bun / deno.
 - Box notes: the shared `peaceai-cand` uid is used by every agent's m146 runs, which kill all its processes; use a
   separate candidate uid per concurrent run (`PEACEAI_STAGE2_CAND`, `M146_CAND` / `M151_CAND` in tests). A full or
