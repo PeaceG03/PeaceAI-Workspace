@@ -212,6 +212,10 @@ export function loopPlanner(flag: string | undefined): PlannerName | null {
 // ---- the proposer
 
 export interface Edit { path: string; content: string }
+/** (after #659) A proposal's `edits` must be an array of { path: string, content: string }; anything else (missing,
+ *  an object, a bad element) is the proposer's failure, PROPOSER_FAILED. An empty array is a well-formed no-op attempt:
+ *  it is applied (nothing changes) and graded like any other attempt. */
+const validEdits = (x: unknown): x is Edit[] => Array.isArray(x) && x.every((e) => typeof e === "object" && e !== null && typeof (e as Edit).path === "string" && typeof (e as Edit).content === "string");
 export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null }
 export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
@@ -283,7 +287,7 @@ export interface LoopOptions {
   depsCache?: DepsCache;
   /** v2: where the run's install cache dir is made (default os.tmpdir()). */
   depsDir?: string;
-  /** M162 (runLoopFile): the planner flag (v1|v2|v3 or plan-only-vN), resolved by selectPlanner; absent = the default. */
+  /** M162 (runLoopFile): the planner flag (v1|v2|v3|v4 or plan-only-vN), resolved by selectPlanner; absent = the default. */
   plannerFlag?: string;
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
@@ -386,7 +390,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     }
     // 4. the proposals. (M164) a throwing next() is the proposer's failure, not the fetch's: a fixed code, the error
     // itself is dropped (as prepare's); so is a next() that returns no proposal at all (undefined or another non-object,
-    // which would otherwise throw on the `in` check below and land on the catch-all FETCH_FAILED)
+    // which would otherwise throw on the `in` check below and land on the catch-all FETCH_FAILED), and (after #659) a
+    // proposal that neither refuses nor carries a valid `edits` array (e.g. [] or {}), which would throw in applyEdits
     const feedback: Feedback[] = [];
     const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
       try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
@@ -395,6 +400,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       const p = ask(attempt);
       if (p === null) return done("PROPOSER_FAILED"); // m164-guard:next-failed
       if (typeof p !== "object") return done("PROPOSER_FAILED"); // m164-guard:next-empty
+      if (!("refuse" in p) && !validEdits((p as { edits?: unknown }).edits)) return done("PROPOSER_FAILED"); // m164-guard:next-malformed
       if ("refuse" in p) return done(p.refuse);
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);

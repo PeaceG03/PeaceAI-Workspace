@@ -98,4 +98,37 @@ export const CASES: Case[] = [
       assert.equal(loopRowProblem(refused.row), null);
     },
   },
+  {
+    id: "next-malformed: a proposal with no refuse and no valid edits array ([], {}, edits: {}, a bad edit) is PROPOSER_FAILED, not FETCH_FAILED; near miss: an empty edits array is a graded no-op attempt (attempt 2 then passes)",
+    run(l, ctx) {
+      const opts = (p: Loop.Proposer) => ({ root: ctx.root, fetcher: ctx.fetcher, proposer: p, maxAttempts: 5, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>() });
+      if (!ctx.cand) { assert.match(l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(returning(l, 1, {}, false))).row.code, /^CAND_UID_/); return; }
+      for (const [what, bad] of [["[]", []], ["{}", {}], ["edits: {}", { edits: {} }], ["edits: [1]", { edits: [1] }], ["edit without content", { edits: [{ path: "src/window.ts" }] }]] as const) {
+        const r = l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(returning(l, 1, bad, false)));
+        assert.equal(r.row.code, "PROPOSER_FAILED", what);
+        assert.equal(r.row.attempts, 0, what);
+        assert.equal(loopRowProblem(r.row), null, what);
+      }
+      const later = l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(returning(l, 2, {}, true)));
+      assert.equal(later.row.code, "PROPOSER_FAILED");
+      assert.equal(later.row.attempts, 1, "attempt 1 ran and is recorded");
+      // near miss: { edits: [] } is well formed; it is applied (no change), fails the grade, and attempt 2's fix passes
+      const empty = l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(returning(l, 1, { edits: [] }, true)));
+      assert.equal(empty.row.code, "PASS");
+      assert.equal(empty.row.attempts, 2);
+      assert.equal(loopRowProblem(empty.row), null);
+    },
+  },
+  {
+    id: "fetch-failed: a fetcher that throws still ends the task FETCH_FAILED (the proposer guards do not swallow real fetch failures), no error text in the row",
+    run(l, ctx) {
+      const throwing: typeof ctx.fetcher = () => { throw new Error(SECRET); };
+      const r = l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), { root: ctx.root, fetcher: throwing, proposer: proposer(l, null, false), maxAttempts: 5, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>() });
+      if (!ctx.cand) { assert.match(r.row.code, /^CAND_UID_/); return; }
+      assert.equal(r.row.code, "FETCH_FAILED");
+      assert.equal(r.row.attempts, 0);
+      assert.equal(loopRowProblem(r.row), null);
+      assert.ok(!JSON.stringify(r.row).includes("m164-secret"), "the error text reached the row");
+    },
+  },
 ];
