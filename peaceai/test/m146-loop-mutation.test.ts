@@ -76,3 +76,26 @@ for (const g of guards) {
     assert.ok(r.failed.length > 0, `no case notices guard:${g.id} removed`);
   });
 }
+
+// The plan-log add-only guard (m146-planlog.ts): each "// guard:<id>" line is deleted in a copy, which must fail a case.
+const planLogSource = readFileSync(resolve(import.meta.dirname, "m146-planlog.ts"), "utf8");
+const planLogLines = planLogSource.split("\n");
+const planLogGuards = planLogLines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i }] : []; });
+const planLogCopy = (keep: (i: number) => boolean) => planLogLines.filter((_, i) => keep(i)).join("\n").replace(/from "\.\.\/lib\/([a-z0-9-]+\.ts)"/g, (_, f: string) => `from ${JSON.stringify(pathToFileURL(join(libDir, f)).href)}`);
+
+test("M146 mutation: the plan-log guard tags cover the prefix, newline and row checks; the unmutated copy passes", async () => {
+  assert.deepEqual(planLogGuards.map((g) => g.id).sort(), ["plan-log-main-newline", "plan-log-newline", "plan-log-prefix", "plan-log-rows"]);
+  const file = join(dir, "planlog-control.ts");
+  writeFileSync(file, planLogCopy(() => true));
+  const { failingPlanLogCases } = await import("./m146-planlog-cases.ts");
+  assert.deepEqual(failingPlanLogCases((await import(pathToFileURL(file).href)).planLogAddOnlyProblem), []);
+});
+
+for (const g of planLogGuards) {
+  test(`M146 mutation: deleting plan-log guard:${g.id} makes a case fail`, async () => {
+    const file = join(dir, `planlog-mutant-${g.id}.ts`);
+    writeFileSync(file, planLogCopy((i) => i !== g.line));
+    const { failingPlanLogCases } = await import("./m146-planlog-cases.ts");
+    assert.ok(failingPlanLogCases((await import(pathToFileURL(file).href)).planLogAddOnlyProblem).length > 0, `no case notices plan-log guard:${g.id} removed`);
+  });
+}
