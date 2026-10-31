@@ -1,7 +1,7 @@
 // Sandboxed test-and-fix loop v1 CLI (see peaceai/spec/loop-v1.md).
 //   tsx peaceai/bin/loop.ts run <taskfile> [--max N] [--deps-dir DIR] [--proposer rules-v1|repair-v1] [--planner NAME]
 //   (DIR: where the run's install cache goes; the proposer defaults to rules-v1, repair-v1 is M152's edit proposer;
-//   NAME: v1|v2|v3 or plan-only-vN, picked by lib/plandefault.ts selectPlanner, default = its default planner (M162))
+//   NAME: v1|v2|v3|v4 or plan-only-vN, picked by lib/plandefault.ts selectPlanner, default = its default planner (M162))
 // The task file must be locked in the committed plan log (plan-only.ts lock). Candidate code runs only as the
 // stage-2 candidate uid named by PEACEAI_STAGE2_CAND; without it every task is refused (CAND_UID_*). Appends one
 // loop row per task to peaceai/plan/loop-runs.jsonl. Prints codes and numbers only; a hidden-set line names no task.
@@ -19,7 +19,7 @@ const prop = propAt >= 0 ? args[propAt + 1] : "rules-v1";
 const planAt = args.indexOf("--planner");
 const plannerFlag = planAt >= 0 ? (args[planAt + 1] ?? "") : undefined;
 if (cmd !== "run" || !file || !Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS || (depsAt >= 0 && !depsDir?.startsWith("/")) || (prop !== "rules-v1" && prop !== "repair-v1")) {
-  console.log(`usage: loop.ts run <taskfile> [--max 1..${MAX_ATTEMPTS}] [--deps-dir /abs/dir] [--proposer rules-v1|repair-v1] [--planner v1|v2|v3]`);
+  console.log(`usage: loop.ts run <taskfile> [--max 1..${MAX_ATTEMPTS}] [--deps-dir /abs/dir] [--proposer rules-v1|repair-v1] [--planner v1|v2|v3|v4]`);
   process.exit(2);
 }
 // the planner is picked only by selectPlanner; an unknown name is refused before anything runs

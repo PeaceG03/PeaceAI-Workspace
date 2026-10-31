@@ -32,7 +32,7 @@ That switch (v1 -> v3) rested on 20 hidden tasks with a noisy +0.058 margin.
 v4 is the default since the switch after #658: hidden 0.337 vs 0.287, gain on 3 of 20 tasks. Hidden half (Auditor, 20/20 graded at eb4d135, v4
 plannerSha256 b667d518...): v4 mean 0.337 (runTests 0.450), v3 rerun 0.287 (runTests 0.300; it reproduces v3's
 committed hidden rows exactly), v1 0.229 (runTests 0.350). Per task v4 wins 3, loses 0 and ties 17: the margin rests
-on 3 tasks out of 20, so it is small and could be noise. Dev (public split): v4 runTests 0.833 vs v3's 0.667.
+on 3 tasks out of 20, so it is small and could be noise. Dev (public split), context only, not evidence: v4 runTests 0.833 vs v3's 0.667.
 
 ## Tests
 
