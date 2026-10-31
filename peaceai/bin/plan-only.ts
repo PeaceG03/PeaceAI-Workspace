@@ -14,7 +14,7 @@ const { appendLock, runFile, RunError, PLANNERS } = await import("../lib/planrun
 
 const [cmd, file, ...rest] = process.argv.slice(2);
 const planner = rest.length === 0 ? "plan-only-v1" : rest.length === 2 && rest[0] === "--planner" ? rest[1] : null;
-if (!file || (cmd !== "lock" && cmd !== "run") || !planner || !(PLANNERS as readonly string[]).includes(planner) || (cmd === "lock" && rest.length)) { console.log("usage: plan-only.ts lock <taskfile> | run <taskfile> [--planner plan-only-v1|plan-only-v2]"); process.exit(2); }
+if (!file || (cmd !== "lock" && cmd !== "run") || !planner || !(PLANNERS as readonly string[]).includes(planner) || (cmd === "lock" && rest.length)) { console.log("usage: plan-only.ts lock|run <taskfile> [--planner plan-only-v1|plan-only-v2] (lock takes no option)"); process.exit(2); }
 try {
   if (cmd === "lock") {
     const r = appendLock(file);
