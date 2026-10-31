@@ -10,6 +10,20 @@
       "cleared": "Auditor hidden report-only taskset_near_dup=0 (2026-10-30, after #652)"
     }
   ],
+  "firstRun": {
+    "note": "Auditor ruling after #654: the first real lb-train run (peace-lm-train.yml input run=lb-first-run, main only, GitHub-hosted runner). The corpus is rebuilt in-run at corpusCommit with lb-hidden-drop-hashes.txt and refused unless all three pins equal corpus below and it is a cleared corpus. Weights, saves and checkpoints stay on the runner; Results gets one metrics-only row. lb_run.py refuses LoRA, replay, init/resume, saves and any flag outside daily.trainArgsAllowed, and requires adamw8bit, easy_to_hard and a patience. Sizing: the M37 ext-train.json model (about 9.7 s/step projected on the runner); the run stops on patience, steps or the deadline trainDeadlineMin after the job start, which leaves reserveMin inside jobTimeoutMin.",
+    "corpus": {
+      "docs": "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
+      "manifest": "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
+      "fingerprint": "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4"
+    },
+    "corpusCommit": "b149d9bea430d45792470f0e32657032748af717",
+    "dropHashesSha256": "ecc97adfde53f4307fadfd93ee7f4c5cacb29c24665a37ba54becc87a5b1dc0a",
+    "jobTimeoutMin": 330,
+    "trainDeadlineMin": 290,
+    "reserveMin": 40,
+    "train": {"--d-model": "320", "--n-layer": "6", "--n-head": "5", "--ctx": "512", "--vocab": "8192", "--batch": "16", "--steps": "1500", "--eval-every": "50", "--patience": "4", "--min-delta": "0.001", "--threads": "4", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard"}
+  },
   "daily": {
     "maxBudgetMin": 340,
     "trainArgsAllowed": ["--steps", "--max-steps-this-run", "--threads", "--seed", "--batch", "--eval-every", "--d-model", "--n-layer", "--n-head", "--ctx", "--vocab", "--lr", "--warmup", "--patience", "--min-delta", "--optimizer", "--curriculum", "--curriculum-start", "--curriculum-ramp", "--curriculum-seed", "--save-every-min"]
