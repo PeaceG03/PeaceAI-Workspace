@@ -180,10 +180,13 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
   The daily row is now schema peaceai-lb-daily-run:v2 with the same three fields and the same recompute check, and
   the `lb-daily` log line ends the same way. New rows are v2 only; v1 rows (landed before this change) are still read
   as part of the trusted record (exactly the v1 fields), never written or landed again.
-- v1 cutoff (batch 7, Auditor's #661 note): lb_daily.py V1_LAST_RUN_ID = 41222155935, the first daily run (dispatched
-  on 08c2383 before v2 merged as ec36fc1), is the last run that can have landed a v1 row. A v1 row with runId <= the
-  cutoff is trusted history; a v1 row with a larger runId is refused (guard dr-row-v1-cutoff, LB_DAILY_RECORD_BAD from
-  the trusted read). v2 rows are not affected by the cutoff.
+- v1 cutoff (batch 7, Auditor's #661 and #662 notes): lb_daily.py V1_LAST_RUN_ID = 41222155935, the first daily run
+  (dispatched on 08c2383 before v2 merged as ec36fc1), is the only run that can have landed a v1 row. A v1 row is
+  trusted history only when runId == "41222155935"; a v1 row with any other runId is refused (guard dr-row-v1-cutoff,
+  LB_DAILY_RECORD_BAD from the trusted read). An earlier draft accepted runId <= the cutoff, which let a low-id v1 row
+  with a later date (e.g. runId 7, endStep 999) become the resume point (Auditor FAIL at b2bcaad). v2 rows are not
+  affected. Every lb_daily.py whole-value pattern ends in \Z, not $ (Python's $ also matches before a trailing newline, so
+  "41222155935\n" used to pass ID_RE).
 - Tests: m163-lb-first-run.test.ts (each tagged lb_run.py guard killed when disabled, near misses, the workflow shape
   checker with its mutants, the end-to-end run on a tiny corpus).
 
