@@ -93,11 +93,11 @@ test("M132: the never-zone on main before and after the ruling (exact sets)", ()
   const tracked = execFileSync("git", ["ls-files"], { cwd: repo, encoding: "utf8" }).split("\n").filter(Boolean);
   const read = (p: string) => { try { return readFileSync(join(repo, p), "utf8"); } catch { return null; } };
   const before = computeNeverZone(tracked, read, rawMentionSegments), after = computeNeverZone(tracked, read);
-  // exact sets (m132-neverzone-sets.json, sorted): 442 before, 438 after (Auditor-pass: + parse-auditor-pass.ts and auditor-pass.ts, run by peace-verdict; S2: + the gen-records run record; G17: + the v6 spec, proposal and test; G17 phase 2: + the v6 evidence file; G17 gate fix: + the evidence generator; G18: + the derive-wire-v1 spec, proposal and the three files it names; G18 v2: + the derive-wire-v2 spec, proposal, lib and test; G29: + the derive-wire-rethrow-v1 spec, proposal and test; M147: + the nl-pairs lib, bin, wrapper, config, public exclusion file, manifest and summary; M147 round 2: + the combined hidden-hash exclusion file)
+  // exact sets (m132-neverzone-sets.json, sorted): 443 before, 439 after (Auditor-pass: + parse-auditor-pass.ts and auditor-pass.ts, run by peace-verdict; S2: + the gen-records run record; G17: + the v6 spec, proposal and test; G17 phase 2: + the v6 evidence file; G17 gate fix: + the evidence generator; G18: + the derive-wire-v1 spec, proposal and the three files it names; G18 v2: + the derive-wire-v2 spec, proposal, lib and test; G29: + the derive-wire-rethrow-v1 spec, proposal and test; M147: + the nl-pairs lib, bin, wrapper, config, public exclusion file, manifest and summary; M147 round 2: + the combined hidden-hash exclusion file; M150: + the lb-clean config)
   assert.deepEqual([...before.why.keys()].sort(), SETS.before);
   assert.deepEqual([...after.why.keys()].sort(), SETS.after);
-  assert.equal(before.why.size, 442);
-  assert.equal(after.why.size, 438);
+  assert.equal(before.why.size, 443);
+  assert.equal(after.why.size, 439);
   const left = [...before.why.keys()].filter((p) => !after.why.has(p)).sort();
   assert.deepEqual(left, ["peaceai/bin/derive-practice-dedup.ts", "peaceai/bin/nl-train.ts", "src/numbers.ts", "src/status.ts"]);
   assert.deepEqual([...after.why.keys()].filter((p) => !before.why.has(p)), []);
