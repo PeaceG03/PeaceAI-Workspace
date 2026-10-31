@@ -7,7 +7,9 @@
 //      `env -i` and a private HOME/cache, in a per-run staging dir (never the copy, never a shared cache), with a
 //      deadline and a size cap. Package-manager config files that can redirect the registry or run code (.npmrc,
 //      .yarnrc*, .pnpmfile.*, .corepack.env; corepack also gets COREPACK_ENV_FILE=0) are removed from the staging tree first, and every root lockfile is scanned first
-//      (size-capped; both npm lockfiles at once refused; pnpm parsed as a plain YAML subset, yarn fields strict): every
+//      (size-capped; both npm lockfiles at once refused; pnpm parsed as a plain YAML subset; yarn.lock read only in the strict subset yarn's own parser reads the same way
+//      (no YAML fallback), with every dependency of every block itself a locked name@range header (closure) and every
+//      semver header range satisfied by its version, so yarn never re-resolves): every
 //      package must come from https://registry.npmjs.org/ (yarn v1: or registry.yarnpkg.com) with an integrity hash
 //      (git, remote-tarball, file: and outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace /
 //      link entries inside the repo are allowed); a lockfile below the root, and for pnpm any pnpm-workspace.yaml key but
@@ -346,64 +348,224 @@ export function pnpmLockAllowed(text: string): boolean {
   return walk(doc, []);
 }
 
-/** One yarn.lock v1 header line ("a@^1", a@^1.2:) -> its specs, each quoted (no backslash) or bare, comma-separated;
- * null for any other shape. */
-export function yarnHeaderSpecs(line: string): string[] | null {
-  if (!line.endsWith(":")) return null;
-  const s = line.slice(0, -1);
-  const out: string[] = [];
-  let i = 0;
-  for (;;) {
-    while (s[i] === " ") i++;
-    let tok: string;
-    if (s[i] === '"') { const j = s.indexOf('"', i + 1); if (j < 0) return null; tok = s.slice(i + 1, j); i = j + 1; if (tok.includes("\\")) return null; }
-    else { const j = s.indexOf(",", i); const end = j < 0 ? s.length : j; tok = s.slice(i, end).trimEnd(); i = end; if (/["\s]/.test(tok)) return null; }
-    if (!tok) return null;
-    out.push(tok);
-    while (s[i] === " ") i++;
-    if (i >= s.length) return out;
-    if (s[i] !== ",") return null;
-    i++;
+// ---- yarn v1 (Auditor FAILs 71fff3d and 7e7a41d). yarn 1.22's own lockfile parser (src/lockfile/parse.js) falls back
+// to YAML when it throws, and its resolver re-resolves (fetches) a locked entry whose version is outside the range,
+// any pattern that is not a lockfile key, and a workspace dep whose version does not match. So: a strict subset of
+// the yarn format that yarn's parser reads the same way (no fallback), and a closure + semver check over it.
+
+/** A strict semver version (node-semver `valid`, non-loose), or null. Numbers capped at 9 digits. */
+type SemVer = { main: [number, number, number]; pre: (string | number)[] };
+const SV_NUM = "(?:0|[1-9]\\d{0,8})";
+const SV_PRE = `(?:${SV_NUM}|\\d*[A-Za-z-][0-9A-Za-z-]*)`;
+const SV_RX = new RegExp(`^(${SV_NUM})\\.(${SV_NUM})\\.(${SV_NUM})(?:-(${SV_PRE}(?:\\.${SV_PRE})*))?$`);
+export function semverParse(s: string): SemVer | null {
+  const m = s.length <= 256 ? SV_RX.exec(s) : null;
+  if (!m) return null;
+  return { main: [+m[1]!, +m[2]!, +m[3]!], pre: m[4] === undefined ? [] : m[4].split(".").map((x) => /^\d+$/.test(x) ? +x : x) };
+}
+function semverCmp(a: SemVer, b: SemVer): number {
+  for (let i = 0; i < 3; i++) if (a.main[i] !== b.main[i]) return a.main[i]! < b.main[i]! ? -1 : 1;
+  if (a.pre.length && !b.pre.length) return -1;
+  if (!a.pre.length && b.pre.length) return 1;
+  for (let i = 0; ; i++) {
+    const x = a.pre[i], y = b.pre[i];
+    if (x === undefined && y === undefined) return 0;
+    if (y === undefined) return 1;
+    if (x === undefined) return -1;
+    if (x === y) continue;
+    const xn = typeof x === "number", yn = typeof y === "number";
+    if (xn && !yn) return -1;
+    if (yn && !xn) return 1;
+    return x < y ? -1 : 1;
   }
 }
-/** Every spec in a yarn.lock v1's headers (name@range, as package.json writes it), or null when a header is malformed. */
-export function yarnLockSpecs(text: string): Set<string> | null {
-  const out = new Set<string>();
-  for (const line of text.split(/\r?\n/)) {
-    if (!/^[^\s#]/.test(line)) continue;
-    const specs = yarnHeaderSpecs(line);
-    if (!specs) return null;
-    for (const x of specs) out.add(x);
+type Op = "" | "<" | ">" | "<=" | ">=";
+type Comparator = { op: Op; v: SemVer } | null; // null: any
+const SV_PART = `(${SV_NUM}|[xX*])`;
+const SV_COMP = new RegExp(`^(\\^|~|>=|<=|>|<|=)?${SV_PART}(?:\\.${SV_PART}(?:\\.${SV_PART}(?:-(${SV_PRE}(?:\\.${SV_PRE})*))?)?)?$`);
+const ver = (M: number, m: number, p: number, pre = ""): SemVer => semverParse(`${M}.${m}.${p}${pre ? "-" + pre : ""}`)!;
+/** One comparator token -> node-semver 5's desugaring (replaceCaret / replaceTilde / replaceXRange), or null. */
+function semverComparator(tok: string): Comparator[] | null {
+  const m = SV_COMP.exec(tok);
+  if (!m) return null;
+  const op = m[1] ?? "";
+  const isX = (s: string | undefined) => s === undefined || /^[xX*]$/.test(s);
+  const [sM, sm, sp, pr] = [m[2], m[3], m[4], m[5]];
+  if (pr !== undefined && (isX(sM) || isX(sm) || isX(sp))) return null;
+  const M = isX(sM) ? 0 : +sM!, mi = isX(sm) ? 0 : +sm!, p = isX(sp) ? 0 : +sp!;
+  const range = (lo: SemVer, hi: SemVer): Comparator[] => [{ op: ">=", v: lo }, { op: "<", v: hi }];
+  if (op === "^" || op === "~") {
+    if (isX(sM)) return [null];
+    if (isX(sm)) return range(ver(M, 0, 0), ver(M + 1, 0, 0));
+    if (isX(sp)) return range(ver(M, mi, 0), op === "~" || M === 0 ? ver(M, mi + 1, 0) : ver(M + 1, 0, 0));
+    const lo = ver(M, mi, p, pr);
+    if (op === "~") return range(lo, ver(M, mi + 1, 0));
+    return range(lo, M !== 0 ? ver(M + 1, 0, 0) : mi !== 0 ? ver(0, mi + 1, 0) : ver(0, 0, p + 1));
+  }
+  const xM = isX(sM), xm = xM || isX(sm), xp = xm || isX(sp);
+  let g = op === "=" ? "" : op;
+  if (xM) return g === ">" || g === "<" ? [{ op: "<", v: ver(0, 0, 0) }] : [null];
+  if (g && xp) {
+    let [a, b, c] = [M, xm ? 0 : mi, 0];
+    if (g === ">") { g = ">="; if (xm) { a = M + 1; b = 0; c = 0; } else { b = mi + 1; c = 0; } }
+    else if (g === "<=") { g = "<"; if (xm) a = M + 1; else b = mi + 1; }
+    return [{ op: g as ">=" | "<", v: ver(a, b, c) }];
+  }
+  if (xm) return range(ver(M, 0, 0), ver(M + 1, 0, 0));
+  if (xp) return range(ver(M, mi, 0), ver(M, mi + 1, 0));
+  return [{ op: g as Op, v: ver(M, mi, p, pr) }];
+}
+/** A semver range in the subset yarn locks use (|| of space-separated comparators; no hyphen ranges, no build
+ * metadata, no "v" prefix, no loose forms) -> comparator sets, or null for anything else. */
+export function semverRange(r: string): Comparator[][] | null {
+  if (r.length > 256 || !/^[0-9A-Za-z.^~<>=|*+ -]+$/.test(r) || r !== r.trim()) return null;
+  const sets: Comparator[][] = [];
+  for (const raw of r.split(/ *\|\| */)) {
+    if (!raw) return null;
+    const toks = raw.split(/ +/);
+    const set: Comparator[] = [];
+    for (let i = 0; i < toks.length; i++) {
+      let t = toks[i]!;
+      if (/^(?:>=|<=|>|<|=)$/.test(t) && i + 1 < toks.length) t += toks[++i]!;
+      const c = semverComparator(t);
+      if (!c) return null;
+      set.push(...c);
+    }
+    sets.push(set);
+  }
+  return sets;
+}
+/** node-semver 5 satisfies(version, range) for a version from semverParse and a range from semverRange. */
+export function semverSatisfies(v: SemVer, sets: Comparator[][]): boolean {
+  const test = (c: Comparator) => { if (!c) return true; const k = semverCmp(v, c.v); return c.op === "" ? k === 0 : c.op === "<" ? k < 0 : c.op === ">" ? k > 0 : c.op === "<=" ? k <= 0 : k >= 0; };
+  return sets.some((set) => set.every(test) && (!v.pre.length || set.some((c) => !!c && c.v.pre.length > 0 && c.v.main.every((x, i) => x === v.main[i]))));
+}
+
+/** An npm package name as yarn's resolvers see it (so no exotic resolver matches the pattern on the name). */
+const NPM_NAME = /^(?:@[a-z0-9~-][a-z0-9._~-]*\/)?[A-Za-z0-9~-][A-Za-z0-9._~-]*$/;
+/** "name@range" split as yarn's normalizePattern does, with a valid name and a non-empty range; or null. */
+export function yarnPattern(spec: string): { name: string; range: string } | null {
+  const scoped = spec.startsWith("@");
+  const at = spec.indexOf("@", scoped ? 1 : 0);
+  if (at <= 0) return null;
+  const name = spec.slice(0, at), range = spec.slice(at + 1);
+  if (!NPM_NAME.test(name)) return null; // guard:lock-yarn-name
+  return range ? { name, range } : null;
+}
+/** A registry range: a semver range in the subset, or an npm: alias to name@<such a range>. */
+const registryRange = (r: string): boolean => {
+  if (r.startsWith("npm:")) { const p = yarnPattern(r.slice(4)); return !!p && semverRange(p.range) !== null; }
+  return semverRange(r) !== null;
+};
+
+/** The tokens of one yarn.lock line as yarn 1.22's tokenizer cuts them (strings, "," and ":"; spaces skipped), but
+ * only for strings yarn's own writer could have written: a quoted string without a backslash, or a bare one that
+ * starts with a letter, is not true / false and has no quote, backslash or bracket. Else null. */
+type YarnTok = { s: string } | "," | ":";
+function yarnLineTokens(line: string): YarnTok[] | null {
+  if (!/^[\x20-\x7e]*$/.test(line)) return null;
+  const out: YarnTok[] = [];
+  for (let i = 0; i < line.length;) {
+    const c = line[i]!;
+    if (c === " ") { i++; continue; }
+    if (c === "," || c === ":") { out.push(c); i++; continue; }
+    if (c === '"') {
+      const j = line.indexOf('"', i + 1);
+      if (j < 0) return null;
+      const s = line.slice(i + 1, j);
+      if (s.includes("\\")) return null;
+      out.push({ s }); i = j + 1; continue;
+    }
+    let j = i;
+    while (j < line.length && line[j] !== " " && line[j] !== "," && line[j] !== ":") j++;
+    const s = line.slice(i, j);
+    if (!/^[a-zA-Z]/.test(s) || /^(?:true|false)/.test(s) || /["\\[\]]/.test(s)) return null; // guard:lock-yarn-bare
+    out.push({ s }); i = j;
   }
   return out;
 }
+const isStr = (t: YarnTok | undefined): t is { s: string } => typeof t === "object";
 
-/** yarn.lock v1 (berry is refused earlier): fields at 2 spaces, dependency maps at 4; no duplicate or quoted field. */
-export function yarnLockAllowed(text: string): boolean {
-  const blocks: { specs: string[]; fields: Map<string, string | null>; inMap: boolean }[] = [];
-  const lines = text.split(/\r?\n/);
-  if (lines.some((l) => /[\r\t]/.test(l))) return false;
-  for (const line of lines) {
-    if (!line.trim() || line.startsWith("#")) continue;
-    if (/^\S/.test(line)) { const specs = yarnHeaderSpecs(line); if (!specs) return false; blocks.push({ specs, fields: new Map(), inMap: false }); continue; }
-    const b = blocks[blocks.length - 1];
-    if (!b) return false;
-    if (/^ {4}\S/.test(line)) { if (!b.inMap || !/^ {4}("[^"\\]*"|[^\s"]+) ("[^"\\]*"|[^\s"]+)$/.test(line)) return false; continue; }
-    const m = /^ {2}([A-Za-z][A-Za-z0-9]*)(?: ("[^"\\]*"|[^\s"]+)|:)$/.exec(line);
-    if (!m) return false; // guard:lock-yarn-field
-    if (!m) continue; // (unreachable while the guard above stands)
-    if (b.fields.has(m[1]!)) return false; // guard:lock-yarn-dup
-    b.fields.set(m[1]!, m[2] ?? null);
-    b.inMap = m[2] === undefined;
+/** One yarn.lock v1 header line ("a@^1", a@^1.2:) -> its specs, or null for any other shape. */
+export function yarnHeaderSpecs(line: string): string[] | null {
+  const t = yarnLineTokens(line);
+  if (!t || t[t.length - 1] !== ":") return null;
+  const out: string[] = [];
+  for (let i = 0; i < t.length - 1; i += 2) {
+    const s = t[i];
+    if (!isStr(s) || !s.s) return null;
+    if (i + 1 < t.length - 1 && t[i + 1] !== ",") return null; // guard:lock-yarn-colon
+    out.push(s.s);
   }
+  return out.length && t.length === out.length * 2 ? out : null;
+}
+
+type YarnBlock = { specs: string[]; fields: Map<string, string>; maps: Map<string, Map<string, string>> };
+const YARN_SCALARS = new Set(["version", "resolved", "integrity"]);
+const YARN_MAPS = new Set(["dependencies", "optionalDependencies"]);
+/** A yarn.lock v1 in the strict subset -> its blocks; null for anything else (yarn's parser could read it differently
+ * or fall back to YAML): no CR / tab / non-ASCII / BOM, only "" or "#..." lines at column 0 besides headers, fields at
+ * exactly 2 spaces, dependency entries at exactly 4 under a dependency map, no duplicate field or entry. */
+export function yarnLockParse(text: string): YarnBlock[] | null {
+  const blocks: YarnBlock[] = [];
+  let map: Map<string, string> | null = null;
+  for (const line of text.split("\n")) {
+    if (line === "") continue;
+    // yarn throws on a "yarn lockfile vN" comment with N > 1, and then reads the file as YAML instead
+    if (line.startsWith("#") && /^yarn lockfile v\d+$/.test(line.slice(1).trim()) && line.slice(1).trim() !== "yarn lockfile v1") return null; // guard:lock-yarn-comment
+    if (line.startsWith("#")) continue;
+    if (!line.startsWith(" ")) { const specs = yarnHeaderSpecs(line); if (!specs) return null; blocks.push({ specs, fields: new Map(), maps: new Map() }); map = null; continue; }
+    const b = blocks[blocks.length - 1];
+    const t = yarnLineTokens(line);
+    if (!b || !t) return null;
+    if (/^ {4}\S/.test(line)) {
+      if (!map || t.length !== 2 || !isStr(t[0]) || !isStr(t[1]) || map.has(t[0].s)) return null;
+      map.set(t[0].s, t[1].s);
+      continue;
+    }
+    if (!isStr(t[0]) || !(isStr(t[1]) || t[1] === ":")) return null;
+    if (!/^ {2}[A-Za-z]/.test(line) || t.length !== 2) return null; // guard:lock-yarn-field
+    const key = t[0].s;
+    if (b.fields.has(key) || b.maps.has(key)) return null; // guard:lock-yarn-dup
+    if (!(t[1] === ":" ? YARN_MAPS : YARN_SCALARS).has(key)) return null; // guard:lock-yarn-key
+    if (t[1] === ":") { map = new Map(); b.maps.set(key, map); } else { b.fields.set(key, (t[1] as { s: string }).s); map = null; }
+  }
+  return blocks;
+}
+
+/** Every spec in a yarn.lock v1's headers (name@range, as package.json writes it), or null when the lock is outside the subset. */
+export function yarnLockSpecs(text: string): Set<string> | null {
+  const blocks = yarnLockParse(text);
+  return blocks ? new Set(blocks.flatMap((b) => b.specs)) : null;
+}
+
+/**
+ * yarn.lock v1 (berry is refused earlier), in the strict subset. Every block: each header spec a valid name with a
+ * registry range (semver subset or npm: alias) or an in-repo link:, a version inside every semver header range
+ * (yarn re-resolves an "outdated" entry from the registry), the registry + integrity source rule. Every entry under
+ * dependencies / optionalDependencies of every block (the closure yarn walks from the lock) must be a registry
+ * range and a header of this lock: yarn resolves anything else afresh.
+ */
+export function yarnLockAllowed(text: string): boolean {
+  if (/[\r\t]/.test(text) || text.startsWith("\ufeff")) return false;
+  const blocks = yarnLockParse(text);
+  if (!blocks) return false;
+  const specs = new Set(blocks.flatMap((b) => b.specs));
   for (const b of blocks) {
-    const ranges = b.specs.map((s) => s.slice(s.indexOf("@", 1) + 1));
-    const field = (name: string) => { const v = b.fields.get(name); return v === undefined || v === null ? undefined : unquote(v); };
-    const resolved = field("resolved");
+    const pats = b.specs.map(yarnPattern);
+    if (pats.some((p) => p === null)) return false;
+    const ranges = pats.map((p) => p!.range);
+    const resolved = b.fields.get("resolved");
     const links = ranges.every((r) => r.startsWith("link:") && insideRepo(".", r.slice(5)));
-    if (ranges.some((r) => r.includes(":") && !r.startsWith("npm:") && !(r.startsWith("link:") && insideRepo(".", r.slice(5))))) return false; // guard:lock-yarn-spec
+    if (!ranges.every((r) => registryRange(r) || (r.startsWith("link:") && insideRepo(".", r.slice(5))))) return false; // guard:lock-yarn-spec
+    const v = semverParse(b.fields.get("version") ?? "");
+    if (ranges.some((r) => semverRange(r) !== null && !(v && semverSatisfies(v, semverRange(r)!)))) return false; // guard:lock-yarn-outdated
+    for (const deps of b.maps.values()) for (const [n, r] of deps) {
+      if (!registryRange(r) || !yarnPattern(`${n}@${r}`)) return false; // guard:lock-yarn-dep-spec
+      if (!specs.has(`${n}@${r}`)) return false; // guard:lock-yarn-closure
+    }
     if (links && resolved === undefined) continue;
-    if (!yarnSourceOk(resolved, field("integrity"))) return false; // guard:lock-yarn
+    if (!yarnSourceOk(resolved, b.fields.get("integrity"))) return false; // guard:lock-yarn
   }
   return true;
 }
@@ -482,12 +644,13 @@ export function managerFieldsOk(p: string, isRoot: boolean): boolean {
   return de === undefined || (!!de && typeof de === "object" && !Array.isArray(de) && !Object.hasOwn(de, "packageManager") && !Object.hasOwn(de, "runtime"));
 }
 
-/** Dependency fields yarn v1 installs (peerDependencies are not installed by yarn v1, so not read here). */
+/** Dependency fields yarn v1 installs. peerDependencies are not installed by yarn v1 (PackageRequest/install pushDeps
+ *  read only these three), so not read here; bundledDependencies must be absent or empty (guard yarn-bundled). */
 export const YARN_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
 /**
  * yarn v1 only: --frozen-lockfile does not stop yarn fetching a dependency that has no yarn.lock entry, so every
  * dependency spec in the root and in every workspace package must be a `name@spec` header in yarn.lock, or name a
- * workspace package with a protocol-free range. resolutions (anywhere) are refused outright; workspaces must be
+ * workspace package (name + strict semver version) whose version satisfies the spec as a plain semver range. resolutions (anywhere) are refused outright; workspaces must be
  * plain globs (an array, or {packages, nohoist}).
  */
 export function yarnManifestsAllowed(root: string, files: readonly string[]): boolean {
@@ -502,14 +665,23 @@ export function yarnManifestsAllowed(root: string, files: readonly string[]): bo
   const wsDirs = files.filter((f) => posix.basename(f) === "package.json" && f.includes("/")).map((f) => posix.dirname(f)).filter((d) => rxs.some((r) => r.test("/" + d)));
   const pkgs = [rootPkg, ...wsDirs.map((d) => readPkg(join(root, d, "package.json")))];
   if (pkgs.some((x) => x === null)) return false;
-  const names = new Set(pkgs.slice(1).map((x) => x!.name).filter((n): n is string => typeof n === "string"));
+  // yarn ignores a workspace package without both a name and a version (it is then not a workspace at all).
+  const wsVer = new Map<string, SemVer | null>();
+  for (const x of pkgs.slice(1)) if (typeof x!.name === "string" && typeof x!.version === "string" && x!.name && x!.version) wsVer.set(x!.name, semverParse(x!.version));
   for (const pkg of pkgs as Record<string, unknown>[]) {
     if (Object.hasOwn(pkg, "resolutions")) return false; // guard:yarn-resolutions
+    for (const b of ["bundledDependencies", "bundleDependencies"]) if (pkg[b] !== undefined && !(Array.isArray(pkg[b]) && (pkg[b] as unknown[]).length === 0)) return false; // guard:yarn-bundled
     for (const field of YARN_DEP_FIELDS) {
       const deps = pkg[field];
       if (deps === undefined) continue;
       if (!deps || typeof deps !== "object" || Array.isArray(deps) || !Object.values(deps).every((v) => typeof v === "string")) return false; // guard:yarn-dep-shape
-      for (const [n, spec] of Object.entries(deps as Record<string, string>)) if (!lock.has(`${n}@${spec}`) && !(names.has(n) && !/[:/]/.test(spec))) return false; // guard:yarn-dep-lock
+      for (const [n, spec] of Object.entries(deps as Record<string, string>)) {
+        if (lock.has(`${n}@${spec}`)) continue;
+        // Else it must name a workspace whose version is in the range (yarn: semver.satisfies, loose); otherwise yarn
+        // fetches name@spec from the registry, which has no lock entry. Non-strict versions / ranges are refused.
+        const v = wsVer.get(n), r = semverRange(spec);
+        if (!v || !r || !semverSatisfies(v, r)) return false; // guard:yarn-dep-lock
+      }
     }
   }
   return true;

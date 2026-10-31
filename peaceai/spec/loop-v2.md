@@ -59,12 +59,28 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
     `resolution` that is exactly `{integrity}` or `{integrity, tarball}` with a registry tarball; no package /
     snapshot key with a protocol; every `link:` resolves inside the repo from its importer dir; no other value with a
     URL, `file:`, `git...:` or `tarball:` (the free-text `deprecated:` notice is skipped).
-  - yarn classic: fields at 2 spaces as `name value` or `name:` (dependency maps at 4); a quoted or colon-form field
-    name, a duplicate field in a block (yarn keeps the last), or any other line shape is refused. Specs have no
-    protocol except `npm:` aliases and in-repo `link:`; every non-link entry's `resolved` is a plain tarball path
-    under `https://registry.npmjs.org/` or `https://registry.yarnpkg.com/` (exact host, https, lower case; Auditor
-    ruling) with an `integrity` line, or, without one, the `#<40-hex sha1>` fragment yarn v1 checks the tarball
-    against. Any other host or no hash stays `DEPS_NONREGISTRY`.
+  - yarn classic (Auditor FAIL 7e7a41d): yarn 1.22's own lockfile parser falls back to js-yaml (FAILSAFE) whenever
+    it throws, and that reading differs (an unquoted `is-number@npm:is-odd@3.0.1:` header becomes another key with a
+    string value), so the lock is read only in the subset yarn's parser reads without throwing and the same way:
+    printable ASCII, no tab, CR or BOM; `#` lines only at column 0 and no `yarn lockfile vN` with N other than 1;
+    headers at column 0 as comma-separated tokens ending in `:`; quoted tokens without a backslash; a bare token must
+    start with a letter, not start with `true` / `false` and hold none of `" \ [ ]`, and bare tokens end at space, `,`
+    and `:` as in yarn (so an unquoted `:` inside a header is refused); scalar fields at 2 spaces only `version`,
+    `resolved`, `integrity`, maps at 2 spaces only `dependencies`, `optionalDependencies`, map entries at 4 spaces as
+    two quoted-or-bare strings; no duplicate field, map or entry; any other line (whitespace-only, odd indent, a third
+    token, a trailing comment) is refused. Every header spec is `name@range` (a valid npm name; a bare-name header is
+    refused because yarn looks the bare name up first) with range a plain semver range (a subset of node-semver 5: `^ ~
+    x * = < <= > >=`, spaces, `||`; no hyphen ranges, `v`, `~>` or loose forms), an `npm:` alias of one, or an in-repo
+    `link:`. A semver header range must be satisfied by the block's `version` (otherwise yarn treats the entry as
+    outdated and resolves it fresh). The closure: every entry of every block's `dependencies` / `optionalDependencies`
+    must be a registry range (no URL, git, `file:`, `link:` or other protocol) whose `name@range` is itself a header,
+    because yarn looks sub-dependencies up by that exact key and fetches anything missing. Every non-link block's
+    `resolved` is a plain tarball path under `https://registry.npmjs.org/` or `https://registry.yarnpkg.com/` (exact
+    host, https, lower case; Auditor ruling) with an `integrity` line, or, without one, the `#<40-hex sha1>` fragment
+    yarn v1 checks the tarball against. A layout outside the subset is refused; any other host or no hash stays
+    `DEPS_NONREGISTRY`. The parser and the semver subset were checked off-repo against yarn 1.22.22's own modules (same
+    object on the yup lock and 4,000 line mutants of it wherever ours accepts; same `satisfies` (strict and loose)
+    and a valid range on 123,505 random accepted range/version pairs).
 - Package-manager settings outside the root lockfile (`depsSourceProblem`, before the lockfile scan, fail closed;
   Auditor FAIL 886ee29). The whole copy is walked (symlinks not followed, `.git` skipped; a dir it cannot read or
   more than 500,000 entries -> refused). Refused with `DEPS_PM_CONFIG`:
@@ -88,12 +104,14 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
     `package.json` that is not a JSON object.
   - yarn only: `--frozen-lockfile` does not stop yarn v1 fetching a dependency that has no yarn.lock entry, so every
     spec in `dependencies`, `devDependencies` and `optionalDependencies` of the root and of every workspace package
-    must be a `name@spec` header in yarn.lock (headers parsed properly: comma-separated, quoted or bare, no
-    backslash), or name a workspace package with a protocol-free range. `peerDependencies` are not installed by yarn
-    v1 and are not read. `resolutions` in any of those manifests are refused outright. `workspaces` must be a list
-    (or `{packages, nohoist}`) of plain globs; the matcher matches at least what yarn does (`*` within a segment,
-    `**` any number of segments). package.json files outside the workspaces (fixtures) are not read by yarn and are
-    not judged.
+    must be a `name@spec` header in yarn.lock (headers parsed as above), or name a workspace package whose version
+    (strict semver) satisfies the spec as a plain semver range (yarn otherwise fetches `name@spec` from the registry). A
+    package without both a `name` and a `version` is not a workspace for yarn and is not one here. `peerDependencies`
+    are not installed by yarn v1 (its install reads only the three fields above) and are not read.
+    `bundledDependencies` / `bundleDependencies` other than an empty list, and `resolutions`, in any of those
+    manifests are refused outright. `workspaces` must be a list (or `{packages, nohoist}`) of plain globs; the matcher
+    matches at least what yarn does (`*` within a segment, `**` any number of segments). package.json files outside
+    the workspaces (fixtures) are not read by yarn and are not judged.
   - plain globs (yarn workspaces and pnpm `packages`): inside the repo, no `..` segment, no leading `.` or `/`, none
     of `{ } ? [ ] ( ) ! + @ \` (pnpm keeps a leading `!` negation).
   - `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml`, `.corepack.env` are removed at ANY depth from the
@@ -137,12 +155,8 @@ Fail closed: no report -> `fail 1`; failed suites with no failed test -> counted
 `success: false` with no failure -> `fail 1`. vitest >= 3.1 is retried once with `--configLoader runner` when no
 report was written (the default config loader writes a temp file beside the config, and the copy is read-only).
 
-Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (41: runner-other, service, runner-dep,
-deps-lockfile, deps-nonregistry, deps-npm-allow, deps-pnpmfile, deps-frozen, deps-ignore-scripts, deps-config,
-deps-registry, deps-env-i, deps-cand, deps-kill, deps-chown, deps-timeout, deps-size, lock-size, lock-npm-both,
-lock-all, lock-npm-key, lock-link, lock-npm, lock-npm-v1, lock-pnpm-anchor, lock-pnpm-esc, lock-pnpm-flow,
-lock-pnpm-indent, lock-pnpm-dup, lock-pnpm-key, lock-pnpm-missing, lock-pnpm-res, lock-pnpm-link, lock-pnpm-url,
-lock-yarn-field, lock-yarn-dup, lock-yarn-spec, lock-yarn, shim-report, shim-suites, shim-exit). Each has a refused
+Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (68 at round 6; the list is in
+`m151-mutation.test.ts`). Each has a refused
 near-miss case; the layout guards also have a near miss whose content is harmless, so only the layout rule refuses
 it. The m151
 mutation test deletes each in turn (with a loop.ts that imports the mutant) and requires a case to fail with an
