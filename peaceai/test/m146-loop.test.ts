@@ -12,6 +12,8 @@ import { logRowProblem, RUN_LOG } from "../lib/plangrade.ts";
 import { lockRow } from "../lib/planrun.ts";
 import { CASES } from "./m146-loop-cases.ts";
 import { CALC_FIXED, setup, teardown, type Ctx } from "./m146-fixtures.ts";
+import { planLogAddOnlyProblem } from "./m146-planlog.ts";
+import { failingPlanLogCases } from "./m146-planlog-cases.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 let ctx: Ctx;
@@ -96,13 +98,21 @@ test("M146: static: the loop reuses selfpropose.ts guardedRun + stage2CandUid un
   assert.equal(JSON.parse(readFileSync(resolve(root, "peaceai/self/stage2.json"), "utf8")).enabled, false, "the stage-2 self-change flag stays off");
 });
 
-test("M146: selfpropose.ts (the stage-2 isolation) and the plan-only files are unchanged on this branch", (t) => {
+test("M146: selfpropose.ts (the stage-2 isolation) and the plan-only code are unchanged on this branch; the plan log is add-only", (t) => {
   let base = "";
   try { base = execFileSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* shallow CI checkout */ }
   if (!base) { t.skip("no origin/main here (shallow checkout)"); return; }
   assert.equal(execFileSync("git", ["diff", base, "HEAD", "--", "peaceai/lib/selfpropose.ts"], { cwd: root, encoding: "utf8" }), "", "selfpropose.ts unchanged");
-  for (const f of ["peaceai/lib/plan.ts", "peaceai/lib/plangrade.ts", "peaceai/lib/planrun.ts", "peaceai/bin/plan-only.ts", "peaceai/plan/runs.jsonl"])
+  for (const f of ["peaceai/lib/plan.ts", "peaceai/lib/plangrade.ts", "peaceai/lib/planrun.ts", "peaceai/bin/plan-only.ts"])
     assert.equal(execFileSync("git", ["diff", base, "HEAD", "--", f], { cwd: root, encoding: "utf8" }), "", `${f} unchanged (the plan-only files are #634's)`);
+  // Plan run rows legitimately land via PRs (#641, #644): main's bytes must be an exact prefix of the branch's log and
+  // every appended line must pass the planrun row validator (logRowProblem).
+  const show = (rev: string) => { try { return execFileSync("git", ["show", `${rev}:${RUN_LOG}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }); } catch { return ""; } };
+  assert.equal(planLogAddOnlyProblem(show(base), show("HEAD")), null, `${RUN_LOG} is add-only against main`);
+});
+
+test("M146: the plan-log add-only guard admits appended valid rows and refuses rewritten logs (edited, removed, reordered rows) and invalid appends", () => {
+  assert.deepEqual(failingPlanLogCases(planLogAddOnlyProblem), []);
 });
 
 test("M146: the committed loop log is valid and add-only against its git history", () => {
