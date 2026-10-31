@@ -493,10 +493,10 @@ export const CASES: Case[] = [
         "yarn.lock": lockAll,
         "packages/w/package.json": JSON.stringify({ name: "w", version: "1.0.0", dependencies: { a: "^1.1.0" } }),
         "packages/x/package.json": JSON.stringify({ name: "x", dependencies: { w: "^1.0.0", "@s/b": "npm:c@^2" } }),
-        "test/fixtures/p/package.json": JSON.stringify({ dependencies: { "is-number": "https://evil.example/n.tgz" } }),
+        "test/fixtures/p/package.json": JSON.stringify({ name: "fixture", dependencies: { a: "^1.0.0" } }),
       };
       const problem = (files: Record<string, string>) => { const d = plain(dir(ctx, "yarnman"), files); const p = l.deps.pickLockfile(d); assert.ok(!("refuse" in p)); assert.equal(p.pm, "yarn"); return l.deps.depsSourceProblem(d, p); };
-      assert.equal(problem(base), null, "locked specs (multi-spec and quoted headers), an npm: alias, a workspace dep, peers (not installed by yarn v1), a non-workspace fixture");
+      assert.equal(problem(base), null, "locked specs (multi-spec and quoted headers), an npm: alias, a workspace dep, peers (not installed by yarn v1), a non-workspace fixture with locked deps");
       assert.equal(problem({ ...base, "package.json": root({ workspaces: { packages: ["packages/*"], nohoist: ["**/x"] } }) }), null, "workspaces as {packages, nohoist}");
       assert.equal(problem({ ...base, "package.json": root({ dependencies: { w: "link:packages/w" } }) }), null, "a locked link: spec");
       const evil = "https://evil.example/is-number-7.0.0.tgz";
@@ -519,6 +519,7 @@ export const CASES: Case[] = [
         ["a workspace glob with ? / a class / a negation", { ...base, "package.json": root({ workspaces: ["packages/[wx]?", "!packages/x"] }) }],
         ["workspaces with another key", { ...base, "package.json": root({ workspaces: { packages: ["packages/*"], other: [] } }) }],
         ["a workspace package.json that is not JSON", { ...base, "packages/w/package.json": "{name: w}" }],
+        ["a fixture outside the workspaces with a URL dep (every package.json is checked; Auditor FAIL e5f28a6)", { ...base, "test/fixtures/p/package.json": JSON.stringify({ dependencies: { "is-number": "https://evil.example/n.tgz" } }) }],
       ];
       for (const [why, files] of bad) assert.equal(problem(files), "DEPS_PM_CONFIG", why);
       assert.deepEqual(l.deps.yarnHeaderSpecs('"a@^1.0.0", a@^1.1.0:'), ["a@^1.0.0", "a@^1.1.0"]);
@@ -620,6 +621,39 @@ export const CASES: Case[] = [
         ["bundleDependencies: true in a workspace", { ...base, "packages/w/package.json": w({ bundleDependencies: true }) }],
       ];
       for (const [why, files] of bad) assert.equal(problem(files), "DEPS_PM_CONFIG", why);
+    },
+  },
+  // ---- yarn v1, round 7 (Auditor FAIL e5f28a6): workspace globs yarn normalises but the matcher did not
+  {
+    id: "pm config (yarn v1): empty / . segments and a trailing / in a glob, unchecked non-workspace manifests, dot and node_modules dirs counted as workspaces -> DEPS_PM_CONFIG",
+    run(l, ctx) {
+      const lock = ["# yarn lockfile v1", "", '"is-number@7.0.0":', '  version "7.0.0"', `  resolved "${REG}is-number/-/is-number-7.0.0.tgz"`, `  integrity ${INT}`, ""].join("\n");
+      const evil = JSON.stringify({ name: "a", version: "1.0.0", dependencies: { evil: "https://registry.yarnpkg.com/is-odd/-/is-odd-nope.tgz" } });
+      const fine = JSON.stringify({ name: "a", version: "1.0.0", dependencies: { "is-number": "7.0.0" } });
+      const repo = (ws: string[], a: string, extra: Record<string, string> = {}, deps: Record<string, string> = { "is-number": "7.0.0" }) =>
+        ({ "package.json": JSON.stringify({ packageManager: "yarn@1.22.22", private: true, workspaces: ws, dependencies: deps }), "yarn.lock": lock, "packages/a/package.json": a, ...extra });
+      const problem = (files: Record<string, string>) => { const d = plain(dir(ctx, "yarnglob"), files); const p = l.deps.pickLockfile(d); assert.ok(!("refuse" in p)); assert.equal(p.pm, "yarn"); return l.deps.depsSourceProblem(d, p); };
+      assert.equal(problem(repo(["packages/*"], fine)), null, "packages/* with a locked dep");
+      assert.equal(problem(repo(["packages/**"], fine)), null, "packages/** with a locked dep");
+      assert.equal(problem(repo(["packages/a"], fine)), null, "a literal dir");
+      assert.equal(problem(repo(["packages/*"], fine, { "docs/example/package.json": JSON.stringify({ name: "ex", private: true }) })), null, "a fixture without deps");
+      assert.equal(problem(repo(["packages/*"], fine, {}, { "is-number": "7.0.0", a: "^1.0.0" })), null, "a dep on a counted workspace");
+      for (const g of ["packages//*", "packages/./*", "packages/*/.", "packages/*/", "#packages/*", "packages/*//", "./packages/*", ""]) {
+        assert.equal(problem(repo([g], evil)), "DEPS_PM_CONFIG", `Auditor: ${JSON.stringify(g)} with a URL dep in packages/a`);
+        assert.equal(problem(repo([g], fine)), "DEPS_PM_CONFIG", `${JSON.stringify(g)} even with harmless packages`);
+      }
+      const bad: [string, Record<string, string>][] = [
+        ["packages/* with a URL dep in packages/a", repo(["packages/*"], evil)],
+        ["a URL dep in a package.json no glob matches", repo(["packages/*"], fine, { "tools/x/package.json": evil.replace('"a"', '"x"') })],
+        ["a URL dep in a package.json with no workspaces at all", { ...repo(["packages/*"], fine), "package.json": JSON.stringify({ packageManager: "yarn@1.22.22", dependencies: { "is-number": "7.0.0" } }), "packages/a/package.json": evil }],
+        ["a dot dir is no workspace for yarn's glob (dot: false), so a dep on its name is unlocked", repo(["packages/*"], fine, { "packages/.h/package.json": JSON.stringify({ name: "h", version: "1.0.0" }) }, { "is-number": "7.0.0", h: "^1.0.0" })],
+        ["a dot dir below ** likewise", repo(["packages/**"], fine, { "packages/x/.h/package.json": JSON.stringify({ name: "h", version: "1.0.0" }) }, { "is-number": "7.0.0", h: "^1.0.0" })],
+        ["a node_modules dir likewise", repo(["packages/**"], fine, { "packages/x/node_modules/h/package.json": JSON.stringify({ name: "h", version: "1.0.0" }) }, { "is-number": "7.0.0", h: "^1.0.0" })],
+        ["a non-JSON package.json anywhere (fail closed)", repo(["packages/*"], fine, { "test/fixtures/broken/package.json": "{ not json" })],
+      ];
+      for (const [why, files] of bad) assert.equal(problem(files), "DEPS_PM_CONFIG", why);
+      for (const g of ["packages//*", "packages/./*", "packages/*/.", "packages/*/", ""]) assert.equal(l.deps.plainGlob(g), false, g);
+      for (const g of ["packages/*", "packages/**", "a/b-c_d.e/*"]) assert.equal(l.deps.plainGlob(g), true, g);
     },
   },
   // ---- the shim (guard:shim-report, guard:shim-suites, guard:shim-exit)

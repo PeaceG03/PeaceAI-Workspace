@@ -14,7 +14,7 @@
 //      (git, remote-tarball, file: and outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace /
 //      link entries inside the repo are allowed); a lockfile below the root, and for pnpm any pnpm-workspace.yaml key but
 //      packages / catalog(s) or any `pnpm` field in a package.json, a packageManager other than name@x.y.z[+hash], and
-//      for yarn v1 any manifest dependency spec without a yarn.lock header (or resolutions), is refused with DEPS_PM_CONFIG; npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
+//      for yarn v1 any dependency spec in any package.json without a yarn.lock header (or resolutions), is refused with DEPS_PM_CONFIG; npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
 //      as the candidate uid WITH network (registry only by config; it runs no package code: scripts off, no
 //      pnpmfile). Every candidate-uid process is killed right after the install. Tests never get network. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
 //      sha256 (+ package manager and manifests) inside one run dir only, removed with the run.
@@ -617,14 +617,16 @@ export function treeFiles(root: string): { files: string[]; complete: boolean } 
   return { files, complete };
 }
 
-/** A workspace glob of plain path segments with * and ** only: inside the repo, no "..", no leading "." or "/", no
- * brace / class / ? / extglob / escape syntax (so the matcher below matches at least what the package manager does). */
+/** A workspace glob of plain path segments with * and ** only: inside the repo, no "..", no leading ".", "/" or "#"
+ * (a minimatch comment), no empty or "." segment and no trailing "/" (the package managers normalise those; the
+ * matcher below does not), no brace / class / ? / extglob / escape syntax. */
 export function plainGlob(g: string): boolean {
-  return insideRepo(".", g) && !/(?:^|\/)\.\.(?:\/|$)/.test(g) && !/^[./]/.test(g) && !/[{}?[\]()!+@\\]/.test(g);
+  if (g.split("/").some((seg) => seg === "" || seg === ".")) return false; // guard:glob-segment
+  return insideRepo(".", g) && !/(?:^|\/)\.\.(?:\/|$)/.test(g) && !/^[./#]/.test(g) && !/[{}?[\]()!+@\\]/.test(g);
 }
 /** A plain glob -> a test over repo-relative dirs: "*" is any chars within a segment, a "**" segment any number of
  * segments (none too). Matched against "/" + dir so a "**" segment can stand for nothing. */
-const globRx = (g: string): RegExp => new RegExp("^" + g.replace(/\/+$/, "").split("/").map((seg) => seg === "**" ? "(?:/.*)?" : "/" + seg.replace(/[.^$|]/g, "\\$&").replace(/\*+/g, "[^/]*")).join("") + "$");
+const globRx = (g: string): RegExp => new RegExp("^" + g.split("/").map((seg) => seg === "**" ? "(?:/.*)?" : "/" + seg.replace(/[.^$|]/g, "\\$&").replace(/\*+/g, "[^/]*")).join("") + "$");
 
 /** A package.json as a JSON object (regular file, size-capped, a leading BOM stripped as the package managers do), or null. */
 function readPkg(p: string): Record<string, unknown> | null {
@@ -649,8 +651,9 @@ export function managerFieldsOk(p: string, isRoot: boolean): boolean {
 export const YARN_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
 /**
  * yarn v1 only: --frozen-lockfile does not stop yarn fetching a dependency that has no yarn.lock entry, so every
- * dependency spec in the root and in every workspace package must be a `name@spec` header in yarn.lock, or name a
- * workspace package (name + strict semver version) whose version satisfies the spec as a plain semver range. resolutions (anywhere) are refused outright; workspaces must be
+ * dependency spec in the root and in every other package.json in the tree (workspace or not) must be a `name@spec`
+ * header in yarn.lock, or name a workspace package (name + strict semver version) whose version satisfies the spec
+ * as a plain semver range. resolutions (anywhere) are refused outright; workspaces must be
  * plain globs (an array, or {packages, nohoist}).
  */
 export function yarnManifestsAllowed(root: string, files: readonly string[]): boolean {
@@ -662,12 +665,21 @@ export function yarnManifestsAllowed(root: string, files: readonly string[]): bo
   const globs = ws === undefined ? [] : Array.isArray(ws) ? ws : ws && typeof ws === "object" && Object.keys(ws).every((k) => k === "packages" || k === "nohoist") ? ((ws as { packages?: unknown }).packages ?? []) : null;
   if (!Array.isArray(globs) || !globs.every((g) => typeof g === "string" && plainGlob(g))) return false; // guard:yarn-ws-glob
   const rxs = (globs as string[]).map(globRx);
-  const wsDirs = files.filter((f) => posix.basename(f) === "package.json" && f.includes("/")).map((f) => posix.dirname(f)).filter((d) => rxs.some((r) => r.test("/" + d)));
-  const pkgs = [rootPkg, ...wsDirs.map((d) => readPkg(join(root, d, "package.json")))];
+  const nested = files.filter((f) => f !== "package.json" && posix.basename(f) === "package.json");
+  // Workspaces, for the workspace-name rule only: a SUBSET of what yarn's glob finds (node-glob, dot: false, the
+  // pattern's node_modules ignored), so a package yarn does not treat as a workspace is never counted as one here.
+  const wsDirs = nested.map((f) => posix.dirname(f)).filter((d) => rxs.some((r) => r.test("/" + d)));
+  let wsSure = wsDirs;
+  wsSure = wsDirs.filter((d) => !d.split("/").some((seg) => seg.startsWith(".") || seg === "node_modules")); // guard:yarn-ws-dot
+  // The dependency rules apply to EVERY package.json in the tree, workspace or not (Auditor FAIL e5f28a6), so no
+  // difference between this matcher and yarn's can leave a package yarn installs unchecked.
+  let manifests = wsDirs.map((d) => `${d}/package.json`);
+  manifests = nested; // guard:yarn-all-manifests
+  const pkgs = [rootPkg, ...manifests.map((f) => readPkg(join(root, f)))];
   if (pkgs.some((x) => x === null)) return false;
   // yarn ignores a workspace package without both a name and a version (it is then not a workspace at all).
   const wsVer = new Map<string, SemVer | null>();
-  for (const x of pkgs.slice(1)) if (typeof x!.name === "string" && typeof x!.version === "string" && x!.name && x!.version) wsVer.set(x!.name, semverParse(x!.version));
+  for (const x of wsSure.map((d) => readPkg(join(root, d, "package.json")))) if (x && typeof x.name === "string" && typeof x.version === "string" && x.name && x.version) wsVer.set(x.name, semverParse(x.version));
   for (const pkg of pkgs as Record<string, unknown>[]) {
     if (Object.hasOwn(pkg, "resolutions")) return false; // guard:yarn-resolutions
     for (const b of ["bundledDependencies", "bundleDependencies"]) if (pkg[b] !== undefined && !(Array.isArray(pkg[b]) && (pkg[b] as unknown[]).length === 0)) return false; // guard:yarn-bundled

@@ -59,12 +59,12 @@ test("M151 mutation: the guard tags are unique and cover the guards", () => {
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
   assert.deepEqual([...ids].sort(), [
     "deps-cand", "deps-chown", "deps-config", "deps-corepack-env", "deps-env-i", "deps-frozen", "deps-ignore-scripts", "deps-kill", "deps-lockfile", "deps-nonregistry", "deps-npm-allow",
-    "deps-pnpmfile", "deps-registry", "deps-size", "deps-timeout", "lock-all", "lock-link", "lock-npm", "lock-npm-both", "lock-npm-key", "lock-npm-v1", "lock-pnpm-anchor", "lock-pnpm-dup", "lock-pnpm-esc",
+    "deps-pnpmfile", "deps-registry", "deps-size", "deps-timeout", "glob-segment", "lock-all", "lock-link", "lock-npm", "lock-npm-both", "lock-npm-key", "lock-npm-v1", "lock-pnpm-anchor", "lock-pnpm-dup", "lock-pnpm-esc",
     "lock-pnpm-flow", "lock-pnpm-indent", "lock-pnpm-key", "lock-pnpm-link", "lock-pnpm-missing", "lock-pnpm-res", "lock-pnpm-url", "lock-size", "lock-yarn",
     "lock-yarn-bare", "lock-yarn-closure", "lock-yarn-colon", "lock-yarn-comment", "lock-yarn-dep-spec", "lock-yarn-dup", "lock-yarn-field", "lock-yarn-key", "lock-yarn-name",
     "lock-yarn-outdated", "lock-yarn-spec", "pm-manager", "pm-nested-lock", "pm-pnpm", "pm-tree", "pm-yarn", "pnpm-field", "pnpm-manifest", "pnpm-ws", "pnpm-ws-catalog", "pnpm-ws-key",
     "pnpm-ws-other", "pnpm-ws-packages", "pnpm-ws-parse", "runner-dep", "runner-other", "service", "shim-exit", "shim-report", "shim-suites",
-    "yarn-bundled", "yarn-dep-lock", "yarn-dep-shape", "yarn-resolutions", "yarn-ws-glob",
+    "yarn-all-manifests", "yarn-bundled", "yarn-dep-lock", "yarn-dep-shape", "yarn-resolutions", "yarn-ws-dot", "yarn-ws-glob",
   ]);
 });
 

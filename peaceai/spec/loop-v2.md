@@ -103,17 +103,24 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
     `devEngines.runtime` (corepack and pnpm can download those), in any `package.json` that parses; a root
     `package.json` that is not a JSON object.
   - yarn only: `--frozen-lockfile` does not stop yarn v1 fetching a dependency that has no yarn.lock entry, so every
-    spec in `dependencies`, `devDependencies` and `optionalDependencies` of the root and of every workspace package
-    must be a `name@spec` header in yarn.lock (headers parsed as above), or name a workspace package whose version
-    (strict semver) satisfies the spec as a plain semver range (yarn otherwise fetches `name@spec` from the registry). A
-    package without both a `name` and a `version` is not a workspace for yarn and is not one here. `peerDependencies`
+    spec in `dependencies`, `devDependencies` and `optionalDependencies` of the root and of EVERY other package.json in
+    the tree, workspace or not (Auditor FAIL e5f28a6: a glob yarn normalises, such as `packages//*`, matched nothing
+    here, so a workspace went unchecked), must be a `name@spec` header in yarn.lock (headers parsed as above), or name
+    a workspace package whose version (strict semver) satisfies the spec as a plain semver range (yarn otherwise
+    fetches `name@spec` from the registry). For that rule only, a workspace is a dir the glob matches with no segment
+    starting with `.` and none named `node_modules`: a subset of what yarn's node-glob (dot: false) finds, so nothing
+    yarn does not treat as a workspace counts as one. A package without both a `name` and a `version` is not a
+    workspace for yarn and is not one here. A package.json anywhere that is not a JSON object is refused (fail
+    closed; yarn would not read a fixture, but it is not vouched for). Cost: a yarn repo with an unlocked or URL dep in
+    any fixture package.json is refused; none in the dev set (yup has only the root package.json). `peerDependencies`
     are not installed by yarn v1 (its install reads only the three fields above) and are not read.
     `bundledDependencies` / `bundleDependencies` other than an empty list, and `resolutions`, in any of those
     manifests are refused outright. `workspaces` must be a list (or `{packages, nohoist}`) of plain globs; the matcher
     matches at least what yarn does (`*` within a segment, `**` any number of segments). package.json files outside
     the workspaces (fixtures) are not read by yarn and are not judged.
-  - plain globs (yarn workspaces and pnpm `packages`): inside the repo, no `..` segment, no leading `.` or `/`, none
-    of `{ } ? [ ] ( ) ! + @ \` (pnpm keeps a leading `!` negation).
+  - plain globs (yarn workspaces and pnpm `packages`): inside the repo, no `..` segment, no empty or `.` segment and no
+    trailing `/` (which the package managers normalise), no leading `.`, `/` or `#` (a minimatch comment), none of
+    `{ } ? [ ] ( ) ! + @ \` (pnpm keeps a leading `!` negation).
   - `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml`, `.corepack.env` are removed at ANY depth from the
     install tree (basename match over every tracked file, below), and untracked files are never copied there; the
     user / global config is the private HOME under `env -i`, so no repo file is read as one.
@@ -155,7 +162,7 @@ Fail closed: no report -> `fail 1`; failed suites with no failed test -> counted
 `success: false` with no failure -> `fail 1`. vitest >= 3.1 is retried once with `--configLoader runner` when no
 report was written (the default config loader writes a temp file beside the config, and the copy is read-only).
 
-Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (68 at round 6; the list is in
+Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (71 at round 7; the list is in
 `m151-mutation.test.ts`). Each has a refused
 near-miss case; the layout guards also have a near miss whose content is harmless, so only the layout rule refuses
 it. The m151
