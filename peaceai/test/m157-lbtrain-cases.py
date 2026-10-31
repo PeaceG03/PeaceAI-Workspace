@@ -138,7 +138,7 @@ def run(name):
     if name == "stop-val-split-replay":
         return f"ok {lbtrain.check_val_split('disjoint', True)}"
     if name == "stop-val-disjoint-short":
-        return f"ok {lbtrain.val_window_ids('disjoint', 97 * 32 + 1 + 31, 32)}"  # 97 windows: one short of 98
+        return f"ok {lbtrain.val_window_ids('disjoint', 112 * 32 + 1 + 31, 32)}"  # 112 windows: one short of 113
     if name == "stop-val-best-split":
         return f"best={lbtrain.val_best({'val': 1.0, 'step': 4, 'stale': 2}, 'disjoint')}"
     # ---- M161 LoRA
@@ -299,15 +299,22 @@ def run(name):
         return f"ok changed={sorted(k for k in b if not np.array_equal(b[k], m[k]))}"
     if name == "near-cur":
         return f"ok {lbtrain.curriculum_cfg('easy_to_hard', 1.0, 1, 's')['start']} {lbtrain.order_easy_to_hard([1, 2, 3], {1: 5, 2: 5.5, 3: 1}, 's')}"
+    if name == "near-val-disjoint-113":
+        return f"ok {lbtrain.val_window_ids('disjoint', 113 * 32 + 1, 32)}"  # batch 7: the smallest accepted size
     if name == "near-val-split":
         T = 32
         out = [lbtrain.check_val_split("first", True), lbtrain.check_val_split("disjoint", False)]
-        for n_tok in (98 * T + 1, 200 * T + 1, 1225844):
+        for n_tok in (113 * T + 1, 200 * T + 1, 1225844):
             ids = lbtrain.val_window_ids("disjoint", n_tok, T)
             n = (n_tok - 1) // T
             ev = range(min(n, lbtrain.EXPORT_EVAL_WINDOWS))  # export.py's eval windows
             used = lambda ks: {t for k in ks for t in range(k * T, k * T + T + 1)}  # noqa: E731  (window k reads held[kT .. kT+T])
             out.append(f"{ids[0]}..{ids[-1]}:{len(ids)}:shared={len(used(ids) & used(ev))}")
+        for nw in (98, 112):  # batch 7: a partial disjoint val set is refused, not shrunk
+            try:
+                out.append(f"{nw}:{len(lbtrain.val_window_ids('disjoint', nw * T + 1, T))}")
+            except lbtrain.LbError as e:
+                out.append(f"{nw}:{e}")
         out.append(f"w96shared={len(used([96]) & used(range(96)))}")  # why the gap: window 96 starts on export's last target token
         legacy = lbtrain.val_window_ids("first", 200 * T + 1, T)
         out.append(f"first={legacy[0]}..{legacy[-1]}:shared={len({k for k in legacy} & set(range(96)))}")

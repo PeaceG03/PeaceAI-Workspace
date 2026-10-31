@@ -20,7 +20,7 @@ export function withDir(fn: (dir: string) => void) {
 }
 
 /** 80 small TypeScript docs with an lb-clean style difficulty.score (more branches = harder); every 10th is heldout. */
-/** opts.bigHeld (batch 6): 80 extra held-out docs after the usual 80, so a ctx-32 run has more than the 98 held-out
+/** opts.bigHeld (batch 6): 80 extra held-out docs after the usual 80, so a ctx-32 run has at least the 113 held-out
  *  windows that --val-split disjoint needs (export's 96 eval windows, a one-window gap, then the val windows). */
 export function tinyCorpus(dir: string, opts: { difficulty?: boolean; name?: string; bigHeld?: boolean } = {}) {
   const c = join(dir, opts.name ?? "corpus");

@@ -33,6 +33,10 @@ LEGACY_SCHEMA = "peaceai-lb-daily-run:v1"
 V1_FIELDS = ("schema", "runId", "workflowSha", "chainId", "today", "pins", "status", "startStep", "endStep", "stopReason",
              "heldoutBpb", "baselineBpb", "wallSeconds", "resumedFrom", "marker")
 ROW_FIELDS = V1_FIELDS + ("modelCe", "heldoutTokens", "heldBytes")
+# batch 7 (Auditor's #661 note): v1 is trusted history only. The last run that can have landed a v1 row is the first
+# daily run, 41222155935 (dispatched on 08c2383, before v2 merged as ec36fc1); every later run writes v2. A v1 row with a
+# larger run id cannot be genuine history, so the trusted-record read refuses it (LB_DAILY_RECORD_BAD).
+V1_LAST_RUN_ID = 41222155935
 MARKER_SCHEMA = "peaceai-lm-chain:v1"
 MARKER_FIELDS = ("schema", "more", "stopReason", "step", "totalSteps", "save", "manifestSha256", "cfgSha256")
 STOP_REASONS = ("patience", "steps", "max_seconds", "deadline", "max_steps_this_run", "nonfinite")
@@ -132,7 +136,8 @@ def bpb_matches(row):
 
 
 def check_row(row, cfg, legacy_ok=False):
-    """legacy_ok (the trusted-record read only): a v1 row with exactly the v1 fields is accepted."""
+    """legacy_ok (the trusted-record read only): a v1 row with exactly the v1 fields and runId <= V1_LAST_RUN_ID is
+    accepted."""
     legacy = legacy_ok and isinstance(row, dict) and row.get("schema") == LEGACY_SCHEMA
     if not isinstance(row, dict) or sorted(row) != sorted(V1_FIELDS if legacy else ROW_FIELDS):  # guard:dr-row-fields
         raise DailyRunError("LB_DAILY_ROW_FIELD")
@@ -146,6 +151,8 @@ def check_row(row, cfg, legacy_ok=False):
           and type(row["wallSeconds"]) is int and row["wallSeconds"] >= 0
           and (row["resumedFrom"] is None or (isinstance(row["resumedFrom"], str) and HEX64.match(row["resumedFrom"]))))
     if not ok:  # guard:dr-row-values
+        raise DailyRunError("LB_DAILY_ROW_VALUE")
+    if legacy and int(row["runId"]) > V1_LAST_RUN_ID:  # guard:dr-row-v1-cutoff
         raise DailyRunError("LB_DAILY_ROW_VALUE")
     if not legacy:
         ins = (num_ok(row["modelCe"]) and type(row["heldoutTokens"]) is int and row["heldoutTokens"] >= 1

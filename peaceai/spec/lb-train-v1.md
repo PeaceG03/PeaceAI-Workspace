@@ -57,7 +57,8 @@ Auditor hidden check and an add-only entry in lb-train.json.
   windows 0..15, which are also the first 16 of the 96 windows export.py's eval uses, so the stopping rule and best.npz
   were chosen on data that is part of the reported held-out eval. `disjoint` is windows 97..112: export's windows
   0..95 cover token indices 0..96*T and window 96 starts on export's last target token, so from window 97 on no token
-  is shared (m159 asserts it, including the real 1225844-token first-run held-out size). Fewer than 98 windows:
+  is shared (m159 asserts it, including the real 1225844-token first-run held-out size). Fewer than 113 windows
+  (the full 97..112 set; batch 7: 98..112 used to validate on fewer than 16 windows, now refused):
   VAL_NOT_DISJOINT; with replay (its val is the replay heldout docs): VAL_SPLIT_BAD. best.json records
   valSplit for a non-default split, and a best.json from another split is not resumed (early stopping restarts from
   inf), so a best chosen on the old windows never carries over. The split is not part of the model cfg, so saves and
@@ -179,6 +180,10 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
   The daily row is now schema peaceai-lb-daily-run:v2 with the same three fields and the same recompute check, and
   the `lb-daily` log line ends the same way. New rows are v2 only; v1 rows (landed before this change) are still read
   as part of the trusted record (exactly the v1 fields), never written or landed again.
+- v1 cutoff (batch 7, Auditor's #661 note): lb_daily.py V1_LAST_RUN_ID = 41222155935, the first daily run (dispatched
+  on 08c2383 before v2 merged as ec36fc1), is the last run that can have landed a v1 row. A v1 row with runId <= the
+  cutoff is trusted history; a v1 row with a larger runId is refused (guard dr-row-v1-cutoff, LB_DAILY_RECORD_BAD from
+  the trusted read). v2 rows are not affected by the cutoff.
 - Tests: m163-lb-first-run.test.ts (each tagged lb_run.py guard killed when disabled, near misses, the workflow shape
   checker with its mutants, the end-to-end run on a tiny corpus).
 
