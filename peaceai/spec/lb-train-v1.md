@@ -92,7 +92,8 @@ checks no other workflow names the cycle; m165-lb-daily-run.test.ts pins the wra
 - no Actions artifacts or cache; the R2 secrets are in env only for the restore and copy steps, the Results key only
   for the record read and landing; nothing echoes them; actions sha-pinned, persist-credentials false.
 
-Limitation: after a chain reports done, a new chain needs a dailyRun config change (reviewed PR).
+Limitation: after a chain reports done, a new chain needs a dailyRun config change (reviewed PR). Any change to the wrapper's
+shape (a schedule, another ref, LoRA, another storage place) needs Auditor and Peace first.
 
 Known limitation (fails closed): main's train.py refuses saves made by this PR's train.py (SAVE_FILE_SET: every
 save now holds run.json, and LoRA saves adapter.npz / best-adapter.npz, which main's saves.py does not allow). If this PR is rolled back, a chain started with it cannot
