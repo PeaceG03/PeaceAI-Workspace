@@ -1,4 +1,4 @@
-// M162 lb-train v1 first real run (Auditor ruling after #654): the lb-first-run job of peace-lm-train.yml, its guards
+// M163 lb-train v1 first real run (Auditor ruling after #654): the lb-first-run job of peace-lm-train.yml, its guards
 // (peaceai/model/lb_run.py), the ported corpus rebuild (peaceai/bin/lb-corpus-rebuild.sh) and the run script
 // (peaceai/bin/lb-first-run.sh). Every tagged lb_run.py guard has a case whose outcome must change when the guard is
 // disabled (killed mutant), next to a near miss that passes; the workflow shape is checked by lbJobProblems, which is
@@ -127,7 +127,7 @@ const CASES: Record<string, { run: Case; real: string | RegExp }> = {
   "run-gain": { run: rowCase(undefined, { model_bits_per_byte: 4.07, unigram_bits_per_byte: 4.06 }), real: /verdict=no_gain / },
 };
 
-test("M162: every tagged lb_run.py guard has a case, and disabling the guard changes its outcome (killed mutant)", () => {
+test("M163: every tagged lb_run.py guard has a case, and disabling the guard changes its outcome (killed mutant)", () => {
   const src = readFileSync(join(MODEL, "lb_run.py"), "utf8");
   const tags = [...src.matchAll(/# guard:([a-z0-9-]+)$/gm)].map((g) => g[1]!);
   assert.deepEqual([...tags].sort(), Object.keys(CASES).sort(), "every tagged guard has a case and no case is untagged");
@@ -148,7 +148,7 @@ test("M162: every tagged lb_run.py guard has a case, and disabling the guard cha
   });
 });
 
-test("M162 near misses: main passes the ref gate, a cleared first-run corpus passes the pins, the real config argv is the ruled settings", () => {
+test("M163 near misses: main passes the ref gate, a cleared first-run corpus passes the pins, the real config argv is the ruled settings", () => {
   withDir((dir) => {
     const m0 = scratchModel(dir, "m0");
     assert.equal(lb(m0, ["ref", "--ref", "refs/heads/main"]).last, "ref ok");
@@ -189,7 +189,7 @@ test("M162 near misses: main passes the ref gate, a cleared first-run corpus pas
   });
 });
 
-test("M162 row: exactly the allowed fields, a gain only below the baseline, one new file under runs/lb-train/, never twice", () => {
+test("M163 row: exactly the allowed fields, a gain only below the baseline, one new file under runs/lb-train/, never twice", () => {
   withDir((dir) => {
     const c = tinyCorpus(dir);
     const m = scratchModel(dir, "m", tinyCfg(c));
@@ -264,7 +264,7 @@ function lbJobProblems(text: string, jobTimeoutMin: number): string[] {
   return [...p].sort();
 }
 
-test("M162 workflow: the lb-first-run jobs have the reviewed shape; each guard kills its mutant and a near miss passes", () => {
+test("M163 workflow: the lb-first-run jobs have the reviewed shape; each guard kills its mutant and a near miss passes", () => {
   const wf = read(WF);
   const cfg = json(join(MODEL, "lb-train.json")).firstRun;
   assert.deepEqual(lbJobProblems(wf, cfg.jobTimeoutMin), []);
@@ -301,7 +301,7 @@ test("M162 workflow: the lb-first-run jobs have the reviewed shape; each guard k
   assert.ok(!/lb-train\.json|lb-daily-cycle|daily_cycle/.test(wf), "the daily cycle stays unscheduled (M160)");
 });
 
-test("M162 config and rebuild: the three ruled pins, b149d9b, the drop file, and the ported rebuild recipe", () => {
+test("M163 config and rebuild: the three ruled pins, b149d9b, the drop file, and the ported rebuild recipe", () => {
   const cfg = json(join(MODEL, "lb-train.json"));
   const fr = cfg.firstRun;
   assert.deepEqual(fr.corpus, PINS, "exactly the Auditor's pins");
@@ -322,10 +322,10 @@ test("M162 config and rebuild: the three ruled pins, b149d9b, the drop file, and
   const order = ["lb ref --ref", "lb pins --corpus", "lb train-argv", "/train.py", "/export.py", "lb row"].map((s) => fr2.indexOf(s));
   assert.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1]!)), "ref, pins, argv, train, export, row");
   assert.match(fr2, /\ntrap cleanup EXIT\n/);
-  for (const p of ["peaceai/model/lb_run.py", "peaceai/bin/lb-corpus-rebuild.sh", "peaceai/bin/lb-first-run.sh", "peaceai/test/m162-lb-first-run.test.ts", WF]) assert.ok(protectedReason(p), p);
+  for (const p of ["peaceai/model/lb_run.py", "peaceai/bin/lb-corpus-rebuild.sh", "peaceai/bin/lb-first-run.sh", "peaceai/test/m163-lb-first-run.test.ts", WF]) assert.ok(protectedReason(p), p);
 });
 
-test("M162 end to end (tiny corpus): lb-first-run.sh trains, evaluates and writes the metrics-only row; the dirs are gone; refusals stop before training", () => {
+test("M163 end to end (tiny corpus): lb-first-run.sh trains, evaluates and writes the metrics-only row; the dirs are gone; refusals stop before training", () => {
   withDir((dir) => {
     const run = (m: string, c: string, tag: string, ref = "refs/heads/main") => {
       const r = spawnSync("bash", [join(repo, "peaceai/bin/lb-first-run.sh"), c, join(dir, `${tag}-w`), join(dir, `${tag}-m`), join(dir, `${tag}-row.json`)], {
@@ -358,7 +358,7 @@ test("M162 end to end (tiny corpus): lb-first-run.sh trains, evaluates and write
   });
 });
 
-test("M162 landing: the workflow's results-write --sparse command adds exactly runs/lb-train/<run id>.json to Results, and refuses a second write", () => {
+test("M163 landing: the workflow's results-write --sparse command adds exactly runs/lb-train/<run id>.json to Results, and refuses a second write", () => {
   withDir((dir) => {
     const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8", env: { ...process.env, ...ID } });
     const ID = { GIT_AUTHOR_NAME: "PeaceG03", GIT_AUTHOR_EMAIL: "301894882+PeaceG03@users.noreply.github.com", GIT_COMMITTER_NAME: "PeaceG03", GIT_COMMITTER_EMAIL: "301894882+PeaceG03@users.noreply.github.com" };

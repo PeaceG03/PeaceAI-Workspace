@@ -71,7 +71,7 @@ test("M31/M37: the workflow fetches the manifest corpus, runs the ext manifest c
   assert.ok(!/upload-artifact/.test(wf), "weights never become a public artifact");
   assert.match(wf, /results-write\.sh/);
   // lb-train v1 first run (Auditor ruling after #654): the key goes to exactly two steps, the M37 landing step and the
-  // lb-first-run metrics-row step (m162-lb-first-run.test.ts pins that step), never to any other step.
+  // lb-first-run metrics-row step (m163-lb-first-run.test.ts pins that step), never to any other step.
   const keyed = wf.split(/\n(?=      - )/).filter((s) => s.includes("secrets.PEACEAI_RESULTS_DEPLOY_KEY")).map((s) => s.split("\n")[0]);
   assert.deepEqual(keyed, ["      - name: Record one metrics-only row in Results (runs/lb-train/<run id>.json, new file only; no weights, no latest.json)", "      - name: Land the model in Results only (no latest.json; refused until memcheck PASS)"], "the key is given to the two landing steps only");
   assert.equal((wf.match(/secrets\.PEACEAI_RESULTS_DEPLOY_KEY/g) ?? []).length, 2);

@@ -111,7 +111,7 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
 - Refusals: LORA_NEEDS_BASE, LORA_BASE_READ, LORA_BAD_RANK, LORA_BAD_ALPHA, LORA_BAD_TARGETS, LORA_SHAPE,
   LORA_SCHEMA, LORA_BASE_MISMATCH, LORA_BASE_SHA_REQUIRED, LORA_ADAPTER_MISMATCH, LORA_OUT_EXISTS.
 
-## M162 first real run (Auditor ruling after #654)
+## M163 first real run (Auditor ruling after #654)
 
 - Route: the existing manual-dispatch workflow `.github/workflows/peace-lm-train.yml`, input `run: lb-first-run`
   (the default `ext-pretrain` runs only the unchanged M37 job). GitHub-hosted `ubuntu-24.04`, environment
@@ -141,7 +141,7 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
   workflowSha, runId, steps, stopReason, heldoutBpb, baselineBpb, wallSeconds, checkpointSha256 (LB_RUN_ROW_FIELD for
   any other or missing field, LB_RUN_ROW_VALUE for a bad value, LB_RUN_ROW_EXISTS if present). No weights or derived
   bytes, no latest.json, nothing modified or deleted.
-- Tests: m162-lb-first-run.test.ts (each tagged lb_run.py guard killed when disabled, near misses, the workflow shape
+- Tests: m163-lb-first-run.test.ts (each tagged lb_run.py guard killed when disabled, near misses, the workflow shape
   checker with its mutants, the end-to-end run on a tiny corpus).
 
 ## Tests
