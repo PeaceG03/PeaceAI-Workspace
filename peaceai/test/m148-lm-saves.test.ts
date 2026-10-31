@@ -314,7 +314,7 @@ test("m148 wire: workflow shape: env-scoped R2 secrets in three steps only, no a
   const wf = readFileSync(WF, "utf8");
   const train = jobBlock(wf, "train"), chain = jobBlock(wf, "chain");
   assert.match(train, /\n    timeout-minutes: 355\n    environment: peaceai-results\n    permissions:\n      contents: read\n    outputs:\n/);
-  assert.equal((wf.match(/^ +environment:/gm) ?? []).length, 1, "one environment: the existing peaceai-results (main only), on the train job; no new environment (Auditor, #643)");
+  assert.deepEqual(wf.match(/^ +environment:.*$/gm), ["    environment: peaceai-results", "    environment: peaceai-results"], "only the existing peaceai-results (main only), on the lb-first-run (#656) and train jobs; no new environment (Auditor, #643)");
   assert.ok(!/upload-artifact|download-artifact|actions\/cache|--max-seconds/.test(wf), "no artifact, no cache: saves go only to R2");
   assert.match(wf, /--save-dir "\$S" --save-every-min 20 --job-start "\$JOB_START" --soft-deadline-min 340 --marker "\$RUNNER_TEMP\/work\/chain\.json"/);
   assert.match(wf, /\[\[ "\$IN_INDEX" =~ \^\(0\|\[1-9\]\[0-9\]\?\)\$ && "\$IN_MAX" =~ \^\(\[1-9\]\|1\[0-2\]\)\$ \]\]/, "max chain 1-12 checked before training");
@@ -337,7 +337,7 @@ test("m148 wire: workflow shape: env-scoped R2 secrets in three steps only, no a
   assert.match(chain, /\n    needs: train\n    if: needs\.train\.outputs\.next == 'yes'\n[\s\S]*\n    timeout-minutes: 5\n    permissions:\n      actions: write # [^\n]*\n    steps:\n/);
   assert.ok(!/secrets\.|environment:|actions\/checkout|contents:|id-token|upload-artifact/.test(chain), "the chain job holds no key and no checkout");
   for (const o of ["chain_id", "index", "max_chain", "save", "sha"]) assert.match(chain, new RegExp(`: \\$\\{\\{ needs\\.train\\.outputs\\.${o} \\}\\}\\n`));
-  assert.match(chain, /gh workflow run peace-lm-train\.yml --repo "\$GITHUB_REPOSITORY" --ref main -f chain_id="\$N_CHAIN" -f chain_index="\$N_INDEX" \\\n {12}-f max_chain="\$N_MAX" -f resume_save="\$N_SAVE" -f resume_manifest_sha="\$N_SHA" > \/dev\/null 2>&1/);
+  assert.match(chain, /gh workflow run peace-lm-train\.yml --repo "\$GITHUB_REPOSITORY" --ref main -f run=ext-pretrain -f chain_id="\$N_CHAIN" -f chain_index="\$N_INDEX" \\\n {12}-f max_chain="\$N_MAX" -f resume_save="\$N_SAVE" -f resume_manifest_sha="\$N_SHA" > \/dev\/null 2>&1/);
   assert.equal((wf.match(/^ +actions: write/gm) ?? []).length, 1, "only the chain job can dispatch");
   // trusted sha: the train job's sha output is the decide line's (from the local marker), the resume sha is the input
   assert.match(train, /\n      sha: \$\{\{ steps\.decide\.outputs\.sha \}\}\n/);
@@ -416,7 +416,7 @@ test("m148 wire: chain step dispatches only well-formed next-link inputs (index 
   const N = (o: Record<string, string>) => ({ N_CHAIN: "555", N_INDEX: "1", N_MAX: "4", N_SAVE: "save-000000040", N_SHA: sha, GH_TOKEN: "t", ...o });
   const good = runStep(join(dir, "g"), "Dispatch the next link", N({}));
   assert.equal(good.status, 0, good.out);
-  assert.equal(good.gh, `workflow run peace-lm-train.yml --repo o/r --ref main -f chain_id=555 -f chain_index=1 -f max_chain=4 -f resume_save=save-000000040 -f resume_manifest_sha=${sha}\n`);
+  assert.equal(good.gh, `workflow run peace-lm-train.yml --repo o/r --ref main -f run=ext-pretrain -f chain_id=555 -f chain_index=1 -f max_chain=4 -f resume_save=save-000000040 -f resume_manifest_sha=${sha}\n`);
   assert.equal(good.out, `chain dispatched index=1 save=save-000000040 sha=${sha}\n`);
   const bads: Array<Record<string, string>> = [{ N_SHA: "" }, { N_SHA: sha.slice(1) }, { N_SAVE: "save-1" }, { N_INDEX: "0" }, { N_INDEX: "4" }, { N_MAX: "13" }, { N_CHAIN: "" }, { N_CHAIN: "5 5" }];
   bads.forEach((o, i) => {

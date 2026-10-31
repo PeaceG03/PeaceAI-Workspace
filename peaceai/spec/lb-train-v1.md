@@ -73,15 +73,26 @@ STATE/reports/<day>.json. One cycle per day; a finished chain writes a "done" re
   symlink) is refused, the shell opens its logs with noclobber (O_EXCL) and reports are created with
   O_CREAT|O_EXCL|O_NOFOLLOW.
 
-NOT SCHEDULED, NOT INSTALLED. No workflow file runs it (m160 checks .github/workflows) and this PR adds none (Auditor
-ruling on #654). A scheduled or dispatched wrapper needs Auditor and Peace, and waits on Peace's R2 key. When it is
-built it must be:
+NOT SCHEDULED. The only wrapper is the manual-dispatch workflow `.github/workflows/peace-lb-daily.yml` (M165, Auditor
+ruling once R2 was ready; Peace's bucket-scoped key is in this repo's environment peaceai-results, main only). m160
+checks no other workflow names the cycle; m165-lb-daily-run.test.ts pins the wrapper's shape. Per dispatch:
 
-- a manual-dispatch (workflow_dispatch) workflow, added by its own PR in peaceai-results (not in this repo), on a
-  GitHub-hosted runner (free compute);
-- keeping STATE's saves under their own R2 folder (never next to Results files, never latest.json);
-- resuming only with the save manifest sha256 taken from the trusted record that workflow writes, never from the
-  restored state itself.
+- workflow_dispatch only, never scheduled; a ref gate job and lb_daily.py ref refuse any ref but refs/heads/main;
+  GitHub-hosted ubuntu-24.04 (free compute), timeout 355 min, train deadline 300 min from the job start;
+- the trusted record is the newest add-only Results row runs/lb-daily/<day>-<run id>.json (read through
+  results-write.sh with nothing written; none yet = fresh chain, id = this run id; done = nothing trains);
+- saves live only in R2 under their own folder lb-daily/<chain id>/ (lm-saves-r2.sh --folder lb-daily), never next
+  to Results files, never latest.json; the restored save must hash to the record's manifest sha256 before any
+  resume (LB_DAILY_SAVE_SHA_MISMATCH), chain.json is written from the record, and lb-daily-cycle.sh refuses a plan
+  that is not the trusted one (LB_DAILY_EXPECT, DAILY_PLAN_UNTRUSTED). The sha never comes from the bucket or state;
+- the new save is uploaded with put-one (its own manifest sha256 only), the chain's other saves are pruned except
+  the new and the trusted one; then ONE add-only row is landed (new file only, never latest.json);
+- LoRA is refused (dailyRun.loraUnlock: until a full-model run beats the same-split unigram baseline 2.5156 bpb,
+  LB_DAILY_LORA_LOCKED; the wrapper passes no LoRA flag even after);
+- no Actions artifacts or cache; the R2 secrets are in env only for the restore and copy steps, the Results key only
+  for the record read and landing; nothing echoes them; actions sha-pinned, persist-credentials false.
+
+Limitation: after a chain reports done, a new chain needs a dailyRun config change (reviewed PR).
 
 Known limitation (fails closed): main's train.py refuses saves made by this PR's train.py (SAVE_FILE_SET: every
 save now holds run.json, and LoRA saves adapter.npz / best-adapter.npz, which main's saves.py does not allow). If this PR is rolled back, a chain started with it cannot

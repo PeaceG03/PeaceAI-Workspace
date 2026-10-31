@@ -107,3 +107,11 @@ soft deadline.
 
 Not built (rules): no hourly backup-check routine (standing "no check or sweep routines" rule); no paid compute; the
 workflow has not been run; latest.json, promotion and the stage-2 flag are untouched.
+
+## Folders and put-one (M165)
+
+lm-saves-r2.sh takes an optional leading `--folder lm-saves|lb-daily` (default lm-saves; anything else is
+R2_BAD_ARGS); every key is `<folder>/<chain>/<save>/`. peace-lm-train.yml keeps the default; the lb-train daily
+cycle (peace-lb-daily.yml) uses lb-daily only. `put-one CHAIN DIR SAVE SHA [TRUSTED_SAVE]` uploads one save only if
+its manifest hashes to SHA (R2_SHA_MISMATCH), the manifest last, then removes the chain's other saves in that folder
+except SAVE and TRUSTED_SAVE (the save the trusted record names), so a failed day never loses the resume point.
