@@ -63,7 +63,9 @@ uni_ce = float(-uni[ys].mean())
 tok = lm.Tokenizer(json.load(open(os.path.join(args.out, "tokenizer.json"))))
 held_bytes = len(tok.decode(ys.tolist()).encode())
 m16 = ce(w16)
-ev = {"heldout_tokens": int(len(ys)), "heldout_windows": int(n_eval), "model_ce_fp32": round(ce(params), 4), "model_ce_fp16": round(m16, 4),
+# model_ce (unrounded) and held_bytes (batch 6): with heldout_tokens they are the exact inputs of model_bits_per_byte,
+# so a row can be recomputed: model_ce * heldout_tokens / ln 2 / held_bytes.
+ev = {"heldout_tokens": int(len(ys)), "heldout_windows": int(n_eval), "model_ce": float(m16), "held_bytes": int(held_bytes), "model_ce_fp32": round(ce(params), 4), "model_ce_fp16": round(m16, 4),
       "unigram_ce": round(uni_ce, 4), "model_ppl": round(math.exp(m16), 2), "unigram_ppl": round(math.exp(uni_ce), 2),
       "model_bits_per_byte": round(m16 * len(ys) / math.log(2) / held_bytes, 4), "unigram_bits_per_byte": round(uni_ce * len(ys) / math.log(2) / held_bytes, 4)}
 with open(os.path.join(args.out, "eval.json"), "w") as f:

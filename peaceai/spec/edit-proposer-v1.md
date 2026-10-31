@@ -59,13 +59,17 @@ team's tests pass and the related tests do not regress (loop v2, unchanged).
   loop asks again. It is not PROPOSER_FAILED, because "propose nothing this round" is a legal (if useless) answer,
   while a missing or non-array `edits` is a broken proposer. The value of `refuse` is not checked here. A throwing
   fetcher still ends FETCH_FAILED.
+  (batch 6, Auditor's #660 notes) An element with a non-string `path` (`{ path: 1, content: "x" }`) is malformed,
+  and so is a SPARSE `edits` array (one with a hole, e.g. `new Array(1)` or a hole after a good edit):
+  `Array.prototype.every` skips holes, so the check runs over `Array.from(edits)`, where each hole is `undefined`.
   Tests (cases in `m164-loop-cases.ts`):
-  - `next-malformed`: the five malformed shapes at attempt 1, `{}` at attempt 2, and the near miss
+  - `next-malformed`: the eight malformed shapes (including the non-string path and the two sparse arrays) at attempt 1, `{}` at attempt 2, and the near miss
     `{ edits: [] }` at attempt 1, after which attempt 2's fix passes;
   - `fetch-failed`: a throwing fetcher gives FETCH_FAILED with no error text in the row.
 
   Mutants (in `m164-proposer-next.test.ts`), each killed: `drop-next-malformed`, `malformed-code-fetch-failed`,
-  `edit-elements-unchecked` and `empty-edits-refused`.
+  `edit-elements-unchecked`, `empty-edits-refused`, `edit-path-unchecked` (the `typeof path` check dropped) and
+  `sparse-holes-skipped` (back to `edits.every`, which skips holes).
 - `loopSha256()` hashes lib/editpropose.ts as well as loop.ts, looprow.ts and loopdeps.ts, so every row binds the
   proposer version it ran with (`// m152-guard:sha-proposer`). Rows written before this change carry the older hash.
 - `Feedback.tests` (the attempt's counts) and `ProposeInput.baseline`.

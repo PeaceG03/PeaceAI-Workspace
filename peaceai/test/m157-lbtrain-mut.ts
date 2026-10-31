@@ -20,16 +20,18 @@ export function withDir(fn: (dir: string) => void) {
 }
 
 /** 80 small TypeScript docs with an lb-clean style difficulty.score (more branches = harder); every 10th is heldout. */
-export function tinyCorpus(dir: string, opts: { difficulty?: boolean; name?: string } = {}) {
+/** opts.bigHeld (batch 6): 80 extra held-out docs after the usual 80, so a ctx-32 run has more than the 98 held-out
+ *  windows that --val-split disjoint needs (export's 96 eval windows, a one-window gap, then the val windows). */
+export function tinyCorpus(dir: string, opts: { difficulty?: boolean; name?: string; bigHeld?: boolean } = {}) {
   const c = join(dir, opts.name ?? "corpus");
   mkdirSync(c, { recursive: true });
   const docs: string[] = [], man: string[] = [];
-  for (let i = 0; i < 80; i += 1) {
+  for (let i = 0; i < (opts.bigHeld ? 160 : 80); i += 1) {
     const n = 1 + ((i * 7) % 6);
     const body = Array.from({ length: n }, (_, j) => `  if (x > ${j}) { x = x - ${j}; }\n`).join("");
     const text = `export function f${i}(x: number): number {\n${body}  return x + ${i};\n}\n`;
     docs.push(JSON.stringify({ doc: i, text }));
-    man.push(JSON.stringify({ doc: i, split: i % 10 === 3 ? "heldout" : "train", ...(opts.difficulty === false ? {} : { difficulty: { score: n * 10, level: "easy" } }) }));
+    man.push(JSON.stringify({ doc: i, split: i % 10 === 3 || i >= 80 ? "heldout" : "train", ...(opts.difficulty === false ? {} : { difficulty: { score: n * 10, level: "easy" } }) }));
   }
   writeFileSync(join(c, "docs.jsonl"), docs.join("\n") + "\n");
   writeFileSync(join(c, "manifest.jsonl"), man.join("\n") + "\n");

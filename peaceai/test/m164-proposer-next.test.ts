@@ -89,8 +89,10 @@ const MUTANTS: [string, string][] = [
   ["code-fetch-failed", swap('if (p === null) return done("PROPOSER_FAILED");', 'if (p === null) return done("FETCH_FAILED");')],
   ["empty-code-fetch-failed", swap('if (typeof p !== "object") return done("PROPOSER_FAILED");', 'if (typeof p !== "object") return done("FETCH_FAILED");')],
   ["malformed-code-fetch-failed", swap('!validEdits((p as { edits?: unknown }).edits)) return done("PROPOSER_FAILED");', '!validEdits((p as { edits?: unknown }).edits)) return done("FETCH_FAILED");')],
-  ["edit-elements-unchecked", swap("Array.isArray(x) && x.every((e) =>", "Array.isArray(x) || x.every((e) =>")],
-  ["empty-edits-refused", swap("Array.isArray(x) && x.every((e) =>", "Array.isArray(x) && x.length > 0 && x.every((e) =>")],
+  ["edit-elements-unchecked", swap("Array.isArray(x) && Array.from(x as unknown[]).every((e) =>", "Array.isArray(x) || Array.from(x as unknown[]).every((e) =>")],
+  ["empty-edits-refused", swap("Array.isArray(x) && Array.from(x as unknown[]).every((e) =>", "Array.isArray(x) && x.length > 0 && Array.from(x as unknown[]).every((e) =>")],
+  ["edit-path-unchecked", swap('e !== null && typeof (e as Edit).path === "string" && typeof', 'e !== null && typeof')],
+  ["sparse-holes-skipped", swap("Array.isArray(x) && Array.from(x as unknown[]).every((e) =>", "Array.isArray(x) && x.every((e) =>")],
   ["catch-rethrows", swap("attempt, feedback, baseline }); } catch { return null; }", "attempt, feedback, baseline }); } catch (e) { throw e; }")],
 ];
 for (const [id, text] of MUTANTS) {

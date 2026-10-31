@@ -30,7 +30,7 @@ const SHA40 = "0123456789abcdef0123456789abcdef01234567";
 const T = "2026-10-31", PREV = "2026-10-30";
 const now = () => Math.floor(Date.now() / 1000);
 const pinsOf = (c: string) => ({ docs: sha(join(c, "docs.jsonl")), manifest: sha(join(c, "manifest.jsonl")), fingerprint: json(join(c, "fingerprint.json")).fingerprint });
-const TINY_TRAIN: Record<string, string> = { "--d-model": "16", "--n-layer": "1", "--n-head": "2", "--ctx": "32", "--vocab": "300", "--batch": "2", "--threads": "1", "--eval-every": "2", "--steps": "8", "--max-steps-this-run": "4", "--patience": "5", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard" };
+const TINY_TRAIN: Record<string, string> = { "--d-model": "16", "--n-layer": "1", "--n-head": "2", "--ctx": "32", "--vocab": "300", "--batch": "2", "--threads": "1", "--eval-every": "2", "--steps": "8", "--max-steps-this-run": "4", "--patience": "5", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard", "--val-split": "disjoint" };
 let uniq = 0;
 const u = (p: string) => `${p}-${(uniq += 1)}`;
 
@@ -59,9 +59,14 @@ const ld = (root: string, args: string[], env: Record<string, string> = {}) => {
 
 const marker = (step: number, save: string, more = true, msha = "a".repeat(64)) =>
   ({ schema: "peaceai-lm-chain:v1", more, stopReason: more ? "deadline" : "patience", step, totalSteps: step, save, manifestSha256: msha, cfgSha256: "c".repeat(64) });
-const goodRow = (o: Record<string, unknown> = {}) => ({
+/** model_ce for a given bpb, tokens and bytes (export.py: bpb = model_ce * tokens / ln 2 / bytes). */
+const ceFor = (bpb: number, tokens: number, bytes: number) => (bpb * Math.LN2 * bytes) / tokens;
+/** A v1 row (as landed before batch 6, e.g. by the first daily run): still read as part of the trusted record. */
+const goodRowV1 = (o: Record<string, unknown> = {}) => ({
   schema: "peaceai-lb-daily-run:v1", runId: "100", workflowSha: SHA40, chainId: "100", today: PREV, pins: { ...PINS }, status: "trained", startStep: 0,
   endStep: 50, stopReason: "deadline", heldoutBpb: 3.1, baselineBpb: 2.5156, wallSeconds: 1000, resumedFrom: null, marker: marker(50, "save-000000050"), ...o });
+/** A v2 row (batch 6): v1 plus the bpb inputs. */
+const goodRow = (o: Record<string, unknown> = {}): Record<string, unknown> => goodRowV1({ schema: "peaceai-lb-daily-run:v2", modelCe: ceFor(3.1, 1000, 2000), heldoutTokens: 1000, heldBytes: 2000, ...o });
 
 /** A Results dir with the given files (path under runs/ -> JSON). */
 function results(dir: string, files: Record<string, unknown> = {}) {
@@ -98,11 +103,12 @@ function rowCase(dir: string, root: string, o: { kind?: "fresh" | "resume"; repo
   mkdirSync(join(s, "reports"));
   const kind = o.kind ?? "resume";
   writeFileSync(join(s, "reports", `${T}.json`), JSON.stringify({ status: "trained", startStep: kind === "resume" ? 50 : 0, endStep: 80, stopReason: "deadline",
-    eval: { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5156 }, corpus: { ...PINS }, ...o.report }));
+    eval: { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5156, model_ce: ceFor(3.0, 96, 300), heldout_tokens: 96, held_bytes: 300 }, corpus: { ...PINS }, ...o.report }));
   if (o.tamper) writeFileSync(join(s, "saves", save, "manifest.json"), `{"step":81}`);
   const t = trustedFile(dir, kind === "resume" ? resumeT("b".repeat(64)) : FRESH);
-  return ld(root, ["row", "--trusted", t.f, "--trusted-sha", t.sha, "--state", s, "--today", T, "--run-id", "200", "--sha", SHA40, "--job-start", String(now() - 100),
-    "--uploaded", o.uploaded ?? `${save}:${msha}`, "--out", join(dir, u("row") + ".json")]);
+  const outFile = join(dir, u("row") + ".json");
+  return { ...ld(root, ["row", "--trusted", t.f, "--trusted-sha", t.sha, "--state", s, "--today", T, "--run-id", "200", "--sha", SHA40, "--job-start", String(now() - 100),
+    "--uploaded", o.uploaded ?? `${save}:${msha}`, "--out", outFile]), outFile };
 }
 const land = (dir: string, root: string, row: unknown, o: { runId?: string; res?: string } = {}) => {
   const f = join(dir, u("in") + ".json"); writeFileSync(f, JSON.stringify(row));
@@ -119,13 +125,16 @@ const CASES: Record<string, (dir: string) => string> = {
   "dr-setting-forbidden": (d) => ld(scratch(d, withTrain((t) => { t["--resume-from"] = "x"; })), ["config"]).last,
   "dr-setting-allowed": (d) => ld(scratch(d, withTrain((t) => { t["--foo"] = "1"; })), ["config"]).last,
   "dr-setting-values": (d) => ld(scratch(d, withTrain((t) => { t["--threads"] = "1;x"; })), ["config"]).last,
+  "dr-val-split": (d) => ld(scratch(d, withTrain((t) => { t["--val-split"] = "first"; })), ["config"]).last,
   "dr-deadline-cap": (d) => ld(scratch(d, (c) => { c.dailyRun.jobTimeoutMin = 400; }), ["config"]).last,
   "dr-r2-folder": (d) => ld(scratch(d, (c) => { c.dailyRun.r2Folder = "lm-saves"; }), ["config"]).last,
   "dr-cleared": (d) => ld(scratch(d, (c) => { c.dailyRun.corpus.docs = "0".repeat(64); }), ["config"]).last,
   "dr-marker": (d) => trusted(scratch(d), results(d, { [`lb-daily/${PREV}-100.json`]: goodRow({ marker: { ...marker(50, "save-000000050"), schema: "x" } }) })).last,
   "dr-row-fields": (d) => land(d, scratch(d), { ...goodRow(), weights: "w" }).last,
   "dr-row-pins": (d) => land(d, scratch(d), goodRow({ pins: { ...PINS, docs: "0".repeat(64) } })).last,
-  "dr-row-values": (d) => land(d, scratch(d), goodRow({ heldoutBpb: -1 })).last,
+  "dr-row-values": (d) => land(d, scratch(d), goodRow({ wallSeconds: -1 })).last,
+  "dr-row-inputs": (d) => land(d, scratch(d), goodRow({ heldBytes: 2000.5, modelCe: ceFor(3.1, 1000, 2000.5) })).last,
+  "dr-row-bpb": (d) => land(d, scratch(d), goodRow({ heldoutBpb: 3.2 })).last,
   "dr-row-marker-match": (d) => land(d, scratch(d), goodRow({ endStep: 60 })).last,
   "dr-read-symlink": (d) => {
     const real = results(d, { [`lb-daily/${PREV}-100.json`]: goodRow() }), res = results(d); mkdirSync(join(res, "runs"));
@@ -157,6 +166,7 @@ const REAL: Record<string, string | RegExp> = {
   "dr-setting-forbidden": "LB_DAILY_FORBIDDEN_SETTING", "dr-setting-allowed": "LB_DAILY_SETTING_NOT_ALLOWED", "dr-setting-values": "LB_DAILY_SETTING_NOT_ALLOWED",
   "dr-deadline-cap": "LB_DAILY_BAD_DEADLINE", "dr-r2-folder": "LB_DAILY_BAD_CONFIG", "dr-cleared": "LB_DAILY_NOT_CLEARED", "dr-marker": "LB_DAILY_RECORD_BAD",
   "dr-row-fields": "LB_DAILY_ROW_FIELD", "dr-row-pins": "LB_DAILY_PIN_MISMATCH", "dr-row-values": "LB_DAILY_ROW_VALUE", "dr-row-marker-match": "LB_DAILY_ROW_VALUE",
+  "dr-row-inputs": "LB_DAILY_ROW_VALUE", "dr-row-bpb": "LB_DAILY_ROW_VALUE", "dr-val-split": "LB_DAILY_SETTING_REQUIRED",
   "dr-read-symlink": "LB_DAILY_RECORD_BAD", "dr-record-name": "LB_DAILY_RECORD_BAD", "dr-once": "LB_DAILY_ALREADY_RAN", "dr-one-chain": "LB_DAILY_RECORD_BAD",
   "dr-trusted-sha": "LB_DAILY_UNTRUSTED", "dr-fresh-empty": "LB_DAILY_STATE_NOT_EMPTY", "dr-only-trusted-save": "LB_DAILY_SAVE_SET",
   "dr-save-sha": "LB_DAILY_SAVE_SHA_MISMATCH", "dr-chain-absent": "LB_DAILY_STATE_NOT_EMPTY", "dr-job-start": "LB_DAILY_BAD_DEADLINE", "dr-budget": "LB_DAILY_BAD_DEADLINE",
@@ -229,7 +239,25 @@ test("M165 near misses: the valid neighbour of each refusal passes", () => withD
   assert.equal(cycleArgs(root, trustedFile(d, FRESH), now() - 60).out.split("\n")[1], "fresh");
   assert.equal(cycleArgs(root, trustedFile(d, FRESH), now() - 270 * 60).out.split("\n")[0], "30", "exactly minBudgetMin still runs");
   // row: fresh and resume
-  assert.match(rowCase(d, root, { kind: "resume" }).last, /^lb-daily start=50 end=80 stop=deadline more=True heldout_bpb=3(\.0)? baseline_bpb=2\.5156 verdict=no_gain save=save-000000080 sha=[0-9a-f]{64} wall_s=\d+$/);
+  assert.match(rowCase(d, root, { kind: "resume" }).last, /^lb-daily start=50 end=80 stop=deadline more=True heldout_bpb=3(\.0)? baseline_bpb=2\.5156 verdict=no_gain save=save-000000080 sha=[0-9a-f]{64} wall_s=\d+ model_ce=[0-9.]+ heldout_tokens=96 held_bytes=300$/);
+  // batch 6: the row is v2 and carries the bpb inputs exactly (they recompute heldoutBpb); missing inputs are refused
+  const v2 = rowCase(d, root, { kind: "resume" });
+  const r2 = json(v2.outFile);
+  assert.equal(r2.schema, "peaceai-lb-daily-run:v2");
+  assert.deepEqual([r2.modelCe, r2.heldoutTokens, r2.heldBytes], [ceFor(3.0, 96, 300), 96, 300]);
+  assert.ok(v2.last.includes(` model_ce=${r2.modelCe} `), "the log line carries the same unrounded model_ce");
+  assert.ok(Math.abs(r2.modelCe * r2.heldoutTokens / Math.LN2 / r2.heldBytes - r2.heldoutBpb) <= 5e-5);
+  for (const [what, ev] of [["no inputs", { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5156 }], ["bpb off", { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5156, model_ce: ceFor(3.1, 96, 300), heldout_tokens: 96, held_bytes: 300 }]] as const)
+    assert.equal(rowCase(d, root, { report: { eval: ev } }).last, "LB_DAILY_ROW_VALUE", what);
+  // v1 rows (landed before batch 6) are still read as the trusted record; they are never landed again; a mixed row is bad
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: goodRowV1() })).last, `trusted kind=resume chain=100 save=save-000000050 sha=${"a".repeat(64)} step=50 record=${PREV}-100.json`);
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: goodRowV1({ endStep: 80, marker: marker(80, "save-000000080") }), "lb-daily/2026-10-29-90.json": goodRow({ today: "2026-10-29", runId: "90" }) })).last,
+    `trusted kind=resume chain=100 save=save-000000080 sha=${"a".repeat(64)} step=80 record=${PREV}-100.json`, "v1 and v2 rows in one chain");
+  assert.equal(land(d, root, goodRowV1()).last, "LB_DAILY_ROW_FIELD", "a v1 row is not landed");
+  assert.equal(land(d, root, { ...goodRowV1(), modelCe: 1, heldoutTokens: 1, heldBytes: 1 }).last, "LB_DAILY_ROW_VALUE", "v1 schema, v2 fields");
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: { ...goodRow(), schema: "peaceai-lb-daily-run:v1" } })).last, "LB_DAILY_RECORD_BAD", "v1 schema with v2 fields");
+  const { modelCe: _c, heldoutTokens: _t, heldBytes: _b, ...v2less } = goodRow();
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: v2less })).last, "LB_DAILY_RECORD_BAD", "v2 schema without the inputs");
   assert.match(rowCase(d, root, { kind: "fresh" }).last, /^lb-daily start=0 end=80 /);
   // land: a new add-only file named <day>-<run id>.json, never latest.json; the same row twice is refused
   const l = land(d, root, goodRow());
@@ -401,7 +429,7 @@ const cycleSh = (root: string, c: string, s: string, today: string, expect: stri
   ...Object.entries(TINY_TRAIN).flat()], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: PYNN, LB_DAILY_EXPECT: expect } });
 
 test("M165 chain: fresh day -> R2 (fake) -> row -> land; next day resumes ONLY the trusted save after its sha check; done", () => withDir((dir) => {
-  const c = tinyCorpus(dir), root = tinyRoot(dir, c), res = results(dir), bucket = join(dir, "bucket");
+  const c = tinyCorpus(dir, { bigHeld: true }), root = tinyRoot(dir, c), res = results(dir), bucket = join(dir, "bucket");
   const day = (today: string, runId: string) => {
     const tf = join(dir, u("trusted") + ".json"), gho = join(dir, u("gho")); writeFileSync(gho, "");
     const tr = ld(root, ["trusted", "--out", tf, "--today", today], { RESULTS_DIR: res, GITHUB_OUTPUT: gho });
@@ -430,6 +458,9 @@ test("M165 chain: fresh day -> R2 (fake) -> row -> land; next day resumes ONLY t
   assert.equal(d1.kind, "fresh");
   assert.match(d1.out, /^plan fresh start=0\ndaily 2026-11-01 status=trained start=0 end=4 stop=max_steps_this_run /);
   assert.deepEqual([d1.row.chainId, d1.row.startStep, d1.row.endStep, d1.row.resumedFrom, d1.row.marker.more], ["501", 0, 4, null, true]);
+  // batch 6: a v2 row from real export.py output; its inputs recompute the bpb
+  assert.equal(d1.row.schema, "peaceai-lb-daily-run:v2"); assert.equal(d1.row.heldoutTokens, 96 * 32);
+  assert.ok(Math.abs(d1.row.modelCe * d1.row.heldoutTokens / Math.LN2 / d1.row.heldBytes - d1.row.heldoutBpb) <= 5e-5, "bpb recomputes from the row");
   assert.ok(!existsSync(join(res, "latest.json")));
   const d2 = day("2026-11-02", "502");
   assert.equal(d2.kind, "resume");
@@ -441,7 +472,7 @@ test("M165 chain: fresh day -> R2 (fake) -> row -> land; next day resumes ONLY t
 }));
 
 test("M165 save sha: a tampered bucket save is refused before any resume; the cycle refuses a plan that is not the trusted one", () => withDir((dir) => {
-  const c = tinyCorpus(dir), root = tinyRoot(dir, c);
+  const c = tinyCorpus(dir, { bigHeld: true }), root = tinyRoot(dir, c);
   // day 1 locally, to get a real save
   const s1 = join(dir, "s1"); mkdirSync(join(s1, "saves"), { recursive: true });
   const t0 = trustedFile(dir, FRESH);
@@ -583,7 +614,11 @@ test("M165 config: the committed dailyRun block", () => {
   assert.ok(dr.jobTimeoutMin <= 355 && dr.trainDeadlineMin + dr.reserveMin <= dr.jobTimeoutMin);
   assert.ok(!Object.keys(dr.train).some((k) => /lora|init-from|replay|resume/.test(k)));
   assert.equal(dr.train["--optimizer"], "adamw8bit"); assert.equal(dr.train["--curriculum"], "easy_to_hard"); assert.ok(dr.train["--patience"]);
+  assert.equal(dr.train["--val-split"], "disjoint", "batch 6: early-stop val windows disjoint from export's eval windows");
+  assert.equal(CFG.firstRun.train["--val-split"], "disjoint");
+  assert.ok(CFG.daily.trainArgsAllowed.includes("--val-split"));
   assert.equal(ld(join(repo, "peaceai"), ["config"]).last, "config ok");
+  withDir((d) => assert.equal(ld(scratch(d, withTrain((t) => { delete t["--val-split"]; })), ["config"]).last, "LB_DAILY_SETTING_REQUIRED", "a missing --val-split"));
 });
 
 test("#657 stdlib only: saves, lb_run, lb_daily and daily_cycle import with numpy blocked; a numpy import in any of them is caught (killed near miss)", () => withDir((dir) => {

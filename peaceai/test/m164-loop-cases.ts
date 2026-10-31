@@ -99,11 +99,15 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "next-malformed: a proposal with no refuse and no valid edits array ([], {}, edits: {}, a bad edit) is PROPOSER_FAILED, not FETCH_FAILED; near miss: an empty edits array is a graded no-op attempt (attempt 2 then passes)",
+    id: "next-malformed: a proposal with no refuse and no valid edits array ([], {}, edits: {}, a bad edit, a non-string path, a sparse array) is PROPOSER_FAILED, not FETCH_FAILED; near miss: an empty edits array is a graded no-op attempt (attempt 2 then passes)",
     run(l, ctx) {
       const opts = (p: Loop.Proposer) => ({ root: ctx.root, fetcher: ctx.fetcher, proposer: p, maxAttempts: 5, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>() });
       if (!ctx.cand) { assert.match(l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(returning(l, 1, {}, false))).row.code, /^CAND_UID_/); return; }
-      for (const [what, bad] of [["[]", []], ["{}", {}], ["edits: {}", { edits: {} }], ["edits: [1]", { edits: [1] }], ["edit without content", { edits: [{ path: "src/window.ts" }] }]] as const) {
+      for (const [what, bad] of [["[]", []], ["{}", {}], ["edits: {}", { edits: {} }], ["edits: [1]", { edits: [1] }], ["edit without content", { edits: [{ path: "src/window.ts" }] }],
+        ["edit with a non-string path", { edits: [{ path: 1, content: "x" }] }],
+        // sparse arrays (batch 6): a hole alone, and a hole after a well-formed edit (Array.prototype.every skips holes)
+        ["sparse: one hole", { edits: new Array(1) }],
+        ["sparse: edit then hole", { edits: Object.assign(new Array(2), { 0: { path: "src/window.ts", content: "x" } }) }]] as const) {
         const r = l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(returning(l, 1, bad, false)));
         assert.equal(r.row.code, "PROPOSER_FAILED", what);
         assert.equal(r.row.attempts, 0, what);

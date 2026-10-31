@@ -45,6 +45,10 @@ is fp32 only.
                                  docs ordered by lb-clean difficulty.score (manifest), batches drawn from the easiest
                                  prefix growing from F to all of it at step N (default steps // 2). Not with replay.
   --min-delta D                  with --patience: an eval improves only when lower than best by more than D.
+  --val-split first|disjoint     early-stop val windows: first (default) = held-out windows 0..15, which are also the
+                                 first 16 of export.py's 96 eval windows; disjoint = windows 97..112, no token shared
+                                 with them (VAL_NOT_DISJOINT under 98 windows; not with replay). best.json records a
+                                 non-default split; a best.json from another split is not resumed (early stop restarts).
   --lora-rank R [--lora-alpha A] [--lora-targets wqkv,wo]
                                  LoRA on frozen --init-from weights (--init-from on every LoRA run, resumes too: its
                                  params_sha256 is cfg.lora.baseSha256); adapter.npz / best-adapter.npz saved
@@ -98,6 +102,7 @@ ap.add_argument("--curriculum-start", type=float, default=0.25)
 ap.add_argument("--curriculum-ramp", type=int, default=0)  # 0 = steps // 2
 ap.add_argument("--curriculum-seed", default=None)  # default: --seed
 ap.add_argument("--min-delta", type=float, default=0.0)
+ap.add_argument("--val-split", default="first")  # batch 6: first (legacy) | disjoint (no token shared with export's eval windows)
 ap.add_argument("--lora-rank", type=int, default=0)  # 0 = off
 ap.add_argument("--lora-alpha", type=float, default=0.0)  # 0 = the rank (scale 1)
 ap.add_argument("--lora-targets", default="wqkv,wo")
@@ -126,6 +131,7 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
         CCFG = lbtrain.curriculum_cfg(args.curriculum, args.curriculum_start, args.curriculum_ramp or max(1, args.steps // 2),
                                       args.curriculum_seed if args.curriculum_seed is not None else str(args.seed), bool(args.replay_corpus))
         lbtrain.check_stop_args(args.patience, args.min_delta)
+        VAL_SPLIT = lbtrain.check_val_split(args.val_split, bool(args.replay_corpus))
     except lbtrain.LbError as e:
         raise SystemExit(e.code)
 
@@ -289,10 +295,17 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
         print(f"replay rows={k_replay} ft rows={B - k_replay} of batch={B} (frac={args.replay_frac}); val windows={vrec['windows']} docs={vrec['docs']}", flush=True)
     else:
         k_replay = 0
-        # Fixed held-out evaluation windows (non-overlapping, deterministic).
-        n_eval = min(16, max(1, (len(held_tok) - 1) // T))
-        eval_x = np.stack([held_tok[i * T: i * T + T] for i in range(n_eval)]).astype(np.int64)
-        eval_y = np.stack([held_tok[i * T + 1: i * T + T + 1] for i in range(n_eval)]).astype(np.int64)
+        # Fixed held-out evaluation windows (non-overlapping, deterministic). --val-split first: windows 0..15 (these are
+        # also export.py's first 16 eval windows); disjoint: windows 97.. (no token shared with export's 96).
+        try:
+            val_ids = lbtrain.val_window_ids(VAL_SPLIT, len(held_tok), T)
+        except lbtrain.LbError as e:
+            raise SystemExit(e.code)
+        n_eval = len(val_ids)
+        eval_x = np.stack([held_tok[i * T: i * T + T] for i in val_ids]).astype(np.int64)
+        eval_y = np.stack([held_tok[i * T + 1: i * T + T + 1] for i in val_ids]).astype(np.int64)
+        if VAL_SPLIT != "first":
+            print(f"val split={VAL_SPLIT} windows={val_ids[0]}..{val_ids[-1]} n={n_eval} eval_windows=0..{lbtrain.EXPORT_EVAL_WINDOWS - 1}", flush=True)
 
     if os.path.exists(W("checkpoint.npz")):
         with np.load(W("checkpoint.npz"), allow_pickle=False) as z:
@@ -380,9 +393,7 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
         lbtrain.save_adapter(W("best-adapter.npz"), lora, LCFG, LCFG["baseSha256"], step)
 
 
-    best = {"val": float("inf"), "step": 0, "stale": 0}
-    if os.path.exists(W("best.json")):
-        best = json.load(open(W("best.json")))
+    best = lbtrain.val_best(json.load(open(W("best.json"))) if os.path.exists(W("best.json")) else None, VAL_SPLIT)
     slow = {"step": 0.0, "eval": 0.0, "evalSeconds": 0.0}
     if step == 0:
         te = time.time()
@@ -467,7 +478,7 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
                 shutil.copyfile(W("checkpoint.npz"), W(f"ckpt-{step}.npz"))
             last_val = rec["val_loss"]
             if lbtrain.improved(rec["val_loss"], best["val"], args.min_delta):
-                best = {"val": rec["val_loss"], "step": step, "stale": 0}
+                best = {"val": rec["val_loss"], "step": step, "stale": 0, **({"valSplit": VAL_SPLIT} if VAL_SPLIT != "first" else {})}
                 import shutil
                 if LCFG:
                     save_best_merged()
