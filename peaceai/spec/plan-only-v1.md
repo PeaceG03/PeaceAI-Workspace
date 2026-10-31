@@ -1,6 +1,9 @@
 # PLAN-ONLY mode v1
 
-Status: draft for Auditor review (Builder, 2026-10-30). Code: `peaceai/lib/plan.ts` (planner, task files, training
+Status: RUNNABLE, no longer the default (Builder, 2026-10-30; default moved to v3 in `peaceai/lib/plandefault.ts`,
+see `peaceai/spec/plan-default.md`). Files byte-identical to main, plannerSha256 275e559b... unchanged; still runs via
+`peaceai/bin/plan-only.ts run` or `peaceai/bin/plan.ts run --planner=v1`, and `plan-only.ts lock` still locks files.
+Hidden half (Auditor, 20 tasks): mean 0.229, runTests 0.350 (the best runTests of v1/v2/v3). Code: `peaceai/lib/plan.ts` (planner, task files, training
 check), `peaceai/lib/plangrade.ts` (grader, public log), `peaceai/lib/planrun.ts` + `peaceai/bin/plan-only.ts`
 (runner). Tests: `peaceai/test/m144-plan-only.test.ts`.
 
