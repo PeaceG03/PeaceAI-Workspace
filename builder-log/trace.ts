@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { effectiveVerdict, type TaskRecord, type VerdictRecord } from "../peaceai/lib/records.ts";
 import { parsePatchComment, PATCH_MARKER, sha256, verifyPatch, type PatchComment } from "../peaceai/lib/patch.ts";
 import { parseProvenance } from "../peaceai/lib/stacked.ts";
+import { ghCoreProbe, ghSignal, RateLimitRetry, stderrOf } from "../peaceai/lib/gh-ratelimit.ts";
 import { LANDING_REPOS, type Entry } from "./check.ts";
 
 export const BOT = "github-actions[bot]";
@@ -331,21 +332,33 @@ export function traceErrors(entries: readonly Entry[], rows: readonly TraceRow[]
 
 // ---- Real deps (gh CLI + local git clones). ----
 
-function gh(args: string[]): string {
-  const r = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (r.status !== 0) throw new Error(`gh ${args.slice(0, 2).join(" ")} failed: ${r.stderr.trim().slice(0, 200)}`);
-  return r.stdout;
+// A rate-limited gh call is waited out and retried by the shared helper (peaceai/lib/gh-ratelimit.ts); any other
+// failure, or a limit that cannot be waited out, throws the same error as before (and stopAfterRateLimit still stops).
+const ghLimit = (err: unknown) => ghSignal(stderrOf(err), ghCoreProbe("gh"));
+function gh(args: string[], retry: RateLimitRetry): string {
+  return retry.runSync(() => {
+    const r = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (r.status !== 0) throw Object.assign(new Error(`gh ${args.slice(0, 2).join(" ")} failed: ${r.stderr.trim().slice(0, 200)}`), { stderr: r.stderr });
+    return r.stdout;
+  }, ghLimit);
 }
 
 /** results: "gh" reads Results read-only through gh (box), a directory reads a local clone (CI main job), null skips. */
-export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir: string } | null, resultsRepo = "PeaceG03/PeaceAI-Results"): TraceDeps {
+export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir: string } | null, resultsRepo = "PeaceG03/PeaceAI-Results", retry: RateLimitRetry = new RateLimitRetry()): TraceDeps {
   const raw = (path: string): string | null => {
     if (results && results !== "gh") return existsSync(join(results.dir, path)) ? readFileSync(join(results.dir, path), "utf8") : null;
-    const r = spawnSync("gh", ["api", "-H", "Accept: application/vnd.github.raw+json", `repos/${resultsRepo}/contents/${path}`], {
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    return r.status === 0 ? r.stdout : null;
+    try {
+      return retry.runSync(() => {
+        const r = spawnSync("gh", ["api", "-H", "Accept: application/vnd.github.raw+json", `repos/${resultsRepo}/contents/${path}`], {
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+        });
+        if (r.status !== 0) throw Object.assign(new Error("gh raw read failed"), { stderr: r.stderr });
+        return r.stdout;
+      }, ghLimit);
+    } catch {
+      return null;
+    }
   };
   const names = (path: string): string[] => {
     if (results && results !== "gh") {
@@ -353,11 +366,11 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
       if (!existsSync(d)) throw new Error(`Results path ${path} missing`);
       return readdirSync(d);
     }
-    return gh(["api", `repos/${resultsRepo}/contents/${path}`, "--jq", ".[].name"]).split("\n").filter(Boolean);
+    return gh(["api", `repos/${resultsRepo}/contents/${path}`, "--jq", ".[].name"], retry).split("\n").filter(Boolean);
   };
   return {
     async botComments(issue) {
-      return gh(["api", "--paginate", `repos/${WORKSPACE}/issues/${issue}/comments?per_page=100`, "--jq", ".[] | {user: .user.login, body: .body}"])
+      return gh(["api", "--paginate", `repos/${WORKSPACE}/issues/${issue}/comments?per_page=100`, "--jq", ".[] | {user: .user.login, body: .body}"], retry)
         .split("\n")
         .filter(Boolean)
         .map((l) => JSON.parse(l) as { user: string; body: string })
@@ -399,14 +412,14 @@ export function makeGhDeps(clones: Record<string, string>, results: "gh" | { dir
       return all.join() === fp.join() ? { onto, via: all } : null;
     },
     async pullRequest(repo, n) {
-      const j = JSON.parse(gh(["api", `repos/${repo}/pulls/${n}`, "--jq", "{merged: .merged, mergeCommit: .merge_commit_sha, headRef: .head.ref}"])) as Omit<PullView, "diff">;
-      const diff = gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${repo}/pulls/${n}`]);
+      const j = JSON.parse(gh(["api", `repos/${repo}/pulls/${n}`, "--jq", "{merged: .merged, mergeCommit: .merge_commit_sha, headRef: .head.ref}"], retry)) as Omit<PullView, "diff">;
+      const diff = gh(["api", "-H", "Accept: application/vnd.github.diff", `repos/${repo}/pulls/${n}`], retry);
       return { merged: j.merged === true, mergeCommit: j.mergeCommit ?? null, headRef: String(j.headRef), diff };
     },
     async verdictPulls(repo, issue) {
       // Read-only: closed and open PRs, filtered by the exact verdict-branch prefix for this issue.
       const prefix = `peace-task/issue-${issue}-candidate-`;
-      return gh(["api", "--paginate", `repos/${repo}/pulls?state=all&per_page=100`, "--jq", ".[] | [.number, .head.ref] | @tsv"])
+      return gh(["api", "--paginate", `repos/${repo}/pulls?state=all&per_page=100`, "--jq", ".[] | [.number, .head.ref] | @tsv"], retry)
         .split("\n")
         .filter(Boolean)
         .map((l) => l.split("\t"))

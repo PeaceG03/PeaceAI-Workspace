@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { DEFAULT_POLICY, RateLimitRetry } from "../peaceai/lib/gh-ratelimit.ts";
 import { appendOnly, COVERAGE_NONE_SEQS, LOG_PATH, makeGithubShaResolver, peaceAiShaLandings, validateCoverageNoneSeqs, validateLog, verifyPeaceAiShas, type Entry } from "./check.ts";
 
 const ok = {
@@ -107,7 +108,8 @@ test("verify-shas: lookup errors name the HTTP status; 403/429 stops further cal
       const h = new Headers(r.headers ?? {});
       return { status: r.status, headers: h } as Response;
     }) as unknown as typeof fetch;
-    return { urls, resolver: makeGithubShaResolver("t", f) };
+    // No retries here: this test pins what happens once the wait-and-retry gives up (the messages and the stop).
+    return { urls, resolver: makeGithubShaResolver("t", f, new RateLimitRetry({ ...DEFAULT_POLICY, maxRetries: 0 })) };
   };
   // 8 distinct repo@sha (seq 5 repeats seq 1): deduped, so 8 calls when all pass.
   const all = stub(() => ({ status: 200 }));
@@ -183,4 +185,46 @@ test("PeaceAI proof wording without coverage:none fails unless grandfathered; wi
     ),
     "no coverage wording also requires the field",
   );
+});
+
+test("verify-shas: a rate limit with a near reset is waited out and retried; a far reset or a plain 403 still fails closed", async () => {
+  const entries = [1, 2].map((seq) => ({
+    seq, date: "2026-10-13", time: `01:0${seq}`, asked: "fixture asked text here",
+    changed: `PeaceSTOCKS@abcdef${seq}`, why: "fixture why text here", skill: "TEST_CASE", mark: "PeaceAI-able today", by: "PeaceAI",
+  })) as Entry[];
+  const now = 1_800_000_000_000;
+  const run = async (replies: (n: number) => { status: number; headers?: Record<string, string> }) => {
+    let n = 0;
+    const slept: number[] = [];
+    const f = (async () => { n += 1; const r = replies(n); return { status: r.status, headers: new Headers(r.headers ?? {}) } as Response; }) as unknown as typeof fetch;
+    const retry = new RateLimitRetry(DEFAULT_POLICY, { now: () => now, sleep: async (ms) => { slept.push(ms); }, log: () => {} });
+    const errs = await verifyPeaceAiShas(entries, makeGithubShaResolver("t", f, retry));
+    return { errs, calls: n, slept };
+  };
+  const limited = (resetInS: number) => ({ status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(now / 1000 + resetInS) } });
+  // Near reset (2 min): one wait to the reset plus 5 s slack, then the same lookup succeeds; both landings verified.
+  const near = await run((n) => (n === 1 ? limited(120) : { status: 200 }));
+  assert.deepEqual(near.errs, []);
+  assert.equal(near.calls, 3);
+  assert.deepEqual(near.slept, [125_000]);
+  // Far reset (40 min): no wait, the same fail-closed messages as before.
+  const far = await run(() => limited(2400));
+  assert.equal(far.calls, 1);
+  assert.deepEqual(far.slept, []);
+  assert.match(far.errs[0]!, /lookup failed \(fail closed\): HTTP 403 x-ratelimit-remaining 0 x-ratelimit-reset \S+ \(rate limited\)$/);
+  assert.match(far.errs[1]!, /^lookups stopped after HTTP 403 .*: 1 more repo@sha landing not verified \(fail closed\)$/);
+  // A 403 without limit headers: no wait, fails closed at once.
+  const plain = await run(() => ({ status: 403 }));
+  assert.equal(plain.calls, 1);
+  assert.deepEqual(plain.slept, []);
+  assert.match(plain.errs[0]!, /lookup failed \(fail closed\): HTTP 403$/);
+  // Secondary limit (429 + retry-after 30): waits 35 s, then succeeds.
+  const sec = await run((n) => (n === 1 ? { status: 429, headers: { "retry-after": "30" } } : { status: 200 }));
+  assert.deepEqual(sec.errs, []);
+  assert.deepEqual(sec.slept, [35_000]);
+  // Still limited after every retry: 3 waits at most, then the original fail-closed error.
+  const stuck = await run(() => limited(60));
+  assert.equal(stuck.calls, 4);
+  assert.equal(stuck.slept.length, 3);
+  assert.match(stuck.errs[0]!, /lookup failed \(fail closed\): HTTP 403 .*\(rate limited\)$/);
 });

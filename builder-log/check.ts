@@ -2,6 +2,7 @@
 // Usage: tsx builder-log/check.ts [--base <git-rev>] [--verify-shas]
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { RateLimitRetry, signalFromHeaders, type RateLimitSignal } from "../peaceai/lib/gh-ratelimit.ts";
 
 export const LOG_PATH = "builder-log/tasks.jsonl";
 
@@ -296,7 +297,8 @@ export function peaceAiShaLandings(entries: readonly Entry[]): { seq: number; la
  * status and, for 403/429, the rate-limit headers, so a failing check says why it failed.
  */
 export class LookupError extends Error {
-  constructor(message: string, readonly stop: boolean) {
+  /** `rateLimit`: the 403/429 response's limit headers, read by the shared wait-and-retry (peaceai/lib/gh-ratelimit.ts). */
+  constructor(message: string, readonly stop: boolean, readonly rateLimit: RateLimitSignal | null = null) {
     super(message);
     this.name = "LookupError";
   }
@@ -346,23 +348,30 @@ export function describeHttpFailure(res: { status: number; headers: { get(name: 
   return bits.join(" ");
 }
 
-/** GitHub Commits API resolver using a token (contents:read is enough for public + this-repo commits). */
-export function makeGithubShaResolver(token: string, fetchImpl: typeof fetch = fetch): ShaResolver {
+/**
+ * GitHub Commits API resolver using a token (contents:read is enough for public + this-repo commits). A 403/429 that is
+ * a rate limit with a near reset (or a retry-after) is waited out and retried by `retry` (one budget for every lookup);
+ * any other answer, or a limit that cannot be waited out, throws exactly as before.
+ */
+export function makeGithubShaResolver(token: string, fetchImpl: typeof fetch = fetch, retry: RateLimitRetry = new RateLimitRetry()): ShaResolver {
   if (!token) throw new Error("GITHUB_TOKEN is required for --verify-shas");
-  return async (repo, sha) => {
-    const url = `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(sha)}`;
-    const res = await fetchImpl(url, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "PeaceAI-Workspace-builder-log",
-      },
-    });
-    if (res.status === 200) return true;
-    if (res.status === 404) return false;
-    throw new LookupError(describeHttpFailure(res), res.status === 403 || res.status === 429);
-  };
+  return (repo, sha) => retry.run(() => lookupCommit(token, fetchImpl, repo, sha), (err) => (err instanceof LookupError ? err.rateLimit : null));
+}
+
+async function lookupCommit(token: string, fetchImpl: typeof fetch, repo: string, sha: string): Promise<boolean> {
+  const url = `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(sha)}`;
+  const res = await fetchImpl(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "PeaceAI-Workspace-builder-log",
+    },
+  });
+  if (res.status === 200) return true;
+  if (res.status === 404) return false;
+  const limited = res.status === 403 || res.status === 429;
+  throw new LookupError(describeHttpFailure(res), limited, limited ? signalFromHeaders(res) : null);
 }
 
 function baseText(rev: string): string {

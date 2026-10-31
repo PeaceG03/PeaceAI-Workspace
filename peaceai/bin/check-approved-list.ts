@@ -22,6 +22,7 @@ import { loadApprovedList } from "../lib/approved.ts";
 import { APPROVAL_BRANCH_PREFIX, APPROVE_COMMAND, AUDITOR_APPROVE_COMMAND, attestationProblem, auditorPolicyProblem, branchProblem, LIST_PATH, oneAppendProblem, PROPOSAL_LABEL, REVERT_BRANCH, revertProblem, SOURCE_BUILDER_LABEL, teamPickedProblem } from "../lib/approval.ts";
 import { AUDITOR_SOURCE } from "../lib/approved.ts";
 import { specHash } from "../lib/learned.ts";
+import { ghCoreProbe, ghSignal, RateLimitRetry, stderrOf } from "../lib/gh-ratelimit.ts";
 import { parseMarker, parseSpecBlock } from "../lib/propose.ts";
 
 const listPath = resolve(process.env.PEACEAI_APPROVED_LIST ?? "peaceai/rules/approved.json");
@@ -31,9 +32,15 @@ const gh = process.env.PEACEAI_GH ?? "gh";
 // maxBuffer: a branch compare carries every file's patch; past the 1 MiB default execFileSync throws (ENOBUFS) and
 // the branch check failed closed on a large but legitimate diff (#491 round 4: 1.1 MB). Still fails closed on any gh error.
 // stderr is captured (never printed) so a failure can name a fixed cause: the HTTP status, and whether it was a rate limit.
-const api = (path: string): Record<string, unknown> => JSON.parse(execFileSync(gh, ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 }));
+// A rate-limited call with a near reset is waited out and retried (peaceai/lib/gh-ratelimit.ts, one budget per run);
+// any other failure, or a limit that cannot be waited out, throws the same error as before, so cause() and the
+// stop-after-rate-limit below are unchanged.
+const limitRetry = new RateLimitRetry();
+const ghLimit = (err: unknown) => ghSignal(stderrOf(err), ghCoreProbe(gh));
+const ghRead = (args: string[]): string => limitRetry.runSync(() => execFileSync(gh, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 }), ghLimit);
+const api = (path: string): Record<string, unknown> => JSON.parse(ghRead(["api", path]));
 /** Every page of a list endpoint, flattened (gh api --paginate --slurp gives an array of pages). */
-const apiAll = (path: string): Record<string, unknown>[] => (JSON.parse(execFileSync(gh, ["api", "--paginate", "--slurp", path], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 })) as Record<string, unknown>[][]).flat();
+const apiAll = (path: string): Record<string, unknown>[] => (JSON.parse(ghRead(["api", "--paginate", "--slurp", path])) as Record<string, unknown>[][]).flat();
 /** main's approved list, read through the API (the checkout may be the branch). */
 const mainList = (): unknown => JSON.parse(Buffer.from(String(api(`repos/${repoName}/contents/${LIST_PATH}?ref=main`).content ?? ""), "base64").toString("utf8"));
 const readJsonFile = (p: string): unknown => { try { return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; } catch { return null; } };

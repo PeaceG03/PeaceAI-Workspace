@@ -462,8 +462,10 @@ test("CI guard: a gh failure names a fixed cause; after a rate limit it stops ca
     const calls = join(dir, "calls");
     const fake = (stderr: string) => {
       const f = join(dir, "gh");
+      // The rate-limit wait-and-retry (lib/gh-ratelimit.ts) asks the free `gh api rate_limit` once; it fails here
+      // too, so nothing is waited out. Probes are logged as "p", lookups as "x".
       writeFileSync(f, `#!/usr/bin/env node
-require("node:fs").appendFileSync(${JSON.stringify(calls)}, "x\\n");
+require("node:fs").appendFileSync(${JSON.stringify(calls)}, process.argv[3] === "rate_limit" ? "p\\n" : "x\\n");
 process.stderr.write(${JSON.stringify(stderr)});
 process.exit(1);
 `);
@@ -474,14 +476,61 @@ process.exit(1);
     const run = (stderr: string) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: "main", PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: dir, PEACEAI_GH: fake(stderr) } });
     const rl = run("gh: API rate limit exceeded for installation ID 9. (HTTP 403)\n");
     assert.equal(rl.status, 1, rl.stdout + rl.stderr);
-    assert.equal(readFileSync(calls, "utf8").split("\n").filter(Boolean).length, 1, "one gh call, then stop");
+    assert.deepEqual(readFileSync(calls, "utf8").split("\n").filter(Boolean), ["x", "p"], "one gh call and one failed rate_limit probe, then stop");
     assert.match(rl.stdout, /APPROVED LIST FAIL public-set-literal-v1: approval comment or issue not readable \(rate limited \(HTTP 403\)\)/);
     assert.match(rl.stdout, /APPROVED LIST FAIL rate limited: GitHub API rate limit hit; 2 more entries not checked \(fail closed\)/);
     assert.ok(!/installation ID/.test(rl.stdout + rl.stderr), "gh stderr is never printed");
     const nf = run("gh: Not Found (HTTP 404)\n");
     assert.equal(nf.status, 1);
-    assert.equal(readFileSync(calls, "utf8").split("\n").filter(Boolean).length, 3, "a 404 does not stop the other entries");
+    assert.deepEqual(readFileSync(calls, "utf8").split("\n").filter(Boolean), ["x", "x", "x"], "a 404 does not stop the other entries (and is never probed)");
     assert.equal((nf.stdout.match(/not readable \(HTTP 404\)/g) ?? []).length, 3);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("CI guard: a rate limit with a near reset is waited out and every entry is still checked; a far reset fails closed", () => {
+  const dir = scratch();
+  try {
+    const rules = join(dir, "rules");
+    mkdirSync(rules);
+    writeFileSync(join(rules, `${PUBLIC.id}.json`), JSON.stringify(PUBLIC));
+    const list = join(dir, "approved.json");
+    writeFileSync(list, JSON.stringify(withEntry({ schema: APPROVED_SCHEMA, rules: [] }, entry(PUBLIC_SHA))));
+    const comment = { user: { login: "PeaceG03" }, author_association: "OWNER", body: `/approve-rule ${PUBLIC_SHA}`, html_url: ENTRY_URL, issue_url: "https://api.github.com/repos/PeaceG03/PeaceAI-Workspace/issues/50" };
+    const issue = { labels: [{ name: "rule-proposal" }], body: ev().issueBody };
+    const calls = join(dir, "calls");
+    // The first lookup is rate limited; rate_limit reports 0 left and a reset `resetIn` s away; later lookups answer.
+    const fake = (resetIn: number, forged = false) => {
+      const f = join(dir, "gh");
+      writeFileSync(f, `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = process.argv[3];
+const n = fs.existsSync(${JSON.stringify(calls)}) ? fs.readFileSync(${JSON.stringify(calls)}, "utf8").split("\\n").filter((l) => l === "x").length : 0;
+fs.appendFileSync(${JSON.stringify(calls)}, p === "rate_limit" ? "p\\n" : "x\\n");
+if (p === "rate_limit") { process.stdout.write("0\\t" + (Math.floor(Date.now() / 1000) + ${resetIn}) + "\\n"); process.exit(0); }
+if (n === 0) { process.stderr.write("gh: API rate limit exceeded for installation ID 9. (HTTP 403)\\n"); process.exit(1); }
+if (p.includes("/issues/comments/")) process.stdout.write(${JSON.stringify(JSON.stringify(comment))}.replace("PeaceG03", ${JSON.stringify(forged ? "someone" : "PeaceG03")}));
+else process.stdout.write(${JSON.stringify(JSON.stringify(issue))});
+`);
+      chmodSync(f, 0o755);
+      rmSync(calls, { force: true });
+      return f;
+    };
+    const run = (gh: string) => spawnSync(tsx, [join(repo, "peaceai/bin/check-approved-list.ts")], { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_HEAD_REF: "", GITHUB_REF_NAME: "main", PEACEAI_APPROVED_LIST: list, PEACEAI_RULES_DIR: rules, PEACEAI_GH: gh, PEACEAI_RL_SLACK_S: "0" } });
+    const near = run(fake(1));
+    assert.equal(near.status, 0, near.stdout + near.stderr);
+    assert.match(near.stdout, /APPROVED LIST PASS rules=1/);
+    assert.match(near.stderr, /^rate limited \(HTTP 403\): waiting \d+s for the limit to reset, then retrying \(retry 1\/3\)$/m);
+    assert.deepEqual(readFileSync(calls, "utf8").split("\n").filter(Boolean), ["x", "p", "x", "x"], "retried, then comment and issue both read");
+    // After the wait the entry is still fully checked: a forged comment author still fails.
+    const forged = run(fake(1, true));
+    assert.equal(forged.status, 1);
+    assert.match(forged.stdout, /APPROVED LIST FAIL public-set-literal-v1: comment author is not PeaceG03 \(OWNER\)/);
+    // Reset 40 min away: no wait, the old fail-closed messages.
+    const far = run(fake(2400));
+    assert.equal(far.status, 1);
+    assert.match(far.stdout, /APPROVED LIST FAIL public-set-literal-v1: approval comment or issue not readable \(rate limited \(HTTP 403\)\)/);
+    assert.ok(!/waiting/.test(far.stderr));
+    assert.deepEqual(readFileSync(calls, "utf8").split("\n").filter(Boolean), ["x", "p"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
