@@ -111,6 +111,39 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
 - Refusals: LORA_NEEDS_BASE, LORA_BASE_READ, LORA_BAD_RANK, LORA_BAD_ALPHA, LORA_BAD_TARGETS, LORA_SHAPE,
   LORA_SCHEMA, LORA_BASE_MISMATCH, LORA_BASE_SHA_REQUIRED, LORA_ADAPTER_MISMATCH, LORA_OUT_EXISTS.
 
+## M163 first real run (Auditor ruling after #654)
+
+- Route: the existing manual-dispatch workflow `.github/workflows/peace-lm-train.yml`, input `run: lb-first-run`
+  (the default `ext-pretrain` runs only the unchanged M37 job). GitHub-hosted `ubuntu-24.04`, environment
+  `peaceai-results` (main-branch policy, no required reviewer: a dispatch from main starts without an approval click).
+- Main only: the `lb-ref-gate` job fails with LB_RUN_REF_NOT_MAIN on any other ref; the `lb-first-run` job needs it and
+  is itself `if: ... github.ref == 'refs/heads/main'`; lb-first-run.sh checks the ref again (`lb_run.py ref`).
+- Corpus: `peaceai/bin/lb-corpus-rebuild.sh` (ported from the box recipe that produced the cleared pins) fetches
+  PeaceAI-Workspace at b149d9bea430d45792470f0e32657032748af717 by sha (HEAD checked), runs that commit's ext-fetch /
+  ext-manifest-check (manifest 8458eac6), the public task-set refs and lb-clean with
+  `peaceai/model/lb-hidden-drop-hashes.txt` (byte-identical to main's copy, sha256 ecc97adf...). `lb_run.py pins`
+  refuses (LB_RUN_PIN_MISMATCH / LB_RUN_NOT_CLEARED) unless docs, manifest and fingerprint equal lb-train.json
+  firstRun.corpus (7eb6c628... / e9f78828... / a3e9165f...) and that corpus is in clearedCorpora.
+- Settings: only lb-train.json firstRun.train (no CLI override). `lb_run.py train-argv` refuses LoRA, replay,
+  init/resume, saves, markers and kept checkpoints (LB_RUN_FORBIDDEN_SETTING), any flag outside daily.trainArgsAllowed
+  or owned by the run (LB_RUN_SETTING_NOT_ALLOWED), and a run without adamw8bit, easy_to_hard and a patience
+  (LB_RUN_SETTING_REQUIRED). It appends --deadline = job start + trainDeadlineMin (290) and --max-seconds, refusing
+  (LB_RUN_BAD_DEADLINE) unless trainDeadlineMin + reserveMin (40) <= jobTimeoutMin (330, the job's timeout-minutes).
+  Model: the M37 ext-train.json size (d 320, 6 layers, ctx 512, vocab 8192, batch 16), steps 1500, eval every 50,
+  patience 4, min-delta 0.001.
+- Eval: export.py on the run's own held-out split: model bits per byte and the unigram baseline (trained on the train
+  split) on the SAME held-out windows. The log verdict is beats_baseline only when held-out bpb < baseline bpb, else
+  no_gain; the 4.06 smoke figure is a reference only, the in-run baseline is the comparison.
+- Nothing leaves the runner but one row: no artifacts, no cache, no R2; lb-first-run.sh deletes the work, model and
+  corpus dirs on exit and the last step removes them again (always). Logs: codes, pins, shas, counts and step metrics.
+- Results: `results-write.sh --sparse "/runs/lb-train/<run id>.json"` (new file only, blob verified), after the
+  checkout and key-script verify step. `lb_run.py land` writes exactly the fields pins {docs, manifest, fingerprint},
+  workflowSha, runId, steps, stopReason, heldoutBpb, baselineBpb, wallSeconds, checkpointSha256 (LB_RUN_ROW_FIELD for
+  any other or missing field, LB_RUN_ROW_VALUE for a bad value, LB_RUN_ROW_EXISTS if present). No weights or derived
+  bytes, no latest.json, nothing modified or deleted.
+- Tests: m163-lb-first-run.test.ts (each tagged lb_run.py guard killed when disabled, near misses, the workflow shape
+  checker with its mutants, the end-to-end run on a tiny corpus).
+
 ## Tests
 
 m157-m161 (peaceai/test), the case driver m157-lbtrain-cases.py and the helper m157-lbtrain-mut.ts. Every tagged
