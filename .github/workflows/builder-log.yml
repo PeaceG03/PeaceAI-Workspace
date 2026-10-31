@@ -12,7 +12,9 @@ jobs:
   builder-log:
     name: builder-log
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # 5 min of work + two lookup steps (--verify-shas, trace.ts) that may each wait out a GitHub rate limit for at most
+    # 17 min (peaceai/lib/gh-ratelimit.ts DEFAULT_POLICY; m155 pins this sum).
+    timeout-minutes: 45
     permissions:
       contents: read
       issues: read
@@ -57,7 +59,8 @@ jobs:
     name: builder-log Results cross-check (trace + rule-skill)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'PeaceG03/PeaceAI-Workspace'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 15 min of work + trace.ts waiting out a GitHub rate limit for at most 17 min (gh-ratelimit.ts; m155 pins this sum).
+    timeout-minutes: 35
     environment: peaceai-core
     permissions:
       contents: read

@@ -47,7 +47,8 @@ jobs:
   tamper-proof:
     name: tamper-proof
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # 10 min of work + check-approved-list.ts waiting out a GitHub rate limit for at most 17 min (gh-ratelimit.ts; m155).
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: read
