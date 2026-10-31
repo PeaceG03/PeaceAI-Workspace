@@ -13,8 +13,9 @@ jobs:
     name: builder-log
     runs-on: ubuntu-24.04
     # 5 min of work + two lookup steps (--verify-shas, trace.ts) that may each wait out a GitHub rate limit for at most
-    # 17 min (peaceai/lib/gh-ratelimit.ts DEFAULT_POLICY; m155 pins this sum).
-    timeout-minutes: 45
+    # 17 min (peaceai/lib/gh-ratelimit.ts DEFAULT_POLICY; m155 pins this sum), plus 5 min of headroom for slow npm ci
+    # and git clone steps (raised from 45 after #659).
+    timeout-minutes: 50
     permissions:
       contents: read
       issues: read
