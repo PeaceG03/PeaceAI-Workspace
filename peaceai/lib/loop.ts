@@ -381,15 +381,16 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       try { o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: [...base.failing] }); } catch { prepared = false; }
       if (!prepared) return done("PROPOSER_FAILED"); // m152-guard:prepare-failed
     }
-    // 4. the first proposal
+    // 4. the proposals. (M164) a throwing next() is the proposer's failure, not the fetch's: a fixed code, the error
+    // itself is dropped (as prepare's)
     const feedback: Feedback[] = [];
-    let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback, baseline });
-    if ("refuse" in p) return done(p.refuse);
+    const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
+      try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
+    };
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      if (attempt > 1) {
-        p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback, baseline });
-        if ("refuse" in p) return done(p.refuse);
-      }
+      const p = ask(attempt);
+      if (p === null) return done("PROPOSER_FAILED"); // m164-guard:next-failed
+      if ("refuse" in p) return done(p.refuse);
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);
       putTeamTests();
