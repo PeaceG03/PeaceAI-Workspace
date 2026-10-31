@@ -1,7 +1,7 @@
 // M144 PLAN-ONLY mode v1 (peaceai/spec/plan-only-v1.md): task-file validation, the training-data exclusion
 // (Auditor's condition), the lock requirement, the planner's can-do / missing marking on a fixture repository, the
 // grader's math, the public log's row validator (no URL, no free text) and its add-only rule. Offline: the fetcher is
-// a fixture, so no test touches the network.
+// a fixture, so no test touches the network. Also: plan-only from another cwd or a worktree with no node_modules.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -12,6 +12,7 @@ import { approvedRules, CAPABILITIES, planTask, sha256, taskFileProblem, trainin
 import { addOnlyProblem, gradePlan, isLocked, LOCK_SCHEMA, logRowProblem, parseLog, RUN_LOG, RUN_SCHEMA, taskKey } from "../lib/plangrade.ts";
 import { runFile, runTask, type Checkout, type Fetcher } from "../lib/planrun.ts";
 import { loadTargets } from "../lib/target.ts";
+import { typescriptEntry } from "../lib/tsresolve.ts";
 import type { IndexFile } from "../lib/symbols.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
@@ -240,4 +241,77 @@ test("M144: the committed run log is valid and add-only against its git history"
     prev = cur;
   }
   assert.equal(addOnlyProblem(prev, text), null, "working tree extends the last commit");
+});
+
+// Auditor (2026-10-30): plan-only must work when run from another directory, including a checkout with no
+// node_modules of its own (a git worktree). Node resolves "typescript" from the importing file, never from the cwd.
+const TSX = join(repo, "node_modules/.bin/tsx");
+const spawn = (cwd: string, args: string[]) => { try { return { status: 0, out: execFileSync(TSX, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e: any) { return { status: e.status as number, out: `${e.stdout ?? ""}${e.stderr ?? ""}` }; } };
+const synthHidden = (): string => JSON.stringify({ schema: publicFile.schema, set: "hidden", tasks: [fixtureTask()] });
+
+test("M144: plan-only runs from a temp dir outside the repo (usage, and a refusal that needs the parser loaded)", () => {
+  const out = mkdtempSync(join(tmpdir(), "m144-cwd-"));
+  try {
+    writeFileSync(join(out, "t.json"), synthHidden());
+    const usage = spawn(out, [join(repo, "peaceai/bin/plan-only.ts")]);
+    assert.equal(usage.status, 2, usage.out);
+    assert.match(usage.out, /^usage: plan-only\.ts lock\|run <taskfile>/);
+    // `run` on an unlocked file (path relative to the temp cwd): refused before any fetch, nothing written.
+    const before = read(RUN_LOG);
+    const r = spawn(out, [join(repo, "peaceai/bin/plan-only.ts"), "run", "t.json"]);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /^refused [A-Z_]+\n$/);
+    assert.doesNotMatch(r.out, /TASK_FILE_INVALID|TYPESCRIPT_NOT_FOUND|ERR_MODULE_NOT_FOUND/);
+    assert.equal(read(RUN_LOG), before);
+  } finally { rmSync(out, { recursive: true, force: true }); }
+});
+
+test("M144: plan-only in a git worktree with no node_modules, run from outside it, uses the main checkout's pinned typescript; the old static import fails there (near-miss)", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "m144-wt-"));
+  const wt = join(base, "wt");
+  const out = join(base, "cwd");
+  mkdirSync(out);
+  try {
+    execFileSync("git", ["worktree", "add", "--detach", "-q", wt, "HEAD"], { cwd: repo, stdio: "ignore" });
+    assert.equal(execFileSync("git", ["ls-files", "--", "node_modules"], { cwd: wt, encoding: "utf8" }), "", "node_modules is not checked in");
+    if (!typescriptEntry(wt)) { t.skip("the main worktree has no pinned typescript"); return; }
+    writeFileSync(join(out, "t.json"), synthHidden());
+    // Fixed path: lock works from the outside cwd and appends one hidden lock row to the worktree's log.
+    const r = spawn(out, [join(wt, "peaceai/bin/plan-only.ts"), "lock", "t.json"]);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /^locked set=hidden tasks=1 sha256=[0-9a-f]{64}\n$/);
+    assert.ok(isLocked(readFileSync(join(wt, RUN_LOG), "utf8"), sha256(synthHidden())));
+    // The parser really runs there: after the redirect, symbols.ts (static `import ts from "typescript"`) indexes a file.
+    const probe = join(out, "probe.mts");
+    writeFileSync(probe, `import { typescriptEntry, useTypescript } from ${JSON.stringify(join(wt, "peaceai/lib/tsresolve.ts"))};\nuseTypescript(typescriptEntry()!);\nconst { buildIndex } = await import(${JSON.stringify(join(wt, "peaceai/lib/symbols.ts"))});\nconsole.log(buildIndex([{ path: "src/a.ts", content: "export function f(): number { return 1; }\\n" }]).defs.map((d: { name: string }) => d.name).join(","));\n`);
+    const ok = spawn(out, [probe]);
+    assert.equal(ok.status, 0, ok.out);
+    assert.equal(ok.out.trim(), "f");
+    // Near-miss: the same worktree, the planner imported directly with no redirect (the old plan-only.ts): typescript is not found.
+    const old = join(out, "old.mts");
+    writeFileSync(old, `await import(${JSON.stringify(join(wt, "peaceai/lib/planrun.ts"))});\nconsole.log("loaded");\n`);
+    const bad = spawn(out, [old]);
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.out, /Cannot find package 'typescript'/);
+  } finally {
+    try { execFileSync("git", ["worktree", "remove", "--force", wt], { cwd: repo, stdio: "ignore" }); } catch { /* removed below */ }
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("M144: typescriptEntry takes only the pinned version and never walks above a candidate root (near-miss)", () => {
+  const root = mkdtempSync(join(tmpdir(), "m144-pin-"));
+  try {
+    const pin = (JSON.parse(read("package.json")) as { devDependencies: Record<string, string> }).devDependencies.typescript!;
+    writeFileSync(join(root, "package.json"), JSON.stringify({ devDependencies: { typescript: pin } }));
+    assert.equal(typescriptEntry(root), null, "no node_modules: not found (no walk up to a parent's)");
+    const dir = join(root, "node_modules", "typescript");
+    mkdirSync(join(dir, "lib"), { recursive: true });
+    writeFileSync(join(dir, "lib", "typescript.js"), "module.exports = {};\n");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "typescript", version: "0.0.1", main: "./lib/typescript.js" }));
+    assert.equal(typescriptEntry(root), null, "wrong version: refused");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "typescript", version: pin, main: "./lib/typescript.js" }));
+    assert.equal(typescriptEntry(root), join(dir, "lib", "typescript.js"));
+    assert.ok(typescriptEntry(repo)?.startsWith(join(repo, "node_modules", "typescript")), "a full checkout uses its own copy first");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
