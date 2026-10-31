@@ -52,6 +52,8 @@ test("M151: v2 rows: runner, deps and baseline are required, fixed values, consi
   assert.equal(loopRowProblem({ ...v1, attemptCodes: [], attempts: 0, code: "DEPS_TIMEOUT", result: "refused", tests: null }), "code", "DEPS_* codes are v2 only");
   assert.equal(loopRowProblem({ ...v1, attemptCodes: [], attempts: 0, code: "DEPS_NONREGISTRY", result: "refused", tests: null }), "code");
   assert.equal(loopRowProblem(v2({ code: "DEPS_NONREGISTRY", result: "refused", attempts: 0, attemptCodes: [], tests: null, deps: null, baseline: null })), null);
+  assert.equal(loopRowProblem(v2({ code: "DEPS_PM_CONFIG", result: "refused", attempts: 0, attemptCodes: [], tests: null, deps: null, baseline: null })), null);
+  assert.equal(loopRowProblem({ ...v1, attemptCodes: [], attempts: 0, code: "DEPS_PM_CONFIG", result: "refused", tests: null }), "code", "DEPS_PM_CONFIG is v2 only");
 });
 
 test("M151: hidden rows carry the taskKey and scores only: runner, deps and baseline must be null", () => {

@@ -61,7 +61,8 @@ test("M151 mutation: the guard tags are unique and cover the guards", () => {
     "deps-cand", "deps-chown", "deps-config", "deps-env-i", "deps-frozen", "deps-ignore-scripts", "deps-kill", "deps-lockfile", "deps-nonregistry", "deps-npm-allow",
     "deps-pnpmfile", "deps-registry", "deps-size", "deps-timeout", "lock-all", "lock-link", "lock-npm", "lock-npm-both", "lock-npm-key", "lock-npm-v1", "lock-pnpm-anchor", "lock-pnpm-dup", "lock-pnpm-esc",
     "lock-pnpm-flow", "lock-pnpm-indent", "lock-pnpm-key", "lock-pnpm-link", "lock-pnpm-missing", "lock-pnpm-res", "lock-pnpm-url", "lock-size", "lock-yarn",
-    "lock-yarn-dup", "lock-yarn-field", "lock-yarn-spec", "runner-dep", "runner-other", "service", "shim-exit", "shim-report", "shim-suites",
+    "lock-yarn-dup", "lock-yarn-field", "lock-yarn-spec", "pm-nested-lock", "pm-pnpm", "pm-tree", "pnpm-field", "pnpm-manifest", "pnpm-ws", "pnpm-ws-catalog", "pnpm-ws-key",
+    "pnpm-ws-other", "pnpm-ws-packages", "pnpm-ws-parse", "runner-dep", "runner-other", "service", "shim-exit", "shim-report", "shim-suites",
   ]);
 });
 

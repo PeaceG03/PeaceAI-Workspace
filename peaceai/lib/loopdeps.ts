@@ -10,7 +10,8 @@
 //      (size-capped; both npm lockfiles at once refused; pnpm parsed as a plain YAML subset, yarn fields strict): every
 //      package must come from https://registry.npmjs.org/ (yarn v1: or registry.yarnpkg.com) with an integrity hash
 //      (git, remote-tarball, file: and outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace /
-//      link entries inside the repo are allowed); npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
+//      link entries inside the repo are allowed); a lockfile below the root, and for pnpm any pnpm-workspace.yaml key but
+//      packages / catalog(s) or any `pnpm` field in a package.json, is refused with DEPS_PM_CONFIG; npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
 //      as the candidate uid WITH network (registry only by config; it runs no package code: scripts off, no
 //      pnpmfile). Every candidate-uid process is killed right after the install. Tests never get network. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
 //      sha256 (+ package manager and manifests) inside one run dir only, removed with the run.
@@ -32,7 +33,7 @@ export const RUNNERS = ["node-test", "vitest", "jest"] as const;
 export type RunnerKind = (typeof RUNNERS)[number];
 export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
-export const DEPS_CODES = ["DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE"] as const;
+export const DEPS_CODES = ["DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE"] as const;
 export type DepsCode = (typeof DEPS_CODES)[number];
 export type RunnerRefusal = "TEST_RUNNER_UNSUPPORTED" | "TEST_NEEDS_SERVICE";
 
@@ -382,12 +383,97 @@ const scanLock = (root: string, f: string, pm: PackageManager): boolean => {
  * inside the repo. Every other lockfile at the root is scanned too (npm also reads yarn.lock), and a repo with both
  * npm-shrinkwrap.json and package-lock.json is refused (npm ci would read the shrinkwrap; no guessing).
  */
-export function lockfileAllowed(root: string, p: LockPick): boolean {
+function rootLockfilesAllowed(root: string, p: LockPick): boolean {
   const present = presentLockfiles(root);
   if (present.some(([f]) => f === "npm-shrinkwrap.json") && present.some(([f]) => f === "package-lock.json")) return false; // guard:lock-npm-both
   for (const [f, pm] of present) if (f !== p.lockfile && !scanLock(root, f, pm)) return false; // guard:lock-all
   return scanLock(root, p.lockfile, p.pm);
 }
+
+// ---- package-manager settings outside the root lockfile (Auditor FAIL 886ee29, M151 r4)
+/** Lockfile names refused anywhere below the root: a package manager can be made to read a nested one (pnpm with
+ * sharedWorkspaceLockfile: false installs each workspace package from its own lock), and only the root is scanned. */
+export const NESTED_LOCKFILES = ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "bun.lock", "bun.lockb"] as const;
+/** The only top-level keys a pnpm-workspace.yaml may hold. Every other key is a pnpm setting (registries,
+ * sharedWorkspaceLockfile, overrides, pnpmfile, configDependencies, ...) and is refused rather than judged. */
+export const PNPM_WORKSPACE_KEYS = ["packages", "catalog", "catalogs"] as const;
+const TREE_MAX_ENTRIES = 500_000;
+
+/** Every non-directory entry under a tree (repo-relative, symlinks not followed, .git skipped). complete: false when a
+ * dir could not be read or the tree is over TREE_MAX_ENTRIES (the caller refuses: what was not seen is not vouched for). */
+export function treeFiles(root: string): { files: string[]; complete: boolean } {
+  const files: string[] = [];
+  let n = 0;
+  const walk = (rel: string): boolean => {
+    let ents: string[];
+    try { ents = readdirSync(join(root, rel)); } catch { return false; }
+    for (const e of ents) {
+      if (++n > TREE_MAX_ENTRIES) return false;
+      const r = rel ? `${rel}/${e}` : e;
+      let st; try { st = lstatSync(join(root, r)); } catch { return false; }
+      if (!st.isDirectory()) files.push(r);
+      else if (e !== ".git" && !walk(r)) return false;
+    }
+    return true;
+  };
+  const complete = walk("");
+  return { files, complete };
+}
+
+/** A regular file under the size cap, as text; null otherwise (a symlink, a dir, unreadable, too large). */
+function smallFile(p: string): string | null {
+  try { const st = lstatSync(p); if (!st.isFile() || st.size > LOCK_MAX_BYTES) return null; return readFileSync(p, "utf8"); } catch { return null; }
+}
+
+/** pnpm-workspace.yaml: the plain YAML subset (the lockfile parser), only packages / catalog / catalogs, packages
+ * globs inside the repo, catalog entries plain version ranges (npm: aliases allowed; no other protocol). */
+export function pnpmWorkspaceAllowed(text: string): boolean {
+  const parsed = pnpmParse(text);
+  if (parsed === null) return false; // guard:pnpm-ws-parse
+  const doc = parsed ?? ymap();
+  if (!Object.keys(doc).every((k) => (PNPM_WORKSPACE_KEYS as readonly string[]).includes(k))) return false; // guard:pnpm-ws-key
+  const pk = doc.packages;
+  if (pk !== undefined && pk !== "" && !(Array.isArray(pk) && pk.every((g) => typeof g === "string" && insideRepo(".", g.replace(/^!/, ""))))) return false; // guard:pnpm-ws-packages
+  const specs = (m: YNode | undefined): boolean => m === undefined || m === "" || (isYMap(m) && Object.values(m).every((v) => typeof v === "string" && v !== "" && !v.replace(/^npm:/, "").includes(":")));
+  if (!specs(doc.catalog) || !(doc.catalogs === undefined || doc.catalogs === "" || (isYMap(doc.catalogs) && Object.values(doc.catalogs).every(specs)))) return false; // guard:pnpm-ws-catalog
+  return true;
+}
+
+/** A package.json with no `pnpm` field (any `pnpm` field is refused: overrides, packageExtensions, patchedDependencies,
+ * and the settings pnpm still reads there can change what is fetched or from where; none is needed to install). Not a
+ * regular file, or not a JSON object (a leading BOM is stripped first, as pnpm does) -> refused too. */
+export function pnpmFieldFree(p: string): boolean {
+  const t = smallFile(p);
+  if (t === null) return false;
+  let o: unknown;
+  try { o = JSON.parse(t.replace(/^\ufeff/, "")); } catch { return false; }
+  return !!o && typeof o === "object" && !Array.isArray(o) && !Object.hasOwn(o, "pnpm");
+}
+
+/** pnpm only: one root pnpm-workspace.yaml at most, no other manifest format, every package.json free of `pnpm`. */
+function pnpmConfigAllowed(root: string, files: readonly string[]): boolean {
+  if (files.some((f) => f !== "pnpm-workspace.yaml" && /^pnpm-workspace\.ya?ml$/.test(posix.basename(f)))) return false; // guard:pnpm-ws-other
+  if (files.some((f) => /^package\.(?:json5|ya?ml)$/.test(posix.basename(f)))) return false; // guard:pnpm-manifest
+  if (files.includes("pnpm-workspace.yaml") && !pnpmWorkspaceAllowed(smallFile(join(root, "pnpm-workspace.yaml")) ?? "\t")) return false; // guard:pnpm-ws
+  for (const f of files) if (posix.basename(f) === "package.json" && !pnpmFieldFree(join(root, f))) return false; // guard:pnpm-field
+  return true;
+}
+
+/**
+ * Why the copy's dependencies may not be installed, or null: DEPS_PM_CONFIG for package-manager settings the loop
+ * does not vouch for (a lockfile below the root; for pnpm, workspace settings or a `pnpm` field), else
+ * DEPS_NONREGISTRY when a root lockfile has a non-registry source. .npmrc / .yarnrc* / .pnpmfile.* / bunfig.toml at
+ * any depth are not judged here: they are removed from the install tree (guard:deps-config).
+ */
+export function depsSourceProblem(root: string, p: LockPick): "DEPS_PM_CONFIG" | "DEPS_NONREGISTRY" | null {
+  const tree = treeFiles(root);
+  if (!tree.complete) return "DEPS_PM_CONFIG"; // guard:pm-tree
+  if (tree.files.some((f) => f.includes("/") && (NESTED_LOCKFILES as readonly string[]).includes(posix.basename(f)))) return "DEPS_PM_CONFIG"; // guard:pm-nested-lock
+  if (p.pm === "pnpm" && !pnpmConfigAllowed(root, tree.files)) return "DEPS_PM_CONFIG"; // guard:pm-pnpm
+  return rootLockfilesAllowed(root, p) ? null : "DEPS_NONREGISTRY";
+}
+/** True when installDeps may run the package manager on this copy (depsSourceProblem is null). */
+export const lockfileAllowed = (root: string, p: LockPick): boolean => depsSourceProblem(root, p) === null;
 
 /** Package-manager config files that can redirect the registry or run code at install time. */
 export const PM_CONFIG_FILES = [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", ".pnpmfile.mjs", "bunfig.toml"] as const;
@@ -462,7 +548,8 @@ export function treeBytes(p: string): number {
 export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o: DepsOptions = {}): { pm: PackageManager } | { refuse: DepsCode } {
   const lock = pickLockfile(copyDir, Math.min(o.lockMaxBytes ?? LOCK_MAX_BYTES, LOCK_MAX_BYTES));
   if ("refuse" in lock) return lock;
-  if (!lockfileAllowed(copyDir, lock)) return { refuse: "DEPS_NONREGISTRY" }; // guard:deps-nonregistry
+  const problem = depsSourceProblem(copyDir, lock);
+  if (problem) return { refuse: problem }; // guard:deps-nonregistry
   const files = listed(copyDir);
   const manifests = files.filter((f) => posix.basename(f) === "package.json" || f === "pnpm-workspace.yaml").sort();
   const key = sha256([lock.pm, lock.version ?? "", ...presentLockfiles(copyDir).map(([f]) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`), ...manifests.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`)].join("\n"));

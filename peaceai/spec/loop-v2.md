@@ -25,8 +25,9 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
    --allow-remote=none --allow-file=none --ignore-scripts`;
    `yarn.lock` (classic) -> `corepack yarn@1.x install --frozen-lockfile --ignore-scripts`. `packageManager` pins the
    version; otherwise the pnpm lockfile format picks one. No lockfile -> `DEPS_NO_LOCKFILE`; yarn berry or an unknown
-   pnpm lockfile -> `DEPS_PM_UNSUPPORTED`. Before anything is installed the lockfile is scanned (below); a
-   non-registry source -> `DEPS_NONREGISTRY`.
+   pnpm lockfile -> `DEPS_PM_UNSUPPORTED`. Before anything is installed the package-manager settings are checked and
+   the lockfile is scanned (below); settings the loop does not vouch for -> `DEPS_PM_CONFIG`, a non-registry source
+   -> `DEPS_NONREGISTRY`.
 4. Targets: the team's test files (as v1). After a team pass, the tests the code search tools relate to the edited
    files (`testsFor`, top 3 per file, at most 10, same package, not the team's) are run on the edited copy; if they
    fail there but passed on the unedited copy the attempt gets `RELATED_FAIL` (a regression) and the loop revises.
@@ -64,6 +65,26 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
     under `https://registry.npmjs.org/` or `https://registry.yarnpkg.com/` (exact host, https, lower case; Auditor
     ruling) with an `integrity` line, or, without one, the `#<40-hex sha1>` fragment yarn v1 checks the tarball
     against. Any other host or no hash stays `DEPS_NONREGISTRY`.
+- Package-manager settings outside the root lockfile (`depsSourceProblem`, before the lockfile scan, fail closed;
+  Auditor FAIL 886ee29). The whole copy is walked (symlinks not followed, `.git` skipped; a dir it cannot read or
+  more than 500,000 entries -> refused). Refused with `DEPS_PM_CONFIG`:
+  - any lockfile below the root, for every package manager: `pnpm-lock.yaml`, `package-lock.json`,
+    `npm-shrinkwrap.json`, `yarn.lock`, `bun.lock`, `bun.lockb` at any depth (only root lockfiles are scanned, and
+    pnpm with `sharedWorkspaceLockfile: false` installs each workspace package from its own lock).
+  - pnpm only (the picked manager is pnpm): a `pnpm-workspace.yaml` that is not a regular file, is outside the plain
+    YAML subset (the lockfile parser), or has any top-level key other than `packages`, `catalog`, `catalogs`
+    (`registries`, `sharedWorkspaceLockfile`, `overrides`, `pnpmfile`, `onlyBuiltDependencies`, ... are all refused,
+    not judged); `packages` must be a list of globs inside the repo (`!` negations too); catalog entries must be
+    plain version ranges (`npm:` aliases allowed, no other protocol). A `pnpm-workspace.yaml` below the root, a
+    `pnpm-workspace.yml`, or a `package.yaml` / `package.json5` / `package.yml` anywhere. Any `pnpm` field in any
+    `package.json` in the copy (a superset of the root plus the workspace packages), or a `package.json` that is not
+    a regular file or not a JSON object (a leading BOM is stripped first, as pnpm does). Any `pnpm` field is refused
+    rather than an allowed subset: `overrides`, `packageExtensions`, `patchedDependencies` and the settings pnpm still
+    reads there can change what is fetched or from where, and none is needed for a frozen, scripts-off install.
+  - npm and yarn never read pnpm's files, so those are not judged in npm / yarn repos.
+  - `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml` are removed at ANY depth from the
+    install tree (basename match over every tracked file, below), and untracked files are never copied there; the
+    user / global config is the private HOME under `env -i`, so no repo file is read as one.
 - npm also gets `--allow-git=none --allow-remote=none --allow-file=none` (npm 11 defaults these to `all`), so npm
   itself refuses git / url / file deps even if the scan missed one.
 - Runs as the stage-2 candidate uid (`sudo -n -u <cand>`; the same separate no-sudo uid as the test runs), under
@@ -113,7 +134,7 @@ mutation test deletes each in turn (with a loop.ts that imports the mutant) and 
 assertion. deps-cand / deps-config / deps-registry / deps-env-i / deps-kill / deps-chown / deps-timeout / deps-size
 need the candidate uid and sudo: where those are missing, their mutants and the install cases (`needsCand`) are
 reported as SKIPPED with a reason, never as passes; the loop cases assert the `CAND_UID_*` refusal there. The
-lockfile-scan cases and `DEPS_NONREGISTRY` need no candidate uid and run everywhere. The tests never use the
+lockfile-scan and pm-config cases, `DEPS_NONREGISTRY` and `DEPS_PM_CONFIG` need no candidate uid and run everywhere. The tests never use the
 network: the package manager is a vendored stub injected through `DepsOptions.tool`, and the vitest it installs is
 a vendored stub runner.
 
@@ -122,8 +143,8 @@ a vendored stub runner.
 Rows are `peaceai-plan-loop:v2` / `loop-v2` with three more required keys: `runner` (node-test / vitest / jest, or
 null when refused before one was picked), `deps` (none / npm / pnpm / yarn, or null) and `baseline`
 (`{ total, passing, failing }` for the team's tests on the unedited copy, or null when it did not run). New codes:
-`TEST_NEEDS_SERVICE`, `DEPS_NO_LOCKFILE`, `DEPS_PM_UNSUPPORTED`, `DEPS_NONREGISTRY`, `DEPS_INSTALL_FAILED`,
-`DEPS_TIMEOUT`, `DEPS_TOO_LARGE`, attempt code `RELATED_FAIL` (all v2-only; v1 rows keep validating as before). Codes
+`TEST_NEEDS_SERVICE`, `DEPS_NO_LOCKFILE`, `DEPS_PM_UNSUPPORTED`, `DEPS_NONREGISTRY`, `DEPS_PM_CONFIG`,
+`DEPS_INSTALL_FAILED`, `DEPS_TIMEOUT`, `DEPS_TOO_LARGE`, attempt code `RELATED_FAIL` (all v2-only; v1 rows keep validating as before). Codes
 and numbers only, as v1. Hidden-set rows carry the taskKey plus scores only: `runner`, `deps` and `baseline` are
 always null there (together they could identify the repo); the loop writes them so and the validator refuses
 anything else (`hidden_detail`).
@@ -138,6 +159,9 @@ anything else (`hidden_detail`).
   network. Package code is not run there (see Install safety); it first runs inside the test isolation (no network).
 - pnpm lockfiles outside the plain YAML subset (hand-edited, or written by a future pnpm in another style) are
   refused (`DEPS_NONREGISTRY`) rather than parsed.
+- pnpm repos whose `pnpm-workspace.yaml` carries settings (even inert ones such as `allowBuilds` or
+  `minimumReleaseAge`), or whose `package.json` has a `pnpm` field, are refused (`DEPS_PM_CONFIG`); widening this
+  needs a per-key ruling.
 - One package per task; no service-backed suites; no yarn berry; no bun / deno.
 - Box notes: the shared `peaceai-cand` uid is used by every agent's m146 runs, which kill all its processes; use a
   separate candidate uid per concurrent run (`PEACEAI_STAGE2_CAND`, `M146_CAND` / `M151_CAND` in tests). A full or

@@ -5,7 +5,7 @@
 // fail-closed CAND_UID_* refusal there instead.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as Deps from "../lib/loopdeps.ts";
 import type * as Loop from "../lib/loop.ts";
@@ -352,6 +352,103 @@ export const CASES: Case[] = [
       withCache(l, ctx, (cache) => {
         const d = repo(dir(ctx, "big"), { "package.json": pkgJson({ test: "vitest run" }, VDEP), "package-lock.json": npmOk });
         assert.deepEqual(l.deps.installDeps(d, fake as never, cache, { tool: ctx.tool, lockMaxBytes: 16 }), { refuse: "DEPS_TOO_LARGE" });
+      });
+    },
+  },
+  // ---- package-manager settings outside the root lockfile, round 4 (Auditor FAIL 886ee29)
+  {
+    id: "pm config: a lockfile below the root (any manager, any depth) or an unreadable dir -> DEPS_PM_CONFIG; look-alike names and lockfile-named dirs pass",
+    run(l, ctx) {
+      const npmOk = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT } } });
+      const base = { "package.json": pkgJson({}), "package-lock.json": npmOk, "packages/a/package.json": pkgJson({}) };
+      const check = (files: Record<string, string>) => { const d = plain(dir(ctx, "nest"), files); const p = l.deps.pickLockfile(d); assert.ok(!("refuse" in p)); return { d, p, problem: l.deps.depsSourceProblem(d, p) }; };
+      assert.equal(check(base).problem, null, "a workspace package without its own lockfile");
+      assert.equal(check({ ...base, "packages/a/pnpm-lock.yaml.orig": "x", "packages/yarn.lock/keep": "" }).problem, null, "a look-alike name, a dir named like a lockfile");
+      for (const f of ["packages/a/package-lock.json", "packages/a/npm-shrinkwrap.json", "packages/a/pnpm-lock.yaml", "packages/a/yarn.lock", "packages/a/bun.lock", "packages/a/bun.lockb", "x/y/z/yarn.lock"]) {
+        const r = check({ ...base, [f]: npmOk });
+        assert.equal(r.problem, "DEPS_PM_CONFIG", f);
+        assert.equal(l.deps.lockfileAllowed(r.d, r.p), false, f);
+      }
+      // Auditor's first bypass, without the settings key (so only the nested-lockfile rule refuses it)
+      const ws = check({ "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9" }), "pnpm-lock.yaml": PNPM_OK, "pnpm-workspace.yaml": "packages:\n  - p\n", "p/package.json": pkgJson({}),
+        "p/pnpm-lock.yaml": PNPM_OK.replace("resolution: {integrity: " + INT + "}", `resolution: {integrity: ${INT}, tarball: https://evil.example/b.tgz}`) });
+      assert.equal(ws.p.pm, "pnpm");
+      assert.equal(ws.problem, "DEPS_PM_CONFIG", "a workspace package's own pnpm lockfile");
+      if (process.getuid?.() !== 0) {
+        const u = check({ ...base, "secret/x": "" });
+        chmodSync(join(u.d, "secret"), 0);
+        try { assert.equal(l.deps.depsSourceProblem(u.d, u.p), "DEPS_PM_CONFIG", "a dir the scan cannot read is not vouched for"); } finally { chmodSync(join(u.d, "secret"), 0o755); }
+      }
+    },
+  },
+  {
+    id: "pm config (pnpm-workspace.yaml): packages / catalog / catalogs in the plain subset pass; any other key, a parse failure, an outside glob, a protocol catalog entry -> refused",
+    run(l) {
+      const ok = "packages:\n  - 'packages/*'\n  - '!**/test/**'\n  - website\ncatalog:\n  vitest: ^3.0.0\n  b: 'npm:c@^2'\ncatalogs:\n  old:\n    vitest: ^2.0.0\n";
+      assert.equal(l.deps.pnpmWorkspaceAllowed(ok), true);
+      assert.equal(l.deps.pnpmWorkspaceAllowed("packages:\n  - 'packages/*'\n"), true);
+      assert.equal(l.deps.pnpmWorkspaceAllowed(""), true, "an empty file");
+      const bad: [string, string][] = [
+        ["registries (Auditor)", ok + "registries:\n  default: https://evil.example/\n"],
+        ["sharedWorkspaceLockfile (Auditor)", ok + "sharedWorkspaceLockfile: false\n"],
+        ["a harmless-looking setting is still a setting", ok + "onlyBuiltDependencies:\n  - esbuild\n"],
+        ["overrides", ok + "overrides:\n  a: 1.0.0\n"],
+        ["pnpmfile", ok + "pnpmfile: x.cjs\n"],
+        ["an inline comment (outside the subset)", ok.replace("  - website\n", "  - website # site\n")],
+        ["a flow list at the top level (outside the subset)", "packages: ['packages/*']\n"],
+        ["an anchor", ok.replace("vitest: ^3.0.0", "vitest: &v ^3.0.0")],
+        ["a glob outside the repo", ok.replace("  - website\n", "  - ../outside\n")],
+        ["a negated glob outside the repo", ok.replace("  - website\n", "  - '!../outside'\n")],
+        ["an absolute glob", ok.replace("  - website\n", "  - /abs\n")],
+        ["packages not a list", "packages:\n  a: b\n"],
+        ["a url catalog entry", ok.replace("vitest: ^3.0.0", "vitest: 'https://evil.example/v.tgz'")],
+        ["a file: catalog entry", ok.replace("vitest: ^3.0.0", "vitest: 'file:vendor/v'")],
+        ["a link: entry in a named catalog", ok.replace("vitest: ^2.0.0", "vitest: 'link:../v'")],
+        ["a map as a catalog entry", ok.replace("  vitest: ^3.0.0\n", "  vitest:\n    x: y\n")],
+      ];
+      for (const [why, text] of bad) { assert.notEqual(text, ok, why); assert.equal(l.deps.pnpmWorkspaceAllowed(text), false, why); }
+    },
+  },
+  {
+    id: "pm config (pnpm repos): Auditor's registries bypass, a nested or .yml workspace file, a symlinked one, package.yaml / json5, any `pnpm` field -> DEPS_PM_CONFIG; npm repos are not judged on pnpm files",
+    run(l, ctx) {
+      const PM = JSON.stringify({ packageManager: "pnpm@9.15.9", devDependencies: VDEP });
+      const base = { "package.json": PM, "pnpm-lock.yaml": PNPM_OK, "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n", "packages/app/package.json": JSON.stringify({ name: "app", dependencies: { pnpm: "9.0.0" }, scripts: { x: "pnpm -r build" } }) };
+      const problem = (files: Record<string, string>, link?: [string, string]) => {
+        const d = plain(dir(ctx, "pnpmcfg"), files);
+        if (link) symlinkSync(link[1], join(d, link[0]));
+        const p = l.deps.pickLockfile(d);
+        assert.ok(!("refuse" in p));
+        return l.deps.depsSourceProblem(d, p);
+      };
+      assert.equal(problem(base), null, "a plain workspace; a dependency or script named pnpm is not a pnpm field");
+      const { "pnpm-workspace.yaml": _w, ...noWs } = base;
+      assert.equal(problem(noWs), null, "no workspace file");
+      const bad: [string, Record<string, string>][] = [
+        ["registries in the workspace file + integrity-only lock (Auditor)", { ...base, "pnpm-workspace.yaml": "registries:\n  default: https://evil.example/\n" }],
+        ["sharedWorkspaceLockfile in the workspace file (Auditor)", { ...base, "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\nsharedWorkspaceLockfile: false\n" }],
+        ["a workspace file below the root", { ...base, "packages/app/pnpm-workspace.yaml": "packages:\n  - x\n" }],
+        ["pnpm-workspace.yml at the root", { ...noWs, "pnpm-workspace.yml": "packages:\n  - 'packages/*'\n" }],
+        ["package.yaml in a workspace package", { ...base, "packages/lib/package.yaml": "name: lib\n" }],
+        ["package.json5 in a workspace package", { ...base, "packages/lib/package.json5": "{name: 'lib'}\n" }],
+        ["pnpm.overrides in the root package.json", { ...base, "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9", devDependencies: VDEP, pnpm: { overrides: { b: "https://evil.example/b.tgz" } } }) }],
+        ["an empty pnpm field", { ...base, "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9", devDependencies: VDEP, pnpm: {} }) }],
+        ["a pnpm field in a workspace package", { ...base, "packages/app/package.json": JSON.stringify({ name: "app", pnpm: { onlyBuiltDependencies: ["esbuild"] } }) }],
+        ["a pnpm field behind a BOM", { ...base, "packages/app/package.json": "\ufeff" + JSON.stringify({ name: "app", pnpm: { overrides: {} } }) }],
+        ["a package.json that is not JSON", { ...base, "packages/app/package.json": "{name: app}" }],
+      ];
+      for (const [why, files] of bad) assert.equal(problem(files), "DEPS_PM_CONFIG", why);
+      assert.equal(problem({ ...base, "packages/app/package.json": "\ufeff" + JSON.stringify({ name: "app" }) }), null, "a BOM alone is fine");
+      assert.equal(problem(noWs, ["pnpm-workspace.yaml", "packages/app/package.json"]), "DEPS_PM_CONFIG", "a symlinked workspace file");
+      // npm never reads pnpm's files: an npm repo is judged on its own lockfile only
+      const npmOk = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT } } });
+      assert.equal(problem({ "package.json": JSON.stringify({ pnpm: { overrides: {} } }), "package-lock.json": npmOk, "pnpm-workspace.yaml": "registries:\n  default: https://evil.example/\n" }), null);
+      const fake = { name: "m151-no-such-user", uid: 2_000_000_000 };
+      withCache(l, ctx, (cache) => {
+        const d = repo(dir(ctx, "pnpmcfg-inst"), { ...base, "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9", scripts: { test: "vitest run" }, devDependencies: VDEP }), "pnpm-workspace.yaml": "registries:\n  default: https://evil.example/\n" });
+        let ran = 0;
+        assert.deepEqual(l.deps.installDeps(d, fake as never, cache, { tool: ctx.tool, onInstall: () => { ran++; } }), { refuse: "DEPS_PM_CONFIG" });
+        assert.equal(ran, 0);
       });
     },
   },
