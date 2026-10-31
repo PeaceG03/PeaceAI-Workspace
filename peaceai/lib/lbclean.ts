@@ -8,6 +8,8 @@
 //         junk_minified, junk_low_alnum, junk_long_token (a base64 / hex data run) (whole doc)
 //   split at top-level function / class / interface / enum / type / namespace boundaries (TypeScript parser)
 //   drop  taskset_near_dup, exact_dup, near_dup                                (per piece)
+//   drop  taskset_hidden_dup: a piece whose exact text sha256 is in a --drop-hashes file (Auditor's hash-only handoff
+//         of the hidden near-dup check); it is still registered for dedup, so nothing else changes
 //   add   difficulty fields; best-code repeats; fill-in-the-middle examples   (kept train pieces)
 // Every drop is a fixed rule code; the report holds counts only (never text, never a hidden name or hash).
 import ts from "typescript";
@@ -15,12 +17,12 @@ import { createHash } from "node:crypto";
 import { isExcludedRepo, mentionsExcluded, namesHashedRepo, type Exclusions } from "./nlpairs.ts";
 
 /** Bump on any change to a rule or an output field: it is part of the fingerprint (Auditor). */
-export const LB_CLEAN_VERSION = "peaceai-lb-clean:v1";
+export const LB_CLEAN_VERSION = "peaceai-lb-clean:v2";
 export const LB_CONFIG_SCHEMA = "peaceai-lb-clean-config:v1";
 export const LB_FINGERPRINT_SCHEMA = "peaceai-lb-clean-fingerprint:v1";
 export const DROP_RULES = [
   "taskset_repo", "taskset_name", "taskset_hidden_name", "junk_path", "junk_generated_header", "junk_long_line", "junk_minified",
-  "junk_low_alnum", "junk_long_token", "taskset_near_dup", "exact_dup", "near_dup",
+  "junk_low_alnum", "junk_long_token", "taskset_near_dup", "exact_dup", "near_dup", "taskset_hidden_dup",
 ] as const;
 export type DropRule = (typeof DROP_RULES)[number];
 export const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
@@ -192,6 +194,30 @@ export function tasksetReport(texts: readonly string[], refs: TasksetRefs, maxCo
   return { docs: texts.length, taskset_near_dup: hits };
 }
 
+/** --matched-out: the sorted, deduplicated sha256 (lowercase hex) of the exact UTF-8 text of every doc the report-only
+ * test counts (the same containment and threshold as tasksetReport). Hashes only: no name, path or text. It is the
+ * output manifest's textSha256, so --drop-hashes removes exactly these docs in one round. */
+export function matchedTextHashes(texts: readonly string[], refs: TasksetRefs, maxContainment: number): string[] {
+  const out = new Set<string>();
+  for (const t of texts) if (tasksetContainment(t, refs) >= maxContainment) out.add(sha256(t)); // m150-guard:matched-near
+  return [...out].sort();
+}
+/** A --drop-hashes file, strictly: one lowercase 64-hex sha256 per line, LF only, every line (the last too) ending in
+ * a newline, no blank line, no spaces, no duplicate, at least one hash. Anything else is a fixed refusal code. The
+ * committed file is add-only (later rounds append), so the order is free. */
+export function parseDropHashes(buf: Buffer): { hashes: Set<string> } | { code: string } {
+  const s = buf.toString("utf8");
+  if (s.length === 0) return { code: "drop_hashes_empty" }; // m150-guard:drop-empty
+  if (!s.endsWith("\n")) return { code: "drop_hashes_no_final_newline" }; // m150-guard:drop-final-nl
+  const hashes = new Set<string>();
+  for (const l of s.slice(0, -1).split("\n")) {
+    if (!/^[0-9a-f]{64}$/.test(l)) return { code: "drop_hashes_bad_line" }; // m150-guard:drop-line
+    if (hashes.has(l)) return { code: "drop_hashes_duplicate" }; // m150-guard:drop-dup
+    hashes.add(l);
+  }
+  return { hashes };
+}
+
 // ---- split at function / class boundaries
 const parseOk = (sf: ts.SourceFile) => ((sf as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics ?? []).length === 0;
 function isUnit(s: ts.Statement): boolean {
@@ -259,7 +285,12 @@ export function fimExample(text: string, salt: string, f: LbConfig["fim"]): { te
 export interface InDoc { doc: number; text: string; man: Record<string, unknown> & { doc: number; split: string; repo: string; path: string; function?: string } }
 export interface OutDoc { text: string; man: Record<string, unknown> & { doc: number; split: string; textSha256: string } }
 export interface CleanResult { out: OutDoc[]; report: Record<string, any> }
-export function clean(docs: readonly InDoc[], cfg: LbConfig, ex: ExSets, refs: TasksetRefs | null): CleanResult {
+/** `drop`: the --drop-hashes set (exact text sha256s), applied to each piece (an unsplit doc's one piece is its whole
+ * text; a best repeat has its piece's text) and to each fill-in-the-middle example, i.e. to every text the pass can
+ * write, which is every text --matched-out can list. A listed piece is dropped (taskset_hidden_dup) with its repeats
+ * and its FIM example, but is still added to the dedup indexes, so every other output doc is unchanged. A listed FIM
+ * example alone is skipped (fimSkips.fim_hidden_dup) and its piece is kept. */
+export function clean(docs: readonly InDoc[], cfg: LbConfig, ex: ExSets, refs: TasksetRefs | null, drop: ReadonlySet<string> = new Set()): CleanResult {
   const drops: Record<string, number> = Object.fromEntries(DROP_RULES.map((r) => [r, 0]));
   const skips: Record<string, number> = {};
   const out: { text: string; man: Record<string, unknown> & { split: string } }[] = [];
@@ -280,7 +311,9 @@ export function clean(docs: readonly InDoc[], cfg: LbConfig, ex: ExSets, refs: T
       if (seen.has(key)) { drops.exact_dup!++; return; } // m150-guard:exact-dup
       const sh = shingles(tokens(text), cfg.dedup.shingleTokens);
       if (near.find(sh) >= 0) { drops.near_dup!++; return; }
-      seen.add(key); near.add(sh); kept++;
+      seen.add(key); near.add(sh);
+      if (drop.has(sha256(text))) { drops.taskset_hidden_dup!++; return; } // m150-guard:hidden-dup
+      kept++;
       const fn = String(d.man.function ?? ""), base = parts.length > 1 ? `${fn}#p${pi + 1}of${parts.length}` : fn;
       const diff = difficulty(text, cfg.difficulty); levels[diff.level]!++;
       const man = { ...d.man, function: base, src: d.doc, ...(parts.length > 1 ? { part: pi + 1, parts: parts.length } : {}), difficulty: diff };
@@ -288,7 +321,8 @@ export function clean(docs: readonly InDoc[], cfg: LbConfig, ex: ExSets, refs: T
       if (d.man.split !== "train") return;
       if (best) for (let r = 2; r <= cfg.best.weight; r++) { out.push({ text, man: { ...man, function: `${base}#rep${r}`, repeatOf: d.doc, best: true } }); repeats++; } // m150-guard:best-repeat
       const fx = fimExample(text, cfg.salt, cfg.fim);
-      if ("text" in fx) { out.push({ text: fx.text, man: { ...man, function: `${base}#fim`, fimOf: d.doc } }); fims++; }
+      if ("text" in fx && drop.has(sha256(fx.text))) skips.fim_hidden_dup = (skips.fim_hidden_dup ?? 0) + 1; // m150-guard:hidden-fim
+      else if ("text" in fx) { out.push({ text: fx.text, man: { ...man, function: `${base}#fim`, fimOf: d.doc } }); fims++; }
       else skips[fx.skip] = (skips[fx.skip] ?? 0) + 1;
     });
   }
@@ -297,18 +331,20 @@ export function clean(docs: readonly InDoc[], cfg: LbConfig, ex: ExSets, refs: T
     schema: "peaceai-lb-clean-report:v1", cleanerVersion: LB_CLEAN_VERSION, docsIn: docs.length, piecesChecked: pieces, splitDocs, keptPieces: kept,
     drops, bestDocs, repeats, fim: fims, fimSkips: Object.fromEntries(Object.entries(skips).sort()), docsOut: outMan.length,
     train: outMan.filter((o) => o.man.split === "train").length, heldout: outMan.filter((o) => o.man.split === "heldout").length,
-    difficultyLevels: levels, tasksetRefFiles: refs?.files ?? 0, exclusionHashes: ex.hashes.size,
+    difficultyLevels: levels, tasksetRefFiles: refs?.files ?? 0, exclusionHashes: ex.hashes.size, dropHashes: drop.size,
   };
   return { out: outMan, report };
 }
 
 /** The output fingerprint: sha256 over the cleaner code version and code sha256s, the config and the input manifest
- * (docs + manifest sha256s, the exclusion file and task-set refs). Refuses without a code version (Auditor). */
+ * (docs + manifest sha256s, the exclusion file, task-set refs and the sorted sha256s of the --drop-hashes files, []
+ * when none). Refuses without a code version (Auditor). */
 export interface FingerprintParts { cleanerVersion: string; codeSha256: Record<string, string>; typescriptVersion: string; configSha256: string; exclusionsSha256: string;
-  input: { docsSha256: string; manifestSha256: string }; refs: { docsSha256: string; manifestSha256: string } | null }
+  input: { docsSha256: string; manifestSha256: string }; refs: { docsSha256: string; manifestSha256: string } | null; dropHashesSha256: string[] }
 export function fingerprintOf(p: FingerprintParts): string {
   if (!p.cleanerVersion || p.cleanerVersion !== LB_CLEAN_VERSION) throw new Error("fingerprint_cleaner_version"); // m150-guard:fp-version
   if (Object.keys(p.codeSha256).length === 0 || !Object.values(p.codeSha256).every((h) => /^[0-9a-f]{64}$/.test(h))) throw new Error("fingerprint_code_sha");
+  if (!Array.isArray(p.dropHashesSha256) || !p.dropHashesSha256.every((h, i, a) => /^[0-9a-f]{64}$/.test(h) && (i === 0 || a[i - 1]! < h))) throw new Error("fingerprint_drop_hashes"); // m150-guard:fp-drop
   const canon = (v: unknown): unknown => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v;
   return sha256(JSON.stringify(canon({ schema: LB_FINGERPRINT_SCHEMA, ...p }))); // m150-guard:fp-hash
 }
