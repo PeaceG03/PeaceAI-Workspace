@@ -1,0 +1,1264 @@
+peaceai-vendored-bundle:v1
+repo: mesqueeb/is-what
+commit: 864e944abd8eb6f6356de03ff67339c71440d6bb
+license: MIT (LICENSE)
+files: 49
+note: verbatim copies of the listed files at the commit; each stays under the project's MIT license (LICENSE below and THIRD_PARTY_NOTICES).
+@@@ file .gitignore 53 ce8e750f04c6545dc83c6c920e37c400cda7d6d93b7425b21c0e585b1d84f374
+docs/dist
+node_modules/
+.cache
+.rpt2_cache
+.DS_Store
+
+@@@ file LICENSE 1076 91d090a8e06fd0f8b599f7bd5bc9e3d97896548037ef43ee1926c6109b7cd342
+MIT License
+
+Copyright (c) 2018 Luca Ban - Mesqueeb
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+@@@ file package.json 1957 d7580797f366fcc7f7726e30d7c94ad394bc8cf040585170eae94944e6f6a9e0
+{
+  "name": "is-what",
+  "version": "5.5.7",
+  "description": "JS type check (TypeScript supported) functions like `isPlainObject() isArray()` etc. A simple & small integration.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "tsc --noEmit && oxlint && oxfmt --check",
+    "build": "del-cli dist && tsc",
+    "build:docs": "typedoc",
+    "release": "pnpm run lint && pnpm run build && pnpm test && bumpp --no-push --all && pnpm publish --no-git-checks && jsr publish ${JSR_TOKEN:+--token $JSR_TOKEN} && git push --follow-tags && gh release create $(git describe --tags --abbrev=0) --generate-notes --notes \"$(git log --pretty='- %s  %h' $(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD~1)\"",
+    "format": "oxfmt"
+  },
+  "devDependencies": {
+    "bumpp": "^12.3.0",
+    "del-cli": "^7.0.0",
+    "jsr": "^0.14.3",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.86.0",
+    "typedoc": "^0.28.20",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "javascript",
+    "typescript",
+    "typechecker",
+    "check-type",
+    "javascript-type",
+    "primitive-types",
+    "plain-object",
+    "plain-objects",
+    "class-instance",
+    "class-identifier",
+    "type-checking",
+    "type-checker",
+    "type-check",
+    "define-type",
+    "get-type",
+    "what-type",
+    "is-object",
+    "is-plain-obj",
+    "is-plain-object"
+  ],
+  "author": "Luca Ban - Mesqueeb (https://cycraft.co)",
+  "funding": "https://github.com/sponsors/mesqueeb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mesqueeb/is-what.git"
+  },
+  "homepage": "https://github.com/mesqueeb/is-what#readme",
+  "bugs": "https://github.com/mesqueeb/is-what/issues",
+  "packageManager": "pnpm@11.28.3"
+}
+
+@@@ file tsconfig.json 714 1b1298f0ae2804b7b90b3d9c00805250b4688c647261606d2e2d9eb4b9d52d70
+{
+  "include": ["src"],
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleDetection": "force",
+    "target": "es2022",
+    "lib": ["DOM", "DOM.Iterable", "esnext"],
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "noEmitOnError": true,
+    "newLine": "lf",
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "stripInternal": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true
+  },
+  "typedocOptions": {
+    "entryPoints": ["src/index.ts"],
+    "out": "docs/dist",
+    "skipErrorChecking": true
+  }
+}
+
+@@@ file src/getType.ts 168 8be315695aa50a0996083e82664a229b8a735a1cb7b8deba089638d290ba348a
+/** Returns the object type of the given payload */
+export function getType(payload: unknown): string {
+  return Object.prototype.toString.call(payload).slice(8, -1)
+}
+
+@@@ file src/index.ts 2154 93ab2132d052f7ee36436418c0c64ddb3efca47f7e7aa6ea381ab492aa862f93
+export type AnyAsyncFunction = (...args: unknown[]) => Promise<unknown>
+export { getType } from './getType.js'
+export { isAnyObject } from './isAnyObject.js'
+export { isArray } from './isArray.js'
+export { isBigInt } from './isBigInt.js'
+export { isBlob } from './isBlob.js'
+export { isBoolean } from './isBoolean.js'
+export { isDate } from './isDate.js'
+export { isEmptyArray } from './isEmptyArray.js'
+export { isEmptyObject } from './isEmptyObject.js'
+export { isEmptyString } from './isEmptyString.js'
+export { isError } from './isError.js'
+export { isFile } from './isFile.js'
+export { isFullArray } from './isFullArray.js'
+export { isFullObject } from './isFullObject.js'
+export { isFullString } from './isFullString.js'
+export { isFunction } from './isFunction.js'
+export type { AnyFunction } from './isFunction.js'
+export { isHexDecimal } from './isHexDecimal.js'
+export { isInstanceOf } from './isInstanceOf.js'
+export { isInteger } from './isInteger.js'
+export { isIterable } from './isIterable.js'
+export { isMap } from './isMap.js'
+export { isNaNValue } from './isNaNValue.js'
+export { isNegativeInteger } from './isNegativeInteger.js'
+export { isNegativeNumber } from './isNegativeNumber.js'
+export { isNull } from './isNull.js'
+export { isNullOrUndefined } from './isNullOrUndefined.js'
+export { isNumber } from './isNumber.js'
+export { isObject } from './isObject.js'
+export { isObjectLike } from './isObjectLike.js'
+export { isOneOf } from './isOneOf.js'
+export { isPlainObject } from './isPlainObject.js'
+export type { PlainObject } from './isPlainObject.js'
+export { isPositiveInteger } from './isPositiveInteger.js'
+export { isPositiveNumber } from './isPositiveNumber.js'
+export { isPrimitive } from './isPrimitive.js'
+export { isPromise } from './isPromise.js'
+export { isRegExp } from './isRegExp.js'
+export { isSet } from './isSet.js'
+export { isString } from './isString.js'
+export { isSymbol } from './isSymbol.js'
+export { isType } from './isType.js'
+export type { AnyClass } from './isType.js'
+export { isUndefined } from './isUndefined.js'
+export { isWeakMap } from './isWeakMap.js'
+export { isWeakSet } from './isWeakSet.js'
+
+@@@ file src/isAnyObject.ts 339 16e749a08b7b6eec1934c3b4f3abb596e710533a04af5b5bc5d3486b4c3e4457
+import { getType } from './getType.js'
+import type { PlainObject } from './isPlainObject.js'
+
+/**
+ * Returns whether the payload is an any kind of object (including special classes or objects with
+ * different prototypes)
+ */
+export function isAnyObject(payload: unknown): payload is PlainObject {
+  return getType(payload) === 'Object'
+}
+
+@@@ file src/isArray.ts 193 008bf6175d65d05dfa10ae703afd4e1b0c229cf99446e7e9a6c6147c2413c7a7
+import { getType } from './getType.js'
+
+/** Returns whether the payload is an array */
+export function isArray(payload: unknown): payload is unknown[] {
+  return getType(payload) === 'Array'
+}
+
+@@@ file src/isBigInt.ts 192 01bd70e75f3c7bfe2bd697c55ca658510972e194192ef8d4eeb46bcd101d98a9
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a bigint */
+export function isBigInt(payload: unknown): payload is bigint {
+  return getType(payload) === 'BigInt'
+}
+
+@@@ file src/isBlob.ts 184 349767e11e64c29277fd1b601942030f168cdf2d6449eb11534aecb88b08e8f8
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a Blob */
+export function isBlob(payload: unknown): payload is Blob {
+  return getType(payload) === 'Blob'
+}
+
+@@@ file src/isBoolean.ts 196 84d8653fdcc064f662d38b523f09135ae4769d0f1561a87639a8a91f69fa6050
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a boolean */
+export function isBoolean(payload: unknown): payload is boolean {
+  return getType(payload) === 'Boolean'
+}
+
+@@@ file src/isDate.ts 258 4bbce83efaa59fc2e475d8d63884e22ca18329221af3e569eeeeb4b2d8103bb2
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a Date, and that the date is valid */
+export function isDate(payload: unknown): payload is Date {
+  return getType(payload) === 'Date' && !Number.isNaN((payload as Date).valueOf())
+}
+
+@@@ file src/isEmptyArray.ts 211 4fa35187757b76f67987412231681562425a015e14868d3477f42da27b20cfda
+import { isArray } from './isArray.js'
+
+/** Returns whether the payload is a an empty array */
+export function isEmptyArray(payload: unknown): payload is [] {
+  return isArray(payload) && payload.length === 0
+}
+
+@@@ file src/isEmptyObject.ts 357 7e74469c351fda255f308edd12140a7bae6abef177bbe7eee4d63013dcfb5204
+import { isPlainObject } from './isPlainObject.js'
+
+/**
+ * Returns whether the payload is a an empty object (excluding special classes or objects with other
+ * prototypes)
+ */
+export function isEmptyObject(
+  payload: unknown,
+): payload is { [K in string | symbol | number]: never } {
+  return isPlainObject(payload) && Object.keys(payload).length === 0
+}
+
+@@@ file src/isEmptyString.ts 136 c3f5ff8b51b893b347948af52b4d95856af269c2ff136337a2206e5b38dbef08
+/** Returns whether the payload is '' */
+export function isEmptyString(payload: unknown): payload is string {
+  return payload === ''
+}
+
+@@@ file src/isError.ts 217 13687e570fd6875499b9ccf71646abb8030e7aeb598d217eb152faaf97772b39
+import { getType } from './getType.js'
+
+/** Returns whether the payload is an Error */
+export function isError(payload: unknown): payload is Error {
+  return getType(payload) === 'Error' || payload instanceof Error
+}
+
+@@@ file src/isFile.ts 184 3f3eb88e9d3afcdbe5aa8425a1bd7fb99d517b5cfc0436546e364416e111e177
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a File */
+export function isFile(payload: unknown): payload is File {
+  return getType(payload) === 'File'
+}
+
+@@@ file src/isFullArray.ts 230 29cccace47a30d59c2e5cd2a0bf74e793a3e485de25d8d08a1fd0dbfb5e49542
+import { isArray } from './isArray.js'
+
+/** Returns whether the payload is a an array with at least 1 item */
+export function isFullArray(payload: unknown): payload is unknown[] {
+  return isArray(payload) && payload.length > 0
+}
+
+@@@ file src/isFullObject.ts 372 e8de8b91c69d1b6cedcdce41b4ab6e880b83a5c4350e440a7bb6f1e1b43c6f70
+import type { PlainObject } from './isPlainObject.js'
+import { isPlainObject } from './isPlainObject.js'
+
+/**
+ * Returns whether the payload is a an empty object (excluding special classes or objects with other
+ * prototypes)
+ */
+export function isFullObject(payload: unknown): payload is PlainObject {
+  return isPlainObject(payload) && Object.keys(payload).length > 0
+}
+
+@@@ file src/isFullString.ts 230 123467209c56e3f2fb753ec2881266eba11d4e501da8c78a6cd5d981aa15c03d
+import { isString } from './isString.js'
+
+/** Returns whether the payload is a string, BUT returns false for '' */
+export function isFullString(payload: unknown): payload is string {
+  return isString(payload) && payload !== ''
+}
+
+@@@ file src/isFunction.ts 275 f28faa02a39c9cf27bc4cbae5349ffecd5192b56d35c5bc9c7b7eb2f7859c989
+// oxlint-disable-next-line no-explicit-any
+export type AnyFunction = (...args: any[]) => any
+
+/** Returns whether the payload is a function (regular or async) */
+export function isFunction(payload: unknown): payload is AnyFunction {
+  return typeof payload === 'function'
+}
+
+@@@ file src/isHexDecimal.ts 417 a66fce7879ad00a608bf8cb234b23e19444b142f550ac26ef0a0dd0cebfa0f40
+import { isString } from './isString.js'
+
+/**
+ * Checks if a string is a valid hexadecimal string. If a length is provided, it also checks that
+ * the string has that length.
+ */
+export function isHexDecimal(payload: unknown, length?: number): payload is string {
+  if (!isString(payload)) return false
+  if (!/^[0-9a-fA-F]+$/u.test(payload)) return false
+  return length === undefined || payload.length === length
+}
+
+@@@ file src/isInstanceOf.ts 1670 11fe7f404f0ace1d11282347c47ff339b8eeb9d3c6b968c1d3eb3f563561b9ad
+import { getType } from './getType.js'
+import type { AnyClass } from './isType.js'
+import { isType } from './isType.js'
+
+type GlobalClassName = {
+  [K in keyof typeof globalThis]: (typeof globalThis)[K] extends AnyClass ? K : never
+}[keyof typeof globalThis]
+
+/**
+ * Checks if a value is an instance of a class or a class name. Useful when you want to check if a
+ * value is an instance of a class that may not be defined in the current scope. For example, if you
+ * want to check if a value is an `OffscreenCanvas` instance, you might not want to do the song and
+ * dance of using `typeof OffscreenCanvas !== 'undefined'` and then shimming `OffscreenCanvas` if
+ * the types aren't around.
+ *
+ * @example
+ *   if (isInstanceOf(value, 'OffscreenCanvas')) {
+ *     // value is an OffscreenCanvas
+ *   }
+ *
+ * @param value The value to recursively check
+ * @param class_ A string or class that the value should be an instance of
+ */
+export function isInstanceOf<T extends AnyClass>(value: unknown, class_: T): value is T
+export function isInstanceOf<K extends GlobalClassName>(
+  value: unknown,
+  className: K,
+): value is (typeof globalThis)[K]
+export function isInstanceOf(value: unknown, className: string): value is object
+export function isInstanceOf(value: unknown, classOrClassName: AnyClass | string): boolean {
+  if (typeof classOrClassName === 'function') {
+    for (let p = value; p; p = Object.getPrototypeOf(p)) {
+      if (isType(p, classOrClassName)) {
+        return true
+      }
+    }
+  } else {
+    for (let p = value; p; p = Object.getPrototypeOf(p)) {
+      if (getType(p) === classOrClassName) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+@@@ file src/isInteger.ts 241 36d2883b34787d79b40328442cb6926d89223ebc7e2e786719ae8e191a82c2da
+import { getType } from './getType.js'
+
+/** Returns whether the payload is an integer number */
+export function isInteger(payload: unknown): payload is number {
+  return getType(payload) === 'Number' && Number.isInteger(payload as number)
+}
+
+@@@ file src/isIterable.ts 754 c82f091a53e6e1ae1f9061520d9e53ee8fed737ba8a8ea6b18a27afd7d1b17cb
+/** Returns whether the payload is an iterable (regular or async) */
+export function isIterable(payload: unknown): payload is Iterable<unknown> {
+  // oxlint-disable-next-line no-typeof-undefined
+  if (typeof Symbol === 'undefined' || typeof Symbol.iterator === 'undefined') {
+    return false
+  }
+  // oxlint-disable-next-line no-null
+  if (payload === null || payload === undefined) return false
+  // Strings are iterable, even though they're primitives.
+  if (typeof payload === 'string') return true
+  // For objects, arrays and functions, check if Symbol.iterator is a function.
+  return (
+    (typeof payload === 'object' || typeof payload === 'function') &&
+    typeof (payload as { [key: symbol]: unknown })[Symbol.iterator] === 'function'
+  )
+}
+
+@@@ file src/isMap.ts 198 6500732eb2fb0323d8f91b056c11ea40c63b18acca906a5ac2574dbeacf1d7f8
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a Map */
+export function isMap(payload: unknown): payload is Map<unknown, unknown> {
+  return getType(payload) === 'Map'
+}
+
+@@@ file src/isNaNValue.ts 290 7eab14a81e5a746e16210ec66e4b76cdc0eb41e04a736a11877781d6eb09410d
+import { getType } from './getType.js'
+
+/** Returns whether the payload is literally the value `NaN` (it's `NaN` and also a `number`) */
+export function isNaNValue(payload: unknown): payload is typeof Number.NaN {
+  return getType(payload) === 'Number' && Number.isNaN(payload as number)
+}
+
+@@@ file src/isNegativeInteger.ts 231 1c5fcb31b1ed781390a69efb13cae60fe41f9e95a74e80493a50de51eeb19001
+import { isInteger } from './isInteger.js'
+
+/** Returns whether the payload is a negative Integer (but not 0) */
+export function isNegativeInteger(payload: unknown): payload is number {
+  return isInteger(payload) && payload < 0
+}
+
+@@@ file src/isNegativeNumber.ts 226 bdccf8e26f7d4af91c0bfc53e474845f308df867de58195a33c7bd51693814bf
+import { isNumber } from './isNumber.js'
+
+/** Returns whether the payload is a negative number (but not 0) */
+export function isNegativeNumber(payload: unknown): payload is number {
+  return isNumber(payload) && payload < 0
+}
+
+@@@ file src/isNull.ts 182 880a4a9992917a08261827d788ac1ec10a4ffbbd6e6f8d1ca53795dcf36e1f1d
+import { getType } from './getType.js'
+
+/** Returns whether the payload is null */
+export function isNull(payload: unknown): payload is null {
+  return getType(payload) === 'Null'
+}
+
+@@@ file src/isNullOrUndefined.ts 352 c8def4a3e7dd7226f2f1a83e22c610dae960cd065d20984b03c74c6f8ed7afbd
+import { isNull } from './isNull.js'
+import { /* tree-shaking no-side-effects-when-called */ isOneOf } from './isOneOf.js'
+import { isUndefined } from './isUndefined.js'
+
+/** Returns true whether the payload is null or undefined */
+export const isNullOrUndefined: (payload: unknown) => payload is null | undefined = isOneOf(
+  isNull,
+  isUndefined,
+)
+
+@@@ file src/isNumber.ts 289 dccf5b5a2a1aa91a1b47ec03736b71475bf4217fa7823a91372305d6218fdd3f
+import { getType } from './getType.js'
+
+/**
+ * Returns whether the payload is a number (but not NaN)
+ *
+ * This will return `false` for `NaN`!!
+ */
+export function isNumber(payload: unknown): payload is number {
+  return getType(payload) === 'Number' && !Number.isNaN(payload as number)
+}
+
+@@@ file src/isObject.ts 341 df64d2e71ed9b63c3e12f1cd06ae983e81a91b7ae3d6d358baec458bbb7d9ca6
+import type { PlainObject } from './isPlainObject.js'
+import { isPlainObject } from './isPlainObject.js'
+
+/**
+ * Returns whether the payload is a plain JavaScript object (excluding special classes or objects
+ * with other prototypes)
+ */
+export function isObject(payload: unknown): payload is PlainObject {
+  return isPlainObject(payload)
+}
+
+@@@ file src/isObjectLike.ts 444 394385e388ef380efaea71ac3b2e290ef0a60b3685b5c6ad07947b5bf0757ecd
+import { isAnyObject } from './isAnyObject.js'
+import type { PlainObject } from './isPlainObject.js'
+
+/**
+ * Returns whether the payload is an object like a type passed in < >
+ *
+ * Usage: isObjectLike<{id: any}>(payload) // will make sure it's an object and has an `id` prop.
+ *
+ * @template T This must be passed in < >
+ */
+export function isObjectLike<T extends PlainObject>(payload: unknown): payload is T {
+  return isAnyObject(payload)
+}
+
+@@@ file src/isOneOf.ts 2990 1233a2abdd8b61da065206309d80ae0f599a7e6f911e09d229695f0bf532d7c7
+// oxlint-disable max-params
+type TypeGuard<A, B extends A> = (payload: A) => payload is B
+
+/**
+ * A factory function that creates a function to check if the payload is one of the given types.
+ *
+ * @example
+ *   import { isOneOf, isNull, isUndefined } from 'is-what'
+ *
+ *   const isNullOrUndefined = isOneOf(isNull, isUndefined)
+ *
+ *   isNullOrUndefined(null) // true
+ *   isNullOrUndefined(undefined) // true
+ *   isNullOrUndefined(123) // false
+ */
+export function isOneOf<A, B extends A, C extends A>(
+  a: TypeGuard<A, B>,
+  b: TypeGuard<A, C>,
+): TypeGuard<A, B | C>
+/**
+ * A factory function that creates a function to check if the payload is one of the given types.
+ *
+ * @example
+ *   import { isOneOf, isNull, isUndefined } from 'is-what'
+ *
+ *   const isNullOrUndefined = isOneOf(isNull, isUndefined)
+ *
+ *   isNullOrUndefined(null) // true
+ *   isNullOrUndefined(undefined) // true
+ *   isNullOrUndefined(123) // false
+ */
+export function isOneOf<A, B extends A, C extends A, D extends A>(
+  a: TypeGuard<A, B>,
+  b: TypeGuard<A, C>,
+  c: TypeGuard<A, D>,
+): TypeGuard<A, B | C | D>
+/**
+ * A factory function that creates a function to check if the payload is one of the given types.
+ *
+ * @example
+ *   import { isOneOf, isNull, isUndefined } from 'is-what'
+ *
+ *   const isNullOrUndefined = isOneOf(isNull, isUndefined)
+ *
+ *   isNullOrUndefined(null) // true
+ *   isNullOrUndefined(undefined) // true
+ *   isNullOrUndefined(123) // false
+ */
+export function isOneOf<A, B extends A, C extends A, D extends A, E extends A>(
+  a: TypeGuard<A, B>,
+  b: TypeGuard<A, C>,
+  c: TypeGuard<A, D>,
+  d: TypeGuard<A, E>,
+): TypeGuard<A, B | C | D | E>
+/**
+ * A factory function that creates a function to check if the payload is one of the given types.
+ *
+ * @example
+ *   import { isOneOf, isNull, isUndefined } from 'is-what'
+ *
+ *   const isNullOrUndefined = isOneOf(isNull, isUndefined)
+ *
+ *   isNullOrUndefined(null) // true
+ *   isNullOrUndefined(undefined) // true
+ *   isNullOrUndefined(123) // false
+ */
+export function isOneOf<A, B extends A, C extends A, D extends A, E extends A, F extends A>(
+  a: TypeGuard<A, B>,
+  b: TypeGuard<A, C>,
+  c: TypeGuard<A, D>,
+  d: TypeGuard<A, E>,
+  e: TypeGuard<A, F>,
+): TypeGuard<A, B | C | D | E | F>
+/**
+ * A factory function that creates a function to check if the payload is one of the given types.
+ *
+ * @example
+ *   import { isOneOf, isNull, isUndefined } from 'is-what'
+ *
+ *   const isNullOrUndefined = isOneOf(isNull, isUndefined)
+ *
+ *   isNullOrUndefined(null) // true
+ *   isNullOrUndefined(undefined) // true
+ *   isNullOrUndefined(123) // false
+ */
+export function isOneOf(
+  a: (...args: unknown[]) => boolean,
+  b: (...args: unknown[]) => boolean,
+  c?: (...args: unknown[]) => boolean,
+  d?: (...args: unknown[]) => boolean,
+  e?: (...args: unknown[]) => boolean,
+): (value: unknown) => boolean {
+  return (value): boolean =>
+    a(value) || b(value) || (!!c && c(value)) || (!!d && d(value)) || (!!e && e(value))
+}
+
+@@@ file src/isPlainObject.ts 514 d7da3bb8017a8b4b24221a88206f47720a75de1094cfeaba1bb7d81ae0d177a9
+import { getType } from './getType.js'
+
+export type PlainObject = { [key in string | number | symbol]: unknown }
+
+/**
+ * Returns whether the payload is a plain JavaScript object (excluding special classes or objects
+ * with other prototypes)
+ */
+export function isPlainObject(payload: unknown): payload is PlainObject {
+  if (getType(payload) !== 'Object') return false
+  const prototype = Object.getPrototypeOf(payload)
+  return !!prototype && prototype.constructor === Object && prototype === Object.prototype
+}
+
+@@@ file src/isPositiveInteger.ts 231 2bade36547e257f2e0fb196a859edb669abf9b1b5d458b6b5eafc6b0484e54c5
+import { isInteger } from './isInteger.js'
+
+/** Returns whether the payload is a positive Integer (but not 0) */
+export function isPositiveInteger(payload: unknown): payload is number {
+  return isInteger(payload) && payload > 0
+}
+
+@@@ file src/isPositiveNumber.ts 226 c0cfc8261b6a92a49dc83fb48a5f6cb575f8e3c8649b8172ba12b0552d93a199
+import { isNumber } from './isNumber.js'
+
+/** Returns whether the payload is a positive number (but not 0) */
+export function isPositiveNumber(payload: unknown): payload is number {
+  return isNumber(payload) && payload > 0
+}
+
+@@@ file src/isPrimitive.ts 736 3d6a7fef0eaf85e54b8ec578ebe3f9506f64636ac5c2d1ff3b267a3e2f9473c6
+import { isBigInt } from './isBigInt.js'
+import { isBoolean } from './isBoolean.js'
+import { isNull } from './isNull.js'
+import { isNumber } from './isNumber.js'
+import { isString } from './isString.js'
+import { isSymbol } from './isSymbol.js'
+import { isUndefined } from './isUndefined.js'
+
+/**
+ * Returns whether the payload is a primitive type (eg. Boolean | Null | Undefined | Number | String
+ *
+ * | Symbol)
+ */
+export function isPrimitive(
+  payload: unknown,
+): payload is boolean | null | undefined | number | string | symbol | bigint {
+  return (
+    isBoolean(payload) ||
+    isNull(payload) ||
+    isUndefined(payload) ||
+    isNumber(payload) ||
+    isString(payload) ||
+    isSymbol(payload) ||
+    isBigInt(payload)
+  )
+}
+
+@@@ file src/isPromise.ts 205 085b5f97d942fd7021c53e742c199cfea5f3d4ffd6a70a4128fe7a82127bbd99
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a Promise */
+export function isPromise(payload: unknown): payload is Promise<unknown> {
+  return getType(payload) === 'Promise'
+}
+
+@@@ file src/isRegExp.ts 213 58e9f170b989d0952be7fb68c32426f5de150a7115998349732daa24898841bf
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a regular expression (RegExp) */
+export function isRegExp(payload: unknown): payload is RegExp {
+  return getType(payload) === 'RegExp'
+}
+
+@@@ file src/isSet.ts 189 42637a18a0f8ad7aec414a6fab627f8ffe556458e6bc346451a3fd66e2bfef7c
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a Set */
+export function isSet(payload: unknown): payload is Set<unknown> {
+  return getType(payload) === 'Set'
+}
+
+@@@ file src/isString.ts 192 490c9a92c6e2f63ada5795a99aa393162fe33155476f4fb535d34f19a060e9a1
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a string */
+export function isString(payload: unknown): payload is string {
+  return getType(payload) === 'String'
+}
+
+@@@ file src/isSymbol.ts 192 a928ae42670be9c5191714b57d64d796e3ba2a4da0e2bc118f68889e3ad5b7b1
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a Symbol */
+export function isSymbol(payload: unknown): payload is symbol {
+  return getType(payload) === 'Symbol'
+}
+
+@@@ file src/isType.ts 963 2d03f994bafe7248c5c37a9ead166df74b0df3dbad107be855afec5f541b50a7
+import { getType } from './getType.js'
+import type { AnyFunction } from './isFunction.js'
+import { isFunction } from './isFunction.js'
+
+export type AnyClass = new (...args: unknown[]) => unknown
+
+/**
+ * Does a generic check to check that the given payload is of a given type. In cases like Number, it
+ * will return true for NaN as NaN is a Number (thanks javascript!); It will, however, differentiate
+ * between object and null
+ *
+ * @throws {TypeError} Will throw type error if type is an invalid type
+ */
+export function isType<T extends AnyFunction | AnyClass>(payload: unknown, type: T): payload is T {
+  if (!isFunction(type)) {
+    throw new TypeError('Type must be a function')
+  }
+  if (!Object.hasOwn(type, 'prototype')) {
+    throw new TypeError('Type is not a class')
+  }
+  // Classes usually have names (as functions usually have names)
+  const { name } = type
+  return getType(payload) === name || Boolean(payload && payload.constructor === type)
+}
+
+@@@ file src/isUndefined.ts 202 e16e8b7083c8404cb78ee28b8fe7362cb76e77f88b51d5ae9acceb9b7960bb19
+import { getType } from './getType.js'
+
+/** Returns whether the payload is undefined */
+export function isUndefined(payload: unknown): payload is undefined {
+  return getType(payload) === 'Undefined'
+}
+
+@@@ file src/isWeakMap.ts 214 e23fd07ad0ff2d28f4887ff8838961ec3a32b62f57b01c42e382fd6b718ecad9
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a WeakMap */
+export function isWeakMap(payload: unknown): payload is WeakMap<WeakKey, unknown> {
+  return getType(payload) === 'WeakMap'
+}
+
+@@@ file src/isWeakSet.ts 205 a3212183d275da1565c86176bd253b51d60cc7b9f10d4774f4b6d9d7464340ee
+import { getType } from './getType.js'
+
+/** Returns whether the payload is a WeakSet */
+export function isWeakSet(payload: unknown): payload is WeakSet<WeakKey> {
+  return getType(payload) === 'WeakSet'
+}
+
+@@@ file test/index.test.ts 18922 e7c935f3d545ce857b390b2a567d21e27910ebfbb8e3506fb943f0961a8e2299
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
+/* eslint-disable @typescript-eslint/no-useless-constructor */
+/* eslint-disable @typescript-eslint/no-extraneous-class */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-empty-function */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+/* eslint-disable @typescript-eslint/no-array-constructor */
+import { expect, test } from 'vitest'
+
+import {
+  isAnyObject,
+  isArray,
+  isBigInt,
+  isBoolean,
+  isDate,
+  isEmptyArray,
+  isEmptyObject,
+  isEmptyString,
+  isError,
+  isFullArray,
+  isFullObject,
+  isFullString,
+  isFunction,
+  isHexDecimal,
+  isInstanceOf,
+  isInteger,
+  isIterable,
+  isMap,
+  isNaNValue,
+  isNegativeInteger,
+  isNegativeNumber,
+  isNull,
+  isNullOrUndefined,
+  isNumber,
+  isObject,
+  isOneOf,
+  isPlainObject,
+  isPositiveInteger,
+  isPositiveNumber,
+  isPrimitive,
+  // isBlob,
+  // isFile,
+  isPromise,
+  isRegExp,
+  isSet,
+  isString,
+  isSymbol,
+  isType,
+  isUndefined,
+  isWeakMap,
+  isWeakSet,
+} from '../src/index'
+
+// TODO: test isBlob
+// test('isBlob', () => {
+//   expect(isBlob(Blob)).toBe(false)
+//   expect(isBlob(new Blob())).toBe(true)
+// })
+
+// TODO: test isFile
+// test('isFile', () => {
+//   expect(isFile(File)).toBe(false)
+//   expect(isFile(new File([''], '', { type: 'text/html' }))).toBe(true)
+// })
+
+test('Basic true tests', () => {
+  expect(isError(new Error(''))).toEqual(true)
+  expect(isUndefined(undefined)).toEqual(true)
+  expect(isNull(null)).toEqual(true)
+  expect(isNullOrUndefined(null)).toEqual(true)
+  expect(isNullOrUndefined(undefined)).toEqual(true)
+  expect(isObject({})).toEqual(true)
+  expect(isEmptyObject({})).toEqual(true)
+  expect(isFullObject({ 0: '' })).toEqual(true)
+  expect(isFullObject({ '': '' })).toEqual(true)
+  expect(isObject(new Object())).toEqual(true)
+  expect(isArray([])).toEqual(true)
+  expect(isEmptyArray([])).toEqual(true)
+  expect(isFullArray([''])).toEqual(true)
+  expect(isArray(new Array())).toEqual(true)
+  expect(isString('')).toEqual(true)
+  expect(isString('_')).toEqual(true)
+  expect(isEmptyString('')).toEqual(true)
+  expect(isFullString(' ')).toEqual(true)
+  expect(isBoolean(true)).toEqual(true)
+  expect(isBoolean(false)).toEqual(true)
+  expect(isRegExp(/./)).toEqual(true)
+  expect(isRegExp(/./gi)).toEqual(true)
+  expect(isNumber(0)).toEqual(true)
+  expect(isNumber(1)).toEqual(true)
+  expect(isInteger(1)).toEqual(true)
+  expect(isInteger(-1)).toEqual(true)
+  expect(isInteger(0)).toEqual(true)
+  expect(isBigInt(0n)).toEqual(true)
+  expect(isDate(new Date())).toEqual(true)
+  expect(isSymbol(Symbol())).toEqual(true)
+  expect(isMap(new Map())).toEqual(true)
+  expect(isWeakMap(new WeakMap())).toEqual(true)
+  expect(isSet(new Set())).toEqual(true)
+  expect(isWeakSet(new WeakSet())).toEqual(true)
+  // expect(isBlob(blob)).toEqual(true)
+  // expect(isFile(new File([''], '', { type: 'text/html' }))).toEqual(true)
+  expect(isPromise(new Promise((_resolve, _reject) => {}))).toEqual(true)
+})
+
+test('Basic false tests', () => {
+  expect(isError({})).toEqual(false)
+  expect(isNumber(NaN)).toEqual(false)
+  expect(isDate(new Date('_'))).toEqual(false)
+  expect(isDate(NaN)).toEqual(false)
+  expect(isUndefined(NaN)).toEqual(false)
+  expect(isNull(NaN)).toEqual(false)
+  expect(isObject(NaN)).toEqual(false)
+  expect(isArray(NaN)).toEqual(false)
+  expect(isString(NaN)).toEqual(false)
+  expect(isEmptyString(' ')).toEqual(false)
+  expect(isFullString('')).toEqual(false)
+  expect(isBoolean(NaN)).toEqual(false)
+  expect(isRegExp(NaN)).toEqual(false)
+  expect(isSymbol(NaN)).toEqual(false)
+  expect(isBigInt(0)).toEqual(false)
+  expect(isInteger(1.1)).toEqual(false)
+  expect(isInteger(NaN)).toEqual(false)
+  expect(isInteger(Infinity)).toEqual(false)
+  expect(isMap(new WeakMap())).toEqual(false)
+  expect(isWeakMap(new Map())).toEqual(false)
+  expect(isSet(new WeakSet())).toEqual(false)
+  expect(isWeakSet(new Set())).toEqual(false)
+  expect(isNullOrUndefined(NaN)).toEqual(false)
+})
+
+test('isHexDecimal', () => {
+  expect(isHexDecimal('60adf084f0fbdcab42de841e')).toEqual(true)
+  expect(isHexDecimal('123456789012345678901234')).toEqual(true)
+  expect(isHexDecimal('60adf084f0fbdcab42de8')).toEqual(true)
+  expect(isHexDecimal('60adf084f0fbdcab42de84a3d')).toEqual(true)
+
+  expect(isHexDecimal('60adf084f0fbdcab42de841e', 24)).toEqual(true)
+  expect(isHexDecimal('123456789012345678901234', 24)).toEqual(true)
+
+  expect(isHexDecimal('60adf084f0fbdcab42de841g')).toEqual(false) // not hexdecimal
+  expect(isHexDecimal('60adf084f0fbdcab42de841Z')).toEqual(false) // not hexdecimal
+  expect(isHexDecimal('invalid-hexdecimal-id-string')).toEqual(false) // not hexdecimal
+
+  expect(isHexDecimal('60adf084f0fbdcab42de8', 24)).toEqual(false) // not 24 characters
+  expect(isHexDecimal('60adf084f0fbdcab42de84a3d', 24)).toEqual(false) // not 24 characters
+})
+
+test('isFunction', () => {
+  expect(isFunction(NaN)).toEqual(false)
+  expect(isFunction(() => {})).toEqual(true)
+  expect(isFunction(function () {})).toEqual(true)
+  expect(isFunction(async () => {})).toEqual(true)
+  expect(isFunction(async function () {})).toEqual(true)
+  expect(isFunction(function* () {})).toEqual(true)
+  expect(isFunction(async function* () {})).toEqual(true)
+  const _ = { fn: () => {}, method() {} }
+  expect(isFunction(_.fn)).toEqual(true)
+  expect(isFunction(_.method)).toEqual(true)
+})
+
+test('isEmptyObject', () => {
+  expect(isEmptyObject({})).toEqual(true)
+  expect(isEmptyObject(new Object())).toEqual(true)
+
+  expect(isEmptyObject('{}')).toEqual(false)
+  expect(isEmptyObject('{}')).toEqual(false)
+  expect(isEmptyObject(null)).toEqual(false)
+  expect(isEmptyObject(new Date())).toEqual(false)
+  expect(isEmptyObject(new Error(''))).toEqual(false)
+  expect(isEmptyObject(new Date())).toEqual(false)
+  expect(isEmptyObject(Symbol())).toEqual(false)
+  expect(isEmptyObject(new Map())).toEqual(false)
+  expect(isEmptyObject(new WeakMap())).toEqual(false)
+  expect(isEmptyObject(new Set())).toEqual(false)
+  expect(isEmptyObject(new WeakSet())).toEqual(false)
+})
+
+test('isEmptyArray', () => {
+  expect(isEmptyArray([])).toEqual(true)
+  expect(isEmptyArray(new Array())).toEqual(true)
+  expect(isEmptyArray(new Array(0))).toEqual(true)
+
+  expect(isEmptyArray(new Array(1))).toEqual(false)
+  expect(isEmptyArray([undefined])).toEqual(false)
+  expect(isEmptyArray(null)).toEqual(false)
+  expect(isEmptyArray(new Date())).toEqual(false)
+  expect(isEmptyArray(new Error(''))).toEqual(false)
+  expect(isEmptyArray(new Date())).toEqual(false)
+  expect(isEmptyArray(Symbol())).toEqual(false)
+  expect(isEmptyArray(new Map())).toEqual(false)
+  expect(isEmptyArray(new WeakMap())).toEqual(false)
+  expect(isEmptyArray(new Set())).toEqual(false)
+  expect(isEmptyArray(new WeakSet())).toEqual(false)
+})
+
+test('isFullArray', () => {
+  expect(isFullArray(new Array(1))).toEqual(true)
+  expect(isFullArray([undefined])).toEqual(true)
+  expect(isFullArray([null])).toEqual(true)
+  expect(isFullArray([''])).toEqual(true)
+
+  expect(isFullArray([])).toEqual(false)
+  expect(isFullArray(new Array())).toEqual(false)
+  expect(isFullArray(new Array(0))).toEqual(false)
+
+  expect(isFullArray(null)).toEqual(false)
+  expect(isFullArray(new Date())).toEqual(false)
+  expect(isFullArray(new Error(''))).toEqual(false)
+  expect(isFullArray(new Date())).toEqual(false)
+  expect(isFullArray(Symbol())).toEqual(false)
+  expect(isFullArray(new Map())).toEqual(false)
+  expect(isFullArray(new WeakMap())).toEqual(false)
+  expect(isFullArray(new Set())).toEqual(false)
+  expect(isFullArray(new WeakSet())).toEqual(false)
+})
+
+test('isPositiveNumber / isNegativeNumber', () => {
+  expect(isPositiveNumber(-1)).toEqual(false)
+  expect(isPositiveNumber(0)).toEqual(false)
+  expect(isPositiveNumber(1)).toEqual(true)
+  expect(isNegativeNumber(-1)).toEqual(true)
+  expect(isNegativeNumber(0)).toEqual(false)
+  expect(isNegativeNumber(1)).toEqual(false)
+})
+
+test('isPositiveInteger / isNegativeInteger', () => {
+  expect(isPositiveInteger(-1)).toEqual(false)
+  expect(isPositiveInteger(0)).toEqual(false)
+  expect(isPositiveInteger(1)).toEqual(true)
+  expect(isNegativeInteger(-1)).toEqual(true)
+  expect(isNegativeInteger(0)).toEqual(false)
+  expect(isNegativeInteger(1)).toEqual(false)
+})
+
+test('NaN tests', () => {
+  expect(isNaNValue(NaN)).toEqual(true)
+  expect(isNaNValue(new Error(''))).toEqual(false)
+  expect(isNaNValue(undefined)).toEqual(false)
+  expect(isNaNValue(null)).toEqual(false)
+  expect(isNaNValue(undefined)).toEqual(false)
+  expect(isNaNValue({})).toEqual(false)
+  expect(isNaNValue(new Object())).toEqual(false)
+  expect(isNaNValue(() => {})).toEqual(false)
+  expect(isNaNValue([])).toEqual(false)
+  expect(isNaNValue(new Array())).toEqual(false)
+  expect(isNaNValue('')).toEqual(false)
+  expect(isNaNValue('_')).toEqual(false)
+  expect(isNaNValue('')).toEqual(false)
+  expect(isNaNValue(' ')).toEqual(false)
+  expect(isNaNValue(true)).toEqual(false)
+  expect(isNaNValue(false)).toEqual(false)
+  expect(isNaNValue(/./)).toEqual(false)
+  expect(isNaNValue(/./gi)).toEqual(false)
+  expect(isNaNValue(0)).toEqual(false)
+  expect(isNaNValue(1)).toEqual(false)
+  expect(isNaNValue(new Date())).toEqual(false)
+  expect(isNaNValue(Symbol())).toEqual(false)
+  expect(isNaNValue(new Map())).toEqual(false)
+  expect(isNaNValue(new WeakMap())).toEqual(false)
+  expect(isNaNValue(new Set())).toEqual(false)
+  expect(isNaNValue(new WeakSet())).toEqual(false)
+  expect(isNaNValue(new Promise((_resolve, _reject) => {}))).toEqual(false)
+})
+
+test('Primitive tests', () => {
+  // true
+  expect(isPrimitive(0)).toEqual(true)
+  expect(isPrimitive('')).toEqual(true)
+  expect(isPrimitive('str')).toEqual(true)
+  expect(isPrimitive(Symbol())).toEqual(true)
+  expect(isPrimitive(true)).toEqual(true)
+  expect(isPrimitive(false)).toEqual(true)
+  expect(isPrimitive(null)).toEqual(true)
+  expect(isPrimitive(undefined)).toEqual(true)
+  expect(isPrimitive(0n)).toEqual(true)
+  // false
+  expect(isPrimitive(NaN)).toEqual(false)
+  expect(isPrimitive([])).toEqual(false)
+  expect(isPrimitive(new Array())).toEqual(false)
+  expect(isPrimitive({})).toEqual(false)
+  expect(isPrimitive(new Object())).toEqual(false)
+  expect(isPrimitive(new Date())).toEqual(false)
+  expect(isPrimitive(() => {})).toEqual(false)
+})
+
+test('Date exception', () => {
+  expect(isDate(new Date('_'))).toEqual(false)
+})
+
+test('Generic isType', () => {
+  // -----------------------------
+  // This is correct old fashion syntax for classes, if this is missing
+  function MyClass() {}
+  MyClass.prototype.constructor = MyClass
+  // @ts-ignore
+  const myClass = new MyClass()
+  // -----------------------------
+  class MyOtherClass {
+    constructor() {}
+  }
+  // this is expected behaviour
+  expect(isType('', String)).toEqual(true)
+  expect(isType('_', String)).toEqual(true)
+  expect(isType('Hello World', String)).toEqual(true)
+  expect(isType(NaN, Number)).toEqual(true)
+  expect(isType(0, Number)).toEqual(true)
+  expect(isType(1, Number)).toEqual(true)
+  expect(isType({}, Object)).toEqual(true)
+  expect(isType(new Object(), Object)).toEqual(true)
+  expect(isType([], Array)).toEqual(true)
+  expect(isType(new Array(), Array)).toEqual(true)
+  expect(isType(() => {}, Function)).toEqual(true)
+  expect(isType(true, Boolean)).toEqual(true)
+  expect(isType(false, Boolean)).toEqual(true)
+  expect(isType(new Date('_'), Date)).toEqual(true)
+  expect(isType(new Date(), Date)).toEqual(true)
+  expect(isType(/./, RegExp)).toEqual(true)
+  expect(isType(/./gi, RegExp)).toEqual(true)
+  expect(isType(myClass, MyClass)).toEqual(true)
+  expect(isType(new MyOtherClass(), MyOtherClass)).toEqual(true)
+  expect(isType(myClass, MyOtherClass)).toEqual(false)
+  expect(isType(Symbol(), Symbol)).toEqual(true)
+  // expect(isType(null, Null)).toEqual(true)
+  // expect(isType(undefined, Undefined)).toEqual(true)
+  // It SHOULD fail
+  expect(isType(5, String)).toEqual(false)
+  expect(isType(null, Object)).toEqual(false)
+  // Not sure if this would be the expected behaviour but everything is an object
+  // so I would say so
+  expect(isType(myClass, Object)).toEqual(true)
+})
+
+test('isPlainObject vs isAnyObject', () => {
+  // -----------------------------
+  // This is correct old fashion syntax for classes, if this is missing
+  function MyClass() {}
+  MyClass.prototype.constructor = MyClass
+  // @ts-ignore
+  const myClass = new MyClass()
+  // -----------------------------
+  class MyClass2 {
+    constructor() {}
+  }
+  const myClass2 = new MyClass2()
+  const mySpecialObject = {}
+  Object.setPrototypeOf(mySpecialObject, {
+    toDate: function () {
+      return new Date()
+    },
+  })
+  // IS OBJECT
+  // plain object `{}`
+  expect(isAnyObject({})).toEqual(true)
+  expect(isPlainObject({})).toEqual(true)
+  // plain object `new Object()`
+  expect(isAnyObject(new Object())).toEqual(true)
+  expect(isPlainObject(new Object())).toEqual(true)
+  // plain object `{ constructor: '123' }`
+  expect(isAnyObject({ constructor: '123' })).toEqual(true)
+  expect(isPlainObject({ constructor: '123' })).toEqual(true)
+  // plain object `Object.create(null)`
+  expect(isAnyObject(Object.create(null))).toEqual(true)
+  expect(isPlainObject(Object.create(null))).toEqual(false)
+  // classes & prototypes
+  expect(isAnyObject(myClass)).toEqual(true)
+  expect(isPlainObject(myClass)).toEqual(false)
+  expect(isAnyObject(myClass2)).toEqual(true)
+  expect(isPlainObject(myClass2)).toEqual(false)
+  expect(isAnyObject(mySpecialObject)).toEqual(true)
+  expect(isPlainObject(mySpecialObject)).toEqual(false)
+  // arrays and dates
+  expect(isAnyObject([])).toEqual(false)
+  expect(isPlainObject([])).toEqual(false)
+  expect(isAnyObject(new Array())).toEqual(false)
+  expect(isPlainObject(new Array())).toEqual(false)
+  expect(isAnyObject(new Date('_'))).toEqual(false)
+  expect(isPlainObject(new Date('_'))).toEqual(false)
+  expect(isAnyObject(new Date())).toEqual(false)
+  expect(isPlainObject(new Date())).toEqual(false)
+})
+
+test('isOneOf', () => {
+  expect(isOneOf(isString, isNumber)('_')).toEqual(true)
+  expect(isOneOf(isString, isNumber)(1)).toEqual(true)
+  expect(isOneOf(isString, isNumber)(undefined)).toEqual(false)
+
+  expect(isOneOf(isString, isNumber, isBoolean)('_')).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean)(1)).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean)(true)).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean)(undefined)).toEqual(false)
+
+  expect(isOneOf(isString, isNumber, isBoolean, isArray)('_')).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray)(1)).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray)(true)).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray)([])).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray)(undefined)).toEqual(false)
+
+  expect(isOneOf(isString, isNumber, isBoolean, isArray, isPlainObject)('_')).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray, isPlainObject)(1)).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray, isPlainObject)(true)).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray, isPlainObject)([])).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray, isPlainObject)({})).toEqual(true)
+  expect(isOneOf(isString, isNumber, isBoolean, isArray, isPlainObject)(undefined)).toEqual(false)
+})
+
+test('type related tests', () => {
+  // const fn: string | ((k: number) => string) = (p) => 'a'
+  // if (!isFunction(fn)) {
+  //   fn
+  // }
+  // const a: Record<string, number> = {}
+  // a[fn(1)] = fn(2)
+  // const myArray: string | string[] = ['a', 'b']
+  // if (!isArray(myArray)) {
+  //   myArray
+  // }
+  // const a: Record<string, number> = {}
+  // a[myArray[1]] = myArray[0]
+  // const myArray: string | unknown[] = [1, 2, 'a', 'b']
+  // if (!isArray(myArray)) {
+  //   myArray
+  // }
+  // const a: Record<string, number> = {}
+  // a[myArray[1]] = myArray[0]
+})
+
+test('isInstanceOf', () => {
+  expect(isInstanceOf(new Date(), Date)).toEqual(true)
+  expect(isInstanceOf(new Date(), 'Date')).toEqual(true)
+  expect(isInstanceOf(new Date(), Object)).toEqual(true)
+  expect(isInstanceOf(new Date(), 'Object')).toEqual(true)
+
+  expect(isInstanceOf(new String(), String)).toEqual(true)
+  expect(isInstanceOf(new String(), 'String')).toEqual(true)
+  expect(isInstanceOf(new String(), Object)).toEqual(true)
+  expect(isInstanceOf(new String(), 'Object')).toEqual(true)
+
+  expect(isInstanceOf(new Number(), Number)).toEqual(true)
+  expect(isInstanceOf(new Number(), 'Number')).toEqual(true)
+  expect(isInstanceOf(new Number(), Object)).toEqual(true)
+  expect(isInstanceOf(new Number(), 'Object')).toEqual(true)
+
+  expect(isInstanceOf(new Boolean(), Boolean)).toEqual(true)
+  expect(isInstanceOf(new Boolean(), 'Boolean')).toEqual(true)
+  expect(isInstanceOf(new Boolean(), Object)).toEqual(true)
+  expect(isInstanceOf(new Boolean(), 'Object')).toEqual(true)
+
+  expect(isInstanceOf([], Array)).toEqual(true)
+  expect(isInstanceOf([], 'Array')).toEqual(true)
+  expect(isInstanceOf([], Object)).toEqual(true)
+  expect(isInstanceOf([], 'Object')).toEqual(true)
+
+  expect(isInstanceOf({}, Object)).toEqual(true)
+  expect(isInstanceOf({}, 'Object')).toEqual(true)
+})
+
+test('isIterable - valid iterables', () => {
+  // Arrays are iterable.
+  expect(isIterable([1, 2, 3])).toEqual(true)
+
+  // Strings are iterable.
+  expect(isIterable('hello')).toEqual(true)
+
+  // Maps and Sets are iterable.
+  expect(isIterable(new Map())).toEqual(true)
+  expect(isIterable(new Set())).toEqual(true)
+
+  // Generator objects are iterable.
+  function* generator() {
+    yield 1
+    yield 2
+  }
+  expect(isIterable(generator())).toEqual(true)
+
+  // Custom iterable object.
+  const customIterable = {
+    [Symbol.iterator]() {
+      let i = 0
+      return {
+        next() {
+          return { done: i >= 3, value: i++ }
+        },
+      }
+    },
+  }
+  expect(isIterable(customIterable)).toEqual(true)
+})
+
+test('isIterable - non-iterables', () => {
+  // Plain object is not iterable.
+  expect(isIterable({})).toEqual(false)
+
+  // null and undefined are not iterable.
+  expect(isIterable(null)).toEqual(false)
+  expect(isIterable(undefined)).toEqual(false)
+
+  // Numbers and booleans are not iterable.
+  expect(isIterable(42)).toEqual(false)
+  expect(isIterable(true)).toEqual(false)
+
+  // Promise is not iterable.
+  expect(isIterable(new Promise(() => {}))).toEqual(false)
+
+  // Object with Symbol.iterator property that is not a function.
+  const invalidIterable = { [Symbol.iterator]: 123 }
+  expect(isIterable(invalidIterable)).toEqual(false)
+})
+
+test('isIterable - async iterable objects', () => {
+  // An object with only Symbol.asyncIterator is an async iterable,
+  // but our isIterable function only checks for Symbol.iterator.
+  const asyncIterable = {
+    async *[Symbol.asyncIterator]() {
+      yield 1
+    },
+  }
+  expect(isIterable(asyncIterable)).toEqual(false)
+})
+

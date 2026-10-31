@@ -1,0 +1,2787 @@
+peaceai-vendored-bundle:v1
+repo: dsherret/code-block-writer
+commit: 96de18325769606589307281ce355f18eca830b2
+license: MIT (LICENSE)
+files: 8
+note: verbatim copies of the listed files at the commit; each stays under the project's MIT license (LICENSE below and THIRD_PARTY_NOTICES).
+@@@ file .gitignore 39 2daaa067ae9f0b2c05da8387710c3d4f422971255f8f53b7c8bac03f50a62a18
+/node_modules
+*.js.map
+npm
+.vscode
+
+@@@ file LICENSE 1108 2769ffd3960ca1197b672b10d18b5216f423cb5c07dc328590548c47724d50fd
+The MIT License (MIT)
+
+Copyright (c) 2015-2024 David Sherret
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+@@@ file _test.deps.ts 155 4ccf29082bab0413ae2d3955461bb8c61cc03eeff8dfc5aa2f45350bea997a9b
+export { describe, it } from "https://deno.land/std@0.193.0/testing/bdd.ts";
+// @deno-types="npm:@types/chai@4.3"
+export { expect } from "npm:chai@4.3.7";
+
+@@@ file deno.json 251 fe1fe5666e06a8dd9331cc94249507dc8d4d9863892f76c014b54b52feaa8593
+{
+  "name": "@david/code-block-writer",
+  "version": "0.0.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "build:npm": "deno run -A ./scripts/build_npm.ts"
+  },
+  "exclude": [
+    "npm"
+  ],
+  "imports": {
+    "@deno/dnt": "jsr:@deno/dnt@^0.41.1"
+  }
+}
+
+@@@ file mod.test.ts 50173 284eb6deb3dc29101d9e03817257134df4fb193e8cd3381b268c7a0550733dde
+import { describe, expect, it } from "./_test.deps.ts";
+import CodeBlockWriter from "./mod.ts";
+
+describe("CodeBlockWriter", () => {
+  describe("default opts", () => {
+    it("should use a \n newline if none is specified", () => {
+      const writer = new CodeBlockWriter();
+      writer.writeLine("test");
+      expect(writer.toString()).to.equal("test\n");
+    });
+  });
+
+  describe("tests for \\n", () => {
+    runTestsForNewLineChar({ newLine: "\n" });
+  });
+
+  describe("tests for \\r\\n", () => {
+    runTestsForNewLineChar({ newLine: "\r\n" });
+  });
+});
+
+function runTestsForNewLineChar(opts: { newLine: "\r\n" | "\n" }) {
+  function getWriter(additionalOpts: { useSingleQuote?: boolean } = {}) {
+    return new CodeBlockWriter({
+      newLine: opts.newLine,
+      useSingleQuote: additionalOpts.useSingleQuote,
+    });
+  }
+
+  function doTest(
+    expected: string,
+    writerCallback: (writer: CodeBlockWriter) => void,
+    additionalOpts: { useSingleQuote?: boolean } = {},
+  ) {
+    const writer = getWriter(additionalOpts);
+    writerCallback(writer);
+    expect(writer.toString()).to.equal(expected.replace(/\r?\n/g, opts.newLine));
+  }
+
+  describe("#write()", () => {
+    it("should write a single letter", () => {
+      const expected = `a`;
+
+      doTest(expected, writer => {
+        writer.write("a");
+      });
+    });
+
+    it("should write the text", () => {
+      const expected = `test`;
+
+      doTest(expected, writer => {
+        writer.write("test");
+      });
+    });
+
+    it("should do nothing if providing a null string", () => {
+      const expected = "";
+
+      doTest(expected, writer => {
+        writer.write(null as unknown as string);
+      });
+    });
+
+    it("should indent if it's passed a newline character inside a block", () => {
+      const expected = `test {
+    inside
+    inside
+}`;
+      doTest(expected, writer => {
+        writer.write("test ").block(() => {
+          writer.write(`inside${opts.newLine}inside`);
+        });
+      });
+    });
+
+    it("should write all requested newlines", () => {
+      const expected = "\n\ntest\n\n";
+
+      doTest(expected, writer => {
+        writer.write("\n\ntest\n\n");
+      });
+    });
+
+    it("should not write indentation between newlines", () => {
+      const expected = "    test\n\n    test";
+
+      doTest(expected, writer => {
+        writer.setIndentationLevel(1);
+        writer.write("test\n\ntest");
+      });
+    });
+
+    it("should indent if passed an empty string at the start of a newline within a block", () => {
+      const expected = `test {\n    inside\n    \n}`;
+      doTest(expected, writer => {
+        writer.write("test ").block(() => {
+          writer.writeLine(`inside`);
+          writer.write("");
+        });
+      });
+    });
+  });
+
+  describe("#block()", () => {
+    it("should allow an empty block", () => {
+      const expected = `test {
+}`;
+      doTest(expected, writer => {
+        writer.write("test").block();
+      });
+    });
+
+    it("should write text inside a block", () => {
+      const expected = `test {
+    inside
+}`;
+      doTest(expected, writer => {
+        writer.write("test").block(() => {
+          writer.write("inside");
+        });
+      });
+    });
+
+    it("should write text inside a block inside a block", () => {
+      const expected = `test {
+    inside {
+        inside again
+    }
+}`;
+
+      doTest(expected, writer => {
+        writer.write("test").block(() => {
+          writer.write("inside").block(() => {
+            writer.write("inside again");
+          });
+        });
+      });
+    });
+
+    it("should not do an extra space if there was a space added before the block", () => {
+      const expected = `test {
+    inside
+}`;
+      doTest(expected, writer => {
+        writer.write("test ").block(() => {
+          writer.write("inside");
+        });
+      });
+    });
+
+    it("should put the brace on the next line if there is a newline before it", () => {
+      const expected = `test
+{
+    inside
+}`;
+      doTest(expected, writer => {
+        writer.writeLine("test").block(() => {
+          writer.writeLine("inside");
+        });
+      });
+    });
+
+    it("should not add an extra newline if the last character written in the block was a newline", () => {
+      const expected = `test {
+    inside
+}`;
+      doTest(expected, writer => {
+        writer.write("test ").block(() => {
+          writer.writeLine("inside");
+        });
+      });
+    });
+
+    it("should add a newline after the block when writing afterwards", () => {
+      const expected = `{
+    t;
+}
+ `;
+      doTest(expected, writer => {
+        writer.block(() => writer.write("t;")).write(" ");
+      });
+    });
+
+    it("should not add a newline after the block when doing a condition call and the conditions are false", () => {
+      const expected = `{
+    t;
+}`;
+      doTest(expected, writer => {
+        writer.block(() => writer.write("t;"))
+          .conditionalWrite(false, " ")
+          .conditionalWriteLine(false, " ")
+          .conditionalNewLine(false)
+          .conditionalBlankLine(false);
+      });
+    });
+
+    it("should not indent when in a string", () => {
+      const expected = "block {\n    const t = `\nt`;\n    const u = 1;\n}";
+
+      doTest(expected, writer => {
+        writer.write("block").block(() => {
+          writer.write("const t = `\nt`;\nconst u = 1;");
+        });
+      });
+    });
+
+    it("should indent when in a comment", () => {
+      const expected = "block {\n    const t = /*\n    const u = 1;*/\n}";
+
+      doTest(expected, writer => {
+        writer.write("block").block(() => {
+          writer.write("const t = /*\nconst u = 1;*/");
+        });
+      });
+    });
+  });
+
+  describe("#inlineBlock()", () => {
+    it("should allow an empty inline block", () => {
+      const expected = `someCall({\n});`;
+
+      doTest(expected, writer => {
+        writer.write("someCall(").inlineBlock().write(");");
+      });
+    });
+
+    it("should do an inline block correctly", () => {
+      const expected = `someCall({\n    console.log();\n});`;
+
+      doTest(expected, writer => {
+        writer.write("someCall(").inlineBlock(() => {
+          writer.write("console.log();");
+        }).write(");");
+      });
+    });
+  });
+
+  describe("#indent()", () => {
+    describe("number argument", () => {
+      it("should indent as necessary", () => {
+        const expected = `test\n    test`;
+
+        doTest(expected, writer => {
+          writer.writeLine("test").indent().write("test");
+        });
+      });
+
+      it("should indent multiple times when specifying an argument", () => {
+        const expected = `test\n        test`;
+
+        doTest(expected, writer => {
+          writer.writeLine("test").indent(2).write("test");
+        });
+      });
+    });
+
+    describe("block argument", () => {
+      it("should indent text inside a block", () => {
+        const expected = `test\n    inside`;
+        doTest(expected, writer => {
+          writer.write("test").indent(() => {
+            writer.write("inside");
+          });
+        });
+      });
+
+      it("should not do a newline on the first line", () => {
+        const expected = `    inside`;
+        doTest(expected, writer => {
+          writer.indent(() => {
+            writer.write("inside");
+          });
+        });
+      });
+
+      it("should not do a newline at the start if the last was a new line", () => {
+        const expected = `test\n    inside`;
+        doTest(expected, writer => {
+          writer.writeLine("test").indent(() => {
+            writer.write("inside");
+          });
+        });
+      });
+
+      it("should not do a newline at the end if the last was a new line", () => {
+        const expected = `    inside\ntest`;
+        doTest(expected, writer => {
+          writer.indent(() => {
+            writer.writeLine("inside");
+          }).write("test");
+        });
+      });
+
+      it("should indent text inside a block inside a block", () => {
+        const expected = `test
+    inside
+        inside again
+test`;
+
+        doTest(expected, writer => {
+          writer.write("test").indent(() => {
+            writer.write("inside").indent(() => {
+              writer.write("inside again");
+            });
+          });
+          writer.write("test");
+        });
+      });
+
+      it("should not indent when in a string", () => {
+        const expected = "block\n    const t = `\nt`;\n    const u = 1;";
+
+        doTest(expected, writer => {
+          writer.write("block").indent(() => {
+            writer.write("const t = `\nt`;\nconst u = 1;");
+          });
+        });
+      });
+
+      it("should indent when in a comment", () => {
+        const expected = "block\n    const t = /*\n    const u = 1;*/";
+
+        doTest(expected, writer => {
+          writer.write("block").indent(() => {
+            writer.write("const t = /*\nconst u = 1;*/");
+          });
+        });
+      });
+    });
+  });
+
+  describe("#writeLine()", () => {
+    it("should write some text on a line", () => {
+      const expected = `test\n`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test");
+      });
+    });
+
+    it("should start writing on a newline if the last one was just writing", () => {
+      const expected = `test\ntest\ntest\n`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test").write("test").writeLine("test");
+      });
+    });
+
+    it("should not create a newline between two writeLines", () => {
+      const expected = `test\ntest\n`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test").writeLine("test");
+      });
+    });
+
+    it("should indent if passed an empty string at the start of a newline within a block", () => {
+      const expected = `test {\n    inside\n    \n}`;
+      doTest(expected, writer => {
+        writer.write("test ").block(() => {
+          writer.writeLine(`inside`);
+          writer.writeLine("");
+        });
+      });
+    });
+  });
+
+  describe("#blankLineIfLastNot()", () => {
+    it("should do a blank line if the last text was not a newline", () => {
+      const expected = `test\n\n`;
+
+      doTest(expected, writer => {
+        writer.write("test").blankLineIfLastNot();
+      });
+    });
+
+    it("should do a blank line if the last text was a newline", () => {
+      const expected = `test\n\n`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test").blankLineIfLastNot();
+      });
+    });
+
+    it("should not do a blank line if the last text was a blank line", () => {
+      const expected = `test\n\n`;
+
+      doTest(expected, writer => {
+        writer.write("test").blankLine().blankLineIfLastNot();
+      });
+    });
+  });
+
+  describe("#blankLine()", () => {
+    it("should do a blank line if the last text was not a new line", () => {
+      const expected = `test\n\ntest`;
+
+      doTest(expected, writer => {
+        writer.write("test").blankLine().write("test");
+      });
+    });
+
+    it("should do a blank line if the last text was a newline", () => {
+      const expected = `test\n\ntest`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test").blankLine().write("test");
+      });
+    });
+
+    it("should do a blank line if the last was a blank line", () => {
+      const expected = `test\n\n\ntest`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test").blankLine().blankLine().write("test");
+      });
+    });
+  });
+
+  describe("#conditionalBlankLine()", () => {
+    it("should write when the condition is true", () => {
+      doTest("t\n\n", writer => {
+        writer.write("t").conditionalBlankLine(true);
+      });
+    });
+
+    it("should not write when the condition is false", () => {
+      doTest("t", writer => {
+        writer.write("t").conditionalBlankLine(false);
+      });
+    });
+
+    it("should not write when the condition is undefined", () => {
+      doTest("t", writer => {
+        writer.write("t").conditionalBlankLine(undefined);
+      });
+    });
+  });
+
+  describe("#newLineIfLastNot()", () => {
+    it("should do a newline if the last text was not a newline", () => {
+      const expected = `test\n`;
+
+      doTest(expected, writer => {
+        writer.write("test").newLineIfLastNot();
+      });
+    });
+
+    it("should not do a newline if the last text was a newline", () => {
+      const expected = `test\n`;
+
+      doTest(expected, writer => {
+        writer.writeLine("test").newLineIfLastNot();
+      });
+    });
+  });
+
+  describe("#newLine()", () => {
+    it("should do a newline when writing", () => {
+      const expected = `test\n`;
+
+      doTest(expected, writer => {
+        writer.write("test").newLine();
+      });
+    });
+
+    it("should do a newline after doing a newline", () => {
+      const expected = `test\n\ntext`;
+
+      doTest(expected, writer => {
+        writer.write("test").newLine().newLine().write("text");
+      });
+    });
+
+    it("should allow doing a newline at the start", () => {
+      const expected = `\n`;
+
+      doTest(expected, writer => {
+        writer.newLine();
+      });
+    });
+
+    it("should allow doing a newline after doing a block", () => {
+      const expected = `test {\n\n    test\n}`;
+
+      doTest(expected, writer => {
+        writer.write("test").block(() => {
+          writer.newLine().writeLine("test");
+        });
+      });
+    });
+
+    it("should allow doing a newline if the last line was a blank line (allow consecutive blank lines)", () => {
+      const expected = `test\n\n\ntext`;
+
+      doTest(expected, writer => {
+        writer.write("test").newLine().newLine().newLine().write("text");
+      });
+    });
+
+    it("should do a newline if a string causes it to not be a consecutive blank line", () => {
+      const expected = `test\na\n`;
+
+      doTest(expected, writer => {
+        writer.write("test").newLine().write("a").newLine();
+      });
+    });
+
+    it("should be allowed to have two newlines at the end of a file", () => {
+      const expected = `text\n\n`;
+
+      doTest(expected, writer => {
+        writer.write("text").newLine().newLine();
+      });
+    });
+
+    it("should indent if it's passed a newline character inside a block", () => {
+      const expected = `test {
+    inside
+    inside
+}`;
+      doTest(expected, writer => {
+        writer.write("test ").block(() => {
+          writer.writeLine(`inside${opts.newLine}inside`);
+        });
+      });
+    });
+  });
+
+  describe("#quote()", () => {
+    it("should write out a double quote character", () => {
+      const expected = `"`;
+      doTest(expected, writer => {
+        writer.quote();
+      });
+    });
+
+    it("should write out a single quote character", () => {
+      const expected = `'`;
+      doTest(expected, writer => {
+        writer.quote();
+      }, { useSingleQuote: true });
+    });
+
+    it("should write out text surrounded by quotes", () => {
+      const expected = `"test"`;
+      doTest(expected, writer => {
+        writer.quote("test");
+      });
+    });
+
+    it("should write out text surrounded by quotes and escape quotes and new lines", () => {
+      const expected = `"te\\"\\r\\n\\\r\nst"`;
+      doTest(expected, writer => {
+        writer.quote("te\"\r\nst");
+      });
+    });
+  });
+
+  describe("#spaceIfLastNot()", () => {
+    it("should do a space at the beginning of the file", () => {
+      const expected = ` `;
+
+      doTest(expected, writer => {
+        writer.spaceIfLastNot();
+      });
+    });
+
+    it("should do a space if the last character wasn't a space", () => {
+      const expected = `test `;
+
+      doTest(expected, writer => {
+        writer.write("test").spaceIfLastNot();
+      });
+    });
+
+    it("should not do a space if the last character was a space", () => {
+      const expected = `test `;
+
+      doTest(expected, writer => {
+        writer.write("test").spaceIfLastNot().spaceIfLastNot();
+      });
+    });
+
+    it("should do a space if the last character was a newline", () => {
+      const expected = `test\n `;
+
+      doTest(expected, writer => {
+        writer.write("test").newLine().spaceIfLastNot();
+      });
+    });
+  });
+
+  describe("#space()", () => {
+    it("should do a space when saying to", () => {
+      const expected = `   `;
+      doTest(expected, writer => {
+        writer.space().space().space();
+      });
+    });
+
+    it("should do a space when saying to do multiple", () => {
+      const expected = `     `;
+      doTest(expected, writer => {
+        writer.space(5);
+      });
+    });
+
+    it("should throw if providing a negative number", () => {
+      const writer = new CodeBlockWriter();
+      expect(() => writer.space(-1)).to.throw();
+    });
+  });
+
+  describe("#tabIfLastNot()", () => {
+    it("should do a tab at the beginning of the file", () => {
+      const expected = `\t`;
+
+      doTest(expected, writer => {
+        writer.tabIfLastNot();
+      });
+    });
+
+    it("should do a tab if the last character wasn't a tab", () => {
+      const expected = `test\t`;
+
+      doTest(expected, writer => {
+        writer.write("test").tabIfLastNot();
+      });
+    });
+
+    it("should not do a tab if the last character was a tab", () => {
+      const expected = `test\t`;
+
+      doTest(expected, writer => {
+        writer.write("test").tabIfLastNot().tabIfLastNot();
+      });
+    });
+
+    it("should do a tab if the last character was a newline", () => {
+      const expected = `test\n\t`;
+
+      doTest(expected, writer => {
+        writer.write("test").newLine().tabIfLastNot();
+      });
+    });
+  });
+
+  describe("#tab()", () => {
+    it("should do a tab when saying to", () => {
+      const expected = `\t\t\t`;
+      doTest(expected, writer => {
+        writer.tab().tab().tab();
+      });
+    });
+
+    it("should do a tab when saying to do multiple", () => {
+      const expected = `\t\t\t\t\t`;
+      doTest(expected, writer => {
+        writer.tab(5);
+      });
+    });
+
+    it("should throw if providing a negative number", () => {
+      const writer = new CodeBlockWriter();
+      expect(() => writer.tab(-1)).to.throw();
+    });
+  });
+
+  describe("#getLength()", () => {
+    it("should return the length", () => {
+      const writer = getWriter();
+      writer.write("1234");
+      expect(writer.getLength()).to.equal(4);
+    });
+
+    it("should get the correct length after various kinds of writes", () => {
+      const writer = getWriter();
+      writer.write("1").writeLine("2").write("3").block(() => writer.write("4")).tab(5).quote("testing").blankLine();
+      expect(writer.getLength()).to.equal(writer.toString().length);
+    });
+  });
+
+  describe("#conditionalNewLine()", () => {
+    it("should write when the condition is true", () => {
+      doTest("t\n", writer => {
+        writer.write("t").conditionalNewLine(true);
+      });
+    });
+
+    it("should not write when the condition is false", () => {
+      doTest("t", writer => {
+        writer.write("t").conditionalNewLine(false);
+      });
+    });
+
+    it("should not write when the condition is undefined", () => {
+      doTest("t", writer => {
+        writer.write("t").conditionalNewLine(undefined);
+      });
+    });
+  });
+
+  describe("#conditionalWrite()", () => {
+    it("should write the given string when the condition is true", () => {
+      doTest("test", writer => {
+        writer.conditionalWrite(true, "test");
+      });
+    });
+
+    it("should not write the given string when the condition is false", () => {
+      doTest("", writer => {
+        writer.conditionalWrite(false, "test");
+      });
+    });
+
+    it("should not write the given string when the condition is undefined", () => {
+      doTest("", writer => {
+        writer.conditionalWrite(undefined, "test");
+      });
+    });
+
+    it("should write the result of the given function when the condition is true", () => {
+      doTest("test", writer => {
+        writer.conditionalWrite(true, () => "test");
+      });
+    });
+
+    it("should not write the result of the given function when the condition is false", () => {
+      doTest("", writer => {
+        writer.conditionalWrite(false, () => "test");
+      });
+    });
+
+    it("should not evaluate the given function when the condition is false", () => {
+      // deno-lint-ignore no-explicit-any
+      const test: any = null;
+      doTest("", writer => {
+        writer.conditionalWrite(false, () => test.test);
+      });
+    });
+  });
+
+  describe("#conditionalWriteLine()", () => {
+    it("should write the given string when the condition is true", () => {
+      doTest("test\n", writer => {
+        writer.conditionalWriteLine(true, "test");
+      });
+    });
+
+    it("should not write the given string when the condition is false", () => {
+      doTest("", writer => {
+        writer.conditionalWriteLine(false, "test");
+      });
+    });
+
+    it("should not write the given string when the condition is undefined", () => {
+      doTest("", writer => {
+        writer.conditionalWriteLine(undefined, "test");
+      });
+    });
+
+    it("should write the result of the given function when the condition is true", () => {
+      doTest("test\n", writer => {
+        writer.conditionalWriteLine(true, () => "test");
+      });
+    });
+
+    it("should not write the result of the given function when the condition is false", () => {
+      doTest("", writer => {
+        writer.conditionalWriteLine(false, () => "test");
+      });
+    });
+
+    it("should not evaluate the given function when the condition is false", () => {
+      // deno-lint-ignore no-explicit-any
+      const test: any = null;
+      doTest("", writer => {
+        writer.conditionalWriteLine(false, () => test.test);
+      });
+    });
+  });
+
+  describe("#closeComment()", () => {
+    it("should not do anything if not in a comment", () => {
+      doTest("test", writer => {
+        writer.write("test").closeComment();
+      });
+    });
+
+    it("should not do anything if in a string", () => {
+      doTest('"/* test"', (writer) => {
+        writer.write('"/* test"').closeComment();
+      });
+
+      doTest('"// test"', (writer) => {
+        writer.write('"// test"').closeComment();
+      });
+    });
+
+    it("should do a newline if in a slash slash comment", () => {
+      doTest("// test\n", writer => {
+        writer.write("// test").closeComment();
+      });
+    });
+
+    it("should add a space at the end if on same line in a star slash comment", () => {
+      doTest("/* test */", writer => {
+        writer.write("/* test").closeComment();
+      });
+    });
+
+    it("should not add a space at the end if on same line and a space exists in a star slash comment", () => {
+      doTest("/* test */", writer => {
+        writer.write("/* test ").closeComment();
+      });
+    });
+
+    it("should not add a space at the start of the line in a star slash comment", () => {
+      doTest("/* test\n*/", writer => {
+        writer.writeLine("/* test").closeComment();
+      });
+    });
+  });
+
+  describe("#unsafeInsert()", () => {
+    it("should throw if providing a negative number", () => {
+      const writer = new CodeBlockWriter();
+      expect(() => writer.unsafeInsert(-1, "t"))
+        .to.throw("Provided position of '-1' was less than zero.");
+    });
+
+    it("should throw if providing a number greater than the length", () => {
+      const writer = new CodeBlockWriter();
+      expect(() => writer.unsafeInsert(1, "t"))
+        .to.throw("Provided position of '1' was greater than the text length of '0'.");
+    });
+
+    it("should support inserting at the beginning", () => {
+      doTest("01234", writer => {
+        writer.write("1234").unsafeInsert(0, "0");
+        expect(writer.getLength()).to.equal(5);
+      });
+    });
+
+    it("should support inserting at the end", () => {
+      doTest("01234", writer => {
+        writer.write("0123").unsafeInsert(4, "4");
+        expect(writer.getLength()).to.equal(5);
+      });
+    });
+
+    it("should support inserting in the first half at the beginning of an existing string", () => {
+      doTest("0x123456", writer => {
+        writer.write("0").write("12").write("3").write("45").write("6");
+        writer.unsafeInsert(1, "x");
+        expect(writer.getLength()).to.equal(8);
+      });
+    });
+
+    it("should support inserting in the first half in the middle of an existing string", () => {
+      doTest("01x23456", writer => {
+        writer.write("0").write("12").write("3").write("45").write("6");
+        writer.unsafeInsert(2, "x");
+        expect(writer.getLength()).to.equal(8);
+      });
+    });
+
+    it("should support inserting in the first half at the end of an existing string", () => {
+      doTest("012x3456", writer => {
+        writer.write("0").write("12").write("3").write("45").write("6");
+        writer.unsafeInsert(3, "x");
+        expect(writer.getLength()).to.equal(8);
+      });
+    });
+
+    it("should support inserting in the second half at the beginning of an existing string", () => {
+      doTest("0123x456", writer => {
+        writer.write("0").write("12").write("3").write("45").write("6");
+        writer.unsafeInsert(4, "x");
+        expect(writer.getLength()).to.equal(8);
+      });
+    });
+
+    it("should support inserting in the second half in the middle of an existing string", () => {
+      doTest("01234x56", writer => {
+        writer.write("0").write("12").write("3").write("45").write("6");
+        writer.unsafeInsert(5, "x");
+        expect(writer.getLength()).to.equal(8);
+      });
+    });
+
+    it("should support inserting in the second half at the end of an existing string", () => {
+      doTest("012345x6", writer => {
+        writer.write("0").write("12").write("3").write("45").write("6");
+        writer.unsafeInsert(6, "x");
+        expect(writer.getLength()).to.equal(8);
+      });
+    });
+  });
+}
+
+describe("#setIndentationLevel", () => {
+  it("should throw when providing a negative number", () => {
+    const writer = new CodeBlockWriter();
+    expect(() => writer.setIndentationLevel(-1)).to.throw();
+  });
+
+  it("should throw when not providing a number or string", () => {
+    const writer = new CodeBlockWriter();
+    // deno-lint-ignore no-explicit-any
+    expect(() => writer.setIndentationLevel({} as any)).to.throw();
+  });
+
+  it("should not throw when providing an empty string", () => {
+    const writer = new CodeBlockWriter();
+    expect(() => writer.setIndentationLevel("")).to.not.throw();
+  });
+
+  it("should throw when providing a string that doesn't contain only spaces and tabs", () => {
+    const writer = new CodeBlockWriter();
+    expect(() => writer.setIndentationLevel("  \ta")).to.throw();
+  });
+
+  it("should be able to set the indentation level and it maintains it over newlines", () => {
+    const writer = new CodeBlockWriter();
+    writer.setIndentationLevel(2);
+    writer.writeLine("t");
+    writer.writeLine("t");
+
+    expect(writer.toString()).to.equal("        t\n        t\n");
+    expect(writer.getIndentationLevel()).to.equal(2);
+  });
+
+  it("should be able to set the indentation level to 0 within a block", () => {
+    const writer = new CodeBlockWriter();
+    writer.write("t").block(() => {
+      writer.setIndentationLevel(0);
+      writer.writeLine("t");
+      writer.writeLine("t");
+    }).write("t").block(() => {
+      writer.write("t");
+    });
+
+    expect(writer.toString()).to.equal("t {\nt\nt\n}\nt {\n    t\n}");
+  });
+
+  function doSpacesTest(numberSpaces: number) {
+    const writer = new CodeBlockWriter({ indentNumberOfSpaces: numberSpaces });
+    const indent = Array(numberSpaces + 1).join(" ");
+    writer.setIndentationLevel(indent + indent);
+    writer.write("t").block(() => writer.write("t"));
+
+    expect(writer.toString()).to.equal(`${indent + indent}t {\n${indent + indent + indent}t\n${indent + indent}}`);
+    expect(writer.getIndentationLevel()).to.equal(2);
+  }
+
+  it("should be able to set the indentation level using a string with two spaces", () => {
+    doSpacesTest(2);
+  });
+
+  it("should be able to set the indentation level using a string with four spaces", () => {
+    doSpacesTest(4);
+  });
+
+  it("should be able to set the indentation level using a string with eight spaces", () => {
+    doSpacesTest(8);
+  });
+
+  it("should indent by the provided number of tabs", () => {
+    const writer = new CodeBlockWriter({ useTabs: true });
+    writer.setIndentationLevel("\t\t");
+    writer.write("s");
+
+    expect(writer.toString()).to.equal(`\t\ts`);
+  });
+
+  it("should indent to the nearest indent when mixing tabs and spaces (round down)", () => {
+    const writer = new CodeBlockWriter({ useTabs: true });
+    writer.setIndentationLevel("\t \t ");
+    writer.write("s");
+
+    expect(writer.toString()).to.equal(`\t\ts`);
+  });
+
+  it("should indent to the nearest indent when mixing tabs and spaces (round down, 2 spaces)", () => {
+    const writer = new CodeBlockWriter({ useTabs: true, indentNumberOfSpaces: 2 });
+    writer.setIndentationLevel("\t \t");
+    writer.write("s");
+
+    expect(writer.toString()).to.equal(`\t\ts`);
+  });
+
+  it("should indent to the nearest indent when mixing tabs and spaces (round up)", () => {
+    const writer = new CodeBlockWriter({ useTabs: true });
+    writer.setIndentationLevel("\t \t  ");
+    writer.write("s");
+
+    expect(writer.toString()).to.equal(`\t\t\ts`);
+  });
+
+  it("should indent to the nearest indent when mixing tabs and spaces (2 spaces)", () => {
+    const writer = new CodeBlockWriter({ useTabs: true, indentNumberOfSpaces: 2 });
+    writer.setIndentationLevel("\t \t     ");
+    writer.write("s");
+
+    expect(writer.toString()).to.equal(`\t\t\t\t\ts`);
+  });
+
+  function doPortionTest(level: number, expected: string) {
+    const writer = new CodeBlockWriter({ useTabs: false, indentNumberOfSpaces: 4 });
+    writer.setIndentationLevel(level);
+    writer.write("s");
+    expect(writer.toString()).to.equal(expected + `s`);
+  }
+
+  it("should indent a quarter of an indent when using spaces and specifying a quarter", () => {
+    doPortionTest(0.25, " ");
+  });
+
+  it("should indent half an indent when using spaces and specifying halfway", () => {
+    doPortionTest(0.5, "  ");
+  });
+
+  it("should indent a third of an indent when using spaces and specifying a third", () => {
+    doPortionTest(0.75, "   ");
+  });
+
+  it("should round the indent when specifying a position between two indexes", () => {
+    doPortionTest(0.125, " ");
+  });
+});
+
+describe("#withIndentationLevel", () => {
+  it("should use the provided indentation level within the block", () => {
+    const writer = new CodeBlockWriter();
+    writer.withIndentationLevel(2, () => {
+      expect(writer.getIndentationLevel()).to.equal(2);
+    });
+    expect(writer.getIndentationLevel()).to.equal(0);
+  });
+
+  it("should use the provided indentation level within the block when providing a string", () => {
+    const writer = new CodeBlockWriter();
+    writer.withIndentationLevel("    ", () => {
+      expect(writer.getIndentationLevel()).to.equal(1);
+    });
+    expect(writer.getIndentationLevel()).to.equal(0);
+  });
+});
+
+describe("#queueIndentationLevel", () => {
+  it("should throw when providing a negative number", () => {
+    const writer = new CodeBlockWriter();
+    expect(() => writer.queueIndentationLevel(-1)).to.throw();
+  });
+
+  it("should throw when not providing a number or string", () => {
+    const writer = new CodeBlockWriter();
+    // deno-lint-ignore no-explicit-any
+    expect(() => writer.queueIndentationLevel({} as any)).to.throw();
+  });
+
+  it("should not throw when providing an empty string", () => {
+    const writer = new CodeBlockWriter();
+    expect(() => writer.queueIndentationLevel("")).to.not.throw();
+  });
+
+  it("should throw when providing a string that doesn't contain only spaces and tabs", () => {
+    const writer = new CodeBlockWriter();
+    expect(() => writer.queueIndentationLevel("  \ta")).to.throw();
+  });
+
+  it("should write with indentation when queuing and immediately doing a newline", () => {
+    const writer = new CodeBlockWriter();
+    writer.queueIndentationLevel(1);
+    writer.newLine().write("t");
+
+    expect(writer.toString()).to.equal("\n    t");
+  });
+
+  it("should be able to queue the indentation level", () => {
+    const writer = new CodeBlockWriter();
+    writer.queueIndentationLevel(1);
+    writer.writeLine("t");
+    writer.writeLine("t");
+
+    expect(writer.toString()).to.equal("t\n    t\n");
+  });
+
+  it("should be able to queue the indentation mid line and it will write the next line with indentation", () => {
+    const writer = new CodeBlockWriter();
+    writer.write("t");
+    writer.queueIndentationLevel(1);
+    writer.write("t");
+    writer.writeLine("t");
+
+    expect(writer.toString()).to.equal("tt\n    t\n");
+  });
+
+  it("should be able to set and queue an indentation", () => {
+    const writer = new CodeBlockWriter();
+    writer.setIndentationLevel(1);
+    writer.queueIndentationLevel(2);
+    writer.writeLine("t");
+    writer.writeLine("t");
+
+    expect(writer.toString()).to.equal("    t\n        t\n");
+  });
+
+  it("should be able to set after queueng an indentation", () => {
+    const writer = new CodeBlockWriter();
+    writer.queueIndentationLevel(1);
+    writer.writeLine("t");
+    writer.writeLine("t");
+    writer.setIndentationLevel(2);
+    writer.writeLine("t");
+    writer.writeLine("t");
+
+    expect(writer.toString()).to.equal("t\n    t\n        t\n        t\n");
+  });
+});
+
+describe("#hangingIndent", () => {
+  it("should queue an indent +1 when using newLine() and writing text", () => {
+    function doTest(action: (writer: CodeBlockWriter) => void) {
+      const writer = new CodeBlockWriter();
+      writer.setIndentationLevel(2);
+      writer.hangingIndent(() => {
+        expect(writer.getIndentationLevel()).to.equal(2);
+        action(writer);
+        expect(writer.getIndentationLevel()).to.equal(3);
+      });
+      expect(writer.getIndentationLevel()).to.equal(2);
+    }
+
+    doTest(writer => writer.newLine());
+    doTest(writer => writer.write("testing\nthis"));
+  });
+
+  it("should handle nested indentations", () => {
+    const writer = new CodeBlockWriter();
+    writer.write("(");
+    writer.hangingIndent(() => {
+      writer.write("p");
+      writer.hangingIndent(() => {
+        writer.write(": string\n| number");
+      });
+    });
+    writer.write(")");
+    expect(writer.toString()).to.equal("(p: string\n    | number)");
+  });
+
+  it("should handle if a block occurs within a hanging indent", () => {
+    const writer = new CodeBlockWriter();
+    writer.hangingIndent(() => {
+      writer.block();
+    });
+    expect(writer.toString()).to.equal("{\n    }");
+  });
+
+  it("should not indent if within a string", () => {
+    const writer = new CodeBlockWriter();
+    writer.hangingIndent(() => {
+      writer.quote("t\nu").newLine().write("t");
+    });
+    expect(writer.toString()).to.equal(`"t\\n\\\nu"\n    t`);
+  });
+});
+
+describe("#hangingIndentUnlessBlock", () => {
+  it("should write with hanging indentation when not a brace", () => {
+    const writer = new CodeBlockWriter();
+    writer.setIndentationLevel(2);
+    writer.hangingIndentUnlessBlock(() => {
+      expect(writer.getIndentationLevel()).to.equal(2);
+      writer.write("t").newLine();
+      expect(writer.getIndentationLevel()).to.equal(3);
+    });
+    expect(writer.getIndentationLevel()).to.equal(2);
+  });
+
+  it("should not write with hanging indentation when it's a block and using \n newlines", () => {
+    const writer = new CodeBlockWriter();
+    writer.hangingIndentUnlessBlock(() => {
+      writer.write("t").block(() => {
+        writer.write("f");
+      });
+    });
+    expect(writer.toString()).to.equal(`t {\n    f\n}`);
+  });
+
+  it("should not write with hanging indentation when it's a block and using \r\n newlines", () => {
+    const writer = new CodeBlockWriter({ newLine: "\r\n" });
+    writer.hangingIndentUnlessBlock(() => {
+      writer.write("t").block(() => {
+        writer.write("f");
+      });
+    });
+    expect(writer.toString()).to.equal(`t {\r\n    f\r\n}`);
+  });
+
+  it("should write blocks at the same hanging indentation once past the first line with hanging indenation", () => {
+    const writer = new CodeBlockWriter();
+    writer.hangingIndentUnlessBlock(() => {
+      writer.writeLine("t");
+      writer.write("u").block(() => {
+        writer.write("f");
+      });
+      writer.write("v");
+    });
+    expect(writer.toString()).to.equal(`t\n    u {\n        f\n    }\n    v`);
+  });
+
+  it("should ignore blocks written in a string", () => {
+    // this would be strange to happen... but this behaviour seems ok
+    const writer = new CodeBlockWriter();
+    writer.hangingIndentUnlessBlock(() => {
+      writer.writeLine("`t{");
+      writer.write("v`");
+      writer.block(() => writer.write("u"));
+    });
+    expect(writer.toString()).to.equal("`t{\nv` {\n    u\n}");
+  });
+});
+
+describe("#endsWith", () => {
+  function doTest(str: string, text: string, expectedValue: boolean) {
+    const writer = new CodeBlockWriter();
+    writer.write(str);
+    expect(writer.endsWith(text)).to.equal(expectedValue);
+  }
+
+  it("should be true when equal", () => {
+    doTest("test", "test", true);
+  });
+
+  it("should be true when it ends with", () => {
+    doTest("test", "st", true);
+  });
+
+  it("should be false when the provided text is greater than the length", () => {
+    doTest("test", "test1", false);
+  });
+
+  it("should be false when the provided text does not end with", () => {
+    doTest("test", "rt", false);
+  });
+});
+
+describe("#iterateLastChars", () => {
+  it("should iterate over the past characters until the end", () => {
+    const writer = new CodeBlockWriter();
+    writer.write("test\n");
+    const expected: [string, number][] = [
+      ["\n", 4],
+      ["t", 3],
+      ["s", 2],
+      ["e", 1],
+      ["t", 0],
+    ];
+    const result: typeof expected = [];
+    const returnValue = writer.iterateLastChars((char, index) => {
+      result.push([char, index]);
+    });
+    expect(result).to.deep.equal(expected);
+    expect(returnValue).to.equal(undefined);
+  });
+
+  it("should stop and return the value when returning a non-null value", () => {
+    const writer = new CodeBlockWriter();
+    writer.write("test");
+    const returnValue = writer.iterateLastChars(char => {
+      if (char !== "t") {
+        throw new Error("It didn't stop for some reason.");
+      }
+      return false;
+    });
+    expect(returnValue).to.equal(false);
+  });
+});
+
+describe("#getIndentationLevel", () => {
+  it("should get the indentation level", () => {
+    const writer = new CodeBlockWriter();
+    writer.setIndentationLevel(5);
+    expect(writer.getIndentationLevel()).to.equal(5);
+  });
+});
+
+describe("#isInString", () => {
+  function doTest(str: string, expectedValues: boolean[]) {
+    expect(str.length + 1).to.equal(expectedValues.length);
+    const writer = new CodeBlockWriter();
+    expect(writer.isInString()).to.equal(expectedValues[0]);
+    for (let i = 0; i < str.length; i++) {
+      writer.write(str[i]);
+      expect(writer.isInString()).to.equal(expectedValues[i + 1], `at expected position ${i + 1}`);
+    }
+  }
+
+  it("should be in a string while in double quotes", () => {
+    doTest(`s"y"`, [false, false, true, true, false]);
+  });
+
+  it("should be in a string while in single quotes", () => {
+    doTest(`s'y'`, [false, false, true, true, false]);
+  });
+
+  it("should be in a string while in backticks", () => {
+    doTest("s`y`", [false, false, true, true, false]);
+  });
+
+  it("should not be in a string after a new line and not closing the double quote", () => {
+    doTest(`s"y\nt`, [false, false, true, true, false, false]);
+  });
+
+  it("should be in a string after a new line and not closing the double quote, but escaping the new line", () => {
+    doTest(`s"y\\\nt`, [false, false, true, true, true, true, true]);
+  });
+
+  it("should not be in a string after a new line and not closing the single quote", () => {
+    doTest(`s'y\nt`, [false, false, true, true, false, false]);
+  });
+
+  it("should be in a string after a new line and not closing the single quote, but escaping the new line", () => {
+    doTest(`s'y\\\nt`, [false, false, true, true, true, true, true]);
+  });
+
+  it("should be in a string after a new line and not closing the back tick", () => {
+    doTest("s\`y\nt", [false, false, true, true, true, true]);
+  });
+
+  it("should not be affected by other string quotes while in double quotes", () => {
+    doTest(`"'\`\${}"`, [false, true, true, true, true, true, true, false]);
+  });
+
+  it("should not be affected by other string quotes while in single quotes", () => {
+    doTest(`'"\`\${}'`, [false, true, true, true, true, true, true, false]);
+  });
+
+  it("should not be affected by other string quotes while in back ticks", () => {
+    doTest(`\`'"\``, [false, true, true, true, false]);
+  });
+
+  it("should not be in a string while in backticks within braces", () => {
+    doTest("`y${t}`", [false, true, true, true, false, false, true, false]);
+  });
+
+  it("should be in a string while in backticks within braces within a single quote string", () => {
+    doTest("`${'t'}`", [false, true, true, false, true, true, false, true, false]);
+  });
+
+  it("should be in a string while in backticks within braces within a double quote string", () => {
+    doTest("`${\"t\"}`", [false, true, true, false, true, true, false, true, false]);
+  });
+
+  it("should be in a string while in backticks within braces within back ticks", () => {
+    doTest("`${`t`}`", [false, true, true, false, true, true, false, true, false]);
+  });
+
+  it("should not be in a string while in backticks within braces within back ticks within braces", () => {
+    doTest("`${`${t}`}`", [false, true, true, false, true, true, false, false, true, false, true, false]);
+  });
+
+  it("should not be in a string while comments", () => {
+    doTest("//'t'", [false, false, false, false, false, false]);
+  });
+
+  it("should be in a string while the previous line was a comment and now this is a string", () => {
+    doTest("//t\n't'", [false, false, false, false, false, true, true, false]);
+  });
+
+  it("should not be in a string for star comments", () => {
+    doTest("/*\n't'\n*/'t'", [false, false, false, false, false, false, false, false, false, false, true, true, false]);
+  });
+
+  it("should not be in a string for regex using a single quote", () => {
+    doTest("/'test/", [false, false, false, false, false, false, false, false]);
+  });
+
+  it("should not be in a string for regex using a double quote", () => {
+    doTest("/\"test/", [false, false, false, false, false, false, false, false]);
+  });
+
+  it("should not be in a string for regex using a back tick", () => {
+    doTest("/`test/", [false, false, false, false, false, false, false, false]);
+  });
+
+  it("should be in a string for a string after a regex", () => {
+    doTest("/`/'t'", [false, false, false, false, true, true, false]);
+  });
+
+  it("should handle escaped single quotes", () => {
+    doTest(`'\\''`, [false, true, true, true, false]);
+  });
+
+  it("should handle escaped double quotes", () => {
+    doTest(`"\\""`, [false, true, true, true, false]);
+  });
+
+  it("should handle escaped back ticks", () => {
+    doTest("`\\``", [false, true, true, true, false]);
+  });
+
+  it("should handle escaped template spans", () => {
+    doTest("`\\${t}`", [false, true, true, true, true, true, true, false]);
+  });
+});
+
+function runSequentialCheck<T>(
+  str: string,
+  expectedValues: T[],
+  func: (writer: CodeBlockWriter) => T,
+  writer = new CodeBlockWriter(),
+) {
+  expect(str.length + 1).to.equal(expectedValues.length);
+  expect(func(writer)).to.equal(expectedValues[0]);
+  for (let i = 0; i < str.length; i++) {
+    writer.write(str[i]);
+    expect(func(writer)).to.equal(expectedValues[i + 1], `For char: ${JSON.stringify(str[i])} (${i})`);
+  }
+}
+
+describe("#isInComment", () => {
+  function doTest(str: string, expectedValues: boolean[]) {
+    runSequentialCheck(str, expectedValues, writer => writer.isInComment());
+  }
+
+  it("should be in a comment for star comments", () => {
+    doTest("/*\nt\n*/", [false, false, true, true, true, true, true, false]);
+  });
+
+  it("should be in a comment for line comments", () => {
+    doTest("// t\nt", [false, false, true, true, true, false, false]);
+  });
+});
+
+describe("#isLastSpace", () => {
+  function doTest(str: string, expectedValues: boolean[]) {
+    runSequentialCheck(str, expectedValues, writer => writer.isLastSpace());
+  }
+
+  it("should be true when a space", () => {
+    doTest("t t\t\r\n", [false, false, true, false, false, false, false]);
+  });
+});
+
+describe("#isLastTab", () => {
+  function doTest(str: string, expectedValues: boolean[]) {
+    runSequentialCheck(str, expectedValues, writer => writer.isLastTab());
+  }
+
+  it("should be true when a tab", () => {
+    doTest("t t\t\r\n", [false, false, false, false, true, false, false]);
+  });
+});
+
+describe("#isOnFirstLineOfBlock", () => {
+  function doTest(str: string, expectedValues: boolean[]) {
+    runSequentialCheck(str, expectedValues, writer => writer.isOnFirstLineOfBlock());
+  }
+
+  it("should be true up until the new line", () => {
+    doTest("t \t\n", [true, true, true, true, false]);
+  });
+
+  it("should be true when on a new block", () => {
+    const writer = new CodeBlockWriter();
+    assertState(true);
+    writer.writeLine("testing");
+    assertState(false);
+    writer.inlineBlock(() => {
+      assertState(true);
+      writer.newLine();
+      assertState(false);
+      writer.indent(() => {
+        assertState(true);
+        writer.write("testing\n");
+        assertState(false);
+        writer.write("more\n");
+        assertState(false);
+      });
+      assertState(false);
+      writer.block(() => {
+        assertState(true);
+      });
+      assertState(false);
+    });
+    assertState(false);
+
+    function assertState(state: boolean) {
+      expect(writer.isOnFirstLineOfBlock()).to.equal(state);
+    }
+  });
+});
+
+describe("#isAtStartOfFirstLineOfBlock", () => {
+  function doTest(str: string, expectedValues: boolean[]) {
+    runSequentialCheck(str, expectedValues, writer => writer.isAtStartOfFirstLineOfBlock());
+  }
+
+  it("should be true only for the first", () => {
+    doTest("t \t\n", [true, false, false, false, false]);
+  });
+
+  it("should be true when on a new block at the start", () => {
+    const writer = new CodeBlockWriter();
+    assertState(true);
+    writer.writeLine("testing");
+    assertState(false);
+    writer.inlineBlock(() => {
+      assertState(true);
+      writer.write(" ");
+      assertState(false);
+      writer.newLine();
+      assertState(false);
+      writer.indent(() => {
+        assertState(true);
+        writer.write("testing\n");
+        assertState(false);
+        writer.write("more\n");
+        assertState(false);
+      });
+      assertState(false);
+      writer.block(() => {
+        assertState(true);
+      });
+      assertState(false);
+    });
+    assertState(false);
+
+    function assertState(state: boolean) {
+      expect(writer.isAtStartOfFirstLineOfBlock()).to.equal(state);
+    }
+  });
+});
+
+describe("#isLastNewLine", () => {
+  function doTest(str: string, expectedValues: boolean[], customWriter?: CodeBlockWriter) {
+    runSequentialCheck(str, expectedValues, writer => writer.isLastNewLine(), customWriter);
+  }
+
+  it("should be true when a new line", () => {
+    doTest(" \nt", [false, false, true, false]);
+  });
+
+  it("should be true for \\n when specifying \\r\\n", () => {
+    const writer = new CodeBlockWriter({ newLine: "\r\n" });
+    doTest(" \nt", [false, false, true, false], writer);
+  });
+});
+
+describe("#isLastBlankLine", () => {
+  function doTest(str: string, expectedValues: boolean[], customWriter?: CodeBlockWriter) {
+    runSequentialCheck(str, expectedValues, writer => writer.isLastBlankLine(), customWriter);
+  }
+
+  it("should be true when a blank line", () => {
+    doTest(" \n\nt", [false, false, false, true, false]);
+  });
+
+  it("should be true when using \\r\\n", () => {
+    doTest(" \n\r\nt", [false, false, false, false, true, false]);
+  });
+});
+
+describe("#getLastChar", () => {
+  function doTest(str: string, expectedValues: (string | undefined)[]) {
+    runSequentialCheck(str, expectedValues, writer => writer.getLastChar());
+  }
+
+  it("should get the last char", () => {
+    doTest(" \nt", [undefined, " ", "\n", "t"]);
+  });
+});
+
+describe("#_getLastCharWithOffset", () => {
+  function doTest(strs: string[], offset: number, expectedValue: string | undefined) {
+    const writer = new CodeBlockWriter();
+    for (const str of strs) {
+      writer.write(str);
+    }
+    expect(writer._getLastCharCodeWithOffset(offset)).to.equal(expectedValue?.charCodeAt(0));
+  }
+
+  it("should return undefined for a negative number", () => {
+    doTest(["values"], -1, undefined);
+  });
+
+  it("should return undefined for the text length", () => {
+    doTest(["1", "2", "3"], 3, undefined);
+  });
+
+  it("should get when getting the first index", () => {
+    doTest(["2", "1", "0"], 0, "0");
+  });
+
+  it("should get when getting the last index", () => {
+    doTest(["3", "21", "0"], 3, "3");
+  });
+
+  it("should get when getting the last index of a write", () => {
+    doTest(["3", "21", "0"], 2, "2");
+  });
+
+  it("should get when getting the first index of a write", () => {
+    doTest(["3", "21", "0"], 1, "1");
+  });
+});
+
+describe("indentNumberOfSpaces", () => {
+  it("should indent 2 spaces", () => {
+    const writer = new CodeBlockWriter({ indentNumberOfSpaces: 2 });
+    writer.write("do").block(() => {
+      writer.write("something");
+    });
+
+    const expected = `do {
+  something
+}`;
+
+    expect(writer.toString()).to.equal(expected);
+  });
+});
+
+describe("useTabs", () => {
+  it("should use tabs", () => {
+    const writer = new CodeBlockWriter({ useTabs: true });
+    writer.write("do").block(() => {
+      writer.write("do").block(() => {
+        writer.write("something");
+      });
+    });
+
+    const expected = `do {
+\tdo {
+\t\tsomething
+\t}
+}`;
+
+    expect(writer.toString()).to.equal(expected);
+  });
+});
+
+describe("#getOptions", () => {
+  it("should have the options that were passed in", () => {
+    const writer = new CodeBlockWriter({
+      indentNumberOfSpaces: 8,
+      newLine: "\r\n",
+      useTabs: true,
+      useSingleQuote: false,
+    });
+    expect(writer.getOptions()).to.deep.equal({
+      indentNumberOfSpaces: 8,
+      newLine: "\r\n",
+      useTabs: true,
+      useSingleQuote: false,
+    });
+  });
+});
+
+@@@ file mod.ts 29463 0607bd073927514eb8a03d75b0fb3a4a319af1354904523590fd2ffbb59d3ba5
+import { escapeForWithinString, getStringFromStrOrFunc } from "./utils/string_utils.ts";
+
+/** @internal */
+enum CommentChar {
+  Line,
+  Star,
+}
+
+/**
+ * Options for the writer.
+ */
+export interface Options {
+  /**
+   * Newline character.
+   * @remarks Defaults to \n.
+   */
+  newLine: "\n" | "\r\n";
+  /**
+   * Number of spaces to indent when `useTabs` is false.
+   * @remarks Defaults to 4.
+   */
+  indentNumberOfSpaces: number;
+  /**
+   * Whether to use tabs (true) or spaces (false).
+   * @remarks Defaults to false.
+   */
+  useTabs: boolean;
+  /**
+   * Whether to use a single quote (true) or double quote (false).
+   * @remarks Defaults to false.
+   */
+  useSingleQuote: boolean;
+}
+
+// Using the char codes is a performance improvement (about 5.5% faster when writing because it eliminates additional string allocations).
+const CHARS = {
+  BACK_SLASH: "\\".charCodeAt(0),
+  FORWARD_SLASH: "/".charCodeAt(0),
+  NEW_LINE: "\n".charCodeAt(0),
+  CARRIAGE_RETURN: "\r".charCodeAt(0),
+  ASTERISK: "*".charCodeAt(0),
+  DOUBLE_QUOTE: "\"".charCodeAt(0),
+  SINGLE_QUOTE: "'".charCodeAt(0),
+  BACK_TICK: "`".charCodeAt(0),
+  OPEN_BRACE: "{".charCodeAt(0),
+  CLOSE_BRACE: "}".charCodeAt(0),
+  DOLLAR_SIGN: "$".charCodeAt(0),
+  SPACE: " ".charCodeAt(0),
+  TAB: "\t".charCodeAt(0),
+};
+const isCharToHandle = new Set<number>([
+  CHARS.BACK_SLASH,
+  CHARS.FORWARD_SLASH,
+  CHARS.NEW_LINE,
+  CHARS.CARRIAGE_RETURN,
+  CHARS.ASTERISK,
+  CHARS.DOUBLE_QUOTE,
+  CHARS.SINGLE_QUOTE,
+  CHARS.BACK_TICK,
+  CHARS.OPEN_BRACE,
+  CHARS.CLOSE_BRACE,
+]);
+
+/**
+ * Code writer that assists with formatting and visualizing blocks of JavaScript or TypeScript code.
+ */
+export default class CodeBlockWriter {
+  /** @internal */
+  private readonly _indentationText: string;
+  /** @internal */
+  private readonly _newLine: "\n" | "\r\n";
+  /** @internal */
+  private readonly _useTabs: boolean;
+  /** @internal */
+  private readonly _quoteChar: string;
+  /** @internal */
+  private readonly _indentNumberOfSpaces: number;
+  /** @internal */
+  private _currentIndentation = 0;
+  /** @internal */
+  private _queuedIndentation: number | undefined;
+  /** @internal */
+  private _queuedOnlyIfNotBlock: true | undefined;
+  /** @internal */
+  private _length = 0;
+  /** @internal */
+  private _newLineOnNextWrite = false;
+  /** @internal */
+  private _currentCommentChar: CommentChar | undefined = undefined;
+  /** @internal */
+  private _stringCharStack: number[] = [];
+  /** @internal */
+  private _isInRegEx = false;
+  /** @internal */
+  private _isOnFirstLineOfBlock = true;
+  // An array of strings is used rather than a single string because it was
+  // found to be ~11x faster when printing a 10K line file (~11s to ~1s).
+  /** @internal */
+  private _texts: string[] = [];
+
+  /**
+   * Constructor.
+   * @param opts - Options for the writer.
+   */
+  constructor(opts: Partial<Options> = {}) {
+    this._newLine = opts.newLine || "\n";
+    this._useTabs = opts.useTabs || false;
+    this._indentNumberOfSpaces = opts.indentNumberOfSpaces || 4;
+    this._indentationText = getIndentationText(this._useTabs, this._indentNumberOfSpaces);
+    this._quoteChar = opts.useSingleQuote ? "'" : `"`;
+  }
+
+  /**
+   * Gets the options.
+   */
+  getOptions(): Options {
+    return {
+      indentNumberOfSpaces: this._indentNumberOfSpaces,
+      newLine: this._newLine,
+      useTabs: this._useTabs,
+      useSingleQuote: this._quoteChar === "'",
+    };
+  }
+
+  /**
+   * Queues the indentation level for the next lines written.
+   * @param indentationLevel - Indentation level to queue.
+   */
+  queueIndentationLevel(indentationLevel: number): this;
+  /**
+   * Queues the indentation level for the next lines written using the provided indentation text.
+   * @param whitespaceText - Gets the indentation level from the indentation text.
+   */
+  queueIndentationLevel(whitespaceText: string): this;
+  /** @internal */
+  queueIndentationLevel(countOrText: string | number): this;
+  queueIndentationLevel(countOrText: string | number) {
+    this._queuedIndentation = this._getIndentationLevelFromArg(countOrText);
+    this._queuedOnlyIfNotBlock = undefined;
+    return this;
+  }
+
+  /**
+   * Writes the text within the provided action with hanging indentation.
+   * @param action - Action to perform with hanging indentation.
+   */
+  hangingIndent(action: () => void): this {
+    return this._withResetIndentation(() => this.queueIndentationLevel(this.getIndentationLevel() + 1), action);
+  }
+
+  /**
+   * Writes the text within the provided action with hanging indentation unless writing a block.
+   * @param action - Action to perform with hanging indentation unless a block is written.
+   */
+  hangingIndentUnlessBlock(action: () => void): this {
+    return this._withResetIndentation(() => {
+      this.queueIndentationLevel(this.getIndentationLevel() + 1);
+      this._queuedOnlyIfNotBlock = true;
+    }, action);
+  }
+
+  /**
+   * Sets the current indentation level.
+   * @param indentationLevel - Indentation level to be at.
+   */
+  setIndentationLevel(indentationLevel: number): this;
+  /**
+   * Sets the current indentation using the provided indentation text.
+   * @param whitespaceText - Gets the indentation level from the indentation text.
+   */
+  setIndentationLevel(whitespaceText: string): this;
+  /** @internal */
+  setIndentationLevel(countOrText: string | number): this;
+  setIndentationLevel(countOrText: string | number) {
+    this._currentIndentation = this._getIndentationLevelFromArg(countOrText);
+    return this;
+  }
+
+  /**
+   * Sets the indentation level within the provided action and restores the writer's indentation
+   * state afterwards.
+   * @remarks Restores the writer's state after the action.
+   * @param indentationLevel - Indentation level to set.
+   * @param action - Action to perform with the indentation.
+   */
+  withIndentationLevel(indentationLevel: number, action: () => void): this;
+  /**
+   * Sets the indentation level with the provided indentation text within the provided action
+   * and restores the writer's indentation state afterwards.
+   * @param whitespaceText - Gets the indentation level from the indentation text.
+   * @param action - Action to perform with the indentation.
+   */
+  withIndentationLevel(whitespaceText: string, action: () => void): this;
+  withIndentationLevel(countOrText: string | number, action: () => void) {
+    return this._withResetIndentation(() => this.setIndentationLevel(countOrText), action);
+  }
+
+  /** @internal */
+  private _withResetIndentation(setStateAction: () => void, writeAction: () => void) {
+    const previousState = this._getIndentationState();
+    setStateAction();
+    try {
+      writeAction();
+    } finally {
+      this._setIndentationState(previousState);
+    }
+    return this;
+  }
+
+  /**
+   * Gets the current indentation level.
+   */
+  getIndentationLevel(): number {
+    return this._currentIndentation;
+  }
+
+  /**
+   * Writes a block using braces.
+   * @param block - Write using the writer within this block.
+   */
+  block(block?: () => void): this {
+    this._newLineIfNewLineOnNextWrite();
+    if (this.getLength() > 0 && !this.isLastNewLine()) {
+      this.spaceIfLastNot();
+    }
+    this.inlineBlock(block);
+    this._newLineOnNextWrite = true;
+    return this;
+  }
+
+  /**
+   * Writes an inline block with braces.
+   * @param block - Write using the writer within this block.
+   */
+  inlineBlock(block?: () => void): this {
+    this._newLineIfNewLineOnNextWrite();
+    this.write("{");
+    this._indentBlockInternal(block);
+    this.newLineIfLastNot().write("}");
+
+    return this;
+  }
+
+  /**
+   * Indents the code one level for the current line.
+   */
+  indent(times?: number): this;
+  /**
+   * Indents a block of code.
+   * @param block - Block to indent.
+   */
+  indent(block: () => void): this;
+  indent(timesOrBlock: number | (() => void) = 1) {
+    if (typeof timesOrBlock === "number") {
+      this._newLineIfNewLineOnNextWrite();
+      return this.write(this._indentationText.repeat(timesOrBlock));
+    } else {
+      this._indentBlockInternal(timesOrBlock);
+      if (!this.isLastNewLine()) {
+        this._newLineOnNextWrite = true;
+      }
+      return this;
+    }
+  }
+
+  /** @internal */
+  private _indentBlockInternal(block?: () => void) {
+    if (this.getLastChar() != null) {
+      this.newLineIfLastNot();
+    }
+    this._currentIndentation++;
+    this._isOnFirstLineOfBlock = true;
+    if (block != null) {
+      block();
+    }
+    this._isOnFirstLineOfBlock = false;
+    this._currentIndentation = Math.max(0, this._currentIndentation - 1);
+  }
+
+  /**
+   * Conditionally writes a line of text.
+   * @param condition - Condition to evaluate.
+   * @param textFunc - A function that returns a string to write if the condition is true.
+   */
+  conditionalWriteLine(condition: boolean | undefined, textFunc: () => string): this;
+  /**
+   * Conditionally writes a line of text.
+   * @param condition - Condition to evaluate.
+   * @param text - Text to write if the condition is true.
+   */
+  conditionalWriteLine(condition: boolean | undefined, text: string): this;
+  conditionalWriteLine(condition: boolean | undefined, strOrFunc: string | (() => string)) {
+    if (condition) {
+      this.writeLine(getStringFromStrOrFunc(strOrFunc));
+    }
+
+    return this;
+  }
+
+  /**
+   * Writes a line of text.
+   * @param text - String to write.
+   */
+  writeLine(text: string): this {
+    this._newLineIfNewLineOnNextWrite();
+    if (this.getLastChar() != null) {
+      this.newLineIfLastNot();
+    }
+    this._writeIndentingNewLines(text);
+    this.newLine();
+
+    return this;
+  }
+
+  /**
+   * Writes a newline if the last line was not a newline.
+   */
+  newLineIfLastNot(): this {
+    this._newLineIfNewLineOnNextWrite();
+
+    if (!this.isLastNewLine()) {
+      this.newLine();
+    }
+
+    return this;
+  }
+
+  /**
+   * Writes a blank line if the last written text was not a blank line.
+   */
+  blankLineIfLastNot(): this {
+    if (!this.isLastBlankLine()) {
+      this.blankLine();
+    }
+    return this;
+  }
+
+  /**
+   * Writes a blank line if the condition is true.
+   * @param condition - Condition to evaluate.
+   */
+  conditionalBlankLine(condition: boolean | undefined): this {
+    if (condition) {
+      this.blankLine();
+    }
+    return this;
+  }
+
+  /**
+   * Writes a blank line.
+   */
+  blankLine(): this {
+    return this.newLineIfLastNot().newLine();
+  }
+
+  /**
+   * Writes a newline if the condition is true.
+   * @param condition - Condition to evaluate.
+   */
+  conditionalNewLine(condition: boolean | undefined): this {
+    if (condition) {
+      this.newLine();
+    }
+    return this;
+  }
+
+  /**
+   * Writes a newline.
+   */
+  newLine(): this {
+    this._newLineOnNextWrite = false;
+    this._baseWriteNewline();
+    return this;
+  }
+
+  /**
+   * Writes a quote character.
+   */
+  quote(): this;
+  /**
+   * Writes text surrounded in quotes.
+   * @param text - Text to write.
+   */
+  quote(text: string): this;
+  quote(text?: string) {
+    this._newLineIfNewLineOnNextWrite();
+    this._writeIndentingNewLines(text == null ? this._quoteChar : this._quoteChar + escapeForWithinString(text, this._quoteChar) + this._quoteChar);
+    return this;
+  }
+
+  /**
+   * Writes a space if the last character was not a space.
+   */
+  spaceIfLastNot(): this {
+    this._newLineIfNewLineOnNextWrite();
+
+    if (!this.isLastSpace()) {
+      this._writeIndentingNewLines(" ");
+    }
+
+    return this;
+  }
+
+  /**
+   * Writes a space.
+   * @param times - Number of times to write a space.
+   */
+  space(times = 1): this {
+    this._newLineIfNewLineOnNextWrite();
+    this._writeIndentingNewLines(" ".repeat(times));
+    return this;
+  }
+
+  /**
+   * Writes a tab if the last character was not a tab.
+   */
+  tabIfLastNot(): this {
+    this._newLineIfNewLineOnNextWrite();
+
+    if (!this.isLastTab()) {
+      this._writeIndentingNewLines("\t");
+    }
+
+    return this;
+  }
+
+  /**
+   * Writes a tab.
+   * @param times - Number of times to write a tab.
+   */
+  tab(times = 1): this {
+    this._newLineIfNewLineOnNextWrite();
+    this._writeIndentingNewLines("\t".repeat(times));
+    return this;
+  }
+
+  /**
+   * Conditionally writes text.
+   * @param condition - Condition to evaluate.
+   * @param textFunc - A function that returns a string to write if the condition is true.
+   */
+  conditionalWrite(condition: boolean | undefined, textFunc: () => string): this;
+  /**
+   * Conditionally writes text.
+   * @param condition - Condition to evaluate.
+   * @param text - Text to write if the condition is true.
+   */
+  conditionalWrite(condition: boolean | undefined, text: string): this;
+  conditionalWrite(condition: boolean | undefined, textOrFunc: string | (() => string)) {
+    if (condition) {
+      this.write(getStringFromStrOrFunc(textOrFunc));
+    }
+
+    return this;
+  }
+
+  /**
+   * Writes the provided text.
+   * @param text - Text to write.
+   */
+  write(text: string): this {
+    this._newLineIfNewLineOnNextWrite();
+    this._writeIndentingNewLines(text);
+    return this;
+  }
+
+  /**
+   * Writes text to exit a comment if in a comment.
+   */
+  closeComment(): this {
+    const commentChar = this._currentCommentChar;
+
+    switch (commentChar) {
+      case CommentChar.Line:
+        this.newLine();
+        break;
+      case CommentChar.Star:
+        if (!this.isLastNewLine()) {
+          this.spaceIfLastNot();
+        }
+        this.write("*/");
+        break;
+      default: {
+        const _assertUndefined: undefined = commentChar;
+        break;
+      }
+    }
+
+    return this;
+  }
+
+  /**
+   * Inserts text at the provided position.
+   *
+   * This method is "unsafe" because it won't update the state of the writer unless
+   * inserting at the end position. It is biased towards being fast at inserting closer
+   * to the start or end, but slower to insert in the middle. Only use this if
+   * absolutely necessary.
+   * @param pos - Position to insert at.
+   * @param text - Text to insert.
+   */
+  unsafeInsert(pos: number, text: string): this {
+    const textLength = this._length;
+    const texts = this._texts;
+    verifyInput();
+
+    if (pos === textLength) {
+      return this.write(text);
+    }
+
+    updateInternalArray();
+    this._length += text.length;
+
+    return this;
+
+    function verifyInput() {
+      if (pos < 0) {
+        throw new Error(`Provided position of '${pos}' was less than zero.`);
+      }
+      if (pos > textLength) {
+        throw new Error(`Provided position of '${pos}' was greater than the text length of '${textLength}'.`);
+      }
+    }
+
+    function updateInternalArray() {
+      const { index, localIndex } = getArrayIndexAndLocalIndex();
+
+      if (localIndex === 0) {
+        texts.splice(index, 0, text);
+      } else if (localIndex === texts[index].length) {
+        texts.splice(index + 1, 0, text);
+      } else {
+        const textItem = texts[index];
+        const startText = textItem.substring(0, localIndex);
+        const endText = textItem.substring(localIndex);
+        texts.splice(index, 1, startText, text, endText);
+      }
+    }
+
+    function getArrayIndexAndLocalIndex() {
+      if (pos < textLength / 2) {
+        // start searching from the front
+        let endPos = 0;
+        for (let i = 0; i < texts.length; i++) {
+          const textItem = texts[i];
+          const startPos = endPos;
+          endPos += textItem.length;
+          if (endPos >= pos) {
+            return { index: i, localIndex: pos - startPos };
+          }
+        }
+      } else {
+        // start searching from the back
+        let startPos = textLength;
+        for (let i = texts.length - 1; i >= 0; i--) {
+          const textItem = texts[i];
+          startPos -= textItem.length;
+          if (startPos <= pos) {
+            return { index: i, localIndex: pos - startPos };
+          }
+        }
+      }
+
+      throw new Error("Unhandled situation inserting. This should never happen.");
+    }
+  }
+
+  /**
+   * Gets the length of the string in the writer.
+   */
+  getLength(): number {
+    return this._length;
+  }
+
+  /**
+   * Gets if the writer is currently in a comment.
+   */
+  isInComment(): boolean {
+    return this._currentCommentChar !== undefined;
+  }
+
+  /**
+   * Gets if the writer is currently at the start of the first line of the text, block, or indentation block.
+   */
+  isAtStartOfFirstLineOfBlock(): boolean {
+    return this.isOnFirstLineOfBlock() && (this.isLastNewLine() || this.getLastChar() == null);
+  }
+
+  /**
+   * Gets if the writer is currently on the first line of the text, block, or indentation block.
+   */
+  isOnFirstLineOfBlock(): boolean {
+    return this._isOnFirstLineOfBlock;
+  }
+
+  /**
+   * Gets if the writer is currently in a string.
+   */
+  isInString(): boolean {
+    return this._stringCharStack.length > 0 && this._stringCharStack[this._stringCharStack.length - 1] !== CHARS.OPEN_BRACE;
+  }
+
+  /**
+   * Gets if the last chars written were for a newline.
+   */
+  isLastNewLine(): boolean {
+    const lastChar = this.getLastChar();
+    return lastChar === "\n" || lastChar === "\r";
+  }
+
+  /**
+   * Gets if the last chars written were for a blank line.
+   */
+  isLastBlankLine(): boolean {
+    let foundCount = 0;
+
+    // todo: consider extracting out iterating over past characters, but don't use
+    // an iterator because it will be slow.
+    for (let i = this._texts.length - 1; i >= 0; i--) {
+      const currentText = this._texts[i];
+      for (let j = currentText.length - 1; j >= 0; j--) {
+        const currentChar = currentText.charCodeAt(j);
+        if (currentChar === CHARS.NEW_LINE) {
+          foundCount++;
+          if (foundCount === 2) {
+            return true;
+          }
+        } else if (currentChar !== CHARS.CARRIAGE_RETURN) {
+          return false;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Gets if the last char written was a space.
+   */
+  isLastSpace(): boolean {
+    return this.getLastChar() === " ";
+  }
+
+  /**
+   * Gets if the last char written was a tab.
+   */
+  isLastTab(): boolean {
+    return this.getLastChar() === "\t";
+  }
+
+  /**
+   * Gets the last char written.
+   */
+  getLastChar(): string | undefined {
+    const charCode = this._getLastCharCodeWithOffset(0);
+    return charCode == null ? undefined : String.fromCharCode(charCode);
+  }
+
+  /**
+   * Gets if the writer ends with the provided text.
+   * @param text - Text to check if the writer ends with the provided text.
+   */
+  endsWith(text: string): boolean {
+    const length = this._length;
+    return this.iterateLastCharCodes((charCode, index) => {
+      const offset = length - index;
+      const textIndex = text.length - offset;
+      if (text.charCodeAt(textIndex) !== charCode) {
+        return false;
+      }
+      return textIndex === 0 ? true : undefined;
+    }) || false;
+  }
+
+  /**
+   * Iterates over the writer characters in reverse order. The iteration stops when a non-null or
+   * undefined value is returned from the action. The returned value is then returned by the method.
+   *
+   * @remarks It is much more efficient to use this method rather than `#toString()` since `#toString()`
+   * will combine the internal array into a string.
+   */
+  iterateLastChars<T>(action: (char: string, index: number) => T | undefined): T | undefined {
+    return this.iterateLastCharCodes((charCode, index) => action(String.fromCharCode(charCode), index));
+  }
+
+  /**
+   * Iterates over the writer character char codes in reverse order. The iteration stops when a non-null or
+   * undefined value is returned from the action. The returned value is then returned by the method.
+   *
+   * @remarks It is much more efficient to use this method rather than `#toString()` since `#toString()`
+   * will combine the internal array into a string. Additionally, this is slightly more efficient that
+   * `iterateLastChars` as this won't allocate a string per character.
+   */
+  iterateLastCharCodes<T>(action: (charCode: number, index: number) => T | undefined): T | undefined {
+    let index = this._length;
+    for (let i = this._texts.length - 1; i >= 0; i--) {
+      const currentText = this._texts[i];
+      for (let j = currentText.length - 1; j >= 0; j--) {
+        index--;
+        const result = action(currentText.charCodeAt(j), index);
+        if (result != null) {
+          return result;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Gets the writer's text.
+   */
+  toString(): string {
+    if (this._texts.length > 1) {
+      const text = this._texts.join("");
+      this._texts.length = 0;
+      this._texts.push(text);
+    }
+
+    return this._texts[0] || "";
+  }
+
+  /** @internal */
+  private static readonly _newLineRegEx = /\r?\n/;
+  /** @internal */
+  private _writeIndentingNewLines(text: string) {
+    text = text || "";
+    if (text.length === 0) {
+      writeIndividual(this, "");
+      return;
+    }
+
+    const items = text.split(CodeBlockWriter._newLineRegEx);
+    items.forEach((s, i) => {
+      if (i > 0) {
+        this._baseWriteNewline();
+      }
+
+      if (s.length === 0) {
+        return;
+      }
+
+      writeIndividual(this, s);
+    });
+
+    function writeIndividual(writer: CodeBlockWriter, s: string) {
+      if (!writer.isInString()) {
+        const isAtStartOfLine = writer.isLastNewLine() || writer.getLastChar() == null;
+        if (isAtStartOfLine) {
+          writer._writeIndentation();
+        }
+      }
+
+      writer._updateInternalState(s);
+      writer._internalWrite(s);
+    }
+  }
+
+  /** @internal */
+  private _baseWriteNewline() {
+    if (this._currentCommentChar === CommentChar.Line) {
+      this._currentCommentChar = undefined;
+    }
+
+    const lastStringCharOnStack = this._stringCharStack[this._stringCharStack.length - 1];
+    if ((lastStringCharOnStack === CHARS.DOUBLE_QUOTE || lastStringCharOnStack === CHARS.SINGLE_QUOTE) && this._getLastCharCodeWithOffset(0) !== CHARS.BACK_SLASH) {
+      this._stringCharStack.pop();
+    }
+
+    this._internalWrite(this._newLine);
+    this._isOnFirstLineOfBlock = false;
+    this._dequeueQueuedIndentation();
+  }
+
+  /** @internal */
+  private _dequeueQueuedIndentation() {
+    if (this._queuedIndentation == null) {
+      return;
+    }
+
+    if (this._queuedOnlyIfNotBlock && wasLastBlock(this)) {
+      this._queuedIndentation = undefined;
+      this._queuedOnlyIfNotBlock = undefined;
+    } else {
+      this._currentIndentation = this._queuedIndentation;
+      this._queuedIndentation = undefined;
+    }
+
+    function wasLastBlock(writer: CodeBlockWriter) {
+      let foundNewLine = false;
+      return writer.iterateLastCharCodes(charCode => {
+        switch (charCode) {
+          case CHARS.NEW_LINE:
+            if (foundNewLine) {
+              return false;
+            } else {
+              foundNewLine = true;
+            }
+            break;
+          case CHARS.CARRIAGE_RETURN:
+            return undefined;
+          case CHARS.OPEN_BRACE:
+            return true;
+          default:
+            return false;
+        }
+      });
+    }
+  }
+
+  /** @internal */
+  private _updateInternalState(str: string) {
+    for (let i = 0; i < str.length; i++) {
+      const currentChar = str.charCodeAt(i);
+
+      // This is a performance optimization to short circuit all the checks below. If the current char
+      // is not in this set then it won't change any internal state so no need to continue and do
+      // so many other checks (this made it 3x faster in one scenario I tested).
+      if (!isCharToHandle.has(currentChar)) {
+        continue;
+      }
+
+      const pastChar = i === 0 ? this._getLastCharCodeWithOffset(0) : str.charCodeAt(i - 1);
+      const pastPastChar = i === 0 ? this._getLastCharCodeWithOffset(1) : i === 1 ? this._getLastCharCodeWithOffset(0) : str.charCodeAt(i - 2);
+
+      // handle regex
+      if (this._isInRegEx) {
+        if (pastChar === CHARS.FORWARD_SLASH && pastPastChar !== CHARS.BACK_SLASH || pastChar === CHARS.NEW_LINE) {
+          this._isInRegEx = false;
+        } else {
+          continue;
+        }
+      } else if (!this.isInString() && !this.isInComment() && isRegExStart(currentChar, pastChar, pastPastChar)) {
+        this._isInRegEx = true;
+        continue;
+      }
+
+      // handle comments
+      if (!this.isInString()) {
+        if (this._currentCommentChar == null && pastChar === CHARS.FORWARD_SLASH && currentChar === CHARS.FORWARD_SLASH) {
+          this._currentCommentChar = CommentChar.Line;
+        } else if (this._currentCommentChar == null && pastChar === CHARS.FORWARD_SLASH && currentChar === CHARS.ASTERISK) {
+          this._currentCommentChar = CommentChar.Star;
+        } else if (this._currentCommentChar === CommentChar.Star && pastChar === CHARS.ASTERISK && currentChar === CHARS.FORWARD_SLASH) {
+          this._currentCommentChar = undefined;
+        }
+      }
+      if (this.isInComment()) {
+        continue;
+      }
+
+      // handle strings
+      const lastStringCharOnStack = this._stringCharStack.length === 0 ? undefined : this._stringCharStack[this._stringCharStack.length - 1];
+      if (pastChar !== CHARS.BACK_SLASH && (currentChar === CHARS.DOUBLE_QUOTE || currentChar === CHARS.SINGLE_QUOTE || currentChar === CHARS.BACK_TICK)) {
+        if (lastStringCharOnStack === currentChar) {
+          this._stringCharStack.pop();
+        } else if (lastStringCharOnStack === CHARS.OPEN_BRACE || lastStringCharOnStack === undefined) {
+          this._stringCharStack.push(currentChar);
+        }
+      } else if (pastPastChar !== CHARS.BACK_SLASH && pastChar === CHARS.DOLLAR_SIGN && currentChar === CHARS.OPEN_BRACE && lastStringCharOnStack === CHARS.BACK_TICK) {
+        this._stringCharStack.push(currentChar);
+      } else if (currentChar === CHARS.CLOSE_BRACE && lastStringCharOnStack === CHARS.OPEN_BRACE) {
+        this._stringCharStack.pop();
+      }
+    }
+  }
+
+  /** @internal - This is private, but exposed for testing. */
+  _getLastCharCodeWithOffset(offset: number): number | undefined {
+    if (offset >= this._length || offset < 0) {
+      return undefined;
+    }
+
+    for (let i = this._texts.length - 1; i >= 0; i--) {
+      const currentText = this._texts[i];
+      if (offset >= currentText.length) {
+        offset -= currentText.length;
+      } else {
+        return currentText.charCodeAt(currentText.length - 1 - offset);
+      }
+    }
+    return undefined;
+  }
+
+  /** @internal */
+  private _writeIndentation() {
+    const flooredIndentation = Math.floor(this._currentIndentation);
+    this._internalWrite(this._indentationText.repeat(flooredIndentation));
+
+    const overflow = this._currentIndentation - flooredIndentation;
+    if (this._useTabs) {
+      if (overflow > 0.5) {
+        this._internalWrite(this._indentationText);
+      }
+    } else {
+      const portion = Math.round(this._indentationText.length * overflow);
+
+      // build up the string first, then append it for performance reasons
+      let text = "";
+      for (let i = 0; i < portion; i++) {
+        text += this._indentationText[i];
+      }
+      this._internalWrite(text);
+    }
+  }
+
+  /** @internal */
+  private _newLineIfNewLineOnNextWrite() {
+    if (!this._newLineOnNextWrite) {
+      return;
+    }
+    this._newLineOnNextWrite = false;
+    this.newLine();
+  }
+
+  /** @internal */
+  private _internalWrite(text: string) {
+    if (text.length === 0) {
+      return;
+    }
+
+    this._texts.push(text);
+    this._length += text.length;
+  }
+
+  /** @internal */
+  private static readonly _spacesOrTabsRegEx = /^[ \t]*$/;
+  /** @internal */
+  private _getIndentationLevelFromArg(countOrText: string | number) {
+    if (typeof countOrText === "number") {
+      if (countOrText < 0) {
+        throw new Error("Passed in indentation level should be greater than or equal to 0.");
+      }
+      return countOrText;
+    } else if (typeof countOrText === "string") {
+      if (!CodeBlockWriter._spacesOrTabsRegEx.test(countOrText)) {
+        throw new Error("Provided string must be empty or only contain spaces or tabs.");
+      }
+
+      const { spacesCount, tabsCount } = getSpacesAndTabsCount(countOrText);
+      return tabsCount + spacesCount / this._indentNumberOfSpaces;
+    } else {
+      throw new Error("Argument provided must be a string or number.");
+    }
+  }
+
+  /** @internal */
+  private _setIndentationState(state: IndentationLevelState) {
+    this._currentIndentation = state.current;
+    this._queuedIndentation = state.queued;
+    this._queuedOnlyIfNotBlock = state.queuedOnlyIfNotBlock;
+  }
+
+  /** @internal */
+  private _getIndentationState(): IndentationLevelState {
+    return {
+      current: this._currentIndentation,
+      queued: this._queuedIndentation,
+      queuedOnlyIfNotBlock: this._queuedOnlyIfNotBlock,
+    };
+  }
+}
+
+interface IndentationLevelState {
+  current: number;
+  queued: number | undefined;
+  queuedOnlyIfNotBlock: true | undefined;
+}
+
+function isRegExStart(currentChar: number, pastChar: number | undefined, pastPastChar: number | undefined) {
+  return pastChar === CHARS.FORWARD_SLASH
+    && currentChar !== CHARS.FORWARD_SLASH
+    && currentChar !== CHARS.ASTERISK
+    && pastPastChar !== CHARS.ASTERISK
+    && pastPastChar !== CHARS.FORWARD_SLASH;
+}
+
+function getIndentationText(useTabs: boolean, numberSpaces: number) {
+  if (useTabs) {
+    return "\t";
+  }
+  return Array(numberSpaces + 1).join(" ");
+}
+
+function getSpacesAndTabsCount(str: string) {
+  let spacesCount = 0;
+  let tabsCount = 0;
+
+  for (let i = 0; i < str.length; i++) {
+    const charCode = str.charCodeAt(i);
+    if (charCode === CHARS.SPACE) {
+      spacesCount++;
+    } else if (charCode === CHARS.TAB) {
+      tabsCount++;
+    }
+  }
+
+  return { spacesCount, tabsCount };
+}
+
+@@@ file utils/string_utils.test.ts 1324 584ecf874059e0c2a003d6ad98d3f86076fd7090ff5075188bbe1417a84d200a
+import { describe, expect, it } from "../_test.deps.ts";
+import { escapeForWithinString, getStringFromStrOrFunc } from "./string_utils.ts";
+
+describe("escapeForWithinString", () => {
+  function doTest(input: string, expected: string) {
+    expect(escapeForWithinString(input, "\"")).to.equal(expected);
+  }
+
+  it("should escape the quotes and newline", () => {
+    doTest(`"testing\n this out"`, `\\"testing\\n\\\n this out\\"`);
+  });
+
+  function doQuoteTest(input: string, quote: string, expected: string) {
+    expect(escapeForWithinString(input, quote)).to.equal(expected);
+  }
+
+  it("should escape the single quotes when specified", () => {
+    doQuoteTest(`'testing "this" out'`, `'`, `\\'testing "this" out\\'`);
+  });
+
+  it("should escape regardless of if the character is already escaped", () => {
+    doQuoteTest(`"testing \\"this\\" out"`, `"`, `\\"testing \\\\\\"this\\\\\\" out\\"`);
+  });
+
+  it("should escape unicode escape sequences", () => {
+    doQuoteTest(`\\u0009`, `"`, `\\\\u0009`);
+  });
+});
+
+describe("getStringFromStrOrFunc", () => {
+  it("should return a string when given a string", () => {
+    expect(getStringFromStrOrFunc("test")).to.equal("test");
+  });
+
+  it("should return a string when given a function", () => {
+    expect(getStringFromStrOrFunc(() => "test")).to.equal("test");
+  });
+});
+
+@@@ file utils/string_utils.ts 693 56e4f259c3a4beded71519cc9df85ff881a37ef902987269997153a65f192900
+/** @internal */
+export function escapeForWithinString(str: string, quoteKind: string) {
+  let result = "";
+  // todo: reduce appends (don't go char by char)
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === quoteKind) {
+      result += "\\";
+    } else if (str[i] === "\r" && str[i + 1] === "\n") {
+      result += "\\r\\n\\";
+      i++; // skip the \r
+    } else if (str[i] === "\n") {
+      result += "\\n\\";
+    } else if (str[i] === "\\") {
+      result += "\\";
+    }
+    result += str[i];
+  }
+  return result;
+}
+
+/** @internal */
+export function getStringFromStrOrFunc(strOrFunc: string | (() => string)) {
+  return strOrFunc instanceof Function ? strOrFunc() : strOrFunc;
+}
+
