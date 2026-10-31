@@ -3,8 +3,11 @@
 // DepsOptions.tool) and the "vitest" it installs is a tiny stub runner that writes a jest-format JSON report.
 // Nothing here is modeled on a public task repo or a training repo.
 //   stub pm:     refuses (exit 3) without --ignore-scripts, (exit 4) without --frozen-lockfile for pnpm / yarn,
-//                (exit 5) when a package-manager config file (.npmrc ...) is present; records its uid and argv.
-//                Modes (M151_STUB_PM): sleep (never ends), big (2 MiB file), fail (exit 1), none (no node_modules).
+//                (exit 5) when a package-manager config file (.npmrc ...) is present, (exit 6) for npm without
+//                --allow-git/--allow-remote/--allow-file=none; records its uid, argv, the registry it was given and
+//                whether sudo's variables leaked through (no env -i).
+//                Modes (M151_STUB_PM): sleep (never ends), big (2 MiB file), fail (exit 1), none (no node_modules),
+//                escape (leaves a setsid child running after it exits).
 //   stub vitest: imports each test file (global test(name, fn)), counts, writes the report given by --outputFile.
 //                Modes (M151_STUB_RUNNER, direct shim cases only): noreport, suitefail (a failed suite, yet success / exit 0),
 //                exitonly (no failure in the report, exit 1).
@@ -36,20 +39,25 @@ export function repo(dir: string, files: Record<string, string>): string {
 /** A plain dir (detectRunner / pickLockfile only read files). */
 export function plain(dir: string, files: Record<string, string>): string { mkdirSync(dir, { recursive: true }); put(dir, files); return dir; }
 
+export const ESCAPEE = "m151-escapee";
 export const STUB_PM = [
+  'import { spawn } from "node:child_process";',
   'import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";',
   "const [pm, ...args] = process.argv.slice(2);",
   'if (!args.includes("--ignore-scripts")) process.exit(3);',
   'if (pm !== "npm" && !args.includes("--frozen-lockfile")) process.exit(4);',
+  'if (pm === "npm" && !["--allow-git=none", "--allow-remote=none", "--allow-file=none"].every((f) => args.includes(f))) process.exit(6);',
   'for (const f of [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", ".pnpmfile.mjs"]) if (existsSync(f)) process.exit(5);',
   'const mode = process.env.M151_STUB_PM || "";',
   'if (mode === "sleep") await new Promise((r) => setTimeout(r, 3_600_000));',
   'if (mode === "fail") process.exit(1);',
   'if (mode === "none") process.exit(0);',
+  `if (mode === "escape") spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "${ESCAPEE}"], { detached: true, stdio: "ignore" }).unref();`,
   'mkdirSync("node_modules", { recursive: true });',
   'if (process.env.M151_STUB_VITEST_DIR) cpSync(process.env.M151_STUB_VITEST_DIR, "node_modules/vitest", { recursive: true });',
   'writeFileSync("node_modules/.m151-uid", String(process.getuid()));',
   'writeFileSync("node_modules/.m151-argv", JSON.stringify([pm, ...args]));',
+  'writeFileSync("node_modules/.m151-env", JSON.stringify({ registry: process.env.npm_config_registry ?? null, sudoVars: Object.keys(process.env).filter((k) => k.startsWith("SUDO_")).length }));',
   'if (mode === "big") writeFileSync("node_modules/big.bin", Buffer.alloc(2 << 20));',
   "",
 ].join("\n");

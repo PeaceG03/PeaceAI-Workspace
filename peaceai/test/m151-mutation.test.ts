@@ -19,7 +19,7 @@ const loopSource = readFileSync(join(libDir, "loop.ts"), "utf8");
 const TAG = /\/\/ guard:([a-z0-9-]+)(?:\s*$|",?\s*$)/;
 const lines = source.split("\n");
 const guards = lines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i }] : []; });
-const NEEDS_CAND = new Set(["deps-cand", "deps-config", "deps-timeout", "deps-size"]);
+const NEEDS_CAND = new Set(["deps-cand", "deps-config", "deps-timeout", "deps-size", "deps-registry", "deps-env-i", "deps-kill", "deps-chown"]);
 const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M151_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
 
 let dir: string;
@@ -35,7 +35,7 @@ function rewrite(text: string, depsFile: string | null): string {
 }
 
 const MUTANT_MS = 300_000;
-function runMutant(name: string, depsText: string): Promise<{ failed: string[]; crashed: string[]; cand: boolean } | null> {
+function runMutant(name: string, depsText: string): Promise<{ failed: string[]; crashed: string[]; skipped: string[]; cand: boolean } | null> {
   const depsFile = join(dir, `mutant-${name}-loopdeps.ts`);
   const loopFile = join(dir, `mutant-${name}-loop.ts`);
   writeFileSync(depsFile, rewrite(depsText, null));
@@ -57,7 +57,11 @@ function runMutant(name: string, depsText: string): Promise<{ failed: string[]; 
 test("M151 mutation: the guard tags are unique and cover the guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
-  assert.deepEqual([...ids].sort(), ["deps-cand", "deps-config", "deps-frozen", "deps-ignore-scripts", "deps-lockfile", "deps-size", "deps-timeout", "runner-dep", "runner-other", "service", "shim-exit", "shim-report", "shim-suites"]);
+  assert.deepEqual([...ids].sort(), [
+    "deps-cand", "deps-chown", "deps-config", "deps-env-i", "deps-frozen", "deps-ignore-scripts", "deps-kill", "deps-lockfile", "deps-nonregistry", "deps-npm-allow",
+    "deps-pnpmfile", "deps-registry", "deps-size", "deps-timeout", "lock-link", "lock-npm", "lock-npm-key", "lock-npm-v1", "lock-pnpm-key", "lock-pnpm-link",
+    "lock-pnpm-missing", "lock-pnpm-res", "lock-pnpm-url", "lock-yarn", "lock-yarn-spec", "runner-dep", "runner-other", "service", "shim-exit", "shim-report", "shim-suites",
+  ]);
 });
 
 test("M151 mutation: the unmutated copy passes every case (the harness itself is sound)", async () => {

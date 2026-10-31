@@ -11,12 +11,14 @@ const loop = await import(pathToFileURL(process.argv[3]!).href);
 const ctx = setup();
 const failed: string[] = [];
 const crashed: string[] = [];
+const skipped: string[] = [];
 try {
   for (const c of CASES) {
+    if (c.needsCand && !ctx.cand) { skipped.push(c.id); continue; }
     try { c.run({ deps, loop }, ctx); } catch (e) {
       const top = e instanceof Error ? (e.stack ?? "").split("\n").find((l) => l.trim().startsWith("at ")) ?? "" : "";
       if (e instanceof assert.AssertionError || !top.includes("mutant-")) failed.push(c.id); else crashed.push(`${c.id}: ${String(e)}`);
     }
   }
 } finally { teardown(ctx); }
-process.stdout.write(JSON.stringify({ failed, crashed, cand: !!ctx.cand }) + "\n");
+process.stdout.write(JSON.stringify({ failed, crashed, skipped, cand: !!ctx.cand }) + "\n");

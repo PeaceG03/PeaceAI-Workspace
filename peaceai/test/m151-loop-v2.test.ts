@@ -17,7 +17,8 @@ let ctx: Ctx;
 before(() => { ctx = setup(); });
 after(() => teardown(ctx));
 
-for (const c of CASES) test(`M151: ${c.id}`, () => c.run({ deps, loop }, ctx));
+// a case that needs the candidate uid is SKIPPED (with its reason) where it is missing, never counted as a pass
+for (const c of CASES) test(`M151: ${c.id}`, (t) => { if (c.needsCand && !ctx.cand) { t.skip(c.needsCand); return; } c.run({ deps, loop }, ctx); });
 
 const v2 = (over: Partial<LoopRow> = {}): LoopRow => ({
   schema: LOOP_SCHEMA_V2, at: "2026-10-30T23:00:00Z", set: "public", taskFileSha256: "a".repeat(64), taskKey: "0123456789abcdef", repo: "o/r", commit: "c".repeat(40),
@@ -49,6 +50,19 @@ test("M151: v2 rows: runner, deps and baseline are required, fixed values, consi
   assert.equal(loopRowProblem(v1), "attempt_codes", "RELATED_FAIL is v2 only");
   assert.equal(loopRowProblem({ ...v1, attemptCodes: [["TEST_FAIL"], ["TEST_FAIL"]] }), null, "v1 rows still validate");
   assert.equal(loopRowProblem({ ...v1, attemptCodes: [], attempts: 0, code: "DEPS_TIMEOUT", result: "refused", tests: null }), "code", "DEPS_* codes are v2 only");
+  assert.equal(loopRowProblem({ ...v1, attemptCodes: [], attempts: 0, code: "DEPS_NONREGISTRY", result: "refused", tests: null }), "code");
+  assert.equal(loopRowProblem(v2({ code: "DEPS_NONREGISTRY", result: "refused", attempts: 0, attemptCodes: [], tests: null, deps: null, baseline: null })), null);
+});
+
+test("M151: hidden rows carry the taskKey and scores only: runner, deps and baseline must be null", () => {
+  const { repo: _repo, commit: _commit, ...pub } = v2();
+  const hidden = { ...pub, set: "hidden" as const, runner: null, deps: null, baseline: null };
+  assert.equal(loopRowProblem(hidden), null, "a hidden row with attempts and test counts but no runner / deps / baseline");
+  for (const over of [{ runner: "vitest" }, { deps: "pnpm" }, { deps: "none" }, { baseline: { total: 3, passing: 1, failing: 2 } }]) {
+    assert.equal(loopRowProblem(JSON.parse(JSON.stringify({ ...hidden, ...over }))), "hidden_detail", JSON.stringify(over));
+  }
+  assert.equal(loopRowProblem({ ...hidden, repo: "o/r", commit: "c".repeat(40) }), "hidden_names_repo");
+  assert.equal(loopRowProblem({ ...v2(), baseline: null }), "baseline_presence", "public rows that ran tests still need the baseline");
 });
 
 test("M151: loopdeps is general (no task, repo or task-set strings) and part of the loop's pinned code", () => {
@@ -58,6 +72,7 @@ test("M151: loopdeps is general (no task, repo or task-set strings) and part of 
   assert.ok(!/tasks-public|hidden-tasks|\bhidden\b/i.test(src));
   assert.ok(readFileSync(join(ROOT, "peaceai/lib/loop.ts"), "utf8").includes('"lib/loopdeps.ts"'), "loopSha256 covers loopdeps.ts");
   // the only network use is the registry install step, which runs under env -i with the registry pinned
-  assert.match(src, /npm_config_registry: "https:\/\/registry\.npmjs\.org\/"/);
+  assert.match(src, /export const REGISTRY = "https:\/\/registry\.npmjs\.org\/";/);
+  assert.match(src, /env\.npm_config_registry = REGISTRY; \/\/ guard:deps-registry/);
   assert.equal((src.match(/spawnSync\(cmd\[0\]/g) ?? []).length, 1, "one install run site");
 });

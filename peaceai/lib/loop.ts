@@ -273,7 +273,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, lm: "not-loadable", code, maxAttempts,
       attempts: records.length, result: code === "PASS" ? "pass" : code === "ATTEMPT_LIMIT" ? "fail" : "refused",
       attemptCodes: records.map((r) => r.codes), tests: records.length ? records[records.length - 1]!.tests : tests,
-      runner: pick?.runner ?? null, deps: pick ? deps : null, baseline,
+      // hidden rows: taskKey plus scores only (runner, package manager and baseline counts could identify the repo)
+      ...(set === "hidden" ? { runner: null, deps: null, baseline: null } : { runner: pick?.runner ?? null, deps: pick ? deps : null, baseline }),
     },
     plan, attempts: records, context,
   });
@@ -334,7 +335,6 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     const feedback: Feedback[] = [];
     let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback });
     if ("refuse" in p) return done(p.refuse);
-    let related: string[] | null = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) {
         p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback });
@@ -350,7 +350,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if (!r.isolation) return done("ISOLATION_UNAVAILABLE");
       // the team's tests pass: the tests the search tools relate to the edited files (testsFor) must not regress
       if (r.codes.length === 0) {
-        related ??= relatedTests(c, det, p.edits.map((e) => e.path));
+        const related = relatedTests(c, det, p.edits.map((e) => e.path)); // per attempt: each edit touches its own files
         if (related.length) {
           const after = runTests(c, cand, o.runMs, det, related);
           if (after.codes.length) {

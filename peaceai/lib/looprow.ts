@@ -26,9 +26,9 @@ export const LOOP_CODES = [
   // stopped mid-loop by a safety guard
   "EDIT_OUTSIDE_COPY", "TEAM_TEST_EDIT", "ISOLATION_UNAVAILABLE",
   // v2 only: the repo's own runner and dependencies (M151)
-  "TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE",
+  "TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE",
 ] as const;
-const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL"];
+const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL"];
 export type LoopCode = (typeof LOOP_CODES)[number];
 /** Per-attempt failure codes (filtered: what kind of failure, never its text). */
 export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL"] as const;
@@ -118,6 +118,9 @@ export function loopRowProblem(o: unknown): string | null {
   if (r.code === "PASS" && (r.tests === null || r.tests.filledByTeam !== 0 || r.tests.total === 0)) return "pass_tests";
   if (r.attempts > 0 && r.tests === null) return "tests_presence";
   if (v2) {
+    // a hidden row is a taskKey plus scores: which runner / package manager and the exact baseline counts could
+    // together identify the repo, so they are never written for the hidden set
+    if (r.set === "hidden" && (r.runner !== null || r.deps !== null || r.baseline !== null)) return "hidden_detail";
     if (r.runner !== null && !(LOOP_RUNNERS as readonly string[]).includes(r.runner)) return "runner";
     if (r.deps !== null && !(LOOP_DEPS as readonly string[]).includes(r.deps)) return "deps";
     if (r.baseline !== null) {
@@ -126,7 +129,7 @@ export function loopRowProblem(o: unknown): string | null {
       if (!nat(b.total) || !nat(b.passing) || !nat(b.failing) || (b.passing as number) + (b.failing as number) !== b.total) return "baseline_values";
       if (r.runner === null || r.deps === null) return "baseline_without_runner";
     }
-    if (r.attempts > 0 && r.baseline === null) return "baseline_presence";
+    if (r.set === "public" && r.attempts > 0 && r.baseline === null) return "baseline_presence";
     if (r.deps !== null && r.runner === null) return "deps_without_runner";
   }
   return null;

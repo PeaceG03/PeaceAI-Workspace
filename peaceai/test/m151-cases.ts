@@ -1,7 +1,8 @@
 // M151 behavior cases for loop v2 (peaceai/lib/loopdeps.ts and its use in peaceai/lib/loop.ts), as data so the
 // mutation test can replay them against each mutant. Each case throws (node:assert) on failure. Every guard has a
-// refused near-miss here. Cases that install need the stage-2 candidate uid (and sudo); where it is missing they
-// assert the fail-closed CAND_UID_* refusal instead (the CI test job).
+// refused near-miss here. Cases that install need the stage-2 candidate uid (and sudo): they carry `needsCand` and
+// are reported as SKIPPED (never as passes) where it is missing (the CI test job). The loop cases assert the
+// fail-closed CAND_UID_* refusal there instead.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -9,10 +10,12 @@ import { join } from "node:path";
 import type * as Deps from "../lib/loopdeps.ts";
 import type * as Loop from "../lib/loop.ts";
 import { loopRowProblem } from "../lib/looprow.ts";
-import { ADD_FIXED, ADD_FIXED_SUB_BROKEN, MIT, pkgJson, plain, repo, STUB_VITEST_CLI, type Ctx } from "./m151-fixtures.ts";
+import { ADD_FIXED, ADD_FIXED_SUB_BROKEN, ESCAPEE, MIT, pkgJson, plain, repo, STUB_VITEST_CLI, type Ctx } from "./m151-fixtures.ts";
 
 export interface Libs { deps: typeof Deps; loop: typeof Loop }
-export interface Case { id: string; run: (l: Libs, ctx: Ctx) => void }
+/** needsCand: the skip reason where the stage-2 candidate uid is missing (the case would test nothing there). */
+export interface Case { id: string; needsCand?: string; run: (l: Libs, ctx: Ctx) => void }
+const CAND_SKIP = "needs the stage-2 candidate uid and sudo (box / private job): a real install as that uid";
 
 let n = 0;
 const dir = (ctx: Ctx, name: string) => join(ctx.base, "c", `${name}-${n++}`);
@@ -46,6 +49,19 @@ function withCache<T>(l: Libs, ctx: Ctx, f: (c: Deps.DepsCache) => T): T {
   const c = l.deps.openDepsCache(join(ctx.base));
   try { return f(c); } finally { c.close(); }
 }
+
+const REG = "https://registry.npmjs.org/";
+const INT = "sha512-" + "A".repeat(86) + "==";
+const PNPM_OK = [
+  "lockfileVersion: '9.0'", "", "importers:", "", "  .:", "    dependencies:", "      b:", "        specifier: ^2.0.0", "        version: 2.0.0",
+  "  packages/app:", "    dependencies:", "      lib:", "        specifier: workspace:*", "        version: link:../lib", "", "packages:", "",
+  "  a@1.0.0:", `    resolution: {integrity: ${INT}}`, "    deprecated: moved, see https://example.com/notice", "", "  b@2.0.0:", `    resolution: {integrity: ${INT}}`, "    hasBin: true", "",
+  "snapshots:", "", "  a@1.0.0: {}", "", "  b@2.0.0: {}", "",
+].join("\n");
+const YARN_OK = [
+  "# yarn lockfile v1", "", '"a@^1.0.0", a@^1.1.0:', '  version "1.1.0"', `  resolved "${REG}a/-/a-1.1.0.tgz#${"0".repeat(40)}"`, `  integrity ${INT}`, "",
+  '"@s/b@npm:c@^2":', '  version "2.0.0"', `  resolved "${REG}c/-/c-2.0.0.tgz"`, `  integrity ${INT}`, "", '"w@link:packages/w":', '  version "0.0.0"', "",
+].join("\n");
 
 export const CASES: Case[] = [
   // ---- the runner (guard:runner-other, guard:service, guard:runner-dep)
@@ -105,10 +121,10 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "install argv: frozen lockfile and --ignore-scripts for every package manager",
+    id: "install argv: frozen lockfile and --ignore-scripts for every package manager; npm allows no git / url / file deps; pnpm ignores the pnpmfile",
     run(l) {
       const npm = l.deps.installArgv({ pm: "npm", lockfile: "package-lock.json", version: null }, null);
-      assert.deepEqual(npm, ["npm", "ci", "--no-audit", "--no-fund", "--ignore-scripts"]);
+      assert.deepEqual(npm, ["npm", "ci", "--no-audit", "--no-fund", "--allow-git=none", "--allow-remote=none", "--allow-file=none", "--ignore-scripts"]);
       assert.deepEqual(l.deps.installArgv({ pm: "pnpm", lockfile: "pnpm-lock.yaml", version: "9.15.9" }, null), ["corepack", "pnpm@9.15.9", "install", "--ignore-pnpmfile", "--frozen-lockfile", "--ignore-scripts"]);
       assert.deepEqual(l.deps.installArgv({ pm: "yarn", lockfile: "yarn.lock", version: "1.22.22" }, null), ["corepack", "yarn@1.22.22", "install", "--non-interactive", "--frozen-lockfile", "--ignore-scripts"]);
     },
@@ -116,8 +132,8 @@ export const CASES: Case[] = [
   // ---- the install (guard:deps-cand, guard:deps-config, guard:deps-timeout, guard:deps-size)
   {
     id: "install: as the candidate uid, scripts off, config files stripped; the copy gets links into a runner-owned tree",
+    needsCand: CAND_SKIP,
     run(l, ctx) {
-      if (!ctx.cand) return;
       withCache(l, ctx, (cache) => {
         const { d, r } = install(l, ctx, cache, { ".npmrc": "registry=http://127.0.0.1:9/\n" });
         assert.deepEqual(r, { pm: "npm" });
@@ -129,13 +145,16 @@ export const CASES: Case[] = [
         assert.equal(statSync(staging.staging).uid, process.getuid!(), "the installed tree is the runner's again");
         assert.equal(statSync(join(staging.staging, "node_modules")).mode & 0o022, 0, "and not group / world writable");
         assert.ok(!existsSync(join(staging.staging, ".npmrc")), "config files are not in the install tree");
+        const env = JSON.parse(readFileSync(join(d, "node_modules/.m151-env"), "utf8"));
+        assert.equal(env.registry, "https://registry.npmjs.org/", "the registry is pinned");
+        assert.equal(env.sudoVars, 0, "env -i: nothing from the caller's or sudo's environment");
       });
     },
   },
   {
     id: "install near-misses: a hung install -> DEPS_TIMEOUT, an oversized one -> DEPS_TOO_LARGE, a failing one -> DEPS_INSTALL_FAILED",
+    needsCand: CAND_SKIP,
     run(l, ctx) {
-      if (!ctx.cand) return;
       withCache(l, ctx, (cache) => {
         assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":1}\n" }, { timeoutMs: 2_000, extraEnv: { M151_STUB_PM: "sleep" } }).r, { refuse: "DEPS_TIMEOUT" });
         assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":2}\n" }, { maxBytes: 1 << 20, extraEnv: { M151_STUB_PM: "big" } }).r, { refuse: "DEPS_TOO_LARGE" });
@@ -146,8 +165,8 @@ export const CASES: Case[] = [
   },
   {
     id: "install cache: keyed by the lockfile sha256 within one run's cache; a new lockfile or a new run installs again",
+    needsCand: CAND_SKIP,
     run(l, ctx) {
-      if (!ctx.cand) return;
       const keys: string[] = [];
       const o = { onInstall: (k: string) => keys.push(k) };
       let first = "";
@@ -162,6 +181,96 @@ export const CASES: Case[] = [
       assert.ok(!existsSync(first), "the run's cache is removed with the run");
       withCache(l, ctx, (cache) => { install(l, ctx, cache, {}, o); });
       assert.equal(keys.length, 3, "nothing is shared between runs");
+    },
+  },
+  {
+    id: "install near-misses: a setsid process left by the install is killed before the tree changes hands; a failed chown -> DEPS_INSTALL_FAILED",
+    needsCand: CAND_SKIP,
+    run(l, ctx) {
+      const alive = () => spawnSync("pgrep", ["-u", ctx.cand!.name, "-f", ESCAPEE], { stdio: "ignore" }).status === 0;
+      try {
+        withCache(l, ctx, (cache) => {
+          assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"e\":1}\n" }, { extraEnv: { M151_STUB_PM: "escape" } }).r, { pm: "npm" });
+          assert.ok(!alive(), "no candidate-uid process outlives the install");
+          assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"e\":2}\n" }, { chown: () => ["false"] }).r, { refuse: "DEPS_INSTALL_FAILED" });
+        });
+      } finally {
+        // a mutant may have run the stub pm as this user (no sudo -u): its escapee is ours to kill too
+        spawnSync("sudo", ["-n", "pkill", "-KILL", "-u", ctx.cand!.name, "-f", ESCAPEE], { stdio: "ignore" });
+        spawnSync("pkill", ["-KILL", "-u", String(process.getuid!()), "-f", ESCAPEE], { stdio: "ignore" });
+      }
+    },
+  },
+  // ---- the lockfile scan (guard:deps-nonregistry, guard:lock-*): registry tarballs with integrity, or in-repo links
+  {
+    id: "lockfile scan (npm): registry + integrity, workspace dirs, in-repo links and bundled entries pass; git / url / file / outside entries -> refused",
+    run(l) {
+      const lock = (packages: Record<string, unknown>, deps?: Record<string, unknown>) => JSON.stringify({ lockfileVersion: deps ? 2 : 3, packages: { "": { name: "f" }, ...packages }, ...(deps ? { dependencies: deps } : {}) });
+      const OKP = { "node_modules/a": { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT }, "packages/w": { name: "w", version: "1.0.0" }, "node_modules/w": { resolved: "packages/w", link: true }, "node_modules/a/node_modules/b": { version: "1.0.0", inBundle: true } };
+      const OKD = { a: { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT, dependencies: { c: { version: "2.0.0", resolved: `${REG}c/-/c-2.0.0.tgz`, integrity: INT } } }, w: { version: "file:packages/w" }, b: { version: "1.0.0", bundled: true } };
+      assert.equal(l.deps.npmLockAllowed(lock(OKP)), true);
+      assert.equal(l.deps.npmLockAllowed(lock(OKP, OKD)), true);
+      assert.equal(l.deps.npmLockAllowed("{}"), true, "no packages: nothing to fetch");
+      const bad: [string, Record<string, unknown>, Record<string, unknown>?][] = [
+        ["git", { "node_modules/g": { version: "1.0.0", resolved: "git+ssh://git@github.com/o/g.git#abc" } }],
+        ["remote tarball with integrity", { "node_modules/r": { version: "1.0.0", resolved: "https://example.com/r-1.0.0.tgz", integrity: INT } }],
+        ["look-alike registry host", { "node_modules/r": { version: "1.0.0", resolved: "https://registry.npmjs.org.example.com/r/-/r-1.0.0.tgz", integrity: INT } }],
+        ["registry, no integrity", { "node_modules/r": { version: "1.0.0", resolved: `${REG}r/-/r-1.0.0.tgz` } }],
+        ["file tarball", { "node_modules/f": { version: "1.0.0", resolved: "file:vendor/f.tgz", integrity: INT } }],
+        ["link outside the repo", { "node_modules/o": { resolved: "../outside", link: true } }],
+        ["installed outside the repo", { "../outside/node_modules/x": { version: "1.0.0", resolved: `${REG}x/-/x-1.0.0.tgz`, integrity: INT } }],
+        ["v1 git dep", {}, { g: { version: "1.0.0", resolved: "git+https://github.com/o/g.git#abc" } }],
+        ["v1 nested remote dep", {}, { a: { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT, dependencies: { r: { version: "1.0.0", resolved: "https://example.com/r.tgz", integrity: INT } } } }],
+        ["v1 file dep outside", {}, { w: { version: "file:../w" } }],
+      ];
+      for (const [why, p, d] of bad) assert.equal(l.deps.npmLockAllowed(lock({ ...OKP, ...p }, d ? { ...OKD, ...d } : undefined)), false, why);
+    },
+  },
+  {
+    id: "lockfile scan (pnpm): integrity-only resolutions and in-repo links pass; other hosts, git / directory / file sources, a missing resolution, outside links -> refused",
+    run(l) {
+      const ok = PNPM_OK;
+      assert.equal(l.deps.pnpmLockAllowed(ok), true);
+      assert.equal(l.deps.pnpmLockAllowed(ok.replace("resolution: {integrity: " + INT + "}", `resolution: {integrity: ${INT}, tarball: ${REG}b/-/b-2.0.0.tgz}`)), true, "a registry tarball url is fine");
+      const bad: [string, string][] = [
+        ["tarball from another host", ok.replace("resolution: {integrity: " + INT + "}", `resolution: {integrity: ${INT}, tarball: https://example.com/b.tgz}`)],
+        ["git resolution", ok.replace("resolution: {integrity: " + INT + "}", "resolution: {commit: abc, repo: https://github.com/o/b, type: git}")],
+        ["directory resolution", ok.replace("resolution: {integrity: " + INT + "}", "resolution: {directory: vendor/b, type: directory}")],
+        ["an entry without a resolution", ok.replace("    resolution: {integrity: " + INT + "}\n", "")],
+        ["a file: package key", ok.replace("  b@2.0.0:\n", "  'b@file:vendor/b':\n")],
+        ["a file: snapshot key", ok.replace("  b@2.0.0: {}", "  'b@file:vendor/b': {}")],
+        ["link outside the repo", ok.replace("version: link:../lib", "version: link:../../../outside")],
+        ["git specifier", ok.replace("specifier: ^2.0.0", "specifier: git+https://github.com/o/b.git")],
+      ];
+      for (const [why, text] of bad) { assert.notEqual(text, ok, why); assert.equal(l.deps.pnpmLockAllowed(text), false, why); }
+    },
+  },
+  {
+    id: "lockfile scan (yarn v1): registry + integrity and in-repo links pass; another host, no integrity, git / file specs, outside links -> refused",
+    run(l) {
+      const ok = YARN_OK;
+      assert.equal(l.deps.yarnLockAllowed(ok), true);
+      const bad: [string, string][] = [
+        ["the yarnpkg mirror host (only " + REG + ")", ok.replaceAll(REG, "https://registry.yarnpkg.com/")],
+        ["no integrity", ok.replace(`  integrity ${INT}\n`, "")],
+        ["git spec behind a registry url", ok.replace('"a@^1.0.0"', '"a@git+https://github.com/o/a.git"')],
+        ["file spec", ok.replace('"a@^1.0.0"', '"a@file:../a"')],
+        ["link outside the repo", ok.replace('"w@link:packages/w"', '"w@link:../w"')],
+      ];
+      for (const [why, text] of bad) { assert.notEqual(text, ok, why); assert.equal(l.deps.yarnLockAllowed(text), false, why); }
+    },
+  },
+  {
+    id: "lockfile scan: installDeps refuses a non-registry lockfile with DEPS_NONREGISTRY before anything runs",
+    run(l, ctx) {
+      const fake = { name: "m151-no-such-user", uid: 2_000_000_000 };
+      withCache(l, ctx, (cache) => {
+        const lock = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/g": { version: "1.0.0", resolved: "git+ssh://git@github.com/o/g.git#abc" } } });
+        const d = repo(dir(ctx, "nonreg"), { "package.json": pkgJson({ test: "vitest run" }, VDEP), "package-lock.json": lock });
+        let ran = 0;
+        assert.deepEqual(l.deps.installDeps(d, fake as never, cache, { tool: ctx.tool, onInstall: () => { ran++; } }), { refuse: "DEPS_NONREGISTRY" });
+        assert.equal(ran, 0);
+      });
     },
   },
   // ---- the shim (guard:shim-report, guard:shim-suites, guard:shim-exit)
@@ -203,6 +312,17 @@ export const CASES: Case[] = [
       if (!ctx.cand) { assert.match(r.row.code, NO_CAND); return; }
       assert.equal(r.row.code, "PASS");
       assert.deepEqual(r.row.attemptCodes, [["RELATED_FAIL"], []]);
+    },
+  },
+  {
+    id: "loop: a hidden-set row carries the taskKey and scores only (no repo, commit, runner, deps or baseline)",
+    needsCand: "needs the stage-2 candidate uid to reach the test stage (without it every row is CAND_UID_*, runner null)",
+    run(l, ctx) {
+      const r = l.loop.runLoopTask(ctx.vitest, "hidden", "a".repeat(64), loopOpts(l, ctx, seq([ADD_FIXED])));
+      assert.equal(loopRowProblem(r.row), null, String(loopRowProblem(r.row)));
+      assert.equal(r.row.code, "PASS", "it did reach the tests");
+      assert.deepEqual([r.row.runner, r.row.deps, r.row.baseline, "repo" in r.row, "commit" in r.row], [null, null, null, false, false]);
+      assert.deepEqual(r.row.tests, { total: 2, passedByPeaceAI: 2, filledByTeam: 0 });
     },
   },
   {

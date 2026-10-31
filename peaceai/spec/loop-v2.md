@@ -1,6 +1,6 @@
 # Sandboxed test-and-fix loop v2 (M151)
 
-Status: draft for Auditor review (Builder, 2026-10-30). Builds on loop v1 (`loop-v1.md`, PR #637). Code:
+Status: draft for Auditor review (Builder, 2026-10-30; revised after Auditor's FAIL at 547444c). Builds on loop v1 (`loop-v1.md`, PR #637). Code:
 `peaceai/lib/loopdeps.ts` (new: runner detection, lockfile-only dependency install, json-runner shim),
 `peaceai/lib/loop.ts` (uses it; v2 rows), `peaceai/lib/looprow.ts` (v2 row + validator), `peaceai/bin/loop.ts`
 (`--deps-dir`). Tests: `peaceai/test/m151-loop-v2.test.ts`, `peaceai/test/m151-mutation.test.ts` (cases in
@@ -21,24 +21,49 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
    `TEST_RUNNER_UNSUPPORTED`; a compose file or `docker` in the script (a database or other service) ->
    `TEST_NEEDS_SERVICE`.
 3. Dependencies, only from the repo's lockfile: `pnpm-lock.yaml` -> `corepack pnpm@V install --ignore-pnpmfile
-   --frozen-lockfile --ignore-scripts`; `package-lock.json` / `npm-shrinkwrap.json` -> `npm ci --ignore-scripts`;
+   --frozen-lockfile --ignore-scripts`; `package-lock.json` / `npm-shrinkwrap.json` -> `npm ci --allow-git=none
+   --allow-remote=none --allow-file=none --ignore-scripts`;
    `yarn.lock` (classic) -> `corepack yarn@1.x install --frozen-lockfile --ignore-scripts`. `packageManager` pins the
    version; otherwise the pnpm lockfile format picks one. No lockfile -> `DEPS_NO_LOCKFILE`; yarn berry or an unknown
-   pnpm lockfile -> `DEPS_PM_UNSUPPORTED`.
+   pnpm lockfile -> `DEPS_PM_UNSUPPORTED`. Before anything is installed the lockfile is scanned (below); a
+   non-registry source -> `DEPS_NONREGISTRY`.
 4. Targets: the team's test files (as v1). After a team pass, the tests the code search tools relate to the edited
    files (`testsFor`, top 3 per file, at most 10, same package, not the team's) are run on the edited copy; if they
    fail there but passed on the unedited copy the attempt gets `RELATED_FAIL` (a regression) and the loop revises.
+   The related tests are worked out again for every attempt (each edit can touch different files).
 
 ## Install safety (binding)
 
+- Lockfile scan first (`lockfileAllowed`, fail closed): every package entry must be a tarball under
+  `https://registry.npmjs.org/` with an integrity hash (sha512 / sha384 / sha256 / sha1 SRI). Allowed otherwise only:
+  workspace package dirs and link entries whose target stays inside the repo, and npm entries bundled inside their
+  parent's (registry) tarball (`inBundle` / `bundled`, no `resolved` of their own). Everything else is refused with
+  `DEPS_NONREGISTRY` before the candidate uid runs anything: git deps (any form), remote tarballs on any other host
+  (even with an integrity hash), `file:` deps, links or install locations outside the repo, registry entries with
+  no integrity, an unparseable lockfile. npm: `packages` (v2/v3) and `dependencies` (v1, also read when a v2 file
+  has both). pnpm (v5/v6/v9): every `packages` entry has exactly one `resolution: {integrity: ...}` (optionally with a
+  registry `tarball:`); no package / snapshot key with a protocol; every `link:` resolves inside the repo from its
+  importer dir; no value anywhere with a URL, `file:`, `git...:` or `tarball:` (the free-text `deprecated:` notice is
+  skipped). yarn classic: every entry's specs have no protocol except `npm:` aliases and in-repo `link:`; every
+  non-link entry has a registry `resolved` and an `integrity`. Note: yarn classic lockfiles usually point at
+  `https://registry.yarnpkg.com/`; those are refused by this rule (see v2 limits).
+- npm also gets `--allow-git=none --allow-remote=none --allow-file=none` (npm 11 defaults these to `all`), so npm
+  itself refuses git / url / file deps even if the scan missed one.
 - Runs as the stage-2 candidate uid (`sudo -n -u <cand>`; the same separate no-sudo uid as the test runs), under
   `env -i` with a fixed PATH and a private HOME / TMPDIR / package-manager cache, inside `timeout -s KILL`.
 - In a staging tree built from the tracked files at the pinned commit (no team tests, no edits), in the run's own
   cache dir; package-manager config files that can redirect the registry or run code (`.npmrc`, `.yarnrc`,
   `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml`) are removed first; the registry is pinned to
   `https://registry.npmjs.org/`. Install scripts are off; pnpmfiles are ignored.
-- Network is used only by this step (the registry). Test runs never have network (v1 wrapper unchanged).
-- After the install the tree is chowned back to the runner and made `go-w`; the private HOME is deleted. The copy gets
+- This step is the one place with network, and here the candidate uid runs a process WITH network: the package
+  manager itself (npm, or pnpm / yarn which corepack fetches from the npm registry). It runs no package code:
+  scripts off, pnpmfile ignored, config files stripped, only registry tarballs with integrity (scan + npm flags).
+  Test runs never have network (v1 wrapper unchanged); package code first runs there.
+- Right after the install, before the tree changes hands, every process of the candidate uid is killed
+  (`sudo -n pkill -KILL -u <cand>`, up to 5 rounds, then `pgrep -u <cand>` must find none), so a `setsid` escapee
+  cannot keep running with network. If that cannot be confirmed -> `DEPS_INSTALL_FAILED`.
+- After the install the tree is chowned back to the runner (`sudo -n chown -R`; if that fails ->
+  `DEPS_INSTALL_FAILED`, the tree is never used) and made `go-w`; the private HOME is deleted. The copy gets
   a real `node_modules` dir of per-entry symlinks into the staging tree (no `.bin`), so nothing the loop writes into
   the copy (wrapper, shim) can reach the shared tree, and the candidate cannot write the tree.
 - Caps: deadline (default 600 s) -> `DEPS_TIMEOUT`; installed bytes over the cap (default 1.5 GiB, inode-deduped) ->
@@ -59,11 +84,16 @@ Fail closed: no report -> `fail 1`; failed suites with no failed test -> counted
 `success: false` with no failure -> `fail 1`. vitest >= 3.1 is retried once with `--configLoader runner` when no
 report was written (the default config loader writes a temp file beside the config, and the copy is read-only).
 
-Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (runner-other, service, runner-dep, deps-lockfile,
-deps-frozen, deps-ignore-scripts, deps-config, deps-cand, deps-timeout, deps-size, shim-report, shim-suites,
-shim-exit). The m151 mutation test deletes each in turn (with a loop.ts that imports the mutant) and requires a case
-to fail with an assertion. deps-cand / deps-config / deps-timeout / deps-size need the candidate uid and sudo; where
-those are missing they are skipped and the loop cases assert the `CAND_UID_*` refusal. The tests never use the
+Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (31: runner-other, service, runner-dep,
+deps-lockfile, deps-nonregistry, deps-npm-allow, deps-pnpmfile, deps-frozen, deps-ignore-scripts, deps-config,
+deps-registry, deps-env-i, deps-cand, deps-kill, deps-chown, deps-timeout, deps-size, lock-npm-key, lock-link,
+lock-npm, lock-npm-v1, lock-pnpm-key, lock-pnpm-missing, lock-pnpm-res, lock-pnpm-link, lock-pnpm-url,
+lock-yarn-spec, lock-yarn, shim-report, shim-suites, shim-exit). Each has a refused near-miss case. The m151
+mutation test deletes each in turn (with a loop.ts that imports the mutant) and requires a case to fail with an
+assertion. deps-cand / deps-config / deps-registry / deps-env-i / deps-kill / deps-chown / deps-timeout / deps-size
+need the candidate uid and sudo: where those are missing, their mutants and the install cases (`needsCand`) are
+reported as SKIPPED with a reason, never as passes; the loop cases assert the `CAND_UID_*` refusal there. The
+lockfile-scan cases and `DEPS_NONREGISTRY` need no candidate uid and run everywhere. The tests never use the
 network: the package manager is a vendored stub injected through `DepsOptions.tool`, and the vitest it installs is
 a vendored stub runner.
 
@@ -72,9 +102,11 @@ a vendored stub runner.
 Rows are `peaceai-plan-loop:v2` / `loop-v2` with three more required keys: `runner` (node-test / vitest / jest, or
 null when refused before one was picked), `deps` (none / npm / pnpm / yarn, or null) and `baseline`
 (`{ total, passing, failing }` for the team's tests on the unedited copy, or null when it did not run). New codes:
-`TEST_NEEDS_SERVICE`, `DEPS_NO_LOCKFILE`, `DEPS_PM_UNSUPPORTED`, `DEPS_INSTALL_FAILED`, `DEPS_TIMEOUT`,
-`DEPS_TOO_LARGE`, attempt code `RELATED_FAIL` (all v2-only; v1 rows keep validating as before). Codes and numbers
-only, as v1.
+`TEST_NEEDS_SERVICE`, `DEPS_NO_LOCKFILE`, `DEPS_PM_UNSUPPORTED`, `DEPS_NONREGISTRY`, `DEPS_INSTALL_FAILED`,
+`DEPS_TIMEOUT`, `DEPS_TOO_LARGE`, attempt code `RELATED_FAIL` (all v2-only; v1 rows keep validating as before). Codes
+and numbers only, as v1. Hidden-set rows carry the taskKey plus scores only: `runner`, `deps` and `baseline` are
+always null there (together they could identify the repo); the loop writes them so and the validator refuses
+anything else (`hidden_detail`).
 
 ## v2 limits
 
@@ -82,8 +114,10 @@ only, as v1.
 - Counts are advisory as in v1 (the candidate's code shares the runner process); tamper hashes and the leftover kill
   still apply. The installed tree is not tamper-hashed per file, but it is owned by the runner and not writable by
   the candidate.
-- The install is a second place where the candidate uid runs a process (the package manager, not candidate code),
-  and it has network (the registry). Packages' own code first runs inside the test isolation (no network).
+- The install is a second place where the candidate uid runs a process, and that process (the package manager) has
+  network. Package code is not run there (see Install safety); it first runs inside the test isolation (no network).
+- yarn classic lockfiles that use the `registry.yarnpkg.com` mirror or lack integrity lines are refused
+  (`DEPS_NONREGISTRY`); allowing that mirror would be a separate, reviewed change.
 - One package per task; no service-backed suites; no yarn berry; no bun / deno.
 - Box notes: the shared `peaceai-cand` uid is used by every agent's m146 runs, which kill all its processes; use a
   separate candidate uid per concurrent run (`PEACEAI_STAGE2_CAND`, `M146_CAND` / `M151_CAND` in tests). A full or

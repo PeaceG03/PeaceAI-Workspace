@@ -6,8 +6,12 @@
 //      yarn install --frozen-lockfile), install scripts off (--ignore-scripts), as the stage-2 candidate uid with
 //      `env -i` and a private HOME/cache, in a per-run staging dir (never the copy, never a shared cache), with a
 //      deadline and a size cap. Package-manager config files that can redirect the registry or run code (.npmrc,
-//      .yarnrc*, .pnpmfile.*) are removed from the staging tree first. Network is used only here (the registry);
-//      tests never get it. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
+//      .yarnrc*, .pnpmfile.*) are removed from the staging tree first, and the lockfile is scanned first: every
+//      package must come from https://registry.npmjs.org/ with an integrity hash (git, remote-tarball, file: and
+//      outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace / link entries inside the repo are
+//      allowed); npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
+//      as the candidate uid WITH network (registry only by config; it runs no package code: scripts off, no
+//      pnpmfile). Every candidate-uid process is killed right after the install. Tests never get network. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
 //      sha256 (+ package manager and manifests) inside one run dir only, removed with the run.
 //   3. the json-runner shim: vitest / jest run inside the existing no-network isolation (loop.ts wrapper, selfpropose
 //      guardedRun) through a PeaceAI-written shim that asks the runner for its JSON report (in the private TMPDIR)
@@ -27,7 +31,7 @@ export const RUNNERS = ["node-test", "vitest", "jest"] as const;
 export type RunnerKind = (typeof RUNNERS)[number];
 export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
-export const DEPS_CODES = ["DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE"] as const;
+export const DEPS_CODES = ["DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE"] as const;
 export type DepsCode = (typeof DEPS_CODES)[number];
 export type RunnerRefusal = "TEST_RUNNER_UNSUPPORTED" | "TEST_NEEDS_SERVICE";
 
@@ -119,10 +123,124 @@ export function pickLockfile(root: string): LockPick | { refuse: DepsCode } {
 /** The install command (argv) for a lockfile: frozen, scripts off. `tool` replaces the real package manager in tests. */
 export function installArgv(p: LockPick, tool: ((pm: PackageManager, version: string | null) => string[]) | null): string[] {
   const base = tool ? tool(p.pm, p.version) : p.pm === "npm" ? ["npm"] : ["corepack", `${p.pm}@${p.version}`];
-  const argv = [...base, ...(p.pm === "npm" ? ["ci", "--no-audit", "--no-fund"] : p.pm === "pnpm" ? ["install", "--ignore-pnpmfile"] : ["install", "--non-interactive"])];
+  const argv = [...base, ...(p.pm === "npm" ? ["ci", "--no-audit", "--no-fund"] : ["install", ...(p.pm === "yarn" ? ["--non-interactive"] : [])])];
+  if (p.pm === "npm") argv.push("--allow-git=none", "--allow-remote=none", "--allow-file=none"); // guard:deps-npm-allow
+  if (p.pm === "pnpm") argv.push("--ignore-pnpmfile"); // guard:deps-pnpmfile
   if (p.pm !== "npm") argv.push("--frozen-lockfile"); // guard:deps-frozen
   argv.push("--ignore-scripts"); // guard:deps-ignore-scripts
   return argv;
+}
+
+/** The only registry a lockfile entry may come from (the install env pins the same one). */
+export const REGISTRY = "https://registry.npmjs.org/";
+const INTEGRITY = /^sha(?:1|256|384|512)-[A-Za-z0-9+/]+={0,2}$/;
+const integrityOk = (i: unknown): boolean => typeof i === "string" && i.trim().split(/\s+/).every((x) => INTEGRITY.test(x));
+const registryOk = (resolved: unknown, integrity: unknown): boolean => {
+  if (typeof resolved !== "string") return false;
+  const u = resolved.replace(/#[0-9a-f]{40}$/, ""); // yarn v1 appends the tarball sha1
+  return u.startsWith(REGISTRY) && !/[\s\\?#]|\.\.|\/\//.test(u.slice(REGISTRY.length)) && integrityOk(integrity);
+};
+/** A repo-relative path (from `base`, repo-relative) that stays inside the repo. */
+export function insideRepo(base: string, rel: unknown): boolean {
+  if (typeof rel !== "string" || !rel || rel.includes("\0") || rel.includes("\\") || posix.isAbsolute(rel)) return false;
+  const n = posix.normalize(posix.join(base || ".", rel));
+  return n !== ".." && !n.startsWith("../") && !posix.isAbsolute(n);
+}
+
+/** npm package-lock.json / npm-shrinkwrap.json (v1 `dependencies`, v2/v3 `packages`; both are read when present). */
+export function npmLockAllowed(text: string): boolean {
+  let o: any;
+  try { o = JSON.parse(text); } catch { return false; }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+  for (const [k, v] of Object.entries((o.packages ?? {}) as Record<string, any>)) {
+    if (k === "") continue;
+    if (!v || typeof v !== "object") return false;
+    if (!insideRepo(".", k)) return false; // guard:lock-npm-key
+    const nm = /(?:^|\/)node_modules\//.test(k);
+    if (v.link === true) { if (!insideRepo(".", v.resolved)) return false; continue; } // guard:lock-link
+    if (!nm || v.inBundle === true) { if ("resolved" in v) return false; continue; } // a workspace package dir, or bundled in its parent's tarball
+    if (!registryOk(v.resolved, v.integrity)) return false; // guard:lock-npm
+  }
+  const walk = (deps: unknown): boolean => {
+    if (deps === undefined) return true;
+    if (!deps || typeof deps !== "object") return false;
+    for (const v of Object.values(deps as Record<string, any>)) {
+      if (!v || typeof v !== "object") return false;
+      const ver = String(v.version ?? "");
+      const ok = ver.startsWith("file:") ? insideRepo(".", ver.slice(5)) && !/\.(?:tgz|tar|tar\.gz)$/i.test(ver) && !("resolved" in v)
+        : v.bundled === true ? !("resolved" in v) : !/:/.test(ver.replace(/^npm:/, "").replace(/^@?[^@]*@/, "")) && registryOk(v.resolved, v.integrity);
+      if (!ok) return false; // guard:lock-npm-v1
+      if (!walk(v.dependencies)) return false;
+    }
+    return true;
+  };
+  return walk(o.dependencies);
+}
+
+const unquote = (s: string): string => s.trim().replace(/^(['"])(.*)\1$/, "$2");
+const PNPM_RES = /^\s+resolution: \{integrity: sha(?:1|256|384|512)-[A-Za-z0-9+/]+={0,2}(?:, tarball: https:\/\/registry\.npmjs\.org\/[^\s,{}]+)?\}\s*$/;
+/** pnpm-lock.yaml (v5 / v6 / v9), read line by line in the fixed layout pnpm writes; anything unexpected is refused. */
+export function pnpmLockAllowed(text: string): boolean {
+  let section = "";
+  let importer = ".";
+  let entry: string | null = null;
+  let res = 0;
+  const entryOk = () => section !== "packages" || entry === null || res === 1;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\S/.test(line) && !line.startsWith("#")) {
+      if (!entryOk()) return false;
+      section = /^([A-Za-z]+):/.exec(line)?.[1] ?? "?";
+      entry = null; importer = ".";
+      continue;
+    }
+    const key = /^ {2}('[^']*'|"[^"]*"|[^\s'"#][^:]*?):(?:\s|$)/.exec(line)?.[1];
+    if (key !== undefined && section === "importers") importer = unquote(key);
+    if (key !== undefined && (section === "packages" || section === "snapshots") && unquote(key).includes(":")) return false; // guard:lock-pnpm-key
+    if (key !== undefined && section === "packages") {
+      if (!entryOk()) return false; // guard:lock-pnpm-missing
+      entry = unquote(key); res = 0;
+    }
+    if (section === "packages" && /^\s+resolution:/.test(line)) {
+      res++;
+      if (!PNPM_RES.test(line)) return false; // guard:lock-pnpm-res
+      continue;
+    }
+    if (section === "packages" && /^ {4}deprecated: /.test(line)) continue; // free text (a notice), never read as a source
+    // values only (a dependency name such as "simple-git" is a key, never a source)
+    const kv = /^\s*(?:-\s+)?('[^']*'|"[^"]*"|[^\s'"][^:]*?):(?:\s+(.*))?$/.exec(line);
+    const val = kv ? kv[2] ?? "" : line;
+    for (const m of val.matchAll(/(?:^|[\s{,'"])link:([^\s'",}]*)/g)) if (!insideRepo(importer, m[1])) return false; // guard:lock-pnpm-link
+    if (/:\/\/|(?:^|[\s{,'"@])(?:file|git|git\+[a-z]+|github|gitlab|bitbucket|gist|tarball):/.test(val)) return false; // guard:lock-pnpm-url
+  }
+  return entryOk();
+}
+
+/** yarn.lock v1 (berry is refused earlier). */
+export function yarnLockAllowed(text: string): boolean {
+  const blocks: { specs: string[]; fields: string[] }[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith("#")) continue;
+    if (/^\S/.test(line)) { if (!line.endsWith(":")) return false; blocks.push({ specs: line.slice(0, -1).split(/,\s*/).map(unquote), fields: [] }); continue; }
+    if (!blocks.length) return false;
+    blocks[blocks.length - 1]!.fields.push(line);
+  }
+  for (const b of blocks) {
+    const ranges = b.specs.map((s) => s.slice(s.indexOf("@", 1) + 1));
+    const field = (name: string) => b.fields.find((f) => f.startsWith(`  ${name} `))?.slice(name.length + 3);
+    const resolved = field("resolved");
+    const links = ranges.every((r) => r.startsWith("link:") && insideRepo(".", r.slice(5)));
+    if (ranges.some((r) => r.includes(":") && !r.startsWith("npm:") && !(r.startsWith("link:") && insideRepo(".", r.slice(5))))) return false; // guard:lock-yarn-spec
+    if (links && resolved === undefined) continue;
+    if (!registryOk(resolved === undefined ? undefined : unquote(resolved), field("integrity"))) return false; // guard:lock-yarn
+  }
+  return true;
+}
+
+/** Every package in the lockfile comes from the registry with an integrity hash, or is a workspace / link entry inside the repo. */
+export function lockfileAllowed(root: string, p: LockPick): boolean {
+  let text: string;
+  try { text = readFileSync(join(root, p.lockfile), "utf8"); } catch { return false; }
+  return p.pm === "npm" ? npmLockAllowed(text) : p.pm === "pnpm" ? pnpmLockAllowed(text) : yarnLockAllowed(text);
 }
 
 /** Package-manager config files that can redirect the registry or run code at install time. */
@@ -139,6 +257,8 @@ export interface DepsOptions {
   onInstall?: (key: string) => void;
   /** Extra variables for the install env (tests only; still under env -i). */
   extraEnv?: Record<string, string>;
+  /** Tests only: the argv that gives the installed tree back to the runner (default sudo -n chown -R). */
+  chown?: ((owner: string, dir: string) => string[]) | null;
 }
 const MAX_CACHED = 2;
 export const DEPS_DEFAULTS = { timeoutMs: 600_000, maxBytes: 1536 * 1024 * 1024 } as const;
@@ -194,6 +314,7 @@ export function treeBytes(p: string): number {
 export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o: DepsOptions = {}): { pm: PackageManager } | { refuse: DepsCode } {
   const lock = pickLockfile(copyDir);
   if ("refuse" in lock) return lock;
+  if (!lockfileAllowed(copyDir, lock)) return { refuse: "DEPS_NONREGISTRY" }; // guard:deps-nonregistry
   const files = listed(copyDir);
   const manifests = files.filter((f) => posix.basename(f) === "package.json" || f === "pnpm-workspace.yaml").sort();
   const key = sha256([lock.pm, lock.version ?? "", sha256(readFileSync(join(copyDir, lock.lockfile))), ...manifests.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`)].join("\n"));
@@ -219,6 +340,17 @@ export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o:
   return { pm: lock.pm };
 }
 
+/** Kills every process of the candidate uid (a few rounds, then checks none is left). False: not sure they are gone. */
+export function killCand(cand: CandUid): boolean {
+  for (let i = 0; i < 5; i++) {
+    const k = spawnSync("sudo", ["-n", "pkill", "-KILL", "-u", cand.name], { stdio: "ignore" }).status;
+    if (k !== 0 && k !== 1) return false; // 1: nothing matched
+    if (spawnSync("pgrep", ["-u", cand.name], { stdio: "ignore" }).status === 1) return true;
+    spawnSync("sleep", ["0.2"]);
+  }
+  return false;
+}
+
 function install(copyDir: string, files: readonly string[], lock: LockPick, cand: CandUid, cache: DepsCache, key: string, o: DepsOptions): { staging: string } | { refuse: DepsCode } {
   o.onInstall?.(key);
   const staging = join(cache.dir, `deps-${key.slice(0, 16)}`);
@@ -240,17 +372,23 @@ function install(copyDir: string, files: readonly string[], lock: LockPick, cand
   const env: Record<string, string> = {
     PATH: `${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMPDIR: home, LANG: "C.UTF-8", CI: "true",
     COREPACK_HOME: join(home, "corepack"), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", COREPACK_ENABLE_STRICT: "0",
-    npm_config_cache: join(home, "npm-cache"), npm_config_store_dir: join(home, "pnpm-store"), npm_config_registry: "https://registry.npmjs.org/",
+    npm_config_cache: join(home, "npm-cache"), npm_config_store_dir: join(home, "pnpm-store"),
     npm_config_update_notifier: "false", YARN_CACHE_FOLDER: join(home, "yarn-cache"), ...o.extraEnv,
   };
+  env.npm_config_registry = REGISTRY; // guard:deps-registry
   const argv = installArgv(lock, o.tool ?? null);
   const secs = String(Math.max(1, Math.ceil(timeoutMs / 1000)));
-  const cmd = ["env", "-i", ...Object.entries(env).map(([k, v]) => `${k}=${v}`), "timeout", "-s", "KILL", secs, ...argv];
+  const cmd = [...Object.entries(env).map(([k, v]) => `${k}=${v}`), "timeout", "-s", "KILL", secs, ...argv];
+  cmd.unshift("env", "-i"); // guard:deps-env-i
   cmd.unshift("sudo", "-n", "-u", cand.name, "--"); // guard:deps-cand
   const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd: staging, stdio: "ignore", timeout: timeoutMs + 30_000, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } });
+  // every process of the candidate uid goes before the tree changes hands (a setsid escapee would keep its network)
+  if (!killCand(cand)) return { refuse: "DEPS_INSTALL_FAILED" }; // guard:deps-kill
   // back to the runner: the candidate can no longer change the installed tree; its private HOME (caches) goes
-  spawnSync("sudo", ["-n", "chown", "-R", me, staging], { stdio: "ignore" });
+  const chown = o.chown ? o.chown(me, staging) : ["sudo", "-n", "chown", "-R", me, staging];
+  const owned = spawnSync(chown[0]!, chown.slice(1), { stdio: "ignore" }).status === 0;
   spawnSync("sudo", ["-n", "rm", "-rf", "--", home], { stdio: "ignore" });
+  if (!owned) return { refuse: "DEPS_INSTALL_FAILED" }; // guard:deps-chown
   execFileSync("chmod", ["-R", "go-w", staging], { stdio: "ignore" });
   if (r.status === 137 || r.status === 124 || r.signal) return { refuse: "DEPS_TIMEOUT" }; // guard:deps-timeout
   if (r.status !== 0) return { refuse: "DEPS_INSTALL_FAILED" };
