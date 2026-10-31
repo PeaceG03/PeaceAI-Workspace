@@ -21,8 +21,9 @@ const PINS = {
   manifest: "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
   fingerprint: "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4",
 };
-const ROW_FIELDS = ["baselineBpb", "checkpointSha256", "heldoutBpb", "pins", "runId", "steps", "stopReason", "wallSeconds", "workflowSha"];
-const TINY_TRAIN = { "--d-model": "16", "--n-layer": "1", "--n-head": "2", "--ctx": "32", "--vocab": "300", "--batch": "2", "--threads": "1", "--eval-every": "2", "--steps": "4", "--patience": "2", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard" };
+// batch 6 (deliberate pin change, 9 -> 12 fields): + heldBytes, heldoutTokens, modelCe, the inputs heldoutBpb is computed from.
+const ROW_FIELDS = ["baselineBpb", "checkpointSha256", "heldBytes", "heldoutBpb", "heldoutTokens", "modelCe", "pins", "runId", "steps", "stopReason", "wallSeconds", "workflowSha"];
+const TINY_TRAIN = { "--d-model": "16", "--n-layer": "1", "--n-head": "2", "--ctx": "32", "--vocab": "300", "--batch": "2", "--threads": "1", "--eval-every": "2", "--steps": "4", "--patience": "2", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard", "--val-split": "disjoint" };
 const SHA40 = "0123456789abcdef0123456789abcdef01234567";
 
 const pinsOf = (c: string) => ({ docs: sha(join(c, "docs.jsonl")), manifest: sha(join(c, "manifest.jsonl")), fingerprint: json(join(c, "fingerprint.json")).fingerprint });
@@ -52,17 +53,21 @@ const lb = (m: string, args: string[], env: Record<string, string> = {}) => {
   return { status: r.status, out: r.stdout.trim(), last: (r.stdout.trim() || r.stderr.trim()).split("\n").pop()! };
 };
 
+/** model_ce for a given bpb, tokens and bytes (export.py: bpb = model_ce * tokens / ln 2 / bytes). */
+const ceFor = (bpb: number, tokens: number, bytes: number) => (bpb * Math.LN2 * bytes) / tokens;
 /** A valid row for the tiny corpus c. */
 const goodRow = (c: string, extra: Record<string, unknown> = {}) => ({
   pins: pinsOf(c), workflowSha: SHA40, runId: "42", steps: 4, stopReason: "steps", heldoutBpb: 3.9, baselineBpb: 4.06,
-  wallSeconds: 100, checkpointSha256: "c".repeat(64), ...extra,
+  wallSeconds: 100, checkpointSha256: "c".repeat(64), modelCe: ceFor(3.9, 1000, 2000), heldoutTokens: 1000, heldBytes: 2000, ...extra,
 });
 
 /** A work dir (stop.json + checkpoint) and eval.json, as train.py / export.py leave them. */
 function fakeRun(d: string, stop: Record<string, unknown> = { reason: "patience", step: 30 }, ev: Record<string, unknown> = {}) {
   mkdirSync(join(d, "w"), { recursive: true }); mkdirSync(join(d, "m"), { recursive: true });
   writeFileSync(join(d, "w/stop.json"), JSON.stringify(stop)); writeFileSync(join(d, "w/best.npz"), "ckpt");
-  writeFileSync(join(d, "m/eval.json"), JSON.stringify({ heldout_windows: 3, model_bits_per_byte: 3.5, unigram_bits_per_byte: 4.06, ...ev }));
+  const e: Record<string, any> = { heldout_windows: 3, model_bits_per_byte: 3.5, unigram_bits_per_byte: 4.06, heldout_tokens: 96, held_bytes: 300, ...ev };
+  if (!("model_ce" in ev)) e.model_ce = ceFor(Number(e.model_bits_per_byte), e.heldout_tokens, e.held_bytes);
+  writeFileSync(join(d, "m/eval.json"), JSON.stringify(e));
 }
 const rowArgs = (d: string, c: string) => ["row", "--corpus", c, "--work", join(d, "w"), "--eval", join(d, "m/eval.json"), "--checkpoint", join(d, "w/best.npz"),
   "--run-id", "42", "--sha", SHA40, "--job-start", String(Math.floor(Date.now() / 1000) - 50), "--out", join(d, `row-${Math.random().toString(36).slice(2)}.json`)];
@@ -110,6 +115,7 @@ const CASES: Record<string, { run: Case; real: string | RegExp }> = {
   "run-setting-allowed": { run: argvCase((t) => { t["--weight-decay"] = "0.1"; }), real: "LB_RUN_SETTING_NOT_ALLOWED" },
   "run-setting-values": { run: argvCase((t) => { t["--seed"] = "1;rm"; }), real: "LB_RUN_SETTING_NOT_ALLOWED" },
   "run-setting-required": { run: argvCase((t) => { t["--optimizer"] = "adamw"; }), real: "LB_RUN_SETTING_REQUIRED" },
+  "run-val-split": { run: argvCase((t) => { t["--val-split"] = "first"; }), real: "LB_RUN_SETTING_REQUIRED" },
   "run-patience": { run: argvCase((t) => { delete t["--patience"]; }), real: "LB_RUN_SETTING_REQUIRED" },
   "run-deadline-cap": { run: argvCase(() => {}, (cfg) => { cfg.firstRun.trainDeadlineMin = 300; }), real: "LB_RUN_BAD_DEADLINE" },
   "run-job-start": { run: argvCase(() => {}, () => {}, now() + 3600), real: "LB_RUN_BAD_DEADLINE" },
@@ -118,6 +124,7 @@ const CASES: Record<string, { run: Case; real: string | RegExp }> = {
   "run-row-pin-fields": { run: landCase((c) => goodRow(c, { pins: { ...pinsOf(c), drop: "x" } })), real: "LB_RUN_ROW_FIELD" },
   "run-row-pins": { run: landCase((c) => goodRow(c, { pins: { ...pinsOf(c), docs: "0".repeat(64) } })), real: "LB_RUN_PIN_MISMATCH" },
   "run-row-values": { run: landCase((c) => goodRow(c, { heldoutBpb: "3.9" })), real: "LB_RUN_ROW_VALUE" },
+  "run-row-bpb": { run: landCase((c) => goodRow(c, { heldoutBpb: 3.95 })), real: "LB_RUN_ROW_VALUE" },
   "run-land-id": { run: landCase((c) => goodRow(c), "43"), real: "LB_RUN_ROW_VALUE" },
   "run-land-symlink": {
     run: landCase((c) => goodRow(c), "42", (res) => { const o = join(res, "..", `elsewhere-${Math.random().toString(36).slice(2)}`); mkdirSync(o); symlinkSync(o, join(res, "runs")); }),
@@ -168,7 +175,7 @@ test("M163 near misses: main passes the ref gate, a cleared first-run corpus pas
     assert.equal(r.status, 0, r.out);
     const a = r.out.split("\n");
     const kv = Object.fromEntries(Array.from({ length: a.length / 2 }, (_, i) => [a[2 * i]!, a[2 * i + 1]!]));
-    assert.equal(kv["--optimizer"], "adamw8bit"); assert.equal(kv["--curriculum"], "easy_to_hard"); assert.equal(kv["--patience"], "4");
+    assert.equal(kv["--optimizer"], "adamw8bit"); assert.equal(kv["--curriculum"], "easy_to_hard"); assert.equal(kv["--patience"], "4"); assert.equal(kv["--val-split"], "disjoint");
     assert.equal(Number(kv["--deadline"]), start + 290 * 60);
     assert.ok(Number(kv["--deadline"]) + 40 * 60 <= start + 330 * 60, "the deadline leaves the reserve inside the job cap");
     assert.ok(!a.some((x) => /^--(lora|replay|init-from|resume|save-dir|marker|keep-checkpoints)/.test(x)), "no LoRA, replay, init, resume or saves");
@@ -177,7 +184,7 @@ test("M163 near misses: main passes the ref gate, a cleared first-run corpus pas
       const m = scratchModel(dir, `f${f}`, withTrain((t) => { t[f] = "1"; })(c));
       assert.equal(lb(m, argvArgs()).last, "LB_RUN_FORBIDDEN_SETTING", f);
     }
-    for (const [f, v] of [["--curriculum", "none"], ["--curriculum", "hard_to_easy"], ["--optimizer", "adamw_fp32"]]) {
+    for (const [f, v] of [["--curriculum", "none"], ["--curriculum", "hard_to_easy"], ["--optimizer", "adamw_fp32"], ["--val-split", "first"], ["--val-split", "overlap"]]) {
       const m = scratchModel(dir, `r${f}${v}`, withTrain((t) => { t[f!] = v!; })(c));
       assert.equal(lb(m, argvArgs()).last, "LB_RUN_SETTING_REQUIRED", `${f} ${v}`);
     }
@@ -198,9 +205,19 @@ test("M163 row: exactly the allowed fields, a gain only below the baseline, one 
     const args = rowArgs(d, c);
     const r = lb(m, args);
     assert.equal(r.status, 0, r.out);
-    assert.match(r.last, /^lb-run steps=30 stop=patience heldout_bpb=3\.5 baseline_bpb=4\.06 verdict=beats_baseline wall_s=\d+ checkpoint=[0-9a-f]{64}$/);
+    assert.match(r.last, /^lb-run steps=30 stop=patience heldout_bpb=3\.5 baseline_bpb=4\.06 verdict=beats_baseline wall_s=\d+ checkpoint=[0-9a-f]{64} model_ce=[0-9.]+ heldout_tokens=96 held_bytes=300$/);
     const row = json(args[args.length - 1]!);
     assert.deepEqual(Object.keys(row).sort(), [...ROW_FIELDS].sort());
+    // the bpb inputs are logged exactly (model_ce unrounded) and recompute heldoutBpb
+    const ev = json(join(d, "m/eval.json"));
+    assert.deepEqual([row.modelCe, row.heldoutTokens, row.heldBytes], [ev.model_ce, 96, 300]);
+    assert.ok(r.last.includes(` model_ce=${ev.model_ce} `), "the log line carries the same unrounded model_ce");
+    assert.ok(Math.abs(row.modelCe * row.heldoutTokens / Math.LN2 / row.heldBytes - row.heldoutBpb) <= 5e-5);
+    // inputs that do not recompute the bpb, or are not counts, are refused; an eval without them too
+    for (const [what, e] of [["bpb off", { model_ce: ceFor(3.6, 96, 300) }], ["float bytes", { held_bytes: 300.5 }], ["no tokens", { heldout_tokens: null, model_ce: 2 }], ["zero ce", { model_ce: 0 }]] as const) {
+      const x = join(dir, `bad-${what.replace(/ /g, "-")}`); fakeRun(x, undefined, e);
+      assert.equal(lb(m, rowArgs(x, c)).last, "LB_RUN_ROW_VALUE", what);
+    }
     assert.deepEqual(Object.keys(row.pins).sort(), ["docs", "fingerprint", "manifest"]);
     assert.equal(row.checkpointSha256, sha(join(d, "w/best.npz")));
     // equal to the baseline is no gain; just below is
@@ -333,16 +350,22 @@ test("M163 end to end (tiny corpus): lb-first-run.sh trains, evaluates and write
         encoding: "utf8", env: { ...process.env, PY: py, LB_MODEL_DIR: m, LB_JOB_START: String(now() - 5), GITHUB_REF: ref, GITHUB_SHA: SHA40, GITHUB_RUN_ID: "77" } });
       return { status: r.status, out: r.stdout + r.stderr };
     };
-    const c = tinyCorpus(dir);
+    const c = tinyCorpus(dir, { bigHeld: true }); // --val-split disjoint needs more than 98 held-out windows
     const m = scratchModel(dir, "m", tinyCfg(c));
     const g = run(m, c, "good");
     assert.equal(g.status, 0, g.out);
-    for (const line of g.out.trim().split("\n")) assert.match(line, /^(ref ok|pins ok |params=|tokens |optimizer=adamw8bit |curriculum easy_to_hard |best val_loss|stopped |lb-run steps=)/, `quiet log: ${line}`);
+    for (const line of g.out.trim().split("\n")) assert.match(line, /^(ref ok|pins ok |params=|tokens |optimizer=adamw8bit |curriculum easy_to_hard |val split=disjoint windows=97\.\.112 |best val_loss|stopped |lb-run steps=)/, `quiet log: ${line}`);
+    assert.match(g.out, /^val split=disjoint windows=97\.\.112 n=16 eval_windows=0\.\.95$/m);
     assert.match(g.out, /optimizer=adamw8bit /); assert.match(g.out, /curriculum easy_to_hard /);
     assert.match(g.out, /lb-run steps=\d+ stop=(steps|patience) heldout_bpb=[\d.]+ baseline_bpb=[\d.]+ verdict=(beats_baseline|no_gain) /);
     const row = json(join(dir, "good-row.json"));
     assert.deepEqual(Object.keys(row).sort(), [...ROW_FIELDS].sort());
     assert.equal(row.runId, "77"); assert.equal(row.workflowSha, SHA40); assert.equal(row.pins.fingerprint, "e".repeat(64));
+    // real export.py output: 96 eval windows of ctx 32, and the logged inputs recompute the bpb
+    assert.equal(row.heldoutTokens, 96 * 32);
+    assert.ok(Number.isInteger(row.heldBytes) && row.heldBytes > 0 && row.modelCe > 0);
+    assert.ok(Math.abs(row.modelCe * row.heldoutTokens / Math.LN2 / row.heldBytes - row.heldoutBpb) <= 5e-5, "bpb recomputes from the row");
+    assert.match(g.out, new RegExp(`lb-run .* model_ce=${row.modelCe} heldout_tokens=${row.heldoutTokens} held_bytes=${row.heldBytes}$`, "m"));
     for (const p of ["good-w", "good-m", "good-w.log"]) assert.ok(!existsSync(join(dir, p)), `${p} removed`);
     assert.ok(!existsSync(c), "the corpus is removed");
     // a pin mismatch and a non-main ref refuse before any training (no work dir, no row)

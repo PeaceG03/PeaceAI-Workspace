@@ -19,7 +19,7 @@ lb pins --corpus "$C"
 argv=$(lb train-argv --corpus "$C" --work "$W" --job-start "$LB_JOB_START") || { echo "$argv"; exit 3; }
 mapfile -t A <<< "$argv"
 "$PY" "$M/train.py" "${A[@]}" > "$W.log" 2>&1 || { rc=$?; echo "train failed exit=$rc"; jq -r '"stop reason=\(.reason) code=\(.code // "")"' "$W/stop.json" 2>/dev/null || true; exit 1; }
-grep -E '^(params=|tokens |optimizer=|curriculum |best val_loss|stopped )' "$W.log" || true
+grep -E '^(params=|tokens |optimizer=|curriculum |val split=|best val_loss|stopped )' "$W.log" || true
 ck=best.npz; test -f "$W/best.npz" || ck=checkpoint.npz
 "$PY" "$M/export.py" --work "$W" --out "$O" --threads 4 --checkpoint "$ck" > /dev/null
 lb row --corpus "$C" --work "$W" --eval "$O/eval.json" --checkpoint "$W/$ck" --run-id "${GITHUB_RUN_ID:-}" --sha "${GITHUB_SHA:-}" \

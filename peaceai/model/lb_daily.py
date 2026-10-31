@@ -25,9 +25,14 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PIN_KEYS = ("docs", "manifest", "fingerprint")
-ROW_SCHEMA = "peaceai-lb-daily-run:v1"
-ROW_FIELDS = ("schema", "runId", "workflowSha", "chainId", "today", "pins", "status", "startStep", "endStep", "stopReason",
-              "heldoutBpb", "baselineBpb", "wallSeconds", "resumedFrom", "marker")
+# v2 (batch 6) adds the inputs heldoutBpb is computed from (export.py eval.json model_ce, heldout_tokens, held_bytes), so
+# heldoutBpb = modelCe * heldoutTokens / ln 2 / heldBytes can be recomputed. New rows are v2 only; v1 rows (landed before
+# this change, e.g. the first daily run) are still read as part of the trusted record, never written or landed.
+ROW_SCHEMA = "peaceai-lb-daily-run:v2"
+LEGACY_SCHEMA = "peaceai-lb-daily-run:v1"
+V1_FIELDS = ("schema", "runId", "workflowSha", "chainId", "today", "pins", "status", "startStep", "endStep", "stopReason",
+             "heldoutBpb", "baselineBpb", "wallSeconds", "resumedFrom", "marker")
+ROW_FIELDS = V1_FIELDS + ("modelCe", "heldoutTokens", "heldBytes")
 MARKER_SCHEMA = "peaceai-lm-chain:v1"
 MARKER_FIELDS = ("schema", "more", "stopReason", "step", "totalSteps", "save", "manifestSha256", "cfgSha256")
 STOP_REASONS = ("patience", "steps", "max_seconds", "deadline", "max_steps_this_run", "nonfinite")
@@ -98,6 +103,8 @@ def check_config(cfg, rows=()):
         raise DailyRunError("LB_DAILY_SETTING_NOT_ALLOWED")
     if any(not isinstance(v, str) or not re.match(r"^[A-Za-z0-9._]+$", v) for v in t.values()):  # guard:dr-setting-values
         raise DailyRunError("LB_DAILY_SETTING_NOT_ALLOWED")
+    if t.get("--val-split") != "disjoint":  # guard:dr-val-split
+        raise DailyRunError("LB_DAILY_SETTING_REQUIRED")
     td, rv, jt, mb = dr.get("trainDeadlineMin"), dr.get("reserveMin"), dr.get("jobTimeoutMin"), dr.get("minBudgetMin")
     if not all(type(x) is int for x in (td, rv, jt, mb)) or mb < 1 or td < mb or rv < 30 or td + rv > jt or jt > 355:  # guard:dr-deadline-cap
         raise DailyRunError("LB_DAILY_BAD_DEADLINE")
@@ -118,12 +125,20 @@ def check_marker(m):
     return m
 
 
-def check_row(row, cfg):
-    if not isinstance(row, dict) or sorted(row) != sorted(ROW_FIELDS):  # guard:dr-row-fields
+def bpb_matches(row):
+    """heldoutBpb is export.py's round(model_ce * tokens / ln 2 / bytes, 4): the recompute from the logged inputs must
+    agree to the rounding (5e-5; 1e-4 allows for numpy's round)."""
+    return abs(row["modelCe"] * row["heldoutTokens"] / math.log(2) / row["heldBytes"] - row["heldoutBpb"]) <= 1e-4
+
+
+def check_row(row, cfg, legacy_ok=False):
+    """legacy_ok (the trusted-record read only): a v1 row with exactly the v1 fields is accepted."""
+    legacy = legacy_ok and isinstance(row, dict) and row.get("schema") == LEGACY_SCHEMA
+    if not isinstance(row, dict) or sorted(row) != sorted(V1_FIELDS if legacy else ROW_FIELDS):  # guard:dr-row-fields
         raise DailyRunError("LB_DAILY_ROW_FIELD")
     if not isinstance(row["pins"], dict) or sorted(row["pins"]) != sorted(PIN_KEYS) or any(row["pins"][k] != cfg["dailyRun"]["corpus"][k] for k in PIN_KEYS):  # guard:dr-row-pins
         raise DailyRunError("LB_DAILY_PIN_MISMATCH")
-    ok = (row["schema"] == ROW_SCHEMA and isinstance(row["runId"], str) and ID_RE.match(row["runId"])
+    ok = (row["schema"] == (LEGACY_SCHEMA if legacy else ROW_SCHEMA) and isinstance(row["runId"], str) and ID_RE.match(row["runId"])
           and isinstance(row["chainId"], str) and ID_RE.match(row["chainId"]) and isinstance(row["workflowSha"], str)
           and re.match(r"^[0-9a-f]{40}$", row["workflowSha"]) and isinstance(row["today"], str) and DATE_RE.match(row["today"])
           and row["status"] == "trained" and type(row["startStep"]) is int and row["startStep"] >= 0 and type(row["endStep"]) is int
@@ -132,6 +147,13 @@ def check_row(row, cfg):
           and (row["resumedFrom"] is None or (isinstance(row["resumedFrom"], str) and HEX64.match(row["resumedFrom"]))))
     if not ok:  # guard:dr-row-values
         raise DailyRunError("LB_DAILY_ROW_VALUE")
+    if not legacy:
+        ins = (num_ok(row["modelCe"]) and type(row["heldoutTokens"]) is int and row["heldoutTokens"] >= 1
+               and type(row["heldBytes"]) is int and row["heldBytes"] >= 1)
+        if not ins:  # guard:dr-row-inputs
+            raise DailyRunError("LB_DAILY_ROW_VALUE")
+        if not bpb_matches(row):  # guard:dr-row-bpb
+            raise DailyRunError("LB_DAILY_ROW_VALUE")
     check_marker(row["marker"])
     if row["marker"]["step"] != row["endStep"] or row["marker"]["stopReason"] != row["stopReason"]:  # guard:dr-row-marker-match
         raise DailyRunError("LB_DAILY_ROW_VALUE")
@@ -160,7 +182,7 @@ def pick_trusted(daily, cfg, today):
     for n, r in daily:
         m = NAME_RE.match(n)
         try:
-            check_row(r, cfg)
+            check_row(r, cfg, legacy_ok=True)
         except DailyRunError:
             raise DailyRunError("LB_DAILY_RECORD_BAD")
         if not m or m.group(1) != r["today"] or m.group(2) != r["runId"]:  # guard:dr-record-name
@@ -292,7 +314,8 @@ def build_row(a, cfg, now):
     row = {"schema": ROW_SCHEMA, "runId": a.run_id, "workflowSha": a.sha, "chainId": t["chainId"] or a.run_id, "today": a.today,
            "pins": rep.get("corpus"), "status": "trained", "startStep": rep.get("startStep"), "endStep": rep.get("endStep"),
            "stopReason": rep.get("stopReason"), "heldoutBpb": ev.get("model_bits_per_byte"), "baselineBpb": ev.get("unigram_bits_per_byte"),
-           "wallSeconds": int(now) - int(a.job_start), "resumedFrom": prev, "marker": mk}
+           "wallSeconds": int(now) - int(a.job_start), "resumedFrom": prev, "marker": mk,
+           "modelCe": ev.get("model_ce"), "heldoutTokens": ev.get("heldout_tokens"), "heldBytes": ev.get("held_bytes")}
     return check_row(row, cfg)
 
 
@@ -351,7 +374,8 @@ def main(argv):
             raise DailyRunError("LB_DAILY_ROW_EXISTS")
         v = "beats_baseline" if row["heldoutBpb"] < row["baselineBpb"] else "no_gain"
         print(f"lb-daily start={row['startStep']} end={row['endStep']} stop={row['stopReason']} more={row['marker']['more']} heldout_bpb={row['heldoutBpb']} "
-              f"baseline_bpb={row['baselineBpb']} verdict={v} save={row['marker']['save']} sha={row['marker']['manifestSha256']} wall_s={row['wallSeconds']}")
+              f"baseline_bpb={row['baselineBpb']} verdict={v} save={row['marker']['save']} sha={row['marker']['manifestSha256']} wall_s={row['wallSeconds']} "
+              f"model_ce={row['modelCe']} heldout_tokens={row['heldoutTokens']} held_bytes={row['heldBytes']}")
     else:
         print("landed " + land(a, cfg))
 

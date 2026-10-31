@@ -52,6 +52,22 @@ Auditor hidden check and an add-only entry in lb-train.json.
 - A stale stop.json (or a symlink there) is removed at the start of every run, before any check, so the file
   always describes this run.
 - Refusal: STOP_BAD_ARGS (negative patience, negative or non-finite min-delta).
+- Validation split (batch 6, Auditor's #660 note): `--val-split first|disjoint`. The early-stop val loss uses 16
+  held-out windows (window k = held[k*T : k*T+T+1]). `first` (the default, unchanged for every other caller) is
+  windows 0..15, which are also the first 16 of the 96 windows export.py's eval uses, so the stopping rule and best.npz
+  were chosen on data that is part of the reported held-out eval. `disjoint` is windows 97..112: export's windows
+  0..95 cover token indices 0..96*T and window 96 starts on export's last target token, so from window 97 on no token
+  is shared (m159 asserts it, including the real 1225844-token first-run held-out size). Fewer than 98 windows:
+  VAL_NOT_DISJOINT; with replay (its val is the replay heldout docs): VAL_SPLIT_BAD. best.json records
+  valSplit for a non-default split, and a best.json from another split is not resumed (early stopping restarts from
+  inf), so a best chosen on the old windows never carries over. The split is not part of the model cfg, so saves and
+  chains resume across the change. lb_run.py (LB_RUN_SETTING_REQUIRED) and lb_daily.py (LB_DAILY_SETTING_REQUIRED)
+  require `--val-split disjoint` in firstRun.train / dailyRun.train.
+- Honest note on runs before this change: the first real run (41187515379, held-out 1.1506 vs baseline 2.5156 bpb)
+  and the daily runs started before it (from 41222155935) used the `first` split, i.e. val windows that overlap the
+  eval. The 1.1506 result stands as Auditor passed it, but its stopping point and best checkpoint were selected on 16
+  of the 96 eval windows, so it is mildly optimistic, not a clean held-out number. The next daily resume restarts
+  early stopping on the disjoint split.
 
 ## M160 daily cycle
 
@@ -140,7 +156,7 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
 - Settings: only lb-train.json firstRun.train (no CLI override). `lb_run.py train-argv` refuses LoRA, replay,
   init/resume, saves, markers and kept checkpoints (LB_RUN_FORBIDDEN_SETTING), any flag outside daily.trainArgsAllowed
   or owned by the run (LB_RUN_SETTING_NOT_ALLOWED), and a run without adamw8bit, easy_to_hard and a patience
-  (LB_RUN_SETTING_REQUIRED). It appends --deadline = job start + trainDeadlineMin (290) and --max-seconds, refusing
+  (LB_RUN_SETTING_REQUIRED), and (batch 6) one without `--val-split disjoint` (LB_RUN_SETTING_REQUIRED). It appends --deadline = job start + trainDeadlineMin (290) and --max-seconds, refusing
   (LB_RUN_BAD_DEADLINE) unless trainDeadlineMin + reserveMin (40) <= jobTimeoutMin (330, the job's timeout-minutes).
   Model: the M37 ext-train.json size (d 320, 6 layers, ctx 512, vocab 8192, batch 16), steps 1500, eval every 50,
   patience 4, min-delta 0.001.
@@ -151,9 +167,18 @@ be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume i
   corpus dirs on exit and the last step removes them again (always). Logs: codes, pins, shas, counts and step metrics.
 - Results: `results-write.sh --sparse "/runs/lb-train/<run id>.json"` (new file only, blob verified), after the
   checkout and key-script verify step. `lb_run.py land` writes exactly the fields pins {docs, manifest, fingerprint},
-  workflowSha, runId, steps, stopReason, heldoutBpb, baselineBpb, wallSeconds, checkpointSha256 (LB_RUN_ROW_FIELD for
-  any other or missing field, LB_RUN_ROW_VALUE for a bad value, LB_RUN_ROW_EXISTS if present). No weights or derived
-  bytes, no latest.json, nothing modified or deleted.
+  workflowSha, runId, steps, stopReason, heldoutBpb, baselineBpb, wallSeconds, checkpointSha256 and (batch 6) modelCe,
+  heldoutTokens, heldBytes (LB_RUN_ROW_FIELD for any other or missing field, LB_RUN_ROW_VALUE for a bad value,
+  LB_RUN_ROW_EXISTS if present). No weights or derived bytes, no latest.json, nothing modified or deleted.
+- Bpb inputs (batch 6, Auditor's #660 note): export.py's eval.json now also has model_ce (the unrounded fp16 model
+  cross-entropy, nats per token) and held_bytes (UTF-8 bytes of the decoded eval targets) next to heldout_tokens, so
+  heldoutBpb = round(modelCe * heldoutTokens / ln 2 / heldBytes, 4) can be recomputed. The row carries all three
+  (metrics only), the `lb-run` log line ends with `model_ce= heldout_tokens= held_bytes=`, and lb_run.py refuses a
+  row whose inputs do not recompute its heldoutBpb to within 1e-4 (LB_RUN_ROW_VALUE). The row went from 9 to 12
+  fields; rows landed before (runs/lb-train/41187515379.json) keep 9 and are only read by the daily LoRA gate.
+  The daily row is now schema peaceai-lb-daily-run:v2 with the same three fields and the same recompute check, and
+  the `lb-daily` log line ends the same way. New rows are v2 only; v1 rows (landed before this change) are still read
+  as part of the trusted record (exactly the v1 fields), never written or landed again.
 - Tests: m163-lb-first-run.test.ts (each tagged lb_run.py guard killed when disabled, near misses, the workflow shape
   checker with its mutants, the end-to-end run on a tiny corpus).
 

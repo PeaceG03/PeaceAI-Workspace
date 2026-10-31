@@ -6,7 +6,9 @@ Usage: lb_run.py ref --ref REF
        lb_run.py land --row FILE --run-id ID          (under results-write.sh: writes $RESULTS_DIR/runs/lb-train/<ID>.json)
 Settings come from lb-train.json firstRun only (no CLI override). A refusal prints one fixed code and exits 3; output is
 codes, pins, shas and metrics only. The row has exactly the allowed fields (pins, workflow sha, run id, steps, stop reason,
-held-out bpb, unigram baseline bpb on the same held-out windows, wall seconds, checkpoint sha256): no weights, no bytes."""
+held-out bpb, unigram baseline bpb on the same held-out windows, wall seconds, checkpoint sha256, and (batch 6) the
+inputs the bpb is computed from: the unrounded model cross-entropy, the held-out token count and the held-out byte
+count, so heldoutBpb = modelCe * heldoutTokens / ln 2 / heldBytes can be recomputed): no weights, no bytes."""
 import argparse
 import hashlib
 import json
@@ -18,7 +20,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PIN_KEYS = ("docs", "manifest", "fingerprint")
-ROW_FIELDS = ("pins", "workflowSha", "runId", "steps", "stopReason", "heldoutBpb", "baselineBpb", "wallSeconds", "checkpointSha256")
+ROW_FIELDS = ("pins", "workflowSha", "runId", "steps", "stopReason", "heldoutBpb", "baselineBpb", "wallSeconds", "checkpointSha256",
+              "modelCe", "heldoutTokens", "heldBytes")
 STOP_REASONS = ("patience", "steps", "max_seconds", "deadline", "nonfinite")
 FORBIDDEN = re.compile(r"^--(lora|replay|init-from|resume|save-dir|marker|keep-checkpoints)")
 OWNED = ("--corpus", "--work", "--max-seconds", "--deadline", "--job-start")
@@ -67,7 +70,8 @@ def check_pins(corpus, cfg):
 
 def train_argv(corpus, work, job_start, now, cfg):
     """train.py argv from firstRun.train plus the owned paths and the time limits; refuses LoRA, replay, init/resume
-    and saves, any flag the daily cycle does not allow, a missing adamw8bit / easy_to_hard / patience, and a deadline
+    and saves, any flag the daily cycle does not allow, a missing adamw8bit / easy_to_hard / patience, a val split other
+    than disjoint (batch 6: early-stop windows share no token with export's eval windows), and a deadline
     that does not leave firstRun.reserveMin inside the job cap."""
     fr = cfg["firstRun"]
     t = fr["train"]
@@ -78,6 +82,8 @@ def train_argv(corpus, work, job_start, now, cfg):
     if any(not isinstance(v, str) or not re.match(r"^[A-Za-z0-9._]+$", v) for v in t.values()):  # guard:run-setting-values
         raise RunError("LB_RUN_SETTING_NOT_ALLOWED")
     if t.get("--optimizer") != "adamw8bit" or t.get("--curriculum") != "easy_to_hard":  # guard:run-setting-required
+        raise RunError("LB_RUN_SETTING_REQUIRED")
+    if t.get("--val-split") != "disjoint":  # guard:run-val-split
         raise RunError("LB_RUN_SETTING_REQUIRED")
     if not re.match(r"^[1-9][0-9]?$", t.get("--patience", "")):  # guard:run-patience
         raise RunError("LB_RUN_SETTING_REQUIRED")
@@ -111,10 +117,20 @@ def check_row(row, cfg):
           and type(row["steps"]) is int and row["steps"] >= 0 and row["stopReason"] in STOP_REASONS
           and num_ok(row["heldoutBpb"], 0) and num_ok(row["baselineBpb"], 0) and row["heldoutBpb"] > 0 and row["baselineBpb"] > 0
           and type(row["wallSeconds"]) is int and row["wallSeconds"] >= 0
-          and isinstance(row["checkpointSha256"], str) and HEX64.match(row["checkpointSha256"]))
+          and isinstance(row["checkpointSha256"], str) and HEX64.match(row["checkpointSha256"])
+          and num_ok(row["modelCe"], 0) and row["modelCe"] > 0
+          and type(row["heldoutTokens"]) is int and row["heldoutTokens"] >= 1 and type(row["heldBytes"]) is int and row["heldBytes"] >= 1)
     if not ok:  # guard:run-row-values
         raise RunError("LB_RUN_ROW_VALUE")
+    if not bpb_matches(row):  # guard:run-row-bpb
+        raise RunError("LB_RUN_ROW_VALUE")
     return row
+
+
+def bpb_matches(row):
+    """heldoutBpb is export.py's round(model_ce * tokens / ln 2 / bytes, 4): the recompute from the logged inputs must
+    agree to the rounding (5e-5; 1e-4 allows for numpy's round)."""
+    return abs(row["modelCe"] * row["heldoutTokens"] / math.log(2) / row["heldBytes"] - row["heldoutBpb"]) <= 1e-4
 
 
 def verdict(row):
@@ -143,7 +159,8 @@ def build_row(a, cfg, now):
         raise RunError("LB_RUN_BAD_DEADLINE")
     row = {"pins": pins, "workflowSha": a.sha, "runId": a.run_id, "steps": stop.get("step"), "stopReason": stop["reason"],
            "heldoutBpb": ev.get("model_bits_per_byte"), "baselineBpb": ev.get("unigram_bits_per_byte"),
-           "wallSeconds": int(now) - int(a.job_start), "checkpointSha256": ck}
+           "wallSeconds": int(now) - int(a.job_start), "checkpointSha256": ck,
+           "modelCe": ev.get("model_ce"), "heldoutTokens": ev.get("heldout_tokens"), "heldBytes": ev.get("held_bytes")}
     return check_row(row, cfg)
 
 
@@ -197,7 +214,8 @@ def main(argv):
         except OSError:
             raise RunError("LB_RUN_ROW_EXISTS")
         print(f"lb-run steps={row['steps']} stop={row['stopReason']} heldout_bpb={row['heldoutBpb']} baseline_bpb={row['baselineBpb']} "
-              f"verdict={verdict(row)} wall_s={row['wallSeconds']} checkpoint={row['checkpointSha256']}")
+              f"verdict={verdict(row)} wall_s={row['wallSeconds']} checkpoint={row['checkpointSha256']} "
+              f"model_ce={row['modelCe']} heldout_tokens={row['heldoutTokens']} held_bytes={row['heldBytes']}")
     else:
         print("landed " + land(a, cfg))
 

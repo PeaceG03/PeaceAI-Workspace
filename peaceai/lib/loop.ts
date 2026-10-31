@@ -214,8 +214,9 @@ export function loopPlanner(flag: string | undefined): PlannerName | null {
 export interface Edit { path: string; content: string }
 /** (after #659) A proposal's `edits` must be an array of { path: string, content: string }; anything else (missing,
  *  an object, a bad element) is the proposer's failure, PROPOSER_FAILED. An empty array is a well-formed no-op attempt:
- *  it is applied (nothing changes) and graded like any other attempt. */
-const validEdits = (x: unknown): x is Edit[] => Array.isArray(x) && x.every((e) => typeof e === "object" && e !== null && typeof (e as Edit).path === "string" && typeof (e as Edit).content === "string");
+ *  it is applied (nothing changes) and graded like any other attempt. (batch 6) A sparse array (a hole, which
+ *  Array.prototype.every skips) is malformed too: Array.from turns each hole into undefined, which fails the check. */
+const validEdits = (x: unknown): x is Edit[] => Array.isArray(x) && Array.from(x as unknown[]).every((e) => typeof e === "object" && e !== null && typeof (e as Edit).path === "string" && typeof (e as Edit).content === "string");
 export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null }
 export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };

@@ -47,6 +47,9 @@ LORA_TARGETS = ("wqkv", "wo", "w1", "w2")
 BLOCK = 256
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,80}$")
+VAL_SPLITS = ("first", "disjoint")
+EXPORT_EVAL_WINDOWS = 96  # export.py: n_eval = min(n, 96) windows held[k*T : k*T+T+1], k = 0..n_eval-1
+VAL_WINDOWS = 16
 
 
 class LbError(Exception):
@@ -244,6 +247,40 @@ def improved(val, best_val, min_delta):
     if not finite_num(val):  # guard:stop-val-finite
         return False
     return val < best_val - min_delta
+
+
+def check_val_split(mode, replay):
+    """--val-split (batch 6, Auditor's #660 note): "first" (the default, unchanged) validates on held-out windows
+    0..15, which are the first 16 of export.py's 96 eval windows; "disjoint" validates on windows that share no token
+    with them. Not with replay (replay validation is the replay heldout docs)."""
+    if mode not in VAL_SPLITS:  # guard:stop-val-split-mode
+        raise LbError("VAL_SPLIT_BAD")
+    if mode != "first" and replay:  # guard:stop-val-split-replay
+        raise LbError("VAL_SPLIT_BAD")
+    return mode
+
+
+def val_window_ids(mode, n_tokens, T):
+    """The early-stop validation window ids k (window k = held[k*T : k*T+T+1], as export.py) for n_tokens held-out
+    tokens. first: 0..min(16, n)-1 (the legacy split). disjoint: EXPORT_EVAL_WINDOWS+1 .. +16 (capped at n): export's
+    windows 0..95 cover token indices 0..96*T and window 96 starts at 96*T, so starting at window 97 (index 97*T) no
+    token is shared. Fewer than 98 windows cannot hold a disjoint split: refused (VAL_NOT_DISJOINT)."""
+    n = (int(n_tokens) - 1) // T
+    if mode == "first":
+        return list(range(min(VAL_WINDOWS, max(1, n))))
+    lo = EXPORT_EVAL_WINDOWS + 1
+    if n < lo + 1:  # guard:stop-val-disjoint-short
+        raise LbError("VAL_NOT_DISJOINT")
+    return list(range(lo, min(n, lo + VAL_WINDOWS)))
+
+
+def val_best(saved, mode):
+    """best.json on start: kept only when it was chosen on the same val split (a legacy best.json has no valSplit and
+    is "first"); otherwise early stopping starts again from inf, so a best chosen on the old split never carries over."""
+    fresh = {"val": float("inf"), "step": 0, "stale": 0, **({"valSplit": mode} if mode != "first" else {})}
+    if not isinstance(saved, dict) or saved.get("valSplit", "first") != mode:  # guard:stop-val-best-split
+        return fresh
+    return saved
 
 
 def loss_ok(loss):
