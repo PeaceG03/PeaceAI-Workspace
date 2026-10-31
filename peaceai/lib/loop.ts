@@ -27,7 +27,7 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 import ts from "typescript";
-import { openRepo } from "./codesearch.ts";
+import { openRepo, type CodeRepo } from "./codesearch.ts";
 import { applyRule, specHash, type RuleSpec } from "./learned.ts";
 import { loadModel } from "./nlparse.ts";
 import { approvedRules, isTestPath, planTask, PLAN_LICENSES, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanTask, type PlanTaskFile } from "./plan.ts";
@@ -187,10 +187,19 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
 // ---- the proposer
 
 export interface Edit { path: string; content: string }
-export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[] }
-export interface ProposeInput { request: string; repo: string; plan: Plan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[] }
+export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
+export interface ProposeInput { request: string; repo: string; plan: Plan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null }
 export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
-export interface Proposer { name: string; next(input: ProposeInput): Proposal }
+export interface Proposer {
+  name: string;
+  /**
+   * M152: called once per task after the baseline, on the copy reset to the pinned commit (the team's test files are
+   * NOT in it), with the code search tools and the baseline's failing test names (node:test only). A proposer must do
+   * all its searching here: from the first next() on, the copy holds the team's tests it is graded by.
+   */
+  prepare?(search: CodeRepo, input: { request: string; failing: readonly string[] }): void;
+  next(input: ProposeInput): Proposal;
+}
 
 /**
  * v1 proposer: PeaceAI's own approved learned rules only. Its candidates are the edits the hash-pinned approved rules
@@ -232,6 +241,8 @@ export interface LoopOptions {
   root?: string;
   fetcher?: CopyFetcher;
   proposer?: Proposer;
+  /** M152: a fresh proposer per task (runLoopFile); wins over `proposer`. */
+  makeProposer?: () => Proposer;
   maxAttempts?: number;
   /** Per test-run deadline (ms). */
   runMs?: number;
@@ -256,7 +267,7 @@ export function loopSha256(): string {
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache }): LoopResult {
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache }): LoopResult {
   const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
@@ -330,14 +341,19 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
     if (base.codes.length === 0) return done("BASELINE_PASSES");
+    // (M152) the proposer's search, on the pinned commit without the team's tests
+    if (o.proposer.prepare) {
+      resetCopy(c); // m152-guard:prepare-clean
+      o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: [...base.failing] });
+    }
     // 4. the first proposal
     const feedback: Feedback[] = [];
-    let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback });
+    let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback, baseline });
     if ("refuse" in p) return done(p.refuse);
     let related: string[] | null = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) {
-        p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback });
+        p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback, baseline });
         if ("refuse" in p) return done(p.refuse);
       }
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
@@ -363,7 +379,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       }
       records.push({ attempt, edits: p.edits.map((e) => e.path), codes: r.codes, failing: r.failing, tests: r.tests });
       if (r.codes.length === 0) return done("PASS");
-      feedback.push({ attempt, codes: r.codes, failing: r.failing }); // 7. revise
+      feedback.push({ attempt, codes: r.codes, failing: r.failing, tests: r.tests }); // 7. revise
     }
     return done("ATTEMPT_LIMIT");
   } catch (e) {
@@ -415,7 +431,7 @@ export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" 
   try {
     for (const task of parsed.tasks) {
       // a fresh proposer state per task
-      const r = runLoopTask(task, parsed.set, fileSha, { ...o, proposer: opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
+      const r = runLoopTask(task, parsed.set, fileSha, { ...o, proposer: opts.makeProposer?.() ?? opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
       if (loopRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
       results.push(r);
       appendFileSync(join(root, LOOP_LOG), JSON.stringify(r.row) + "\n");
