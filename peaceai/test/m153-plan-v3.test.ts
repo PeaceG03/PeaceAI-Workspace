@@ -1,7 +1,7 @@
 // M153 PLAN-ONLY v3 (peaceai/spec/plan-only-v3.md): the planner's admit cases on three code shapes and a refused near
 // miss per rule (m153-cases.ts); a mutation check (every `rule:<id>` line of lib/plan3.ts has a mutant that removes
 // it, and each mutant must fail at least one case); a generality check (plan3.ts names no task, task repository,
-// task file or project); the can-do claim verified by the unchanged grader; and the runner: v1 stays the default,
+// task file or project); the can-do claim verified by the unchanged grader; and the runner: v1 stays runnable (the default is v3, M154),
 // v1's and v2's fingerprints are unchanged, and v3 rows pass the same log validator. Offline.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -122,13 +122,13 @@ test("M153: the can-do claim is verified by the unchanged grader, and the named 
 const MAIN_V1_PLANNER_SHA256 = "275e559b93822a74c461970d122b9c27233d034c0839b04d599d7c112e7aedeb";
 const MAIN_V2_PLANNER_SHA256 = "fae6c0c489dcd18acf968706dcaa7bc0643a01f9375ee85b09747745cc697227";
 
-test("M153: v1 (the default) and v2 keep main's plannerSha256; v3 has its own", () => {
+test("M153: v1 and v2 keep main's plannerSha256; v3 has its own", () => {
   assert.equal(plannerSha256(), MAIN_V1_PLANNER_SHA256, "plan.ts, plangrade.ts or planrun.ts changed");
   assert.equal(plannerSha256V2(), MAIN_V2_PLANNER_SHA256, "plan2.ts, plangrade.ts or plan2run.ts changed");
   const v3 = plannerSha256V3();
   assert.ok(v3 !== MAIN_V1_PLANNER_SHA256 && v3 !== MAIN_V2_PLANNER_SHA256);
   const cli = readFileSync(join(repo, "peaceai/bin/plan-only.ts"), "utf8");
-  assert.ok(!/plan3|plan-only-v3/.test(cli), "v1's CLI stays the default and never routes to v3");
+  assert.ok(!/plan3|plan-only-v3/.test(cli), "v1's CLI (bin/plan-only.ts) is unchanged and never routes to v3");
   const log = parseLog(readFileSync(join(repo, RUN_LOG), "utf8"));
   assert.ok("rows" in log, "committed log parses");
   // Dev rows, plus exactly the 20 hidden-half rows the Auditor ran at c4dd914 (planner digest f4999797...).

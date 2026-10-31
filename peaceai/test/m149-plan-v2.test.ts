@@ -1,7 +1,7 @@
 // M149 PLAN-ONLY v2 (peaceai/spec/plan-only-v2.md): the planner's admit cases on two code shapes and a refused near
 // miss per condition (m149-cases.ts), a mutation check (each condition removed from a copy of lib/plan2.ts must fail
 // at least one case), a generality check (plan2.ts names no task, task repo or project), the can-do claim verified by
-// the unchanged grader, and the runner: v1 stays the default and v2 rows pass the same log validator. Offline.
+// the unchanged grader, and the runner: v1 stays runnable (default: v3, M154) and v2 rows pass the same log validator. Offline.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
