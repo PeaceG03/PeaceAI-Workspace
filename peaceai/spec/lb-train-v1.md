@@ -1,0 +1,120 @@
+# lb-train v1: limit-breaker training improvements (M157-M161)
+
+Status: implemented in peaceai/model (lbtrain.py, train.py, saves.py, daily_cycle.py, lb-train.json) and
+peaceai/bin/lb-daily-cycle.sh. Everything is OFF by default (precision is fp32 only): a run with no new flag is bitwise the run of the
+previous train.py (m157 checks params, Adam moments, losses and config keys against origin/main). All of it is
+numpy on CPU, from scratch (CONSTITUTION 12: no pretrained weights, no new dependency).
+
+Training data: only an Auditor-cleared corpus. Today that is exactly one corpus (lb-train.json clearedCorpora):
+docs 7eb6c628..., manifest e9f78828..., fingerprint a3e9165f..., built at b149d9b. Any other corpus needs a fresh
+Auditor hidden check and an add-only entry in lb-train.json.
+
+## M157 8-bit optimizer (precision is fp32 only)
+
+- Precision is fp32 only. An emulated bfloat16 option existed in a draft of this PR and was DROPPED (Auditor
+  ruling on #654): there is no precision flag, no precision key in cfg, run.json or the daily report, and a default
+  run stays bitwise origin/main's.
+- `--optimizer adamw|adamw8bit` (default adamw). adamw8bit is the same AdamW math with the moments stored
+  block-wise (256): m as int8 with an absmax scale, v as uint8 of sqrt(v) with a scale. About 1/4 of the fp32
+  optimizer-state bytes (m157 checks < 0.3). The step dequantizes one tensor at a time, so peak memory is not
+  reduced by the same factor.
+- A non-default choice goes into cfg (save manifest cfgSha256, the resume config check) and run.json.
+- A work-dir checkpoint resumes only with exactly its config: every key of either side is compared (total_steps
+  excepted), so resuming a default checkpoint with `--optimizer adamw8bit` (or the reverse) is
+  CHECKPOINT_CONFIG_MISMATCH, never a KeyError.
+- Refusals: OPTIMIZER_BAD, OPT8_GRAD_NONFINITE, OPT8_NONFINITE, OPT8_NEGATIVE, CHECKPOINT_OPT_MISMATCH,
+  CHECKPOINT_CONFIG_MISMATCH, SAVE_CONFIG_MISMATCH (resuming a save with another optimizer).
+
+## M158 easy-to-hard curriculum
+
+- `--curriculum easy_to_hard` (default off), `--curriculum-start 0.25`, `--curriculum-ramp N` (0 = steps/2),
+  `--curriculum-seed` (default --seed).
+- Train docs are ordered by the lb-clean manifest `difficulty.score`; ties by sha256("seed:doc"). The token
+  stream is re-laid in that order in memory only (tokens_train.npy on disk is unchanged, so export.py is not
+  affected). Batches are drawn from the easiest prefix, growing linearly from start*N tokens to N over the ramp,
+  never below one window. Deterministic: same seed, same run; resume is bitwise.
+- Refusals: CURRICULUM_BAD_ARGS, CURRICULUM_NO_DIFFICULTY, CURRICULUM_WITH_REPLAY (replay keeps its own mix),
+  CURRICULUM_STREAM_MISMATCH.
+
+## M159 stopping rule
+
+- An eval improves only when val < best - `--min-delta` (default 0) and val is finite. `--patience` evals without
+  improvement stop the run. `--steps`, `--max-steps-this-run`, `--max-seconds` and `--deadline` bound it.
+- A non-finite training loss stops the run before the update: reason "nonfinite", the chain marker has
+  more=false, best.npz keeps the last finite best.
+- Every run writes stop.json (schema peaceai-lb-stop:v1): reason, step, totalSteps, bestStep, bestVal, lastVal,
+  stale, patience, minDelta, maxSeconds, elapsedSeconds. It is written last (after timing.json), with O_EXCL.
+- Every other exit writes stop.json too: train.py's body runs under try/except BaseException, and any refusal
+  (STOP_*, SAVE_*, CHECKPOINT_*, LORA_*, OPT8_*, CURRICULUM_*, REPLAY_*, ...) or crash writes
+  {schema, reason: "error", code, step} and re-raises unchanged. code is the fixed refusal name (the part before
+  any ":"); a message that is not a fixed name becomes TRAIN_ERROR, any other exception TRAIN_CRASH, Ctrl-C
+  INTERRUPTED; it never holds a message or a path. A clean exit (status 0) writes no error record.
+- A stale stop.json (or a symlink there) is removed at the start of every run, before any check, so the file
+  always describes this run.
+- Refusal: STOP_BAD_ARGS (negative patience, negative or non-finite min-delta).
+
+## M160 daily cycle
+
+`peaceai/bin/lb-daily-cycle.sh CORPUS STATE BUDGET_MIN [YYYY-MM-DD] [-- train args]`:
+plan (checks) -> train.py within the budget, resuming from the newest verified local save -> export.py eval ->
+STATE/reports/<day>.json. One cycle per day; a finished chain writes a "done" report and trains nothing.
+
+- Corpus must match one lb-train.json clearedCorpora entry exactly (DAILY_CORPUS_NOT_CLEARED).
+- Free compute only: on GitHub Actions only RUNNER_ENVIRONMENT=github-hosted (DAILY_NOT_FREE_RUNNER).
+- Budget is whole minutes 1..340; train args only from daily.trainArgsAllowed (DAILY_BAD_ARGS). The cycle owns
+  corpus, work, saves, marker, resume, budget, init-from and replay.
+- Saves without a chain marker, a marker that is not one, or a marker not naming the newest save:
+  DAILY_STATE_INCONSISTENT (never a fresh start over existing saves).
+- Writes only under STATE. No network, no upload, no cloud storage.
+- LoRA is not available in the daily cycle (--init-from and --lora-* are not allowed).
+- No write goes through a symlink: STATE itself, STATE/saves, work, logs and reports must be real directories,
+  every STATE/saves entry a real directory, chain.json a regular file and chain.json.tmp absent
+  (DAILY_STATE_INCONSISTENT; the report step re-checks). An existing logs/<today>.* (file, symlink or dangling
+  symlink) is refused, the shell opens its logs with noclobber (O_EXCL) and reports are created with
+  O_CREAT|O_EXCL|O_NOFOLLOW.
+
+NOT SCHEDULED, NOT INSTALLED. No workflow file runs it (m160 checks .github/workflows) and this PR adds none (Auditor
+ruling on #654). A scheduled or dispatched wrapper needs Auditor and Peace, and waits on Peace's R2 key. When it is
+built it must be:
+
+- a manual-dispatch (workflow_dispatch) workflow, added by its own PR in peaceai-results (not in this repo), on a
+  GitHub-hosted runner (free compute);
+- keeping STATE's saves under their own R2 folder (never next to Results files, never latest.json);
+- resuming only with the save manifest sha256 taken from the trusted record that workflow writes, never from the
+  restored state itself.
+
+Known limitation (fails closed): main's train.py refuses saves made by this PR's train.py (SAVE_FILE_SET: every
+save now holds run.json, and LoRA saves adapter.npz / best-adapter.npz, which main's saves.py does not allow). If this PR is rolled back, a chain started with it cannot
+be resumed by main; it must start fresh. Nothing is loaded wrongly; the resume is refused.
+
+## M161 LoRA
+
+- `--lora-rank r` (default 0 = off), `--lora-alpha` (default r), `--lora-targets` (default wqkv,wo; any of
+  wqkv, wo, w1, w2), always with `--init-from BASE.npz`, on a fresh run AND on every resume (LORA_NEEDS_BASE).
+- W_eff = W + (alpha/r) A@B, A ~ N(0, 1/din), B = 0, so step 0 is exactly the base. Only A and B train and have
+  optimizer state.
+- Trust anchor: train.py hashes the ACTUAL --init-from file (params_sha256 of its p.* arrays; unreadable or empty:
+  LORA_BASE_READ) and puts it in cfg as lora.baseSha256, so it is bound by cfgSha256, every save manifest, the
+  chain marker and run.json (loraBaseSha256). Resuming a save with another base file is SAVE_CONFIG_MISMATCH; a
+  checkpoint whose frozen base (p.*) is not that file is LORA_BASE_MISMATCH, even if its stored cfg was edited to
+  name the new file.
+- Saves: checkpoint.npz holds the base (p.*) and adapters (l.*); adapter.npz and best-adapter.npz hold only the
+  adapters plus lora (with baseSha256) and baseSha256; best.npz is the merged model, so eval and export.py work
+  unchanged.
+- `python3 peaceai/model/lbtrain.py lora-merge BASE.npz ADAPTER.npz OUT.npz --base-sha SHA` rebuilds the merged
+  model (m161: bitwise best.npz). SHA must come from a trusted record (run.json cfg.lora.baseSha256 or a save
+  manifest), never from the adapter: without it LORA_BASE_SHA_REQUIRED; the actual BASE file must hash to SHA
+  (LORA_BASE_MISMATCH) and the adapter must name SHA (LORA_ADAPTER_MISMATCH), so a swapped base with an edited
+  adapter sidecar is refused. It never overwrites OUT.
+- The backward pass still computes the full weight gradient and projects it onto A and B: correct, but no compute
+  saving on this backend; the saving is in trainable parameters and optimizer state.
+- Refusals: LORA_NEEDS_BASE, LORA_BASE_READ, LORA_BAD_RANK, LORA_BAD_ALPHA, LORA_BAD_TARGETS, LORA_SHAPE,
+  LORA_SCHEMA, LORA_BASE_MISMATCH, LORA_BASE_SHA_REQUIRED, LORA_ADAPTER_MISMATCH, LORA_OUT_EXISTS.
+
+## Tests
+
+m157-m161 (peaceai/test), the case driver m157-lbtrain-cases.py and the helper m157-lbtrain-mut.ts. Every tagged
+guard (`# guard:<name>` in lbtrain.py and daily_cycle.py) has one case; each test disables its guards one at a
+time (`if False:`) in a copy of the model dir and requires the case outcome to change. Logic outside the tagged
+guards (train.py's stop.json wrapper, stale removal, cfg-match call site and LoRA resume check; the shell's
+noclobber line) has text mutants (textMutant in the helper), each required to change the observed outcome.
