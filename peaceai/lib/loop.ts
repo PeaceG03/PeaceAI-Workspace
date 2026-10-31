@@ -35,6 +35,8 @@ import { planTaskV2, type PlanV2 } from "./plan2.ts";
 import { plannerSha256V2 } from "./plan2run.ts";
 import { planTaskV3, type PlanV3 } from "./plan3.ts";
 import { plannerSha256V3 } from "./plan3run.ts";
+import { planTaskV4, type PlanV4 } from "./plan4.ts";
+import { plannerSha256V4 } from "./plan4run.ts";
 import { selectPlanner, type PlannerName } from "./plandefault.ts";
 import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
@@ -193,13 +195,14 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
 // ---- the planner (M162)
 
 /** A plan from any planner selectPlanner can pick. The loop and its proposers read only the steps (action, file,
- *  status, rule, objective) and tests, which v1, v2 and v3 plans share. */
-export type LoopPlan = Plan | PlanV2 | PlanV3;
+ *  status, rule, objective) and tests, which v1, v2, v3 and v4 plans share. */
+export type LoopPlan = Plan | PlanV2 | PlanV3 | PlanV4;
 /** How the loop runs each planner and reads its digest. WHICH planner runs is decided only by plandefault.ts. */
 const LOOP_PLANNERS: Readonly<Record<PlannerName, { sha: () => string; plan: (task: PlanTask, ctx: PlanContext, dir: string) => LoopPlan }>> = Object.freeze({
   "plan-only-v1": { sha: () => plannerSha256(), plan: (t: PlanTask, ctx: PlanContext) => planTask(t.id, t.request, ctx) },
   "plan-only-v2": { sha: () => plannerSha256V2(), plan: (t: PlanTask, ctx: PlanContext, dir: string) => planTaskV2(t.id, t.request, ctx, openRepo(dir)) },
   "plan-only-v3": { sha: () => plannerSha256V3(), plan: (t: PlanTask, ctx: PlanContext, dir: string) => planTaskV3(t.id, t.request, ctx, openRepo(dir)) },
+  "plan-only-v4": { sha: () => plannerSha256V4(), plan: (t: PlanTask, ctx: PlanContext, dir: string) => planTaskV4(t.id, t.request, ctx, openRepo(dir)) },
 });
 /** The loop's planner, picked only through plandefault.selectPlanner: no flag = the default; null = an unknown name. */
 export function loopPlanner(flag: string | undefined): PlannerName | null {

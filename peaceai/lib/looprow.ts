@@ -13,7 +13,7 @@ export const LOOP_VERSION_V2 = "loop-v2" as const;
  *  and its plannerSha256. The loop itself is still loop-v2. */
 export const LOOP_SCHEMA_V3 = "peaceai-plan-loop:v3" as const;
 /** The planner names a v3 row can carry (plandefault.ts PLANNERS; kept here as data, since this module has no imports). */
-export const LOOP_PLANNER_NAMES = ["plan-only-v1", "plan-only-v2", "plan-only-v3"] as const;
+export const LOOP_PLANNER_NAMES = ["plan-only-v1", "plan-only-v2", "plan-only-v3", "plan-only-v4"] as const;
 export const LOOP_RUNNERS = ["node-test", "vitest", "jest"] as const;
 export const LOOP_DEPS = ["none", "npm", "pnpm", "yarn"] as const;
 /** The loop's add-only log (repo-relative). */
