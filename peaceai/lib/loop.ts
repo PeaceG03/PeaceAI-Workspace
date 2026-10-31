@@ -32,7 +32,8 @@ import { applyRule, specHash, type RuleSpec } from "./learned.ts";
 import { loadModel } from "./nlparse.ts";
 import { approvedRules, isTestPath, planTask, PLAN_LICENSES, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanTask, type PlanTaskFile } from "./plan.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA, loopRowProblem, LOOP_VERSION, type AttemptCode, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA_V2, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { detectRunner, installDeps, installShim, openDepsCache, shimArgs, type DepsCache, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -150,11 +151,17 @@ export function testNames(content: string): string[] {
 }
 
 export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean }
-/** One attempt's test run: the team's test files, whole and per named test, all in the stage-2 isolation. */
-function runTeamTests(c: Copy, cand: CandUid, runMs: number): RunOutcome {
-  const files = [...c.teamTests.keys()].sort();
-  const run = (args: string[]): RawRun => guardedRun(c.dir, args, Date.now() + runMs, files, null, cand); // guard:isolated
-  const whole = run([...TAP, ...files]);
+/**
+ * One test run in the stage-2 isolation: node:test files whole and per named test (TAP), or vitest / jest files whole
+ * through the loopdeps shim (counts from the runner's JSON report; per-test names are not collected for them).
+ */
+function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testFiles: readonly string[]): RunOutcome {
+  const files = [...testFiles].sort();
+  const watch = [...new Set([...c.teamTests.keys(), ...files])].sort();
+  const run = (args: string[]): RawRun => guardedRun(c.dir, args, Date.now() + runMs, watch, null, cand); // guard:isolated
+  const json = pick.runner !== "node-test";
+  const rel = (f: string) => (pick.pkgDir ? posix.relative(pick.pkgDir, posix.normalize(f)) : posix.normalize(f));
+  const whole = run(json ? shimArgs({ ...pick, files: files.map(rel) }) : [...TAP, ...files]);
   const isolation = whole.exitCode !== 97 && whole.exitCode !== 98; // guard:isolation-exit
   const codes = new Set<AttemptCode>();
   if (whole.exitCode === 124) codes.add("TIMEOUT");
@@ -162,7 +169,7 @@ function runTeamTests(c: Copy, cand: CandUid, runMs: number): RunOutcome {
   if (whole.tampered?.length) codes.add("TAMPERED");
   if (whole.exitCode !== 0 || whole.fail > 0) codes.add("TEST_FAIL");
   if (whole.pass + whole.fail === 0) codes.add("NO_TESTS_RAN");
-  const named = files.flatMap((f) => testNames(c.teamTests.get(f)!).map((name) => ({ f, name })));
+  const named = json ? [] : files.flatMap((f) => testNames(c.teamTests.get(f) ?? (() => { try { return readFileSync(join(c.dir, f), "utf8"); } catch { return ""; } })()).map((name) => ({ f, name })));
   const failing: string[] = [];
   let passed = 0;
   if (isolation && named.length) {
@@ -170,7 +177,7 @@ function runTeamTests(c: Copy, cand: CandUid, runMs: number): RunOutcome {
       const r = run([...TAP, `--test-name-pattern=^${escRx(t.name)}$`, t.f]);
       if (r.exitCode === 0 && r.fail === 0 && r.pass >= 1 && r.leftovers === 0 && !r.tampered?.length) passed++; else failing.push(t.name);
     }
-  } else passed = codes.size ? 0 : whole.pass;
+  } else passed = codes.size && !json ? 0 : whole.pass;
   const total = named.length || whole.pass + whole.fail;
   if (failing.length && !codes.has("TEST_FAIL")) codes.add("TEST_FAIL");
   if (passed > total) passed = total;
@@ -234,18 +241,22 @@ export interface LoopOptions {
   committed?: string;
   rules?: RuleSpec[];
   training?: Set<string>;
+  /** v2: dependency install limits (and, in tests only, a stub package manager). */
+  deps?: DepsOptions;
+  /** v2: the run's install cache (one per runLoopFile; a task run alone gets its own). */
+  depsCache?: DepsCache;
+  /** v2: where the run's install cache dir is made (default os.tmpdir()). */
+  depsDir?: string;
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface LoopResult { row: LoopRow; plan: Plan | null; attempts: AttemptRecord[]; context: string[] }
 
 export function loopSha256(): string {
-  return sha256(["lib/loop.ts", "lib/looprow.ts"].map((f) => readFileSync(join(ROOT, "peaceai", f), "utf8")).join("\0"));
+  return sha256(["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"].map((f) => readFileSync(join(ROOT, "peaceai", f), "utf8")).join("\0"));
 }
 
-const nodeTestRunner = (testCmd: unknown): boolean => typeof testCmd === "string" && /^(?:node|tsx)\b[^&|;]*\s--test\b/.test(testCmd.trim());
-
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training">> & { training: Set<string> }): LoopResult {
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache }): LoopResult {
   const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
@@ -253,12 +264,17 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let plan: Plan | null = null;
   let context: string[] = [];
   const tests: LoopTests | null = null;
+  let pick: RunnerPick | null = null;
+  let deps: LoopRow["deps"] = null;
+  let baseline: LoopBaseline | null = null;
   const done = (code: LoopCode): LoopResult => ({
     row: {
-      schema: LOOP_SCHEMA, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
-      loop: LOOP_VERSION, loopSha256: loopSha256(), proposer: o.proposer.name, lm: "not-loadable", code, maxAttempts,
+      schema: LOOP_SCHEMA_V2, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
+      loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, lm: "not-loadable", code, maxAttempts,
       attempts: records.length, result: code === "PASS" ? "pass" : code === "ATTEMPT_LIMIT" ? "fail" : "refused",
       attemptCodes: records.map((r) => r.codes), tests: records.length ? records[records.length - 1]!.tests : tests,
+      // hidden rows: taskKey plus scores only (runner, package manager and baseline counts could identify the repo)
+      ...(set === "hidden" ? { runner: null, deps: null, baseline: null } : { runner: pick?.runner ?? null, deps: pick ? deps : null, baseline }),
     },
     plan, attempts: records, context,
   });
@@ -270,6 +286,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   if (!cu.ok) return done(cu.reason as LoopCode); // guard:cand
   const cand = cu.cand;
   let c: Copy | null = null;
+  const ownCache = o.depsCache ? null : openDepsCache();
+  const cache = o.depsCache ?? ownCache!;
   try {
     c = o.fetcher(task.repo, task.commit, task.reference.from.merge, task.tests.files);
     if (c.head !== task.commit) return done("COMMIT_MISMATCH");
@@ -288,20 +306,35 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     catch { return done("PLAN_FAILED"); }
     const rel = openRepo(c.dir).relevant(task.request);
     context = rel.ok ? [...rel.files, ...rel.tests].map((f) => f.path) : [];
-    // 3. the first proposal: no edit, no run
+    // 3. (v2) the test stage first: the runner the team's tests belong to, the repo's dependencies (lockfile only,
+    //    scripts off, as the candidate uid), then the baseline run on the unedited copy. This runs whether or not
+    //    the proposer has an edit, so every row says how far the task's own tests can be run.
+    if (c.teamTests.size === 0) return done("NO_TESTS");
+    for (const f of c.teamTests.keys()) if (!safeEditPath(c.dir, f)) return done("TASK_INVALID");
+    const putTeamTests = () => { for (const [f, text] of c!.teamTests) { const full = safeEditPath(c!.dir, f); if (full) { mkdirSync(dirname(full), { recursive: true }); writeFileSync(full, text); } } };
+    putTeamTests(); // so the runner sees the package layout the tests live in (removed again by resetCopy)
+    const det = detectRunner(c.dir, [...c.teamTests.keys()].sort());
+    resetCopy(c);
+    if ("refuse" in det) return done(det.refuse);
+    pick = det;
+    if (det.runner !== "node-test" || det.hasDeps) {
+      const d = installDeps(c.dir, cand, cache, o.deps);
+      if ("refuse" in d) return done(d.refuse);
+      deps = d.pm;
+    } else deps = "none";
+    installRunner(c, cand);
+    if (det.runner !== "node-test") installShim(c.dir);
+    // the team's tests must fail before any edit (else the task proves nothing)
+    putTeamTests();
+    const base = runTests(c, cand, o.runMs, det, [...c.teamTests.keys()]);
+    if (!base.isolation) return done("ISOLATION_UNAVAILABLE");
+    const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
+    baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
+    if (base.codes.length === 0) return done("BASELINE_PASSES");
+    // 4. the first proposal
     const feedback: Feedback[] = [];
     let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback });
     if ("refuse" in p) return done(p.refuse);
-    if (!nodeTestRunner(testCommand)) return done("TEST_RUNNER_UNSUPPORTED");
-    if (Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length) return done("DEPS_UNSUPPORTED");
-    if (c.teamTests.size === 0) return done("NO_TESTS");
-    installRunner(c, cand);
-    const putTeamTests = () => { for (const [f, text] of c!.teamTests) { const full = safeEditPath(c!.dir, f); if (full) { mkdirSync(dirname(full), { recursive: true }); writeFileSync(full, text); } } };
-    // the team's tests must fail before any edit (else the task proves nothing)
-    putTeamTests();
-    const base = runTeamTests(c, cand, o.runMs);
-    if (!base.isolation) return done("ISOLATION_UNAVAILABLE");
-    if (base.codes.length === 0) return done("BASELINE_PASSES");
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) {
         p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback });
@@ -313,8 +346,21 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       const bad = applyEdits(c, p.edits);
       if (bad) return done(bad);
       // 5. run, 6. read codes + names
-      const r = runTeamTests(c, cand, o.runMs);
+      const r = runTests(c, cand, o.runMs, det, [...c.teamTests.keys()]);
       if (!r.isolation) return done("ISOLATION_UNAVAILABLE");
+      // the team's tests pass: the tests the search tools relate to the edited files (testsFor) must not regress
+      if (r.codes.length === 0) {
+        const related = relatedTests(c, det, p.edits.map((e) => e.path)); // per attempt: each edit touches its own files
+        if (related.length) {
+          const after = runTests(c, cand, o.runMs, det, related);
+          if (after.codes.length) {
+            resetCopy(c);
+            putTeamTests();
+            const before = runTests(c, cand, o.runMs, det, related);
+            if (before.codes.length === 0) r.codes = ["RELATED_FAIL"]; // they passed before the edit: a regression
+          }
+        }
+      }
       records.push({ attempt, edits: p.edits.map((e) => e.path), codes: r.codes, failing: r.failing, tests: r.tests });
       if (r.codes.length === 0) return done("PASS");
       feedback.push({ attempt, codes: r.codes, failing: r.failing }); // 7. revise
@@ -324,7 +370,24 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     return done(e instanceof LoopError ? e.code : "FETCH_FAILED");
   } finally {
     c?.close();
+    ownCache?.close();
   }
+}
+
+/** Up to 10 existing tests the search tools relate to the edited files (testsFor), in the runner's package, not the team's. */
+function relatedTests(c: Copy, pick: RunnerPick, edited: readonly string[]): string[] {
+  const repo = openRepo(c.dir);
+  const out: string[] = [];
+  for (const e of edited) {
+    const r = repo.testsFor(posix.normalize(e));
+    if (!r.ok) continue;
+    for (const t of r.tests.slice(0, 3)) {
+      if (c.teamTests.has(t.path) || out.includes(t.path)) continue;
+      if (pick.pkgDir && !t.path.startsWith(pick.pkgDir + "/")) continue;
+      out.push(t.path);
+    }
+  }
+  return out.slice(0, 10).sort();
 }
 
 // ---- a task file
@@ -347,14 +410,18 @@ export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" 
   const outDir = opts.outDir ?? join(root, ".peaceai-out/loop");
   mkdirSync(outDir, { recursive: true });
   const results: LoopResult[] = [];
-  for (const task of parsed.tasks) {
-    // a fresh proposer state per task
-    const r = runLoopTask(task, parsed.set, fileSha, { ...o, proposer: opts.proposer ?? rulesProposer(o.rules) });
-    if (loopRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
-    results.push(r);
-    appendFileSync(join(root, LOOP_LOG), JSON.stringify(r.row) + "\n");
-    writeFileSync(join(outDir, `${r.row.taskKey}.json`), JSON.stringify({ row: r.row, attempts: r.attempts, context: r.context, plan: r.plan }, null, 1) + "\n");
-  }
+  // one install cache per run (keyed by lockfile sha256), removed when the run ends; never shared between runs
+  const depsCache = opts.depsCache ?? openDepsCache(opts.depsDir);
+  try {
+    for (const task of parsed.tasks) {
+      // a fresh proposer state per task
+      const r = runLoopTask(task, parsed.set, fileSha, { ...o, proposer: opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
+      if (loopRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
+      results.push(r);
+      appendFileSync(join(root, LOOP_LOG), JSON.stringify(r.row) + "\n");
+      writeFileSync(join(outDir, `${r.row.taskKey}.json`), JSON.stringify({ row: r.row, attempts: r.attempts, context: r.context, plan: r.plan }, null, 1) + "\n");
+    }
+  } finally { if (!opts.depsCache) depsCache.close(); }
   return { code: "OK", results };
 }
 export { ATTEMPT_CODES };
