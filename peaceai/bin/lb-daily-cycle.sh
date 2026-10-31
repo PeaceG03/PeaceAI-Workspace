@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # M160 limit-breaker daily cycle: plan (checks) -> train within the budget, resuming from the latest verified local save
 # -> evaluate -> report. Local / free compute only; no network, no upload, no cloud storage; writes only under STATE.
-# NOT scheduled anywhere; no workflow is installed (peaceai/spec/lb-train-v1.md says what one needs first).
+# NOT scheduled anywhere. The only workflow that runs it is the manual-dispatch peace-lb-daily.yml (main only), which sets
+# LB_DAILY_EXPECT=fresh|resume:<manifest sha256 from the trusted Results record>: any other plan is DAILY_PLAN_UNTRUSTED.
 # Usage: lb-daily-cycle.sh CORPUS STATE BUDGET_MIN [TODAY] [-- <train.py args from lb-train.json daily.trainArgsAllowed>]
 set -uo pipefail
 [ $# -ge 3 ] || { echo "usage: lb-daily-cycle.sh CORPUS STATE BUDGET_MIN [TODAY] [-- train args]" >&2; exit 2; }
@@ -14,11 +15,13 @@ M=$(cd "$(dirname "${BASH_SOURCE[0]}")/../model" && pwd)
 line=$("$PY" "$M/daily_cycle.py" plan --corpus "$C" --state "$S" --budget-min "$B" --today "$D" -- "$@") || { echo "$line"; exit 3; }
 echo "$line"
 resume=(); start=0
+expect=${LB_DAILY_EXPECT:-}
 case "$line" in
-  "plan done "*) exit 0 ;;
-  "plan fresh start=0") ;;
+  "plan done "*) [ -z "$expect" ] || { echo "DAILY_PLAN_UNTRUSTED"; exit 3; }; exit 0 ;;
+  "plan fresh start=0") [ -z "$expect" ] || [ "$expect" = fresh ] || { echo "DAILY_PLAN_UNTRUSTED"; exit 3; } ;;
   "plan resume "*)
     read -r _ _ st sv sh <<<"$line"
+    [ -z "$expect" ] || [ "$expect" = "resume:${sh#sha=}" ] || { echo "DAILY_PLAN_UNTRUSTED"; exit 3; }
     start=${st#start=}; resume=(--resume-from "$S/saves/${sv#save=}" --resume-manifest-sha "${sh#sha=}") ;;
   *) echo "DAILY_PLAN_UNKNOWN"; exit 3 ;;
 esac
