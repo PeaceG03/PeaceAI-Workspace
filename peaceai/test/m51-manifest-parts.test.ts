@@ -59,15 +59,22 @@ test("committed M49 manifest: split parts only, each under 2 MB, joining to 8458
   for (const p of ["peaceai/model/ext-manifest/index.json", "peaceai/model/ext-manifest/part-000.jsonl", "peaceai/lib/manifestparts.ts", "peaceai/model/manifest_parts.py", "peaceai/test/m51-manifest-parts.test.ts"]) assert.ok(protectedReason(p), p);
 });
 
-test("--manifest-sha pin: the M37 workflow pins the #148 manifest, so ext-fetch and ext-manifest-check refuse the M49 corpus", () => {
+test("--manifest-sha pin: the M37 workflow pins the committed manifest 8458eac6; ext-fetch and ext-manifest-check refuse the old #148 pin", () => {
+  // lm-train repin (Auditor, 2026-10-30): was pinned to the #148 manifest 040eb0c4 (M51), which no committed manifest matches
+  // any more, so the workflow could not train; it now pins the committed manifest, and a stale pin is still refused.
   const wf = readFileSync(join(repo, ".github/workflows/peace-lm-train.yml"), "utf8");
-  assert.equal((wf.match(/--manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af\n/g) ?? []).length, 2);
+  assert.equal((wf.match(/--manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231\n/g) ?? []).length, 2);
+  assert.ok(!wf.includes("040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af"), "the old #148 pin is gone");
   const d = mkdtempSync(join(tmpdir(), "m51-")); mkdirSync(join(d, "c")); writeFileSync(join(d, "c/docs.jsonl"), "");
   const tsx = join(repo, "node_modules/.bin/tsx");
   const f = spawnSync(tsx, [join(repo, "peaceai/bin/ext-fetch.ts"), join(d, "w"), join(d, "o"), "--manifest-sha", "040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af"], { encoding: "utf8" });
   assert.equal(f.status, 1); assert.match(f.stdout, /ext-fetch refused: manifest sha256 8458eac6/);
   const m = spawnSync(tsx, [join(repo, "peaceai/bin/ext-manifest-check.ts"), join(d, "c"), "pretrain", "--manifest-sha", "040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af"], { encoding: "utf8" });
   assert.equal(m.status, 1); assert.match(m.stdout, /is not the pinned 040eb0c4/);
+  // the new pin passes ext-manifest-check's pin check (it then fails on the empty docs, not on the pin); ext-fetch hashes
+  // the same readManifestBytes join, asserted to be 8458eac6 above (not run here: past the pin it fetches over the network)
+  const m2 = spawnSync(tsx, [join(repo, "peaceai/bin/ext-manifest-check.ts"), join(d, "c"), "pretrain", "--manifest-sha", "8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231"], { encoding: "utf8" });
+  assert.ok(!/is not the pinned/.test(m2.stdout), "ext-manifest-check accepts the 8458eac6 pin");
   rmSync(d, { recursive: true });
 });
 
