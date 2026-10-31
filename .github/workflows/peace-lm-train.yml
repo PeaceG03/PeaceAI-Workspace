@@ -7,8 +7,32 @@ name: peace-lm-train
 # model reaches this public repository: no artifacts, quiet logs (counts and step metrics only). Weights land only in
 # Results through results-write.sh. No latest.json is written, so every loader refuses the model until the model
 # memcheck (on the box, against core) passes. Stage: pretrain only; finetune is a reserved hook and is refused.
+# M148 (limit-breaker step 1; Peace "R2 is fine", Auditor gates): a run is one link of a chain. train.py saves the
+# full resume state every 20 min and at the soft deadline (job start + 340 min); lm-saves-r2.sh copies each save to
+# one private R2 bucket used only for these saves (latest 2 kept), with credentials only from the existing
+# environment peaceai-results (main only). The chain job (actions: write, no checkout, no secrets) dispatches the next link with
+# the save name and its manifest sha256 taken from THIS run's train job outputs: the expected sha is a trusted
+# record, never read from the bucket, and train.py re-verifies the manifest and every file before loading. Missing
+# storage config fails closed (R2_NOT_CONFIGURED) before any training. The model is exported and landed only by the
+# last link (no next link). Max chain 12 (saves.py hard cap).
 on:
   workflow_dispatch:
+    inputs:
+      chain_id:
+        description: "chain id (the first link's run id; empty on the first link)"
+        default: ""
+      chain_index:
+        description: "this link's index (0 = first link, fresh start)"
+        default: "0"
+      max_chain:
+        description: "max links (1-12)"
+        default: "4"
+      resume_save:
+        description: "save name to resume (links after the first; set by the chain job)"
+        default: ""
+      resume_manifest_sha:
+        description: "expected manifest sha256 of that save (from the previous run's job output, never from the bucket)"
+        default: ""
 
 permissions: {}
 
@@ -21,11 +45,20 @@ jobs:
     name: train LM (external pretrain corpus)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 330
+    timeout-minutes: 355
     environment: peaceai-results
     permissions:
       contents: read
+    outputs:
+      next: ${{ steps.decide.outputs.next }}
+      chain_id: ${{ steps.decide.outputs.chain_id }}
+      index: ${{ steps.decide.outputs.index }}
+      max_chain: ${{ steps.decide.outputs.max_chain }}
+      save: ${{ steps.decide.outputs.save }}
+      sha: ${{ steps.decide.outputs.sha }}
     steps:
+      - name: Job clock (the soft deadline is job start + 340 min)
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -42,20 +75,93 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Chain inputs and storage check (fail closed before any training)
+        env:
+          IN_CHAIN: ${{ inputs.chain_id }}
+          IN_INDEX: ${{ inputs.chain_index }}
+          IN_MAX: ${{ inputs.max_chain }}
+          IN_SAVE: ${{ inputs.resume_save }}
+          IN_SHA: ${{ inputs.resume_manifest_sha }}
+          LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
+          LM_SAVES_R2_ACCESS_KEY_ID: ${{ secrets.LM_SAVES_R2_ACCESS_KEY_ID }}
+          LM_SAVES_R2_SECRET_ACCESS_KEY: ${{ secrets.LM_SAVES_R2_SECRET_ACCESS_KEY }}
+          LM_SAVES_R2_BUCKET: ${{ secrets.LM_SAVES_R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          [[ "$IN_INDEX" =~ ^(0|[1-9][0-9]?)$ && "$IN_MAX" =~ ^([1-9]|1[0-2])$ ]] || { echo "CHAIN_BAD_ARGS"; exit 1; }
+          [ "$IN_INDEX" -lt "$IN_MAX" ] || { echo "CHAIN_BAD_ARGS"; exit 1; }
+          ./peaceai/bin/lm-saves-r2.sh check
+          if [ "$IN_INDEX" = 0 ]; then
+            [ -z "$IN_CHAIN$IN_SAVE$IN_SHA" ] || { echo "CHAIN_BAD_ARGS"; exit 1; }
+            chain=$GITHUB_RUN_ID; resume=""
+          else
+            [[ "$IN_CHAIN" =~ ^[0-9]{1,20}$ && "$IN_SAVE" =~ ^save-[0-9]{9}$ && "$IN_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "RESUME_INPUTS_BAD"; exit 1; }
+            chain=$IN_CHAIN
+            ./peaceai/bin/lm-saves-r2.sh get "$chain" "$IN_SAVE" "$RUNNER_TEMP/prev/$IN_SAVE"
+            resume="--resume-from $RUNNER_TEMP/prev/$IN_SAVE --resume-manifest-sha $IN_SHA"
+          fi
+          { echo "CHAIN_ID=$chain"; echo "CHAIN_INDEX=$IN_INDEX"; echo "MAX_CHAIN=$IN_MAX"; echo "RESUME_ARGS=$resume"; } >> "$GITHUB_ENV"
+          echo "chain index=$IN_INDEX max=$IN_MAX resume=$([ -n "$resume" ] && echo yes || echo no)"
       - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
         run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Manifest check (stage, provenance, sha256, A/B/C and set C v2 hashes, set C v2 repos, whole-corpus memcheck record)
         run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
-      - name: Train (ctx 512, CPU, early stopping) and export
+      - name: Train (ctx 512, CPU, early stopping; rolling 20-min saves copied to R2; soft deadline 340 min)
+        env:
+          LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
+          LM_SAVES_R2_ACCESS_KEY_ID: ${{ secrets.LM_SAVES_R2_ACCESS_KEY_ID }}
+          LM_SAVES_R2_SECRET_ACCESS_KEY: ${{ secrets.LM_SAVES_R2_SECRET_ACCESS_KEY }}
+          LM_SAVES_R2_BUCKET: ${{ secrets.LM_SAVES_R2_BUCKET }}
         run: |
           set -euo pipefail
           py="$RUNNER_TEMP/venv/bin/python"
           m() { jq -r ".model.$1" peaceai/model/ext-train.json; }
-          "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
+          S="$RUNNER_TEMP/work/saves"
+          # background copy of each new save to R2 (one filtered line per save); training never sees the credentials
+          ( while [ ! -e "$RUNNER_TEMP/train.done" ]; do sleep 60; ./peaceai/bin/lm-saves-r2.sh put "$CHAIN_ID" "$S" || true; done ) &
+          up=$!
+          trap 'touch "$RUNNER_TEMP/train.done"; wait "$up" || true' EXIT
+          # shellcheck disable=SC2086 # RESUME_ARGS is two validated flags (save name and sha256 regex-checked)
+          env -u LM_SAVES_R2_ACCOUNT_ID -u LM_SAVES_R2_ACCESS_KEY_ID -u LM_SAVES_R2_SECRET_ACCESS_KEY -u LM_SAVES_R2_BUCKET \
+            "$py" peaceai/model/train.py --corpus "$RUNNER_TEMP/corpus" --work "$RUNNER_TEMP/work" \
             --ctx "$(m ctx)" --d-model "$(m d_model)" --n-layer "$(m n_layer)" --n-head "$(m n_head)" --vocab "$(m vocab)" --batch "$(m batch)" \
-            --steps "$(m steps)" --eval-every 50 --patience 4 --threads 4 --max-seconds 14400 > "$RUNNER_TEMP/train.log" 2>&1 \
+            --steps "$(m steps)" --eval-every 50 --patience 4 --threads 4 \
+            --save-dir "$S" --save-every-min 20 --job-start "$JOB_START" --soft-deadline-min 340 --marker "$RUNNER_TEMP/work/chain.json" \
+            $RESUME_ARGS > "$RUNNER_TEMP/train.log" 2>&1 \
             || { echo "train failed exit=$?"; exit 1; }
-          grep -E '^(params=|tokens |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+          grep -E '^(params=|tokens |resumed |marker |best val_loss|stopped )' "$RUNNER_TEMP/train.log" || true
+      - name: Copy the remaining saves to R2 (also after a failed train step; prints each save's manifest sha256)
+        if: always()
+        env:
+          LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
+          LM_SAVES_R2_ACCESS_KEY_ID: ${{ secrets.LM_SAVES_R2_ACCESS_KEY_ID }}
+          LM_SAVES_R2_SECRET_ACCESS_KEY: ${{ secrets.LM_SAVES_R2_SECRET_ACCESS_KEY }}
+          LM_SAVES_R2_BUCKET: ${{ secrets.LM_SAVES_R2_BUCKET }}
+        run: |
+          [ -n "${CHAIN_ID:-}" ] || { echo "no chain: nothing to copy"; exit 0; }
+          ./peaceai/bin/lm-saves-r2.sh put "$CHAIN_ID" "$RUNNER_TEMP/work/saves"
+      - name: Chain decision (the next link gets the save name and manifest sha256 from this step's outputs only)
+        id: decide
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"
+          line=$("$py" peaceai/model/saves.py decide "$RUNNER_TEMP/work/chain.json" "$RUNNER_TEMP/work/saves" "$CHAIN_INDEX" "$MAX_CHAIN") \
+            || { echo "chain refused: ${line:-CHAIN_UNKNOWN}"; exit 1; }
+          echo "$line"
+          if [[ "$line" =~ ^chain\ next=yes\ index=([0-9]+)\ .*\ save=(save-[0-9]{9})\ sha=([0-9a-f]{64})$ ]]; then
+            ./peaceai/bin/lm-saves-r2.sh uploaded "$RUNNER_TEMP/work/saves" "${BASH_REMATCH[2]}"
+            { echo "next=yes"; echo "chain_id=$CHAIN_ID"; echo "index=${BASH_REMATCH[1]}"; echo "max_chain=$MAX_CHAIN"
+              echo "save=${BASH_REMATCH[2]}"; echo "sha=${BASH_REMATCH[3]}"; } >> "$GITHUB_OUTPUT"
+          elif [[ "$line" =~ ^chain\ next=no\  ]]; then
+            echo "FINAL_LINK=yes" >> "$GITHUB_ENV"; echo "next=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "chain refused: CHAIN_LINE_BAD"; exit 1
+          fi
+      - name: Export (last link only)
+        if: env.FINAL_LINK == 'yes'
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/venv/bin/python"
           ck=best.npz; test -f "$RUNNER_TEMP/work/best.npz" || ck=checkpoint.npz
           "$py" peaceai/model/export.py --work "$RUNNER_TEMP/work" --out "$RUNNER_TEMP/model" --threads 4 --checkpoint "$ck" > /dev/null
           cp "$RUNNER_TEMP/work/metrics.jsonl" "$RUNNER_TEMP/model/train-metrics.jsonl"
@@ -63,6 +169,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/src"
           jq -r '"model \(.version) ctx=\(.ctx) params=\(.params)"' "$RUNNER_TEMP/model/config.json"
       - name: Set C v2 eval (only once wired by the Architect; aggregate loss only; NON-FATAL so a trained model is never lost)
+        if: env.FINAL_LINK == 'yes'
         run: |
           if [ "$(jq -r .wiredAsEval peaceai/model/heldout-c.json)" != true ]; then echo "set C v2 not wired as eval: skipped"; exit 0; fi
           if ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" --set-c \
@@ -74,6 +181,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/csrc" "$RUNNER_TEMP/setc" "$RUNNER_TEMP/eval.txt"
           exit 0
       - name: Land the model in Results only (no latest.json; refused until memcheck PASS)
+        if: env.FINAL_LINK == 'yes'
         env:
           DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
           MODEL_DIR: ${{ runner.temp }}/model
@@ -92,3 +200,29 @@ jobs:
                 if [ "${name:0:${#prefix}}" != "$prefix" ]; then echo "landing refused: path outside models/lm/$v/"; exit 1; fi
               done <<< "$staged"'
           rm -rf "$RUNNER_TEMP/model" "$RUNNER_TEMP/work"
+
+  chain:
+    name: dispatch the next link (no checkout, no secrets)
+    needs: train
+    if: needs.train.outputs.next == 'yes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write # gh workflow run peace-lm-train.yml (the same mechanism as peace-verdict.yml); nothing else
+    steps:
+      - name: Dispatch the next link (save name and manifest sha256 from this run's train job outputs, never the bucket)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N_CHAIN: ${{ needs.train.outputs.chain_id }}
+          N_INDEX: ${{ needs.train.outputs.index }}
+          N_MAX: ${{ needs.train.outputs.max_chain }}
+          N_SAVE: ${{ needs.train.outputs.save }}
+          N_SHA: ${{ needs.train.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$N_CHAIN" =~ ^[0-9]{1,20}$ && "$N_INDEX" =~ ^[1-9][0-9]?$ && "$N_MAX" =~ ^([1-9]|1[0-2])$ ]] || { echo "CHAIN_BAD_ARGS"; exit 1; }
+          [[ "$N_SAVE" =~ ^save-[0-9]{9}$ && "$N_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "CHAIN_BAD_ARGS"; exit 1; }
+          [ "$N_INDEX" -lt "$N_MAX" ] || { echo "CHAIN_BAD_ARGS"; exit 1; }
+          gh workflow run peace-lm-train.yml --repo "$GITHUB_REPOSITORY" --ref main -f chain_id="$N_CHAIN" -f chain_index="$N_INDEX" \
+            -f max_chain="$N_MAX" -f resume_save="$N_SAVE" -f resume_manifest_sha="$N_SHA" > /dev/null 2>&1 || { echo "CHAIN_DISPATCH_FAILED"; exit 1; }
+          echo "chain dispatched index=$N_INDEX save=$N_SAVE sha=$N_SHA"
