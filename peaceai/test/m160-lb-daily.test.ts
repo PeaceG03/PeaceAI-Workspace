@@ -1,7 +1,8 @@
 // M160 (limit-breaker step 3): the daily cycle (peaceai/bin/lb-daily-cycle.sh + peaceai/model/daily_cycle.py):
 // plan (fail-closed checks) -> train within the budget resuming from the latest verified local save -> evaluate ->
 // report. It trains only an Auditor-cleared corpus (lb-train.json), runs only on free compute, and is NOT scheduled:
-// no workflow under .github/workflows mentions it. The end-to-end run uses a scratch copy of the model dir with its own
+// the one workflow that mentions it is peace-lb-daily.yml (M165: workflow_dispatch only, main only).
+// The end-to-end run uses a scratch copy of the model dir with its own
 // lb-train.json (the real config cannot be pointed at a test corpus). The cycle writes through no symlink: STATE,
 // saves/work/logs/reports, chain.json and every save entry must be real (DAILY_STATE_INCONSISTENT), an existing
 // logs/<today>.* is refused, and the shell opens logs with noclobber (O_EXCL). Every tagged guard is mutation-checked;
@@ -13,12 +14,14 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import test from "node:test";
 import { applyEdit, json, MODEL, mutationCheck, ok, py, repo, runCase, stateHash, tinyCorpus, TINY, withDir } from "./m157-lbtrain-mut.ts";
+import { pyNoNumpyFor } from "./nonumpy.ts";
 
 const SCRIPT = join(repo, "peaceai/bin/lb-daily-cycle.sh");
+const PYNN = pyNoNumpyFor(py); // daily_cycle.py / saves.py run with numpy blocked (CI has none); train.py keeps it
 const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
 const ARGS = ["--", ...TINY, "--steps", "8", "--max-steps-this-run", "4"];
 const cycle = (script: string, corpus: string, state: string, day: string, extra = ARGS, env: Record<string, string> = {}) =>
-  spawnSync("bash", [script, corpus, state, "2", day, ...extra], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: py, ...env } });
+  spawnSync("bash", [script, corpus, state, "2", day, ...extra], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: PYNN, ...env } });
 
 function scratch(dir: string, corpus: string, pkg = "pkg") {
   mkdirSync(join(dir, pkg, "model"), { recursive: true }); mkdirSync(join(dir, pkg, "bin"));
@@ -121,7 +124,11 @@ test("m160: static: real pins are the cleared corpus, not scheduled anywhere, bu
   assert.ok(cfg.daily.maxBudgetMin <= 340, "fits a 360 min GitHub-hosted job");
   for (const owned of ["--corpus", "--work", "--save-dir", "--marker", "--resume-from", "--init-from", "--replay-corpus", "--max-seconds", "--deadline", "--lora-rank"]) assert.ok(!cfg.daily.trainArgsAllowed.includes(owned), owned);
   const wf = join(repo, ".github/workflows");
-  for (const f of readdirSync(wf)) assert.ok(!/lb-daily-cycle|daily_cycle|lb-train\.json/.test(readFileSync(join(wf, f), "utf8")), `${f} must not run the daily cycle`);
+  for (const f of readdirSync(wf)) {
+    const t = readFileSync(join(wf, f), "utf8");
+    if (f === "peace-lb-daily.yml") assert.match(t, /\non:\n  workflow_dispatch:\n\npermissions: \{\}\n/, "the daily cycle is manual dispatch only (M165 checks the rest)");
+    else assert.ok(!/lb-daily-cycle|daily_cycle|lb_daily|lb-daily-run|lb-train\.json/.test(t), `${f} must not run the daily cycle`);
+  }
 });
 
 test("m160: mutation check: disabling any daily-cycle guard changes its case's outcome", () => {

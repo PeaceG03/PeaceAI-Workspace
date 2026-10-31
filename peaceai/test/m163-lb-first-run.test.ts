@@ -11,6 +11,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { protectedReason } from "../lib/selfchange.ts";
 import { json, MODEL, py, repo, tinyCorpus, withDir } from "./m157-lbtrain-mut.ts";
+import { noNumpyEnv } from "./nonumpy.ts";
 
 const WF = ".github/workflows/peace-lm-train.yml";
 const read = (p: string) => readFileSync(join(repo, p), "utf8");
@@ -47,7 +48,7 @@ const tinyCfg = (c: string, train: Record<string, string> = TINY_TRAIN) => (cfg:
 };
 
 const lb = (m: string, args: string[], env: Record<string, string> = {}) => {
-  const r = spawnSync(py, [join(m, "lb_run.py"), ...args], { encoding: "utf8", env: { ...process.env, ...env } });
+  const r = spawnSync(py, [join(m, "lb_run.py"), ...args], { encoding: "utf8", env: { ...process.env, ...noNumpyEnv(), ...env } }); // numpy blocked: stdlib only
   return { status: r.status, out: r.stdout.trim(), last: (r.stdout.trim() || r.stderr.trim()).split("\n").pop()! };
 };
 

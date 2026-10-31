@@ -1,0 +1,153 @@
+name: peace-lb-daily
+
+# lb-train daily cycle (Auditor ruling, R2 ready): ONE day of peaceai/bin/lb-daily-cycle.sh per manual dispatch from main
+# (workflow_dispatch only; never scheduled; any other ref is refused) on a GitHub-hosted runner (free compute).
+# The cleared corpus is rebuilt in-run at b149d9b and pin-checked. The resume point is the newest add-only Results row
+# runs/lb-daily/<day>-<run id>.json (the trusted record, read through results-write.sh with nothing written); the save is
+# fetched from the private R2 bucket under its own folder lb-daily/<chain id>/ and must hash to that row's manifest
+# sha256 before any resume, and chain.json is written from the row, never from the bucket. No Actions artifacts or cache.
+# The bucket is add-only: a save name that already exists is refused (R2_SAVE_EXISTS) and nothing is ever removed.
+# The R2 secrets are in env only for the R2 steps, the Results key only for the Results steps; nothing echoes them.
+# LoRA is refused (lb_daily.py). Results gets one add-only metrics row per trained day; latest.json is never written.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: peace-lb-daily
+  cancel-in-progress: false
+
+jobs:
+  lb-daily-ref-gate:
+    name: daily cycle ref gate (main only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Refuse unless dispatched from main
+        run: test "$GITHUB_REF" = refs/heads/main || { echo "LB_DAILY_REF_NOT_MAIN"; exit 1; }
+
+  lb-daily:
+    name: lb daily cycle (one day; saves in R2 lb-daily/; one metrics row in Results)
+    needs: lb-daily-ref-gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    environment: peaceai-results
+    permissions:
+      contents: read
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      KEY_SCRIPTS_SHA256: |
+        bee71029e4a528f4ea7a9aae3c25d8591f4f35db398c9fb24cf11d645b4b355e  peaceai/bin/with-deploy-key.sh
+        da2a4c6e32d3f6dc2e5587767bf4e01885b37e4011ce3a223ea7493506600e42  peaceai/bin/results-write.sh
+    steps:
+      - name: Record the job start and the day (the train deadline is measured from here)
+        run: |
+          echo "LB_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+          echo "LB_TODAY=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Ref and config checks (main only; LoRA locked; only allowed settings)
+        run: python3 peaceai/model/lb_daily.py ref --ref "$GITHUB_REF" && python3 peaceai/model/lb_daily.py config
+      - name: Install hash-pinned numpy
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Verify the checkout and the key scripts before any key is used
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s' "$KEY_SCRIPTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Read the trusted record (Results runs/lb-daily/ and runs/lb-train/, read only; writes nothing)
+        id: trusted
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse /runs/lb-daily/ --sparse /runs/lb-train/ "lb daily trusted record read (run $GITHUB_RUN_ID; writes nothing)" \
+            python3 peaceai/model/lb_daily.py trusted --out "$RUNNER_TEMP/lb-trusted.json" --today "$LB_TODAY"
+      - name: Chain finished (the trusted record says no more steps; nothing is trained)
+        if: steps.trusted.outputs.kind == 'done'
+        run: echo "LB_DAILY_CHAIN_DONE"
+      - name: Rebuild the cleared corpus at b149d9b (anonymous, read-only; lb-clean with the hidden drop hashes)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        run: ./peaceai/bin/lb-corpus-rebuild.sh "$RUNNER_TEMP/lbc"
+      - name: Restore the trusted save from R2 lb-daily/ (sha256 checked against the trusted record before any resume)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        env:
+          LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
+          LM_SAVES_R2_ACCESS_KEY_ID: ${{ secrets.LM_SAVES_R2_ACCESS_KEY_ID }}
+          LM_SAVES_R2_SECRET_ACCESS_KEY: ${{ secrets.LM_SAVES_R2_SECRET_ACCESS_KEY }}
+          LM_SAVES_R2_BUCKET: ${{ secrets.LM_SAVES_R2_BUCKET }}
+          T_KIND: ${{ steps.trusted.outputs.kind }}
+          T_CHAIN: ${{ steps.trusted.outputs.chain }}
+          T_SAVE: ${{ steps.trusted.outputs.save }}
+          T_SHA: ${{ steps.trusted.outputs.trusted_sha }}
+        run: |
+          set -euo pipefail
+          ./peaceai/bin/lm-saves-r2.sh --folder lb-daily check
+          mkdir -p "$RUNNER_TEMP/lbs/saves"
+          if [ "$T_KIND" = resume ]; then
+            ./peaceai/bin/lm-saves-r2.sh --folder lb-daily get "$T_CHAIN" "$T_SAVE" "$RUNNER_TEMP/lbs/saves/$T_SAVE"
+          fi
+          "$RUNNER_TEMP/venv/bin/python" peaceai/model/lb_daily.py restore --trusted "$RUNNER_TEMP/lb-trusted.json" --trusted-sha "$T_SHA" --state "$RUNNER_TEMP/lbs"
+      - name: Daily cycle (train within the budget from the trusted save; held-out bpb vs the same-split unigram baseline)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        env:
+          PY: ${{ runner.temp }}/venv/bin/python
+          T_SHA: ${{ steps.trusted.outputs.trusted_sha }}
+        run: ./peaceai/bin/lb-daily-run.sh "$RUNNER_TEMP/lbc/out" "$RUNNER_TEMP/lbs" "$RUNNER_TEMP/lb-trusted.json" "$T_SHA"
+      - name: Re-verify the checkout and the key scripts right before the R2 key is used again (copy)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s' "$KEY_SCRIPTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Copy the new save to R2 lb-daily/ (only its own manifest sha256 is accepted; an existing name is refused; nothing is removed)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        env:
+          LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
+          LM_SAVES_R2_ACCESS_KEY_ID: ${{ secrets.LM_SAVES_R2_ACCESS_KEY_ID }}
+          LM_SAVES_R2_SECRET_ACCESS_KEY: ${{ secrets.LM_SAVES_R2_SECRET_ACCESS_KEY }}
+          LM_SAVES_R2_BUCKET: ${{ secrets.LM_SAVES_R2_BUCKET }}
+          T_CHAIN: ${{ steps.trusted.outputs.chain }}
+        run: |
+          set -euo pipefail
+          save=$(jq -r .save "$RUNNER_TEMP/lbs/chain.json"); sha=$(jq -r .manifestSha256 "$RUNNER_TEMP/lbs/chain.json")
+          chain=${T_CHAIN:-$GITHUB_RUN_ID}
+          ./peaceai/bin/lm-saves-r2.sh --folder lb-daily put-one "$chain" "$RUNNER_TEMP/lbs/saves" "$save" "$sha"
+          echo "LB_UPLOADED=$save:$sha" >> "$GITHUB_ENV"
+      - name: Build the metrics row (pins, shas, steps, stop reason, held-out and baseline bpb, wall time, save marker)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        env:
+          T_SHA: ${{ steps.trusted.outputs.trusted_sha }}
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" peaceai/model/lb_daily.py row --trusted "$RUNNER_TEMP/lb-trusted.json" --trusted-sha "$T_SHA" --state "$RUNNER_TEMP/lbs" \
+            --today "$LB_TODAY" --run-id "$GITHUB_RUN_ID" --sha "$GITHUB_SHA" --job-start "$LB_JOB_START" --uploaded "$LB_UPLOADED" --out "$RUNNER_TEMP/lb-daily-row.json"
+      - name: Re-verify the checkout and the key scripts right before the deploy key is used again (land)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s' "$KEY_SCRIPTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Record one add-only row in Results (runs/lb-daily/<day>-<run id>.json, new file only; no weights, no latest.json)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        env:
+          DEPLOY_KEY: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}
+        run: |
+          ./peaceai/bin/with-deploy-key.sh ./peaceai/bin/results-write.sh --sparse "/runs/lb-daily/$LB_TODAY-$GITHUB_RUN_ID.json" "lb daily cycle metrics ($LB_TODAY, run $GITHUB_RUN_ID)" \
+            python3 peaceai/model/lb_daily.py land --row "$RUNNER_TEMP/lb-daily-row.json" --run-id "$GITHUB_RUN_ID" --today "$LB_TODAY"
+      - name: Remove the corpus, state and venv (weights and saves leave the runner only to R2)
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/lbc" "$RUNNER_TEMP/lbs" "$RUNNER_TEMP/lb-trusted.json" "$RUNNER_TEMP/lb-daily-row.json" "$RUNNER_TEMP/venv"

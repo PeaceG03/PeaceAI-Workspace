@@ -12,8 +12,8 @@
     4. daily_cycle.py report  STATE/reports/<today>.json (never overwritten), one quiet line.
 
 Free compute only: local processes on this box, or a GitHub-hosted runner when a human dispatches it (any other
-runner is refused). No network, no upload, no cloud storage; it writes only under STATE. It is not scheduled anywhere; no workflow
-is installed (peaceai/spec/lb-train-v1.md says what one needs: Auditor and Peace first).
+runner is refused). No network, no upload, no cloud storage; it writes only under STATE. It is not scheduled anywhere; its only wrapper
+is the manual-dispatch .github/workflows/peace-lb-daily.yml (M165; peaceai/spec/lb-train-v1.md).
 
 plan checks (fail-closed):
   corpus  docs.jsonl sha256, manifest.jsonl sha256 and fingerprint.json's lb-clean fingerprint must be ONE entry of

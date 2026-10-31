@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import sys
+import zipfile
 
 SAVE_SCHEMA = "peaceai-lm-save:v1"
 MARKER_SCHEMA = "peaceai-lm-chain:v1"
@@ -80,6 +81,37 @@ def list_saves(saves_dir):
     if not os.path.isdir(saves_dir):
         return []
     return sorted(n for n in os.listdir(saves_dir) if NAME_RE.match(n))
+
+
+NPY_MAGIC = b"\x93NUMPY"
+NPY_META_RE = re.compile(r"^\{'descr': '<U([0-9]{1,9})', 'fortran_order': False, 'shape': \(\), \}\s*$")
+
+
+def npz_meta(path):
+    """The JSON string in checkpoint.npz's 0-d unicode "meta" array, read with the standard library only (zipfile + the
+    .npy header), so the chain decision and every other stdlib-only caller never imports numpy (CI has none; #657).
+    Same value as str(np.load(path, allow_pickle=False)["meta"]); anything else (another dtype or shape, a pickle,
+    a short or malformed member) raises ValueError."""
+    with zipfile.ZipFile(path) as z:
+        raw = z.read("meta.npy")
+    if raw[:6] != NPY_MAGIC or len(raw) < 10:
+        raise ValueError("npy magic")
+    major = raw[6]
+    if major == 1:
+        hlen, off = int.from_bytes(raw[8:10], "little"), 10
+    elif major in (2, 3):
+        hlen, off = int.from_bytes(raw[8:12], "little"), 12
+    else:
+        raise ValueError("npy version")
+    header = raw[off:off + hlen].decode("latin1")
+    m = NPY_META_RE.match(header)
+    if not m:
+        raise ValueError("npy header")
+    n = int(m.group(1))
+    data = raw[off + hlen:]
+    if len(data) != 4 * n:
+        raise ValueError("npy size")
+    return data.decode("utf-32-le").rstrip("\x00")
 
 
 def _fsync_file(path):
@@ -170,10 +202,8 @@ def verify_save(d, want_sha, cfg=None, data_sha=None):
             raise SaveError("SAVE_FILE_SET")
         if os.path.getsize(p) != rec.get("bytes") or sha256_file(p) != rec.get("sha256"):  # guard:file-sha
             raise SaveError("SAVE_FILE_SHA")
-    import numpy as np
-    try:
-        with np.load(os.path.join(d, "checkpoint.npz"), allow_pickle=False) as z:
-            meta = json.loads(str(z["meta"]))
+    try:  # stdlib only (npz_meta): the chain decision runs without numpy
+        meta = json.loads(npz_meta(os.path.join(d, "checkpoint.npz")))
     except Exception:
         raise SaveError("SAVE_CHECKPOINT")
     if meta.get("step") != man.get("step") or canonical(meta.get("cfg")) != canonical(man.get("cfg")):  # guard:checkpoint-step

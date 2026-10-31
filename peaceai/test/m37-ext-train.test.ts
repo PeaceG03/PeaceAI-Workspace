@@ -60,7 +60,7 @@ test("workflow: stage gate, fetch, check, train with ext-train.json sizing, set 
   const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
   assert.match(wf, /stage=\$\(jq -r \.stage peaceai\/model\/ext-train\.json\)\n          if \[ "\$stage" != pretrain \]; then echo "stage \$stage refused/);
   assert.match(wf, /--steps "\$\(m steps\)"/);
-  assert.match(wf, /--max-seconds 14400/);
+  assert.match(wf, /--job-start "\$JOB_START" --soft-deadline-min 340 /); // M148 wiring: the soft deadline (job start + 340 min, 355-min job) replaces --max-seconds 14400; a longer run continues in the next link
   assert.match(wf, /if \[ "\$\(jq -r \.wiredAsEval peaceai\/model\/heldout-c\.json\)" != true \]; then echo "set C v2 not wired as eval: skipped"; exit 0; fi/);
   // Auditor (run 38622524096): the eval step can never fail the job, so a trained model always reaches the landing step.
   const ev = wf.slice(wf.indexOf("      - name: Set C v2 eval"), wf.indexOf("      - name: Land the model"));
