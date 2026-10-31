@@ -30,7 +30,8 @@ function spy(): { p: Loop.Proposer; plans: string[] } {
 const taskOpts = (ctx: M152Ctx, proposer: Loop.Proposer) => ({ root: ctx.root, fetcher: ctx.fetcher, proposer, maxAttempts: 1, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>() });
 
 function checkRow(l: Libs, ctx: M152Ctx, r: Loop.LoopResult, name: string, plans: string[]): void {
-  assert.equal(r.row.schema, "peaceai-plan-loop:v3");
+  assert.equal(r.row.schema, "peaceai-plan-loop:v4", "M166: the loop writes v4 rows (v3 + modelManifestSha256)");
+  assert.equal(r.row.modelManifestSha256, null, "no model behind this proposer");
   assert.equal(r.row.planner, name);
   assert.equal(r.row.plannerSha256, SHA[name]!(), `${name}: the row carries that planner's own digest`);
   assert.equal(l.row.loopRowProblem(r.row), null);
