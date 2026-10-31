@@ -103,9 +103,9 @@ jobs:
           { echo "CHAIN_ID=$chain"; echo "CHAIN_INDEX=$IN_INDEX"; echo "MAX_CHAIN=$IN_MAX"; echo "RESUME_ARGS=$resume"; } >> "$GITHUB_ENV"
           echo "chain index=$IN_INDEX max=$IN_MAX resume=$([ -n "$resume" ] && echo yes || echo no)"
       - name: Fetch the corpus from the provenance manifest (anonymous, read-only, sha256 per file)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-fetch.ts "$RUNNER_TEMP/src" "$RUNNER_TEMP/corpus" --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Manifest check (stage, provenance, sha256, A/B/C and set C v2 hashes, set C v2 repos, whole-corpus memcheck record)
-        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 040eb0c40961b9ac669c97bbcc4c2c3aca30234a9de10e7562ab4cd2fc7a33af
+        run: ./node_modules/.bin/tsx peaceai/bin/ext-manifest-check.ts "$RUNNER_TEMP/corpus" pretrain --manifest-sha 8458eac61cc414128e98eedb6c3b3ad9c50813e62ab680f5a9ef9d909ccfc231
       - name: Train (ctx 512, CPU, early stopping; rolling 20-min saves copied to R2; soft deadline 340 min)
         env:
           LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
