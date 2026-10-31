@@ -24,6 +24,17 @@ LM retrain replay (forgetting fix after run 40375535718; peaceai/model/replay.py
                         it, and its eval when one is due, is expected to finish before it (2x the slowest step and the
                         slowest eval seen so far). With --max-seconds, the loop ends cleanly at the last completed step,
                         so a job's time limit never kills a run with nothing written. 0 = none.
+M148 limit-breaker saves (peaceai/model/saves.py holds the rules; spec peaceai/spec/lm-saves-v1.md):
+  --save-dir DIR        full resume saves (weights + AdamW state + step + RNG/data position + tokenizer, metrics, best)
+                        every --save-every-min minutes (default 20) at a step boundary and once at the end; atomic,
+                        sha256 manifest per save, only the latest 2 kept. Off when --save-dir is not given.
+  --job-start EPOCH     with --save-dir and no --deadline: the soft deadline is EPOCH + --soft-deadline-min (default 340
+                        = 5h40m), so the run saves and exits cleanly before the 6 h job limit.
+  --marker FILE         chain.json {more, stopReason, step, save, manifestSha256}: more is true when the run stopped on
+                        time (deadline, max_seconds) or max_steps_this_run, i.e. there is more to do.
+  --resume-from DIR --resume-manifest-sha SHA
+                        resume from a save: the manifest sha256, every file, the checkpoint step, the config and the
+                        training data are verified first; any mismatch exits with one SAVE_* code (never a fresh start).
 Every run writes timing.json {setupSeconds, trainSeconds, evalSeconds, steps, stoppedStep, bestStep, stopReason
 ("steps" | "patience" | "max_steps_this_run" | "max_seconds" | "deadline"), timeCut (max_seconds or deadline)}."""
 import argparse
@@ -59,6 +70,13 @@ ap.add_argument("--val-windows", type=int, default=64)
 ap.add_argument("--val-seed", default=None)
 ap.add_argument("--keep-checkpoints", action="store_true")
 ap.add_argument("--deadline", type=float, default=0.0)
+ap.add_argument("--save-dir", default="")
+ap.add_argument("--save-every-min", type=float, default=20.0)
+ap.add_argument("--job-start", type=float, default=0.0)
+ap.add_argument("--soft-deadline-min", type=float, default=340.0)
+ap.add_argument("--marker", default="")
+ap.add_argument("--resume-from", default="")
+ap.add_argument("--resume-manifest-sha", default="")
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -68,11 +86,25 @@ import numpy as np  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lm  # noqa: E402
 import replay  # noqa: E402
+import saves  # noqa: E402
 
 os.makedirs(args.work, exist_ok=True)
 W = lambda name: os.path.join(args.work, name)  # noqa: E731
 t0 = time.time()
-
+RESUME_MAN = None
+if args.resume_from:
+    # M148: verify the save (manifest sha256, every file, checkpoint step) BEFORE anything is read or trained;
+    # config and data are checked against it below, once they are known. Any failure: one code, no fresh start.
+    if args.init_from:
+        raise SystemExit("RESUME_WITH_INIT_FROM")
+    try:
+        RESUME_MAN = saves.restore(args.resume_from, args.work, saves.verify_save(args.resume_from, args.resume_manifest_sha))
+    except saves.SaveError as e:
+        raise SystemExit(e.code)
+if args.marker and not args.save_dir:
+    raise SystemExit("MARKER_NEEDS_SAVE_DIR")
+if args.save_dir and args.job_start and not args.deadline:
+    args.deadline = args.job_start + args.soft_deadline_min * 60.0
 
 
 def read_corpus(d):
@@ -146,6 +178,16 @@ cfg = {"schema": lm.MODEL_SCHEMA, "d_model": args.d_model, "n_head": args.n_head
        "vocab_size": args.vocab, "ctx": args.ctx, "lr": args.lr, "warmup": args.warmup, "total_steps": args.steps,
        "batch": args.batch, "weight_decay": 0.1, "grad_clip": 1.0, "seed": args.seed}
 T, B = cfg["ctx"], cfg["batch"]
+DATA_FILES = [os.path.join(args.corpus, "docs.jsonl"), os.path.join(args.corpus, "manifest.jsonl")]
+if REPLAY:
+    DATA_FILES += [os.path.join(args.replay_corpus, "docs.jsonl"), os.path.join(args.replay_corpus, "manifest.jsonl")]
+DATA_SHA = saves.data_sha256(DATA_FILES) if (args.save_dir or RESUME_MAN) else None
+if RESUME_MAN is not None:
+    try:
+        saves.check_identity(RESUME_MAN, cfg, DATA_SHA)
+    except saves.SaveError as e:
+        saves.unrestore(RESUME_MAN, args.work)  # a refused save leaves nothing behind to be resumed by accident
+        raise SystemExit(e.code)
 
 if REPLAY:
     # Validation = replay heldout docs only: one window per doc over val-windows distinct docs (replay.val_windows).
@@ -237,6 +279,20 @@ if step == 0:
     slow["eval"] = time.time() - te
 start = time.time()
 run_start_step = step
+last_save = start
+last_saved = None  # (name, manifest sha256) of the newest save written by this run
+
+
+def timed_save():
+    global last_saved
+    save()
+    if last_saved and last_saved[0] == saves.save_name(step):
+        return
+    try:
+        last_saved = saves.write_save(args.work, args.save_dir, step, cfg, DATA_SHA)
+    except saves.SaveError as e:
+        raise SystemExit(e.code)
+    print(f"save step={step} name={last_saved[0]}", flush=True)
 
 
 def stop_reason():
@@ -295,7 +351,16 @@ while (reason := stop_reason()) is None:
             best["stale"] += 1
         json.dump(best, open(W("best.json"), "w"))
     log(rec)
+    if args.save_dir and saves.due(time.time(), last_save, args.save_every_min * 60.0):
+        timed_save()
+        last_save = time.time()
 save()
+if args.save_dir:
+    timed_save()
+if args.marker:
+    nm, ms = last_saved if last_saved else (None, None)
+    mk = saves.write_marker(args.marker, reason, step, cfg["total_steps"], nm, ms, cfg)
+    print(f"marker more={'yes' if mk['more'] else 'no'} stop={reason} step={step}", flush=True)
 json.dump({"setupSeconds": round(start - t0, 1), "trainSeconds": round(time.time() - start, 1), "evalSeconds": round(slow["evalSeconds"], 1),
            "steps": step - run_start_step, "stoppedStep": step, "bestStep": best["step"], "stopReason": reason,
            "timeCut": reason in ("max_seconds", "deadline")}, open(W("timing.json"), "w"), sort_keys=True)
