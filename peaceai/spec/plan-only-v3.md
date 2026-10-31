@@ -2,8 +2,12 @@
 
 Status: EXPERIMENTAL (Builder, 2026-10-30). v1 (`plan-only`, bin/plan-only.ts) remains the default planner and is
 byte-identical to main (plannerSha256 275e559b...); v2 (`plan-only-v2`, plannerSha256 fae6c0c4...) is byte-identical
-to main as well. v3 runs only via `peaceai/bin/plan-only-v3.ts`. No improvement is claimed until the Auditor has run
-the hidden half. Grader `plan-grade-v2` (`plangrade.ts`) is unchanged.
+to main as well. v3 runs only via `peaceai/bin/plan-only-v3.ts`.
+Hidden half (Auditor, 20/20 graded, v3 at c4dd914, plannerSha256 f4999797...): v3 mean 0.287 (runTests 0.300);
+v1 0.229 (runTests 0.350); v2 0.223 (runTests 0.250). This is the first held-out gain (+0.058 over v1), on 20 tasks
+only, so the margin is noisy. Dev 0.681 is not proof (v2 scored 1.000 on dev and 0.223 hidden). runTests is below
+v1's even though v3 always plans a test step: the planned test commands likely do not match what the tasks expect.
+v3 stays EXPERIMENTAL; v1 remains the default. Grader `plan-grade-v2` (`plangrade.ts`) is unchanged.
 
 Files: `peaceai/lib/plan3.ts` (planner), `peaceai/lib/plan3run.ts` (runner: fetch, plan, grade, log row; a
 self-contained copy of the v2 runner so a v2 change cannot move v3), `peaceai/bin/plan-only-v3.ts` (CLI). Tests:
