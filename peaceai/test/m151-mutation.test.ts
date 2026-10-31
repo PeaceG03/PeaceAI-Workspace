@@ -19,7 +19,7 @@ const loopSource = readFileSync(join(libDir, "loop.ts"), "utf8");
 const TAG = /\/\/ guard:([a-z0-9-]+)(?:\s*$|",?\s*$)/;
 const lines = source.split("\n");
 const guards = lines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i }] : []; });
-const NEEDS_CAND = new Set(["deps-cand", "deps-config", "deps-timeout", "deps-size", "deps-registry", "deps-env-i", "deps-kill", "deps-chown"]);
+const NEEDS_CAND = new Set(["deps-cand", "deps-config", "deps-corepack-env", "deps-timeout", "deps-size", "deps-registry", "deps-env-i", "deps-kill", "deps-chown"]);
 const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M151_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
 
 let dir: string;
@@ -58,11 +58,12 @@ test("M151 mutation: the guard tags are unique and cover the guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
   assert.deepEqual([...ids].sort(), [
-    "deps-cand", "deps-chown", "deps-config", "deps-env-i", "deps-frozen", "deps-ignore-scripts", "deps-kill", "deps-lockfile", "deps-nonregistry", "deps-npm-allow",
+    "deps-cand", "deps-chown", "deps-config", "deps-corepack-env", "deps-env-i", "deps-frozen", "deps-ignore-scripts", "deps-kill", "deps-lockfile", "deps-nonregistry", "deps-npm-allow",
     "deps-pnpmfile", "deps-registry", "deps-size", "deps-timeout", "lock-all", "lock-link", "lock-npm", "lock-npm-both", "lock-npm-key", "lock-npm-v1", "lock-pnpm-anchor", "lock-pnpm-dup", "lock-pnpm-esc",
     "lock-pnpm-flow", "lock-pnpm-indent", "lock-pnpm-key", "lock-pnpm-link", "lock-pnpm-missing", "lock-pnpm-res", "lock-pnpm-url", "lock-size", "lock-yarn",
-    "lock-yarn-dup", "lock-yarn-field", "lock-yarn-spec", "pm-nested-lock", "pm-pnpm", "pm-tree", "pnpm-field", "pnpm-manifest", "pnpm-ws", "pnpm-ws-catalog", "pnpm-ws-key",
+    "lock-yarn-dup", "lock-yarn-field", "lock-yarn-spec", "pm-manager", "pm-nested-lock", "pm-pnpm", "pm-tree", "pm-yarn", "pnpm-field", "pnpm-manifest", "pnpm-ws", "pnpm-ws-catalog", "pnpm-ws-key",
     "pnpm-ws-other", "pnpm-ws-packages", "pnpm-ws-parse", "runner-dep", "runner-other", "service", "shim-exit", "shim-report", "shim-suites",
+    "yarn-dep-lock", "yarn-dep-shape", "yarn-resolutions", "yarn-ws-glob",
   ]);
 });
 

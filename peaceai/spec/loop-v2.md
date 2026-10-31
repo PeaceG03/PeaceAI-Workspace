@@ -82,7 +82,21 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
     rather than an allowed subset: `overrides`, `packageExtensions`, `patchedDependencies` and the settings pnpm still
     reads there can change what is fetched or from where, and none is needed for a frozen, scripts-off install.
   - npm and yarn never read pnpm's files, so those are not judged in npm / yarn repos.
-  - `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml` are removed at ANY depth from the
+  - every package manager (Auditor FAIL 71fff3d): a `packageManager` that is not exactly `name@x.y.z` with an
+    optional `+algo.hexhash` (a URL, range, tag or another manager), or a `devEngines.packageManager` /
+    `devEngines.runtime` (corepack and pnpm can download those), in any `package.json` that parses; a root
+    `package.json` that is not a JSON object.
+  - yarn only: `--frozen-lockfile` does not stop yarn v1 fetching a dependency that has no yarn.lock entry, so every
+    spec in `dependencies`, `devDependencies` and `optionalDependencies` of the root and of every workspace package
+    must be a `name@spec` header in yarn.lock (headers parsed properly: comma-separated, quoted or bare, no
+    backslash), or name a workspace package with a protocol-free range. `peerDependencies` are not installed by yarn
+    v1 and are not read. `resolutions` in any of those manifests are refused outright. `workspaces` must be a list
+    (or `{packages, nohoist}`) of plain globs; the matcher matches at least what yarn does (`*` within a segment,
+    `**` any number of segments). package.json files outside the workspaces (fixtures) are not read by yarn and are
+    not judged.
+  - plain globs (yarn workspaces and pnpm `packages`): inside the repo, no `..` segment, no leading `.` or `/`, none
+    of `{ } ? [ ] ( ) ! + @ \` (pnpm keeps a leading `!` negation).
+  - `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml`, `.corepack.env` are removed at ANY depth from the
     install tree (basename match over every tracked file, below), and untracked files are never copied there; the
     user / global config is the private HOME under `env -i`, so no repo file is read as one.
 - npm also gets `--allow-git=none --allow-remote=none --allow-file=none` (npm 11 defaults these to `all`), so npm
@@ -91,7 +105,8 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
   `env -i` with a fixed PATH and a private HOME / TMPDIR / package-manager cache, inside `timeout -s KILL`.
 - In a staging tree built from the tracked files at the pinned commit (no team tests, no edits), in the run's own
   cache dir; package-manager config files that can redirect the registry or run code (`.npmrc`, `.yarnrc`,
-  `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml`) are removed first; the registry is pinned to
+  `.yarnrc.yml`, `.pnpmfile.cjs/.mjs`, `bunfig.toml`, `.corepack.env`) are removed first (any depth); corepack is also
+  told to read no env file (`COREPACK_ENV_FILE=0`, guard deps-corepack-env); the registry is pinned to
   `https://registry.npmjs.org/`. Install scripts are off; pnpmfiles are ignored.
 - This step is the one place with network, and here the candidate uid runs a process WITH network: the package
   manager itself (npm, or pnpm / yarn which corepack fetches from the npm registry). It runs no package code:
@@ -131,7 +146,7 @@ lock-yarn-field, lock-yarn-dup, lock-yarn-spec, lock-yarn, shim-report, shim-sui
 near-miss case; the layout guards also have a near miss whose content is harmless, so only the layout rule refuses
 it. The m151
 mutation test deletes each in turn (with a loop.ts that imports the mutant) and requires a case to fail with an
-assertion. deps-cand / deps-config / deps-registry / deps-env-i / deps-kill / deps-chown / deps-timeout / deps-size
+assertion. deps-cand / deps-config / deps-corepack-env / deps-registry / deps-env-i / deps-kill / deps-chown / deps-timeout / deps-size
 need the candidate uid and sudo: where those are missing, their mutants and the install cases (`needsCand`) are
 reported as SKIPPED with a reason, never as passes; the loop cases assert the `CAND_UID_*` refusal there. The
 lockfile-scan and pm-config cases, `DEPS_NONREGISTRY` and `DEPS_PM_CONFIG` need no candidate uid and run everywhere. The tests never use the

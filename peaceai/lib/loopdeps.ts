@@ -6,12 +6,13 @@
 //      yarn install --frozen-lockfile), install scripts off (--ignore-scripts), as the stage-2 candidate uid with
 //      `env -i` and a private HOME/cache, in a per-run staging dir (never the copy, never a shared cache), with a
 //      deadline and a size cap. Package-manager config files that can redirect the registry or run code (.npmrc,
-//      .yarnrc*, .pnpmfile.*) are removed from the staging tree first, and every root lockfile is scanned first
+//      .yarnrc*, .pnpmfile.*, .corepack.env; corepack also gets COREPACK_ENV_FILE=0) are removed from the staging tree first, and every root lockfile is scanned first
 //      (size-capped; both npm lockfiles at once refused; pnpm parsed as a plain YAML subset, yarn fields strict): every
 //      package must come from https://registry.npmjs.org/ (yarn v1: or registry.yarnpkg.com) with an integrity hash
 //      (git, remote-tarball, file: and outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace /
 //      link entries inside the repo are allowed); a lockfile below the root, and for pnpm any pnpm-workspace.yaml key but
-//      packages / catalog(s) or any `pnpm` field in a package.json, is refused with DEPS_PM_CONFIG; npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
+//      packages / catalog(s) or any `pnpm` field in a package.json, a packageManager other than name@x.y.z[+hash], and
+//      for yarn v1 any manifest dependency spec without a yarn.lock header (or resolutions), is refused with DEPS_PM_CONFIG; npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
 //      as the candidate uid WITH network (registry only by config; it runs no package code: scripts off, no
 //      pnpmfile). Every candidate-uid process is killed right after the install. Tests never get network. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
 //      sha256 (+ package manager and manifests) inside one run dir only, removed with the run.
@@ -109,13 +110,15 @@ export const LOCK_MAX_BYTES = 64 * 1024 * 1024;
 /** The lockfiles at the repo root (regular files only: a symlinked lockfile is not copied to the install tree). */
 const presentLockfiles = (root: string): [string, PackageManager][] => LOCKFILES.filter(([f]) => existsSync(join(root, f)) && lstatSync(join(root, f)).isFile());
 
+/** The only packageManager form accepted: name@x.y.z with an optional +algo.hexhash (no URL, range or tag). */
+export const PACKAGE_MANAGER_FIELD = /^(npm|pnpm|yarn)@(\d{1,3}\.\d{1,3}\.\d{1,3})(?:\+[a-z0-9]+\.[0-9a-f]+)?$/;
 /** The lockfile at the repo root and the package manager that reads it (packageManager pins the version). */
 export function pickLockfile(root: string, maxBytes: number = LOCK_MAX_BYTES): LockPick | { refuse: DepsCode } {
   const present = presentLockfiles(root);
   if (!present.length) return { refuse: "DEPS_NO_LOCKFILE" }; // guard:deps-lockfile
   if (present.some(([f]) => lstatSync(join(root, f)).size > maxBytes)) return { refuse: "DEPS_TOO_LARGE" }; // guard:lock-size
   const pmField = String(readJson(join(root, "package.json"))?.packageManager ?? "");
-  const m = /^(npm|pnpm|yarn)@(\d{1,3}\.\d{1,3}\.\d{1,3})(?:\+[a-z0-9]+\.[0-9a-f]+)?$/.exec(pmField);
+  const m = PACKAGE_MANAGER_FIELD.exec(pmField);
   const [lockfile, pm] = (m && present.find(([, pm]) => pm === m[1])) || present[0] || ["package-lock.json", "npm" as const];
   let text = "";
   try { text = readFileSync(join(root, lockfile), "utf8"); } catch { text = ""; }
@@ -343,6 +346,38 @@ export function pnpmLockAllowed(text: string): boolean {
   return walk(doc, []);
 }
 
+/** One yarn.lock v1 header line ("a@^1", a@^1.2:) -> its specs, each quoted (no backslash) or bare, comma-separated;
+ * null for any other shape. */
+export function yarnHeaderSpecs(line: string): string[] | null {
+  if (!line.endsWith(":")) return null;
+  const s = line.slice(0, -1);
+  const out: string[] = [];
+  let i = 0;
+  for (;;) {
+    while (s[i] === " ") i++;
+    let tok: string;
+    if (s[i] === '"') { const j = s.indexOf('"', i + 1); if (j < 0) return null; tok = s.slice(i + 1, j); i = j + 1; if (tok.includes("\\")) return null; }
+    else { const j = s.indexOf(",", i); const end = j < 0 ? s.length : j; tok = s.slice(i, end).trimEnd(); i = end; if (/["\s]/.test(tok)) return null; }
+    if (!tok) return null;
+    out.push(tok);
+    while (s[i] === " ") i++;
+    if (i >= s.length) return out;
+    if (s[i] !== ",") return null;
+    i++;
+  }
+}
+/** Every spec in a yarn.lock v1's headers (name@range, as package.json writes it), or null when a header is malformed. */
+export function yarnLockSpecs(text: string): Set<string> | null {
+  const out = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    if (!/^[^\s#]/.test(line)) continue;
+    const specs = yarnHeaderSpecs(line);
+    if (!specs) return null;
+    for (const x of specs) out.add(x);
+  }
+  return out;
+}
+
 /** yarn.lock v1 (berry is refused earlier): fields at 2 spaces, dependency maps at 4; no duplicate or quoted field. */
 export function yarnLockAllowed(text: string): boolean {
   const blocks: { specs: string[]; fields: Map<string, string | null>; inMap: boolean }[] = [];
@@ -350,7 +385,7 @@ export function yarnLockAllowed(text: string): boolean {
   if (lines.some((l) => /[\r\t]/.test(l))) return false;
   for (const line of lines) {
     if (!line.trim() || line.startsWith("#")) continue;
-    if (/^\S/.test(line)) { if (!line.endsWith(":")) return false; blocks.push({ specs: line.slice(0, -1).split(/,\s*/).map(unquote), fields: new Map(), inMap: false }); continue; }
+    if (/^\S/.test(line)) { const specs = yarnHeaderSpecs(line); if (!specs) return false; blocks.push({ specs, fields: new Map(), inMap: false }); continue; }
     const b = blocks[blocks.length - 1];
     if (!b) return false;
     if (/^ {4}\S/.test(line)) { if (!b.inMap || !/^ {4}("[^"\\]*"|[^\s"]+) ("[^"\\]*"|[^\s"]+)$/.test(line)) return false; continue; }
@@ -420,6 +455,66 @@ export function treeFiles(root: string): { files: string[]; complete: boolean } 
   return { files, complete };
 }
 
+/** A workspace glob of plain path segments with * and ** only: inside the repo, no "..", no leading "." or "/", no
+ * brace / class / ? / extglob / escape syntax (so the matcher below matches at least what the package manager does). */
+export function plainGlob(g: string): boolean {
+  return insideRepo(".", g) && !/(?:^|\/)\.\.(?:\/|$)/.test(g) && !/^[./]/.test(g) && !/[{}?[\]()!+@\\]/.test(g);
+}
+/** A plain glob -> a test over repo-relative dirs: "*" is any chars within a segment, a "**" segment any number of
+ * segments (none too). Matched against "/" + dir so a "**" segment can stand for nothing. */
+const globRx = (g: string): RegExp => new RegExp("^" + g.replace(/\/+$/, "").split("/").map((seg) => seg === "**" ? "(?:/.*)?" : "/" + seg.replace(/[.^$|]/g, "\\$&").replace(/\*+/g, "[^/]*")).join("") + "$");
+
+/** A package.json as a JSON object (regular file, size-capped, a leading BOM stripped as the package managers do), or null. */
+function readPkg(p: string): Record<string, unknown> | null {
+  const t = smallFile(p);
+  if (t === null) return null;
+  try { const o = JSON.parse(t.replace(/^\ufeff/, "")); return o && typeof o === "object" && !Array.isArray(o) ? o : null; } catch { return null; }
+}
+
+/** packageManager (read by corepack and by pnpm itself) only as name@x.y.z[+hash]; no devEngines package manager /
+ * runtime (corepack and pnpm can fetch those). The root must be a JSON object; other package.json files are judged
+ * when they parse (corepack reads the nearest one to the install dir: the root). */
+export function managerFieldsOk(p: string, isRoot: boolean): boolean {
+  const o = readPkg(p);
+  if (!o) return !isRoot;
+  if (o.packageManager !== undefined && !(typeof o.packageManager === "string" && PACKAGE_MANAGER_FIELD.test(o.packageManager))) return false;
+  const de = o.devEngines;
+  return de === undefined || (!!de && typeof de === "object" && !Array.isArray(de) && !Object.hasOwn(de, "packageManager") && !Object.hasOwn(de, "runtime"));
+}
+
+/** Dependency fields yarn v1 installs (peerDependencies are not installed by yarn v1, so not read here). */
+export const YARN_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
+/**
+ * yarn v1 only: --frozen-lockfile does not stop yarn fetching a dependency that has no yarn.lock entry, so every
+ * dependency spec in the root and in every workspace package must be a `name@spec` header in yarn.lock, or name a
+ * workspace package with a protocol-free range. resolutions (anywhere) are refused outright; workspaces must be
+ * plain globs (an array, or {packages, nohoist}).
+ */
+export function yarnManifestsAllowed(root: string, files: readonly string[]): boolean {
+  const lockText = smallFile(join(root, "yarn.lock"));
+  const lock = lockText === null ? null : yarnLockSpecs(lockText);
+  const rootPkg = readPkg(join(root, "package.json"));
+  if (!lock || !rootPkg) return false;
+  const ws = rootPkg.workspaces;
+  const globs = ws === undefined ? [] : Array.isArray(ws) ? ws : ws && typeof ws === "object" && Object.keys(ws).every((k) => k === "packages" || k === "nohoist") ? ((ws as { packages?: unknown }).packages ?? []) : null;
+  if (!Array.isArray(globs) || !globs.every((g) => typeof g === "string" && plainGlob(g))) return false; // guard:yarn-ws-glob
+  const rxs = (globs as string[]).map(globRx);
+  const wsDirs = files.filter((f) => posix.basename(f) === "package.json" && f.includes("/")).map((f) => posix.dirname(f)).filter((d) => rxs.some((r) => r.test("/" + d)));
+  const pkgs = [rootPkg, ...wsDirs.map((d) => readPkg(join(root, d, "package.json")))];
+  if (pkgs.some((x) => x === null)) return false;
+  const names = new Set(pkgs.slice(1).map((x) => x!.name).filter((n): n is string => typeof n === "string"));
+  for (const pkg of pkgs as Record<string, unknown>[]) {
+    if (Object.hasOwn(pkg, "resolutions")) return false; // guard:yarn-resolutions
+    for (const field of YARN_DEP_FIELDS) {
+      const deps = pkg[field];
+      if (deps === undefined) continue;
+      if (!deps || typeof deps !== "object" || Array.isArray(deps) || !Object.values(deps).every((v) => typeof v === "string")) return false; // guard:yarn-dep-shape
+      for (const [n, spec] of Object.entries(deps as Record<string, string>)) if (!lock.has(`${n}@${spec}`) && !(names.has(n) && !/[:/]/.test(spec))) return false; // guard:yarn-dep-lock
+    }
+  }
+  return true;
+}
+
 /** A regular file under the size cap, as text; null otherwise (a symlink, a dir, unreadable, too large). */
 function smallFile(p: string): string | null {
   try { const st = lstatSync(p); if (!st.isFile() || st.size > LOCK_MAX_BYTES) return null; return readFileSync(p, "utf8"); } catch { return null; }
@@ -433,7 +528,7 @@ export function pnpmWorkspaceAllowed(text: string): boolean {
   const doc = parsed ?? ymap();
   if (!Object.keys(doc).every((k) => (PNPM_WORKSPACE_KEYS as readonly string[]).includes(k))) return false; // guard:pnpm-ws-key
   const pk = doc.packages;
-  if (pk !== undefined && pk !== "" && !(Array.isArray(pk) && pk.every((g) => typeof g === "string" && insideRepo(".", g.replace(/^!/, ""))))) return false; // guard:pnpm-ws-packages
+  if (pk !== undefined && pk !== "" && !(Array.isArray(pk) && pk.every((g) => typeof g === "string" && plainGlob(g.replace(/^!/, ""))))) return false; // guard:pnpm-ws-packages
   const specs = (m: YNode | undefined): boolean => m === undefined || m === "" || (isYMap(m) && Object.values(m).every((v) => typeof v === "string" && v !== "" && !v.replace(/^npm:/, "").includes(":")));
   if (!specs(doc.catalog) || !(doc.catalogs === undefined || doc.catalogs === "" || (isYMap(doc.catalogs) && Object.values(doc.catalogs).every(specs)))) return false; // guard:pnpm-ws-catalog
   return true;
@@ -469,14 +564,16 @@ export function depsSourceProblem(root: string, p: LockPick): "DEPS_PM_CONFIG" |
   const tree = treeFiles(root);
   if (!tree.complete) return "DEPS_PM_CONFIG"; // guard:pm-tree
   if (tree.files.some((f) => f.includes("/") && (NESTED_LOCKFILES as readonly string[]).includes(posix.basename(f)))) return "DEPS_PM_CONFIG"; // guard:pm-nested-lock
+  if (!tree.files.every((f) => posix.basename(f) !== "package.json" || managerFieldsOk(join(root, f), f === "package.json"))) return "DEPS_PM_CONFIG"; // guard:pm-manager
   if (p.pm === "pnpm" && !pnpmConfigAllowed(root, tree.files)) return "DEPS_PM_CONFIG"; // guard:pm-pnpm
+  if (p.pm === "yarn" && !yarnManifestsAllowed(root, tree.files)) return "DEPS_PM_CONFIG"; // guard:pm-yarn
   return rootLockfilesAllowed(root, p) ? null : "DEPS_NONREGISTRY";
 }
 /** True when installDeps may run the package manager on this copy (depsSourceProblem is null). */
 export const lockfileAllowed = (root: string, p: LockPick): boolean => depsSourceProblem(root, p) === null;
 
 /** Package-manager config files that can redirect the registry or run code at install time. */
-export const PM_CONFIG_FILES = [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", ".pnpmfile.mjs", "bunfig.toml"] as const;
+export const PM_CONFIG_FILES = [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", ".pnpmfile.mjs", "bunfig.toml", ".corepack.env"] as const;
 
 export interface DepsOptions {
   /** Install deadline (ms). */
@@ -611,6 +708,7 @@ function install(copyDir: string, files: readonly string[], lock: LockPick, cand
     npm_config_update_notifier: "false", YARN_CACHE_FOLDER: join(home, "yarn-cache"), ...o.extraEnv,
   };
   env.npm_config_registry = REGISTRY; // guard:deps-registry
+  env.COREPACK_ENV_FILE = "0"; // guard:deps-corepack-env
   const argv = installArgv(lock, o.tool ?? null);
   const secs = String(Math.max(1, Math.ceil(timeoutMs / 1000)));
   const cmd = [...Object.entries(env).map(([k, v]) => `${k}=${v}`), "timeout", "-s", "KILL", secs, ...argv];

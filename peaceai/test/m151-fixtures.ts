@@ -47,7 +47,7 @@ export const STUB_PM = [
   'if (!args.includes("--ignore-scripts")) process.exit(3);',
   'if (pm !== "npm" && !args.includes("--frozen-lockfile")) process.exit(4);',
   'if (pm === "npm" && !["--allow-git=none", "--allow-remote=none", "--allow-file=none"].every((f) => args.includes(f))) process.exit(6);',
-  'for (const f of [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", ".pnpmfile.mjs"]) if (existsSync(f)) process.exit(5);',
+  'for (const f of [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", ".pnpmfile.mjs", ".corepack.env"]) if (existsSync(f)) process.exit(5);',
   'const mode = process.env.M151_STUB_PM || "";',
   'if (mode === "sleep") await new Promise((r) => setTimeout(r, 3_600_000));',
   'if (mode === "fail") process.exit(1);',
@@ -57,7 +57,7 @@ export const STUB_PM = [
   'if (process.env.M151_STUB_VITEST_DIR) cpSync(process.env.M151_STUB_VITEST_DIR, "node_modules/vitest", { recursive: true });',
   'writeFileSync("node_modules/.m151-uid", String(process.getuid()));',
   'writeFileSync("node_modules/.m151-argv", JSON.stringify([pm, ...args]));',
-  'writeFileSync("node_modules/.m151-env", JSON.stringify({ registry: process.env.npm_config_registry ?? null, sudoVars: Object.keys(process.env).filter((k) => k.startsWith("SUDO_")).length }));',
+  'writeFileSync("node_modules/.m151-env", JSON.stringify({ registry: process.env.npm_config_registry ?? null, corepackEnvFile: process.env.COREPACK_ENV_FILE ?? null, sudoVars: Object.keys(process.env).filter((k) => k.startsWith("SUDO_")).length }));',
   'if (mode === "big") writeFileSync("node_modules/big.bin", Buffer.alloc(2 << 20));',
   "",
 ].join("\n");

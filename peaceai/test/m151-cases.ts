@@ -135,7 +135,7 @@ export const CASES: Case[] = [
     needsCand: CAND_SKIP,
     run(l, ctx) {
       withCache(l, ctx, (cache) => {
-        const { d, r } = install(l, ctx, cache, { ".npmrc": "registry=http://127.0.0.1:9/\n" });
+        const { d, r } = install(l, ctx, cache, { ".npmrc": "registry=http://127.0.0.1:9/\n", ".corepack.env": "COREPACK_NPM_REGISTRY=http://127.0.0.1:9\n", "sub/.corepack.env": "COREPACK_INTEGRITY_KEYS=0\n" });
         assert.deepEqual(r, { pm: "npm" });
         assert.equal(readFileSync(join(d, "node_modules/.m151-uid"), "utf8"), String(ctx.cand!.uid), "the package manager ran as the candidate uid");
         assert.ok(JSON.parse(readFileSync(join(d, "node_modules/.m151-argv"), "utf8")).includes("--ignore-scripts"));
@@ -145,8 +145,10 @@ export const CASES: Case[] = [
         assert.equal(statSync(staging.staging).uid, process.getuid!(), "the installed tree is the runner's again");
         assert.equal(statSync(join(staging.staging, "node_modules")).mode & 0o022, 0, "and not group / world writable");
         assert.ok(!existsSync(join(staging.staging, ".npmrc")), "config files are not in the install tree");
+        assert.ok(!existsSync(join(staging.staging, ".corepack.env")) && !existsSync(join(staging.staging, "sub/.corepack.env")), ".corepack.env (any depth) is not in the install tree");
         const env = JSON.parse(readFileSync(join(d, "node_modules/.m151-env"), "utf8"));
         assert.equal(env.registry, "https://registry.npmjs.org/", "the registry is pinned");
+        assert.equal(env.corepackEnvFile, "0", "corepack reads no .corepack.env (COREPACK_ENV_FILE=0)");
         assert.equal(env.sudoVars, 0, "env -i: nothing from the caller's or sudo's environment");
       });
     },
@@ -401,6 +403,10 @@ export const CASES: Case[] = [
         ["a negated glob outside the repo", ok.replace("  - website\n", "  - '!../outside'\n")],
         ["an absolute glob", ok.replace("  - website\n", "  - /abs\n")],
         ["packages not a list", "packages:\n  a: b\n"],
+        ["a glob with a leading ./", ok.replace("  - website\n", "  - './website'\n")],
+        ["a glob with a brace set", ok.replace("  - website\n", "  - 'packages/{a,b}'\n")],
+        ["a glob with ..", ok.replace("  - website\n", "  - 'packages/a/../b'\n")],
+        ["a glob with ? / a class", ok.replace("  - website\n", "  - 'packages/[ab]?'\n")],
         ["a url catalog entry", ok.replace("vitest: ^3.0.0", "vitest: 'https://evil.example/v.tgz'")],
         ["a file: catalog entry", ok.replace("vitest: ^3.0.0", "vitest: 'file:vendor/v'")],
         ["a link: entry in a named catalog", ok.replace("vitest: ^2.0.0", "vitest: 'link:../v'")],
@@ -450,6 +456,74 @@ export const CASES: Case[] = [
         assert.deepEqual(l.deps.installDeps(d, fake as never, cache, { tool: ctx.tool, onInstall: () => { ran++; } }), { refuse: "DEPS_PM_CONFIG" });
         assert.equal(ran, 0);
       });
+    },
+  },
+  // ---- corepack and yarn v1 manifests, round 5 (Auditor FAIL 71fff3d)
+  {
+    id: "pm config (corepack): packageManager only as name@x.y.z[+hash], no devEngines package manager / runtime, a root package.json that is JSON; .corepack.env is a stripped config file",
+    run(l, ctx) {
+      assert.ok((l.deps.PM_CONFIG_FILES as readonly string[]).includes(".corepack.env"));
+      const npmOk = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT } } });
+      const problem = (pkg: string, more: Record<string, string> = {}) => { const d = plain(dir(ctx, "corepack"), { "package.json": pkg, "package-lock.json": npmOk, ...more }); const p = l.deps.pickLockfile(d); assert.ok(!("refuse" in p)); return l.deps.depsSourceProblem(d, p); };
+      for (const pm of ["npm@10.9.2", "yarn@1.22.22+sha512.0123abcd", undefined]) assert.equal(problem(JSON.stringify({ packageManager: pm })), null, String(pm));
+      assert.equal(problem(JSON.stringify({ devEngines: { os: { name: "linux" } } })), null, "devEngines without a package manager / runtime");
+      assert.equal(problem(pkgJson({}), { "fixtures/broken/package.json": "{not json" }), null, "a nested package.json that is not JSON (corepack reads the root)");
+      const bad: [string, string, Record<string, string>?][] = [
+        ["a URL (corepack fetches it)", JSON.stringify({ packageManager: "yarn@https://evil.example/yarn-1.22.22.tgz" })],
+        ["a range", JSON.stringify({ packageManager: "npm@^10" })],
+        ["a tag", JSON.stringify({ packageManager: "pnpm@latest" })],
+        ["another manager", JSON.stringify({ packageManager: "bun@1.1.0" })],
+        ["not a string", JSON.stringify({ packageManager: 10 })],
+        ["a hash with upper case / odd chars", JSON.stringify({ packageManager: "npm@10.9.2+sha512.XYZ" })],
+        ["devEngines.packageManager", JSON.stringify({ devEngines: { packageManager: { name: "pnpm", version: "^10", onFail: "download" } } })],
+        ["devEngines.runtime", JSON.stringify({ devEngines: { runtime: { name: "node", onFail: "download" } } })],
+        ["a root package.json that is not JSON", "{packageManager: 'npm@10.9.2'}"],
+        ["a bad packageManager in a nested package.json", pkgJson({}), { "packages/a/package.json": JSON.stringify({ packageManager: "pnpm@https://evil.example/p.tgz" }) }],
+      ];
+      for (const [why, pkg, more] of bad) assert.equal(problem(pkg, more), "DEPS_PM_CONFIG", why);
+    },
+  },
+  {
+    id: "pm config (yarn v1): every dependency spec of the root and the workspace packages must be a yarn.lock header (or a workspace package); resolutions, odd workspace globs, odd dependency maps -> DEPS_PM_CONFIG",
+    run(l, ctx) {
+      const lockAll = YARN_OK.replace('"a@^1.0.0", a@^1.1.0:', '"a@1", "a@^1.0.0", a@^1.1.0:');
+      const root = (o: Record<string, unknown>) => JSON.stringify({ packageManager: "yarn@1.22.22", private: true, workspaces: ["packages/*"], dependencies: { a: "^1.0.0" }, ...o });
+      const base: Record<string, string> = {
+        "package.json": root({ devDependencies: { "@s/b": "npm:c@^2" }, optionalDependencies: { a: "^1.1.0" }, peerDependencies: { zzz: "^9" } }),
+        "yarn.lock": lockAll,
+        "packages/w/package.json": JSON.stringify({ name: "w", version: "1.0.0", dependencies: { a: "^1.1.0" } }),
+        "packages/x/package.json": JSON.stringify({ name: "x", dependencies: { w: "^1.0.0", "@s/b": "npm:c@^2" } }),
+        "test/fixtures/p/package.json": JSON.stringify({ dependencies: { "is-number": "https://evil.example/n.tgz" } }),
+      };
+      const problem = (files: Record<string, string>) => { const d = plain(dir(ctx, "yarnman"), files); const p = l.deps.pickLockfile(d); assert.ok(!("refuse" in p)); assert.equal(p.pm, "yarn"); return l.deps.depsSourceProblem(d, p); };
+      assert.equal(problem(base), null, "locked specs (multi-spec and quoted headers), an npm: alias, a workspace dep, peers (not installed by yarn v1), a non-workspace fixture");
+      assert.equal(problem({ ...base, "package.json": root({ workspaces: { packages: ["packages/*"], nohoist: ["**/x"] } }) }), null, "workspaces as {packages, nohoist}");
+      assert.equal(problem({ ...base, "package.json": root({ dependencies: { w: "link:packages/w" } }) }), null, "a locked link: spec");
+      const evil = "https://evil.example/is-number-7.0.0.tgz";
+      const bad: [string, Record<string, string>][] = [
+        ["a URL dependency with a header-only yarn.lock (Auditor)", { "package.json": JSON.stringify({ packageManager: "yarn@1.22.22", dependencies: { "is-number": evil } }), "yarn.lock": "# yarn lockfile v1\n\n" }],
+        ["a URL dependency in a workspace package (Auditor)", { ...base, "packages/w/package.json": JSON.stringify({ name: "w", dependencies: { "is-number": evil } }) }],
+        ["a registry range with no lock entry", { ...base, "package.json": root({ dependencies: { "is-number": "^7.0.0" } }) }],
+        ["a spec that differs from the header", { ...base, "package.json": root({ dependencies: { a: "^1.2.0" } }) }],
+        ["an unlocked devDependency", { ...base, "package.json": root({ devDependencies: { c: "^2" } }) }],
+        ["an unlocked optionalDependency", { ...base, "package.json": root({ optionalDependencies: { c: "^2" } }) }],
+        ["a workspace name with a protocol", { ...base, "package.json": root({ dependencies: { w: "file:packages/w" } }) }],
+        ["a ** workspace glob reaching a nested package", { ...base, "package.json": root({ workspaces: ["packages/**"] }), "packages/w/deep/package.json": JSON.stringify({ name: "deep", dependencies: { "is-number": evil } }) }],
+        ["resolutions at the root", { ...base, "package.json": root({ resolutions: { a: "1.1.0" } }) }],
+        ["resolutions in a workspace package", { ...base, "packages/w/package.json": JSON.stringify({ name: "w", resolutions: {} }) }],
+        ["a dependency map that is a list", { ...base, "package.json": root({ dependencies: ["a@^1.0.0"] }) }],
+        ["a non-string spec that would print as a locked one", { ...base, "package.json": root({ dependencies: { a: 1 } }) }],
+        ["a workspace glob outside the repo", { ...base, "package.json": root({ workspaces: ["../*"] }) }],
+        ["a workspace glob with a leading ./", { ...base, "package.json": root({ workspaces: ["./packages/*"] }) }],
+        ["a workspace glob with a brace set", { ...base, "package.json": root({ workspaces: ["packages/{a,b}"] }) }],
+        ["a workspace glob with ? / a class / a negation", { ...base, "package.json": root({ workspaces: ["packages/[wx]?", "!packages/x"] }) }],
+        ["workspaces with another key", { ...base, "package.json": root({ workspaces: { packages: ["packages/*"], other: [] } }) }],
+        ["a workspace package.json that is not JSON", { ...base, "packages/w/package.json": "{name: w}" }],
+      ];
+      for (const [why, files] of bad) assert.equal(problem(files), "DEPS_PM_CONFIG", why);
+      assert.deepEqual(l.deps.yarnHeaderSpecs('"a@^1.0.0", a@^1.1.0:'), ["a@^1.0.0", "a@^1.1.0"]);
+      assert.deepEqual(l.deps.yarnHeaderSpecs('"a@>=1 <2", "@s/b@npm:c@^2":'), ["a@>=1 <2", "@s/b@npm:c@^2"]);
+      for (const h of ['"a@1:', 'a@1 2:', 'a@1,,b:', '"a@\\x31":', 'a@1']) assert.equal(l.deps.yarnHeaderSpecs(h), null, h);
     },
   },
   // ---- the shim (guard:shim-report, guard:shim-suites, guard:shim-exit)
