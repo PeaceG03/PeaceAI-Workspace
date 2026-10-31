@@ -180,7 +180,7 @@ Rows are `peaceai-plan-loop:v2` / `loop-v2` with three more required keys: `runn
 null when refused before one was picked), `deps` (none / npm / pnpm / yarn, or null) and `baseline`
 (`{ total, passing, failing }` for the team's tests on the unedited copy, or null when it did not run). New codes:
 `TEST_NEEDS_SERVICE`, `DEPS_NO_LOCKFILE`, `DEPS_PM_UNSUPPORTED`, `DEPS_NONREGISTRY`, `DEPS_PM_CONFIG`,
-`DEPS_INSTALL_FAILED`, `DEPS_TIMEOUT`, `DEPS_TOO_LARGE`, attempt code `RELATED_FAIL` (all v2-only; v1 rows keep validating as before). Codes
+`DEPS_INSTALL_FAILED`, `DEPS_TIMEOUT`, `DEPS_TOO_LARGE`, (M152) `PROPOSER_FAILED`, attempt code `RELATED_FAIL` (all v2-only; v1 rows keep validating as before). Codes
 and numbers only, as v1. Hidden-set rows carry the taskKey plus scores only: `runner`, `deps` and `baseline` are
 always null there (together they could identify the repo); the loop writes them so and the validator refuses
 anything else (`hidden_detail`).

@@ -262,8 +262,12 @@ export interface LoopOptions {
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface LoopResult { row: LoopRow; plan: Plan | null; attempts: AttemptRecord[]; context: string[] }
 
-export function loopSha256(): string {
-  return sha256(["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"].map((f) => readFileSync(join(ROOT, "peaceai", f), "utf8")).join("\0"));
+/** The loop's code, hashed into every row: the loop, its row, its dependency install and (M152) the edit proposer, so a
+ *  row binds the proposer version it was produced with. `root` is for tests only. */
+export function loopSha256(root: string = ROOT): string {
+  const files = ["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"];
+  files.push("lib/editpropose.ts"); // m152-guard:sha-proposer
+  return sha256(files.map((f) => readFileSync(join(root, "peaceai", f), "utf8")).join("\0"));
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
@@ -345,7 +349,10 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     // (M152) the proposer's search, on the pinned commit without the team's tests
     if (o.proposer.prepare) {
       resetCopy(c); // m152-guard:prepare-clean
-      o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: [...base.failing] });
+      // a throwing search is the proposer's failure, not the fetch's: a fixed code, the error itself is dropped
+      let prepared = true;
+      try { o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: [...base.failing] }); } catch { prepared = false; }
+      if (!prepared) return done("PROPOSER_FAILED"); // m152-guard:prepare-failed
     }
     // 4. the first proposal
     const feedback: Feedback[] = [];

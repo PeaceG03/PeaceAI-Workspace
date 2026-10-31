@@ -41,3 +41,8 @@ test("M152: the loop gives the proposer counts in the feedback and calls prepare
   const at = src.indexOf("o.proposer.prepare(");
   assert.ok(at > 0 && src.lastIndexOf("resetCopy(c); // m152-guard:prepare-clean", at) > src.lastIndexOf("putTeamTests();", at), "prepare must follow a reset after the baseline");
 });
+
+test("M152: a throwing prepare is caught without binding the error (no message text can reach a row)", () => {
+  const src = readFileSync(join(ROOT, "peaceai/lib/loop.ts"), "utf8");
+  assert.match(src, /try \{ o\.proposer\.prepare\([^\n]*\); \} catch \{ prepared = false; \}\n\s*if \(!prepared\) return done\("PROPOSER_FAILED"\); \/\/ m152-guard:prepare-failed/);
+});

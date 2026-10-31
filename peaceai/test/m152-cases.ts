@@ -5,11 +5,12 @@
 // run anywhere. The loop case runs the real loop (node:test in the stage-2 isolation) and needs the candidate uid;
 // without it, it asserts the fail-closed CAND_UID_* refusal.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
 import { openRepo } from "../lib/codesearch.ts";
+import { loopRowProblem } from "../lib/looprow.ts";
 import type * as Prop from "../lib/editpropose.ts";
 import type * as Loop from "../lib/loop.ts";
 import type { M152Ctx } from "./m152-fixtures.ts";
@@ -243,6 +244,49 @@ export const CASES: Case[] = [
       assert.equal(r.row.code, "PASS");
       assert.equal(r.row.proposer, "repair-v1");
       assert.ok(r.row.baseline && r.row.baseline.failing > 0);
+    },
+  },
+  {
+    id: "prepare-failed: a proposer whose search throws ends the task as PROPOSER_FAILED (fixed code, no error text); near miss: the same proposer not throwing passes",
+    run(l, ctx) {
+      const SECRET = "m152-secret-error-text /tmp/should-never-reach-a-row";
+      const opts = (proposer: Loop.Proposer) => ({ root: ctx.root, fetcher: ctx.fetcher, proposer, maxAttempts: 20, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>() });
+      const throwing = (fail: boolean): Loop.Proposer => {
+        const inner = l.prop.repairProposer();
+        // the search itself runs first, so without the guard the loop would go on and pass
+        return { name: inner.name, prepare(search, input) { inner.prepare(search, input); if (fail) throw new Error(SECRET); }, next: (i) => inner.next(i) };
+      };
+      if (!ctx.cand) {
+        assert.match(l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(throwing(true))).row.code, /^CAND_UID_/);
+        return;
+      }
+      const bad = l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(throwing(true)));
+      assert.equal(bad.row.code, "PROPOSER_FAILED");
+      assert.equal(bad.row.result, "refused");
+      assert.equal(bad.row.attempts, 0);
+      assert.ok(bad.row.baseline && bad.row.baseline.failing > 0, "the baseline still ran and is recorded");
+      assert.equal(loopRowProblem(bad.row), null);
+      assert.ok(!JSON.stringify(bad.row).includes("m152-secret"), "the error text reached the row");
+      const { runner: _r, deps: _d, baseline: _b, ...v1 } = bad.row;
+      assert.equal(loopRowProblem({ ...v1, schema: "peaceai-plan-loop:v1", loop: "loop-v1" } as never), "code", "v1 rows cannot carry PROPOSER_FAILED");
+      assert.equal(loopRowProblem({ ...v1, code: "NO_EDIT", schema: "peaceai-plan-loop:v1", loop: "loop-v1" } as never), null, "near miss: the same v1 row with a v1 code validates");
+      // near miss: the same proposer, not throwing
+      assert.equal(l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), opts(throwing(false))).row.code, "PASS");
+    },
+  },
+  {
+    id: "sha-proposer: loopSha256 binds editpropose.ts (a changed proposer gives a new hash); near miss: a file outside the loop does not",
+    run(l, ctx) {
+      const root = join(ctx.base, "sha-root");
+      mkdirSync(join(root, "peaceai/lib"), { recursive: true });
+      for (const f of ["loop.ts", "looprow.ts", "loopdeps.ts", "editpropose.ts", "codesearch.ts"]) copyFileSync(join(l.loop.ROOT, "peaceai/lib", f), join(root, "peaceai/lib", f));
+      const h0 = l.loop.loopSha256(root);
+      assert.match(h0, /^[0-9a-f]{64}$/);
+      // near miss: a file the loop row does not bind
+      writeFileSync(join(root, "peaceai/lib/codesearch.ts"), readFileSync(join(root, "peaceai/lib/codesearch.ts"), "utf8") + "\n// changed\n");
+      assert.equal(l.loop.loopSha256(root), h0, "a file outside the loop changed the hash");
+      writeFileSync(join(root, "peaceai/lib/editpropose.ts"), readFileSync(join(root, "peaceai/lib/editpropose.ts"), "utf8") + "\n// changed\n");
+      assert.notEqual(l.loop.loopSha256(root), h0, "a changed edit proposer kept the same loopSha256");
     },
   },
 ];

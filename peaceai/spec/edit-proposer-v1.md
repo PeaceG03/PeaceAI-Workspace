@@ -35,6 +35,11 @@ team's tests pass and the related tests do not regress (loop v2, unchanged).
 - `Proposer.prepare?(search, { request, failing })`: called once per task after the baseline, on the copy reset to
   the pinned commit, so the search tools never see the team's test files the task is graded by
   (`// m152-guard:prepare-clean`; separate tag so the m146 guard list is unchanged). The proposer searches only here.
+- If `prepare` throws, the task ends as `PROPOSER_FAILED` (a v2-only code; `// m152-guard:prepare-failed`). The
+  error is caught without binding it, so no message text can reach the row. (Before, the loop's outer catch called
+  this FETCH_FAILED.)
+- `loopSha256()` hashes lib/editpropose.ts as well as loop.ts, looprow.ts and loopdeps.ts, so every row binds the
+  proposer version it ran with (`// m152-guard:sha-proposer`). Rows written before this change carry the older hash.
 - `Feedback.tests` (the attempt's counts) and `ProposeInput.baseline`.
 - `LoopOptions.makeProposer`: a fresh proposer per task in `runLoopFile`.
 - `bin/loop.ts --proposer rules-v1|repair-v1` (default rules-v1, unchanged behavior).
@@ -42,7 +47,8 @@ team's tests pass and the related tests do not regress (loop v2, unchanged).
 ## Guards
 
 Single lines tagged `// guard:<id>` in editpropose.ts: span-strings, test-path, generated, changed, parse, cap,
-dedupe, stop-unsafe, combine-improved; plus `loop-prepare-clean` in loop.ts. m152-mutation deletes each and requires
+dedupe, stop-unsafe, combine-improved; plus `loop-prepare-clean`, `loop-prepare-failed` and `loop-sha-proposer`
+in loop.ts. m152-mutation deletes each and requires
 a case to fail with an assertion; every guard has a refused near-miss case.
 
 ## Limits

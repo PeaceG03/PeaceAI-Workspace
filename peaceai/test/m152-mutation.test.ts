@@ -3,7 +3,8 @@
 // "// m152-guard:<id>" (a separate tag, so the m146 guard list is unchanged). For each one, this test deletes that
 // line, writes the mutant (and a loop.ts that imports it) to a temp dir and runs the M152 cases against them in a
 // child process group (capped at MUTANT_MS, group killed). At least one case must fail with an assertion (not a
-// crash). The loop guard is only observable with the stage-2 candidate uid; elsewhere it is reported, not claimed.
+// crash). The loop prepare guards are only observable with the stage-2 candidate uid; elsewhere they are reported
+// (skipped), not claimed. loop-sha-proposer runs everywhere.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -25,6 +26,8 @@ const guards = [
   ...propLines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i, file: "prop" as const }] : []; }),
   ...loopLines.flatMap((l, i) => { const m = LOOP_TAG.exec(l); return m ? [{ id: `loop-${m[1]!}`, line: i, file: "loop" as const }] : []; }),
 ];
+// loop guards observable without the candidate uid (the rest need the stage-2 isolation to reach them)
+const NO_CAND_GUARDS = new Set(["loop-sha-proposer"]);
 const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
 
 let dir: string;
@@ -62,7 +65,7 @@ function runMutant(name: string, propText: string, loopText: string): Promise<{ 
 test("M152 mutation: the guard tags are unique and cover the guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
-  assert.deepEqual([...ids].sort(), ["cap", "changed", "combine-improved", "dedupe", "generated", "loop-prepare-clean", "parse", "span-strings", "stop-unsafe", "test-path"]);
+  assert.deepEqual([...ids].sort(), ["cap", "changed", "combine-improved", "dedupe", "generated", "loop-prepare-clean", "loop-prepare-failed", "loop-sha-proposer", "parse", "span-strings", "stop-unsafe", "test-path"]);
 });
 
 test("M152 mutation: the unmutated copy passes every case (the harness itself is sound)", async () => {
@@ -74,7 +77,7 @@ test("M152 mutation: the unmutated copy passes every case (the harness itself is
 
 for (const g of guards) {
   test(`M152 mutation: deleting guard:${g.id} makes a case fail`, async (t) => {
-    if (g.file === "loop" && !cand) { t.skip("needs the stage-2 candidate uid (box / private job)"); return; }
+    if (g.file === "loop" && !NO_CAND_GUARDS.has(g.id) && !cand) { t.skip("needs the stage-2 candidate uid (box / private job)"); return; }
     const drop = (lines: string[]) => lines.filter((_, i) => i !== g.line).join("\n");
     const r = await runMutant(g.id, g.file === "prop" ? drop(propLines) : propSource, g.file === "loop" ? drop(loopLines) : loopSource);
     assert.ok(r, `guard:${g.id} mutant hung`);
