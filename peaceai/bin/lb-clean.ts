@@ -53,8 +53,10 @@ function readCorpus(dir: string): { docs: Map<number, string>; man: any[]; docsB
   return { docs, man, docsBuf, manBuf };
 }
 
-const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap((e) => e.isDirectory() ? (["node_modules", ".git"].includes(e.name) ? [] : walk(join(d, e.name))) : e.isFile() ? [join(d, e.name)] : []);
-const refFile = (dir: string, f: string) => { const p = relative(dir, f); return CODE_FILE.test(p) && !p.endsWith(".d.ts") && statSync(f).size <= 1_000_000; };
+// a tree entry that cannot be listed, stat-ed or read refuses with a fixed code: the error (its path) is never printed
+const treeRead = <T>(f: () => T): T => { try { return f(); } catch { return refuse("tree_read"); } }; // m150-guard:tree-read
+const walk = (d: string): string[] => treeRead(() => readdirSync(d, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap((e) => e.isDirectory() ? (["node_modules", ".git"].includes(e.name) ? [] : walk(join(d, e.name))) : e.isFile() ? [join(d, e.name)] : []);
+const refFile = (dir: string, f: string) => { const p = relative(dir, f); return CODE_FILE.test(p) && !p.endsWith(".d.ts") && treeRead(() => statSync(f).size) <= 1_000_000; };
 const writeRefs = (out: string, docs: string[], man: string[]) => {
   if (!docs.length) refuse("refs_empty");
   rmSync(out, { recursive: true, force: true }); mkdirSync(out, { recursive: true });
@@ -69,11 +71,11 @@ if (buildRefs && trees.length) {
   if (argv.length || opt("--tasks") !== null) refuse("usage");
   const docs: string[] = [], man: string[] = [];
   trees.forEach((dir, ti) => {
-    if (!existsSync(dir) || !statSync(dir).isDirectory()) refuse("tree_missing");
+    if (!existsSync(dir) || !treeRead(() => statSync(dir)).isDirectory()) refuse("tree_missing");
     for (const f of walk(dir)) {
       if (!refFile(dir, f)) continue;
       man.push(JSON.stringify({ doc: docs.length, split: "train", repo: L.LOCAL_TREE_REPO, path: `t${ti}/f${docs.length}`, function: `tree:${ti}` }));
-      docs.push(JSON.stringify({ doc: docs.length, text: readFileSync(f, "utf8") }));
+      docs.push(JSON.stringify({ doc: docs.length, text: treeRead(() => readFileSync(f, "utf8")) }));
     }
   });
   writeRefs(out, docs, man);
@@ -91,12 +93,12 @@ if (buildRefs) {
   for (const t of [...tasks].sort((a, b) => (a.id < b.id ? -1 : 1))) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(t.repo) || !ex.repos.has(t.repo.toLowerCase())) refuse("refs_repo_not_public_by_name");
     const dir = join(trees, t.id);
-    if (!/^[\w.-]+$/.test(t.id) || !existsSync(dir) || !statSync(dir).isDirectory()) { missing++; continue; }
+    if (!/^[\w.-]+$/.test(t.id) || !existsSync(dir) || !treeRead(() => statSync(dir)).isDirectory()) { missing++; continue; }
     for (const f of walk(dir)) {
       if (!refFile(dir, f)) continue;
       const p = relative(dir, f);
       man.push(JSON.stringify({ doc: docs.length, split: "train", repo: t.repo, path: p, function: `task:${t.id}` }));
-      docs.push(JSON.stringify({ doc: docs.length, text: readFileSync(f, "utf8") }));
+      docs.push(JSON.stringify({ doc: docs.length, text: treeRead(() => readFileSync(f, "utf8")) }));
     }
   }
   writeRefs(out, docs, man);

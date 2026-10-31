@@ -96,7 +96,11 @@ fingerprint, a cleaner built from this code still gets a new fingerprint.
 
 `exclusions_missing`, `exclusions_bad_line`, `exclusions_empty`, `exclusions_no_hidden_hashes`, `config_*`,
 `input_missing`, `input_docs`, `input_manifest`, `input_docs_manifest_differ`, `refs_repo_not_public_by_name`,
-`tasks_empty`, `refs_empty`, `tree_missing`, `typescript_not_found`, `usage`.
+`tasks_empty`, `refs_empty`, `tree_missing`, `tree_read`, `typescript_not_found`, `usage`.
+
+`tree_read`: a file or directory in a `--build-refs` tree (`--tree` or `--trees`) that cannot be listed, stat-ed or
+read (for example `chmod 000`) refuses with only `lb-clean refused: tree_read` on stdout. The error, its path and
+the file name never reach stdout or stderr.
 
 ## Not done here
 

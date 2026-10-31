@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -336,4 +336,55 @@ test("m150: the CLI is deterministic, writes the fingerprint with the output, an
     writeFileSync(join(dir, "tasks2.json"), JSON.stringify({ tasks: [{ id: "t-one", repo: SYN }] }));
     refused(/^lb-clean refused: refs_repo_not_public_by_name$/m, "--build-refs", "--tasks", join(dir, "tasks2.json"), "--trees", join(dir, "trees"), "--out", join(dir, "built2"), "--exclusions", join(dir, "ex.txt"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// tree_read: an unreadable entry in a --build-refs tree refuses with the fixed code alone; no path or name is printed.
+// As root (or with read-override capabilities) chmod 000 does not block reads, so the case is skipped, not passed.
+const unreadableSkip = (() => {
+  if (process.getuid?.() === 0) return "running as root: chmod 000 does not block reads";
+  const d = mkdtempSync(join(tmpdir(), "m150-perm-")), f = join(d, "x.ts");
+  try { writeFileSync(f, "x"); chmodSync(f, 0o000); try { readFileSync(f); return "chmod 000 does not block reads here (read-override capability)"; } catch { return false; } }
+  finally { chmodSync(f, 0o600); rmSync(d, { recursive: true, force: true }); }
+})();
+test("m150: an unreadable file or directory in a --build-refs tree refuses with tree_read and names nothing", { skip: unreadableSkip }, () => {
+  const bin = read("peaceai/bin/lb-clean.ts");
+  const guard = `try { return f(); } catch { return refuse("tree_read"); }`;
+  // every guard tagged m150-guard:<name> in the bin has a mutant here
+  const tagged = bin.split("\n").filter((l) => /\/\/ m150-guard:[\w-]+/.test(l));
+  assert.equal(tagged.length, 1); assert.ok(tagged[0]!.includes(guard), "tree-read guard site");
+  const dir = mkdtempSync(join(tmpdir(), "m150-tree-read-"));
+  const locked: string[] = [];
+  try {
+    writeFileSync(join(dir, "ex.txt"), EXTXT);
+    const NAMES = ["secret-checkout-qv", "lockeddirqv", "unreadablefileqv"];
+    const check = (binPath: string): string[] => {
+      const bad: string[] = [];
+      const leak = (o: string) => o.includes(dir) || NAMES.some((n) => o.includes(n));
+      for (const [label, mk] of [
+        ["file", (t: string) => { writeFileSync(join(t, "unreadablefileqv.ts"), block("u")); return join(t, "unreadablefileqv.ts"); }],
+        ["dir", (t: string) => { mkdirSync(join(t, "lockeddirqv")); writeFileSync(join(t, "lockeddirqv", "in.ts"), block("v")); return join(t, "lockeddirqv"); }],
+      ] as const) {
+        const tree = join(dir, `${label}-${H(binPath).slice(0, 6)}`, "secret-checkout-qv");
+        mkdirSync(tree, { recursive: true }); writeFileSync(join(tree, "ok.ts"), block("ok"));
+        const p = mk(tree); chmodSync(p, 0o000); locked.push(p);
+        const r = spawnSync(tsx, [binPath, "--build-refs", "--tree", tree, "--out", join(dir, `out-${label}`), "--exclusions", join(dir, "ex.txt")], { cwd: repo, encoding: "utf8" });
+        if (r.status !== 1) bad.push(`${label}: status ${r.status}`);
+        if (r.stdout !== "lb-clean refused: tree_read\n") bad.push(`${label}: stdout is not the fixed code`);
+        if (r.stderr !== "") bad.push(`${label}: stderr not empty`);
+        if (leak(r.stdout) || leak(r.stderr)) bad.push(`${label}: a path or name is printed`);
+      }
+      return bad;
+    };
+    assert.deepEqual(check(join(repo, "peaceai/bin/lb-clean.ts")), []);
+    // mutant: the catch removed (the error propagates, its path on stderr) must fail the check
+    const libUrl = pathToFileURL(join(repo, "peaceai", "lib")).href;
+    const fixed = bin.replace(/"\.\.\/lib\/([\w.-]+)"/g, (_, f) => `"${libUrl}/${f}"`).replace(`new URL("../../", import.meta.url).pathname`, JSON.stringify(repo + "/"));
+    assert.ok(fixed.includes(guard), "mutant site not found: tree_read catch removed");
+    // control: the same relocated copy unmutated passes, so the mutant below fails on the leak, not on loading
+    const ctl = join(dir, "ctl-tree-read.mts"); writeFileSync(ctl, fixed);
+    assert.deepEqual(check(ctl), [], "relocated unmutated copy");
+    const mut = join(dir, "mut-tree-read.mts"); writeFileSync(mut, fixed.replace(guard, `return f();`));
+    const bad = check(mut);
+    assert.ok(bad.includes("file: a path or name is printed") && bad.includes("dir: a path or name is printed"), `mutant survived: tree_read catch removed (${bad.join("; ")})`);
+  } finally { for (const p of locked) chmodSync(p, 0o700); rmSync(dir, { recursive: true, force: true }); }
 });
