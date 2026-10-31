@@ -2,7 +2,7 @@
 // lbtrain.py / daily_cycle.py has one case in m157-lbtrain-cases.py; disabling the guard must change its outcome).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -77,3 +77,25 @@ export function mutationCheck(prefix: RegExp, expectReal: Record<string, string 
     }
   });
 }
+
+/** A copy of peaceai/model (+ bin/lb-daily-cycle.sh) under dir/name with exact text edits (each `from` must occur
+ * exactly once in its file): the mutants for logic outside the tagged if-guards (train.py's stop.json wrapper, its
+ * resume checks, lb-daily-cycle.sh). Returns the copy's root; its train.py is root/model/train.py. */
+export function textMutant(dir: string, name: string, edits: { file: string; from: string; to: string }[]) {
+  const root = join(dir, name);
+  mkdirSync(join(root, "model"), { recursive: true }); mkdirSync(join(root, "bin"), { recursive: true });
+  for (const f of readdirSync(MODEL).filter((x) => x.endsWith(".py") || x.endsWith(".json"))) copyFileSync(join(MODEL, f), join(root, "model", f));
+  copyFileSync(join(repo, "peaceai/bin/lb-daily-cycle.sh"), join(root, "bin/lb-daily-cycle.sh"));
+  for (const e of edits) applyEdit(join(root, e.file), e.from, e.to);
+  return root;
+}
+
+export function applyEdit(path: string, from: string, to: string) {
+  assert.ok(existsSync(path), path);
+  const src = readFileSync(path, "utf8");
+  assert.equal(src.split(from).length, 2, `mutant anchor occurs exactly once in ${path}: ${from}`);
+  writeFileSync(path, src.replace(from, to));
+}
+
+/** stop.json of a work dir (or null). */
+export const stopOf = (work: string) => (existsSync(join(work, "stop.json")) ? JSON.parse(readFileSync(join(work, "stop.json"), "utf8")) : null);

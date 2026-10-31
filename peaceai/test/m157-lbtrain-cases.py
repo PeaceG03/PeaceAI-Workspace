@@ -28,11 +28,21 @@ def params():
 LC = {"rank": 2, "alpha": 4.0, "targets": ["wo", "wqkv"]}
 
 
-def adapter(path, base, schema=lbtrain.ADAPTER_SCHEMA, lora=None, lc=LC):
+def adapter(path, base, schema=lbtrain.ADAPTER_SCHEMA, lora=None, lc=LC, sha=None):
     lora = lora if lora is not None else lbtrain.lora_init(base, lc, 1)
-    np.savez(path, meta=np.array(json.dumps({"schema": schema, "lora": lc, "baseSha256": lbtrain.params_sha256(base), "step": 3})),
+    sha = sha or lbtrain.params_sha256(base)
+    np.savez(path, meta=np.array(json.dumps({"schema": schema, "lora": dict(lc, baseSha256=sha), "baseSha256": sha, "step": 3})),
              **{f"a.{k}": v for k, v in lora.items()})
     return path
+
+
+def sym(target, link, is_dir=True):
+    if is_dir:
+        os.makedirs(target, exist_ok=True)
+    else:
+        open(target, "w").write("precious\n")
+    os.makedirs(os.path.dirname(link), exist_ok=True)
+    os.symlink(target, link)
 
 
 class Z:  # a checkpoint-like mapping for opt_load
@@ -65,12 +75,9 @@ def plan(state, cfg, c, budget="5", today="2026-10-31", targs=(), env=None):
 def run(name):
     st = os.path.join(TMP, "state")
     os.makedirs(st, exist_ok=True)
-    # ---- M157 precision / 8-bit
-    if name == "prec-name":
-        return lbtrain.resolve_precision("fp16")
-    if name == "prec-nan":
-        x = np.array([0x7FFFFFFF], np.uint32).view(np.float32)
-        return "nan" if np.isnan(lbtrain.bf16_round(x)[0]) else f"not-nan {lbtrain.bf16_round(x)[0]}"
+    # ---- M157 8-bit optimizer / config match
+    if name == "opt-cfg-dict":
+        return f"match={lbtrain.cfg_matches(None, {'a': 1})}"
     if name == "opt8-finite":
         lbtrain._q_signed(np.array([1.0, np.inf], np.float32))
         return "ok"
@@ -121,15 +128,38 @@ def run(name):
         return "ok"
     if name == "stop-val-finite":
         return f"improved={lbtrain.improved(-math.inf, 5.0, 0.0)}"
+    if name == "stop-clean-exit":
+        return f"code={lbtrain.exit_code(SystemExit(0))}"
+    if name == "stop-code":
+        return f"code={lbtrain.exit_code(SystemExit('could not read /data/x/private.npz'))}"
     # ---- M161 LoRA
     if name == "lora-rank":
-        return f"ok {lbtrain.lora_cfg(17, 4.0, 'wo', 'base.npz', False, CFG)}"
+        return f"ok {lbtrain.lora_cfg(17, 4.0, 'wo', 'base.npz', CFG)}"
     if name == "lora-alpha":
-        return f"ok {lbtrain.lora_cfg(2, -1.0, 'wo', 'base.npz', False, CFG)}"
+        return f"ok {lbtrain.lora_cfg(2, -1.0, 'wo', 'base.npz', CFG)}"
     if name == "lora-targets":
-        return f"ok {lbtrain.lora_cfg(2, 4.0, 'wo,bogus', 'base.npz', False, CFG)}"
+        return f"ok {lbtrain.lora_cfg(2, 4.0, 'wo,bogus', 'base.npz', CFG)}"
     if name == "lora-base":
-        return f"ok {lbtrain.lora_cfg(2, 4.0, 'wo', '', False, CFG)}"
+        return f"ok {lbtrain.lora_cfg(2, 4.0, 'wo', '', CFG)}"
+    if name == "lora-base-read":
+        np.savez(os.path.join(TMP, "nop.npz"), meta=np.array("{}"))
+        return f"ok {lbtrain.lora_base(os.path.join(TMP, 'nop.npz'))[1][:8]}"
+    if name == "lora-bind-sha":
+        return f"ok {lbtrain.lora_bind(LC, 'not-a-sha')}"
+    if name == "lora-resume-base":
+        b = params()
+        lc = lbtrain.lora_bind(LC, lbtrain.params_sha256(b))
+        b["h0.wo"] = b["h0.wo"] + 1  # the checkpoint's frozen base is not the --init-from file
+        lbtrain.lora_resume_check(b, lc)
+        return "ok"
+    if name == "lora-trusted-sha":
+        b = params()
+        lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b), None)
+        return "ok"
+    if name == "lora-adapter-sha":
+        b = params()  # the trusted base, but an adapter that says it was trained on another base
+        lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b, sha="1" * 64), lbtrain.params_sha256(b))
+        return "ok"
     if name == "lora-keys":
         b = params()
         lo = lbtrain.lora_init(b, LC, 1)
@@ -144,13 +174,13 @@ def run(name):
         return "ok"
     if name == "lora-schema":
         b = params()
-        lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b, schema="other:v1"))
+        lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b, schema="other:v1"), lbtrain.params_sha256(b))
         return "ok"
     if name == "lora-base-sha":
-        b = params()
-        path = adapter(os.path.join(TMP, "a.npz"), b)
+        b = params()  # swapped base + an adapter sidecar edited to match it; the trusted record still names the old base
+        trusted = lbtrain.params_sha256(b)
         b["wte"] = b["wte"] + 1
-        lbtrain.lora_merge(b, path)
+        lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b), trusted)
         return "ok"
     if name == "lora-merge-out":
         b = params()
@@ -159,7 +189,8 @@ def run(name):
         open(os.path.join(TMP, "out.npz"), "w").write("keep")
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = lbtrain.main(["lora-merge", os.path.join(TMP, "base.npz"), os.path.join(TMP, "a.npz"), os.path.join(TMP, "out.npz")])
+            rc = lbtrain.main(["lora-merge", os.path.join(TMP, "base.npz"), os.path.join(TMP, "a.npz"), os.path.join(TMP, "out.npz"),
+                               "--base-sha", lbtrain.params_sha256(b)])
         return f"rc={rc} {buf.getvalue().strip()} kept={open(os.path.join(TMP, 'out.npz')).read() == 'keep'}"
     # ---- M160 daily cycle
     if name == "daily-corpus-cleared":
@@ -197,7 +228,46 @@ def run(name):
         os.makedirs(os.path.join(st, "reports"))
         open(os.path.join(st, "reports", "2026-10-31.json"), "w").write("{}")
         return plan(st, cfg, c)
+    if name == "daily-state-symlink":
+        c, cfg = corpus(TMP)
+        sym(os.path.join(TMP, "elsewhere"), os.path.join(TMP, "state-link"))
+        return plan(os.path.join(TMP, "state-link"), cfg, c)
+    if name == "daily-sub-symlink":
+        c, cfg = corpus(TMP)
+        sym(os.path.join(TMP, "elsewhere"), os.path.join(st, "reports"))
+        return plan(st, cfg, c)
+    if name == "daily-chain-symlink":
+        c, cfg = corpus(TMP)
+        os.makedirs(os.path.join(st, "saves", "save-000000004"))
+        os.makedirs(os.path.join(TMP, "elsewhere"))
+        marker(os.path.join(TMP, "elsewhere"), "save-000000004")
+        os.symlink(os.path.join(TMP, "elsewhere", "chain.json"), os.path.join(st, "chain.json"))
+        return plan(st, cfg, c)
+    if name == "daily-save-symlink":
+        c, cfg = corpus(TMP)
+        sym(os.path.join(TMP, "elsewhere"), os.path.join(st, "saves", "save-000000004"))
+        marker(st, "save-000000004")
+        return plan(st, cfg, c)
+    if name == "daily-logs-exist":
+        c, cfg = corpus(TMP)
+        sym(os.path.join(TMP, "precious.txt"), os.path.join(st, "logs", "2026-10-31.log"), is_dir=False)
+        return plan(st, cfg, c)
     # ---- near misses (must pass with the real code)
+    if name == "near-daily-state":
+        c, cfg = corpus(TMP)
+        for d in ("saves", "work", "reports", "logs"):
+            os.makedirs(os.path.join(st, d), exist_ok=True)
+        for n in ("2026-10-30.log", "2026-10-30.err", "2026-10-310.log"):
+            open(os.path.join(st, "logs", n), "w").write("")
+        sym(os.path.join(TMP, "elsewhere"), os.path.join(st, "notes"))  # not a path the cycle writes through
+        return plan(st, cfg, c)
+    if name == "near-cfg":
+        d = {"a": 1, "total_steps": 5}
+        return (f"ok {lbtrain.cfg_matches(d, {'a': 1, 'total_steps': 9})} {lbtrain.cfg_matches(d, {'a': 1, 'total_steps': 5, 'optimizer': 'adamw8bit'})}"
+                f" {lbtrain.cfg_matches(dict(d, optimizer='adamw8bit'), {'a': 1, 'total_steps': 5})} {lbtrain.cfg_matches(d, {'a': 2, 'total_steps': 5})}")
+    if name == "near-stop-code":
+        return " ".join(str(lbtrain.exit_code(e)) for e in (SystemExit("REPLAY_REFUSED: /data/x"), SystemExit("SAVE_FILE_SET"), SystemExit(None),
+                                                             SystemExit(2), ValueError("x"), KeyboardInterrupt()))
     if name == "near-daily-fresh":
         c, cfg = corpus(TMP)
         return plan(st, cfg, c, targs=["--steps", "8"])
@@ -216,15 +286,13 @@ def run(name):
         b = params()
         lo = lbtrain.lora_init(b, LC, 1)
         lo = {k: (v + 0.5 if k.endswith(".B") else v) for k, v in lo.items()}
-        m, meta = lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b, lora=lo))
+        m, meta = lbtrain.lora_merge(b, adapter(os.path.join(TMP, "a.npz"), b, lora=lo), lbtrain.params_sha256(b))
         return f"ok changed={sorted(k for k in b if not np.array_equal(b[k], m[k]))}"
     if name == "near-cur":
         return f"ok {lbtrain.curriculum_cfg('easy_to_hard', 1.0, 1, 's')['start']} {lbtrain.order_easy_to_hard([1, 2, 3], {1: 5, 2: 5.5, 3: 1}, 's')}"
     if name == "near-stop":
         lbtrain.check_stop_args(0, 0.0)
         return f"ok {lbtrain.improved(4.9, 5.0, 0.1)} {lbtrain.improved(4.89, 5.0, 0.1)} {lbtrain.improved(4.99, 5.0, 0.0)}"
-    if name == "near-prec":
-        return f"ok {lbtrain.resolve_precision('auto')} {lbtrain.resolve_precision('bf16')} {lbtrain.resolve_precision('fp32')}"
     raise SystemExit(f"unknown case {name}")
 
 

@@ -2,28 +2,30 @@
 
 Every option is OFF by default and adds nothing to the training config when off, so a default run (and every
 existing save, resume and fingerprint) is byte-for-byte unchanged. When an option is on it is recorded in the config
-(cfg: precision, optimizer, curriculum, lora), which saves.py binds into every save manifest (cfgSha256) and which a
+(cfg: optimizer, curriculum, lora), which saves.py binds into every save manifest (cfgSha256) and which a
 resume must match exactly, and in run.json (the run fingerprint: cfgSha256, dataSha256 and the stop rule).
 
-  M157 precision   --precision fp32|bf16|auto (default fp32). bf16 = mixed precision, EMULATED: the 2-D weight
-                   matrices are rounded to bfloat16 (round to nearest even) for the forward/backward compute copy and
-                   the fp32 master weights take the update. numpy has no native bf16, so auto falls back to fp32 and
-                   bf16 saves no time or memory here; it is a numerics rehearsal for a backend that has it.
-                   --optimizer adamw|adamw8bit (default adamw). adamw8bit keeps the Adam moments block-wise
+  M157 8-bit opt   --optimizer adamw|adamw8bit (default adamw). adamw8bit keeps the Adam moments block-wise
                    quantized between steps (m: int8 absmax per block, v: uint8 of sqrt(v), absmax per block, block
-                   256), about 1/4 of the fp32 optimizer-state memory and checkpoint bytes.
+                   256), about 1/4 of the fp32 optimizer-state memory and checkpoint bytes. Precision is fp32 only
+                   (Auditor ruling on #654: the emulated bfloat16 option was dropped; numpy has no native one).
   M158 curriculum  --curriculum easy_to_hard: train docs ordered by lb-clean's difficulty.score (manifest), ties by
                    sha256(seed:doc); batches are drawn from the easiest prefix of the token stream, growing linearly
                    from --curriculum-start (fraction) to all of it at --curriculum-ramp steps. Seeded, recorded.
   M159 stop rule   --patience N evals without an improvement of more than --min-delta (default 0 = the old strict
                    rule), a non-finite loss stops at once (no update applied), plus the existing --steps,
-                   --max-seconds and --deadline budgets. stop.json records why it stopped.
+                   --max-seconds and --deadline budgets. stop.json records why it stopped, on EVERY run: a stale one
+                   is removed first and a refusal / crash writes reason "error" with its fixed code.
   M160 daily cycle daily_cycle.py (separate file).
-  M161 LoRA        --lora-rank R --lora-alpha A --lora-targets wqkv,wo,w1,w2 with --init-from BASE: the base weights
-                   are frozen, W_eff = W + (A/R) * La @ Lb is trained through La (d_in x R) and Lb (R x d_out, zero at
-                   start, so step 0 is exactly the base). Adapters are saved separately (adapter.npz, best-adapter.npz,
-                   bound to the base by baseSha256); best.npz is the MERGED model, so export/eval read it unchanged;
-                   lbtrain.py lora-merge BASE ADAPTER OUT merges an adapter file for eval.
+  M161 LoRA        --lora-rank R --lora-alpha A --lora-targets wqkv,wo,w1,w2 with --init-from BASE (on EVERY run,
+                   resumes included): the base weights are frozen, W_eff = W + (A/R) * La @ Lb is trained through La
+                   (d_in x R) and Lb (R x d_out, zero at start, so step 0 is exactly the base). The params_sha256 of
+                   the actual BASE file is bound into cfg.lora.baseSha256 (so into cfgSha256, every save manifest and
+                   the chain marker), and a resume compares the checkpoint's frozen weights with that file's hash.
+                   Adapters are saved separately (adapter.npz, best-adapter.npz); best.npz is the MERGED model, so
+                   export/eval read it unchanged; lbtrain.py lora-merge BASE ADAPTER OUT --base-sha SHA merges an
+                   adapter for eval, where SHA comes from a trusted record (the save manifest / run.json cfg), never
+                   from the adapter file itself.
 
 Refusals raise LbError(code) (one fixed code, no paths or text). Guards are tagged `# guard:<name>` and
 mutation-checked by peaceai/test/m157..m161 (disabling any one changes its case's outcome).
@@ -40,10 +42,11 @@ import numpy as np
 RUN_SCHEMA = "peaceai-lb-run:v1"
 STOP_SCHEMA = "peaceai-lb-stop:v1"
 ADAPTER_SCHEMA = "peaceai-lora:v1"
-PRECISIONS = ("fp32", "bf16", "auto")
 OPTIMIZERS = ("adamw", "adamw8bit")
 LORA_TARGETS = ("wqkv", "wo", "w1", "w2")
 BLOCK = 256
+SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,80}$")
 
 
 class LbError(Exception):
@@ -64,33 +67,15 @@ def finite_num(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
-# ---------------------------------------------------------------- M157 precision + 8-bit optimizer
+# ---------------------------------------------------------------- M157 8-bit optimizer (precision is fp32 only)
 
-def resolve_precision(req):
-    """fp32 (default) | bf16 (emulated mixed precision) | auto (bf16 only with native support: numpy has none -> fp32)."""
-    if req not in PRECISIONS:  # guard:prec-name
-        raise LbError("PRECISION_BAD")
-    if req == "auto":
-        return "fp32"
-    return req
-
-
-def bf16_round(x):
-    """fp32 -> nearest bfloat16 (ties to even) -> fp32. NaN stays NaN, +-inf stays inf."""
-    x = np.ascontiguousarray(x, dtype=np.float32)
-    u = x.view(np.uint32).astype(np.uint64)
-    r = ((u + 0x7FFF + ((u >> 16) & 1)) & 0xFFFF0000).astype(np.uint32).view(np.float32)
-    nan = np.isnan(x)
-    if nan.any():  # guard:prec-nan
-        r = np.where(nan, x, r)
-    return r.reshape(x.shape)
-
-
-def compute_params(p, precision):
-    """The compute copy for forward/backward: fp32 -> the same dict (default path unchanged); bf16 -> 2-D weights rounded."""
-    if precision != "bf16":
-        return p
-    return {k: (bf16_round(v) if v.ndim == 2 else v) for k, v in p.items()}
+def cfg_matches(saved, cur):
+    """A work-dir checkpoint's cfg equals this run's cfg on EVERY key of either side except total_steps (a key on one
+    side only, e.g. optimizer=adamw8bit against a default checkpoint, is a mismatch, never a KeyError)."""
+    if not isinstance(saved, dict):  # guard:opt-cfg-dict
+        return False
+    keys = sorted((set(saved) | set(cur)) - {"total_steps"})
+    return all(canonical(saved.get(k)) == canonical(cur.get(k)) for k in keys)
 
 
 def _q_signed(x):
@@ -272,9 +257,35 @@ def stop_record(reason, step, total, best, last_val, patience, min_delta, max_se
             "patience": int(patience), "minDelta": float(min_delta), "maxSeconds": float(max_seconds), "elapsedSeconds": round(float(elapsed), 1)}
 
 
+def exit_code(e):
+    """The fixed code a train.py exit carries (None for a clean exit). A SystemExit("CODE: detail") keeps only CODE;
+    anything that is not a fixed code (free text, paths) becomes TRAIN_ERROR, so stop.json never holds paths or text."""
+    if isinstance(e, SystemExit):
+        if e.code is None or e.code == 0:  # guard:stop-clean-exit
+            return None
+        c = str(e.code).split(":")[0].strip()
+        if not CODE_RE.match(c):  # guard:stop-code
+            return "TRAIN_ERROR"
+        return c
+    if isinstance(e, KeyboardInterrupt):
+        return "INTERRUPTED"
+    return "TRAIN_CRASH"
+
+
+def error_stop_record(code, step):
+    return {"schema": STOP_SCHEMA, "reason": "error", "code": code, "step": step if isinstance(step, int) and not isinstance(step, bool) else None}
+
+
+def write_stop(path, rec):
+    """stop.json is created exclusively (O_EXCL: never through a symlink, never over a stale file train.py did not
+    remove at its start)."""
+    with open(path, "x", encoding="ascii") as f:
+        f.write(canonical(rec) + "\n")
+
+
 # ---------------------------------------------------------------- M161 LoRA
 
-def lora_cfg(rank, alpha, targets, init_from, has_checkpoint, cfg):
+def lora_cfg(rank, alpha, targets, init_from, cfg):
     if not rank:
         return None
     d = cfg["d_model"]
@@ -285,9 +296,35 @@ def lora_cfg(rank, alpha, targets, init_from, has_checkpoint, cfg):
     tl = [t for t in str(targets).split(",") if t]
     if not tl or len(set(tl)) != len(tl) or any(t not in LORA_TARGETS for t in tl):  # guard:lora-targets
         raise LbError("LORA_BAD_TARGETS")
-    if not init_from and not has_checkpoint:  # guard:lora-base
-        raise LbError("LORA_NEEDS_BASE")
+    if not init_from:  # guard:lora-base
+        raise LbError("LORA_NEEDS_BASE")  # every LoRA run, resumes included: the base file is the hash anchor
     return {"rank": int(rank), "alpha": float(alpha), "targets": sorted(tl)}
+
+
+def lora_base(path):
+    """The base weights (p.* of BASE.npz) and their params_sha256: the anchor the adapters are bound to."""
+    try:
+        with np.load(path, allow_pickle=False) as z:
+            base = {k[2:]: z[k].astype(np.float32) for k in z.files if k.startswith("p.")}
+    except Exception:
+        raise LbError("LORA_BASE_READ")
+    if not base:  # guard:lora-base-read
+        raise LbError("LORA_BASE_READ")
+    return base, params_sha256(base)
+
+
+def lora_bind(lcfg, base_sha):
+    """cfg.lora with the base's params_sha256 in it, so cfgSha256 / every save manifest / the chain marker bind it."""
+    if not SHA_RE.match(str(base_sha)):  # guard:lora-bind-sha
+        raise LbError("LORA_BASE_READ")
+    return dict(lcfg, baseSha256=base_sha)
+
+
+def lora_resume_check(params, lcfg):
+    """On resume the checkpoint's frozen weights must hash to the actual --init-from file's hash (cfg.lora.baseSha256),
+    never to a value read from the checkpoint or an adapter sidecar."""
+    if params_sha256(params) != lcfg.get("baseSha256"):  # guard:lora-resume-base
+        raise LbError("LORA_BASE_MISMATCH")
 
 
 def lora_keys(params, lcfg):
@@ -359,11 +396,17 @@ def load_adapter(path):
     return meta, lora
 
 
-def lora_merge(base_params, adapter_path):
-    """Merged fp32 weights for eval; the adapter must be for exactly this base (baseSha256) and shape."""
-    meta, lora = load_adapter(adapter_path)
-    if meta.get("baseSha256") != params_sha256(base_params):  # guard:lora-base-sha
+def lora_merge(base_params, adapter_path, trusted_sha):
+    """Merged fp32 weights for eval. trusted_sha is the base hash from a TRUSTED record (cfg.lora.baseSha256 of the
+    sha-verified save manifest or run.json), never from the adapter: the actual base file must hash to it, and the
+    adapter must say it was trained on it."""
+    if not SHA_RE.match(str(trusted_sha)):  # guard:lora-trusted-sha
+        raise LbError("LORA_BASE_SHA_REQUIRED")
+    if params_sha256(base_params) != trusted_sha:  # guard:lora-base-sha
         raise LbError("LORA_BASE_MISMATCH")
+    meta, lora = load_adapter(adapter_path)
+    if meta.get("baseSha256") != trusted_sha or meta["lora"].get("baseSha256") != trusted_sha:  # guard:lora-adapter-sha
+        raise LbError("LORA_ADAPTER_MISMATCH")
     lora_check(base_params, lora, meta["lora"])
     return lora_effective(base_params, lora, meta["lora"]), meta
 
@@ -375,20 +418,21 @@ def load_params(path):
 
 # ---------------------------------------------------------------- fingerprint
 
-def run_record(cfg, data_sha, stop, base_sha=None):
+def run_record(cfg, data_sha, stop):
     rec = {"schema": RUN_SCHEMA, "cfg": cfg, "cfgSha256": sha256_bytes(canonical(cfg).encode()), "dataSha256": data_sha,
-           "precision": cfg.get("precision", "fp32"), "optimizer": cfg.get("optimizer", "adamw"),
+           "optimizer": cfg.get("optimizer", "adamw"),
            "curriculum": cfg.get("curriculum"), "lora": cfg.get("lora"), "stop": stop}
-    if base_sha:
-        rec["loraBaseSha256"] = base_sha
+    if cfg.get("lora"):
+        rec["loraBaseSha256"] = cfg["lora"]["baseSha256"]
     return rec
 
 
 def main(argv):
     try:
-        if len(argv) == 4 and argv[0] == "lora-merge":
+        if argv[:1] == ["lora-merge"] and len(argv) in (4, 6):
+            trusted = argv[5] if len(argv) == 6 and argv[4] == "--base-sha" else None
             base, base_meta = load_params(argv[1])
-            merged, meta = lora_merge(base, argv[2])
+            merged, meta = lora_merge(base, argv[2], trusted)
             if os.path.exists(argv[3]):  # guard:lora-merge-out
                 raise LbError("LORA_OUT_EXISTS")
             out_meta = json.loads(base_meta) if base_meta else {}
@@ -400,7 +444,7 @@ def main(argv):
     except LbError as e:
         print(e.code)
         return 3
-    print("usage: lbtrain.py lora-merge BASE.npz ADAPTER.npz OUT.npz")
+    print("usage: lbtrain.py lora-merge BASE.npz ADAPTER.npz OUT.npz --base-sha SHA")
     return 2
 
 

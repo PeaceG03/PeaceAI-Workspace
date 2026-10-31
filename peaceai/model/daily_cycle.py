@@ -12,15 +12,20 @@
     4. daily_cycle.py report  STATE/reports/<today>.json (never overwritten), one quiet line.
 
 Free compute only: local processes on this box, or a GitHub-hosted runner when a human dispatches it (any other
-runner is refused). No network, no upload, no cloud storage; it writes only under STATE. It is not scheduled anywhere; the drafted
-workflow in peaceai/spec/lb-train-v1.md is NOT installed and needs Auditor and Peace before it is.
+runner is refused). No network, no upload, no cloud storage; it writes only under STATE. It is not scheduled anywhere; no workflow
+is installed (peaceai/spec/lb-train-v1.md says what one needs: Auditor and Peace first).
 
 plan checks (fail-closed):
   corpus  docs.jsonl sha256, manifest.jsonl sha256 and fingerprint.json's lb-clean fingerprint must be ONE entry of
           lb-train.json clearedCorpora (Auditor-cleared for exactly those pins), else DAILY_CORPUS_NOT_CLEARED.
   args    whole minutes 1..daily.maxBudgetMin; TODAY is YYYY-MM-DD (default: the UTC date); train.py args only
           "--flag value" pairs from daily.trainArgsAllowed (the cycle owns corpus, work, saves, marker, resume, budget).
-  once    one cycle per TODAY (a report or work dir for it already exists: refused).
+  state   STATE itself, STATE/saves, work, logs and reports are real directories (not symlinks), every entry of
+          STATE/saves is a real directory, STATE/chain.json is a regular file and chain.json.tmp does not exist; else
+          DAILY_STATE_INCONSISTENT, so nothing the cycle writes can land outside STATE. The report re-checks it.
+  once    one cycle per TODAY (a report or work dir for it already exists, even as a dangling symlink: refused;
+          any logs/<TODAY>.* already there: DAILY_STATE_INCONSISTENT). lb-daily-cycle.sh opens its logs with
+          noclobber (O_EXCL: never through a symlink) and write_report uses O_CREAT|O_EXCL|O_NOFOLLOW.
   resume  STATE/chain.json (the previous train.py --marker) names a save that must be the newest in STATE/saves;
           train.py verifies its manifest sha256 before loading (never a fresh start over existing saves; saves with no
           chain.json, or a chain.json that is not a marker, are refused as DAILY_STATE_INCONSISTENT).
@@ -117,10 +122,31 @@ def resume_plan(state):
     return "resume", m["step"], m
 
 
+def _not_dir(p):
+    return os.path.islink(p) or (os.path.lexists(p) and not os.path.isdir(p))
+
+
+def check_state(state):
+    """Nothing under STATE the cycle writes through may be a symlink (or the wrong kind of file)."""
+    if _not_dir(state):  # guard:daily-state-symlink
+        raise DailyError("DAILY_STATE_INCONSISTENT")
+    for sub in ("saves", "work", "logs", "reports"):
+        if _not_dir(os.path.join(state, sub)):  # guard:daily-sub-symlink
+            raise DailyError("DAILY_STATE_INCONSISTENT")
+    cp = os.path.join(state, "chain.json")
+    if os.path.islink(cp) or (os.path.lexists(cp) and not os.path.isfile(cp)) or os.path.lexists(cp + ".tmp"):  # guard:daily-chain-symlink
+        raise DailyError("DAILY_STATE_INCONSISTENT")
+    sd = os.path.join(state, "saves")
+    for n in (sorted(os.listdir(sd)) if os.path.isdir(sd) else []):
+        if _not_dir(os.path.join(sd, n)):  # guard:daily-save-symlink
+            raise DailyError("DAILY_STATE_INCONSISTENT")
+
+
 def write_report(path, rec):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    body = json.dumps(rec, sort_keys=True, indent=2) + "\n"
-    with open(path, "x", encoding="ascii") as f:  # one report per day; never overwritten
+    body = (json.dumps(rec, sort_keys=True, indent=2) + "\n").encode("ascii")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)  # one report per day; never overwritten
+    with os.fdopen(fd, "wb") as f:
         f.write(body)
 
 
@@ -135,10 +161,14 @@ def plan(corpus, state, budget, today, train_args, cfg, env):
     check_runner(env)
     check_args(budget, today, train_args, cfg["daily"])
     pins = check_corpus(corpus, cfg["clearedCorpora"])
+    check_state(state)
     rpath = os.path.join(state, "reports", f"{today}.json")
     work = os.path.join(state, "work", today)
-    if os.path.exists(rpath) or os.path.exists(work):  # guard:daily-once
+    if os.path.lexists(rpath) or os.path.lexists(work):  # guard:daily-once
         raise DailyError("DAILY_ALREADY_RAN")
+    logs = os.path.join(state, "logs")
+    if any(n.startswith(f"{today}.") for n in (os.listdir(logs) if os.path.isdir(logs) else [])):  # guard:daily-logs-exist
+        raise DailyError("DAILY_STATE_INCONSISTENT")
     kind, step, m = resume_plan(state)
     if kind == "done":
         write_report(rpath, {"schema": REPORT_SCHEMA, "today": today, "budgetMin": int(budget), "corpus": pins, "status": "done", "startStep": step,
@@ -152,6 +182,7 @@ def plan(corpus, state, budget, today, train_args, cfg, env):
 
 
 def report(corpus, state, budget, today, start_step, train_rc, cfg):
+    check_state(state)
     pins = corpus_pins(corpus)
     work = os.path.join(state, "work", today)
     base = {"schema": REPORT_SCHEMA, "today": today, "budgetMin": int(budget), "corpus": pins, "startStep": int(start_step)}
@@ -167,7 +198,7 @@ def report(corpus, state, budget, today, start_step, train_rc, cfg):
     stop, best, run = stop or {}, best or {}, run or {}
     rec = dict(base, status="trained", endStep=stop.get("step"), stopReason=stop.get("reason"), more=mk.get("more"), bestVal=best.get("val"),
                bestStep=best.get("step"), lastVal=stop.get("lastVal"), eval=ev, evalOk=ev is not None, save=mk.get("save"),
-               manifestSha256=mk.get("manifestSha256"), cfgSha256=run.get("cfgSha256"), precision=run.get("precision"),
+               manifestSha256=mk.get("manifestSha256"), cfgSha256=run.get("cfgSha256"),
                optimizer=run.get("optimizer"), curriculum=run.get("curriculum"), stopRule=run.get("stop"))
     write_report(os.path.join(state, "reports", f"{today}.json"), rec)
     return rec

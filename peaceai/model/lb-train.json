@@ -12,6 +12,6 @@
   ],
   "daily": {
     "maxBudgetMin": 340,
-    "trainArgsAllowed": ["--steps", "--max-steps-this-run", "--threads", "--seed", "--batch", "--eval-every", "--d-model", "--n-layer", "--n-head", "--ctx", "--vocab", "--lr", "--warmup", "--patience", "--min-delta", "--precision", "--optimizer", "--curriculum", "--curriculum-start", "--curriculum-ramp", "--curriculum-seed", "--save-every-min"]
+    "trainArgsAllowed": ["--steps", "--max-steps-this-run", "--threads", "--seed", "--batch", "--eval-every", "--d-model", "--n-layer", "--n-head", "--ctx", "--vocab", "--lr", "--warmup", "--patience", "--min-delta", "--optimizer", "--curriculum", "--curriculum-start", "--curriculum-ramp", "--curriculum-seed", "--save-every-min"]
   }
 }
