@@ -65,8 +65,12 @@ the model put the right candidate earlier", measured at a small fixed `--max` pr
   implementation PR's review.
 - No paid compute: a standard GitHub-hosted runner, CPU numpy inference (`infer.py --threads`), one manual dispatch
   per evaluation, a job timeout; at most 60 candidates per task (`score` already caps at 64 items).
-- Rows (ruling c): a v3 loop row carrying the model manifest sha256, in its own schema PR before any model-v1 row is
-  written. Rows stay codes and numbers only (loop-v1.md / loop-v2.md).
+- Rows (ruling c): a loop row carrying the model manifest sha256, in its own schema PR before any model-v1 row is
+  written. Rows stay codes and numbers only (loop-v1.md / loop-v2.md). M166 implements it as
+  `peaceai-plan-loop:v4` (the "v3" this ruling first named was already M162's planner row; see loop-v2.md
+  "Rows v4"): v3 + `modelManifestSha256`. The model manifest is the text of one line per LM file, in `LM_FILES`
+  order (config.json, tokenizer.json, weights.npz), each `<sha256 of the file>  <file name>` and ending in a newline
+  (the `sha256sum` format); its sha256 is the row's `modelManifestSha256`.
 
 ## Evaluation (honest reporting, ruling f)
 
