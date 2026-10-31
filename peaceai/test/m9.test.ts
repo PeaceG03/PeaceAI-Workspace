@@ -449,7 +449,7 @@ test("isolation: model code has no network, no outside model or tokenizer, and M
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".py"))) {
     const text = readFileSync(join(dir, f), "utf8");
     const imports = [...text.matchAll(/^\s*(?:import|from)\s+([A-Za-z_.]+)/gm)].map((m) => m[1]!.split(".")[0]);
-    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm", "manifest_parts", "replay"].includes(i!), `${f} imports ${i}`);
+    for (const i of imports) assert.ok(["argparse", "hashlib", "heapq", "json", "math", "os", "re", "shutil", "sys", "time", "numpy", "lm", "manifest_parts", "replay", "saves"].includes(i!), `${f} imports ${i}`);
     assert.ok(!/huggingface|from_pretrained|torch|tensorflow|transformers|tiktoken|sentencepiece|openai|anthropic|urllib|requests|socket|http/i.test(text), f);
   }
   for (const f of ["lib/lm.ts", "lib/fill.ts", "lib/lmcorpus.ts", "bin/lm-fill.ts", "bin/lm-memcheck.ts", "bin/lm-corpus.ts"]) {
