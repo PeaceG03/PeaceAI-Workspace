@@ -131,7 +131,13 @@ test("M153: v1 (the default) and v2 keep main's plannerSha256; v3 has its own", 
   assert.ok(!/plan3|plan-only-v3/.test(cli), "v1's CLI stays the default and never routes to v3");
   const log = parseLog(readFileSync(join(repo, RUN_LOG), "utf8"));
   assert.ok("rows" in log, "committed log parses");
-  for (const r of log.rows as any[]) if (r.planner === "plan-only-v3") assert.equal(r.set, "public", "v3 rows on this branch are dev rows only");
+  // Dev rows, plus exactly the 20 hidden-half rows the Auditor ran at c4dd914 (planner digest f4999797...).
+  let hidden = 0;
+  for (const r of log.rows as any[]) if (r.planner === "plan-only-v3") {
+    if (r.set === "hidden") { hidden++; assert.equal(r.plannerSha256, v3, "hidden v3 rows come from this exact v3"); }
+    else assert.equal(r.set, "public", "v3 rows are dev rows or the Auditor's hidden rows");
+  }
+  assert.ok(hidden === 0 || hidden === 20, "hidden v3 rows are the Auditor's 20, add-only");
 });
 
 test("M153 runner: v3 rows carry their own id and digest, pass the log validator, and a hidden row names no repo", () => {
