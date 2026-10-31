@@ -27,12 +27,18 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 import ts from "typescript";
-import { openRepo } from "./codesearch.ts";
+import { openRepo, type CodeRepo } from "./codesearch.ts";
 import { applyRule, specHash, type RuleSpec } from "./learned.ts";
 import { loadModel } from "./nlparse.ts";
-import { approvedRules, isTestPath, planTask, PLAN_LICENSES, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanTask, type PlanTaskFile } from "./plan.ts";
+import { approvedRules, isTestPath, planTask, PLAN_LICENSES, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanContext, type PlanTask, type PlanTaskFile } from "./plan.ts";
+import { planTaskV2, type PlanV2 } from "./plan2.ts";
+import { plannerSha256V2 } from "./plan2run.ts";
+import { planTaskV3, type PlanV3 } from "./plan3.ts";
+import { plannerSha256V3 } from "./plan3run.ts";
+import { selectPlanner, type PlannerName } from "./plandefault.ts";
+import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA_V2, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA_V3, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { detectRunner, installDeps, installShim, openDepsCache, shimArgs, type DepsCache, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
@@ -184,13 +190,38 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   return { codes: [...codes].sort() as AttemptCode[], failing, tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) }, isolation };
 }
 
+// ---- the planner (M162)
+
+/** A plan from any planner selectPlanner can pick. The loop and its proposers read only the steps (action, file,
+ *  status, rule, objective) and tests, which v1, v2 and v3 plans share. */
+export type LoopPlan = Plan | PlanV2 | PlanV3;
+/** How the loop runs each planner and reads its digest. WHICH planner runs is decided only by plandefault.ts. */
+const LOOP_PLANNERS: Readonly<Record<PlannerName, { sha: () => string; plan: (task: PlanTask, ctx: PlanContext, dir: string) => LoopPlan }>> = Object.freeze({
+  "plan-only-v1": { sha: () => plannerSha256(), plan: (t: PlanTask, ctx: PlanContext) => planTask(t.id, t.request, ctx) },
+  "plan-only-v2": { sha: () => plannerSha256V2(), plan: (t: PlanTask, ctx: PlanContext, dir: string) => planTaskV2(t.id, t.request, ctx, openRepo(dir)) },
+  "plan-only-v3": { sha: () => plannerSha256V3(), plan: (t: PlanTask, ctx: PlanContext, dir: string) => planTaskV3(t.id, t.request, ctx, openRepo(dir)) },
+});
+/** The loop's planner, picked only through plandefault.selectPlanner: no flag = the default; null = an unknown name. */
+export function loopPlanner(flag: string | undefined): PlannerName | null {
+  return selectPlanner(flag)?.name ?? null;
+}
+
 // ---- the proposer
 
 export interface Edit { path: string; content: string }
-export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[] }
-export interface ProposeInput { request: string; repo: string; plan: Plan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[] }
+export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
+export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null }
 export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
-export interface Proposer { name: string; next(input: ProposeInput): Proposal }
+export interface Proposer {
+  name: string;
+  /**
+   * M152: called once per task after the baseline, on the copy reset to the pinned commit (the team's test files are
+   * NOT in it), with the code search tools and the baseline's failing test names (node:test only). A proposer must do
+   * all its searching here: from the first next() on, the copy holds the team's tests it is graded by.
+   */
+  prepare?(search: CodeRepo, input: { request: string; failing: readonly string[] }): void;
+  next(input: ProposeInput): Proposal;
+}
 
 /**
  * v1 proposer: PeaceAI's own approved learned rules only. Its candidates are the edits the hash-pinned approved rules
@@ -232,6 +263,8 @@ export interface LoopOptions {
   root?: string;
   fetcher?: CopyFetcher;
   proposer?: Proposer;
+  /** M152: a fresh proposer per task (runLoopFile); wins over `proposer`. */
+  makeProposer?: () => Proposer;
   maxAttempts?: number;
   /** Per test-run deadline (ms). */
   runMs?: number;
@@ -247,21 +280,30 @@ export interface LoopOptions {
   depsCache?: DepsCache;
   /** v2: where the run's install cache dir is made (default os.tmpdir()). */
   depsDir?: string;
+  /** M162 (runLoopFile): the planner flag (v1|v2|v3 or plan-only-vN), resolved by selectPlanner; absent = the default. */
+  plannerFlag?: string;
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
-export interface LoopResult { row: LoopRow; plan: Plan | null; attempts: AttemptRecord[]; context: string[] }
+export interface LoopResult { row: LoopRow; plan: LoopPlan | null; attempts: AttemptRecord[]; context: string[] }
 
-export function loopSha256(): string {
-  return sha256(["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"].map((f) => readFileSync(join(ROOT, "peaceai", f), "utf8")).join("\0"));
+/** The loop's code, hashed into every row: the loop, its row, its dependency install and (M152) the edit proposer, so a
+ *  row binds the proposer version it was produced with. `root` is for tests only. */
+export function loopSha256(root: string = ROOT): string {
+  const files = ["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"];
+  files.push("lib/editpropose.ts"); // m152-guard:sha-proposer
+  return sha256(files.map((f) => readFileSync(join(root, "peaceai", f), "utf8")).join("\0"));
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache }): LoopResult {
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName }): LoopResult {
   const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
   const records: AttemptRecord[] = [];
-  let plan: Plan | null = null;
+  // M162: the planner (absent = selectPlanner's default) and its digest, recorded in every row
+  const planner = o.planner ?? loopPlanner(undefined)!;
+  const plannerSha = LOOP_PLANNERS[planner].sha();
+  let plan: LoopPlan | null = null;
   let context: string[] = [];
   const tests: LoopTests | null = null;
   let pick: RunnerPick | null = null;
@@ -269,8 +311,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let baseline: LoopBaseline | null = null;
   const done = (code: LoopCode): LoopResult => ({
     row: {
-      schema: LOOP_SCHEMA_V2, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
-      loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, lm: "not-loadable", code, maxAttempts,
+      schema: LOOP_SCHEMA_V3, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
+      loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, planner, plannerSha256: plannerSha, lm: "not-loadable", code, maxAttempts,
       attempts: records.length, result: code === "PASS" ? "pass" : code === "ATTEMPT_LIMIT" ? "fail" : "refused",
       attemptCodes: records.map((r) => r.codes), tests: records.length ? records[records.length - 1]!.tests : tests,
       // hidden rows: taskKey plus scores only (runner, package manager and baseline counts could identify the repo)
@@ -302,7 +344,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     let pkg: Record<string, any> = {};
     try { pkg = JSON.parse(readFileSync(join(c.dir, "package.json"), "utf8")); } catch { pkg = {}; }
     const testCommand: string | null = typeof pkg.scripts?.test === "string" ? pkg.scripts.test : null;
-    try { plan = planTask(task.id, task.request, { repo: task.repo, files, rules: o.rules, model: loadModel(), testCommand }); }
+    try { plan = LOOP_PLANNERS[planner].plan(task, { repo: task.repo, files, rules: o.rules, model: loadModel(), testCommand }, c.dir); }
     catch { return done("PLAN_FAILED"); }
     const rel = openRepo(c.dir).relevant(task.request);
     context = rel.ok ? [...rel.files, ...rel.tests].map((f) => f.path) : [];
@@ -331,13 +373,21 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
     if (base.codes.length === 0) return done("BASELINE_PASSES");
+    // (M152) the proposer's search, on the pinned commit without the team's tests
+    if (o.proposer.prepare) {
+      resetCopy(c); // m152-guard:prepare-clean
+      // a throwing search is the proposer's failure, not the fetch's: a fixed code, the error itself is dropped
+      let prepared = true;
+      try { o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: [...base.failing] }); } catch { prepared = false; }
+      if (!prepared) return done("PROPOSER_FAILED"); // m152-guard:prepare-failed
+    }
     // 4. the first proposal
     const feedback: Feedback[] = [];
-    let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback });
+    let p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt: 1, feedback, baseline });
     if ("refuse" in p) return done(p.refuse);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) {
-        p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback });
+        p = o.proposer.next({ request: task.request, repo: task.repo, plan, files, context, attempt, feedback, baseline });
         if ("refuse" in p) return done(p.refuse);
       }
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
@@ -363,7 +413,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       }
       records.push({ attempt, edits: p.edits.map((e) => e.path), codes: r.codes, failing: r.failing, tests: r.tests });
       if (r.codes.length === 0) return done("PASS");
-      feedback.push({ attempt, codes: r.codes, failing: r.failing }); // 7. revise
+      feedback.push({ attempt, codes: r.codes, failing: r.failing, tests: r.tests }); // 7. revise
     }
     return done("ATTEMPT_LIMIT");
   } catch (e) {
@@ -393,7 +443,10 @@ function relatedTests(c: Copy, pick: RunnerPick, edited: readonly string[]): str
 // ---- a task file
 
 /** Runs the loop on every task of a task file locked in the committed plan-only log (runs.jsonl); appends one loop row per task to loop-runs.jsonl. */
-export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" | "TASK_FILE_UNLOCKED" | "TASK_FILE_INVALID" | "TRAINING_LIST_UNREADABLE"; results: LoopResult[] } {
+export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" | "PLANNER_UNKNOWN" | "TASK_FILE_UNLOCKED" | "TASK_FILE_INVALID" | "TRAINING_LIST_UNREADABLE"; results: LoopResult[] } {
+  // M162: an unknown planner name is refused before anything is read or run
+  const planner = loopPlanner(opts.plannerFlag);
+  if (!planner) return { code: "PLANNER_UNKNOWN", results: [] }; // m162-guard:planner-unknown
   const root = opts.root ?? ROOT;
   const text = readFileSync(path, "utf8");
   const fileSha = sha256(text);
@@ -415,7 +468,7 @@ export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" 
   try {
     for (const task of parsed.tasks) {
       // a fresh proposer state per task
-      const r = runLoopTask(task, parsed.set, fileSha, { ...o, proposer: opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
+      const r = runLoopTask(task, parsed.set, fileSha, { ...o, planner, proposer: opts.makeProposer?.() ?? opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
       if (loopRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
       results.push(r);
       appendFileSync(join(root, LOOP_LOG), JSON.stringify(r.row) + "\n");
