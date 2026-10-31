@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # M148 wiring (limit-breaker step 1): rolling LM saves in one private Cloudflare R2 bucket used only for these saves.
-# Credentials come only from the environment of the calling workflow step (GitHub environment peaceai-lm-saves,
+# Credentials come only from the environment of the calling workflow step (GitHub environment peaceai-results,
 # main only): LM_SAVES_R2_ACCOUNT_ID, LM_SAVES_R2_ACCESS_KEY_ID, LM_SAVES_R2_SECRET_ACCESS_KEY, LM_SAVES_R2_BUCKET.
 # Every key is lm-saves/<chain id>/<save name>/<file>; nothing outside lm-saves/<chain id>/ is read, written or
 # deleted. Only the latest 2 saves of a chain are kept in the bucket. Output is one filtered line per action (codes,

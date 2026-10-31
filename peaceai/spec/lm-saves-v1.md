@@ -2,7 +2,7 @@
 
 Status: trainer + save/verify/chain code and tests are BUILT (#640). The workflow wiring (R2 storage, chained links)
 is BUILT on lb-saves/wire as a draft PR after the storage ruling: R2 (Peace "R2 is fine", 2026-10-30; Auditor gates).
-It cannot run until Peace creates the environment and secrets below; without them it fails closed (R2_NOT_CONFIGURED).
+It cannot run until Peace adds the four R2 secrets below to the existing peaceai-results environment; without them it fails closed (R2_NOT_CONFIGURED).
 
 ## Model size (measured, not guessed)
 
@@ -53,20 +53,17 @@ Ruling: R2 under Auditor's terms (instead of the earlier artifact / encryption /
 weights (m9 / m31 / m37 also ban download-artifact and actions/cache for this workflow); Results cannot hold rolling
 saves (100 MB file limit vs a 122 MB checkpoint, delete-nothing rule).
 
-Peace creates (the values never go in chat, logs or the repo):
-  - GitHub environment peaceai-lm-saves on PeaceG03/PeaceAI-Workspace, deployment branches: main only (custom
-    branch policy "main", like peaceai-results).
-  - Environment secrets in peaceai-lm-saves:
+Peace adds (the values never go in chat, logs or the repo):
+  - No new environment (Auditor, #643 review): the train job stays on the existing environment peaceai-results
+    (deployment branches: main only). PEACEAI_RESULTS_DEPLOY_KEY stays as is.
+  - Four new environment secrets in peaceai-results:
       LM_SAVES_R2_ACCOUNT_ID         Cloudflare account id (32 hex)
       LM_SAVES_R2_ACCESS_KEY_ID      R2 API token access key id
       LM_SAVES_R2_SECRET_ACCESS_KEY  R2 API token secret access key
-      LM_SAVES_R2_BUCKET             bucket name (one private bucket used only for these saves, e.g. peaceai-lm-saves)
-      PEACEAI_RESULTS_DEPLOY_KEY     a Results write deploy key (environment secrets are per environment: the train
-                                     job now runs in peaceai-lm-saves, so the last link's landing step needs the key
-                                     here too; a separate new deploy key on PeaceAI-Results is cleanest)
+      LM_SAVES_R2_BUCKET             bucket name (one private bucket used only for these saves)
   - The R2 API token: "Object Read & Write", scoped to that one bucket only, no account-level permission.
 
-Job train (environment peaceai-lm-saves, contents: read, timeout-minutes 355):
+Job train (environment peaceai-results, contents: read, timeout-minutes 355):
   1. Job clock: JOB_START; the soft deadline is JOB_START + 340 min (train.py --job-start / --soft-deadline-min).
   2. Chain inputs and storage check, BEFORE the corpus fetch and training: chain_index 0-99 below max_chain 1-12
      (CHAIN_BAD_ARGS), lm-saves-r2.sh check (R2_NOT_CONFIGURED if any of the four secrets is missing or malformed,

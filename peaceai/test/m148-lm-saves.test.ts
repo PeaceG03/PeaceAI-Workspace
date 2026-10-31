@@ -313,8 +313,8 @@ function jobBlock(wf: string, job: string): string {
 test("m148 wire: workflow shape: env-scoped R2 secrets in three steps only, no artifacts, timeouts, caps, chain job least privilege", () => {
   const wf = readFileSync(WF, "utf8");
   const train = jobBlock(wf, "train"), chain = jobBlock(wf, "chain");
-  assert.match(train, /\n    timeout-minutes: 355\n    environment: peaceai-lm-saves\n    permissions:\n      contents: read\n    outputs:\n/);
-  assert.equal((wf.match(/^ +environment:/gm) ?? []).length, 1, "one environment: peaceai-lm-saves (main only), on the train job");
+  assert.match(train, /\n    timeout-minutes: 355\n    environment: peaceai-results\n    permissions:\n      contents: read\n    outputs:\n/);
+  assert.equal((wf.match(/^ +environment:/gm) ?? []).length, 1, "one environment: the existing peaceai-results (main only), on the train job; no new environment (Auditor, #643)");
   assert.ok(!/upload-artifact|download-artifact|actions\/cache|--max-seconds/.test(wf), "no artifact, no cache: saves go only to R2");
   assert.match(wf, /--save-dir "\$S" --save-every-min 20 --job-start "\$JOB_START" --soft-deadline-min 340 --marker "\$RUNNER_TEMP\/work\/chain\.json"/);
   assert.match(wf, /\[\[ "\$IN_INDEX" =~ \^\(0\|\[1-9\]\[0-9\]\?\)\$ && "\$IN_MAX" =~ \^\(\[1-9\]\|1\[0-2\]\)\$ \]\]/, "max chain 1-12 checked before training");
