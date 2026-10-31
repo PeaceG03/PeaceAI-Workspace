@@ -80,6 +80,17 @@ export function gitCopyFetcher(url: (repo: string) => string = (r) => `https://g
   };
 }
 
+/** The proposer's file index of a copy at the pinned commit: tracked .ts / .tsx files up to MAX_INDEX_FILE_BYTES.
+ *  M167: shared with model-v1's scoring job, which must rebuild exactly the candidate list the attempt job sees. */
+export function indexFiles(dir: string): IndexFile[] {
+  const files: IndexFile[] = [];
+  for (const p of git(dir, "ls-files", "-z").split("\0").filter((x) => /\.tsx?$/.test(x))) {
+    const content = readFileSync(join(dir, p), "utf8");
+    if (Buffer.byteLength(content) <= MAX_INDEX_FILE_BYTES) files.push({ path: p, content });
+  }
+  return files;
+}
+
 /** Back to the pinned commit: drops every earlier edit (node_modules, holding the runner wrapper, is kept). */
 function resetCopy(c: Copy): void {
   git(c.dir, "checkout", "-q", "-f", "--detach", c.head);
@@ -276,8 +287,9 @@ export interface LoopOptions {
   root?: string;
   fetcher?: CopyFetcher;
   proposer?: Proposer;
-  /** M152: a fresh proposer per task (runLoopFile); wins over `proposer`. */
-  makeProposer?: () => Proposer;
+  /** M152: a fresh proposer per task (runLoopFile); wins over `proposer`. M167: given the task's key and file sha256
+   *  (model-v1 looks its ranking up by them; other proposers ignore them). */
+  makeProposer?: (task: { taskKey: string; taskFileSha256: string }) => Proposer;
   maxAttempts?: number;
   /** Per test-run deadline (ms). */
   runMs?: number;
@@ -304,6 +316,7 @@ export interface LoopResult { row: LoopRow; plan: LoopPlan | null; attempts: Att
 export function loopSha256(root: string = ROOT): string {
   const files = ["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"];
   files.push("lib/editpropose.ts"); // m152-guard:sha-proposer
+  files.push("lib/modelpropose.ts"); // m167-guard:sha-model
   return sha256(files.map((f) => readFileSync(join(root, "peaceai", f), "utf8")).join("\0"));
 }
 
@@ -350,11 +363,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     const lic = (() => { try { return readFileSync(join(c!.dir, task.licensePath), "utf8"); } catch { return null; } })();
     if (lic === null || sha256(lic) !== task.licenseSha256) return done("LICENSE_CHANGED");
     // 1. plan, 2. context (both read-only on the copy)
-    const files: IndexFile[] = [];
-    for (const p of git(c.dir, "ls-files", "-z").split("\0").filter((x) => /\.tsx?$/.test(x))) {
-      const content = readFileSync(join(c.dir, p), "utf8");
-      if (Buffer.byteLength(content) <= MAX_INDEX_FILE_BYTES) files.push({ path: p, content });
-    }
+    const files = indexFiles(c.dir);
     let pkg: Record<string, any> = {};
     try { pkg = JSON.parse(readFileSync(join(c.dir, "package.json"), "utf8")); } catch { pkg = {}; }
     const testCommand: string | null = typeof pkg.scripts?.test === "string" ? pkg.scripts.test : null;
@@ -487,7 +496,7 @@ export function runLoopFile(path: string, opts: LoopOptions = {}): { code: "OK" 
   try {
     for (const task of parsed.tasks) {
       // a fresh proposer state per task
-      const r = runLoopTask(task, parsed.set, fileSha, { ...o, planner, proposer: opts.makeProposer?.() ?? opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
+      const r = runLoopTask(task, parsed.set, fileSha, { ...o, planner, proposer: opts.makeProposer?.({ taskKey: taskKey(fileSha, task.id), taskFileSha256: fileSha }) ?? opts.proposer ?? rulesProposer(o.rules), deps: opts.deps, depsCache });
       if (loopRowProblem(r.row)) throw new Error("log_row_invalid"); // a bug: never write a row the validator rejects
       results.push(r);
       appendFileSync(join(root, LOOP_LOG), JSON.stringify(r.row) + "\n");

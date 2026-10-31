@@ -1,0 +1,10 @@
+{
+ "schema": "peaceai-model-v1-proposer:v1",
+ "note": "M167 model-v1 pins (spec/edit-proposer-model-v1.md). The Results LM the scoring job (peace-model-v1-dev.yml model-v1-score) may load: the promoted model of judge-v2.json promoted / lm-retrain.json promoted, restored from Results by its weights sha256 and memchecked (lm.ts verifyModelDir) before any score. maxAttempts is the pre-registered --max of every model-v1 dev run (and of its paired repair-v1 run in the same job); taskFile is the only task file model-v1 may run on (the public dev split). Re-pin only with Auditor and Peace.",
+ "version": "lm-v1-858573767465",
+ "runId": "40694718190",
+ "weightsSha256": "858573767465fbede9c9f1ea0d1e6a3e8c8830c70a07ff358c74783a26119255",
+ "maxAttempts": 20,
+ "maxCandidates": 60,
+ "taskFile": "peaceai/plan/tasks-public-v1.json"
+}
