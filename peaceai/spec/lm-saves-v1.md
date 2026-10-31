@@ -46,6 +46,9 @@ RESUME_WITH_INIT_FROM. There is no fallback to a fresh start. Tested: 4 steps + 
 saves.py decide MARKER SAVES_DIR INDEX MAX prints one line: "chain next=yes index=I+1 ..." or
 "chain next=no reason=done|cap", or exits 3 with CHAIN_BAD_ARGS, CHAIN_MAX_TOO_LARGE (MAX > 12), CHAIN_NO_MARKER,
 CHAIN_SAVE_BAD (bad save name) or CHAIN_SAVE_BAD:<verify code> (missing / corrupted save, marker not matching it).
+saves.py verify and decide use the standard library only (the checkpoint meta is read with zipfile and the .npy
+header, npz_meta), so they run without numpy; the tests run them, and lb_run.py, lb_daily.py and daily_cycle.py,
+with numpy blocked (peaceai/test/nonumpy.ts; #657).
 
 ## Workflow wiring (peace-lm-train.yml, built; Auditor gates)
 

@@ -11,6 +11,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { noNumpyEnv } from "./nonumpy.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const py = process.env.PEACEAI_PYTHON ?? "python3";
@@ -76,7 +77,7 @@ test("m148: the soft deadline (job start + N min) saves and exits cleanly with a
   assert.equal(m.more, true); assert.equal(m.stopReason, "deadline"); assert.ok(m.step > 0 && m.step < 100000);
   assert.equal(m.save, `save-${String(m.step).padStart(9, "0")}`, "the marker names the save made at the stop step");
   assert.match(out, new RegExp(`^marker more=yes stop=deadline step=${m.step}$`, "m"));
-  assert.equal(execFileSync(py, [join(MODEL, "saves.py"), "verify", join(dir, "w/saves", m.save), m.manifestSha256], { encoding: "utf8" }).trim(), `save ok step=${m.step}`);
+  assert.equal(execFileSync(py, [join(MODEL, "saves.py"), "verify", join(dir, "w/saves", m.save), m.manifestSha256], { encoding: "utf8", env: { ...process.env, ...noNumpyEnv() } }).trim(), `save ok step=${m.step}`);
   // the default soft deadline is 340 min (5h40m) and the default cadence 20 min
   const src = readFileSync(TRAIN, "utf8");
   assert.match(src, /"--soft-deadline-min", type=float, default=340\.0/);
@@ -143,9 +144,9 @@ test("m148: verify / chain case table with near misses", () => {
 });
 
 test("m148: the decide CLI prints one line and exits 3 with a filtered code on a refusal", () => withDir((dir) => {
-  const r = spawnSync(py, [join(MODEL, "saves.py"), "decide", join(dir, "none.json"), join(dir, "saves"), "0", "3"], { encoding: "utf8" });
+  const r = spawnSync(py, [join(MODEL, "saves.py"), "decide", join(dir, "none.json"), join(dir, "saves"), "0", "3"], { encoding: "utf8", env: { ...process.env, ...noNumpyEnv() } });
   assert.equal(r.status, 3); assert.equal(r.stdout, "CHAIN_NO_MARKER\n"); assert.equal(r.stderr, "");
-  const v = spawnSync(py, [join(MODEL, "saves.py"), "verify", join(dir, "nope"), "a".repeat(64)], { encoding: "utf8" });
+  const v = spawnSync(py, [join(MODEL, "saves.py"), "verify", join(dir, "nope"), "a".repeat(64)], { encoding: "utf8", env: { ...process.env, ...noNumpyEnv() } });
   assert.equal(v.status, 3); assert.equal(v.stdout, "SAVE_MISSING\n"); assert.equal(v.stderr, "");
 }));
 
@@ -402,7 +403,7 @@ function runStep(dir: string, name: string, env: Record<string, string>) {
   const rt = join(dir, "rt"); mkdirSync(rt, { recursive: true });
   const genv = join(dir, "github_env"), gout = join(dir, "github_output"); writeFileSync(genv, ""); writeFileSync(gout, "");
   const r = spawnSync("bash", ["-e", "-c", stepRun(readFileSync(WF, "utf8"), name)], { encoding: "utf8", cwd: repo,
-    env: { PATH: `${t.bin}:${process.env.PATH}`, FAKE_S3: t.s3, FAKE_GH_LOG: t.ghLog, RUNNER_TEMP: rt, GITHUB_ENV: genv, GITHUB_OUTPUT: gout, GITHUB_RUN_ID: "555", GITHUB_REPOSITORY: "o/r", ...env } });
+    env: { PATH: `${t.bin}:${process.env.PATH}`, FAKE_S3: t.s3, FAKE_GH_LOG: t.ghLog, RUNNER_TEMP: rt, GITHUB_ENV: genv, GITHUB_OUTPUT: gout, GITHUB_RUN_ID: "555", GITHUB_REPOSITORY: "o/r", ...noNumpyEnv(), ...env } }); // numpy blocked: the steps run stdlib-only Python
   const gh = existsSync(t.ghLog) ? readFileSync(t.ghLog, "utf8") : "";
   return { status: r.status, out: r.stdout + r.stderr, env: readFileSync(genv, "utf8"), output: readFileSync(gout, "utf8"), gh, rt, s3: t.s3 };
 }
@@ -450,6 +451,16 @@ test("m148 wire: decide step: next link only for an uploaded, verified save; its
   assert.equal(yes.status, 0, yes.out);
   assert.equal(yes.output, `next=yes\nchain_id=555\nindex=1\nmax_chain=4\nsave=${m.save}\nsha=${m.manifestSha256}\n`);
   assert.equal(yes.env, "", "not the last link: no export or landing");
+  // #657: the decision runs with numpy blocked (runStep); the pre-#657 numpy read of the checkpoint meta is caught (killed near miss)
+  const decideArgs = (mdir: string) => [join(mdir, "saves.py"), "decide", join(more, "rt/work/chain.json"), join(more, "rt/work/saves"), "0", "4"];
+  const nn = { encoding: "utf8" as const, env: { ...process.env, ...noNumpyEnv() } };
+  assert.match(spawnSync(py, decideArgs(MODEL), nn).stdout, /^chain next=yes index=1 /);
+  const oldMdir = join(dir, "old-model"); mkdirSync(oldMdir);
+  const cur = readFileSync(join(MODEL, "saves.py"), "utf8"), newRead = `        meta = json.loads(npz_meta(os.path.join(d, "checkpoint.npz")))\n`;
+  assert.equal(cur.split(newRead).length, 2, "the stdlib checkpoint meta read");
+  writeFileSync(join(oldMdir, "saves.py"), cur.replace(newRead, `        import numpy as np\n        with np.load(os.path.join(d, "checkpoint.npz"), allow_pickle=False) as z:\n            meta = json.loads(str(z["meta"]))\n`));
+  const old = spawnSync(py, decideArgs(oldMdir), nn);
+  assert.notEqual(old.status, 0); assert.doesNotMatch(old.stdout, /chain next=yes/, "a numpy read in the decision path fails with numpy blocked");
   const cap = runStep(more, "Chain decision", { CHAIN_ID: "555", CHAIN_INDEX: "3", MAX_CHAIN: "4" });
   assert.equal(cap.status, 0); assert.equal(cap.output, "next=no\n"); assert.equal(cap.env, "FINAL_LINK=yes\n", "at the cap the last link lands its best");
   const ck = join(more, "rt/work/saves", m.save, "checkpoint.npz"); const b = readFileSync(ck); b[b.length >> 1] ^= 1; writeFileSync(ck, b);

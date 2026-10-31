@@ -14,12 +14,14 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import test from "node:test";
 import { applyEdit, json, MODEL, mutationCheck, ok, py, repo, runCase, stateHash, tinyCorpus, TINY, withDir } from "./m157-lbtrain-mut.ts";
+import { pyNoNumpyFor } from "./nonumpy.ts";
 
 const SCRIPT = join(repo, "peaceai/bin/lb-daily-cycle.sh");
+const PYNN = pyNoNumpyFor(py); // daily_cycle.py / saves.py run with numpy blocked (CI has none); train.py keeps it
 const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
 const ARGS = ["--", ...TINY, "--steps", "8", "--max-steps-this-run", "4"];
 const cycle = (script: string, corpus: string, state: string, day: string, extra = ARGS, env: Record<string, string> = {}) =>
-  spawnSync("bash", [script, corpus, state, "2", day, ...extra], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: py, ...env } });
+  spawnSync("bash", [script, corpus, state, "2", day, ...extra], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: PYNN, ...env } });
 
 function scratch(dir: string, corpus: string, pkg = "pkg") {
   mkdirSync(join(dir, pkg, "model"), { recursive: true }); mkdirSync(join(dir, pkg, "bin"));

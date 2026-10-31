@@ -16,6 +16,9 @@ import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, re
 import { join } from "node:path";
 import test from "node:test";
 import { json, MODEL, py, repo, tinyCorpus, withDir } from "./m157-lbtrain-mut.ts";
+import { NONUMPY, noNumpyEnv, pyNoNumpyFor, STDLIB_ONLY } from "./nonumpy.ts";
+
+const PYNN = pyNoNumpyFor(py); // the stdlib-only entry points run with numpy blocked (CI has none); train.py/export.py keep it
 
 const WF = ".github/workflows/peace-lb-daily.yml";
 const read = (p: string) => readFileSync(join(repo, p), "utf8");
@@ -50,7 +53,7 @@ function scratch(dir: string, edit: (cfg: any) => void = () => {}, files: Record
 const withTrain = (edit: (t: Record<string, string>) => void) => (cfg: any) => edit(cfg.dailyRun.train);
 
 const ld = (root: string, args: string[], env: Record<string, string> = {}) => {
-  const r = spawnSync(py, [join(root, "model/lb_daily.py"), ...args], { encoding: "utf8", env: { ...process.env, GITHUB_OUTPUT: "", ...env } });
+  const r = spawnSync(py, [join(root, "model/lb_daily.py"), ...args], { encoding: "utf8", env: { ...process.env, ...noNumpyEnv(), GITHUB_OUTPUT: "", ...env } });
   return { status: r.status, out: r.stdout.trim(), last: (r.stdout.trim() || r.stderr.trim()).split("\n").pop()! };
 };
 
@@ -391,11 +394,11 @@ function tinyRoot(dir: string, c: string, files: Record<string, string> = {}) {
 }
 const runDay = (root: string, c: string, s: string, t: { f: string; sha: string }, today: string, env: Record<string, string> = {}) => {
   const r = spawnSync("bash", [join(root, "bin/lb-daily-run.sh"), c, s, t.f, t.sha], { encoding: "utf8",
-    env: { ...process.env, PY: py, LB_JOB_START: String(now() - 30), LB_TODAY: today, LB_MODEL_DIR: join(root, "model"), ...env } });
+    env: { ...process.env, PY: PYNN, LB_JOB_START: String(now() - 30), LB_TODAY: today, LB_MODEL_DIR: join(root, "model"), ...env } });
   return { status: r.status, out: r.stdout.trim(), err: r.stderr };
 };
 const cycleSh = (root: string, c: string, s: string, today: string, expect: string) => spawnSync("bash", [join(root, "bin/lb-daily-cycle.sh"), c, s, "2", today, "--",
-  ...Object.entries(TINY_TRAIN).flat()], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: py, LB_DAILY_EXPECT: expect } });
+  ...Object.entries(TINY_TRAIN).flat()], { encoding: "utf8", env: { ...process.env, PEACEAI_PYTHON: PYNN, LB_DAILY_EXPECT: expect } });
 
 test("M165 chain: fresh day -> R2 (fake) -> row -> land; next day resumes ONLY the trusted save after its sha check; done", () => withDir((dir) => {
   const c = tinyCorpus(dir), root = tinyRoot(dir, c), res = results(dir), bucket = join(dir, "bucket");
@@ -582,3 +585,29 @@ test("M165 config: the committed dailyRun block", () => {
   assert.equal(dr.train["--optimizer"], "adamw8bit"); assert.equal(dr.train["--curriculum"], "easy_to_hard"); assert.ok(dr.train["--patience"]);
   assert.equal(ld(join(repo, "peaceai"), ["config"]).last, "config ok");
 });
+
+test("#657 stdlib only: saves, lb_run, lb_daily and daily_cycle import with numpy blocked; a numpy import in any of them is caught (killed near miss)", () => withDir((dir) => {
+  const env = { ...process.env, ...noNumpyEnv() };
+  const blocked = spawnSync(py, ["-c", "import numpy"], { encoding: "utf8", env });
+  assert.notEqual(blocked.status, 0); assert.match(blocked.stderr, /numpy blocked/, "the block itself works");
+  const imp = (m: string, mod: string) => spawnSync(py, ["-c", `import sys; sys.path.insert(0, sys.argv[1]); import ${mod}; assert "numpy" not in sys.modules, "numpy loaded"`, m], { encoding: "utf8", env });
+  const copy = (name: string) => {
+    const m = join(dir, name); mkdirSync(m);
+    for (const f of readdirSync(MODEL).filter((x) => x.endsWith(".py") || x.endsWith(".json"))) copyFileSync(join(MODEL, f), join(m, f));
+    return m;
+  };
+  const real = copy("real");
+  for (const f of STDLIB_ONLY) {
+    const mod = f.replace(/\.py$/, "");
+    const r = imp(real, mod); assert.equal(r.status, 0, `${f}: ${r.stderr}`);
+    const mut = copy(`mut-${mod}`); const src = readFileSync(join(mut, f), "utf8");
+    const at = src.indexOf("\nimport sys\n"); assert.ok(at > 0, f);
+    writeFileSync(join(mut, f), src.slice(0, at) + "\nimport numpy" + src.slice(at));
+    const k = imp(mut, mod); assert.notEqual(k.status, 0, `${f}: a module-level numpy import must fail with numpy blocked`); assert.match(k.stderr, /numpy blocked/, f);
+  }
+  // the PEACEAI_PYTHON / PY wrapper blocks numpy for exactly the stdlib-only scripts; train.py and export.py are untouched
+  const w = join(dir, "w"); mkdirSync(w);
+  for (const f of [...STDLIB_ONLY, "train.py", "export.py"]) writeFileSync(join(w, f), "import os, sys\nprint(os.environ.get('PYTHONPATH', '').split(os.pathsep)[0])\n");
+  for (const f of STDLIB_ONLY) assert.equal(spawnSync(PYNN, [join(w, f)], { encoding: "utf8" }).stdout.trim(), NONUMPY, f);
+  for (const f of ["train.py", "export.py"]) assert.notEqual(spawnSync(PYNN, [join(w, f)], { encoding: "utf8", env: { ...process.env, PYTHONPATH: "" } }).stdout.trim(), NONUMPY, f);
+}));
