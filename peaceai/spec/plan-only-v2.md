@@ -1,7 +1,8 @@
 # PLAN-ONLY mode v2 (planner `plan-only-v2`)
 
-Status: EXPERIMENTAL (Builder, 2026-10-30). v1 (`plan-only`, bin/plan-only.ts) remains the default planner; v2 runs only via
-`peaceai/bin/plan-only-v2.ts`. Hidden half (Auditor, 20/20 graded): v2 mean 0.223 (runTests 0.250) vs v1 0.229
+Status: EXPERIMENTAL (Builder, 2026-10-30). Not the default: the default is v3 (`peaceai/lib/plandefault.ts`, see
+`peaceai/spec/plan-default.md`); v1 was the default when v2 landed. v2 runs via `peaceai/bin/plan-only-v2.ts` or
+`peaceai/bin/plan.ts run --planner=v2`; plannerSha256 fae6c0c4... unchanged. Hidden half (Auditor, 20/20 graded): v2 mean 0.223 (runTests 0.250) vs v1 0.229
 (runTests 0.350); no improvement is claimed. Dev 1.000 reflects tuning on dev. Code: `peaceai/lib/plan2.ts` (planner). Runner:
 `peaceai/lib/plan2run.ts` (new), with its own CLI `peaceai/bin/plan-only-v2.ts run <taskfile>`. v1's files
 (plan.ts, plangrade.ts, planrun.ts, bin/plan-only.ts) are byte-identical to main, so v1's
