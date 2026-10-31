@@ -99,13 +99,23 @@ test("m159: mutation check: disabling any stop-rule guard changes its case's out
 // batch 6 (Auditor's #660 note): early-stop validation must not use export.py's 96 held-out eval windows.
 test("batch 6 val split: disjoint val windows share no token with export's 96 eval windows; the legacy split shares all 16; near misses", () => {
   assert.equal(runCase(MODEL, "near-val-split"),
-    "ok first disjoint 97..97:1:shared=0 97..112:16:shared=0 97..112:16:shared=0 w96shared=1 first=0..15:shared=16 same=4 legacy=4 none={'val': inf, 'step': 0, 'stale': 0}");
+    "ok first disjoint 97..112:16:shared=0 97..112:16:shared=0 97..112:16:shared=0 98:VAL_NOT_DISJOINT 112:VAL_NOT_DISJOINT w96shared=1 first=0..15:shared=16 same=4 legacy=4 none={'val': inf, 'step': 0, 'stale': 0}");
   // the window count lbtrain assumes is export.py's: n_eval = min(n, 96), window k = held[k*T : k*T+T+1]
   const exp = readFileSync(join(MODEL, "export.py"), "utf8");
   assert.equal(exp.split("n_eval = min(n, 96)\n").length, 2, "export.py evaluates min(n, 96) windows");
   assert.ok(exp.includes("held[k * T:k * T + T]") && exp.includes("held[k * T + 1:k * T + T + 1]"), "export.py window k = held[kT .. kT+T]");
   assert.match(readFileSync(join(MODEL, "lbtrain.py"), "utf8"), /^EXPORT_EVAL_WINDOWS = 96 /m);
 });
+
+// batch 7 (Auditor's #661 note): 98..112 windows used to validate on fewer than 16 windows; now refused.
+test("batch 7 val split boundary: 112 windows refused, 113 accepted with exactly 16 windows; the old 98 bound is a killed mutant", () => withDir((dir) => {
+  assert.equal(runCase(MODEL, "stop-val-disjoint-short"), "VAL_NOT_DISJOINT");
+  assert.equal(runCase(MODEL, "near-val-disjoint-113"), "ok [97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]");
+  const m = textMutant(dir, "m-lo1", [{ file: "model/lbtrain.py", from: "if n < lo + VAL_WINDOWS:  # guard:stop-val-disjoint-short", to: "if n < lo + 1:  # guard:stop-val-disjoint-short" }]);
+  assert.equal(runCase(join(m, "model"), "stop-val-disjoint-short"), "ok [97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]",
+    "mutant killed: the old bound silently validates on 15 windows");
+  assert.equal(runCase(join(m, "model"), "near-val-disjoint-113"), runCase(MODEL, "near-val-disjoint-113"), "the 113 near miss does not tell them apart");
+}));
 
 test("batch 6 val split: a real tiny run validates on windows 97..112, records the split, refuses a short held set, and resumes a best.json only from the same split", () => withDir((dir) => {
   const big = tinyCorpus(dir, { bigHeld: true, name: "big" });

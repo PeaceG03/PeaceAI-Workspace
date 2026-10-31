@@ -47,7 +47,7 @@ is fp32 only.
   --min-delta D                  with --patience: an eval improves only when lower than best by more than D.
   --val-split first|disjoint     early-stop val windows: first (default) = held-out windows 0..15, which are also the
                                  first 16 of export.py's 96 eval windows; disjoint = windows 97..112, no token shared
-                                 with them (VAL_NOT_DISJOINT under 98 windows; not with replay). best.json records a
+                                 with them (VAL_NOT_DISJOINT under 113 windows; not with replay). best.json records a
                                  non-default split; a best.json from another split is not resumed (early stop restarts).
   --lora-rank R [--lora-alpha A] [--lora-targets wqkv,wo]
                                  LoRA on frozen --init-from weights (--init-from on every LoRA run, resumes too: its

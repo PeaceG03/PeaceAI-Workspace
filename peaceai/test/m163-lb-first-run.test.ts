@@ -350,7 +350,7 @@ test("M163 end to end (tiny corpus): lb-first-run.sh trains, evaluates and write
         encoding: "utf8", env: { ...process.env, PY: py, LB_MODEL_DIR: m, LB_JOB_START: String(now() - 5), GITHUB_REF: ref, GITHUB_SHA: SHA40, GITHUB_RUN_ID: "77" } });
       return { status: r.status, out: r.stdout + r.stderr };
     };
-    const c = tinyCorpus(dir, { bigHeld: true }); // --val-split disjoint needs more than 98 held-out windows
+    const c = tinyCorpus(dir, { bigHeld: true }); // --val-split disjoint needs at least 113 held-out windows
     const m = scratchModel(dir, "m", tinyCfg(c));
     const g = run(m, c, "good");
     assert.equal(g.status, 0, g.out);

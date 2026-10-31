@@ -33,16 +33,23 @@ LEGACY_SCHEMA = "peaceai-lb-daily-run:v1"
 V1_FIELDS = ("schema", "runId", "workflowSha", "chainId", "today", "pins", "status", "startStep", "endStep", "stopReason",
              "heldoutBpb", "baselineBpb", "wallSeconds", "resumedFrom", "marker")
 ROW_FIELDS = V1_FIELDS + ("modelCe", "heldoutTokens", "heldBytes")
+# batch 7 (Auditor's #661 / #662 notes): v1 is trusted history only. The one run that can have landed a v1 row is the
+# first daily run, 41222155935 (dispatched on 08c2383, before v2 merged as ec36fc1); every later run writes v2. A v1 row
+# with any other run id (larger, or a low id with a later date) cannot be genuine history, so the trusted-record read
+# refuses it (LB_DAILY_RECORD_BAD).
+V1_LAST_RUN_ID = 41222155935
 MARKER_SCHEMA = "peaceai-lm-chain:v1"
 MARKER_FIELDS = ("schema", "more", "stopReason", "step", "totalSteps", "save", "manifestSha256", "cfgSha256")
 STOP_REASONS = ("patience", "steps", "max_seconds", "deadline", "max_steps_this_run", "nonfinite")
 LORA = re.compile(r"^--(lora|init-from)")
 FORBIDDEN = re.compile(r"^--(replay|resume|save-dir|marker|keep-checkpoints|corpus|work|max-seconds|deadline|job-start)")
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
-SAVE_RE = re.compile(r"^save-[0-9]{9}$")
-DATE_RE = re.compile(r"^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$")
-ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")
-NAME_RE = re.compile(r"^(20[0-9]{2}-[0-9]{2}-[0-9]{2})-([1-9][0-9]{0,19})\.json$")
+# batch 7 (Auditor's #662 note): every whole-value pattern ends in \Z, not $: Python's $ also matches before a
+# trailing newline, so "41222155935\n" passed ID_RE.match.
+HEX64 = re.compile(r"^[0-9a-f]{64}\Z")
+SAVE_RE = re.compile(r"^save-[0-9]{9}\Z")
+DATE_RE = re.compile(r"^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])\Z")
+ID_RE = re.compile(r"^[1-9][0-9]{0,19}\Z")
+NAME_RE = re.compile(r"^(20[0-9]{2}-[0-9]{2}-[0-9]{2})-([1-9][0-9]{0,19})\.json\Z")
 
 
 class DailyRunError(Exception):
@@ -101,7 +108,7 @@ def check_config(cfg, rows=()):
         raise DailyRunError("LB_DAILY_FORBIDDEN_SETTING")
     if any(k not in cfg["daily"]["trainArgsAllowed"] for k in t):  # guard:dr-setting-allowed
         raise DailyRunError("LB_DAILY_SETTING_NOT_ALLOWED")
-    if any(not isinstance(v, str) or not re.match(r"^[A-Za-z0-9._]+$", v) for v in t.values()):  # guard:dr-setting-values
+    if any(not isinstance(v, str) or not re.match(r"^[A-Za-z0-9._]+\Z", v) for v in t.values()):  # guard:dr-setting-values
         raise DailyRunError("LB_DAILY_SETTING_NOT_ALLOWED")
     if t.get("--val-split") != "disjoint":  # guard:dr-val-split
         raise DailyRunError("LB_DAILY_SETTING_REQUIRED")
@@ -132,7 +139,8 @@ def bpb_matches(row):
 
 
 def check_row(row, cfg, legacy_ok=False):
-    """legacy_ok (the trusted-record read only): a v1 row with exactly the v1 fields is accepted."""
+    """legacy_ok (the trusted-record read only): a v1 row with exactly the v1 fields and runId == str(V1_LAST_RUN_ID) is
+    accepted."""
     legacy = legacy_ok and isinstance(row, dict) and row.get("schema") == LEGACY_SCHEMA
     if not isinstance(row, dict) or sorted(row) != sorted(V1_FIELDS if legacy else ROW_FIELDS):  # guard:dr-row-fields
         raise DailyRunError("LB_DAILY_ROW_FIELD")
@@ -140,12 +148,14 @@ def check_row(row, cfg, legacy_ok=False):
         raise DailyRunError("LB_DAILY_PIN_MISMATCH")
     ok = (row["schema"] == (LEGACY_SCHEMA if legacy else ROW_SCHEMA) and isinstance(row["runId"], str) and ID_RE.match(row["runId"])
           and isinstance(row["chainId"], str) and ID_RE.match(row["chainId"]) and isinstance(row["workflowSha"], str)
-          and re.match(r"^[0-9a-f]{40}$", row["workflowSha"]) and isinstance(row["today"], str) and DATE_RE.match(row["today"])
+          and re.match(r"^[0-9a-f]{40}\Z", row["workflowSha"]) and isinstance(row["today"], str) and DATE_RE.match(row["today"])
           and row["status"] == "trained" and type(row["startStep"]) is int and row["startStep"] >= 0 and type(row["endStep"]) is int
           and row["endStep"] >= row["startStep"] and row["stopReason"] in STOP_REASONS and num_ok(row["heldoutBpb"]) and num_ok(row["baselineBpb"])
           and type(row["wallSeconds"]) is int and row["wallSeconds"] >= 0
           and (row["resumedFrom"] is None or (isinstance(row["resumedFrom"], str) and HEX64.match(row["resumedFrom"]))))
     if not ok:  # guard:dr-row-values
+        raise DailyRunError("LB_DAILY_ROW_VALUE")
+    if legacy and row["runId"] != str(V1_LAST_RUN_ID):  # guard:dr-row-v1-cutoff
         raise DailyRunError("LB_DAILY_ROW_VALUE")
     if not legacy:
         ins = (num_ok(row["modelCe"]) and type(row["heldoutTokens"]) is int and row["heldoutTokens"] >= 1
@@ -276,7 +286,7 @@ def cycle_args(a, cfg, now):
     t = load_trusted(a.trusted, a.trusted_sha)
     if t["kind"] == "done":
         raise DailyRunError("LB_DAILY_CHAIN_DONE")
-    if not re.match(r"^[0-9]{10}$", str(a.job_start)) or int(a.job_start) > now + 60:  # guard:dr-job-start
+    if not re.match(r"^[0-9]{10}\Z", str(a.job_start)) or int(a.job_start) > now + 60:  # guard:dr-job-start
         raise DailyRunError("LB_DAILY_BAD_DEADLINE")
     budget = min(dr["trainDeadlineMin"], (int(a.job_start) + dr["trainDeadlineMin"] * 60 - now) // 60)
     if budget < dr["minBudgetMin"]:  # guard:dr-budget

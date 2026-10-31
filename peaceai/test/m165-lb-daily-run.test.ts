@@ -136,6 +136,7 @@ const CASES: Record<string, (dir: string) => string> = {
   "dr-row-inputs": (d) => land(d, scratch(d), goodRow({ heldBytes: 2000.5, modelCe: ceFor(3.1, 1000, 2000.5) })).last,
   "dr-row-bpb": (d) => land(d, scratch(d), goodRow({ heldoutBpb: 3.2 })).last,
   "dr-row-marker-match": (d) => land(d, scratch(d), goodRow({ endStep: 60 })).last,
+  "dr-row-v1-cutoff": (d) => trusted(scratch(d), results(d, { [`lb-daily/${PREV}-41222155936.json`]: goodRowV1({ runId: "41222155936" }) })).last,
   "dr-read-symlink": (d) => {
     const real = results(d, { [`lb-daily/${PREV}-100.json`]: goodRow() }), res = results(d); mkdirSync(join(res, "runs"));
     symlinkSync(join(real, "runs/lb-daily"), join(res, "runs/lb-daily"));
@@ -167,6 +168,7 @@ const REAL: Record<string, string | RegExp> = {
   "dr-deadline-cap": "LB_DAILY_BAD_DEADLINE", "dr-r2-folder": "LB_DAILY_BAD_CONFIG", "dr-cleared": "LB_DAILY_NOT_CLEARED", "dr-marker": "LB_DAILY_RECORD_BAD",
   "dr-row-fields": "LB_DAILY_ROW_FIELD", "dr-row-pins": "LB_DAILY_PIN_MISMATCH", "dr-row-values": "LB_DAILY_ROW_VALUE", "dr-row-marker-match": "LB_DAILY_ROW_VALUE",
   "dr-row-inputs": "LB_DAILY_ROW_VALUE", "dr-row-bpb": "LB_DAILY_ROW_VALUE", "dr-val-split": "LB_DAILY_SETTING_REQUIRED",
+  "dr-row-v1-cutoff": "LB_DAILY_RECORD_BAD",
   "dr-read-symlink": "LB_DAILY_RECORD_BAD", "dr-record-name": "LB_DAILY_RECORD_BAD", "dr-once": "LB_DAILY_ALREADY_RAN", "dr-one-chain": "LB_DAILY_RECORD_BAD",
   "dr-trusted-sha": "LB_DAILY_UNTRUSTED", "dr-fresh-empty": "LB_DAILY_STATE_NOT_EMPTY", "dr-only-trusted-save": "LB_DAILY_SAVE_SET",
   "dr-save-sha": "LB_DAILY_SAVE_SHA_MISMATCH", "dr-chain-absent": "LB_DAILY_STATE_NOT_EMPTY", "dr-job-start": "LB_DAILY_BAD_DEADLINE", "dr-budget": "LB_DAILY_BAD_DEADLINE",
@@ -250,12 +252,39 @@ test("M165 near misses: the valid neighbour of each refusal passes", () => withD
   for (const [what, ev] of [["no inputs", { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5156 }], ["bpb off", { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5156, model_ce: ceFor(3.1, 96, 300), heldout_tokens: 96, held_bytes: 300 }]] as const)
     assert.equal(rowCase(d, root, { report: { eval: ev } }).last, "LB_DAILY_ROW_VALUE", what);
   // v1 rows (landed before batch 6) are still read as the trusted record; they are never landed again; a mixed row is bad
-  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: goodRowV1() })).last, `trusted kind=resume chain=100 save=save-000000050 sha=${"a".repeat(64)} step=50 record=${PREV}-100.json`);
-  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: goodRowV1({ endStep: 80, marker: marker(80, "save-000000080") }), "lb-daily/2026-10-29-90.json": goodRow({ today: "2026-10-29", runId: "90" }) })).last,
-    `trusted kind=resume chain=100 save=save-000000080 sha=${"a".repeat(64)} step=80 record=${PREV}-100.json`, "v1 and v2 rows in one chain");
+  const V1ID = "41222155935"; // the only run id a v1 row may carry (V1_LAST_RUN_ID)
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-${V1ID}.json`]: goodRowV1({ runId: V1ID }) })).last, `trusted kind=resume chain=100 save=save-000000050 sha=${"a".repeat(64)} step=50 record=${PREV}-${V1ID}.json`);
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-${V1ID}.json`]: goodRowV1({ runId: V1ID, endStep: 80, marker: marker(80, "save-000000080") }), "lb-daily/2026-10-29-90.json": goodRow({ today: "2026-10-29", runId: "90" }) })).last,
+    `trusted kind=resume chain=100 save=save-000000080 sha=${"a".repeat(64)} step=80 record=${PREV}-${V1ID}.json`, "v1 and v2 rows in one chain");
   assert.equal(land(d, root, goodRowV1()).last, "LB_DAILY_ROW_FIELD", "a v1 row is not landed");
   assert.equal(land(d, root, { ...goodRowV1(), modelCe: 1, heldoutTokens: 1, heldBytes: 1 }).last, "LB_DAILY_ROW_VALUE", "v1 schema, v2 fields");
   assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: { ...goodRow(), schema: "peaceai-lb-daily-run:v1" } })).last, "LB_DAILY_RECORD_BAD", "v1 schema with v2 fields");
+  // batch 7: v1 is trusted only for the first daily run's id (V1_LAST_RUN_ID); one above, or (Auditor #662) a low id with a
+  // later date that would otherwise become the resume point, is refused; v2 is unaffected
+  assert.match(readFileSync(join(MODEL, "lb_daily.py"), "utf8"), /^V1_LAST_RUN_ID = 41222155935$/m);
+  const at = "41222155935", above = "41222155936";
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-${at}.json`]: goodRowV1({ runId: at }) })).last,
+    `trusted kind=resume chain=100 save=save-000000050 sha=${"a".repeat(64)} step=50 record=${PREV}-${at}.json`, "v1 at the cutoff");
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-${above}.json`]: goodRowV1({ runId: above }) })).last, "LB_DAILY_RECORD_BAD", "v1 above the cutoff");
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-7.json`]: goodRowV1({ runId: "7", chainId: "7" }) })).last, "LB_DAILY_RECORD_BAD", "v1 with a low run id");
+  assert.equal(trusted(root, results(d, { [`lb-daily/2026-10-29-${at}.json`]: goodRowV1({ runId: at, today: "2026-10-29" }), [`lb-daily/${PREV}-7.json`]: goodRowV1({ runId: "7", endStep: 999, marker: marker(999, "save-000000999") }) })).last,
+    "LB_DAILY_RECORD_BAD", "Auditor #662: a low-id v1 row dated after the real one is not a resume point");
+  // a trailing newline is not an id (\Z, not $): the chain id is only checked by ID_RE; the v1 cutoff id neither
+  assert.equal(land(d, root, goodRow({ chainId: "100\n" })).last, "LB_DAILY_ROW_VALUE", "chain id with a newline");
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-${at}.json`]: goodRowV1({ runId: `${at}\n` }) })).last, "LB_DAILY_RECORD_BAD", "v1 cutoff id with a newline");
+  // killed text mutants: ID_RE back to $ (the newline chain id lands), and the #661 bound runId <= cutoff (the
+  // Auditor #662 low-id row becomes the resume point)
+  const src = readFileSync(join(MODEL, "lb_daily.py"), "utf8");
+  const swap = (from: string, to: string) => { assert.equal(src.split(from).length, 2, from); return src.replace(from, to); };
+  const lowId = { [`lb-daily/2026-10-29-${at}.json`]: goodRowV1({ runId: at, today: "2026-10-29" }), [`lb-daily/${PREV}-7.json`]: goodRowV1({ runId: "7", endStep: 999, marker: marker(999, "save-000000999") }) };
+  MUTANT = swap('ID_RE = re.compile(r"^[1-9][0-9]{0,19}\\Z")', 'ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")');
+  try { assert.match(land(d, scratch(d), goodRow({ chainId: "100\n" })).last, /^landed /, "mutant ID_RE $: the newline id lands"); } finally { MUTANT = null; }
+  MUTANT = swap('if legacy and row["runId"] != str(V1_LAST_RUN_ID):', 'if legacy and int(row["runId"]) > V1_LAST_RUN_ID:');
+  try { assert.match(trusted(scratch(d), results(d, lowId)).last, /^trusted kind=resume .* step=999 record=2026-10-30-7\.json$/, "mutant <= cutoff: resumes from the low-id row"); } finally { MUTANT = null; }
+  assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-${above}.json`]: goodRow({ runId: above }) })).last,
+    `trusted kind=resume chain=100 save=save-000000050 sha=${"a".repeat(64)} step=50 record=${PREV}-${above}.json`, "v2 above the cutoff");
+  assert.equal(trusted(root, results(d, { [`lb-daily/2026-10-29-${at}.json`]: goodRowV1({ runId: at, today: "2026-10-29" }), [`lb-daily/${PREV}-${above}.json`]: goodRow({ runId: above, endStep: 80, marker: marker(80, "save-000000080") }) })).last,
+    `trusted kind=resume chain=100 save=save-000000080 sha=${"a".repeat(64)} step=80 record=${PREV}-${above}.json`, "the real shape: v1 first day, v2 after");
   const { modelCe: _c, heldoutTokens: _t, heldBytes: _b, ...v2less } = goodRow();
   assert.equal(trusted(root, results(d, { [`lb-daily/${PREV}-100.json`]: v2less })).last, "LB_DAILY_RECORD_BAD", "v2 schema without the inputs");
   assert.match(rowCase(d, root, { kind: "fresh" }).last, /^lb-daily start=0 end=80 /);
