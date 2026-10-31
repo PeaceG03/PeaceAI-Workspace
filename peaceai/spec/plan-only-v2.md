@@ -1,8 +1,8 @@
 # PLAN-ONLY mode v2 (planner `plan-only-v2`)
 
 Status: draft for Auditor review (Builder, 2026-10-30). Code: `peaceai/lib/plan2.ts` (planner). Runner:
-`peaceai/lib/plan2run.ts` (new), reached by `peaceai/bin/plan-only.ts run <taskfile> --planner plan-only-v2`; the
-default stays `plan-only-v1`, and v1's files (plan.ts, plangrade.ts, planrun.ts) are byte-identical to main, so v1's
+`peaceai/lib/plan2run.ts` (new), with its own CLI `peaceai/bin/plan-only-v2.ts run <taskfile>`. v1's files
+(plan.ts, plangrade.ts, planrun.ts, bin/plan-only.ts) are byte-identical to main, so v1's
 `plannerSha256` is unchanged. Grader `plan-grade-v2` (`plangrade.ts`) is
 unchanged. Tests: `peaceai/test/m149-plan-v2.test.ts` (+ `m149-cases.ts`, `m149-fixtures.ts`).
 
@@ -75,5 +75,5 @@ is the measure. The component-noun list and the stemmer are general English, not
   read-only (`unchanged()` still proves nothing was written). A fetcher without a directory (test fixtures) gets a
   temp copy of its files, removed after planning.
 - `plannerSha256V2()`: sha256 of plan2.ts, plangrade.ts, plan2run.ts. Rows carry `planner` = `plan-only-v2`.
-- `peaceai/bin/plan-only.ts`: `--planner plan-only-v1|plan-only-v2` (default v1, which calls planrun.ts exactly as
-  before); v2 dispatches to plan2run.ts.
+- `peaceai/bin/plan-only-v2.ts run <taskfile>`: v2's CLI, same output format as v1's `run`; locking stays with
+  v1's `plan-only.ts lock` (one lock row serves both planners). `peaceai/bin/plan-only.ts` is unchanged.
