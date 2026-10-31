@@ -52,13 +52,14 @@ export function isPermutation(order: unknown, n: number): boolean {
 const exactKeys = (o: unknown, keys: string[]): o is Record<string, unknown> =>
   !!o && typeof o === "object" && !Array.isArray(o) && Object.keys(o).sort().join() === [...keys].sort().join();
 
-export type RankingRefusal = "RANKING_MISSING" | "RANKING_SHA_MISMATCH" | "RANKING_TOO_LARGE" | "RANKING_INVALID" | "RANKING_OTHER_TASK_FILE" | "RANKING_OTHER_WEIGHTS";
+export type RankingRefusal = "RANKING_OTHER_TASKS" | "RANKING_MISSING" | "RANKING_SHA_MISMATCH" | "RANKING_TOO_LARGE" | "RANKING_INVALID" | "RANKING_OTHER_TASK_FILE" | "RANKING_OTHER_WEIGHTS";
 
 /**
  * Reads the ranking the attempt job received. `expectSha256` is the scoring job's second output; `pin` is the weights
- * sha256 pinned in peaceai/model/model-v1-proposer.json; `taskFileSha256` the task file this run reads.
+ * sha256 pinned in peaceai/model/model-v1-proposer.json; `taskFileSha256` the task file this run reads; `taskKeys` its
+ * task keys (the ranking must hold exactly one entry per task of that file, no more, no fewer).
  */
-export function parseRanking(text: string | null, expectSha256: string | null, pin: { weightsSha256: string }, taskFileSha256: string): { ok: true; ranking: Ranking } | { ok: false; reason: RankingRefusal } {
+export function parseRanking(text: string | null, expectSha256: string | null, pin: { weightsSha256: string }, taskFileSha256: string, taskKeys: readonly string[]): { ok: true; ranking: Ranking } | { ok: false; reason: RankingRefusal } {
   if (text === null || text === "") return { ok: false, reason: "RANKING_MISSING" };
   if (Buffer.byteLength(text) > MAX_RANKING_BYTES) return { ok: false, reason: "RANKING_TOO_LARGE" }; // m167-guard:rank-size
   if (typeof expectSha256 !== "string" || !H64.test(expectSha256) || sha256(text) !== expectSha256) return { ok: false, reason: "RANKING_SHA_MISMATCH" }; // m167-guard:rank-sha
@@ -77,6 +78,7 @@ export function parseRanking(text: string | null, expectSha256: string | null, p
     if (typeof e.candidatesSha256 !== "string" || !H64.test(e.candidatesSha256) || typeof e.bindingSha256 !== "string" || !H64.test(e.bindingSha256)) return { ok: false, reason: "RANKING_INVALID" };
     if (!Array.isArray(e.order) || e.order.length > MAX_CANDIDATES || !isPermutation(e.order, e.order.length)) return { ok: false, reason: "RANKING_INVALID" }; // m167-guard:rank-entry-order
   }
+  if (keys.size !== new Set(taskKeys).size || ![...new Set(taskKeys)].every((k) => keys.has(k))) return { ok: false, reason: "RANKING_OTHER_TASKS" }; // m167-guard:rank-task-keys
   return { ok: true, ranking: r as unknown as Ranking };
 }
 
@@ -105,10 +107,13 @@ export interface ModelProposer {
  * because the scoring job runs no tests and so cannot know failing test names; the candidate lists must be equal).
  */
 export function modelProposer(task: { taskKey: string }, ranking: Ranking | null): ModelProposer {
-  const inner = repairProposer({ name: MODEL_PROPOSER, order: (q) => applyRanking(ranking!, task.taskKey, q) });
+  // the manifest is named on the row only once this task's ranked order was actually applied (a refused or mismatched
+  // ranking leaves it null, and such a task ends PROPOSER_FAILED before any attempt)
+  let applied = false;
+  const inner = repairProposer({ name: MODEL_PROPOSER, order: (q) => { const o = applyRanking(ranking!, task.taskKey, q); applied = true; return o; } });
   return {
     name: MODEL_PROPOSER,
-    modelManifestSha256: ranking ? ranking.modelManifestSha256 : null,
+    get modelManifestSha256() { return applied && ranking ? ranking.modelManifestSha256 : null; }, // m167-guard:manifest-applied
     prepare(search, input) {
       if (!ranking) throw new Error("ranking: none usable"); // m167-guard:prepare-no-ranking
       if (ranking.entries.filter((e) => e.taskKey === task.taskKey).length !== 1) throw new Error("ranking: no entry for this task"); // m167-guard:prepare-entry

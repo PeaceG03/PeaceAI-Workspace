@@ -21,12 +21,15 @@ const libDir = join(ROOT, "peaceai/lib");
 const H = (c: string) => c.repeat(64);
 
 function v4Row(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
+  // a model-v1 row carries no lm key (M167, Auditor #664); every other proposer's row keeps lm "not-loadable"
+  const o: Record<string, unknown> = {
     schema: "peaceai-plan-loop:v4", at: "2026-10-31T08:00:00Z", set: "public", taskFileSha256: H("a"), taskKey: "0123456789abcdef", repo: "o/r", commit: "c".repeat(40),
-    workspace: "d".repeat(40), loop: "loop-v2", loopSha256: H("e"), proposer: "model-v1", planner: "plan-only-v4", plannerSha256: H("f"), modelManifestSha256: H("1"), lm: "not-loadable",
+    workspace: "d".repeat(40), loop: "loop-v2", loopSha256: H("e"), proposer: "model-v1", planner: "plan-only-v4", plannerSha256: H("f"), modelManifestSha256: H("1"),
     code: "ATTEMPT_LIMIT", maxAttempts: 3, attempts: 3, result: "fail", attemptCodes: [["TEST_FAIL"], ["TEST_FAIL"], ["TEST_FAIL"]], tests: { total: 1, passedByPeaceAI: 0, filledByTeam: 1 }, runner: "node-test", deps: "none", baseline: { total: 1, passing: 0, failing: 1 },
     ...over,
   };
+  if (o.proposer !== "model-v1" && !("lm" in over)) o.lm = "not-loadable";
+  return o;
 }
 const refusedAt0 = { code: "PROPOSER_FAILED", attempts: 0, result: "refused", attemptCodes: [], tests: null };
 
@@ -55,7 +58,7 @@ const CASES: Case[] = [
       assert.equal(l.row.loopRowProblem(v3), "model_needs_v4");
       const { planner: _p, plannerSha256: _s, ...v2 } = v3;
       assert.equal(l.row.loopRowProblem({ ...v2, schema: "peaceai-plan-loop:v2" }), "model_needs_v4");
-      assert.equal(l.row.loopRowProblem({ ...v3, proposer: "repair-v1" }), null, "near miss: a v3 repair-v1 row");
+      assert.equal(l.row.loopRowProblem({ ...v3, proposer: "repair-v1", lm: "not-loadable" }), null, "near miss: a v3 repair-v1 row");
       assert.deepEqual([...l.row.LOOP_MODEL_PROPOSERS], ["model-v1"]);
     },
   },

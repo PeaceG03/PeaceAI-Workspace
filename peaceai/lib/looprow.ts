@@ -74,7 +74,8 @@ export interface LoopRow {
   plannerSha256?: string;
   /** v4 only: the model manifest sha256 behind a model-backed proposer's ranking (null: no model, or none was usable). */
   modelManifestSha256?: string | null;
-  lm: "not-loadable" | "loaded";
+  /** Absent on a model-backed proposer's row (M167: the attempt job never loads the model; the manifest names it). */
+  lm?: "not-loadable" | "loaded";
   code: LoopCode;
   maxAttempts: number;
   attempts: number;
@@ -110,7 +111,8 @@ export function loopRowProblem(o: unknown): string | null {
   if (r.schema !== LOOP_SCHEMA && !v2) return "schema";
   const keys = v4 ? KEYS_V4 : v3 ? KEYS_V3 : v2 ? KEYS_V2 : KEYS;
   if (Object.keys(r).some((k) => !keys.includes(k))) return "loop_keys";
-  if (v2 && !keys.every((k) => k === "repo" || k === "commit" || k in r)) return "loop_keys";
+  const model = (LOOP_MODEL_PROPOSERS as readonly string[]).includes(r.proposer);
+  if (v2 && !keys.every((k) => k === "repo" || k === "commit" || (k === "lm" && model) || k in r)) return "loop_keys";
   if (typeof r.at !== "string" || !ISO.test(r.at)) return "at";
   if (r.set !== "public" && r.set !== "hidden") return "set";
   if (typeof r.taskFileSha256 !== "string" || !H64.test(r.taskFileSha256)) return "file_sha";
@@ -123,12 +125,12 @@ export function loopRowProblem(o: unknown): string | null {
   if (typeof r.proposer !== "string" || !/^[a-z0-9-]{1,40}$/.test(r.proposer)) return "proposer";
   if (v3 && !(LOOP_PLANNER_NAMES as readonly string[]).includes(r.planner)) return "planner"; // m162-guard:row-planner
   if (v3 && (typeof r.plannerSha256 !== "string" || !H64.test(r.plannerSha256))) return "planner_sha"; // m162-guard:row-planner-sha
-  const model = (LOOP_MODEL_PROPOSERS as readonly string[]).includes(r.proposer);
   if (model && !v4) return "model_needs_v4"; // m166-guard:row-model-v4
   if (v4 && r.modelManifestSha256 !== null && (typeof r.modelManifestSha256 !== "string" || !H64.test(r.modelManifestSha256))) return "model_sha"; // m166-guard:row-model-sha
   if (v4 && !model && r.modelManifestSha256 !== null) return "model_sha_unexpected"; // m166-guard:row-model-unexpected
   if (v4 && model && r.modelManifestSha256 === null && r.attempts !== 0) return "model_sha_missing"; // m166-guard:row-model-missing
-  if (r.lm !== "not-loadable" && r.lm !== "loaded") return "lm";
+  if (model && "lm" in r) return "lm"; // m167-guard:row-model-no-lm
+  if (!model && r.lm !== "not-loadable" && r.lm !== "loaded") return "lm";
   if (!(LOOP_CODES as readonly string[]).includes(r.code) || (!v2 && V2_ONLY_CODES.includes(r.code))) return "code";
   if (!nat(r.maxAttempts, 20) || r.maxAttempts < 1) return "max_attempts";
   if (!nat(r.attempts, 20) || r.attempts > r.maxAttempts) return "attempts";

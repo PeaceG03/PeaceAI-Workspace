@@ -2,16 +2,21 @@ name: peace-model-v1-dev
 
 # M167 model-v1 dev run (peaceai/spec/edit-proposer-model-v1.md; Auditor rulings a-f). Manual dispatch on main only.
 # Two jobs, so no job that runs candidate code ever holds the weights:
-#   model-v1-score (environment peaceai-results; runs NO candidate code): restores the Results LM pinned in
-#     peaceai/model/model-v1-proposer.json by its weights sha256 (model-v1-fetch.sh, fetch only), rebuilds repair-v1's
-#     candidate lists for the public dev tasks (anonymous clones, no install, no tests), then scores them with NO
-#     network (unshare --net; lib/modelscore.ts offline + scoringJobAllowed + lm.ts verifyModelDir memcheck) and
-#     deletes the model. Its only result is the ranking: one compact JSON line of index lists (no code, no text),
-#     handed to the next job as two job outputs, ranking and ranking_sha256. No artifact, no cache, no upload.
+#   model-v1-score (environment peaceai-results; runs NO candidate code): FIRST rebuilds repair-v1's candidate lists
+#     for the public dev tasks (anonymous clones, no install, no tests; no key and no weights on the runner yet), THEN
+#     restores the Results LM pinned in peaceai/model/model-v1-proposer.json by its weights sha256 (model-v1-fetch.sh,
+#     fetch only), scores the lists with NO network (unshare --net; lib/modelscore.ts offline + scoringJobAllowed +
+#     lm.ts verifyModelDir: the pinned LM's strict memcheck is FAIL, it is accepted via the core-free-64 recheck bound
+#     to its config, tokenizer and weights shas, for dev-split use only) and deletes the model. Step logs are filtered
+#     to the counts lines. Its only result is the ranking: one compact JSON line of index lists (no code, no text),
+#     size- and schema-checked with jq, handed to the next job as two job outputs, ranking and ranking_sha256.
+#     No artifact, no cache, no upload.
 #   model-v1-attempt (no environment, no secrets, PEACEAI_CANDIDATE_JOB): runs bin/loop.ts at the pinned --max on the
 #     pinned public task file for repair-v1, model-v1 (whose ranking must hash to ranking_sha256 and bind each task
 #     key and candidate list, else every task is PROPOSER_FAILED) and rules-v1, with the team tests as the
-#     peaceai-cand uid; prints the appended loop rows (public set: codes and numbers) and their sha256.
+#     peaceai-cand uid, with this runner's tools read-only as in Job B (only the loop log is writable); prints the
+#     appended loop rows (public set: codes and numbers) and their sha256. The job fails unless every loop run exits 0
+#     and each proposer wrote exactly one row per task of the task file (12); a refused ranking fails the job.
 # Counts-only logs; dev split only, no hidden data anywhere; no gain claim.
 on:
   workflow_dispatch:
@@ -52,6 +57,11 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --no-deps --require-hashes -r peaceai/model/requirements.txt
+      - name: Build repair-v1's candidate lists for the public dev tasks first (anonymous clones; no key, no weights yet; counts line only)
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/tsx peaceai/bin/model-v1-score.ts candidates --out "$RUNNER_TEMP/candidates.json" 2>&1 \
+            | grep -E '^(candidates tasks=[0-9]+ lists=[0-9]+ nonEmpty=[0-9]+ candidates=[0-9]+ refused=[A-Za-z0-9_:,-]+|refused [A-Z0-9_]+)$'
       - name: Verify the checkout and the key scripts before any key is used
         run: |
           set -euo pipefail
@@ -67,8 +77,6 @@ jobs:
           set -euo pipefail
           [ -n "${DEPLOY_KEY:-}" ] || { echo "PEACEAI_RESULTS_DEPLOY_KEY is not set: refused (fail closed)"; exit 1; }
           ./peaceai/bin/model-v1-fetch.sh "$RUNNER_TEMP/m"
-      - name: Build repair-v1's candidate lists for the public dev tasks (anonymous clones; no install, no tests, no model)
-        run: ./node_modules/.bin/tsx peaceai/bin/model-v1-score.ts candidates --out "$RUNNER_TEMP/candidates.json"
       - name: Score with no network (unshare --net), emit the ranking as job outputs, nothing else
         id: score
         run: |
@@ -78,8 +86,21 @@ jobs:
           sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups -- env -i PATH="$PATH" HOME="$HOME" TMPDIR="$RUNNER_TEMP" \
             PEACEAI_PYTHON="$RUNNER_TEMP/venv/bin/python" GITHUB_ACTIONS="$GITHUB_ACTIONS" GITHUB_JOB="$GITHUB_JOB" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" GITHUB_REF="$GITHUB_REF" \
-            ./node_modules/.bin/tsx peaceai/bin/model-v1-score.ts score --candidates "$RUNNER_TEMP/candidates.json" --model "$RUNNER_TEMP/m" --out "$R"
+            ./node_modules/.bin/tsx peaceai/bin/model-v1-score.ts score --candidates "$RUNNER_TEMP/candidates.json" --model "$RUNNER_TEMP/m" --out "$R" 2>&1 \
+            | grep -E '^(scored model=[a-z0-9-]+ lists=[0-9]+ candidates=[0-9]+ reordered=[0-9]+ bytes=[0-9]+|refused [A-Z0-9_]+)$'
           test -s "$R" && test "$(wc -l < "$R")" = 0 || { echo "ranking is not one line: refused"; exit 1; }
+          # size and exact schema before the ranking becomes a job output (the attempt job checks it again, with its binding)
+          [ "$(stat -c %s "$R")" -le 65536 ] || { echo "ranking over 64 KiB: refused"; exit 1; }
+          T=$(jq -r .taskFile "$PIN"); [ "$T" = peaceai/plan/tasks-public-v1.json ] || { echo "not the public dev task file: refused"; exit 1; }
+          jq -e --arg tf "$(sha256sum "$T" | cut -c1-64)" --argjson n "$(jq '.tasks | length' "$T")" '
+            def h(k): type == "string" and test("^[0-9a-f]{" + (k | tostring) + "}$");
+            type == "object" and keys == ["entries", "modelManifestSha256", "schema", "taskFileSha256", "weightsSha256"]
+            and .schema == "peaceai-model-v1-ranking:v1" and .taskFileSha256 == $tf and (.weightsSha256 | h(64)) and (.modelManifestSha256 | h(64))
+            and (.entries | type == "array" and length == $n and ([.[].taskKey] | unique | length) == $n and all(
+              type == "object" and keys == ["bindingSha256", "candidatesSha256", "order", "taskKey"]
+              and (.taskKey | h(16)) and (.candidatesSha256 | h(64)) and (.bindingSha256 | h(64))
+              and (.order | type == "array" and length <= 60 and (unique | length) == length and all(type == "number" and . >= 0 and . < 60 and floor == .))))
+          ' "$R" > /dev/null || { echo "ranking fails the schema check: refused"; exit 1; }
           s=$(sha256sum "$R" | cut -c1-64)
           { echo "ranking=$(cat "$R")"; echo "ranking_sha256=$s"; } >> "$GITHUB_OUTPUT"
           echo "ranking sha256 $s"
@@ -108,6 +129,10 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - name: Create the unprivileged candidate user (same as Job B)
         run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
+      - name: Make this runner's tools read-only (same as Job B; only the loop log it appends to stays writable)
+        run: |
+          chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
+          chmod u+w peaceai/plan/loop-runs.jsonl
       - name: The ranking from the scoring job (job outputs only; checked by bin/loop.ts against ranking_sha256)
         env:
           RANKING: ${{ needs.model-v1-score.outputs.ranking }}
@@ -119,12 +144,20 @@ jobs:
           set -euo pipefail
           T=$(jq -r .taskFile "$PIN"); M=$(jq -r .maxAttempts "$PIN")
           [ "$T" = peaceai/plan/tasks-public-v1.json ] || { echo "not the public dev task file: refused"; exit 1; }
+          N=$(jq '.tasks | length' "$T"); [ "$N" = 12 ] || { echo "task file has $N tasks, not 12: refused"; exit 1; }
           L=peaceai/plan/loop-runs.jsonl; n0=$(wc -l < "$L")
-          ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer repair-v1 --deps-dir "$RUNNER_TEMP/deps" || echo "loop run exited non-zero (codes above)"
-          ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer model-v1 --ranking "$RUNNER_TEMP/ranking.json" --ranking-sha256 "$RANKING_SHA256" --deps-dir "$RUNNER_TEMP/deps" || echo "loop run exited non-zero (codes above)"
-          ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer rules-v1 --deps-dir "$RUNNER_TEMP/deps" || echo "loop run exited non-zero (codes above)"
+          # every run is attempted and its exit code kept; the job fails below (after printing the rows) unless all are 0
+          r1=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer repair-v1 --deps-dir "$RUNNER_TEMP/deps" || r1=$?
+          r2=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer model-v1 --ranking "$RUNNER_TEMP/ranking.json" --ranking-sha256 "$RANKING_SHA256" --deps-dir "$RUNNER_TEMP/deps" || r2=$?
+          r3=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer rules-v1 --deps-dir "$RUNNER_TEMP/deps" || r3=$?
           # the appended rows (public set: codes and numbers only), for Builder to commit verbatim; their sha256 binds the copy
           tail -n +"$((n0 + 1))" "$L" > "$RUNNER_TEMP/rows.jsonl"
           ! jq -e 'select(.set != "public")' "$RUNNER_TEMP/rows.jsonl" > /dev/null || { echo "a non-public row: refused to print"; exit 1; }
           cat "$RUNNER_TEMP/rows.jsonl"
           echo "appended rows $(wc -l < "$RUNNER_TEMP/rows.jsonl"), sha256 $(sha256sum < "$RUNNER_TEMP/rows.jsonl" | cut -c1-64)"
+          echo "loop exit codes repair-v1=$r1 model-v1=$r2 rules-v1=$r3"
+          [ "$r1" = 0 ] && [ "$r2" = 0 ] && [ "$r3" = 0 ] || { echo "a loop run exited non-zero (a refused model-v1 ranking exits 1): job failed"; exit 1; }
+          for p in repair-v1 model-v1 rules-v1; do
+            k=$(jq -s --arg p "$p" 'map(select(.proposer == $p)) | length' "$RUNNER_TEMP/rows.jsonl")
+            [ "$k" = "$N" ] || { echo "$p wrote $k rows, not $N: job failed"; exit 1; }
+          done

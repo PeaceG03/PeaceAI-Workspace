@@ -5,7 +5,8 @@
 //     tests, no install, no candidate code). Network is still on here; no model is loaded.
 //   tsx peaceai/bin/model-v1-score.ts score --candidates FILE --model RESULTS_DIR --out FILE
 //     refuses unless there is no network, the model in RESULTS_DIR/models/lm/<pin version>/ passes verifyModelDir
-//     (memcheck) and its weights are the pin; scores each candidate once (infer.py score) and writes the ranking (one
+//     (the pinned LM's strict memcheck is FAIL; it is accepted via the core-free-64 recheck bound to its config,
+//     tokenizer and weights shas (infer.py accepts it), for dev-split use only) and its weights are the pin; scores each candidate once (infer.py score) and writes the ranking (one
 //     compact JSON line) to FILE. The job hands FILE and its sha256 to the attempt job as job outputs.
 // Prints counts only (no task text, no repo names, no scores); writes nothing else.
 import { readFileSync, writeFileSync } from "node:fs";

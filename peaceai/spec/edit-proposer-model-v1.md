@@ -51,8 +51,9 @@ the model put the right candidate earlier", measured at a small fixed `--max` pr
   and measured on the public dev split only, with no gain claim. How hidden scoring can happen, and whether model
   weights may run where Auditor does hidden runs, is Peace's decision, which Auditor will raise when the proposer is
   ready. This design does not plan around it (open item, owned by Peace / Auditor).
-- Model (ruling a): only the memchecked Results LM (`LM_FILES` config.json / tokenizer.json / weights.npz; lm.ts
-  `verifyModelDir`, infer.py's memcheck rule), pinned by its weights sha256. An lb-daily save is not eligible; it
+- Model (ruling a): only a Results LM that lm.ts `verifyModelDir` and infer.py both accept (`LM_FILES` config.json /
+  tokenizer.json / weights.npz), pinned by its weights sha256. For the M167 pin see "Implementation (M167)": its
+  strict memcheck is FAIL and it is accepted only via the core-free-64 recheck, for dev-split use only. An lb-daily save is not eligible; it
   becomes eligible only after export + M49 memcheck + provenance check, in its own reviewed PR.
 - Weights never on a bot computer, no model on the box: `lmJobAllowed` (lm.ts) currently ALLOWS off Actions ("Off
   Actions (the box) is allowed"). The scoring job needs its own check that refuses unless `GITHUB_ACTIONS === "true"`
@@ -107,18 +108,27 @@ plus semantic mutants). Rows: M166 `peaceai-plan-loop:v4`, `modelManifestSha256`
 - Model: the pin is judge-v2.json `promoted` (lm-v1-858573767465, run 40694718190, weights sha256 8585...9255).
   `model-v1-fetch.sh` restores it from Results main into the runtime layout (`models/lm/<v>/` with memcheck.json,
   `runs/lm-retrain/<run>/memcheck-recheck-*.json`), checks the weights against the pin and drops `.git`; the score
-  step then requires `verifyModelDir` ok (memcheck PASS or a PASS recheck bound to these files), the version and the
-  weights sha256 to be the pin, else it refuses and there is no ranking. infer.py re-checks the memcheck itself.
+  step then requires `verifyModelDir` ok, the version and the weights sha256 to be the pin, else it refuses and there
+  is no ranking. Memcheck status, stated exactly: the pinned LM's strict memcheck is FAIL; it is accepted via the
+  core-free-64 recheck bound to its config, tokenizer and weights shas (infer.py accepts it), for dev-split use only.
+  It is not a strict-memcheck PASS model, and nothing in M167 says it is.
 - Score: per candidate one `infer.py score` item, target = the changed lines (common prefix and suffix lines
   dropped, at most 2000 chars), context = `// <request, whitespace folded, at most 400 chars>`, `// <path>` and up to
   30 lines before the change. Rank = mean log P (logprob / tokens), high first; unscored last; ties keep repair-v1's
   order. Any infer refusal, or scores not exactly one per item in order, gives no ranking (the job fails).
-- No network after scoring starts: the candidate lists are built first (anonymous clones of the pinned commits; no
-  team tests, no install, no candidate code), then the score step runs under `sudo unshare --net` (as the runner
-  user again via setpriv, with a minimal env), and `model-v1-score.ts score` also refuses unless only an
-  address-less loopback is left (`offline`). The model is deleted when the job ends.
-- Logs: counts only (tasks, lists, candidates, reordered lists, ranking bytes) and the ranking's sha256. No task text,
-  repo name, score or code is printed by the scoring job.
+- Step order (Auditor #664): the candidate lists are built FIRST (anonymous clones of the pinned commits; no team
+  tests, no install, no candidate code), before the checkout and key scripts are verified, before the deploy key is
+  used and before any weights reach the runner, so no process runs with both network and weights. Then the fetch,
+  then the score step under `sudo unshare --net` (as the runner user again via setpriv, with a minimal env);
+  `model-v1-score.ts score` also refuses unless only an address-less loopback is left (`offline`). The model is
+  deleted when the job ends.
+- Logs: the candidates and score steps pipe all their output (stdout and stderr) through `grep -E` for their one
+  counts line (`candidates tasks=.. lists=.. nonEmpty=.. candidates=.. refused=..`, `scored model=.. lists=..
+  candidates=.. reordered=.. bytes=..`) or a `refused CODE` line; nothing else reaches the log. Then the ranking's
+  sha256. No task text, repo name, score or code is printed by the scoring job.
+- Rows: a model-v1 row carries no `lm` key (the attempt job loads no model; `lm: "not-loadable"` would read as a
+  model that failed to load). Every other proposer's row keeps `lm: "not-loadable"` as before
+  (`m167-guard:row-model-no-lm`, `loop-no-lm`).
 
 ## Hand-off without artifacts (resolves open item 2)
 
@@ -138,11 +148,20 @@ modelManifestSha256 = sha256 of the manifest text defined in ruling (c) above
 `model-v1-attempt` (`needs: model-v1-score`, no environment, no secrets, PEACEAI_CANDIDATE_JOB=true) writes the
 `ranking` output (through an env var, never interpolated into a script) to a file and runs
 `bin/loop.ts run <taskFile> --max 20 --proposer model-v1 --ranking FILE --ranking-sha256 <ranking_sha256>`.
+Before the `ranking` output is written, the score step (in the sha-pinned workflow, m9) checks with jq that the file
+is one line, at most 64 KiB, and exactly the schema below (key sets, hex widths, one entry per task of the task file,
+orders of distinct integers 0..59, at most 60); a failure fails the job and there is no output.
 `modelpropose.ts` `parseRanking` refuses (and every task then ends PROPOSER_FAILED, with
 `modelManifestSha256: null` and no attempts) unless: the text exists, is at most 64 KiB and hashes to
 `ranking_sha256`; it is exactly that schema and key set; the manifest sha256 is 64 hex; `taskFileSha256` is the task
-file being run; `weightsSha256` is the pin; task keys are unique and well formed; every order is a permutation of at
-most 60. Per task, `prepare` refuses unless there is exactly one entry for this task key, and the reorder refuses
+file being run; `weightsSha256` is the pin; task keys are unique and well formed; the set of entry task keys equals
+the set of task keys of the task file being run (none missing, none extra: RANKING_OTHER_TASKS); every order is a
+permutation of at most 60. A row names the ranking's `modelManifestSha256` only after this task's ranked order was
+actually applied (`m167-guard:manifest-applied`); a refused ranking, a missing entry or a mismatched list gives
+`modelManifestSha256: null`. A refused ranking still writes every row (all PROPOSER_FAILED, 0 attempts) and then
+`bin/loop.ts` exits 1. The attempt job keeps every loop run's exit code, prints the rows, and then fails unless all
+three runs exited 0 and each proposer wrote exactly one row per task of the task file (12); nothing turns a refusal
+into a green job. Per task, `prepare` refuses unless there is exactly one entry for this task key, and the reorder refuses
 unless `candidatesSha256` is the sha256 of the list THIS job rebuilt, `bindingSha256` recomputes, and the order is a
 permutation of this list. Never a fallback to repair-v1's order. What this does and does not protect against: a
 corrupted or truncated output, a ranking for another task file, another model or another candidate list are all
@@ -158,8 +177,9 @@ The pre-registered `--max` is 20, fixed in `peaceai/model/model-v1-proposer.json
 `peaceai/plan/loop-runs.jsonl` (24 rows, the 12 public tasks twice) ran at `--max 20`, so the pairing needs no new
 repair-v1 baseline at another budget; it is also `MAX_ATTEMPTS`, the loop's cap, so it is not "small" in absolute
 terms, and that is stated here rather than hidden. Because a pass ends the loop, each passing row's `attempts` is the
-rank of the first passing candidate, so the same rows also give pass within 1, 3 and 5 attempts as secondary,
-descriptive numbers (no gain claim). The attempt job runs repair-v1, model-v1 and rules-v1 at 20 on the same commit,
+rank of the first passing candidate, so the same rows also give pass within 1, 3 and 5 attempts. Attempts-to-pass
+is descriptive only: it is not pre-registered as a metric, carries no significance test and supports no gain claim;
+the pre-registered number is the pass count at `--max 20`. The attempt job runs repair-v1, model-v1 and rules-v1 at 20 on the same commit,
 same planner default and same candidate uid (`peaceai-cand`), in that order, and prints the appended rows (public
 set only: codes and numbers, as the committed log) with their sha256, for Builder to commit verbatim.
 
@@ -169,5 +189,5 @@ set only: codes and numbers, as the committed log) with their sha256, for Builde
    may run where Auditor does hidden runs. Auditor raises it with Peace when the proposer is ready.
 2. Resolved in M167 (job outputs + sha256, above), for Auditor's review.
 3. Resolved in M167 (`--max 20`, above), for Auditor's review.
-4. Not checked from the box: that Results holds a PASS memcheck (or PASS recheck) for the pinned model in the runtime
-   layout. The score step fails closed (no ranking) if it does not.
+4. Not checked from the box: that Results holds, in the runtime layout, the core-free-64 recheck that `verifyModelDir`
+   accepts for the pinned model (its strict memcheck is FAIL). The score step fails closed (no ranking) if it does not.

@@ -1,6 +1,7 @@
 // M167: model-v1's SCORING side (spec/edit-proposer-model-v1.md). Runs only in the `model-v1-score` job of
-// .github/workflows/peace-model-v1-dev.yml, which holds the memchecked Results LM (pinned by its weights sha256 in
-// peaceai/model/model-v1-proposer.json) and runs no candidate code: it rebuilds repair-v1's candidate lists for the
+// .github/workflows/peace-model-v1-dev.yml, which holds the Results LM pinned by its weights sha256 in
+// peaceai/model/model-v1-proposer.json (its strict memcheck is FAIL; it is accepted via the core-free-64 recheck bound
+// to its config, tokenizer and weights shas (infer.py accepts it), for dev-split use only) and runs no candidate code: it rebuilds repair-v1's candidate lists for the
 // public dev tasks (anonymous clones of the pinned commits, no team tests, no install, no test run), scores each
 // candidate once (mean log P of its changed lines given the request and the lines before them: infer.py score), and
 // emits one small ranking (index lists, sha256-bound to task key + candidate list + model manifest). Counts only are

@@ -20,13 +20,14 @@ import * as LM from "../lib/lm.ts";
 import * as Loop from "../lib/loop.ts";
 import * as MP from "../lib/modelpropose.ts";
 import * as MS from "../lib/modelscore.ts";
+import * as Row from "../lib/looprow.ts";
 import type { PlanTaskFile } from "../lib/plan.ts";
 import { setup, teardown, type M152Ctx } from "./m152-fixtures.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const libDir = join(ROOT, "peaceai/lib");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-interface Libs { mp: typeof MP; ms: typeof MS; loop: typeof Loop }
+interface Libs { mp: typeof MP; ms: typeof MS; loop: typeof Loop; row: typeof Row }
 
 let base: string;
 let ctx: M152Ctx;
@@ -65,7 +66,7 @@ function rankingFor(l: Libs, cands: readonly EP.Candidate[], over: Partial<MP.Ra
   return { schema: MP.RANKING_SCHEMA, taskFileSha256: TASK_FILE_SHA, weightsSha256: WEIGHTS, modelManifestSha256: manifest, entries: [{ taskKey: TASK_KEY, candidatesSha256: cs, order: o, bindingSha256: l.mp.bindingSha256(manifest, TASK_KEY, cs, o) }], ...over };
 }
 const asText = (r: unknown) => { const t = JSON.stringify(r); return { t, s: sha(t) }; };
-const parse = (l: Libs, r: unknown, fileSha = TASK_FILE_SHA) => { const { t, s } = asText(r); return l.mp.parseRanking(t, s, PIN, fileSha); };
+const parse = (l: Libs, r: unknown, fileSha = TASK_FILE_SHA, keys: readonly string[] = [TASK_KEY]) => { const { t, s } = asText(r); return l.mp.parseRanking(t, s, PIN, fileSha, keys); };
 const reason = (x: ReturnType<typeof MP.parseRanking>) => (x.ok ? "OK" : x.reason);
 /** The proposer's first proposal, or "threw" / the refusal code. */
 function first(l: Libs, d: string, ranking: MP.Ranking | null, request = REQUEST, failing: string[] = [], key = TASK_KEY): string | EP.RepairEdit[] {
@@ -90,8 +91,17 @@ const CASES: Case[] = [
       const rep = EP.repairProposer(); rep.prepare(openRepo(d), { request: REQUEST, failing: [] });
       const e = rep.next(input(d));
       assert.ok("edits" in e && JSON.stringify(e.edits) === JSON.stringify(q[0]!.edits) && JSON.stringify(q[0]!.edits) !== JSON.stringify(q[q.length - 1]!.edits));
-      assert.equal(l.mp.modelProposer({ taskKey: TASK_KEY }, r).modelManifestSha256, MANIFEST);
+      // the row names the manifest only once this task's ranked order was applied
+      const named = l.mp.modelProposer({ taskKey: TASK_KEY }, r);
+      assert.equal(named.modelManifestSha256, null, "nothing applied yet");
+      named.prepare(openRepo(d), { request: REQUEST, failing: [] });
+      named.next(input(d));
+      assert.equal(named.modelManifestSha256, MANIFEST);
       assert.equal(l.mp.modelProposer({ taskKey: TASK_KEY }, null).modelManifestSha256, null);
+      const mismatched = l.mp.modelProposer({ taskKey: TASK_KEY }, rankingFor(l, q.slice(1)));
+      mismatched.prepare(openRepo(d), { request: REQUEST, failing: [] });
+      assert.throws(() => mismatched.next(input(d)), /another candidate list/);
+      assert.equal(mismatched.modelManifestSha256, null, "a mismatched ranking names no model");
       // later attempts follow the ranking, then NO_MORE_EDITS
       const p = l.mp.modelProposer({ taskKey: TASK_KEY }, rankingFor(l, q, {}, q.map((_, i) => i).reverse()));
       p.prepare(openRepo(d), { request: REQUEST, failing: [] });
@@ -160,11 +170,11 @@ const CASES: Case[] = [
       const r = rankingFor(l, queueOf(d));
       assert.equal(reason(parse(l, r)), "OK");
       const { t, s } = asText(r);
-      assert.equal(reason(l.mp.parseRanking(null, s, PIN, TASK_FILE_SHA)), "RANKING_MISSING");
-      assert.equal(reason(l.mp.parseRanking(t, null, PIN, TASK_FILE_SHA)), "RANKING_SHA_MISMATCH");
-      assert.equal(reason(l.mp.parseRanking(t + " ", s, PIN, TASK_FILE_SHA)), "RANKING_SHA_MISMATCH");
+      assert.equal(reason(l.mp.parseRanking(null, s, PIN, TASK_FILE_SHA, [TASK_KEY])), "RANKING_MISSING");
+      assert.equal(reason(l.mp.parseRanking(t, null, PIN, TASK_FILE_SHA, [TASK_KEY])), "RANKING_SHA_MISMATCH");
+      assert.equal(reason(l.mp.parseRanking(t + " ", s, PIN, TASK_FILE_SHA, [TASK_KEY])), "RANKING_SHA_MISMATCH");
       const big = t + " ".repeat(MP.MAX_RANKING_BYTES);
-      assert.equal(reason(l.mp.parseRanking(big, sha(big), PIN, TASK_FILE_SHA)), "RANKING_TOO_LARGE");
+      assert.equal(reason(l.mp.parseRanking(big, sha(big), PIN, TASK_FILE_SHA, [TASK_KEY])), "RANKING_TOO_LARGE");
       assert.equal(reason(parse(l, { ...r, schema: "peaceai-model-v1-ranking:v0" })), "RANKING_INVALID");
       assert.equal(reason(parse(l, { ...r, extra: 1 })), "RANKING_INVALID");
       assert.equal(reason(parse(l, { ...r, modelManifestSha256: "X".repeat(64) })), "RANKING_INVALID");
@@ -178,6 +188,12 @@ const CASES: Case[] = [
       assert.equal(reason(parse(l, { ...r, entries: [{ ...e, order: o61 }] })), "RANKING_INVALID");
       const o60 = o61.slice(0, 60);
       assert.equal(reason(parse(l, { ...r, entries: [{ ...e, order: o60 }] })), "OK", "near miss: 60 candidates parse");
+      // the entries' task keys are exactly the task file's: none missing, none extra
+      const e2 = { ...e, taskKey: "fedcba9876543210" };
+      assert.equal(reason(parse(l, r, TASK_FILE_SHA, [TASK_KEY, "fedcba9876543210"])), "RANKING_OTHER_TASKS", "a task of the file has no entry");
+      assert.equal(reason(parse(l, { ...r, entries: [e, e2] })), "RANKING_OTHER_TASKS", "an entry for a task not in the file");
+      assert.equal(reason(parse(l, { ...r, entries: [e, e2] }, TASK_FILE_SHA, [TASK_KEY, "fedcba9876543210"])), "OK", "near miss: one entry per task");
+      assert.equal(reason(parse(l, r, TASK_FILE_SHA, [])), "RANKING_OTHER_TASKS");
     },
   },
   {
@@ -237,7 +253,7 @@ const CASES: Case[] = [
       assert.ok(r.ok);
       assert.deepEqual(r.ranking.entries.map((e) => e.order), [[1, 0], []]);
       assert.equal(r.sha256, sha(r.text));
-      assert.equal(reason(l.mp.parseRanking(r.text, r.sha256, PIN, TASK_FILE_SHA)), "OK");
+      assert.equal(reason(l.mp.parseRanking(r.text, r.sha256, PIN, TASK_FILE_SHA, [TASK_KEY, "fedcba9876543210"])), "OK");
       assert.deepEqual(tryOr(() => l.ms.buildRanking(c, () => null, m)), { ok: false, reason: "INFER_FAILED" });
       assert.deepEqual(tryOr(() => l.ms.buildRanking(c, (items) => fakeScorer(items).reverse(), m)), { ok: false, reason: "SCORES_MISMATCH" });
     },
@@ -282,9 +298,67 @@ const CASES: Case[] = [
       assert.notEqual(l.loop.loopSha256(root), h0, "a changed model-v1 kept the same loopSha256");
     },
   },
+  {
+    id: "rows: a model-v1 row carries no lm key (the attempt job loads no model); every other proposer's row still must",
+    run(l) {
+      const BAD = { id: "m167-bad", repo: "o/r", commit: "c".repeat(40) } as never; // refused TASK_INVALID before any fetch
+      const write = (p: Loop.Proposer) => l.loop.runLoopTask(BAD, "public", "a".repeat(64), { root: ROOT, fetcher: (() => { throw new Error("no fetch"); }) as never, proposer: p, maxAttempts: 1, runMs: 1000, env: {}, rules: [], training: new Set<string>() }).row;
+      const m = write(l.mp.modelProposer({ taskKey: TASK_KEY }, null) as Loop.Proposer);
+      assert.equal(m.code, "TASK_INVALID");
+      assert.ok(!("lm" in m), "a model-v1 row names no lm");
+      assert.equal(l.row.loopRowProblem(m), null);
+      assert.equal(l.row.loopRowProblem({ ...m, lm: "not-loadable" }), "lm");
+      assert.equal(l.row.loopRowProblem({ ...m, lm: "loaded" }), "lm");
+      const r = write({ name: "repair-v1", next: () => ({ refuse: "NO_EDIT" }) });
+      assert.equal(r.lm, "not-loadable");
+      assert.equal(l.row.loopRowProblem(r), null);
+      const { lm: _lm, ...noLm } = r;
+      assert.equal(l.row.loopRowProblem(noLm), "loop_keys", "near miss: a repair-v1 row without lm");
+    },
+  },
 ];
 
-for (const c of CASES) test(`M167: ${c.id}`, () => c.run({ mp: MP, ms: MS, loop: Loop }));
+for (const c of CASES) test(`M167: ${c.id}`, () => c.run({ mp: MP, ms: MS, loop: Loop, row: Row }));
+
+test("M167 end to end: model-v1 with a bad ranking ends a real loop task PROPOSER_FAILED (0 attempts, no model named, no lm), a valid v4 row; near miss: the bound ranking reaches the tests", () => {
+  const opts = (proposer: Loop.Proposer) => ({ root: ctx.root, fetcher: ctx.fetcher, proposer, maxAttempts: 20, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>() });
+  const fileSha = "a".repeat(64);
+  if (!ctx.cand) {
+    assert.match(Loop.runLoopTask(ctx.task, "public", fileSha, opts(MP.modelProposer({ taskKey: "0".repeat(16) }, null) as Loop.Proposer)).row.code, /^CAND_UID_/);
+    return;
+  }
+  // the attempt job's lists, built as the scoring job does
+  const file: PlanTaskFile = { schema: "peaceai-plan-tasks:v1", set: "public", tasks: [ctx.task] };
+  const { out } = MS.buildCandidates(file, fileSha, ctx.fetcher);
+  const good = MS.buildRanking(out, fakeScorer, { weightsSha256: WEIGHTS, modelManifestSha256: MANIFEST });
+  assert.ok(good.ok);
+  const tk = out.entries[0]!.taskKey;
+  const parsed = MP.parseRanking(good.text, good.sha256, PIN, fileSha, [tk]);
+  assert.ok(parsed.ok);
+  assert.equal(reason(MP.parseRanking(good.text, good.sha256, PIN, fileSha, [tk, "fedcba9876543210"])), "RANKING_OTHER_TASKS", "a ranking missing a task of the file is refused, so bin/loop.ts hands null");
+  const bad: [string, MP.Ranking | null][] = [
+    ["no usable ranking (parseRanking refused)", null],
+    ["a ranking for another task", { ...parsed.ranking, entries: parsed.ranking.entries.map((e) => ({ ...e, taskKey: "fedcba9876543210" })) }],
+    ["a ranking for another candidate list", { ...parsed.ranking, entries: parsed.ranking.entries.map((e) => ({ ...e, candidatesSha256: "b".repeat(64) })) }],
+  ];
+  for (const [what, ranking] of bad) {
+    const r = Loop.runLoopTask(ctx.task, "public", fileSha, opts(MP.modelProposer({ taskKey: tk }, ranking) as Loop.Proposer)).row;
+    assert.equal(r.code, "PROPOSER_FAILED", what);
+    assert.equal(r.result, "refused", what);
+    assert.equal(r.attempts, 0, what);
+    assert.equal(r.modelManifestSha256, null, what);
+    assert.equal(r.schema, "peaceai-plan-loop:v4", what);
+    assert.equal(r.proposer, "model-v1", what);
+    assert.ok(!("lm" in r), what);
+    assert.ok(r.baseline && r.baseline.failing > 0, `${what}: the baseline still ran`);
+    assert.equal(Row.loopRowProblem(r), null, what);
+  }
+  // near miss: the bound ranking is used, the row names the manifest
+  const ok = Loop.runLoopTask(ctx.task, "public", fileSha, opts(MP.modelProposer({ taskKey: tk }, parsed.ranking) as Loop.Proposer)).row;
+  assert.ok(ok.attempts > 0 && ok.code !== "PROPOSER_FAILED", ok.code);
+  assert.equal(ok.modelManifestSha256, MANIFEST);
+  assert.equal(Row.loopRowProblem(ok), null);
+});
 
 // ---- static: what each side may import, and the bins' gates
 
@@ -316,6 +390,12 @@ test("M167: LM_JOBS pins model-v1-score to its workflow (runInfer's gate); the p
   for (const k of ["version", "runId", "weightsSha256"]) assert.equal(pin[k], v2.promoted[k], k);
   assert.equal(pin.maxAttempts, 20, "the pre-registered --max (spec)");
   assert.match(src("peaceai/spec/edit-proposer-model-v1.md"), /pre-registered `--max` is 20/);
+  // Auditor #664: the pinned LM's memcheck status, stated exactly, and never called "memchecked"
+  const spec = src("peaceai/spec/edit-proposer-model-v1.md").replace(/\s+/g, " ");
+  assert.ok(spec.includes("the pinned LM's strict memcheck is FAIL; it is accepted via the core-free-64 recheck bound to its config, tokenizer and weights shas (infer.py accepts it), for dev-split use only"));
+  assert.ok(spec.includes("Attempts-to-pass is descriptive only"));
+  assert.ok(pin.note.includes("strict memcheck is FAIL") && pin.note.includes("for dev-split use only"));
+  for (const f of ["peaceai/spec/edit-proposer-model-v1.md", "peaceai/model/model-v1-proposer.json", ".github/workflows/peace-model-v1-dev.yml", "peaceai/lib/modelscore.ts", "peaceai/lib/modelpropose.ts", "peaceai/bin/model-v1-score.ts", "peaceai/bin/model-v1-fetch.sh"]) assert.doesNotMatch(src(f), /memchecked/i, f);
 });
 
 test("M167: bin/loop.ts: model-v1 is checked (modelV1RunProblem) before any run; ranking flags need model-v1", () => {
@@ -365,19 +445,36 @@ test("M167: the workflow: dispatch-only, two jobs, weights only in the scoring j
     assert.equal(sha(readFileSync(join(ROOT, f!)) as unknown as string), h, `${f} changed: re-pin KEY_SCRIPTS_SHA256`);
   }
   assert.deepEqual(keys[1]!.trim().split("\n").map((x) => x.trim().split(/\s+/)[1]).sort(), ["peaceai/bin/model-v1-fetch.sh", "peaceai/bin/with-deploy-key.sh"]);
+  // Auditor #664: candidates are built before any key or weights reach the runner; scoring logs are the counts line only
+  const iCand = score.indexOf("model-v1-score.ts candidates"), iVerify = score.indexOf("sha256sum -c --quiet"), iFetch = score.indexOf("model-v1-fetch.sh \"$RUNNER_TEMP/m\""), iScore = score.indexOf("model-v1-score.ts score");
+  assert.ok(iCand > 0 && iCand < iVerify && iVerify < iFetch && iFetch < iScore, "order: candidates, verify, fetch, score");
+  assert.match(score, /model-v1-score\.ts candidates [^\n]*2>&1 \\\n\s+\| grep -E '\^\(candidates tasks=/);
+  assert.match(score, /model-v1-score\.ts score [^\n]*2>&1 \\\n\s+\| grep -E '\^\(scored model=/);
+  const iJq = score.indexOf("jq -e --arg tf"), iOut = score.indexOf(">> \"$GITHUB_OUTPUT\"");
+  assert.ok(score.indexOf("-le 65536") > iScore && iJq > iScore && iJq < iOut, "size and schema checked before the job output");
+  assert.match(score, /keys == \["entries", "modelManifestSha256", "schema", "taskFileSha256", "weightsSha256"\]/);
+  assert.match(score, /keys == \["bindingSha256", "candidatesSha256", "order", "taskKey"\]/);
+  // the attempt job: read-only tools as in Job B; a refusal or a missing row fails the job
+  assert.match(attempt, /run: \|\n\s+chmod -R a-w node_modules peaceai package\.json package-lock\.json tsconfig\.json\n\s+chmod u\+w peaceai\/plan\/loop-runs\.jsonl\n/);
+  assert.ok(attempt.indexOf("chmod -R a-w") < attempt.indexOf("bin/loop.ts run"));
+  assert.doesNotMatch(attempt, /\|\| echo/, "no exit code is swallowed");
+  assert.match(attempt, /\[ "\$N" = 12 \]/);
+  assert.match(attempt, /\[ "\$r1" = 0 \] && \[ "\$r2" = 0 \] && \[ "\$r3" = 0 \] \|\| \{[^}]*exit 1; \}/);
+  assert.match(attempt, /for p in repair-v1 model-v1 rules-v1; do\n[^\n]*\n\s+\[ "\$k" = "\$N" \] \|\| \{[^}]*exit 1; \}/);
+  assert.match(src("peaceai/bin/loop.ts"), /\nif \(rankingRefused\) process\.exit\(1\);/, "bin/loop.ts exits 1 after writing the rows of a refused ranking");
 });
 
 // ---- mutants
 
 const TAG = /\/\/ m167-guard:([a-z0-9-]+)\s*$/;
-const FILESET = { mp: "modelpropose.ts", ms: "modelscore.ts", loop: "loop.ts" } as const;
+const FILESET = { mp: "modelpropose.ts", ms: "modelscore.ts", loop: "loop.ts", row: "looprow.ts" } as const;
 type Key = keyof typeof FILESET;
 const sources = Object.fromEntries(Object.entries(FILESET).map(([k, f]) => [k, readFileSync(join(libDir, f), "utf8")])) as Record<Key, string>;
 const guards = (Object.keys(FILESET) as Key[]).flatMap((k) => sources[k].split("\n").flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, file: k, line: i }] : []; }));
 // [id, file, from, to]: each `from` must occur exactly once
 const SEMANTIC: [string, Key, string, string][] = [
   ["failing-names-passed", "mp", "inner.prepare(search, { request: input.request, failing: [] });", "inner.prepare(search, input);"],
-  ["no-reorder", "mp", "repairProposer({ name: MODEL_PROPOSER, order: (q) => applyRanking(ranking!, task.taskKey, q) })", "repairProposer({ name: MODEL_PROPOSER })"],
+  ["no-reorder", "mp", "repairProposer({ name: MODEL_PROPOSER, order: (q) => { const o = applyRanking(ranking!, task.taskKey, q); applied = true; return o; } })", "repairProposer({ name: MODEL_PROPOSER, order: (q) => { applyRanking(ranking!, task.taskKey, q); applied = true; return [...q]; } })"],
   ["binding-without-manifest", "mp", "return sha256(`${RANKING_SCHEMA}\\n${modelManifestSha256}\\n${taskKey}", "return sha256(`${RANKING_SCHEMA}\\n${taskKey}"],
   ["ties-reversed", "ms", "sort((a, b) => b.m - a.m || a.i - b.i)", "sort((a, b) => b.m - a.m || b.i - a.i)"],
   ["manifest-unordered", "ms", "return LM_FILES.map((f) => `${shas[f]}  ${f}\\n`).join(\"\");", "return [...LM_FILES].reverse().map((f) => `${shas[f]}  ${f}\\n`).join(\"\");"],
@@ -402,19 +499,21 @@ async function killed(name: string, texts: Record<Key, string>): Promise<{ faile
   const mp = await import(pathToFileURL(paths["modelpropose.ts"]!).href) as typeof MP;
   const ms = await import(pathToFileURL(paths["modelscore.ts"]!).href) as typeof MS;
   const loop = await import(pathToFileURL(paths["loop.ts"]!).href) as typeof Loop;
+  const row = await import(pathToFileURL(paths["looprow.ts"]!).href) as typeof Row;
   const failed: string[] = [], crashed: string[] = [];
   for (const c of CASES) {
-    try { c.run({ mp, ms, loop }); } catch (e) { (e instanceof assert.AssertionError ? failed : crashed).push(`${c.id}: ${String(e).slice(0, 200)}`); }
+    try { c.run({ mp, ms, loop, row }); } catch (e) { (e instanceof assert.AssertionError ? failed : crashed).push(`${c.id}: ${String(e).slice(0, 200)}`); }
   }
   return { failed, crashed };
 }
 
 test("M167 mutation: the guard list is exact", () => {
   assert.deepEqual(guards.map((g) => `${g.file}:${g.id}`).sort(), [
-    "loop:sha-model",
-    "mp:apply-binding", "mp:apply-cands", "mp:apply-entry", "mp:apply-permutation", "mp:pin-public", "mp:pin-version", "mp:prepare-entry", "mp:prepare-no-ranking",
-    "mp:rank-entry-key", "mp:rank-entry-order", "mp:rank-manifest", "mp:rank-schema", "mp:rank-sha", "mp:rank-size", "mp:rank-task-file", "mp:rank-weights", "mp:run-max", "mp:run-task-file",
+    "loop:loop-no-lm", "loop:sha-model",
+    "mp:apply-binding", "mp:apply-cands", "mp:apply-entry", "mp:apply-permutation", "mp:manifest-applied", "mp:pin-public", "mp:pin-version", "mp:prepare-entry", "mp:prepare-no-ranking",
+    "mp:rank-entry-key", "mp:rank-entry-order", "mp:rank-manifest", "mp:rank-schema", "mp:rank-sha", "mp:rank-size", "mp:rank-task-file", "mp:rank-task-keys", "mp:rank-weights", "mp:run-max", "mp:run-task-file",
     "ms:cands-commit", "ms:job-actions", "ms:job-candidate", "ms:job-dispatch", "ms:job-id", "ms:job-main", "ms:job-repo", "ms:job-workflow", "ms:score-failed", "ms:score-ids",
+    "row:row-model-no-lm",
   ]);
 });
 

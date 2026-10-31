@@ -15,6 +15,7 @@ import { repairProposer } from "../lib/editpropose.ts";
 import { loopPlanner, MAX_ATTEMPTS, ROOT, runLoopFile, type Proposer } from "../lib/loop.ts";
 import { MODEL_PROPOSER, MODEL_V1_PIN, modelProposer, modelV1RunProblem, parseRanking, type ModelV1Pin, type Ranking } from "../lib/modelpropose.ts";
 import { sha256 } from "../lib/plan.ts";
+import { taskKey } from "../lib/plangrade.ts";
 
 const args = process.argv.slice(2);
 const [cmd, file] = args;
@@ -34,6 +35,7 @@ if (cmd !== "run" || !file || !Number.isInteger(max) || max < 1 || max > MAX_ATT
 const planner = loopPlanner(plannerFlag);
 if (!planner) { console.log("refused PLANNER_UNKNOWN"); process.exit(2); }
 let out: ReturnType<typeof runLoopFile>;
+let rankingRefused = false;
 let makeProposer: ((t: { taskKey: string }) => Proposer) | undefined = prop === "repair-v1" ? (): Proposer => repairProposer() : undefined;
 const rankAt = args.indexOf("--ranking"), rankShaAt = args.indexOf("--ranking-sha256");
 if (prop !== MODEL_PROPOSER && (rankAt >= 0 || rankShaAt >= 0)) { console.log("refused RANKING_WITHOUT_MODEL_V1"); process.exit(2); }
@@ -45,9 +47,13 @@ if (prop === MODEL_PROPOSER) {
   if (bad) { console.log(`refused ${bad}`); process.exit(2); }
   const rankPath = rankAt >= 0 ? args[rankAt + 1] : undefined;
   const text = rankPath && existsSync(rankPath) ? readFileSync(rankPath, "utf8") : null;
-  const pr = parseRanking(text, rankShaAt >= 0 ? (args[rankShaAt + 1] ?? null) : null, pin as ModelV1Pin, sha256(readFileSync(file, "utf8")));
+  const fileText = readFileSync(file, "utf8"), fileSha = sha256(fileText);
+  let keys: string[] = [];
+  try { keys = ((JSON.parse(fileText) as { tasks: { id: string }[] }).tasks).map((t) => taskKey(fileSha, t.id)); } catch { /* the loop refuses the file below */ }
+  const pr = parseRanking(text, rankShaAt >= 0 ? (args[rankShaAt + 1] ?? null) : null, pin as ModelV1Pin, fileSha, keys);
   const ranking: Ranking | null = pr.ok ? pr.ranking : null;
-  if (!pr.ok) console.log(`model-v1 ranking refused ${pr.reason}: every task ends PROPOSER_FAILED`);
+  // the rows are still written (every task PROPOSER_FAILED, no model named), then the run exits non-zero below
+  if (!pr.ok) { console.log(`model-v1 ranking refused ${pr.reason}: every task ends PROPOSER_FAILED`); rankingRefused = true; }
   makeProposer = (t) => modelProposer(t, ranking) as Proposer;
 }
 try { out = runLoopFile(file, { maxAttempts: max, depsDir, makeProposer, plannerFlag }); } catch { console.log("refused TASK_FILE_INVALID"); process.exit(1); }
@@ -60,3 +66,4 @@ for (const { row: r } of out.results) {
 }
 const n = (c: string) => out.results.filter((x) => x.row.result === c).length;
 console.log(`planner=${planner} tasks=${out.results.length} pass=${n("pass")} fail=${n("fail")} refused=${n("refused")} reachedTests=${out.results.filter((x) => x.row.baseline).length}`);
+if (rankingRefused) process.exit(1); // M167: a refused ranking is never a green run
