@@ -30,13 +30,14 @@ function problems(m: M): string[] {
   ck(m.DEFAULT_PLANNER === "plan-only-v3", "default is v3");
   const d = m.selectPlanner(undefined);
   ck(d?.name === "plan-only-v3" && d.module === "../lib/plan3run.ts" && d.run === "runFileV3" && d.status === "DEFAULT", "no flag -> v3 runner");
-  for (const [f, n, mod, run] of [["v1", "plan-only-v1", "../lib/planrun.ts", "runFile"], ["v2", "plan-only-v2", "../lib/plan2run.ts", "runFileV2"], ["v3", "plan-only-v3", "../lib/plan3run.ts", "runFileV3"]] as const) {
+  for (const [f, n, mod, run] of [["v1", "plan-only-v1", "../lib/planrun.ts", "runFile"], ["v2", "plan-only-v2", "../lib/plan2run.ts", "runFileV2"], ["v3", "plan-only-v3", "../lib/plan3run.ts", "runFileV3"], ["v4", "plan-only-v4", "../lib/plan4run.ts", "runFileV4"]] as const) {
     for (const flag of [f, n]) { const e = m.selectPlanner(flag); ck(e?.name === n && e.module === mod && e.run === run, `--planner=${flag} -> ${n}`); }
   }
   // Near misses: close to a valid name but not one.
-  for (const bad of ["", "V3", "v3 ", " v3", "v4", "v0", "plan-only", "plan-only-v4", "plan-only-V3", "3", "toString", "__proto__", "constructor"]) ck(m.selectPlanner(bad) === null, `refuses ${JSON.stringify(bad)}`);
+  for (const bad of ["", "V3", "v3 ", " v3", "v5", "v0", "plan-only", "plan-only-v5", "V4", "plan-only-V3", "3", "toString", "__proto__", "constructor"]) ck(m.selectPlanner(bad) === null, `refuses ${JSON.stringify(bad)}`);
   ck(Object.values(m.PLANNERS).filter((e) => e.status === "DEFAULT").length === 1 && m.PLANNERS["plan-only-v3"].status === "DEFAULT", "exactly one DEFAULT, v3");
   ck(m.PLANNERS["plan-only-v1"].status === "RUNNABLE" && m.PLANNERS["plan-only-v2"].status === "EXPERIMENTAL", "v1 RUNNABLE, v2 EXPERIMENTAL");
+  ck(m.PLANNERS["plan-only-v4"]?.status === "EXPERIMENTAL", "v4 EXPERIMENTAL (M164: dev evidence only)");
   return out;
 }
 
@@ -57,7 +58,7 @@ test("M154: bin/plan.ts routes through selectPlanner and refuses an unknown plan
   assert.match(cli, /import \{ selectPlanner \} from "\.\.\/lib\/plandefault\.ts"/);
   assert.ok(!/plan2run|plan3run|runFileV[23]/.test(cli), "no hard-coded planner in the entry point");
   const run = (...a: string[]) => spawnSync(join(repo, "node_modules/.bin/tsx"), [join(repo, "peaceai/bin/plan.ts"), ...a], { encoding: "utf8", cwd: tmpdir() });
-  const bad = run("run", "--planner=v4", "t.json");
+  const bad = run("run", "--planner=v5", "t.json");
   assert.equal(bad.status, 2); assert.equal(bad.stdout.trim(), "refused PLANNER_UNKNOWN");
   const near = run("run", "--planner=V3", "t.json");
   assert.equal(near.status, 2); assert.equal(near.stdout.trim(), "refused PLANNER_UNKNOWN");

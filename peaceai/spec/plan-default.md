@@ -8,11 +8,12 @@ Only in `peaceai/lib/plandefault.ts` (`DEFAULT_PLANNER`, `PLANNERS`, `selectPlan
 for "the default planner" is `peaceai/bin/plan.ts`:
 
 - `tsx peaceai/bin/plan.ts run <taskfile>` runs the default (v3).
-- `tsx peaceai/bin/plan.ts run --planner=v1|v2|v3 <taskfile>` (or the full `plan-only-vN` name) runs that planner.
+- `tsx peaceai/bin/plan.ts run --planner=v1|v2|v3|v4 <taskfile>` (or the full `plan-only-vN` name) runs that planner.
   Any other value is refused `PLANNER_UNKNOWN` (exit 2) before anything is loaded or run.
 - `tsx peaceai/bin/plan.ts lock <taskfile>` is the same lock as `plan-only.ts lock` (one lock serves every planner).
 
-The per-planner CLIs are unchanged: `bin/plan-only.ts` (v1, and `lock`), `bin/plan-only-v2.ts`, `bin/plan-only-v3.ts`.
+The per-planner CLIs are unchanged: `bin/plan-only.ts` (v1, and `lock`), `bin/plan-only-v2.ts`, `bin/plan-only-v3.ts`; (M164)
+`bin/plan-only-v4.ts` for the EXPERIMENTAL v4 (`plan-only-v4.md`). Adding v4 changed no v1/v2/v3 file.
 
 ## Why this route
 
@@ -24,8 +25,9 @@ module plus a new entry point changes no planner file: v1 275e559b..., v2 fae6c0
 
 Hidden half (Auditor, 20/20 graded): v3 0.287 (runTests 0.300), v1 0.229 (runTests 0.350), v2 0.223 (runTests
 0.250). The switch rests on 20 hidden tasks with a noisy +0.058 margin. v3's runTests is below v1's.
+v4 (M164) is EXPERIMENTAL, not the default: dev runTests 0.833 vs v3's 0.667, no hidden run.
 
 ## Tests
 
-`peaceai/test/m154-plan-default.test.ts`: the default is v3; v1/v2/v3 stay selectable; near-miss flags are refused;
+`peaceai/test/m154-plan-default.test.ts`: the default is v3; v1/v2/v3/v4 stay selectable (v4 EXPERIMENTAL); near-miss flags are refused;
 the three plannerSha256 values are unchanged; a mutation check (each mutant of lib/plandefault.ts must fail a check).

@@ -34,7 +34,7 @@ test("M162: bin/loop.ts (the loop scorecard) refuses an unknown --planner before
   assert.match(cli, /runLoopFile\(file, \{[^}]*plannerFlag \}\)/);
   assert.match(cli, /console\.log\(`planner=\$\{planner\} tasks=/);
   const tsx = join(ROOT, "node_modules/.bin/tsx");
-  for (const bad of ["V3", "v4"]) {
+  for (const bad of ["V3", "v5"]) {
     let out = ""; let code = 0;
     try { out = execFileSync(tsx, [join(ROOT, "peaceai/bin/loop.ts"), "run", "/nonexistent/m162-tasks.json", "--planner", bad], { cwd: ctx.base, encoding: "utf8", env: { ...process.env, PEACEAI_STAGE2_CAND: "" } }); } catch (e: any) { out = String(e.stdout); code = e.status; }
     assert.equal(out.trim(), "refused PLANNER_UNKNOWN", bad);

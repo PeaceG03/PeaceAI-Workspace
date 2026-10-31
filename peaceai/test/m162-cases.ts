@@ -11,6 +11,7 @@ import { PLANNERS } from "../lib/plandefault.ts";
 import { plannerSha256 } from "../lib/planrun.ts";
 import { plannerSha256V2 } from "../lib/plan2run.ts";
 import { plannerSha256V3 } from "../lib/plan3run.ts";
+import { plannerSha256V4 } from "../lib/plan4run.ts";
 import { lockRow } from "../lib/planrun.ts";
 import type * as Loop from "../lib/loop.ts";
 import type * as Row from "../lib/looprow.ts";
@@ -19,7 +20,7 @@ import type { M152Ctx } from "./m152-fixtures.ts";
 export interface Libs { loop: typeof Loop; row: typeof Row }
 export interface Case { id: string; needsCand?: boolean; run: (l: Libs, ctx: M152Ctx) => void }
 
-const SHA: Record<string, () => string> = { "plan-only-v1": () => plannerSha256(), "plan-only-v2": () => plannerSha256V2(), "plan-only-v3": () => plannerSha256V3() };
+const SHA: Record<string, () => string> = { "plan-only-v1": () => plannerSha256(), "plan-only-v2": () => plannerSha256V2(), "plan-only-v3": () => plannerSha256V3(), "plan-only-v4": () => plannerSha256V4() };
 
 /** A proposer that records the plan the loop gives it and stops at once (NO_EDIT), so a run ends after the baseline. */
 function spy(): { p: Loop.Proposer; plans: string[] } {
@@ -49,20 +50,21 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "near miss: every planner selectPlanner knows is honoured (v1 / v2 / v3), each with its own plannerSha256",
+    id: "near miss: every planner selectPlanner knows is honoured (v1 / v2 / v3 / v4), each with its own plannerSha256",
     run(l, ctx) {
-      for (const name of ["plan-only-v1", "plan-only-v2"] as const) {
+      for (const name of ["plan-only-v1", "plan-only-v2", "plan-only-v4"] as const) {
         const s = spy();
         checkRow(l, ctx, l.loop.runLoopTask(ctx.task, "public", "a".repeat(64), { ...taskOpts(ctx, s.p), planner: name }), name, s.plans);
       }
       assert.notEqual(plannerSha256(), plannerSha256V3());
+      assert.notEqual(plannerSha256V4(), plannerSha256V3());
     },
   },
   {
-    id: "names: short and full names map through selectPlanner; near-miss names (case, spaces, v4, empty, __proto__) are unknown",
+    id: "names: short and full names map through selectPlanner; near-miss names (case, spaces, v5, empty, __proto__) are unknown",
     run(l) {
-      for (const [f, n] of [["v1", "plan-only-v1"], ["v2", "plan-only-v2"], ["v3", "plan-only-v3"], ["plan-only-v1", "plan-only-v1"], ["plan-only-v3", "plan-only-v3"]]) assert.equal(l.loop.loopPlanner(f), n, f);
-      for (const bad of ["V3", " v3", "v3 ", "v4", "", "plan-only-v4", "__proto__", "toString"]) assert.equal(l.loop.loopPlanner(bad), null, JSON.stringify(bad));
+      for (const [f, n] of [["v1", "plan-only-v1"], ["v2", "plan-only-v2"], ["v3", "plan-only-v3"], ["plan-only-v1", "plan-only-v1"], ["plan-only-v3", "plan-only-v3"], ["v4", "plan-only-v4"]]) assert.equal(l.loop.loopPlanner(f), n, f);
+      for (const bad of ["V3", " v3", "v3 ", "v5", "", "plan-only-v5", "__proto__", "toString"]) assert.equal(l.loop.loopPlanner(bad), null, JSON.stringify(bad));
     },
   },
   {
@@ -74,7 +76,7 @@ export const CASES: Case[] = [
       const log = join(ctx.root, "peaceai/plan/loop-runs.jsonl");
       const read = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
       const opts = (plannerFlag?: string) => ({ root: ctx.root, committed: JSON.stringify(lockRow(text)) + "\n", fetcher: ctx.fetcher, makeProposer: () => spy().p, maxAttempts: 1, runMs: 60_000, env: ctx.env, rules: [], training: new Set<string>(), outDir: join(ctx.base, "m162-out"), plannerFlag });
-      for (const bad of ["V3", "v4", "", " v1"]) {
+      for (const bad of ["V3", "v5", "", " v1"]) {
         const before = read();
         const r = l.loop.runLoopFile(file, opts(bad));
         assert.equal(r.code, "PLANNER_UNKNOWN", JSON.stringify(bad));
@@ -100,8 +102,8 @@ export const CASES: Case[] = [
         code: "NO_EDIT", maxAttempts: 3, attempts: 0, result: "refused", attemptCodes: [], tests: null, runner: "node-test", deps: "none", baseline: { total: 1, passing: 0, failing: 1 },
       };
       assert.equal(l.row.loopRowProblem(v3), null);
-      for (const p of ["plan-only-v1", "plan-only-v2"]) assert.equal(l.row.loopRowProblem({ ...v3, planner: p }), null, p);
-      for (const p of ["plan-only-v4", "v3", "", null, 3]) assert.equal(l.row.loopRowProblem({ ...v3, planner: p }), "planner", JSON.stringify(p));
+      for (const p of ["plan-only-v1", "plan-only-v2", "plan-only-v4"]) assert.equal(l.row.loopRowProblem({ ...v3, planner: p }), null, p);
+      for (const p of ["plan-only-v5", "v3", "", null, 3]) assert.equal(l.row.loopRowProblem({ ...v3, planner: p }), "planner", JSON.stringify(p));
       for (const h of ["F".repeat(64), "f".repeat(63), null, ""]) assert.equal(l.row.loopRowProblem({ ...v3, plannerSha256: h }), "planner_sha", JSON.stringify(h));
       const { planner: _p, plannerSha256: _h, ...v2 } = v3;
       assert.equal(l.row.loopRowProblem(v3.planner ? { ...v2 } : v2), "loop_keys", "a v3 row without the planner keys");

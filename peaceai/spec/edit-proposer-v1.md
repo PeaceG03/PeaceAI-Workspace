@@ -38,6 +38,12 @@ team's tests pass and the related tests do not regress (loop v2, unchanged).
 - If `prepare` throws, the task ends as `PROPOSER_FAILED` (a v2-only code; `// m152-guard:prepare-failed`). The
   error is caught without binding it, so no message text can reach the row. (Before, the loop's outer catch called
   this FETCH_FAILED.)
+- (M164) The same holds for `next()`: every proposal is asked through one helper whose catch has no binding, and a
+  throw at any attempt ends the task as `PROPOSER_FAILED` (`// m164-guard:next-failed`; attempts already run stay
+  recorded). Before, a throwing `next()` also landed on the outer catch as FETCH_FAILED. Tests:
+  `peaceai/test/m164-proposer-next.test.ts` (cases in `m164-loop-cases.ts`: a throw at attempt 1 and at attempt 2,
+  no error text in the row, near misses that pass; static checks; mutants that drop the guard, map it to
+  FETCH_FAILED or rethrow must each fail a case; the cases need the stage-2 candidate uid).
 - `loopSha256()` hashes lib/editpropose.ts as well as loop.ts, looprow.ts and loopdeps.ts, so every row binds the
   proposer version it ran with (`// m152-guard:sha-proposer`). Rows written before this change carry the older hash.
 - `Feedback.tests` (the attempt's counts) and `ProposeInput.baseline`.
