@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -87,6 +87,13 @@ function runCases(m: Mod): string[] {
   const refSrc = block("task", 60), refs = m.buildRefs([refSrc, "export default 1;\n"], CFG.taskset.shingleTokens);
   ok("taskset-near-dup", () => fate(refSrc.split("\n").slice(10, 45).join("\n") + "\n", {}, cfg, refs) === "taskset_near_dup");
   ok("taskset-near-dup-short-exact", () => fate("export   default 1;", {}, cfg, refs) === "taskset_near_dup");
+  // refs from any local tree (unnamed) or a public repo by name; check-only report (counts only)
+  ok("refs-any-dir", () => m.LOCAL_TREE_REPO === "local/tree" && m.refsRowOk(m.LOCAL_TREE_REPO, EX));
+  ok("refs-public-by-name", () => m.refsRowOk("UNJS/defu", EX));
+  ok("refs-near-miss", () => !m.refsRowOk(SYN, EX) && !m.refsRowOk(SYN.toLowerCase(), EX) && !m.refsRowOk("local/tree2", EX) && !m.refsRowOk("Local/Tree", EX) && !m.refsRowOk("other/repo", EX));
+  const near35 = refSrc.split("\n").slice(10, 45).join("\n") + "\n";
+  ok("report-counts", () => JSON.stringify(m.tasksetReport([near35, block("own"), "export default 1;\n"], refs, CFG.taskset.maxContainment)) === JSON.stringify({ docs: 3, taskset_near_dup: 2 }));
+  ok("report-near-miss", () => JSON.stringify(m.tasksetReport([block("own", 40) + refSrc.split("\n")[3] + "\n", "export default 2;\n"], refs, CFG.taskset.maxContainment)) === JSON.stringify({ docs: 2, taskset_near_dup: 0 }) && m.tasksetReport([], refs, 0.5).taskset_near_dup === 0);
   ok("taskset-near-dup-near-miss", () => fate(block("own", 40) + refSrc.split("\n")[3] + "\n", {}, cfg, refs) === "kept" && fate("export default 2;", {}, cfg, refs) === "kept");
   ok("taskset-no-refs-kept", () => fate(refSrc) === "kept");
   // split at function / class boundaries
@@ -191,6 +198,10 @@ test("m150: mutation check: removing any filter or transform fails at least one 
     ["near threshold ignored", `if (jaccard(sh, this.sets[i]!) >= this.cfg.nearJaccard) return i;`, `return i;`],
     ["exact duplicates kept", `if (seen.has(key)) { drops.exact_dup!++; return; }`, ``],
     ["task-set near duplicates kept", `if (refs && tasksetContainment(text, refs) >= cfg.taskset.maxContainment) { drops.taskset_near_dup!++; return; }`, ``],
+    ["local tree refs refused", `if (repo === LOCAL_TREE_REPO) return true;`, ``],
+    ["any refs repo accepted", `return ex.repos.has(repo.toLowerCase());`, `return true;`],
+    ["report-only counts nothing", `for (const t of texts) if (tasksetContainment(t, refs) >= maxContainment) hits++;`, ``],
+    ["report-only threshold ignored", `if (tasksetContainment(t, refs) >= maxContainment) hits++;`, `hits++;`],
     ["task-set short exact copies kept", `if (refs.exact.has(sha256(tt.join(" ")))) return 1;`, ``],
     ["no split", `if (bounds[i + 1]! - start > s.maxChunkChars && bounds[i]! > start) { out.push(text.slice(start, bounds[i])); start = bounds[i]!; }`, ``],
     ["split ignores minChars", `if (text.length < s.minChars) return [text];`, ``],
@@ -269,6 +280,34 @@ test("m150: the CLI is deterministic, writes the fingerprint with the output, an
     const man = readFileSync(join(dir, "o1", "manifest.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
     assert.deepEqual(man.filter((x) => !x.fimOf && x.fimOf !== 0).map((x) => x.src), [0, 8]);
     assert.ok(man.every((x) => x.difficulty && typeof x.difficulty.score === "number"));
+    const refused = (code: RegExp, ...a: string[]) => { const x = run(...a); assert.equal(x.status, 1, x.stdout); assert.match(x.stdout, code); };
+    // --build-refs --tree: any local directory, nothing named in the refs corpus or the output
+    const tree = join(dir, "secret-checkout-zq"); mkdirSync(join(tree, "srcdirq"), { recursive: true }); mkdirSync(join(tree, "node_modules"), { recursive: true });
+    writeFileSync(join(tree, "srcdirq", "hiddenfileq.ts"), task); writeFileSync(join(tree, "README.md"), "x"); writeFileSync(join(tree, "node_modules", "dep.ts"), block("dep"));
+    r = run("--build-refs", "--tree", tree, "--out", join(dir, "trefs"), "--exclusions", join(dir, "ex.txt"));
+    assert.equal(r.status, 0, r.stdout); assert.equal(r.stdout, "lb-clean refs files=1 trees=1\n");
+    const tman = readFileSync(join(dir, "trefs", "manifest.jsonl"), "utf8");
+    assert.deepEqual(JSON.parse(tman), { doc: 0, split: "train", repo: "local/tree", path: "t0/f0", function: "tree:0" });
+    assert.ok(!/secret-checkout|srcdirq|hiddenfileq/.test(tman + r.stdout), "no dir or file name is written");
+    refused(/^lb-clean refused: tree_missing$/m, "--build-refs", "--tree", join(dir, "nope"), "--out", join(dir, "trefs2"), "--exclusions", join(dir, "ex.txt"));
+    refused(/^lb-clean refused: usage$/m, "--build-refs", "--tree", tree, "--tasks", join(dir, "x.json"), "--out", join(dir, "trefs2"), "--exclusions", join(dir, "ex.txt"));
+    // tree refs are usable by the cleaner and give the same drop as the named refs
+    r = run("--in", join(dir, "in"), "--exclusions", join(dir, "ex.txt"), "--refs", join(dir, "trefs"), "--dry-run");
+    assert.equal(r.status, 0, r.stdout); assert.match(r.stdout, /taskset_near_dup:1,/);
+    // --report-only: counts only, writes nothing, exit 2 with a fixed code when the count is above 0
+    const listing = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? listing(join(d, e.name)).map((x) => `${e.name}/${x}`) : [`${e.name}:${H(readFileSync(join(d, e.name)))}`]).sort();
+    const snap = listing(dir);
+    r = run("--in", join(dir, "o1"), "--refs", join(dir, "trefs"), "--report-only", "--exclusions", join(dir, "ex.txt"));
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, /^lb-clean report-only docs=\d+ refFiles=1 taskset_near_dup=0\n$/);
+    r = run("--in", join(dir, "in"), "--refs", join(dir, "refs"), "--report-only", "--exclusions", join(dir, "ex.txt"));
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.stdout, "lb-clean report-only docs=9 refFiles=1 taskset_near_dup=1\nlb-clean report-only: taskset_near_dup_found\n");
+    assert.equal(r.stderr, "");
+    assert.deepEqual(listing(dir), snap, "report-only writes nothing");
+    refused(/^lb-clean refused: usage$/m, "--in", join(dir, "in"), "--refs", join(dir, "refs"), "--report-only", "--out", join(dir, "o5"), "--exclusions", join(dir, "ex.txt"));
+    refused(/^lb-clean refused: usage$/m, "--in", join(dir, "in"), "--report-only", "--exclusions", join(dir, "ex.txt"));
+    refused(/^lb-clean refused: usage$/m, "--in", join(dir, "in"), "--refs", join(dir, "refs"), "--report-only", "--dry-run", "--exclusions", join(dir, "ex.txt"));
+    assert.throws(() => readFileSync(join(dir, "o5", "docs.jsonl")));
     // a config change changes the fingerprint; dry run writes nothing
     const c2 = clone(CFG); c2.fim.rate = 0.5; writeFileSync(join(dir, "c2.json"), JSON.stringify(c2));
     r = run(...args("o3", "--config", join(dir, "c2.json"), "--dry-run"));
@@ -276,7 +315,6 @@ test("m150: the CLI is deterministic, writes the fingerprint with the output, an
     assert.notEqual(/fingerprint=([0-9a-f]{64})/.exec(r.stdout)![1], fp.fingerprint);
     assert.throws(() => readFileSync(join(dir, "o3", "docs.jsonl")));
     // refusals
-    const refused = (code: RegExp, ...a: string[]) => { const x = run(...a); assert.equal(x.status, 1, x.stdout); assert.match(x.stdout, code); };
     refused(/^lb-clean refused: exclusions_missing$/m, "--in", join(dir, "in"), "--out", join(dir, "o4"));
     refused(/^lb-clean refused: exclusions_missing$/m, "--in", join(dir, "in"), "--out", join(dir, "o4"), "--exclusions", join(dir, "nope.txt"));
     writeFileSync(join(dir, "pub-only.txt"), "unjs/defu\n");

@@ -42,7 +42,7 @@ Per piece:
 
 | code | rule |
 |---|---|
-| taskset_near_dup | containment of the piece's `taskset.shingleTokens`-token shingles in the public task-repo trees at or above `maxContainment`. The refs file is built by `--build-refs` only from repos named in the public exclusion list; the hidden half is applied only through the hashed-name rules above. |
+| taskset_near_dup | containment of the piece's `taskset.shingleTokens`-token shingles in the public task-repo trees at or above `maxContainment`. The refs file comes from `--build-refs`: `--tasks` mode accepts only repos named in the public exclusion list, and `--tree` mode accepts any local directory, unnamed (see below). By name, the hidden half is applied only through the hashed-name rules above. |
 | exact_dup | same whitespace-normalized text as an earlier kept piece |
 | near_dup | MinHash LSH candidates (FNV-32 shingles, fmix32 permutations with sha256-derived seeds, `bands` x rows), then exact shingle Jaccard at or above `jaccard` against an earlier kept piece. The first in doc-id order wins, across splits, so a heldout piece that copies a train piece is dropped. |
 
@@ -75,11 +75,28 @@ is sha256 over canonical sorted-key JSON of:
 
 Without the cleaner version the fingerprint is refused.
 
+## Refs from any local tree, and the check-only report
+
+`--build-refs --tree <dir> [--tree <dir> ...]` collects the code files of any local directory into a refs corpus.
+This is how a checkout that is not named in the public list can be used, a hidden one included. Rows carry the
+label `local/tree` and an opaque path `t<i>/f<n>`, so no repo, directory or file name is written or printed.
+The cleaner accepts a refs row when its repo is `local/tree` or a repo named in the public exclusion set
+(`refsRowOk`). A hash-listed repo is still never accepted by name. `node_modules`, `.git` and symlinks are skipped.
+
+`--in <cleaned corpus> --refs <dir> --report-only` runs only the taskset_near_dup test (`tasksetReport`, the same
+containment and threshold) over every doc of an already-cleaned corpus. It writes nothing and prints one count line,
+`lb-clean report-only docs=N refFiles=F taskset_near_dup=K`. When K > 0 it prints the fixed code
+`lb-clean report-only: taskset_near_dup_found` and exits 2. Refusals exit 1. `--out` and `--dry-run` are refused
+with `usage`, and so is a run without `--refs`.
+
+The cleaning rules are unchanged, so the version stays `peaceai-lb-clean:v1`. Because the code sha256s are in the
+fingerprint, a cleaner built from this code still gets a new fingerprint.
+
 ## Fail-closed refusals
 
 `exclusions_missing`, `exclusions_bad_line`, `exclusions_empty`, `exclusions_no_hidden_hashes`, `config_*`,
 `input_missing`, `input_docs`, `input_manifest`, `input_docs_manifest_differ`, `refs_repo_not_public_by_name`,
-`tasks_empty`, `refs_empty`, `typescript_not_found`, `usage`.
+`tasks_empty`, `refs_empty`, `tree_missing`, `typescript_not_found`, `usage`.
 
 ## Not done here
 
