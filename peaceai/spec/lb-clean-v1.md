@@ -141,11 +141,18 @@ Design:
 `tasks_empty`, `refs_empty`, `tree_missing`, `tree_read`, `typescript_not_found`, `usage`, `matched_out_needs_report_only`,
 `matched_out_exists`, `matched_out_write`, `drop_hashes_missing`, `drop_hashes_read`, `drop_hashes_empty`,
 `drop_hashes_no_final_newline`, `drop_hashes_bad_line`, `drop_hashes_duplicate`, `drop_hashes_repeated`,
-`drop_hashes_not_in_report_only`.
+`drop_hashes_not_in_report_only`, `input_read`, `exclusions_read`, `config_read`, `tasks_read`, `code_read`,
+`output_write`.
 
 `tree_read`: a file or directory in a `--build-refs` tree (`--tree` or `--trees`) that cannot be listed, stat-ed or
 read (for example `chmod 000`) refuses with only `lb-clean refused: tree_read` on stdout. The error, its path and
 the file name never reach stdout or stderr.
+
+Every other file read or write is wrapped the same way, each with one fixed code: `input_read` (`docs.jsonl` or
+`manifest.jsonl` of `--in` or `--refs`), `exclusions_read`, `config_read`, `drop_hashes_read`, `tasks_read` (the
+`--tasks` file, unreadable or not JSON), `code_read` (the files hashed into the fingerprint) and `output_write`
+(`--out`, both modes). A directory where a file is read, a `chmod 000` file or an `--out` under a file prints only
+`lb-clean refused: <code>`: nothing on stderr, no path, no stack.
 
 ## Not done here
 

@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -146,12 +146,117 @@ const BIN_MUTANTS: Record<string, [string, string]> = {
   "clean-drop": [`cfg, ex, refs, drop);`, `cfg, ex, refs);`],
   "fp-drop-files": [`dropHashesSha256: dropSha,`, `dropHashesSha256: [],`],
 };
+// every file read / write wrap (io(...), Auditor #652): mutant = the wrap replaced by a plain call
+const IO_MUTANTS: Record<string, [string, string]> = {
+  "ex-read": [`io("exclusions_read", () => readFileSync(exPath!))`, `readFileSync(exPath!)`],
+  "docs-read": [`io("input_read", () => readFileSync(dp))`, `readFileSync(dp)`],
+  "man-read": [`io("input_read", () => readFileSync(mp))`, `readFileSync(mp)`],
+  "refs-write": [`io("output_write", () => { rmSync(out,`, `((_c: string, f: () => void) => f())("output_write", () => { rmSync(out,`],
+  "tasks-read": [`io("tasks_read", () => JSON.parse(readFileSync(tasksPath, "utf8")).tasks)`, `JSON.parse(readFileSync(tasksPath, "utf8")).tasks`],
+  "drop-read": [`io("drop_hashes_read", () => readFileSync(p))`, `readFileSync(p)`],
+  "cfg-read": [`io("config_read", () => readFileSync(cfgPath))`, `readFileSync(cfgPath)`],
+  "code-read": [`io("code_read", () => readFileSync(join(ROOT, p)))`, `readFileSync(join(ROOT, p))`],
+  "out-write": [`io("output_write", () => { rmSync(outDir!,`, `((_c: string, f: () => void) => f())("output_write", () => { rmSync(outDir!,`],
+};
+const libUrl = pathToFileURL(join(repo, "peaceai", "lib")).href;
+/** The bin relocated (lib imports by file URL) with ROOT set to `root`. */
+const reloc = (src: string, root: string) => src.replace(/"\.\.\/lib\/([\w.-]+)"/g, (_, f) => `"${libUrl}/${f}"`).replace(`new URL("../../", import.meta.url).pathname`, JSON.stringify(root + "/"));
+const tagsOf = (src: string) => src.split("\n").flatMap((l) => { const x = /\/\/ m156-guard:([\w-]+)/.exec(l); return x ? [{ id: x[1]!, line: l }] : []; });
+// as root (or with read-override capabilities) chmod 000 does not block reads: those cases are skipped, not passed
+const chmodBlocks = (() => {
+  if (process.getuid?.() === 0) return false;
+  const d = mkdtempSync(join(tmpdir(), "m156-perm-")), f = join(d, "x");
+  try { writeFileSync(f, "x"); chmodSync(f, 0o000); try { readFileSync(f); return false; } catch { return true; } }
+  finally { chmodSync(f, 0o600); rmSync(d, { recursive: true, force: true }); }
+})();
+/** Unreadable inputs (a directory where a file is read; mode 000 when chmod blocks reads here) and unwritable
+ * outputs: each must refuse with only its fixed code on stdout, nothing on stderr, no path. `bin` has ROOT = the repo;
+ * `codeBin` has ROOT = a copy whose lbclean.ts is a directory (the fingerprint's code read). */
+function ioScenarios(bin: string, codeBin: string, dir: string, stop: boolean): string[] {
+  const bad: string[] = [], locked: string[] = [];
+  const corpus = (d: string, repoName = "clean/a") => { mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "docs.jsonl"), JSON.stringify({ doc: 0, text: block("io") }) + "\n");
+    writeFileSync(join(d, "manifest.jsonl"), JSON.stringify({ doc: 0, split: "train", repo: repoName, path: "src/io.ts", function: "f0" }) + "\n"); return d; };
+  const ex = join(dir, "ex.txt"); writeFileSync(ex, EXTXT);
+  const cfg = join(repo, "peaceai/model/lb-clean.json");
+  const inOk = corpus(join(dir, "in-ok")), refsOk = corpus(join(dir, "refs-ok"), "unjs/defu");
+  const asDir = (d: string, f: string) => { rmSync(join(d, f)); mkdirSync(join(d, f)); return d; };
+  const lock = (p: string) => { chmodSync(p, 0o000); locked.push(p); return p; };
+  const mk = (n: string) => { const d = join(dir, n); mkdirSync(d, { recursive: true }); return d; };
+  writeFileSync(join(dir, "afile"), "x\n");
+  writeFileSync(join(dir, "drop.txt"), `${H("io")}\n`); writeFileSync(join(dir, "badjson.json"), "{ not json");
+  const tree = mk("tree-io"); writeFileSync(join(tree, "a.ts"), block("t"));
+  const cases: [string, string, () => string[], string?][] = [
+    ["--in docs.jsonl is a directory", "input_read", () => ["--in", asDir(corpus(join(dir, "in-dd")), "docs.jsonl"), "--dry-run", "--exclusions", ex]],
+    ["--in manifest.jsonl is a directory", "input_read", () => ["--in", asDir(corpus(join(dir, "in-md")), "manifest.jsonl"), "--dry-run", "--exclusions", ex]],
+    ["--refs docs.jsonl is a directory", "input_read", () => ["--in", inOk, "--refs", asDir(corpus(join(dir, "refs-dd"), "unjs/defu"), "docs.jsonl"), "--dry-run", "--exclusions", ex]],
+    ["--refs manifest.jsonl is a directory", "input_read", () => ["--in", inOk, "--refs", asDir(corpus(join(dir, "refs-md"), "unjs/defu"), "manifest.jsonl"), "--report-only", "--exclusions", ex]],
+    ["--exclusions is a directory", "exclusions_read", () => ["--in", inOk, "--dry-run", "--exclusions", mk("ex-dir")]],
+    ["--config is a directory", "config_read", () => ["--in", inOk, "--dry-run", "--exclusions", ex, "--config", mk("cfg-dir")]],
+    ["--tasks is a directory", "tasks_read", () => ["--build-refs", "--tasks", mk("tasks-dir"), "--trees", mk("trees-x"), "--out", join(dir, "tr-out"), "--exclusions", ex]],
+    ["--tasks is not JSON", "tasks_read", () => ["--build-refs", "--tasks", join(dir, "badjson.json"), "--trees", mk("trees-x"), "--out", join(dir, "tr-out2"), "--exclusions", ex]],
+    ["--drop-hashes is a directory", "drop_hashes_read", () => ["--in", inOk, "--dry-run", "--exclusions", ex, "--drop-hashes", mk("drop-dir")]],
+    ["--out under a file", "output_write", () => ["--in", inOk, "--out", join(dir, "afile", "sub"), "--exclusions", ex, "--refs", refsOk]],
+    ["--build-refs --out under a file", "output_write", () => ["--build-refs", "--tree", tree, "--out", join(dir, "afile", "sub2"), "--exclusions", ex]],
+    ["fingerprint code file unreadable", "code_read", () => ["--in", inOk, "--dry-run", "--exclusions", ex, "--config", cfg], "code"],
+  ];
+  if (chmodBlocks) cases.push(
+    ["docs.jsonl mode 000", "input_read", () => { const d = corpus(join(dir, "in-d0")); lock(join(d, "docs.jsonl")); return ["--in", d, "--dry-run", "--exclusions", ex]; }],
+    ["manifest.jsonl mode 000", "input_read", () => { const d = corpus(join(dir, "in-m0")); lock(join(d, "manifest.jsonl")); return ["--in", d, "--dry-run", "--exclusions", ex]; }],
+    ["refs docs.jsonl mode 000", "input_read", () => { const d = corpus(join(dir, "refs-d0"), "unjs/defu"); lock(join(d, "docs.jsonl")); return ["--in", inOk, "--refs", d, "--report-only", "--exclusions", ex]; }],
+    ["exclusions mode 000", "exclusions_read", () => { writeFileSync(join(dir, "ex0.txt"), EXTXT); return ["--in", inOk, "--dry-run", "--exclusions", lock(join(dir, "ex0.txt"))]; }],
+    ["config mode 000", "config_read", () => { cpSync(cfg, join(dir, "cfg0.json")); return ["--in", inOk, "--dry-run", "--exclusions", ex, "--config", lock(join(dir, "cfg0.json"))]; }],
+    ["drop-hashes mode 000", "drop_hashes_read", () => { writeFileSync(join(dir, "drop0.txt"), `${H("io")}\n`); return ["--in", inOk, "--dry-run", "--exclusions", ex, "--drop-hashes", lock(join(dir, "drop0.txt"))]; }],
+    ["tasks mode 000", "tasks_read", () => { writeFileSync(join(dir, "tasks0.json"), "{}"); return ["--build-refs", "--tasks", lock(join(dir, "tasks0.json")), "--trees", mk("trees-x"), "--out", join(dir, "tr-out3"), "--exclusions", ex]; }],
+  );
+  try {
+    for (const [name, code, args, which] of cases) {
+      if (stop && bad.length) break;
+      try {
+        const r = spawnSync(tsx, [which === "code" ? codeBin : bin, ...args()], { cwd: repo, encoding: "utf8" });
+        if (r.status !== 1 || r.stdout !== `lb-clean refused: ${code}\n`) bad.push(`${name}: status ${r.status}, not the fixed code`);
+        else if (r.stderr !== "") bad.push(`${name}: stderr not empty`);
+        else if ((r.stdout + r.stderr).includes(dir)) bad.push(`${name}: a path is printed`);
+      } catch { bad.push(`${name}: threw`); }
+    }
+  } finally { for (const p of locked) chmodSync(p, 0o600); }
+  return bad;
+}
+/** A root copy for codeBin: the config, with peaceai/lib/lbclean.ts a directory. */
+const badRoot = (dir: string) => { const r = join(dir, "root"); mkdirSync(join(r, "peaceai", "lib", "lbclean.ts"), { recursive: true }); mkdirSync(join(r, "peaceai", "model"), { recursive: true });
+  cpSync(join(repo, "peaceai/model/lb-clean.json"), join(r, "peaceai/model/lb-clean.json")); return r; };
+
+test("M156: unreadable or directory inputs and unwritable outputs refuse with a fixed code, nothing on stderr, no path", { timeout: 600_000 }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "m156-io-"));
+  try {
+    const codeBin = join(dir, "code-bin.mts"); writeFileSync(codeBin, reloc(binSrc, badRoot(dir)));
+    const w = join(dir, "w"); mkdirSync(w); assert.deepEqual(ioScenarios(BIN, codeBin, w, false), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("M156 mutation: every io wrap is tagged and each mutant fails an io scenario", { timeout: 1_200_000 }, () => {
+  const tagged = tagsOf(binSrc).filter((t) => t.id in IO_MUTANTS);
+  assert.deepEqual(tagged.map((t) => t.id).sort(), Object.keys(IO_MUTANTS).sort());
+  for (const t of tagged) assert.ok(t.line.includes(IO_MUTANTS[t.id]![0]), `mutant site on its tagged line: ${t.id}`);
+  assert.equal((binSrc.match(/\bio\("/g) ?? []).length, Object.keys(IO_MUTANTS).length + 1, "every io wrap but the typescript package.json read has a mutant");
+  const dir = mkdtempSync(join(tmpdir(), "m156-iomut-"));
+  try {
+    const root = badRoot(dir);
+    const one = (name: string, src: string) => { const d = join(dir, name); mkdirSync(d); const b = join(d, "bin.mts"), cb = join(d, "code-bin.mts");
+      writeFileSync(b, reloc(src, repo)); writeFileSync(cb, reloc(src, root)); const w = join(d, "w"); mkdirSync(w); return ioScenarios(b, cb, w, true); };
+    assert.deepEqual(one("control", binSrc), [], "relocated unmutated copy");
+    for (const [id, [from, to]] of Object.entries(IO_MUTANTS)) {
+      assert.ok(binSrc.includes(from), `mutant site not found: ${id}`);
+      assert.ok(one(`mut-${id}`, binSrc.replace(from, to)).length > 0, `mutant survived: ${id}`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("M156 mutation: every bin guard is tagged and each mutant fails a scenario", { timeout: 1_200_000 }, () => {
-  const tagged = binSrc.split("\n").flatMap((l) => { const x = /\/\/ m156-guard:([\w-]+)/.exec(l); return x ? [{ id: x[1]!, line: l }] : []; });
+  const tagged = tagsOf(binSrc).filter((t) => !(t.id in IO_MUTANTS));
   assert.deepEqual(tagged.map((t) => t.id).sort(), Object.keys(BIN_MUTANTS).sort());
   for (const t of tagged) assert.ok(t.line.includes(BIN_MUTANTS[t.id]![0]), `mutant site on its tagged line: ${t.id}`);
-  const libUrl = pathToFileURL(join(repo, "peaceai", "lib")).href;
-  const fixed = binSrc.replace(/"\.\.\/lib\/([\w.-]+)"/g, (_, f) => `"${libUrl}/${f}"`).replace(`new URL("../../", import.meta.url).pathname`, JSON.stringify(repo + "/"));
+  const fixed = reloc(binSrc, repo);
   const dir = mkdtempSync(join(tmpdir(), "m156-mut-"));
   try {
     const one = (name: string, src: string) => { const d = join(dir, name); mkdirSync(d); const f = join(d, "bin.mts"); writeFileSync(f, src); return scenarios(f, d, true); };

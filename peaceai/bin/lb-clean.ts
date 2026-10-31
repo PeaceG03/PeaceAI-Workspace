@@ -24,6 +24,9 @@ import { join, relative } from "node:path";
 import { typescriptEntry, useTypescript } from "../lib/tsresolve.ts";
 
 const refuse = (code: string): never => { console.log(`lb-clean refused: ${code}`); process.exit(1); };
+// every file read or write outside a --build-refs tree: an error (its path, a stack) never reaches stdout or stderr,
+// only the fixed code does (as treeRead below; Auditor #652)
+const io = <T>(code: string, f: () => T): T => { try { return f(); } catch { return refuse(code); } };
 const tsEntry = typescriptEntry();
 if (!tsEntry || !useTypescript(tsEntry)) refuse("typescript_not_found");
 const L = await import("../lib/lbclean.ts");
@@ -37,7 +40,7 @@ const opt = (k: string): string | null => { const i = argv.indexOf(k); if (i < 0
 const buildRefs = flag("--build-refs"), dry = flag("--dry-run"), reportOnly = flag("--report-only");
 const exPath = opt("--exclusions");
 if (exPath === null) refuse("exclusions_missing");
-const exBuf = existsSync(exPath!) ? readFileSync(exPath!) : null;
+const exBuf = existsSync(exPath!) ? io("exclusions_read", () => readFileSync(exPath!)) : null; // m156-guard:ex-read
 const ex = parseExclusions(exBuf);
 if ("code" in ex) refuse(ex.code);
 if (!("repos" in ex)) throw new Error("unreachable");
@@ -46,7 +49,8 @@ if (ex.hashes.size === 0) refuse("exclusions_no_hidden_hashes");
 function readCorpus(dir: string): { docs: Map<number, string>; man: any[]; docsBuf: Buffer; manBuf: Buffer } {
   const dp = join(dir, "docs.jsonl"), mp = join(dir, "manifest.jsonl");
   if (!existsSync(dp) || !existsSync(mp)) refuse("input_missing");
-  const docsBuf = readFileSync(dp), manBuf = readFileSync(mp);
+  const docsBuf = io("input_read", () => readFileSync(dp)); // m156-guard:docs-read
+  const manBuf = io("input_read", () => readFileSync(mp)); // m156-guard:man-read
   const docs = new Map<number, string>();
   try {
     for (const l of docsBuf.toString("utf8").split("\n")) if (l.trim()) { const o = JSON.parse(l); if (!Number.isInteger(o.doc) || typeof o.text !== "string" || docs.has(o.doc)) refuse("input_docs"); docs.set(o.doc, o.text); }
@@ -65,9 +69,9 @@ const walk = (d: string): string[] => treeRead(() => readdirSync(d, { withFileTy
 const refFile = (dir: string, f: string) => { const p = relative(dir, f); return CODE_FILE.test(p) && !p.endsWith(".d.ts") && treeRead(() => statSync(f).size) <= 1_000_000; };
 const writeRefs = (out: string, docs: string[], man: string[]) => {
   if (!docs.length) refuse("refs_empty");
-  rmSync(out, { recursive: true, force: true }); mkdirSync(out, { recursive: true });
-  writeFileSync(join(out, "docs.jsonl"), docs.map((l) => l + "\n").join(""));
-  writeFileSync(join(out, "manifest.jsonl"), man.map((l) => l + "\n").join(""));
+  io("output_write", () => { rmSync(out, { recursive: true, force: true }); mkdirSync(out, { recursive: true }); // m156-guard:refs-write
+    writeFileSync(join(out, "docs.jsonl"), docs.map((l) => l + "\n").join(""));
+    writeFileSync(join(out, "manifest.jsonl"), man.map((l) => l + "\n").join("")); });
 };
 const trees: string[] = [];
 for (let t = opt("--tree"); t !== null; t = opt("--tree")) trees.push(t);
@@ -92,7 +96,7 @@ if (trees.length) refuse("usage");
 if (buildRefs) {
   const tasksPath = opt("--tasks") ?? refuse("arg_tasks"), trees = opt("--trees") ?? refuse("arg_trees"), out = opt("--out") ?? refuse("arg_out");
   if (argv.length) refuse("usage");
-  const tasks = JSON.parse(readFileSync(tasksPath, "utf8")).tasks as { id: string; repo: string }[];
+  const tasks = io("tasks_read", () => JSON.parse(readFileSync(tasksPath, "utf8")).tasks) as { id: string; repo: string }[]; // m156-guard:tasks-read
   if (!Array.isArray(tasks) || !tasks.length) refuse("tasks_empty");
   const docs: string[] = [], man: string[] = [];
   let missing = 0;
@@ -125,7 +129,7 @@ if (matchedOut !== null && exists(matchedOut)) refuse("matched_out_exists"); // 
 const drop = new Set<string>(), dropSha: string[] = [];
 for (const p of dropPaths) {
   if (!existsSync(p)) refuse("drop_hashes_missing"); // m156-guard:drop-missing
-  let buf = Buffer.alloc(0); try { buf = readFileSync(p); } catch { refuse("drop_hashes_read"); }
+  const buf = io("drop_hashes_read", () => readFileSync(p)); // m156-guard:drop-read
   const r = L.parseDropHashes(buf);
   if ("code" in r) refuse(r.code); // m156-guard:drop-parse
   for (const h of "hashes" in r ? r.hashes : []) drop.add(h);
@@ -134,7 +138,7 @@ for (const p of dropPaths) {
 dropSha.sort();
 if (new Set(dropSha).size !== dropSha.length) refuse("drop_hashes_repeated"); // m156-guard:drop-repeated
 if (!existsSync(cfgPath)) refuse("config_missing");
-const cfgBuf = readFileSync(cfgPath);
+const cfgBuf = io("config_read", () => readFileSync(cfgPath)); // m156-guard:cfg-read
 let cfg: any; try { cfg = JSON.parse(cfgBuf.toString("utf8")); } catch { refuse("config_json"); }
 const probs = L.configProblems(cfg);
 if (probs.length) refuse(probs.join(","));
@@ -162,8 +166,9 @@ if (reportOnly) {
 const res = L.clean(inp.man.map((m) => ({ doc: m.doc, text: inp.docs.get(m.doc)!, man: m })), cfg, ex, refs, drop); // m156-guard:clean-drop
 const CODE = ["peaceai/lib/lbclean.ts", "peaceai/bin/lb-clean.ts", "peaceai/lib/nlpairs.ts", "peaceai/lib/lmcorpus.ts", "peaceai/lib/tsresolve.ts"];
 const parts = {
-  cleanerVersion: L.LB_CLEAN_VERSION, codeSha256: Object.fromEntries(CODE.map((p) => [p, L.sha256(readFileSync(join(ROOT, p)))])),
-  typescriptVersion: JSON.parse(readFileSync(join(tsEntry!, "..", "..", "package.json"), "utf8")).version as string,
+  cleanerVersion: L.LB_CLEAN_VERSION, codeSha256: Object.fromEntries(CODE.map((p) => [p, L.sha256(io("code_read", () => readFileSync(join(ROOT, p))))])), // m156-guard:code-read
+  // the installed typescript package.json (already imported above, so reachable): wrapped the same way
+  typescriptVersion: io("code_read", () => JSON.parse(readFileSync(join(tsEntry!, "..", "..", "package.json"), "utf8")).version) as string,
   configSha256: L.sha256(cfgBuf), exclusionsSha256: ex.fileSha256,
   input: { docsSha256: L.sha256(inp.docsBuf), manifestSha256: L.sha256(inp.manBuf) }, refs: refsSha, dropHashesSha256: dropSha, // m156-guard:fp-drop-files
 };
@@ -171,9 +176,9 @@ const fingerprint = L.fingerprintOf(parts);
 const report: Record<string, any> = { ...res.report, fingerprint };
 const line = `lb-clean ${dry ? "dry-run " : ""}docsIn=${report.docsIn} pieces=${report.piecesChecked} kept=${report.keptPieces} docsOut=${report.docsOut} repeats=${report.repeats} fim=${report.fim} splitDocs=${report.splitDocs} drops=${Object.entries(report.drops as Record<string, number>).map(([k, v]) => `${k}:${v}`).join(",")} fingerprint=${fingerprint}`;
 if (dry) { console.log(line); console.log(JSON.stringify(report)); process.exit(0); }
-rmSync(outDir!, { recursive: true, force: true }); mkdirSync(outDir!, { recursive: true });
+io("output_write", () => { rmSync(outDir!, { recursive: true, force: true }); mkdirSync(outDir!, { recursive: true }); // m156-guard:out-write
 writeFileSync(join(outDir!, "docs.jsonl"), res.out.map((o) => JSON.stringify({ doc: o.man.doc, text: o.text }) + "\n").join(""));
 writeFileSync(join(outDir!, "manifest.jsonl"), res.out.map((o) => JSON.stringify(o.man) + "\n").join(""));
 writeFileSync(join(outDir!, "clean-report.json"), JSON.stringify(report, null, 1) + "\n");
-writeFileSync(join(outDir!, "fingerprint.json"), JSON.stringify({ schema: L.LB_FINGERPRINT_SCHEMA, fingerprint, parts, outManifestSha256: L.sha256(readFileSync(join(outDir!, "manifest.jsonl"))) }, null, 1) + "\n");
+writeFileSync(join(outDir!, "fingerprint.json"), JSON.stringify({ schema: L.LB_FINGERPRINT_SCHEMA, fingerprint, parts, outManifestSha256: L.sha256(readFileSync(join(outDir!, "manifest.jsonl"))) }, null, 1) + "\n"); });
 console.log(line);
