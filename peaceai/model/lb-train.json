@@ -1,0 +1,17 @@
+{
+  "schema": "peaceai-lb-train:v1",
+  "note": "M160 daily cycle. clearedCorpora: the only corpora daily_cycle.py trains on (docs.jsonl sha256, manifest.jsonl sha256, lb-clean fingerprint), each cleared by Auditor's hidden near-dup check for exactly these pins; any other corpus needs a fresh Auditor hidden check and an add-only entry here. The cycle is local / free-runner only and is not scheduled anywhere.",
+  "clearedCorpora": [
+    {
+      "docs": "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
+      "manifest": "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
+      "fingerprint": "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4",
+      "builtAt": "b149d9b",
+      "cleared": "Auditor hidden report-only taskset_near_dup=0 (2026-10-30, after #652)"
+    }
+  ],
+  "daily": {
+    "maxBudgetMin": 340,
+    "trainArgsAllowed": ["--steps", "--max-steps-this-run", "--threads", "--seed", "--batch", "--eval-every", "--d-model", "--n-layer", "--n-head", "--ctx", "--vocab", "--lr", "--warmup", "--patience", "--min-delta", "--precision", "--optimizer", "--curriculum", "--curriculum-start", "--curriculum-ramp", "--curriculum-seed", "--save-every-min"]
+  }
+}

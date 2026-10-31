@@ -36,7 +36,21 @@ M148 limit-breaker saves (peaceai/model/saves.py holds the rules; spec peaceai/s
                         resume from a save: the manifest sha256, every file, the checkpoint step, the config and the
                         training data are verified first; any mismatch exits with one SAVE_* code (never a fresh start).
 Every run writes timing.json {setupSeconds, trainSeconds, evalSeconds, steps, stoppedStep, bestStep, stopReason
-("steps" | "patience" | "max_steps_this_run" | "max_seconds" | "deadline"), timeCut (max_seconds or deadline)}."""
+("steps" | "patience" | "max_steps_this_run" | "max_seconds" | "deadline" | "nonfinite"), timeCut (max_seconds or deadline)}.
+Limit-breaker steps 3-7 (M157-M161; peaceai/model/lbtrain.py holds the rules; spec peaceai/spec/lb-train-v1.md). All
+off by default; when on, each is recorded in the config (so in every save manifest and the resume check):
+  --precision fp32|bf16|auto     bf16 = emulated mixed precision (bf16 compute copy of the weight matrices, fp32
+                                 master weights); auto = fp32 here (numpy has no native bf16). Default fp32.
+  --optimizer adamw|adamw8bit    adamw8bit = block-wise 8-bit Adam moments between steps. Default adamw.
+  --curriculum easy_to_hard [--curriculum-start F] [--curriculum-ramp N] [--curriculum-seed S]
+                                 docs ordered by lb-clean difficulty.score (manifest), batches drawn from the easiest
+                                 prefix growing from F to all of it at step N (default steps // 2). Not with replay.
+  --min-delta D                  with --patience: an eval improves only when lower than best by more than D.
+  --lora-rank R [--lora-alpha A] [--lora-targets wqkv,wo]
+                                 LoRA on frozen --init-from weights; adapter.npz / best-adapter.npz saved separately,
+                                 best.npz is the merged model (export reads it unchanged).
+Every run writes run.json (fingerprint: cfg, cfgSha256, dataSha256, precision, optimizer, curriculum, lora, stop
+rule) and stop.json (reason, step, bestStep, bestVal, lastVal, stale, patience, minDelta, budget)."""
 import argparse
 import json
 import os
@@ -77,6 +91,16 @@ ap.add_argument("--soft-deadline-min", type=float, default=340.0)
 ap.add_argument("--marker", default="")
 ap.add_argument("--resume-from", default="")
 ap.add_argument("--resume-manifest-sha", default="")
+ap.add_argument("--precision", default="fp32")
+ap.add_argument("--optimizer", default="adamw")
+ap.add_argument("--curriculum", default="")
+ap.add_argument("--curriculum-start", type=float, default=0.25)
+ap.add_argument("--curriculum-ramp", type=int, default=0)  # 0 = steps // 2
+ap.add_argument("--curriculum-seed", default=None)  # default: --seed
+ap.add_argument("--min-delta", type=float, default=0.0)
+ap.add_argument("--lora-rank", type=int, default=0)  # 0 = off
+ap.add_argument("--lora-alpha", type=float, default=0.0)  # 0 = the rank (scale 1)
+ap.add_argument("--lora-targets", default="wqkv,wo")
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -87,6 +111,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lm  # noqa: E402
 import replay  # noqa: E402
 import saves  # noqa: E402
+import lbtrain  # noqa: E402
+
+try:  # M157-M159 argument checks, before anything is read or written
+    PREC = lbtrain.resolve_precision(args.precision)
+    OPT = args.optimizer
+    lbtrain.opt_init({}, OPT)
+    CCFG = lbtrain.curriculum_cfg(args.curriculum, args.curriculum_start, args.curriculum_ramp or max(1, args.steps // 2),
+                                  args.curriculum_seed if args.curriculum_seed is not None else str(args.seed), bool(args.replay_corpus))
+    lbtrain.check_stop_args(args.patience, args.min_delta)
+except lbtrain.LbError as e:
+    raise SystemExit(e.code)
 
 os.makedirs(args.work, exist_ok=True)
 W = lambda name: os.path.join(args.work, name)  # noqa: E731
@@ -120,6 +155,18 @@ def read_corpus(d):
                 o = json.loads(line)
                 sp[o["doc"]] = o["split"]
     return texts, sp
+
+
+def read_scores(d):
+    """M158: lb-clean's difficulty.score per doc from the manifest (None when a line has none)."""
+    out = {}
+    with open(os.path.join(d, "manifest.jsonl"), encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                o = json.loads(line)
+                dif = o.get("difficulty")
+                out[o["doc"]] = dif.get("score") if isinstance(dif, dict) else None
+    return out
 
 
 docs, split = read_corpus(args.corpus)
@@ -173,10 +220,33 @@ if REPLAY:
     print(f"tokens train={len(train_tok)} replay={len(replay_tok)} val_docs={len(val_ids)} bytes_per_token={train_bytes / max(1, len(train_tok)):.2f}", flush=True)
 else:
     print(f"tokens train={len(train_tok)} heldout={len(held_tok)} bytes_per_token={train_bytes / len(train_tok):.2f}", flush=True)
+if CCFG:
+    # M158: sample from the easy-to-hard re-laid stream (tokens_train.npy on disk keeps the id order for export.py)
+    try:
+        train_tok = lbtrain.reorder_stream(train_tok, train_ids, lbtrain.order_easy_to_hard(train_ids, read_scores(args.corpus), CCFG["seed"]), lm.EOD)
+    except lbtrain.LbError as e:
+        raise SystemExit(e.code)
+    print(f"curriculum easy_to_hard start={CCFG['start']} ramp={CCFG['ramp']}", flush=True)
 
 cfg = {"schema": lm.MODEL_SCHEMA, "d_model": args.d_model, "n_head": args.n_head, "n_layer": args.n_layer,
        "vocab_size": args.vocab, "ctx": args.ctx, "lr": args.lr, "warmup": args.warmup, "total_steps": args.steps,
        "batch": args.batch, "weight_decay": 0.1, "grad_clip": 1.0, "seed": args.seed}
+# M157/M158/M161: recorded only when on, so a default config (and every existing save) is unchanged
+if PREC != "fp32":
+    cfg["precision"] = PREC
+if OPT != "adamw":
+    cfg["optimizer"] = OPT
+if CCFG:
+    cfg["curriculum"] = CCFG
+try:
+    LCFG = lbtrain.lora_cfg(args.lora_rank, args.lora_alpha or float(args.lora_rank), args.lora_targets, args.init_from,
+                            os.path.exists(W("checkpoint.npz")), cfg)
+except lbtrain.LbError as e:
+    if RESUME_MAN is not None:
+        saves.unrestore(RESUME_MAN, args.work)
+    raise SystemExit(e.code)
+if LCFG:
+    cfg["lora"] = LCFG
 T, B = cfg["ctx"], cfg["batch"]
 DATA_FILES = [os.path.join(args.corpus, "docs.jsonl"), os.path.join(args.corpus, "manifest.jsonl")]
 if REPLAY:
@@ -227,7 +297,16 @@ if os.path.exists(W("checkpoint.npz")):
         if lm.canonical({k: meta["cfg"][k] for k in cfg if k != "total_steps"}) != lm.canonical({k: cfg[k] for k in cfg if k != "total_steps"}):
             raise SystemExit("CHECKPOINT_CONFIG_MISMATCH")
         params = {k[2:]: z[k].astype(np.float32) for k in z.files if k.startswith("p.")}
-        state = {"t": meta["t"], "m": {k[2:]: z[k] for k in z.files if k.startswith("m.")}, "v": {k[2:]: z[k] for k in z.files if k.startswith("v.")}}
+        lora = {k[2:]: z[k].astype(np.float32) for k in z.files if k.startswith("l.")} if LCFG else None
+        try:
+            if LCFG:
+                lbtrain.lora_check(params, lora, LCFG)
+            state = lbtrain.opt_load(z, meta["t"], lora if LCFG else params, OPT)
+        except lbtrain.LbError as e:
+            raise SystemExit(e.code)
+    BASE_SHA = meta.get("loraBaseSha256")
+    if LCFG and lbtrain.params_sha256(params) != BASE_SHA:  # M161: the frozen base is the one the adapters were trained on
+        raise SystemExit("LORA_BASE_MISMATCH")
     rng = np.random.Generator(np.random.PCG64())
     rng.bit_generator.state = meta["rng"]
     step = meta["step"]
@@ -241,16 +320,32 @@ else:
             raise SystemExit("INIT_SHAPE_MISMATCH")
         params = init
         print("initialized from weights", flush=True)
-    state = {"t": 0, "m": {k: np.zeros_like(v) for k, v in params.items()}, "v": {k: np.zeros_like(v) for k, v in params.items()}}
+    BASE_SHA = lbtrain.params_sha256(params) if LCFG else None
+    lora = lbtrain.lora_init(params, LCFG, args.seed) if LCFG else None
+    state = lbtrain.opt_init(lora if LCFG else params, OPT)
     rng = np.random.Generator(np.random.PCG64(args.seed + 1))
     step = 0
+trainable = lora if LCFG else params
+STEP_FN = lbtrain.adamw8_step if OPT == "adamw8bit" else lm.adamw_step
+RUN_DATA_SHA = DATA_SHA or saves.data_sha256(DATA_FILES)
+STOP_RULE = {"patience": args.patience, "minDelta": args.min_delta, "steps": args.steps, "maxSeconds": args.max_seconds,
+             "maxStepsThisRun": args.max_steps_this_run, "evalEvery": args.eval_every}
+with open(W("run.json"), "w") as f:
+    f.write(lbtrain.canonical(lbtrain.run_record(cfg, RUN_DATA_SHA, STOP_RULE, BASE_SHA)) + "\n")
+if LCFG or OPT != "adamw" or PREC != "fp32":
+    print(f"precision={PREC} optimizer={OPT} opt_state_bytes={lbtrain.opt_state_bytes(state)}" + (f" lora rank={LCFG['rank']} targets={','.join(LCFG['targets'])} trainable={sum(v.size for v in lora.values())}" if LCFG else ""), flush=True)
 print(f"params={lm.param_count(cfg)} d={cfg['d_model']} layers={cfg['n_layer']} heads={cfg['n_head']} ctx={T} vocab={cfg['vocab_size']} threads={args.threads}", flush=True)
+
+
+def eval_params():
+    return lbtrain.lora_effective(params, lora, LCFG) if LCFG else params
 
 
 def eval_loss():
     tot = 0.0
+    ep = eval_params()
     for i in range(0, n_eval, 4):
-        tot += lm.forward(params, cfg, eval_x[i:i + 4], eval_y[i:i + 4])[1] * len(eval_x[i:i + 4])
+        tot += lm.forward(ep, cfg, eval_x[i:i + 4], eval_y[i:i + 4])[1] * len(eval_x[i:i + 4])
     return tot / n_eval
 
 
@@ -262,11 +357,25 @@ def log(rec):
 
 def save():
     meta = {"cfg": cfg, "t": state["t"], "step": step, "rng": rng.bit_generator.state}
+    if LCFG:
+        meta["loraBaseSha256"] = BASE_SHA
     arrays = {f"p.{k}": params[k] for k in params}
-    arrays.update({f"m.{k}": state["m"][k] for k in params})
-    arrays.update({f"v.{k}": state["v"][k] for k in params})
+    if LCFG:
+        arrays.update({f"l.{k}": lora[k] for k in lora})
+    arrays.update(lbtrain.opt_arrays(state, list(trainable)))
     np.savez(W("checkpoint.tmp.npz"), meta=np.array(json.dumps(meta)), **arrays)
     os.replace(W("checkpoint.tmp.npz"), W("checkpoint.npz"))
+    if LCFG:
+        lbtrain.save_adapter(W("adapter.npz"), lora, LCFG, BASE_SHA, step)
+
+
+def save_best_merged():
+    """M161: best.npz = the merged model (meta + p.*) so export/eval read it unchanged; the adapter goes separately."""
+    ep = eval_params()
+    meta = {"cfg": cfg, "t": state["t"], "step": step, "rng": rng.bit_generator.state, "loraBaseSha256": BASE_SHA}
+    np.savez(W("best.tmp.npz"), meta=np.array(json.dumps(meta)), **{f"p.{k}": ep[k] for k in ep})
+    os.replace(W("best.tmp.npz"), W("best.npz"))
+    lbtrain.save_adapter(W("best-adapter.npz"), lora, LCFG, BASE_SHA, step)
 
 
 best = {"val": float("inf"), "step": 0, "stale": 0}
@@ -281,6 +390,7 @@ start = time.time()
 run_start_step = step
 last_save = start
 last_saved = None  # (name, manifest sha256) of the newest save written by this run
+last_val = None
 
 
 def timed_save():
@@ -320,15 +430,25 @@ while (reason := stop_reason()) is None:
         xy = np.stack(rows).astype(np.int64)
         x, y = xy[:, :T], xy[:, 1:]
     else:
-        offs = rng.integers(0, len(train_tok) - T - 1, B)
+        hi = lbtrain.curriculum_hi(step, CCFG, len(train_tok), T) if CCFG else len(train_tok)  # M158: easiest prefix
+        offs = rng.integers(0, hi - T - 1, B)
         x = np.stack([train_tok[o:o + T] for o in offs]).astype(np.int64)
         y = np.stack([train_tok[o + 1:o + T + 1] for o in offs]).astype(np.int64)
     ts = time.time()
-    _, loss, cache = lm.forward(params, cfg, x, y, keep=True)
-    grads = lm.backward(params, cfg, cache)
+    fwd = lbtrain.compute_params(eval_params(), PREC)
+    _, loss, cache = lm.forward(fwd, cfg, x, y, keep=True)
+    if not lbtrain.loss_ok(loss):  # M159: a non-finite loss stops before its update is applied
+        reason = "nonfinite"
+        break
+    grads = lm.backward(fwd, cfg, cache)
     del cache
+    if LCFG:
+        grads = lbtrain.lora_grads(grads, lora, LCFG, params)
     lr = lm.lr_at(step, cfg)
-    gnorm = lm.adamw_step(params, grads, state, lr, cfg)
+    try:
+        gnorm = STEP_FN(trainable, grads, state, lr, cfg)
+    except lbtrain.LbError as e:
+        raise SystemExit(e.code)
     step += 1
     rec = {"step": step, "loss": round(loss, 4), "lr": round(lr, 7), "grad_norm": round(gnorm, 3), "sec": round(time.time() - ts, 2)}
     if REPLAY:
@@ -343,10 +463,14 @@ while (reason := stop_reason()) is None:
         if args.keep_checkpoints:
             import shutil
             shutil.copyfile(W("checkpoint.npz"), W(f"ckpt-{step}.npz"))
-        if rec["val_loss"] < best["val"]:
+        last_val = rec["val_loss"]
+        if lbtrain.improved(rec["val_loss"], best["val"], args.min_delta):
             best = {"val": rec["val_loss"], "step": step, "stale": 0}
             import shutil
-            shutil.copyfile(W("checkpoint.npz"), W("best.npz"))
+            if LCFG:
+                save_best_merged()
+            else:
+                shutil.copyfile(W("checkpoint.npz"), W("best.npz"))
         else:
             best["stale"] += 1
         json.dump(best, open(W("best.json"), "w"))
@@ -361,6 +485,9 @@ if args.marker:
     nm, ms = last_saved if last_saved else (None, None)
     mk = saves.write_marker(args.marker, reason, step, cfg["total_steps"], nm, ms, cfg)
     print(f"marker more={'yes' if mk['more'] else 'no'} stop={reason} step={step}", flush=True)
+with open(W("stop.json"), "w") as f:
+    f.write(lbtrain.canonical(lbtrain.stop_record(reason, step, cfg["total_steps"], best, last_val, args.patience, args.min_delta,
+                                                  args.max_seconds, time.time() - start)) + "\n")
 json.dump({"setupSeconds": round(start - t0, 1), "trainSeconds": round(time.time() - start, 1), "evalSeconds": round(slow["evalSeconds"], 1),
            "steps": step - run_start_step, "stoppedStep": step, "bestStep": best["step"], "stopReason": reason,
            "timeCut": reason in ("max_seconds", "deadline")}, open(W("timing.json"), "w"), sort_keys=True)
