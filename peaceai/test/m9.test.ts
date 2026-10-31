@@ -612,8 +612,13 @@ test("M9 retrain: train.py stops early on held-out loss and keeps the best check
   assert.match(train, /--patience/);
   assert.match(train, /shutil\.copyfile\(W\("checkpoint\.npz"\), W\("best\.npz"\)\)/);
   // LM retrain pretrain mode: the loop's stop rules moved into stop_reason() (patience first; then steps, max-steps-this-run, max-seconds, deadline).
-  assert.match(train, /def stop_reason\(\):\n    if args\.patience and best\["stale"\] >= args\.patience:\n        return "patience"/);
-  assert.match(train, /\nwhile \(reason := stop_reason\(\)\) is None:\n/);
+  // M159 (lb-train): the module body sits one level inside a single top-level `try:` (it writes stop.json on every
+  // exit), so the def and the loop may be indented by exactly that one level -- the same indent for both, and only
+  // when that top-level try exists; patience is still the first rule and the loop is still driven by stop_reason().
+  const d = train.match(/^(|    )def stop_reason\(\):\n\1    if args\.patience and best\["stale"\] >= args\.patience:\n\1        return "patience"/m);
+  assert.ok(d, "stop_reason() checks patience first");
+  assert.match(train, new RegExp(`\\n${d[1]}while \\(reason := stop_reason\\(\\)\\) is None:\\n`));
+  if (d[1]) assert.match(train, /^try:  # M159: every exit below/m, "indented only inside the one top-level try");
   assert.match(readFileSync(join(repo, "peaceai/model/export.py"), "utf8"), /--checkpoint", default="checkpoint\.npz"/);
 });
 

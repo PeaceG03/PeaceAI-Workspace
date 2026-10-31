@@ -25,7 +25,7 @@ resume must match exactly, and in run.json (the run fingerprint: cfgSha256, data
                    Adapters are saved separately (adapter.npz, best-adapter.npz); best.npz is the MERGED model, so
                    export/eval read it unchanged; lbtrain.py lora-merge BASE ADAPTER OUT --base-sha SHA merges an
                    adapter for eval, where SHA comes from a trusted record (the save manifest / run.json cfg), never
-                   from the adapter file itself.
+                   taken from the adapter file itself.
 
 Refusals raise LbError(code) (one fixed code, no paths or text). Guards are tagged `# guard:<name>` and
 mutation-checked by peaceai/test/m157..m161 (disabling any one changes its case's outcome).
