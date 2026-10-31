@@ -243,6 +243,13 @@ const R2_SECRETS = ["LM_SAVES_R2_ACCOUNT_ID", "LM_SAVES_R2_ACCESS_KEY_ID", "LM_S
 const KEY_STEPS = ["Read the trusted record", "Record one add-only row in Results"];
 const R2_STEPS = ["Restore the trusted save from R2", "Copy the new save to R2"];
 const TSHA = "${{ steps.trusted.outputs.trusted_sha }}";
+const GATE = "        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'\n";
+const VERIFY_LINES = [
+  `          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }\n`,
+  `          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }\n`,
+  `          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }\n`,
+  `          printf '%s' "$KEY_SCRIPTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }`,
+];
 
 /** The reviewed shape of peace-lb-daily.yml; returns the problem classes found. */
 function lbDailyProblems(t: string, jobTimeoutMin: number): string[] {
@@ -288,6 +295,13 @@ function lbDailyProblems(t: string, jobTimeoutMin: number): string[] {
     || !restoreS.includes(`./peaceai/bin/lm-saves-r2.sh --folder lb-daily get "$T_CHAIN" "$T_SAVE" "$RUNNER_TEMP/lbs/saves/$T_SAVE"\n`)) p.add("trusted");
   if (!t.includes(`        run: ./peaceai/bin/lb-daily-run.sh "$RUNNER_TEMP/lbc/out" "$RUNNER_TEMP/lbs" "$RUNNER_TEMP/lb-trusted.json" "$T_SHA"\n`)) p.add("trusted");
   if (/resume-from|resume-manifest|manifestSha256[^\n]*T_SHA|inputs\./.test(t)) p.add("trusted");
+  if (!t.includes(`./peaceai/bin/lm-saves-r2.sh --folder lb-daily put-one "$chain" "$RUNNER_TEMP/lbs/saves" "$save" "$sha"\n`)) p.add("store"); // no extra arg; the bucket is add-only
+  // re-verify (Auditor #657): the checkout and key scripts are verified again in the step right before each later key use
+  for (const [verifyName, keyName] of [["Re-verify the checkout and the key scripts right before the R2 key is used again (copy)", "Copy the new save to R2"], ["Re-verify the checkout and the key scripts right before the deploy key is used again (land)", "Record one add-only row in Results"]]) {
+    const k = steps.findIndex((x) => x.startsWith(STEP(keyName)));
+    const v = k > 0 ? steps[k - 1]! + "\n" : "";
+    if (!v.startsWith(STEP(verifyName) + "\n" + GATE + "        run: |\n          set -euo pipefail\n") || !VERIFY_LINES.every((l) => v.includes(l)) || /secrets\./.test(v)) p.add("reverify");
+  }
   if ((t.match(/lm-saves-r2\.sh/g) ?? []).length !== 3 || (t.match(/lm-saves-r2\.sh --folder lb-daily /g) ?? []).length !== 3) p.add("store");
   // order: verify -> trusted -> corpus -> restore (sha check) -> cycle -> upload -> row -> land -> cleanup
   const order = [STEP("Verify the checkout and the key scripts before any key is used"), STEP("Read the trusted record"), "lb-corpus-rebuild.sh", STEP("Restore the trusted save from R2"),
@@ -345,6 +359,12 @@ test("M165 workflow: peace-lb-daily.yml has the reviewed shape; each guard kills
     ["land", "landing without --sparse", wf.replace('results-write.sh --sparse "/runs/lb-daily/$LB_TODAY-$GITHUB_RUN_ID.json" ', "results-write.sh ")],
     ["land", "landing a whole dir", wf.replace('--sparse "/runs/lb-daily/$LB_TODAY-$GITHUB_RUN_ID.json"', '--sparse "/runs/"')],
     ["order", "no checkout verify before the key", wf.replace("printf '%s' \"$KEY_SCRIPTS_SHA256\" | sha256sum -c --quiet - || { echo \"key script hash mismatch: key refused\"; exit 1; }\n", "true\n")],
+    ["reverify", "no re-verify before the copy (R2 key)", (() => { const a = wf.indexOf(STEP("Re-verify the checkout and the key scripts right before the R2 key")), b = wf.indexOf(STEP("Copy the new save to R2")); return wf.slice(0, a) + wf.slice(b); })()],
+    ["reverify", "no re-verify before the land (deploy key)", (() => { const a = wf.indexOf(STEP("Re-verify the checkout and the key scripts right before the deploy key")), b = wf.indexOf(STEP("Record one add-only row in Results")); return wf.slice(0, a) + wf.slice(b); })()],
+    ["reverify", "re-verify before the land moved earlier (the row step in between)", (() => { const a = wf.indexOf(STEP("Build the metrics row")), b = wf.indexOf(STEP("Re-verify the checkout and the key scripts right before the deploy key")), c = wf.indexOf(STEP("Record one add-only row in Results")); return wf.slice(0, a) + wf.slice(b, c) + wf.slice(a, b) + wf.slice(c); })()],
+    ["reverify", "re-verify without the key script hash check", wf.replace(/(Re-verify the checkout and the key scripts right before the R2 key[^]*?)printf '%s' "\$KEY_SCRIPTS_SHA256" \| sha256sum -c --quiet - \|\| \{ echo "key script hash mismatch: key refused"; exit 1; \}/, "$1true")],
+    ["reverify", "re-verify without the untracked-files check", wf.replace(/(Re-verify the checkout and the key scripts right before the deploy key[^]*?)          test -z "\$\(git status --porcelain --untracked-files=all\)" [^\n]*\n/, "$1")],
+    ["store", "put-one with an extra keep argument", wf.replace('"$save" "$sha"\n', '"$save" "$sha" "$T_CHAIN"\n')],
     ["cleanup", "no cleanup", wf.replace('        if: always()\n        run: rm -rf "$RUNNER_TEMP/lbc"', '        run: rm -rf "$RUNNER_TEMP/lbc"')],
   ];
   for (const [want, what, text] of mutants) {
@@ -355,6 +375,8 @@ test("M165 workflow: peace-lb-daily.yml has the reviewed shape; each guard kills
   assert.deepEqual(lbDailyProblems(step("      # the saves go to R2 only: nothing is uploaded as an artifact\n"), jt), []);
   assert.deepEqual(lbDailyProblems(wf.replace('          echo "LB_UPLOADED=$save:$sha" >> "$GITHUB_ENV"\n', '          echo "LB_UPLOADED=$save:$sha" >> "$GITHUB_ENV"\n          echo "uploaded $save"\n'), jt), []);
   assert.deepEqual(lbDailyProblems(wf.replace('"$RUNNER_TEMP/venv"\n', '"$RUNNER_TEMP/venv" "$RUNNER_TEMP/tmp"\n'), jt), []);
+  // near miss: a re-verify step with one more harmless check line still passes
+  assert.deepEqual(lbDailyProblems(wf.replace(/(Re-verify the checkout and the key scripts right before the deploy key[^]*?set -euo pipefail\n)/, '$1          test -d "$RUNNER_TEMP"\n'), jt), []);
   // the key scripts are pinned to their committed bytes (checked before any key is used)
   for (const f of ["peaceai/bin/with-deploy-key.sh", "peaceai/bin/results-write.sh"]) assert.ok(wf.includes(`\n        ${sha(join(repo, f))}  ${f}\n`), f);
   // one workflow runs the daily cycle, and the M148 / lb-first-run workflow does not
@@ -466,7 +488,7 @@ const R2_ENV = { LM_SAVES_R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef", LM_
 const FAKE_AWS = `#!/usr/bin/env bash
 # fake aws (m165, as m148): s3://BUCKET/KEY is $FAKE_S3/BUCKET/KEY; every call is logged
 echo "argv=$*" >> "$FAKE_S3.log"
-[ "$1" = s3 ] || exit 2
+[ "$1" = s3 ] || { echo "$1 $2" >> "$FAKE_S3.deletes"; exit 2; }  # s3api delete-object(s), etc.: never allowed
 op=$2; shift 2
 args=(); for a in "$@"; do case "$a" in --recursive|--only-show-errors) ;; *) args+=("$a");; esac; done
 loc() { echo "$FAKE_S3/\${1#s3://}"; }
@@ -475,8 +497,7 @@ case "$op" in
     if [[ "$src" == s3://* ]]; then s=$(loc "$src"); [ -d "$s" ] || exit 1; mkdir -p "$dst"; cp -R "$s"/. "$dst"/
     else d=$(loc "$dst"); mkdir -p "$(dirname "$d")"; cp "$src" "$d"; fi ;;
   ls) d=$(loc "\${args[0]}"); [ -d "$d" ] || exit 1; for x in "$d"/*/; do [ -d "$x" ] && echo "                           PRE $(basename "$x")/"; done ;;
-  rm) rm -rf "$(loc "\${args[0]}")" ;;
-  *) exit 2 ;;
+  *) echo "s3 $op" >> "$FAKE_S3.deletes"; exit 2 ;;  # rm, rb, mv, sync --delete: the bucket is add-only
 esac
 `;
 
@@ -485,38 +506,70 @@ function r2(dir: string, script: string, args: string[]) {
   const s3 = join(dir, "s3");
   const r = spawnSync("bash", [script, ...args], { encoding: "utf8", cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin`, FAKE_S3: s3, ...R2_ENV } });
   const log = existsSync(`${s3}.log`) ? readFileSync(`${s3}.log`, "utf8") : "";
-  return { status: r.status, out: r.stdout + r.stderr, s3, log };
+  const deletes = existsSync(`${s3}.deletes`) ? readFileSync(`${s3}.deletes`, "utf8") : "";
+  return { status: r.status, out: r.stdout + r.stderr, s3, log, deletes };
 }
 
-test("M165 R2: put-one uploads only a save whose manifest hashes to the given sha, into lb-daily/, keeping the trusted save", () => withDir((dir) => {
+test("M165 R2: put-one uploads only a save whose manifest hashes to the given sha into lb-daily/, refuses an existing name, and deletes nothing", () => withDir((dir) => {
   const R2 = join(repo, "peaceai/bin/lm-saves-r2.sh");
+  const src = readFileSync(R2, "utf8");
+  // Auditor #657 bar: no delete form anywhere in the script
+  assert.ok(!/ rm |\brm\b|delete-object|delete-objects|\brb\b|s3api|\bmv\b|--delete/.test(src.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")), "lm-saves-r2.sh has no bucket delete");
   const saves = join(dir, "saves");
   const mk = (n: string, m: string) => { mkdirSync(join(saves, n), { recursive: true }); writeFileSync(join(saves, n, "checkpoint.npz"), "ck"); writeFileSync(join(saves, n, "manifest.json"), m); };
   mk("save-000000008", '{"step":8}');
   const good = shaText('{"step":8}');
+  const chainDir = join(dir, "s3/peace-lm-saves-test/lb-daily/501");
   // bucket already holds the trusted save and an older one
-  for (const n of ["save-000000002", "save-000000004"]) { mkdirSync(join(dir, "s3/peace-lm-saves-test/lb-daily/501", n), { recursive: true }); writeFileSync(join(dir, "s3/peace-lm-saves-test/lb-daily/501", n, "manifest.json"), "{}"); }
-  const bad = r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "save-000000008", "f".repeat(64), "save-000000004"]);
+  for (const n of ["save-000000002", "save-000000004"]) { mkdirSync(join(chainDir, n), { recursive: true }); writeFileSync(join(chainDir, n, "manifest.json"), "{}"); }
+  const bad = r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "save-000000008", "f".repeat(64)]);
   assert.equal(bad.status, 1); assert.equal(bad.out.trim(), "R2_SHA_MISMATCH");
-  assert.ok(!/ cp /.test(bad.log) && !/argv=s3 cp/.test(bad.log), "nothing uploaded on a mismatch");
-  const ok = r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "save-000000008", good, "save-000000004"]);
+  assert.ok(!/argv=s3 cp/.test(bad.log), "nothing uploaded on a mismatch");
+  const ok = r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "save-000000008", good]);
   assert.equal(ok.status, 0, ok.out);
-  assert.equal(ok.out.trim(), `R2_PUT save=save-000000008 manifest=${good}\nR2_PRUNE save=save-000000002`);
-  assert.deepEqual(readdirSync(join(dir, "s3/peace-lm-saves-test/lb-daily/501")).sort(), ["save-000000004", "save-000000008"], "the new save and the trusted save");
+  assert.equal(ok.out.trim(), `R2_PUT save=save-000000008 manifest=${good}`);
+  assert.equal(ok.deletes, "", "no delete call reached the bucket");
+  assert.deepEqual(readdirSync(chainDir).sort(), ["save-000000002", "save-000000004", "save-000000008"], "add-only: every earlier save stays");
   const cps = ok.log.split("\n").filter((l) => l.startsWith("argv=s3 cp"));
   assert.ok(cps.at(-1)!.includes("/manifest.json"), "manifest last");
   assert.ok(cps.every((l) => l.includes("s3://peace-lm-saves-test/lb-daily/501/save-000000008/")), "only lb-daily/<chain>/<save>/");
   for (const v of Object.values(R2_ENV)) assert.ok(!ok.out.includes(v) && !bad.out.includes(v), "no credential, account id or bucket name in the output");
+  // an existing name is refused before any upload (s3 cp would overwrite it silently); the bucket copy is unchanged
+  const before = readFileSync(join(chainDir, "save-000000004/manifest.json"), "utf8");
+  mk("save-000000004", '{"step":4,"other":1}');
+  const ex = r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "save-000000004", shaText('{"step":4,"other":1}')]);
+  assert.equal(ex.status, 1); assert.equal(ex.out.trim(), "R2_SAVE_EXISTS");
+  assert.equal(readFileSync(join(chainDir, "save-000000004/manifest.json"), "utf8"), before, "not overwritten");
+  assert.equal(ex.log.split("\n").filter((l) => l.startsWith("argv=s3 cp")).length, cps.length, "no cp after the refusal");
+  // near miss: the same name under another chain is new there
+  const nm = r2(dir, R2, ["--folder", "lb-daily", "put-one", "502", saves, "save-000000004", shaText('{"step":4,"other":1}')]);
+  assert.equal(nm.status, 0, nm.out); assert.match(nm.out, /^R2_PUT save=save-000000004 manifest=[0-9a-f]{64}$/m);
+  // the old trailing keep argument is refused now (nothing is pruned)
+  assert.equal(r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "save-000000008", good, "save-000000004"]).out.trim(), "R2_BAD_ARGS");
   // near misses / refusals: only lm-saves or lb-daily folders; bad names
   assert.equal(r2(dir, R2, ["--folder", "other", "check"]).out.trim(), "R2_BAD_ARGS");
   assert.equal(r2(dir, R2, ["--folder", "lb-daily", "put-one", "501", saves, "../x", good]).out.trim(), "R2_BAD_ARGS");
+  const fresh = (name: string) => { const md = join(dir, name); mkdirSync(md); cpSync(saves, join(md, "saves"), { recursive: true }); cpSync(join(dir, "s3"), join(md, "s3"), { recursive: true }); return md; };
   // killed mutant: without the sha check the mismatched save is uploaded
-  const src = readFileSync(R2, "utf8");
   const anchor = `  [ "$(sha256sum "$man" | cut -c1-64)" = "$want" ] || die R2_SHA_MISMATCH\n`;
   assert.equal(src.split(anchor).length, 2);
   const mut = join(dir, "mut.sh"); writeFileSync(mut, src.replace(anchor, ""));
-  const md = join(dir, "m"); mkdirSync(md); cpSync(saves, join(md, "saves"), { recursive: true });
-  assert.notEqual(r2(md, mut, ["--folder", "lb-daily", "put-one", "501", join(md, "saves"), "save-000000008", "f".repeat(64)]).out.trim(), "R2_SHA_MISMATCH");
+  const md = fresh("m");
+  assert.notEqual(r2(md, mut, ["--folder", "lb-daily", "put-one", "503", join(md, "saves"), "save-000000008", "f".repeat(64)]).out.trim(), "R2_SHA_MISMATCH");
+  // killed mutant: without the exists check the existing save is overwritten
+  const xanchor = `  exists "$chain" "$name"; case $? in 0) die R2_SAVE_EXISTS ;; 1) ;; *) exit 1 ;; esac\n`;
+  assert.equal(src.split(xanchor).length, 2);
+  const mut2 = join(dir, "mut2.sh"); writeFileSync(mut2, src.replace(xanchor, ""));
+  const md2 = fresh("m2");
+  const ow = r2(md2, mut2, ["--folder", "lb-daily", "put-one", "501", join(md2, "saves"), "save-000000004", shaText('{"step":4,"other":1}')]);
+  assert.equal(ow.status, 0); assert.notEqual(readFileSync(join(md2, "s3/peace-lm-saves-test/lb-daily/501/save-000000004/manifest.json"), "utf8"), before, "mutant killed: the overwrite happens without the check");
+  // killed mutant: a delete call (the removed prune) is caught by the fake bucket
+  const mut3 = join(dir, "mut3.sh");
+  writeFileSync(mut3, src.replace(`  echo "R2_PUT save=$name manifest=$want"\n}`, `  echo "R2_PUT save=$name manifest=$want"\n  q s3 rm "s3://$B/$F/$chain/save-000000002/" --recursive\n}`));
+  assert.notEqual(readFileSync(mut3, "utf8"), src);
+  const md3 = fresh("m3");
+  const del = r2(md3, mut3, ["--folder", "lb-daily", "put-one", "504", join(md3, "saves"), "save-000000008", good]);
+  assert.notEqual(del.deletes, "", "mutant killed: the fake bucket records the delete call");
 }));
 
 test("M165 config: the committed dailyRun block", () => {

@@ -11,7 +11,7 @@ It cannot run until Peace adds the four R2 secrets below to the existing peaceai
 - fp16 export weights.npz: 20,345,566 bytes.
 - Full resume checkpoint.npz (fp32 weights + Adam m + Adam v + meta): 122,035,950 bytes.
 - Trimmed best.npz in a save (meta + fp32 weights only): 40,678,846 bytes.
-- One save is about 163 MB; keep-2 is about 326 MB. (The retrain default 384/6/6/256/4096 would be 12,297,984 params.)
+- One save is about 163 MB; the local keep-2 is about 326 MB (the bucket is add-only and grows by one save per upload). (The retrain default 384/6/6/256/4096 would be 12,297,984 params.)
 
 ## Trainer (peaceai/model/train.py + peaceai/model/saves.py)
 
@@ -22,8 +22,8 @@ It cannot run until Peace adds the four R2 secrets below to the existing peaceai
   from it, and the token streams are rebuilt deterministically from the restored tokenizer and the same corpus.
 - Atomic: files go to saves/.tmp-save-NNNNNNNNN-PID, are fsynced, a manifest.json is written (schema, step, cfg,
   cfgSha256, dataSha256 = sha256 of the corpus/replay files, and sha256 + bytes per file), then one rename makes the
-  save visible. The manifest file's sha256 is the save's identity. Only the latest 2 saves are kept; stale .tmp
-  dirs are removed.
+  save visible. The manifest file's sha256 is the save's identity. Only the latest 2 saves are kept in the local
+  saves dir on the runner (the bucket is add-only, below); stale .tmp dirs are removed.
 - --job-start EPOCH + --soft-deadline-min M (default 340 = 5h40m): sets the existing --deadline, so training stops
   before a step that would not finish in time, saves, and with --marker writes chain.json:
   {schema peaceai-lm-chain:v1, more, stopReason, step, totalSteps, save, manifestSha256, cfgSha256}. more is true
@@ -90,17 +90,18 @@ gh workflow run peace-lm-train.yml --ref main -f chain_id -f chain_index -f max_
 -f resume_manifest_sha. A dispatched link queues behind the running one (concurrency group, no cancel).
 
 Bucket layout (lm-saves-r2.sh): lm-saves/<chain id>/save-NNNNNNNNN/<file>, manifest.json uploaded last (a save
-without its manifest is not fetched and cannot verify). After each new upload only the latest 2 saves of the chain
-are kept (R2_PRUNE). Nothing outside lm-saves/<chain id>/ is touched. The endpoint is built from the account id in
+without its manifest is not fetched and cannot verify). The bucket is add-only (Auditor, #657): nothing is ever
+removed or overwritten, and a save name that already exists under the chain is refused before any upload
+(R2_SAVE_EXISTS; s3 cp would silently overwrite it; a listing error is R2_LIST_FAILED). Nothing outside
+lm-saves/<chain id>/ is touched. The endpoint is built from the account id in
 the environment (AWS_ENDPOINT_URL), never on a command line; all aws output goes to /dev/null; every printed line is
-a code, a save name, a step or a sha256. Old chains are not deleted automatically (the last 2 saves of each chain
-stay until Peace removes them).
+a code, a save name, a step or a sha256. Every save of every chain stays until Peace removes it by hand.
 
-Codes: R2_NOT_CONFIGURED, R2_TOOL_MISSING, R2_BAD_ARGS, R2_PUT_FAILED, R2_PUT_REFUSED, R2_PUT_SKIPPED, R2_PRUNE_FAILED,
+Codes: R2_NOT_CONFIGURED, R2_TOOL_MISSING, R2_BAD_ARGS, R2_PUT_FAILED, R2_PUT_REFUSED, R2_PUT_SKIPPED, R2_SAVE_EXISTS, R2_LIST_FAILED,
 R2_GET_FAILED, R2_SAVE_NOT_UPLOADED, CHAIN_BAD_ARGS, RESUME_INPUTS_BAD, CHAIN_DISPATCH_FAILED, CHAIN_LINE_BAD, plus the
 saves.py SAVE_* / CHAIN_* codes above.
 
-Tests: m148-lm-saves.test.ts runs lm-saves-r2.sh against a fake aws (keep-2, manifest last, endpoint only in the
+Tests: m148-lm-saves.test.ts runs lm-saves-r2.sh against a fake aws (no delete call, an existing name refused, manifest last, endpoint only in the
 environment, quiet output, every refusal) and runs the storage-check, chain-decision and dispatch steps' own scripts
 (extracted from the workflow) with fake aws / gh; m9 pins the workflow sha and its exact secret set; m37 pins the
 soft deadline.
@@ -112,6 +113,6 @@ workflow has not been run; latest.json, promotion and the stage-2 flag are untou
 
 lm-saves-r2.sh takes an optional leading `--folder lm-saves|lb-daily` (default lm-saves; anything else is
 R2_BAD_ARGS); every key is `<folder>/<chain>/<save>/`. peace-lm-train.yml keeps the default; the lb-train daily
-cycle (peace-lb-daily.yml) uses lb-daily only. `put-one CHAIN DIR SAVE SHA [TRUSTED_SAVE]` uploads one save only if
-its manifest hashes to SHA (R2_SHA_MISMATCH), the manifest last, then removes the chain's other saves in that folder
-except SAVE and TRUSTED_SAVE (the save the trusted record names), so a failed day never loses the resume point.
+cycle (peace-lb-daily.yml) uses lb-daily only. `put-one CHAIN DIR SAVE SHA` uploads one save only if its
+manifest hashes to SHA (R2_SHA_MISMATCH) and the name is not in the bucket yet (R2_SAVE_EXISTS), the manifest last;
+it removes nothing, so every earlier save (including the trusted resume point) stays.

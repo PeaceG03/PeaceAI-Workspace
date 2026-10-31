@@ -6,6 +6,7 @@ name: peace-lb-daily
 # runs/lb-daily/<day>-<run id>.json (the trusted record, read through results-write.sh with nothing written); the save is
 # fetched from the private R2 bucket under its own folder lb-daily/<chain id>/ and must hash to that row's manifest
 # sha256 before any resume, and chain.json is written from the row, never from the bucket. No Actions artifacts or cache.
+# The bucket is add-only: a save name that already exists is refused (R2_SAVE_EXISTS) and nothing is ever removed.
 # The R2 secrets are in env only for the R2 steps, the Results key only for the Results steps; nothing echoes them.
 # LoRA is refused (lb_daily.py). Results gets one add-only metrics row per trained day; latest.json is never written.
 on:
@@ -103,7 +104,15 @@ jobs:
           PY: ${{ runner.temp }}/venv/bin/python
           T_SHA: ${{ steps.trusted.outputs.trusted_sha }}
         run: ./peaceai/bin/lb-daily-run.sh "$RUNNER_TEMP/lbc/out" "$RUNNER_TEMP/lbs" "$RUNNER_TEMP/lb-trusted.json" "$T_SHA"
-      - name: Copy the new save to R2 lb-daily/ (only its own manifest sha256 is accepted)
+      - name: Re-verify the checkout and the key scripts right before the R2 key is used again (copy)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s' "$KEY_SCRIPTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
+      - name: Copy the new save to R2 lb-daily/ (only its own manifest sha256 is accepted; an existing name is refused; nothing is removed)
         if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
         env:
           LM_SAVES_R2_ACCOUNT_ID: ${{ secrets.LM_SAVES_R2_ACCOUNT_ID }}
@@ -111,12 +120,11 @@ jobs:
           LM_SAVES_R2_SECRET_ACCESS_KEY: ${{ secrets.LM_SAVES_R2_SECRET_ACCESS_KEY }}
           LM_SAVES_R2_BUCKET: ${{ secrets.LM_SAVES_R2_BUCKET }}
           T_CHAIN: ${{ steps.trusted.outputs.chain }}
-          T_SAVE: ${{ steps.trusted.outputs.save }}
         run: |
           set -euo pipefail
           save=$(jq -r .save "$RUNNER_TEMP/lbs/chain.json"); sha=$(jq -r .manifestSha256 "$RUNNER_TEMP/lbs/chain.json")
           chain=${T_CHAIN:-$GITHUB_RUN_ID}
-          ./peaceai/bin/lm-saves-r2.sh --folder lb-daily put-one "$chain" "$RUNNER_TEMP/lbs/saves" "$save" "$sha" $T_SAVE
+          ./peaceai/bin/lm-saves-r2.sh --folder lb-daily put-one "$chain" "$RUNNER_TEMP/lbs/saves" "$save" "$sha"
           echo "LB_UPLOADED=$save:$sha" >> "$GITHUB_ENV"
       - name: Build the metrics row (pins, shas, steps, stop reason, held-out and baseline bpb, wall time, save marker)
         if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
@@ -125,6 +133,14 @@ jobs:
         run: |
           "$RUNNER_TEMP/venv/bin/python" peaceai/model/lb_daily.py row --trusted "$RUNNER_TEMP/lb-trusted.json" --trusted-sha "$T_SHA" --state "$RUNNER_TEMP/lbs" \
             --today "$LB_TODAY" --run-id "$GITHUB_RUN_ID" --sha "$GITHUB_SHA" --job-start "$LB_JOB_START" --uploaded "$LB_UPLOADED" --out "$RUNNER_TEMP/lb-daily-row.json"
+      - name: Re-verify the checkout and the key scripts right before the deploy key is used again (land)
+        if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "checkout is not $GITHUB_SHA"; exit 1; }
+          git diff --exit-code --stat HEAD -- || { echo "checkout modified: key refused"; exit 1; }
+          test -z "$(git status --porcelain --untracked-files=all)" || { echo "untracked files in checkout: key refused"; exit 1; }
+          printf '%s' "$KEY_SCRIPTS_SHA256" | sha256sum -c --quiet - || { echo "key script hash mismatch: key refused"; exit 1; }
       - name: Record one add-only row in Results (runs/lb-daily/<day>-<run id>.json, new file only; no weights, no latest.json)
         if: steps.trusted.outputs.kind == 'fresh' || steps.trusted.outputs.kind == 'resume'
         env:

@@ -197,7 +197,8 @@ const FAKE_AWS = `#!/usr/bin/env bash
 # fake aws (m148): s3://BUCKET/KEY is $FAKE_S3/BUCKET/KEY; every call is logged with the endpoint it saw
 echo "argv=$* endpoint=\${AWS_ENDPOINT_URL:-} region=\${AWS_DEFAULT_REGION:-}" >> "$FAKE_S3.log"
 [ -n "\${FAKE_S3_FAIL:-}" ] && [[ "$*" == *"$FAKE_S3_FAIL"* ]] && { echo "boom https://leak.example secret" >&2; exit 1; }
-[ "$1" = s3 ] || exit 2
+[ -n "\${FAKE_S3_LS_RC:-}" ] && [ "$2" = ls ] && { echo "An error occurred (AccessDenied)" >&2; exit "$FAKE_S3_LS_RC"; }  # a listing error (aws exits 254/255)
+[ "$1" = s3 ] || { echo "$1 $2" >> "$FAKE_S3.deletes"; exit 2; }  # s3api delete-object(s), etc.: never allowed
 op=$2; shift 2
 args=(); for a in "$@"; do case "$a" in --recursive|--only-show-errors) ;; *) args+=("$a");; esac; done
 loc() { echo "$FAKE_S3/\${1#s3://}"; }
@@ -206,8 +207,7 @@ case "$op" in
     if [[ "$src" == s3://* ]]; then s=$(loc "$src"); [ -d "$s" ] || exit 1; mkdir -p "$dst"; cp -R "$s"/. "$dst"/
     else d=$(loc "$dst"); mkdir -p "$(dirname "$d")"; cp "$src" "$d"; fi ;;
   ls) d=$(loc "\${args[0]}"); [ -d "$d" ] || exit 1; for x in "$d"/*/; do [ -d "$x" ] && echo "                           PRE $(basename "$x")/"; done ;;
-  rm) rm -rf "$(loc "\${args[0]}")" ;;
-  *) exit 2 ;;
+  *) echo "s3 $op" >> "$FAKE_S3.deletes"; exit 2 ;;  # rm, rb, mv, sync --delete: the bucket is add-only (Auditor, #657)
 esac
 `;
 const FAKE_GH = `#!/usr/bin/env bash
@@ -221,10 +221,13 @@ function fakeTools(dir: string) {
   return { bin, s3: join(dir, "s3"), ghLog: join(dir, "gh.log") };
 }
 
-function r2(dir: string, args: string[], env: Record<string, string> = {}) {
+/** Runs lm-saves-r2.sh (or a mutant) against the fake bucket; any delete call reaching the bucket fails the test unless allowDelete. */
+function r2(dir: string, args: string[], env: Record<string, string> = {}, script = R2, allowDelete = false) {
   const t = fakeTools(dir);
-  const r = spawnSync("bash", [R2, ...args], { encoding: "utf8", cwd: dir, env: { PATH: `${t.bin}:/usr/bin:/bin`, FAKE_S3: t.s3, ...R2_ENV, ...env } });
-  return { status: r.status, out: r.stdout, err: r.stderr, s3: t.s3 };
+  const r = spawnSync("bash", [script, ...args], { encoding: "utf8", cwd: dir, env: { PATH: `${t.bin}:/usr/bin:/bin`, FAKE_S3: t.s3, ...R2_ENV, ...env } });
+  const deletes = existsSync(`${t.s3}.deletes`) ? readFileSync(`${t.s3}.deletes`, "utf8") : "";
+  if (!allowDelete) assert.equal(deletes, "", `a delete call reached the bucket: ${deletes}`);
+  return { status: r.status, out: r.stdout, err: r.stderr, s3: t.s3, deletes };
 }
 
 function fakeSave(saves: string, step: number) {
@@ -238,7 +241,7 @@ const quiet = (out: string) => {
   assert.ok(!/https?:|r2\.cloudflarestorage|s3:\/\/|boom/.test(out), `no URL and no aws text in the output: ${out}`);
 };
 
-test("m148 wire: lm-saves-r2.sh keeps the latest 2 saves per chain, uploads the manifest last, prints codes and shas only", () => withDir((dir) => {
+test("m148 wire: lm-saves-r2.sh is add-only (every save stays, no delete call), uploads the manifest last, prints codes and shas only", () => withDir((dir) => {
   const saves = join(dir, "w/saves");
   const shas: string[] = [];
   for (const st of [10, 20, 30]) {
@@ -248,7 +251,7 @@ test("m148 wire: lm-saves-r2.sh keeps the latest 2 saves per chain, uploads the 
     assert.match(r.out, new RegExp(`^R2_PUT save=save-0000000${st} manifest=${shas.at(-1)}$`, "m"), "the job log carries each save's manifest sha256");
   }
   const chainDir = join(dir, "s3", R2_ENV.LM_SAVES_R2_BUCKET, "lm-saves/123");
-  assert.deepEqual(readdirSync(chainDir).sort(), ["save-000000020", "save-000000030"], "only the latest 2 saves stay in the bucket");
+  assert.deepEqual(readdirSync(chainDir).sort(), ["save-000000010", "save-000000020", "save-000000030"], "add-only: every save stays in the bucket");
   const again = r2(dir, ["put", "123", saves]);
   assert.equal(again.status, 0); assert.equal(again.out, "", "nothing new: quiet (the training step calls put every minute)");
   // the manifest is the last object of each save; the endpoint comes from the environment, never argv
@@ -289,8 +292,54 @@ test("m148 wire: lm-saves-r2.sh fails closed: missing config, missing tool, bad 
   assert.equal(r2(dir, ["uploaded", saves, "save-000000005"]).out, "R2_SAVE_NOT_UPLOADED\n", "a failed upload never counts as uploaded");
   const g = r2(dir, ["get", "7", "save-000000005", join(dir, "d2")]);
   assert.equal(g.out, "R2_GET_FAILED\n", "a save without its manifest is not fetched");
-  const ok2 = r2(dir, ["put", "7", saves]); assert.equal(ok2.status, 0); assert.match(ok2.out, /^R2_PUT save=save-000000005 manifest=[0-9a-f]{64}$/m, "near miss: the retry uploads it");
+  // a retry never overwrites the partial save (its files are already under the name): refused, still no manifest
+  const ok2 = r2(dir, ["put", "7", saves]); assert.equal(ok2.status, 1); assert.equal(ok2.out, "R2_SAVE_EXISTS save=save-000000005\n");
+  assert.ok(!existsSync(join(dir, "s3", R2_ENV.LM_SAVES_R2_BUCKET, "lm-saves/7/save-000000005/manifest.json")), "the partial save stays partial (resume refuses it)");
+  fakeSave(saves, 6);
+  const ok3 = r2(dir, ["put", "7", saves]); assert.equal(ok3.status, 1); assert.match(ok3.out, /^R2_PUT save=save-000000006 manifest=[0-9a-f]{64}$/m, "near miss: the next save uploads");
   const nm = r2(dir, ["get", "8", "save-000000005", join(dir, "d3")]); assert.equal(nm.out, "R2_GET_FAILED\n", "another chain's prefix is not this chain's");
+}));
+
+test("m148 wire (Auditor #657): no bucket delete in lm-saves-r2.sh; put refuses a save name already in the bucket; near miss and killed mutants", () => withDir((dir) => {
+  const src = readFileSync(R2, "utf8");
+  const code = src.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+  assert.ok(!/ rm |\brm\b|delete-object|delete-objects|\brb\b|s3api|\bmv\b|--delete|prune|KEEP/.test(code), "no delete form and no pruning left");
+  const bucket = join(dir, "s3", R2_ENV.LM_SAVES_R2_BUCKET, "lm-saves/9");
+  // another job (a crashed link re-run, a second chain link with the same step) already put save-000000010 under chain 9
+  mkdirSync(join(bucket, "save-000000010"), { recursive: true }); writeFileSync(join(bucket, "save-000000010/manifest.json"), "old");
+  const saves = join(dir, "w/saves"); fakeSave(saves, 10); fakeSave(saves, 11);
+  const r = r2(dir, ["put", "9", saves]);
+  assert.equal(r.status, 1); quiet(r.out + r.err);
+  assert.match(r.out, /^R2_SAVE_EXISTS save=save-000000010$/m);
+  assert.equal(readFileSync(join(bucket, "save-000000010/manifest.json"), "utf8"), "old", "the existing save is not overwritten");
+  assert.equal(r2(dir, ["uploaded", saves, "save-000000010"]).out, "R2_SAVE_NOT_UPLOADED\n", "a refused save never counts as uploaded (the chain stops)");
+  // near miss: the new name in the same run uploads
+  assert.match(r.out, /^R2_PUT save=save-000000011 manifest=[0-9a-f]{64}$/m);
+  assert.deepEqual(readdirSync(bucket).sort(), ["save-000000010", "save-000000011"]);
+  // killed mutant: without the exists check in put, the existing save is overwritten
+  const anchor = `    exists "$chain" "$name"; case $? in 0) echo "R2_SAVE_EXISTS save=$name"; rc=1; continue ;; 1) ;; *) rc=1; continue ;; esac\n`;
+  assert.equal(src.split(anchor).length, 2);
+  const md = join(dir, "m"); mkdirSync(join(md, "s3", R2_ENV.LM_SAVES_R2_BUCKET, "lm-saves/9/save-000000010"), { recursive: true });
+  writeFileSync(join(md, "s3", R2_ENV.LM_SAVES_R2_BUCKET, "lm-saves/9/save-000000010/manifest.json"), "old");
+  const mut = join(dir, "mut.sh"); writeFileSync(mut, src.replace(anchor, ""));
+  const ms = join(md, "w/saves"); fakeSave(ms, 10);
+  const m = r2(md, ["put", "9", ms], {}, mut);
+  assert.equal(m.status, 0); assert.notEqual(readFileSync(join(md, "s3", R2_ENV.LM_SAVES_R2_BUCKET, "lm-saves/9/save-000000010/manifest.json"), "utf8"), "old", "mutant killed: overwritten without the check");
+  // killed mutant: a listing error must refuse, not count as "no such save"
+  const lanchor = `  [ "$rc" = 0 ] || [ "$rc" = 1 ] && { [ "$rc" = 0 ] || [ -z "$out" ]; } || { echo "R2_LIST_FAILED"; return 2; }\n`;
+  assert.equal(src.split(lanchor).length, 2);
+  const ld = join(dir, "l"); const ls = join(ld, "w/saves"); fakeSave(ls, 12);
+  const lf = r2(ld, ["put", "9", ls], { FAKE_S3_LS_RC: "254" });
+  assert.equal(lf.status, 1); assert.equal(lf.out, "R2_LIST_FAILED\n");
+  const lmut = join(dir, "lmut.sh"); writeFileSync(lmut, src.replace(lanchor, ""));
+  const ld2 = join(dir, "l2"); const ls2 = join(ld2, "w/saves"); fakeSave(ls2, 12);
+  assert.notEqual(r2(ld2, ["put", "9", ls2], { FAKE_S3_LS_RC: "254" }, lmut).out, "R2_LIST_FAILED\n", "mutant killed (list error)");
+  // killed mutant: a put that deletes (the removed prune) is caught by the fake bucket
+  const dmut = join(dir, "dmut.sh");
+  writeFileSync(dmut, src.replace(`    echo "R2_PUT save=$name manifest=$sha"\n`, `    echo "R2_PUT save=$name manifest=$sha"\n    q s3 rm "s3://$B/$F/$chain/save-000000001/" --recursive\n`));
+  assert.notEqual(readFileSync(dmut, "utf8"), src);
+  const dd = join(dir, "d"); const ds = join(dd, "w/saves"); fakeSave(ds, 13);
+  assert.notEqual(r2(dd, ["put", "9", ds], {}, dmut, true).deletes, "", "mutant killed: the fake bucket records the delete call");
 }));
 
 /** One step's run script from the workflow (the block under `run: |`, dedented). */

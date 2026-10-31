@@ -9,7 +9,7 @@ name: peace-lm-train
 # memcheck (on the box, against core) passes. Stage: pretrain only; finetune is a reserved hook and is refused.
 # M148 (limit-breaker step 1; Peace "R2 is fine", Auditor gates): a run is one link of a chain. train.py saves the
 # full resume state every 20 min and at the soft deadline (job start + 340 min); lm-saves-r2.sh copies each save to
-# one private R2 bucket used only for these saves (latest 2 kept), with credentials only from the existing
+# one private R2 bucket used only for these saves (add-only: no save removed or overwritten), with credentials only from the existing
 # environment peaceai-results (main only). The chain job (actions: write, no checkout, no secrets) dispatches the next link with
 # the save name and its manifest sha256 taken from THIS run's train job outputs: the expected sha is a trusted
 # record, never read from the bucket, and train.py re-verifies the manifest and every file before loading. Missing

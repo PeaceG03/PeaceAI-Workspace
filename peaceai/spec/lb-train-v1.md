@@ -85,8 +85,9 @@ checks no other workflow names the cycle; m165-lb-daily-run.test.ts pins the wra
   to Results files, never latest.json; the restored save must hash to the record's manifest sha256 before any
   resume (LB_DAILY_SAVE_SHA_MISMATCH), chain.json is written from the record, and lb-daily-cycle.sh refuses a plan
   that is not the trusted one (LB_DAILY_EXPECT, DAILY_PLAN_UNTRUSTED). The sha never comes from the bucket or state;
-- the new save is uploaded with put-one (its own manifest sha256 only), the chain's other saves are pruned except
-  the new and the trusted one; then ONE add-only row is landed (new file only, never latest.json);
+- the checkout and key scripts are re-verified right before each later key use (copy, land); the new save is
+  uploaded with put-one (its own manifest sha256 only; an existing name is refused, R2_SAVE_EXISTS; the bucket is
+  add-only, nothing is removed); then ONE add-only row is landed (new file only, never latest.json);
 - LoRA is refused (dailyRun.loraUnlock: until a full-model run beats the same-split unigram baseline 2.5156 bpb,
   LB_DAILY_LORA_LOCKED; the wrapper passes no LoRA flag even after);
 - no Actions artifacts or cache; the R2 secrets are in env only for the restore and copy steps, the Results key only

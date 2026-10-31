@@ -3,27 +3,25 @@
 # Credentials come only from the environment of the calling workflow step (GitHub environment peaceai-results,
 # main only): LM_SAVES_R2_ACCOUNT_ID, LM_SAVES_R2_ACCESS_KEY_ID, LM_SAVES_R2_SECRET_ACCESS_KEY, LM_SAVES_R2_BUCKET.
 # Every key is <folder>/<chain id>/<save name>/<file> (folder lm-saves, or lb-daily for the daily cycle); nothing outside
-# <folder>/<chain id>/ is read, written or
-# deleted. Only the latest 2 saves of a chain are kept in the bucket. Output is one filtered line per action (codes,
+# <folder>/<chain id>/ is read or written, and nothing in the bucket is ever removed or overwritten (a save
+# name that already exists is refused with R2_SAVE_EXISTS; Auditor, #657). Output is one filtered line per action (codes,
 # save names, step numbers and manifest sha256 only): no URL, no key, no bucket name, no aws output.
 # The bucket is never trusted on its own: a resume needs the expected manifest sha256 from a trusted record (the
 # previous run's job output passed by the chain job, or a job-log R2_PUT line), and train.py --resume-manifest-sha
 # re-verifies the manifest and every file's sha256 and size before anything is loaded.
 #
 #   lm-saves-r2.sh check                         -> "R2 ok" or exit 1 with R2_NOT_CONFIGURED / R2_TOOL_MISSING
-#   lm-saves-r2.sh put CHAIN SAVES_DIR           -> uploads new complete saves (manifest.json last), prunes to 2
+#   lm-saves-r2.sh put CHAIN SAVES_DIR           -> uploads new complete saves (manifest.json last); refuses a name already in the bucket
 #   lm-saves-r2.sh get CHAIN SAVE DEST           -> downloads one save into DEST (must not exist yet)
 #   lm-saves-r2.sh uploaded SAVES_DIR SAVE       -> exit 0 if SAVE was uploaded by put, else R2_SAVE_NOT_UPLOADED
-#   lm-saves-r2.sh put-one CHAIN SAVES_DIR SAVE SHA [TRUSTED_SAVE]
+#   lm-saves-r2.sh put-one CHAIN SAVES_DIR SAVE SHA
 #                                                 -> uploads exactly SAVE (manifest.json last) only if its manifest sha256
-#                                                    is SHA (else R2_SHA_MISMATCH), then removes every other save of the
-#                                                    chain except TRUSTED_SAVE (the save the trusted record points at, which
-#                                                    stays until a newer row is recorded)
+#                                                    is SHA (else R2_SHA_MISMATCH) and CHAIN/SAVE/ is not in the bucket yet
+#                                                    (else R2_SAVE_EXISTS); nothing is removed
 # Optional first argument --folder lm-saves|lb-daily (default lm-saves): the daily cycle (peace-lb-daily.yml) keeps its
 # saves under their own folder lb-daily/<chain id>/; no other folder is accepted (R2_BAD_ARGS).
 set -uo pipefail
 
-KEEP=2
 SAVE_RE='^save-[0-9]{9}$'
 CHAIN_RE='^[0-9]{1,20}$'
 FILE_RE='^[A-Za-z0-9._-]+$'
@@ -53,20 +51,15 @@ setup() {
 
 q() { aws "$@" --only-show-errors > /dev/null 2>&1; }
 
-prune() { # keep the latest KEEP saves of this chain (names are zero-padded steps, so name order is step order)
-  local chain=$1 names n i=0
-  names=$(aws s3 ls "s3://$B/$F/$chain/" 2> /dev/null | awk '$1 == "PRE" { print $2 }' | tr -d / | grep -E "$SAVE_RE" | LC_ALL=C sort -r) \
-    || { echo "R2_PRUNE_FAILED"; return 1; }
-  for n in $names; do
-    i=$((i + 1))
-    [ "$i" -le "$KEEP" ] && continue
-    q s3 rm "s3://$B/$F/$chain/$n/" --recursive || { echo "R2_PRUNE_FAILED"; return 1; }
-    echo "R2_PRUNE save=$n"
-  done
+exists() { # exit 0 if <folder>/<chain>/<save>/ already has any object (s3 cp would silently overwrite it)
+  local chain=$1 name=$2 out rc
+  out=$(aws s3 ls "s3://$B/$F/$chain/" 2> /dev/null); rc=$?
+  [ "$rc" = 0 ] || [ "$rc" = 1 ] && { [ "$rc" = 0 ] || [ -z "$out" ]; } || { echo "R2_LIST_FAILED"; return 2; }
+  printf '%s\n' "$out" | awk '$1 == "PRE" { print $2 }' | tr -d / | grep -qx "$name"
 }
 
 put() {
-  local chain=$1 dir=$2 state man sha f name rc=0 new=0
+  local chain=$1 dir=$2 state man sha f name rc=0
   [[ "$chain" =~ $CHAIN_RE ]] || die R2_BAD_ARGS
   [ -d "$dir" ] || return 0  # nothing saved yet: quiet (the training step calls this every minute)
   state="$dir/../r2-uploaded.txt"; touch "$state"
@@ -76,6 +69,7 @@ put() {
     grep -qx "$name" "$state" && continue
     man="$d/manifest.json"; [ -f "$man" ] || continue  # a save is visible only after its rename, manifest included
     sha=$(sha256sum "$man" | cut -c1-64)
+    exists "$chain" "$name"; case $? in 0) echo "R2_SAVE_EXISTS save=$name"; rc=1; continue ;; 1) ;; *) rc=1; continue ;; esac
     for f in "$d"/*; do
       [ "$(basename "$f")" = manifest.json ] && continue
       [[ "$(basename "$f")" =~ $FILE_RE ]] && [ -f "$f" ] && [ ! -L "$f" ] || { echo "R2_PUT_REFUSED save=$name"; rc=1; continue 2; }
@@ -83,17 +77,15 @@ put() {
     done
     # the manifest goes last: a save without its manifest is refused on resume (SAVE_MISSING / SAVE_MANIFEST_SHA)
     q s3 cp "$man" "s3://$B/$F/$chain/$name/manifest.json" || { [ -d "$d" ] && { echo "R2_PUT_FAILED save=$name"; rc=1; } || echo "R2_PUT_SKIPPED save=$name"; continue; }
-    echo "$name" >> "$state"; new=1
+    echo "$name" >> "$state"
     echo "R2_PUT save=$name manifest=$sha"
   done
-  [ "$new" = 1 ] && { prune "$chain" || rc=1; }
   return $rc
 }
 
 put_one() {
-  local chain=$1 dir=$2 name=$3 want=$4 keep=${5:-} d man f names n
+  local chain=$1 dir=$2 name=$3 want=$4 d man f
   [[ "$chain" =~ $CHAIN_RE ]] && [[ "$name" =~ $SAVE_RE ]] && [[ "$want" =~ ^[0-9a-f]{64}$ ]] || die R2_BAD_ARGS
-  [ -z "$keep" ] || [[ "$keep" =~ $SAVE_RE ]] || die R2_BAD_ARGS
   d="$dir/$name"; man="$d/manifest.json"
   [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$man" ] && [ ! -L "$man" ] || die R2_PUT_REFUSED
   [ "$(sha256sum "$man" | cut -c1-64)" = "$want" ] || die R2_SHA_MISMATCH
@@ -101,19 +93,13 @@ put_one() {
     [ "$(basename "$f")" = manifest.json ] && continue
     [[ "$(basename "$f")" =~ $FILE_RE ]] && [ -f "$f" ] && [ ! -L "$f" ] || die R2_PUT_REFUSED
   done
+  exists "$chain" "$name"; case $? in 0) die R2_SAVE_EXISTS ;; 1) ;; *) exit 1 ;; esac
   for f in "$d"/*; do
     [ "$(basename "$f")" = manifest.json ] && continue
     q s3 cp "$f" "s3://$B/$F/$chain/$name/$(basename "$f")" || die R2_PUT_FAILED
   done
   q s3 cp "$man" "s3://$B/$F/$chain/$name/manifest.json" || die R2_PUT_FAILED
   echo "R2_PUT save=$name manifest=$want"
-  names=$(aws s3 ls "s3://$B/$F/$chain/" 2> /dev/null | awk '$1 == "PRE" { print $2 }' | tr -d / | grep -E "$SAVE_RE") \
-    || die R2_PRUNE_FAILED
-  for n in $names; do
-    [ "$n" = "$name" ] || [ "$n" = "$keep" ] && continue
-    q s3 rm "s3://$B/$F/$chain/$n/" --recursive || die R2_PRUNE_FAILED
-    echo "R2_PRUNE save=$n"
-  done
 }
 
 get() {
@@ -130,7 +116,7 @@ cmd=${1:-}
 case "$cmd" in
   check) [ $# -eq 1 ] || die R2_BAD_ARGS; setup; echo "R2 ok" ;;
   put) [ $# -eq 3 ] || die R2_BAD_ARGS; setup; put "$2" "$3" ;;
-  put-one) [ $# -eq 5 ] || [ $# -eq 6 ] || die R2_BAD_ARGS; setup; put_one "$2" "$3" "$4" "$5" "${6:-}" ;;
+  put-one) [ $# -eq 5 ] || die R2_BAD_ARGS; setup; put_one "$2" "$3" "$4" "$5" ;;
   get) [ $# -eq 4 ] || die R2_BAD_ARGS; setup; get "$2" "$3" "$4" ;;
   uploaded) [ $# -eq 3 ] || die R2_BAD_ARGS; [[ "$3" =~ $SAVE_RE ]] || die R2_BAD_ARGS
     grep -qx "$3" "$2/../r2-uploaded.txt" 2> /dev/null || die R2_SAVE_NOT_UPLOADED; echo "R2 uploaded save=$3" ;;
