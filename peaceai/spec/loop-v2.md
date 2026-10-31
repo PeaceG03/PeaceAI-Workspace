@@ -185,6 +185,30 @@ and numbers only, as v1. Hidden-set rows carry the taskKey plus scores only: `ru
 always null there (together they could identify the repo); the loop writes them so and the validator refuses
 anything else (`hidden_detail`).
 
+## Planner (M162)
+
+The loop plans with whichever planner `peaceai/lib/plandefault.ts` `selectPlanner` picks, never a planner of its own
+choosing: no flag = `selectPlanner`'s default (`plan-only-v3` since #650, see `plan-default.md`), and
+`tsx peaceai/bin/loop.ts run <taskfile> --planner v1|v2|v3` (or the full `plan-only-vN` name) picks another. Any other
+value is refused `PLANNER_UNKNOWN` (exit 2; `runLoopFile` returns the same code) before the task file is read or a
+row is written. `bin/loop.ts`'s summary line (the loop scorecard printout) starts with `planner=<name>`. The
+proposers read only the plan's steps, which every planner shares, so they are unchanged.
+
+Rows the loop writes from M162 on are `peaceai-plan-loop:v3`: a v2 row (same keys and rules, loop still `loop-v2`)
+plus two required keys, `planner` (one of `plan-only-v1` / `plan-only-v2` / `plan-only-v3`, the same list as
+plandefault's `PLANNERS`) and `plannerSha256` (that planner's own fingerprint: `plannerSha256` / `plannerSha256V2` /
+`plannerSha256V3`). Codes `planner` / `planner_sha` refuse an unknown name or a malformed digest; a v3 row without
+the keys, or a v1 / v2 row with them, is `loop_keys`. Existing v1 and v2 rows keep validating as before (the log
+stays add-only). No planner file is edited, so no planner fingerprint moves.
+
+Tests: `peaceai/test/m162-loop-planner.test.ts` (cases in `m162-cases.ts`: the default row is v3 with v3's digest and
+the loop used v3's plan; near miss: v1 / v2 are honoured with their own digests; near-miss names `V3`, ` v3`, `v4`,
+empty, `__proto__` are unknown; `runLoopFile` refuses an unknown flag without a row; the row validator; static
+checks on loop.ts and bin/loop.ts). `m162-mutation.test.ts` deletes each `// m162-guard:<id>` line and applies fixed
+semantic mutants (a hard-coded v1 planner, a v1 default, a dropped flag, a bypassed selectPlanner, one digest for
+every planner, a plan that ignores the picked planner, v3 rows validated as v2); each must fail a case with an
+assertion. The plan-observing cases need the stage-2 candidate uid (else they assert the `CAND_UID_*` refusal).
+
 ## v2 limits
 
 - vitest / jest: per-test names are not collected (only counts); feedback to the proposer has codes, no names.

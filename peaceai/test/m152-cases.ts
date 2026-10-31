@@ -267,7 +267,7 @@ export const CASES: Case[] = [
       assert.ok(bad.row.baseline && bad.row.baseline.failing > 0, "the baseline still ran and is recorded");
       assert.equal(loopRowProblem(bad.row), null);
       assert.ok(!JSON.stringify(bad.row).includes("m152-secret"), "the error text reached the row");
-      const { runner: _r, deps: _d, baseline: _b, ...v1 } = bad.row;
+      const { runner: _r, deps: _d, baseline: _b, planner: _p, plannerSha256: _ps, ...v1 } = bad.row;
       assert.equal(loopRowProblem({ ...v1, schema: "peaceai-plan-loop:v1", loop: "loop-v1" } as never), "code", "v1 rows cannot carry PROPOSER_FAILED");
       assert.equal(loopRowProblem({ ...v1, code: "NO_EDIT", schema: "peaceai-plan-loop:v1", loop: "loop-v1" } as never), null, "near miss: the same v1 row with a v1 code validates");
       // near miss: the same proposer, not throwing
