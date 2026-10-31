@@ -96,7 +96,7 @@ async function suite(m: Mod, bin: string): Promise<void> {
     assert.equal(e.out, e.errs[0], "far reset: original error");
     assert.deepEqual(e.slept, []);
   }
-  // Default caps stay under the job timeouts (builder-log 45 min with two lookup steps, tamper-proof 30 min).
+  // Default caps stay under the job timeouts (builder-log 50 min with two lookup steps, tamper-proof 30 min).
   assert.ok(P.maxWaitMs + P.slackMs <= P.maxTotalWaitMs && P.maxTotalWaitMs <= 17 * 60_000 && P.maxRetries <= 3);
 }
 

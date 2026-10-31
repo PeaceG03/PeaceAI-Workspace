@@ -2,7 +2,7 @@
 // lib/plandefault.ts (now plan-only-v4: hidden 0.337 vs 0.287, gain on 3 of 20 tasks; v3 before, still selectable).
 //   tsx peaceai/bin/plan.ts run [--planner=v1|v2|v3|v4] <taskfile> plan + grade a locked file (default planner if no flag)
 //   tsx peaceai/bin/plan.ts lock <taskfile>                       same lock as bin/plan-only.ts lock (one lock serves all)
-// bin/plan-only.ts (v1), bin/plan-only-v2.ts and bin/plan-only-v3.ts are unchanged and still run their planner.
+// bin/plan-only.ts (v1), bin/plan-only-v2.ts, bin/plan-only-v3.ts and bin/plan-only-v4.ts still run their own planner.
 // Prints codes and numbers only. For a hidden-set file it prints nothing that names a task.
 import { typescriptEntry, useTypescript } from "../lib/tsresolve.ts";
 import { selectPlanner } from "../lib/plandefault.ts";

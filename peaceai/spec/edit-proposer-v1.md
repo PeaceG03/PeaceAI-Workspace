@@ -46,10 +46,26 @@ team's tests pass and the related tests do not regress (loop v2, unchanged).
   FETCH_FAILED or rethrow must each fail a case; the cases need the stage-2 candidate uid).
 - (after #658, Auditor's note) A `next()` that returns no proposal at all (undefined, or any other non-object) also
   ends the task as `PROPOSER_FAILED` (`// m164-guard:next-empty`), at attempt 1 or a later one. Before, the
-  `"refuse" in p` check threw a TypeError on it and the outer catch called it FETCH_FAILED. A malformed object (one
-  with neither `refuse` nor `edits`) is not covered by this guard. Tests: the `next-empty` case in
+  `"refuse" in p` check threw a TypeError on it and the outer catch called it FETCH_FAILED. (A malformed object was not
+  covered by that guard; see the next item.) Tests: the `next-empty` case in
   `m164-loop-cases.ts` (undefined at attempt 1 and at attempt 2; near miss: a `{ refuse: "NO_EDIT" }` proposal still
   ends NO_EDIT) and the mutants `drop-next-empty` and `empty-code-fetch-failed` in `m164-proposer-next.test.ts`.
+- (after #659, Auditor's note) A proposal that does not refuse must carry a valid `edits` array: an array whose
+  every element is an object with a string `path` and a string `content`. Anything else (`[]` or `{}` as the whole
+  proposal, a non-array `edits` such as `{ edits: {} }`, or a bad element such as `{ edits: [1] }`) ends the task as
+  `PROPOSER_FAILED` (`// m164-guard:next-malformed`), at any attempt. Before, `applyEdits` threw on it and the
+  outer catch called it FETCH_FAILED. Decision: an EMPTY `edits` array (`{ edits: [] }`) is well formed. It is a
+  no-op attempt that is applied (nothing changes) and graded like any other, so it normally fails the grade and the
+  loop asks again. It is not PROPOSER_FAILED, because "propose nothing this round" is a legal (if useless) answer,
+  while a missing or non-array `edits` is a broken proposer. The value of `refuse` is not checked here. A throwing
+  fetcher still ends FETCH_FAILED.
+  Tests (cases in `m164-loop-cases.ts`):
+  - `next-malformed`: the five malformed shapes at attempt 1, `{}` at attempt 2, and the near miss
+    `{ edits: [] }` at attempt 1, after which attempt 2's fix passes;
+  - `fetch-failed`: a throwing fetcher gives FETCH_FAILED with no error text in the row.
+
+  Mutants (in `m164-proposer-next.test.ts`), each killed: `drop-next-malformed`, `malformed-code-fetch-failed`,
+  `edit-elements-unchecked` and `empty-edits-refused`.
 - `loopSha256()` hashes lib/editpropose.ts as well as loop.ts, looprow.ts and loopdeps.ts, so every row binds the
   proposer version it ran with (`// m152-guard:sha-proposer`). Rows written before this change carry the older hash.
 - `Feedback.tests` (the attempt's counts) and `ProposeInput.baseline`.
