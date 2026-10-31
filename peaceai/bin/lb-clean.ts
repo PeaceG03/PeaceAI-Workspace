@@ -1,19 +1,25 @@
 // Limit-breaker step 2: the training-data cleaner (box only; rules in peaceai/lib/lbclean.ts, spec peaceai/spec/lb-clean-v1.md).
 //   lb-clean.ts --in <corpus dir> --out <dir> --exclusions <file> [--refs <dir>] [--config <file>] [--dry-run]
+//               [--drop-hashes <file> ...]
 //     <corpus dir>: docs.jsonl + manifest.jsonl (nl-pairs.ts / ft_prepare.py / eval_dedup.py output). Writes <out>/docs.jsonl,
 //     <out>/manifest.jsonl, <out>/clean-report.json (counts only) and <out>/fingerprint.json. --dry-run writes nothing
 //     and prints the counts. --refs: the public task-set repos' code (docs.jsonl + manifest.jsonl, from --build-refs).
+//     --drop-hashes (repeatable): a strict file of text sha256s (Auditor's --matched-out output); every piece or FIM
+//     example whose exact text hashes to a listed value is dropped (taskset_hidden_dup). The files' sha256s go into
+//     the fingerprint.
 //   lb-clean.ts --build-refs --tasks <tasks json> --trees <dir> --out <dir> --exclusions <file>
 //     Collects the code files of each task's checkout (<trees>/<task id>/) into a refs corpus. A task repo must be
 //     named in the exclusion file (public set by name); a repo that is only hash-listed is never read or named.
 //   lb-clean.ts --build-refs --tree <dir> [--tree <dir> ...] --out <dir> --exclusions <file>
 //     Collects the code files of any local directory into a refs corpus. Rows carry the label local/tree and an
 //     opaque path (t<i>/f<n>): no repo or file name is written or printed, so a hidden checkout can be used as refs.
-//   lb-clean.ts --in <cleaned corpus dir> --refs <dir> --report-only --exclusions <file> [--config <file>]
-//     Check-only: the taskset_near_dup test alone over every doc of an already-cleaned corpus. Writes nothing and
-//     prints counts only; exits 2 with code taskset_near_dup_found when the count is above 0.
+//   lb-clean.ts --in <cleaned corpus dir> --refs <dir> --report-only --exclusions <file> [--config <file>] [--matched-out <file>]
+//     Check-only: the taskset_near_dup test alone over every doc of an already-cleaned corpus. Prints counts only;
+//     exits 2 with code taskset_near_dup_found when the count is above 0. Writes nothing, except with --matched-out:
+//     a new file (refused if it exists) holding the sorted unique sha256 of each matched doc's exact text, one
+//     lowercase hex hash per LF line, nothing else (no name, path or text).
 // Refuses without the exclusion file or without any sha256 (hidden-half) line in it. Prints counts and codes only.
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { typescriptEntry, useTypescript } from "../lib/tsresolve.ts";
 
@@ -107,8 +113,26 @@ if (buildRefs) {
 }
 
 const inDir = opt("--in"), outDir = opt("--out"), refsDir = opt("--refs"), cfgPath = opt("--config") ?? join(ROOT, "peaceai/model/lb-clean.json");
+const matchedOut = opt("--matched-out"), dropPaths: string[] = [];
+for (let p = opt("--drop-hashes"); p !== null; p = opt("--drop-hashes")) dropPaths.push(p);
 if (inDir === null || argv.length) refuse("usage");
 if (reportOnly ? (outDir !== null || dry || refsDir === null) : outDir === null && !dry) refuse("usage");
+if (matchedOut !== null && !reportOnly) refuse("matched_out_needs_report_only"); // m156-guard:matched-needs-report
+if (dropPaths.length && reportOnly) refuse("drop_hashes_not_in_report_only"); // m156-guard:drop-not-report
+// never overwrite (a dangling symlink counts as existing): the hash file is a one-shot handoff
+const exists = (p: string) => { try { lstatSync(p); return true; } catch { return false; } };
+if (matchedOut !== null && exists(matchedOut)) refuse("matched_out_exists"); // m156-guard:matched-exists
+const drop = new Set<string>(), dropSha: string[] = [];
+for (const p of dropPaths) {
+  if (!existsSync(p)) refuse("drop_hashes_missing"); // m156-guard:drop-missing
+  let buf = Buffer.alloc(0); try { buf = readFileSync(p); } catch { refuse("drop_hashes_read"); }
+  const r = L.parseDropHashes(buf);
+  if ("code" in r) refuse(r.code); // m156-guard:drop-parse
+  for (const h of "hashes" in r ? r.hashes : []) drop.add(h);
+  dropSha.push(L.sha256(buf));
+}
+dropSha.sort();
+if (new Set(dropSha).size !== dropSha.length) refuse("drop_hashes_repeated"); // m156-guard:drop-repeated
 if (!existsSync(cfgPath)) refuse("config_missing");
 const cfgBuf = readFileSync(cfgPath);
 let cfg: any; try { cfg = JSON.parse(cfgBuf.toString("utf8")); } catch { refuse("config_json"); }
@@ -124,18 +148,24 @@ if (refsDir !== null) {
 }
 if (reportOnly) {
   // counts only: no output docs, no file names, no text
-  const rep = L.tasksetReport(inp.man.map((m) => inp.docs.get(m.doc)!), refs!, cfg.taskset.maxContainment);
+  const texts = inp.man.map((m) => inp.docs.get(m.doc)!);
+  const rep = L.tasksetReport(texts, refs!, cfg.taskset.maxContainment);
+  if (matchedOut !== null) {
+    const hs = L.matchedTextHashes(texts, refs!, cfg.taskset.maxContainment);
+    // exclusive create (flag wx): fails rather than follow or replace anything created since the check above
+    try { writeFileSync(matchedOut, hs.map((h) => h + "\n").join(""), { flag: "wx", mode: 0o600 }); } catch { refuse("matched_out_write"); } // m156-guard:matched-write
+  }
   console.log(`lb-clean report-only docs=${rep.docs} refFiles=${refs!.files} taskset_near_dup=${rep.taskset_near_dup}`);
   if (rep.taskset_near_dup > 0) { console.log("lb-clean report-only: taskset_near_dup_found"); process.exit(2); }
   process.exit(0);
 }
-const res = L.clean(inp.man.map((m) => ({ doc: m.doc, text: inp.docs.get(m.doc)!, man: m })), cfg, ex, refs);
+const res = L.clean(inp.man.map((m) => ({ doc: m.doc, text: inp.docs.get(m.doc)!, man: m })), cfg, ex, refs, drop); // m156-guard:clean-drop
 const CODE = ["peaceai/lib/lbclean.ts", "peaceai/bin/lb-clean.ts", "peaceai/lib/nlpairs.ts", "peaceai/lib/lmcorpus.ts", "peaceai/lib/tsresolve.ts"];
 const parts = {
   cleanerVersion: L.LB_CLEAN_VERSION, codeSha256: Object.fromEntries(CODE.map((p) => [p, L.sha256(readFileSync(join(ROOT, p)))])),
   typescriptVersion: JSON.parse(readFileSync(join(tsEntry!, "..", "..", "package.json"), "utf8")).version as string,
   configSha256: L.sha256(cfgBuf), exclusionsSha256: ex.fileSha256,
-  input: { docsSha256: L.sha256(inp.docsBuf), manifestSha256: L.sha256(inp.manBuf) }, refs: refsSha,
+  input: { docsSha256: L.sha256(inp.docsBuf), manifestSha256: L.sha256(inp.manBuf) }, refs: refsSha, dropHashesSha256: dropSha, // m156-guard:fp-drop-files
 };
 const fingerprint = L.fingerprintOf(parts);
 const report: Record<string, any> = { ...res.report, fingerprint };

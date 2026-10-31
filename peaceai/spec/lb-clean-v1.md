@@ -1,7 +1,8 @@
 # lb-clean v1: one-pass training-data cleaning (limit-breaker step 2)
 
 Code: `peaceai/lib/lbclean.ts` (pure logic), `peaceai/bin/lb-clean.ts` (file I/O), config `peaceai/model/lb-clean.json`,
-test `m150-lb-clean.test.ts`. Version string `peaceai-lb-clean:v1` (bump on any rule or output-field change).
+test `m150-lb-clean.test.ts` (and `m156-lb-drop-hashes.test.ts` for the hash-only handoff). Version string
+`peaceai-lb-clean:v2` (bump on any rule or output-field change; v2 added `taskset_hidden_dup`, see below).
 
 It is not a second framework. The task-set exclusion is the M147 code in `nlpairs.ts`
 (`parseExclusions`, `isExcludedRepo`, `mentionsExcluded`, `namesHashedRepo`) over the same files
@@ -44,6 +45,7 @@ Per piece:
 |---|---|
 | taskset_near_dup | containment of the piece's `taskset.shingleTokens`-token shingles in the public task-repo trees at or above `maxContainment`. The refs file comes from `--build-refs`: `--tasks` mode accepts only repos named in the public exclusion list, and `--tree` mode accepts any local directory, unnamed (see below). By name, the hidden half is applied only through the hashed-name rules above. |
 | exact_dup | same whitespace-normalized text as an earlier kept piece |
+| taskset_hidden_dup | the piece's exact text sha256 is in a `--drop-hashes` file (see "Hash-only handoff" below). Checked after the dedup tests and after the piece is added to the dedup indexes, so later copies of it are still dropped as exact_dup / near_dup and every other output doc is unchanged |
 | near_dup | MinHash LSH candidates (FNV-32 shingles, fmix32 permutations with sha256-derived seeds, `bands` x rows), then exact shingle Jaccard at or above `jaccard` against an earlier kept piece. The first in doc-id order wins, across splits, so a heldout piece that copies a train piece is dropped. |
 
 Kept pieces:
@@ -72,6 +74,7 @@ is sha256 over canonical sorted-key JSON of:
 - exclusionsSha256
 - input {docsSha256, manifestSha256}
 - refs {docsSha256, manifestSha256} or null
+- dropHashesSha256: the sorted sha256s of the `--drop-hashes` files (`[]` without the flag; strictly sorted, unique)
 
 Without the cleaner version the fingerprint is refused.
 
@@ -89,14 +92,56 @@ containment and threshold) over every doc of an already-cleaned corpus. It write
 `lb-clean report-only: taskset_near_dup_found` and exits 2. Refusals exit 1. `--out` and `--dry-run` are refused
 with `usage`, and so is a run without `--refs`.
 
-The cleaning rules are unchanged, so the version stays `peaceai-lb-clean:v1`. Because the code sha256s are in the
+The cleaning rules were unchanged by report-only, so it kept `peaceai-lb-clean:v1`. Because the code sha256s are in the
 fingerprint, a cleaner built from this code still gets a new fingerprint.
+
+## Hash-only handoff of the hidden near-dup check (M156)
+
+We never see the hidden task trees, names or paths, so a hidden near-dup found by Auditor comes back as hashes only.
+
+1. Auditor: `--in <cleaned corpus> --refs <hidden refs> --report-only --matched-out <new file>`. Same test and the
+   same stdout and exit codes as `--report-only`. It also writes the sha256 (lowercase hex) of the exact UTF-8 text
+   of every matched doc, one per LF line, sorted, deduplicated, nothing else (no name, path or text). It is the same
+   value as that doc's `textSha256` in the output manifest. The file is created exclusively (`wx`, mode 600). It
+   is refused (`matched_out_exists`) if anything exists at the path, a dangling symlink included, and refused
+   (`matched_out_write`, no path printed) if it cannot be created. It is refused without `--report-only`
+   (`matched_out_needs_report_only`). With 0 matches the file is empty and the exit is 0.
+2. We: append its lines to `peaceai/model/lb-hidden-drop-hashes.txt` (add-only, checked by m156 against main), then
+   clean again with `--drop-hashes peaceai/model/lb-hidden-drop-hashes.txt` (repeatable).
+3. Auditor re-runs step 1 on the new output, and the count must be 0.
+
+Design:
+
+- Text hash, not the normalized key. The hash is over the exact doc text, so it is stable and equals the manifest's
+  `textSha256`. A whitespace variant is a different hash, and a near copy elsewhere is still caught by the dedup
+  rules (see below).
+- Hashes apply per piece and per FIM example, not to the pre-split file. The report-only check sees output docs,
+  and an output doc is one of three things: a piece (an unsplit doc's one piece is its whole text), a best repeat
+  (its piece's text) or a FIM example. A listed piece is dropped (`taskset_hidden_dup`) together with its repeats and
+  its FIM example, which is never built. A listed FIM example whose piece is not listed is skipped
+  (`fimSkips.fim_hidden_dup`) and the piece is kept. A whole split file's hash never appears in the output, so
+  `--matched-out` never lists one.
+- One round is enough. A dropped piece stays in the dedup indexes, so the drop changes nothing else: the new output
+  is the old output minus exactly the listed texts and the repeats and FIM examples of listed pieces. With the same
+  input, refs and config, every doc left was unmatched before, so step 3 gives 0.
+- The `--drop-hashes` file is strict: each line is `^[0-9a-f]{64}$`, LF only, and every line ends with a newline
+  (`drop_hashes_bad_line`, `drop_hashes_no_final_newline`). Uppercase, 63 or 65 chars, spaces, CR, blank lines and
+  prefixes are refused. Duplicates are refused (`drop_hashes_duplicate`), and so is an empty file
+  (`drop_hashes_empty`). Order is free because the committed file is add-only. A missing file gives
+  `drop_hashes_missing`. The same file passed twice gives `drop_hashes_repeated`. `--drop-hashes` with
+  `--report-only` gives `drop_hashes_not_in_report_only`.
+- Without `--drop-hashes`, docs.jsonl and manifest.jsonl are byte-identical to v1's. The fingerprint changes anyway,
+  because the code sha256s and the version string are in it. clean-report.json gains `drops.taskset_hidden_dup: 0`
+  and `dropHashes: 0`.
 
 ## Fail-closed refusals
 
 `exclusions_missing`, `exclusions_bad_line`, `exclusions_empty`, `exclusions_no_hidden_hashes`, `config_*`,
 `input_missing`, `input_docs`, `input_manifest`, `input_docs_manifest_differ`, `refs_repo_not_public_by_name`,
-`tasks_empty`, `refs_empty`, `tree_missing`, `tree_read`, `typescript_not_found`, `usage`.
+`tasks_empty`, `refs_empty`, `tree_missing`, `tree_read`, `typescript_not_found`, `usage`, `matched_out_needs_report_only`,
+`matched_out_exists`, `matched_out_write`, `drop_hashes_missing`, `drop_hashes_read`, `drop_hashes_empty`,
+`drop_hashes_no_final_newline`, `drop_hashes_bad_line`, `drop_hashes_duplicate`, `drop_hashes_repeated`,
+`drop_hashes_not_in_report_only`.
 
 `tree_read`: a file or directory in a `--build-refs` tree (`--tree` or `--trees`) that cannot be listed, stat-ed or
 read (for example `chmod 000`) refuses with only `lb-clean refused: tree_read` on stdout. The error, its path and

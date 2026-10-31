@@ -31,6 +31,7 @@ const block = (p: string, n = 40, from = 0) => Array.from({ length: n }, (_, i) 
 const fn = (name: string, k: number, body = 6) => `/** ${name} returns a value for ${k}. */\nexport function ${name}(a: number, b: number): number {\n` + Array.from({ length: body }, (_, i) => `  const ${name}T${i} = a * ${k + i} + b - ${i};\n  if (${name}T${i} > ${k * 3 + i}) { return ${name}T${i} - ${k}; }\n`).join("") + `  return [a, b].reduce((s, x) => s + x, ${k});\n}\n`;
 type Mod = typeof real;
 const doc = (i: number, text: string, man: Partial<real.InDoc["man"]> = {}): real.InDoc => ({ doc: i, text, man: { doc: i, split: "train", repo: "clean/lib", path: `src/f${i}.ts`, function: `fn${i}`, ...man } });
+const src0 = () => block("fim");
 const noFim = (c: real.LbConfig) => { const x = clone(c); x.fim.rate = 0; return x; };
 
 /** The rule case table. Returns the names of failing cases (empty = all pass). Used on the real module and on mutants. */
@@ -108,6 +109,33 @@ function runCases(m: Mod): string[] {
   ok("split-near-miss-diff", () => pieces(`diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n` + big).length === 1);
   ok("split-near-miss-one-unit", () => { const one = fn("huge", 3, 60); return one.length > CFG.split.minChars && pieces(one).length === 1; });
   ok("split-in-pass", () => { const r = run([doc(0, big)]); return r.report.splitDocs === 1 && r.out.length >= 2 && r.out.map((o) => o.text).join("") === big && r.out.every((o, i) => o.man.part === i + 1 && o.man.parts === r.out.length && o.man.function === `fn0#p${i + 1}of${r.out.length}`); });
+  // hash-only handoff (M156): --matched-out lists the exact text sha256 of each matched doc; --drop-hashes drops them
+  ok("matched-hashes", () => JSON.stringify(m.matchedTextHashes([near35, block("own"), near35, "export default 1;\n"], refs, CFG.taskset.maxContainment)) === JSON.stringify([H(near35), H("export default 1;\n")].sort()));
+  ok("matched-hashes-near-miss", () => m.matchedTextHashes([block("own", 40) + refSrc.split("\n")[3] + "\n", "export default 2;\n"], refs, CFG.taskset.maxContainment).length === 0);
+  const fateDrop = (text: string, drop: string[], c = cfg) => { const r = m.clean([doc(0, block("ctl")), doc(1, text)], c, EX, null, new Set(drop));
+    if (!r.out.some((o) => o.man.src === 0)) return "control_dropped";
+    const hit = Object.entries(r.report.drops as Record<string, number>).filter(([, v]) => v > 0);
+    return hit.length === 0 ? "kept" : hit.length === 1 && hit[0]![1] === 1 ? hit[0]![0] : "many"; };
+  const hd = block("hd");
+  ok("hidden-dup", () => fateDrop(hd, [H(hd)]) === "taskset_hidden_dup" && m.clean([doc(1, hd)], cfg, EX, null, new Set([H(hd)])).out.length === 0);
+  ok("hidden-dup-near-miss", () => fateDrop(hd, [H(hd.replace(/\n/g, "\n\n"))]) === "kept" && fateDrop(hd, [H(hd).toUpperCase()]) === "kept" && fateDrop(hd, [H(hd + " ")]) === "kept" && fateDrop(hd, []) === "kept");
+  ok("hidden-dup-report", () => { const r = m.clean([doc(0, hd)], cfg, EX, null, new Set([H(hd), "0".repeat(64)])); return r.report.dropHashes === 2 && r.report.drops.taskset_hidden_dup === 1 && r.report.keptPieces === 0; });
+  ok("hidden-dup-still-dedups", () => { const r = m.clean([doc(0, hd), doc(1, hd.replace(/ = /g, "  =  ")), doc(2, hd.replace("+ 35;", "+ 36;"))], cfg, EX, null, new Set([H(hd)])); return r.out.length === 0 && r.report.drops.taskset_hidden_dup === 1 && r.report.drops.exact_dup === 1 && r.report.drops.near_dup === 1; });
+  ok("hidden-dup-per-piece", () => { const p = m.splitUnits("src/big.ts", big, CFG.split); const r = m.clean([doc(0, big, { path: "src/big.ts" })], cfg, EX, null, new Set([H(p[1]!)]));
+    return p.length > 2 && r.report.drops.taskset_hidden_dup === 1 && r.out.length === p.length - 1 && !r.out.some((o) => o.text === p[1]) && m.clean([doc(0, big, { path: "src/big.ts" })], cfg, EX, null, new Set([H(big)])).out.length === p.length; });
+  const fc = clone(cfg); fc.fim.rate = 1;
+  const fx = m.fimExample(src0(), fc.salt, fc.fim);
+  ok("hidden-dup-drops-fim-and-repeats", () => { const c = clone(fc); c.best.paths = [{ repo: "clean/lib", pathPrefix: "src/" }]; c.best.weight = 3; const r0 = m.clean([doc(0, src0())], c, EX, null), r = m.clean([doc(0, src0())], c, EX, null, new Set([H(src0())]));
+    return r0.out.length === 4 && r0.report.fim === 1 && r.out.length === 0 && r.report.fim === 0 && r.report.repeats === 0; });
+  ok("hidden-fim-only", () => { if (!("text" in fx)) return false; const r = m.clean([doc(0, src0())], fc, EX, null, new Set([H(fx.text)])); return r.out.length === 1 && r.out[0]!.text === src0() && r.report.fim === 0 && r.report.fimSkips.fim_hidden_dup === 1 && r.report.drops.taskset_hidden_dup === 0; });
+  ok("hidden-dup-rest-unchanged", () => { const ds = [doc(0, block("u1")), doc(1, src0()), doc(2, big, { path: "src/big.ts" }), doc(3, block("u2"))]; const a = m.clean(ds, fc, EX, null), b = m.clean(ds, fc, EX, null, new Set([H(src0())]));
+    const gone = new Set(a.out.filter((o) => o.man.src === 1).map((o) => o.text)); return gone.size === 2 && JSON.stringify(b.out.map((o) => o.text)) === JSON.stringify(a.out.map((o) => o.text).filter((t) => !gone.has(t))); });
+  const PD = (t: string) => { const r = m.parseDropHashes(Buffer.from(t)); return "code" in r ? r.code : [...r.hashes].join(","); };
+  const h1 = H("one"), h2 = H("two");
+  ok("drop-parse", () => PD(`${h1}\n${h2}\n`) === `${h1},${h2}` && PD(`${h2}\n${h1}\n`) === `${h2},${h1}`);
+  ok("drop-parse-near-miss", () => PD("") === "drop_hashes_empty" && PD(h1) === "drop_hashes_no_final_newline" && PD(`${h1}\n${h2}`) === "drop_hashes_no_final_newline"
+    && [h1.toUpperCase(), h1.replace(/[a-f]/, (c) => c.toUpperCase()), h1.slice(1), h1 + "a", h1 + " ", " " + h1, h1 + "\r", "", "sha256:" + h1, h1.slice(0, 63) + "g", "\ufeff" + h1].every((l) => PD(`${l}\n`) === "drop_hashes_bad_line" && PD(`${h2}\n${l}\n`) === "drop_hashes_bad_line")
+    && PD(`${h1}\n${h1}\n`) === "drop_hashes_duplicate" && PD(`${h1}\n${h2}\n${h1}\n`) === "drop_hashes_duplicate" && PD(`${h1}\r\n`) === "drop_hashes_bad_line" && PD(`${h1}\n\n`) === "drop_hashes_bad_line");
   // best-code repeats
   const bestCfg = clone(cfg); bestCfg.best.paths = [{ repo: "clean/lib", pathPrefix: "src/best/" }]; bestCfg.best.weight = 3;
   ok("best-repeat", () => { const r = run([doc(0, block("bst"), { path: "src/best/a.ts" })], bestCfg); return r.out.length === 3 && r.report.repeats === 2 && r.out.every((o) => o.text === r.out[0]!.text) && r.out[1]!.man.repeatOf === 0 && new Set(r.out.map((o) => o.man.function)).size === 3; });
@@ -117,7 +145,7 @@ function runCases(m: Mod): string[] {
   ok("best-cap", () => { const c = clone(bestCfg); c.best.maxDocs = 1; const r = run([doc(0, block("b1"), { path: "src/best/a.ts" }), doc(1, block("b2"), { path: "src/best/b.ts" })], c); return r.report.bestDocs === 1 && r.out.length === 4; });
   // fill-in-the-middle
   const fimCfg = clone(cfg); fimCfg.fim.rate = 1;
-  const F = CFG.fim, src = block("fim");
+  const F = CFG.fim, src = src0();
   ok("fim-example", () => { const r = run([doc(0, src)], fimCfg); const f = r.out.find((o) => o.man.fimOf === 0); if (!f || r.report.fim !== 1) return false;
     const t = f.text; const a = t.indexOf(F.prefix), b = t.indexOf(F.suffix), c = t.indexOf(F.middle);
     return a === 0 && b > a && c > b && t.slice(F.prefix.length, b) + t.slice(c + F.middle.length) + t.slice(b + F.suffix.length, c) === src && t.slice(c + F.middle.length).length > 0 && f.man.function === "fn0#fim"; });
@@ -138,14 +166,17 @@ function runCases(m: Mod): string[] {
   ok("diff-score-order", () => D("const a = 1;").score < D(fn("deep", 4, 20)).score && D(fn("deep", 4, 20)).score < D(fn("deep", 4, 20).replace(/return \[a, b\]/, "return [[[[[[[[[a]]]]]]]], b]")).score);
   ok("diff-level", () => D("const a = 1;").level === "easy");
   // fingerprint
-  const parts = (): real.FingerprintParts => ({ cleanerVersion: m.LB_CLEAN_VERSION, codeSha256: { "peaceai/lib/lbclean.ts": "a".repeat(64) }, typescriptVersion: "5.9.3", configSha256: "b".repeat(64), exclusionsSha256: "c".repeat(64), input: { docsSha256: "d".repeat(64), manifestSha256: "e".repeat(64) }, refs: null });
+  const parts = (): real.FingerprintParts => ({ cleanerVersion: m.LB_CLEAN_VERSION, codeSha256: { "peaceai/lib/lbclean.ts": "a".repeat(64) }, typescriptVersion: "5.9.3", configSha256: "b".repeat(64), exclusionsSha256: "c".repeat(64), input: { docsSha256: "d".repeat(64), manifestSha256: "e".repeat(64) }, refs: null, dropHashesSha256: [] });
   ok("fp-stable", () => m.fingerprintOf(parts()) === m.fingerprintOf(parts()) && /^[0-9a-f]{64}$/.test(m.fingerprintOf(parts())));
   ok("fp-covers-each-part", () => { const base = m.fingerprintOf(parts());
     const muts: ((p: real.FingerprintParts) => void)[] = [(p) => { p.codeSha256["peaceai/lib/lbclean.ts"] = "f".repeat(64); }, (p) => { p.configSha256 = "f".repeat(64); }, (p) => { p.input.manifestSha256 = "f".repeat(64); },
-      (p) => { p.input.docsSha256 = "f".repeat(64); }, (p) => { p.exclusionsSha256 = "f".repeat(64); }, (p) => { p.refs = { docsSha256: "1".repeat(64), manifestSha256: "2".repeat(64) }; }, (p) => { p.typescriptVersion = "5.9.4"; }];
+      (p) => { p.input.docsSha256 = "f".repeat(64); }, (p) => { p.exclusionsSha256 = "f".repeat(64); }, (p) => { p.refs = { docsSha256: "1".repeat(64), manifestSha256: "2".repeat(64) }; }, (p) => { p.typescriptVersion = "5.9.4"; },
+      (p) => { p.dropHashesSha256 = ["1".repeat(64)]; }, (p) => { p.dropHashesSha256 = ["1".repeat(64), "2".repeat(64)]; }];
     return muts.every((f) => { const p = parts(); f(p); return m.fingerprintOf(p) !== base; }); });
-  ok("fp-key-order-free", () => { const p = parts(), q = { refs: p.refs, input: { manifestSha256: p.input.manifestSha256, docsSha256: p.input.docsSha256 }, exclusionsSha256: p.exclusionsSha256, configSha256: p.configSha256, typescriptVersion: p.typescriptVersion, codeSha256: p.codeSha256, cleanerVersion: p.cleanerVersion }; return m.fingerprintOf(p) === m.fingerprintOf(q); });
+  ok("fp-key-order-free", () => { const p = parts(), q = { refs: p.refs, input: { manifestSha256: p.input.manifestSha256, docsSha256: p.input.docsSha256 }, exclusionsSha256: p.exclusionsSha256, configSha256: p.configSha256, typescriptVersion: p.typescriptVersion, codeSha256: p.codeSha256, cleanerVersion: p.cleanerVersion, dropHashesSha256: p.dropHashesSha256 }; return m.fingerprintOf(p) === m.fingerprintOf(q); });
   ok("fp-version-required", () => { for (const v of ["", "peaceai-lb-clean:v0"]) { try { m.fingerprintOf({ ...parts(), cleanerVersion: v }); return false; } catch { /* refused */ } } return true; });
+  ok("fp-drop-hashes-strict", () => [["2".repeat(64), "1".repeat(64)], ["1".repeat(64), "1".repeat(64)], ["A".repeat(64)], ["1".repeat(63)]].every((d) => { try { m.fingerprintOf({ ...parts(), dropHashesSha256: d }); return false; } catch { return true; } })
+    && /^[0-9a-f]{64}$/.test(m.fingerprintOf({ ...parts(), dropHashesSha256: ["1".repeat(64), "2".repeat(64)] })));
   ok("fp-code-required", () => { try { m.fingerprintOf({ ...parts(), codeSha256: {} }); return false; } catch { return true; } });
   // config
   const probs = (f: (c: any) => void) => { const c = clone(CFG) as any; f(c); return m.configProblems(c); };
@@ -214,6 +245,20 @@ test("m150: mutation check: removing any filter or transform fails at least one 
     ["nesting not measured", `nesting = Math.max(nesting, ++depth);`, `++depth;`],
     ["score ignores nesting", `0.3 * f(nesting, c.capNesting)`, `0`],
     ["fingerprint without code version", `if (!p.cleanerVersion || p.cleanerVersion !== LB_CLEAN_VERSION) throw new Error("fingerprint_cleaner_version");`, ``],
+    ["matched-out lists nothing", `for (const t of texts) if (tasksetContainment(t, refs) >= maxContainment) out.add(sha256(t));`, ``],
+    ["matched-out threshold ignored", `if (tasksetContainment(t, refs) >= maxContainment) out.add(sha256(t));`, `out.add(sha256(t));`],
+    ["matched-out hashes a normalised key", `out.add(sha256(t));`, `out.add(normKey(t));`],
+    ["drop file: empty accepted", `if (s.length === 0) return { code: "drop_hashes_empty" };`, ``],
+    ["drop file: no final newline accepted", `if (!s.endsWith("\\n")) return { code: "drop_hashes_no_final_newline" };`, ``],
+    ["drop file: any line accepted", `if (!/^[0-9a-f]{64}$/.test(l)) return { code: "drop_hashes_bad_line" };`, ``],
+    ["drop file: uppercase accepted", `/^[0-9a-f]{64}$/.test(l)`, `/^[0-9a-f]{64}$/i.test(l)`],
+    ["drop file: line not anchored", `/^[0-9a-f]{64}$/.test(l)`, `/[0-9a-f]{64}/.test(l)`],
+    ["drop file: duplicates accepted", `if (hashes.has(l)) return { code: "drop_hashes_duplicate" };`, ``],
+    ["hidden dups kept", `if (drop.has(sha256(text))) { drops.taskset_hidden_dup!++; return; }`, ``],
+    ["hidden dup matched on the normalised key", `if (drop.has(sha256(text))) { drops.taskset_hidden_dup!++; return; }`, `if (drop.has(key)) { drops.taskset_hidden_dup!++; return; }`],
+    ["hidden dup not registered for dedup", `seen.add(key); near.add(sh);\n      if (drop.has(sha256(text))) { drops.taskset_hidden_dup!++; return; }`, `if (drop.has(sha256(text))) { drops.taskset_hidden_dup!++; return; }\n      seen.add(key); near.add(sh);`],
+    ["hidden fim kept", `if ("text" in fx && drop.has(sha256(fx.text))) skips.fim_hidden_dup = (skips.fim_hidden_dup ?? 0) + 1;`, `if (false) void 0;`],
+    ["fingerprint drop list unchecked", `if (!Array.isArray(p.dropHashesSha256) || !p.dropHashesSha256.every((h, i, a) => /^[0-9a-f]{64}$/.test(h) && (i === 0 || a[i - 1]! < h))) throw new Error("fingerprint_drop_hashes");`, ``],
     ["fingerprint ignores its parts", `return sha256(JSON.stringify(canon({ schema: LB_FINGERPRINT_SCHEMA, ...p })));`, `return sha256(LB_FINGERPRINT_SCHEMA);`],
   ];
   // every guard tagged m150-guard:<name> in the lib has a mutant on its line
@@ -236,7 +281,7 @@ test("m150: the committed config is valid and the committed exclusion file carri
   assert.deepEqual(real.configProblems(CFG), []);
   const cx = parseExclusions(readFileSync(join(repo, "peaceai/model/nl-pairs-exclusions-hidden-hashes.txt")));
   assert.ok("hashes" in cx && cx.hashes.size === 15 && cx.repos.has("unjs/defu"));
-  assert.deepEqual([...real.DROP_RULES].sort(), ["exact_dup", "junk_generated_header", "junk_long_line", "junk_long_token", "junk_low_alnum", "junk_minified", "junk_path", "near_dup", "taskset_hidden_name", "taskset_name", "taskset_near_dup", "taskset_repo"]);
+  assert.deepEqual([...real.DROP_RULES].sort(), ["exact_dup", "junk_generated_header", "junk_long_line", "junk_long_token", "junk_low_alnum", "junk_minified", "junk_path", "near_dup", "taskset_hidden_dup", "taskset_hidden_name", "taskset_name", "taskset_near_dup", "taskset_repo"]);
 });
 
 test("m150: the CLI is deterministic, writes the fingerprint with the output, and refuses fail-closed", () => {
@@ -265,7 +310,7 @@ test("m150: the CLI is deterministic, writes the fingerprint with the output, an
     const args = (out: string, ...more: string[]) => ["--in", join(dir, "in"), "--out", join(dir, out), "--exclusions", join(dir, "ex.txt"), "--refs", join(dir, "refs"), ...more];
     let r = run(...args("o1"));
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /^lb-clean docsIn=9 .*drops=taskset_repo:1,taskset_name:1,taskset_hidden_name:1,junk_path:1,junk_generated_header:0,junk_long_line:0,junk_minified:0,junk_low_alnum:0,junk_long_token:0,taskset_near_dup:1,exact_dup:1,near_dup:1 fingerprint=[0-9a-f]{64}$/m);
+    assert.match(r.stdout, /^lb-clean docsIn=9 .*drops=taskset_repo:1,taskset_name:1,taskset_hidden_name:1,junk_path:1,junk_generated_header:0,junk_long_line:0,junk_minified:0,junk_low_alnum:0,junk_long_token:0,taskset_near_dup:1,exact_dup:1,near_dup:1,taskset_hidden_dup:0 fingerprint=[0-9a-f]{64}$/m);
     assert.ok(!r.stdout.toLowerCase().includes(SYN.toLowerCase()) && !r.stdout.includes(H(SYN.toLowerCase())), "a hash-listed repo is never named");
     assert.equal(run(...args("o2")).status, 0);
     for (const f of ["docs.jsonl", "manifest.jsonl", "clean-report.json", "fingerprint.json"]) assert.equal(H(readFileSync(join(dir, "o1", f))), H(readFileSync(join(dir, "o2", f))), `deterministic ${f}`);
