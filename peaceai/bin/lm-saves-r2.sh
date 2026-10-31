@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# M148 wiring (limit-breaker step 1): rolling LM saves in one private Cloudflare R2 bucket used only for these saves.
+# Credentials come only from the environment of the calling workflow step (GitHub environment peaceai-lm-saves,
+# main only): LM_SAVES_R2_ACCOUNT_ID, LM_SAVES_R2_ACCESS_KEY_ID, LM_SAVES_R2_SECRET_ACCESS_KEY, LM_SAVES_R2_BUCKET.
+# Every key is lm-saves/<chain id>/<save name>/<file>; nothing outside lm-saves/<chain id>/ is read, written or
+# deleted. Only the latest 2 saves of a chain are kept in the bucket. Output is one filtered line per action (codes,
+# save names, step numbers and manifest sha256 only): no URL, no key, no bucket name, no aws output.
+# The bucket is never trusted on its own: a resume needs the expected manifest sha256 from a trusted record (the
+# previous run's job output passed by the chain job, or a job-log R2_PUT line), and train.py --resume-manifest-sha
+# re-verifies the manifest and every file's sha256 and size before anything is loaded.
+#
+#   lm-saves-r2.sh check                         -> "R2 ok" or exit 1 with R2_NOT_CONFIGURED / R2_TOOL_MISSING
+#   lm-saves-r2.sh put CHAIN SAVES_DIR           -> uploads new complete saves (manifest.json last), prunes to 2
+#   lm-saves-r2.sh get CHAIN SAVE DEST           -> downloads one save into DEST (must not exist yet)
+#   lm-saves-r2.sh uploaded SAVES_DIR SAVE       -> exit 0 if SAVE was uploaded by put, else R2_SAVE_NOT_UPLOADED
+set -uo pipefail
+
+KEEP=2
+SAVE_RE='^save-[0-9]{9}$'
+CHAIN_RE='^[0-9]{1,20}$'
+FILE_RE='^[A-Za-z0-9._-]+$'
+
+die() { echo "$1"; exit 1; }
+
+setup() {
+  [ -n "${LM_SAVES_R2_ACCOUNT_ID:-}" ] && [ -n "${LM_SAVES_R2_ACCESS_KEY_ID:-}" ] && [ -n "${LM_SAVES_R2_SECRET_ACCESS_KEY:-}" ] \
+    && [ -n "${LM_SAVES_R2_BUCKET:-}" ] || die R2_NOT_CONFIGURED
+  [[ "$LM_SAVES_R2_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]] || die R2_NOT_CONFIGURED
+  [[ "$LM_SAVES_R2_BUCKET" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]] || die R2_NOT_CONFIGURED
+  [[ "$LM_SAVES_R2_ACCESS_KEY_ID" =~ ^[A-Za-z0-9]{16,128}$ ]] || die R2_NOT_CONFIGURED
+  [[ "$LM_SAVES_R2_SECRET_ACCESS_KEY" =~ ^[A-Za-z0-9/+=]{16,256}$ ]] || die R2_NOT_CONFIGURED
+  command -v aws > /dev/null 2>&1 || die R2_TOOL_MISSING
+  export AWS_ACCESS_KEY_ID="$LM_SAVES_R2_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$LM_SAVES_R2_SECRET_ACCESS_KEY"
+  export AWS_ENDPOINT_URL="https://$LM_SAVES_R2_ACCOUNT_ID.r2.cloudflarestorage.com" AWS_DEFAULT_REGION=auto
+  export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+  export AWS_PAGER="" AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null
+  B="$LM_SAVES_R2_BUCKET"
+}
+
+q() { aws "$@" --only-show-errors > /dev/null 2>&1; }
+
+prune() { # keep the latest KEEP saves of this chain (names are zero-padded steps, so name order is step order)
+  local chain=$1 names n i=0
+  names=$(aws s3 ls "s3://$B/lm-saves/$chain/" 2> /dev/null | awk '$1 == "PRE" { print $2 }' | tr -d / | grep -E "$SAVE_RE" | LC_ALL=C sort -r) \
+    || { echo "R2_PRUNE_FAILED"; return 1; }
+  for n in $names; do
+    i=$((i + 1))
+    [ "$i" -le "$KEEP" ] && continue
+    q s3 rm "s3://$B/lm-saves/$chain/$n/" --recursive || { echo "R2_PRUNE_FAILED"; return 1; }
+    echo "R2_PRUNE save=$n"
+  done
+}
+
+put() {
+  local chain=$1 dir=$2 state man sha f name rc=0 new=0
+  [[ "$chain" =~ $CHAIN_RE ]] || die R2_BAD_ARGS
+  [ -d "$dir" ] || return 0  # nothing saved yet: quiet (the training step calls this every minute)
+  state="$dir/../r2-uploaded.txt"; touch "$state"
+  for d in "$dir"/save-*; do
+    [ -d "$d" ] && [ ! -L "$d" ] || continue
+    name=$(basename "$d"); [[ "$name" =~ $SAVE_RE ]] || continue
+    grep -qx "$name" "$state" && continue
+    man="$d/manifest.json"; [ -f "$man" ] || continue  # a save is visible only after its rename, manifest included
+    sha=$(sha256sum "$man" | cut -c1-64)
+    for f in "$d"/*; do
+      [ "$(basename "$f")" = manifest.json ] && continue
+      [[ "$(basename "$f")" =~ $FILE_RE ]] && [ -f "$f" ] && [ ! -L "$f" ] || { echo "R2_PUT_REFUSED save=$name"; rc=1; continue 2; }
+      q s3 cp "$f" "s3://$B/lm-saves/$chain/$name/$(basename "$f")" || { [ -d "$d" ] && { echo "R2_PUT_FAILED save=$name"; rc=1; } || echo "R2_PUT_SKIPPED save=$name"; continue 2; }
+    done
+    # the manifest goes last: a save without its manifest is refused on resume (SAVE_MISSING / SAVE_MANIFEST_SHA)
+    q s3 cp "$man" "s3://$B/lm-saves/$chain/$name/manifest.json" || { [ -d "$d" ] && { echo "R2_PUT_FAILED save=$name"; rc=1; } || echo "R2_PUT_SKIPPED save=$name"; continue; }
+    echo "$name" >> "$state"; new=1
+    echo "R2_PUT save=$name manifest=$sha"
+  done
+  [ "$new" = 1 ] && { prune "$chain" || rc=1; }
+  return $rc
+}
+
+get() {
+  local chain=$1 save=$2 dest=$3
+  [[ "$chain" =~ $CHAIN_RE ]] && [[ "$save" =~ $SAVE_RE ]] || die R2_BAD_ARGS
+  [ ! -e "$dest" ] || die R2_BAD_ARGS
+  mkdir -p "$dest"
+  q s3 cp "s3://$B/lm-saves/$chain/$save/" "$dest/" --recursive || die R2_GET_FAILED
+  [ -f "$dest/manifest.json" ] || die R2_GET_FAILED
+  echo "R2_GET save=$save"
+}
+
+cmd=${1:-}
+case "$cmd" in
+  check) [ $# -eq 1 ] || die R2_BAD_ARGS; setup; echo "R2 ok" ;;
+  put) [ $# -eq 3 ] || die R2_BAD_ARGS; setup; put "$2" "$3" ;;
+  get) [ $# -eq 4 ] || die R2_BAD_ARGS; setup; get "$2" "$3" "$4" ;;
+  uploaded) [ $# -eq 3 ] || die R2_BAD_ARGS; [[ "$3" =~ $SAVE_RE ]] || die R2_BAD_ARGS
+    grep -qx "$3" "$2/../r2-uploaded.txt" 2> /dev/null || die R2_SAVE_NOT_UPLOADED; echo "R2 uploaded save=$3" ;;
+  *) die R2_BAD_ARGS ;;
+esac

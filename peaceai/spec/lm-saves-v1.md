@@ -1,7 +1,8 @@
 # lm-saves v1 (M148, limit-breaker step 1): rolling saves, verified resume, chained runs
 
-Status: trainer + save/verify/chain code and tests are BUILT in this PR. The workflow wiring below is a DRAFT only:
-it needs Auditor and Peace to rule on storage and permissions before any workflow file changes (separate workflow PR).
+Status: trainer + save/verify/chain code and tests are BUILT (#640). The workflow wiring (R2 storage, chained links)
+is BUILT on lb-saves/wire as a draft PR after the storage ruling: R2 (Peace "R2 is fine", 2026-10-30; Auditor gates).
+It cannot run until Peace creates the environment and secrets below; without them it fails closed (R2_NOT_CONFIGURED).
 
 ## Model size (measured, not guessed)
 
@@ -46,73 +47,66 @@ saves.py decide MARKER SAVES_DIR INDEX MAX prints one line: "chain next=yes inde
 "chain next=no reason=done|cap", or exits 3 with CHAIN_BAD_ARGS, CHAIN_MAX_TOO_LARGE (MAX > 12), CHAIN_NO_MARKER,
 CHAIN_SAVE_BAD (bad save name) or CHAIN_SAVE_BAD:<verify code> (missing / corrupted save, marker not matching it).
 
-## Workflow wiring (DRAFT, needs Auditor and Peace)
+## Workflow wiring (peace-lm-train.yml, built; Auditor gates)
 
-Storage conflict: the brief says Actions artifacts. This repo is public and its tests and headers forbid model
-artifacts (m9 pins peace-lm-train.yml and bans upload-artifact; m31 "weights never become a public artifact"; m37;
-the retrain pin bans upload-artifact, download-artifact and actions/cache). Public-repo artifacts are downloadable by
-any signed-in GitHub user, so a save artifact publishes the weights. Results cannot hold rolling saves (100 MB file
-limit vs a 122 MB checkpoint, and "delete nothing in Results"). Options for the ruling:
-  A. Accept artifacts for saves (weights become public while retained; set retention-days 1-2) and relax the m9 /
-     m31 / m37 / m119 artifact bans for the save artifact name only.
-  B. Encrypt the save before upload with a key Peace adds as a secret (needs a new secret: excluded by the brief).
-  C. Keep chaining off; use saves only within one job (crash-safe to the last 20 min, no cross-run resume).
-Permissions: the chain job needs GITHUB_TOKEN actions: write (the same mechanism peace-verdict.yml already uses for
-gh workflow run) and the resume job needs actions: read to download the previous run's artifact. Timeout: the
-train job's timeout-minutes must exceed 340 (e.g. 355); the existing --max-seconds 14400 pin (m37) changes to the
+Ruling: R2 under Auditor's terms (instead of the earlier artifact / encryption / in-job-only options). Artifacts stay banned for
+weights (m9 / m31 / m37 also ban download-artifact and actions/cache for this workflow); Results cannot hold rolling
+saves (100 MB file limit vs a 122 MB checkpoint, delete-nothing rule).
+
+Peace creates (the values never go in chat, logs or the repo):
+  - GitHub environment peaceai-lm-saves on PeaceG03/PeaceAI-Workspace, deployment branches: main only (custom
+    branch policy "main", like peaceai-results).
+  - Environment secrets in peaceai-lm-saves:
+      LM_SAVES_R2_ACCOUNT_ID         Cloudflare account id (32 hex)
+      LM_SAVES_R2_ACCESS_KEY_ID      R2 API token access key id
+      LM_SAVES_R2_SECRET_ACCESS_KEY  R2 API token secret access key
+      LM_SAVES_R2_BUCKET             bucket name (one private bucket used only for these saves, e.g. peaceai-lm-saves)
+      PEACEAI_RESULTS_DEPLOY_KEY     a Results write deploy key (environment secrets are per environment: the train
+                                     job now runs in peaceai-lm-saves, so the last link's landing step needs the key
+                                     here too; a separate new deploy key on PeaceAI-Results is cleanest)
+  - The R2 API token: "Object Read & Write", scoped to that one bucket only, no account-level permission.
+
+Job train (environment peaceai-lm-saves, contents: read, timeout-minutes 355):
+  1. Job clock: JOB_START; the soft deadline is JOB_START + 340 min (train.py --job-start / --soft-deadline-min).
+  2. Chain inputs and storage check, BEFORE the corpus fetch and training: chain_index 0-99 below max_chain 1-12
+     (CHAIN_BAD_ARGS), lm-saves-r2.sh check (R2_NOT_CONFIGURED if any of the four secrets is missing or malformed,
+     R2_TOOL_MISSING without aws). Link 0 takes no resume inputs and its chain id is its own run id. A later link
+     needs chain_id, resume_save (save-NNNNNNNNN) and resume_manifest_sha (64 lowercase hex), else
+     RESUME_INPUTS_BAD; it downloads lm-saves/<chain>/<save>/ (R2_GET_FAILED) and passes
+     --resume-from <download> --resume-manifest-sha <the INPUT sha> to train.py. The expected sha never comes from
+     the bucket; train.py verifies the manifest's sha256, the exact file set and every file's sha256 and size before
+     loading anything, and refuses with one code (no fresh start).
+  3. Train: train.py --save-dir --save-every-min 20 --job-start --soft-deadline-min 340 --marker, run under
+     env -u for the four R2 variables (training never sees the credentials). A background loop calls
+     lm-saves-r2.sh put every 60 s, so each 20-min save reaches R2 while the job runs (crash / timeout safe).
+  4. Copy the remaining saves to R2 (if: always()): one line per save "R2_PUT save=<name> manifest=<sha256>" - this
+     job-log line is the trusted record for a manual resume after a crash (dispatch with chain_id, chain_index,
+     resume_save and resume_manifest_sha copied from it).
+  5. Chain decision (id decide): saves.py decide on the local marker and save (verified); a next link also needs
+     the save to be one this job uploaded (R2_SAVE_NOT_UPLOADED). Outputs next, chain_id, index, max_chain, save, sha.
+     No next link (done, or at the cap) sets FINAL_LINK.
+  6-8. Export, set C v2 eval and the Results landing run only on the last link (if: env.FINAL_LINK == 'yes').
+
+Job chain (needs train, only if next == yes; no checkout, no environment, no secret; permissions actions: write only,
+the peace-verdict.yml mechanism; timeout 5): re-validates the five outputs and runs
+gh workflow run peace-lm-train.yml --ref main -f chain_id -f chain_index -f max_chain -f resume_save
+-f resume_manifest_sha. A dispatched link queues behind the running one (concurrency group, no cancel).
+
+Bucket layout (lm-saves-r2.sh): lm-saves/<chain id>/save-NNNNNNNNN/<file>, manifest.json uploaded last (a save
+without its manifest is not fetched and cannot verify). After each new upload only the latest 2 saves of the chain
+are kept (R2_PRUNE). Nothing outside lm-saves/<chain id>/ is touched. The endpoint is built from the account id in
+the environment (AWS_ENDPOINT_URL), never on a command line; all aws output goes to /dev/null; every printed line is
+a code, a save name, a step or a sha256. Old chains are not deleted automatically (the last 2 saves of each chain
+stay until Peace removes them).
+
+Codes: R2_NOT_CONFIGURED, R2_TOOL_MISSING, R2_BAD_ARGS, R2_PUT_FAILED, R2_PUT_REFUSED, R2_PUT_SKIPPED, R2_PRUNE_FAILED,
+R2_GET_FAILED, R2_SAVE_NOT_UPLOADED, CHAIN_BAD_ARGS, RESUME_INPUTS_BAD, CHAIN_DISPATCH_FAILED, CHAIN_LINE_BAD, plus the
+saves.py SAVE_* / CHAIN_* codes above.
+
+Tests: m148-lm-saves.test.ts runs lm-saves-r2.sh against a fake aws (keep-2, manifest last, endpoint only in the
+environment, quiet output, every refusal) and runs the storage-check, chain-decision and dispatch steps' own scripts
+(extracted from the workflow) with fake aws / gh; m9 pins the workflow sha and its exact secret set; m37 pins the
 soft deadline.
 
-Draft for peace-lm-train.yml (option A), not applied:
-
-    on:
-      workflow_dispatch:
-        inputs:
-          resume_run_id: { description: "run id holding the save to resume (empty = fresh)", default: "" }
-          chain_index:   { description: "this link's index (0 = first)", default: "0" }
-          max_chain:     { description: "max links (1-12)", default: "4" }
-    jobs:
-      train:
-        timeout-minutes: 355
-        permissions: { contents: read, actions: read }
-        steps:
-          - name: Job clock
-            run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-          # ... checkout, install, fetch, manifest check as today ...
-          - name: Fetch the previous link's save (refused if missing)
-            if: inputs.resume_run_id != ''
-            env: { GH_TOKEN: "${{ github.token }}", RID: "${{ inputs.resume_run_id }}" }
-            run: |
-              [[ "$RID" =~ ^[0-9]{1,20}$ ]] || { echo "CHAIN_BAD_RUN_ID"; exit 1; }
-              gh run download "$RID" --repo "$GITHUB_REPOSITORY" --name lm-save --dir "$RUNNER_TEMP/prev" > /dev/null 2>&1 \
-                || { echo "CHAIN_SAVE_BAD:SAVE_MISSING"; exit 1; }
-              m="$RUNNER_TEMP/prev/chain.json"; test -f "$m" || { echo "CHAIN_NO_MARKER"; exit 1; }
-              echo "RESUME_ARGS=--resume-from $RUNNER_TEMP/prev/saves/$(jq -r .save "$m") --resume-manifest-sha $(jq -r .manifestSha256 "$m")" >> "$GITHUB_ENV"
-          - name: Train
-            run: |
-              "$py" peaceai/model/train.py ...same model flags... --save-dir "$RUNNER_TEMP/work/saves" \
-                --job-start "$JOB_START" --soft-deadline-min 340 --save-every-min 20 --marker "$RUNNER_TEMP/work/chain.json" \
-                $RESUME_ARGS > "$RUNNER_TEMP/train.log" 2>&1 || { echo "train failed exit=$?"; exit 1; }
-              grep -E '^(params=|resumed |save |marker |stopped )' "$RUNNER_TEMP/train.log" || true
-          - name: Keep the latest save (also after a crash or timeout: the last 20-min save survives)
-            if: always()
-            uses: actions/upload-artifact@<pinned sha>
-            with: { name: lm-save, path: "${{ runner.temp }}/work/saves\n${{ runner.temp }}/work/chain.json", retention-days: 2, if-no-files-found: ignore }
-          # export + land in Results ONLY when chain.json says more=false (the final link)
-      chain:
-        needs: train
-        permissions: { actions: write }
-        steps:
-          - uses: actions/checkout@<pinned sha>
-          - uses: actions/download-artifact@<pinned sha>
-            with: { name: lm-save, path: "${{ runner.temp }}/s" }
-          - name: Next link (one line; refuses a missing save or a chain at its cap)
-            env: { GH_TOKEN: "${{ github.token }}", IDX: "${{ inputs.chain_index }}", MAX: "${{ inputs.max_chain }}" }
-            run: |
-              line=$(python3 peaceai/model/saves.py decide "$RUNNER_TEMP/s/chain.json" "$RUNNER_TEMP/s/saves" "$IDX" "$MAX") || { echo "chain refused"; exit 1; }
-              echo "$line"
-              case "$line" in "chain next=yes "*) ;; *) exit 0;; esac
-              gh workflow run peace-lm-train.yml --repo "$GITHUB_REPOSITORY" --ref main \
-                -f resume_run_id="$GITHUB_RUN_ID" -f chain_index=$((IDX + 1)) -f max_chain="$MAX"
-
-Not built (rules): no hourly backup-check routine (standing "no check or sweep routines" rule); no R2, no new
-secret, no paid compute; latest.json, promotion and Results are untouched; the stage-2 flag stays off.
+Not built (rules): no hourly backup-check routine (standing "no check or sweep routines" rule); no paid compute; the
+workflow has not been run; latest.json, promotion and the stage-2 flag are untouched.
