@@ -1,0 +1,11 @@
+{
+ "schema": "peaceai-lb-clean-config:v1",
+ "salt": "peaceai-lb-clean:v1",
+ "junk": { "maxLineChars": 1000, "maxMeanLineChars": 200, "minAlnumRatio": 0.3, "maxTokenChars": 200, "headerLines": 10 },
+ "dedup": { "shingleTokens": 5, "numPerm": 128, "bands": 32, "nearJaccard": 0.8 },
+ "taskset": { "shingleTokens": 16, "maxContainment": 0.5 },
+ "split": { "minChars": 4000, "maxChunkChars": 3000 },
+ "best": { "weight": 3, "maxDocs": 64, "textSha256": [], "paths": [] },
+ "fim": { "rate": 0.15, "minChars": 300, "minLines": 8, "maxMiddleLines": 12, "prefix": "<|fim_prefix|>", "suffix": "<|fim_suffix|>", "middle": "<|fim_middle|>" },
+ "difficulty": { "capChars": 6000, "capNesting": 10, "capIdentifiers": 150 }
+}
