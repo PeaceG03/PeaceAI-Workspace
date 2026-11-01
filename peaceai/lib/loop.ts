@@ -40,7 +40,7 @@ import { plannerSha256V4 } from "./plan4run.ts";
 import { selectPlanner, type PlannerName } from "./plandefault.ts";
 import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA_V3, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { ATTEMPT_CODES, LOOP_LOG, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { detectRunner, installDeps, installShim, openDepsCache, shimArgs, type DepsCache, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
@@ -223,6 +223,11 @@ export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS"
 export interface Proposer {
   name: string;
   /**
+   * M166: a model-backed proposer (looprow LOOP_MODEL_PROPOSERS) names the model manifest sha256 behind its ranking;
+   * the loop copies it into the (v4) row, read when the row is written. Absent / null for proposers without a model.
+   */
+  readonly modelManifestSha256?: string | null;
+  /**
    * M152: called once per task after the baseline, on the copy reset to the pinned commit (the team's test files are
    * NOT in it), with the code search tools and the baseline's failing test names (node:test only). A proposer must do
    * all its searching here: from the first next() on, the copy holds the team's tests it is graded by.
@@ -319,8 +324,9 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let baseline: LoopBaseline | null = null;
   const done = (code: LoopCode): LoopResult => ({
     row: {
-      schema: LOOP_SCHEMA_V3, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
-      loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, planner, plannerSha256: plannerSha, lm: "not-loadable", code, maxAttempts,
+      schema: LOOP_SCHEMA_V4, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
+      loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, planner, plannerSha256: plannerSha,
+      modelManifestSha256: o.proposer.modelManifestSha256 ?? null, lm: "not-loadable", code, maxAttempts, // M166: v4
       attempts: records.length, result: code === "PASS" ? "pass" : code === "ATTEMPT_LIMIT" ? "fail" : "refused",
       attemptCodes: records.map((r) => r.codes), tests: records.length ? records[records.length - 1]!.tests : tests,
       // hidden rows: taskKey plus scores only (runner, package manager and baseline counts could identify the repo)

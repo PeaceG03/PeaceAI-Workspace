@@ -209,6 +209,33 @@ semantic mutants (a hard-coded v1 planner, a v1 default, a dropped flag, a bypas
 every planner, a plan that ignores the picked planner, v3 rows validated as v2); each must fail a case with an
 assertion. The plan-observing cases need the stage-2 candidate uid (else they assert the `CAND_UID_*` refusal).
 
+## Rows v4: the model manifest (M166)
+
+Rows the loop writes from M166 on are `peaceai-plan-loop:v4` (ruling c of `edit-proposer-model-v1.md`; that doc's
+"v3 loop row" is this schema: `peaceai-plan-loop:v3` was already M162's planner row). A v4 row is a v3 row (same keys
+and rules, planner keys as today, loop still `loop-v2`) plus one required key, `modelManifestSha256`: the sha256 of the
+model manifest behind a model-backed proposer's ranking (the manifest format is in `edit-proposer-model-v1.md`), or
+`null` for a proposer that uses no model. The loop copies it from the proposer's optional `modelManifestSha256`
+property when the row is written (loop.ts `Proposer`), else `null`. Rules (looprow.ts, `LOOP_MODEL_PROPOSERS` =
+`model-v1`):
+
+- `model_sha`: a value that is neither `null` nor 64 lowercase hex digits;
+- `model_needs_v4`: a model-backed proposer's row in any schema before v4;
+- `model_sha_unexpected`: a digest on the row of a proposer without a model (`rules-v1`, `repair-v1`, any other name);
+- `model_sha_missing`: a model-backed row with `null` after an attempt ran. `null` is allowed only with
+  `attempts: 0` (the proposer had no usable ranking, so no model-ranked edit ever ran; such a task ends
+  PROPOSER_FAILED or an earlier refusal);
+- `loop_keys`: a v4 row without the key, or a v1 / v2 / v3 row with it.
+
+Existing v1, v2 and v3 rows keep validating as before (the log stays add-only); no row is rewritten. No planner file is
+edited, so no planner fingerprint moves. `loopSha256` changes with loop.ts / looprow.ts as for any loop change.
+
+Tests: `peaceai/test/m166-loop-row-v4.test.ts` (validator cases with v1 / v2 / v3 near misses; the writer on a task
+refused before any fetch, with and without a model-backed proposer; the committed log still parses). Its mutants
+delete each `// m166-guard:<id>` line of looprow.ts and apply fixed semantic rewrites (v4 not recognised, v4 not
+treated as v3, no model-backed proposers, v4 keys as v3, a v3 writer, a writer that always writes `null`, a writer
+that drops the key); each must fail a case with an assertion. `m162-cases.ts` now expects v4 rows with `null`.
+
 ## v2 limits
 
 - vitest / jest: per-test names are not collected (only counts); feedback to the proposer has codes, no names.

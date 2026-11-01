@@ -12,6 +12,12 @@ export const LOOP_VERSION_V2 = "loop-v2" as const;
 /** M162: v3 rows are v2 rows that also say which planner made the loop's plan (picked by plandefault.selectPlanner)
  *  and its plannerSha256. The loop itself is still loop-v2. */
 export const LOOP_SCHEMA_V3 = "peaceai-plan-loop:v3" as const;
+/** M166: v4 rows are v3 rows (planner keys as today) plus `modelManifestSha256`: the sha256 of the model manifest
+ *  (spec/edit-proposer-model-v1.md: one "<sha256>  <file>" line per LM file) whose ranking a model-backed proposer
+ *  used, or null for a proposer that uses no model. v1 / v2 / v3 rows keep validating as before (the log is add-only). */
+export const LOOP_SCHEMA_V4 = "peaceai-plan-loop:v4" as const;
+/** Proposers that are backed by a model: their rows must be v4 and, once an attempt ran, name the model manifest. */
+export const LOOP_MODEL_PROPOSERS = ["model-v1"] as const;
 /** The planner names a v3 row can carry (plandefault.ts PLANNERS; kept here as data, since this module has no imports). */
 export const LOOP_PLANNER_NAMES = ["plan-only-v1", "plan-only-v2", "plan-only-v3", "plan-only-v4"] as const;
 export const LOOP_RUNNERS = ["node-test", "vitest", "jest"] as const;
@@ -52,7 +58,7 @@ export interface LoopTests {
 /** v2: the team's tests on the unedited copy (they must fail there for the task to mean anything). */
 export interface LoopBaseline { total: number; passing: number; failing: number }
 export interface LoopRow {
-  schema: typeof LOOP_SCHEMA | typeof LOOP_SCHEMA_V2 | typeof LOOP_SCHEMA_V3;
+  schema: typeof LOOP_SCHEMA | typeof LOOP_SCHEMA_V2 | typeof LOOP_SCHEMA_V3 | typeof LOOP_SCHEMA_V4;
   at: string;
   set: "public" | "hidden";
   taskFileSha256: string;
@@ -66,6 +72,8 @@ export interface LoopRow {
   /** v3 only: the planner that made the loop's plan, and its digest. */
   planner?: (typeof LOOP_PLANNER_NAMES)[number];
   plannerSha256?: string;
+  /** v4 only: the model manifest sha256 behind a model-backed proposer's ranking (null: no model, or none was usable). */
+  modelManifestSha256?: string | null;
   lm: "not-loadable" | "loaded";
   code: LoopCode;
   maxAttempts: number;
@@ -89,16 +97,18 @@ const H40 = /^[0-9a-f]{40}$/;
 const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commit", "workspace", "loop", "loopSha256", "proposer", "lm", "code", "maxAttempts", "attempts", "result", "attemptCodes", "tests"];
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
+const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
 export function loopRowProblem(o: unknown): string | null {
   if (!o || typeof o !== "object" || Array.isArray(o)) return "not_object";
   const r = o as Record<string, any>;
-  const v3 = r.schema === LOOP_SCHEMA_V3;
+  const v4 = r.schema === LOOP_SCHEMA_V4;
+  const v3 = r.schema === LOOP_SCHEMA_V3 || v4;
   const v2 = r.schema === LOOP_SCHEMA_V2 || v3;
   if (r.schema !== LOOP_SCHEMA && !v2) return "schema";
-  const keys = v3 ? KEYS_V3 : v2 ? KEYS_V2 : KEYS;
+  const keys = v4 ? KEYS_V4 : v3 ? KEYS_V3 : v2 ? KEYS_V2 : KEYS;
   if (Object.keys(r).some((k) => !keys.includes(k))) return "loop_keys";
   if (v2 && !keys.every((k) => k === "repo" || k === "commit" || k in r)) return "loop_keys";
   if (typeof r.at !== "string" || !ISO.test(r.at)) return "at";
@@ -113,6 +123,11 @@ export function loopRowProblem(o: unknown): string | null {
   if (typeof r.proposer !== "string" || !/^[a-z0-9-]{1,40}$/.test(r.proposer)) return "proposer";
   if (v3 && !(LOOP_PLANNER_NAMES as readonly string[]).includes(r.planner)) return "planner"; // m162-guard:row-planner
   if (v3 && (typeof r.plannerSha256 !== "string" || !H64.test(r.plannerSha256))) return "planner_sha"; // m162-guard:row-planner-sha
+  const model = (LOOP_MODEL_PROPOSERS as readonly string[]).includes(r.proposer);
+  if (model && !v4) return "model_needs_v4"; // m166-guard:row-model-v4
+  if (v4 && r.modelManifestSha256 !== null && (typeof r.modelManifestSha256 !== "string" || !H64.test(r.modelManifestSha256))) return "model_sha"; // m166-guard:row-model-sha
+  if (v4 && !model && r.modelManifestSha256 !== null) return "model_sha_unexpected"; // m166-guard:row-model-unexpected
+  if (v4 && model && r.modelManifestSha256 === null && r.attempts !== 0) return "model_sha_missing"; // m166-guard:row-model-missing
   if (r.lm !== "not-loadable" && r.lm !== "loaded") return "lm";
   if (!(LOOP_CODES as readonly string[]).includes(r.code) || (!v2 && V2_ONLY_CODES.includes(r.code))) return "code";
   if (!nat(r.maxAttempts, 20) || r.maxAttempts < 1) return "max_attempts";
