@@ -449,8 +449,9 @@ export function retrainPretrainChainDecision(cfg: unknown, x: RetrainChainInput)
  *  m49-posttrain-memcheck.yml's single `memcheck` job (main-only, peaceai-core, no candidate code; it must sample the
  *  model, else lm-memcheck refuses before any proof is read), and m49-provenance-check.yml's single `provenance` job
  *  (same environment and guards, read-only, dispatch-only, no upload), and m49-source-hunt.yml's `source-hunt` job (same).
+ *  (same), and M167 peace-model-v1-dev.yml's `model-v1-score` job (dispatch-only, main-only, no candidate code, no upload).
  *  Never Job B/B2 (ids `test`, `regate`), where candidate code runs. */
-export const LM_JOBS = ["lm-fill", "generate", "record", "tests", "memcheck", "provenance", "source-hunt", "retrain-memcheck"] as const;
+export const LM_JOBS = ["lm-fill", "generate", "record", "tests", "memcheck", "provenance", "source-hunt", "retrain-memcheck", "model-v1-score"] as const;
 /** Each LM job id is pinned to the one workflow file that defines it: GITHUB_JOB alone is a plain job id that any
  *  workflow (or a new one) can reuse, so the job must also run from its own workflow in this repository. */
 export const LM_JOB_WORKFLOWS: Readonly<Record<(typeof LM_JOBS)[number], string>> = {
@@ -462,6 +463,7 @@ export const LM_JOB_WORKFLOWS: Readonly<Record<(typeof LM_JOBS)[number], string>
   provenance: ".github/workflows/m49-provenance-check.yml",
   "source-hunt": ".github/workflows/m49-source-hunt.yml",
   "retrain-memcheck": ".github/workflows/peace-lm-retrain.yml", // M119: the retrain candidate's verbatim memcheck (strict rule)
+  "model-v1-score": ".github/workflows/peace-model-v1-dev.yml", // M167: model-v1's scoring job (lib/modelscore.ts scoringJobAllowed is stricter)
 };
 export const LM_REPO = "PeaceG03/PeaceAI-Workspace";
 /** On Actions the job id AND its workflow path decide (GITHUB_WORKFLOW_REF = "<repo>/<path>@<ref>", repository

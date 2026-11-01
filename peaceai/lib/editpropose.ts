@@ -246,49 +246,65 @@ export function candidateFor(files: ReadonlyMap<string, string>, muts: Mutation[
 }
 
 /**
+ * repair-v1's candidate list for located sites on the original files: every template mutation, in the fixed order
+ * (template, then located site, then position), kept when it is a changed, parsing, new edit, at most MAX_CANDIDATES.
+ * `seen` collects the keys (shared with the combination step). M167: model-v1's scoring job builds the same list.
+ */
+export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set()): Candidate[] {
+  const all: Mutation[] = [];
+  const exported = new Map<string, Set<string>>();
+  sites.forEach((site, i) => {
+    const text = files.get(site.path);
+    if (text === undefined) return;
+    const sf = parseSource(site.path, text);
+    if (!exported.has(site.path)) {
+      const ex = new Set<string>();
+      for (const st of sf.statements) {
+        if (ts.isExportDeclaration(st) && st.exportClause && ts.isNamedExports(st.exportClause)) for (const e of st.exportClause.elements) ex.add((e.propertyName ?? e.name).text);
+        if (ts.isExportAssignment(st) && ts.isIdentifier(st.expression)) ex.add(st.expression.text);
+      }
+      exported.set(site.path, ex);
+    }
+    all.push(...mutationsIn(sf, site, i, exported.get(site.path)!));
+  });
+  const rank = (x: Mutation) => TEMPLATES.indexOf(x.template);
+  all.sort((a, b) => rank(a) - rank(b) || a.site - b.site || a.start - b.start || a.end - b.end || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
+  const queue: Candidate[] = [];
+  for (const x of all) {
+    if (queue.length >= MAX_CANDIDATES) break; // guard:cap
+    const c = candidateFor(files, [x]);
+    if (!c) continue;
+    if (seen.has(c.key)) continue; // guard:dedupe
+    seen.add(c.key);
+    queue.push(c);
+  }
+  return queue;
+}
+
+/** M167: options for a proposer built on repair-v1 (model-v1): its row name, and a reorder of the first candidate
+ *  list (called once, also with [] when nothing was located; a throw is the proposer's failure, PROPOSER_FAILED). */
+export interface RepairOptions { name?: string; order?: (queue: readonly Candidate[]) => Candidate[] }
+
+/**
  * The general repair proposer (repair-v1). prepare() is called once per task by the loop with the search tools on the
  * pinned commit (no team tests) and the baseline's failing test names (node:test only; [] for vitest / jest).
  */
-export function repairProposer(): { name: string; prepare(search: CodeRepo, input: PrepareInput): void; next(input: RepairInput): RepairProposal } {
+export function repairProposer(opts: RepairOptions = {}): { name: string; prepare(search: CodeRepo, input: PrepareInput): void; next(input: RepairInput): RepairProposal } {
   let sites: Site[] | null = null;
   let queue: Candidate[] | null = null;
   const tried: Candidate[] = [];
   const seen = new Set<string>();
   const combined = new Set<string>();
   return {
-    name: REPAIR_PROPOSER,
+    name: opts.name ?? REPAIR_PROPOSER,
     prepare(search, input) { sites = locate(search, input); },
     next(input) {
+      if (opts.order && !queue && (!sites || sites.length === 0)) { queue = opts.order([]); } // M167: the ranking must hold for "nothing located" too
       if (!sites || sites.length === 0) return { refuse: "NO_EDIT" }; // nothing the request names was located: no edit anywhere
       const files = new Map(input.files.map((f) => [f.path, f.content] as const));
       if (!queue) {
-        const all: Mutation[] = [];
-        const exported = new Map<string, Set<string>>();
-        sites.forEach((site, i) => {
-          const text = files.get(site.path);
-          if (text === undefined) return;
-          const sf = parseSource(site.path, text);
-          if (!exported.has(site.path)) {
-            const ex = new Set<string>();
-            for (const st of sf.statements) {
-              if (ts.isExportDeclaration(st) && st.exportClause && ts.isNamedExports(st.exportClause)) for (const e of st.exportClause.elements) ex.add((e.propertyName ?? e.name).text);
-              if (ts.isExportAssignment(st) && ts.isIdentifier(st.expression)) ex.add(st.expression.text);
-            }
-            exported.set(site.path, ex);
-          }
-          all.push(...mutationsIn(sf, site, i, exported.get(site.path)!));
-        });
-        const rank = (x: Mutation) => TEMPLATES.indexOf(x.template);
-        all.sort((a, b) => rank(a) - rank(b) || a.site - b.site || a.start - b.start || a.end - b.end || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
-        queue = [];
-        for (const x of all) {
-          if (queue.length >= MAX_CANDIDATES) break; // guard:cap
-          const c = candidateFor(files, [x]);
-          if (!c) continue;
-          if (seen.has(c.key)) continue; // guard:dedupe
-          seen.add(c.key);
-          queue.push(c);
-        }
+        queue = repairCandidates(sites, files, seen);
+        if (opts.order) queue = opts.order(queue);
         if (queue.length === 0) return { refuse: "NO_EDIT" };
       }
       const last = input.feedback[input.feedback.length - 1];

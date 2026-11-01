@@ -279,7 +279,7 @@ export const CASES: Case[] = [
     run(l, ctx) {
       const root = join(ctx.base, "sha-root");
       mkdirSync(join(root, "peaceai/lib"), { recursive: true });
-      for (const f of ["loop.ts", "looprow.ts", "loopdeps.ts", "editpropose.ts", "codesearch.ts"]) copyFileSync(join(l.loop.ROOT, "peaceai/lib", f), join(root, "peaceai/lib", f));
+      for (const f of ["loop.ts", "looprow.ts", "loopdeps.ts", "editpropose.ts", "modelpropose.ts", "codesearch.ts"]) copyFileSync(join(l.loop.ROOT, "peaceai/lib", f), join(root, "peaceai/lib", f));
       const h0 = l.loop.loopSha256(root);
       assert.match(h0, /^[0-9a-f]{64}$/);
       // near miss: a file the loop row does not bind
