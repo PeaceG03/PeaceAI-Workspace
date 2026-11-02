@@ -88,10 +88,17 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
     `npm-shrinkwrap.json`, `yarn.lock`, `bun.lock`, `bun.lockb` at any depth (only root lockfiles are scanned, and
     pnpm with `sharedWorkspaceLockfile: false` installs each workspace package from its own lock).
   - pnpm only (the picked manager is pnpm): a `pnpm-workspace.yaml` that is not a regular file, is outside the plain
-    YAML subset (the lockfile parser), or has any top-level key other than `packages`, `catalog`, `catalogs`
-    (`registries`, `sharedWorkspaceLockfile`, `overrides`, `pnpmfile`, `onlyBuiltDependencies`, ... are all refused,
-    not judged); `packages` must be a list of globs inside the repo (`!` negations too); catalog entries must be
-    plain version ranges (`npm:` aliases allowed, no other protocol). A `pnpm-workspace.yaml` below the root, a
+    YAML subset (the lockfile parser), or has any top-level key other than `packages`, `catalog`, `catalogs` and
+    the six inert keys below (`registries`, `sharedWorkspaceLockfile`, `overrides`, `patchedDependencies`,
+    `pnpmfile`, `hoistPattern`, ... are all refused, not judged). Per-key ruling (Auditor, #667 / M169): admitted
+    are `allowBuilds`, `onlyBuiltDependencies`, `neverBuiltDependencies`, `ignoredBuiltDependencies`,
+    `minimumReleaseAge` and `minimumReleaseAgeExclude`, only with the expected-form values loopdeps.ts validates
+    (package names, a name -> true|false map, a minute count; any other value is refused). They are inert under
+    `--frozen-lockfile`, `--ignore-scripts`, `env -i` and the pinned registry, and the release-age keys can only make
+    an install fail. `onlyBuiltDependencies` has therefore left the #647 near-miss set; m151's harmless-looking
+    near-miss now uses `hoistPattern`, which stays refused. `packages` must be a list of globs inside the repo
+    (`!` negations too); catalog entries must be plain version ranges (`npm:` aliases allowed, no other
+    protocol). A `pnpm-workspace.yaml` below the root, a
     `pnpm-workspace.yml`, or a `package.yaml` / `package.json5` / `package.yml` anywhere. Any `pnpm` field in any
     `package.json` in the copy (a superset of the root plus the workspace packages), or a `package.json` that is not
     a regular file or not a JSON object (a leading BOM is stripped first, as pnpm does). Any `pnpm` field is refused
@@ -246,9 +253,12 @@ that drops the key); each must fail a case with an assertion. `m162-cases.ts` no
   network. Package code is not run there (see Install safety); it first runs inside the test isolation (no network).
 - pnpm lockfiles outside the plain YAML subset (hand-edited, or written by a future pnpm in another style) are
   refused (`DEPS_NONREGISTRY`) rather than parsed.
-- pnpm repos whose `pnpm-workspace.yaml` carries settings (even inert ones such as `allowBuilds` or
-  `minimumReleaseAge`), or whose `package.json` has a `pnpm` field, are refused (`DEPS_PM_CONFIG`); widening this
-  needs a per-key ruling.
+- pnpm repos whose `pnpm-workspace.yaml` carries settings other than the six keys admitted by the per-key ruling
+  (Auditor, #667 / M169: `allowBuilds`, `onlyBuiltDependencies`, `neverBuiltDependencies`,
+  `ignoredBuiltDependencies`, `minimumReleaseAge`, `minimumReleaseAgeExclude`, expected-form values only; inert under
+  `--frozen-lockfile`, `--ignore-scripts`, `env -i` and the pinned registry, the release-age keys can only make an
+  install fail), or whose `package.json` has a `pnpm` field, are refused (`DEPS_PM_CONFIG`); every other key stays
+  refused, and widening further needs another per-key ruling.
 - One package per task; no service-backed suites; no yarn berry; no bun / deno.
 - Box notes: the shared `peaceai-cand` uid is used by every agent's m146 runs, which kill all its processes; use a
   separate candidate uid per concurrent run (`PEACEAI_STAGE2_CAND`, `M146_CAND` / `M151_CAND` in tests). A full or

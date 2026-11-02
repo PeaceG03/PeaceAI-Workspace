@@ -160,8 +160,8 @@ export const CASES: Case[] = [
       withCache(l, ctx, (cache) => {
         assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":1}\n" }, { timeoutMs: 2_000, extraEnv: { M151_STUB_PM: "sleep" } }).r, { refuse: "DEPS_TIMEOUT" });
         assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":2}\n" }, { maxBytes: 1 << 20, extraEnv: { M151_STUB_PM: "big" } }).r, { refuse: "DEPS_TOO_LARGE" });
-        assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":3}\n" }, { extraEnv: { M151_STUB_PM: "fail" } }).r, { refuse: "DEPS_INSTALL_FAILED" });
-        assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":4}\n" }, { extraEnv: { M151_STUB_PM: "none" } }).r, { refuse: "DEPS_INSTALL_FAILED" });
+        assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":3}\n" }, { extraEnv: { M151_STUB_PM: "fail" } }).r, { refuse: "DEPS_INSTALL_FAILED", fail: "PM_EXIT" });
+        assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"n\":4}\n" }, { extraEnv: { M151_STUB_PM: "none" } }).r, { refuse: "DEPS_INSTALL_FAILED", fail: "NO_MODULES" });
       });
     },
   },
@@ -194,7 +194,7 @@ export const CASES: Case[] = [
         withCache(l, ctx, (cache) => {
           assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"e\":1}\n" }, { extraEnv: { M151_STUB_PM: "escape" } }).r, { pm: "npm" });
           assert.ok(!alive(), "no candidate-uid process outlives the install");
-          assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"e\":2}\n" }, { chown: () => ["false"] }).r, { refuse: "DEPS_INSTALL_FAILED" });
+          assert.deepEqual(install(l, ctx, cache, { "package-lock.json": "{\"e\":2}\n" }, { chown: () => ["false"] }).r, { refuse: "DEPS_INSTALL_FAILED", fail: "CHOWN_BACK" });
         });
       } finally {
         // a mutant may have run the stub pm as this user (no sudo -u): its escapee is ours to kill too
@@ -393,7 +393,7 @@ export const CASES: Case[] = [
       const bad: [string, string][] = [
         ["registries (Auditor)", ok + "registries:\n  default: https://evil.example/\n"],
         ["sharedWorkspaceLockfile (Auditor)", ok + "sharedWorkspaceLockfile: false\n"],
-        ["a harmless-looking setting is still a setting", ok + "onlyBuiltDependencies:\n  - esbuild\n"],
+        ["a harmless-looking setting is still a setting (M169: build/age keys are listed as inert; this one is not)", ok + "hoistPattern:\n  - '*'\n"],
         ["overrides", ok + "overrides:\n  a: 1.0.0\n"],
         ["pnpmfile", ok + "pnpmfile: x.cjs\n"],
         ["an inline comment (outside the subset)", ok.replace("  - website\n", "  - website # site\n")],

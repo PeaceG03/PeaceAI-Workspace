@@ -38,6 +38,16 @@ export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 export const DEPS_CODES = ["DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE"] as const;
 export type DepsCode = (typeof DEPS_CODES)[number];
+/**
+ * M169: why an install was refused with DEPS_INSTALL_FAILED, as a fixed code only (never the package manager's output):
+ * CAND_NO_ACCESS the candidate uid cannot traverse or write its staging dir (e.g. a --deps-dir under a home dir it
+ * cannot enter), CHOWN_TO_CAND / CHOWN_BACK the ownership hand-over failed, KILL a candidate process survived,
+ * PM_EXIT the package manager exited non-zero, NO_MODULES it exited 0 but installed nothing. Same list as
+ * looprow.ts LOOP_DEPS_FAILS (m169 checks they match).
+ */
+export const DEPS_FAILS = ["CAND_NO_ACCESS", "CHOWN_TO_CAND", "KILL", "CHOWN_BACK", "PM_EXIT", "NO_MODULES"] as const;
+export type DepsFail = (typeof DEPS_FAILS)[number];
+export type DepsRefusal = { refuse: DepsCode; fail?: DepsFail };
 export type RunnerRefusal = "TEST_RUNNER_UNSUPPORTED" | "TEST_NEEDS_SERVICE";
 
 const sha256 = (s: string | Buffer): string => createHash("sha256").update(s).digest("hex");
@@ -594,6 +604,22 @@ export const NESTED_LOCKFILES = ["pnpm-lock.yaml", "package-lock.json", "npm-shr
 /** The only top-level keys a pnpm-workspace.yaml may hold. Every other key is a pnpm setting (registries,
  * sharedWorkspaceLockfile, overrides, pnpmfile, configDependencies, ...) and is refused rather than judged. */
 export const PNPM_WORKSPACE_KEYS = ["packages", "catalog", "catalogs"] as const;
+/**
+ * M169: pnpm-workspace.yaml keys that cannot change what is fetched or from where, nor run code, under the loop's
+ * install (frozen lockfile, --ignore-scripts, registry pinned): which dependencies may run build scripts (scripts are
+ * off anyway) and how old a version must be to be newly resolved (nothing is resolved under a frozen lockfile). Each
+ * is shape-checked (pnpmInertOk); any other key is still refused.
+ */
+export const PNPM_WORKSPACE_INERT_KEYS = ["allowBuilds", "onlyBuiltDependencies", "neverBuiltDependencies", "ignoredBuiltDependencies", "minimumReleaseAge", "minimumReleaseAgeExclude"] as const;
+const PKG_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(?:@[A-Za-z0-9.+-]+)?$/;
+/** One inert key's value has the shape pnpm documents (names, a name->boolean map, a minute count); else refused. */
+export function pnpmInertOk(key: string, v: YNode | undefined): boolean {
+  if (v === undefined || v === "") return true;
+  const names = (x: YNode) => Array.isArray(x) && x.every((n) => typeof n === "string" && PKG_NAME.test(n));
+  if (key === "allowBuilds") return isYMap(v) && Object.entries(v).every(([k, b]) => PKG_NAME.test(k) && (b === "true" || b === "false")); // m169-guard:pnpm-inert-builds
+  if (key === "minimumReleaseAge") return typeof v === "string" && /^\d{1,9}$/.test(v); // m169-guard:pnpm-inert-age
+  return names(v); // m169-guard:pnpm-inert-names
+}
 const TREE_MAX_ENTRIES = 500_000;
 
 /** Every non-directory entry under a tree (repo-relative, symlinks not followed, .git skipped). complete: false when a
@@ -710,7 +736,8 @@ export function pnpmWorkspaceAllowed(text: string): boolean {
   const parsed = pnpmParse(text);
   if (parsed === null) return false; // guard:pnpm-ws-parse
   const doc = parsed ?? ymap();
-  if (!Object.keys(doc).every((k) => (PNPM_WORKSPACE_KEYS as readonly string[]).includes(k))) return false; // guard:pnpm-ws-key
+  if (!Object.keys(doc).every((k) => (PNPM_WORKSPACE_KEYS as readonly string[]).includes(k) || (PNPM_WORKSPACE_INERT_KEYS as readonly string[]).includes(k))) return false; // guard:pnpm-ws-key
+  if (!PNPM_WORKSPACE_INERT_KEYS.every((k) => pnpmInertOk(k, doc[k]))) return false; // m169-guard:pnpm-inert-shape
   const pk = doc.packages;
   if (pk !== undefined && pk !== "" && !(Array.isArray(pk) && pk.every((g) => typeof g === "string" && plainGlob(g.replace(/^!/, ""))))) return false; // guard:pnpm-ws-packages
   const specs = (m: YNode | undefined): boolean => m === undefined || m === "" || (isYMap(m) && Object.values(m).every((v) => typeof v === "string" && v !== "" && !v.replace(/^npm:/, "").includes(":")));
@@ -779,14 +806,14 @@ const MAX_CACHED = 2;
 export const DEPS_DEFAULTS = { timeoutMs: 600_000, maxBytes: 1536 * 1024 * 1024 } as const;
 
 /** One run's install cache: staging dirs keyed by lockfile sha256 (+ manager, version, manifests). Removed by close(). */
-export interface DepsCache { dir: string; entries: Map<string, { staging: string } | { refuse: DepsCode }>; close(): void }
+export interface DepsCache { dir: string; entries: Map<string, { staging: string } | DepsRefusal>; close(): void }
 export function openDepsCache(base: string = tmpdir()): DepsCache {
   // --deps-dir may name a directory that does not exist yet (peace-model-v1-dev.yml passes "$RUNNER_TEMP/deps"); create it
   // first, else mkdtemp throws ENOENT and bin/loop.ts reports the whole run as TASK_FILE_INVALID (run 41473993873)
   mkdirSync(base, { recursive: true });
   const dir = mkdtempSync(join(base, "peaceai-loopdeps-"));
   chmodSync(dir, 0o755);
-  const entries = new Map<string, { staging: string } | { refuse: DepsCode }>();
+  const entries = new Map<string, { staging: string } | DepsRefusal>();
   return { dir, entries, close: () => { spawnSync("sudo", ["-n", "rm", "-rf", "--", dir], { stdio: "ignore" }); rmSync(dir, { recursive: true, force: true }); } };
 }
 
@@ -829,7 +856,7 @@ export function treeBytes(p: string): number {
  * env -i, scripts off), then links the copy's node_modules dirs to it (the staging tree is owned by the runner and
  * read-only to the candidate; the isolation also mounts /tmp read-only). Returns null on success or a fixed DEPS_* code.
  */
-export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o: DepsOptions = {}): { pm: PackageManager } | { refuse: DepsCode } {
+export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o: DepsOptions = {}): { pm: PackageManager } | DepsRefusal {
   const lock = pickLockfile(copyDir, Math.min(o.lockMaxBytes ?? LOCK_MAX_BYTES, LOCK_MAX_BYTES));
   if ("refuse" in lock) return lock;
   const problem = depsSourceProblem(copyDir, lock);
@@ -870,7 +897,7 @@ export function killCand(cand: CandUid): boolean {
   return false;
 }
 
-function install(copyDir: string, files: readonly string[], lock: LockPick, cand: CandUid, cache: DepsCache, key: string, o: DepsOptions): { staging: string } | { refuse: DepsCode } {
+function install(copyDir: string, files: readonly string[], lock: LockPick, cand: CandUid, cache: DepsCache, key: string, o: DepsOptions): { staging: string } | DepsRefusal {
   o.onInstall?.(key);
   const staging = join(cache.dir, `deps-${key.slice(0, 16)}`);
   const home = join(cache.dir, `home-${key.slice(0, 16)}`);
@@ -886,7 +913,12 @@ function install(copyDir: string, files: readonly string[], lock: LockPick, cand
   }
   for (const f of files) if ((PM_CONFIG_FILES as readonly string[]).includes(posix.basename(f))) rmSync(join(staging, f), { force: true }); // guard:deps-config
   const me = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`;
-  if (spawnSync("sudo", ["-n", "chown", "-R", `${cand.name}:`, staging, home], { stdio: "ignore" }).status !== 0) return { refuse: "DEPS_INSTALL_FAILED" };
+  if (spawnSync("sudo", ["-n", "chown", "-R", `${cand.name}:`, staging, home], { stdio: "ignore" }).status !== 0) return { refuse: "DEPS_INSTALL_FAILED", fail: "CHOWN_TO_CAND" };
+  // M169 pre-flight: the candidate uid must reach (every parent searchable) and write its staging dir and HOME before
+  // the package manager runs, else the install fails for a reason that is not the repo's (run 41488888877: a deps dir
+  // under the runner's home); refused with its own fixed subcode, nothing is run
+  const access = ["sudo", "-n", "-u", cand.name, "--", "test", "-x", staging, "-a", "-w", staging, "-a", "-x", home, "-a", "-w", home];
+  if (spawnSync(access[0]!, access.slice(1), { stdio: "ignore" }).status !== 0) return { refuse: "DEPS_INSTALL_FAILED", fail: "CAND_NO_ACCESS" }; // m169-guard:deps-cand-access
   const timeoutMs = o.timeoutMs ?? DEPS_DEFAULTS.timeoutMs;
   const env: Record<string, string> = {
     PATH: `${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMPDIR: home, LANG: "C.UTF-8", CI: "true",
@@ -903,18 +935,18 @@ function install(copyDir: string, files: readonly string[], lock: LockPick, cand
   cmd.unshift("sudo", "-n", "-u", cand.name, "--"); // guard:deps-cand
   const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd: staging, stdio: "ignore", timeout: timeoutMs + 30_000, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } });
   // every process of the candidate uid goes before the tree changes hands (a setsid escapee would keep its network)
-  if (!killCand(cand)) return { refuse: "DEPS_INSTALL_FAILED" }; // guard:deps-kill
+  if (!killCand(cand)) return { refuse: "DEPS_INSTALL_FAILED", fail: "KILL" }; // guard:deps-kill
   // back to the runner: the candidate can no longer change the installed tree; its private HOME (caches) goes
   const chown = o.chown ? o.chown(me, staging) : ["sudo", "-n", "chown", "-R", me, staging];
   const owned = spawnSync(chown[0]!, chown.slice(1), { stdio: "ignore" }).status === 0;
   spawnSync("sudo", ["-n", "rm", "-rf", "--", home], { stdio: "ignore" });
-  if (!owned) return { refuse: "DEPS_INSTALL_FAILED" }; // guard:deps-chown
+  if (!owned) return { refuse: "DEPS_INSTALL_FAILED", fail: "CHOWN_BACK" }; // guard:deps-chown
   execFileSync("chmod", ["-R", "go-w", staging], { stdio: "ignore" });
   if (r.status === 137 || r.status === 124 || r.signal) return { refuse: "DEPS_TIMEOUT" }; // guard:deps-timeout
-  if (r.status !== 0) return { refuse: "DEPS_INSTALL_FAILED" };
+  if (r.status !== 0) return { refuse: "DEPS_INSTALL_FAILED", fail: "PM_EXIT" };
   const bytes = moduleDirs(staging).reduce((n, d) => n + treeBytes(join(staging, d)), 0);
   if (bytes > (o.maxBytes ?? DEPS_DEFAULTS.maxBytes)) return { refuse: "DEPS_TOO_LARGE" }; // guard:deps-size
-  if (!moduleDirs(staging).length) return { refuse: "DEPS_INSTALL_FAILED" };
+  if (!moduleDirs(staging).length) return { refuse: "DEPS_INSTALL_FAILED", fail: "NO_MODULES" };
   return { staging };
 }
 

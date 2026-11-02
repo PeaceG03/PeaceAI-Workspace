@@ -41,7 +41,7 @@ import { selectPlanner, type PlannerName } from "./plandefault.ts";
 import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
 import { ATTEMPT_CODES, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
-import { detectRunner, installDeps, installShim, openDepsCache, shimArgs, type DepsCache, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
+import { detectRunner, installDeps, installShim, openDepsCache, shimArgs, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -335,7 +335,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let pick: RunnerPick | null = null;
   let deps: LoopRow["deps"] = null;
   let baseline: LoopBaseline | null = null;
-  const done = (code: LoopCode): LoopResult => ({
+  const done = (code: LoopCode, depsFail?: DepsFail): LoopResult => ({
     row: {
       schema: LOOP_SCHEMA_V4, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
       loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, planner, plannerSha256: plannerSha,
@@ -345,6 +345,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       attemptCodes: records.map((r) => r.codes), tests: records.length ? records[records.length - 1]!.tests : tests,
       // hidden rows: taskKey plus scores only (runner, package manager and baseline counts could identify the repo)
       ...(set === "hidden" ? { runner: null, deps: null, baseline: null } : { runner: pick?.runner ?? null, deps: pick ? deps : null, baseline }),
+      // M169: which install step failed (a fixed code), public rows only
+      ...(set === "public" && code === "DEPS_INSTALL_FAILED" && depsFail ? { depsFail } : {}), // m169-guard:loop-depsfail
     },
     plan, attempts: records, context,
   });
@@ -385,7 +387,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     pick = det;
     if (det.runner !== "node-test" || det.hasDeps) {
       const d = installDeps(c.dir, cand, cache, o.deps);
-      if ("refuse" in d) return done(d.refuse);
+      if ("refuse" in d) return done(d.refuse, d.fail);
       deps = d.pm;
     } else deps = "none";
     installRunner(c, cand);

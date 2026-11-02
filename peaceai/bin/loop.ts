@@ -1,7 +1,8 @@
 // Sandboxed test-and-fix loop v1 CLI (see peaceai/spec/loop-v1.md).
-//   tsx peaceai/bin/loop.ts run <taskfile> [--max N] [--deps-dir DIR] [--proposer rules-v1|repair-v1|model-v1] [--planner NAME]
+//   tsx peaceai/bin/loop.ts run <taskfile> [--max N] [--deps-dir DIR] [--proposer rules-v1|repair-v1|repair-v2|model-v1] [--planner NAME]
 //       [--ranking FILE --ranking-sha256 HEX]   (model-v1 only)
 //   (DIR: where the run's install cache goes; the proposer defaults to rules-v1, repair-v1 is M152's edit proposer,
+//   repair-v2 is M168's (repair-v1 plus idiom templates, depth-2 callees and file-name focus; spec/edit-proposer-v2.md),
 //   model-v1 (M167) reranks repair-v1's candidates by the scoring job's ranking FILE, which must hash to HEX; model-v1
 //   runs only on the pinned public dev task file at the pinned --max (peaceai/model/model-v1-proposer.json), and any
 //   ranking problem ends every task PROPOSER_FAILED (never repair-v1's order);
@@ -9,7 +10,7 @@
 // The task file must be locked in the committed plan log (plan-only.ts lock). Candidate code runs only as the
 // stage-2 candidate uid named by PEACEAI_STAGE2_CAND; without it every task is refused (CAND_UID_*). Appends one
 // loop row per task to peaceai/plan/loop-runs.jsonl. Prints codes and numbers only; a hidden-set line names no task.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repairProposer } from "../lib/editpropose.ts";
 import { loopPlanner, MAX_ATTEMPTS, ROOT, runLoopFile, type Proposer } from "../lib/loop.ts";
@@ -27,8 +28,8 @@ const propAt = args.indexOf("--proposer");
 const prop = propAt >= 0 ? args[propAt + 1] : "rules-v1";
 const planAt = args.indexOf("--planner");
 const plannerFlag = planAt >= 0 ? (args[planAt + 1] ?? "") : undefined;
-if (cmd !== "run" || !file || !Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS || (depsAt >= 0 && !depsDir?.startsWith("/")) || (prop !== "rules-v1" && prop !== "repair-v1" && prop !== MODEL_PROPOSER)) {
-  console.log(`usage: loop.ts run <taskfile> [--max 1..${MAX_ATTEMPTS}] [--deps-dir /abs/dir] [--proposer rules-v1|repair-v1|model-v1] [--planner v1|v2|v3|v4] [--ranking /abs --ranking-sha256 HEX]`);
+if (cmd !== "run" || !file || !Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS || (depsAt >= 0 && !depsDir?.startsWith("/")) || (prop !== "rules-v1" && prop !== "repair-v1" && prop !== "repair-v2" && prop !== MODEL_PROPOSER)) {
+  console.log(`usage: loop.ts run <taskfile> [--max 1..${MAX_ATTEMPTS}] [--deps-dir /abs/dir] [--proposer rules-v1|repair-v1|repair-v2|model-v1] [--planner v1|v2|v3|v4] [--ranking /abs --ranking-sha256 HEX]`);
   process.exit(2);
 }
 // the planner is picked only by selectPlanner; an unknown name is refused before anything runs
@@ -36,7 +37,7 @@ const planner = loopPlanner(plannerFlag);
 if (!planner) { console.log("refused PLANNER_UNKNOWN"); process.exit(2); }
 let out: ReturnType<typeof runLoopFile>;
 let rankingRefused = false;
-let makeProposer: ((t: { taskKey: string }) => Proposer) | undefined = prop === "repair-v1" ? (): Proposer => repairProposer() : undefined;
+let makeProposer: ((t: { taskKey: string }) => Proposer) | undefined = prop === "repair-v1" ? (): Proposer => repairProposer() : prop === "repair-v2" ? (): Proposer => repairProposer({ v2: true }) : undefined;
 const rankAt = args.indexOf("--ranking"), rankShaAt = args.indexOf("--ranking-sha256");
 if (prop !== MODEL_PROPOSER && (rankAt >= 0 || rankShaAt >= 0)) { console.log("refused RANKING_WITHOUT_MODEL_V1"); process.exit(2); }
 if (prop === MODEL_PROPOSER) {
@@ -56,7 +57,32 @@ if (prop === MODEL_PROPOSER) {
   if (!pr.ok) { console.log(`model-v1 ranking refused ${pr.reason}: every task ends PROPOSER_FAILED`); rankingRefused = true; }
   makeProposer = (t) => modelProposer(t, ranking) as Proposer;
 }
-try { out = runLoopFile(file, { maxAttempts: max, depsDir, makeProposer, plannerFlag }); } catch { console.log("refused TASK_FILE_INVALID"); process.exit(1); }
+// M169: only a failure to read the task file itself is TASK_FILE_INVALID (runLoopFile returns that code for a file it
+// read but could not parse or validate); any other throw is LOOP_CRASHED with a fixed code (the error's code or class
+// name, never its message), so a crash elsewhere (run 41473993873: a missing --deps-dir) is no longer reported as a
+// bad task file
+const regularFile = (p: string | undefined): boolean => { try { return !!p && statSync(p).isFile(); } catch { return false; } };
+// the printed code comes from fixed allow-lists only (public-log rule: filtered codes); any other code, an upper-case
+// token included (e.g. ENAMETOOLONG, ERR_*), or any other class name prints OTHER
+const CRASH_CODES: ReadonlySet<string> = new Set([
+  "ENOENT", "EACCES", "EPERM", "EEXIST", "ENOTDIR", "EISDIR", "ENOTEMPTY", "EROFS", "ENOSPC", "EDQUOT", "EMFILE", "ENFILE",
+  "EBUSY", "EAGAIN", "ENOMEM", "E2BIG", "EPIPE", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND",
+]);
+const CRASH_CLASSES: ReadonlySet<string> = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "URIError", "EvalError", "AggregateError"]);
+const crashCode = (e: unknown): string => {
+  const c = (e as { code?: unknown } | null)?.code;
+  if (typeof c === "string" && CRASH_CODES.has(c)) return c; // m169-guard:bin-crash-code
+  const n = e instanceof Error ? e.name : "";
+  return c === undefined && CRASH_CLASSES.has(n) ? n : "OTHER";
+};
+try { out = runLoopFile(file, { maxAttempts: max, depsDir, makeProposer, plannerFlag }); } catch (e) {
+  let taskFile = false;
+  // the task file is the first thing runLoopFile reads: a throw naming it, or any throw while it is not a regular file
+  // (a directory read fails EISDIR without a path), is the task file's
+  if ((e as { path?: unknown } | null)?.path === file || !regularFile(file)) taskFile = true; // m169-guard:bin-task-file
+  console.log(taskFile ? "refused TASK_FILE_INVALID" : `refused LOOP_CRASHED ${crashCode(e)}`);
+  process.exit(1);
+}
 if (out.code !== "OK") { console.log(`refused ${out.code}`); process.exit(1); }
 for (const { row: r } of out.results) {
   const id = r.set === "public" ? `${r.repo}@${r.commit!.slice(0, 10)}` : r.taskKey;

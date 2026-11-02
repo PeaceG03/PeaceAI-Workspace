@@ -401,7 +401,7 @@ test("M167: LM_JOBS pins model-v1-score to its workflow (runInfer's gate); the p
 test("M167: bin/loop.ts: model-v1 is checked (modelV1RunProblem) before any run; ranking flags need model-v1", () => {
   const bin = code("peaceai/bin/loop.ts");
   assert.ok(bin.indexOf("modelV1RunProblem(") > 0 && bin.indexOf("modelV1RunProblem(") < bin.indexOf("runLoopFile("));
-  assert.match(bin, /prop !== "rules-v1" && prop !== "repair-v1" && prop !== MODEL_PROPOSER/);
+  assert.match(bin, /prop !== "rules-v1" && prop !== "repair-v1" && prop !== "repair-v2" && prop !== MODEL_PROPOSER/); // M168: + repair-v2
   const tsx = join(ROOT, "node_modules/.bin/tsx");
   const run = (...a: string[]) => spawnSync(tsx, [join(ROOT, "peaceai/bin/loop.ts"), ...a], { cwd: ROOT, encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 60_000 });
   const r1 = run("run", "peaceai/plan/tasks-public-v1.json", "--max", "3", "--proposer", "model-v1");
@@ -547,7 +547,8 @@ for (const [id, file, from, to] of SEMANTIC) {
 // Run 41473993873: the attempt job's three loop runs all printed "refused TASK_FILE_INVALID" because --deps-dir
 // "$RUNNER_TEMP/deps" did not exist (openDepsCache's mkdtemp threw ENOENT, and bin/loop.ts reports any throw from
 // runLoopFile as TASK_FILE_INVALID). Runs the workflow's exact three loop.ts lines, verbatim, in a clone of the
-// committed HEAD with a fresh RUNNER_TEMP that has no deps dir. No candidate uid is named, so every task stops at
+// committed HEAD with a fresh RUNNER_TEMP that has no deps dir (M169: the lines pass "$PEACEAI_DEPS_DIR", which the
+// pre-flight step exports; here it names a dir that does not exist yet). No candidate uid is named, so every task stops at
 // CAND_UID_REQUIRED before any fetch or install (no network); the ranking file is absent, so model-v1 writes its rows
 // and exits 1 (a refused ranking is never green). Every run must accept tasks-public-v1.json and write 12 rows.
 test("M167: the attempt job's exact loop.ts invocations accept tasks-public-v1.json (deps dir not pre-created)", () => {
@@ -566,7 +567,7 @@ test("M167: the attempt job's exact loop.ts invocations accept tasks-public-v1.j
     const log = join(clone, "peaceai/plan/loop-runs.jsonl");
     const n0 = readFileSync(log, "utf8").split("\n").filter(Boolean).length;
     const script = ["set -uo pipefail", `T=${pin.taskFile}; M=${pin.maxAttempts}`, ...lines, 'echo "exit codes $r1 $r2 $r3"'].join("\n");
-    const r = spawnSync("bash", ["-c", script], { cwd: clone, encoding: "utf8", timeout: 300_000, env: { PATH: process.env.PATH, HOME: d, RUNNER_TEMP: rt, PEACEAI_CANDIDATE_JOB: "true", RANKING_SHA256: "0".repeat(64) } });
+    const r = spawnSync("bash", ["-c", script], { cwd: clone, encoding: "utf8", timeout: 300_000, env: { PATH: process.env.PATH, HOME: d, RUNNER_TEMP: rt, PEACEAI_DEPS_DIR: join(rt, "deps"), PEACEAI_CANDIDATE_JOB: "true", RANKING_SHA256: "0".repeat(64) } });
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout, /TASK_FILE_INVALID/);
     assert.match(r.stdout, /\nexit codes 0 1 0\n/, "repair-v1 and rules-v1 exit 0; model-v1 exits 1 only for its refused ranking");

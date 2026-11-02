@@ -22,6 +22,9 @@ export const LOOP_MODEL_PROPOSERS = ["model-v1"] as const;
 export const LOOP_PLANNER_NAMES = ["plan-only-v1", "plan-only-v2", "plan-only-v3", "plan-only-v4"] as const;
 export const LOOP_RUNNERS = ["node-test", "vitest", "jest"] as const;
 export const LOOP_DEPS = ["none", "npm", "pnpm", "yarn"] as const;
+/** M169: v4 public rows only, and only with code DEPS_INSTALL_FAILED: which install step failed, as a fixed code
+ *  (never package-manager output). Optional: rows written before M169 have none. Same list as loopdeps.ts DEPS_FAILS. */
+export const LOOP_DEPS_FAILS = ["CAND_NO_ACCESS", "CHOWN_TO_CAND", "KILL", "CHOWN_BACK", "PM_EXIT", "NO_MODULES"] as const;
 /** The loop's add-only log (repo-relative). */
 export const LOOP_LOG = "peaceai/plan/loop-runs.jsonl";
 /** Task-level outcome codes (the one `code` of a row). Never message text. */
@@ -90,6 +93,8 @@ export interface LoopRow {
   deps?: (typeof LOOP_DEPS)[number] | null;
   /** v2 only: the baseline run on the unedited copy (null: it did not run). */
   baseline?: LoopBaseline | null;
+  /** M169, v4 public DEPS_INSTALL_FAILED rows only (optional): the failed install step, a fixed code. */
+  depsFail?: (typeof LOOP_DEPS_FAILS)[number];
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -99,6 +104,7 @@ const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commi
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
 const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
+const OPTIONAL_V4 = ["depsFail"]; // M169: optional, so rows written before it still validate
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
@@ -110,7 +116,9 @@ export function loopRowProblem(o: unknown): string | null {
   const v2 = r.schema === LOOP_SCHEMA_V2 || v3;
   if (r.schema !== LOOP_SCHEMA && !v2) return "schema";
   const keys = v4 ? KEYS_V4 : v3 ? KEYS_V3 : v2 ? KEYS_V2 : KEYS;
-  if (Object.keys(r).some((k) => !keys.includes(k))) return "loop_keys";
+  let optional: string[] = [];
+  if (v4) optional = OPTIONAL_V4; // m169-guard:row-depsfail-v4
+  if (Object.keys(r).some((k) => !keys.includes(k) && !optional.includes(k))) return "loop_keys";
   const model = (LOOP_MODEL_PROPOSERS as readonly string[]).includes(r.proposer);
   if (v2 && !keys.every((k) => k === "repo" || k === "commit" || (k === "lm" && model) || k in r)) return "loop_keys";
   if (typeof r.at !== "string" || !ISO.test(r.at)) return "at";
@@ -163,6 +171,11 @@ export function loopRowProblem(o: unknown): string | null {
     }
     if (r.set === "public" && r.attempts > 0 && r.baseline === null) return "baseline_presence";
     if (r.deps !== null && r.runner === null) return "deps_without_runner";
+  }
+  if ("depsFail" in r) {
+    if (!(LOOP_DEPS_FAILS as readonly string[]).includes(r.depsFail)) return "deps_fail"; // m169-guard:row-depsfail-code
+    if (r.code !== "DEPS_INSTALL_FAILED") return "deps_fail_code"; // m169-guard:row-depsfail-only
+    if (r.set !== "public") return "hidden_detail"; // m169-guard:row-depsfail-public
   }
   return null;
 }
