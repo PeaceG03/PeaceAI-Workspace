@@ -19,7 +19,7 @@ section still holds; `selfpropose.ts` is unchanged and there is still exactly on
    The runner must be a dependency. Refused with a code, never text: another runner in the script (mocha, ava, tap,
    tape, uvu, jasmine, karma, cypress, playwright, qunit, lab, ospec, bun, deno) or two / no runner ->
    `TEST_RUNNER_UNSUPPORTED`; a compose file or `docker` in the script (a database or other service) ->
-   `TEST_NEEDS_SERVICE`.
+   `TEST_NEEDS_SERVICE`, checked first (batch 10).
 3. Dependencies, only from the repo's lockfile: `pnpm-lock.yaml` -> `corepack pnpm@V install --ignore-pnpmfile
    --frozen-lockfile --ignore-scripts`; `package-lock.json` / `npm-shrinkwrap.json` -> `npm ci --allow-git=none
    --allow-remote=none --allow-file=none --ignore-scripts`;
@@ -161,6 +161,8 @@ package bin with the JSON reporter writing to the private TMPDIR (`vitest run --
 Fail closed: no report -> `fail 1`; failed suites with no failed test -> counted as failures; a nonzero exit or
 `success: false` with no failure -> `fail 1`. vitest >= 3.1 is retried once with `--configLoader runner` when no
 report was written (the default config loader writes a temp file beside the config, and the copy is read-only).
+vitest < 2 (with a `./node` export file) is started through its node API instead, with its results cache off
+(batch 10; peaceai/spec/loop-runners-v2.md).
 
 Each guard is one line tagged `// guard:<id>` in `loopdeps.ts` (71 at round 7; the list is in
 `m151-mutation.test.ts`). Each has a refused
