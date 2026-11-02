@@ -129,6 +129,20 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
       - name: Create the unprivileged candidate user (same as Job B)
         run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand
+      - name: Pre-flight (fail closed) - the candidate uid can traverse and write the deps dir (M169, run 41488888877)
+        # The install cache was under $RUNNER_TEMP (inside the runner's home), which the candidate uid cannot enter, so
+        # every install ended DEPS_INSTALL_FAILED. The deps dir is now a fresh dir under /tmp; this step proves the
+        # candidate uid can reach it and write a dir it owns there before any loop runs, else the job stops here.
+        run: |
+          set -euo pipefail
+          if sudo -n -u peaceai-cand -- test -x "$RUNNER_TEMP"; then echo "runner-temp candidate-traversable=yes"; else echo "runner-temp candidate-traversable=no"; fi
+          D=$(mktemp -d /tmp/peaceai-deps.XXXXXX); chmod 755 "$D"
+          P="$D/preflight"; mkdir "$P"; sudo -n chown peaceai-cand: "$P"
+          sudo -n -u peaceai-cand -- test -x "$D" || { echo "refused DEPS_DIR_CAND_NO_TRAVERSE"; exit 1; }
+          sudo -n -u peaceai-cand -- sh -c 'touch "$1/w" && rm "$1/w"' sh "$P" || { echo "refused DEPS_DIR_CAND_NO_WRITE"; exit 1; }
+          sudo -n rm -rf -- "$P"
+          echo "PEACEAI_DEPS_DIR=$D" >> "$GITHUB_ENV"
+          echo "deps dir pre-flight ok"
       - name: Make this runner's tools read-only (same as Job B; only the loop log it appends to stays writable)
         run: |
           chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
@@ -147,9 +161,9 @@ jobs:
           N=$(jq '.tasks | length' "$T"); [ "$N" = 12 ] || { echo "task file has $N tasks, not 12: refused"; exit 1; }
           L=peaceai/plan/loop-runs.jsonl; n0=$(wc -l < "$L")
           # every run is attempted and its exit code kept; the job fails below (after printing the rows) unless all are 0
-          r1=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer repair-v1 --deps-dir "$RUNNER_TEMP/deps" || r1=$?
-          r2=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer model-v1 --ranking "$RUNNER_TEMP/ranking.json" --ranking-sha256 "$RANKING_SHA256" --deps-dir "$RUNNER_TEMP/deps" || r2=$?
-          r3=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer rules-v1 --deps-dir "$RUNNER_TEMP/deps" || r3=$?
+          r1=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer repair-v1 --deps-dir "$PEACEAI_DEPS_DIR" || r1=$?
+          r2=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer model-v1 --ranking "$RUNNER_TEMP/ranking.json" --ranking-sha256 "$RANKING_SHA256" --deps-dir "$PEACEAI_DEPS_DIR" || r2=$?
+          r3=0; ./node_modules/.bin/tsx peaceai/bin/loop.ts run "$T" --max "$M" --proposer rules-v1 --deps-dir "$PEACEAI_DEPS_DIR" || r3=$?
           # the appended rows (public set: codes and numbers only), for Builder to commit verbatim; their sha256 binds the copy
           tail -n +"$((n0 + 1))" "$L" > "$RUNNER_TEMP/rows.jsonl"
           ! jq -e 'select(.set != "public")' "$RUNNER_TEMP/rows.jsonl" > /dev/null || { echo "a non-public row: refused to print"; exit 1; }

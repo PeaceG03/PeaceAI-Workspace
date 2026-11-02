@@ -10,7 +10,7 @@
 // The task file must be locked in the committed plan log (plan-only.ts lock). Candidate code runs only as the
 // stage-2 candidate uid named by PEACEAI_STAGE2_CAND; without it every task is refused (CAND_UID_*). Appends one
 // loop row per task to peaceai/plan/loop-runs.jsonl. Prints codes and numbers only; a hidden-set line names no task.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repairProposer } from "../lib/editpropose.ts";
 import { loopPlanner, MAX_ATTEMPTS, ROOT, runLoopFile, type Proposer } from "../lib/loop.ts";
@@ -57,7 +57,25 @@ if (prop === MODEL_PROPOSER) {
   if (!pr.ok) { console.log(`model-v1 ranking refused ${pr.reason}: every task ends PROPOSER_FAILED`); rankingRefused = true; }
   makeProposer = (t) => modelProposer(t, ranking) as Proposer;
 }
-try { out = runLoopFile(file, { maxAttempts: max, depsDir, makeProposer, plannerFlag }); } catch { console.log("refused TASK_FILE_INVALID"); process.exit(1); }
+// M169: only a failure to read the task file itself is TASK_FILE_INVALID (runLoopFile returns that code for a file it
+// read but could not parse or validate); any other throw is LOOP_CRASHED with a fixed code (the error's code or class
+// name, never its message), so a crash elsewhere (run 41473993873: a missing --deps-dir) is no longer reported as a
+// bad task file
+const regularFile = (p: string | undefined): boolean => { try { return !!p && statSync(p).isFile(); } catch { return false; } };
+const crashCode = (e: unknown): string => {
+  const c = (e as { code?: unknown } | null)?.code;
+  if (typeof c === "string" && /^[A-Z][A-Z0-9_]{1,40}$/.test(c)) return c; // m169-guard:bin-crash-code
+  const n = e instanceof Error ? e.name : "";
+  return /^[A-Za-z]{1,40}$/.test(n) ? n : "UNKNOWN";
+};
+try { out = runLoopFile(file, { maxAttempts: max, depsDir, makeProposer, plannerFlag }); } catch (e) {
+  let taskFile = false;
+  // the task file is the first thing runLoopFile reads: a throw naming it, or any throw while it is not a regular file
+  // (a directory read fails EISDIR without a path), is the task file's
+  if ((e as { path?: unknown } | null)?.path === file || !regularFile(file)) taskFile = true; // m169-guard:bin-task-file
+  console.log(taskFile ? "refused TASK_FILE_INVALID" : `refused LOOP_CRASHED ${crashCode(e)}`);
+  process.exit(1);
+}
 if (out.code !== "OK") { console.log(`refused ${out.code}`); process.exit(1); }
 for (const { row: r } of out.results) {
   const id = r.set === "public" ? `${r.repo}@${r.commit!.slice(0, 10)}` : r.taskKey;
