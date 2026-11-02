@@ -62,11 +62,18 @@ if (prop === MODEL_PROPOSER) {
 // name, never its message), so a crash elsewhere (run 41473993873: a missing --deps-dir) is no longer reported as a
 // bad task file
 const regularFile = (p: string | undefined): boolean => { try { return !!p && statSync(p).isFile(); } catch { return false; } };
+// the printed code comes from fixed allow-lists only (public-log rule: filtered codes); any other code, an upper-case
+// token included (e.g. ENAMETOOLONG, ERR_*), or any other class name prints OTHER
+const CRASH_CODES: ReadonlySet<string> = new Set([
+  "ENOENT", "EACCES", "EPERM", "EEXIST", "ENOTDIR", "EISDIR", "ENOTEMPTY", "EROFS", "ENOSPC", "EDQUOT", "EMFILE", "ENFILE",
+  "EBUSY", "EAGAIN", "ENOMEM", "E2BIG", "EPIPE", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND",
+]);
+const CRASH_CLASSES: ReadonlySet<string> = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "URIError", "EvalError", "AggregateError"]);
 const crashCode = (e: unknown): string => {
   const c = (e as { code?: unknown } | null)?.code;
-  if (typeof c === "string" && /^[A-Z][A-Z0-9_]{1,40}$/.test(c)) return c; // m169-guard:bin-crash-code
+  if (typeof c === "string" && CRASH_CODES.has(c)) return c; // m169-guard:bin-crash-code
   const n = e instanceof Error ? e.name : "";
-  return /^[A-Za-z]{1,40}$/.test(n) ? n : "UNKNOWN";
+  return c === undefined && CRASH_CLASSES.has(n) ? n : "OTHER";
 };
 try { out = runLoopFile(file, { maxAttempts: max, depsDir, makeProposer, plannerFlag }); } catch (e) {
   let taskFile = false;

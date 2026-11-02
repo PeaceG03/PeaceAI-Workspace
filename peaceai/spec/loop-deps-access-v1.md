@@ -39,15 +39,18 @@ The attempt job put the cache under `$RUNNER_TEMP`, which sits inside the runner
 5. LOOP_CRASHED (Auditor). `bin/loop.ts` no longer turns every throw into TASK_FILE_INVALID. A throw that names the
    task file, or any throw while the task file is not a regular file, is still `refused TASK_FILE_INVALID`
    (`bin-task-file`); validation codes runLoopFile returns (TASK_FILE_INVALID, TASK_FILE_UNLOCKED, ...) print as
-   before; any other throw prints `refused LOOP_CRASHED <code>`, the error's `code` if it is an upper-case token,
-   else its class name, else UNKNOWN (`bin-crash-code`). Exit 1 either way.
+   before; any other throw prints `refused LOOP_CRASHED <code>`: the error's `code` if it is on a fixed allow-list of
+   system codes (ENOENT, EACCES, EPERM, EEXIST, ENOTDIR, EISDIR, ENOTEMPTY, EROFS, ENOSPC, EDQUOT, EMFILE, ENFILE,
+   EBUSY, EAGAIN, ENOMEM, E2BIG, EPIPE, ETIMEDOUT, ECONNRESET, ECONNREFUSED, EAI_AGAIN, ENOTFOUND; `bin-crash-code`),
+   else, for an error with no code, its class name if it is a built-in Error class, else OTHER. Any other upper-case
+   token (ENAMETOOLONG, ERR_*, a custom code) prints OTHER (m169 near-miss). Exit 1 either way.
 
 ## Soundness note
 
 - Nothing here widens what runs or what is fetched. The access check and the pre-flight only add refusals. The
   subcode is chosen from a fixed list by the code path taken; no string from the package manager, the error or the
-  repo reaches a row or a log line. LOOP_CRASHED prints a token matched by `^[A-Z][A-Z0-9_]{1,40}$` or a class name
-  matched by `^[A-Za-z]{1,40}$`, never `e.message` (the test checks the path is not printed).
+  repo reaches a row or a log line. LOOP_CRASHED prints only a token from the fixed code list, a built-in Error class
+  name, or OTHER, never `e.message` or an unlisted code (the test checks the path is not printed).
 - The inert keys cannot change sources or run code under the loop's install: it is `--frozen-lockfile` (nothing is
   resolved, so release-age settings have nothing to act on), `--ignore-scripts` (no dependency build script runs
   whatever the build allow lists say), the registry is pinned under `env -i`, and every lockfile entry is still

@@ -144,5 +144,10 @@ export function binChecks(tsx: string, bin: string, root: string, scratch: strin
   assert.match(crash.out, /^refused LOOP_CRASHED (?:EEXIST|ENOTDIR)$/, "a crash that is not the task file's");
   assert.equal(crash.status, 1);
   assert.ok(!crash.out.includes(notDir) && !crash.out.includes(":"), "a code only, no message text");
+  // near miss: a real upper-case system code that is not on the allow-list (ENAMETOOLONG from a 300-char --deps-dir
+  // component) prints OTHER, never the raw token
+  const longDir = join(scratch, "d".repeat(300));
+  const near = run([join(root, "peaceai/plan/tasks-public-v1.json"), "--deps-dir", longDir]);
+  assert.deepEqual(near, { out: "refused LOOP_CRASHED OTHER", status: 1 }, "a code off the allow-list prints OTHER");
   assert.equal(readFileSync(log, "utf8"), before, "no task ran, no row appended");
 }
