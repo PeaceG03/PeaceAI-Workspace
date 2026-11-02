@@ -781,6 +781,9 @@ export const DEPS_DEFAULTS = { timeoutMs: 600_000, maxBytes: 1536 * 1024 * 1024 
 /** One run's install cache: staging dirs keyed by lockfile sha256 (+ manager, version, manifests). Removed by close(). */
 export interface DepsCache { dir: string; entries: Map<string, { staging: string } | { refuse: DepsCode }>; close(): void }
 export function openDepsCache(base: string = tmpdir()): DepsCache {
+  // --deps-dir may name a directory that does not exist yet (peace-model-v1-dev.yml passes "$RUNNER_TEMP/deps"); create it
+  // first, else mkdtemp throws ENOENT and bin/loop.ts reports the whole run as TASK_FILE_INVALID (run 41473993873)
+  mkdirSync(base, { recursive: true });
   const dir = mkdtempSync(join(base, "peaceai-loopdeps-"));
   chmodSync(dir, 0o755);
   const entries = new Map<string, { staging: string } | { refuse: DepsCode }>();
