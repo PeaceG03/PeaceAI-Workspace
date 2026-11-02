@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type * as Deps from "../lib/loopdeps.ts";
 import type * as Loop from "../lib/loop.ts";
 import type * as Row from "../lib/looprow.ts";
@@ -124,8 +125,8 @@ export const CASES: Case[] = [
  * text; nothing is appended to the loop log. `bin` is bin/loop.ts or a mutant of it; `tsx` the tsx binary.
  */
 export function binChecks(tsx: string, bin: string, root: string, scratch: string): void {
-  const run = (args: string[]) => {
-    const r = spawnSync(tsx, [bin, "run", ...args], { cwd: scratch, encoding: "utf8", env: { ...process.env, PEACEAI_STAGE2_CAND: "" }, timeout: 120_000 });
+  const run = (args: string[], extra: Record<string, string> = {}) => {
+    const r = spawnSync(tsx, [bin, "run", ...args], { cwd: scratch, encoding: "utf8", env: { ...process.env, PEACEAI_STAGE2_CAND: "", ...extra }, timeout: 120_000 });
     return { out: (r.stdout ?? "").trim(), status: r.status };
   };
   mkdirSync(scratch, { recursive: true });
@@ -149,5 +150,17 @@ export function binChecks(tsx: string, bin: string, root: string, scratch: strin
   const longDir = join(scratch, "d".repeat(300));
   const near = run([join(root, "peaceai/plan/tasks-public-v1.json"), "--deps-dir", longDir]);
   assert.deepEqual(near, { out: "refused LOOP_CRASHED OTHER", status: 1 }, "a code off the allow-list prints OTHER");
+  // near miss (Auditor #667): a non-builtin Error subclass with its own name and no code (thrown from openDepsCache's
+  // mkdtemp by a preload) prints OTHER, never its class name or message
+  const pre = join(scratch, "leaky-name-preload.mjs");
+  writeFileSync(pre, [
+    'import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";',
+    "const orig = fs.mkdtempSync;",
+    'class LeakyNameError extends Error { constructor() { super("leak-message"); this.name = "LeakyNameError"; } }',
+    'fs.mkdtempSync = (p, ...r) => { if (String(p).includes("peaceai-loopdeps-")) throw new LeakyNameError(); return orig(p, ...r); };',
+    "syncBuiltinESMExports();",
+  ].join("\n"));
+  const named = run([join(root, "peaceai/plan/tasks-public-v1.json"), "--deps-dir", join(scratch, "deps-named")], { NODE_OPTIONS: `--import=${pathToFileURL(pre).href}` });
+  assert.deepEqual(named, { out: "refused LOOP_CRASHED OTHER", status: 1 }, "a custom Error class name prints OTHER");
   assert.equal(readFileSync(log, "utf8"), before, "no task ran, no row appended");
 }

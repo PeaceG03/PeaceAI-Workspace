@@ -136,6 +136,9 @@ jobs:
         run: |
           set -euo pipefail
           if sudo -n -u peaceai-cand -- test -x "$RUNNER_TEMP"; then echo "runner-temp candidate-traversable=yes"; else echo "runner-temp candidate-traversable=no"; fi
+          # octal modes only (settles the 0750 theory on the next run); "none" if the path is missing
+          if m=$(stat -c %a /home/runner 2>/dev/null); then echo "mode home-runner=$m"; else echo "mode home-runner=none"; fi
+          if m=$(stat -c %a "$(dirname "$RUNNER_TEMP")" 2>/dev/null); then echo "mode runner-temp-parent=$m"; else echo "mode runner-temp-parent=none"; fi
           D=$(mktemp -d /tmp/peaceai-deps.XXXXXX); chmod 755 "$D"
           P="$D/preflight"; mkdir "$P"; sudo -n chown peaceai-cand: "$P"
           sudo -n -u peaceai-cand -- test -x "$D" || { echo "refused DEPS_DIR_CAND_NO_TRAVERSE"; exit 1; }

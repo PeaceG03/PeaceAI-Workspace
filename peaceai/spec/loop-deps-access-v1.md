@@ -21,7 +21,8 @@ The attempt job put the cache under `$RUNNER_TEMP`, which sits inside the runner
    (`refused DEPS_DIR_CAND_NO_TRAVERSE`, job fails) and can write a dir it owns there (`refused
    DEPS_DIR_CAND_NO_WRITE`, job fails), then exports it as `PEACEAI_DEPS_DIR`. The three loop lines pass
    `--deps-dir "$PEACEAI_DEPS_DIR"`. One extra line prints `runner-temp candidate-traversable=yes|no` (a fixed word,
-   to confirm the cause on the next run). The m9 pin `MODEL_V1_DEV_WORKFLOW_SHA256` is updated.
+   to confirm the cause on the next run), and two more print the modes of `/home/runner` and of `$RUNNER_TEMP`'s
+   parent, octal only (`stat -c %a`, or `none`; Auditor #667) to settle the 0750 theory. The m9 pin `MODEL_V1_DEV_WORKFLOW_SHA256` is updated.
 2. In-code access check (`m169-guard:deps-cand-access`). After the staging dir and HOME are handed to the candidate
    uid and before the package manager runs, `sudo -u <cand> test -x/-w` on both; failure is DEPS_INSTALL_FAILED with
    subcode CAND_NO_ACCESS, and nothing is run.
@@ -43,7 +44,9 @@ The attempt job put the cache under `$RUNNER_TEMP`, which sits inside the runner
    system codes (ENOENT, EACCES, EPERM, EEXIST, ENOTDIR, EISDIR, ENOTEMPTY, EROFS, ENOSPC, EDQUOT, EMFILE, ENFILE,
    EBUSY, EAGAIN, ENOMEM, E2BIG, EPIPE, ETIMEDOUT, ECONNRESET, ECONNREFUSED, EAI_AGAIN, ENOTFOUND; `bin-crash-code`),
    else, for an error with no code, its class name if it is a built-in Error class, else OTHER. Any other upper-case
-   token (ENAMETOOLONG, ERR_*, a custom code) prints OTHER (m169 near-miss). Exit 1 either way.
+   token (ENAMETOOLONG, ERR_*, a custom code) prints OTHER, and so does a non-builtin Error subclass with its own
+   name (m169 near-misses; m169-mutation semantic mutants crash-any-name, crash-name-shape, crash-name-with-code).
+   Exit 1 either way.
 
 ## Soundness note
 

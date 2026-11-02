@@ -91,3 +91,19 @@ for (const g of guards) {
     assert.ok(r.failed.length > 0, `no case notices m169-guard:${g.id} removed`);
   });
 }
+
+// Semantic mutants of bin/loop.ts's crash-name rule (Auditor #667): printing any e.name, or any name-shaped token,
+// instead of the fixed built-in class list must fail binChecks (the custom Error subclass near-miss).
+const NAME_MUTANTS: readonly [string, string, string][] = [
+  ["crash-any-name", 'return c === undefined && CRASH_CLASSES.has(n) ? n : "OTHER";', 'return n || "OTHER";'],
+  ["crash-name-shape", "CRASH_CLASSES.has(n)", "/^[A-Za-z]{1,40}$/.test(n)"],
+  ["crash-name-with-code", 'return c === undefined && CRASH_CLASSES.has(n) ? n : "OTHER";', 'return n ? n : "OTHER";'],
+];
+for (const [id, from, to] of NAME_MUTANTS) {
+  test(`M169 mutation: bin/loop.ts semantic mutant ${id} makes a check fail`, () => {
+    assert.equal(sources.bin!.split(from).length, 2, `${id}: the mutated text occurs exactly once`);
+    const bin = join(dir, `mutant-${id}-loop.ts`);
+    writeFileSync(bin, rewrite(sources.bin!.replace(from, to), {}, join(ROOT, "peaceai/bin")));
+    assert.throws(() => binChecks(tsx, bin, ROOT, join(dir, `bin-${id}`)), assert.AssertionError, `no check notices ${id}`);
+  });
+}
