@@ -2,10 +2,10 @@
 // `git ls-files` list or on disk) is refused, not just when it is in the context subset handed to the rule.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { applyRule, pathExistsIn, type RuleSpec } from "../lib/learned.ts";
+import { scratchDir } from "./scratch.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const spec = (id: string) => JSON.parse(readFileSync(join(root, "peaceai/rules/learned", `${id}.json`), "utf8")) as RuleSpec;
@@ -33,14 +33,14 @@ for (const c of CASES) {
     assert.equal(applyRule(s, c.objective, files, isTest, undefined, why1, pathExistsIn("/nonexistent", ["README.md", created[0]!])), null);
     assert.equal(why1.reason, "new_test_path_exists");
     // Untracked but on disk:
-    const dir = mkdtempSync(join(tmpdir(), "m26-ntp-"));
+    const dir = scratchDir("m26-ntp-");
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(join(dir, created[0]!), "// untracked\n");
     const why2: { reason?: string } = {};
     assert.equal(applyRule(s, c.objective, files, isTest, undefined, why2, pathExistsIn(dir, [])), null);
     assert.equal(why2.reason, "new_test_path_exists");
     // Free path: still builds with the check on.
-    assert.ok(applyRule(s, c.objective, files, isTest, undefined, {}, pathExistsIn(mkdtempSync(join(tmpdir(), "m26-ntp-")), ["src/a.ts"])));
+    assert.ok(applyRule(s, c.objective, files, isTest, undefined, {}, pathExistsIn(scratchDir("m26-ntp-"), ["src/a.ts"])));
   });
 }
 
@@ -54,7 +54,7 @@ test("a broken symlink at the new test path counts as existing (lstat, not exist
   const s = spec("public-complex-function-v1");
   const c = CASES[0]!;
   const created = applyRule(s, c.objective, files, isTest)!.extra!.map((x) => x.path);
-  const dir = mkdtempSync(join(tmpdir(), "m26-ntp-link-"));
+  const dir = scratchDir("m26-ntp-link-");
   mkdirSync(join(dir, "src"), { recursive: true });
   symlinkSync(join(dir, "does-not-exist"), join(dir, created[0]!));
   assert.equal(pathExistsIn(dir, [])(created[0]!), true);
@@ -65,7 +65,7 @@ test("a broken symlink at the new test path counts as existing (lstat, not exist
 });
 
 test("a non-ENOENT lstat error counts as existing (fail closed): a path under a regular file is ENOTDIR", () => {
-  const dir = mkdtempSync(join(tmpdir(), "m26-ntp-enotdir-"));
+  const dir = scratchDir("m26-ntp-enotdir-");
   writeFileSync(join(dir, "src"), "a regular file, not a directory\n");
   assert.equal(pathExistsIn(dir, [])("src/a.foo-0000000.test.ts"), true);
   assert.equal(pathExistsIn(dir, [])("other/a.test.ts"), false, "plain ENOENT stays free");

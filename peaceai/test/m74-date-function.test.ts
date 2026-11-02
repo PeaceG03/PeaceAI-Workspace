@@ -10,7 +10,6 @@ import ts from "typescript";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { admitRules } from "../lib/approved.ts";
 import { applyComplexRule, COMPLEX_TRIGGER, DATE_FUNCTION_FLAG, DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, DATE_TRIGGER, dateRefusal, LOOP_TRIGGER, NAMED_REFUSALS, stubComplexBody } from "../lib/learned-complex.ts";
@@ -19,6 +18,7 @@ import { readManifestBytes } from "../lib/manifestparts.ts";
 import { parseTask } from "../lib/nlparse.ts";
 import { isDateSpec, parseMarker, parseSpecBlock, phrasingFor, proposalBody } from "../lib/propose.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
+import { scratchDir } from "./scratch.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -152,7 +152,7 @@ test("v1 complex and loop specs keep refusing Date types; the date phrase reache
 test("e2e: the generated test passes on the function and fails on the stub and on the base", () => {
   const { e, r } = run("startOfUtcDay(value: Date): Date", SOD, '- startOfUtcDay(new Date("2026-10-16T05:30:00Z")).toISOString() is "2026-10-16T00:00:00.000Z"\n- startOfUtcDay(new Date("2026-10-16T23:59:59Z")).getTime() is 1792108800000');
   assert.ok(e, r);
-  const dir = mkdtempSync(join(tmpdir(), "m74-")); mkdirSync(join(dir, "src"));
+  const dir = scratchDir("m74-"); mkdirSync(join(dir, "src"));
   const testPath = join(dir, e!.extra![0]!.path);
   const tsx = resolve(root, "node_modules/.bin/tsx");
   const passes = (content: string) => { writeFileSync(join(dir, e!.path), content); writeFileSync(testPath, e!.extra![0]!.content); try { execFileSync(tsx, ["--test", testPath], { stdio: "pipe", env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "NODE_TEST_CONTEXT")), TZ: "Pacific/Kiritimati" } }); return true; } catch { return false; } };

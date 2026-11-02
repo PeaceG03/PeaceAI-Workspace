@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { dualCoreFreeDecision, ftManifestEntryProblem, manifestProvesNoCore, trainedOnShas, validCoreFreeProof, verifyModelDir, modelFileShas, MEMCHECK_SCHEMA } from "../lib/lm.ts";
 import { protectedReason } from "../lib/selfchange.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const py = process.env.PEACEAI_PYTHON ?? "python3";
@@ -43,7 +44,7 @@ function sourceRoot(dir: string) {
   } };
 }
 function env() {
-  const dir = mkdtempSync(join(tmpdir(), "m52-"));
+  const dir = scratchDir("m52-");
   const core = join(dir, "core"); mkdirSync(core); writeFileSync(join(core, "x.ts"), CORE);
   execFileSync("git", ["init", "-q"], { cwd: core }); execFileSync("git", ["add", "-A"], { cwd: core });
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"], { cwd: core });
@@ -185,7 +186,7 @@ test("M52 (a) --stage must match the manifest schema; the single-corpus file is 
 });
 
 test("M52 (a) loaders refuse a two-corpus model unless memcheck recorded both proofs valid for its trainedOn shas", () => {
-  const dir = mkdtempSync(join(tmpdir(), "m52v-"));
+  const dir = scratchDir("m52v-");
   const trainedOn = { pretrainManifestSha256: "3".repeat(64), finetuneManifestSha256: "4".repeat(64) };
   writeFileSync(join(dir, "config.json"), JSON.stringify({ schema: "peaceai-lm:v1", version: "lm-v1-000000000052", trainedOn }));
   writeFileSync(join(dir, "tokenizer.json"), "{}"); writeFileSync(join(dir, "weights.npz"), "w");
@@ -211,7 +212,7 @@ const UNIV = Array.from({ length: 40 }, (_, i) => `export function elig${i}(barC
 const FEAT = Array.from({ length: 40 }, (_, i) => `export function featureRecipe${i}(x: number[]): number { return x.slice(${i}).reduce((a, b) => a + b * ${i + 1}, 0); }`).join("\n") + "\n";
 const PRIV = Array.from({ length: 40 }, (_, i) => `export function privateCore${i}(s: string): string { return s.padStart(${i + 3}, "*") + "${i}"; }`).join("\n") + "\n";
 function pinEnv() {
-  const dir = mkdtempSync(join(tmpdir(), "m49p-"));
+  const dir = scratchDir("m49p-");
   const core = join(dir, "core");
   const files: Record<string, string> = { "packages/markets-scanner/src/universe.ts": UNIV, "packages/markets-scanner/src/features.ts": FEAT, "packages/private.ts": PRIV };
   for (const [p, t] of Object.entries(files)) { mkdirSync(join(core, p, ".."), { recursive: true }); writeFileSync(join(core, p), t); }

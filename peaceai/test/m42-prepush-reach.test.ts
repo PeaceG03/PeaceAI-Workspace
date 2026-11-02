@@ -4,9 +4,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { scratchDir } from "./scratch.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const mail = ["peace", "users.noreply.github.com"].join("@"); // built at runtime (no address in this file)
@@ -20,7 +20,7 @@ const put = (dir: string, path: string, text: string) => { mkdirSync(dirname(joi
 const commit = (dir: string, path: string, text: string, msg: string) => { put(dir, path, text); g(dir, "add", "-A"); g(dir, "commit", "-q", "-m", msg); };
 
 function setup() {
-  const t = mkdtempSync(join(tmpdir(), "m42-"));
+  const t = scratchDir("m42-");
   const core = join(t, "core");
   mkdirSync(core); g(core, "init", "-q"); commit(core, "engine/core.ts", CORE_TEXT, "core");
   const ws = join(t, "ws");

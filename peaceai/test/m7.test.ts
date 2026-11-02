@@ -3,7 +3,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import {
@@ -25,6 +24,7 @@ import { taskDir } from "../lib/store.ts";
 import { buildIndex } from "../lib/symbols.ts";
 
 import { b2Fixture, harnessFixture, PROFILE, PROFILE_TEST, repo, runB2, runJobB, sha, THEME, TSCONFIG, tsx } from "./m7-fixtures.ts";
+import { scratchDir } from "./scratch.ts";
 
 const tscBin = join(repo, "node_modules/.bin/tsc");
 
@@ -334,7 +334,7 @@ test("loop stops: NOT_NEEDED, GREEN, NO_RULE, NO_PROGRESS, BUDGET_ITERATIONS, BU
 });
 
 test("real tsc: the loop parses actual compiler output and repairs five error kinds to green", () => {
-  const dir = mkdtempSync(join(tmpdir(), "m7-tsc-"));
+  const dir = scratchDir("m7-tsc-");
   const files: Record<string, string> = {
     "src/util.ts": "export function clamp(n: number): number {\n  return Math.max(0, n);\n}\n",
     "src/theme.ts": [

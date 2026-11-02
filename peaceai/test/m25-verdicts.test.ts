@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { SummaryCandidate } from "../lib/gate.ts";
@@ -8,6 +7,7 @@ import { findOpenPeacePr, openPeacePrs, planPr, prBranch } from "../lib/prguard.
 import type { CandidateResult } from "../lib/rank.ts";
 import { buildRecords, buildSummary, effectiveVerdict, stableJson, taskEntry, withdraws, type VerdictRecord } from "../lib/records.ts";
 import { effectiveVerdict as effectiveForIssue, taskDir, writeNew, writeSummary } from "../lib/store.ts";
+import { scratchDir } from "./scratch.ts";
 
 const sc = (id: string, lines: number): SummaryCandidate => ({ id, file: `candidates/${id}.diff`, transformations: ["X"], operationId: null, diffBytes: lines * 10, diffLines: lines });
 const res = (id: string, lines: number): CandidateResult => ({ id, diffBytes: lines * 10, diffLines: lines, applied: true, typecheckPassed: true, originalSuitePassed: true, newTestsPassed: true, newTestFiles: 0 });
@@ -94,7 +94,7 @@ test("ordering ties: same timestamp falls back to numeric comment id", () => {
 });
 
 test("summary: only the latest attempt per issue counts; reader uses latest attempt; raw rows untouched", () => {
-  const root = mkdtempSync(join(tmpdir(), "m25-"));
+  const root = scratchDir("m25-");
   for (const runId of ["900", "1001"]) {
     const r = records(35, runId);
     writeNew(join(taskDir(root, 35, runId), "task.json"), stableJson(r.task));
@@ -205,7 +205,7 @@ test("record-verdict outputs: withdrew only for unsure on the picked letter or n
   const { spawnSync } = await import("node:child_process");
   const { readFileSync } = await import("node:fs");
   const repo = join(import.meta.dirname, "../..");
-  const root = mkdtempSync(join(tmpdir(), "m31-"));
+  const root = scratchDir("m31-");
   const r = buildRecords({ ...task(38), title: "[test] Do x" }, [sc("candidate-1", 5), sc("candidate-2", 9), sc("candidate-3", 12)],
     [res("candidate-1", 5), res("candidate-2", 9), res("candidate-3", 12)], "s");
   writeNew(join(taskDir(root, 38, "1001"), "task.json"), stableJson(r.task));

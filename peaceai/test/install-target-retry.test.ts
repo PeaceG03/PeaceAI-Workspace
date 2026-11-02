@@ -2,14 +2,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { scratchDir } from "./scratch.ts";
 
 const SCRIPT = resolve("peaceai/bin/install-target.sh");
 
 function fake(failTimes: number) {
-  const root = mkdtempSync(join(tmpdir(), "inst-"));
+  const root = scratchDir("inst-");
   const bin = join(root, "bin"); const dir = join(root, "target");
   mkdirSync(bin); mkdirSync(dir);
   for (const tool of ["corepack", "npm"]) {

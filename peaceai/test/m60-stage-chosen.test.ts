@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { scratchDir } from "./scratch.ts";
 
 const SCRIPT = resolve("peaceai/bin/stage-chosen.sh");
 const git = (dir: string, ...a: string[]) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8" }).trim();
 
 function repo(): string {
-  const d = mkdtempSync(join(tmpdir(), "stage-chosen-"));
+  const d = scratchDir("stage-chosen-");
   git(d, "init", "-q");
   mkdirSync(join(d, "src"));
   mkdirSync(join(d, ".github/workflows"), { recursive: true });
@@ -73,7 +73,7 @@ test("workflow-file candidate is refused and nothing is staged", () => {
 
 test("empty diff fails closed", () => {
   const d = repo();
-  const f = join(d, "..", "empty.diff");
+  const f = `${d}.empty.diff`; // beside d, so scratchDir removes it
   writeFileSync(f, "");
   const r = spawnSync("bash", [SCRIPT, f], { cwd: d, encoding: "utf8" });
   assert.notEqual(r.status, 0);
