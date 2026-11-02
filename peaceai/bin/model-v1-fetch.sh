@@ -22,7 +22,9 @@ done
 [ ! -e "$dest" ] || { echo "destination already exists: refused"; exit 1; }
 M="models/lm/$pv"; D="runs/lm-retrain/$run"
 ./peaceai/bin/with-deploy-key.sh git clone --quiet --depth 1 --filter=blob:none --sparse git@github.com:PeaceG03/PeaceAI-Results.git "$dest" 2>/dev/null || { echo "Results could not be cloned: refused"; exit 1; }
-git -C "$dest" sparse-checkout set --no-cone "/$M/config.json" "/$M/tokenizer.json" "/$M/weights.npz" "/$M/memcheck.json" "/$D/memcheck-recheck-*.json"
+# sparse-checkout set checks the chosen paths out at once, lazily fetching their blobs from the promisor remote (Results),
+# so it needs the key too (run 41272161658 failed here without it: publickey, could not fetch the config.json blob).
+./peaceai/bin/with-deploy-key.sh git -C "$dest" sparse-checkout set --no-cone "/$M/config.json" "/$M/tokenizer.json" "/$M/weights.npz" "/$M/memcheck.json" "/$D/memcheck-recheck-*.json" 2>/dev/null || { echo "Results sparse checkout failed: refused"; exit 1; }
 ./peaceai/bin/with-deploy-key.sh git -C "$dest" checkout --quiet 2>/dev/null || { echo "Results checkout failed: refused"; exit 1; }
 for f in config.json tokenizer.json weights.npz memcheck.json; do
   [ -f "$dest/$M/$f" ] && [ ! -L "$dest/$M/$f" ] || { echo "$M/$f missing or not a regular file in Results: refused"; exit 1; }

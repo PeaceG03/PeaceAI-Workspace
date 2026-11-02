@@ -85,6 +85,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/spec\/lb-train-v1\.md$|^peaceai\/test\/m15[789]-lb-[a-z]+\.test\.ts$|^peaceai\/test\/m16[01]-lb-[a-z]+\.test\.ts$|^peaceai\/test\/m157-lbtrain-(cases\.py|mut\.ts)$/i, why: "the M157-M161 limit-breaker training spec, tests, shared test helper and case driver (precision / 8-bit optimizer, curriculum, stop rule, daily cycle, LoRA; lbtrain.py, daily_cycle.py and lb-train.json are under peaceai/model/, lb-daily-cycle.sh under peaceai/bin/)" },
   { pattern: /^peaceai\/bin\/model-v1-score\.ts$|^peaceai\/bin\/loop\.ts$|^peaceai\/lib\/modelscore\.ts$|^peaceai\/lib\/modelpropose\.ts$/i, why: "the M167 model-v1 dev run: the scoring bin and lib peace-model-v1-dev.yml runs next to the Results LM, the attempt side's ranking checks, and the loop bin its attempt job runs (m95; Auditor #664)" },
   { pattern: /^peaceai\/lib\/(loop|loopdeps|looprow|codesearch|editpropose|plan|plan[234]|planrun|plan[234]run|plandefault|plangrade)\.ts$/i, why: "the lib import closure of the M167 model-v1 bins and libs (closure test m96): the loop, its row and deps checks, the code search, repair-v1 and the planners" },
+  { pattern: /^peaceai\/plan\/tasks-public-v1\.json$|^peaceai\/spec\/edit-proposer-model-v1\.md$/i, why: "the M167 model-v1 dev run's pinned public task file (model-v1-proposer.json taskFile) and the model-v1 spec (Auditor #664 PASS nits)" },
 ];
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */

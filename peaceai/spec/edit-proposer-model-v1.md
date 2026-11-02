@@ -53,8 +53,8 @@ the model put the right candidate earlier", measured at a small fixed `--max` pr
   ready. This design does not plan around it (open item, owned by Peace / Auditor).
 - Model (ruling a): only a Results LM that lm.ts `verifyModelDir` and infer.py both accept (`LM_FILES` config.json /
   tokenizer.json / weights.npz), pinned by its weights sha256. For the M167 pin see "Implementation (M167)": its
-  strict memcheck is FAIL and it is accepted only via the core-free-64 recheck, for dev-split use only. An lb-daily save is not eligible; it
-  becomes eligible only after export + M49 memcheck + provenance check, in its own reviewed PR.
+  strict memcheck is FAIL and it is accepted only via the core-free-64 recheck bound to config, tokenizer and weights
+  shas, for dev-split use only. An lb-daily save is not eligible; it becomes eligible only after export + M49 memcheck + provenance check, in its own reviewed PR.
 - Weights never on a bot computer, no model on the box: `lmJobAllowed` (lm.ts) currently ALLOWS off Actions ("Off
   Actions (the box) is allowed"). The scoring job needs its own check that refuses unless `GITHUB_ACTIONS === "true"`
   and the job id is pinned in `LM_JOB_WORKFLOWS` to one new manual-dispatch workflow. Unit tests use an injected fake
@@ -150,7 +150,11 @@ modelManifestSha256 = sha256 of the manifest text defined in ruling (c) above
 `bin/loop.ts run <taskFile> --max 20 --proposer model-v1 --ranking FILE --ranking-sha256 <ranking_sha256>`.
 Before the `ranking` output is written, the score step (in the sha-pinned workflow, m9) checks with jq that the file
 is one line, at most 64 KiB, and exactly the schema below (key sets, hex widths, one entry per task of the task file,
-orders of distinct integers 0..59, at most 60); a failure fails the job and there is no output.
+orders of distinct integers 0..59, at most 60); a failure fails the job and there is no output. The jq check only
+enforces distinct integers in 0..59, not a full permutation of each task's list (jq does not know the list lengths);
+`isPermutation` in the attempt job catches the rest: `parseRanking` refuses an order that is not a permutation of
+0..len-1 (a gap such as [0, 2]; RANKING_INVALID), and `applyRanking` refuses one whose length is not that of the list
+the job rebuilt (PROPOSER_FAILED).
 `modelpropose.ts` `parseRanking` refuses (and every task then ends PROPOSER_FAILED, with
 `modelManifestSha256: null` and no attempts) unless: the text exists, is at most 64 KiB and hashes to
 `ranking_sha256`; it is exactly that schema and key set; the manifest sha256 is 64 hex; `taskFileSha256` is the task

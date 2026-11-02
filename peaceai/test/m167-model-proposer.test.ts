@@ -445,6 +445,12 @@ test("M167: the workflow: dispatch-only, two jobs, weights only in the scoring j
     assert.equal(sha(readFileSync(join(ROOT, f!)) as unknown as string), h, `${f} changed: re-pin KEY_SCRIPTS_SHA256`);
   }
   assert.deepEqual(keys[1]!.trim().split("\n").map((x) => x.trim().split(/\s+/)[1]).sort(), ["peaceai/bin/model-v1-fetch.sh", "peaceai/bin/with-deploy-key.sh"]);
+  // run 41272161658: the bare `git sparse-checkout set` lazily fetched blobs from Results with no key (publickey, exit 128).
+  // Every git call in the fetch script runs under with-deploy-key.sh, fails closed, and keeps git's stderr out of the log.
+  const fetchSh = readFileSync(join(ROOT, "peaceai/bin/model-v1-fetch.sh"), "utf8");
+  const gitLines = fetchSh.split("\n").filter((l) => !/^\s*#/.test(l) && /(^|[\s;&|(])git\s/.test(l));
+  assert.ok(gitLines.length >= 3 && gitLines.some((l) => /sparse-checkout set/.test(l)), "clone, sparse-checkout and checkout are present");
+  for (const l of gitLines) assert.match(l, /^\.\/peaceai\/bin\/with-deploy-key\.sh git [^\n]* 2>\/dev\/null \|\| \{ echo "[^"]*: refused"; exit 1; \}$/, `git call not under the key or not fail-closed: ${l.slice(0, 80)}`);
   // Auditor #664: candidates are built before any key or weights reach the runner; scoring logs are the counts line only
   const iCand = score.indexOf("model-v1-score.ts candidates"), iVerify = score.indexOf("sha256sum -c --quiet"), iFetch = score.indexOf("model-v1-fetch.sh \"$RUNNER_TEMP/m\""), iScore = score.indexOf("model-v1-score.ts score");
   assert.ok(iCand > 0 && iCand < iVerify && iVerify < iFetch && iFetch < iScore, "order: candidates, verify, fetch, score");
