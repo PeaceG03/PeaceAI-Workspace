@@ -124,9 +124,10 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "service first near-misses: mocha with no compose file stays TEST_RUNNER_UNSUPPORTED; vitest with no compose file is admitted",
+    id: "service first near-misses: ava with no compose file stays TEST_RUNNER_UNSUPPORTED; vitest with no compose file is admitted",
     run(l, ctx) {
-      const d1 = plain(dir(ctx, "svc"), { "package.json": pkgJson({ test: "mocha test" }, { mocha: "10.0.0" }), "test/a.test.js": OK });
+      // M172 (batch 11): mocha is a loop runner now (m172-cases.ts), so this near-miss uses ava, which is not
+      const d1 = plain(dir(ctx, "svc"), { "package.json": pkgJson({ test: "ava" }, { ava: "6.0.0" }), "test/a.test.js": OK });
       assert.deepEqual(l.deps.detectRunner(d1, ["test/a.test.js"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
       const d2 = plain(dir(ctx, "svc"), { "package.json": pkgJson({ test: "vitest run" }, { vitest: "1.0.0" }), "test/a.test.js": OK });
       assert.equal((l.deps.detectRunner(d2, ["test/a.test.js"]) as Deps.RunnerPick).runner, "vitest");

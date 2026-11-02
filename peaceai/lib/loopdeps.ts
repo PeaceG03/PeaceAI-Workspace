@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import type { CandUid } from "./selfpropose.ts";
 
-export const RUNNERS = ["node-test", "vitest", "jest"] as const;
+export const RUNNERS = ["node-test", "vitest", "jest", "mocha"] as const;
 export type RunnerKind = (typeof RUNNERS)[number];
 export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
@@ -56,11 +56,76 @@ const readJson = (p: string): Record<string, any> | null => { try { const o = JS
 // ---- 1. the runner
 
 /** Runners the loop does not drive (refused with TEST_RUNNER_UNSUPPORTED); matched as whole script words. */
-export const OTHER_RUNNERS = ["mocha", "ava", "tap", "tape", "uvu", "jasmine", "karma", "cypress", "playwright", "qunit", "lab", "ospec", "bun", "deno"] as const;
+export const OTHER_RUNNERS = ["ava", "tap", "tape", "uvu", "jasmine", "karma", "cypress", "playwright", "qunit", "lab", "ospec", "bun", "deno"] as const;
 /** Files that mean the suite needs an outside service (a database, a broker): refused with TEST_NEEDS_SERVICE. */
 export const SERVICE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] as const;
 
-export interface RunnerPick { runner: RunnerKind; pkgDir: string; files: string[]; hasDeps: boolean }
+/** M172: `options` (mocha only) are the allowlisted mocha options read from the package's scripts (mochaOptions). */
+export interface RunnerPick { runner: RunnerKind; pkgDir: string; files: string[]; hasDeps: boolean; options?: string[] }
+
+// ---- M172: mocha (batch 11). mocha has no lockfile-free way to say "these files only, report as JSON" beyond its CLI,
+// and the repo's own options (a --require of its TypeScript / Babel hook) live in the script that runs it. PeaceAI
+// reads that script itself and passes on only a fixed allowlist; anything else in the mocha command, more than one
+// mocha command, or a mocha config file (.mocharc.*, or a "mocha" key in package.json, which mocha would read on
+// its own) is refused with TEST_RUNNER_UNSUPPORTED. The shim then runs mocha with --no-config --no-package, so no
+// config file anywhere above the copy is read either. Spec: peaceai/spec/loop-runners-v3.md.
+
+/** mocha config files mocha reads from its working dir (refused: PeaceAI would not see what they set). */
+export const MOCHA_CONFIG_FILES = [".mocharc.js", ".mocharc.cjs", ".mocharc.mjs", ".mocharc.yaml", ".mocharc.yml", ".mocharc.json", ".mocharc.jsonc"] as const;
+/** The mocha options passed through, each with the values it may take. Booleans take none. */
+const MOCHA_VALUE_FLAGS: Readonly<Record<string, string>> = { "--require": "--require", "-r": "--require", "--ui": "--ui", "-u": "--ui", "--timeout": "--timeout", "-t": "--timeout", "--extension": "--extension" };
+const MOCHA_BOOL_FLAGS: readonly string[] = ["--recursive", "--exit", "--full-trace", "--check-leaks"];
+const MOCHA_UIS: readonly string[] = ["bdd", "tdd", "qunit", "exports"];
+/** A --require value: a package name (optionally scoped, optionally a subpath) or a ./relative path inside the package. */
+const MOCHA_REQUIRE_PKG = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(?:\/[\w.-]+)*$/i;
+const MOCHA_REQUIRE_REL = /^\.\/(?:[\w.-]+\/)*[\w.-]+$/;
+
+/** One mocha option value, normalised, or null when it is not on the allowlist. */
+function mochaValue(root: string, pkgDir: string, flag: string, v: string): string | null {
+  if (flag === "--ui") return MOCHA_UIS.includes(v) ? v : null; // m172-guard:mocha-ui
+  if (flag === "--timeout") return /^\d{1,7}$/.test(v) ? v : null; // m172-guard:mocha-timeout
+  if (flag === "--extension") return /^[a-z0-9]{1,8}$/i.test(v) ? v : null; // m172-guard:mocha-extension
+  // --require: a ./path must stay inside the package and be a regular file there (no "..", no symlink)
+  if (v.split("/").some((seg) => seg === "..")) return null; // m172-guard:mocha-require-dotdot
+  if (MOCHA_REQUIRE_REL.test(v)) {
+    const full = join(root, pkgDir, v);
+    try { if (!lstatSync(full).isFile()) return null; } catch { return null; } // m172-guard:mocha-require-file
+    return v;
+  }
+  return MOCHA_REQUIRE_PKG.test(v) && !v.startsWith(".") ? v : null; // m172-guard:mocha-require-pkg
+}
+
+/**
+ * The mocha options of a package: its test script, or (one level, as scriptWords) a package script the test script
+ * names, must hold exactly one command that is `mocha ...` (optionally `npx mocha ...`); its flags must all be on the
+ * allowlist (see MOCHA_VALUE_FLAGS / MOCHA_BOOL_FLAGS); its other words (the spec files / globs it lists) are dropped,
+ * since the loop runs the team's test files only. Returns null (refuse) for anything else.
+ */
+export function mochaOptions(root: string, pkgDir: string, scripts: Record<string, unknown> | undefined): string[] | null {
+  const texts: string[] = [];
+  const own = typeof scripts?.test === "string" ? scripts.test : "";
+  texts.push(own);
+  for (const w of scriptWords(scripts)) if (w !== "test" && scripts && Object.hasOwn(scripts, w) && typeof scripts[w] === "string" && !texts.includes(scripts[w] as string)) texts.push(scripts[w] as string);
+  const commands = texts.flatMap((t) => t.split(/&&|\|\||[;|&]/)).map((c) => c.trim().split(/\s+/).filter(Boolean)).map((w) => (w[0] === "npx" ? w.slice(1) : w)).filter((w) => w[0] === "mocha");
+  if (commands.length !== 1) return null; // m172-guard:mocha-one-command
+  const words = commands[0]!.slice(1);
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]!;
+    if (!w.startsWith("-")) continue; // a spec file / glob of the script's own run: the loop names the files itself
+    const eq = w.indexOf("=");
+    const name = eq > 0 ? w.slice(0, eq) : w;
+    if (MOCHA_BOOL_FLAGS.includes(name) && eq < 0) { out.push(name); continue; }
+    const flag = MOCHA_VALUE_FLAGS[name];
+    if (!flag) return null; // m172-guard:mocha-flag
+    const v = eq > 0 ? w.slice(eq + 1) : words[++i];
+    if (v === undefined) return null;
+    const ok = mochaValue(root, pkgDir, flag, v);
+    if (ok === null) return null;
+    out.push(flag, ok);
+  }
+  return out;
+}
 
 /** Words of a package's test script, plus (one level) the words of the package scripts it names. */
 export function scriptWords(scripts: Record<string, unknown> | undefined, name = "test"): string[] {
@@ -102,7 +167,7 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   if (SERVICE_FILES.some((f) => existsSync(join(root, f)) || (pkgDir && existsSync(join(root, pkgDir, f)))) || words.includes("docker") || words.includes("docker-compose")) return { refuse: "TEST_NEEDS_SERVICE" }; // guard:service
   if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
   const rel = (f: string) => (pkgDir ? posix.relative(pkgDir, posix.normalize(f)) : posix.normalize(f));
-  const named = (["vitest", "jest"] as const).filter((r) => words.includes(r));
+  const named = (["vitest", "jest", "mocha"] as const).filter((r) => words.includes(r));
   const nodeTest = typeof pkg.scripts?.test === "string" && /^(?:node|tsx)\b[^&|;]*\s--test\b/.test(pkg.scripts.test.trim());
   let runner: RunnerKind | null = null;
   if (named.length === 1) runner = named[0]!;
@@ -110,6 +175,13 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   else if (named.length === 0) { const inDeps = (["vitest", "jest"] as const).filter((r) => Object.hasOwn(deps, r)); runner = inDeps.length === 1 ? inDeps[0]! : null; }
   if (!runner) return { refuse: "TEST_RUNNER_UNSUPPORTED" };
   if (runner !== "node-test" && !Object.hasOwn(deps, runner)) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-dep
+  if (runner === "mocha") {
+    // M172: a mocha config PeaceAI does not read is refused, in the package or the repo root
+    if (MOCHA_CONFIG_FILES.some((f) => existsSync(join(root, pkgDir, f)) || existsSync(join(root, f))) || Object.hasOwn(pkg, "mocha") || Object.hasOwn(rootPkg, "mocha")) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m172-guard:mocha-config
+    const options = mochaOptions(root, pkgDir, pkgDir && !pkg.scripts?.test ? rootPkg.scripts : pkg.scripts);
+    if (!options) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m172-guard:mocha-options
+    return { runner, pkgDir, files: testFiles.map(rel), hasDeps, options };
+  }
   return { runner, pkgDir, files: testFiles.map(rel), hasDeps };
 }
 
@@ -958,27 +1030,35 @@ function install(copyDir: string, files: readonly string[], lock: LockPick, cand
 /** Repo-relative path of the shim in the copy (under node_modules: never an edit target, tamper-hashed by guardedRun). */
 export const SHIM_PATH = "node_modules/.peaceai-loop/run.mjs";
 export const SHIM_SOURCE = [
-  "// PeaceAI loop v2 (M151): runs vitest or jest for the given test files and prints the pass / fail counts from the",
+  "// PeaceAI loop v2 (M151, M172): runs vitest, jest or mocha for the given test files and prints the pass / fail counts from the",
   "// runner's JSON report as the last two lines (`# pass N`, `# fail N`). Written by peaceai/lib/loopdeps.ts.",
   'import { spawnSync } from "node:child_process";',
   'import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";',
   'import { dirname, join, resolve } from "node:path";',
   'import { pathToFileURL } from "node:url";',
-  "const [runner, pkgDir, ...files] = process.argv.slice(2);",
+  "const [runner, pkgDir, ...rest] = process.argv.slice(2);",
+  "// M172: mocha's allowlisted options (read by PeaceAI from the package's scripts) come first, ended by `--`",
+  "const sep = runner === \"mocha\" ? rest.indexOf(\"--\") : -1;",
+  "const opts = sep >= 0 ? rest.slice(0, sep) : [];",
+  "const files = sep >= 0 ? rest.slice(sep + 1) : rest;",
   "const cwd = resolve(pkgDir || \".\");",
   "const tmp = process.env.TMPDIR || \"/nonexistent\";",
   "const report = join(tmp, \"peaceai-loop-report.json\");",
   "const done = (pass, fail, code) => { process.stdout.write(`\\n# pass ${pass}\\n# fail ${fail}\\n`); process.exit(code); };",
   "let pkgJson = null;",
   "for (let d = cwd; ; d = dirname(d)) { const p = join(d, \"node_modules\", runner, \"package.json\"); if (existsSync(p)) { pkgJson = realpathSync(p); break; } if (dirname(d) === d) break; }",
-  "if (!pkgJson || (runner !== \"vitest\" && runner !== \"jest\")) done(0, 1, 1);",
+  "if (!pkgJson || (runner !== \"vitest\" && runner !== \"jest\" && runner !== \"mocha\")) done(0, 1, 1);",
+  "if (runner === \"mocha\" && sep < 0) done(0, 1, 1); // m172-guard:shim-mocha-sep",
   "const meta = JSON.parse(readFileSync(pkgJson, \"utf8\"));",
   "const binRel = typeof meta.bin === \"string\" ? meta.bin : meta.bin?.[runner];",
   "if (typeof binRel !== \"string\") done(0, 1, 1);",
   "const bin = join(dirname(pkgJson), binRel);",
-  "const args = runner === \"vitest\"",
+  "let args = runner === \"vitest\"",
   "  ? [\"run\", \"--reporter=json\", `--outputFile=${report}`, ...files]",
   "  : [\"--ci\", \"--json\", `--outputFile=${report}`, \"--watchman=false\", `--cacheDirectory=${join(tmp, \"jest-cache\")}`, \"--runTestsByPath\", ...files];",
+  "// M172: mocha reads no config file (--no-config, --no-package: PeaceAI passed on what the script set) and writes its",
+  "// JSON report to the file (the json reporter's output option, mocha >= 9.2; older mochas write none: fail closed)",
+  "if (runner === \"mocha\") args = [\"--no-config\", \"--no-package\", ...opts, \"--reporter\", \"json\", \"--reporter-option\", `output=${report}`, ...files]; // m172-guard:shim-mocha-args",
   "// batch 10: vitest < 2 writes its results cache into node_modules/.vitest after every run; the copy is read-only, so",
   "// that write fails (EACCES) and the run exits 1 even when every test passed. Its CLI has no flag to turn the cache",
   "// off, so for those versions the same run is started through vitest's own node API (what its CLI calls) with the",
@@ -996,8 +1076,10 @@ export const SHIM_SOURCE = [
   "if (!j && runner === \"vitest\" && (maj > 3 || (maj === 3 && min >= 1))) ({ r, j } = run([\"--configLoader\", \"runner\"]));",
   "if (!j || typeof j !== \"object\") done(0, 1, r.status || 1); // guard:shim-report",
   "const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);",
-  "const pass = n(j.numPassedTests);",
-  "let fail = n(j.numFailedTests);",
+  "// M172: mocha's report keeps its counts under `stats`; a report without them is a failure",
+  "if (runner === \"mocha\" && (!j.stats || typeof j.stats !== \"object\")) done(0, 1, r.status || 1); // m172-guard:shim-mocha-stats",
+  "const pass = runner === \"mocha\" ? n(j.stats.passes) : n(j.numPassedTests);",
+  "let fail = runner === \"mocha\" ? n(j.stats.failures) : n(j.numFailedTests);",
   "if (fail === 0 && n(j.numFailedTestSuites) > 0) fail = n(j.numFailedTestSuites); // guard:shim-suites",
   "if (fail === 0 && (r.status !== 0 || j.success === false)) fail = 1; // guard:shim-exit",
   "done(pass, fail, fail ? (r.status || 1) : 0);",
@@ -1010,5 +1092,5 @@ export function installShim(copyDir: string): void {
   writeFileSync(join(copyDir, SHIM_PATH), SHIM_SOURCE);
 }
 export function shimArgs(pick: RunnerPick): string[] {
-  return [SHIM_PATH, pick.runner, pick.pkgDir, ...pick.files];
+  return [SHIM_PATH, pick.runner, pick.pkgDir, ...(pick.runner === "mocha" ? [...(pick.options ?? []), "--"] : []), ...pick.files];
 }
