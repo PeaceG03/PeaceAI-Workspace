@@ -65,6 +65,32 @@ test("M172 mutation: the unmutated copies pass every check (the harness itself i
   assert.deepEqual(r.failed, []);
 });
 
+// batch 11: an order guard is a line tagged "// m172-order:<id>" just above a guard line that must stay above another
+// (named in the tag's comment); its mutant swaps the two lines instead of deleting one
+const ORDER = /\/\/ m172-order:([a-z0-9-]+) .*must stay above (guard:[a-z0-9-]+)/;
+const orders = Object.entries(sources).flatMap(([file, text]) => text.split("\n").flatMap((l, i, all) => {
+  const m = ORDER.exec(l);
+  if (!m) return [];
+  const other = all.findIndex((x) => x.trimEnd().endsWith(`// ${m[2]}`));
+  return [{ id: m[1]!, file, line: i + 1, other }];
+}));
+
+test("M172 mutation: the order tags are the expected ones and name a later guard line", () => {
+  assert.deepEqual(orders.map((o) => o.id), ["service-first"]);
+  for (const o of orders) assert.ok(o.other > o.line, `m172-order:${o.id}: the other guard is not below it`);
+});
+
+for (const o of orders) {
+  test(`M172 mutation: swapping the m172-order:${o.id} line with the guard below it makes a check fail`, async () => {
+    const lines = sources[o.file]!.split("\n");
+    [lines[o.line], lines[o.other]] = [lines[o.other]!, lines[o.line]!];
+    const r = await runMutant(`order-${o.id}`, o.file, lines.join("\n"));
+    assert.ok(r, `m172-order:${o.id} mutant hung`);
+    assert.deepEqual(r.crashed, [], `m172-order:${o.id} mutant crashed instead of failing an assertion`);
+    assert.ok(r.failed.length > 0, `no case notices m172-order:${o.id} swapped`);
+  });
+}
+
 for (const g of guards) {
   test(`M172 mutation: deleting m172-guard:${g.id} makes a check fail`, async () => {
     const text = sources[g.file]!.split("\n").filter((_, i) => i !== g.line).join("\n");

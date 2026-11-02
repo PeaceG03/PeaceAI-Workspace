@@ -164,6 +164,7 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   const words = [...scriptWords(pkg.scripts), ...(pkgDir && !pkg.scripts?.test ? scriptWords(rootPkg.scripts) : [])];
   // batch 10: the service check comes first, so a suite that needs a database (a compose file, any runner) is
   // refused for that reason (TEST_NEEDS_SERVICE) rather than for its runner; both stay refusals
+  // m172-order:service-first (batch 11: the next line must stay above guard:runner-other; m172-mutation swaps them)
   if (SERVICE_FILES.some((f) => existsSync(join(root, f)) || (pkgDir && existsSync(join(root, pkgDir, f)))) || words.includes("docker") || words.includes("docker-compose")) return { refuse: "TEST_NEEDS_SERVICE" }; // guard:service
   if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
   const rel = (f: string) => (pkgDir ? posix.relative(pkgDir, posix.normalize(f)) : posix.normalize(f));

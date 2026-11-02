@@ -66,11 +66,13 @@ test("limit 3: no new imports and no fs/net/process/child_process/eval/Function/
 });
 
 /** Live proof harness: a scratch copy of this repo's src/, the real numbers.test.ts, real tsx. */
+// batch 11: TAP pinned like every production caller (loop.ts, selfpropose.ts, test-candidates.ts); Node >= 23 prints
+// the spec reporter by default even when piped, so assertionFailuresOnly saw no "not ok" lines and the proof failed.
 function runNumbersTest(content: string): { ok: boolean; tap: string } {
   const d = scratchDir("m32-");
   cpSync(join(root, "src"), join(d, "src"), { recursive: true });
   writeFileSync(join(d, P), content);
-  const r = spawnSync(join(root, "node_modules/.bin/tsx"), ["--test", join(d, "src/numbers.test.ts")], { encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
+  const r = spawnSync(join(root, "node_modules/.bin/tsx"), ["--test", "--test-reporter=tap", join(d, "src/numbers.test.ts")], { encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
   return { ok: r.status === 0, tap: r.stdout + r.stderr };
 }
 

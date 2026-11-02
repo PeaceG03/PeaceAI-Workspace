@@ -63,3 +63,14 @@ in a path and in a package subpath, a missing file, a symlinked hook, an absolut
 `.mocharc.yml`, a package.json `mocha` key, no mocha dependency, ava; a failing test, no `--` separator, a report
 without stats. End to end (candidate uid): a mocha stub task with a `--require` hook through `runLoopTask` is PASS
 with the right baseline. `m172-mutation.test.ts` deletes each m172 guard line and needs a case to fail.
+
+## Batch 11 follow-ups (Auditor, non-blocking)
+
+- Order guard `m172-order:service-first`: the service check (`guard:service`) must stay above the unsupported-runner
+  check (`guard:runner-other`), so a repo with a compose file is refused as TEST_NEEDS_SERVICE even when its runner is
+  also unsupported. Now that mocha is admitted, the m172 case uses ava (compose + ava -> TEST_NEEDS_SERVICE, direct and
+  one script down; ava alone -> TEST_RUNNER_UNSUPPORTED). m172-mutation swaps the two lines and requires a case to fail.
+- Real old vitest: m172-real-vitest.test.ts installs vitest 1.6.0 from a pinned lockfile
+  (peaceai/test/fixtures/m172-real-vitest1, `npm ci --ignore-scripts`), makes node_modules read-only, shows the real CLI
+  exits 1 there although every test passes, and shows the shim scores pass 2 / fail 0 and pass 1 / fail 1. It needs the
+  registry: with CI=true an install failure fails the test; otherwise it is skipped.

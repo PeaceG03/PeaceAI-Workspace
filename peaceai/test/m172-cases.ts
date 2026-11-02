@@ -244,6 +244,16 @@ export const CASES: Case[] = [
       assert.deepEqual(detect(l, ctx, { test: "ava" }, {}, { ava: "6.0.0" }), REFUSED, "ava stays unsupported");
     },
   },
+  // ---- the service check stays before the runner check (m172-order:service-first; batch 10 made the order, now mocha
+  // is admitted a compose file with mocha no longer shows it, so these use ava, which stays unsupported)
+  {
+    id: "service first (m172-order:service-first): a compose file with an unsupported runner (ava) is TEST_NEEDS_SERVICE, direct and one script down; near miss: ava alone",
+    run(l, ctx) {
+      assert.deepEqual(detect(l, ctx, { test: "ava" }, { "docker-compose.yml": "services: {}\n" }, { ava: "6.0.0" }), { refuse: "TEST_NEEDS_SERVICE" });
+      assert.deepEqual(detect(l, ctx, { test: "npm run test:unit", "test:unit": "ava" }, { "compose.yaml": "services: {}\n" }, { ava: "6.0.0" }), { refuse: "TEST_NEEDS_SERVICE" });
+      assert.deepEqual(detect(l, ctx, { test: "ava" }, {}, { ava: "6.0.0" }), REFUSED);
+    },
+  },
   // ---- mocha: the shim
   {
     id: "mocha shim admit: options pass through before the files; mocha reads no config; the json report's stats are the counts (bdd and a --require hook)",
