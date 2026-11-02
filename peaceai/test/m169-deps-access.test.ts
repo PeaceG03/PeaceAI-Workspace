@@ -43,6 +43,10 @@ test("M169: the attempt job proves the candidate uid can reach and write the dep
   assert.match(body, /echo "PEACEAI_DEPS_DIR=\$D" >> "\$GITHUB_ENV"/);
   assert.ok(body.indexOf("GITHUB_ENV") > body.indexOf("DEPS_DIR_CAND_NO_WRITE"), "exported only after both checks");
   assert.match(body, /runner-temp candidate-traversable=yes"; else echo "runner-temp candidate-traversable=no"/, "the diagnosis line prints yes/no only");
+  // Auditor #667: the two parent modes, octal only (stat -c %a) or the fixed word none
+  assert.ok(body.includes('if m=$(stat -c %a /home/runner 2>/dev/null); then echo "mode home-runner=$m"; else echo "mode home-runner=none"; fi'), "home-runner mode, octal only");
+  assert.ok(body.includes('if m=$(stat -c %a "$(dirname "$RUNNER_TEMP")" 2>/dev/null); then echo "mode runner-temp-parent=$m"; else echo "mode runner-temp-parent=none"; fi'), "runner-temp parent mode, octal only");
+  assert.equal((body.match(/stat /g) ?? []).length, 2, "no other stat output is printed");
   assert.equal((steps.match(/--deps-dir "\$PEACEAI_DEPS_DIR"/g) ?? []).length, 3);
   assert.ok(!wf.includes('--deps-dir "$RUNNER_TEMP/deps"'));
 });
