@@ -9,7 +9,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -543,3 +543,35 @@ for (const [id, file, from, to] of SEMANTIC) {
     assert.ok(r.failed.length > 0, `semantic mutant ${id} survived (crashed: ${r.crashed.join("; ")})`);
   });
 }
+
+// Run 41473993873: the attempt job's three loop runs all printed "refused TASK_FILE_INVALID" because --deps-dir
+// "$RUNNER_TEMP/deps" did not exist (openDepsCache's mkdtemp threw ENOENT, and bin/loop.ts reports any throw from
+// runLoopFile as TASK_FILE_INVALID). Runs the workflow's exact three loop.ts lines, verbatim, in a clone of the
+// committed HEAD with a fresh RUNNER_TEMP that has no deps dir. No candidate uid is named, so every task stops at
+// CAND_UID_REQUIRED before any fetch or install (no network); the ranking file is absent, so model-v1 writes its rows
+// and exits 1 (a refused ranking is never green). Every run must accept tasks-public-v1.json and write 12 rows.
+test("M167: the attempt job's exact loop.ts invocations accept tasks-public-v1.json (deps dir not pre-created)", () => {
+  const wf = readFileSync(join(ROOT, ".github/workflows/peace-model-v1-dev.yml"), "utf8");
+  const attempt = wf.slice(wf.indexOf("\n  model-v1-attempt:"));
+  const lines = attempt.split("\n").map((l) => l.trim()).filter((l) => /^r[123]=0; \.\/node_modules\/\.bin\/tsx peaceai\/bin\/loop\.ts run "\$T" /.test(l));
+  assert.equal(lines.length, 3, "the attempt job runs loop.ts three times");
+  const pin = JSON.parse(readFileSync(join(ROOT, MP.MODEL_V1_PIN), "utf8")) as { taskFile: string; maxAttempts: number };
+  assert.equal(pin.taskFile, "peaceai/plan/tasks-public-v1.json");
+  const d = mkdtempSync(join(tmpdir(), "peaceai-m167-wf-"));
+  try {
+    const clone = join(d, "repo"), rt = join(d, "runner-temp");
+    mkdirSync(rt);
+    assert.equal(spawnSync("git", ["clone", "-q", "--shared", ROOT, clone], { encoding: "utf8" }).status, 0, "clone of HEAD");
+    symlinkSync(join(ROOT, "node_modules"), join(clone, "node_modules"));
+    const log = join(clone, "peaceai/plan/loop-runs.jsonl");
+    const n0 = readFileSync(log, "utf8").split("\n").filter(Boolean).length;
+    const script = ["set -uo pipefail", `T=${pin.taskFile}; M=${pin.maxAttempts}`, ...lines, 'echo "exit codes $r1 $r2 $r3"'].join("\n");
+    const r = spawnSync("bash", ["-c", script], { cwd: clone, encoding: "utf8", timeout: 300_000, env: { PATH: process.env.PATH, HOME: d, RUNNER_TEMP: rt, PEACEAI_CANDIDATE_JOB: "true", RANKING_SHA256: "0".repeat(64) } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /TASK_FILE_INVALID/);
+    assert.match(r.stdout, /\nexit codes 0 1 0\n/, "repair-v1 and rules-v1 exit 0; model-v1 exits 1 only for its refused ranking");
+    assert.equal(r.stdout.match(/ tasks=12 /g)?.length, 3, "each run reads all 12 tasks");
+    const rows = readFileSync(log, "utf8").split("\n").filter(Boolean).slice(n0).map((l) => JSON.parse(l) as { proposer: string; set: string });
+    for (const p of ["repair-v1", "model-v1", "rules-v1"]) assert.equal(rows.filter((x) => x.proposer === p && x.set === "public").length, 12, p);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
