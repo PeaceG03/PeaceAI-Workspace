@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { editKey, normalizedEdit } from "../lib/dedupe.ts";
@@ -12,6 +11,7 @@ import { train } from "../lib/ranker/model.ts";
 import { shadowRanking, toExample, trainExclusion } from "../lib/ranker/pipeline.ts";
 import { buildRecords, buildSummary, distinctEligible, effectiveVerdict, taskEntry, type VerdictRecord } from "../lib/records.ts";
 import { taskDir } from "../lib/store.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -117,7 +117,7 @@ test("two distinct edits both count; one distinct edit is a single-candidate tas
 });
 
 test("Job C records group membership and presents one candidate per distinct edit", () => {
-  const work = mkdtempSync(join(tmpdir(), "m41-jobc-"));
+  const work = scratchDir("m41-jobc-");
   const root = join(work, "results");
   const inDir = join(work, "in");
   const testDir = join(work, "tests");
@@ -147,7 +147,7 @@ test("Job C records group membership and presents one candidate per distinct edi
 });
 
 test("pre-push scan covers every pushed commit: a core line in a middle commit blocks even if HEAD is clean", () => {
-  const work = mkdtempSync(join(tmpdir(), "m41-prepush-"));
+  const work = scratchDir("m41-prepush-");
   const g = (cwd: string, ...args: string[]) => {
     const r = spawnSync("git", args, { cwd, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);

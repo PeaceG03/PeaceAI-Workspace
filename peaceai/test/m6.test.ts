@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
@@ -13,6 +12,7 @@ import { indexBoost, selectSources } from "../lib/sources.ts";
 import { buildIndex, definitions, indexStats, references, relatedFiles, resolveTargets, search, tokenize } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants } from "../lib/taskmap.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -20,7 +20,7 @@ const WS = "PeaceG03/PeaceAI-Workspace";
 const PS = "PeaceG03/PeaceSTOCKS";
 const targets = loadTargets();
 const isTest = (p: string) => p.endsWith(".test.ts");
-const scratch = () => mkdtempSync(join(tmpdir(), "m6-"));
+const scratch = () => scratchDir("m6-");
 const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 // ----

@@ -6,13 +6,13 @@ import ts from "typescript";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CLOSURE_NOT_ALLOWED, LOOP_ASYNC, LOOP_LABEL, LOOP_TRIGGER, LOOP_UNBOUNDED, LOOP_UNSUPPORTED, LOOP_WHILE_UNSUPPORTED, COMPLEX_TRIGGER } from "../lib/learned-complex.ts";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { readManifestBytes } from "../lib/manifestparts.ts";
 import { classifyLicense } from "../lib/lmcorpus.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
+import { scratchDir } from "./scratch.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -273,7 +273,7 @@ test("m45 pin microsoft/vscode: LICENSE classifies as MIT and matches the pinned
   assert.equal(pin!.licenseSha256, "20535828272932407c2f5172aeb714ac7b374a34e5ecb1825af509f2902cde54");
   let text: string;
   try {
-    const dir = mkdtempSync(join(tmpdir(), "m64-vscode-"));
+    const dir = scratchDir("m64-vscode-");
     const g = (...a: string[]) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", timeout: 120_000, stdio: ["ignore", "pipe", "ignore"] });
     g("init", "-q"); g("remote", "add", "o", "https://github.com/microsoft/vscode");
     g("fetch", "-q", "--depth", "1", "--filter=blob:none", "o", pin!.commit);

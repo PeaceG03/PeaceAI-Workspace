@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { heldOutHashes } from "../lib/lmcorpus.ts";
 import { docsProblems, filterPublic, manifestProblems, validAllow, type PublicManifestEntry } from "../lib/lmpublic.ts";
 import { protectedReason } from "../lib/selfchange.ts";
+import { scratchDir } from "./scratch.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const allowRaw = JSON.parse(readFileSync(join(root, "peaceai/model/lm-public-allow.json"), "utf8"));
@@ -46,7 +46,7 @@ test("M31: filterPublic drops held-out, private and off-list entries; its output
 });
 
 test("M31: lm-manifest-check exits 1 on a held-out sha and 0 on a clean manifest", () => {
-  const d = mkdtempSync(join(tmpdir(), "m31-"));
+  const d = scratchDir("m31-");
   const run = (rows: PublicManifestEntry[], texts = rows.map(() => "x")) => { const f = join(d, "m.jsonl"), g = join(d, "d.jsonl");
     writeFileSync(f, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     writeFileSync(g, texts.map((t, i) => JSON.stringify({ doc: i, text: t })).join("\n") + "\n");
@@ -91,7 +91,7 @@ test("Auditor #140: the manifest check re-hashes every doc against its manifest 
 });
 
 test("Auditor #140: the CLI fails on a doc whose text differs from the manifest, and without docs.jsonl", () => {
-  const d = mkdtempSync(join(tmpdir(), "m31d-"));
+  const d = scratchDir("m31d-");
   const f = join(d, "m.jsonl"), g = join(d, "d.jsonl");
   writeFileSync(f, JSON.stringify(entry(ok)) + "\n"); writeFileSync(g, JSON.stringify({ doc: 0, text: "smuggled" }) + "\n");
   const tsx = join(root, "node_modules/.bin/tsx"), cli = join(root, "peaceai/bin/lm-manifest-check.ts");
@@ -106,7 +106,7 @@ function land(version: string, extra?: (results: string, model: string) => void)
   const wf = readFileSync(join(root, ".github/workflows/peace-lm-train.yml"), "utf8");
   const m = wf.match(/bash -c '(set -euo pipefail\n[\s\S]*?)'\n/);
   assert.ok(m, "landing script found");
-  const d = mkdtempSync(join(tmpdir(), "m31l-")), results = join(d, "results"), model = join(d, "model");
+  const d = scratchDir("m31l-"), results = join(d, "results"), model = join(d, "model");
   mkdirSync(join(results, "models/lm"), { recursive: true }); mkdirSync(model);
   execFileSync("git", ["init", "-q", results]);
   writeFileSync(join(model, "config.json"), JSON.stringify({ version })); writeFileSync(join(model, "weights.npz"), "w");

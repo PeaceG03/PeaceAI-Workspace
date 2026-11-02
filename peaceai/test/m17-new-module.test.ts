@@ -3,12 +3,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
 import { FUNCTION_TRIGGER } from "../lib/learned-function.ts";
 import { observeFile, parseHunks } from "../lib/mine.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -59,7 +59,7 @@ test("grading: the new test PASSES with the new module and FAILS without it", ()
   const e = applyRule(spec(P2), task("src/pct.ts"), files, isTest)!;
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
   const run = (withModule: boolean) => {
-    const d = mkdtempSync(join(tmpdir(), "m17-"));
+    const d = scratchDir("m17-");
     for (const f of [{ path: "src/lib.ts", content: LIB }, ...(withModule ? [{ path: e.path, content: e.content }] : []), e.extra![0]!]) { mkdirSync(join(d, dirname(f.path)), { recursive: true }); writeFileSync(join(d, f.path), f.content); }
     writeFileSync(join(d, "package.json"), '{"type":"module"}');
     return spawnSync(tsx, ["--test", e.extra![0]!.path], { cwd: d, env, encoding: "utf8" }).status;
@@ -97,7 +97,7 @@ test("stub: body replaced by the type default; a test the stub satisfies is REJE
   // End to end: a boolean helper whose only bullet expects false passes with the stub.
   const e = applyRule(spec(P2), "add function `isTwo(s: string): boolean` to `src/two.ts` returning s.length === 2\n- `isTwo(\"abc\")` is false", files, isTest)!;
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
-  const d = mkdtempSync(join(tmpdir(), "m17s-"));
+  const d = scratchDir("m17s-");
   mk(join(d, "src"), { recursive: true });
   writeFileSync(join(d, "package.json"), '{"type":"module"}');
   writeFileSync(join(d, e.path), stubFunction(e.content, "isTwo")!);
@@ -120,10 +120,10 @@ test("protected names and module paths are refused", () => {
 });
 
 test("on disk: realpath inside the root, no symlinked component, file must not exist", () => {
-  const root = mkdtempSync(join(tmpdir(), "m17d-"));
+  const root = scratchDir("m17d-");
   mk(join(root, "src", "sub"), { recursive: true });
   writeFileSync(join(root, "src", "lib.ts"), LIB);
-  const outside = mkdtempSync(join(tmpdir(), "m17o-"));
+  const outside = scratchDir("m17o-");
   symlinkSync(outside, join(root, "src", "link"));
   symlinkSync(join(root, "src", "sub"), join(root, "src", "inner"));
   assert.equal(safeNewModuleOnDisk(root, "src/pct.ts"), true);

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { scratchDir } from "./scratch.ts";
 
 export const repo = resolve(import.meta.dirname, "../..");
 export const tsx = join(repo, "node_modules/.bin/tsx");
@@ -35,7 +35,7 @@ export const PROFILE = "export type Profile = {\n  readonly id: string;\n};\n";
 export const PROFILE_TEST = 'import assert from "node:assert/strict";\nimport test from "node:test";\nimport type { Profile } from "./profile";\n\ntest("profile literal", () => {\n  const p: Profile = { id: "x" };\n  assert.equal(p.id, "x");\n});\n';
 
 export function harnessFixture() {
-  const dir = mkdtempSync(join(tmpdir(), "m7-job-b-"));
+  const dir = scratchDir("m7-job-b-");
   const ws = join(dir, "ws");
   mkdirSync(join(ws, "src"), { recursive: true });
   writeFileSync(join(ws, "src/theme.ts"), THEME);

@@ -3,16 +3,16 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { memcheckStatus, MIN_MEMCHECK_SAMPLES } from "../lib/lm.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
 
 function setup(coreFiles: number, publicDocs: number, dropKind = "", dupe = false) {
-  const dir = mkdtempSync(join(tmpdir(), "m49mc-"));
+  const dir = scratchDir("m49mc-");
   const core = join(dir, "core"); mkdirSync(join(core, "src"), { recursive: true });
   for (let i = 0; i < coreFiles; i++) writeFileSync(join(core, "src", `c${i}.ts`), Array.from({ length: 12 }, (_, j) => `export const privateCoreValue${i}_${j} = ${i * 100 + j};`).join("\n") + "\n");
   execFileSync("git", ["init", "-q"], { cwd: core }); execFileSync("git", ["add", "-A"], { cwd: core });
