@@ -85,7 +85,8 @@ function packageDirOf(root: string, file: string): string {
 /**
  * Picks the runner for the team's test files. All files must sit in one package. The package's test script decides
  * (vitest / jest / node --test); when it names neither, its dependencies do (exactly one of vitest / jest). A script
- * that names another runner, or both vitest and jest, is refused; so is a repo with a compose file (outside service).
+ * that names another runner, or both vitest and jest, is refused; so is a repo with a compose file (outside service),
+ * which is checked first (TEST_NEEDS_SERVICE wins over TEST_RUNNER_UNSUPPORTED).
  */
 export function detectRunner(root: string, testFiles: readonly string[]): RunnerPick | { refuse: RunnerRefusal } {
   if (!testFiles.length) return { refuse: "TEST_RUNNER_UNSUPPORTED" };
@@ -97,8 +98,10 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   const deps = { ...rootPkg.dependencies, ...rootPkg.devDependencies, ...pkg.dependencies, ...pkg.devDependencies };
   const hasDeps = Object.keys(deps).length > 0;
   const words = [...scriptWords(pkg.scripts), ...(pkgDir && !pkg.scripts?.test ? scriptWords(rootPkg.scripts) : [])];
-  if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
+  // batch 10: the service check comes first, so a suite that needs a database (a compose file, any runner) is
+  // refused for that reason (TEST_NEEDS_SERVICE) rather than for its runner; both stay refusals
   if (SERVICE_FILES.some((f) => existsSync(join(root, f)) || (pkgDir && existsSync(join(root, pkgDir, f)))) || words.includes("docker") || words.includes("docker-compose")) return { refuse: "TEST_NEEDS_SERVICE" }; // guard:service
+  if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
   const rel = (f: string) => (pkgDir ? posix.relative(pkgDir, posix.normalize(f)) : posix.normalize(f));
   const named = (["vitest", "jest"] as const).filter((r) => words.includes(r));
   const nodeTest = typeof pkg.scripts?.test === "string" && /^(?:node|tsx)\b[^&|;]*\s--test\b/.test(pkg.scripts.test.trim());
@@ -961,6 +964,7 @@ export const SHIM_SOURCE = [
   'import { spawnSync } from "node:child_process";',
   'import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";',
   'import { dirname, join, resolve } from "node:path";',
+  'import { pathToFileURL } from "node:url";',
   "const [runner, pkgDir, ...files] = process.argv.slice(2);",
   "const cwd = resolve(pkgDir || \".\");",
   "const tmp = process.env.TMPDIR || \"/nonexistent\";",
@@ -976,11 +980,20 @@ export const SHIM_SOURCE = [
   "const args = runner === \"vitest\"",
   "  ? [\"run\", \"--reporter=json\", `--outputFile=${report}`, ...files]",
   "  : [\"--ci\", \"--json\", `--outputFile=${report}`, \"--watchman=false\", `--cacheDirectory=${join(tmp, \"jest-cache\")}`, \"--runTestsByPath\", ...files];",
-  "const run = (extra) => { rmSync(report, { force: true }); const r = spawnSync(process.execPath, [bin, ...args, ...extra], { cwd, stdio: [\"ignore\", \"inherit\", \"inherit\"] }); let j = null; try { j = JSON.parse(readFileSync(report, \"utf8\")); } catch { j = null; } return { r, j }; };",
+  "// batch 10: vitest < 2 writes its results cache into node_modules/.vitest after every run; the copy is read-only, so",
+  "// that write fails (EACCES) and the run exits 1 even when every test passed. Its CLI has no flag to turn the cache",
+  "// off, so for those versions the same run is started through vitest's own node API (what its CLI calls) with the",
+  "// cache off and vite's cache dir in TMPDIR. Same report, same files, same exit-code rules below.",
+  "const [maj, min] = String(meta.version).split(\".\").map(Number);",
+  "const nodeEntry = (() => { const e = meta.exports && meta.exports[\"./node\"]; const rel = typeof e === \"string\" ? e : e && (typeof e.import === \"string\" ? e.import : e.import && e.import.default || e.default); return typeof rel === \"string\" ? join(dirname(pkgJson), rel) : null; })();",
+  "let legacy = false;",
+  "if (runner === \"vitest\" && maj < 2 && nodeEntry && existsSync(nodeEntry)) legacy = true; // m170-guard:vitest-legacy-api",
+  "const API = \"const [u, out, vc, ...fs] = process.argv.slice(1); const { startVitest } = await import(u); const ctx = await startVitest('test', fs, { run: true, watch: false, reporters: ['json'], outputFile: out, cache: false }, { cacheDir: vc }); await ctx?.close(); process.exit(process.exitCode ?? 0);\";",
+  "const argvFor = (extra) => legacy ? [\"--input-type=module\", \"-e\", API, pathToFileURL(nodeEntry).href, report, join(tmp, \"vite-cache\"), ...files] : [bin, ...args, ...extra];",
+  "const run = (extra) => { rmSync(report, { force: true }); const r = spawnSync(process.execPath, argvFor(extra), { cwd, stdio: [\"ignore\", \"inherit\", \"inherit\"] }); let j = null; try { j = JSON.parse(readFileSync(report, \"utf8\")); } catch { j = null; } return { r, j }; };",
   "let { r, j } = run([]);",
   "// the copy is read-only, so vite's default config bundling (a temp file beside the config) can fail; vitest >= 3.1",
   "// can load the config in-process instead, so retry once that way when no report was written",
-  "const [maj, min] = String(meta.version).split(\".\").map(Number);",
   "if (!j && runner === \"vitest\" && (maj > 3 || (maj === 3 && min >= 1))) ({ r, j } = run([\"--configLoader\", \"runner\"]));",
   "if (!j || typeof j !== \"object\") done(0, 1, r.status || 1); // guard:shim-report",
   "const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);",

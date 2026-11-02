@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -10,6 +9,7 @@ import type { CandidateResult } from "../lib/rank.ts";
 import { buildRecords, buildSummary, peacePick, stableJson, taskEntry, type VerdictRecord } from "../lib/records.ts";
 import { appendIndex, latestAttempt, loadAll, taskDir, writeNew, writeSummary } from "../lib/store.ts";
 import { parseVerdict } from "../lib/verdict.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ISSUE_3_TITLE = "Add a helper that will normalize a title by trimming surrounding whitespace in src/text.ts, with focused tests.";
 
@@ -122,7 +122,7 @@ test("agreement: only tasks with 2+ eligible candidates and a decisive pick; uns
 });
 
 test("store: append-only layout, latest attempt, deterministic summary", () => {
-  const root = mkdtempSync(join(tmpdir(), "results-"));
+  const root = scratchDir("results-");
   const rec = buildRecords(task(20, "[test] Do x with focused tests"), [sc("candidate-1", 5), sc("candidate-2", 9)], [res("candidate-1"), res("candidate-2")], "s");
   const dir = taskDir(root, 20, "1001");
   writeNew(join(dir, "task.json"), stableJson(rec.task));

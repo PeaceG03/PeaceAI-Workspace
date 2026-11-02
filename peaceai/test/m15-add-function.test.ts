@@ -4,7 +4,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { applyRule, specHash, validateSpec, type RuleSpec } from "../lib/learned.ts";
@@ -12,6 +11,7 @@ import { FUNCTION_TRIGGER, parseFunctionTask } from "../lib/learned-function.ts"
 import { parseTask } from "../lib/nlparse.ts";
 import { PROTECTED_SELF } from "../lib/selfchange.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -85,7 +85,7 @@ test("engine: issue-cleaned text still works (no `>` needed), string/array bodie
 test("grading: the new test PASSES with the function and FAILS on the task base", () => {
   const e = applyRule(spec(), TASK, files())!;
   const run = (src: string) => {
-    const d = mkdtempSync(join(tmpdir(), "m15-"));
+    const d = scratchDir("m15-");
     for (const f of [{ path: "src/lib.ts", content: src }, e.extra![0]!]) { mkdirSync(join(d, dirname(f.path)), { recursive: true }); writeFileSync(join(d, f.path), f.content); }
     writeFileSync(join(d, "package.json"), '{"type":"module"}');
     return spawnSync(tsx, ["--test", e.extra![0]!.path], { cwd: d, encoding: "utf8", env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST"))) }).status;

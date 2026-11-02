@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { bodyGrammarProblem } from "../lib/learned-function.ts";
 import { applyMultiBody, multiBodyCredited, multiBodyEditProblem, multiBodyEnabled, MULTIBODY_MAX_LINES } from "../lib/learned-multibody.ts";
 import { protectedReason } from "../lib/selfchange.ts";
+import { scratchDir } from "./scratch.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const WS = "PeaceG03/PeaceAI-Workspace", P = "src/numbers.ts";
@@ -67,7 +67,7 @@ test("limit 3: no new imports and no fs/net/process/child_process/eval/Function/
 
 /** Live proof harness: a scratch copy of this repo's src/, the real numbers.test.ts, real tsx. */
 function runNumbersTest(content: string): { ok: boolean; tap: string } {
-  const d = mkdtempSync(join(tmpdir(), "m32-"));
+  const d = scratchDir("m32-");
   cpSync(join(root, "src"), join(d, "src"), { recursive: true });
   writeFileSync(join(d, P), content);
   const r = spawnSync(join(root, "node_modules/.bin/tsx"), ["--test", join(d, "src/numbers.test.ts")], { encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: undefined } });

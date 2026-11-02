@@ -4,11 +4,11 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { freshVerdict, patchFiles, rebaseAndRegrade, type RegradeRunners } from "../lib/rebase.ts";
 import { protectedReason } from "../lib/selfchange.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ID = { name: "PeaceG03", email: "301894882+PeaceG03@users.noreply.github.com" };
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST")));
@@ -22,7 +22,7 @@ const SUITE = 'import assert from "node:assert/strict";\nimport test from "node:
 
 /** A repo at base B, the candidate patch built on B (append pad2 + its new test), and B checked out again. */
 function setup() {
-  const d = mkdtempSync(join(tmpdir(), "m16-"));
+  const d = scratchDir("m16-");
   g(d, "init", "-q", "-b", "main");
   writeFileSync(join(d, "lib.mjs"), LIB); writeFileSync(join(d, "suite.test.mjs"), SUITE); writeFileSync(join(d, "other.txt"), "x\n");
   g(d, "add", "-A"); g(d, "commit", "-qm", "base");

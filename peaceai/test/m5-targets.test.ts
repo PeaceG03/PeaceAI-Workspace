@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
@@ -14,6 +13,7 @@ import { checkCandidateScope } from "../lib/scope.ts";
 import { MAX_SOURCE_BYTES, MAX_SOURCES, relatedTests, selectSources, taskIdentifiers } from "../lib/sources.ts";
 import { decide, DECISION_MESSAGE, loadTargets, resolveTarget, scopeOf, visibilityOf } from "../lib/target.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
+import { scratchDir } from "./scratch.ts";
 
 const WS = "PeaceG03/PeaceAI-Workspace";
 const PS = "PeaceG03/PeaceSTOCKS";
@@ -194,7 +194,7 @@ test("records carry the target; the review names a non-default target", () => {
 
 // ---------- private-target isolation (the CLI with a fake gh) ----------
 function fakeGh(api: "public" | "private" | "error"): { dir: string; log: string } {
-  const dir = mkdtempSync(join(tmpdir(), "peaceai-fakegh-"));
+  const dir = scratchDir("peaceai-fakegh-");
   const log = join(dir, "calls.log");
   const repoJson = api === "public" ? JSON.stringify(publicApi(PS)) : JSON.stringify({ full_name: PS, private: true, visibility: "private" });
   const issueJson = JSON.stringify({ number: 41, labels: [{ name: "peace-task" }, { name: `target:${PS}` }], body: "Add an exported constant X with value 1 to src/dust.ts." });
@@ -275,7 +275,7 @@ test("workflow: later jobs only ever see a confirmed-public target, re-checked b
 });
 
 test("clone-target.sh refuses bad names and clones anonymously (a missing repo fails without prompting)", () => {
-  const dest = join(mkdtempSync(join(tmpdir(), "peaceai-ct-")), "t");
+  const dest = join(scratchDir("peaceai-ct-"), "t");
   const bad = spawnSync("peaceai/bin/clone-target.sh", ["not/a/repo", dest], { encoding: "utf8" });
   assert.notEqual(bad.status, 0);
   assert.match(bad.stderr, /invalid target/);
@@ -289,7 +289,7 @@ test("clone-target.sh refuses bad names and clones anonymously (a missing repo f
 
 // ---------- pre-push hook reaches new Workspace clones ----------
 test("install-pre-push --template: every new Workspace clone gets the hook; other remotes are untouched", { skip: !process.env.PEACEAI_CORE_DIR }, () => {
-  const root = mkdtempSync(join(tmpdir(), "peaceai-tpl-"));
+  const root = scratchDir("peaceai-tpl-");
   const home = join(root, "home");
   mkdirSync(home);
   const env = { ...process.env, HOME: home, GIT_CONFIG_NOSYSTEM: "1" };

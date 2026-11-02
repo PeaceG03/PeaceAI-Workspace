@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { indexGitTree } from "../lib/coreindex.ts";
@@ -13,6 +12,7 @@ import { COREFREE_MIN_RUN, LM_JOBS, scanSamples } from "../lib/lm.ts";
 import { buildMemcheckPrompts } from "../lib/memprompts.ts";
 import { classify, dominated, GENERIC_CORE_FILES, PROMPT_OVERLAP_MIN, promptOverlap, promptVerdict, sameRuns, seqId, verdictOf } from "../lib/provenance.ts";
 import { buildSubstringIndex } from "../lib/substr.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -39,7 +39,7 @@ test("classify: GENERIC in any public doc or >= 5 core files; LEAK_SIGNAL unique
 });
 
 function env(secretInCoreFiles: number) {
-  const dir = mkdtempSync(join(tmpdir(), "m49prov-"));
+  const dir = scratchDir("m49prov-");
   const core = join(dir, "core"); mkdirSync(join(core, "src"), { recursive: true });
   for (let i = 0; i < 20; i++) writeFileSync(join(core, "src", `c${i}.ts`), Array.from({ length: 12 }, (_, j) => `export const privateCoreValue${i}_${j} = ${i * 100 + j};`).join("\n") + "\n" + (i < secretInCoreFiles ? `const v${i} = ${SECRET};\n` : ""));
   execFileSync("git", ["init", "-q"], { cwd: core }); execFileSync("git", ["add", "-A"], { cwd: core });

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { SummaryCandidate } from "../lib/gate.ts";
@@ -15,6 +14,7 @@ import {
 } from "../lib/ranker/pipeline.ts";
 import { buildRecords, stableJson, type TaskSource, type VerdictRecord } from "../lib/records.ts";
 import { loadAll, taskDir, writeNew, writeSummary } from "../lib/store.ts";
+import { scratchDir } from "./scratch.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -45,7 +45,7 @@ interface FixtureTask {
 
 /** Writes a Results checkout with one attempt per task; Peace prefers the candidate with tests. */
 function fixture(tasks: readonly FixtureTask[]): string {
-  const root = mkdtempSync(join(tmpdir(), "m3-results-"));
+  const root = scratchDir("m3-results-");
   for (const t of tasks) {
     const runId = t.runId ?? "1000";
     const summary = t.single ? [sc("candidate-1", 2, ["EDIT_ALPHA"])] : [sc("candidate-1", 2, ["EDIT_ALPHA"]), sc("candidate-2", 8, ["EDIT_ALPHA", "EDIT_BETA"])];
@@ -228,7 +228,7 @@ test("promotion rule: off unless every condition holds AND Peace sets PEACEAI_RA
 });
 
 function jobCInputs(root: string, issue: number) {
-  const work = mkdtempSync(join(tmpdir(), "m3-jobc-"));
+  const work = scratchDir("m3-jobc-");
   const inDir = join(work, "in");
   const testDir = join(work, "tests");
   mkdirSync(join(inDir, "candidates"), { recursive: true });

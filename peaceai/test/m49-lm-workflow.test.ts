@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { FT_AUTHOR, FT_SOURCE_LABEL, pairsOf, type FtCommit } from "../lib/ftpairs.ts";
 import { isSafetyToolFile } from "../lib/extcorpus.ts";
+import { scratchDir } from "./scratch.ts";
 const repo = join(import.meta.dirname, "../..");
 const read = (p: string) => readFileSync(join(repo, p), "utf8");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -137,7 +138,7 @@ test("config: ctx 1024, 3 parts that fit the 4 h cap, fine-tune knobs; parts cov
 
 const PY = existsSync("/usr/bin/python3") && (() => { try { execFileSync("python3", ["-c", "import numpy"]); return true; } catch { return false; } })();
 test("train.py --init-from: loads weights of the same shape, refuses a different shape", { skip: !PY }, () => {
-  const d = mkdtempSync(join(tmpdir(), "m49-")), corpus = join(d, "c");
+  const d = scratchDir("m49-"), corpus = join(d, "c");
   execFileSync("mkdir", ["-p", corpus]);
   const docs = Array.from({ length: 12 }, (_, i) => JSON.stringify({ doc: i, text: `function f${i}(a) { return a + ${i}; }\n`.repeat(20) }));
   writeFileSync(join(corpus, "docs.jsonl"), docs.join("\n") + "\n");
@@ -189,7 +190,7 @@ test("Auditor #178: set A/B candidates decompress through a 50 MB cap and an ove
   assert.match(step, /stat -c %s "\$RUNNER_TEMP\/ab-cands\.jsonl"\)" -lt 50000000 \] \|\| \{[^}]*refused[^}]*exit 0; \}/);
   assert.equal((WF.match(/\| gunzip/g) ?? []).length, 1, "no other uncapped gunzip");
   // Behaviour, with the cap scaled down to 1000 bytes: under passes, a bomb is truncated and refused.
-  const d = mkdtempSync(join(tmpdir(), "m49cap-"));
+  const d = scratchDir("m49cap-");
   const run = (bytes: number) => {
     const gz = execFileSync("bash", ["-c", `head -c ${bytes} /dev/zero | gzip | base64 -w0`], { encoding: "utf8" });
     const sh = step.replaceAll("50000000", "1000").replaceAll("$RUNNER_TEMP", d) + "\necho KEPT";

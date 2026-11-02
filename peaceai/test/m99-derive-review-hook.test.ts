@@ -8,11 +8,11 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertDeriveNotesShown, attachDeriveNotes, buildDeriveEdit, DERIVE_TRIGGER, DERIVE_VOCAB, parseDeriveTask } from "../lib/learned-derive.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { repo, tsx } from "./m7-fixtures.ts";
+import { scratchDir } from "./scratch.ts";
 
 const S1_ROWS = [[429, true], [500, true], [502, true], [503, true], [504, true], [550, true], [510, true], [520, true], [530, true], [540, true], [560, true], [570, true], [580, true], [590, true], [438, false], [446, false], [454, false], [462, false], [470, false], [478, false], [486, false], [494, false], [599, true], [428, false], [430, false], [465, false], [499, false], [600, false], [700, false], [100, false], [200, false], [204, false], [301, false], [400, false], [403, false], [404, false], [0, false]] as const;
 // S1's range half (429 false): a range-only candidate (S1 itself, eq + || + range, is covered in the gates test).
@@ -33,7 +33,7 @@ const OTHER = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\
 
 /** Runs review-comment.ts on a candidates dir: candidate-1 = `d1` (DERIVE), candidate-2 = a plain edit. */
 function runReview(d1: string, opts: { placeholderOn1?: boolean; tag1?: boolean } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "m99-hook-"));
+  const dir = scratchDir("m99-hook-");
   mkdirSync(join(dir, "candidates"));
   writeFileSync(join(dir, "candidates/candidate-1.diff"), d1);
   writeFileSync(join(dir, "candidates/candidate-2.diff"), OTHER);
