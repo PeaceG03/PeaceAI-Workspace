@@ -1,7 +1,8 @@
 // Sandboxed test-and-fix loop v1 CLI (see peaceai/spec/loop-v1.md).
-//   tsx peaceai/bin/loop.ts run <taskfile> [--max N] [--deps-dir DIR] [--proposer rules-v1|repair-v1|model-v1] [--planner NAME]
+//   tsx peaceai/bin/loop.ts run <taskfile> [--max N] [--deps-dir DIR] [--proposer rules-v1|repair-v1|repair-v2|model-v1] [--planner NAME]
 //       [--ranking FILE --ranking-sha256 HEX]   (model-v1 only)
 //   (DIR: where the run's install cache goes; the proposer defaults to rules-v1, repair-v1 is M152's edit proposer,
+//   repair-v2 is M168's (repair-v1 plus idiom templates, depth-2 callees and file-name focus; spec/edit-proposer-v2.md),
 //   model-v1 (M167) reranks repair-v1's candidates by the scoring job's ranking FILE, which must hash to HEX; model-v1
 //   runs only on the pinned public dev task file at the pinned --max (peaceai/model/model-v1-proposer.json), and any
 //   ranking problem ends every task PROPOSER_FAILED (never repair-v1's order);
@@ -27,8 +28,8 @@ const propAt = args.indexOf("--proposer");
 const prop = propAt >= 0 ? args[propAt + 1] : "rules-v1";
 const planAt = args.indexOf("--planner");
 const plannerFlag = planAt >= 0 ? (args[planAt + 1] ?? "") : undefined;
-if (cmd !== "run" || !file || !Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS || (depsAt >= 0 && !depsDir?.startsWith("/")) || (prop !== "rules-v1" && prop !== "repair-v1" && prop !== MODEL_PROPOSER)) {
-  console.log(`usage: loop.ts run <taskfile> [--max 1..${MAX_ATTEMPTS}] [--deps-dir /abs/dir] [--proposer rules-v1|repair-v1|model-v1] [--planner v1|v2|v3|v4] [--ranking /abs --ranking-sha256 HEX]`);
+if (cmd !== "run" || !file || !Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS || (depsAt >= 0 && !depsDir?.startsWith("/")) || (prop !== "rules-v1" && prop !== "repair-v1" && prop !== "repair-v2" && prop !== MODEL_PROPOSER)) {
+  console.log(`usage: loop.ts run <taskfile> [--max 1..${MAX_ATTEMPTS}] [--deps-dir /abs/dir] [--proposer rules-v1|repair-v1|repair-v2|model-v1] [--planner v1|v2|v3|v4] [--ranking /abs --ranking-sha256 HEX]`);
   process.exit(2);
 }
 // the planner is picked only by selectPlanner; an unknown name is refused before anything runs
@@ -36,7 +37,7 @@ const planner = loopPlanner(plannerFlag);
 if (!planner) { console.log("refused PLANNER_UNKNOWN"); process.exit(2); }
 let out: ReturnType<typeof runLoopFile>;
 let rankingRefused = false;
-let makeProposer: ((t: { taskKey: string }) => Proposer) | undefined = prop === "repair-v1" ? (): Proposer => repairProposer() : undefined;
+let makeProposer: ((t: { taskKey: string }) => Proposer) | undefined = prop === "repair-v1" ? (): Proposer => repairProposer() : prop === "repair-v2" ? (): Proposer => repairProposer({ v2: true }) : undefined;
 const rankAt = args.indexOf("--ranking"), rankShaAt = args.indexOf("--ranking-sha256");
 if (prop !== MODEL_PROPOSER && (rankAt >= 0 || rankShaAt >= 0)) { console.log("refused RANKING_WITHOUT_MODEL_V1"); process.exit(2); }
 if (prop === MODEL_PROPOSER) {

@@ -20,6 +20,14 @@
 //
 // Each guard is a single line tagged "guard:<id>"; the m152 mutation test deletes each tagged line in turn and
 // requires a behavior case to fail.
+//
+// M168 (repair-v2, spec/edit-proposer-v2.md): an opt-in second proposer built on the same code. It adds four typed
+// IDIOM templates for well-known JS/TS bug shapes that no single-token mutation reaches (a discarded result of a
+// non-mutating method, an inverted letter-case predicate, a truthiness test that drops falsy primitives before a
+// typeof "object" check, and an Object.assign copy into {} that runs the __proto__ setter), tried before the v1
+// templates, and it locates one more level of same-file callees (depth 2). repair-v1 (and model-v1, which ranks
+// repair-v1's list) is unchanged: every v2 path is behind an option repair-v1 never sets. v2 guards are tagged
+// "m168-guard:<id>" (a separate tag, so the m152 guard list is unchanged); m168-mutation deletes each one.
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import { isGeneratedPath, isTestPath, type CodeRepo } from "./codesearch.ts";
@@ -32,6 +40,7 @@ export interface PrepareInput { request: string; failing: readonly string[] }
 export type RepairProposal = { edits: RepairEdit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
 export const REPAIR_PROPOSER = "repair-v1";
+export const REPAIR_PROPOSER_V2 = "repair-v2";
 export const MAX_CANDIDATES = 60;
 export const MAX_SYMBOLS = 8;
 export const MAX_SITES = 12;
@@ -39,7 +48,14 @@ const MAX_FILES_PER_SYMBOL = 6;
 const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
-export type Template = (typeof TEMPLATES)[number];
+/** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy"] as const;
+export type Idiom = (typeof IDIOM_TEMPLATES)[number];
+export type Template = (typeof TEMPLATES)[number] | Idiom;
+/** M168: repair-v2's full order (idioms first, then the v1 templates unchanged). */
+export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES];
+/** M168: how many levels of same-file callees each proposer locates (v1: 1, unchanged; v2: 2). */
+export const CALLEE_DEPTH = { v1: 1, v2: 2 } as const;
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const SOURCE = /\.(?:ts|tsx|mts|cts)$/;
@@ -100,10 +116,25 @@ function topFunctions(sf: ts.SourceFile): Map<string, ts.Node> {
   return m;
 }
 
+/** M168: the request's words (any identifier-like word of 3+ letters, lower-cased), for file-name focus. */
+export function requestWords(text: string): Set<string> {
+  return new Set([...text.matchAll(/[A-Za-z][A-Za-z0-9]{2,}/g)].map((m) => m[0].toLowerCase()));
+}
+/** M168: a file's name stem, lower-cased (src/string.ts -> "string", lib/a.d.ts -> "a"). */
+export const fileStem = (p: string): string => (p.split("/").pop() ?? "").replace(/\.(?:d\.)?[cm]?[jt]sx?$/, "").toLowerCase();
+/** M168: files ordered by whether the request names their stem (stable); when some do, only those are kept. */
+export function focusFiles(files: readonly string[], words: ReadonlySet<string>): string[] {
+  const named = files.filter((p) => words.has(fileStem(p)));
+  let out = [...files];
+  if (named.length > 0) out = named; // m168-guard:focus-named
+  return out;
+}
+
 /** The located sites, computed once from the search tools (see prepare). */
-export function locate(search: CodeRepo, input: PrepareInput): Site[] {
+export function locate(search: CodeRepo, input: PrepareInput, depth: number = CALLEE_DEPTH.v1): Site[] {
   const names = [...namedSymbols(input.request), ...input.failing.flatMap((n) => namedSymbols(n))].filter((n, i, a) => a.indexOf(n) === i).slice(0, MAX_SYMBOLS);
   const sites: Site[] = [];
+  const words = requestWords(input.request);
   const texts = new Map<string, string | null>();
   const textOf = (p: string) => {
     if (!texts.has(p)) { const r = search.read(p); texts.set(p, r.ok && !r.truncated ? r.text : null); }
@@ -124,7 +155,11 @@ export function locate(search: CodeRepo, input: PrepareInput): Site[] {
       const g = search.grep(`\\b${name.replace(/\$/g, "\\$")}\\s*(?:[(:=<]|\\?\\s*:)`, { regex: true, limit: 50 });
       if (g.ok) for (const h of g.hits) if (!files.includes(h.path)) files.push(h.path);
     }
-    for (const p of files.filter(allowed).slice(0, MAX_FILES_PER_SYMBOL)) {
+    let ok = files.filter(allowed);
+    // M168 (repair-v2 only): files whose name the request's words name (`string` -> src/string.ts) go first, and when
+    // any does, only the best-named ones are kept, so a method many files define is located where the request points
+    if (depth >= 2) ok = focusFiles(ok, words); // m168-guard:focus-v2-only
+    for (const p of ok.slice(0, MAX_FILES_PER_SYMBOL)) {
       const text = textOf(p);
       if (text === null) continue;
       const sf = parseSource(p, text);
@@ -138,7 +173,20 @@ export function locate(search: CodeRepo, input: PrepareInput): Site[] {
           ts.forEachChild(n, walk);
         };
         walk(d);
-        for (const c of callees.slice(0, MAX_CALLEES)) { const t = tops.get(c)!; push({ path: p, name: c, start: t.getStart(sf), end: t.getEnd(), tier: 1 }); }
+        for (const c of callees.slice(0, MAX_CALLEES)) {
+          const t = tops.get(c)!;
+          push({ path: p, name: c, start: t.getStart(sf), end: t.getEnd(), tier: 1 });
+          // M168 (repair-v2 only): a second level, the same-file top-level functions that callee calls (the fault is
+          // often in a worker below a factory: entry -> factory -> worker); v1 never passes depth 2
+          if (depth < 2) continue; // m168-guard:depth-v1
+          const deeper: string[] = [];
+          const walk2 = (n: ts.Node) => {
+            if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text !== name && n.expression.text !== c && !callees.includes(n.expression.text) && tops.has(n.expression.text) && !deeper.includes(n.expression.text)) deeper.push(n.expression.text);
+            ts.forEachChild(n, walk2);
+          };
+          walk2(t);
+          for (const c2 of deeper.slice(0, MAX_CALLEES)) { const t2 = tops.get(c2)!; push({ path: p, name: c2, start: t2.getStart(sf), end: t2.getEnd(), tier: 2 }); }
+        }
       }
     }
   }
@@ -225,6 +273,121 @@ export function mutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number, ex
   return out;
 }
 
+// ---- M168 idiom templates (repair-v2 only)
+
+/** Methods that return a new value and leave the receiver unchanged (Array / String); a call whose result is dropped
+ *  does nothing. Mutating methods (sort, reverse, splice, push, fill, ...) are NOT here. */
+export const PURE_METHODS: ReadonlySet<string> = new Set([
+  "filter", "map", "concat", "slice", "flat", "flatMap", "toSorted", "toReversed", "toSpliced", "with",
+  "trim", "trimStart", "trimEnd", "replace", "replaceAll", "toLowerCase", "toUpperCase", "padStart", "padEnd", "substring", "normalize",
+]);
+
+/** A side-effect-free reference: an identifier, `this`, or a non-optional property access chain of those. */
+export function plainRef(e: ts.Node): boolean {
+  if (ts.isIdentifier(e) || e.kind === ts.SyntaxKind.ThisKeyword) return true;
+  return ts.isPropertyAccessExpression(e) && !e.questionDotToken && ts.isIdentifier(e.name) && plainRef(e.expression);
+}
+
+/** Names a file binds that cannot be assigned: const declarations and import bindings (any scope; conservative). */
+export function fixedNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>();
+  const visit = (n: ts.Node) => {
+    if (ts.isVariableDeclarationList(n) && (n.flags & ts.NodeFlags.Const)) for (const d of n.declarations) if (ts.isIdentifier(d.name)) out.add(d.name.text);
+    if (ts.isImportClause(n) && n.name) out.add(n.name.text);
+    if (ts.isNamespaceImport(n) || ts.isImportSpecifier(n) || ts.isImportEqualsDeclaration(n)) out.add(n.name.text);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/** discarded-result: `ref.m(...);` where m is a non-mutating method -> `ref = ref.m(...);`. */
+function discardedResult(n: ts.Node, sf: ts.SourceFile, fixed: ReadonlySet<string>): string | null {
+  const e = (n as { expression?: ts.Node }).expression;
+  if (!ts.isExpressionStatement(n)) return null; // m168-guard:dr-statement
+  if (!e || !ts.isCallExpression(e) || !ts.isPropertyAccessExpression(e.expression) || !ts.isIdentifier(e.expression.name)) return null;
+  if (!PURE_METHODS.has(e.expression.name.text)) return null; // m168-guard:dr-method
+  if (e.questionDotToken || e.expression.questionDotToken) return null; // m168-guard:dr-optional
+  const recv = e.expression.expression;
+  if (!plainRef(recv) || recv.kind === ts.SyntaxKind.ThisKeyword) return null; // m168-guard:dr-ref
+  if (ts.isIdentifier(recv) && fixed.has(recv.text)) return null; // m168-guard:dr-const
+  const r = sf.text.slice(recv.getStart(sf), recv.getEnd());
+  return `${r} = ${sf.text.slice(e.getStart(sf), e.getEnd())}`;
+}
+
+/** case-predicate: `x.toUpperCase() === x` (true for every non-letter) -> `x !== x.toLowerCase()` (true only for a
+ *  letter that has a lower-case form); the lower-case mirror and `!==` likewise. Either operand order. */
+function casePredicate(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isBinaryExpression(n)) return null;
+  const k = n.operatorToken.kind;
+  if (k !== ts.SyntaxKind.EqualsEqualsEqualsToken && k !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return null; // m168-guard:cp-op
+  const src = (x: ts.Node) => sf.text.slice(x.getStart(sf), x.getEnd());
+  for (const [call, other] of [[n.left, n.right], [n.right, n.left]] as const) {
+    if (!ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression) || call.expression.questionDotToken || call.questionDotToken) continue;
+    const m = call.expression.name.text;
+    if (m !== "toUpperCase" && m !== "toLowerCase") continue;
+    if (call.arguments.length !== 0) continue; // m168-guard:cp-noargs
+    const x = call.expression.expression;
+    if (!plainRef(x)) continue; // m168-guard:cp-ref
+    if (src(x) !== src(other)) continue; // m168-guard:cp-same
+    const flip = m === "toUpperCase" ? "toLowerCase" : "toUpperCase";
+    const op = k === ts.SyntaxKind.EqualsEqualsEqualsToken ? "!==" : "===";
+    return `${src(x)} ${op} ${src(x)}.${flip}()`;
+  }
+  return null;
+}
+
+/** typeof-null: `x && typeof x !== "object"` (meant to let null through as a primitive, but also drops 0, "", false,
+ *  NaN) -> `(x === null || typeof x !== "object")`. Either operand order. */
+function typeofNull(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isBinaryExpression(n)) return null;
+  if (n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) return null; // m168-guard:tn-and
+  const src = (x: ts.Node) => sf.text.slice(x.getStart(sf), x.getEnd());
+  for (const [ref, check] of [[n.left, n.right], [n.right, n.left]] as const) {
+    if (!plainRef(ref)) continue; // m168-guard:tn-ref
+    if (!ts.isBinaryExpression(check)) continue;
+    const ck = check.operatorToken.kind;
+    if (ck !== ts.SyntaxKind.ExclamationEqualsEqualsToken && ck !== ts.SyntaxKind.ExclamationEqualsToken) continue;
+    const [t, lit] = ts.isTypeOfExpression(check.left) ? [check.left, check.right] : [check.right, check.left];
+    if (!ts.isTypeOfExpression(t)) continue;
+    if (!ts.isStringLiteral(lit) || lit.text !== "object") continue; // m168-guard:tn-object
+    if (src(t.expression) !== src(ref)) continue; // m168-guard:tn-same
+    return `(${src(ref)} === null || typeof ${src(ref)} !== "object")`;
+  }
+  return null;
+}
+
+/** proto-safe-copy: `Object.assign({}, a, ...)` ([[Set]]: an own "__proto__" key in a source, e.g. from JSON.parse, runs
+ *  the setter and swaps the copy's prototype) -> `({ ...a, ... })` (own data properties, no setter). */
+function protoSafeCopy(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isCallExpression(n) || n.questionDotToken) return null;
+  const c = n.expression;
+  if (!ts.isPropertyAccessExpression(c) || !ts.isIdentifier(c.expression) || c.expression.text !== "Object" || c.name.text !== "assign") return null; // m168-guard:pc-object
+  const [target, ...sources] = n.arguments;
+  if (!target || !ts.isObjectLiteralExpression(target) || target.properties.length !== 0) return null; // m168-guard:pc-empty
+  if (sources.length === 0) return null; // m168-guard:pc-sources
+  if (sources.some((a) => ts.isSpreadElement(a))) return null; // m168-guard:pc-spread
+  return `({ ${sources.map((a) => `...${sf.text.slice(a.getStart(sf), a.getEnd())}`).join(", ")} })`;
+}
+
+/** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
+export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
+  const out: Mutation[] = [];
+  const fixed = fixedNames(sf);
+  const visit = (n: ts.Node) => {
+    const s = n.getStart(sf);
+    if (s < site.start || n.getEnd() > site.end) { ts.forEachChild(n, visit); return; }
+    const add = (rep: string | null, template: Idiom) => { if (rep !== null) out.push({ path: site.path, start: s, end: n.getEnd(), text: rep, template, site: siteIndex }); };
+    add(discardedResult(n, sf, fixed), "discarded-result");
+    add(casePredicate(n, sf), "case-predicate");
+    add(typeofNull(n, sf), "typeof-null");
+    add(protoSafeCopy(n, sf), "proto-safe-copy");
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+
 const parses = (path: string, text: string): boolean => ((parseSource(path, text) as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics ?? [1]).length === 0;
 const applyAll = (text: string, ms: readonly Mutation[]): string => [...ms].sort((a, b) => b.start - a.start).reduce((t, x) => t.slice(0, x.start) + x.text + t.slice(x.end), text);
 const overlaps = (a: Mutation, b: Mutation) => a.path === b.path && a.start < b.end && b.start < a.end || (a.path === b.path && a.start === b.start);
@@ -250,7 +413,7 @@ export function candidateFor(files: ReadonlyMap<string, string>, muts: Mutation[
  * (template, then located site, then position), kept when it is a changed, parsing, new edit, at most MAX_CANDIDATES.
  * `seen` collects the keys (shared with the combination step). M167: model-v1's scoring job builds the same list.
  */
-export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set()): Candidate[] {
+export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set(), v2 = false): Candidate[] {
   const all: Mutation[] = [];
   const exported = new Map<string, Set<string>>();
   sites.forEach((site, i) => {
@@ -266,8 +429,10 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
       exported.set(site.path, ex);
     }
     all.push(...mutationsIn(sf, site, i, exported.get(site.path)!));
+    if (v2) all.push(...idiomMutationsIn(sf, site, i)); // m168-guard:idioms-v2-only
   });
-  const rank = (x: Mutation) => TEMPLATES.indexOf(x.template);
+  const order: readonly Template[] = v2 ? TEMPLATES_V2 : TEMPLATES;
+  const rank = (x: Mutation) => order.indexOf(x.template);
   all.sort((a, b) => rank(a) - rank(b) || a.site - b.site || a.start - b.start || a.end - b.end || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
   const queue: Candidate[] = [];
   for (const x of all) {
@@ -283,7 +448,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
 
 /** M167: options for a proposer built on repair-v1 (model-v1): its row name, and a reorder of the first candidate
  *  list (called once, also with [] when nothing was located; a throw is the proposer's failure, PROPOSER_FAILED). */
-export interface RepairOptions { name?: string; order?: (queue: readonly Candidate[]) => Candidate[] }
+export interface RepairOptions { name?: string; order?: (queue: readonly Candidate[]) => Candidate[]; v2?: boolean }
 
 /**
  * The general repair proposer (repair-v1). prepare() is called once per task by the loop with the search tools on the
@@ -296,14 +461,14 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; prepar
   const seen = new Set<string>();
   const combined = new Set<string>();
   return {
-    name: opts.name ?? REPAIR_PROPOSER,
-    prepare(search, input) { sites = locate(search, input); },
+    name: opts.name ?? (opts.v2 ? REPAIR_PROPOSER_V2 : REPAIR_PROPOSER),
+    prepare(search, input) { sites = locate(search, input, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); },
     next(input) {
       if (opts.order && !queue && (!sites || sites.length === 0)) { queue = opts.order([]); } // M167: the ranking must hold for "nothing located" too
       if (!sites || sites.length === 0) return { refuse: "NO_EDIT" }; // nothing the request names was located: no edit anywhere
       const files = new Map(input.files.map((f) => [f.path, f.content] as const));
       if (!queue) {
-        queue = repairCandidates(sites, files, seen);
+        queue = repairCandidates(sites, files, seen, opts.v2 === true);
         if (opts.order) queue = opts.order(queue);
         if (queue.length === 0) return { refuse: "NO_EDIT" };
       }
