@@ -2,11 +2,11 @@
  "schema": "peaceai-lb-corpus2:v1",
  "note": "lb-corpus v2 for lb-daily chain 2 (spec peaceai/spec/lb-corpus2-v1.md). NOT cleared and NOT trainable: it is not in lb-train.json clearedCorpora, and nothing reads this file to train. Training on it needs (1) Auditor's hidden near-dup check of the published pins below = 0, (2) an add-only clearedCorpora entry, (3) a separate reviewed PR wiring chain 2 (warm start below) into the daily cycle.",
  "sources": {
-  "schema": "peaceai-lb-corpus2-sources:v1",
+  "schema": "peaceai-lb-corpus2-sources:v2",
   "repo": "PeaceG03/PeaceAI-Workspace",
   "tip": "d70bf9ac7cf3e4e50c732c7976531fe0af18a559",
   "license": "owner:PeaceG03",
-  "rule": "A file of the tip tree is admitted iff (a) every commit that touched its path (git log --no-renames --full-history) is the squash merge on main of a PR listed in passed (Auditor PASS at the exact merged head, evidence named); (b) its extension is code or text (ts mts cts js mjs cjs py sh md); (c) its path is not junk (lb-clean JUNK_PATH), not a fixture dir, not .github, and names nothing held-out, hidden, Results, task-set, exclusion, drop-hash, nl-pairs or verdict related; (d) its text holds no 40-64 hex run (a pinned hash) and is valid UTF-8. Anything not attributable this way is excluded. Peace's own verdicts: none are admitted in v1 (they live in Results, which is excluded).",
+  "rule": "A file of the tip tree is admitted iff (a) every commit that touched its path (git log --no-renames --full-history) is the squash merge on main of a PR listed in passed (Auditor PASS at the exact merged head, evidence named); (b) its extension is code or text (ts mts cts js mjs cjs py sh md); (c) its path is not junk (lb-clean JUNK_PATH), not a fixture dir, not .github, and names nothing held-out, hidden, Results, task-set, exclusion, drop-hash, nl-pairs or verdict related; (d) its text holds no 40-64 hex run (a pinned hash) and is valid UTF-8. Anything not attributable this way is excluded. Peace's own verdicts: none are admitted in v1 (they live in Results, which is excluded). (e) Dev-task rule (Auditor #673 B1): no new TRAIN doc may name, diagnose or encode the fix of a public dev task of peaceai/plan/tasks-public-v1.json (lbcorpus2.ts devTaskHits: dev_name, dev_span, dev_sha, dev_fix against the pinned set and devfix files). Each admitted file that hits has a decision in devTasks.decisions: drop (it encodes or describes a dev fix, or lb-clean already drops it) or heldout_v2 (it only names dev tasks or reports their run status); a build refuses an undecided or stale hit, and refuses when any new train doc still hits.",
   "passed": [
    {
     "pr": 665,
@@ -378,31 +378,135 @@
      668
     ]
    }
-  ]
+  ],
+  "devTasks": {
+   "set": "peaceai/plan/tasks-public-v1.json",
+   "setSha256": "06c97d8d024c684f36afbc7e6724e48be2542e11be1ace0ad1da3ad59a43f810",
+   "fix": "peaceai/model/lb-corpus2-devfix.json",
+   "fixSha256": "001e8f1edbe6f09eb526d6652a8c6bd553251aa0f34bf6a6ac84b61faa8901e7",
+   "diffs": "Each task's reference diff, fetched with: gh api -H 'Accept: application/vnd.github.diff' repos/<repo>/compare/<first parent of reference.from.merge>...<reference.from.merge>, saved as <task id>.diff; the devfix file pins each diff's sha256.",
+   "decisions": [
+    {
+     "path": "peaceai/spec/edit-proposer-v2.md",
+     "to": "drop",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Lists every public dev repo by owner/repo; lb-clean already drops it as taskset_name, so the explicit decision is drop."
+    },
+    {
+     "path": "peaceai/spec/loop-deps-access-v1.md",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names dev tasks with their dev-run refusal codes and deps-access outcomes (run status only, no fault location or fix); kept as held-out prose."
+    },
+    {
+     "path": "peaceai/spec/loop-isolation-v1.md",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names the dev tasks that reached the isolation step in a dev run (run status only); kept as held-out prose."
+    },
+    {
+     "path": "peaceai/spec/loop-runners-v2.md",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names dev tasks with their runner and service refusal causes (run status only, no fix text); kept as held-out prose."
+    },
+    {
+     "path": "peaceai/spec/loop-runners-v3.md",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names one dev task and its runner refusal (run status only); already in the heldout_v2 slice by sha, decision recorded."
+    },
+    {
+     "path": "peaceai/spec/repair-v2-m172.md",
+     "to": "drop",
+     "hits": [
+      "dev_name",
+      "dev_fix"
+     ],
+     "why": "Carries reference-fix shingles of a dev task (dev_fix) and diagnoses it; fix text is kept out of every split."
+    },
+    {
+     "path": "peaceai/spec/repair-v2-m173.md",
+     "to": "drop",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Diagnoses remaining dev-task failures down to the fault site and what each fix needs; a fix description is kept out of every split."
+    },
+    {
+     "path": "peaceai/test/m168-repair-v2.test.ts",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names dev repos only inside a negative assertion (the code must not mention them); no diagnosis or fix; held out."
+    },
+    {
+     "path": "peaceai/test/m170-cases.ts",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names one dev repo as the example of a refusal class in a comment; already in the heldout_v2 slice by sha, decision recorded."
+    },
+    {
+     "path": "peaceai/test/m172-cases.ts",
+     "to": "drop",
+     "hits": [
+      "dev_name",
+      "dev_fix"
+     ],
+     "why": "Carries a dev task's reference fix token for token (dev_fix) in its admit cases; fix text is kept out of every split."
+    },
+    {
+     "path": "peaceai/test/m173-batch12.test.ts",
+     "to": "heldout_v2",
+     "hits": [
+      "dev_name"
+     ],
+     "why": "Names dev repos only inside a negative assertion (the code must not mention them); no diagnosis or fix; held out."
+    }
+   ]
+  }
  },
  "build": {
-  "docsSha256": "ef28742c97b93750cf1dc9c475f275054190c3796c93e15f8ab91d0fc1bda112",
-  "manifestSha256": "5098382238a49355b239bca01cb3588096d66493f1958155c59e7afcdd4a339f",
-  "fingerprint": "788526b350f5e1be66f628a179e677ae70b34a6432f7da732549cbec1ce68088",
-  "docs": 63939,
-  "docsBytes": 114096394,
+  "docsSha256": "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
+  "manifestSha256": "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe",
+  "fingerprint": "46598960d6d7f41e8da4f38093263cd97cd5d5dd16b473c31a015a86b57a0e37",
+  "docs": 63928,
+  "docsBytes": 114016163,
   "baseDocs": 63839,
-  "newFiles": 44,
-  "newFilesHeldoutV2": 5,
-  "newDocs": 100,
-  "newTrain": 91,
-  "newHeldoutV2": 9,
-  "newTrainBytes": 341146,
-  "newHeldoutV2Bytes": 33083,
-  "newManifestSha256": "cb62c9b5657394d4acc0f7af606a29a0c4d7f2e4e9959778c125a15c75b7b1be",
+  "newFiles": 40,
+  "newFilesHeldoutV2": 9,
+  "newDocs": 89,
+  "newTrain": 74,
+  "newHeldoutV2": 15,
+  "newTrainBytes": 237106,
+  "newHeldoutV2Bytes": 59531,
+  "newManifestSha256": "a61cc51b848f445c5eb6a6a05a9b7a5ebcb7a39fac1708ce191b4848cc4b7572",
   "cross": {
    "cross_exact_dup": 0,
    "cross_near_dup": 0,
    "cross_followers": 0
   },
   "cleanDrops": {
-   "taskset_name": 1,
    "near_dup": 4
+  },
+  "devTask": {
+   "hitFiles": 11,
+   "movedToHeldoutV2": 7,
+   "dropped": 4,
+   "newTrainHits": 0
   },
   "overlap": {
    "new_train_vs_old_heldout_exact": 0,
@@ -429,6 +533,7 @@
   "eval": {
    "heldout": "split == heldout (days 1-3, unchanged; the export eval stream)",
    "heldoutV2": "split == heldout_v2 (new slice; reported separately, wiring in a later PR)"
-  }
+  },
+  "buildIsolation": "Binding (Auditor #673 answer b): the chain-2 run PR must not execute peaceai/lib/lbcorpus2.ts or peaceai/bin/lb-corpus2.ts in a job that holds secrets. It builds the corpus in a separate secrets-free job and passes only the output, sha-checked against the pins in build, to the training job. No /approve-rule is needed for this PR."
  }
 }

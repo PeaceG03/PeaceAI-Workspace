@@ -10,14 +10,17 @@
 //   - the non-overlap check (overlapProblems): no new train text equals or near-duplicates an old held-out doc or a
 //     heldout_v2 doc, and no chain-1 train doc does either with a heldout_v2 doc (by text sha256, normalised key and
 //     shingle Jaccard), a hard post-condition of every build;
+//   - the dev-task rule (devTaskHits): no new TRAIN doc names, diagnoses or encodes the fix of a public dev task
+//     (peaceai/plan/tasks-public-v1.json): a hit file is moved to heldout_v2 or dropped by a listed decision, and no
+//     new train doc may hit (a hard post-condition of every build; Auditor #673 B1);
 //   - the v2 fingerprint over the code, config, sources file, base pins, refs, drop files and output.
 // Spec: peaceai/spec/lb-corpus2-v1.md. Counts and codes only; no text is ever printed.
 import { clean, NearIndex, normKey, sha256, shingles, tokens, JUNK_PATH, type InDoc, type LbConfig, type TasksetRefs } from "./lbclean.ts";
 import type { Exclusions } from "./nlpairs.ts";
 
 /** Bump on any change to a rule or an output field: it is part of the fingerprint. */
-export const LB_CORPUS2_VERSION = "peaceai-lb-corpus2:v1";
-export const SOURCES_SCHEMA = "peaceai-lb-corpus2-sources:v1";
+export const LB_CORPUS2_VERSION = "peaceai-lb-corpus2:v2";
+export const SOURCES_SCHEMA = "peaceai-lb-corpus2-sources:v2";
 export const FINGERPRINT2_SCHEMA = "peaceai-lb-corpus2-fingerprint:v1";
 export const HELDOUT2 = "heldout_v2";
 
@@ -55,6 +58,7 @@ export interface Sources {
   base: { docs: string; manifest: string; fingerprint: string; builtAt: string };
   slice: { salt: string; rate: number };
   files: { path: string; blob: string; prs: number[] }[];
+  devTasks: DevTasksPins;
 }
 /** Problems with a sources file as fixed codes (empty = ok). */
 export function sourcesProblems(s: any): string[] {
@@ -70,6 +74,7 @@ export function sourcesProblems(s: any): string[] {
   const prs = new Set(Array.isArray(s?.passed) ? s.passed.map((x: any) => x.pr) : []);
   if (!Array.isArray(s?.files) || !s.files.length || !s.files.every((f: any, i: number, a: any[]) => typeof f?.path === "string" && hex(f?.blob, 40) && (i === 0 || a[i - 1].path < f.path)
     && Array.isArray(f.prs) && f.prs.length > 0 && f.prs.every((n: unknown) => prs.has(n)))) p.push("sources_files"); // c2-guard:sources-files
+  if (devPinsProblems(s?.devTasks, Array.isArray(s?.files) ? s.files.map((f: any) => f?.path) : []).length) p.push("sources_dev"); // c2-guard:sources-dev
   return p;
 }
 
@@ -78,6 +83,131 @@ export function sourcesProblems(s: any): string[] {
 export function sliceOf(path: string, salt: string, rate: number): "train" | typeof HELDOUT2 {
   const u = parseInt(sha256(`${salt}\nslice\n${path}`).slice(0, 8), 16) / 0x100000000;
   return u < rate ? HELDOUT2 : "train"; // c2-guard:slice-rate
+}
+
+// ---- the dev-task rule (Auditor #673 B1)
+// The public dev tasks are peaceai/plan/tasks-public-v1.json (the set file is the authority, never a list in code).
+// A new doc HITS a dev task when its text has any of, derived from the set and its reference fixes only:
+//   dev_name  a repo name, owner/repo or task id of the set (case-insensitive, not inside a longer word);
+//   dev_span  a back-quoted code span of a request with >= DEV_SPAN_TOKENS tokens, token for token;
+//   dev_sha   a 7..40 hex run that starts a task's commit or reference merge sha;
+//   dev_fix   a fix shingle: DEVFIX_K tokens of an added line run of a reference diff, as is, or with identifiers
+//             abstracted when the window holds >= DEVFIX_MIN_KEYWORDS keywords (a renamed copy of the fix), kept only
+//             when it occurs nowhere in the chain-1 base corpus (so it is specific to the fix, not common code).
+// Fix shingles are committed as hashes (peaceai/model/lb-corpus2-devfix.json, built by lb-corpus2.ts --devfix).
+export const DEVFIX_SCHEMA = "peaceai-lb-corpus2-devfix:v1";
+export const DEV_SET_SCHEMA = "peaceai-plan-tasks:v1";
+export const DEVFIX_K = 10;
+export const DEVFIX_MIN_KEYWORDS = 2;
+export const DEV_SPAN_TOKENS = 4;
+export const DEV_DECISIONS = ["drop", HELDOUT2] as const;
+/** JavaScript / TypeScript words kept by the abstraction (every other identifier becomes "I"). */
+export const DEV_KEYWORDS: ReadonlySet<string> = new Set(("if else for while do return const let var function in of new typeof instanceof undefined null true false "
+  + "await async yield throw try catch finally class extends this super import export from default switch case break continue void delete").split(" "));
+const IDENT = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+export const devAbstract = (t: readonly string[]) => t.map((x) => (DEV_KEYWORDS.has(x) || !IDENT.test(x) ? x : "I"));
+const fixHash = (kind: string, w: readonly string[]) => sha256(`${DEVFIX_SCHEMA}\n${kind}\n${w.join(" ")}`).slice(0, 16);
+/** Every fix-shingle hash of one token run. */
+export function fixShingles(toks: readonly string[]): Set<string> {
+  const out = new Set<string>(), a = devAbstract(toks);
+  for (let i = 0; i + DEVFIX_K <= toks.length; i++) {
+    out.add(fixHash("exact", toks.slice(i, i + DEVFIX_K))); // c2-guard:fix-exact
+    const w = a.slice(i, i + DEVFIX_K);
+    if (w.filter((x) => DEV_KEYWORDS.has(x)).length >= DEVFIX_MIN_KEYWORDS) out.add(fixHash("abst", w)); // c2-guard:fix-abst
+  }
+  return out;
+}
+/** The added line runs of a unified diff (consecutive "+" lines, "+++" headers excluded), one string per run. */
+export function addedRuns(diff: string): string[] {
+  const runs: string[] = []; let cur: string[] = [];
+  for (const l of diff.split("\n")) {
+    if (l.startsWith("+") && !l.startsWith("+++ ")) { cur.push(l.slice(1)); continue; }
+    if (cur.length) runs.push(cur.join("\n")); cur = []; // c2-guard:fix-runs
+  }
+  if (cur.length) runs.push(cur.join("\n"));
+  return runs;
+}
+export interface DevTask { id: string; repo: string; commit: string; request: string; reference: { from: { pr: number; merge: string } } }
+/** Problems with the dev task set file (empty = ok). */
+export function devSetProblems(set: any): string[] {
+  const hex40 = (v: unknown) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v);
+  if (set?.schema !== DEV_SET_SCHEMA || !Array.isArray(set?.tasks) || set.tasks.length === 0) return ["dev_set_schema"];
+  if (!set.tasks.every((t: any) => typeof t?.id === "string" && t.id && typeof t?.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(t.repo) && hex40(t?.commit)
+    && typeof t?.request === "string" && Number.isInteger(t?.reference?.from?.pr) && hex40(t?.reference?.from?.merge))) return ["dev_set_task"];
+  if (new Set(set.tasks.map((t: any) => t.id)).size !== set.tasks.length) return ["dev_set_task"];
+  return [];
+}
+export interface DevFixFile { schema: string; k: number; minKeywords: number; tasks: { id: string; repo: string; merge: string; diffSha256: string; hashes: string[] }[] }
+/** Builds the devfix file: per task (set order), the fix shingles of its reference diff's added runs minus every
+ * shingle that occurs in a base doc. `diffs`: task id -> the diff text of reference.from.merge against its parent. */
+export function devFixOf(set: { tasks: DevTask[] }, diffs: ReadonlyMap<string, string>, baseTexts: Iterable<string>): DevFixFile {
+  const per = set.tasks.map((t) => {
+    const d = diffs.get(t.id); if (d === undefined) throw new Error("devfix_diff_missing"); // c2-guard:fix-diff
+    const h = new Set<string>(); for (const r of addedRuns(d)) for (const x of fixShingles(tokens(r))) h.add(x);
+    return { t, d, h };
+  });
+  const all = new Set<string>(); for (const p of per) for (const x of p.h) all.add(x);
+  const common = new Set<string>();
+  for (const b of baseTexts) for (const x of fixShingles(tokens(b))) if (all.has(x)) common.add(x); // c2-guard:fix-base
+  return { schema: DEVFIX_SCHEMA, k: DEVFIX_K, minKeywords: DEVFIX_MIN_KEYWORDS,
+    tasks: per.map(({ t, d, h }) => ({ id: t.id, repo: t.repo, merge: t.reference.from.merge, diffSha256: sha256(d), hashes: [...h].filter((x) => !common.has(x)).sort() })) };
+}
+export interface DevSet { names: string[]; spans: string[]; shas: string[]; fix: Set<string> }
+/** The matchers of a dev task set and its devfix file. Throws a fixed code when they do not belong together. */
+export function devSetOf(set: any, fix: any): DevSet {
+  if (devSetProblems(set).length) throw new Error("dev_set_invalid"); // c2-guard:dev-set
+  const ok = fix?.schema === DEVFIX_SCHEMA && fix.k === DEVFIX_K && fix.minKeywords === DEVFIX_MIN_KEYWORDS && Array.isArray(fix.tasks) && fix.tasks.length === set.tasks.length
+    && set.tasks.every((t: DevTask, i: number) => fix.tasks[i]?.id === t.id && fix.tasks[i]?.repo === t.repo && fix.tasks[i]?.merge === t.reference.from.merge
+      && Array.isArray(fix.tasks[i]?.hashes) && fix.tasks[i].hashes.length > 0 && fix.tasks[i].hashes.every((h: unknown) => typeof h === "string" && /^[0-9a-f]{16}$/.test(h)));
+  if (!ok) throw new Error("devfix_differs"); // c2-guard:dev-fix-file
+  const names = new Set<string>(), spans = new Set<string>(), shas = new Set<string>(), hashes = new Set<string>();
+  for (const t of set.tasks as DevTask[]) {
+    for (const n of [t.repo, t.repo.split("/")[1]!, t.id]) names.add(n.toLowerCase()); // c2-guard:dev-names
+    for (const m of t.request.matchAll(/`([^`]+)`/g)) { const k = tokens(m[1]!); if (k.length >= DEV_SPAN_TOKENS) spans.add(k.join(" ")); } // c2-guard:dev-spans
+    shas.add(t.commit); shas.add(t.reference.from.merge);
+  }
+  for (const f of fix.tasks) for (const h of f.hashes) hashes.add(h);
+  return { names: [...names].sort(), spans: [...spans].sort(), shas: [...shas].sort(), fix: hashes };
+}
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+/** The dev-task hit codes of one text (empty = no hit). */
+export function devTaskHits(text: string, d: DevSet): string[] {
+  const hits: string[] = [], low = text.toLowerCase();
+  if (d.names.some((n) => new RegExp(`(?<![\\p{L}\\p{N}_])${esc(n)}(?![\\p{L}\\p{N}_])`, "u").test(low))) hits.push("dev_name"); // c2-guard:hit-name
+  const toks = tokens(text), joined = ` ${toks.join(" ")} `;
+  if (d.spans.some((s) => joined.includes(` ${s} `))) hits.push("dev_span"); // c2-guard:hit-span
+  const hex = low.match(/(?<![0-9a-f])[0-9a-f]{7,40}(?![0-9a-f])/g) ?? [];
+  if (hex.some((h) => d.shas.some((s) => s.startsWith(h)))) hits.push("dev_sha"); // c2-guard:hit-sha
+  for (const x of fixShingles(toks)) if (d.fix.has(x)) { hits.push("dev_fix"); break; } // c2-guard:hit-fix
+  return hits;
+}
+export interface DevDecision { path: string; to: (typeof DEV_DECISIONS)[number]; hits: string[]; why: string }
+export interface DevTasksPins { set: string; setSha256: string; fix: string; fixSha256: string; diffs: string; decisions: DevDecision[] }
+/** Problems with the sources' devTasks block (empty = ok). `paths`: the sources' file paths. */
+export function devPinsProblems(p: any, paths: readonly string[]): string[] {
+  const hex = (v: unknown) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+  if (!p || typeof p.set !== "string" || !hex(p.setSha256) || typeof p.fix !== "string" || !hex(p.fixSha256) || typeof p.diffs !== "string" || !Array.isArray(p.decisions)) return ["dev_pins"];
+  const known = new Set(paths), codes = new Set(["dev_name", "dev_span", "dev_sha", "dev_fix"]);
+  if (!p.decisions.every((d: any, i: number, a: any[]) => typeof d?.path === "string" && known.has(d.path) && (i === 0 || a[i - 1].path < d.path) // c2-guard:dev-decision-paths
+    && (DEV_DECISIONS as readonly string[]).includes(d.to) && Array.isArray(d.hits) && d.hits.length > 0 && d.hits.every((h: unknown) => codes.has(h as string)) // c2-guard:dev-decision-to
+    && typeof d.why === "string" && d.why.length > 0)) return ["dev_decisions"];
+  return [];
+}
+/** Decision problems for the admitted files' hits: every hit file has a decision whose hits are exactly its hits,
+ * and every decision is for a hit file. `hitsOf`: path -> hit codes (all admitted files). */
+export function devDecisionProblems(hitsOf: ReadonlyMap<string, string[]>, decisions: readonly DevDecision[]): string[] {
+  const p: string[] = [], dec = new Map(decisions.map((d) => [d.path, d]));
+  for (const [path, h] of hitsOf) {
+    const d = dec.get(path);
+    if (h.length && !d) p.push(`devtask_undecided:${path}`); // c2-guard:dec-undecided
+    else if (d && JSON.stringify(d.hits) !== JSON.stringify(h)) p.push(`devtask_decision_stale:${path}`); // c2-guard:dec-stale
+  }
+  for (const d of decisions) if (!hitsOf.has(d.path)) p.push(`devtask_decision_stale:${d.path}`);
+  return p;
+}
+/** How many TRAIN docs of a new doc list hit a dev task (must be 0). */
+export function devTrainHits(docs: readonly { text: string; split: string }[], d: DevSet): number {
+  return docs.filter((o) => o.split === "train" && devTaskHits(o.text, d).length > 0).length; // c2-guard:dev-train
 }
 
 // ---- the append pass

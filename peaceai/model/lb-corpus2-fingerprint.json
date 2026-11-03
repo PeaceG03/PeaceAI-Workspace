@@ -1,11 +1,11 @@
 {
  "schema": "peaceai-lb-corpus2-fingerprint:v1",
- "fingerprint": "788526b350f5e1be66f628a179e677ae70b34a6432f7da732549cbec1ce68088",
+ "fingerprint": "46598960d6d7f41e8da4f38093263cd97cd5d5dd16b473c31a015a86b57a0e37",
  "parts": {
-  "version": "peaceai-lb-corpus2:v1",
+  "version": "peaceai-lb-corpus2:v2",
   "codeSha256": {
-   "peaceai/lib/lbcorpus2.ts": "aa8983c428c3564347e9a8b9cd77c25cb403563473e86fba6a49abc79a3fc43c",
-   "peaceai/bin/lb-corpus2.ts": "4d22a14af38e7f8363c9a2f80c0f4d115f036b8423a3a04ea3019c563af26f5b",
+   "peaceai/lib/lbcorpus2.ts": "e7aa3d942815ad6a364355a19b0efe5dc1b44d8dbd34a4fd9c330768637f66e5",
+   "peaceai/bin/lb-corpus2.ts": "ce9c9e36f4e4d1d2d2a0e197cf9f3fad6b229b57e4d7b7acc3e42fab44996e4c",
    "peaceai/lib/lbclean.ts": "0d43ab9490996910bf0e11ec62d9ce6686c8dc33ae4d0ee51129d2bf763f052b",
    "peaceai/lib/nlpairs.ts": "477547782310282234eaee515bead602cd49ddf8df94ed79f885e23559a3ddf8",
    "peaceai/lib/tsresolve.ts": "2ab9daa80406e857c743c6fe5691d1ea354115e8f99d6c0c673e9d74032b9bef"
@@ -13,15 +13,15 @@
   "typescriptVersion": "5.9.3",
   "configSha256": "f66e030422529a00046a4f9bf9298df5fde367dba8c8d6e29fe97ae3cea6cbf4",
   "exclusionsSha256": "dbd0be3de5de3f12e6bd30a87422f9fb7ca0ffa7a2640f04a66615b87aac7d23",
-  "sourcesSha256": "6f87e0867e320c58f6b9add176d7202f4935ae8ced333ea835ecf88ef1d28e6a",
+  "sourcesSha256": "dc0794ea918f3cc94d6aa6871bd2254b96555e804f3e1b2bcc67ad5e75deeaaa",
   "base": {
    "docs": "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
    "manifest": "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
    "fingerprint": "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4"
   },
   "newInput": {
-   "docsSha256": "567b861c58692c66b03eb42c7ae87bde3a22071282c40ce9f63d2b362ad965cb",
-   "manifestSha256": "b8f05029b4658d5a3b047b2a2f4ffa105e075d22e576056955dfc391794f1792"
+   "docsSha256": "7f6183700b6615106d2ef4ac1159c890042760eee03c5b95d7953be2d7f12167",
+   "manifestSha256": "f134d079232f570549e69da57bd167cb80e2c9f4013ced5336c5e1badda737f5"
   },
   "refs": {
    "docsSha256": "937058e3c4f53fa6bb25ac9d97a644b1facbacf8ced73fae94fb72195f43812a",
@@ -31,8 +31,8 @@
    "ecc97adfde53f4307fadfd93ee7f4c5cacb29c24665a37ba54becc87a5b1dc0a"
   ],
   "out": {
-   "docs": "ef28742c97b93750cf1dc9c475f275054190c3796c93e15f8ab91d0fc1bda112",
-   "manifest": "5098382238a49355b239bca01cb3588096d66493f1958155c59e7afcdd4a339f"
+   "docs": "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
+   "manifest": "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe"
   }
  }
 }

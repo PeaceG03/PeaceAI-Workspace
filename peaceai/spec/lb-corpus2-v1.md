@@ -54,7 +54,8 @@ Exclusions:
 - Nothing hidden-adjacent is admitted.
 
 License: "owner:PeaceG03". The Workspace has no LICENSE file. This follows the existing owner-repo precedent in
-sources.json and ext-manifest, and is flagged for Auditor.
+sources.json and ext-manifest. Auditor (#673): owner-authored code is fine and needs no LICENSE, because the model stays
+private.
 
 Passed PRs: each PASS is at the exact head that was merged. Full shas are in peaceai/model/lb-corpus2.json.
 
@@ -73,7 +74,36 @@ PASS record at their merged head.
 
 Result: 44 files are admitted (7 specs and 37 tests from the m168-m173 work), listed with blob and PRs in
 lb-corpus2.json sources.files. The bin recomputes the list from git and refuses on any difference
-(sources_files_differ).
+(sources_files_differ). The dev-task rule below then drops 4 of them, so 40 files are built.
+
+## Public dev tasks (Auditor #673 B1)
+
+No train doc may name, diagnose or encode the fix of any of the 12 public dev tasks in peaceai/plan/tasks-public-v1.json
+(sha-pinned in sources.devTasks). lbcorpus2.ts devTaskHits() flags a file text on four kinds of hit, all derived from
+the task set and its reference fixes, never from the corpus:
+
+- dev_name: a task's owner/repo, repo name or task id, case-insensitive, not inside a longer word.
+- dev_span: a backticked span of 4+ tokens from a task's request text, token for token.
+- dev_sha: a hex run of 7-40 characters that is a prefix of a task's commit or reference merge.
+- dev_fix: a 10-token shingle of a reference diff's added-line runs. Shingles are kept exact, and also with
+  identifiers abstracted when the window holds 2+ JS keywords. Each is stored as a 16-hex hash in
+  peaceai/model/lb-corpus2-devfix.json; any shingle that also occurs in the chain-1 base corpus is removed, so a
+  generic code phrase cannot hit.
+
+Every hit file needs a decision in sources.devTasks.decisions with exactly its hits:
+- drop: the file diagnoses a dev-task fault or carries reference-fix text. It is kept out of every split.
+- heldout_v2: the file only names tasks (run status, negative-assertion name lists). It is never trained on.
+
+The bin refuses devtask_set_differs, devtask_fix_differs, devtask_undecided and devtask_decision_stale, and after the
+build refuses devtask_in_train if any train doc of the new set still hits. m180 checks the committed new manifest the
+same way from the file blobs, and shows that injecting a dropped or moved dev-task doc, a dev repo name, a task id, a
+request span or a merge sha into train fails the check.
+
+Result: 11 hit files. Dropped (4): peaceai/spec/edit-proposer-v2.md, peaceai/spec/repair-v2-m172.md,
+peaceai/spec/repair-v2-m173.md, peaceai/test/m172-cases.ts. Moved to heldout_v2 (7): peaceai/spec/loop-deps-access-v1.md,
+peaceai/spec/loop-isolation-v1.md, peaceai/spec/loop-runners-v2.md, peaceai/spec/loop-runners-v3.md,
+peaceai/test/m168-repair-v2.test.ts, peaceai/test/m170-cases.ts, peaceai/test/m173-batch12.test.ts. The reasons are in
+lb-corpus2.json.
 
 ## Held-out (condition 4)
 
@@ -83,7 +113,7 @@ lb-corpus2.json sources.files. The bin recomputes the list from git and refuses 
   compared with rate 0.15. Every piece of a file therefore lands on the same side. lb-clean sees heldout_v2 as
   heldout (no FIM, no repeats), and the label is restored on output. train.py ignores heldout_v2, so it is never
   trained on. Wiring a separate heldout_v2 eval is part of the later chain-2 PR.
-- Unigram baseline note: export.py derives the baseline from tokens_train.npy. The train split grows by 91 docs (of
+- Unigram baseline note: export.py derives the baseline from tokens_train.npy. The train split grows by 74 docs (of
   about 60.9k), so chain 2's baseline can differ from 2.5156 in a late decimal. Chain-2 rows must carry their own
   baseline.
 
@@ -127,7 +157,11 @@ chain-1 part was already cleared at exactly its pins.
 
 Reproduce:
 1. Run peaceai/bin/lb-corpus-rebuild.sh, which gives the chain-1 out/ and refs/ at their pins.
-2. Run:
+2. Optional (the devfix file is committed and sha-pinned): fetch each task's reference diff as sources.devTasks.diffs
+   says into <diffs>/<task id>.diff, then
+   `tsx peaceai/bin/lb-corpus2.ts --devfix --diffs <diffs> --base <work>/out --out peaceai/model/lb-corpus2-devfix.json`
+   gives the same bytes.
+3. Run:
 
 ```
 tsx peaceai/bin/lb-corpus2.ts --repo <full-history clone with d70bf9a> --base <work>/out --refs <work>/refs \
@@ -143,3 +177,6 @@ tsx peaceai/bin/lb-corpus2.ts --repo <full-history clone with d70bf9a> --base <w
 3. Publish before training: the pins are committed here. Training waits for Auditor's PASS (= 0).
 4. The same held-out split plus a new slice, non-overlap tests and near-miss tests: m180.
 5. Results add-only, latest.json untouched, R2 only from main, no paid compute: this PR touches none of them.
+6. Build isolation (Auditor #673, binding on the chain-2 run PR, not implemented here): the run PR must build
+   lib/lbcorpus2.ts and bin/lb-corpus2.ts in a separate job with no secrets, and pass on to the training job only
+   output whose sha matches the protected pin. No /approve-rule is needed for this data-only PR.

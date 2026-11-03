@@ -9,6 +9,14 @@
 //     the new docs), new-manifest.jsonl (the appended manifest rows alone), report.json (counts only), fingerprint.json, and <out>/check/{docs,manifest}.jsonl: the new docs
 //     alone in lb-clean's split vocabulary (heldout_v2 written as heldout), for lb-clean --report-only (the hidden check).
 //     Refuses (writes nothing) when any non-overlap count is above 0.
+//     Dev-task rule: every admitted file whose text hits a public dev task (lbcorpus2.ts devTaskHits; the set file and
+//     the devfix file at the sha256s pinned in sources.devTasks) needs a listed decision (drop, or heldout_v2); no new
+//     train doc may hit. [--dev-set <file>] [--dev-fix <file>] override the two paths (m180's synthetic ones).
+//   lb-corpus2.ts --dev-hits --repo <clone> [--sources <file>] [--dev-set <file>] [--dev-fix <file>]
+//     Prints (JSON) [{path, hits}] for every admitted file that hits a dev task (to write the decisions from).
+//   lb-corpus2.ts --devfix --diffs <dir> --base <chain-1 out dir> --out <file> [--sources <file>] [--dev-set <file>]
+//     Builds the devfix file: <dir>/<task id>.diff is each task's reference diff (sources.devTasks.diffs says how it is
+//     fetched); fix shingles that occur in the pinned base corpus are left out.
 //   lb-corpus2.ts --check <out dir>
 //     Recomputes the non-overlap counts of a built v2 corpus; prints them; exit 2 when any is above 0.
 // Prints counts, shas and fixed codes only (never text). Every refusal: `lb-corpus2 refused: <code>`, exit 1.
@@ -63,11 +71,27 @@ if (check !== null) {
   process.exit(bad ? 2 : 0);
 }
 
-const list = flag("--list");
-const repo = opt("--repo") ?? refuse("arg_repo");
+const list = flag("--list"), devHits = flag("--dev-hits"), devfix = flag("--devfix");
+const devSetArg = opt("--dev-set"), devFixArg = opt("--dev-fix");
 const srcBuf = io("sources_read", () => readFileSync(SOURCES));
 let S: any; try { S = JSON.parse(srcBuf.toString("utf8")).sources; } catch { refuse("sources_json"); }
-const sp = C.sourcesProblems(S); if (sp.length && !(list && sp.length === 1 && sp[0] === "sources_files")) refuse(sp.join(","));
+const sp = C.sourcesProblems(S); if (sp.length && !((list || devHits) && sp.every((c) => c === "sources_files" || c === "sources_dev")) && !(devfix && sp.every((c) => c === "sources_dev"))) refuse(sp.join(","));
+const devSetBuf = () => io("dev_set_read", () => readFileSync(devSetArg ?? join(ROOT, S.devTasks?.set ?? "peaceai/plan/tasks-public-v1.json")));
+const devSetJson = (b: Buffer) => { try { return JSON.parse(b.toString("utf8")); } catch { return refuse("dev_set_json"); } };
+if (devfix) {
+  const diffDir = opt("--diffs") ?? refuse("arg_diffs"), baseDir = opt("--base") ?? refuse("arg_base"), out = opt("--out") ?? refuse("arg_out");
+  if (argv.length) refuse("usage");
+  const set = devSetJson(devSetBuf()); if (C.devSetProblems(set).length) refuse("dev_set_invalid");
+  const diffs = new Map<string, string>(set.tasks.map((t: any) => [t.id, io("devfix_diff_missing", () => readFileSync(join(diffDir, `${t.id}.diff`), "utf8"))]));
+  const base = readLines(baseDir);
+  const baseFp = io("base_read", () => JSON.parse(readFileSync(join(baseDir, "fingerprint.json"), "utf8")).fingerprint);
+  if ([L.sha256(base.docsBuf), L.sha256(base.manBuf), baseFp].join() !== [S.base.docs, S.base.manifest, S.base.fingerprint].join()) refuse("devfix_base_pins_differ");
+  const f = C.devFixOf(set, diffs, base.docs.map((d) => d.text));
+  io("output_write", () => writeFileSync(out, JSON.stringify(f, null, 1) + "\n"));
+  console.log(`lb-corpus2 devfix tasks=${f.tasks.length} hashes=${f.tasks.reduce((n, t) => n + t.hashes.length, 0)} sha256=${L.sha256(readFileSync(out))}`);
+  process.exit(0);
+}
+const repo = opt("--repo") ?? refuse("arg_repo");
 const git = (...a: string[]) => io("git", () => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }));
 const gitBuf = (...a: string[]) => io("git", () => execFileSync("git", ["-C", repo, ...a], { maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }));
 git("cat-file", "-e", `${S.tip}^{commit}`);
@@ -94,7 +118,18 @@ for (const e of tree) {
   texts.set(e.path, text);
 }
 if (list) { console.log(JSON.stringify(files)); process.exit(0); }
+// the dev-task rule: the set and devfix files at their pins; every hit file decided
+const dsBuf = devSetBuf(), dfBuf = io("dev_fix_read", () => readFileSync(devFixArg ?? join(ROOT, S.devTasks?.fix ?? "peaceai/model/lb-corpus2-devfix.json")));
+if (!devHits && L.sha256(dsBuf) !== S.devTasks.setSha256) refuse("devtask_set_differs"); // c2-guard:bin-dev-set
+if (!devHits && L.sha256(dfBuf) !== S.devTasks.fixSha256) refuse("devtask_fix_differs"); // c2-guard:bin-dev-fix
+let dev: ReturnType<typeof C.devSetOf>;
+try { dev = C.devSetOf(devSetJson(dsBuf), JSON.parse(dfBuf.toString("utf8"))); } catch (e) { refuse((e as Error).message.match(/^[a-z_]+$/) ? (e as Error).message : "devfix_json"); }
+const hitsOf = new Map(files.map((f) => [f.path, C.devTaskHits(texts.get(f.path)!, dev!)]));
+if (devHits) { console.log(JSON.stringify([...hitsOf].filter(([, h]) => h.length).map(([path, hits]) => ({ path, hits })))); process.exit(0); }
 if (JSON.stringify(files) !== JSON.stringify(S.files)) refuse("sources_files_differ"); // c2-guard:bin-files
+const decP = C.devDecisionProblems(hitsOf, S.devTasks.decisions);
+if (decP.length) refuse(decP[0]!.split(":")[0]!); // c2-guard:bin-dev-decisions
+const decided = new Map<string, string>(S.devTasks.decisions.map((d: any) => [d.path, d.to]));
 
 const baseDir = opt("--base") ?? refuse("arg_base"), refsDir = opt("--refs") ?? refuse("arg_refs"), exPath = opt("--exclusions") ?? refuse("arg_exclusions"), outDir = opt("--out") ?? refuse("arg_out");
 const dropPaths: string[] = [];
@@ -120,16 +155,18 @@ if (L.sha256(base.docsBuf) !== S.base.docs || L.sha256(base.manBuf) !== S.base.m
 const refsC = readLines(refsDir);
 if (refsC.man.some((m) => !L.refsRowOk(String(m.repo), ex))) refuse("refs_repo_not_public_by_name");
 const refs = L.buildRefs(refsC.docs.map((d) => d.text), cfg.taskset.shingleTokens);
-// new input docs: one per admitted file, in path order
-const input = files.map((f, i) => {
+// new input docs: one per admitted file not dropped by a dev-task decision, in path order; a moved file is heldout_v2
+const input = files.filter((f) => decided.get(f.path) !== "drop").map((f, i) => { // c2-guard:bin-dev-drop
   const text = texts.get(f.path)!;
-  return { doc: i, text, man: { doc: i, stage: "pretrain", repo: S.repo, commit: S.tip, license: S.license, path: f.path, sha256: L.sha256(text), bytes: Buffer.byteLength(text), origin: "auditor-passed-pr", prs: f.prs, split: C.sliceOf(f.path, S.slice.salt, S.slice.rate) as string } };
+  const split = decided.get(f.path) === C.HELDOUT2 ? C.HELDOUT2 : C.sliceOf(f.path, S.slice.salt, S.slice.rate); // c2-guard:bin-dev-move
+  return { doc: i, text, man: { doc: i, stage: "pretrain", repo: S.repo, commit: S.tip, license: S.license, path: f.path, sha256: L.sha256(text), bytes: Buffer.byteLength(text), origin: "auditor-passed-pr", prs: f.prs, split: split as string } };
 });
 const newDocsBuf = Buffer.from(input.map((d) => JSON.stringify({ doc: d.doc, text: d.text }) + "\n").join("")), newManBuf = Buffer.from(input.map((d) => JSON.stringify(d.man) + "\n").join(""));
 const baseDocs = base.docs.map((d, i) => ({ text: d.text, split: String(base.man[i].split) }));
 const res = C.appendCorpus(baseDocs, input, cfg, ex, refs, drop);
 const ov = C.overlapProblems([...baseDocs, ...res.out.map((o) => ({ text: o.text, split: o.man.split }))], baseDocs.length, cfg.dedup);
 if (Object.values(ov).some((v) => v > 0)) refuse("overlap_found"); // c2-guard:bin-overlap
+if (C.devTrainHits(res.out.map((o) => ({ text: o.text, split: o.man.split })), dev!) > 0) refuse("devtask_in_train"); // c2-guard:bin-dev-train
 const outDocs = Buffer.concat([base.docsBuf, Buffer.from(res.out.map((o) => JSON.stringify({ doc: o.man.doc, text: o.text }) + "\n").join(""))]);
 const newMan = Buffer.from(res.out.map((o) => JSON.stringify(o.man) + "\n").join(""));
 const outMan = Buffer.concat([base.manBuf, newMan]);
@@ -142,7 +179,8 @@ const parts = {
   refs: { docsSha256: L.sha256(refsC.docsBuf), manifestSha256: L.sha256(refsC.manBuf) }, dropHashesSha256: dropSha, out: { docs: L.sha256(outDocs), manifest: L.sha256(outMan) },
 };
 const fingerprint = C.fingerprint2Of(parts);
-const report = { ...res.report, overlap: ov, docsBytes: outDocs.length, fingerprint };
+const devTask = { hitFiles: [...hitsOf.values()].filter((h) => h.length).length, movedToHeldoutV2: [...decided.values()].filter((v) => v === C.HELDOUT2).length, dropped: [...decided.values()].filter((v) => v === "drop").length, newTrainHits: 0 };
+const report = { ...res.report, devTask, overlap: ov, docsBytes: outDocs.length, fingerprint };
 io("output_write", () => {
   rmSync(outDir, { recursive: true, force: true }); mkdirSync(join(outDir, "check"), { recursive: true });
   writeFileSync(join(outDir, "docs.jsonl"), outDocs); writeFileSync(join(outDir, "manifest.jsonl"), outMan);
