@@ -106,6 +106,8 @@ ap.add_argument("--val-split", default="first")  # batch 6: first (legacy) | dis
 ap.add_argument("--lora-rank", type=int, default=0)  # 0 = off
 ap.add_argument("--lora-alpha", type=float, default=0.0)  # 0 = the rank (scale 1)
 ap.add_argument("--lora-targets", default="wqkv,wo")
+ap.add_argument("--warm-start-from", default="")  # lb-chain2 v1: a verified save's weights + tokenizer, step 0 (warmstart.py)
+ap.add_argument("--warm-start-manifest-sha", default="")
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -117,6 +119,7 @@ import lm  # noqa: E402
 import replay  # noqa: E402
 import saves  # noqa: E402
 import lbtrain  # noqa: E402
+import warmstart  # noqa: E402
 
 os.makedirs(args.work, exist_ok=True)
 W = lambda name: os.path.join(args.work, name)  # noqa: E731
@@ -146,6 +149,17 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
             RESUME_MAN = saves.restore(args.resume_from, args.work, saves.verify_save(args.resume_from, args.resume_manifest_sha))
         except saves.SaveError as e:
             raise SystemExit(e.code)
+    # lb-chain2 v1: full-model warm start (warmstart.py); the save is verified and its tokenizer copied before the
+    # tokenizer step below, so the new run tokenizes with the old run's tokenizer.
+    WMAN = None
+    try:
+        WS = warmstart.check_args(args.warm_start_from, args.warm_start_manifest_sha, args.resume_from, args.init_from, args.lora_rank,
+                                  bool(args.replay_corpus))
+        if WS and args.warm_start_from:
+            WMAN = warmstart.verify(args.warm_start_from, args.warm_start_manifest_sha, args.work)
+            warmstart.copy_tokenizer(args.warm_start_from, WMAN, args.work)
+    except warmstart.WarmError as e:
+        raise SystemExit(e.code)
     if args.marker and not args.save_dir:
         raise SystemExit("MARKER_NEEDS_SAVE_DIR")
     if args.save_dir and args.job_start and not args.deadline:
@@ -256,6 +270,13 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
         raise SystemExit(e.code)
     if LCFG:
         cfg["lora"] = LCFG
+    if WS:  # lb-chain2 v1: recorded in cfg (cfgSha256, every save manifest, the resume check)
+        cfg["warmStart"] = WS
+    if WMAN is not None:
+        try:
+            warmstart.check_shape(WMAN, cfg)
+        except warmstart.WarmError as e:
+            raise SystemExit(e.code)
     T, B = cfg["ctx"], cfg["batch"]
     DATA_FILES = [os.path.join(args.corpus, "docs.jsonl"), os.path.join(args.corpus, "manifest.jsonl")]
     if REPLAY:
@@ -338,6 +359,12 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
                 raise SystemExit("INIT_SHAPE_MISMATCH")
             params = init
             print("initialized from weights", flush=True)
+        if WMAN is not None:
+            try:
+                params = warmstart.load_params(np, args.warm_start_from, WMAN, params)
+            except warmstart.WarmError as e:
+                raise SystemExit(e.code)
+            print(f"warm start from save step={WMAN['step']} (fresh optimizer, step 0)", flush=True)
         lora = lbtrain.lora_init(params, LCFG, args.seed) if LCFG else None
         state = lbtrain.opt_init(lora if LCFG else params, OPT)
         rng = np.random.Generator(np.random.PCG64(args.seed + 1))
