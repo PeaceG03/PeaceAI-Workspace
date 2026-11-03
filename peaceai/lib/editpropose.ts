@@ -836,10 +836,12 @@ export function candidateFor(files: ReadonlyMap<string, string>, muts: Mutation[
  * (template, then located site, then position), kept when it is a changed, parsing, new edit, at most MAX_CANDIDATES.
  * `seen` collects the keys (shared with the combination step). M167: model-v1's scoring job builds the same list.
  */
-export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set(), v2 = false): Candidate[] {
+export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set(), v2 = false, skip: ReadonlySet<number> = new Set()): Candidate[] {
   const all: Mutation[] = [];
   const exported = new Map<string, Set<string>>();
   sites.forEach((site, i) => {
+    // M178: a demoted site is skipped; site numbers stay the located ones
+    if (skip.has(i)) return; // m178-guard:rb-skip
     const text = files.get(site.path);
     if (text === undefined) return;
     const sf = parseSource(site.path, text);
@@ -924,6 +926,53 @@ export function loadCandidates(diags: readonly LoadDiag[], files: ReadonlyMap<st
   return c ? [c].slice(0, MAX_LOAD_CANDIDATES) : [];
 }
 
+// ---- M178 inert-site demotion (repair-v2 only; spec: peaceai/spec/repair-v2-m178.md)
+
+/** M178: how many INERT results (and no live one) a site needs before its remaining candidates are demoted. */
+export const INERT_AFTER = 2;
+export type SiteEvidence = "inert" | "live";
+const sameNames = (a: readonly string[], b: readonly string[]): boolean => { const x = [...a].sort(), y = [...b].sort(); return x.length === y.length && x.every((v, i) => v === y[i]); };
+/**
+ * M178: what one attempt's result says about the code its edit changed (mutation-based fault localization): INERT when
+ * it ran cleanly (no code but TEST_FAIL) with exactly the baseline's counts and failing test names (the tests did not
+ * notice the edit), LIVE when it ran cleanly and the counts or names differ (the tests execute that code), null when
+ * it proves neither (no baseline, no counts, or another code: a timeout, a load failure, a refusal...). Only counts and
+ * test names are read, never a message.
+ */
+export function siteEvidence(fb: RepairFeedback | undefined, baseline: RepairInput["baseline"], baseFailing: readonly string[]): SiteEvidence | null {
+  if (!baseline) return null; // m178-guard:ev-baseline
+  if (!fb?.tests) return null; // m178-guard:ev-tests
+  if (fb?.codes.some((c) => c !== "TEST_FAIL")) return null; // m178-guard:ev-clean
+  if (fb?.tests?.total !== baseline?.total || fb?.tests?.passedByPeaceAI !== baseline?.passing) return "live"; // m178-guard:ev-counts
+  if (!sameNames(fb?.failing ?? [], baseFailing)) return "live"; // m178-guard:ev-names
+  return "inert";
+}
+/**
+ * M178: the located sites (by number) to demote now: a site with at least INERT_AFTER inert results and no live one,
+ * not demoted already, and only while some other site has a live result (so a suite that notices nothing reorders
+ * nothing). Evidence comes only from single-site candidates; a combined one says nothing about which site mattered.
+ * tried[i] is attempt i + 1.
+ */
+export function siteDemotions(tried: readonly Candidate[], feedback: readonly RepairFeedback[], baseline: RepairInput["baseline"], baseFailing: readonly string[], already: ReadonlySet<number>): number[] {
+  const ev = new Map<number, { inert: number; live: number }>();
+  tried.forEach((c, i) => {
+    const e = siteEvidence(feedback.find((f) => f.attempt === i + 1), baseline, baseFailing);
+    if (e === null) return;
+    const at = [...new Set(c.muts.map((m) => m.site))];
+    if (at.length !== 1) return; // m178-guard:ev-single
+    for (const s of at) { const x = ev.get(s) ?? { inert: 0, live: 0 }; x[e]++; ev.set(s, x); }
+  });
+  if (![...ev.values()].some((x) => x.live > 0)) return []; // m178-guard:dm-live-elsewhere
+  const out: number[] = [];
+  for (const [s, x] of [...ev].sort((a, b) => a[0] - b[0])) {
+    if (already.has(s)) continue; // m178-guard:dm-once
+    if (x.inert < INERT_AFTER) continue; // m178-guard:dm-threshold
+    if (x.live > 0) continue; // m178-guard:dm-no-live
+    out.push(s);
+  }
+  return out;
+}
+
 /** M167: options for a proposer built on repair-v1 (model-v1): its row name, and a reorder of the first candidate
  *  list (called once, also with [] when nothing was located; a throw is the proposer's failure, PROPOSER_FAILED). */
 export interface RepairOptions { name?: string; order?: (queue: readonly Candidate[]) => Candidate[]; v2?: boolean }
@@ -939,12 +988,14 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
   const tried: Candidate[] = [];
   const seen = new Set<string>();
   const combined = new Set<string>();
+  const demoted = new Set<number>(); // M178
+  let baseFailing: readonly string[] = [];
   return {
     name: opts.name ?? (opts.v2 ? REPAIR_PROPOSER_V2 : REPAIR_PROPOSER),
     // M174: repair-v2 only (never repair-v1 or a reranked list such as model-v1's): the loop may then ask it for a
     // suite that does not load, giving only its load diagnostics
     loadRepair: opts.v2 === true && !opts.order, // m174-guard:lr-v2-only
-    prepare(search, input) { sites = locate(search, input, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); },
+    prepare(search, input) { sites = locate(search, input, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); baseFailing = [...input.failing]; },
     next(input) {
       if (input.loadDiagnostics && opts.v2 === true) {
         // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)
@@ -979,6 +1030,22 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
           const c = candidateFor(files, [...a.muts, ...b.muts]);
           if (c && !seen.has(c.key)) { seen.add(c.key); pick = c; }
         }
+      }
+      // M178 (repair-v2 only; never repair-v1 or a reranked list such as model-v1's): sites whose edits the tests do not
+      // notice, while another site's do, go behind the rest; the queue is rebuilt from the other sites in the same
+      // fixed order (so later templates there come within reach), the demoted sites' queued candidates after them
+      let fresh = siteDemotions(tried, input.feedback, input.baseline, baseFailing, demoted);
+      if (opts.v2 !== true || opts.order) fresh = []; // m178-guard:dm-v2-only
+      if (fresh.length) {
+        for (const s of fresh) demoted.add(s);
+        const skipKeys = new Set<string>();
+        for (const c of tried) skipKeys.add(c.key); // m178-guard:rb-tried
+        const live = repairCandidates(sites, files, skipKeys, true, demoted);
+        const rest = queue.filter((c) => !live.some((x) => x.key === c.key));
+        const next = [...live, ...rest];
+        if (next.length > MAX_CANDIDATES) next.length = MAX_CANDIDATES; // m178-guard:rb-cap
+        for (const c of next) seen.add(c.key);
+        queue = next;
       }
       pick ??= queue.shift() ?? null;
       if (!pick) return { refuse: "NO_MORE_EDITS" };

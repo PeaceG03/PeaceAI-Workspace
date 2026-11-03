@@ -23,7 +23,7 @@ const TAG = /\/\/ m169-guard:([a-z0-9-]+)\s*$/;
 const sources: Record<string, string> = Object.fromEntries([...LIB_FILES.map((f) => [f, readFileSync(join(libDir, f), "utf8")]), ["bin", readFileSync(binFile, "utf8")]]);
 const guards = Object.entries(sources).flatMap(([file, text]) => text.split("\n").flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, file, line: i }] : []; }));
 const NEEDS_CAND = new Set(["deps-cand-access", "loop-depsfail"]);
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M169_CAND ?? process.env.M151_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M169_CAND ?? process.env.M151_CAND ?? process.env.M146_CAND ?? "" }).ok;
 const tsx = join(ROOT, "node_modules/.bin/tsx");
 
 let dir: string;

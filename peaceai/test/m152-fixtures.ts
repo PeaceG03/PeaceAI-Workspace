@@ -47,7 +47,7 @@ export function setup(): M152Ctx {
   const root = join(base, "root");
   mkdirSync(join(root, "peaceai/plan"), { recursive: true });
   git(root, "init", "-q", "-b", "main");
-  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M152_CAND ?? process.env.M146_CAND ?? "peaceai-cand" };
+  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M152_CAND ?? process.env.M146_CAND ?? "" };
   return { base, root, task, fetcher: gitCopyFetcher((r) => join(base, "repos", r.split("/")[1]!)), env, cand: stage2CandUid(env).ok };
 }
 

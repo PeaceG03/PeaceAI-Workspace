@@ -20,7 +20,7 @@ const lines = source.split("\n");
 const guards = lines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i }] : []; });
 /** Guards on the isolated run itself: only observable where candidate code can run (the candidate uid exists). */
 const NEEDS_CAND = new Set(["wrapper", "isolated", "isolation-exit", "team-tests"]);
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M146_CAND ?? "" }).ok;
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "peaceai-m146-mut-")); });

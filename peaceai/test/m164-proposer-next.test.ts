@@ -25,7 +25,7 @@ const loopSource = readFileSync(join(libDir, "loop.ts"), "utf8");
 const loopLines = loopSource.split("\n");
 const TAG = /\/\/ m164-guard:([a-z0-9-]+)\s*$/;
 const guards = loopLines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i }] : []; });
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "" }).ok;
 
 let ctx: M152Ctx;
 let dir: string;

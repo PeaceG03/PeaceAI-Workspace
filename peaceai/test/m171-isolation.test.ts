@@ -21,7 +21,7 @@ import { setup as setup151, teardown as teardown151 } from "./m151-fixtures.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const WF = readFileSync(join(ROOT, ".github/workflows/peace-model-v1-dev.yml"), "utf8");
-const CAND = process.env.M171_CAND ?? process.env.M146_CAND ?? "peaceai-cand";
+const CAND = process.env.M171_CAND ?? process.env.M146_CAND ?? "";
 const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: CAND }).ok;
 const STEP = "Pre-flight (fail closed) - the candidate uid gets a private work dir and cannot read the runner's files (M171, run 41521457458)";
 const SYSCTL_STEP = "Lift the user namespace restriction on this credential-free VM only (M171, Auditor ruling; runner-images#10443)";

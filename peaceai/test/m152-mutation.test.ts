@@ -28,7 +28,7 @@ const guards = [
 ];
 // loop guards observable without the candidate uid (the rest need the stage-2 isolation to reach them)
 const NO_CAND_GUARDS = new Set(["loop-sha-proposer"]);
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "" }).ok;
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "peaceai-m152-mut-")); });
