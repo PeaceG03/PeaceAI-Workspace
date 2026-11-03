@@ -7,15 +7,28 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as prop from "../lib/editpropose.ts";
-import { CASES, m178Cand, setup, teardown, type Ctx } from "./m178-cases.ts";
+import { E2E_LOAD } from "./m174-cases.ts";
+import { CASES, E2E_TRIES, m178Cand, setup, teardown, withE2eRetry, type Ctx } from "./m178-cases.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 let ctx: Ctx;
 before(() => { ctx = setup(); });
 after(() => teardown(ctx));
 
-test("M178: environment", (t) => { t.diagnostic(m178Cand() ? "candidate uid available: the end-to-end case runs for real" : "no candidate uid here: the end-to-end case asserts the CAND_UID_* refusal"); });
-for (const c of CASES) test(`M178: ${c.id}`, () => c.run({ prop }, ctx));
+test("M178: environment", (t) => { t.diagnostic(m178Cand() ? `candidate uid available: the end-to-end case runs for real (up to ${E2E_TRIES} tries, load factor ${E2E_LOAD})` : "no candidate uid here: the end-to-end case asserts the CAND_UID_* refusal"); });
+// batch 18: the end-to-end case (a real loop run as the shared candidate uid) may run up to E2E_TRIES times, as
+// m174-mutation's control does; a pure case is never retried, and without a candidate uid nothing is retried
+for (const c of CASES) test(`M178: ${c.id}`, (t) => (c.needsCand && m178Cand() ? withE2eRetry(t, () => c.run({ prop }, ctx)) : c.run({ prop }, ctx)));
+
+test("M178: the e2e retry runs a failing case E2E_TRIES times and then fails; a passing one once", (t) => {
+  let n = 0;
+  assert.throws(() => withE2eRetry(t, () => { n++; throw new Error("flaky"); }), /flaky/);
+  assert.equal(n, E2E_TRIES);
+  n = 0;
+  withE2eRetry(t, () => { n++; if (n < 2) throw new Error("once"); });
+  assert.equal(n, 2);
+  assert.equal(E2E_TRIES, 3);
+});
 
 test("M178: the new code and its fixtures name no dev task", () => {
   const dev = /PeaceSTOCKS|peacestocks|defu|destr|scule|ohash|yup|valibot|remeda|neverthrow|kysely|superstruct|p-queue/i;

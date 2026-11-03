@@ -20,13 +20,27 @@ import * as loop from "../lib/loop.ts";
 import type * as Loop from "../lib/loop.ts";
 import { loopRowProblem, type LoopRow } from "../lib/looprow.ts";
 import { STAGE2_CAND_ENV, stage2CandUid } from "../lib/selfpropose.ts";
-import { e2eTask, opts as opts174 } from "./m174-cases.ts";
+import { E2E_LOAD, e2eTask, opts as opts174 } from "./m174-cases.ts";
 import { setup as setup151, teardown as teardown151 } from "./m151-fixtures.ts";
 
-// M178 runs ONLY as the candidate uid named by M178_CAND (peaceai-cand3 on the box); with none set it asserts the
-// fail-closed CAND_UID_* refusal. It never falls back to another batch's candidate user.
+// The end-to-end case runs ONLY as the candidate uid named by M178_CAND (the box suite sets it explicitly); with none
+// set it asserts the fail-closed CAND_UID_* refusal. It never falls back to another batch's candidate user.
 const M178_CAND = process.env.M178_CAND ?? "";
 export const m178Cand = (): boolean => stage2CandUid({ [STAGE2_CAND_ENV]: M178_CAND }).ok;
+
+/** Batch 18 (Auditor's #678 note: the end-to-end case flaked under concurrent same-uid stage-2 load): how often a loop
+ *  end-to-end case may run, as m174-mutation's control does. Its run timeout already scales with E2E_LOAD (opts174). */
+export const E2E_TRIES = 3;
+/** Runs a loop end-to-end case up to E2E_TRIES times; only the last failure is thrown. Callers use it ONLY for a
+ *  needsCand case with a candidate uid (a real loop run); a pure case is never retried. */
+export function withE2eRetry(t: { diagnostic(m: string): void }, run: () => void): void {
+  for (let i = 1; ; i++) {
+    try { run(); return; } catch (e) {
+      if (i >= E2E_TRIES) throw e;
+      t.diagnostic(`loop e2e try ${i} failed (load factor ${E2E_LOAD}); retrying: ${String(e).slice(0, 300)}`);
+    }
+  }
+}
 
 export interface Libs { prop: typeof Prop }
 export interface Ctx { base: string }
