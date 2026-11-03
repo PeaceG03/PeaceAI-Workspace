@@ -105,13 +105,6 @@ peaceai/spec/loop-isolation-v1.md, peaceai/spec/loop-runners-v2.md, peaceai/spec
 peaceai/test/m168-repair-v2.test.ts, peaceai/test/m170-cases.ts, peaceai/test/m173-batch12.test.ts. The reasons are in
 lb-corpus2.json.
 
-FYI, chain-1 base (batch 15 note; no change to any pin, split or decision): the chain-1 base train set, which v2
-keeps at its pins, already includes 16 docs that mention a dev-task library in passing, and 1 immer doc that
-matches the idiom of one dev task's library. None of them carries a diagnosis of a dev-task fault or reference-fix
-text. Even so, dev-set results from chain-1 and chain-2 models must not be over-claimed: a dev-set gain from those
-models is not clean evidence of generalization, and only a held-out result counts. (The library names are left out
-here on purpose, so this note never becomes a dev_name hit itself.)
-
 ## Held-out (condition 4)
 
 - The old split (`heldout`) is unchanged: the same docs, bytes and ids. train.py reads split == "heldout" for its
