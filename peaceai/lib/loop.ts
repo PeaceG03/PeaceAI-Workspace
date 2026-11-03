@@ -431,6 +431,47 @@ export function loadDiagnostics(dir: string, testFiles: readonly string[], teamT
   return out.slice(0, MAX_LOAD_DIAGS); // m174-guard:cap
 }
 
+/** M174 L0 edit gate (load-repair mode only; Auditor's single-token scope): the token a load repair may insert. */
+export const LOAD_EDIT_TOKEN = "export ";
+/** Is `next` exactly `orig` with 1..MAX_LOAD_DIAGS copies of LOAD_EDIT_TOKEN inserted, each at the start of the text
+ *  or after whitespace (so it never joins an identifier)? Nothing else may differ: no new import, statement or body. */
+export function loadEditShape(orig: string, next: string): boolean {
+  const T = LOAD_EDIT_TOKEN;
+  const k = (next.length - orig.length) / T.length;
+  if (!Number.isInteger(k) || k < 1 || k > MAX_LOAD_DIAGS) return false; // m174-guard:scope-count
+  let o = 0, n = 0;
+  for (let left = k; ; left--) {
+    let p = 0;
+    while (o + p < orig.length && n + p < next.length && orig[o + p] === next[n + p]) p++;
+    if (left === 0) return o + p === orig.length && n + p === next.length;
+    let hit = p, seen = false;
+    for (let i = Math.max(0, p - T.length); i <= p && !seen; i++) if (next.startsWith(T, n + i)) { hit = i; seen = true; }
+    if (!seen) return false; // m174-guard:scope-token
+    if (n + hit > 0 && !/\s/.test(next[n + hit - 1]!)) return false; // m174-guard:scope-boundary
+    o += hit;
+    n += hit + T.length;
+  }
+}
+/** Test infrastructure and config a load repair may never touch (runner configs, setup files). */
+const LOAD_EDIT_INFRA = /(?:^|\/)(?:[^/]*[.-])?config\.[cm]?tsx?$|(?:^|\/)(?:vitest|vite|jest|mocha|ava|karma)[^/]*\.[cm]?tsx?$|(?:^|\/)[^/]*setup[^/]*\.[cm]?tsx?$/i;
+/**
+ * M174 L0 edit gate: why a load-repair proposal is outside the single-token scope (null: inside). Checked on the copy
+ * reset to the pinned commit, before the team's tests are put back and before anything runs; a proposal outside the
+ * scope is the proposer's failure (PROPOSER_FAILED), never run. `original` reads a regular file of the pinned commit.
+ */
+export function loadEditProblem(edits: readonly Edit[], original: (path: string) => string | null): string | null {
+  if (edits.length === 0) return "empty"; // m174-guard:scope-nonempty
+  for (const e of edits) {
+    if (!/\.(?:[cm]?ts|tsx)$/.test(e.path) || /\.d\.[cm]?ts$/.test(e.path)) return "not-source"; // m174-guard:scope-source
+    if (codeTestPath(e.path) || isGeneratedPath(e.path)) return "test-path"; // m174-guard:scope-not-test
+    if (LOAD_EDIT_INFRA.test(e.path)) return "infra"; // m174-guard:scope-not-infra
+    const o = original(e.path);
+    if (o === null) return "new-file"; // m174-guard:scope-exists
+    if (o === null || !loadEditShape(o, e.content)) return "shape"; // m174-guard:scope-shape
+  }
+  return null;
+}
+
 // ---- the proposer
 
 export interface Edit { path: string; content: string }
@@ -667,7 +708,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     // proposal that neither refuses nor carries a valid `edits` array (e.g. [] or {}), which would throw in applyEdits
     const feedback: Feedback[] = [];
     const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
-      try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline, ...(loadDiags ? { loadDiagnostics: loadDiags } : {}) }); } catch { return null; }
+      try { return o.proposer.next({ ...(loadDiags ? { loadDiagnostics: loadDiags } : {}), request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
     };
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const p = ask(attempt);
@@ -677,6 +718,10 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if ("refuse" in p) return done(p.refuse);
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);
+      // M174 L0 gate: a load-repair proposal must be single `export ` insertions in existing source files, else it is
+      // refused here, before anything runs (a wider edit could patch the runner's assertions in process)
+      const readPinned = (f: string): string | null => { const full = safeEditPath(c!.dir, f); try { return full && lstatSync(full).isFile() ? readFileSync(full, "utf8") : null; } catch { return null; } };
+      if (loadDiags && loadEditProblem(p.edits, readPinned) !== null) return done("PROPOSER_FAILED"); // m174-guard:scope-gate
       putTeamTests();
       const bad = applyEdits(c, p.edits);
       if (bad) return done(bad);

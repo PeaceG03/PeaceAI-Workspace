@@ -2,14 +2,16 @@
 // editpropose.ts / loop.ts / looprow.ts. Spec: peaceai/spec/load-diagnostics-m174.md.
 //   1. load diagnostics (lib/loop.ts loadDiagnostics): filtered TypeScript codes for a team test that imports a name a relative
 //      source module does not export (MISSING_EXPORT) or a relative module that does not exist (MISSING_MODULE);
-//   2. repair-v2's load-repair candidates (lib/editpropose.ts): export an existing declaration, or re-export the one
-//      existing export of the name; never a new body;
+//   2. repair-v2's load-repair candidate (lib/editpropose.ts): export an existing declaration (one inserted keyword
+//      token per site); never a new body, statement or import (load-reexport was dropped: outside the single-token scope);
+//   2b. the loop's L0 edit gate (lib/loop.ts loadEditProblem): a load-repair proposal outside that shape is refused
+//      before anything runs (forging cases: an added import, a new file, a config or test edit);
 //   3. the loop (lib/loop.ts, looprow.ts): only a SUITE_LOAD baseline, only for a load-repair proposer, only with a
 //      MISSING_EXPORT goes on (row baselineLoad); every other baseline that proved nothing refuses as before, and PASS
 //      still needs an attempt with no failure code (a suite that still does not load never passes).
 // Every fixture is synthetic and unrelated to any public dev task or reference diff: an inventory restock helper, a
-// shapes barrel, a palette module, a calendar helper, a unit-price table. Admitting shapes: a module-local function
-// (load-export) and a barrel index (load-reexport), plus a class, an enum and a const for load-export.
+// shapes barrel, a palette module, a calendar helper, a unit-price table, a week calendar class. Admitting shapes
+// (end to end): a module-local inventory function and a module-local week class; unit also an enum and a const.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -39,6 +41,9 @@ const SHAPES = {
   "src/square.ts": "export function squareArea(side) {\n  return side * side;\n}\n",
 };
 const SHAPES_TEST = 'import assert from "node:assert/strict";\nimport { circleArea, squareArea } from "../src/index.ts";\n\ntest("unit square", () => assert.equal(squareArea(1), 1));\ntest("circle of radius 0", () => assert.equal(circleArea(0), 0));\n';
+// ---- shape C: a week calendar whose class is module-local
+const WEEK = "class Week {\n  start: number;\n  constructor(start: number) {\n    this.start = start;\n  }\n  dayAt(i: number): number {\n    return (this.start + i) % 7;\n  }\n}\n\nexport function isWeekend(d: number): boolean {\n  return d === 0 || d === 6;\n}\n";
+const WEEK_TEST = 'import assert from "node:assert/strict";\nimport { Week, isWeekend } from "../src/week.ts";\n\ntest("wraps past saturday", () => assert.equal(new Week(5).dayAt(3), 1));\ntest("sunday is weekend", () => assert.equal(isWeekend(0), true));\n';
 
 // ---- the loop, end to end (candidate uid): small vitest-stub repos built from the M151 stub runner and stub package manager
 const VITEST_LOCK = JSON.stringify({ name: "fixture", lockfileVersion: 3, requires: true, packages: { "": { name: "fixture", devDependencies: { vitest: "1.0.0" } } } }, null, 1) + "\n";
@@ -157,21 +162,21 @@ export const CASES: readonly Case[] = [
   },
   // ---- 2. repair-v2 load-repair candidates
   {
-    id: "propose: load-export on a module-local function, class, enum and const (inventory shape); load-reexport from a barrel (shapes shape)",
+    id: "propose: load-export on a module-local function, class, enum and const (inventory, week shapes); a barrel gets no candidate",
     run(l) {
       const p = l.propose;
       const at = (text: string, name: string) => p.loadExportAt(p.parseSource("src/x.ts", text), name);
       assert.equal(at(STOCK, "restockLevel"), STOCK.indexOf("function restockLevel"));
-      assert.equal(at("class Shelf {}\n", "Shelf"), 0);
+      assert.equal(at(WEEK, "Week"), 0);
       assert.equal(at("enum Unit { Box, Each }\n", "Unit"), 0);
       assert.equal(at("const LEAD_DAYS = 3;\n", "LEAD_DAYS"), 0);
-      const files = new Map(Object.entries(SHAPES));
-      assert.equal(p.reexportFrom(files, "src/index.ts", "squareArea"), "src/square.ts");
       const d = (module: string, name: string, spec: string) => ({ kind: "MISSING_EXPORT" as const, test: "test/unit.test.ts", module, name, spec });
-      const shapes = p.loadCandidates([d("src/index.ts", "squareArea", "../src/index.ts")], files);
-      assert.deepEqual(shapes.map((c) => c.edits), [[{ path: "src/index.ts", content: 'export { circleArea } from "./circle.ts";\nexport { squareArea } from "./square.ts";\n' }]]);
       const stock = p.loadCandidates([d("src/stock.ts", "restockLevel", "../src/stock.ts")], new Map([["src/stock.ts", STOCK]]));
       assert.deepEqual(stock.map((c) => c.edits), [[{ path: "src/stock.ts", content: STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel") }]]);
+      const week = p.loadCandidates([d("src/week.ts", "Week", "../src/week.ts")], new Map([["src/week.ts", WEEK]]));
+      assert.deepEqual(week.map((c) => c.edits), [[{ path: "src/week.ts", content: "export " + WEEK }]]);
+      assert.deepEqual([...p.LOAD_TEMPLATES], ["load-export"], "load-reexport is not a template (outside the single-token scope)");
+      assert.deepEqual(p.loadCandidates([d("src/index.ts", "squareArea", "../src/index.ts")], new Map(Object.entries(SHAPES))), [], "near miss: a barrel that does not declare the name gets nothing (no re-export is written)");
     },
   },
   {
@@ -191,31 +196,19 @@ export const CASES: readonly Case[] = [
     },
   },
   {
-    id: "propose: load-reexport near misses (two sources, only a test exports it) and specifier styles",
-    run(l) {
-      const p = l.propose;
-      const two = new Map(Object.entries({ ...SHAPES, "src/tile.ts": "export const squareArea = (s) => s * s;\n" }));
-      assert.equal(p.reexportFrom(two, "src/index.ts", "squareArea"), null, "two files export it (m174-guard:re-unique)");
-      const testOnly = new Map(Object.entries({ "src/index.ts": SHAPES["src/index.ts"], "test/square.test.ts": "export function squareArea(s) { return s * s; }\n" }));
-      assert.equal(p.reexportFrom(testOnly, "src/index.ts", "squareArea"), null, "only a test file (m174-guard:re-not-test)");
-      const sf = (t: string) => p.parseSource("src/index.ts", t);
-      assert.equal(p.specFor(sf('export { a } from "./a.js";\n'), "src/index.ts", "src/geo/square.ts", "../src/index.ts"), "./geo/square.js");
-      assert.equal(p.specFor(sf('import { a } from "./a";\n'), "src/index.ts", "src/geo/index.ts", "../src/index.ts"), "./geo");
-      assert.equal(p.specFor(sf(""), "src/index.ts", "lib/square.ts", "../src/index.ts"), "../lib/square.ts", "no own import: the test's style");
-    },
-  },
-  {
-    id: "propose: one candidate fixes every missing name (mixed templates), a second where both apply; none when a name has no fix",
+    id: "propose: one candidate fixes every missing name (two names, two modules); none when a name has no declaration",
     run(l) {
       const p = l.propose;
       const d = (module: string, name: string) => ({ kind: "MISSING_EXPORT" as const, test: "test/unit.test.ts", module, name, spec: `../${module}` });
-      const files = new Map(Object.entries({ ...SHAPES, "src/index.ts": 'export { circleArea } from "./circle.ts";\nfunction perimeter(n, s) {\n  return n * s;\n}\n', "src/poly.ts": "export function perimeter(n, s) {\n  return n * s;\n}\n" }));
-      const c = p.loadCandidates([d("src/index.ts", "squareArea"), d("src/index.ts", "perimeter")], files);
-      assert.equal(c.length, 2);
-      assert.equal(c[0]!.edits[0]!.content, 'export { circleArea } from "./circle.ts";\nexport function perimeter(n, s) {\n  return n * s;\n}\nexport { squareArea } from "./square.ts";\n');
-      assert.equal(c[1]!.edits[0]!.content, 'export { circleArea } from "./circle.ts";\nfunction perimeter(n, s) {\n  return n * s;\n}\nexport { perimeter } from "./poly.ts";\nexport { squareArea } from "./square.ts";\n');
-      assert.deepEqual(p.loadCandidates([d("src/index.ts", "squareArea"), d("src/index.ts", "hexArea")], files), [], "hexArea has no fix (m174-guard:lc-all-fixed)");
-      assert.deepEqual(p.loadCandidates([{ kind: "MISSING_MODULE", test: "test/unit.test.ts", module: "src/square.ts", name: "", spec: "../src/square.ts" }], files), [], "a missing module only (m174-guard:lc-export-only)");
+      const files = new Map(Object.entries({ "src/stock.ts": STOCK, "src/week.ts": WEEK }));
+      const c = p.loadCandidates([d("src/week.ts", "Week"), d("src/stock.ts", "restockLevel"), d("src/stock.ts", "SAFETY")], files);
+      assert.equal(c.length, 1);
+      assert.deepEqual(c[0]!.edits, [
+        { path: "src/stock.ts", content: "export " + STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel") },
+        { path: "src/week.ts", content: "export " + WEEK },
+      ]);
+      assert.deepEqual(p.loadCandidates([d("src/stock.ts", "restockLevel"), d("src/stock.ts", "reorderDate")], files), [], "reorderDate is not declared (m174-guard:lc-all-fixed)");
+      assert.deepEqual(p.loadCandidates([{ kind: "MISSING_MODULE", test: "test/unit.test.ts", module: "src/labels.ts", name: "", spec: "../src/labels.ts" }], files), [], "a missing module only (m174-guard:lc-export-only)");
     },
   },
   {
@@ -231,6 +224,39 @@ export const CASES: readonly Case[] = [
       assert.deepEqual(r.next({ files, attempt: 1, feedback: [], loadDiagnostics: diag }), { edits: [{ path: "src/stock.ts", content: STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel") }] });
       assert.deepEqual(r.next({ files, attempt: 2, feedback: [], loadDiagnostics: diag }), { refuse: "NO_MORE_EDITS" });
       assert.deepEqual(p.repairProposer({ v2: true }).next({ files, attempt: 1, feedback: [], loadDiagnostics: [{ ...diag[0]!, name: "reorderDate" }] }), { refuse: "NO_EDIT" });
+    },
+  },
+  // ---- 2b. the loop's L0 edit gate (load-repair mode only)
+  {
+    id: "gate: a load-repair edit is single `export ` insertions in existing non-test, non-config source files; every wider edit is refused",
+    run(l) {
+      const g = l.loop;
+      const pinned: Record<string, string> = { "src/stock.ts": STOCK, "src/week.ts": WEEK, "vitest.config.ts": "const cfg = {};\nexport default cfg;\n", "src/app.setup.ts": "const ready = true;\n", "test/helpers.ts": "function make() {}\n", "src/stock.js": "function f() {}\n", "src/types.d.ts": "type T = 1;\n" };
+      const read = (f: string) => pinned[f] ?? null;
+      const ok = STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel");
+      // admits: one site; two sites in one file; two files (inventory, week shapes)
+      assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: ok }], read), null);
+      assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: "export " + ok }], read), null);
+      assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: ok }, { path: "src/week.ts", content: "export " + WEEK }], read), null);
+      assert.equal(g.loadEditShape("export function f() {}\n", "export export function f() {}\n"), true, "an ambiguous site still aligns");
+      assert.equal(g.loadEditShape("enum E { A }\n", "export enum E { A }\n"), true, "a site whose text starts like the token");
+      // near misses, one per condition
+      assert.equal(g.loadEditProblem([], read), "empty", "m174-guard:scope-nonempty");
+      assert.equal(g.loadEditProblem([{ path: "src/stock.js", content: "export function f() {}\n" }], read), "not-source", "m174-guard:scope-source (.js)");
+      assert.equal(g.loadEditProblem([{ path: "src/types.d.ts", content: "export type T = 1;\n" }], read), "not-source", "m174-guard:scope-source (.d.ts)");
+      assert.equal(g.loadEditProblem([{ path: "test/helpers.ts", content: "export function make() {}\n" }], read), "test-path", "m174-guard:scope-not-test");
+      assert.equal(g.loadEditProblem([{ path: "vitest.config.ts", content: "export const cfg = {};\nexport default cfg;\n" }], read), "infra", "m174-guard:scope-not-infra (runner config)");
+      assert.equal(g.loadEditProblem([{ path: "src/app.setup.ts", content: "export const ready = true;\n" }], read), "infra", "m174-guard:scope-not-infra (setup file)");
+      assert.equal(g.loadEditProblem([{ path: "src/patch.ts", content: "export const x = 1;\n" }], read), "new-file", "m174-guard:scope-exists");
+      // forging shapes: an added import that could patch expect, a new statement, a body change, a joined identifier
+      assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: 'import "./patch.ts";\n' + ok }], read), "shape", "an added import (m174-guard:scope-shape)");
+      assert.equal(g.loadEditShape(STOCK, STOCK + "x = 1;\n"), false, "a new statement of the token length (m174-guard:scope-token)");
+      assert.equal(g.loadEditShape(STOCK, STOCK.replace("daily * 7", "daily * 70000000")), false, "a body edit of the token length (m174-guard:scope-token)");
+      assert.equal(g.loadEditShape("const total = 1;\n", "const totalexport  = 1;\n"), false, "joined to an identifier (m174-guard:scope-boundary)");
+      assert.equal(g.loadEditShape(STOCK, STOCK), false, "unchanged (m174-guard:scope-count)");
+      assert.equal(g.loadEditShape("a\n".repeat(30), "export a\n".repeat(21) + "a\n".repeat(9)), false, "more sites than MAX_LOAD_DIAGS (m174-guard:scope-count)");
+      assert.equal(g.loadEditShape("a\n".repeat(30), "export a\n".repeat(20) + "a\n".repeat(10)), true, "near miss: MAX_LOAD_DIAGS sites");
+      assert.equal(g.loadEditShape(STOCK, "export default " + STOCK), false, "another token");
     },
   },
   // ---- 3. the loop and its rows
@@ -283,13 +309,39 @@ export const CASES: readonly Case[] = [
     },
   },
   {
-    id: "loop e2e: a barrel that misses a re-export -> repair-v2 re-exports it, PASS (shapes shape)",
+    id: "loop e2e: a module-local class the team test imports -> repair-v2 exports it, PASS (week shape); a barrel missing a re-export -> NO_EDIT",
     needsCand: true,
     run(l, ctx) {
-      const r = loopRun(l, ctx, "shapes", SHAPES, SHAPES_TEST, v2(l), 2);
+      const r = loopRun(l, ctx, "week", { "src/week.ts": WEEK }, WEEK_TEST, v2(l), 2);
       assert.equal(r.row.code, "PASS");
       assert.equal(r.row.baselineLoad, "MISSING_EXPORT");
+      assert.deepEqual(r.row.attemptCodes, [[]]);
       assert.equal(l.row.loopRowProblem(r.row), null);
+      const b = loopRun(l, ctx, "shapes", SHAPES, SHAPES_TEST, v2(l), 2);
+      assert.equal(b.row.code, "NO_EDIT", "no re-export is written");
+      assert.equal(l.row.loopRowProblem(b.row), null);
+    },
+  },
+  {
+    id: "loop e2e forging: a load-repair proposal wider than single `export ` insertions is refused before anything runs (m174-guard:scope-gate)",
+    needsCand: true,
+    run(l, ctx) {
+      const ok = STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel");
+      const patch = "const g = globalThis as any;\nif (g.expect) g.expect = () => ({ toBe() {}, toEqual() {} });\nexport {};\n";
+      const forge = (edits: Loop.Edit[]): Loop.Proposer => ({ name: "forge", loadRepair: true, next: () => ({ edits }) });
+      for (const [why, edits] of [
+        ["an added import of a patch file", [{ path: "src/stock.ts", content: 'import "./patch.ts";\n' + ok }, { path: "src/patch.ts", content: patch }]],
+        ["a new file next to a valid edit", [{ path: "src/stock.ts", content: ok }, { path: "src/patch.ts", content: patch }]],
+        ["a config edit", [{ path: "src/stock.ts", content: ok }, { path: "vitest.config.ts", content: "export default {};\n" }]],
+      ] as const) {
+        const r = loopRun(l, ctx, "stock-forge", { "src/stock.ts": STOCK }, STOCK_TEST, forge(edits as unknown as Loop.Edit[]), 2);
+        assert.equal(r.row.code, "PROPOSER_FAILED", why);
+        assert.equal(r.row.attempts, 0, `${why}: nothing ran`);
+        assert.equal(r.row.baselineLoad, "MISSING_EXPORT");
+        assert.equal(l.row.loopRowProblem(r.row), null);
+      }
+      const fine = loopRun(l, ctx, "stock-fine", { "src/stock.ts": STOCK }, STOCK_TEST, forge([{ path: "src/stock.ts", content: ok }]), 2);
+      assert.equal(fine.row.code, "PASS", "near miss: the same proposer with the single-token edit");
     },
   },
   {
@@ -312,7 +364,7 @@ export const CASES: readonly Case[] = [
     needsCand: true,
     run(l, ctx) {
       let seen: unknown = null;
-      const wrong: Loop.Proposer = { name: "wrong", loadRepair: true, next: (i) => { seen = i.loadDiagnostics; return { edits: [{ path: "src/stock.ts", content: STOCK + "// unrelated\n" }] }; } };
+      const wrong: Loop.Proposer = { name: "wrong", loadRepair: true, next: (i) => { seen = i.loadDiagnostics; return { edits: [{ path: "src/stock.ts", content: "export " + STOCK }] }; } };
       const a = loopRun(l, ctx, "stock-wrong", { "src/stock.ts": STOCK }, STOCK_TEST, wrong);
       assert.equal(a.row.code, "ATTEMPT_LIMIT");
       assert.deepEqual(a.row.attemptCodes, [["SUITE_LOAD", "TEST_FAIL"]]);

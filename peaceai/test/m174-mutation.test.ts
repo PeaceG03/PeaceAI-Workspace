@@ -18,7 +18,7 @@ const LIB_FILES = ["editpropose.ts", "looprow.ts", "loop.ts"] as const;
 const TAG = /\/\/ m174-guard:([a-z0-9-]+)(?:[\s",].*)?$/;
 const sources: Record<string, string> = Object.fromEntries(LIB_FILES.map((f) => [f, readFileSync(join(libDir, f), "utf8")]));
 const guards = Object.entries(sources).flatMap(([file, text]) => text.split("\n").flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, file, line: i }] : []; }));
-const NEEDS_CAND = new Set(["loop-row-load"]);
+const NEEDS_CAND = new Set(["loop-row-load", "scope-gate"]);
 const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M151_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
 
 let dir: string;
@@ -57,8 +57,9 @@ test("M174 mutation: the guard tags are unique and cover the guards", () => {
   assert.deepEqual([...ids].sort(), [
     "cap", "host-inside", "host-no-modules", "host-no-modules-lex", "lc-all-fixed", "lc-export-only", "le-body", "le-kind", "le-not-listed", "le-one-decl",
     "le-plain", "le-single", "lm-needs-export", "lm-proposer", "lm-suite-load-only", "loop-row-load", "lr-v2-only", "module-lex-inside", "module-not-team",
-    "module-not-test", "module-source", "name-ident", "re-not-test", "re-unique", "relative", "row-load-baseline", "row-load-code", "row-load-value",
-    "row-reached-load", "star-opaque", "star-unknown", "type-only", "type-only-name",
+    "module-not-test", "module-source", "name-ident", "relative", "row-load-baseline", "row-load-code", "row-load-value",
+    "row-reached-load", "scope-boundary", "scope-count", "scope-exists", "scope-gate", "scope-nonempty", "scope-not-infra", "scope-not-test",
+    "scope-shape", "scope-source", "scope-token", "star-opaque", "star-unknown", "type-only", "type-only-name",
 ].sort());
 });
 

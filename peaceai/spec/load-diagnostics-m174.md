@@ -21,12 +21,12 @@ runner. Only (a) is done. Why (b) was deferred:
 Diagnosis only: the M173 note that neverthrow's whole jest suite fails to compile (every attempt 0/1, no signal),
 now refused BASELINE_SUITE_LOAD. That motivated a general gap: when a team suite does not load, PeaceAI learns
 nothing about why. The neverthrow fix itself (it adds a new static method and an aliased export) is NOT what the
-new templates do: load-export and load-reexport never write a function body, an alias, a class member or any new
-logic; they only make an existing declaration or an existing export reachable. No TYPE_ERROR diagnostics and no
+new template does: load-export never writes a function body, an alias, a class member, an import or any new
+logic; it only makes an existing declaration reachable. No TYPE_ERROR diagnostics and no
 TS2339 (missing property / static) handling were added, because those would mirror that task's fix class. No
 fixture, template or idiom is modelled on any dev task or reference diff; every fixture in m174-cases.ts is an
-unrelated shape written for this test (an inventory restock helper, a shapes barrel, a palette module, a calendar
-helper, a unit-price table). No dev-task gain is expected or claimed; box runs never count for model-v1 results.
+unrelated shape written for this test (an inventory restock helper, a week calendar class, a shapes barrel, a palette
+module, a calendar helper, a unit-price table). No dev-task gain is expected or claimed; box runs never count for model-v1 results.
 
 ## Mechanism 1: load diagnostics (lib/loop.ts loadDiagnostics)
 
@@ -54,21 +54,49 @@ A diagnostic is kept only when (guard tag in brackets):
 - at most MAX_LOAD_DIAGS = 20, deduplicated and sorted (cap).
 Each diagnostic is {kind, test, module, name, spec}: names and paths come from the syntax tree and module resolution.
 
+## Decision on Auditor's single-token condition: (i) T2 load-reexport dropped; T1 kept, behind an L0 gate
+
+Auditor's binding condition: on vitest/jest, code in the test process can patch `expect` and forge a pass; that is
+out of reach only while repair edits stay single-token in source files, so before edit scope widens an L0 edit-token
+gate must land with a forging test, and a PASS from a wider edit does not count until then.
+
+- T2 (load-reexport: append a whole `export { name } from "<spec>";` statement) is OUTSIDE that scope and is dropped
+  from this batch (option (i)). It is not a template, not proposed, and no code for it remains (LOAD_TEMPLATES is
+  ["load-export"]). A barrel that misses a re-export now gets no candidate (NO_EDIT; e2e near miss).
+- T1 (load-export) is kept because it is in scope: each site is one inserted keyword token `export ` before a
+  declaration that already exists in an existing, non-test source file. It adds no import, no statement, no
+  expression and no body, so it cannot bring new code into the test process, and in particular cannot patch expect:
+  the only effect is that an existing binding becomes importable. A candidate fixing k missing names inserts k tokens
+  (k <= MAX_LOAD_DIAGS = 20), each one such site.
+- The L0 edit gate (lib/loop.ts loadEditProblem / loadEditShape) enforces this in the loop, independent of the
+  proposer: in load-repair mode every proposal is checked against the copy reset to the pinned commit, before the
+  team's tests are put back and before anything runs (scope-gate). It is refused PROPOSER_FAILED (nothing run,
+  attempts 0) unless it is non-empty (scope-nonempty) and every edit is to an existing (scope-exists) .ts/.tsx/.mts/
+  .cts file that is not a declaration file (scope-source), not a test or generated path (scope-not-test), not a
+  runner config or setup file (scope-not-infra: *config.*, vitest*/vite*/jest*/mocha*/ava*/karma*, *setup*), and
+  whose new content is exactly the old content with 1..20 copies of `export ` inserted (scope-count, scope-token),
+  each at the start of the file or after whitespace so it never joins an identifier (scope-boundary); nothing else may
+  differ (scope-shape). Forging e2e: a load-repair proposer whose edit adds `import "./patch.ts"` (a file that
+  replaces globalThis.expect), or adds a new file, or edits vitest.config.ts, is PROPOSER_FAILED with 0 attempts, and
+  the same proposer with the single-token edit passes.
+- Creditability: a PASS from an edit wider than single-token is non-creditable unless this gate is present. In M174
+  such a PASS cannot be produced: every load-repair row (baselineLoad set) comes from the loop path that applies the
+  gate before the first run, and loopSha256 (which hashes lib/loop.ts, where the gate lives) binds the row to a gated
+  loop version. Rows from the non-load path are unchanged pre-M174 behaviour (the M152/M168 proposers, already
+  reviewed). Any later widening (new templates, multi-token edits) must extend this gate and its forging test first.
+
 ## Mechanism 2: load-repair candidates (lib/editpropose.ts, repair-v2 only)
 
 `repairProposer({v2: true})` has loadRepair = true; repair-v1 and any reranked list (model-v1) have false
 (lr-v2-only). Given load diagnostics, it proposes only load candidates (NO_EDIT if none, then NO_MORE_EDITS), at
-most MAX_LOAD_CANDIDATES = 2:
+most MAX_LOAD_CANDIDATES = 1:
 - load-export: insert `export ` before the module's single top-level declaration of the name
   (le-one-decl: no overloads or merged declarations), which is a function, class, enum, interface, type alias or
   a variable statement (le-kind: not a namespace) with a single declarator (le-single), not declare / default /
   already exported (le-plain), a function with a body (le-body), and not already named in an export list
   (le-not-listed);
-- load-reexport: append `export { name } from "<spec>";` to the module when exactly one other non-test source
-  file (re-not-test, re-unique) exports that name directly; the specifier style (.js / .ts / none) is taken from the
-  module's own relative imports, else from the test's;
-- MISSING_MODULE diagnostics produce no candidate (lc-export-only); a candidate must fix every missing name at once,
-  else there is none (lc-all-fixed). The first candidate prefers load-export, the second prefers load-reexport.
+- MISSING_MODULE diagnostics produce no candidate (lc-export-only); the candidate must fix every missing name at once,
+  else there is none (lc-all-fixed).
 
 ## Mechanism 3: the loop and its rows (lib/loop.ts, lib/looprow.ts)
 
@@ -93,13 +121,15 @@ The planner runs before the baseline and gets no diagnostics; only the proposer 
 
 ## Tests
 
-Admitting shapes, unit and end to end (stub vitest, candidate uid): a module-local inventory helper (load-export ->
-PASS), a shapes barrel missing a re-export (load-reexport -> PASS); unit also a class, an enum, a const, mixed
-templates in one candidate, and three specifier styles. Near misses, one per condition: each guard above has a
+Admitting shapes, unit and end to end (stub vitest, candidate uid), two unrelated shapes: a module-local inventory
+helper function and a module-local week calendar class (load-export -> PASS each); unit also an enum, a const, and
+one candidate fixing two names in two modules. Gate: admits one site, two sites, two files; near misses per condition
+(empty, .js, .d.ts, test path, runner config, setup file, new file, added import, new statement, body edit, joined
+identifier, unchanged, 21 sites vs 20, `export default`); forging e2e as above. Near misses, one per condition: each guard above has a
 refused case in m174-cases.ts (the tag is named in the assertion message). End to end near misses: a proposer
 without loadRepair, and a missing module only, both refuse BASELINE_SUITE_LOAD and the proposer is never asked; an edit
 that keeps the suite unloaded is ATTEMPT_LIMIT with [["SUITE_LOAD","TEST_FAIL"]]; a loaded suite with a buggy function
-ends NO_MORE_EDITS with [["TEST_FAIL"]]. Mutation: m174-mutation.test.ts deletes each of the 33 `// m174-guard:`
+ends NO_MORE_EDITS with [["TEST_FAIL"]]. Mutation: m174-mutation.test.ts deletes each of the 41 `// m174-guard:`
 lines in turn and requires at least one case to fail an assertion (a crash is not a failure); the tag list is pinned.
 
 ## Soundness
@@ -122,15 +152,15 @@ lines in turn and requires at least one case to fail an assertion (a crash is no
   (`reachedTests` stays false for the row), and an attempt is PASS only with no attempt code at all, i.e. a real
   nonce report on fd 3 from the PeaceAI reporter (M173), exit 0 and >= 1 executed test. The M173 forging guards
   (loopdeps.ts launch.cjs nonce + fd3, reporter claim at preload, caller check, dot-dir refusal, mocha locks) are
-  untouched: loopdeps.ts is not changed, and load-repair attempts go through the same runTests as every attempt.
+  untouched, and in-process patching of expect is out of reach because load-repair edits are gated to single tokens: loopdeps.ts is not changed, and load-repair attempts go through the same runTests as every attempt.
 - Relation to the Auditor ruling on run 41556098711 ("a suite that never loaded must not have edits scored
   against it"): M174 is a narrow, explicit exception that needs Auditor's ruling. Edits are tried only when the
   diagnostics name a missing export (a fail-before the team's own tests define), the row is marked baselineLoad and
   never counts as reaching the tests, and its PASS still needs the full M173 acceptance above. Without that ruling
   the exception can be switched off by refusing load-repair rows in crediting (reachedTests false already excludes
   them from any reached-tests count).
-- Load repairs never write a body: load-export inserts the keyword `export `; load-reexport appends one
-  `export { name } from "<spec>";` line naming an existing export. No other text is produced.
+- Load repairs never write a body: load-export inserts only the keyword `export `, and the L0 gate refuses, before
+  anything runs, any load-repair proposal whose content differs from the pinned file by anything else.
 - Load-repair rows are validated downstream like every row: ci.yml test:tools -> m146 -> looprow loopRowProblem,
   which accepts baselineLoad only on v4 rows, only with the value MISSING_EXPORT, only with a post-baseline code, and
   only with the public row's baseline present.
