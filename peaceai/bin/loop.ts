@@ -17,6 +17,28 @@ import { loopPlanner, MAX_ATTEMPTS, ROOT, runLoopFile, type Proposer } from "../
 import { MODEL_PROPOSER, MODEL_V1_PIN, modelProposer, modelV1RunProblem, parseRanking, type ModelV1Pin, type Ranking } from "../lib/modelpropose.ts";
 import { sha256 } from "../lib/plan.ts";
 import { taskKey } from "../lib/plangrade.ts";
+import { PROOFS, runIsolationProofs } from "../lib/loopdeps.ts";
+import { runnerWrapper } from "../lib/loop.ts";
+import { stage2CandUid } from "../lib/selfpropose.ts";
+
+// M171 (Auditor ruling on run 41521457458, condition c): `loop.ts proofs` runs the isolation proofs
+// (lib/loopdeps.ts runIsolationProofs) inside this loop's runner wrapper as the candidate uid, before any attempt.
+// Fixed codes only; exits 1 on any refusal (fail closed; nothing falls back to the runner uid).
+if (process.argv[2] === "proofs") {
+  const c = stage2CandUid(process.env);
+  if (!c.ok) { console.log(`refused ${c.reason}`); process.exit(1); }
+  // no top-level await: a copy of this file outside the ESM package (the m169 mutation harness) compiles as CJS
+  runIsolationProofs(c.cand, { env: process.env, root: ROOT, wrapper: runnerWrapper }).then((r) => {
+    for (const p of PROOFS) if (r.proofs[p]) console.log(`proof ${p}=${r.proofs[p]}`);
+    console.log(`git-credential files checked=${r.credFiles}`);
+    if (!r.ok) { console.log(`refused ${r.refusal}`); process.exit(1); }
+    console.log("isolation proofs ok");
+    process.exit(0);
+  }, () => { console.log("refused PROOFS_CRASHED"); process.exit(1); });
+} else runLoopCommand();
+
+// the `run` command (unchanged, kept at the original indentation so the diff stays small); never reached for `proofs`
+function runLoopCommand(): void {
 
 const args = process.argv.slice(2);
 const [cmd, file] = args;
@@ -93,3 +115,4 @@ for (const { row: r } of out.results) {
 const n = (c: string) => out.results.filter((x) => x.row.result === c).length;
 console.log(`planner=${planner} tasks=${out.results.length} pass=${n("pass")} fail=${n("fail")} refused=${n("refused")} reachedTests=${out.results.filter((x) => x.row.baseline).length}`);
 if (rankingRefused) process.exit(1); // M167: a refused ranking is never a green run
+}

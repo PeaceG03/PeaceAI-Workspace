@@ -25,6 +25,12 @@ export const LOOP_DEPS = ["none", "npm", "pnpm", "yarn"] as const;
 /** M169: v4 public rows only, and only with code DEPS_INSTALL_FAILED: which install step failed, as a fixed code
  *  (never package-manager output). Optional: rows written before M169 have none. Same list as loopdeps.ts DEPS_FAILS. */
 export const LOOP_DEPS_FAILS = ["CAND_NO_ACCESS", "CHOWN_TO_CAND", "KILL", "CHOWN_BACK", "PM_EXIT", "NO_MODULES"] as const;
+/** M171: v4 public rows only, and only with code ISOLATION_UNAVAILABLE: which isolation check failed, as a fixed code.
+ *  NO_NAMESPACES / MOUNT_FAILED: the runner wrapper exited 97 / 98; WORK_DIR: the private work dir could not be made
+ *  (or is open to other users); CAND_NO_ACCESS: the candidate uid cannot reach the copy or its runner; PRIVATE_LINK: a
+ *  symlink in the copy resolves into a private root (the runner's home, RUNNER_TEMP, the workspace checkout);
+ *  PRIVATE_CONFIG: the copy's .git/config names a credential. Optional: rows written before M171 have none. */
+export const LOOP_ISOLATION_FAILS = ["NO_NAMESPACES", "MOUNT_FAILED", "WORK_DIR", "CAND_NO_ACCESS", "PRIVATE_LINK", "PRIVATE_CONFIG"] as const;
 /** The loop's add-only log (repo-relative). */
 export const LOOP_LOG = "peaceai/plan/loop-runs.jsonl";
 /** Task-level outcome codes (the one `code` of a row). Never message text. */
@@ -95,6 +101,8 @@ export interface LoopRow {
   baseline?: LoopBaseline | null;
   /** M169, v4 public DEPS_INSTALL_FAILED rows only (optional): the failed install step, a fixed code. */
   depsFail?: (typeof LOOP_DEPS_FAILS)[number];
+  /** M171, v4 public ISOLATION_UNAVAILABLE rows only (optional): the failed isolation check, a fixed code. */
+  isolationFail?: (typeof LOOP_ISOLATION_FAILS)[number];
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -104,7 +112,7 @@ const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commi
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
 const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
-const OPTIONAL_V4 = ["depsFail"]; // M169: optional, so rows written before it still validate
+const OPTIONAL_V4 = ["depsFail", "isolationFail"]; // M169 / M171: optional, so rows written before them still validate
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
@@ -176,6 +184,11 @@ export function loopRowProblem(o: unknown): string | null {
     if (!(LOOP_DEPS_FAILS as readonly string[]).includes(r.depsFail)) return "deps_fail"; // m169-guard:row-depsfail-code
     if (r.code !== "DEPS_INSTALL_FAILED") return "deps_fail_code"; // m169-guard:row-depsfail-only
     if (r.set !== "public") return "hidden_detail"; // m169-guard:row-depsfail-public
+  }
+  if ("isolationFail" in r) {
+    if (!(LOOP_ISOLATION_FAILS as readonly string[]).includes(r.isolationFail)) return "isolation_fail"; // m171-guard:row-isofail-code
+    if (r.code !== "ISOLATION_UNAVAILABLE") return "isolation_fail_code"; // m171-guard:row-isofail-only
+    if (r.set !== "public") return "hidden_detail"; // m171-guard:row-isofail-public
   }
   return null;
 }

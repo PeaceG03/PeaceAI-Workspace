@@ -453,3 +453,76 @@ test("peace-verdict: record is serialized in ONE global queue (no per-issue key,
   assert.doesNotMatch(record, /group: peace-verdict-record-results\$\{\{/);
   assert.match(record, /environment: peaceai-results/);
 });
+
+// M171 (Auditor ruling on run 41521457458, condition a/b): kernel.apparmor_restrict_unprivileged_userns may be set ONLY
+// in peace-model-v1-dev.yml's model-v1-attempt job, which must stay credential-free (no secret, deploy key,
+// environment, R2, write permission, persisted checkout credentials, push, artifact or cache), and only in the step
+// right before the candidate (loop) step, whose first command runs the in-wrapper isolation proofs.
+const USERNS_KEY = "apparmor_restrict_unprivileged_userns";
+const code = (block: string) => block.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+const stepsOf = (job: string) => job.split(/\n(?= {6}- )/).slice(1);
+export function usernsProblems(texts: Record<string, string>): string[] {
+  const out: string[] = [];
+  for (const [f, text] of Object.entries(texts)) {
+    if (code(text.split(/^jobs:\s*$/m)[0] ?? "").includes(USERNS_KEY)) out.push(`${f}: set outside a job`);
+    for (const [name, job] of jobs(text)) {
+      if (!code(job).includes(USERNS_KEY)) continue;
+      if (f !== "peace-model-v1-dev.yml" || name !== "model-v1-attempt") { out.push(`${f}/${name}: sets ${USERNS_KEY}`); continue; }
+      const c = code(job);
+      if (/secrets\.|secrets:|\$\{\{\s*secrets/.test(c)) out.push("attempt job: names a secret");
+      if (/^ {4}environment:/m.test(c)) out.push("attempt job: has an environment");
+      if (/R2|DEPLOY_KEY|with-deploy-key|AWS_|ssh-agent/.test(c)) out.push("attempt job: names R2 or a key");
+      const perm = /^ {4}permissions:(.*)\n((?: {6}.*\n)*)/m.exec(c);
+      if (!perm || !(perm[1]!.trim() === "{}" || (perm[1]!.trim() === "" && perm[2]!.trim() === "contents: read"))) out.push("attempt job: permissions not {} or contents: read");
+      const checkouts = stepsOf(c).filter((s) => /uses: actions\/checkout@/.test(s));
+      if (!checkouts.length || checkouts.some((s) => !/\n {10}persist-credentials: false\n?/.test(s + "\n"))) out.push("attempt job: a checkout persists credentials");
+      if (/git push|gh |upload-artifact|actions\/cache|GITHUB_TOKEN|github\.token/.test(c)) out.push("attempt job: pushes, uploads, caches or holds a token");
+      const steps = stepsOf(c);
+      const at = steps.map((s, i) => (s.includes(USERNS_KEY) ? i : -1)).filter((i) => i >= 0);
+      const loopAt = steps.findIndex((s) => s.includes("peaceai/bin/loop.ts run"));
+      if (at.length !== 1 || loopAt !== at[0]! + 1) out.push("attempt job: the userns step is not the one step right before the candidate step");
+      else {
+        const s = steps[at[0]!]!;
+        if (!/sudo -n sysctl -q -w kernel\.apparmor_restrict_unprivileged_userns=0\b/.test(s) || !/v=\$\(sysctl -n kernel\.apparmor_restrict_unprivileged_userns /.test(s)) out.push("attempt job: the userns step does not set and read back the value");
+        if (!/if \[ "\$v" = 0 \]; then echo "userns-restrict=0"; else echo "userns-restrict=1"; echo "refused CAND_NO_NAMESPACES"; exit 1; fi/.test(s)) out.push("attempt job: the userns step does not refuse unless 0");
+        const loop = steps[loopAt]!;
+        const proof = loop.indexOf("./node_modules/.bin/tsx peaceai/bin/loop.ts proofs || { echo \"isolation proofs refused: no loop run\"; exit 1; }");
+        if (proof < 0 || proof > loop.indexOf("peaceai/bin/loop.ts run")) out.push("attempt job: the isolation proofs do not run before the first attempt");
+      }
+    }
+  }
+  return out;
+}
+
+test("M171: only the credential-free model-v1 attempt job sets the userns sysctl, right before the candidate step, after the proofs are wired", () => {
+  const texts = Object.fromEntries(files.map((f) => [f, read(f)]));
+  assert.deepEqual(usernsProblems(texts), []);
+  assert.ok(code(jobs(read("peace-model-v1-dev.yml")).get("model-v1-attempt")!).includes(USERNS_KEY), "the attempt job sets it");
+});
+
+test("M171: the userns guard refuses each near miss (another job, a secret, an environment, R2, write permission, persisted credentials, wrong place, no refusal, no proofs)", () => {
+  const f = "peace-model-v1-dev.yml";
+  const wf = read(f);
+  const at = wf.indexOf("\n  model-v1-attempt:");
+  const head = wf.slice(0, at), att = wf.slice(at);
+  const sys = att.slice(att.indexOf("      - name: Lift the user namespace restriction"), att.indexOf("      - name: Loop runs"));
+  const near: [string, string][] = [
+    ["score job sets it", head.replace("    steps:\n", "    steps:\n      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\n") + att],
+    ["another workflow", wf],
+    ["a secret", head + att.replace("      PEACEAI_CANDIDATE_JOB: \"true\"\n", "      PEACEAI_CANDIDATE_JOB: \"true\"\n      K: ${{ secrets.PEACEAI_RESULTS_DEPLOY_KEY }}\n")],
+    ["an environment", head + att.replace("    runs-on: ubuntu-24.04\n", "    runs-on: ubuntu-24.04\n    environment: peaceai-results\n")],
+    ["R2", head + att.replace("      PEACEAI_CANDIDATE_JOB: \"true\"\n", "      PEACEAI_CANDIDATE_JOB: \"true\"\n      LM_SAVES_R2_BUCKET: x\n")],
+    ["write permission", head + att.replace("      contents: read\n", "      contents: write\n")],
+    ["persisted credentials", head + att.replace("persist-credentials: false", "persist-credentials: true")],
+    ["not right before the loop step", head + att.replace(sys, "").replace("      - name: Make this runner's tools read-only", sys + "      - name: Make this runner's tools read-only")],
+    ["no refusal unless 0", head + att.replace('echo "refused CAND_NO_NAMESPACES"; exit 1; fi', "fi")],
+    ["a push", head + att.replace("      - name: Create the unprivileged candidate user", "      - run: git push origin HEAD\n      - name: Create the unprivileged candidate user")],
+    ["set at the workflow level", head.replace("permissions: {}\n", "permissions: {}\n# x\nenv:\n  K: kernel.apparmor_restrict_unprivileged_userns\n") + att],
+    ["no proofs before the attempts", head + att.replace("          ./node_modules/.bin/tsx peaceai/bin/loop.ts proofs || { echo \"isolation proofs refused: no loop run\"; exit 1; }\n", "")],
+  ];
+  for (const [id, text] of near) {
+    if (id !== "another workflow") assert.notEqual(text, wf, `${id}: the near miss changed nothing`);
+    const texts: Record<string, string> = id === "another workflow" ? { [f]: wf, "other.yml": "name: x\npermissions: {}\njobs:\n  j:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\n" } : { [f]: text };
+    assert.ok(usernsProblems(texts).length > 0, `not refused: ${id}`);
+  }
+});

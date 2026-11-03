@@ -146,6 +146,34 @@ jobs:
           sudo -n rm -rf -- "$P"
           echo "PEACEAI_DEPS_DIR=$D" >> "$GITHUB_ENV"
           echo "deps dir pre-flight ok"
+      - name: Pre-flight (fail closed) - the candidate uid gets a private work dir and cannot read the runner's files (M171, run 41521457458)
+        # Every task ended ISOLATION_UNAVAILABLE with 0 attempts (run 41521457458): ubuntu-24.04 restricts unprivileged
+        # user namespaces, so the runner wrapper's first line (unshare -r -n -m true, loop.ts runnerWrapper) exits 97 as
+        # the candidate uid; the step right before the loop runs lifts that (Auditor ruling). This step proves, with no
+        # chmod anywhere under the runner's home, that the candidate uid can traverse and write a fresh 0750 work dir
+        # under /tmp (group cand, as loopdeps.ts openWorkDir makes per task) and CANNOT read $RUNNER_TEMP, the runner's
+        # home or any git credentials file there; else the job stops here. Fixed words and numbers only are printed.
+        # The same proofs run again inside the wrapper, as the candidate, in the loop step (peaceai/bin/loop.ts proofs).
+        run: |
+          set -euo pipefail
+          C=peaceai-cand
+          W=$(mktemp -d /tmp/peaceai-work-preflight.XXXXXX); chmod 750 "$W"; sudo -n chgrp "$(id -g "$C")" "$W"
+          P="$W/probe"; mkdir "$P"; sudo -n chown "$C": "$P"
+          sudo -n -u "$C" -- test -x "$W" || { echo "refused WORK_DIR_CAND_NO_TRAVERSE"; exit 1; }
+          sudo -n -u "$C" -- sh -c 'touch "$1/w" && rm "$1/w"' sh "$P" || { echo "refused WORK_DIR_CAND_NO_WRITE"; exit 1; }
+          sudo -n rm -rf -- "$W"
+          if sudo -n -u "$C" -- test -r "$RUNNER_TEMP" -o -x "$RUNNER_TEMP"; then echo "refused CAND_READS_RUNNER_TEMP"; exit 1; fi
+          if sudo -n -u "$C" -- test -r "$HOME"; then echo "refused CAND_READS_RUNNER_HOME"; exit 1; fi
+          n=0
+          while IFS= read -r -d '' f; do
+            n=$((n + 1))
+            if sudo -n -u "$C" -- test -r "$f"; then echo "refused CAND_READS_GIT_CREDENTIALS"; exit 1; fi
+          done < <(find "$RUNNER_TEMP" "$HOME" -maxdepth 4 \( -name 'git-credentials*' -o -name '.git-credentials' -o -name '.gitconfig' \) -print0 2>/dev/null | sort -zu || true)
+          for f in "$HOME/.git-credentials" "$HOME/.gitconfig" "$HOME/.config/git/credentials"; do
+            if sudo -n -u "$C" -- test -r "$f"; then echo "refused CAND_READS_GIT_CREDENTIALS"; exit 1; fi
+          done
+          echo "git-credential files checked=$n"
+          echo "isolation pre-flight ok"
       - name: Make this runner's tools read-only (same as Job B; only the loop log it appends to stays writable)
         run: |
           chmod -R a-w node_modules peaceai package.json package-lock.json tsconfig.json
@@ -154,11 +182,24 @@ jobs:
         env:
           RANKING: ${{ needs.model-v1-score.outputs.ranking }}
         run: printf '%s' "$RANKING" > "$RUNNER_TEMP/ranking.json"
+      - name: Lift the user namespace restriction on this credential-free VM only (M171, Auditor ruling; runner-images#10443)
+        # ubuntu-24.04 sets kernel.apparmor_restrict_unprivileged_userns=1, so the candidate uid cannot make the runner
+        # wrapper's namespaces (run 41521457458: every task ISOLATION_UNAVAILABLE, reachedTests 0). Auditor allowed setting
+        # it to 0 ONLY here, in the attempt job, which holds no secret, deploy key, environment or R2 access (permissions
+        # contents: read, checkout persist-credentials: false; workflows.test.ts enforces that no other job sets it), and
+        # only in the step right before the candidate step. Prints userns-restrict=<0|1> only; not 0 -> refused.
+        run: |
+          set -uo pipefail
+          sudo -n sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0 > /dev/null 2>&1 || true
+          v=$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || true)
+          if [ "$v" = 0 ]; then echo "userns-restrict=0"; else echo "userns-restrict=1"; echo "refused CAND_NO_NAMESPACES"; exit 1; fi
       - name: Loop runs (repair-v1, then model-v1, then rules-v1) at the pinned --max on the pinned public dev task file
         env:
           RANKING_SHA256: ${{ needs.model-v1-score.outputs.ranking_sha256 }}
         run: |
           set -euo pipefail
+          # M171 (Auditor ruling, condition c): the isolation proofs inside the runner wrapper as the candidate uid, before any attempt
+          ./node_modules/.bin/tsx peaceai/bin/loop.ts proofs || { echo "isolation proofs refused: no loop run"; exit 1; }
           T=$(jq -r .taskFile "$PIN"); M=$(jq -r .maxAttempts "$PIN")
           [ "$T" = peaceai/plan/tasks-public-v1.json ] || { echo "not the public dev task file: refused"; exit 1; }
           N=$(jq '.tasks | length' "$T"); [ "$N" = 12 ] || { echo "task file has $N tasks, not 12: refused"; exit 1; }
