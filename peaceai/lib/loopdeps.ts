@@ -27,7 +27,7 @@
 // case to fail. See peaceai/spec/loop-v2.md.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import type { CandUid } from "./selfpropose.ts";
@@ -85,11 +85,19 @@ function mochaValue(root: string, pkgDir: string, flag: string, v: string): stri
   if (flag === "--ui") return MOCHA_UIS.includes(v) ? v : null; // m172-guard:mocha-ui
   if (flag === "--timeout") return /^\d{1,7}$/.test(v) ? v : null; // m172-guard:mocha-timeout
   if (flag === "--extension") return /^[a-z0-9]{1,8}$/i.test(v) ? v : null; // m172-guard:mocha-extension
-  // --require: a ./path must stay inside the package and be a regular file there (no "..", no symlink)
-  if (v.split("/").some((seg) => seg === "..")) return null; // m172-guard:mocha-require-dotdot
-  if (MOCHA_REQUIRE_REL.test(v)) {
-    const full = join(root, pkgDir, v);
-    try { if (!lstatSync(full).isFile()) return null; } catch { return null; } // m172-guard:mocha-require-file
+  // --require: no absolute path and no ".." segment anywhere
+  if (v.startsWith("/") || v.split("/").some((seg) => seg === "..")) return null; // m172-guard:mocha-require-dotdot
+  // mocha loads a --require value as a file relative to its cwd whenever `v` or `v.js` exists there (lib/cli/
+  // run-helpers.js handleRequires), with or without a leading ./ (batch 11 fix: a bare `test/x.cjs` was taken as a
+  // package name and skipped this check). Any such file must be a regular file inside the package, reached through
+  // no symlink (lstat of the file, and its real path equals its plain path, so no symlinked directory either).
+  const base = join(root, pkgDir);
+  const lexists = (c: string) => { try { lstatSync(join(base, c)); return true; } catch { return false; } };
+  let local: string | null = MOCHA_REQUIRE_REL.test(v) ? v : null;
+  if (local === null) local = [v, `${v}.js`].find(lexists) ?? null; // m172-guard:mocha-require-bare
+  if (local !== null) {
+    const full = join(base, local);
+    try { if (!lstatSync(full).isFile() || realpathSync(full) !== join(realpathSync(base), local)) return null; } catch { return null; } // m172-guard:mocha-require-file
     return v;
   }
   return MOCHA_REQUIRE_PKG.test(v) && !v.startsWith(".") ? v : null; // m172-guard:mocha-require-pkg
@@ -1036,7 +1044,7 @@ export const SHIM_SOURCE = [
   'import { spawnSync } from "node:child_process";',
   'import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";',
   'import { dirname, join, resolve } from "node:path";',
-  'import { pathToFileURL } from "node:url";',
+  'import { fileURLToPath, pathToFileURL } from "node:url";',
   "const [runner, pkgDir, ...rest] = process.argv.slice(2);",
   "// M172: mocha's allowlisted options (read by PeaceAI from the package's scripts) come first, ended by `--`",
   "const sep = runner === \"mocha\" ? rest.indexOf(\"--\") : -1;",
@@ -1059,7 +1067,11 @@ export const SHIM_SOURCE = [
   "  : [\"--ci\", \"--json\", `--outputFile=${report}`, \"--watchman=false\", `--cacheDirectory=${join(tmp, \"jest-cache\")}`, \"--runTestsByPath\", ...files];",
   "// M172: mocha reads no config file (--no-config, --no-package: PeaceAI passed on what the script set) and writes its",
   "// JSON report to the file (the json reporter's output option, mocha >= 9.2; older mochas write none: fail closed)",
-  "if (runner === \"mocha\") args = [\"--no-config\", \"--no-package\", ...opts, \"--reporter\", \"json\", \"--reporter-option\", `output=${report}`, ...files]; // m172-guard:shim-mocha-args",
+  "// batch 11 fix: PeaceAI's pending guard (mocha-guard.cjs beside this file) is required first; it finds the mocha that",
+  "// runs through PEACEAI_MOCHA_LIB and fails a test that ends in a Pending this.skip() did not raise",
+  "const guard = fileURLToPath(new URL(\"./mocha-guard.cjs\", import.meta.url));",
+  "if (runner === \"mocha\") args = [\"--no-config\", \"--no-package\", \"--require\", guard, ...opts, \"--reporter\", \"json\", \"--reporter-option\", `output=${report}`, ...files]; // m172-guard:shim-mocha-args",
+  "const runEnv = runner === \"mocha\" ? { ...process.env, PEACEAI_MOCHA_LIB: join(dirname(pkgJson), \"lib\") } : process.env;",
   "// batch 10: vitest < 2 writes its results cache into node_modules/.vitest after every run; the copy is read-only, so",
   "// that write fails (EACCES) and the run exits 1 even when every test passed. Its CLI has no flag to turn the cache",
   "// off, so for those versions the same run is started through vitest's own node API (what its CLI calls) with the",
@@ -1070,7 +1082,7 @@ export const SHIM_SOURCE = [
   "if (runner === \"vitest\" && maj < 2 && nodeEntry && existsSync(nodeEntry)) legacy = true; // m170-guard:vitest-legacy-api",
   "const API = \"const [u, out, vc, ...fs] = process.argv.slice(1); const { startVitest } = await import(u); const ctx = await startVitest('test', fs, { run: true, watch: false, reporters: ['json'], outputFile: out, cache: false }, { cacheDir: vc }); await ctx?.close(); process.exit(process.exitCode ?? 0);\";",
   "const argvFor = (extra) => legacy ? [\"--input-type=module\", \"-e\", API, pathToFileURL(nodeEntry).href, report, join(tmp, \"vite-cache\"), ...files] : [bin, ...args, ...extra];",
-  "const run = (extra) => { rmSync(report, { force: true }); const r = spawnSync(process.execPath, argvFor(extra), { cwd, stdio: [\"ignore\", \"inherit\", \"inherit\"] }); let j = null; try { j = JSON.parse(readFileSync(report, \"utf8\")); } catch { j = null; } return { r, j }; };",
+  "const run = (extra) => { rmSync(report, { force: true }); const r = spawnSync(process.execPath, argvFor(extra), { cwd, env: runEnv, stdio: [\"ignore\", \"inherit\", \"inherit\"] }); let j = null; try { j = JSON.parse(readFileSync(report, \"utf8\")); } catch { j = null; } return { r, j }; };",
   "let { r, j } = run([]);",
   "// the copy is read-only, so vite's default config bundling (a temp file beside the config) can fail; vitest >= 3.1",
   "// can load the config in-process instead, so retry once that way when no report was written",
@@ -1079,6 +1091,10 @@ export const SHIM_SOURCE = [
   "const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);",
   "// M172: mocha's report keeps its counts under `stats`; a report without them is a failure",
   "if (runner === \"mocha\" && (!j.stats || typeof j.stats !== \"object\")) done(0, 1, r.status || 1); // m172-guard:shim-mocha-stats",
+  "// batch 11 fix (fail closed): a mocha run with any pending test, or whose test count is not passes + failures (a",
+  "// test that ended neither way, or a hook failure), is not credited: no pass counted, at least one failure",
+  "if (runner === \"mocha\" && n(j.stats.pending) > 0) done(0, Math.max(1, n(j.stats.failures)), r.status || 1); // m172-guard:shim-mocha-pending",
+  "if (runner === \"mocha\" && (!Number.isInteger(j.stats.tests) || j.stats.tests !== n(j.stats.passes) + n(j.stats.failures))) done(0, Math.max(1, n(j.stats.failures)), r.status || 1); // m172-guard:shim-mocha-total",
   "const pass = runner === \"mocha\" ? n(j.stats.passes) : n(j.numPassedTests);",
   "let fail = runner === \"mocha\" ? n(j.stats.failures) : n(j.numFailedTests);",
   "if (fail === 0 && n(j.numFailedTestSuites) > 0) fail = n(j.numFailedTestSuites); // guard:shim-suites",
@@ -1087,10 +1103,51 @@ export const SHIM_SOURCE = [
   "",
 ].join("\n");
 
-/** Writes the shim into the copy; returns the argv that guardedRun passes to the wrapper's node. */
+/** Repo-relative path of the mocha pending guard in the copy (beside the shim; read-only and tamper-hashed like it). */
+export const MOCHA_GUARD_PATH = "node_modules/.peaceai-loop/mocha-guard.cjs";
+/**
+ * Batch 11 fix (Auditor B2): real mocha (10.8.2, lib/runnable.js) treats ANY `Pending` thrown synchronously by a test
+ * as a clean finish (`if (err instanceof Pending) return done()`), and only this.skip() marks the test pending first.
+ * So code under test that throws `new (require("mocha/lib/pending"))()` inside a failing test made mocha count that
+ * test as passed. This file, required by the shim before the repo's own --require hooks, wraps each runnable's
+ * function for the duration of its call: a Pending thrown synchronously by a runnable that this.skip()
+ * did not mark pending becomes an Error, so the test (or hook) fails. A sanctioned skip stays pending, which the shim
+ * then refuses to credit (guard:shim-mocha-pending). Missing mocha internals throw: mocha exits with no report (fail
+ * closed). Lines tagged m172-pend-guard are mutated against real mocha by m172-real-mocha.test.ts.
+ */
+export const MOCHA_GUARD_SOURCE = [
+  "\"use strict\";",
+  "// PeaceAI loop (M172, batch 11): a Pending this.skip() did not raise fails the test. Written by peaceai/lib/loopdeps.ts.",
+  "const { join } = require(\"node:path\");",
+  "const lib = process.env.PEACEAI_MOCHA_LIB;",
+  "if (!lib) throw new Error(\"PeaceAI loop: PEACEAI_MOCHA_LIB is not set\");",
+  "const Runnable = require(join(lib, \"runnable.js\"));",
+  "const Pending = require(join(lib, \"pending.js\"));",
+  "if (typeof Runnable !== \"function\" || typeof Runnable.prototype.run !== \"function\" || typeof Pending !== \"function\") throw new Error(\"PeaceAI loop: mocha internals not found\");",
+  "const run = Runnable.prototype.run;",
+  "Runnable.prototype.run = function (fn) {",
+  "  const self = this, f = this.fn;",
+  "  if (typeof f !== \"function\") return run.call(this, fn);",
+  "  const check = (e) => {",
+  "    if (e instanceof Pending && !self.pending) return new Error(\"PeaceAI loop: a Pending thrown without this.skip(); the test does not count as passed\"); // m172-pend-guard:convert",
+  "    return e;",
+  "  };",
+  "  const g = function (...a) {",
+  "    // a returned promise rejected with a Pending is already a failure in mocha (Runnable#run: done(reason)); only a",
+  "    // synchronous throw is taken as a clean finish, so only that is converted",
+  "    try { return f.apply(this, a); } catch (e) { throw check(e); }",
+  "  };",
+  "  this.fn = g; // m172-pend-guard:wrap",
+  "  try { return run.call(this, fn); } finally { this.fn = f; }",
+  "};",
+  "",
+].join("\n");
+
+/** Writes the shim (and the mocha pending guard beside it) into the copy. */
 export function installShim(copyDir: string): void {
   mkdirSync(join(copyDir, dirname(SHIM_PATH)), { recursive: true });
   writeFileSync(join(copyDir, SHIM_PATH), SHIM_SOURCE);
+  writeFileSync(join(copyDir, MOCHA_GUARD_PATH), MOCHA_GUARD_SOURCE);
 }
 export function shimArgs(pick: RunnerPick): string[] {
   return [SHIM_PATH, pick.runner, pick.pkgDir, ...(pick.runner === "mocha" ? [...(pick.options ?? []), "--"] : []), ...pick.files];
