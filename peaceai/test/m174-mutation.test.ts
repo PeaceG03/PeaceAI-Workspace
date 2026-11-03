@@ -58,8 +58,8 @@ test("M174 mutation: the guard tags are unique and cover the guards", () => {
     "cap", "host-inside", "host-no-modules", "host-no-modules-lex", "lc-all-fixed", "lc-export-only", "le-body", "le-kind", "le-not-listed", "le-one-decl",
     "le-plain", "le-single", "lm-needs-export", "lm-proposer", "lm-suite-load-only", "loop-row-load", "lr-v2-only", "module-lex-inside", "module-not-team",
     "module-not-test", "module-source", "name-ident", "relative", "row-load-baseline", "row-load-code", "row-load-value",
-    "row-reached-load", "scope-boundary", "scope-count", "scope-exists", "scope-gate", "scope-nonempty", "scope-not-infra", "scope-not-test",
-    "scope-shape", "scope-source", "scope-token", "star-opaque", "star-unknown", "type-only", "type-only-name",
+    "row-reached-load", "scope-exists", "scope-gate", "scope-nonempty", "scope-not-infra", "scope-not-test",
+    "scope-shape", "scope-source", "star-opaque", "star-unknown", "type-only", "type-only-name",
 ].sort());
 });
 
