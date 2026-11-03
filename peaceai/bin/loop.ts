@@ -17,6 +17,7 @@ import { loopPlanner, MAX_ATTEMPTS, ROOT, runLoopFile, type Proposer } from "../
 import { MODEL_PROPOSER, MODEL_V1_PIN, modelProposer, modelV1RunProblem, parseRanking, type ModelV1Pin, type Ranking } from "../lib/modelpropose.ts";
 import { sha256 } from "../lib/plan.ts";
 import { taskKey } from "../lib/plangrade.ts";
+import { reachedTests } from "../lib/looprow.ts";
 import { PROOFS, runIsolationProofs } from "../lib/loopdeps.ts";
 import { runnerWrapper } from "../lib/loop.ts";
 import { stage2CandUid } from "../lib/selfpropose.ts";
@@ -113,6 +114,6 @@ for (const { row: r } of out.results) {
   console.log(`${id} ${r.code} attempts=${r.attempts}/${r.maxAttempts} codes=${r.attemptCodes.map((c) => c.join("+")).join(",") || "-"} runner=${r.runner ?? "-"} deps=${r.deps ?? "-"}${b}${t}`);
 }
 const n = (c: string) => out.results.filter((x) => x.row.result === c).length;
-console.log(`planner=${planner} tasks=${out.results.length} pass=${n("pass")} fail=${n("fail")} refused=${n("refused")} reachedTests=${out.results.filter((x) => x.row.baseline).length}`);
+console.log(`planner=${planner} tasks=${out.results.length} pass=${n("pass")} fail=${n("fail")} refused=${n("refused")} reachedTests=${out.results.filter((x) => reachedTests(x.row)).length}`);
 if (rankingRefused) process.exit(1); // M167: a refused ranking is never a green run
 }

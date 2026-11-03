@@ -8,8 +8,8 @@
 //                whether sudo's variables leaked through (no env -i).
 //                Modes (M151_STUB_PM): sleep (never ends), big (2 MiB file), fail (exit 1), none (no node_modules),
 //                escape (leaves a setsid child running after it exits).
-//   stub vitest: imports each test file (global test(name, fn)), counts, writes the report given by --outputFile.
-//                Modes (M151_STUB_RUNNER, direct shim cases only): noreport, suitefail (a failed suite, yet success / exit 0),
+//   stub vitest: imports each test file (global test(name, fn)), counts, hands the results to the --reporter file.
+//                Modes (M151_STUB_RUNNER, direct shim cases only): noreport, suitefail (two failed suites, yet exit 0),
 //                exitonly (no failure in the report, exit 1).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -63,27 +63,28 @@ export const STUB_PM = [
 ].join("\n");
 
 export const STUB_VITEST_CLI = [
-  'import { writeFileSync } from "node:fs";',
   'import { resolve } from "node:path";',
   'import { pathToFileURL } from "node:url";',
   "const args = process.argv.slice(2);",
-  'const out = args.find((a) => a.startsWith("--outputFile="))?.slice("--outputFile=".length);',
+  '// M173 (batch 12 forging fix): the results go to the reporter it is given (--reporter=FILE, PeaceAI\'s vitest-reporter.mjs)',
+  '// as vitest hands them over: onFinished(files), each file a suite task holding its test tasks',
+  'const rp = args.find((a) => a.startsWith("--reporter="))?.slice("--reporter=".length);',
   'const files = args.filter((a) => a !== "run" && !a.startsWith("-"));',
   'const mode = process.env.M151_STUB_RUNNER || "";',
   'if (mode === "noreport") process.exit(1);',
   "const tests = [];",
   "globalThis.test = (name, fn) => tests.push([name, fn]);",
   "let pass = 0, fail = 0, suites = 0;",
+  "const tree = [];",
   "for (const f of files) {",
-  "  try { await import(pathToFileURL(resolve(f)).href); } catch { suites++; tests.length = 0; continue; }",
-  "  for (const [, fn] of tests.splice(0)) { try { await fn(); pass++; } catch { fail++; } }",
+  '  try { await import(pathToFileURL(resolve(f)).href); } catch { suites++; tests.length = 0; tree.push({ type: "suite", name: f, filepath: f, result: { state: "fail" }, tasks: [] }); continue; }',
+  "  const tasks = [];",
+  '  for (const [name, fn] of tests.splice(0)) { let ok = true; try { await fn(); pass++; } catch { fail++; ok = false; } tasks.push({ type: "test", name, mode: "run", result: { state: ok ? "pass" : "fail" } }); }',
+  '  tree.push({ type: "suite", name: f, filepath: f, result: { state: tasks.some((t) => t.result.state === "fail") ? "fail" : "pass" }, tasks });',
   "}",
-  'if (mode === "suitefail") { fail = 0; suites = 1; }',
-  "const rep = { numPassedTests: pass, numFailedTests: fail, numFailedTestSuites: suites, success: fail === 0 && suites === 0 };",
-  'if (mode === "exitonly") { rep.numFailedTests = 0; rep.numFailedTestSuites = 0; rep.success = true; }',
-  '// suitefail: a runner that reports a failed suite but says success and exits 0 (each shim guard stands alone)',
-  'if (mode === "suitefail") rep.success = true;',
-  "if (out) writeFileSync(out, JSON.stringify(rep));",
+  '// suitefail: two failed suites (no failed test) and exit 0 (each shim guard stands alone: two suites count two)',
+  'if (mode === "suitefail") { fail = 0; suites = 2; tree.push({ type: "suite", name: "s1", result: { state: "fail" }, tasks: [] }, { type: "suite", name: "s2", result: { state: "fail" }, tasks: [] }); }',
+  'if (rp) { const R = (await import(pathToFileURL(rp).href)).default; await new R().onFinished(tree, []); }',
   'process.exit(mode === "exitonly" ? 1 : mode === "suitefail" ? 0 : fail || suites ? 1 : 0);',
   "",
 ].join("\n");

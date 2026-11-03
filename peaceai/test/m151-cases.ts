@@ -669,7 +669,7 @@ export const CASES: Case[] = [
     run(l, ctx) {
       const ok = 'test("a", () => {});\n';
       assert.equal(tail(shim(l, ctx, "noreport", ok)), "# pass 0\n# fail 1");
-      assert.equal(tail(shim(l, ctx, "suitefail", ok)), "# pass 1\n# fail 1");
+      assert.equal(tail(shim(l, ctx, "suitefail", ok)), "# pass 1\n# fail 2");
       assert.equal(tail(shim(l, ctx, "exitonly", ok)), "# pass 1\n# fail 1");
     },
   },

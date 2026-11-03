@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
+import { posix } from "node:path";
 import test from "node:test";
 import { LM_JOBS } from "../lib/lm.ts";
 
@@ -525,4 +527,57 @@ test("M171: the userns guard refuses each near miss (another job, a secret, an e
     const texts: Record<string, string> = id === "another workflow" ? { [f]: wf, "other.yml": "name: x\npermissions: {}\njobs:\n  j:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\n" } : { [f]: text };
     assert.ok(usernsProblems(texts).length > 0, `not refused: ${id}`);
   }
+});
+
+// M173 (Auditor M171 follow-up 2): the userns guard above reads workflow text only. Every tracked shell script, and
+// every tracked file a workflow names by path outside a YAML comment (a `run:` line's script, tool or module, matched by path suffix) together with its relative-import closure, must
+// not name the user-namespace sysctl in code (comments dropped), so a step cannot lift the restriction through a script
+// it runs. Scope (honest): a file reached only through a glob, a bare-specifier or computed import, or a key built at run time, is not seen
+// here; the workflow-side check and the in-wrapper isolation proofs still apply. Docs (*.md) and the attempt workflow
+// itself are not scanned here (the workflow is checked by usernsProblems).
+const USERNS_ANY = /unprivileged_userns/;
+const codeLines = (path: string, text: string) => text.split("\n").filter((l) => !(/\.(?:sh|bash|py|ya?ml)$/.test(path) ? /^\s*#/ : /^\s*(?:\/\/|\*|\/\*)/).test(l)).join("\n");
+/** The tracked files the userns file guard scans: every *.sh, and every file a workflow names by path. */
+export function usernsScanSet(workflowTexts: readonly string[], tracked: readonly string[], readText?: (p: string) => string): string[] {
+  const named = new Set<string>();
+  for (const t of workflowTexts) for (const m of code(t).matchAll(/[A-Za-z0-9_./-]+\.(?:sh|bash|ts|mts|cts|mjs|cjs|js|py)\b/g)) named.add(m[0].replace(/^(?:\.\/)+/, "").replace(/^.*?\/(?=peaceai\/)/, ""));
+  const set = new Set(tracked.filter((p) => !p.endsWith(".md") && !p.startsWith(".github/workflows/") && (/\.(?:sh|bash)$/.test(p) || [...named].some((n) => n.length > 0 && (p === n || p.endsWith(`/${n}`))))));
+  // the relative-import closure of every named module (static `from "./x"` and `import("./x")` only)
+  if (readText) {
+    const all = new Set(tracked);
+    const queue = [...set].filter((p) => /\.(?:ts|mts|cts|mjs|cjs|js)$/.test(p));
+    while (queue.length) {
+      const f = queue.pop()!;
+      for (const m of readText(f).matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)) {
+        const r = posix.normalize(posix.join(posix.dirname(f), m[1]!));
+        if (all.has(r) && !set.has(r)) { set.add(r); queue.push(r); }
+      }
+    }
+  }
+  return [...set];
+}
+export function usernsFileProblems(files: Record<string, string>): string[] {
+  return Object.entries(files).filter(([p, t]) => USERNS_ANY.test(codeLines(p, t))).map(([p]) => `${p}: names the userns sysctl`);
+}
+const trackedFiles = (): string[] => execFileSync("git", ["ls-files", "-z"], { encoding: "utf8", maxBuffer: 1 << 26 }).split("\0").filter(Boolean);
+
+test("M173: no tracked shell script, and no file a workflow runs, names the userns sysctl (M171 follow-up 2)", () => {
+  const tracked = trackedFiles();
+  const set = usernsScanSet(files.map(read), tracked, (p) => readFileSync(p, "utf8"));
+  assert.ok(set.length >= 30, `scan set too small: ${set.length}`);
+  for (const p of ["peaceai/bin/lb-daily-run.sh", "peaceai/bin/loop.ts", "peaceai/lib/loopdeps.ts", "peaceai/lib/loop.ts"]) assert.ok(set.includes(p), `${p} not scanned`);
+  assert.ok(tracked.filter((p) => p.endsWith(".sh")).every((p) => set.includes(p)), "a tracked .sh file is not scanned");
+  assert.deepEqual(usernsFileProblems(Object.fromEntries(set.map((p) => [p, readFileSync(p, "utf8")]))), []);
+});
+
+test("M173: the userns file guard refuses each near miss (a script, a run module, a /proc write) and admits comments and unscanned docs", () => {
+  const set = usernsScanSet(["      # see peaceai/lib/z.ts\n      - run: bash ./peaceai/bin/x.sh && ./node_modules/.bin/tsx peaceai/bin/y.ts\n"], ["peaceai/bin/x.sh", "peaceai/bin/y.ts", "peaceai/lib/z.ts", "tools/w.sh", "docs/n.md"]);
+  assert.deepEqual(set.sort(), ["peaceai/bin/x.sh", "peaceai/bin/y.ts", "tools/w.sh"]);
+  const src: Record<string, string> = { "peaceai/bin/y.ts": 'import { a } from "../lib/a.ts";\n', "peaceai/lib/a.ts": 'export const a = await import("./b.ts");\n', "peaceai/lib/b.ts": "export {};\n", "peaceai/lib/z.ts": "export {};\n" };
+  const closed = usernsScanSet(["      - run: ./node_modules/.bin/tsx peaceai/bin/y.ts\n"], Object.keys(src), (p) => src[p]!);
+  assert.deepEqual(closed.sort(), ["peaceai/bin/y.ts", "peaceai/lib/a.ts", "peaceai/lib/b.ts"], "the import closure, not unrelated modules");
+  assert.equal(usernsFileProblems({ "tools/w.sh": "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\n" }).length, 1, "a script");
+  assert.equal(usernsFileProblems({ "peaceai/bin/y.ts": "spawnSync(\"sysctl\", [\"-w\", \"kernel.apparmor_restrict_unprivileged_userns=0\"]);\n" }).length, 1, "a run module");
+  assert.equal(usernsFileProblems({ "peaceai/bin/x.sh": "echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns\n" }).length, 1, "a /proc write");
+  assert.deepEqual(usernsFileProblems({ "peaceai/bin/x.sh": "# unprivileged_userns is lifted only in the workflow step\necho ok\n", "peaceai/bin/y.ts": "// unprivileged_userns: see the spec\nexport {};\n" }), [], "comments");
 });

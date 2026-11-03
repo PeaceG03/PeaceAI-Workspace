@@ -51,9 +51,13 @@ export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arit
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
 export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
-export type Template = (typeof TEMPLATES)[number] | Idiom;
-/** M168: repair-v2's full order (idioms first, then the v1 templates unchanged). */
-export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES];
+/** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
+export const CONST_TEMPLATES = ["const-value"] as const;
+export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number];
+/** M168: repair-v2's full order (idioms first, then the v1 templates unchanged; M173: then const-value). */
+export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES, ...CONST_TEMPLATES];
+/** M173: at most this many module-scope constant sites (tier 3) are added after the located sites (repair-v2 only). */
+export const MAX_CONST_SITES = 4;
 /** M168: how many levels of same-file callees each proposer locates (v1: 1, unchanged; v2: 2). */
 export const CALLEE_DEPTH = { v1: 1, v2: 2 } as const;
 
@@ -244,7 +248,61 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
       }
     }
   }
-  return sites;
+  const consts = constSites(sites, textOf);
+  if (depth < 2) return sites; // m173-guard:cs-v2-only
+  return [...sites, ...consts];
+}
+
+/**
+ * M173 (repair-v2 only): the module-scope constants the located sites read. A top-level `const` (not `declare`, not a
+ * function or class) whose name a located site reads as a value (not as a property name, not shadowed by a binding
+ * inside the site) becomes a tier-3 site, in site order then source order, at most MAX_CONST_SITES, after every other
+ * site, so the located sites and their order are unchanged. A wrong limit, table or pattern often lives in such a
+ * constant, outside the function the request names.
+ */
+function constSites(sites: readonly Site[], textOf: (p: string) => string | null): Site[] {
+  const out: Site[] = [];
+  for (const site of sites) {
+    const text = textOf(site.path);
+    if (text === null) continue;
+    const sf = parseSource(site.path, text);
+    const consts: { name: string; st: ts.VariableStatement }[] = [];
+    for (const st of sf.statements) {
+      if (!ts.isVariableStatement(st)) continue;
+      if (!(st.declarationList.flags & ts.NodeFlags.Const)) continue; // m173-guard:cs-const
+      if (ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)) continue; // m173-guard:cs-declare
+      for (const d of st.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+        if (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer) || ts.isClassExpression(d.initializer)) continue; // m173-guard:cs-not-fn
+        consts.push({ name: d.name.text, st });
+      }
+    }
+    const bound = new Set<string>();
+    const read = new Set<string>();
+    const visit = (n: ts.Node) => {
+      if (n.getEnd() <= site.start || n.getStart(sf) >= site.end) return;
+      const inside = n.getStart(sf) >= site.start && n.getEnd() <= site.end;
+      if (inside && (ts.isParameter(n) || ts.isVariableDeclaration(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) && n.name && ts.isIdentifier(n.name)) bound.add(n.name.text);
+      if (inside && ts.isIdentifier(n) && n.parent) {
+        const p = n.parent;
+        let isRead = !((p as { name?: ts.Node }).name === n && !ts.isShorthandPropertyAssignment(p) && !ts.isPropertyAccessExpression(p)); // a declared name is not a read
+        if (ts.isPropertyAccessExpression(p) && p.name === n) isRead = false; // m173-guard:cs-ref-expr
+        if (isRead) read.add(n.text);
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    for (const { name, st } of consts) {
+      if (!read.has(name)) continue; // m173-guard:cs-read
+      if (bound.has(name)) continue; // m173-guard:cs-shadow
+      const s = st.getStart(sf), e = st.getEnd();
+      if (s >= site.start && e <= site.end) continue; // the constant is (inside) this site already
+      if (sites.some((x) => x.path === site.path && x.start === s && x.end === e) || out.some((x) => x.path === site.path && x.start === s && x.end === e)) continue;
+      if (out.length >= MAX_CONST_SITES) return out; // m173-guard:cs-cap
+      out.push({ path: site.path, name, start: s, end: e, tier: 3 });
+    }
+  }
+  return out;
 }
 
 // ---- templates
@@ -477,6 +535,35 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
   return out;
 }
 
+/**
+ * M173 const-value (repair-v2 only): a decimal integer literal (0 or 1 to 6 digits, optionally negated) that is the
+ * whole initializer of a top-level `const` inside the site, or one element / one property value directly inside that
+ * initializer's array or object literal -> the value + 1 and - 1. A wrong limit, size or table entry is an off-by-one
+ * that the v1 templates never reach (they edit literals only inside comparisons, arithmetic, indexes and calls).
+ */
+export function constMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
+  const out: Mutation[] = [];
+  for (const st of sf.statements) {
+    if (st.getStart(sf) < site.start || st.getEnd() > site.end || !ts.isVariableStatement(st)) continue;
+    if (!(st.declarationList.flags & ts.NodeFlags.Const)) continue; // m173-guard:cv-const
+    for (const d of st.declarationList.declarations) {
+      if (!d.initializer) continue;
+      const values: ts.Expression[] = [d.initializer];
+      if (ts.isArrayLiteralExpression(d.initializer)) values.push(...d.initializer.elements); // m173-guard:cv-array
+      if (ts.isObjectLiteralExpression(d.initializer)) for (const p of d.initializer.properties) if (ts.isPropertyAssignment(p)) values.push(p.initializer); // m173-guard:cv-object
+      for (const e of values) {
+        const neg = ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken;
+        const lit = neg ? (e as ts.PrefixUnaryExpression).operand : e;
+        if (!ts.isNumericLiteral(lit)) continue;
+        if (!/^(?:0|[1-9]\d{0,5})$/.test(lit.getText(sf))) continue; // m173-guard:cv-int
+        const v = (neg ? -1 : 1) * Number(lit.text);
+        for (const w of [v + 1, v - 1]) out.push({ path: site.path, start: e.getStart(sf), end: e.getEnd(), text: String(w), template: "const-value", site: siteIndex });
+      }
+    }
+  }
+  return out;
+}
+
 const parses = (path: string, text: string): boolean => ((parseSource(path, text) as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics ?? [1]).length === 0;
 const applyAll = (text: string, ms: readonly Mutation[]): string => [...ms].sort((a, b) => b.start - a.start).reduce((t, x) => t.slice(0, x.start) + x.text + t.slice(x.end), text);
 const overlaps = (a: Mutation, b: Mutation) => a.path === b.path && a.start < b.end && b.start < a.end || (a.path === b.path && a.start === b.start);
@@ -519,6 +606,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
     }
     all.push(...mutationsIn(sf, site, i, exported.get(site.path)!));
     if (v2) all.push(...idiomMutationsIn(sf, site, i)); // m168-guard:idioms-v2-only
+    if (v2) all.push(...constMutationsIn(sf, site, i)); // m173-guard:cv-v2-only
   });
   const order: readonly Template[] = v2 ? TEMPLATES_V2 : TEMPLATES;
   const rank = (x: Mutation) => order.indexOf(x.template);

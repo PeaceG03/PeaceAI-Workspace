@@ -40,8 +40,8 @@ import { plannerSha256V4 } from "./plan4run.ts";
 import { selectPlanner, type PlannerName } from "./plandefault.ts";
 import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
-import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
+import { ATTEMPT_CODES, SHIM_SYNTH_CODES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -233,7 +233,23 @@ export function testNames(content: string): string[] {
   return out.slice(0, 200);
 }
 
-export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean; isoFail: IsolationFail | null }
+export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean; isoFail: IsolationFail | null; synth: ShimSynth | null; executed: number }
+/** M173: which made-up count the runner shim reported through its own exit code (null: real counts, or node:test). */
+export type ShimSynth = (typeof SHIM_SYNTH_CODES)[number];
+export function shimSynth(json: boolean, exitCode: number): ShimSynth | null {
+  if (!json) return null; // m173-loop-guard:synth-json-only
+  for (const k of SHIM_SYNTH_CODES) if (SHIM_EXITS[k] === exitCode) return k;
+  return null;
+}
+/** M173: why a baseline that ran proves nothing (null: it proves something, the loop goes on): the shim had no report
+ *  (its 1/0/1 counts are made up), a suite failed to load or run, no test executed, or the only failure is the exit. */
+export function baselineRefusal(base: Pick<RunOutcome, "synth" | "executed">): LoopCode | null {
+  if (base.synth === "NO_REPORT") return "BASELINE_NO_REPORT"; // m173-loop-guard:base-no-report
+  if (base.synth === "SUITE_LOAD") return "BASELINE_SUITE_LOAD"; // m173-loop-guard:base-suite-load
+  if (base.executed < 1) return "NO_TESTS_RAN"; // m173-loop-guard:base-none-ran
+  if (base.synth === "EXIT_ONLY") return "BASELINE_EXIT_ONLY"; // m173-loop-guard:base-exit-only
+  return null;
+}
 /**
  * One test run in the stage-2 isolation: node:test files whole and per named test (TAP), or vitest / jest files whole
  * through the loopdeps shim (counts from the runner's JSON report; per-test names are not collected for them).
@@ -253,6 +269,8 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   if (whole.tampered?.length) codes.add("TAMPERED");
   if (whole.exitCode !== 0 || whole.fail > 0) codes.add("TEST_FAIL");
   if (whole.pass + whole.fail === 0) codes.add("NO_TESTS_RAN");
+  const synth = isolation ? shimSynth(json, whole.exitCode) : null;
+  if (synth) codes.add(synth); // m173-loop-guard:run-synth-code
   const named = json ? [] : files.flatMap((f) => testNames(c.teamTests.get(f) ?? (() => { try { return readFileSync(join(c.dir, f), "utf8"); } catch { return ""; } })()).map((name) => ({ f, name })));
   const failing: string[] = [];
   let passed = 0;
@@ -265,7 +283,7 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   const total = named.length || whole.pass + whole.fail;
   if (failing.length && !codes.has("TEST_FAIL")) codes.add("TEST_FAIL");
   if (passed > total) passed = total;
-  return { codes: [...codes].sort() as AttemptCode[], failing, tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) }, isolation, isoFail };
+  return { codes: [...codes].sort() as AttemptCode[], failing, tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) }, isolation, isoFail, synth, executed: synth === "NO_REPORT" ? 0 : whole.pass + whole.fail };
 }
 
 // ---- the planner (M162)
@@ -479,6 +497,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     if (!base.isolation) return done("ISOLATION_UNAVAILABLE", undefined, base.isoFail);
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
+    const unrun = baselineRefusal(base);
+    if (unrun) return done(unrun); // m173-loop-guard:base-refuse (no edit is scored against a baseline that proved nothing)
     if (base.codes.length === 0) return done("BASELINE_PASSES");
     // (M152) the proposer's search, on the pinned commit without the team's tests
     if (o.proposer.prepare) {

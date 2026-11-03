@@ -37,10 +37,12 @@ const dir = (ctx: Ctx, name: string) => join(ctx.base, "m172", `${name}-${n++}`)
 // mocha
 
 /** A stub mocha CLI: records its argv in $TMPDIR/m172-argv.json; honours --require (relative or a package), --ui
- * (bdd: it/describe, tdd: test/suite); writes the json reporter's report only for `--reporter json --reporter-option
- * output=FILE`; M172_STUB_MOCHA=nostats writes a report with no stats, =pending one with a pending test, =mismatch one whose
- * test count is not passes + failures. Its lib/ has a runnable.js / pending.js for PeaceAI's pending guard. Exit code:
- * the failure count. */
+ * (bdd: it/describe, tdd: test/suite); (M173, batch 12 forging fix) reports through the reporter it is given
+ * (`--reporter FILE`, PeaceAI's mocha-guard.cjs) the way mocha does: Mocha#run builds a Runner (an EventEmitter), the
+ * reporter is constructed inside it and the runner emits `pass` / `fail` / `pending` / `test end` / `end`.
+ * M172_STUB_MOCHA=pending adds a pending test, =pending-noend a pending event with no `test end`, =mismatch a test that ends neither way. Its lib/ has the mocha classes
+ * PeaceAI's guard needs (runnable.js, pending.js, runner.js, suite.js, test.js, hook.js, context.js, mocha.js).
+ * Exit code: the failure count. */
 export const STUB_MOCHA_CLI = [
   'import { writeFileSync } from "node:fs";',
   'import { createRequire } from "node:module";',
@@ -48,30 +50,51 @@ export const STUB_MOCHA_CLI = [
   'import { pathToFileURL } from "node:url";',
   "const args = process.argv.slice(2);",
   'writeFileSync(join(process.env.TMPDIR, "m172-argv.json"), JSON.stringify(args));',
-  "let reporter = null, output = null; const requires = [], files = [];",
+  "let reporter = null; const requires = [], files = [];",
   "for (let i = 0; i < args.length; i++) {",
   "  const a = args[i];",
   '  if (a === "--require" || a === "-r") requires.push(args[++i]);',
   '  else if (a === "--reporter") reporter = args[++i];',
-  '  else if (a === "--reporter-option" && args[i + 1].startsWith("output=")) output = args[++i].slice(7);',
   '  else if (a === "--ui" || a === "--timeout" || a === "--extension") i++;',
   '  else if (!a.startsWith("-")) files.push(a);',
   "}",
+  "const own = createRequire(import.meta.url);",
+  'const Mocha = own("../lib/mocha.js");',
   "const tests = [];",
   "globalThis.it = globalThis.test = (name, fn) => tests.push(fn);",
   "globalThis.describe = globalThis.suite = (name, fn) => fn();",
   "for (const r of requires) await import(r.startsWith(\"./\") ? pathToFileURL(resolve(r)).href : pathToFileURL(createRequire(join(process.cwd(), \"x.js\")).resolve(r)).href);",
-  "let passes = 0, failures = 0;",
+  "const mocha = new Mocha();",
+  "if (reporter) mocha.Reporter = own(reporter);",
+  "let loadFailures = 0; const all = [];",
   "for (const f of files) {",
-  "  try { await import(pathToFileURL(resolve(f)).href); } catch { failures++; tests.length = 0; continue; }",
-  "  for (const fn of tests.splice(0)) { try { await fn(); passes++; } catch { failures++; } }",
+  "  try { await import(pathToFileURL(resolve(f)).href); } catch { loadFailures++; tests.length = 0; continue; }",
+  "  all.push(...tests.splice(0));",
   "}",
   'const mode = process.env.M172_STUB_MOCHA;',
-  'const rep = mode === "nostats" ? { tests: [] } : { stats: { passes, failures, pending: mode === "pending" ? 1 : 0, tests: passes + failures + (mode === "mismatch" ? 1 : 0) }, tests: [] };',
-  'if (reporter === "json" && output) writeFileSync(output, JSON.stringify(rep)); else process.stdout.write(JSON.stringify(rep));',
-  "process.exit(failures);",
+  "mocha.run(async (runner) => {",
+  "  let failures = loadFailures;",
+  '  for (let k = 0; k < loadFailures; k++) runner.emit("fail", {}, new Error("load"));',
+  '  for (const fn of all) { try { await fn(); runner.emit("pass", {}); } catch (e) { failures++; runner.emit("fail", {}, e); } runner.emit("test end", {}); }',
+  '  if (mode === "pending") { runner.emit("pending", {}); runner.emit("test end", {}); }',
+  '  if (mode === "pending-noend") runner.emit("pending", {});',
+  '  if (mode === "mismatch") runner.emit("test end", {});',
+  '  runner.emit("end");',
+  "  process.exit(failures);",
+  "});",
   "",
 ].join("\n");
+
+const STUB_MOCHA_LIB: Record<string, string> = {
+  "runnable.js": "function Runnable() {}\nRunnable.prototype.run = function (fn) { fn(); };\nmodule.exports = Runnable;\n",
+  "pending.js": "function Pending(m) { this.message = m; }\nmodule.exports = Pending;\n",
+  "runner.js": 'const EventEmitter = require("node:events");\nclass Runner extends EventEmitter {}\nmodule.exports = Runner;\n',
+  "suite.js": "function Suite() {}\nmodule.exports = Suite;\n",
+  "test.js": "function Test() {}\nmodule.exports = Test;\n",
+  "hook.js": "function Hook() {}\nmodule.exports = Hook;\n",
+  "context.js": "function Context() {}\nmodule.exports = Context;\n",
+  "mocha.js": 'const Runner = require("./runner.js");\nfunction Mocha() {}\nMocha.prototype.run = function (exec) { const runner = new Runner(); if (typeof this.Reporter === "function") new this.Reporter(runner); return exec(runner); };\nmodule.exports = Mocha;\n',
+};
 
 export function stubMocha(at: string, version = "10.2.0"): string {
   mkdirSync(join(at, "bin"), { recursive: true });
@@ -79,8 +102,7 @@ export function stubMocha(at: string, version = "10.2.0"): string {
   writeFileSync(join(at, "bin/mocha.js"), STUB_MOCHA_CLI);
   mkdirSync(join(at, "lib"), { recursive: true });
   writeFileSync(join(at, "lib/package.json"), JSON.stringify({ type: "commonjs" }));
-  writeFileSync(join(at, "lib/runnable.js"), "function Runnable() {}\nRunnable.prototype.run = function (fn) { fn(); };\nmodule.exports = Runnable;\n");
-  writeFileSync(join(at, "lib/pending.js"), "function Pending(m) { this.message = m; }\nmodule.exports = Pending;\n");
+  for (const [f, c] of Object.entries(STUB_MOCHA_LIB)) writeFileSync(join(at, "lib", f), c);
   return at;
 }
 
@@ -94,15 +116,22 @@ const FAIL1 = "# pass 1\n# fail 1";
 const NONE = "# pass 0\n# fail 1";
 
 /** Runs the shim directly in a fixture dir with the stub mocha; `args` are what follows the runner and pkgDir. */
-function shimRun(l: Libs, ctx: Ctx, files: Record<string, string>, args: string[], o: { mode?: "nostats" | "pending" | "mismatch" } = {}) {
+function shimRun(l: Libs, ctx: Ctx, files: Record<string, string>, args: string[], o: { mode?: "nostats" | "pending" | "pending-noend" | "mismatch" } = {}) {
   const d = plain(dir(ctx, "shim"), { "package.json": pkgJson({ test: "mocha" }, { mocha: "10.2.0" }), ...files });
   stubMocha(join(d, "node_modules/mocha"));
   l.deps.installShim(d);
+  // nostats (M173, batch 12): PeaceAI's own reporter always writes stats, so a report without them comes from a
+  // reporter that went wrong: the guard is installed with its report line changed to write none
+  if (o.mode === "nostats") {
+    const line = 'on.call(runner, "end", () => write(JSON.stringify({ stats: s })));';
+    assert.ok(l.deps.MOCHA_GUARD_SOURCE.includes(line), "the guard's report line");
+    writeFileSync(join(d, l.deps.MOCHA_GUARD_PATH), l.deps.MOCHA_GUARD_SOURCE.replace(line, 'on.call(runner, "end", () => write(JSON.stringify({ tests: [] })));'));
+  }
   const tmp = join(d, ".tmp");
   mkdirSync(tmp);
   const r = spawnSync(process.execPath, [l.deps.SHIM_PATH, "mocha", "", ...args], { cwd: d, encoding: "utf8", env: { PATH: process.env.PATH, TMPDIR: tmp, ...(o.mode ? { M172_STUB_MOCHA: o.mode } : {}) }, timeout: 60_000 });
   const rec = join(tmp, "m172-argv.json");
-  return { tail: (r.stdout ?? "").trimEnd().split("\n").slice(-2).join("\n"), argv: existsSync(rec) ? JSON.parse(readFileSync(rec, "utf8")) as string[] : null, tmp, dir: d };
+  return { tail: (r.stdout ?? "").trimEnd().split("\n").slice(-2).join("\n"), argv: existsSync(rec) ? JSON.parse(readFileSync(rec, "utf8")) as string[] : null, tmp, dir: d, status: r.status };
 }
 /** detectRunner on a fixture: the package.json (scripts, devDependencies) plus extra files. */
 function detect(l: Libs, ctx: Ctx, scripts: Record<string, string>, extra: Record<string, string> = {}, devDeps: Record<string, string> = { mocha: "10.2.0" }) {
@@ -303,7 +332,7 @@ export const CASES: Case[] = [
       assert.deepEqual(args, ["--require", "./test/setup.cjs", "--ui", "bdd", "--", "test/a.test.js"]);
       const r = shimRun(l, ctx, files, args);
       assert.equal(r.tail, PASS1);
-      assert.deepEqual(r.argv, ["--no-config", "--no-package", "--require", join(r.dir, l.deps.MOCHA_GUARD_PATH), "--require", "./test/setup.cjs", "--ui", "bdd", "--reporter", "json", "--reporter-option", `output=${join(r.tmp, "peaceai-loop-report.json")}`, "test/a.test.js"]);
+      assert.deepEqual(r.argv, ["--no-config", "--no-package", "--require", join(r.dir, l.deps.MOCHA_GUARD_PATH), "--require", "./test/setup.cjs", "--ui", "bdd", "--reporter", join(r.dir, l.deps.MOCHA_GUARD_PATH), "test/a.test.js"]);
       assert.deepEqual(l.deps.shimArgs({ runner: "vitest", pkgDir: "", files: ["a"], hasDeps: true }).slice(1), ["vitest", "", "a"], "other runners unchanged");
     },
   },
@@ -324,8 +353,17 @@ export const CASES: Case[] = [
       assert.equal(shimRun(l, ctx, { "test/a.test.js": TWO_FAIL }, ["--", "test/a.test.js"]).tail, "# pass 1\n# fail 2", "two failures are two (not the pending count, not 1)");
       assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { mode: "pending" }).tail, NONE, "a pending test");
       assert.equal(shimRun(l, ctx, { "test/a.test.js": ONE_FAIL }, ["--", "test/a.test.js"], { mode: "pending" }).tail, "# pass 0\n# fail 1", "a pending test with a failure");
+      // M173 (batch 12): PeaceAI's reporter counts tests on `test end`, as mocha's json reporter does, so a pending test
+      // that also ends is a count mismatch too; a `pending` with no `test end` (tests == passes + failures) is caught by
+      // shim-mocha-pending alone
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { mode: "pending-noend" }).tail, NONE, "a pending test that never ends");
       assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { mode: "mismatch" }).tail, NONE, "a test that neither passed nor failed");
       assert.equal(shimRun(l, ctx, { "test/a.test.js": TWO_FAIL }, ["--", "test/a.test.js"], { mode: "mismatch" }).tail, "# pass 0\n# fail 2", "a mismatch keeps the failure count");
+      // M173 (batch 12 merge): those counts are made up, so the shim exits SUITE_LOAD (loopdeps SHIM_EXITS), never the
+      // runner's 1 a real failing test gives; a report with no stats is NO_REPORT; a real failure stays 1, a pass 0
+      const e = l.deps.SHIM_EXITS, st = (f: string, mode?: "nostats" | "pending" | "pending-noend" | "mismatch") => shimRun(l, ctx, { "test/a.test.js": f }, ["--", "test/a.test.js"], mode ? { mode } : {}).status;
+      assert.deepEqual([st(OK, "pending"), st(ONE_FAIL, "pending"), st(OK, "mismatch"), st(TWO_FAIL, "mismatch")], [e.SUITE_LOAD, e.SUITE_LOAD, e.SUITE_LOAD, e.SUITE_LOAD], "pending / mismatch -> SUITE_LOAD");
+      assert.deepEqual([st(OK, "nostats"), st(ONE_FAIL), st(TWO_FAIL), st(OK)], [e.NO_REPORT, 1, 1, 0], "no stats -> NO_REPORT; real failures 1; pass 0");
     },
   },
   // ---- mocha: end to end (real install as the candidate uid, stage-2 isolation)

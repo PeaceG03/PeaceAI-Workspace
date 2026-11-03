@@ -49,11 +49,24 @@ export const LOOP_CODES = [
   "TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE",
   // v2 only: the proposer's search (prepare) threw (M152); the error is dropped, only this code is kept
   "PROPOSER_FAILED",
+  // v4 only (M173): the baseline ran but proved nothing, so no edit is scored against it: no test executed, the runner
+  // shim had no usable report (its 1/0/1 counts are made up), a suite failed to load or run, or the only failure is the
+  // runner's exit status (no failed test)
+  "NO_TESTS_RAN", "BASELINE_NO_REPORT", "BASELINE_SUITE_LOAD", "BASELINE_EXIT_ONLY",
 ] as const;
+/** M173: the task codes of a baseline that ran but proved nothing (attempts 0; a public row keeps its baseline). */
+export const BASELINE_UNRUN_CODES = ["NO_TESTS_RAN", "BASELINE_NO_REPORT", "BASELINE_SUITE_LOAD", "BASELINE_EXIT_ONLY"] as const;
 const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED"];
 export type LoopCode = (typeof LOOP_CODES)[number];
 /** Per-attempt failure codes (filtered: what kind of failure, never its text). */
-export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL"] as const;
+export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL", "NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
+/** M173 (v4 only): an attempt whose failure the runner shim made up (loopdeps.ts SHIM_EXITS), always with TEST_FAIL and
+ *  at most one of them, so a row tells it apart from a real failing test. */
+export const SHIM_SYNTH_CODES = ["NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
+/** M173: a row whose task reached the team's tests: a baseline ran with at least one executed test and a real report. */
+export function reachedTests(row: Pick<LoopRow, "baseline" | "code">): boolean {
+  return row.baseline != null && !(BASELINE_UNRUN_CODES as readonly string[]).includes(row.code); // m173-loop-guard:row-reached
+}
 export type AttemptCode = (typeof ATTEMPT_CODES)[number];
 
 export interface LoopTests {
@@ -148,6 +161,8 @@ export function loopRowProblem(o: unknown): string | null {
   if (model && "lm" in r) return "lm"; // m167-guard:row-model-no-lm
   if (!model && r.lm !== "not-loadable" && r.lm !== "loaded") return "lm";
   if (!(LOOP_CODES as readonly string[]).includes(r.code) || (!v2 && V2_ONLY_CODES.includes(r.code))) return "code";
+  const unrun = (BASELINE_UNRUN_CODES as readonly string[]).includes(r.code);
+  if (unrun && !v4) return "code"; // m173-loop-guard:row-unrun-v4
   if (!nat(r.maxAttempts, 20) || r.maxAttempts < 1) return "max_attempts";
   if (!nat(r.attempts, 20) || r.attempts > r.maxAttempts) return "attempts";
   const result = r.code === "PASS" ? "pass" : r.code === "ATTEMPT_LIMIT" ? "fail" : "refused";
@@ -156,6 +171,9 @@ export function loopRowProblem(o: unknown): string | null {
   if (!Array.isArray(r.attemptCodes) || r.attemptCodes.length !== r.attempts) return "attempt_codes";
   for (const [i, a] of (r.attemptCodes as unknown[]).entries()) {
     if (!Array.isArray(a) || !a.every((c) => (ATTEMPT_CODES as readonly string[]).includes(c as string) && (v2 || !V2_ONLY_CODES.includes(c as string))) || new Set(a).size !== a.length || [...a].sort().join() !== a.join()) return "attempt_codes";
+    const synth = a.filter((c) => (SHIM_SYNTH_CODES as readonly string[]).includes(c as string));
+    if (synth.length && !v4) return "attempt_synth"; // m173-loop-guard:row-synth-v4
+    if (synth.length > 1 || (synth.length && !a.includes("TEST_FAIL"))) return "attempt_synth"; // m173-loop-guard:row-synth-shape
     if ((a.length === 0) !== (r.code === "PASS" && i === r.attempts - 1)) return "attempt_codes_pass";
   }
   if (r.tests !== null) {
@@ -165,6 +183,7 @@ export function loopRowProblem(o: unknown): string | null {
   }
   if (r.code === "PASS" && (r.tests === null || r.tests.filledByTeam !== 0 || r.tests.total === 0)) return "pass_tests";
   if (r.attempts > 0 && r.tests === null) return "tests_presence";
+  if (unrun && r.attempts !== 0) return "baseline_unrun_attempts"; // m173-loop-guard:row-unrun-attempts
   if (v2) {
     // a hidden row is a taskKey plus scores: which runner / package manager and the exact baseline counts could
     // together identify the repo, so they are never written for the hidden set
@@ -178,6 +197,8 @@ export function loopRowProblem(o: unknown): string | null {
       if (r.runner === null || r.deps === null) return "baseline_without_runner";
     }
     if (r.set === "public" && r.attempts > 0 && r.baseline === null) return "baseline_presence";
+    if (r.set === "public" && unrun && r.baseline === null) return "baseline_presence"; // m173-loop-guard:row-unrun-baseline
+    if (r.code === "BASELINE_NO_REPORT" && r.baseline !== null && (r.baseline.total !== 1 || r.baseline.passing !== 0)) return "baseline_no_report"; // m173-loop-guard:row-no-report-shape
     if (r.deps !== null && r.runner === null) return "deps_without_runner";
   }
   if ("depsFail" in r) {
