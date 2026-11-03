@@ -1,6 +1,6 @@
-// M174 (batch 13) behavior cases, as data so m174-mutation.test.ts can replay them against each mutant of loaddiag.ts /
+// M174 (batch 13) behavior cases, as data so m174-mutation.test.ts can replay them against each mutant of
 // editpropose.ts / loop.ts / looprow.ts. Spec: peaceai/spec/load-diagnostics-m174.md.
-//   1. load diagnostics (lib/loaddiag.ts): filtered TypeScript codes for a team test that imports a name a relative
+//   1. load diagnostics (lib/loop.ts loadDiagnostics): filtered TypeScript codes for a team test that imports a name a relative
 //      source module does not export (MISSING_EXPORT) or a relative module that does not exist (MISSING_MODULE);
 //   2. repair-v2's load-repair candidates (lib/editpropose.ts): export an existing declaration, or re-export the one
 //      existing export of the name; never a new body;
@@ -14,13 +14,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type * as Diag from "../lib/loaddiag.ts";
 import type * as Propose from "../lib/editpropose.ts";
 import type * as Loop from "../lib/loop.ts";
 import type * as Row from "../lib/looprow.ts";
 import { MIT, pkgJson, type Ctx as Ctx151 } from "./m151-fixtures.ts";
 
-export interface Libs { diag: typeof Diag; propose: typeof Propose; loop: typeof Loop; row: typeof Row }
+export interface Libs { diag: typeof Loop; propose: typeof Propose; loop: typeof Loop; row: typeof Row }
 export interface Ctx { m151: Ctx151; scratch: string }
 export interface Case { id: string; needsCand?: boolean; run(l: Libs, ctx: Ctx): void }
 
@@ -28,7 +27,7 @@ const put = (dir: string, files: Record<string, string>) => { for (const [p, c] 
 let seq = 0;
 const tree = (ctx: Ctx, files: Record<string, string>): string => { const d = join(ctx.scratch, `t-${seq++}`); put(d, files); return d; };
 const diags = (l: Libs, ctx: Ctx, files: Record<string, string>, tests: string[], team?: string[]) => l.diag.loadDiagnostics(tree(ctx, files), tests, team ? new Set(team) : undefined);
-const brief = (ds: readonly Diag.LoadDiag[]) => ds.map((d) => `${d.kind} ${d.module} ${d.name}`.trimEnd());
+const brief = (ds: readonly Loop.LoadDiag[]) => ds.map((d) => `${d.kind} ${d.module} ${d.name}`.trimEnd());
 
 // ---- shape A: an inventory module whose restock helper is module-local
 const STOCK = "const SAFETY = 2;\n\nfunction restockLevel(onHand, daily) {\n  return Math.max(0, daily * 7 + SAFETY - onHand);\n}\n\nexport function inStock(onHand) {\n  return onHand > 0;\n}\n";
@@ -250,17 +249,6 @@ export const CASES: readonly Case[] = [
     },
   },
   {
-    id: "loop: loopSha256 binds lib/loaddiag.ts (m174-guard:sha-loaddiag)",
-    run(l, ctx) {
-      const root = join(ctx.scratch, `root-${seq++}`);
-      const lib = join(l.loop.ROOT, "peaceai/lib");
-      for (const f of ["loop.ts", "looprow.ts", "loopdeps.ts", "editpropose.ts", "modelpropose.ts", "loaddiag.ts"]) put(root, { [`peaceai/lib/${f}`]: readFileSync(join(lib, f), "utf8") });
-      const a = l.loop.loopSha256(root);
-      writeFileSync(join(root, "peaceai/lib/loaddiag.ts"), readFileSync(join(lib, "loaddiag.ts"), "utf8") + "\n");
-      assert.notEqual(l.loop.loopSha256(root), a);
-    },
-  },
-  {
     id: "rows: baselineLoad is a v4 fixed code on a post-baseline outcome with its baseline; such a row did not reach the team's tests",
     run(l) {
       const p = l.row.loopRowProblem;
@@ -329,7 +317,7 @@ export const CASES: readonly Case[] = [
       assert.equal(a.row.code, "ATTEMPT_LIMIT");
       assert.deepEqual(a.row.attemptCodes, [["SUITE_LOAD", "TEST_FAIL"]]);
       assert.equal(a.row.baselineLoad, "MISSING_EXPORT");
-      assert.deepEqual((seen as Diag.LoadDiag[]).map((d) => d.name), ["restockLevel"], "the proposer got the diagnostics");
+      assert.deepEqual((seen as Loop.LoadDiag[]).map((d) => d.name), ["restockLevel"], "the proposer got the diagnostics");
       const buggy = { "src/stock.ts": STOCK.replace("daily * 7", "daily * 6") };
       const b = loopRun(l, ctx, "stock-buggy", buggy, STOCK_TEST, v2(l), 2);
       assert.equal(b.row.code, "NO_MORE_EDITS");

@@ -4,7 +4,6 @@ import { after, before, test } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as diag from "../lib/loaddiag.ts";
 import * as propose from "../lib/editpropose.ts";
 import * as loop from "../lib/loop.ts";
 import * as row from "../lib/looprow.ts";
@@ -18,6 +17,6 @@ after(() => { teardown(ctx.m151); rmSync(ctx.scratch, { recursive: true, force: 
 for (const c of CASES) {
   test(`M174 load: ${c.id}`, (t) => {
     if (c.needsCand && !ctx.m151.cand) { t.skip("needs the stage-2 candidate uid (box / private job)"); return; }
-    c.run({ diag, propose, loop, row }, ctx);
+    c.run({ diag: loop, propose, loop, row }, ctx);
   });
 }

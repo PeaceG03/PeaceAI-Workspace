@@ -1,5 +1,5 @@
-// M174 mutation check: every M174 guard is a single line tagged "// m174-guard:<id>" in peaceai/lib/loaddiag.ts,
-// editpropose.ts, loop.ts or looprow.ts. For each one this test deletes that line and runs the M174 cases
+// M174 mutation check: every M174 guard is a single line tagged "// m174-guard:<id>" in peaceai/lib/editpropose.ts,
+// loop.ts (the load diagnostics live there) or looprow.ts. For each one this test deletes that line and runs the M174 cases
 // (m174-cases.ts) against the mutant in a child process group (capped at MUTANT_MS, group killed); at least one case
 // must fail an assertion (not crash). Guards that only act in a real loop run need the stage-2 candidate uid.
 import { after, before, test } from "node:test";
@@ -14,7 +14,7 @@ import { stage2CandUid } from "../lib/selfpropose.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const libDir = join(ROOT, "peaceai/lib");
-const LIB_FILES = ["loaddiag.ts", "editpropose.ts", "looprow.ts", "loop.ts"] as const;
+const LIB_FILES = ["editpropose.ts", "looprow.ts", "loop.ts"] as const;
 const TAG = /\/\/ m174-guard:([a-z0-9-]+)(?:[\s",].*)?$/;
 const sources: Record<string, string> = Object.fromEntries(LIB_FILES.map((f) => [f, readFileSync(join(libDir, f), "utf8")]));
 const guards = Object.entries(sources).flatMap(([file, text]) => text.split("\n").flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, file, line: i }] : []; }));
@@ -38,7 +38,7 @@ function runMutant(name: string, file: string, text: string): Promise<{ failed: 
   const local = Object.fromEntries(LIB_FILES.map((f) => [f, join(dir, `mutant-${name}-${f}`)]));
   for (const f of LIB_FILES) writeFileSync(local[f]!, rewrite(f === file ? text : sources[f]!, local, libDir));
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, [...process.execArgv, join(import.meta.dirname, "m174-mutant-runner.ts"), local["loaddiag.ts"]!, local["editpropose.ts"]!, local["looprow.ts"]!, local["loop.ts"]!], { detached: true, stdio: ["ignore", "pipe", "inherit"] });
+    const child = spawn(process.execPath, [...process.execArgv, join(import.meta.dirname, "m174-mutant-runner.ts"), local["editpropose.ts"]!, local["looprow.ts"]!, local["loop.ts"]!], { detached: true, stdio: ["ignore", "pipe", "inherit"] });
     let out = "";
     child.stdout.on("data", (d) => { out += d; });
     const timer = setTimeout(() => { try { process.kill(-child.pid!, "SIGKILL"); } catch { /* gone */ } }, MUTANT_MS);
@@ -58,7 +58,7 @@ test("M174 mutation: the guard tags are unique and cover the guards", () => {
     "cap", "host-inside", "host-no-modules", "host-no-modules-lex", "lc-all-fixed", "lc-export-only", "le-body", "le-kind", "le-not-listed", "le-one-decl",
     "le-plain", "le-single", "lm-needs-export", "lm-proposer", "lm-suite-load-only", "loop-row-load", "lr-v2-only", "module-lex-inside", "module-not-team",
     "module-not-test", "module-source", "name-ident", "re-not-test", "re-unique", "relative", "row-load-baseline", "row-load-code", "row-load-value",
-    "row-reached-load", "sha-loaddiag", "star-opaque", "star-unknown", "type-only", "type-only-name",
+    "row-reached-load", "star-opaque", "star-unknown", "type-only", "type-only-name",
 ].sort());
 });
 

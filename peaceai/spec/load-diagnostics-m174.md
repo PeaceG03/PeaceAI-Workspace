@@ -1,7 +1,9 @@
 # M174 (batch 13): compile-diagnostic feedback for a team suite that does not load
 
-Code: peaceai/lib/loaddiag.ts (new), peaceai/lib/editpropose.ts (repair-v2 load-repair candidates),
-peaceai/lib/loop.ts (loadRepairDiags, loopSha256), peaceai/lib/looprow.ts (row field baselineLoad).
+Code: peaceai/lib/loop.ts (loadDiagnostics, confinedHost, loadRepairDiags), peaceai/lib/editpropose.ts (repair-v2
+load-repair candidates), peaceai/lib/looprow.ts (row field baselineLoad). No new lib file: the diagnostics live in
+loop.ts, which is already in the protected lib closure of bin/loop.ts (selfchange.ts M167 entries, closure test m96)
+and already hashed by loopSha256, so PROTECTED_DIGEST and the never-zone sets (m132) are unchanged.
 Tests: m174-load.test.ts, m174-cases.ts, m174-mutation.test.ts (+ m174-mutant-runner.ts).
 repair-v1, model-v1 (which ranks repair-v1's list), rules-v1 and every planner are unchanged.
 
@@ -26,7 +28,7 @@ fixture, template or idiom is modelled on any dev task or reference diff; every 
 unrelated shape written for this test (an inventory restock helper, a shapes barrel, a palette module, a calendar
 helper, a unit-price table). No dev-task gain is expected or claimed; box runs never count for model-v1 results.
 
-## Mechanism 1: load diagnostics (lib/loaddiag.ts)
+## Mechanism 1: load diagnostics (lib/loop.ts loadDiagnostics)
 
 Source: the TypeScript compiler API over the copy (a program whose roots are the team's test files), run by the
 runner, executing nothing. The runner's stdout is never parsed: candidate code can write it, so it would be a forging
@@ -84,8 +86,8 @@ no shim code. An edit after which the suite still does not load is scored SUITE_
 Rows: such a row carries `baselineLoad: "MISSING_EXPORT"` (v4 rows only, loop-row-load). loopRowProblem accepts it
 only with that value (row-load-value), only on a post-baseline outcome code, never on a baseline refusal
 (row-load-code), and a public row must keep its baseline (row-load-baseline). `reachedTests` is false for it
-(row-reached-load): the baseline never ran the team's tests, even if the task later passes. loopSha256 hashes
-lib/loaddiag.ts (sha-loaddiag), so a row binds the diagnostics version.
+(row-reached-load): the baseline never ran the team's tests, even if the task later passes. loopSha256 already
+hashes lib/loop.ts, where the diagnostics live, so a row binds the diagnostics version.
 
 The planner runs before the baseline and gets no diagnostics; only the proposer does.
 
@@ -97,7 +99,7 @@ templates in one candidate, and three specifier styles. Near misses, one per con
 refused case in m174-cases.ts (the tag is named in the assertion message). End to end near misses: a proposer
 without loadRepair, and a missing module only, both refuse BASELINE_SUITE_LOAD and the proposer is never asked; an edit
 that keeps the suite unloaded is ATTEMPT_LIMIT with [["SUITE_LOAD","TEST_FAIL"]]; a loaded suite with a buggy function
-ends NO_MORE_EDITS with [["TEST_FAIL"]]. Mutation: m174-mutation.test.ts deletes each of the 34 `// m174-guard:`
+ends NO_MORE_EDITS with [["TEST_FAIL"]]. Mutation: m174-mutation.test.ts deletes each of the 33 `// m174-guard:`
 lines in turn and requires at least one case to fail an assertion (a crash is not a failure); the tag list is pinned.
 
 ## Soundness
@@ -110,3 +112,25 @@ lines in turn and requires at least one case to fail an assertion (a crash is no
 - Limits / residuals: only relative imports of TS sources; JS sources, declaration files, packages and modules
   behind an opaque `export *` are not diagnosed; a missing module, a type error, a missing class member or a
   missing default export gets no candidate; the planner does not see diagnostics; no dev-task gain is claimed.
+- What the diagnostics read: the copy's files after the baseline run. The copy is owned by the runner (0755, files
+  not writable by the candidate uid; M171 write proof), node_modules is excluded by the host, and the result is only a
+  list of identifiers and repo paths handed in-process to the proposer. They choose which edit is tried, never how it
+  is scored.
+- Public logs: a row (and so loop-log.jsonl / Results) gets only the fixed code `baselineLoad: "MISSING_EXPORT"`.
+  Diagnostic names, modules, test paths and TypeScript message text are never written to a row, a log or stdout.
+- A suite that never loaded is never scored PASS: the baseline that did not load is not a pass/fail comparison
+  (`reachedTests` stays false for the row), and an attempt is PASS only with no attempt code at all, i.e. a real
+  nonce report on fd 3 from the PeaceAI reporter (M173), exit 0 and >= 1 executed test. The M173 forging guards
+  (loopdeps.ts launch.cjs nonce + fd3, reporter claim at preload, caller check, dot-dir refusal, mocha locks) are
+  untouched: loopdeps.ts is not changed, and load-repair attempts go through the same runTests as every attempt.
+- Relation to the Auditor ruling on run 41556098711 ("a suite that never loaded must not have edits scored
+  against it"): M174 is a narrow, explicit exception that needs Auditor's ruling. Edits are tried only when the
+  diagnostics name a missing export (a fail-before the team's own tests define), the row is marked baselineLoad and
+  never counts as reaching the tests, and its PASS still needs the full M173 acceptance above. Without that ruling
+  the exception can be switched off by refusing load-repair rows in crediting (reachedTests false already excludes
+  them from any reached-tests count).
+- Load repairs never write a body: load-export inserts the keyword `export `; load-reexport appends one
+  `export { name } from "<spec>";` line naming an existing export. No other text is produced.
+- Load-repair rows are validated downstream like every row: ci.yml test:tools -> m146 -> looprow loopRowProblem,
+  which accepts baselineLoad only on v4 rows, only with the value MISSING_EXPORT, only with a post-baseline code, and
+  only with the public row's baseline present.

@@ -24,7 +24,7 @@ test("M152: the proposer is general: no project, repo or task names, no network,
   assert.doesNotMatch(code, /PeaceSTOCKS|peacestocks|scanner|github\.com|https?:\/\//i);
   assert.doesNotMatch(code, /node:(?:child_process|net|http|https|fs|dgram|worker_threads)|\bfetch\(|\beval\(|new Function/);
   const imports = [...code.matchAll(/from "([^"]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(imports, ["./codesearch.ts", "node:crypto", "typescript"]);
+  assert.deepEqual(imports, ["./codesearch.ts", "node:crypto", "node:path", "typescript"]); // M174: node:path (posix, pure path math) for load-reexport specifiers
 });
 
 test("M152: the template order is fixed and every template is reachable from a case", () => {

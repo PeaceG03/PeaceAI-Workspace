@@ -1,4 +1,4 @@
-// M174 mutation runner (child process): imports one mutant set of loaddiag.ts / editpropose.ts / looprow.ts / loop.ts,
+// M174 mutation runner (child process): imports one mutant set of editpropose.ts / looprow.ts / loop.ts,
 // runs every M174 case against it and prints one JSON line {failed, crashed, skipped, cand}. Run in its own process
 // group by m174-mutation.test.ts (capped, group killed).
 import assert from "node:assert/strict";
@@ -9,10 +9,10 @@ import { pathToFileURL } from "node:url";
 import { CASES } from "./m174-cases.ts";
 import { setup as setup151, teardown as teardown151 } from "./m151-fixtures.ts";
 
-const diag = await import(pathToFileURL(process.argv[2]!).href);
-const propose = await import(pathToFileURL(process.argv[3]!).href);
-const row = await import(pathToFileURL(process.argv[4]!).href);
-const loop = await import(pathToFileURL(process.argv[5]!).href);
+const propose = await import(pathToFileURL(process.argv[2]!).href);
+const row = await import(pathToFileURL(process.argv[3]!).href);
+const loop = await import(pathToFileURL(process.argv[4]!).href);
+const diag = loop; // M174: the load diagnostics live in loop.ts
 const ctx = { m151: setup151(), scratch: mkdtempSync(join(tmpdir(), "peaceai-m174-")) };
 const failed: string[] = [];
 const crashed: string[] = [];

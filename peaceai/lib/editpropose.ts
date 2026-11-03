@@ -32,9 +32,10 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import ts from "typescript";
 import { isGeneratedPath, isTestPath, type CodeRepo } from "./codesearch.ts";
-import type { LoadDiag } from "./loaddiag.ts";
 
 /** The loop's proposer interface (structural copy of loop.ts Proposer / ProposeInput: no import cycle). */
+/** M174: structural copy of loop.ts LoadDiag (one filtered load diagnostic). */
+export interface LoadDiag { kind: "MISSING_EXPORT" | "MISSING_MODULE"; test: string; module: string; name: string; spec: string }
 export interface RepairEdit { path: string; content: string }
 export interface RepairFeedback { attempt: number; codes: readonly string[]; failing: readonly string[]; tests?: { total: number; passedByPeaceAI: number } | null }
 export interface RepairInput { files: readonly { path: string; content: string }[]; attempt: number; feedback: readonly RepairFeedback[]; baseline?: { total: number; passing: number; failing: number } | null; loadDiagnostics?: readonly LoadDiag[] }
