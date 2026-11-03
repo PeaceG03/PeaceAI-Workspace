@@ -23,8 +23,9 @@ const dir = (ctx: Ctx, name: string) => join(ctx.base, "m170", `${name}-${n++}`)
 /** vitest < 2's CLI: runs and reports like the m151 stub, then its results-cache write into the read-only
  * node_modules fails, so it always exits 1. */
 export const STUB_VITEST_LEGACY_CLI = STUB_VITEST_CLI.replace(/^process\.exit\(mode === "exitonly".*$/m, "process.exit(1); // the results-cache write (node_modules/.vitest) fails");
-/** vitest's node API (startVitest), stubbed: records what it was given in $TMPDIR/m170-api.json; writes the report only
- * for run / no watch / a json reporter / an outputFile; exits 1 unless the results cache is off (like the CLI). */
+/** vitest's node API (startVitest), stubbed: records what it was given in $TMPDIR/m170-api.json; reports only for run /
+ * no watch / one reporter instance (M173, batch 12: PeaceAI's, made by launch.cjs; given the results as vitest does,
+ * onFinished(files)); exits 1 unless the results cache is off (like the CLI). */
 export const STUB_VITEST_NODE = [
   'import { writeFileSync } from "node:fs";',
   'import { join, resolve } from "node:path";',
@@ -33,13 +34,16 @@ export const STUB_VITEST_NODE = [
   '  writeFileSync(join(process.env.TMPDIR, "m170-api.json"), JSON.stringify({ mode, files, opts, vite }));',
   "  const tests = [];",
   "  globalThis.test = (name, fn) => tests.push(fn);",
-  "  let pass = 0, fail = 0, suites = 0;",
+  "  let fail = 0, suites = 0;",
+  "  const tree = [];",
   "  for (const f of files) {",
-  "    try { await import(pathToFileURL(resolve(f)).href); } catch { suites++; tests.length = 0; continue; }",
-  "    for (const fn of tests.splice(0)) { try { await fn(); pass++; } catch { fail++; } }",
+  '    try { await import(pathToFileURL(resolve(f)).href); } catch { suites++; tests.length = 0; tree.push({ type: "suite", name: f, result: { state: "fail" }, tasks: [] }); continue; }',
+  "    const tasks = [];",
+  '    for (const fn of tests.splice(0)) { let ok = true; try { await fn(); } catch { fail++; ok = false; } tasks.push({ type: "test", mode: "run", result: { state: ok ? "pass" : "fail" } }); }',
+  '    tree.push({ type: "suite", name: f, result: { state: tasks.some((t) => t.result.state === "fail") ? "fail" : "pass" }, tasks });',
   "  }",
-  '  if (mode !== "test" || opts.run !== true || opts.watch !== false || !Array.isArray(opts.reporters) || !opts.reporters.includes("json") || typeof opts.outputFile !== "string") { process.exitCode = 1; return undefined; }',
-  "  writeFileSync(opts.outputFile, JSON.stringify({ numPassedTests: pass, numFailedTests: fail, numFailedTestSuites: suites, success: !fail && !suites }));",
+  '  if (mode !== "test" || opts.run !== true || opts.watch !== false || !Array.isArray(opts.reporters) || opts.reporters.length !== 1 || typeof (opts.reporters[0] && opts.reporters[0].onFinished) !== "function") { process.exitCode = 1; return undefined; }',
+  "  await opts.reporters[0].onFinished(tree, []);",
   "  process.exitCode = opts.cache !== false || fail || suites || process.env.M170_STUB_EXIT ? 1 : 0;",
   "  return { close: async () => {} };",
   "}",
@@ -84,8 +88,8 @@ export const CASES: Case[] = [
         assert.ok(r.api, `vitest ${v} went through the node API`);
         assert.equal(r.api.mode, "test");
         assert.deepEqual(r.api.files, ["test/a.test.mjs"]);
-        assert.deepEqual([r.api.opts.run, r.api.opts.watch, r.api.opts.cache, r.api.opts.reporters], [true, false, false, ["json"]]);
-        assert.equal(r.api.opts.outputFile, join(r.tmp, "peaceai-loop-report.json"));
+        assert.deepEqual([r.api.opts.run, r.api.opts.watch, r.api.opts.cache, r.api.opts.reporters.length], [true, false, false, 1]);
+        assert.equal(r.api.opts.outputFile, undefined, "(M173, batch 12) no report file: PeaceAI's reporter instance reports on fd 3");
         assert.equal(r.api.vite.cacheDir, join(r.tmp, "vite-cache"), "vite's cache goes to TMPDIR, not node_modules");
       }
     },

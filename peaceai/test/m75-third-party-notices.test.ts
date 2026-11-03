@@ -13,12 +13,13 @@ const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const NOTICES = read("THIRD_PARTY_NOTICES");
 const PERMISSIVE = /^(?:MIT|Apache-2\.0|BSD-[23]-Clause|ISC)$/;
 const OWN = "peaceai/test/fixtures/m67/peacestocks/";
-// Exempt (batch 11 fix, Auditor B1): pinned-install fixtures for the real-runner tests (m172-real-vitest, m172-real-mocha).
+// Exempt (batch 11 fix, Auditor B1): pinned-install fixtures for the real-runner tests (m172-real-vitest, m172-real-mocha, m173-forge).
 // They copy no third-party file: a package.json written in this repo and the package-lock.json npm generated from it
 // (package names, versions, registry URLs and integrity hashes only; no code, no license text). The packages are
 // installed into a temp dir at test time and never committed, so there is no copied work to attribute. The last test
 // below holds them to exactly that shape, so the exemption cannot cover anything else.
-const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/"];
+// Batch 12 (M173 forging fix): the same kind of fixture for m173-forge (vitest 4.1.10, jest 29.7.0).
+const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/", "peaceai/test/fixtures/m173-forge-jest29/", "peaceai/test/fixtures/m173-forge-vitest4/"];
 
 type Group = { repo: string; license: string; file: string; sha: string; rows: { commit: string; path: string }[]; url: string; asWritten: string | null; text: string };
 const groups: Group[] = NOTICES.split(`\n${"=".repeat(78)}\n`).slice(1).map((blk) => {

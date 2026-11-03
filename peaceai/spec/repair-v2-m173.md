@@ -118,3 +118,52 @@ each of the 16 `m173-loop-guard` lines makes a case fail (two need the candidate
    every open work dir; the signal hooks re-raise the same signal so the process still ends by it. close()
    unregisters. Tested in child processes (each signal, process.exit, an uncaught throw) with mutants (no hooks, no
    re-raise). SIGKILL cannot be caught and is not covered.
+
+## Report forging (Auditor, blocks crediting any PASS; pre-existing on main)
+
+The hazard: the loop shim read the runner's verdict from `$TMPDIR/peaceai-loop-report.json`. Code under test can write
+TMPDIR, so writing a passing report there and calling `process.exit(0)` was credited as a pass; so was patching
+mocha's `Runnable.prototype.run` (the guard counted the runner's own events). `m173-forge.test.ts` shows both on the
+raw runners (the old file protocol) before showing them refused.
+
+The verdict channel now:
+
+- The shim (`run.mjs`) makes a 32-byte random nonce and starts `launch.cjs` with the nonce on stdin and fd 3 a pipe
+  only the shim reads. `launch.cjs` reads the nonce off fd 0 before any runner or candidate code is loaded (so it is in
+  no argv, env or file), then exposes a one-shot `claim` (a second claim, or a claim with no valid nonce, writes the
+  poison line) returning a one-shot writer (no newline allowed). The shim credits only exactly one line
+  `PEACEAI-REPORT <nonce> <json>` on fd 3; anything else (no line, two lines, a poison line, a wrong nonce) is
+  BASELINE_NO_REPORT, a refusal. The report file is gone.
+- PeaceAI's reporters (jest `--reporters=`, vitest `--reporter=`, the mocha guard as `--reporter`) claim at load and
+  accept only one construction, and only from a caller whose realpath is in the installed runner packages
+  (`process[Symbol.for("peaceai.loop.from")]`, V8 callsites through a captured `Error.captureStackTrace`; a locked
+  `Error.prepareStackTrace` is a refusal). A dot dir right under node_modules other than the package stores does not
+  count: vite bundles a config into `node_modules/.vite-temp`. Copies of node_modules in TMPDIR do not count either.
+  The jest reporter computes success itself from the aggregated counts.
+- Mocha: only the CLI's own Mocha instance runs with the guard (a spec making its own Mocha with the guard reporter is
+  refused); the reporter is valid only inside that run and once; `Runner.prototype.emit` is pinned; the
+  Runnable/Runner/Suite/Test/Hook/Context/Mocha prototypes are locked (accessors that refuse writes to the prototype
+  but still allow mocha's own instance writes such as `this.skip`), and `node:assert` / `assert.strict` are frozen.
+
+Every guard line carries a `// m173-forge-guard:<tag>` comment; `m173-forge.test.ts` checks the tag list, runs forging
+attacks on real mocha 10, jest 29 and vitest 4 ((a) fake report file + exit 0, a fake fd-3 line, a claimed writer,
+(b) prototype patches, (c) reporter construction from a config or spec) and requires each to be refused, then for each
+tag deletes that line and requires its attack to be credited (mutation check). `launch-write-once`, `launch-dot-dir` and
+the reporter-once tags are mutation-checked at the launch / stub level.
+
+Skips (documented, not aligned). Skips-only never PASS on any of the three runners: vitest and jest report pass 0 (not
+creditable), mocha refuses any pending test (`m172-guard:shim-mocha-pending`, exit SUITE_LOAD). A pass beside a skip
+differs: mocha refuses it, vitest and jest credit it. Strict alignment (any skip / todo refuses, on all three) was built
+and probed on the box: it refused yup-string-not-required at baseline (its team file `test/string.ts` holds a static
+`xit`), losing one of the 4 creditable box PASSes, while adding no protection beyond the residuals below (code under
+test that can reach the framework in-process, e.g. vitest's current-test context skip or jest's patchable globals, can
+already forge a result). So mocha keeps its batch-11 rule (a `Pending` thrown by code under test is a cheap, exception-only
+route) and vitest / jest keep counting a static skip beside passes. `m173-forge.test.ts` pins all three behaviours.
+
+Residuals (not closed, documented): a candidate reading the nonce from `/proc/self/mem` or through the inspector; a
+config driving the runner's own API (e.g. `createVitest`) so that the runner's code constructs the reporter first;
+mocha `--require` hooks that make their own Mocha before the CLI does; instance-level patching (`test.run = ...` on
+instances from hooks); third-party assertion libraries (only `node:assert` is frozen); jest internals run in-band;
+in-process framework reach on vitest / jest (a run-time skip of the current test, patched `it` / `expect` globals).
+There is no yama/ptrace hardening on the box. A follow-up should gate the loop on an L0 edit token so candidate edits
+to test infrastructure are rejected before any run.

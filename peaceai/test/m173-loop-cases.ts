@@ -25,11 +25,12 @@ export interface Case { id: string; needsCand?: boolean; run(l: Libs, ctx: Ctx):
 const put = (dir: string, files: Record<string, string>) => { for (const [p, c] of Object.entries(files)) { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), c); } };
 let seq = 0;
 
-// ---- the shim, run directly (plain node, no candidate uid): a fake jest whose report and exit come from env
+// ---- the shim, run directly (plain node, no candidate uid): a fake jest whose results and exit come from env; (M173,
+// batch 12 forging fix) it hands the results to the reporter it is given (--reporters, PeaceAI's jest-reporter.cjs)
+// the way jest does: constructed once, onRunComplete(contexts, aggregatedResults)
 const FAKE_JEST = [
-  'const fs = require("node:fs");',
-  'const out = process.argv.find((a) => a.startsWith("--outputFile="))?.slice("--outputFile=".length);',
-  'if (out && process.env.M173_REPORT) fs.writeFileSync(out, process.env.M173_REPORT);',
+  'const rp = process.argv.find((a) => a.startsWith("--reporters="))?.slice("--reporters=".length);',
+  'if (rp && process.env.M173_REPORT) { const R = require(rp); new R({}, {}).onRunComplete(new Set(), JSON.parse(process.env.M173_REPORT)); }',
   'process.exit(Number(process.env.M173_EXIT || "0"));',
   "",
 ].join("\n");
@@ -124,7 +125,8 @@ export const CASES: readonly Case[] = [
     run(l, ctx) {
       const e = l.deps.SHIM_EXITS;
       assert.deepEqual(shimRun(l, ctx, rep(2, 0), 1), { tail: "# pass 2\n# fail 1", status: e.EXIT_ONLY });
-      assert.deepEqual(shimRun(l, ctx, { ...rep(2, 0), success: false }, 0), { tail: "# pass 2\n# fail 1", status: e.EXIT_ONLY });
+      // (batch 12) PeaceAI's jest reporter derives success as jest does (a snapshot failure makes it false)
+      assert.deepEqual(shimRun(l, ctx, { ...rep(2, 0), snapshot: { failure: true } }, 0), { tail: "# pass 2\n# fail 1", status: e.EXIT_ONLY });
       assert.equal(shimRun(l, ctx, rep(2, 0), 0).status, 0, "near miss: exit 0, success");
     },
   },

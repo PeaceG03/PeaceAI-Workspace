@@ -95,7 +95,9 @@ const MUTANTS: { id: string; src: () => { shim: string; guard: string } }[] = [
   // shim-mocha-pending alone changes nothing on mocha 10.8.2 (it is killed on the stub's pending report in
   // m172-mutation.test.ts); deleting both must change a result here
   { id: "m172-guard:shim-mocha-pending and shim-mocha-total together", src: () => ({ shim: without(without(SHIM_SOURCE, /\/\/ m172-guard:shim-mocha-pending$/), /\/\/ m172-guard:shim-mocha-total$/), guard: MOCHA_GUARD_SOURCE }) },
-  { id: "no guard required (shim-mocha-args without the guard)", src: () => ({ shim: SHIM_SOURCE.replace('"--require", guard, ', ""), guard: MOCHA_GUARD_SOURCE }) },
+  // (M173, batch 12) the guard is also launch.cjs's preload and mocha's reporter, so it is loaded without the
+  // --require too: that mutant is no longer a change in behaviour and is not listed; the guard not loaded at all is no
+  // report (m173-forge.test.ts)
 ];
 for (const m of MUTANTS) {
   test(`M172 real mocha mutation: deleting ${m.id} changes a case's result`, { skip }, () => {
