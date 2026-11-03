@@ -161,8 +161,9 @@ function warmWith(dir: string, o: { save?: boolean; extra?: string } = {}) {
 }
 const restore = (root: string, t: { f: string; sha: string }, s: string, w: string, shaArg = t.sha) =>
   lc(root, ["restore", "--trusted", t.f, "--trusted-sha", shaArg, "--state", s, "--warm", w]);
-const cycleArgs = (root: string, t: { f: string; sha: string }, start: string, w = "/w") =>
-  lc(root, ["cycle-args", "--trusted", t.f, "--trusted-sha", t.sha, "--job-start", start, "--warm", w]);
+// The clock is pinned (--now) so a budget near a minute boundary cannot flake under load.
+const cycleArgs = (root: string, t: { f: string; sha: string }, start: string, w = "/w", at?: number) =>
+  lc(root, ["cycle-args", "--trusted", t.f, "--trusted-sha", t.sha, "--job-start", start, "--warm", w, ...(at ? ["--now", String(at)] : [])]);
 
 /** A finished day in STATE (report, chain.json, the new save, eval-v2.json) as lb-chain2-run.sh leaves it, then row. */
 function rowCase(dir: string, root: string, o: { kind?: "warm" | "resume"; report?: Record<string, unknown>; tamper?: boolean; uploaded?: string; ev2?: Record<string, unknown> } = {}) {
@@ -249,7 +250,7 @@ const CASES: Record<string, (dir: string) => string> = {
   "c2-save-sha": (d) => restore(c2root(d), trustedFile(d, resumeT("b".repeat(64))), stateWith(d, { "save-000000004": `{"step":4}` }), warmWith(d, { save: false })).last,
   "c2-chain-absent": (d) => { const m = `{"step":4}`; return restore(c2root(d), trustedFile(d, resumeT(shaText(m))), stateWith(d, { "save-000000004": m }, { x: 1 }), warmWith(d, { save: false })).last; },
   "c2-job-start": (d) => cycleArgs(c2root(d), trustedFile(d, warmT()), "abc").last,
-  "c2-budget": (d) => cycleArgs(c2root(d), trustedFile(d, warmT()), String(now() - 299 * 60)).last,
+  "c2-budget": (d) => { const t0 = now(); return cycleArgs(c2root(d), trustedFile(d, warmT()), String(t0 - 299 * 60), "/w", t0).last; },
   "c2-report-trained": (d) => rowCase(d, c2root(d), { report: { status: "error" } }).last,
   "c2-row-save-sha": (d) => rowCase(d, c2root(d), { tamper: true, uploaded: `save-000000008:${shaText(`{"step":8}`)}` }).last,
   "c2-row-uploaded": (d) => rowCase(d, c2root(d), { uploaded: "save-000000008:" + "e".repeat(64) }).last,
@@ -346,14 +347,15 @@ test("M181 near misses: the valid neighbour of each refusal passes", () => withD
   assert.equal(restore(root, trustedFile(d, resumeT(shaText(m))), stateWith(d, { "save-000000004": m }), warmWith(d, { save: false })).last, `restore resume save=save-000000004 sha=${shaText(m)} step=4`);
   assert.equal(restore(root, trustedFile(d, { ...resumeT(shaText(m)), kind: "done" }), stateWith(d), warmWith(d, { save: false })).last, "LB_C2_CHAIN_DONE");
   // cycle-args: warm day -> fresh + --warm-start-from + the pin; resume day -> resume:<sha> + the pin alone
-  const wa = cycleArgs(root, trustedFile(d, warmT()), String(now() - 60), "/W").out.split("\n");
+  const t0 = now();
+  const wa = cycleArgs(root, trustedFile(d, warmT()), String(t0 - 60), "/W", t0).out.split("\n");
   assert.deepEqual(wa.slice(0, 2), ["299", "fresh"], "the budget runs from the job start");
   assert.deepEqual(wa.slice(-4), ["--warm-start-from", `/W/${f.warm.save}`, "--warm-start-manifest-sha", f.msha]);
   assert.deepEqual(wa.slice(2, -4), Object.keys(TINY_TRAIN).sort().flatMap((k) => [k, TINY_TRAIN[k]!]));
-  const ra = cycleArgs(root, trustedFile(d, resumeT("b".repeat(64))), String(now() - 60)).out.split("\n");
+  const ra = cycleArgs(root, trustedFile(d, resumeT("b".repeat(64))), String(t0 - 60), "/w", t0).out.split("\n");
   assert.deepEqual([ra[1], ...ra.slice(-2)], [`resume:${"b".repeat(64)}`, "--warm-start-manifest-sha", f.msha]);
   assert.ok(!ra.includes("--warm-start-from"), "a resume day never re-reads the warm save");
-  assert.equal(cycleArgs(root, trustedFile(d, warmT()), String(now() - 269 * 60)).out.split("\n")[0], "31", "a budget just above the minimum passes");
+  assert.equal(cycleArgs(root, trustedFile(d, warmT()), String(t0 - 269 * 60), "/w", t0).out.split("\n")[0], "31", "a budget just above the minimum passes");
   // row: resume and warm both build; land: a valid row lands once (add-only)
   assert.match(rowCase(d, root).last, /^lb-chain2 start=4 end=8 stop=deadline more=True heldout_bpb=3 baseline_bpb=2\.5 verdict=no_gain heldout_v2_bpb=3\.2 heldout_v2_baseline_bpb=2\.9 /);
   assert.match(rowCase(d, root, { kind: "warm", report: { startStep: 0 } }).last, /^lb-chain2 start=0 end=8 /);
