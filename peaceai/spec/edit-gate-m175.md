@@ -39,11 +39,13 @@ or the attempt is refused (`EDIT_SCOPE`) with no run.
 
 1. File class, by path:
    - `test-file` — a test or generated file (`isTestPath` / `isGeneratedPath`), when it is not a team
-     test (a team test is `applyEdits`'s `TEAM_TEST_EDIT`);
+     test (a team test is `applyEdits`'s `TEAM_TEST_EDIT`); `isGeneratedPath` includes every declaration file
+     (`.d.ts` / `.d.mts` / `.d.cts`), so a declaration file is `test-file` (batch 15: this spec used to say `config`;
+     the code is the authority and both refuse, in both modes);
    - `lockfile` — `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lockb`;
    - `runner-infra` — a runner config or setup file (`LOAD_EDIT_INFRA`: `*.config.[cm]?tsx?`,
      `vitest|vite|jest|mocha|ava|karma *.[cm]?tsx?`, `*setup*.[cm]?tsx?`);
-   - `config` — anything that is not a TypeScript source (`.json`, `.yml`, `.js`, `.d.ts`,
+   - `config` — anything else that is not a TypeScript source (`.json`, `.yml`, `.js`,
      `package.json`, `tsconfig*.json`, a `jest.config.js`, ...);
    - `new-file` — a source path that does not exist at the pinned commit.
    All five are refusal reasons: today's proposers never produce them.
@@ -105,7 +107,12 @@ comments and whitespace) of a top-level statement `st` of the TS AST of `orig`:
 - `st` is one of the pinned kinds (`export-kind`: an expression or other non-declaration statement is
   refused), with no `export` / `declare` / `default` modifier (`export-plain`), a function only with a
   body (`export-body`: not an overload signature), a variable statement only with one declarator
-  (`export-single`); the equality itself is `export-at`.
+  (`export-single`), and no decorator (`export-decorator`, batch 15: `export @d class` and `@d export class`
+  are both TS 5 syntax, but older parsers and `experimentalDecorators` reject the first, so the shape is not
+  pinned for decorated declarations); the equality itself is `export-at`.
+- (batch 15) In edit mode such an insert is not judged in-body either: `editSourceClass` refuses any candidate
+  that adds an `export` modifier to a decorated top-level declaration, before or after its decorators
+  (`export-decorated`), so it is refused in both modes. An export the original already had is not counted.
 The insert count is exactly 1 per edit and does not depend on the proposer: the length must be
 `orig.length + 7` and the text must equal the one-insert string, so two inserts never match. In load
 mode (`loadEditProblem`, `EDIT_SCOPE_POLICY.load`) anything else is refused `PROPOSER_FAILED`; a
@@ -204,6 +211,7 @@ so the neverzone sets (m59 / m119 / m132), the m96 import closure (no new lib fi
 - A runner config file (vitest.config.*, jest.config.*, .mocharc.*, etc.) matches the M174 `LOAD_EDIT_INFRA`
   regex first, so `editClass` returns `runner-infra`, not `config`; both are outside the pinned policy and are
   refused. Non-runner config (package.json, tsconfig, *.json / *.yml) returns `config`.
-- `editSourceExt` admits TypeScript only (`.ts` / `.mts` / `.cts` / `.tsx`, never `.d.ts`). Every PeaceAI fixture
+- `editSourceExt` admits TypeScript only (`.ts` / `.mts` / `.cts` / `.tsx`, never `.d.ts`; a `.d.ts` never reaches it,
+  since `class-test` classes it `test-file` first). Every PeaceAI fixture
   and team repo under repair is TypeScript, so a `.js` edit is outside the source class current proposers produce
   and is refused as `config`. This is strictly narrower than the TS source path; it is never a loosening.

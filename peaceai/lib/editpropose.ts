@@ -58,9 +58,11 @@ export const CONST_TEMPLATES = ["const-value"] as const;
 /** M174 (repair-v2 only, spec/load-diagnostics-m174.md): edits for a team suite that does not load because it imports a
  *  name its source module does not export; proposed only from the loop's load diagnostics, never beside the others. */
 export const LOAD_TEMPLATES = ["load-export"] as const;
-export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number] | (typeof LOAD_TEMPLATES)[number];
+/** M176 (repair-v2 only): simple-stupid-bug edit classes that only rearrange or swap words already in the site. */
+export const SSTUB_TEMPLATES = ["swap-statements", "swap-args", "swap-operands", "change-identifier"] as const;
+export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number] | (typeof LOAD_TEMPLATES)[number] | (typeof SSTUB_TEMPLATES)[number];
 /** M168: repair-v2's full order (idioms first, then the v1 templates unchanged; M173: then const-value). */
-export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES, ...CONST_TEMPLATES];
+export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES, ...CONST_TEMPLATES, ...SSTUB_TEMPLATES]; // M176: + SStuB classes last
 /** M173: at most this many module-scope constant sites (tier 3) are added after the located sites (repair-v2 only). */
 export const MAX_CONST_SITES = 4;
 /** M168: how many levels of same-file callees each proposer locates (v1: 1, unchanged; v2: 2). */
@@ -569,6 +571,103 @@ export function constMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
   return out;
 }
 
+// ---- M176 SStuB templates (repair-v2 only; spec: peaceai/spec/repair-v2-m176.md)
+
+/** A side-effect-free operand: a plain reference (identifier, `this`, non-optional property chain) or a literal. Two
+ *  such operands can trade places without changing what is evaluated, only where each value goes. */
+export function simpleOperand(e: ts.Node): boolean {
+  if (plainRef(e)) return true;
+  return ts.isNumericLiteral(e) || ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || e.kind === ts.SyntaxKind.TrueKeyword || e.kind === ts.SyntaxKind.FalseKeyword || e.kind === ts.SyntaxKind.NullKeyword;
+}
+/** Operators whose operands may not trade places (a - b is not b - a); + and * (also string +), ==, && etc. are left out. */
+export const NON_COMMUTATIVE: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.MinusToken, ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken,
+  ts.SyntaxKind.LessThanToken, ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.GreaterThanEqualsToken,
+]);
+/** A function's own value bindings: identifier parameters, and identifier declarators of variable statements directly in
+ *  its block body, each with the offset from which a read may use it (a parameter: the body start; a local: the end of
+ *  its declaration statement, so never its own initializer and never before it is declared). */
+function ownBindings(fn: FnLike, sf: ts.SourceFile): Map<string, number> {
+  const out = new Map<string, number>();
+  const body = fn.body!;
+  for (const p of fn.parameters) if (ts.isIdentifier(p.name)) out.set(p.name.text, body.getStart(sf));
+  if (ts.isBlock(body)) for (const st of body.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && !out.has(d.name.text)) out.set(d.name.text, st.getEnd());
+  }
+  return out;
+}
+/** change-identifier: every read of one of `fn`'s own bindings, inside `fn` but not inside a nested function, gets each
+ *  other own binding usable there. Returns [start, end, replacement]. */
+function changeIdentifier(fn: FnLike, sf: ts.SourceFile): [number, number, string][] {
+  const out: [number, number, string][] = [];
+  if (!fn.body) return out;
+  const own = ownBindings(fn, sf);
+  if (own.size < 2) return out;
+  const walk = (n: ts.Node) => {
+    // a nested function's names are its own; its own visit handles it
+    if (n !== fn.body && isFn(n)) return; // m176-guard:ci-inner
+    if (ts.isIdentifier(n) && own.has(n.text) && n.parent) {
+      const p = n.parent;
+      let read = true;
+      // a declared or property name is not a read; this also covers a shorthand property ({ a } -> { b } would rename the key)
+      if ((p as { name?: ts.Node }).name === n) read = false; // m176-guard:ci-decl
+      if (ts.isBinaryExpression(p) && p.left === n && p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) read = false; // m176-guard:ci-write
+      if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && (p.operator === ts.SyntaxKind.PlusPlusToken || p.operator === ts.SyntaxKind.MinusMinusToken)) read = false; // m176-guard:ci-incdec
+      if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.expression === n) read = false; // m176-guard:ci-callee
+      // a name in a type is erased: no runtime change
+      if (ts.isTypeQueryNode(p) || ts.isTypeReferenceNode(p)) read = false; // m176-guard:ci-type
+      if (read) for (const [b, from] of own) {
+        if (b === n.text) continue;
+        if (from > n.getStart(sf)) continue; // m176-guard:ci-before
+        out.push([n.getStart(sf), n.getEnd(), b]);
+      }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(fn.body);
+  return out;
+}
+/** swap-operands applies: a non-commutative operator between two side-effect-free operands. */
+function swappableOperands(n: ts.BinaryExpression): boolean {
+  if (!NON_COMMUTATIVE.has(n.operatorToken.kind)) return false; // m176-guard:so-op
+  if (!simpleOperand(n.left) || !simpleOperand(n.right)) return false; // m176-guard:so-simple
+  return true;
+}
+/** M176: every SStuB candidate inside one site (no I/O); repair-v2 only. Each only moves or swaps text already in the
+ *  site: no new word, no new statement, no new write target (the loop's M175 gate re-checks every candidate). */
+export function sstubMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
+  const out: Mutation[] = [];
+  const text = sf.text;
+  const src = (x: ts.Node) => text.slice(x.getStart(sf), x.getEnd());
+  const add = (start: number, end: number, rep: string, template: (typeof SSTUB_TEMPLATES)[number]) => out.push({ path: site.path, start, end, text: rep, template, site: siteIndex });
+  /** a and b (a before b) trade places; whatever lies between them (commas, operator, whitespace) stays. */
+  const swap = (a: ts.Node, b: ts.Node, template: (typeof SSTUB_TEMPLATES)[number]) => add(a.getStart(sf), b.getEnd(), src(b) + text.slice(a.getEnd(), b.getStart(sf)) + src(a), template);
+  const visit = (n: ts.Node) => {
+    if (n.getStart(sf) < site.start || n.getEnd() > site.end) { ts.forEachChild(n, visit); return; }
+    // swap-statements: two adjacent expression statements of a block, both ending in `;` (no ASI change)
+    if (ts.isBlock(n)) for (let i = 0; i + 1 < n.statements.length; i++) {
+      const a = n.statements[i]!, b = n.statements[i + 1]!;
+      if (!ts.isExpressionStatement(a) || !ts.isExpressionStatement(b)) continue; // m176-guard:ss-expr
+      if (!src(a).endsWith(";") || !src(b).endsWith(";")) continue; // m176-guard:ss-semi
+      swap(a, b, "swap-statements");
+    }
+    // swap-args: two adjacent side-effect-free arguments of a call or `new`
+    if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && n.arguments) for (let i = 0; i + 1 < n.arguments.length; i++) {
+      const a = n.arguments[i]!, b = n.arguments[i + 1]!;
+      if (!simpleOperand(a) || !simpleOperand(b)) continue; // m176-guard:sa-simple
+      swap(a, b, "swap-args");
+    }
+    // swap-operands: the side-effect-free operands of a non-commutative operator
+    if (ts.isBinaryExpression(n) && swappableOperands(n)) swap(n.left, n.right, "swap-operands");
+    // change-identifier: a read of one of the function's own bindings -> another one usable there
+    if (isFn(n) && n.body) for (const [s, e, b] of changeIdentifier(n, sf)) add(s, e, b, "change-identifier");
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+
 const parses = (path: string, text: string): boolean => ((parseSource(path, text) as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics ?? [1]).length === 0;
 const applyAll = (text: string, ms: readonly Mutation[]): string => [...ms].sort((a, b) => b.start - a.start).reduce((t, x) => t.slice(0, x.start) + x.text + t.slice(x.end), text);
 const overlaps = (a: Mutation, b: Mutation) => a.path === b.path && a.start < b.end && b.start < a.end || (a.path === b.path && a.start === b.start);
@@ -612,6 +711,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
     all.push(...mutationsIn(sf, site, i, exported.get(site.path)!));
     if (v2) all.push(...idiomMutationsIn(sf, site, i)); // m168-guard:idioms-v2-only
     if (v2) all.push(...constMutationsIn(sf, site, i)); // m173-guard:cv-v2-only
+    if (v2) all.push(...sstubMutationsIn(sf, site, i)); // m176-guard:sstub-v2-only
   });
   const order: readonly Template[] = v2 ? TEMPLATES_V2 : TEMPLATES;
   const rank = (x: Mutation) => order.indexOf(x.template);

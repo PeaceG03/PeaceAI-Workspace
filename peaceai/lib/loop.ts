@@ -537,6 +537,9 @@ export function exportInsertAt(orig: string, next: string): number | null {
     if (kind === null || !EDIT_EXPORT_SHAPE.kinds.includes(kind)) continue; // m175-guard:export-kind (a non-declaration statement)
     const ms = ts.canHaveModifiers(st) ? ts.getModifiers(st) ?? [] : [];
     if (ms.some((m) => m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DeclareKeyword || m.kind === ts.SyntaxKind.DefaultKeyword)) continue; // m175-guard:export-plain
+    // (batch 15) a decorated declaration is never a site: `export @d class` and `@d export class` are both TS 5 syntax
+    // but older parsers and experimentalDecorators reject the first, so the shape is not pinned there: refused
+    if (ts.canHaveDecorators(st) && (ts.getDecorators(st)?.length ?? 0) > 0) continue; // m175-guard:export-decorator
     if (ts.isFunctionDeclaration(st) && !st.body) continue; // m175-guard:export-body (an overload signature)
     if (ts.isVariableStatement(st) && st.declarationList.declarations.length !== 1) continue; // m175-guard:export-single
     const at = st.getStart(sf); // the statement's first token: after its leading comments and whitespace
@@ -624,6 +627,9 @@ function editGlobalWrites(s: string): number | null {
   }
   return n;
 }
+/** (batch 15) How many top-level DECORATED statements carry an `export` modifier. */
+const editExportedDecorated = (st: readonly ts.Statement[]): number =>
+  st.filter((s) => ts.canHaveDecorators(s) && (ts.getDecorators(s)?.length ?? 0) > 0 && ts.canHaveModifiers(s) && (ts.getModifiers(s) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)).length;
 const EDIT_IMPORTISH = new Set<ts.SyntaxKind>([ts.SyntaxKind.ImportDeclaration, ts.SyntaxKind.ImportEqualsDeclaration]);
 const editImportish = (st: readonly ts.Statement[]): number =>
   st.filter((s) => EDIT_IMPORTISH.has(s.kind) || (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined)).length;
@@ -641,6 +647,9 @@ export function editSourceClass(orig: string, next: string): EditScopeClass | st
     if (a.length !== b.length) return "top-level-count"; // m175-guard:toplevel-count
     for (let i = 0; i < n; i++) if (a[i]!.kind !== b[i]!.kind) return "top-level-kind"; // m175-guard:toplevel-kind
     if (editImportish(b) > editImportish(a)) return "adds-import"; // m175-guard:adds-import
+    // (batch 15) an export gained by a decorated declaration (before or after its decorators) is outside the pinned
+    // export-keyword shape (export-decorator) and is refused here too, never judged in-body
+    if (editExportedDecorated(b) > editExportedDecorated(a)) return "export-decorated"; // m175-guard:export-decorated
     if ((editGlobalWrites(next) ?? 0) > (editGlobalWrites(orig) ?? 0)) return "global-write"; // m175-guard:global-write
   }
   // the lexical checks run whether or not the texts parse (a runner's transform may accept what the TS parser rejects)
@@ -655,7 +664,7 @@ export function editClass(path: string, content: string, original: (p: string) =
   if (codeTestPath(path) || isGeneratedPath(path)) return "test-file"; // m175-guard:class-test
   if (EDIT_LOCKFILE.test(path)) return "lockfile"; // m175-guard:class-lockfile
   if (LOAD_EDIT_INFRA.test(path)) return "runner-infra"; // m175-guard:class-infra
-  if (!editSourceExt(path)) return "config"; // m175-guard:class-source (package.json, tsconfig, *.config.*, .json/.yml, .js, .d.ts)
+  if (!editSourceExt(path)) return "config"; // m175-guard:class-source (package.json, tsconfig, *.json/.yml, .js; a .d.ts is test-file above)
   const o = original(path);
   if (o === null) return "new-file"; // m175-guard:class-exists
   return editSourceClass(o ?? "", content); // (o is non-null here; the ?? keeps class-exists's deletion a clean miss, not a throw)

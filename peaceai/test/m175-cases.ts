@@ -165,6 +165,11 @@ export const CASES: Case[] = [
       assert.equal(l.loop.editClass("package-lock.json", '{ "x": 1 }\n', o), "lockfile"); // m175-guard:class-lockfile
       assert.equal(l.loop.editClass("src/new.ts", TEMP, o), "new-file"); // m175-guard:class-exists (does not exist at the pinned commit)
       assert.equal(l.loop.editClass("src/temp.ts", TEMP_FIX, o), "in-body", "near miss: the same change to an existing source file");
+      // (batch 15) a declaration file is a generated path (codesearch isGeneratedPath), so `test-file`, refused in both modes
+      for (const d of ["src/types.d.ts", "types/index.d.mts", "lib/shim.d.cts"]) {
+        assert.equal(l.loop.editClass(d, "export declare const x: number;\n", orig({ [d]: "export declare const x: string;\n" })), "test-file", d);
+        for (const mode of ["edit", "load"] as const) assert.equal(l.loop.editScopeProblem([{ path: d, content: "x" }], orig({ [d]: "y" }), noSkip, mode), "test-file", `${d} ${mode}`);
+      }
     },
   },
   // ---- 5. the gate: owned paths are left to applyEdits; the policy refuses a class a mode does not admit
@@ -246,6 +251,20 @@ export const CASES: Case[] = [
       assert.equal(l.loop.exportInsertAt("let p = 1;\n", "export let p = 1;\n"), 0, "near miss: one declarator");
       assert.equal(l.loop.exportInsertAt("function ok() { return 1; }\nconst = ;\n", "export function ok() { return 1; }\nconst = ;\n"), null, "an original that does not parse"); // m175-guard:export-parse
       assert.equal(l.loop.exportInsertAt("function ok() { return 1; }\nconst z = 1;\n", "export function ok() { return 1; }\nconst z = 1;\n"), 0, "near miss: it parses");
+      // (batch 15) a decorated class: `export ` before its decorator (or after it) is refused in both modes, never in-body;
+      // the same class without the decorator is admitted
+      const DECO = "function tag(c: unknown) { return c; }\n@tag\nclass Gauge {}\n";
+      for (const [what, next] of [["export before the decorator", DECO.replace("@tag", "export @tag")], ["export after the decorator", DECO.replace("class Gauge", "export class Gauge")]] as const) {
+        assert.equal(l.loop.exportInsertAt(DECO, next), null, what); // m175-guard:export-decorator
+        assert.equal(l.loop.editSourceClass(DECO, next), "export-decorated", what); // m175-guard:export-decorated
+        assert.equal(l.loop.editScopeProblem([{ path: "src/gauge.ts", content: next }], orig({ "src/gauge.ts": DECO }), noSkip, "edit"), "export-decorated", `${what}: edit mode`);
+        assert.equal(l.loop.editScopeProblem([{ path: "src/gauge.ts", content: next }], orig({ "src/gauge.ts": DECO }), noSkip, "load"), "export-decorated", `${what}: load mode`);
+      }
+      const PLAIN = "function tag(c: unknown) { return c; }\nclass Gauge {}\n";
+      assert.equal(l.loop.exportInsertAt(PLAIN, PLAIN.replace("class Gauge", "export class Gauge")), PLAIN.indexOf("class Gauge"), "near miss: no decorator");
+      // a decorated class that was already exported, with an in-body edit elsewhere, is not refused by export-decorated
+      const DONE = "function tag(c: unknown) { return c; }\n@tag\nexport class Gauge { v = 1; }\n";
+      assert.equal(l.loop.editSourceClass(DONE, DONE.replace("v = 1", "v = 2")), "in-body", "near miss: an export the original already had");
       // pinned in the one policy table
       assert.equal(l.loop.EDIT_EXPORT_SHAPE.inserts, 1);
     },
