@@ -371,18 +371,54 @@ function opaqueExports(program: ts.Program, host: ts.CompilerHost, abs: string, 
   return false;
 }
 
+/** M175 (Auditor): the bounds of one diagnostics compile (the TS program loadDiagnostics builds): at most `files`
+ *  source files and `bytes` UTF-8 bytes read from the copy (TypeScript's own lib files are not counted), and at most
+ *  `ms` wall time, checked at every file read and around every root's diagnostics. Exceeding one throws LoadDiagLimit
+ *  and the loop refuses fail-closed with LOAD_DIAG_LIMIT (never a partial diagnostic list). PINNED by the M175 policy test. */
+export interface LoadDiagCaps { readonly files: number; readonly bytes: number; readonly ms: number; readonly clock?: () => number }
+export const LOAD_DIAG_CAPS: LoadDiagCaps = Object.freeze({ files: 400, bytes: 4 * 1024 * 1024, ms: 20_000 });
+/** Thrown when a diagnostics compile exceeds a LoadDiagCaps bound (message: the bound, files | bytes | ms). */
+export class LoadDiagLimit extends Error {}
+/** `host` with every source file read counted against `caps`; tick() checks the wall-time bound. */
+function boundedHost(host: ts.CompilerHost, caps: LoadDiagCaps): ts.CompilerHost & { tick(): void } {
+  const now = caps.clock ?? Date.now;
+  const t0 = now();
+  const libDir = realpathSync(dirname(ts.getDefaultLibFilePath(LOAD_OPTIONS)));
+  let files = 0, bytes = 0;
+  const tick = (): void => {
+    if (now() - t0 > caps.ms) throw new LoadDiagLimit("ms"); // m175-guard:limit-ms
+  };
+  return {
+    ...host,
+    tick,
+    getSourceFile: (p, lang, onError, fresh) => {
+      tick();
+      const sf = host.getSourceFile(p, lang, onError, fresh);
+      let real = p;
+      try { real = realpathSync(p); } catch { /* unreadable: host returned nothing */ }
+      if (!sf || real.startsWith(libDir + sep)) return sf;
+      files++;
+      bytes += Buffer.byteLength(sf.text, "utf8");
+      if (files > caps.files) throw new LoadDiagLimit("files"); // m175-guard:limit-files
+      if (bytes > caps.bytes) throw new LoadDiagLimit("bytes"); // m175-guard:limit-bytes
+      return sf;
+    },
+  };
+}
+
 /**
  * The filtered load diagnostics of the team's test files in the copy `dir` (repo-relative paths), at most
  * MAX_LOAD_DIAGS, sorted. `teamTests`: the team's test files (never a module to edit). Nothing is executed.
  */
-export function loadDiagnostics(dir: string, testFiles: readonly string[], teamTests: ReadonlySet<string> = new Set(testFiles)): LoadDiag[] {
+export function loadDiagnostics(dir: string, testFiles: readonly string[], teamTests: ReadonlySet<string> = new Set(testFiles), caps: LoadDiagCaps = LOAD_DIAG_CAPS): LoadDiag[] {
   const top = realpathSync(dir);
-  const host = confinedHost(top);
+  const host = boundedHost(confinedHost(top), caps);
   const roots = [...testFiles].sort().map((f) => join(top, f)).filter((p) => existsSync(p));
   const program = ts.createProgram({ rootNames: roots, options: LOAD_OPTIONS, host });
   const out: LoadDiag[] = [];
   const key = new Set<string>();
   for (const abs of roots) {
+    host.tick();
     const sf = program.getSourceFile(abs);
     if (!sf) continue;
     const test = relative(top, abs).split(sep).join("/");
@@ -428,29 +464,17 @@ export function loadDiagnostics(dir: string, testFiles: readonly string[], teamT
     out.push(x);
   }
   out.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || (a.module < b.module ? -1 : a.module > b.module ? 1 : 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.test < b.test ? -1 : 1));
+  host.tick();
   return out.slice(0, MAX_LOAD_DIAGS); // m174-guard:cap
 }
 
 /** M174 L0 edit gate (load-repair mode only; Auditor's single-token scope): the token a load repair may insert. */
 export const LOAD_EDIT_TOKEN = "export ";
-/** Is `next` exactly `orig` with 1..MAX_LOAD_DIAGS copies of LOAD_EDIT_TOKEN inserted, each at the start of the text
- *  or after whitespace (so it never joins an identifier)? Nothing else may differ: no new import, statement or body. */
+/** Is `next` exactly `orig` with ONE LOAD_EDIT_TOKEN inserted immediately before a plain top-level declaration
+ *  statement? (M175: the AST shape of the M175 policy table, EDIT_EXPORT_SHAPE / exportInsertAt; one source of truth
+ *  for the load gate and the general gate's export-keyword class.) */
 export function loadEditShape(orig: string, next: string): boolean {
-  const T = LOAD_EDIT_TOKEN;
-  const k = (next.length - orig.length) / T.length;
-  if (!Number.isInteger(k) || k < 1 || k > MAX_LOAD_DIAGS) return false; // m174-guard:scope-count
-  let o = 0, n = 0;
-  for (let left = k; ; left--) {
-    let p = 0;
-    while (o + p < orig.length && n + p < next.length && orig[o + p] === next[n + p]) p++;
-    if (left === 0) return o + p === orig.length && n + p === next.length;
-    let hit = p, seen = false;
-    for (let i = Math.max(0, p - T.length); i <= p && !seen; i++) if (next.startsWith(T, n + i)) { hit = i; seen = true; }
-    if (!seen) return false; // m174-guard:scope-token
-    if (n + hit > 0 && !/\s/.test(next[n + hit - 1]!)) return false; // m174-guard:scope-boundary
-    o += hit;
-    n += hit + T.length;
-  }
+  return exportInsertAt(orig, next) !== null;
 }
 /** Test infrastructure and config a load repair may never touch (runner configs, setup files). */
 const LOAD_EDIT_INFRA = /(?:^|\/)(?:[^/]*[.-])?config\.[cm]?tsx?$|(?:^|\/)(?:vitest|vite|jest|mocha|ava|karma)[^/]*\.[cm]?tsx?$|(?:^|\/)[^/]*setup[^/]*\.[cm]?tsx?$/i;
@@ -487,6 +511,39 @@ export function loadEditProblem(edits: readonly Edit[], original: (path: string)
  *  reviewed one-line change here, pinned by the M175 policy test (see the edit-gate-m175 spec). */
 export const EDIT_SCOPE_POLICY: { readonly edit: readonly EditScopeClass[]; readonly load: readonly EditScopeClass[] } =
   Object.freeze({ edit: Object.freeze(["export-keyword", "in-body"] as const), load: Object.freeze(["export-keyword"] as const) });
+
+/** PINNED (M175 policy table): the export-keyword class, the one shape both the load gate (loadEditShape /
+ *  loadEditProblem) and the general gate (editSourceClass) admit as "export-keyword". Exactly `inserts` (1) copy of
+ *  LOAD_EDIT_TOKEN per edit, inserted at the first token of a top-level statement of the ORIGINAL (parsed with the TS
+ *  AST: never inside a block, body, class, namespace, string, comment or template) whose kind is one of `kinds`, with
+ *  no export / declare / default modifier, a function only with a body, a variable statement only with one declarator.
+ *  The count is structural: the candidate must EQUAL the original with one insert, so a second insert never matches. */
+export const EDIT_EXPORT_SHAPE: { readonly inserts: 1; readonly token: string; readonly kinds: readonly string[] } = Object.freeze({
+  inserts: 1 as const, token: "export ",
+  kinds: Object.freeze(["ClassDeclaration", "EnumDeclaration", "FunctionDeclaration", "InterfaceDeclaration", "TypeAliasDeclaration", "VariableStatement"]),
+});
+const EXPORT_KIND_OF = (st: ts.Statement): string | null =>
+  ts.isClassDeclaration(st) ? "ClassDeclaration" : ts.isEnumDeclaration(st) ? "EnumDeclaration" : ts.isFunctionDeclaration(st) ? "FunctionDeclaration"
+    : ts.isInterfaceDeclaration(st) ? "InterfaceDeclaration" : ts.isTypeAliasDeclaration(st) ? "TypeAliasDeclaration" : ts.isVariableStatement(st) ? "VariableStatement" : null;
+/** The offset in `orig` where `next` inserts the one export keyword (EDIT_EXPORT_SHAPE), or null if `next` is anything else. */
+export function exportInsertAt(orig: string, next: string): number | null {
+  const T = EDIT_EXPORT_SHAPE.token;
+  if (next.length !== orig.length + T.length * EDIT_EXPORT_SHAPE.inserts) return null; // (structural: the equality below decides)
+  const sf = ts.createSourceFile("edit.tsx", orig, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics;
+  if (diags && diags.length) return null; // m175-guard:export-parse (no AST, no boundary: refused)
+  for (const st of sf.statements) { // top level only: nothing nested in a block, body, class or namespace is visited
+    const kind = EXPORT_KIND_OF(st);
+    if (kind === null || !EDIT_EXPORT_SHAPE.kinds.includes(kind)) continue; // m175-guard:export-kind (a non-declaration statement)
+    const ms = ts.canHaveModifiers(st) ? ts.getModifiers(st) ?? [] : [];
+    if (ms.some((m) => m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DeclareKeyword || m.kind === ts.SyntaxKind.DefaultKeyword)) continue; // m175-guard:export-plain
+    if (ts.isFunctionDeclaration(st) && !st.body) continue; // m175-guard:export-body (an overload signature)
+    if (ts.isVariableStatement(st) && st.declarationList.declarations.length !== 1) continue; // m175-guard:export-single
+    const at = st.getStart(sf); // the statement's first token: after its leading comments and whitespace
+    if (next === orig.slice(0, at) + T + orig.slice(at)) return at; // m175-guard:export-at
+  }
+  return null;
+}
 
 /** Identifier tokens that reach the runner's own assertions or the module system; a repair never needs to add one, so a
  *  candidate using one more often than the original is a multi-token global redefine, outside scope. */
@@ -742,6 +799,8 @@ export interface LoopOptions {
   workBase?: string;
   /** M171, tests only: the private roots no link in the copy may point into (default privateRoots(root)). */
   privateRoots?: string[];
+  /** M175, tests only: the diagnostics compile bounds (default LOAD_DIAG_CAPS). */
+  loadCaps?: LoadDiagCaps;
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface LoopResult { row: LoopRow; plan: LoopPlan | null; attempts: AttemptRecord[]; context: string[] }
@@ -756,7 +815,7 @@ export function loopSha256(root: string = ROOT): string {
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[] }): LoopResult {
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots" | "loadCaps">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[]; loadCaps?: LoadDiagCaps }): LoopResult {
   const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
@@ -852,7 +911,11 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
     const unrun = baselineRefusal(base);
     // M174: the team's tests are in the copy now; their load diagnostics are read (never run) only when they can matter
-    loadDiags = loadRepairDiags(unrun, o.proposer, () => { try { return loadDiagnostics(c!.dir, [...c!.teamTests.keys()].sort()); } catch { return []; } }); // a crash here refuses as before
+    const limit = { hit: false };
+    loadDiags = loadRepairDiags(unrun, o.proposer, () => {
+      try { return loadDiagnostics(c!.dir, [...c!.teamTests.keys()].sort(), undefined, o.loadCaps ?? LOAD_DIAG_CAPS); } catch (e) { if (e instanceof LoadDiagLimit) limit.hit = true; return []; } // any other crash refuses as before
+    });
+    if (limit.hit) return done("LOAD_DIAG_LIMIT"); // m175-guard:loop-load-limit (fail-closed: the compile was out of bounds)
     if (unrun && !loadDiags) return done(unrun); // m173-loop-guard:base-refuse (no edit is scored against a baseline that proved nothing)
     if (base.codes.length === 0) return done("BASELINE_PASSES");
     // (M152) the proposer's search, on the pinned commit without the team's tests

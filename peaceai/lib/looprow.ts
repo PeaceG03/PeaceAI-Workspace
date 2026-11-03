@@ -51,6 +51,9 @@ export const LOOP_CODES = [
   "PROPOSER_FAILED",
   // v2 only (M175): a candidate edit was outside the pinned edit-scope policy (editScopeProblem), refused before any run
   "EDIT_SCOPE",
+  // v4 only (M175): the load diagnostics compile (load-repair mode) exceeded its file / byte / wall-time bound; refused
+  // fail-closed before any edit (attempts 0), only the code is kept (never which bound)
+  "LOAD_DIAG_LIMIT",
   // v4 only (M173): the baseline ran but proved nothing, so no edit is scored against it: no test executed, the runner
   // shim had no usable report (its 1/0/1 counts are made up), a suite failed to load or run, or the only failure is the
   // runner's exit status (no failed test)
@@ -58,7 +61,7 @@ export const LOOP_CODES = [
 ] as const;
 /** M173: the task codes of a baseline that ran but proved nothing (attempts 0; a public row keeps its baseline). */
 export const BASELINE_UNRUN_CODES = ["NO_TESTS_RAN", "BASELINE_NO_REPORT", "BASELINE_SUITE_LOAD", "BASELINE_EXIT_ONLY"] as const;
-const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE"];
+const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE", "LOAD_DIAG_LIMIT"];
 export type LoopCode = (typeof LOOP_CODES)[number];
 /** Per-attempt failure codes (filtered: what kind of failure, never its text). */
 export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL", "NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
@@ -200,6 +203,9 @@ export function loopRowProblem(o: unknown): string | null {
   if (r.code === "PASS" && (r.tests === null || r.tests.filledByTeam !== 0 || r.tests.total === 0)) return "pass_tests";
   if (r.attempts > 0 && r.tests === null) return "tests_presence";
   if (unrun && r.attempts !== 0) return "baseline_unrun_attempts"; // m173-loop-guard:row-unrun-attempts
+  if (r.code === "LOAD_DIAG_LIMIT" && !v4) return "code"; // m175-guard:row-limit-v4
+  if (r.code === "LOAD_DIAG_LIMIT" && r.attempts !== 0) return "load_limit_attempts"; // m175-guard:row-limit-attempts
+  if (r.code === "LOAD_DIAG_LIMIT" && r.set === "public" && r.baseline === null) return "baseline_presence"; // m175-guard:row-limit-baseline
   if (v2) {
     // a hidden row is a taskKey plus scores: which runner / package manager and the exact baseline counts could
     // together identify the repo, so they are never written for the hidden set

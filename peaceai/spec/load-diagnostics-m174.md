@@ -66,17 +66,18 @@ gate must land with a forging test, and a PASS from a wider edit does not count 
 - T1 (load-export) is kept because it is in scope: each site is one inserted keyword token `export ` before a
   declaration that already exists in an existing, non-test source file. It adds no import, no statement, no
   expression and no body, so it cannot bring new code into the test process, and in particular cannot patch expect:
-  the only effect is that an existing binding becomes importable. A candidate fixing k missing names inserts k tokens
-  (k <= MAX_LOAD_DIAGS = 20), each one such site.
+  the only effect is that an existing binding becomes importable. A candidate fixing k missing names inserts k tokens,
+  each one such site; since M175 the gate admits only one per edited file, so k names in k different files.
 - The L0 edit gate (lib/loop.ts loadEditProblem / loadEditShape) enforces this in the loop, independent of the
   proposer: in load-repair mode every proposal is checked against the copy reset to the pinned commit, before the
   team's tests are put back and before anything runs (scope-gate). It is refused PROPOSER_FAILED (nothing run,
   attempts 0) unless it is non-empty (scope-nonempty) and every edit is to an existing (scope-exists) .ts/.tsx/.mts/
   .cts file that is not a declaration file (scope-source), not a test or generated path (scope-not-test), not a
   runner config or setup file (scope-not-infra: *config.*, vitest*/vite*/jest*/mocha*/ava*/karma*, *setup*), and
-  whose new content is exactly the old content with 1..20 copies of `export ` inserted (scope-count, scope-token),
-  each at the start of the file or after whitespace so it never joins an identifier (scope-boundary); nothing else may
-  differ (scope-shape). Forging e2e: a load-repair proposer whose edit adds `import "./patch.ts"` (a file that
+  whose new content is exactly the old content with ONE `export ` inserted at the first token of a plain top-level
+  declaration of the parsed original (scope-shape; since M175 the shape is the AST check exportInsertAt under the
+  pinned EDIT_EXPORT_SHAPE, see spec/edit-gate-m175.md, which replaced the textual 1..20-insert check and its
+  scope-count / scope-token / scope-boundary guards); nothing else may differ. Forging e2e: a load-repair proposer whose edit adds `import "./patch.ts"` (a file that
   replaces globalThis.expect), or adds a new file, or edits vitest.config.ts, is PROPOSER_FAILED with 0 attempts, and
   the same proposer with the single-token edit passes.
 - Creditability: a PASS from an edit wider than single-token is non-creditable unless this gate is present. In M174

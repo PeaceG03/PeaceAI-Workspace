@@ -1,8 +1,9 @@
 # M175: the general L0 edit-scope gate
 
 Spec for the general edit-scope gate in `peaceai/lib/loop.ts` (`editScopeProblem`, `editClass`,
-`editSourceClass`, `editScopeOf`, `EDIT_SCOPE_POLICY`, `EDIT_DANGEROUS`) and the row vocabulary in
-`peaceai/lib/looprow.ts` (`EDIT_SCOPE`, `EDIT_SCOPE_CLASSES`, the optional `editScope` field).
+`editSourceClass`, `editScopeOf`, `exportInsertAt`, the policy table `EDIT_SCOPE_POLICY`, `EDIT_EXPORT_SHAPE`,
+`EDIT_DANGEROUS`, `EDIT_NEW_WORDS`, and the diagnostics compile bounds `LOAD_DIAG_CAPS`) and the row vocabulary in
+`peaceai/lib/looprow.ts` (`EDIT_SCOPE`, `LOAD_DIAG_LIMIT`, `EDIT_SCOPE_CLASSES`, the optional `editScope` field).
 Tests: `m175-cases.ts` (replayed by `m175-edit-gate.test.ts` and `m175-mutation.test.ts`),
 `m175-policy.test.ts`, `m175-forge.test.ts`.
 
@@ -16,7 +17,7 @@ edit-token gate has to land, with a forging test, or any PASS from a wider edit 
 
 M174 (batch 13) added an L0 gate for the load-repair mode only: `loadEditProblem` refuses any
 load-repair proposal that is not one or more inserted `export ` keywords in an existing source file
-(`loadEditShape`, `LOAD_EDIT_INFRA`). M175 generalises that one gate to EVERY proposer (repair-v1,
+(`loadEditShape`, `LOAD_EDIT_INFRA`; since M175 `loadEditShape` is the AST shape below). M175 generalises that one gate to EVERY proposer (repair-v1,
 repair-v2 including the M174 load-export, model-v1) and EVERY attempt, as a single mechanism: the
 normal-mode gate reuses `loadEditShape` (the `export ` shape) and `LOAD_EDIT_INFRA` (the infra file
 class), so there is one source of truth, not a parallel framework. The load-repair path still calls
@@ -50,7 +51,9 @@ or the attempt is refused (`EDIT_SCOPE`) with no run.
 2. Top-level statement shape of a source edit (`editSourceClass`, only when both the original and the
    candidate parse; an edit whose candidate does not parse skips this axis, which m173's broken-return
    case relies on, but still goes through the lexical axes 3 and 4 below):
-   - `export-keyword` — exactly the M174 `export `-insertion shape (`loadEditShape`);
+   - `export-keyword` — exactly ONE `export ` inserted before a plain top-level declaration
+     (`exportInsertAt` under `EDIT_EXPORT_SHAPE`, the same function the load gate's `loadEditShape` calls; see
+     "The export-keyword shape" below);
    - `top-level-count` — the number of top-level statements changed (a new import/export/statement);
    - `top-level-kind` — a top-level statement's `SyntaxKind` changed (gaining an `export` modifier does
      not change the kind, so it is allowed);
@@ -86,6 +89,49 @@ Axes 3 and 4 are lexical and run on every candidate, parsable or not (a runner's
 esbuild may accept text the TS parser rejects).
 
 An edit that is none of the above is `in-body`.
+
+## The export-keyword shape (Auditor, Nov 3: one source of truth for both gates)
+
+The M174 `loadEditShape` was textual: it accepted 1..20 `export ` inserts anywhere after whitespace,
+mid-body included. It is now a thin wrapper over `exportInsertAt(orig, next)`, which is also what
+`editSourceClass` uses for the `export-keyword` class, under the pinned `EDIT_EXPORT_SHAPE`
+(`{ inserts: 1, token: "export ", kinds: [ClassDeclaration, EnumDeclaration, FunctionDeclaration,
+InterfaceDeclaration, TypeAliasDeclaration, VariableStatement] }`, frozen, pinned by the policy test).
+`next` must EQUAL `orig` with one token inserted at `st.getStart()` (the first token, after leading
+comments and whitespace) of a top-level statement `st` of the TS AST of `orig`:
+- the original parses (`export-parse`); only `sf.statements` are visited, so nothing inside a block,
+  function body, class body or namespace can be a site, and a string, template or comment is never a
+  statement's first token;
+- `st` is one of the pinned kinds (`export-kind`: an expression or other non-declaration statement is
+  refused), with no `export` / `declare` / `default` modifier (`export-plain`), a function only with a
+  body (`export-body`: not an overload signature), a variable statement only with one declarator
+  (`export-single`); the equality itself is `export-at`.
+The insert count is exactly 1 per edit and does not depend on the proposer: the length must be
+`orig.length + 7` and the text must equal the one-insert string, so two inserts never match. In load
+mode (`loadEditProblem`, `EDIT_SCOPE_POLICY.load`) anything else is refused `PROPOSER_FAILED`; a
+repair-v2 load candidate that fixes two names in one module is therefore refused (narrower than M174:
+k names need k different files). In edit mode an edit that is not this shape is judged by the in-body
+axes like any other edit (it is never recorded `export-keyword`). Near-miss cases (m175-cases 6b): two
+inserts, mid-body, inside a namespace, inside a class, inside a string, a template and a comment,
+before the leading comment, before a non-declaration statement, already exported, `declare`, an
+overload, two declarators, an unparsable original; admits: a function, a class, a const after a
+leading comment, an enum, an interface, a type alias, a one-declarator `let`.
+
+## Diagnostics compile bounds (Auditor, Nov 3)
+
+`loadDiagnostics` (the TS program built in load-repair mode, M174) now runs under `LOAD_DIAG_CAPS`
+(frozen, pinned: 400 source files, 4 MiB of UTF-8 source, 20 000 ms wall time). Every source file the
+program reads from the copy is counted (TypeScript's own lib files are not), and the clock is checked at
+every file read and around each root's diagnostics (`limit-files`, `limit-bytes`, `limit-ms`). Over a
+bound it throws `LoadDiagLimit`, and the loop refuses the task fail-closed with the filtered code
+`LOAD_DIAG_LIMIT` (`loop-load-limit`) before any edit: never a partial diagnostic list, never which
+bound. `loopRowProblem` admits `LOAD_DIAG_LIMIT` only on a v4 row (`row-limit-v4`), with 0 attempts
+(`row-limit-attempts`) and, on a public row, its baseline (`row-limit-baseline`). Tests (m175-cases 6c):
+exactly at each cap the diagnostics are read (near misses), one file / one byte / one ms over throws;
+end to end, a load-repair task with `files: 1` is `LOAD_DIAG_LIMIT` with 0 attempts and the same task
+with `files: 2` (exactly its two files) passes. Honest limit: the wall-time bound is checked between
+file reads and per root, it cannot interrupt a single type-check call already running; the file and
+byte caps bound how much such a call can have to do.
 
 ## The pinned policy
 
@@ -144,8 +190,8 @@ The gate is deliberately NOT a lexical token count. The repair templates (null-g
 nullish expansion, negated condition, the idiom and const templates, a combined two-span candidate)
 produce multi-token in-body changes that are legitimate and must still run; a naive one-token rule
 would refuse them and break the loop suite. The enforced scope is structural (the top-level statement
-list is preserved, no new import, no new dangerous token), with the lexical `export `-shape reused from
-M174 for the one keyword-insertion case. An unparsable candidate skips only the structural axis; the
+list is preserved, no new import, no new dangerous token), with the `export `-shape (now an AST check, shared with
+the M174 load gate) for the one keyword-insertion case. An unparsable candidate skips only the structural axis; the
 dangerous-word and vocabulary axes still apply to it, which keeps m173's broken-return case and m164's
 trailing-comment case working when they add no new word.
 

@@ -3,7 +3,7 @@
 // reviewer has to see, because this test pins the exact value. Spec: peaceai/spec/edit-gate-m175.md.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EDIT_SCOPE_POLICY, EDIT_DANGEROUS, EDIT_NEW_WORDS } from "../lib/loop.ts";
+import { EDIT_SCOPE_POLICY, EDIT_DANGEROUS, EDIT_NEW_WORDS, EDIT_EXPORT_SHAPE, LOAD_DIAG_CAPS } from "../lib/loop.ts";
 import { EDIT_SCOPE_CLASSES } from "../lib/looprow.ts";
 
 test("M175 policy: EDIT_SCOPE_POLICY is pinned (edit: export-keyword + in-body; load: export-keyword only)", () => {
@@ -22,4 +22,11 @@ test("M175 policy: the admitted classes, the dangerous-word set and the allowed 
   assert.deepEqual([...EDIT_NEW_WORDS], ["any", "as", "export", "false", "if", "in", "null", "object", "return", "toLowerCase", "toUpperCase", "true", "typeof", "undefined"]);
   // no allowed new word is a dangerous word
   for (const w of EDIT_NEW_WORDS) assert.ok(!EDIT_DANGEROUS.includes(w), w);
+});
+
+test("M175 policy: the export-keyword shape and the diagnostics compile bounds are pinned (one source of truth for both gates)", () => {
+  assert.deepEqual(EDIT_EXPORT_SHAPE, { inserts: 1, token: "export ", kinds: ["ClassDeclaration", "EnumDeclaration", "FunctionDeclaration", "InterfaceDeclaration", "TypeAliasDeclaration", "VariableStatement"] });
+  assert.ok(Object.isFrozen(EDIT_EXPORT_SHAPE) && Object.isFrozen(EDIT_EXPORT_SHAPE.kinds));
+  assert.deepEqual(LOAD_DIAG_CAPS, { files: 400, bytes: 4 * 1024 * 1024, ms: 20_000 });
+  assert.ok(Object.isFrozen(LOAD_DIAG_CAPS));
 });

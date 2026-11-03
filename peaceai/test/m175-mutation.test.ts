@@ -18,7 +18,7 @@ const LIB_FILES = ["looprow.ts", "loop.ts"] as const;
 const TAG = /\/\/ m175-guard:([a-z0-9-]+)(?:[\s",].*)?$/;
 const sources: Record<string, string> = Object.fromEntries(LIB_FILES.map((f) => [f, readFileSync(join(libDir, f), "utf8")]));
 const guards = Object.entries(sources).flatMap(([file, text]) => text.split("\n").flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, file, line: i }] : []; }));
-const NEEDS_CAND = new Set(["scope-gate", "loop-row-scope"]);
+const NEEDS_CAND = new Set(["scope-gate", "loop-row-scope", "loop-load-limit"]);
 const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M175_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
 
 let dir: string;
@@ -57,6 +57,8 @@ test("M175 mutation: the guard tags are unique and cover the guards", () => {
   assert.deepEqual([...ids].sort(), [
     "adds-import", "class-exists", "class-infra", "class-lockfile", "class-source", "class-test", "dangerous", "global-write", "loop-row-scope", "new-word", "policy",
     "row-scope-edit-mode", "row-scope-pass", "row-scope-value", "scope-gate", "shape-export", "skip-owned", "toplevel-count", "toplevel-kind",
+    "export-at", "export-body", "export-kind", "export-parse", "export-plain", "export-single", "limit-bytes", "limit-files", "limit-ms", "loop-load-limit",
+    "row-limit-attempts", "row-limit-baseline", "row-limit-v4",
   ].sort());
 });
 

@@ -32,8 +32,8 @@ const diags = (l: Libs, ctx: Ctx, files: Record<string, string>, tests: string[]
 const brief = (ds: readonly Loop.LoadDiag[]) => ds.map((d) => `${d.kind} ${d.module} ${d.name}`.trimEnd());
 
 // ---- shape A: an inventory module whose restock helper is module-local
-const STOCK = "const SAFETY = 2;\n\nfunction restockLevel(onHand, daily) {\n  return Math.max(0, daily * 7 + SAFETY - onHand);\n}\n\nexport function inStock(onHand) {\n  return onHand > 0;\n}\n";
-const STOCK_TEST = 'import assert from "node:assert/strict";\nimport { inStock, restockLevel } from "../src/stock.ts";\n\ntest("restock to a week of sales", () => assert.equal(restockLevel(5, 2), 11));\ntest("empty shelf", () => assert.equal(inStock(0), false));\n';
+export const STOCK = "const SAFETY = 2;\n\nfunction restockLevel(onHand, daily) {\n  return Math.max(0, daily * 7 + SAFETY - onHand);\n}\n\nexport function inStock(onHand) {\n  return onHand > 0;\n}\n";
+export const STOCK_TEST = 'import assert from "node:assert/strict";\nimport { inStock, restockLevel } from "../src/stock.ts";\n\ntest("restock to a week of sales", () => assert.equal(restockLevel(5, 2), 11));\ntest("empty shelf", () => assert.equal(inStock(0), false));\n';
 // ---- shape B: a shapes barrel that re-exports one module and misses another
 const SHAPES = {
   "src/index.ts": 'export { circleArea } from "./circle.ts";\n',
@@ -48,7 +48,7 @@ const WEEK_TEST = 'import assert from "node:assert/strict";\nimport { Week, isWe
 // ---- the loop, end to end (candidate uid): small vitest-stub repos built from the M151 stub runner and stub package manager
 const VITEST_LOCK = JSON.stringify({ name: "fixture", lockfileVersion: 3, requires: true, packages: { "": { name: "fixture", devDependencies: { vitest: "1.0.0" } } } }, null, 1) + "\n";
 const G = ["-c", "user.name=PeaceG03", "-c", "user.email=301894882+PeaceG03@users.noreply.github.com", "-c", "commit.gpgsign=false"];
-function e2eTask(ctx: Ctx, name: string, src: Record<string, string>, teamTest: string) {
+export function e2eTask(ctx: Ctx, name: string, src: Record<string, string>, teamTest: string) {
   const dir = join(ctx.m151.base, "repos", name);
   const git = (...a: string[]) => execFileSync("git", [...G, ...a], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   mkdirSync(dir, { recursive: true });
@@ -65,7 +65,7 @@ function e2eTask(ctx: Ctx, name: string, src: Record<string, string>, teamTest: 
     reference: { from: { pr: 1, merge: git("rev-parse", "HEAD") }, files: [{ path: first, change: "modify" as const }, { path: "test/unit.test.ts", change: "add" as const }],
       steps: [{ action: "edit-source" as const, file: first }, { action: "add-test" as const, file: "test/unit.test.ts" }, { action: "run-tests" as const, file: null }], docs: [] } };
 }
-const opts = (ctx: Ctx, proposer: Loop.Proposer, maxAttempts = 1) => ({
+export const opts = (ctx: Ctx, proposer: Loop.Proposer, maxAttempts = 1) => ({
   root: ctx.m151.root, fetcher: ctx.m151.fetcher, proposer, maxAttempts, runMs: 60_000, env: ctx.m151.env, rules: [], training: new Set<string>(),
   deps: { tool: ctx.m151.tool, extraEnv: { M151_STUB_VITEST_DIR: ctx.m151.stubVitest } },
 });
@@ -234,11 +234,12 @@ export const CASES: readonly Case[] = [
       const pinned: Record<string, string> = { "src/stock.ts": STOCK, "src/week.ts": WEEK, "vitest.config.ts": "const cfg = {};\nexport default cfg;\n", "src/app.setup.ts": "const ready = true;\n", "test/helpers.ts": "function make() {}\n", "src/stock.js": "function f() {}\n", "src/types.d.ts": "type T = 1;\n" };
       const read = (f: string) => pinned[f] ?? null;
       const ok = STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel");
-      // admits: one site; two sites in one file; two files (inventory, week shapes)
+      // admits: one site; two files with one site each (inventory, week shapes). M175: two sites in ONE file is refused
+      // (exactly one insert per edit, before a plain top-level declaration; see m175-cases export-shape)
       assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: ok }], read), null);
-      assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: "export " + ok }], read), null);
+      assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: "export " + ok }], read), "shape", "M175: two inserts in one edit");
       assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: ok }, { path: "src/week.ts", content: "export " + WEEK }], read), null);
-      assert.equal(g.loadEditShape("export function f() {}\n", "export export function f() {}\n"), true, "an ambiguous site still aligns");
+      assert.equal(g.loadEditShape("export function f() {}\n", "export export function f() {}\n"), false, "M175: an already exported declaration");
       assert.equal(g.loadEditShape("enum E { A }\n", "export enum E { A }\n"), true, "a site whose text starts like the token");
       // near misses, one per condition
       assert.equal(g.loadEditProblem([], read), "empty", "m174-guard:scope-nonempty");
@@ -250,12 +251,12 @@ export const CASES: readonly Case[] = [
       assert.equal(g.loadEditProblem([{ path: "src/patch.ts", content: "export const x = 1;\n" }], read), "new-file", "m174-guard:scope-exists");
       // forging shapes: an added import that could patch expect, a new statement, a body change, a joined identifier
       assert.equal(g.loadEditProblem([{ path: "src/stock.ts", content: 'import "./patch.ts";\n' + ok }], read), "shape", "an added import (m174-guard:scope-shape)");
-      assert.equal(g.loadEditShape(STOCK, STOCK + "x = 1;\n"), false, "a new statement of the token length (m174-guard:scope-token)");
-      assert.equal(g.loadEditShape(STOCK, STOCK.replace("daily * 7", "daily * 70000000")), false, "a body edit of the token length (m174-guard:scope-token)");
-      assert.equal(g.loadEditShape("const total = 1;\n", "const totalexport  = 1;\n"), false, "joined to an identifier (m174-guard:scope-boundary)");
-      assert.equal(g.loadEditShape(STOCK, STOCK), false, "unchanged (m174-guard:scope-count)");
-      assert.equal(g.loadEditShape("a\n".repeat(30), "export a\n".repeat(21) + "a\n".repeat(9)), false, "more sites than MAX_LOAD_DIAGS (m174-guard:scope-count)");
-      assert.equal(g.loadEditShape("a\n".repeat(30), "export a\n".repeat(20) + "a\n".repeat(10)), true, "near miss: MAX_LOAD_DIAGS sites");
+      assert.equal(g.loadEditShape(STOCK, STOCK + "x = 1;\n"), false, "a new statement of the token length");
+      assert.equal(g.loadEditShape(STOCK, STOCK.replace("daily * 7", "daily * 70000000")), false, "a body edit of the token length");
+      assert.equal(g.loadEditShape("const total = 1;\n", "const totalexport  = 1;\n"), false, "joined to an identifier");
+      assert.equal(g.loadEditShape(STOCK, STOCK), false, "unchanged");
+      assert.equal(g.loadEditShape("a\n".repeat(30), "export a\n".repeat(21) + "a\n".repeat(9)), false, "many sites");
+      assert.equal(g.loadEditShape("a\n".repeat(30), "export a\n" + "a\n".repeat(29)), false, "M175: before a non-declaration statement");
       assert.equal(g.loadEditShape(STOCK, "export default " + STOCK), false, "another token");
     },
   },
