@@ -349,6 +349,31 @@ test("M181 guards: every tagged lb_chain2.py guard has a case; disabling it chan
   killMutants("lb_chain2.py", "c2-", CASES, REAL);
 });
 
+// batch 19 (Auditor, #679 review): the c2-row-step0-pins guard compares four fields with the pins; each one drifting ALONE
+// (every other check still satisfied: modelCe recomputed for tokens / bytes, bpb within the tolerance of the drifted
+// expectBpb) is refused, and the mutant that drops just that field's clause lands the row (killed per field).
+test("M181 step0 pins: expectBpb, tolBpb, tokens or bytes drifting alone is refused; dropping that clause alone lets it land (killed)", () => withDir((d) => {
+  const f = fx(), b = f.ev.model_bits_per_byte;
+  const src = readFileSync(join(MODEL, "lb_chain2.py"), "utf8");
+  const drifts: [string, Record<string, unknown>, string][] = [
+    ["expectBpb", { expectBpb: b + 0.0001 }, 's0["expectBpb"] != w["heldoutBpb"] or '],
+    ["tolBpb", { tolBpb: TOL - 0.0001 }, 'or s0["tolBpb"] != tol '],
+    ["tokens", { tokens: f.H + 1, modelCe: ceFor(b, f.H + 1, f.B) }, 'or s0["tokens"] != w["heldoutTokens"] '],
+    ["bytes", { bytes: f.B + 1, modelCe: ceFor(b, f.H, f.B + 1) }, ' or s0["bytes"] != w["heldBytes"]'],
+  ];
+  assert.equal(land(d, c2root(d), c2Row({ step0: step0() })).last, `landed runs/lb-chain2/${D1}-555.json`, "the pinned step0 lands");
+  for (const [field, o, clause] of drifts) {
+    const row = c2Row({ step0: step0(o) });
+    assert.equal(land(d, c2root(d), row).last, "LB_C2_ROW_STEP0", `${field} drift refused`);
+    const line = src.split("\n").find((l) => l.endsWith("# guard:c2-row-step0-pins"))!;
+    assert.ok(line.includes(clause), `${field}: clause present`);
+    MUTANT = { file: "lb_chain2.py", text: src.replace(line, line.replace(clause, field === "expectBpb" ? "" : " ")) };
+    let got: string;
+    try { got = land(d, c2root(d), row).last; } finally { MUTANT = null; }
+    assert.equal(got, `landed runs/lb-chain2/${D1}-555.json`, `${field}: the mutant without its clause lets the drift land (killed)`);
+  }
+}));
+
 test("M181 near misses: the valid neighbour of each refusal passes", () => withDir((d) => {
   const f = fx(), root = c2root(d);
   assert.equal(lc(root, ["ref", "--ref", "refs/heads/main"]).last, "ref ok");
@@ -455,9 +480,15 @@ import numpy as np
 import saves, warmstart
 import lbtrain, lm
 
-def forge(edit_cfg=None, drop_param=False):
-    """A VALID save (saves.write_save) whose checkpoint cfg or parameter set differs from the real one."""
-    w = os.path.join(tmp, "forge-work"); os.makedirs(w)
+def forge(edit_cfg=None, drop_param=False, best_meta=None):
+    """A VALID save (saves.write_save) whose checkpoint cfg or parameter set differs from the real one (best_meta: a
+    best.npz with the real weights whose meta is edited; without it the forged save has no best.npz)."""
+    w = os.path.join(tmp, "forge-work-%d" % len(os.listdir(tmp))); os.makedirs(w)
+    if best_meta:
+        b = dict(np.load(os.path.join(save, "best.npz"), allow_pickle=False))
+        bm = json.loads(str(b["meta"])); best_meta(bm); b["meta"] = np.array(json.dumps(bm))
+        np.savez(os.path.join(w, "best.npz"), **b)
+        shutil.copyfile(os.path.join(save, "best.json"), os.path.join(w, "best.json"))
     z = dict(np.load(os.path.join(save, "checkpoint.npz"), allow_pickle=False))
     meta = json.loads(str(z["meta"]))
     if edit_cfg: edit_cfg(meta["cfg"])
@@ -466,8 +497,9 @@ def forge(edit_cfg=None, drop_param=False):
     np.savez(os.path.join(w, "checkpoint.npz"), **z)
     for f in ("tokenizer.json", "metrics.jsonl"): shutil.copyfile(os.path.join(save, f), os.path.join(w, f))
     man = json.load(open(os.path.join(save, "manifest.json")))
-    name, s = saves.write_save(w, os.path.join(tmp, "forged"), meta["step"], meta["cfg"], man["dataSha256"])
-    return os.path.join(tmp, "forged", name), s
+    out = os.path.join(tmp, "forged-" + os.path.basename(w))  # one saves dir per forge (write_save never rewrites a step)
+    name, s = saves.write_save(w, out, meta["step"], meta["cfg"], man["dataSha256"])
+    return os.path.join(out, name), s
 
 def init_of(p):
     with np.load(os.path.join(p, "checkpoint.npz"), allow_pickle=False) as z:
@@ -505,6 +537,12 @@ def run():
     if case == "ws-opt-sha":
         m = copy.deepcopy(man); m["files"]["checkpoint.npz"]["sha256"] = "0" * 64
         return warmstart.load_opt(np, save, m, init_of(save), "adamw8bit", lbtrain.opt_load)
+    if case == "ws-same-step-sha":
+        m = copy.deepcopy(man); m["files"]["best.npz"]["sha256"] = "0" * 64
+        return warmstart.load_opt(np, save, m, init_of(save), "adamw8bit", lbtrain.opt_load)
+    if case == "ws-same-step":  # batch 19: best.npz from an earlier eval (step 3) than the kept optimizer state (step 4)
+        p, s = forge(best_meta=lambda bm: bm.update(step=bm["step"] - 1, t=bm["t"] - 1))
+        return warmstart.load_opt(np, p, warmstart.verify(p, s, os.path.join(tmp, "work-ss")), init_of(save), "adamw8bit", lbtrain.opt_load)
     fin = warmstart.final_lr(man, lm.lr_at)
     if case == "ws-lr-warmup": return warmstart.check_lr(man, dict(man["cfg"], warmup=1, lr=fin / 2), lm.lr_at)
     if case == "ws-lr-cap": return warmstart.check_lr(man, dict(man["cfg"], warmup=0, lr=fin * 1.001), lm.lr_at)
@@ -519,11 +557,17 @@ def run():
         warmstart.copy_tokenizer(save, man, work); warmstart.check_shape(man, dict(man["cfg"]))
         w = warmstart.load_params(np, save, man, init_of(save))
         st = warmstart.load_opt(np, save, man, w, "adamw8bit", lbtrain.opt_load)
+        p1, s1 = forge()  # no best.npz: weights and optimizer both from checkpoint.npz (one file, one step)
+        m1 = warmstart.verify(p1, s1, os.path.join(tmp, "work-nb"))
+        p2, s2 = forge(best_meta=lambda bm: None)  # a best.npz from the save's own (last) step
+        m2 = warmstart.verify(p2, s2, os.path.join(tmp, "work-sb"))
+        same = [warmstart.weights_file(m1), warmstart.load_opt(np, p1, m1, init_of(save), "adamw8bit", lbtrain.opt_load)["t"],
+                warmstart.weights_file(m2), warmstart.load_opt(np, p2, m2, init_of(save), "adamw8bit", lbtrain.opt_load)["t"]]
         with np.load(os.path.join(save, "best.npz"), allow_pickle=False) as z:
             same_best = all(np.array_equal(w[k[2:]], z[k]) for k in z.files if k.startswith("p."))
         return {"args": warmstart.check_args(save, sha, "", "", 0, False), "resume": warmstart.check_args("", sha, "resume-save", "", 0, False),
                 "off": warmstart.check_args("", "", "", "", 0, False), "params": len(w), "weights": warmstart.weights_file(man), "sameBest": bool(same_best),
-                "t": st["t"], "final": round(fin, 12),
+                "t": st["t"], "final": round(fin, 12), "sameStep": same,
                 "expect": warmstart.check_expect(save, "0.6688:49152:192892:0.0005"), "noExpect": warmstart.check_expect("", ""),
                 "tolCap": warmstart.check_expect(save, "0.5:1:1:0.002")["tol"],
                 "lrAt": warmstart.check_lr(man, dict(man["cfg"], warmup=0, lr=fin), lm.lr_at) == fin,
@@ -554,7 +598,7 @@ const WS_REAL: Record<string, string> = { "ws-sha-format": "WARM_START_SHA_REQUI
   "ws-expect-needs-save": "WARM_START_EXPECT_BAD", "ws-expect-required": "WARM_START_EXPECT_REQUIRED", "ws-expect-format": "WARM_START_EXPECT_BAD",
   "ws-opt-name": "WARM_START_OPT_MISMATCH", "ws-opt-sha": "WARM_START_FILE_SHA", "ws-lr-warmup": "WARM_START_LR_REWARM", "ws-lr-cap": "WARM_START_LR_ABOVE_FINAL",
   "ws-step0-split": "WARM_START_STEP0_SPLIT", "ws-step0-bpb": "WARM_START_STEP0_MISMATCH", "ws-seed-finite": "WARM_START_STEP0_MISMATCH",
-  "ws-seed-fresh": "WARM_START_WORK_NOT_EMPTY" };
+  "ws-seed-fresh": "WARM_START_WORK_NOT_EMPTY", "ws-same-step-sha": "WARM_START_FILE_SHA", "ws-same-step": "WARM_START_STEP_MISMATCH" };
 const WS_CASES: Record<string, (d: string) => string> = Object.fromEntries(Object.keys(WS_REAL).map((g) => [g, (d: string) => wsRun(d, g)]));
 
 test("M181 warm start guards: every tagged warmstart.py guard has a case; disabling it changes the outcome; the valid neighbour passes", () => {
@@ -566,6 +610,7 @@ test("M181 warm start guards: every tagged warmstart.py guard has a case; disabl
     assert.deepEqual([n.args, n.resume, n.off], [{ manifestSha256: fx().msha }, { manifestSha256: fx().msha }, null]);
     assert.ok(n.params > 0);
     assert.deepEqual([n.weights, n.sameBest, n.t], ["best.npz", true, 4], "the model of record's weights, the save's optimizer t");
+    assert.deepEqual(n.sameStep, ["checkpoint.npz", 4, "best.npz", 4], "batch 19: no best.npz, or a best.npz of the save's own step, passes the same-step check");
     assert.equal(n.final, 0.00008, "chain 1 (fixture) ended at lr_at(3) = 6e-4 * 4 / 30");
     assert.deepEqual(n.expect, { bpb: 0.6688, tokens: 49152, bytes: 192892, tol: 0.0005 });
     assert.deepEqual([n.noExpect, n.tolCap, n.lrAt, n.s0], [null, 0.002, true, [0.5004, 0.4996]]);
