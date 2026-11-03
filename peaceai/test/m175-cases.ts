@@ -87,19 +87,63 @@ export const CASES: Case[] = [
       const flag = "export function ready(): boolean {\n  return false;\n}\n";
       const forgeGlobal = "export function ready(): boolean {\n  (globalThis as Record<string, unknown>).expect = () => ({ toBe() {} });\n  return true;\n}\n";
       const flagFix = "export function ready(): boolean {\n  return true;\n}\n";
-      assert.equal(l.loop.editSourceClass(flag, forgeGlobal), "dangerous:globalThis");
+      assert.equal(l.loop.editSourceClass(flag, forgeGlobal), "global-write"); // (the write axis sees it first)
+      const readGlobal = "export function ready(): boolean {\n  return (globalThis as Record<string, unknown>).expect !== undefined;\n}\n";
+      assert.equal(l.loop.editSourceClass(flag, readGlobal), "dangerous:globalThis");
       assert.equal(l.loop.editSourceClass(flag, flagFix), "in-body", "near miss: the same fix without the global");
       // a multi-token source edit that redefines a global as a new top-level statement is refused on the count axis too
       assert.equal(l.loop.editSourceClass(flag, flagFix + "globalThis.expect = 1;\n"), "top-level-count");
+    },
+  },
+  // ---- 2b. the vocabulary axis: an in-body edit may only add words the file already has, plus EDIT_NEW_WORDS
+  {
+    id: "refuse: an in-body edit that adds a word the file lacks (identifier or string), or re-adds a dangerous word the file has; near misses admitted",
+    run(l) {
+      // new identifier / new word in a string (the in-body forge has to name something the file never did)
+      assert.equal(l.loop.editSourceClass(ROMAN, ROMAN.replace("M[n % 3]!", "M[n % 3]!.padStart(2)")), "new-word:padStart");
+      assert.equal(l.loop.editSourceClass(ROMAN, ROMAN.replace("M[n % 3]!", "M[n % 3]! + \"zz\"")), "new-word:zz");
+      assert.equal(l.loop.editSourceClass(ROMAN, ROMAN.replace("M[n % 3]!", "M[n % 3]! + \"XX\"")), "in-body", "near miss: a word the file already has");
+      // near miss: a null-guard-shaped insertion uses only EDIT_NEW_WORDS (if, undefined, null, return, as, any)
+      const guarded = TEMP.replace("{\n", "{ if (f === undefined || f === null) { return f as any; }\n");
+      assert.equal(l.loop.editSourceClass(TEMP, guarded), "in-body");
+      // near miss: a typeof "object" shape and a case flip use only EDIT_NEW_WORDS
+      const S = "export function k(s: string): boolean {\n  return s === s;\n}\n";
+      assert.equal(l.loop.editSourceClass(S, S.replace("s === s", "s === s.toLowerCase() || typeof s !== \"object\"")), "in-body");
+      // a dangerous word the file already uses (so it is not new) is still refused when the edit adds another use
+      const P = "// keeps the constructor\nexport function n(x: number): number {\n  return x;\n}\n";
+      assert.equal(l.loop.editSourceClass(P, P.replace("return x;", "return x.constructor.length;")), "dangerous:constructor");
+      assert.equal(l.loop.editSourceClass(P, P.replace("return x;", "return x + 1;")), "in-body", "near miss: no dangerous word added");
+      // a new comment is inert when the candidate parses; a word that only a comment of the original has is not vocabulary
+      assert.equal(l.loop.editSourceClass(P, P.replace("return x;", "return x; // any words here")), "in-body", "near miss: a comment");
+      const C = "// see the padStart note\nexport function w(s: string): string {\n  return s;\n}\n";
+      assert.equal(l.loop.editSourceClass(C, C.replace("return s;", "return s.padStart(2);")), "new-word:padStart");
+    },
+  },
+  // ---- 2c. the write axis: an in-body edit may not add a write to a global / built-in (a name the file never declares)
+  {
+    id: "refuse: an in-body edit that adds a write rooted at an undeclared name (Object.is = ..., a call result's property); near misses: a parameter, a local, this",
+    run(l) {
+      const SAME = "export function same(a: number, b: number): boolean {\n  return Object.is(a, b);\n}\n";
+      // every word is already in the file, so only the write axis sees it (vitest / jest toBe call Object.is)
+      assert.equal(l.loop.editSourceClass(SAME, SAME.replace("  return", "  Object.is = (a: number) => a === a;\n  return")), "global-write");
+      assert.equal(l.loop.editSourceClass(SAME, SAME.replace("  return", "  delete (Object as any).is;\n  return")), "global-write");
+      assert.equal(l.loop.editSourceClass(SAME, SAME.replace("  return", "  a = b;\n  return")), "in-body", "near miss: a parameter write");
+      const CTR = "export class Counter {\n  n = 0;\n  inc(): number {\n    const k = 1;\n    return this.n + k;\n  }\n}\n";
+      assert.equal(l.loop.editSourceClass(CTR, CTR.replace("return this.n + k;", "this.n += k;\n    return this.n;")), "in-body", "near miss: a write to this");
+      assert.equal(l.loop.editSourceClass(CTR, CTR.replace("return this.n + k;", "return this.n + k++;")), "in-body", "near miss: a local ++");
+      assert.equal(l.loop.editSourceClass(CTR, CTR.replace("return this.n + k;", "return (this.n + k).n = k;")), "global-write", "a write rooted at an expression, not a declared name");
     },
   },
   // ---- 3. an unparsable candidate is admitted (it cannot run or patch anything; m173's broken-return case)
   {
     id: "admit: a candidate that does not parse is in-body (it fails safely at run time, it is not refused here)",
     run(l) {
-      assert.equal(l.loop.editSourceClass("export function f(c) { return c; }\n", "export function fahrenheit(c) {\n  return (\n}\n"), "in-body");
-      // a trailing top-level comment is trivia, not a statement: admitted (m164's near miss)
-      assert.equal(l.loop.editSourceClass(TEMP, TEMP + "// reference\n"), "in-body");
+      assert.equal(l.loop.editSourceClass("export function f(c) { return c; }\n", "export function f(c) {\n  return (\n}\n"), "in-body");
+      // ... but the lexical checks still run on it (a runner's transform may accept what the TS parser rejects)
+      assert.equal(l.loop.editSourceClass("export function f(c) { return c; }\n", "export function f(c) {\n  return (cx\n}\n"), "new-word:cx");
+      assert.equal(l.loop.editSourceClass("export function f(c) { return c; }\n", "export function f(c) {\n  return (c.constructor\n}\n"), "dangerous:constructor");
+      // a trailing top-level comment is trivia, not a statement: admitted (m164's near miss), when it adds no new word
+      assert.equal(l.loop.editSourceClass(TEMP, TEMP + "// f\n"), "in-body");
     },
   },
   // ---- 4. the file-class axis (each refusal with its admitted source near miss)

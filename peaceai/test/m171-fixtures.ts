@@ -78,7 +78,8 @@ export function setup(): Ctx {
   const pkg = JSON.stringify({ name: "m171-fixture", private: true, type: "module", scripts: { test: "node --test" } }, null, 1) + "\n";
   const clampPins = buildRepo(join(home, "repos/clamp"), {
     "package.json": pkg, LICENSE: MIT,
-    "src/clamp.ts": "export function clamp(x: number, lo: number, hi: number): number {\n  return Math.max(lo, x);\n}\n",
+    // M175: the bug is one wrong operand (x for hi), so the fix stays inside the edit-scope gate's vocabulary axis
+    "src/clamp.ts": "export function clamp(x: number, lo: number, hi: number): number {\n  return Math.min(x, Math.max(lo, x));\n}\n",
   }, {
     "src/clamp.ts": CLAMP_FIXED,
     "test/clamp.test.ts": `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { clamp } from "../src/clamp.ts";\n${drop("clamp")}\ntest("clamp keeps values inside the range", () => assert.equal(clamp(5, 0, 10), 5));\ntest("clamp caps values above the range", () => assert.equal(clamp(15, 0, 10), 10));\n`,

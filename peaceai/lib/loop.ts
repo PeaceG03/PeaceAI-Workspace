@@ -490,7 +490,15 @@ export const EDIT_SCOPE_POLICY: { readonly edit: readonly EditScopeClass[]; read
 
 /** Identifier tokens that reach the runner's own assertions or the module system; a repair never needs to add one, so a
  *  candidate using one more often than the original is a multi-token global redefine, outside scope. */
-export const EDIT_DANGEROUS: readonly string[] = ["globalThis", "global", "eval", "Function", "require", "Reflect", "Proxy", "__proto__", "expect", "assert", "vi", "jest"];
+export const EDIT_DANGEROUS: readonly string[] = ["globalThis", "global", "eval", "Function", "require", "Reflect", "Proxy", "__proto__", "expect", "assert", "vi", "jest",
+  "constructor", "prototype", "getPrototypeOf", "setPrototypeOf", "getOwnPropertySymbols", "getOwnPropertyNames", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "defineProperty",
+  "defineProperties", "assign", "Symbol", "import", "process", "module", "exports", "arguments"];
+/** PINNED: the only words an in-body edit may add that the original file does not already contain (the words the
+ *  repair templates write: the null-guard / nullish / typeof-null / case-flip / boolean / export shapes). Any other new
+ *  word (an identifier, a keyword, or a word inside a string, template, regex or comment) is outside scope: an in-body
+ *  forge has to name something the file never did (e.g. `constructor`, or a symbol's description), so a candidate
+ *  built only from the original's own vocabulary plus these words cannot reach the runner by name. */
+export const EDIT_NEW_WORDS: readonly string[] = ["any", "as", "export", "false", "if", "in", "null", "object", "return", "toLowerCase", "toUpperCase", "true", "typeof", "undefined"];
 
 const EDIT_LOCKFILE = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.ya?ml|bun\.lockb?)$/;
 const editSourceExt = (p: string): boolean => /\.(?:[cm]?ts|tsx)$/.test(p) && !/\.d\.[cm]?ts$/.test(p);
@@ -508,14 +516,66 @@ function editTopLevel(s: string): ts.Statement[] | null {
   const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics;
   return diags && diags.length ? null : [...sf.statements];
 }
+/** The words of a text's CODE (its tokens: identifiers, keywords, string / template / regex text), not its comments,
+ *  when `code` and it parses; otherwise every word of its text. Used on both sides when both parse (a comment is inert
+ *  in the candidate and cannot lend a forge its vocabulary in the original); on full texts otherwise. */
+function editVocab(s: string, code: boolean): Set<string> {
+  const sf = ts.createSourceFile("edit.tsx", s, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics;
+  if (!code || (diags && diags.length)) return new Set(editTokenCounts(s).keys());
+  const out = new Set<string>();
+  const leaf = (n: ts.Node): void => {
+    const kids = n.getChildren(sf);
+    if (kids.length === 0) { for (const w of n.getText(sf).match(/[A-Za-z_$][\w$]*/g) ?? []) out.add(w); return; }
+    for (const k of kids) leaf(k);
+  };
+  leaf(sf);
+  return out;
+}
+/** How many writes (an assignment, ++ / --, delete) the text makes to a target rooted at an identifier the file never
+ *  declares (a global or built-in such as `Object.is` or `Math`), or null if it does not parse. */
+function editGlobalWrites(s: string): number | null {
+  const sf = ts.createSourceFile("edit.tsx", s, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics;
+  if (diags && diags.length) return null;
+  const declared = new Set<string>();
+  const bind = (b: ts.BindingName): void => { if (ts.isIdentifier(b)) declared.add(b.text); else for (const e of b.elements) if (!ts.isOmittedExpression(e)) bind(e.name); };
+  const targets: ts.Expression[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)) bind(n.name);
+    else if ((ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassExpression(n) || ts.isEnumDeclaration(n) || ts.isModuleDeclaration(n)) && n.name && ts.isIdentifier(n.name)) declared.add(n.name.text);
+    else if (ts.isImportClause(n) && n.name) declared.add(n.name.text);
+    else if (ts.isNamespaceImport(n) || ts.isImportSpecifier(n) || ts.isImportEqualsDeclaration(n)) declared.add(n.name.text);
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) targets.push(n.left);
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) targets.push(n.operand);
+    if (ts.isDeleteExpression(n)) targets.push(n.expression);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  const root = (e: ts.Expression): ts.Expression => {
+    let x = e;
+    for (;;) {
+      if (ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x) || ts.isNonNullExpression(x) || ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isTypeAssertionExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+      else return x;
+    }
+  };
+  let n = 0;
+  for (const t of targets) {
+    const r = root(t);
+    // a destructuring assignment target ([a, b] = ..., { a } = ...) and a call result are counted as unknown roots too
+    if (!ts.isIdentifier(r) ? r.kind !== ts.SyntaxKind.ThisKeyword : !declared.has(r.text)) n++;
+  }
+  return n;
+}
 const EDIT_IMPORTISH = new Set<ts.SyntaxKind>([ts.SyntaxKind.ImportDeclaration, ts.SyntaxKind.ImportEqualsDeclaration]);
 const editImportish = (st: readonly ts.Statement[]): number =>
   st.filter((s) => EDIT_IMPORTISH.has(s.kind) || (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined)).length;
 
-/** The scope class of one edit to an existing source file, or a refusal reason (string). An edit whose candidate (or
- *  whose original) does not parse is "in-body": it cannot run or patch anything, so it fails safely at run time rather
- *  than being refused here (m173's broken-return case relies on this). The structural checks run only when both parse,
- *  and each is deletion-safe (a removed guard changes the class, it does not throw), so the mutation test can replay. */
+/** The scope class of one edit to an existing source file, or a refusal reason (string). The structural (top-level)
+ *  checks run only when both texts parse; an unparsable candidate skips them (m173's broken-return case relies on this).
+ *  The lexical checks (no added dangerous word, no word the original lacks beyond EDIT_NEW_WORDS) run on every
+ *  candidate, parsable or not. Each guard is deletion-safe (a removed guard changes the class, it does not throw), so
+ *  the mutation test can replay. */
 export function editSourceClass(orig: string, next: string): EditScopeClass | string {
   if (loadEditShape(orig, next)) return "export-keyword"; // m175-guard:shape-export
   const a = editTopLevel(orig), b = editTopLevel(next);
@@ -524,9 +584,13 @@ export function editSourceClass(orig: string, next: string): EditScopeClass | st
     if (a.length !== b.length) return "top-level-count"; // m175-guard:toplevel-count
     for (let i = 0; i < n; i++) if (a[i]!.kind !== b[i]!.kind) return "top-level-kind"; // m175-guard:toplevel-kind
     if (editImportish(b) > editImportish(a)) return "adds-import"; // m175-guard:adds-import
-    const ca = editTokenCounts(orig), cb = editTokenCounts(next);
-    for (const w of EDIT_DANGEROUS) if ((cb.get(w) ?? 0) > (ca.get(w) ?? 0)) return "dangerous:" + w; // m175-guard:dangerous
+    if ((editGlobalWrites(next) ?? 0) > (editGlobalWrites(orig) ?? 0)) return "global-write"; // m175-guard:global-write
   }
+  // the lexical checks run whether or not the texts parse (a runner's transform may accept what the TS parser rejects)
+  const ca = editTokenCounts(orig), cb = editTokenCounts(next);
+  for (const w of EDIT_DANGEROUS) if ((cb.get(w) ?? 0) > (ca.get(w) ?? 0)) return "dangerous:" + w; // m175-guard:dangerous
+  const code = a !== null && b !== null, vocab = editVocab(orig, code);
+  for (const w of editVocab(next, code)) if (!vocab.has(w) && !EDIT_NEW_WORDS.includes(w)) return "new-word:" + w; // m175-guard:new-word
   return "in-body";
 }
 /** The scope class of one edit, or a refusal reason. `original` reads a regular file at the pinned commit (null: none). */

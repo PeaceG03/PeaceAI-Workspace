@@ -55,7 +55,7 @@ test("M175 mutation: the guard tags are unique and cover the guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
   assert.deepEqual([...ids].sort(), [
-    "adds-import", "class-exists", "class-infra", "class-lockfile", "class-source", "class-test", "dangerous", "loop-row-scope", "policy",
+    "adds-import", "class-exists", "class-infra", "class-lockfile", "class-source", "class-test", "dangerous", "global-write", "loop-row-scope", "new-word", "policy",
     "row-scope-edit-mode", "row-scope-pass", "row-scope-value", "scope-gate", "shape-export", "skip-owned", "toplevel-count", "toplevel-kind",
   ].sort());
 });
