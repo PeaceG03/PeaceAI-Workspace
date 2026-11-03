@@ -137,7 +137,8 @@ export function devSetProblems(set: any): string[] {
   if (new Set(set.tasks.map((t: any) => t.id)).size !== set.tasks.length) return ["dev_set_task"];
   return [];
 }
-export interface DevFixFile { schema: string; k: number; minKeywords: number; tasks: { id: string; repo: string; merge: string; diffSha256: string; hashes: string[] }[] }
+/** No `repo` key on purpose: plan.ts trainingRepos() reads every repo value under peaceai/model as a training source. */
+export interface DevFixFile { schema: string; k: number; minKeywords: number; tasks: { id: string; merge: string; diffSha256: string; hashes: string[] }[] }
 /** Builds the devfix file: per task (set order), the fix shingles of its reference diff's added runs minus every
  * shingle that occurs in a base doc. `diffs`: task id -> the diff text of reference.from.merge against its parent. */
 export function devFixOf(set: { tasks: DevTask[] }, diffs: ReadonlyMap<string, string>, baseTexts: Iterable<string>): DevFixFile {
@@ -150,14 +151,14 @@ export function devFixOf(set: { tasks: DevTask[] }, diffs: ReadonlyMap<string, s
   const common = new Set<string>();
   for (const b of baseTexts) for (const x of fixShingles(tokens(b))) if (all.has(x)) common.add(x); // c2-guard:fix-base
   return { schema: DEVFIX_SCHEMA, k: DEVFIX_K, minKeywords: DEVFIX_MIN_KEYWORDS,
-    tasks: per.map(({ t, d, h }) => ({ id: t.id, repo: t.repo, merge: t.reference.from.merge, diffSha256: sha256(d), hashes: [...h].filter((x) => !common.has(x)).sort() })) };
+    tasks: per.map(({ t, d, h }) => ({ id: t.id, merge: t.reference.from.merge, diffSha256: sha256(d), hashes: [...h].filter((x) => !common.has(x)).sort() })) };
 }
 export interface DevSet { names: string[]; spans: string[]; shas: string[]; fix: Set<string> }
 /** The matchers of a dev task set and its devfix file. Throws a fixed code when they do not belong together. */
 export function devSetOf(set: any, fix: any): DevSet {
   if (devSetProblems(set).length) throw new Error("dev_set_invalid"); // c2-guard:dev-set
   const ok = fix?.schema === DEVFIX_SCHEMA && fix.k === DEVFIX_K && fix.minKeywords === DEVFIX_MIN_KEYWORDS && Array.isArray(fix.tasks) && fix.tasks.length === set.tasks.length
-    && set.tasks.every((t: DevTask, i: number) => fix.tasks[i]?.id === t.id && fix.tasks[i]?.repo === t.repo && fix.tasks[i]?.merge === t.reference.from.merge
+    && set.tasks.every((t: DevTask, i: number) => fix.tasks[i]?.id === t.id && fix.tasks[i]?.merge === t.reference.from.merge
       && Array.isArray(fix.tasks[i]?.hashes) && fix.tasks[i].hashes.length > 0 && fix.tasks[i].hashes.every((h: unknown) => typeof h === "string" && /^[0-9a-f]{16}$/.test(h)));
   if (!ok) throw new Error("devfix_differs"); // c2-guard:dev-fix-file
   const names = new Set<string>(), spans = new Set<string>(), shas = new Set<string>(), hashes = new Set<string>();

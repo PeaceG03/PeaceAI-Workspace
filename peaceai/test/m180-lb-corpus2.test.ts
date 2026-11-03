@@ -136,7 +136,7 @@ function runCases(m: Mod): string[] {
   ok("dev-fix-diff-missing", () => { try { m.devFixOf(DEVSET as any, new Map(), []); return false; } catch (e) { return (e as Error).message === "devfix_diff_missing"; } });
   ok("dev-set-invalid", () => [{ ...DEVSET, schema: "x" }, { ...DEVSET, tasks: [] }, { ...DEVSET, tasks: [{ ...DEVSET.tasks[0], commit: "abc" }] }, { ...DEVSET, tasks: [DEVSET.tasks[0], DEVSET.tasks[0]] }]
     .every((st) => { try { m.devSetOf(st, devFix(m)); return false; } catch (e) { return (e as Error).message === "dev_set_invalid"; } }));
-  ok("devfix-differs", () => { const f = devFix(m); return [{ ...f, schema: "x" }, { ...f, k: 9 }, { ...f, tasks: [{ ...f.tasks[0]!, merge: HEXA }] }, { ...f, tasks: [{ ...f.tasks[0]!, hashes: [] }] }, { ...f, tasks: [] }]
+  ok("devfix-differs", () => { const f = devFix(m); return [{ ...f, schema: "x" }, { ...f, k: 9 }, { ...f, tasks: [{ ...f.tasks[0]!, merge: HEXA }] }, { ...f, tasks: [{ ...f.tasks[0]!, id: "other-task" }] }, { ...f, tasks: [{ ...f.tasks[0]!, hashes: [] }] }, { ...f, tasks: [] }]
     .every((x) => { try { m.devSetOf(DEVSET, x); return false; } catch (e) { return (e as Error).message === "devfix_differs"; } }); });
   ok("dev-train", () => m.devTrainHits([{ text: "uses synthkit", split: "train" }, { text: "plain", split: "train" }], dset()) === 1 && m.devTrainHits([{ text: "uses synthkit", split: real.HELDOUT2 }], dset()) === 0);
   ok("sources-dev-missing", () => { const s = SRC().sources; delete s.devTasks; return m.sourcesProblems(s).includes("sources_dev"); });
@@ -486,6 +486,8 @@ test("m180: the committed new set: no train doc names, diagnoses or encodes the 
     assert.ok(dev.shas.includes(t.commit) && dev.shas.includes(t.reference.from.merge), t.id);
     assert.ok(fix.tasks[i].hashes.length > 0 && /^[0-9a-f]{64}$/.test(fix.tasks[i].diffSha256), t.id);
   }
+  // the fix file names no repository: plan.ts trainingRepos() would read one under peaceai/model as a training source (m144)
+  assert.ok(!/"(name|repo|repos)"\s*:/.test(fixBuf.toString("utf8")), "no name/repo key in the devfix file");
   // the texts of the admitted files at the sources tip (their blobs)
   const textOf = new Map<string, string>(C.sources.files.map((f: any) => {
     const t = execFileSync("git", ["-C", repo, "cat-file", "blob", f.blob], { encoding: "utf8", maxBuffer: 1 << 26 });

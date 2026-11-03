@@ -1,10 +1,10 @@
 {
  "schema": "peaceai-lb-corpus2-fingerprint:v1",
- "fingerprint": "46598960d6d7f41e8da4f38093263cd97cd5d5dd16b473c31a015a86b57a0e37",
+ "fingerprint": "8ecd9ceca8109964869858e2c0a4e17a2876016883dd335c9820ae7659d0d723",
  "parts": {
   "version": "peaceai-lb-corpus2:v2",
   "codeSha256": {
-   "peaceai/lib/lbcorpus2.ts": "e7aa3d942815ad6a364355a19b0efe5dc1b44d8dbd34a4fd9c330768637f66e5",
+   "peaceai/lib/lbcorpus2.ts": "72f2a75bbf76f76461158e40c923271f394da261db28f46e30862681a48db841",
    "peaceai/bin/lb-corpus2.ts": "ce9c9e36f4e4d1d2d2a0e197cf9f3fad6b229b57e4d7b7acc3e42fab44996e4c",
    "peaceai/lib/lbclean.ts": "0d43ab9490996910bf0e11ec62d9ce6686c8dc33ae4d0ee51129d2bf763f052b",
    "peaceai/lib/nlpairs.ts": "477547782310282234eaee515bead602cd49ddf8df94ed79f885e23559a3ddf8",
@@ -13,7 +13,7 @@
   "typescriptVersion": "5.9.3",
   "configSha256": "f66e030422529a00046a4f9bf9298df5fde367dba8c8d6e29fe97ae3cea6cbf4",
   "exclusionsSha256": "dbd0be3de5de3f12e6bd30a87422f9fb7ca0ffa7a2640f04a66615b87aac7d23",
-  "sourcesSha256": "dc0794ea918f3cc94d6aa6871bd2254b96555e804f3e1b2bcc67ad5e75deeaaa",
+  "sourcesSha256": "c6f2c791a41d0d7402464d85fe4a1629d986a5bfc999d4aab230a6d614102e1d",
   "base": {
    "docs": "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
    "manifest": "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",

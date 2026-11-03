@@ -383,7 +383,7 @@
    "set": "peaceai/plan/tasks-public-v1.json",
    "setSha256": "06c97d8d024c684f36afbc7e6724e48be2542e11be1ace0ad1da3ad59a43f810",
    "fix": "peaceai/model/lb-corpus2-devfix.json",
-   "fixSha256": "001e8f1edbe6f09eb526d6652a8c6bd553251aa0f34bf6a6ac84b61faa8901e7",
+   "fixSha256": "7ff0a002391c59616347610870afd508a4400cb32cb0cca57fab675a5f017b04",
    "diffs": "Each task's reference diff, fetched with: gh api -H 'Accept: application/vnd.github.diff' repos/<repo>/compare/<first parent of reference.from.merge>...<reference.from.merge>, saved as <task id>.diff; the devfix file pins each diff's sha256.",
    "decisions": [
     {
@@ -482,7 +482,7 @@
  "build": {
   "docsSha256": "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
   "manifestSha256": "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe",
-  "fingerprint": "46598960d6d7f41e8da4f38093263cd97cd5d5dd16b473c31a015a86b57a0e37",
+  "fingerprint": "8ecd9ceca8109964869858e2c0a4e17a2876016883dd335c9820ae7659d0d723",
   "docs": 63928,
   "docsBytes": 114016163,
   "baseDocs": 63839,

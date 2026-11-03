@@ -5,7 +5,6 @@
  "tasks": [
   {
    "id": "defu-proto-defaults",
-   "repo": "unjs/defu",
    "merge": "3942bfbbcaa72084bd4284846c83bd61ed7c8b29",
    "diffSha256": "fe186ac1428bcf24b2bd46bbc0892f2e0350b641581e54d8f950c05a9e85111c",
    "hashes": [
@@ -42,7 +41,6 @@
   },
   {
    "id": "destr-numeric-strings",
-   "repo": "unjs/destr",
    "merge": "d9ba16d7ad5c3afb6d8c8e84f6d24dba616013fe",
    "diffSha256": "a4483fe9080c569d89f335dd36235f7c9a003548be77d0858481f6327ae0291b",
    "hashes": [
@@ -275,7 +273,6 @@
   },
   {
    "id": "scule-is-uppercase",
-   "repo": "unjs/scule",
    "merge": "57cfd1528a03720392604a2e582782fc481657dd",
    "diffSha256": "07d226186a0b4169c939e60fa0d2979d7c4a4f64252271f6a64c6229c7cd75ae",
    "hashes": [
@@ -303,7 +300,6 @@
   },
   {
    "id": "ohash-diff-falsy",
-   "repo": "unjs/ohash",
    "merge": "a5004f7175236d7d44864e77bc7ce20a93b77130",
    "diffSha256": "c9767bfacec0e06224407e00b62c36d104b5ae28038fbfa2a5297805b38d1d15",
    "hashes": [
@@ -406,7 +402,6 @@
   },
   {
    "id": "yup-string-not-required",
-   "repo": "jquense/yup",
    "merge": "dcb4b6381eac21f8f28297066e71920a788c8a47",
    "diffSha256": "2da71ced15fa2936a7e8deafe1b23e26d7e7822757ac9a41d04f0d68daf721cf",
    "hashes": [
@@ -501,7 +496,6 @@
   },
   {
    "id": "kysely-pg-destroy-acquire",
-   "repo": "kysely-org/kysely",
    "merge": "af446a052fb2a7ce9323dc32391cf71fa34b9214",
    "diffSha256": "4990485b462c2cc6c6f3e498b59586919672bae87916ba776ad6961cd386892a",
    "hashes": [
@@ -892,7 +886,6 @@
   },
   {
    "id": "kysely-mssql-json-escape",
-   "repo": "kysely-org/kysely",
    "merge": "e1b4a392c1e90a83e29ec8bd7479459465a0ef42",
    "diffSha256": "231dcb60dca289c17db7d3d0855de6b2ff1c487e06e45a2ef804ef1f7952b51c",
    "hashes": [
@@ -1344,7 +1337,6 @@
   },
   {
    "id": "superstruct-coerce-undefined",
-   "repo": "ianstormtaylor/superstruct",
    "merge": "198beffd1fa61739833fdcbefd90ef1d5804100c",
    "diffSha256": "40d5ca933afd3dc8e7141be0cec9f8cca9355a54c78b178dfa93032121be1aae",
    "hashes": [
@@ -1508,7 +1500,6 @@
   },
   {
    "id": "valibot-ulid-first-char",
-   "repo": "open-circle/valibot",
    "merge": "1c4983f7f70f59a1095018296f9d6e4eb46b43e5",
    "diffSha256": "884a214d598101c8f518f621fab783d25c8dd71ac5499aa893e037d45db3ca36",
    "hashes": [
@@ -1636,7 +1627,6 @@
   },
   {
    "id": "p-queue-idle-event",
-   "repo": "sindresorhus/p-queue",
    "merge": "54a017b3eb38008258141b8008c043076500666a",
    "diffSha256": "712e944223372a1d21d337d139b583f7a5deea44ffaf4b831113d651b5de7e15",
    "hashes": [
@@ -2104,7 +2094,6 @@
   },
   {
    "id": "remeda-zip-empty",
-   "repo": "remeda/remeda",
    "merge": "870135729da0427895af8cba11efd5b4ea6bbeb5",
    "diffSha256": "b69208bfb1801aa75fc8187090c10d03b3710d8d8cd634c8ce7ac4228734778e",
    "hashes": [
@@ -2423,7 +2412,6 @@
   },
   {
    "id": "neverthrow-async-throwable",
-   "repo": "supermacro/neverthrow",
    "merge": "2333199683ebd74b0b68f786b1874ae2d7568303",
    "diffSha256": "4f8ace86f60bef6ebca9a5ef902a84e7d25d1d7bb4a6d833c2267f14a4e993b7",
    "hashes": [
