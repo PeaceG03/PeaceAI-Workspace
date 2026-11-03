@@ -34,7 +34,7 @@ test("M151: v2 rows: runner, deps and baseline are required, fixed values, consi
   const { runner: _r, ...noRunner } = v2();
   const bad: [Record<string, unknown>, string][] = [
     [noRunner, "loop_keys"],
-    [{ ...v2(), runner: "mocha" }, "runner"],
+    [{ ...v2(), runner: "ava" }, "runner"], // M172: mocha is a loop runner now; ava is not
     [{ ...v2(), deps: "bun" }, "deps"],
     [{ ...v2(), baseline: { total: 3, passing: 1, failing: 2, names: ["x"] } }, "baseline_keys"],
     [{ ...v2(), baseline: { total: 3, passing: 2, failing: 2 } }, "baseline_values"],

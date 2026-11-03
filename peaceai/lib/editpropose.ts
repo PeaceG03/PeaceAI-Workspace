@@ -49,7 +49,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy"] as const;
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 export type Template = (typeof TEMPLATES)[number] | Idiom;
 /** M168: repair-v2's full order (idioms first, then the v1 templates unchanged). */
@@ -130,6 +130,34 @@ export function focusFiles(files: readonly string[], words: ReadonlySet<string>)
   return out;
 }
 
+/** M172 (spec: peaceai/spec/repair-v2-m172.md): a relative import specifier resolved to the repo path of a source file it can name (no I/O beyond `exists`). */
+export function resolveImport(from: string, spec: string, exists: (p: string) => boolean): string | null {
+  if (!spec.startsWith("./") && !spec.startsWith("../")) return null; // m172-guard:imp-relative
+  const parts = from.split("/").slice(0, -1);
+  let escapes = false;
+  for (const seg of spec.split("/")) { if (seg === "." || seg === "") continue; if (seg !== "..") parts.push(seg); else if (parts.length) parts.pop(); else escapes = true; }
+  if (escapes) return null; // m172-guard:imp-inside
+  const base = parts.join("/");
+  const stem = base.replace(/\.(?:[cm]?js|jsx)$/, "");
+  for (const c of [base, `${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`, `${stem}/index.ts`, `${stem}/index.tsx`]) if (SOURCE.test(c) && exists(c)) return c;
+  return null;
+}
+/** M172: the file's import bindings from relative modules: local name -> { spec, imported name } (named imports only). */
+function relativeImports(sf: ts.SourceFile): Map<string, { spec: string; name: string }> {
+  const m = new Map<string, { spec: string; name: string }>();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause) continue;
+    if (st.importClause.isTypeOnly) continue; // m172-guard:imp-type-only
+    const b = st.importClause.namedBindings;
+    if (!b || !ts.isNamedImports(b)) continue;
+    for (const e of b.elements) {
+      if (e.isTypeOnly) continue; // m172-guard:imp-type-only-name
+      m.set(e.name.text, { spec: st.moduleSpecifier.text, name: (e.propertyName ?? e.name).text });
+    }
+  }
+  return m;
+}
+
 /** The located sites, computed once from the search tools (see prepare). */
 export function locate(search: CodeRepo, input: PrepareInput, depth: number = CALLEE_DEPTH.v1): Site[] {
   const names = [...namedSymbols(input.request), ...input.failing.flatMap((n) => namedSymbols(n))].filter((n, i, a) => a.indexOf(n) === i).slice(0, MAX_SYMBOLS);
@@ -164,12 +192,36 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
       if (text === null) continue;
       const sf = parseSource(p, text);
       const tops = topFunctions(sf);
+      const imports = relativeImports(sf);
+      // M172 (repair-v2 only): a function called inside `node` that the file imports from a relative module is
+      // located in its own file, one level, after the same-file sites (entry -> helper module is the common layout)
+      const importedCallees = (node: ts.Node, tier: number) => {
+        if (depth < 2) return; // m172-guard:imp-v2-only
+        const seen: string[] = [];
+        const w = (n: ts.Node) => {
+          if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && imports.has(n.expression.text) && !seen.includes(n.expression.text)) seen.push(n.expression.text);
+          ts.forEachChild(n, w);
+        };
+        w(node);
+        for (const local of seen.slice(0, MAX_CALLEES)) {
+          const im = imports.get(local)!;
+          const target = resolveImport(p, im.spec, (q) => textOf(q) !== null);
+          if (!target) continue;
+          if (!allowed(target)) continue; // m172-guard:imp-allowed
+          const tsf = parseSource(target, textOf(target)!);
+          const fn = topFunctions(tsf).get(im.name);
+          if (fn) push({ path: target, name: im.name, start: fn.getStart(tsf), end: fn.getEnd(), tier });
+        }
+      };
       for (const d of declarationsNamed(sf, name)) {
         push({ path: p, name, start: d.getStart(sf), end: d.getEnd(), tier: 0 });
         // one level of same-file callees (the fault is often one call below the named entry point)
         const callees: string[] = [];
         const walk = (n: ts.Node) => {
           if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text !== name && tops.has(n.expression.text) && !callees.includes(n.expression.text)) callees.push(n.expression.text);
+          // M172 (repair-v2 only): a same-file function passed as a value to a call (a callback, an implementation
+          // handed to a dispatcher) runs below the entry point just as a direct callee does
+          if (depth >= 2 && ts.isIdentifier(n) && n.parent && ts.isCallExpression(n.parent) && n.parent.arguments.includes(n as ts.Expression) && n.text !== name && tops.has(n.text) && !callees.includes(n.text)) callees.push(n.text); // m172-guard:ref-arg
           ts.forEachChild(n, walk);
         };
         walk(d);
@@ -186,7 +238,9 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
           };
           walk2(t);
           for (const c2 of deeper.slice(0, MAX_CALLEES)) { const t2 = tops.get(c2)!; push({ path: p, name: c2, start: t2.getStart(sf), end: t2.getEnd(), tier: 2 }); }
+          importedCallees(t, 2);
         }
+        importedCallees(d, 1);
       }
     }
   }
@@ -370,6 +424,40 @@ function protoSafeCopy(n: ts.Node, sf: ts.SourceFile): string | null {
   return `({ ${sources.map((a) => `...${sf.text.slice(a.getStart(sf), a.getEnd())}`).join(", ")} })`;
 }
 
+/** M172 undefined-keeps-key: the condition of `if (v !== undefined) o[k] = v` (no else; the assigned value is the
+ *  checked variable; o a plain reference; k an identifier or literal, or `o.name = v`) -> `v !== undefined || k in o`:
+ *  the skip is meant for an absent key, but it also leaves a stale value under a present key whose new value is
+ *  undefined. The edit only adds assignments of undefined to keys `in` the object, so it cannot touch any other key. */
+function undefinedKeepsKey(n: ts.Node, sf: ts.SourceFile): string | null {
+  const st = n.parent;
+  if (!st || !ts.isIfStatement(st) || st.expression !== n) return null;
+  if (st.elseStatement) return null; // m172-guard:uk-no-else
+  if (!ts.isBinaryExpression(n)) return null;
+  const k = n.operatorToken.kind;
+  if (k !== ts.SyntaxKind.ExclamationEqualsEqualsToken && k !== ts.SyntaxKind.ExclamationEqualsToken) return null;
+  const isUndef = (e: ts.Expression) => ts.isIdentifier(e) && e.text === "undefined";
+  let v: ts.Expression = n.left;
+  if (isUndef(n.left)) v = n.right;
+  else if (!isUndef(n.right)) return null; // m172-guard:uk-undefined
+  if (!ts.isIdentifier(v)) return null;
+  let body: ts.Statement = st.thenStatement;
+  if (ts.isBlock(body) && body.statements.length === 1) body = body.statements[0]!;
+  if (!ts.isExpressionStatement(body) || !ts.isBinaryExpression(body.expression) || body.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return null;
+  const { left, right } = body.expression;
+  if (!ts.isIdentifier(right) || right.text !== v.text) return null; // m172-guard:uk-same-value
+  const src = (x: ts.Node) => sf.text.slice(x.getStart(sf), x.getEnd());
+  let obj: ts.Expression, key: string;
+  if (ts.isElementAccessExpression(left) && !left.questionDotToken) {
+    const a = left.argumentExpression;
+    if (!ts.isIdentifier(a) && !ts.isStringLiteral(a) && !ts.isNumericLiteral(a)) return null; // m172-guard:uk-key
+    obj = left.expression; key = src(a);
+  } else if (ts.isPropertyAccessExpression(left) && !left.questionDotToken && ts.isIdentifier(left.name)) {
+    obj = left.expression; key = JSON.stringify(left.name.text);
+  } else return null;
+  if (!plainRef(obj)) return null; // m172-guard:uk-ref
+  return `${src(n)} || ${key} in ${src(obj)}`;
+}
+
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -382,6 +470,7 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(casePredicate(n, sf), "case-predicate");
     add(typeofNull(n, sf), "typeof-null");
     add(protoSafeCopy(n, sf), "proto-safe-copy");
+    add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
     ts.forEachChild(n, visit);
   };
   visit(sf);

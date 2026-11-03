@@ -44,7 +44,11 @@ const fixtureFetcher = (files = FIXTURE, head = H40, dirty = false): Fetcher => 
   fetches++;
   return { head, files: files.filter((f) => /\.tsx?$/.test(f.path)), read: (p) => files.find((f) => f.path === p)?.content ?? null, unchanged: () => !dirty, close: () => {} } satisfies Checkout;
 };
-const opts = (over: Record<string, unknown> = {}) => ({ root: repo, fetcher: fixtureFetcher(), outDir: mkdtempSync(join(tmpdir(), "m144-out-")), rules: approvedRules(repo), training: new Set<string>(), ...over });
+// batch 11: every out dir this file makes is removed after its tests (they used to stay in /tmp as m144-out-*)
+const outDirs: string[] = [];
+const outDir = () => { const d = mkdtempSync(join(tmpdir(), "m144-out-")); outDirs.push(d); return d; };
+test.after(() => { for (const d of outDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+const opts = (over: Record<string, unknown> = {}) => ({ root: repo, fetcher: fixtureFetcher(), outDir: outDir(), rules: approvedRules(repo), training: new Set<string>(), ...over });
 
 test("M144: the public task file is valid, pinned, permissive, and about 8-12 tasks with no repo or org dominating", () => {
   assert.equal(taskFileProblem(publicFile), null);
