@@ -20,7 +20,7 @@ const TAG = /\/\/ guard:([a-z0-9-]+)(?:\s*$|",?\s*$)/;
 const lines = source.split("\n");
 const guards = lines.flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, line: i }] : []; });
 const NEEDS_CAND = new Set(["deps-cand", "deps-config", "deps-corepack-env", "deps-timeout", "deps-size", "deps-registry", "deps-env-i", "deps-kill", "deps-chown"]);
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M151_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M151_CAND ?? process.env.M146_CAND ?? "" }).ok;
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "peaceai-m151-mut-")); });

@@ -19,7 +19,7 @@ const TAG = /\/\/ m175-guard:([a-z0-9-]+)(?:[\s",].*)?$/;
 const sources: Record<string, string> = Object.fromEntries(LIB_FILES.map((f) => [f, readFileSync(join(libDir, f), "utf8")]));
 const guards = Object.entries(sources).flatMap(([file, text]) => text.split("\n").flatMap((l, i) => { const m = TAG.exec(l); return m ? [{ id: m[1]!, file, line: i }] : []; }));
 const NEEDS_CAND = new Set(["scope-gate", "loop-row-scope", "loop-load-limit"]);
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M175_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M175_CAND ?? process.env.M146_CAND ?? "" }).ok;
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "peaceai-m175-mut-")); });

@@ -23,7 +23,7 @@ import { STAGE2_CAND_ENV, stage2CandUid } from "../lib/selfpropose.ts";
 import { e2eTask, opts as opts174 } from "./m174-cases.ts";
 import { setup as setup151, teardown as teardown151 } from "./m151-fixtures.ts";
 
-// M176 runs ONLY as the candidate uid named by M177_CAND (peaceai-cand3 on the box); with none set it asserts the
+// M177 runs ONLY as the candidate uid named by M177_CAND (peaceai-cand3 on the box); with none set it asserts the
 // fail-closed CAND_UID_* refusal. It never falls back to another batch's candidate user.
 const M177_CAND = process.env.M177_CAND ?? "";
 export const m177Cand = (): boolean => stage2CandUid({ [STAGE2_CAND_ENV]: M177_CAND }).ok;

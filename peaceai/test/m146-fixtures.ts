@@ -115,7 +115,7 @@ export function setup(port: number, hits: () => number): Ctx {
   writeFileSync(join(noNs, "unshare"), "#!/bin/sh\nexit 1\n");
   chmodSync(noNs, 0o755);
   chmodSync(join(noNs, "unshare"), 0o755);
-  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M146_CAND ?? "peaceai-cand" };
+  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M146_CAND ?? "" };
   const cand = stage2CandUid(env).ok;
   return { base, marker, port, hits, calc, jail, file, edits, cand, env, noNs, fetcher: gitCopyFetcher((r) => join(base, "repos", r.split("/")[1]!)), root };
 }
