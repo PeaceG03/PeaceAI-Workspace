@@ -91,6 +91,7 @@ function sstub(l: Libs, text: string): string[] {
 const has = (got: string[], want: string) => assert.ok(got.includes(want), `missing "${want}" in ${JSON.stringify(got)}`);
 const lacks = (got: string[], re: RegExp) => assert.ok(!got.some((g) => re.test(g)), `unexpected ${re} in ${JSON.stringify(got)}`);
 const SSTUB = new Set<string>(["swap-statements", "swap-args", "swap-operands", "change-identifier"]);
+const LATER = new Set<string>(["copy-guard", "delete-statement"]); // M177: the only templates after the SStuB classes
 /** The M175 gate on a candidate: the class the loop would give it before any run (in-body is the only one expected). */
 function gate(orig: ReadonlyMap<string, string>, edits: readonly Prop.RepairEdit[]): string {
   const read = (p: string) => orig.get(p) ?? null;
@@ -111,7 +112,8 @@ function admitted(l: Libs, ctx: Ctx, s: Sim, files: Record<string, string>, requ
   for (const c of ss) assert.equal(gate(s.orig, c.edits), "in-body", `M175 gate on ${c.muts[0]!.template}`);
   // no regression: every earlier template's candidate comes before every SStuB candidate (SStuB is last in TEMPLATES_V2)
   const firstSs = queue.findIndex((c) => c.muts.some((m) => SSTUB.has(m.template)));
-  assert.ok(queue.slice(firstSs).every((c) => c.muts.every((m) => SSTUB.has(m.template))), "an earlier template's candidate after an SStuB one");
+  // M177 (batch 16): the statement edits come after the SStuB classes, so only they may follow
+  assert.ok(queue.slice(firstSs).every((c) => c.muts.every((m) => SSTUB.has(m.template) || LATER.has(m.template))), "an earlier template's candidate after an SStuB one");
 }
 
 // ---- fixtures (synthetic, general bug shapes)
@@ -225,7 +227,7 @@ export const CASES: Case[] = [
     id: "order: the SStuB templates are the last v2 templates; repair-v1's list and the earlier v2 order are unchanged",
     run(l) {
       assert.deepEqual([...l.prop.SSTUB_TEMPLATES], ["swap-statements", "swap-args", "swap-operands", "change-identifier"]);
-      assert.deepEqual([...l.prop.TEMPLATES_V2], [...l.prop.IDIOM_TEMPLATES, ...l.prop.TEMPLATES, ...l.prop.CONST_TEMPLATES, ...l.prop.SSTUB_TEMPLATES]);
+      assert.deepEqual([...l.prop.TEMPLATES_V2], [...l.prop.IDIOM_TEMPLATES, ...l.prop.TEMPLATES, ...l.prop.CONST_TEMPLATES, ...l.prop.SSTUB_TEMPLATES, ...l.prop.STMT_TEMPLATES]); // M177: + statement edits last
       assert.deepEqual([...l.prop.TEMPLATES], ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"]);
     },
   },

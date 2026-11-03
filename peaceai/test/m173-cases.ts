@@ -196,7 +196,7 @@ export const CASES: Case[] = [
     id: "order: const-value is the last v2 template, so the earlier templates' candidates and order are unchanged",
     run(l) {
       assert.deepEqual([...l.prop.CONST_TEMPLATES], ["const-value"]);
-      assert.deepEqual([...l.prop.TEMPLATES_V2], [...l.prop.IDIOM_TEMPLATES, ...l.prop.TEMPLATES, "const-value", ...l.prop.SSTUB_TEMPLATES]); // M176: the SStuB classes come after const-value
+      assert.deepEqual([...l.prop.TEMPLATES_V2], [...l.prop.IDIOM_TEMPLATES, ...l.prop.TEMPLATES, "const-value", ...l.prop.SSTUB_TEMPLATES, ...l.prop.STMT_TEMPLATES]); // M176: the SStuB classes come after const-value; M177: then the statement edits
     },
   },
 ];

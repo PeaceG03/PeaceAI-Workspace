@@ -37,6 +37,7 @@ PeaceSTOCKS code was used to choose, shape or test these classes; the fixtures a
    its declaration, never in its own initializer). Not a read, so never replaced: a declared or property name
    or a shorthand property (`{ a }` would rename the key; its name node, so also `ci-decl`), an assignment target (`ci-write`),
    a `++` / `--` operand (`ci-incdec`), a callee (`ci-callee`), a name in a type (`ci-type`; erased, no runtime change).
+   Known and harmless (batch 16 note): the replacement can be a name shadowed at the use site by an inner block's binding of the same name (it then reads that inner binding); such a candidate is only ever a wrong guess, the M175 gate and the team's tests decide it.
 
 The classes only run for repair-v2 (`m176-guard:sstub-v2-only`); repair-v1, and so model-v1 (which reranks
 repair-v1's list), are unchanged. CI's dev workflow runs repair-v1, model-v1 and rules-v1, so this batch changes no

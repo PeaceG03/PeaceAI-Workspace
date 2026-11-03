@@ -15,6 +15,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { availableParallelism, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import type * as Propose from "../lib/editpropose.ts";
 import type * as Loop from "../lib/loop.ts";
@@ -65,8 +66,12 @@ export function e2eTask(ctx: Ctx, name: string, src: Record<string, string>, tea
     reference: { from: { pr: 1, merge: git("rev-parse", "HEAD") }, files: [{ path: first, change: "modify" as const }, { path: "test/unit.test.ts", change: "add" as const }],
       steps: [{ action: "edit-source" as const, file: first }, { action: "add-test" as const, file: "test/unit.test.ts" }, { action: "run-tests" as const, file: null }], docs: [] } };
 }
+/** Batch 16: the load factor (1..3) for a loop e2e run on a shared box: the 1-minute load average per CPU, bounded. The
+ *  real loop's run timeout (60 s) and m174-mutation's runner cap scale by it, so a run slowed by other sessions' load is
+ *  not cut off; a bound keeps a hang a hang. */
+export const E2E_LOAD = Math.min(3, Math.max(1, Math.round((loadavg()[0]! / Math.max(1, availableParallelism())) * 10) / 10));
 export const opts = (ctx: Ctx, proposer: Loop.Proposer, maxAttempts = 1) => ({
-  root: ctx.m151.root, fetcher: ctx.m151.fetcher, proposer, maxAttempts, runMs: 60_000, env: ctx.m151.env, rules: [], training: new Set<string>(),
+  root: ctx.m151.root, fetcher: ctx.m151.fetcher, proposer, maxAttempts, runMs: Math.round(60_000 * E2E_LOAD), env: ctx.m151.env, rules: [], training: new Set<string>(),
   deps: { tool: ctx.m151.tool, extraEnv: { M151_STUB_VITEST_DIR: ctx.m151.stubVitest } },
 });
 const loopRun = (l: Libs, ctx: Ctx, name: string, src: Record<string, string>, test: string, p: Loop.Proposer, max = 1) =>
