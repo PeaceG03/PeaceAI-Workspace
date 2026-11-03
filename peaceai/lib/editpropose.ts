@@ -150,9 +150,14 @@ export function resolveImport(from: string, spec: string, exists: (p: string) =>
 function relativeImports(sf: ts.SourceFile): Map<string, { spec: string; name: string }> {
   const m = new Map<string, { spec: string; name: string }>();
   for (const st of sf.statements) {
-    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause || st.importClause.isTypeOnly) continue;
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause) continue;
+    if (st.importClause.isTypeOnly) continue; // m172-guard:imp-type-only
     const b = st.importClause.namedBindings;
-    if (b && ts.isNamedImports(b)) for (const e of b.elements) if (!e.isTypeOnly) m.set(e.name.text, { spec: st.moduleSpecifier.text, name: (e.propertyName ?? e.name).text });
+    if (!b || !ts.isNamedImports(b)) continue;
+    for (const e of b.elements) {
+      if (e.isTypeOnly) continue; // m172-guard:imp-type-only-name
+      m.set(e.name.text, { spec: st.moduleSpecifier.text, name: (e.propertyName ?? e.name).text });
+    }
   }
   return m;
 }

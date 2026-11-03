@@ -52,9 +52,10 @@ test("M172 mutation: the guard tags are unique and cover the guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
   assert.deepEqual([...ids].sort(), [
-    "imp-allowed", "imp-inside", "imp-relative", "imp-v2-only", "mocha-config", "mocha-extension", "mocha-flag", "mocha-one-command", "mocha-options",
-    "mocha-require-dotdot", "mocha-require-file", "mocha-require-pkg", "mocha-timeout", "mocha-ui", "ref-arg", "shim-mocha-args", "shim-mocha-sep",
-    "shim-mocha-stats", "uk-key", "uk-no-else", "uk-ref", "uk-same-value", "uk-undefined",
+    "imp-allowed", "imp-inside", "imp-relative", "imp-type-only", "imp-type-only-name", "imp-v2-only", "mocha-config", "mocha-extension", "mocha-flag",
+    "mocha-one-command", "mocha-options", "mocha-require-bare", "mocha-require-dotdot", "mocha-require-file", "mocha-require-pkg", "mocha-timeout", "mocha-ui",
+    "ref-arg", "shim-mocha-args", "shim-mocha-pending", "shim-mocha-sep", "shim-mocha-stats", "shim-mocha-total", "uk-key", "uk-no-else", "uk-ref",
+    "uk-same-value", "uk-undefined",
   ]);
 });
 

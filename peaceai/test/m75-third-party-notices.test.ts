@@ -13,6 +13,12 @@ const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 const NOTICES = read("THIRD_PARTY_NOTICES");
 const PERMISSIVE = /^(?:MIT|Apache-2\.0|BSD-[23]-Clause|ISC)$/;
 const OWN = "peaceai/test/fixtures/m67/peacestocks/";
+// Exempt (batch 11 fix, Auditor B1): pinned-install fixtures for the real-runner tests (m172-real-vitest, m172-real-mocha).
+// They copy no third-party file: a package.json written in this repo and the package-lock.json npm generated from it
+// (package names, versions, registry URLs and integrity hashes only; no code, no license text). The packages are
+// installed into a temp dir at test time and never committed, so there is no copied work to attribute. The last test
+// below holds them to exactly that shape, so the exemption cannot cover anything else.
+const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/"];
 
 type Group = { repo: string; license: string; file: string; sha: string; rows: { commit: string; path: string }[]; url: string; asWritten: string | null; text: string };
 const groups: Group[] = NOTICES.split(`\n${"=".repeat(78)}\n`).slice(1).map((blk) => {
@@ -24,7 +30,7 @@ const groups: Group[] = NOTICES.split(`\n${"=".repeat(78)}\n`).slice(1).map((blk
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : [relative(root, p)]; });
 
 test("every third-party fixture is listed exactly once; every listed path exists; Peace's own fixtures are not listed", () => {
-  const fixtures = walk(resolve(root, "peaceai/test/fixtures")).filter((p) => !p.startsWith(OWN)).sort();
+  const fixtures = walk(resolve(root, "peaceai/test/fixtures")).filter((p) => !p.startsWith(OWN) && !LOCK_ONLY.some((d) => p.startsWith(d))).sort();
   const listed = groups.flatMap((g) => g.rows.map((r) => r.path)).sort();
   assert.deepEqual(listed, fixtures);
   assert.equal(new Set(listed).size, listed.length);
@@ -78,4 +84,23 @@ test("commits and license hashes agree with the evidence records that copied eac
     }
   }
   assert.ok(fromEvidence >= 100);
+});
+
+test("the lockfile-only fixtures are exempt only while they hold just a private package.json and its npm lockfile (registry URLs and integrity hashes, no code)", () => {
+  for (const d of LOCK_ONLY) {
+    assert.deepEqual(readdirSync(resolve(root, d)).sort(), ["package-lock.json", "package.json"], d);
+    const pkg = JSON.parse(read(`${d}package.json`)) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(pkg).filter((k) => !["name", "private", "type", "devDependencies"].includes(k)), [], `${d}package.json: only name / private / type / devDependencies`);
+    assert.equal(pkg.private, true, d);
+    assert.ok(!NOTICES.includes(d), `${d} is not listed as third-party`);
+    const lock = JSON.parse(read(`${d}package-lock.json`)) as { lockfileVersion: number; packages: Record<string, Record<string, unknown>> };
+    assert.equal(lock.lockfileVersion, 3, d);
+    const entries = Object.entries(lock.packages).filter(([k]) => k !== "");
+    assert.ok(entries.length > 0, d);
+    for (const [k, e] of entries) {
+      assert.match(k, /^node_modules\/(?:@[\w.-]+\/)?[\w.-]+(?:\/node_modules\/(?:@[\w.-]+\/)?[\w.-]+)*$/, `${d}: ${k}`);
+      assert.match(String(e.resolved), /^https:\/\/registry\.npmjs\.org\/[^\s]+\.tgz$/, `${d}: ${k} resolved`);
+      assert.match(String(e.integrity), /^sha512-[A-Za-z0-9+/]+=*$/, `${d}: ${k} integrity`);
+    }
+  }
 });

@@ -6,7 +6,11 @@
 //  - repair-v2 localisation: same-file functions passed as call arguments, and functions imported from a relative
 //    module (one level), are located below the named entry point;
 //  - repair-v2 idiom undefined-keeps-key.
-// Synthetic fixtures only (stub runners; no network; none modeled on a dev-split task's code, no PeaceSTOCKS shape).
+// Synthetic fixtures only (stub runners; no network; no PeaceSTOCKS shape). Disclosure (batch 11 fix, Auditor B3): the
+// undefined-keeps-key idiom was derived AFTER looking at the superstruct-coerce-undefined dev failure and its upstream
+// fix (superstruct PR 1126), so no superstruct result may be credited to it. Its admitting shapes below (a patch loop,
+// a property sanitizer, a form-title trim behind an import) are unrelated to that task's code; the earlier fixture that
+// mirrored it (create -> check -> coerceAll over a value's keys) was removed.
 // The repair cases use an in-process oracle (the edited module is transpiled and called), as in m168-cases.ts.
 // Spec: peaceai/spec/loop-runners-v3.md and peaceai/spec/repair-v2-m172.md.
 import assert from "node:assert/strict";
@@ -34,7 +38,9 @@ const dir = (ctx: Ctx, name: string) => join(ctx.base, "m172", `${name}-${n++}`)
 
 /** A stub mocha CLI: records its argv in $TMPDIR/m172-argv.json; honours --require (relative or a package), --ui
  * (bdd: it/describe, tdd: test/suite); writes the json reporter's report only for `--reporter json --reporter-option
- * output=FILE`; M172_STUB_MOCHA=nostats writes a report with no stats. Exit code: the failure count. */
+ * output=FILE`; M172_STUB_MOCHA=nostats writes a report with no stats, =pending one with a pending test, =mismatch one whose
+ * test count is not passes + failures. Its lib/ has a runnable.js / pending.js for PeaceAI's pending guard. Exit code:
+ * the failure count. */
 export const STUB_MOCHA_CLI = [
   'import { writeFileSync } from "node:fs";',
   'import { createRequire } from "node:module";',
@@ -60,7 +66,8 @@ export const STUB_MOCHA_CLI = [
   "  try { await import(pathToFileURL(resolve(f)).href); } catch { failures++; tests.length = 0; continue; }",
   "  for (const fn of tests.splice(0)) { try { await fn(); passes++; } catch { failures++; } }",
   "}",
-  'const rep = process.env.M172_STUB_MOCHA === "nostats" ? { tests: [] } : { stats: { passes, failures, tests: passes + failures }, tests: [] };',
+  'const mode = process.env.M172_STUB_MOCHA;',
+  'const rep = mode === "nostats" ? { tests: [] } : { stats: { passes, failures, pending: mode === "pending" ? 1 : 0, tests: passes + failures + (mode === "mismatch" ? 1 : 0) }, tests: [] };',
   'if (reporter === "json" && output) writeFileSync(output, JSON.stringify(rep)); else process.stdout.write(JSON.stringify(rep));',
   "process.exit(failures);",
   "",
@@ -70,11 +77,16 @@ export function stubMocha(at: string, version = "10.2.0"): string {
   mkdirSync(join(at, "bin"), { recursive: true });
   writeFileSync(join(at, "package.json"), JSON.stringify({ name: "mocha", version, type: "module", bin: { mocha: "./bin/mocha.js", _mocha: "./bin/_mocha" } }));
   writeFileSync(join(at, "bin/mocha.js"), STUB_MOCHA_CLI);
+  mkdirSync(join(at, "lib"), { recursive: true });
+  writeFileSync(join(at, "lib/package.json"), JSON.stringify({ type: "commonjs" }));
+  writeFileSync(join(at, "lib/runnable.js"), "function Runnable() {}\nRunnable.prototype.run = function (fn) { fn(); };\nmodule.exports = Runnable;\n");
+  writeFileSync(join(at, "lib/pending.js"), "function Pending(m) { this.message = m; }\nmodule.exports = Pending;\n");
   return at;
 }
 
 const OK = 'it("a", () => {});\n';
 const ONE_FAIL = 'it("a", () => {});\nit("b", () => { throw new Error("x"); });\n';
+const TWO_FAIL = 'it("a", () => {});\nit("b", () => { throw new Error("x"); });\nit("c", () => { throw new Error("y"); });\n';
 const REG_CHECK = 'it("registered", () => { if (globalThis.M172_REG !== 1) throw new Error("hook not loaded"); });\n';
 const REG = "globalThis.M172_REG = 1;\n";
 const PASS1 = "# pass 1\n# fail 0";
@@ -82,15 +94,15 @@ const FAIL1 = "# pass 1\n# fail 1";
 const NONE = "# pass 0\n# fail 1";
 
 /** Runs the shim directly in a fixture dir with the stub mocha; `args` are what follows the runner and pkgDir. */
-function shimRun(l: Libs, ctx: Ctx, files: Record<string, string>, args: string[], o: { nostats?: boolean } = {}) {
+function shimRun(l: Libs, ctx: Ctx, files: Record<string, string>, args: string[], o: { mode?: "nostats" | "pending" | "mismatch" } = {}) {
   const d = plain(dir(ctx, "shim"), { "package.json": pkgJson({ test: "mocha" }, { mocha: "10.2.0" }), ...files });
   stubMocha(join(d, "node_modules/mocha"));
   l.deps.installShim(d);
   const tmp = join(d, ".tmp");
   mkdirSync(tmp);
-  const r = spawnSync(process.execPath, [l.deps.SHIM_PATH, "mocha", "", ...args], { cwd: d, encoding: "utf8", env: { PATH: process.env.PATH, TMPDIR: tmp, ...(o.nostats ? { M172_STUB_MOCHA: "nostats" } : {}) }, timeout: 60_000 });
+  const r = spawnSync(process.execPath, [l.deps.SHIM_PATH, "mocha", "", ...args], { cwd: d, encoding: "utf8", env: { PATH: process.env.PATH, TMPDIR: tmp, ...(o.mode ? { M172_STUB_MOCHA: o.mode } : {}) }, timeout: 60_000 });
   const rec = join(tmp, "m172-argv.json");
-  return { tail: (r.stdout ?? "").trimEnd().split("\n").slice(-2).join("\n"), argv: existsSync(rec) ? JSON.parse(readFileSync(rec, "utf8")) as string[] : null, tmp };
+  return { tail: (r.stdout ?? "").trimEnd().split("\n").slice(-2).join("\n"), argv: existsSync(rec) ? JSON.parse(readFileSync(rec, "utf8")) as string[] : null, tmp, dir: d, status: r.status };
 }
 /** detectRunner on a fixture: the package.json (scripts, devDependencies) plus extra files. */
 function detect(l: Libs, ctx: Ctx, scripts: Record<string, string>, extra: Record<string, string> = {}, devDeps: Record<string, string> = { mocha: "10.2.0" }) {
@@ -179,8 +191,14 @@ const MAPPED = "export function capAll(xs: number[]): number[] {\n  return xs.ma
 const MAPPED_ALIAS = "export function capAll(xs: number[]): number[] {\n  const f = capOne;\n  return xs.map((x) => f(x));\n}\nfunction capOne(x: number): number {\n  return x < 10 ? x : 10 - 1;\n}\n";
 const SUM_MOD = "export function addUp(xs: number[], i: number): number {\n  let s = 0;\n  for (let k = i + 1; k < xs.length; k++) s += xs[k]!;\n  return s;\n}\n";
 const API = (spec: string) => `import { addUp } from ${JSON.stringify(spec)};\nexport function total(xs: number[]): number {\n  return addUp(xs, 0);\n}\n`;
-const COERCE_MOD = "export function coerceAll(value: Record<string, unknown>, fix: (v: unknown) => unknown): Record<string, unknown> {\n  for (const k of Object.keys(value)) {\n    const v = fix(value[k]);\n    if (v !== undefined) value[k] = v;\n  }\n  return value;\n}\n";
-const STRUCT = "import { coerceAll as each } from \"./util/coerce.js\";\nexport function create(value: Record<string, unknown>): Record<string, unknown> {\n  return check(value);\n}\nfunction check(value: Record<string, unknown>): Record<string, unknown> {\n  return each(value, (v) => (v === \"\" ? undefined : v));\n}\n";
+// batch 11 fix (Auditor B3): a form whose blank title must be cleared; the trim lives in a helper module reached
+// through a same-file step and an aliased `.js` import from a subdirectory (property write, reversed `undefined !==`)
+const TRIM_MOD = "export function trimTitle(form: { title?: string }): { title?: string } {\n  const t = typeof form.title === \"string\" && form.title.trim() !== \"\" ? form.title.trim() : undefined;\n  if (undefined !== t) form.title = t;\n  return form;\n}\n";
+const FORM = "import { trimTitle as tidyTitle } from \"./text/trim.js\";\nexport function submit(form: { title?: string }): { title?: string } {\n  return prepare(form);\n}\nfunction prepare(form: { title?: string }): { title?: string } {\n  return tidyTitle(form);\n}\n";
+// a second import shape: an entry in a subdirectory importing from its parent (`../lib/paging.js`), the call nested in
+// an expression; the fault in the helper is a comparison off by one
+const PAGING_MOD = "export function lastPage(count: number, size: number): number {\n  let pages = 0;\n  for (let seen = 0; seen <= count; seen += size) pages++;\n  return pages < 1 ? 1 : pages;\n}\n";
+const PAGES = "import { lastPage } from \"../lib/paging.js\";\nexport function pageLabel(count: number, size: number): string {\n  return `of ${lastPage(count, size)}`;\n}\n";
 
 export const CASES: Case[] = [
   // ---- mocha: detection (two shapes admitted; a near miss per guard)
@@ -210,6 +228,10 @@ export const CASES: Case[] = [
     id: "mocha near misses (m172-guard:mocha-flag, missing value): an option off the allowlist (--grep, --file, --config), or a flag with no value",
     run(l, ctx) {
       for (const t of ["mocha --grep fast test", "mocha --file ./test/setup.cjs test", "mocha --config x.json test", "mocha test --require"]) assert.deepEqual(detect(l, ctx, { test: t }), REFUSED, t);
+      // batch 11 fix (Auditor): flags that load code, change the reporter, or read a config, each refused (also as --flag=value)
+      for (const t of ["mocha --loader ts-node/esm test", "mocha --loader=ts-node/esm test", "mocha --import tsx test", "mocha --import=tsx test", "mocha --node-option no-warnings test",
+        "mocha -n no-warnings test", "mocha --reporter spec test", "mocha --reporter=json test", "mocha -R dot test", "mocha --reporter-option output=x.json test", "mocha --package ./other.json test",
+        "mocha --package=./other.json test"]) assert.deepEqual(detect(l, ctx, { test: t }), REFUSED, t);
     },
   },
   {
@@ -230,6 +252,23 @@ export const CASES: Case[] = [
       symlinkSync(join(d, "elsewhere.cjs"), join(d, "test/link.cjs"));
       assert.deepEqual(l.deps.detectRunner(d, ["test/a.test.js"]), REFUSED, "a symlinked hook");
       assert.deepEqual(detect(l, ctx, { test: "mocha --require /tmp/x.cjs test" }), REFUSED, "absolute path");
+    },
+  },
+  {
+    id: "mocha --require without ./ (batch 11 fix, m172-guard:mocha-require-bare / -file): mocha loads `test/x.cjs` (or `test/x` + .js) from its cwd, so it gets the same regular-file / no-symlink check",
+    run(l, ctx) {
+      assert.deepEqual(options(detect(l, ctx, { test: "mocha --require test/setup.cjs test" })), ["--require", "test/setup.cjs"], "the control: a bare path to a regular file");
+      assert.deepEqual(options(detect(l, ctx, { test: "mocha -r test/plain test" }, { "test/plain.js": REG })), ["--require", "test/plain"], "the control: mocha's `.js` fallback");
+      const linked = (script: string, link: string, to: string, dirLink = false) => {
+        const d = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: script }, { mocha: "10.2.0" }), "test/a.test.js": OK, "real/setup.cjs": REG, "real/setup.js": REG });
+        symlinkSync(join(d, to), join(d, link), dirLink ? "dir" : "file");
+        return l.deps.detectRunner(d, ["test/a.test.js"]);
+      };
+      assert.deepEqual(linked("mocha --require test/link.cjs test", "test/link.cjs", "real/setup.cjs"), REFUSED, "a bare symlinked hook");
+      assert.deepEqual(linked("mocha --require test/hook test", "test/hook.js", "real/setup.js"), REFUSED, "a symlinked hook reached by the .js fallback");
+      assert.deepEqual(linked("mocha --require lnk/setup.cjs test", "lnk", "real", true), REFUSED, "a regular file under a symlinked directory (bare)");
+      assert.deepEqual(linked("mocha --require ./lnk/setup.cjs test", "lnk", "real", true), REFUSED, "a regular file under a symlinked directory (./)");
+      assert.deepEqual(detect(l, ctx, { test: "mocha --require test test" }), REFUSED, "a directory");
     },
   },
   {
@@ -264,7 +303,7 @@ export const CASES: Case[] = [
       assert.deepEqual(args, ["--require", "./test/setup.cjs", "--ui", "bdd", "--", "test/a.test.js"]);
       const r = shimRun(l, ctx, files, args);
       assert.equal(r.tail, PASS1);
-      assert.deepEqual(r.argv, ["--no-config", "--no-package", "--require", "./test/setup.cjs", "--ui", "bdd", "--reporter", "json", "--reporter-option", `output=${join(r.tmp, "peaceai-loop-report.json")}`, "test/a.test.js"]);
+      assert.deepEqual(r.argv, ["--no-config", "--no-package", "--require", join(r.dir, l.deps.MOCHA_GUARD_PATH), "--require", "./test/setup.cjs", "--ui", "bdd", "--reporter", "json", "--reporter-option", `output=${join(r.tmp, "peaceai-loop-report.json")}`, "test/a.test.js"]);
       assert.deepEqual(l.deps.shimArgs({ runner: "vitest", pkgDir: "", files: ["a"], hasDeps: true }).slice(1), ["vitest", "", "a"], "other runners unchanged");
     },
   },
@@ -276,7 +315,22 @@ export const CASES: Case[] = [
       assert.equal(shimRun(l, ctx, { "test/a.test.js": ONE_FAIL }, ["--", "test/a.test.js"]).tail, FAIL1);
       const nosep = shimRun(l, ctx, { "test/a.test.js": OK }, ["test/a.test.js"]);
       assert.deepEqual([nosep.tail, nosep.argv], [NONE, null], "no options separator: mocha is not run");
-      assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { nostats: true }).tail, NONE);
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { mode: "nostats" }).tail, NONE);
+    },
+  },
+  {
+    id: "mocha shim fail-closed (batch 11 fix, m172-guard:shim-mocha-pending / shim-mocha-total): a report with a pending test, or with tests != passes + failures, credits no pass; two failures count two",
+    run(l, ctx) {
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": TWO_FAIL }, ["--", "test/a.test.js"]).tail, "# pass 1\n# fail 2", "two failures are two (not the pending count, not 1)");
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { mode: "pending" }).tail, NONE, "a pending test");
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": ONE_FAIL }, ["--", "test/a.test.js"], { mode: "pending" }).tail, "# pass 0\n# fail 1", "a pending test with a failure");
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": OK }, ["--", "test/a.test.js"], { mode: "mismatch" }).tail, NONE, "a test that neither passed nor failed");
+      assert.equal(shimRun(l, ctx, { "test/a.test.js": TWO_FAIL }, ["--", "test/a.test.js"], { mode: "mismatch" }).tail, "# pass 0\n# fail 2", "a mismatch keeps the failure count");
+      // M173 (batch 12 merge): those counts are made up, so the shim exits SUITE_LOAD (loopdeps SHIM_EXITS), never the
+      // runner's 1 a real failing test gives; a report with no stats is NO_REPORT; a real failure stays 1, a pass 0
+      const e = l.deps.SHIM_EXITS, st = (f: string, mode?: "nostats" | "pending" | "mismatch") => shimRun(l, ctx, { "test/a.test.js": f }, ["--", "test/a.test.js"], mode ? { mode } : {}).status;
+      assert.deepEqual([st(OK, "pending"), st(ONE_FAIL, "pending"), st(OK, "mismatch"), st(TWO_FAIL, "mismatch")], [e.SUITE_LOAD, e.SUITE_LOAD, e.SUITE_LOAD, e.SUITE_LOAD], "pending / mismatch -> SUITE_LOAD");
+      assert.deepEqual([st(OK, "nostats"), st(ONE_FAIL), st(TWO_FAIL), st(OK)], [e.NO_REPORT, 1, 1, 0], "no stats -> NO_REPORT; real failures 1; pass 0");
     },
   },
   // ---- mocha: end to end (real install as the candidate uid, stage-2 isolation)
@@ -376,12 +430,22 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "imported admit (entry -> same-file helper -> aliased import from a subdirectory `.js` specifier): the idiom fault two calls down is fixed",
+    id: "imported admit (entry -> same-file helper -> aliased import from a subdirectory `.js` specifier): the idiom fault two calls down is fixed (a form title trim)",
     run(l, ctx) {
-      const files = { "src/struct.ts": STRUCT, "src/util/coerce.ts": COERCE_MOD };
-      assert.deepEqual(located(l, files, ctx, "`create` is wrong."), ["src/struct.ts#create:0", "src/struct.ts#check:1", "src/util/coerce.ts#coerceAll:2"]);
-      const checks: Check[] = [(x) => { const r = x.create({ a: "" }); return "a" in r && r.a === undefined; }, (x) => x.create({ a: "x" }).a === "x"];
-      admits(l, ctx, files, "`create({ a: \"\" })` must coerce the empty string to undefined, but the key keeps its old value.", "src/struct.ts", checks, /v !== undefined \|\| k in value/, "src/util/coerce.ts");
+      const files = { "src/form.ts": FORM, "src/text/trim.ts": TRIM_MOD };
+      assert.deepEqual(located(l, files, ctx, "`submit` is wrong."), ["src/form.ts#submit:0", "src/form.ts#prepare:1", "src/text/trim.ts#trimTitle:2"]);
+      const checks: Check[] = [(x) => { const r = x.submit({ title: "   " }); return "title" in r && r.title === undefined; }, (x) => x.submit({ title: " a " }).title === "a", (x) => !("title" in x.submit({}))];
+      admits(l, ctx, files, "`submit({ title: \"   \" })` keeps the blank title; a blank title must be cleared to undefined.", "src/form.ts", checks, /undefined !== t \|\| "title" in form/, "src/text/trim.ts");
+    },
+  },
+  {
+    id: "imported admit (entry in a subdirectory -> `../lib/paging.js`, the call inside a template literal): the comparison fault in the helper is fixed",
+    run(l, ctx) {
+      const files = { "src/report/pages.ts": PAGES, "src/lib/paging.ts": PAGING_MOD };
+      assert.deepEqual(located(l, files, ctx, "`pageLabel` is wrong."), ["src/report/pages.ts#pageLabel:0", "src/lib/paging.ts#lastPage:1"]);
+      assert.deepEqual(located(l, files, ctx, "`pageLabel` is wrong.", false), ["src/report/pages.ts#pageLabel:0"], "repair-v1 does not follow the import");
+      const checks: Check[] = [(x) => x.pageLabel(10, 5) === "of 2", (x) => x.pageLabel(11, 5) === "of 3", (x) => x.pageLabel(0, 5) === "of 1"];
+      admits(l, ctx, files, "`pageLabel(10, 5)` says `of 3`; ten items at five per page are 2 pages.", "src/report/pages.ts", checks, /seen < count/, "src/lib/paging.ts");
     },
   },
   {
@@ -393,6 +457,9 @@ export const CASES: Case[] = [
       assert.deepEqual(located(l, { "src/api.ts": API("sum"), "src/sum.ts": SUM_MOD }, ctx, req), ["src/api.ts#total:0"], "bare specifier");
       assert.deepEqual(located(l, { "api.ts": API("../sum"), "sum.ts": SUM_MOD }, ctx, req), ["api.ts#total:0"], "above the root");
       assert.deepEqual(located(l, { "src/api.ts": API("./__tests__/sum"), "src/__tests__/sum.ts": SUM_MOD }, ctx, req), ["src/api.ts#total:0"], "a test path");
+      // batch 11 fix (Auditor): type-only imports are not followed (m172-guard:imp-type-only / imp-type-only-name)
+      assert.deepEqual(located(l, { "src/api.ts": API("./sum").replace("import {", "import type {"), "src/sum.ts": SUM_MOD }, ctx, req), ["src/api.ts#total:0"], "import type { addUp }");
+      assert.deepEqual(located(l, { "src/api.ts": API("./sum").replace("import { addUp }", "import { type addUp }"), "src/sum.ts": SUM_MOD }, ctx, req), ["src/api.ts#total:0"], "import { type addUp }");
       assert.equal(l.prop.resolveImport("src/a/b.ts", "../c.js", (p) => p === "src/c.ts"), "src/c.ts");
       assert.equal(l.prop.resolveImport("src/b.ts", "./d", (p) => p === "src/d/index.ts"), "src/d/index.ts");
     },

@@ -77,8 +77,9 @@ m173-loop.test.ts, m173-loop-cases.ts, m173-loop-mutation.test.ts with its runne
 
 1. Made-up counts are marked. The shim keeps printing its counts last, but whenever it makes them up it exits with
    its own code instead of the runner's: 95 no usable report (no runner package, no bin, no report file, a mocha
-   report without stats), 94 a suite failed to load or run (jest `numRuntimeErrorTestSuites` > 0, or failed suites
-   with no failed test), 93 the only failure is the exit status or `success: false`. A real failing test exits 1 and a
+   report without stats, a mocha whose pending guard cannot load), 94 a suite failed to load or run (jest `numRuntimeErrorTestSuites` > 0, or failed suites
+   with no failed test; and, since the batch 12 merge of the batch 11 fix, a mocha report with a pending test or with
+   tests != passes + failures, whose counts the shim zeroes: m172-cases.ts asserts the exit), 93 the only failure is the exit status or `success: false`. A real failing test exits 1 and a
    passing run 0, even when the runner itself exited 93-95 (near miss tested). The codes do not clash with 0, 1, the
    wrapper's 97 / 98, timeout's 124 or a kill's 137. For a shim runner (never node:test) the loop maps them to the
    attempt codes NO_REPORT, SUITE_LOAD, EXIT_ONLY, written beside TEST_FAIL; loopRowProblem accepts at most one of them,
