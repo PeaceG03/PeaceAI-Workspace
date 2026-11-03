@@ -8,6 +8,13 @@
       "fingerprint": "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4",
       "builtAt": "b149d9b",
       "cleared": "Auditor hidden report-only taskset_near_dup=0 (2026-10-30, after #652)"
+    },
+    {
+      "docs": "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
+      "manifest": "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe",
+      "fingerprint": "8ecd9ceca8109964869858e2c0a4e17a2876016883dd335c9820ae7659d0d723",
+      "builtAt": "8d7896a",
+      "cleared": "lb-corpus v2 (lb-corpus2.json build, spec lb-corpus2-v1.md): Auditor hidden report-only taskset_near_dup=0 on the 89 new docs, #673 PASS (2026-11-03); its chain-1 prefix is the corpus above, byte-identical"
     }
   ],
   "firstRun": {
@@ -26,7 +33,7 @@
   },
   "daily": {
     "maxBudgetMin": 340,
-    "trainArgsAllowed": ["--steps", "--max-steps-this-run", "--threads", "--seed", "--batch", "--eval-every", "--d-model", "--n-layer", "--n-head", "--ctx", "--vocab", "--lr", "--warmup", "--patience", "--min-delta", "--optimizer", "--curriculum", "--curriculum-start", "--curriculum-ramp", "--curriculum-seed", "--save-every-min", "--val-split"]
+    "trainArgsAllowed": ["--steps", "--max-steps-this-run", "--threads", "--seed", "--batch", "--eval-every", "--d-model", "--n-layer", "--n-head", "--ctx", "--vocab", "--lr", "--warmup", "--patience", "--min-delta", "--optimizer", "--curriculum", "--curriculum-start", "--curriculum-ramp", "--curriculum-seed", "--save-every-min", "--val-split", "--warm-start-from", "--warm-start-manifest-sha"]
   },
   "dailyRun": {
     "note": "Auditor ruling (saves bucket ready, 2026-10-31): the daily cycle on GitHub, peace-lb-daily.yml (workflow_dispatch only, main only, GitHub-hosted, its own reviewed environment). One cycle per dispatch on the cleared corpus below (rebuilt in-run at b149d9b, pins checked). Saves live only in the private saves bucket under r2Folder/<chain id>/, add-only (an existing save name is refused; nothing is ever removed or overwritten); the resume save and its manifest sha256 come only from the newest add-only Results row runs/lb-daily/<day>-<run id>.json, and the restored save must hash to it before any resume. No Actions artifacts or cache. LoRA stays refused until a full-model run row has baselineBpb == loraUnlock.baselineBpb (the same-split unigram baseline) and a held-out bpb below it, and even then the cycle has no LoRA path (LB_DAILY_LORA_NOT_WIRED). The train settings must not change within a chain (train.py refuses a resume with another config). Batch 6: --val-split disjoint (early-stop val windows share no token with the 96 export eval windows) is not part of the model config, so the chain resumes; its first resumed day restarts early stopping (best.json from the old overlapping split is not carried over).",
@@ -38,5 +45,34 @@
     "minBudgetMin": 30,
     "loraUnlock": {"baselineBpb": 2.5156},
     "train": {"--d-model": "320", "--n-layer": "6", "--n-head": "5", "--ctx": "512", "--vocab": "8192", "--batch": "16", "--steps": "6000", "--eval-every": "100", "--patience": "6", "--min-delta": "0.001", "--threads": "4", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard", "--save-every-min": "20", "--val-split": "disjoint"}
+  },
+  "chain2Run": {
+    "note": "lb-chain2 v1 (spec peaceai/spec/lb-chain2-v1.md; Auditor #673 conditions): peace-lb-chain2.yml (workflow_dispatch only, main only, GitHub-hosted). A NEW chain on the lb-corpus v2 (corpus = lb-corpus2.json build pins, cleared above): chainId = the run id of its first dispatch, saves under the saves bucket r2Folder/<chainId>/ (add-only), trusted record = the add-only Results rows runs/<resultsDir>/<day>-<run id>.json. The corpus is built in a separate job with no secrets (contents: read) and the training job uses it only after lb_chain2.py pins checks docs, manifest and fingerprint.json against these pins (fail closed). Day 1 warm-starts (train.py --warm-start-from) from warmStart.save, whose manifest sha256 is pinned here, in lb-corpus2.json chain2.warmStart and in the day-3 Results row (pinned by its file sha256), and is verified with saves.verify_save before use; later days resume the chain-2 save. Same model shape as dailyRun (the chain-1 tokenizer is reused, so the days-1-3 held-out split tokenizes identically: a row's heldoutTokens and heldBytes must equal the day-3 row's); heldout_v2 is reported separately (eval_v2.py). The train settings must not change within the chain.",
+    "corpus": {
+      "docs": "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
+      "manifest": "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe",
+      "fingerprint": "8ecd9ceca8109964869858e2c0a4e17a2876016883dd335c9820ae7659d0d723"
+    },
+    "fingerprintFileSha256": "b2b38708513946377579f0a1e222b12f3d1e510cdfb088890fe820cb4d1a940e",
+    "r2Folder": "lb-daily",
+    "resultsDir": "lb-chain2",
+    "jobTimeoutMin": 355,
+    "trainDeadlineMin": 300,
+    "reserveMin": 45,
+    "minBudgetMin": 30,
+    "warmStart": {
+      "fromChain": "41222155935",
+      "save": "save-000006000",
+      "manifestSha256": "1e513e5080e23453d4ca5b33911567a8958f5873503fd6b869f0fb5dd3ea2cd6",
+      "cfgSha256": "5dba99c0db1fdf90c1fde97d9379831f72070740d2508d4c7325ffd197fba776",
+      "resultsRow": "runs/lb-daily/2026-11-03-41572356445.json",
+      "resultsRowSha256": "258a54a33ec7ac9ff06bced38d32d749a9fc598a57ff0f7000210c98412ace6e",
+      "resultsCommit": "80b0c3580b389c13387ed19bbbb4b83137dbe45d",
+      "heldoutTokens": 49152,
+      "heldBytes": 192892,
+      "heldoutBpb": 0.6688,
+      "baselineBpb": 2.5156
+    },
+    "train": {"--d-model": "320", "--n-layer": "6", "--n-head": "5", "--ctx": "512", "--vocab": "8192", "--batch": "16", "--steps": "4000", "--lr": "0.0003", "--warmup": "100", "--eval-every": "100", "--patience": "6", "--min-delta": "0.001", "--threads": "4", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard", "--save-every-min": "20", "--val-split": "disjoint"}
   }
 }

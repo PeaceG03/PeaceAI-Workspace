@@ -1,6 +1,6 @@
 {
  "schema": "peaceai-lb-corpus2:v1",
- "note": "lb-corpus v2 for lb-daily chain 2 (spec peaceai/spec/lb-corpus2-v1.md). NOT cleared and NOT trainable: it is not in lb-train.json clearedCorpora, and nothing reads this file to train. Training on it needs (1) Auditor's hidden near-dup check of the published pins below = 0, (2) an add-only clearedCorpora entry, (3) a separate reviewed PR wiring chain 2 (warm start below) into the daily cycle.",
+ "note": "lb-corpus v2 for lb-daily chain 2 (spec peaceai/spec/lb-corpus2-v1.md). Cleared: Auditor's hidden near-dup check of the build pins below = 0 (#673 PASS), add-only clearedCorpora entry in lb-train.json. Chain 2 (lb-train.json chain2Run, spec peaceai/spec/lb-chain2-v1.md) trains on it in peace-lb-chain2.yml (dispatch only): built in a job with no secrets and sha-checked against these pins before the training job uses it.",
  "sources": {
   "schema": "peaceai-lb-corpus2-sources:v2",
   "repo": "PeaceG03/PeaceAI-Workspace",
@@ -521,8 +521,8 @@
   }
  },
  "chain2": {
-  "enabled": false,
-  "note": "Plan only: nothing reads this block to train. chain 2 is a NEW lb-daily chain (its chainId is the run id of its first dispatch, never chain 1's 41222155935; R2 under lb-daily/<that id>/) that warm-starts from chain 1's final save. Before any chain-2 training: the warm-start save's manifest sha256 must equal both manifestSha256 here and the one in the Results row named here (day-3 run 41572356445, Auditor-VALID); this corpus must be cleared (Auditor hidden check = 0, then an add-only clearedCorpora entry); and train.py needs a full-model init path (today --init-from is LoRA-only and --resume-from refuses a new DATA_SHA). Each is a separate reviewed PR.",
+  "enabled": true,
+  "note": "chain 2 is a NEW lb-daily chain (its chainId is the run id of its first dispatch, never chain 1's 41222155935; R2 under lb-daily/<that id>/) that warm-starts from chain 1's final save. Wired by the chain-2 run PR (lb-train.json chain2Run, peaceai/model/lb_chain2.py, train.py --warm-start-from, peace-lb-chain2.yml, workflow_dispatch only): the warm-start save's manifest sha256 must equal manifestSha256 here, lb-train.json chain2Run.warmStart, and the one in the Results row named here (day-3 run 41572356445, pinned by its file sha256), and it is verified with saves.verify_save before use. enabled: lb_chain2.py refuses every command but ref when false.",
   "warmStart": {
    "fromChain": "41222155935",
    "save": "save-000006000",
@@ -532,8 +532,8 @@
   },
   "eval": {
    "heldout": "split == heldout (days 1-3, unchanged; the export eval stream)",
-   "heldoutV2": "split == heldout_v2 (new slice; reported separately, wiring in a later PR)"
+   "heldoutV2": "split == heldout_v2 (new slice; reported separately: eval_v2.py, row field heldoutV2)"
   },
-  "buildIsolation": "Binding (Auditor #673 answer b): the chain-2 run PR must not execute peaceai/lib/lbcorpus2.ts or peaceai/bin/lb-corpus2.ts in a job that holds secrets. It builds the corpus in a separate secrets-free job and passes only the output, sha-checked against the pins in build, to the training job. No /approve-rule is needed for this PR."
+  "buildIsolation": "Binding (Auditor #673 answer b), met by peace-lb-chain2.yml: peaceai/lib/lbcorpus2.ts and peaceai/bin/lb-corpus2.ts run only in the c2-corpus job (no environment, no secrets, permissions contents: read; lb-chain2-corpus.sh refuses to start with a secret-like variable set), which passes only docs.jsonl, manifest.jsonl and fingerprint.json on as an artifact; the c2-train job never runs node and checks all three against the build pins here (lb_chain2.py pins, fail closed) before any secret step."
  }
 }
