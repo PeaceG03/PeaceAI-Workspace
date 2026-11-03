@@ -1,4 +1,4 @@
-# repair-v2 M173 (batch 12): module-scope constant sites and the const-value template; M171 follow-ups
+# M173 (batch 12): repair-v2 module-scope constant sites and const-value; baselines that prove nothing; M171 follow-ups
 
 Code: peaceai/lib/editpropose.ts (repair-v2 only), peaceai/lib/loopdeps.ts (work dir cleanup),
 peaceai/test/workflows.test.ts (userns file guard). Tests: m173-batch12.test.ts, m173-cases.ts,
@@ -67,11 +67,46 @@ graded by the same loop (tests run as the candidate uid, same acceptance rules),
 like any other. Validation is not loosened anywhere. Limits: only integer literals; a constant read through an alias
 or another module is not a site.
 
+## Baselines that prove nothing (Auditor ruling on CI run 41556098711)
+
+The honest description of that run is only: isolation works on CI; 6/12 tasks ran tests at baseline; 0 PASS. Its
+`reachedTests` counted every row with a baseline, including baselines whose counts the runner shim made up (no
+report: `# pass 0` / `# fail 1`) and baselines whose suite never loaded. Three general rules now hold (code:
+loopdeps.ts SHIM_SOURCE / SHIM_EXITS, loop.ts shimSynth / baselineRefusal / runTests, looprow.ts; tests:
+m173-loop.test.ts, m173-loop-cases.ts, m173-loop-mutation.test.ts with its runner; guards `// m173-loop-guard:`).
+
+1. Made-up counts are marked. The shim keeps printing its counts last, but whenever it makes them up it exits with
+   its own code instead of the runner's: 95 no usable report (no runner package, no bin, no report file, a mocha
+   report without stats), 94 a suite failed to load or run (jest `numRuntimeErrorTestSuites` > 0, or failed suites
+   with no failed test), 93 the only failure is the exit status or `success: false`. A real failing test exits 1 and a
+   passing run 0, even when the runner itself exited 93-95 (near miss tested). The codes do not clash with 0, 1, the
+   wrapper's 97 / 98, timeout's 124 or a kill's 137. For a shim runner (never node:test) the loop maps them to the
+   attempt codes NO_REPORT, SUITE_LOAD, EXIT_ONLY, written beside TEST_FAIL; loopRowProblem accepts at most one of them,
+   only with TEST_FAIL, only on v4 rows. Candidate code cannot set the shim's exit: the runner is the shim's child.
+2. A baseline that proves nothing refuses the task before the proposer is asked (no edit is scored against it):
+   BASELINE_NO_REPORT (shim code 95), BASELINE_SUITE_LOAD (94; also when other suites loaded: partly loaded is not
+   loaded), NO_TESTS_RAN (0 executed tests in a real report; the 1/0/1 of a missing report is not counted as executed),
+   BASELINE_EXIT_ONLY (93 with >= 1 executed test). loopRowProblem: these four task codes are v4 only, have 0 attempts,
+   and a public row keeps its baseline (a BASELINE_NO_REPORT baseline is exactly 1/0/1); hidden rows still name none.
+3. `reachedTests` (bin/loop.ts) counts looprow.reachedTests(row): a baseline exists and the code is none of the four.
+   Rows written before M173 carry none of these codes, so for them the count is as before (it cannot be recomputed).
+
+neverthrow (diagnosis only, from the batch-11 box probe row: runner jest, baseline 1/0/1, every attempt 0/1): the
+team's suite never loads (a suite-level TypeScript load error: the tests import what the change adds), so the old
+loop scored 20 edits against a made-up failure. With rule 2 it is refused BASELINE_SUITE_LOAD (or BASELINE_NO_REPORT
+if jest writes no report); the box re-probe records which. This is a general refusal, not a neverthrow fix: no
+compile-error localisation was added (that would need parsing runner output in the shim, which is in flux under #670).
+
+Fixtures: a fake jest that writes the report and exit given in env (direct shim cases, no candidate uid), and three
+tiny vitest-stub repos (a temperature converter: a team test importing a missing export, a team test file with no
+test, a real failing test whose edit then breaks loading) run end to end as the candidate uid. Mutation: deleting
+each of the 16 `m173-loop-guard` lines makes a case fail (two need the candidate uid).
+
 ## M171 follow-ups (Auditor)
 
 1. bin/loop.ts `proofs`: m173-followups.test.ts runs a copy of bin/loop.ts whose stage2CandUid succeeds and whose
    runIsolationProofs rejects; it must print exactly `refused PROOFS_CRASHED` and exit 1. The mutants exit-0,
-   no-handler, silent-exit-1 and no-exit each fail that check. bin/loop.ts itself is unchanged.
+   no-handler, silent-exit-1 and no-exit each fail that check. (The handler itself is unchanged; bin/loop.ts changed only for the reachedTests count above.)
 2. userns guard: workflows.test.ts now also scans every tracked *.sh file and every tracked file a workflow names by
    path outside a YAML comment, plus the relative-import closure of named modules; none may name
    `unprivileged_userns` in code (comments dropped). Near misses: a script, a run module, a /proc write. Not seen: a

@@ -94,7 +94,7 @@ export const CASES: Case[] = [
         assert.ok(!("isolationFail" in r.row));
         return r.row;
       });
-      const reachedTests = rows.filter((r) => r.baseline !== null).length; // as bin/loop.ts counts it
+      const reachedTests = rows.filter((r) => l.row.reachedTests(r)).length; // as bin/loop.ts counts it (M173: looprow.reachedTests)
       assert.equal(reachedTests, 2);
       assert.equal(seen.length, 2);
       for (const d of seen) assert.ok(!existsSync(d), "the work dir is removed after the task");

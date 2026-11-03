@@ -1047,13 +1047,16 @@ export const SHIM_SOURCE = [
   "const tmp = process.env.TMPDIR || \"/nonexistent\";",
   "const report = join(tmp, \"peaceai-loop-report.json\");",
   "const done = (pass, fail, code) => { process.stdout.write(`\\n# pass ${pass}\\n# fail ${fail}\\n`); process.exit(code); };",
+  "// M173: the shim's own exit codes when it made the counts up (loopdeps.ts SHIM_EXITS): no usable report, a suite that",
+  "// failed to load or run, a nonzero exit with no failed test; a real failing test exits 1, all passing 0",
+  "const NO_REPORT = 95, SUITE_LOAD = 94, EXIT_ONLY = 93;",
   "let pkgJson = null;",
   "for (let d = cwd; ; d = dirname(d)) { const p = join(d, \"node_modules\", runner, \"package.json\"); if (existsSync(p)) { pkgJson = realpathSync(p); break; } if (dirname(d) === d) break; }",
-  "if (!pkgJson || (runner !== \"vitest\" && runner !== \"jest\" && runner !== \"mocha\")) done(0, 1, 1);",
-  "if (runner === \"mocha\" && sep < 0) done(0, 1, 1); // m172-guard:shim-mocha-sep",
+  "if (!pkgJson || (runner !== \"vitest\" && runner !== \"jest\" && runner !== \"mocha\")) done(0, 1, NO_REPORT);",
+  "if (runner === \"mocha\" && sep < 0) done(0, 1, NO_REPORT); // m172-guard:shim-mocha-sep",
   "const meta = JSON.parse(readFileSync(pkgJson, \"utf8\"));",
   "const binRel = typeof meta.bin === \"string\" ? meta.bin : meta.bin?.[runner];",
-  "if (typeof binRel !== \"string\") done(0, 1, 1);",
+  "if (typeof binRel !== \"string\") done(0, 1, NO_REPORT);",
   "const bin = join(dirname(pkgJson), binRel);",
   "let args = runner === \"vitest\"",
   "  ? [\"run\", \"--reporter=json\", `--outputFile=${report}`, ...files]",
@@ -1076,17 +1079,25 @@ export const SHIM_SOURCE = [
   "// the copy is read-only, so vite's default config bundling (a temp file beside the config) can fail; vitest >= 3.1",
   "// can load the config in-process instead, so retry once that way when no report was written",
   "if (!j && runner === \"vitest\" && (maj > 3 || (maj === 3 && min >= 1))) ({ r, j } = run([\"--configLoader\", \"runner\"]));",
-  "if (!j || typeof j !== \"object\") done(0, 1, r.status || 1); // guard:shim-report",
+  "if (!j || typeof j !== \"object\") done(0, 1, NO_REPORT); // guard:shim-report",
   "const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);",
   "// M172: mocha's report keeps its counts under `stats`; a report without them is a failure",
-  "if (runner === \"mocha\" && (!j.stats || typeof j.stats !== \"object\")) done(0, 1, r.status || 1); // m172-guard:shim-mocha-stats",
+  "if (runner === \"mocha\" && (!j.stats || typeof j.stats !== \"object\")) done(0, 1, NO_REPORT); // m172-guard:shim-mocha-stats",
   "const pass = runner === \"mocha\" ? n(j.stats.passes) : n(j.numPassedTests);",
   "let fail = runner === \"mocha\" ? n(j.stats.failures) : n(j.numFailedTests);",
+  "const tested = fail; // the runner's own count of failed tests, before the shim adds any",
   "if (fail === 0 && n(j.numFailedTestSuites) > 0) fail = n(j.numFailedTestSuites); // guard:shim-suites",
+  "// M173: a suite that failed to load or run (jest: numRuntimeErrorTestSuites; any runner: failed suites, no failed test)",
+  "let synth = n(j.numRuntimeErrorTestSuites) > 0 || (tested === 0 && fail > 0) ? SUITE_LOAD : 0; // m173-loop-guard:shim-suite-load",
   "if (fail === 0 && (r.status !== 0 || j.success === false)) fail = 1; // guard:shim-exit",
-  "done(pass, fail, fail ? (r.status || 1) : 0);",
+  "if (synth === 0 && tested === 0 && fail > 0) synth = EXIT_ONLY; // m173-loop-guard:shim-exit-only",
+  "done(pass, fail, synth || (fail ? 1 : 0));",
   "",
 ].join("\n");
+
+/** M173: the shim's own exit codes for counts it made up (SHIM_SOURCE prints `# pass 0` / `# fail 1` or adds a failure, and
+ *  exits with one of these; a real failing test exits 1). loop.ts maps them to the attempt codes of looprow.ts. */
+export const SHIM_EXITS = Object.freeze({ NO_REPORT: 95, SUITE_LOAD: 94, EXIT_ONLY: 93 } as const);
 
 /** Writes the shim into the copy; returns the argv that guardedRun passes to the wrapper's node. */
 export function installShim(copyDir: string): void {
