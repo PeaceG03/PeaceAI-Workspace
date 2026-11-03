@@ -42,6 +42,7 @@ import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
 import { ATTEMPT_CODES, SHIM_SYNTH_CODES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
+import { loadDiagnostics, type LoadDiag } from "./loaddiag.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -312,7 +313,8 @@ export interface Edit { path: string; content: string }
  *  Array.prototype.every skips) is malformed too: Array.from turns each hole into undefined, which fails the check. */
 const validEdits = (x: unknown): x is Edit[] => Array.isArray(x) && Array.from(x as unknown[]).every((e) => typeof e === "object" && e !== null && typeof (e as Edit).path === "string" && typeof (e as Edit).content === "string");
 export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
-export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null }
+/** M174: `loadDiagnostics` is given only in load-repair mode (the baseline suite did not load; see loadRepairDiags). */
+export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null; loadDiagnostics?: readonly LoadDiag[] }
 export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 export interface Proposer {
   name: string;
@@ -328,6 +330,25 @@ export interface Proposer {
    */
   prepare?(search: CodeRepo, input: { request: string; failing: readonly string[] }): void;
   next(input: ProposeInput): Proposal;
+  /**
+   * M174: true only for a proposer that can repair a suite that does not load from its load diagnostics (repair-v2).
+   * For any other proposer such a baseline still refuses BASELINE_SUITE_LOAD before it is asked.
+   */
+  readonly loadRepair?: boolean;
+}
+
+/**
+ * M174 (spec/load-diagnostics-m174.md): the load diagnostics that let the loop go on past a baseline whose suite did
+ * not load (null: refuse as before). Only a SUITE_LOAD baseline, only for a load-repair proposer, and only when the
+ * team's tests import at least one name a relative source module of the copy does not export. The attempts are graded
+ * as every attempt: PASS needs no failure code at all, so a suite that still does not load never passes.
+ */
+export function loadRepairDiags(refusal: LoopCode | null, proposer: Pick<Proposer, "loadRepair">, diags: () => LoadDiag[]): LoadDiag[] | null {
+  if (refusal !== "BASELINE_SUITE_LOAD") return null; // m174-guard:lm-suite-load-only
+  if (proposer.loadRepair !== true) return null; // m174-guard:lm-proposer
+  const d = diags();
+  if (!d.some((x) => x.kind === "MISSING_EXPORT")) return null; // m174-guard:lm-needs-export
+  return d;
 }
 
 /**
@@ -404,6 +425,7 @@ export function loopSha256(root: string = ROOT): string {
   const files = ["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"];
   files.push("lib/editpropose.ts"); // m152-guard:sha-proposer
   files.push("lib/modelpropose.ts"); // m167-guard:sha-model
+  files.push("lib/loaddiag.ts"); // m174-guard:sha-loaddiag
   return sha256(files.map((f) => readFileSync(join(root, "peaceai", f), "utf8")).join("\0"));
 }
 
@@ -422,6 +444,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let pick: RunnerPick | null = null;
   let deps: LoopRow["deps"] = null;
   let baseline: LoopBaseline | null = null;
+  let loadDiags: LoadDiag[] | null = null; // M174: set only in load-repair mode
   const done = (code: LoopCode, depsFail?: DepsFail, isolationFail?: IsolationFail | null): LoopResult => ({
     row: {
       schema: LOOP_SCHEMA_V4, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
@@ -436,6 +459,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       ...(set === "public" && code === "DEPS_INSTALL_FAILED" && depsFail ? { depsFail } : {}), // m169-guard:loop-depsfail
       // M171: which isolation check failed (a fixed code), public rows only
       ...(set === "public" && code === "ISOLATION_UNAVAILABLE" && isolationFail ? { isolationFail } : {}), // m171-guard:loop-isofail
+      // M174: the baseline suite did not load; the task went on in load-repair mode (both sets: a fixed code)
+      ...(loadDiags ? { baselineLoad: "MISSING_EXPORT" as const } : {}), // m174-guard:loop-row-load
     },
     plan, attempts: records, context,
   });
@@ -498,7 +523,9 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
     const unrun = baselineRefusal(base);
-    if (unrun) return done(unrun); // m173-loop-guard:base-refuse (no edit is scored against a baseline that proved nothing)
+    // M174: the team's tests are in the copy now; their load diagnostics are read (never run) only when they can matter
+    loadDiags = loadRepairDiags(unrun, o.proposer, () => { try { return loadDiagnostics(c!.dir, [...c!.teamTests.keys()].sort()); } catch { return []; } }); // a crash here refuses as before
+    if (unrun && !loadDiags) return done(unrun); // m173-loop-guard:base-refuse (no edit is scored against a baseline that proved nothing)
     if (base.codes.length === 0) return done("BASELINE_PASSES");
     // (M152) the proposer's search, on the pinned commit without the team's tests
     if (o.proposer.prepare) {
@@ -514,7 +541,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     // proposal that neither refuses nor carries a valid `edits` array (e.g. [] or {}), which would throw in applyEdits
     const feedback: Feedback[] = [];
     const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
-      try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
+      try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline, ...(loadDiags ? { loadDiagnostics: loadDiags } : {}) }); } catch { return null; }
     };
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const p = ask(attempt);
