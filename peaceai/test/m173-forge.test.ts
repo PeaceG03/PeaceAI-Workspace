@@ -23,7 +23,7 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -32,8 +32,60 @@ import {
 } from "../lib/loopdeps.ts";
 
 const base = mkdtempSync(join(tmpdir(), "peaceai-m173-forge-"));
-after(() => { spawnSync("chmod", ["-R", "u+w", base]); rmSync(base, { recursive: true, force: true }); });
+after(() => {
+  for (const p of survivors(base)) { try { process.kill(p, "SIGKILL"); } catch { /* gone */ } }
+  spawnSync("chmod", ["-R", "u+w", base]); rmSync(base, { recursive: true, force: true });
+});
 let n = 0;
+
+// ---- (batch 15) process hygiene: a runner (vitest's launch.cjs and its workers) must never outlive its run
+/** Live processes (not this one) whose command line or working directory names `dir` (Linux /proc; elsewhere none). */
+function survivors(dir: string): number[] {
+  if (!existsSync("/proc/self")) return [];
+  const out: number[] = [];
+  for (const e of readdirSync("/proc")) {
+    if (!/^\d+$/.test(e) || Number(e) === process.pid) continue;
+    let cmd = "", cwd = "";
+    try { cmd = readFileSync(`/proc/${e}/cmdline`, "utf8").replace(/\0/g, " "); } catch { continue; }
+    try { cwd = readlinkSync(`/proc/${e}/cwd`); } catch { /* not ours to read */ }
+    if (cmd === "") continue; // a zombie (already dead, waiting to be reaped)
+    if (cmd.includes(dir) || cwd === dir || cwd.startsWith(dir + "/")) out.push(Number(e));
+  }
+  return out;
+}
+/** Runs `cmd args` as the leader of a NEW process group under a small wrapper, which kills the whole group (SIGKILL)
+ *  on every exit path: the command exiting, the timeout (then the wrapper dies by SIGTERM, as spawnSync's own timeout
+ *  reports), a signal to the wrapper, or the test process going away (the wrapper's parent changes). The wrapper waits
+ *  (up to 5 s) for the group to be gone before it exits, and the caller then asserts no process names `cwd`. */
+const GROUP_WRAPPER = String.raw`
+const { spawn } = require("node:child_process");
+const [ms, cmd, ...args] = process.argv.slice(1);
+const c = spawn(cmd, args, { detached: true, stdio: "inherit" });
+const pg = c.pid;
+const killAll = () => { try { process.kill(-pg, "SIGKILL"); } catch {} };
+const gone = () => { try { process.kill(-pg, 0); return false; } catch { return true; } };
+const nap = new Int32Array(new SharedArrayBuffer(4));
+const reap = () => { killAll(); const t0 = Date.now(); while (!gone() && Date.now() - t0 < 5000) Atomics.wait(nap, 0, 0, 50); };
+let timedOut = false;
+const timer = setTimeout(() => { timedOut = true; killAll(); }, Number(ms));
+c.on("error", () => { clearTimeout(timer); reap(); process.exit(127); });
+c.on("exit", (code, sig) => {
+  clearTimeout(timer); reap();
+  const s = timedOut ? "SIGTERM" : sig;
+  if (s) { process.removeAllListeners(s); process.kill(process.pid, s); } else process.exit(code ?? 1);
+});
+for (const s of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(s, () => { reap(); process.exit(128 + 15); });
+const ppid = process.ppid;
+setInterval(() => { if (process.ppid !== ppid) { reap(); process.exit(1); } }, 250).unref();
+`;
+interface GroupRun { stdout: string; stderr: string; status: number | null; signal: NodeJS.Signals | null }
+function runGroup(cmd: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeout: number }): GroupRun {
+  const r = spawnSync(process.execPath, ["-e", GROUP_WRAPPER, String(o.timeout), cmd, ...args], { cwd: o.cwd, encoding: "utf8", env: o.env, timeout: o.timeout + 30_000 });
+  const left = survivors(o.cwd);
+  for (const p of left) { try { process.kill(p, "SIGKILL"); } catch { /* gone */ } }
+  assert.deepEqual(left, [], `no process outlives a run in ${o.cwd}`);
+  return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status, signal: r.signal };
+}
 
 // ---- the guard tags and mutants
 const SOURCES: Record<string, [string, string]> = {
@@ -64,6 +116,28 @@ test("M173 forging: the guard tags are the expected ones (each is deleted by a m
   assert.equal(REPORT_LINE_PREFIX, "PEACEAI-REPORT ");
   for (const s of [SHIM_SOURCE, LAUNCH_SOURCE]) assert.ok(!s.includes("peaceai-loop-report.json"), "no report file any more");
   assert.ok(LAUNCH_SOURCE.includes(`Symbol.for("${REPORT_CLAIM_SYMBOL}")`));
+});
+
+test("M173 forging hygiene (batch 15): a runner's leftover child is killed with its group on exit and on timeout; none survives", () => {
+  const d = join(base, `hygiene-${n++}`);
+  mkdirSync(d, { recursive: true });
+  // a "runner" that leaves a child behind and exits, and one that hangs with a child
+  writeFileSync(join(d, "leak.cjs"), 'require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" }).unref(); console.log("left one");\n');
+  writeFileSync(join(d, "hang.cjs"), 'require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" }); setInterval(() => {}, 1000);\n');
+  const env = { PATH: process.env.PATH };
+  const ok = runGroup(process.execPath, [join(d, "leak.cjs")], { cwd: d, env, timeout: 30_000 });
+  assert.deepEqual([ok.status, ok.signal, ok.stdout.trim()], [0, null, "left one"], "exit path: the status and output pass through");
+  const t0 = Date.now();
+  const hung = runGroup(process.execPath, [join(d, "hang.cjs")], { cwd: d, env, timeout: 1500 });
+  assert.deepEqual([hung.status, hung.signal], [null, "SIGTERM"], "timeout path: reported like spawnSync's own timeout");
+  assert.ok(Date.now() - t0 < 20_000, "the timeout fires");
+  if (existsSync("/proc/self")) {
+    // the check itself sees a leak: the same leaking runner under a bare spawnSync leaves its child alive
+    spawnSync(process.execPath, [join(d, "leak.cjs")], { cwd: d, env, encoding: "utf8", timeout: 30_000 });
+    const left = survivors(d);
+    for (const p of left) { try { process.kill(p, "SIGKILL"); } catch { /* gone */ } }
+    assert.equal(left.length, 1, "control: a bare spawnSync leaks the child (so the check above is not vacuous)");
+  }
 });
 
 // ---- 1. launch.cjs directly
@@ -127,7 +201,7 @@ test("M173 forging, launch: the caller check (peaceai.loop.from) takes the runne
 interface Run { tail: string; status: number | null; out: string }
 function shim(dir: string, runner: string, file: string): Run {
   mkdirSync(join(dir, ".tmp"), { recursive: true });
-  const r = spawnSync(process.execPath, [SHIM_PATH, runner, "", ...(runner === "mocha" ? ["--"] : []), file], { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH, TMPDIR: join(dir, ".tmp") }, timeout: 180_000 });
+  const r = runGroup(process.execPath, [SHIM_PATH, runner, "", ...(runner === "mocha" ? ["--"] : []), file], { cwd: dir, env: { PATH: process.env.PATH, TMPDIR: join(dir, ".tmp") }, timeout: 180_000 });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   return { tail: (r.stdout ?? "").trimEnd().split("\n").slice(-2).join("\n"), status: r.status, out };
 }
@@ -165,7 +239,7 @@ function stubShim(runner: "jest" | "vitest", mode: string, tag?: string): Run {
   writeFileSync(join(d, "package.json"), "{}");
   install(d, tag);
   mkdirSync(join(d, ".tmp"));
-  const r = spawnSync(process.execPath, [SHIM_PATH, runner, "", "test/a.test.js"], { cwd: d, encoding: "utf8", env: { PATH: process.env.PATH, TMPDIR: join(d, ".tmp"), STUB_MODE: mode }, timeout: 60_000 });
+  const r = runGroup(process.execPath, [SHIM_PATH, runner, "", "test/a.test.js"], { cwd: d, env: { PATH: process.env.PATH, TMPDIR: join(d, ".tmp"), STUB_MODE: mode }, timeout: 60_000 });
   return { tail: (r.stdout ?? "").trimEnd().split("\n").slice(-2).join("\n"), status: r.status, out: `${r.stdout}${r.stderr}` };
 }
 
@@ -254,7 +328,7 @@ test("M173 forging, real runners: the hazard on the raw runner with the pre-fix 
     rmSync(out, { force: true });
     for (const [f, c] of Object.entries(a.files)) { mkdirSync(dirname(join(d, f)), { recursive: true }); writeFileSync(join(d, f), c); }
     try {
-      const r = spawnSync(process.execPath, [...raw[a.runner](out), a.test], { cwd: d, encoding: "utf8", env: { PATH: process.env.PATH, TMPDIR: tmp }, timeout: 180_000 });
+      const r = runGroup(process.execPath, [...raw[a.runner](out), a.test], { cwd: d, env: { PATH: process.env.PATH, TMPDIR: tmp }, timeout: 180_000 });
       const j = JSON.parse(readFileSync(out, "utf8"));
       const [p, f] = a.runner === "mocha" ? [j.stats.passes, j.stats.failures] : [j.numPassedTests, j.numFailedTests];
       assert.deepEqual([r.status, p, f], [0, 1, 0], `${id}: the raw runner exits 0 and the file says 1 pass, 0 failed (the failing test is hidden)`);
@@ -303,3 +377,7 @@ for (const t of TAGS.filter((x) => !COVERED_ELSEWHERE.has(x))) {
     }
   });
 }
+
+test("M173 forging hygiene (batch 15): no process outlives the file's runs (checked last)", { skip: !existsSync("/proc/self") && "no /proc" }, () => {
+  assert.deepEqual(survivors(base), []);
+});

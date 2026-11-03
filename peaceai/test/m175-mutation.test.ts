@@ -57,7 +57,7 @@ test("M175 mutation: the guard tags are unique and cover the guards", () => {
   assert.deepEqual([...ids].sort(), [
     "adds-import", "class-exists", "class-infra", "class-lockfile", "class-source", "class-test", "dangerous", "global-write", "loop-row-scope", "new-word", "policy",
     "row-scope-edit-mode", "row-scope-pass", "row-scope-value", "scope-gate", "shape-export", "skip-owned", "toplevel-count", "toplevel-kind",
-    "export-at", "export-body", "export-kind", "export-parse", "export-plain", "export-single", "limit-bytes", "limit-files", "limit-ms", "loop-load-limit",
+    "export-at", "export-body", "export-decorated", "export-decorator", "export-kind", "export-parse", "export-plain", "export-single", "limit-bytes", "limit-files", "limit-ms", "loop-load-limit",
     "row-limit-attempts", "row-limit-baseline", "row-limit-v4",
   ].sort());
 });
