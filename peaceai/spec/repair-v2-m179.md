@@ -22,8 +22,11 @@ shape or test this; the fixtures are synthetic (a rectangle class, a mean with i
 
 1. Anchor (`anchorFor`): the tried candidate with the highest passing count ABOVE the baseline's, among results with
    no code but TEST_FAIL (`an-clean`) and the baseline's total (`an-total`; no counts or no baseline also stop here),
-   carrying fewer than MAX_ANCHOR_MUTS = 3 mutations (`an-room`). Ties keep the earliest (`an-improves`: strictly
-   above). These are the counts the improved-pair step already reads; no message text, no new channel.
+   carrying fewer than MAX_ANCHOR_MUTS = 3 mutations (`an-room`), whose failing test names are all among the
+   baseline's failing names (`an-names`, batch 19 per Auditor's #680 review, like M178's `ev-names`: a result that
+   raises the count while breaking a test that passed before is no anchor; vitest / jest give no names, so for them
+   this check is vacuous and the counts decide as before). Ties keep the earliest (`an-improves`: strictly above).
+   These are the counts and names the loop already gives; no message text, no new channel.
 2. Composition (`composeOnAnchor`): a candidate's mutations applied together with the anchor's, on the original
    files, marked `anchored`. Refused when the candidate overlaps the anchor (`co-overlap`: it changes what the anchor
    changed, so it is tried alone instead), when the total would exceed MAX_ANCHOR_MUTS (`co-cap`), when the result does
@@ -71,13 +74,14 @@ runs and in the full suite (PR body). repair-v1 and model-v1 keep the fixed orde
   the other alone is a clean partial fix, no repeated proposal, and every proposal in-body under the M175 gate.
 - Order: fixed order up to the anchor, every later proposal carries the anchor's edit; no anchor, no change.
 - Near misses per guard: at or below baseline / ties (`an-improves`), no baseline, timeout / load / leftovers
-  (`an-clean`), another total or no counts (`an-total`), a full candidate (`an-room`), overlap, cap, parse, seen
+  (`an-clean`), a higher count with a failing name outside the baseline's (`an-names`; a subset and no names are still
+  anchors), another total or no counts (`an-total`), a full candidate (`an-room`), overlap, cap, parse, seen
   (`co-*`), M178 evidence from a composed result (`an-no-evidence`), repair-v1 / model-v1 / v2 with `order`
   (`an-v2-only`), a scripted misleading anchor whose deferred standalone form is the fix (`df-defer`, `df-tail`), and a
   scripted M178 rebuild after an anchor (`rb-deferred`: no repeat).
 - End to end through the real loop (candidate uid M179_CAND, node:test tests, MAX_ATTEMPTS 20): RECT is a valid PASS
   row with `editScope: "in-body"`. Like m178's, the e2e case may run up to E2E_TRIES = 3 times under shared-uid load.
-- Mutation: each of the 13 tagged `m179-guard` lines deleted in turn fails an assertion (not a crash).
+- Mutation: each of the 14 tagged `m179-guard` lines (13 in batch 18, + `an-names` in batch 19) deleted in turn fails an assertion (not a crash).
 
 ## Claims
 
