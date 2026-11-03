@@ -41,6 +41,26 @@ const NEAR_K = (() => { for (let k = 1; k < 40; k++) if (jac(block("nr"), edited
 const inDoc = (i: number, text: string, split = "train", path = `src/f${i}.ts`): L.InDoc => ({ doc: i, text, man: { doc: i, split, repo: "PeaceG03/PeaceAI-Workspace", path } });
 const HEX40 = "0123456789abcdef0123456789abcdef01234567";
 const SRC = () => JSON.parse(read("peaceai/model/lb-corpus2.json"));
+/** a pinned source blob, fail-closed: a shallow checkout (CI's actions/checkout, depth 1) lacks the blobs of files changed on
+ * main after the sources tip, so a missing blob fetches the pinned tip commit from origin (depth 1) once and reads it again;
+ * a failed fetch, a tip that is not a full sha, or a blob still absent FAILS the test (never a skip) */
+let tipFetched = "";
+const hasObj = (sha: string) => spawnSync("git", ["-C", repo, "cat-file", "-e", `${sha}^{blob}`], { stdio: "ignore" }).status === 0;
+const pinnedBlob = (tip: string, path: string, blob: string): string => {
+  assert.match(blob, /^[0-9a-f]{40}$/, `${path}: the pinned blob is not a full sha`);
+  if (!hasObj(blob)) {
+    assert.match(tip, /^[0-9a-f]{40}$/, `the sources tip is not a full sha: ${tip}`);
+    if (tipFetched !== tip) {
+      const r = spawnSync("git", ["-C", repo, "fetch", "--no-tags", "--depth=1", "origin", tip], { encoding: "utf8", timeout: 180_000 });
+      assert.equal(r.status, 0, `${path}: pinned blob ${blob} is missing locally and fetching the sources tip ${tip} from origin failed (shallow checkout? network?): ${r.error ?? ""}${r.stderr ?? ""}`);
+      tipFetched = tip;
+    }
+    assert.ok(hasObj(blob), `${path}: pinned blob ${blob} is still missing after fetching the sources tip ${tip}`);
+    const atTip = spawnSync("git", ["-C", repo, "rev-parse", `${tip}:${path}`], { encoding: "utf8" });
+    assert.equal(atTip.stdout.trim(), blob, `${path}: the sources tip ${tip} does not carry the pinned blob ${blob}`);
+  }
+  return execFileSync("git", ["-C", repo, "cat-file", "blob", blob], { encoding: "utf8", maxBuffer: 1 << 26 });
+};
 
 // synthetic dev task set (names unrelated to any real task) and its reference diff
 const HEXA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", HEXB = "f0e1d2c3b4a5968778695a4b3c2d1e0f98765432";
@@ -490,8 +510,8 @@ test("m180: the committed new set: no train doc names, diagnoses or encodes the 
   assert.ok(!/"(name|repo|repos)"\s*:/.test(fixBuf.toString("utf8")), "no name/repo key in the devfix file");
   // the texts of the admitted files at the sources tip (their blobs)
   const textOf = new Map<string, string>(C.sources.files.map((f: any) => {
-    const t = execFileSync("git", ["-C", repo, "cat-file", "blob", f.blob], { encoding: "utf8", maxBuffer: 1 << 26 });
-    assert.equal(createHash("sha1").update(`blob ${Buffer.byteLength(t)}\0`).update(t).digest("hex"), f.blob);
+    const t = pinnedBlob(C.sources.tip, f.path, f.blob);
+    assert.equal(createHash("sha1").update(`blob ${Buffer.byteLength(t)}\0`).update(t).digest("hex"), f.blob, `${f.path}: blob ${f.blob} does not hash to its pin`);
     return [f.path, t];
   }));
   const hitsOf = new Map([...textOf].map(([p, t]) => [p, real.devTaskHits(t, dev)]));
