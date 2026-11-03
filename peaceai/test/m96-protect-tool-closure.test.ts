@@ -62,11 +62,19 @@ function c2CorpusJob(wf = C2_WF()): string {
   const m = /\n  c2-corpus:\n([\s\S]*?)(?=\n  [\w-]+:\n|$)/.exec(wf);
   return m ? m[1]! : "";
 }
+/** Batch 17: the workflow's top-level `env:` and `defaults:` blocks (column 0, anywhere in the file, flow or block style):
+ *  every job inherits them, so the c2-corpus job does too. */
+function c2TopLevelBlocks(wf: string): string[] {
+  return [...wf.matchAll(/^(?:env|defaults)\s*:[^\n]*\n?(?:(?:[ \t]+[^\n]*|[ \t]*)(?:\n|$))*/gm)].map((m) => m[0]);
+}
+const C2_CARRIES = /\bsecrets\b|\bvars\b|github\.token|TOKEN/i;
 function secretsFreeBuild(sh: string, ts: string, c2wf = C2_WF()): boolean {
   if (sh !== C2_SH || ts !== C2_TS) return false;
   const job = c2CorpusJob(c2wf);
   if (!job.includes(`./peaceai/bin/${C2_SH}`)) return false;
   if (/secrets\.|environment:|write|id-token|TOKEN|\$\{\{\s*vars\./i.test(job)) return false;
+  if (/\bsecrets\s*[[)]|\bvars\s*[[)]/.test(job)) return false; // batch 17: toJSON(secrets), secrets['X'] (no dot)
+  if (c2TopLevelBlocks(c2wf).some((b) => C2_CARRIES.test(b))) return false; // batch 17: inherited by every job
   if (!/\n    permissions:\n      contents: read\n    steps:/.test(job)) return false;
   if (!/persist-credentials: false/.test(job)) return false;
   // Named nowhere else: no other workflow, no other job, no other bin/*.sh.
@@ -105,7 +113,24 @@ test("m181 exemption: only lb-corpus2.ts from lb-chain2-corpus.sh in the secrets
     ["not run in c2-corpus", sub("        run: ./peaceai/bin/lb-chain2-corpus.sh", "        run: echo")],
     ["also run in c2-train", wf.replace(/\n  c2-train:\n/, "\n  c2-train:\n    # ./peaceai/bin/lb-chain2-corpus.sh\n")],
     ["builder named in the workflow", wf + "\n# peaceai/bin/lb-corpus2.ts\n"],
+    // batch 17: what every job inherits (top-level env / defaults), and secrets read without a dot
+    ["top-level env secret", sub("\npermissions: {}\n", "\npermissions: {}\n\nenv:\n  K: ${{ secrets.X }}\n")],
+    ["top-level env vars", sub("\npermissions: {}\n", "\npermissions: {}\n\nenv:\n  K: ${{ vars.Y }}\n")],
+    ["top-level env flow style", sub("\npermissions: {}\n", "\npermissions: {}\nenv: { K: \"${{ secrets.X }}\" }\n")],
+    ["top-level env after jobs", wf.replace(/\n*$/, "\nenv:\n  K: ${{ secrets.X }}\n")],
+    ["top-level env token", sub("\npermissions: {}\n", "\npermissions: {}\n\nenv:\n  GH: ${{ github.token }}\n")],
+    ["top-level defaults secret", sub("\npermissions: {}\n", "\npermissions: {}\n\ndefaults:\n  run:\n    working-directory: ${{ secrets.X }}\n")],
+    ["top-level defaults vars", sub("\npermissions: {}\n", "\npermissions: {}\n\ndefaults:\n  run:\n    shell: ${{ vars.SH }}\n")],
+    ["job toJSON(secrets)", sub("          retention-days: 1\n", "          retention-days: 1\n        env:\n          K: ${{ toJSON(secrets) }}\n")],
+    ["job secrets index", sub("          retention-days: 1\n", "          retention-days: 1\n        env:\n          K: ${{ secrets['X'] }}\n")],
   ];
+  // batch 17 near misses: a top-level env / defaults with neither secrets nor vars keeps the exemption (the check reads
+  // the blocks, not the header comment, which says "NO secrets"), and the real file has no such block at all
+  assert.deepEqual(c2TopLevelBlocks(wf), []);
+  for (const [name, t] of [
+    ["plain top-level env", sub("\npermissions: {}\n", "\npermissions: {}\n\nenv:\n  TZ: UTC\n")],
+    ["plain top-level defaults", sub("\npermissions: {}\n", "\npermissions: {}\n\ndefaults:\n  run:\n    shell: bash\n")],
+  ] as [string, string][]) { assert.equal(c2TopLevelBlocks(t).length, 1, name); assert.equal(secretsFreeBuild(C2_SH, C2_TS, t), true, name); }
   for (const [name, t] of MUT) { assert.notEqual(t, wf, name); assert.equal(secretsFreeBuild(C2_SH, C2_TS, t), false, name); }
 });
 

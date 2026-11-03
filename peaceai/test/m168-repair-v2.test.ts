@@ -73,7 +73,7 @@ test("M168: the real loop with repair-v2 passes a dropped-filter-result task (ro
     const root = join(base, "root");
     mkdirSync(join(root, "peaceai/plan"), { recursive: true });
     git(root, "init", "-q", "-b", "main");
-    const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M168_CAND ?? process.env.M152_CAND ?? process.env.M146_CAND ?? "peaceai-cand" };
+    const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M168_CAND ?? process.env.M152_CAND ?? process.env.M146_CAND ?? "" };
     const fetcher = loop.gitCopyFetcher((r) => join(base, "repos", r.split("/")[1]!));
     const run = (proposer: loop.Proposer) => loop.runLoopTask(task, "public", "a".repeat(64), { root, fetcher, proposer, maxAttempts: 20, runMs: 120_000, env, rules: [], training: new Set<string>() });
     if (!stage2CandUid(env).ok) { assert.match(run(prop.repairProposer({ v2: true })).row.code, /^CAND_UID_/); return; }

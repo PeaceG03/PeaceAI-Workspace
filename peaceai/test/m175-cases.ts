@@ -20,7 +20,7 @@ import { e2eTask, opts as opts174, STOCK, STOCK_TEST } from "./m174-cases.ts";
 import { setup as setup151, teardown as teardown151 } from "./m151-fixtures.ts";
 
 // M175 runs ONLY as candidate uid peaceai-cand3 (M175_CAND); it never borrows another batch's candidate user.
-const M175_CAND = process.env.M175_CAND ?? process.env.M146_CAND ?? "peaceai-cand";
+const M175_CAND = process.env.M175_CAND ?? process.env.M146_CAND ?? "";
 const m175Env = (ctx: Ctx) => ({ ...ctx.env, [STAGE2_CAND_ENV]: M175_CAND });
 export const m175Cand = (): boolean => stage2CandUid({ [STAGE2_CAND_ENV]: M175_CAND }).ok;
 

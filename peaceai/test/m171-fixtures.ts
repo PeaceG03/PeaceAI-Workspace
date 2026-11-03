@@ -106,7 +106,7 @@ export function setup(): Ctx {
     chmodSync(join(d, tool), 0o755);
     return d;
   };
-  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M171_CAND ?? process.env.M146_CAND ?? "peaceai-cand", RUNNER_TEMP: runnerTemp };
+  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M171_CAND ?? process.env.M146_CAND ?? "", RUNNER_TEMP: runnerTemp };
   const c = stage2CandUid(env);
   return {
     base, home, runnerTemp, marker, root, clamp, stack, env, cand: c.ok ? c.cand : null,

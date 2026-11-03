@@ -18,7 +18,7 @@ import { PROOF_CASES } from "./m171-proof-cases.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const WF = readFileSync(join(ROOT, ".github/workflows/peace-model-v1-dev.yml"), "utf8");
-const CAND = process.env.M171_CAND ?? process.env.M146_CAND ?? "peaceai-cand";
+const CAND = process.env.M171_CAND ?? process.env.M146_CAND ?? "";
 const c = stage2CandUid({ PEACEAI_STAGE2_CAND: CAND });
 const SKIP = "needs the stage-2 candidate uid and sudo (box / private job)";
 

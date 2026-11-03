@@ -143,7 +143,7 @@ export function setup(): Ctx {
   writeFileSync(join(stubVitest, "package.json"), VITEST_PKG);
   writeFileSync(join(stubVitest, "cli.mjs"), STUB_VITEST_CLI);
   execFileSync("chmod", ["-R", "a+rX", base]);
-  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M151_CAND ?? process.env.M146_CAND ?? "peaceai-cand" };
+  const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M151_CAND ?? process.env.M146_CAND ?? "" };
   const c = stage2CandUid(env);
   const srcBase = "export function add(a, b) {\n  return a - b;\n}\nexport function sub(a, b) {\n  return a - b;\n}\n";
   const teamTest = 'import assert from "node:assert/strict";\nimport { add } from "../src/calc.ts";\n\ntest("add sums two numbers", () => assert.equal(add(2, 3), 5));\ntest("add keeps the first number for zero", () => assert.equal(add(2, 0), 2));\n';

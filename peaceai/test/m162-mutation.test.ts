@@ -34,7 +34,7 @@ const SEMANTIC: [string, "loop" | "row", string, string, boolean][] = [
   ["plan-v1-always", "loop", "plan = LOOP_PLANNERS[planner].plan(", "plan = LOOP_PLANNERS[\"plan-only-v1\"].plan(", true],
   ["row-v3-as-v2", "row", "if (v3 && !(LOOP_PLANNER_NAMES", "if (false && !(LOOP_PLANNER_NAMES", false],
 ];
-const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "peaceai-cand" }).ok;
+const cand = stage2CandUid({ PEACEAI_STAGE2_CAND: process.env.M152_CAND ?? process.env.M146_CAND ?? "" }).ok;
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "peaceai-m162-mut-")); });
