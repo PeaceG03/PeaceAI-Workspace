@@ -50,11 +50,70 @@ test("the lib modules the protected tools import, and kernel-guard.ts, are prote
   assert.ok(!isProt("peaceai/lib/ranker/m96-new.ts"));
 });
 
+// M181 (Auditor #673 binding condition chain2.buildIsolation): the one exemption. The lb-corpus v2 builder
+// (peaceai/bin/lb-corpus2.ts and its lib peaceai/lib/lbcorpus2.ts) is unprotected by design and runs ONLY from
+// lb-chain2-corpus.sh, which runs ONLY in the c2-corpus job of peace-lb-chain2.yml: no environment, no secrets.,
+// permissions contents: read, persist-credentials: false; its output is sha-checked against protected pins by the
+// training job. Anything else (another script, another job, or that job gaining a secret) puts the .ts back in the
+// closure and the test fails. Exact pair, not a directory.
+const C2_SH = "lb-chain2-corpus.sh", C2_TS = "peaceai/bin/lb-corpus2.ts";
+const C2_WF = () => read(".github/workflows/peace-lb-chain2.yml");
+function c2CorpusJob(wf = C2_WF()): string {
+  const m = /\n  c2-corpus:\n([\s\S]*?)(?=\n  [\w-]+:\n|$)/.exec(wf);
+  return m ? m[1]! : "";
+}
+function secretsFreeBuild(sh: string, ts: string, c2wf = C2_WF()): boolean {
+  if (sh !== C2_SH || ts !== C2_TS) return false;
+  const job = c2CorpusJob(c2wf);
+  if (!job.includes(`./peaceai/bin/${C2_SH}`)) return false;
+  if (/secrets\.|environment:|write|id-token|TOKEN|\$\{\{\s*vars\./i.test(job)) return false;
+  if (!/\n    permissions:\n      contents: read\n    steps:/.test(job)) return false;
+  if (!/persist-credentials: false/.test(job)) return false;
+  // Named nowhere else: no other workflow, no other job, no other bin/*.sh.
+  for (const wf of readdirSync(resolve(root, ".github/workflows")).filter((f) => /\.ya?ml$/.test(f))) {
+    const t = wf === "peace-lb-chain2.yml" ? c2wf : read(`.github/workflows/${wf}`);
+    const n = t.split(C2_SH).length - 1;
+    if (wf === "peace-lb-chain2.yml" ? n !== job.split(C2_SH).length - 1 : n !== 0) return false;
+    if (t.includes("lb-corpus2.ts") || t.includes("lbcorpus2")) return false;
+  }
+  for (const o of readdirSync(resolve(root, "peaceai/bin")).filter((f) => f.endsWith(".sh") && f !== C2_SH))
+    if (read(`peaceai/bin/${o}`).includes(C2_SH) || read(`peaceai/bin/${o}`).includes("lb-corpus2.ts")) return false;
+  return true;
+}
+
+test("m181 exemption: only lb-corpus2.ts from lb-chain2-corpus.sh in the secrets-free c2-corpus job; near misses are not exempt", () => {
+  assert.equal(secretsFreeBuild(C2_SH, C2_TS), true);
+  assert.equal(secretsFreeBuild("lb-daily-cycle.sh", C2_TS), false);
+  assert.equal(secretsFreeBuild(C2_SH, "peaceai/lib/lbcorpus2.ts"), false);
+  assert.equal(secretsFreeBuild(C2_SH, "peaceai/bin/lb-corpus2b.ts"), false);
+  assert.ok(!isProt(C2_TS) && !isProt("peaceai/lib/lbcorpus2.ts"));
+  assert.ok(isProt(`peaceai/bin/${C2_SH}`) && isProt(".github/workflows/peace-lb-chain2.yml"));
+  // The job text the exemption reads really is the c2-corpus job (it stops at c2-train).
+  const job = c2CorpusJob();
+  assert.match(job, /upload-artifact/);
+  assert.doesNotMatch(job, /c2-train|LM_SAVES_R2/);
+  // Mutants of the workflow text: each one must lose the exemption.
+  const wf = C2_WF();
+  const sub = (a: string, b: string) => { assert.ok(wf.includes(a), a); return wf.replace(a, b); };
+  const MUT: [string, string][] = [
+    ["secret env", sub("          retention-days: 1\n", "          retention-days: 1\n        env:\n          K: ${{ secrets.X }}\n")],
+    ["contents write", sub("      contents: read\n    steps:\n      - uses: actions/checkout@3d3c", "      contents: write\n    steps:\n      - uses: actions/checkout@3d3c")],
+    ["no permissions", sub("    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c", "    steps:\n      - uses: actions/checkout@3d3c")],
+    ["persisted credentials", sub("          fetch-depth: 0\n          persist-credentials: false\n", "          fetch-depth: 0\n")],
+    ["environment", sub("    timeout-minutes: 60\n", "    timeout-minutes: 60\n    environment: peaceai-results\n")],
+    ["vars", sub("          retention-days: 1\n", "          retention-days: 1\n          x: ${{ vars.Y }}\n")],
+    ["not run in c2-corpus", sub("        run: ./peaceai/bin/lb-chain2-corpus.sh", "        run: echo")],
+    ["also run in c2-train", wf.replace(/\n  c2-train:\n/, "\n  c2-train:\n    # ./peaceai/bin/lb-chain2-corpus.sh\n")],
+    ["builder named in the workflow", wf + "\n# peaceai/bin/lb-corpus2.ts\n"],
+  ];
+  for (const [name, t] of MUT) { assert.notEqual(t, wf, name); assert.equal(secretsFreeBuild(C2_SH, C2_TS, t), false, name); }
+});
+
 test("every relative import of a protected module, and every .ts a bin/*.sh runs, is protected (closure is closed)", () => {
   const code = [...walk("peaceai"), ...walk("builder-log")].filter((p) => p.endsWith(".ts") && !p.endsWith(".d.ts") && !p.endsWith(".test.ts") && !p.startsWith("peaceai/test/") && !p.startsWith("peaceai/self-tests/"));
   const entries = new Set(code.filter(isProt));
   for (const sh of readdirSync(resolve(root, "peaceai/bin")).filter((f) => f.endsWith(".sh")))
-    for (const m of read(`peaceai/bin/${sh}`).matchAll(/(peaceai\/[\w./-]+\.ts)\b/g)) if (isFile(m[1]!)) entries.add(m[1]!);
+    for (const m of read(`peaceai/bin/${sh}`).matchAll(/(peaceai\/[\w./-]+\.ts)\b/g)) if (isFile(m[1]!) && !secretsFreeBuild(sh, m[1]!)) entries.add(m[1]!);
   assert.ok(entries.size >= 100, String(entries.size));
   const seen = new Set(entries);
   const queue = [...entries];

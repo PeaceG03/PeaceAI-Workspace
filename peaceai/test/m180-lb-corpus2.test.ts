@@ -486,11 +486,16 @@ test("m180: the committed v2 pins agree with the sources file, the code and each
   const v2Paths = new Set(v2.map((r) => r.path)), v2Sha = new Set(v2.map((r) => r.textSha256));
   assert.ok(!tr.some((r) => v2Paths.has(r.path) || v2Sha.has(r.textSha256)), "no slice file or text on the train side");
   assert.ok(Object.values(B.overlap).length === 9 && Object.values(B.overlap).every((v) => v === 0));
-  // nothing here can train: the v2 corpus is not cleared and the chain-2 plan is off
-  assert.ok(!lbt.clearedCorpora.some((c: any) => c.docs === B.docsSha256 || c.fingerprint === B.fingerprint), "v2 is cleared only after Auditor's hidden check, in a later PR");
-  assert.equal(C.chain2.enabled, false);
+  // lb-chain2 v1 (the chain-2 run PR, after Auditor's #673 PASS): v2 is cleared by one add-only clearedCorpora entry at
+  // exactly the build pins, and chain 2 is enabled; the only workflow that reaches the v2 builder is peace-lb-chain2.yml,
+  // through lb-chain2-corpus.sh in its secrets-free c2-corpus job (m181-lb-chain2.test.ts pins that job's shape).
+  const v2Cleared = lbt.clearedCorpora.filter((c: any) => c.docs === B.docsSha256 || c.manifest === B.manifestSha256 || c.fingerprint === B.fingerprint);
+  assert.deepEqual(v2Cleared.map((c: any) => [c.docs, c.manifest, c.fingerprint]), [[B.docsSha256, B.manifestSha256, B.fingerprint]], "one entry, exactly the build pins");
+  assert.equal(C.chain2.enabled, true);
   assert.equal(C.chain2.warmStart.manifestSha256, "1e513e5080e23453d4ca5b33911567a8958f5873503fd6b869f0fb5dd3ea2cd6");
-  assert.ok(!readdirSync(join(repo, ".github", "workflows")).some((w) => read(join(".github", "workflows", w)).includes("lb-corpus2")), "no workflow runs the v2 builder yet");
+  const wfs = readdirSync(join(repo, ".github", "workflows"));
+  assert.deepEqual(wfs.filter((w) => /lb-corpus2\.ts|lbcorpus2|lb-chain2-corpus\.sh/.test(read(join(".github", "workflows", w)))), ["peace-lb-chain2.yml"], "only the chain-2 workflow reaches the v2 builder");
+  assert.ok(!/lb-corpus2\.ts|lbcorpus2/.test(read(".github/workflows/peace-lb-chain2.yml")), "and only through lb-chain2-corpus.sh");
 });
 
 test("m180: the committed new set: no train doc names, diagnoses or encodes the fix of a public dev task (Auditor #673 B1)", () => {

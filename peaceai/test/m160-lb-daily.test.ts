@@ -120,13 +120,22 @@ test("m160: static: real pins are the cleared corpus, not scheduled anywhere, bu
     "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
     "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
     "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4",
-  ]], "exactly the Auditor-cleared corpus");
+  ], [
+    // M181: the lb-corpus v2 build pins, cleared by Auditor #673 for chain 2 (m180/m181 tie them to lb-corpus2.json).
+    "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
+    "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe",
+    "8ecd9ceca8109964869858e2c0a4e17a2876016883dd335c9820ae7659d0d723",
+  ]], "exactly the Auditor-cleared corpora");
   assert.ok(cfg.daily.maxBudgetMin <= 340, "fits a 360 min GitHub-hosted job");
   for (const owned of ["--corpus", "--work", "--save-dir", "--marker", "--resume-from", "--init-from", "--replay-corpus", "--max-seconds", "--deadline", "--lora-rank"]) assert.ok(!cfg.daily.trainArgsAllowed.includes(owned), owned);
+  // M181: the warm-start flags pass through the cycle only from lb_chain2.py cycle-args; a dailyRun.train may not set them.
+  assert.ok(cfg.daily.trainArgsAllowed.includes("--warm-start-from") && !Object.keys(cfg.dailyRun.train).some((k) => /^--warm-start/.test(k)));
   const wf = join(repo, ".github/workflows");
   for (const f of readdirSync(wf)) {
     const t = readFileSync(join(wf, f), "utf8");
     if (f === "peace-lb-daily.yml") assert.match(t, /\non:\n  workflow_dispatch:\n\npermissions: \{\}\n/, "the daily cycle is manual dispatch only (M165 checks the rest)");
+    // M181: chain 2 reuses the cycle (lb-daily-cycle.sh via lb-chain2-run.sh); also manual dispatch only (m9/m181 check the rest).
+    else if (f === "peace-lb-chain2.yml") assert.match(t, /\non:\n  workflow_dispatch:\n\npermissions: \{\}\n/, "chain 2 is manual dispatch only");
     else assert.ok(!/lb-daily-cycle|daily_cycle|lb_daily|lb-daily-run|lb-train\.json/.test(t), `${f} must not run the daily cycle`);
   }
 });

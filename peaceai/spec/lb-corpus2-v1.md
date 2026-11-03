@@ -1,7 +1,8 @@
 # lb-corpus v2 (limit-breaker chain 2: data only) - v1
 
-Status: BUILT AND PUBLISHED, NOT CLEARED, NOT TRAINABLE. This change builds data. It runs no training, dispatches
-nothing, adds no workflow and does not touch lb-train.json, latest.json, Results or R2.
+Status: BUILT AND PUBLISHED; CLEARED for chain 2 by the chain-2 run PR (spec peaceai/spec/lb-chain2-v1.md), after
+Auditor's #673 PASS. The data PR ran no training, dispatched nothing, added no workflow and did not touch lb-train.json,
+latest.json, Results or R2. The run PR adds the one add-only clearedCorpora entry and the dispatch-only workflow.
 
 ## Decision up front: chain 2 warm-starts from chain 1's final save
 
@@ -12,12 +13,14 @@ nothing, adds no workflow and does not touch lb-train.json, latest.json, Results
   save's manifest sha256 must equal both this pin (peaceai/model/lb-corpus2.json chain2.warmStart) and the one in the
   day-3 Results row runs/lb-daily/2026-11-03-41572356445.json (Results commit 80b0c35, Auditor-VALID). A mismatch
   refuses.
-- That check, the chain-2 workflow input and a full-model init path in train.py are NOT in this PR. Today
-  --init-from is LoRA-only and --resume-from refuses a new DATA_SHA. A later reviewed PR adds them, with any
-  workflow input defaulting to OFF / no-run. chain2.enabled is false here, and m180 asserts it.
-- Training on v2 needs: (1) Auditor's hidden near-dup check of the published pins = 0, (2) an add-only
-  lb-train.json clearedCorpora entry for exactly these pins, and (3) that later PR. Until then nothing can train
-  on v2. m180 asserts that the v2 pins are not in clearedCorpora and that no workflow names the builder.
+- That check, the chain-2 workflow and a full-model init path in train.py (--warm-start-from, warmstart.py) came
+  in the chain-2 run PR (lb-chain2-v1.md). --init-from stays LoRA-only and --resume-from still refuses a new
+  DATA_SHA. The workflow is workflow_dispatch only (no schedule) and runs one day per manual dispatch from main.
+  chain2.enabled is true there; lb_chain2.py refuses every command but ref when it is false.
+- Training on v2 needed: (1) Auditor's hidden near-dup check of the published pins = 0, (2) an add-only
+  lb-train.json clearedCorpora entry for exactly these pins, and (3) the run PR. m180 now asserts the one entry at
+  exactly the build pins and that the only workflow reaching the builder is peace-lb-chain2.yml (through
+  lb-chain2-corpus.sh in its secrets-free build job).
 
 ## What v2 is
 
@@ -105,6 +108,14 @@ peaceai/spec/loop-isolation-v1.md, peaceai/spec/loop-runners-v2.md, peaceai/spec
 peaceai/test/m168-repair-v2.test.ts, peaceai/test/m170-cases.ts, peaceai/test/m173-batch12.test.ts. The reasons are in
 lb-corpus2.json.
 
+### Note: dev-task mentions already in the chain-1 base train set (do not over-claim dev results)
+
+The B1 check above covers the NEW set. The chain-1 base train set (unchanged, and trained on for 6000 steps in
+chain 1) has 16 docs that mention a dev-task library in passing, and 1 immer doc that matches a superstruct-style
+idiom. None of them contains a diagnosis or a reference fix of any dev task. They are kept, because changing the
+chain-1 base would break the same-held-out-split condition. Still, a later dev-task result from a model trained on
+chain 1 or chain 2 must not be claimed as free of any exposure to those libraries: report it with this note.
+
 ## Held-out (condition 4)
 
 - The old split (`heldout`) is unchanged: the same docs, bytes and ids. train.py reads split == "heldout" for its
@@ -112,7 +123,7 @@ lb-corpus2.json.
 - The new slice (`heldout_v2`) is a per-FILE draw: sha256("peaceai-lb-corpus2:v1\nslice\n" + path), first 32 bits,
   compared with rate 0.15. Every piece of a file therefore lands on the same side. lb-clean sees heldout_v2 as
   heldout (no FIM, no repeats), and the label is restored on output. train.py ignores heldout_v2, so it is never
-  trained on. Wiring a separate heldout_v2 eval is part of the later chain-2 PR.
+  trained on. The separate heldout_v2 eval is eval_v2.py (chain-2 run PR), reported as the row's heldoutV2.
 - Unigram baseline note: export.py derives the baseline from tokens_train.npy. The train split grows by 74 docs (of
   about 60.9k), so chain 2's baseline can differ from 2.5156 in a late decimal. Chain-2 rows must carry their own
   baseline.
@@ -172,11 +183,13 @@ tsx peaceai/bin/lb-corpus2.ts --repo <full-history clone with d70bf9a> --base <w
 ## Conditions (Auditor, binding) and where each is met
 
 1. Sources: the rule above and the PR list. Anything not attributable is excluded.
-2. New chainId and pins; warm start sha-checked before training: the decision section above. The check itself
-   comes in the later PR, which does not run training.
+2. New chainId and pins; warm start sha-checked before training: the decision section above. The check itself is
+   lb_chain2.py config / trusted / restore and train.py --warm-start-from (chain-2 run PR; m181).
 3. Publish before training: the pins are committed here. Training waits for Auditor's PASS (= 0).
 4. The same held-out split plus a new slice, non-overlap tests and near-miss tests: m180.
 5. Results add-only, latest.json untouched, R2 only from main, no paid compute: this PR touches none of them.
-6. Build isolation (Auditor #673, binding on the chain-2 run PR, not implemented here): the run PR must build
-   lib/lbcorpus2.ts and bin/lb-corpus2.ts in a separate job with no secrets, and pass on to the training job only
-   output whose sha matches the protected pin. No /approve-rule is needed for this data-only PR.
+6. Build isolation (Auditor #673, binding on the chain-2 run PR): met by peace-lb-chain2.yml. lib/lbcorpus2.ts and
+   bin/lb-corpus2.ts run only in the c2-corpus job (no environment, no secrets, contents: read; lb-chain2-corpus.sh
+   refuses to start with a secret-like variable set), which passes only docs.jsonl, manifest.jsonl and
+   fingerprint.json on; the c2-train job never runs node and checks all three against the protected pins before any
+   secret step, failing closed (lb_chain2.py pins; m181). No /approve-rule was needed for the data-only PR.

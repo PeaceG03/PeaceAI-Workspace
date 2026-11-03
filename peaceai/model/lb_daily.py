@@ -42,7 +42,7 @@ MARKER_SCHEMA = "peaceai-lm-chain:v1"
 MARKER_FIELDS = ("schema", "more", "stopReason", "step", "totalSteps", "save", "manifestSha256", "cfgSha256")
 STOP_REASONS = ("patience", "steps", "max_seconds", "deadline", "max_steps_this_run", "nonfinite")
 LORA = re.compile(r"^--(lora|init-from)")
-FORBIDDEN = re.compile(r"^--(replay|resume|save-dir|marker|keep-checkpoints|corpus|work|max-seconds|deadline|job-start)")
+FORBIDDEN = re.compile(r"^--(replay|resume|save-dir|marker|keep-checkpoints|corpus|work|max-seconds|deadline|job-start|warm-start)")
 # batch 7 (Auditor's #662 note): every whole-value pattern ends in \Z, not $: Python's $ also matches before a
 # trailing newline, so "41222155935\n" passed ID_RE.match.
 HEX64 = re.compile(r"^[0-9a-f]{64}\Z")

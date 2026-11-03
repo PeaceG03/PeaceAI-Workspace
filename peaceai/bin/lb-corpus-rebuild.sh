@@ -43,4 +43,5 @@ echo "task trees=$(find trees -mindepth 1 -maxdepth 1 -type d | wc -l)"
 sha256sum corpus/docs.jsonl corpus/manifest.jsonl refs/docs.jsonl refs/manifest.jsonl out/docs.jsonl out/manifest.jsonl
 echo "fingerprint $(jq -r .fingerprint out/fingerprint.json)"
 jq -c '{docsOut, taskset_hidden_dup: .drops.taskset_hidden_dup, dropHashes}' out/clean-report.json || true
-rm -rf trees refs corpus
+# lb-chain2 v1: LB_REBUILD_KEEP_REFS=1 keeps refs/ (the v2 builder's --refs needs them; the chain-2 build job, which holds no key)
+if [ "${LB_REBUILD_KEEP_REFS:-}" = 1 ]; then rm -rf trees corpus; else rm -rf trees refs corpus; fi
