@@ -815,7 +815,7 @@ const parses = (path: string, text: string): boolean => ((parseSource(path, text
 const applyAll = (text: string, ms: readonly Mutation[]): string => [...ms].sort((a, b) => b.start - a.start).reduce((t, x) => t.slice(0, x.start) + x.text + t.slice(x.end), text);
 const overlaps = (a: Mutation, b: Mutation) => a.path === b.path && a.start < b.end && b.start < a.end || (a.path === b.path && a.start === b.start);
 
-export interface Candidate { key: string; muts: Mutation[]; edits: RepairEdit[] }
+export interface Candidate { key: string; muts: Mutation[]; edits: RepairEdit[]; anchored?: boolean }
 
 /** Builds a candidate from mutations on the original files, or null when it is not a valid one-site (or combined) edit. */
 export function candidateFor(files: ReadonlyMap<string, string>, muts: Mutation[]): Candidate | null {
@@ -958,6 +958,8 @@ export function siteDemotions(tried: readonly Candidate[], feedback: readonly Re
   tried.forEach((c, i) => {
     const e = siteEvidence(feedback.find((f) => f.attempt === i + 1), baseline, baseFailing);
     if (e === null) return;
+    // M179: a composed candidate's counts are relative to its anchor, not to the original code
+    if (c.anchored) return; // m179-guard:an-no-evidence
     const at = [...new Set(c.muts.map((m) => m.site))];
     if (at.length !== 1) return; // m178-guard:ev-single
     for (const s of at) { const x = ev.get(s) ?? { inert: 0, live: 0 }; x[e]++; ev.set(s, x); }
@@ -973,6 +975,44 @@ export function siteDemotions(tried: readonly Candidate[], feedback: readonly Re
   return out;
 }
 
+// ---- M179 anchored continuation (repair-v2 only; spec: peaceai/spec/repair-v2-m179.md)
+
+/** M179: the most mutations an anchored (composed) candidate may carry. */
+export const MAX_ANCHOR_MUTS = 3;
+/**
+ * M179: the anchor, the tried candidate that is the best clean partial fix so far, or null: a result with no code but
+ * TEST_FAIL, the baseline's total, and a passing count above the baseline's and above every earlier anchor's (ties keep
+ * the earliest), carrying fewer than MAX_ANCHOR_MUTS mutations (room for one more). The same counts the improved-pair
+ * step reads; never a message. tried[i] is attempt i + 1.
+ */
+export function anchorFor(tried: readonly Candidate[], feedback: readonly RepairFeedback[], baseline: RepairInput["baseline"]): Candidate | null {
+  let best: Candidate | null = null;
+  let bestPass = baseline?.passing ?? Infinity; // no baseline: nothing is above it
+  tried.forEach((c, i) => {
+    const fb = feedback.find((f) => f.attempt === i + 1);
+    if (fb?.codes.some((x) => x !== "TEST_FAIL")) return; // m179-guard:an-clean
+    // no counts, or no baseline, also stop here (undefined is not a total)
+    if (fb?.tests?.total !== baseline?.total) return; // m179-guard:an-total
+    if (c.muts.length >= MAX_ANCHOR_MUTS) return; // m179-guard:an-room
+    if ((fb?.tests?.passedByPeaceAI ?? -1) <= bestPass) return; // m179-guard:an-improves
+    best = c;
+    bestPass = fb?.tests?.passedByPeaceAI ?? bestPass;
+  });
+  return best;
+}
+/**
+ * M179: `pick` applied on top of `anchor` (both on the original files), or null when it cannot be: an overlapping edit
+ * (the pick changes what the anchor changed: it is tried alone instead), more than MAX_ANCHOR_MUTS mutations, a result
+ * that does not parse, or a composition already proposed.
+ */
+export function composeOnAnchor(anchor: Candidate, pick: Candidate, files: ReadonlyMap<string, string>, seen: ReadonlySet<string>): Candidate | null {
+  if (anchor.muts.some((x) => pick.muts.some((y) => overlaps(x, y)))) return null; // m179-guard:co-overlap
+  if (anchor.muts.length + pick.muts.length > MAX_ANCHOR_MUTS) return null; // m179-guard:co-cap
+  const c = candidateFor(files, [...anchor.muts, ...pick.muts]);
+  if (!c) return null; // m179-guard:co-valid
+  if (seen.has(c?.key ?? "")) return null; // m179-guard:co-seen
+  return { key: c?.key ?? "", muts: c?.muts ?? [], edits: c?.edits ?? [], anchored: true };
+}
 /** M167: options for a proposer built on repair-v1 (model-v1): its row name, and a reorder of the first candidate
  *  list (called once, also with [] when nothing was located; a throw is the proposer's failure, PROPOSER_FAILED). */
 export interface RepairOptions { name?: string; order?: (queue: readonly Candidate[]) => Candidate[]; v2?: boolean }
@@ -989,6 +1029,9 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
   const seen = new Set<string>();
   const combined = new Set<string>();
   const demoted = new Set<number>(); // M178
+  const deferred: Candidate[] = []; // M179: standalone forms of queued candidates tried on an anchor
+  let redo: Candidate[] = []; // M179: tried candidates to try again on the current anchor
+  let anchorKey: string | null = null;
   let baseFailing: readonly string[] = [];
   return {
     name: opts.name ?? (opts.v2 ? REPAIR_PROPOSER_V2 : REPAIR_PROPOSER),
@@ -1040,6 +1083,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         for (const s of fresh) demoted.add(s);
         const skipKeys = new Set<string>();
         for (const c of tried) skipKeys.add(c.key); // m178-guard:rb-tried
+        for (const c of deferred) skipKeys.add(c.key); // m179-guard:rb-deferred
         const live = repairCandidates(sites, files, skipKeys, true, demoted);
         const rest = queue.filter((c) => !live.some((x) => x.key === c.key));
         const next = [...live, ...rest];
@@ -1047,8 +1091,24 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         for (const c of next) seen.add(c.key);
         queue = next;
       }
-      pick ??= queue.shift() ?? null;
+      // M179 (repair-v2 only, like M178): after a clean partial fix (the anchor), the next candidates are tried ON TOP of
+      // it: first every candidate tried so far, in the order it was tried (an edit the tests did not notice on the
+      // original code may be masked by the anchor's fault), then the queue; a queued candidate's standalone form goes to
+      // the end (deferred, not dropped). A composed result that improves further becomes the next anchor.
+      let anchor = anchorFor(tried, input.feedback, input.baseline);
+      if (opts.v2 !== true || opts.order) anchor = null; // m179-guard:an-v2-only
+      if (anchor && anchor.key !== anchorKey) { anchorKey = anchor.key; redo = [...tried]; }
+      if (!anchor) redo = [];
+      while (!pick && anchor && redo.length) pick = composeOnAnchor(anchor, redo.shift()!, files, seen);
+      if (!pick) {
+        const q = queue.shift() ?? null;
+        const c = q && anchor ? composeOnAnchor(anchor, q, files, seen) : null;
+        if (c && q) deferred.push(q); // m179-guard:df-defer
+        pick = c ?? q;
+      }
+      if (!pick) pick = deferred.shift() ?? null; // m179-guard:df-tail
       if (!pick) return { refuse: "NO_MORE_EDITS" };
+      if (pick.anchored) seen.add(pick.key);
       tried.push(pick);
       return { edits: pick.edits };
     },
