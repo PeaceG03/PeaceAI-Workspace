@@ -1,0 +1,38 @@
+{
+ "schema": "peaceai-lb-corpus2-fingerprint:v1",
+ "fingerprint": "8ecd9ceca8109964869858e2c0a4e17a2876016883dd335c9820ae7659d0d723",
+ "parts": {
+  "version": "peaceai-lb-corpus2:v2",
+  "codeSha256": {
+   "peaceai/lib/lbcorpus2.ts": "72f2a75bbf76f76461158e40c923271f394da261db28f46e30862681a48db841",
+   "peaceai/bin/lb-corpus2.ts": "ce9c9e36f4e4d1d2d2a0e197cf9f3fad6b229b57e4d7b7acc3e42fab44996e4c",
+   "peaceai/lib/lbclean.ts": "0d43ab9490996910bf0e11ec62d9ce6686c8dc33ae4d0ee51129d2bf763f052b",
+   "peaceai/lib/nlpairs.ts": "477547782310282234eaee515bead602cd49ddf8df94ed79f885e23559a3ddf8",
+   "peaceai/lib/tsresolve.ts": "2ab9daa80406e857c743c6fe5691d1ea354115e8f99d6c0c673e9d74032b9bef"
+  },
+  "typescriptVersion": "5.9.3",
+  "configSha256": "f66e030422529a00046a4f9bf9298df5fde367dba8c8d6e29fe97ae3cea6cbf4",
+  "exclusionsSha256": "dbd0be3de5de3f12e6bd30a87422f9fb7ca0ffa7a2640f04a66615b87aac7d23",
+  "sourcesSha256": "c6f2c791a41d0d7402464d85fe4a1629d986a5bfc999d4aab230a6d614102e1d",
+  "base": {
+   "docs": "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
+   "manifest": "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
+   "fingerprint": "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4"
+  },
+  "newInput": {
+   "docsSha256": "7f6183700b6615106d2ef4ac1159c890042760eee03c5b95d7953be2d7f12167",
+   "manifestSha256": "f134d079232f570549e69da57bd167cb80e2c9f4013ced5336c5e1badda737f5"
+  },
+  "refs": {
+   "docsSha256": "937058e3c4f53fa6bb25ac9d97a644b1facbacf8ced73fae94fb72195f43812a",
+   "manifestSha256": "10458355bbf4fa1f2b191f17dbdaa3b63d6d323c8d8feb98216b67c116f0ff61"
+  },
+  "dropHashesSha256": [
+   "ecc97adfde53f4307fadfd93ee7f4c5cacb29c24665a37ba54becc87a5b1dc0a"
+  ],
+  "out": {
+   "docs": "9a78ef053f2096fd00148753679f14dad82c268770b09db6a7765245fc57228f",
+   "manifest": "4c950ca4e0594c67de18332ed37feae0bcaac78456b75fd5448f5a634d40fcbe"
+  }
+ }
+}
