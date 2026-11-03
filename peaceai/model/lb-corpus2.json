@@ -1,0 +1,434 @@
+{
+ "schema": "peaceai-lb-corpus2:v1",
+ "note": "lb-corpus v2 for lb-daily chain 2 (spec peaceai/spec/lb-corpus2-v1.md). NOT cleared and NOT trainable: it is not in lb-train.json clearedCorpora, and nothing reads this file to train. Training on it needs (1) Auditor's hidden near-dup check of the published pins below = 0, (2) an add-only clearedCorpora entry, (3) a separate reviewed PR wiring chain 2 (warm start below) into the daily cycle.",
+ "sources": {
+  "schema": "peaceai-lb-corpus2-sources:v1",
+  "repo": "PeaceG03/PeaceAI-Workspace",
+  "tip": "d70bf9ac7cf3e4e50c732c7976531fe0af18a559",
+  "license": "owner:PeaceG03",
+  "rule": "A file of the tip tree is admitted iff (a) every commit that touched its path (git log --no-renames --full-history) is the squash merge on main of a PR listed in passed (Auditor PASS at the exact merged head, evidence named); (b) its extension is code or text (ts mts cts js mjs cjs py sh md); (c) its path is not junk (lb-clean JUNK_PATH), not a fixture dir, not .github, and names nothing held-out, hidden, Results, task-set, exclusion, drop-hash, nl-pairs or verdict related; (d) its text holds no 40-64 hex run (a pinned hash) and is valid UTF-8. Anything not attributable this way is excluded. Peace's own verdicts: none are admitted in v1 (they live in Results, which is excluded).",
+  "passed": [
+   {
+    "pr": 665,
+    "mergeCommit": "777bf1d44111383bae49e57d086beaa0dcd009ac",
+    "passedHead": "d0ab904429269d431d563dafaaa3abc5ea5e493f",
+    "evidence": "Auditor review record review-665-d0ab904.md: VERDICT: PASS at d0ab904"
+   },
+   {
+    "pr": 666,
+    "mergeCommit": "7abc445177f2a54ceecb20ed3d058c76f27b0f16",
+    "passedHead": "4516a243a45575e2ede5845481324229d49d33ab",
+    "evidence": "Auditor review record review-666-4516a24.md: VERDICT: PASS @ 4516a243"
+   },
+   {
+    "pr": 667,
+    "mergeCommit": "c8bf9c6844cc809afc742edbac83451e21121ae6",
+    "passedHead": "328eafd664e971f653320b7388f8ae7c2752ec6f",
+    "evidence": "Auditor review record review-667-26dd178.md: Verdict: PASS at 328eafd"
+   },
+   {
+    "pr": 668,
+    "mergeCommit": "e6b8aec5771c3dadda48599f35c9c35b8950bb55",
+    "passedHead": "acfd60642345d93ce2db6b061d374f85935aa1ac",
+    "evidence": "Auditor review record review-668-acfd606.md: Verdict: PASS at acfd606"
+   },
+   {
+    "pr": 669,
+    "mergeCommit": "d00d7b4ba78b13475e704a20412d14345f843300",
+    "passedHead": "6c8365b8ee1c037e53fc2fe6de2b431e90e6f526",
+    "evidence": "Auditor review record review-669-6c8365b.md: items (a)-(e) PASS at 6c8365b"
+   },
+   {
+    "pr": 670,
+    "mergeCommit": "fa1d4523ab3ea1da3c5d74bc59ca949ce30f7a01",
+    "passedHead": "620216b0807775b434b9ef41fa3ea1f39b977c06",
+    "evidence": "Auditor review record review-670-620216b.md: VERDICT: PASS at 620216b (and Auditor's message: #670 PASS at 620216b)"
+   },
+   {
+    "pr": 671,
+    "mergeCommit": "d70bf9ac7cf3e4e50c732c7976531fe0af18a559",
+    "passedHead": "df2d4c48e37332611c47609203aafe83fe681aa5",
+    "evidence": "Auditor review record review-671-df2d4c4.md: VERDICT: PASS at df2d4c4 (and Auditor's message: #671 PASS at df2d4c48)"
+   }
+  ],
+  "base": {
+   "docs": "7eb6c62800fd8f6b73192f85d0c93972efce5c02c2c390116a888d29f7737764",
+   "manifest": "e9f78828c3777788294b99fe4b2684d288b7144bed10277b7c53ad8ea54119f7",
+   "fingerprint": "a3e9165f13ec603e2e1bcb5e0fb99fed1916a60204208ff63b9c6b116ece0bd4",
+   "builtAt": "b149d9bea430d45792470f0e32657032748af717"
+  },
+  "slice": {
+   "salt": "peaceai-lb-corpus2:v1",
+   "rate": 0.15
+  },
+  "files": [
+   {
+    "path": "peaceai/spec/edit-proposer-v2.md",
+    "blob": "262cf45cf68f23e85da38c4c57159e593b53eedf",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/spec/loop-deps-access-v1.md",
+    "blob": "ee6c33fa1695bc39f1368cf2f2a72bc91a3f3729",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/spec/loop-isolation-v1.md",
+    "blob": "ee678f26838edcaf349309a4153e2907e7954bf4",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/spec/loop-runners-v2.md",
+    "blob": "cd180794b0f11471576953a0da6aae03e54e1d3c",
+    "prs": [
+     668
+    ]
+   },
+   {
+    "path": "peaceai/spec/loop-runners-v3.md",
+    "blob": "a2a0acdd544d6a9dee882202b5f08948e41b1e14",
+    "prs": [
+     670
+    ]
+   },
+   {
+    "path": "peaceai/spec/repair-v2-m172.md",
+    "blob": "a1fe23714ea851d528c8d0d364b3f224b903a36e",
+    "prs": [
+     670
+    ]
+   },
+   {
+    "path": "peaceai/spec/repair-v2-m173.md",
+    "blob": "179ba796572dd9495e7f968cc14e592836835204",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m168-cases.ts",
+    "blob": "1b41edd1417248643aad1b113972ca64e580dc00",
+    "prs": [
+     667,
+     670
+    ]
+   },
+   {
+    "path": "peaceai/test/m168-mutant-runner.ts",
+    "blob": "1bbb9cb09127daca89bdcd10c17a56aae39ea0ed",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/test/m168-mutation.test.ts",
+    "blob": "1784a05f83b3829ffd26246f06948e0930eda03b",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/test/m168-repair-v2.test.ts",
+    "blob": "96c1bacdfc556d3af4b706ce3c4a9c572afafbae",
+    "prs": [
+     667,
+     670,
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m169-cases.ts",
+    "blob": "8991a342a889eae827e72e9deefa09b8d8812df8",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/test/m169-deps-access.test.ts",
+    "blob": "09056c51e40602923f308cf6bee5e8a05317d0c4",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/test/m169-mutant-runner.ts",
+    "blob": "210af8e8950790464acaacb71c238aad9d3640b9",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/test/m169-mutation.test.ts",
+    "blob": "5ee888e777f51519f8345cd713dc583a442b0711",
+    "prs": [
+     667
+    ]
+   },
+   {
+    "path": "peaceai/test/m170-cases.ts",
+    "blob": "158cdb496e129889f8455d7427cd08470dd9fbdf",
+    "prs": [
+     668,
+     670,
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m170-mutant-runner.ts",
+    "blob": "ff44610420f3ec33cb819b6bc379679003b5b9d8",
+    "prs": [
+     668
+    ]
+   },
+   {
+    "path": "peaceai/test/m170-mutation.test.ts",
+    "blob": "60a01919be7fd96acb882b446b1ffe18cc355087",
+    "prs": [
+     668
+    ]
+   },
+   {
+    "path": "peaceai/test/m170-runners.test.ts",
+    "blob": "38d3d1895347340ccdd8c8dbb3a1bd0f6ae49c86",
+    "prs": [
+     668
+    ]
+   },
+   {
+    "path": "peaceai/test/m170-scratch.test.ts",
+    "blob": "3bb477642caec2926f9b6fbe05fe2e51b3bb07b9",
+    "prs": [
+     668
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-cases.ts",
+    "blob": "c9d72b82f0c213665314ec8dcc2b73a3b4c4146c",
+    "prs": [
+     669,
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-fixtures.ts",
+    "blob": "e31d761bbf5cb48c5e8e3c147b512b3e3afb5d90",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-isolation.test.ts",
+    "blob": "34c8ecccf21ed663e26982971fc83241de177ca0",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-mutant-runner.ts",
+    "blob": "7de46ced099ac30f66037c28b5d951d2228eb223",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-mutation.test.ts",
+    "blob": "e4f8bfeb2166458dfed68796457485442b1d1663",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-proof-cases.ts",
+    "blob": "084ef8d0e519c059687d324fc99e5af8785105af",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/test/m171-proof.test.ts",
+    "blob": "1c9af20299be90586e3851ea140ebba0101c2594",
+    "prs": [
+     669
+    ]
+   },
+   {
+    "path": "peaceai/test/m172-batch11.test.ts",
+    "blob": "fa8c19c4c15b832dfb9ae876d635bcb6582d80b3",
+    "prs": [
+     670
+    ]
+   },
+   {
+    "path": "peaceai/test/m172-cases.ts",
+    "blob": "11dae6506a7bf72c0a2b2f29ea1414fb1ca599a4",
+    "prs": [
+     670,
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m172-mutant-runner.ts",
+    "blob": "2f1b55961c04827a47a58dcb0d6aaf9a82b18297",
+    "prs": [
+     670
+    ]
+   },
+   {
+    "path": "peaceai/test/m172-mutation.test.ts",
+    "blob": "90b93887c744cad427ad42b83d7c3283a66b8ccb",
+    "prs": [
+     670
+    ]
+   },
+   {
+    "path": "peaceai/test/m172-real-mocha.test.ts",
+    "blob": "5379dd7f59c7e8369c864fa2f63ade65871b50c9",
+    "prs": [
+     670,
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m172-real-vitest.test.ts",
+    "blob": "71b5e7ebb5f7d14b8250808875a02e92b4de84b8",
+    "prs": [
+     670
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-batch12.test.ts",
+    "blob": "ea14b2b1dc94297f30727404f8b594e68ff6a16c",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-cases.ts",
+    "blob": "a3b8d948e4366e18c3c7d3b619679c96b95d4792",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-followups.test.ts",
+    "blob": "3347809b82d69aaad65c4bf3497167af271b9809",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-forge.test.ts",
+    "blob": "f924ad8a2740f953e8ac7e7c24df5dc103ae16b6",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-loop-cases.ts",
+    "blob": "f700fc0add7874db77f6449b3ab3ff0cf4571d63",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-loop-mutant-runner.ts",
+    "blob": "31d79359cbafa5f410034d1f783fd9a5ea27a4b3",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-loop-mutation.test.ts",
+    "blob": "182f68d5f766ea4e66edeb57cb1b4b56c6afc75c",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-loop.test.ts",
+    "blob": "6a37861c692cf1282b73edaea8b0d2e0b0aadc1b",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-mutant-runner.ts",
+    "blob": "f41323821704ae799afa8c9645b648ae7fe104c4",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/m173-mutation.test.ts",
+    "blob": "6eb769714f59439e7dcb300d97056afdfc2d31f0",
+    "prs": [
+     671
+    ]
+   },
+   {
+    "path": "peaceai/test/scratch.ts",
+    "blob": "13a8a47d35659bb4bd8267424e03c9217af63a13",
+    "prs": [
+     668
+    ]
+   }
+  ]
+ },
+ "build": {
+  "docsSha256": "ef28742c97b93750cf1dc9c475f275054190c3796c93e15f8ab91d0fc1bda112",
+  "manifestSha256": "5098382238a49355b239bca01cb3588096d66493f1958155c59e7afcdd4a339f",
+  "fingerprint": "788526b350f5e1be66f628a179e677ae70b34a6432f7da732549cbec1ce68088",
+  "docs": 63939,
+  "docsBytes": 114096394,
+  "baseDocs": 63839,
+  "newFiles": 44,
+  "newFilesHeldoutV2": 5,
+  "newDocs": 100,
+  "newTrain": 91,
+  "newHeldoutV2": 9,
+  "newTrainBytes": 341146,
+  "newHeldoutV2Bytes": 33083,
+  "newManifestSha256": "cb62c9b5657394d4acc0f7af606a29a0c4d7f2e4e9959778c125a15c75b7b1be",
+  "cross": {
+   "cross_exact_dup": 0,
+   "cross_near_dup": 0,
+   "cross_followers": 0
+  },
+  "cleanDrops": {
+   "taskset_name": 1,
+   "near_dup": 4
+  },
+  "overlap": {
+   "new_train_vs_old_heldout_exact": 0,
+   "new_train_vs_old_heldout_norm": 0,
+   "new_train_vs_old_heldout_near": 0,
+   "new_train_vs_heldout_v2_exact": 0,
+   "new_train_vs_heldout_v2_norm": 0,
+   "new_train_vs_heldout_v2_near": 0,
+   "base_train_vs_heldout_v2_exact": 0,
+   "base_train_vs_heldout_v2_norm": 0,
+   "base_train_vs_heldout_v2_near": 0
+  }
+ },
+ "chain2": {
+  "enabled": false,
+  "note": "Plan only: nothing reads this block to train. chain 2 is a NEW lb-daily chain (its chainId is the run id of its first dispatch, never chain 1's 41222155935; R2 under lb-daily/<that id>/) that warm-starts from chain 1's final save. Before any chain-2 training: the warm-start save's manifest sha256 must equal both manifestSha256 here and the one in the Results row named here (day-3 run 41572356445, Auditor-VALID); this corpus must be cleared (Auditor hidden check = 0, then an add-only clearedCorpora entry); and train.py needs a full-model init path (today --init-from is LoRA-only and --resume-from refuses a new DATA_SHA). Each is a separate reviewed PR.",
+  "warmStart": {
+   "fromChain": "41222155935",
+   "save": "save-000006000",
+   "manifestSha256": "1e513e5080e23453d4ca5b33911567a8958f5873503fd6b869f0fb5dd3ea2cd6",
+   "resultsRow": "runs/lb-daily/2026-11-03-41572356445.json",
+   "resultsCommit": "80b0c35"
+  },
+  "eval": {
+   "heldout": "split == heldout (days 1-3, unchanged; the export eval stream)",
+   "heldoutV2": "split == heldout_v2 (new slice; reported separately, wiring in a later PR)"
+  }
+ }
+}
