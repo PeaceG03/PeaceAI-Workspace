@@ -108,6 +108,7 @@ ap.add_argument("--lora-alpha", type=float, default=0.0)  # 0 = the rank (scale 
 ap.add_argument("--lora-targets", default="wqkv,wo")
 ap.add_argument("--warm-start-from", default="")  # lb-chain2 v1: a verified save's weights + tokenizer, step 0 (warmstart.py)
 ap.add_argument("--warm-start-manifest-sha", default="")
+ap.add_argument("--warm-start-expect", default="")  # lb-chain2 v2: BPB:TOKENS:BYTES:TOL the step-0 model must reproduce
 args = ap.parse_args()
 for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[v] = str(args.threads)
@@ -155,6 +156,7 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
     try:
         WS = warmstart.check_args(args.warm_start_from, args.warm_start_manifest_sha, args.resume_from, args.init_from, args.lora_rank,
                                   bool(args.replay_corpus))
+        WEXP = warmstart.check_expect(args.warm_start_from, args.warm_start_expect)  # v2: required with --warm-start-from
         if WS and args.warm_start_from:
             WMAN = warmstart.verify(args.warm_start_from, args.warm_start_manifest_sha, args.work)
             warmstart.copy_tokenizer(args.warm_start_from, WMAN, args.work)
@@ -275,6 +277,7 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
     if WMAN is not None:
         try:
             warmstart.check_shape(WMAN, cfg)
+            WFINAL_LR = warmstart.check_lr(WMAN, cfg, lm.lr_at)  # v2: no re-warm, peak <= the save's final LR
         except warmstart.WarmError as e:
             raise SystemExit(e.code)
     T, B = cfg["ctx"], cfg["batch"]
@@ -364,9 +367,15 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
                 params = warmstart.load_params(np, args.warm_start_from, WMAN, params)
             except warmstart.WarmError as e:
                 raise SystemExit(e.code)
-            print(f"warm start from save step={WMAN['step']} (fresh optimizer, step 0)", flush=True)
         lora = lbtrain.lora_init(params, LCFG, args.seed) if LCFG else None
         state = lbtrain.opt_init(lora if LCFG else params, OPT)
+        if WMAN is not None:  # v2: the save's optimizer state is kept (moments + t), never a fresh one
+            try:
+                state = warmstart.load_opt(np, args.warm_start_from, WMAN, params, OPT, lbtrain.opt_load)
+            except warmstart.WarmError as e:
+                raise SystemExit(e.code)
+            print(f"warm start from save step={WMAN['step']} weights={warmstart.weights_file(WMAN)} (kept optimizer t={state['t']}, "
+                  f"lr={cfg['lr']} <= final {WFINAL_LR:.6g}, no warmup, step 0)", flush=True)
         rng = np.random.Generator(np.random.PCG64(args.seed + 1))
         step = 0
     trainable = lora if LCFG else params
@@ -424,7 +433,25 @@ try:  # M159: every exit below (a refusal code, a crash) writes stop.json {reaso
     slow = {"step": 0.0, "eval": 0.0, "evalSeconds": 0.0}
     if step == 0:
         te = time.time()
-        log({"step": 0, "val_loss": round(eval_loss(), 4)})
+        if WMAN is not None:  # v2: score the step-0 warm-start model exactly as export.py will, before any training step
+            try:
+                S0 = warmstart.check_step0(warmstart.step0_eval(np, lm.forward, params, cfg, held_tok, tok.decode), WEXP)
+            except warmstart.WarmError as e:
+                raise SystemExit(e.code)
+        val0 = round(eval_loss(), 4)
+        log({"step": 0, "val_loss": val0})
+        if WMAN is not None:  # v2: best is seeded with step 0, so a regression can never become best
+            try:
+                best = warmstart.seed_best(best, float(val0), VAL_SPLIT)
+            except warmstart.WarmError as e:
+                raise SystemExit(e.code)
+            save()
+            import shutil
+            shutil.copyfile(W("checkpoint.npz"), W("best.npz"))
+            json.dump(best, open(W("best.json"), "w"))
+            with open(W("step0.json"), "w") as f:
+                json.dump({**S0, "valLoss": val0, "expect": WEXP}, f, sort_keys=True)
+            print(f"step0 heldout_bpb={S0['bpb']} expect={WEXP['bpb']} tol={WEXP['tol']} val_loss={val0} (best seeded at step 0)", flush=True)
         slow["eval"] = time.time() - te
     start = time.time()
     run_start_step = step

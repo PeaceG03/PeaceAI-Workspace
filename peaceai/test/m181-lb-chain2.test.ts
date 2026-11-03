@@ -12,6 +12,13 @@
 //    heldoutTokens / heldBytes equal the day-3 row's) and heldout_v2 is reported separately.
 // Every tagged lb_chain2.py guard (c2-*) and warmstart.py guard (ws-*) has a case whose outcome must change when the
 // guard is disabled. The stdlib-only lb_chain2.py runs with numpy blocked; train.py / export.py / eval_v2.py keep numpy.
+// v2 (Auditor's conditions on chain-2 day-1 run 41686765194), each with admit and near-miss cases and killed mutants:
+//  (1) train.py scores the step-0 warm-start model on held-out exactly as export.py does and requires chain 1's recorded
+//      bpb within chain2Run.step0TolBpb (WARM_START_STEP0_MISMATCH / _SPLIT, fail closed before any training step);
+//  (2) best is seeded with the step-0 val loss, so a day that never beats step 0 keeps and exports the step-0 model and
+//      its row says improved=false (bestStep 0);
+//  (3) the continuation LR is at most the save's final LR with warmup 0, and the save's optimizer state is kept.
+//  v1 rows are retired: still validated, never deciding warm / resume / done (a new v2 chain starts after them).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -34,6 +41,10 @@ const now = () => Math.floor(Date.now() / 1000);
 const pinsOf = (c: string) => ({ docs: sha(join(c, "docs.jsonl")), manifest: sha(join(c, "manifest.jsonl")), fingerprint: json(join(c, "fingerprint.json")).fingerprint });
 const TINY_TRAIN: Record<string, string> = { "--d-model": "16", "--n-layer": "1", "--n-head": "2", "--ctx": "32", "--vocab": "300", "--batch": "2", "--threads": "1",
   "--eval-every": "2", "--steps": "8", "--max-steps-this-run": "4", "--patience": "5", "--optimizer": "adamw8bit", "--curriculum": "easy_to_hard", "--val-split": "disjoint" };
+/** Chain 2's train settings on the tiny fixture: chain 1 (TINY_TRAIN, defaults lr 6e-4 warmup 30, 4 steps) ends at
+ * lr_at(3) = 8e-5, so the continuation runs at 6e-5 with no warmup. */
+const C2_TRAIN: Record<string, string> = { ...TINY_TRAIN, "--lr": "0.00006", "--warmup": "0" };
+const FINAL_LR_FX = 0.00008, TOL = 0.0005;
 const trainArgs = (t: Record<string, string>) => Object.entries(t).flat();
 let uniq = 0;
 const u = (p: string) => `${p}-${(uniq += 1)}`;
@@ -52,7 +63,8 @@ function fx(): Fx {
   const t1: Record<string, string> = { ...TINY_TRAIN, "--steps": "4" }; delete t1["--max-steps-this-run"];
   const r = spawnSync(py, [join(MODEL, "train.py"), ...trainArgs(t1), "--corpus", c1, "--work", w1, "--save-dir", s1, "--marker", m1], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  const e = spawnSync(py, [join(MODEL, "export.py"), "--work", w1, "--out", join(w1, "model"), "--threads", "1"], { encoding: "utf8" });
+  // exported as lb-daily-cycle.sh does: best.npz (the model of record)
+  const e = spawnSync(py, [join(MODEL, "export.py"), "--work", w1, "--out", join(w1, "model"), "--checkpoint", "best.npz", "--threads", "1"], { encoding: "utf8" });
   assert.equal(e.status, 0, e.stderr);
   const ev = json(join(w1, "model/eval.json")), mk = json(m1);
   const save = join(s1, mk.save), man = json(join(save, "manifest.json"));
@@ -76,9 +88,9 @@ function fx(): Fx {
   const cfg = structuredClone(CFG);
   cfg.dailyRun.train = { ...TINY_TRAIN };
   cfg.clearedCorpora.push({ ...pins2 });
-  Object.assign(cfg.chain2Run, { corpus: { ...pins2 }, fingerprintFileSha256: shaText(fpText), train: { ...TINY_TRAIN } });
+  Object.assign(cfg.chain2Run, { corpus: { ...pins2 }, fingerprintFileSha256: shaText(fpText), train: { ...C2_TRAIN } });
   Object.assign(cfg.chain2Run.warmStart, { ...warm, cfgSha256: mk.cfgSha256, resultsRow: "runs/lb-daily/2026-11-03-901.json", resultsRowSha256: shaText(warmText),
-    heldoutTokens: H, heldBytes: B, heldoutBpb: ev.model_bits_per_byte, baselineBpb: ev.unigram_bits_per_byte });
+    heldoutTokens: H, heldBytes: B, heldoutBpb: ev.model_bits_per_byte, baselineBpb: ev.unigram_bits_per_byte, finalLr: FINAL_LR_FX });
   const plan = structuredClone(PLAN);
   Object.assign(plan.build, { docsSha256: pins2.docs, manifestSha256: pins2.manifest, fingerprint: pins2.fingerprint });
   Object.assign(plan.chain2.warmStart, { ...warm, resultsRow: "runs/lb-daily/2026-11-03-901.json" });
@@ -122,14 +134,26 @@ const marker = (step: number, save: string, more = true, msha = "a".repeat(64)) 
   ({ schema: "peaceai-lm-chain:v1", more, stopReason: more ? "deadline" : "patience", step, totalSteps: step, save, manifestSha256: msha, cfgSha256: "c".repeat(64) });
 const ceFor = (bpb: number, tokens: number, bytes: number) => (bpb * Math.LN2 * bytes) / tokens;
 const v2 = (o: Record<string, unknown> = {}) => ({ bpb: 3.2, baselineBpb: 2.9, modelCe: ceFor(3.2, 320, 700), tokens: 320, bytes: 700, windows: 10, docs: 10, ...o });
-/** A valid chain-2 row (day 1: warm, startStep 0) for the fixture. */
+/** The v2 step0 record: the warm-start model's held-out score (default: exactly chain 1's recorded bpb). */
+const step0 = (o: Record<string, unknown> = {}, bpb = fx().ev.model_bits_per_byte) =>
+  ({ bpb, modelCe: ceFor(bpb, fx().H, fx().B), tokens: fx().H, bytes: fx().B, expectBpb: fx().ev.model_bits_per_byte, tolBpb: TOL, ...o });
+/** A valid chain-2 v2 row (day 1: warm, startStep 0, improved at step 4) for the fixture. */
 const c2Row = (o: Record<string, unknown> = {}): Record<string, unknown> => {
   const f = fx();
-  return { schema: "peaceai-lb-chain2-run:v1", runId: "555", workflowSha: SHA40, chainId: "555", today: D1, pins: { ...f.pins2 }, status: "trained", startStep: 0,
+  return { schema: "peaceai-lb-chain2-run:v2", runId: "555", workflowSha: SHA40, chainId: "555", today: D1, pins: { ...f.pins2 }, status: "trained", startStep: 0,
     endStep: 4, stopReason: "deadline", heldoutBpb: 3.0, baselineBpb: 2.5, wallSeconds: 100, resumedFrom: null, marker: marker(4, "save-000000004"),
-    modelCe: ceFor(3.0, f.H, f.B), heldoutTokens: f.H, heldBytes: f.B, warmStart: { ...f.warm }, heldoutV2: v2(), ...o };
+    modelCe: ceFor(3.0, f.H, f.B), heldoutTokens: f.H, heldBytes: f.B, warmStart: { ...f.warm }, heldoutV2: v2(), step0: step0(), bestStep: 4, improved: true, ...o };
 };
-const day2Row = (o: Record<string, unknown> = {}) => c2Row({ runId: "556", today: D2, startStep: 4, endStep: 8, resumedFrom: "a".repeat(64), marker: marker(8, "save-000000008"), ...o });
+const day2Row = (o: Record<string, unknown> = {}) => c2Row({ runId: "556", today: D2, startStep: 4, endStep: 8, resumedFrom: "a".repeat(64), marker: marker(8, "save-000000008"),
+  step0: null, bestStep: 8, ...o });
+/** A retired v1 row (the shape of run 41686765194's row): no step0 / bestStep / improved. */
+const v1Row = (o: Record<string, unknown> = {}) => {
+  const r: Record<string, unknown> = c2Row({ schema: "peaceai-lb-chain2-run:v1", marker: marker(7, "save-000000007", false), endStep: 7, stopReason: "patience", ...o });
+  delete r.step0; delete r.bestStep; delete r.improved;
+  return r;
+};
+/** A no-improvement day-1 row: best stayed at step 0, so the exported model is the step-0 model. */
+const flatRow = (o: Record<string, unknown> = {}) => { const b = fx().ev.model_bits_per_byte; return c2Row({ bestStep: 0, improved: false, heldoutBpb: b, modelCe: ceFor(b, fx().H, fx().B), ...o }); };
 
 /** A Results dir: the pinned day-3 row (text) + chain-2 rows (name -> row). */
 function results(dir: string, rows: Record<string, unknown> = {}, warmText = fx().warmText) {
@@ -166,14 +190,16 @@ const cycleArgs = (root: string, t: { f: string; sha: string }, start: string, w
   lc(root, ["cycle-args", "--trusted", t.f, "--trusted-sha", t.sha, "--job-start", start, "--warm", w, ...(at ? ["--now", String(at)] : [])]);
 
 /** A finished day in STATE (report, chain.json, the new save, eval-v2.json) as lb-chain2-run.sh leaves it, then row. */
-function rowCase(dir: string, root: string, o: { kind?: "warm" | "resume"; report?: Record<string, unknown>; tamper?: boolean; uploaded?: string; ev2?: Record<string, unknown> } = {}) {
+function rowCase(dir: string, root: string, o: { kind?: "warm" | "resume"; report?: Record<string, unknown>; tamper?: boolean; uploaded?: string; ev2?: Record<string, unknown>;
+  step0?: unknown } = {}) {
   const f = fx(), save = "save-000000008", man = `{"step":8}`;
   const s = stateWith(dir, { [save]: man }); const msha = shaText(man);
   const kind = o.kind ?? "resume";
   writeFileSync(join(s, "chain.json"), JSON.stringify(marker(8, save, true, msha)));
   mkdirSync(join(s, "reports")); mkdirSync(join(s, "work", D2, "model"), { recursive: true });
   writeFileSync(join(s, "reports", `${D2}.json`), JSON.stringify({ status: "trained", startStep: kind === "resume" ? 4 : 0, endStep: 8, stopReason: "deadline",
-    eval: { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5, model_ce: ceFor(3.0, f.H, f.B), heldout_tokens: f.H, held_bytes: f.B }, corpus: { ...f.pins2 }, ...o.report }));
+    eval: { model_bits_per_byte: 3.0, unigram_bits_per_byte: 2.5, model_ce: ceFor(3.0, f.H, f.B), heldout_tokens: f.H, held_bytes: f.B }, corpus: { ...f.pins2 }, bestStep: 8, ...o.report }));
+  if (kind === "warm" && o.step0 !== undefined) writeFileSync(join(s, "work", D2, "step0.json"), JSON.stringify(o.step0));
   writeFileSync(join(s, "work", D2, "model/eval-v2.json"), JSON.stringify({ docs: 10, heldout_tokens: 320, windows: 10, held_bytes: 700, model_ce: ceFor(3.2, 320, 700),
     model_bits_per_byte: 3.2, unigram_bits_per_byte: 2.9, ...o.ev2 }));
   if (o.tamper) writeFileSync(join(s, "saves", save, "manifest.json"), `{"step":9}`);
@@ -182,6 +208,9 @@ function rowCase(dir: string, root: string, o: { kind?: "warm" | "resume"; repor
   return { ...lc(root, ["row", "--trusted", t.f, "--trusted-sha", t.sha, "--state", s, "--today", D2, "--run-id", "556", "--sha", SHA40, "--job-start", String(now() - 100),
     "--uploaded", o.uploaded ?? `${save}:${msha}`, "--out", outFile]), outFile };
 }
+/** train.py's work/<D>/step0.json for a step-0 score `bpb` (expect = the fixture's chain-1 bpb). */
+const step0File = (bpb = fx().ev.model_bits_per_byte) => ({ bpb, modelCe: ceFor(bpb, fx().H, fx().B), tokens: fx().H, bytes: fx().B, valLoss: 5.0,
+  expect: { bpb: fx().ev.model_bits_per_byte, tokens: fx().H, bytes: fx().B, tol: TOL } });
 const land = (dir: string, root: string, row: unknown, o: { runId?: string; res?: string; today?: string } = {}) => {
   const f = join(dir, u("in") + ".json"); writeFileSync(f, JSON.stringify(row));
   const res = o.res ?? results(dir);
@@ -211,6 +240,9 @@ const CASES: Record<string, (dir: string) => string> = {
   "c2-shape": (d) => cfgL(c2root(d, c2((c) => { c.train["--d-model"] = "24"; }))),
   "c2-deadline-cap": (d) => cfgL(c2root(d, c2((c) => { c.jobTimeoutMin = 360; }))),
   "c2-folders": (d) => cfgL(c2root(d, c2((c) => { c.r2Folder = "lb-train"; }))),
+  "c2-step0-config": (d) => cfgL(c2root(d, c2((c) => { c.step0TolBpb = 0.01; }))),
+  "c2-lr-warmup": (d) => cfgL(c2root(d, c2((c) => { c.train["--warmup"] = "100"; }))),
+  "c2-lr-cap": (d) => cfgL(c2root(d, c2((c) => { c.train["--lr"] = "0.0003"; }))),
   "c2-pins-files": (d) => pinsL(c2root(d), artifact(d, (a) => writeFileSync(join(a, "extra.txt"), "x"))),
   "c2-pins-regular": (d) => pinsL(c2root(d), artifact(d, (a) => { rmSync(join(a, "docs.jsonl")); symlinkSync(join(fx().c2, "docs.jsonl"), join(a, "docs.jsonl")); })),
   "c2-pins-docs": (d) => pinsL(c2root(d), artifact(d, (a) => writeFileSync(join(a, "docs.jsonl"), readFileSync(join(a, "docs.jsonl"), "utf8") + '{"doc":999,"text":"x"}\n'))),
@@ -236,9 +268,17 @@ const CASES: Record<string, (dir: string) => string> = {
   "c2-row-same-split": (d) => land(d, c2root(d), c2Row({ heldoutTokens: fx().H + 10, modelCe: ceFor(3.0, fx().H + 10, fx().B) })).last,
   "c2-row-v2": (d) => land(d, c2root(d), c2Row({ heldoutV2: v2({ docs: 0 }) })).last,
   "c2-row-v2-bpb": (d) => land(d, c2root(d), c2Row({ heldoutV2: v2({ bpb: 3.3 }) })).last,
+  "c2-row-step0-day": (d) => land(d, c2root(d), c2Row({ step0: null })).last,
+  "c2-row-step0-shape": (d) => land(d, c2root(d), c2Row({ step0: { ...step0(), extra: 1 } })).last,
+  "c2-row-step0-pins": (d) => land(d, c2root(d), c2Row({ step0: step0({ tolBpb: 0.001 }) })).last,
+  "c2-row-step0-bpb": (d) => land(d, c2root(d), c2Row({ step0: step0({}, fx().ev.model_bits_per_byte + 0.0006) })).last,
+  "c2-row-best": (d) => land(d, c2root(d), c2Row({ bestStep: 9 })).last,
+  "c2-row-improved": (d) => land(d, c2root(d), c2Row({ improved: false })).last,
+  "c2-row-no-improve-export": (d) => land(d, c2root(d), flatRow({ heldoutBpb: 3.0, modelCe: ceFor(3.0, fx().H, fx().B) })).last,
   "c2-record-name": (d) => trusted(c2root(d), results(d, { [`${D1}-554.json`]: c2Row() }), D2).last,
   "c2-once": (d) => trusted(c2root(d), results(d, { [`${D1}-555.json`]: c2Row() }), D1).last,
   "c2-one-chain": (d) => trusted(c2root(d), results(d, { [`${D1}-555.json`]: c2Row(), [`${D2}-556.json`]: day2Row({ chainId: "556" }) }), "2026-11-06").last,
+  "c2-retired-chain": (d) => trusted(c2root(d), results(d, { [`${D1}-555.json`]: v1Row(), [`${D2}-556.json`]: c2Row({ runId: "556", today: D2 }) }), "2026-11-06").last,
   "c2-first-row-warm": (d) => trusted(c2root(d), results(d, { [`${D2}-556.json`]: day2Row({ chainId: "556" }) }), "2026-11-06").last,
   "c2-trusted-sha": (d) => restore(c2root(d), trustedFile(d, warmT()), stateWith(d), warmWith(d), "f".repeat(64)).last,
   "c2-restore-warm-config": (d) => restore(c2root(d), trustedFile(d, warmT({ ...fx().warm, save: "save-000000005" })), stateWith(d), warmWith(d)).last,
@@ -254,7 +294,7 @@ const CASES: Record<string, (dir: string) => string> = {
   "c2-report-trained": (d) => rowCase(d, c2root(d), { report: { status: "error" } }).last,
   "c2-row-save-sha": (d) => rowCase(d, c2root(d), { tamper: true, uploaded: `save-000000008:${shaText(`{"step":8}`)}` }).last,
   "c2-row-uploaded": (d) => rowCase(d, c2root(d), { uploaded: "save-000000008:" + "e".repeat(64) }).last,
-  "c2-row-chain": (d) => rowCase(d, c2root(d), { kind: "warm", report: { startStep: 4 } }).last,
+  "c2-row-chain": (d) => rowCase(d, c2root(d), { kind: "warm", report: { startStep: 4 }, step0: step0File() }).last,
   "c2-land-id": (d) => land(d, c2root(d), c2Row(), { runId: "557" }).last,
   "c2-land-symlink": (d) => {
     const res = results(d), real = join(d, u("real")); mkdirSync(real); symlinkSync(real, join(res, "runs/lb-chain2"));
@@ -266,6 +306,9 @@ const REAL: Record<string, string | RegExp> = {
   "c2-cleared": "LB_C2_NOT_CLEARED", "c2-new-pins": "LB_C2_PIN_MISMATCH", "c2-warm-plan": "LB_C2_WARM_CONFIG", "c2-warm-values": "LB_C2_WARM_CONFIG",
   "c2-setting-forbidden": "LB_C2_FORBIDDEN_SETTING", "c2-setting-allowed": "LB_C2_SETTING_NOT_ALLOWED", "c2-setting-values": "LB_C2_SETTING_NOT_ALLOWED",
   "c2-val-split": "LB_C2_SETTING_REQUIRED", "c2-shape": "LB_C2_SHAPE", "c2-deadline-cap": "LB_C2_BAD_DEADLINE", "c2-folders": "LB_C2_BAD_CONFIG",
+  "c2-step0-config": "LB_C2_WARM_CONFIG", "c2-lr-warmup": "LB_C2_LR", "c2-lr-cap": "LB_C2_LR",
+  "c2-row-step0-day": "LB_C2_ROW_STEP0", "c2-row-step0-shape": "LB_C2_ROW_STEP0", "c2-row-step0-pins": "LB_C2_ROW_STEP0", "c2-row-step0-bpb": "LB_C2_ROW_STEP0",
+  "c2-row-best": "LB_C2_ROW_VALUE", "c2-row-improved": "LB_C2_ROW_VALUE", "c2-row-no-improve-export": "LB_C2_ROW_STEP0", "c2-retired-chain": "LB_C2_RECORD_BAD",
   "c2-pins-files": "LB_C2_CORPUS_FILES", "c2-pins-regular": "LB_C2_CORPUS_FILES", "c2-pins-docs": "LB_C2_CORPUS_SHA_MISMATCH", "c2-pins-manifest": "LB_C2_CORPUS_SHA_MISMATCH",
   "c2-pins-fingerprint-file": "LB_C2_CORPUS_SHA_MISMATCH", "c2-pins-fingerprint": "LB_C2_CORPUS_SHA_MISMATCH",
   "c2-warm-row-symlink": "LB_C2_WARM_ROW", "c2-warm-row-sha": "LB_C2_WARM_ROW", "c2-warm-row-marker": "LB_C2_WARM_ROW", "c2-warm-row-chain": "LB_C2_WARM_ROW",
@@ -316,7 +359,15 @@ test("M181 near misses: the valid neighbour of each refusal passes", () => withD
   const rr = spawnSync(py, [join(real, "lb_chain2.py"), "config"], { encoding: "utf8", env: { ...process.env, ...noNumpyEnv() } });
   assert.equal(rr.stdout.trim(), "config ok", rr.stderr);
   // settings: one more allowed setting, a longer deadline within the cap, an extra cleared corpus, still pass
-  assert.equal(cfgL(c2root(d, c2((c) => { c.train["--lr"] = "0.0002"; c.trainDeadlineMin = 305; }))), "config ok");
+  assert.equal(cfgL(c2root(d, c2((c) => { c.train["--lr"] = "0.00005"; c.trainDeadlineMin = 305; }))), "config ok");
+  // v2 LR: exactly the pinned final LR passes, a hair above or a 1-step warmup is refused; the tolerance cap is inclusive
+  assert.equal(cfgL(c2root(d, c2((c) => { c.train["--lr"] = "0.00008"; }))), "config ok");
+  assert.equal(cfgL(c2root(d, c2((c) => { c.train["--lr"] = "0.0000801"; }))), "LB_C2_LR");
+  assert.equal(cfgL(c2root(d, c2((c) => { c.train["--warmup"] = "1"; }))), "LB_C2_LR");
+  assert.equal(cfgL(c2root(d, c2((c) => { delete c.train["--warmup"]; }))), "LB_C2_LR", "the train.py default warmup (30) is a re-warm");
+  assert.equal(cfgL(c2root(d, c2((c) => { c.step0TolBpb = 0.002; }))), "config ok");
+  assert.equal(cfgL(c2root(d, c2((c) => { c.step0TolBpb = 0.0021; }))), "LB_C2_WARM_CONFIG");
+  assert.equal(cfgL(c2root(d, c2((c) => { delete c.warmStart.finalLr; }))), "LB_C2_WARM_CONFIG");
   assert.equal(cfgL(c2root(d, { cfg: (c) => { c.clearedCorpora.push({ docs: "9".repeat(64), manifest: "9".repeat(64), fingerprint: "9".repeat(64) }); } })), "config ok");
   // resultsCommit: a short prefix of the config's full commit passes; another commit does not
   assert.equal(cfgL(c2root(d, { plan: (p) => { p.chain2.warmStart.resultsCommit = CFG.chain2Run.warmStart.resultsCommit.slice(0, 12); } })), "config ok");
@@ -334,6 +385,23 @@ test("M181 near misses: the valid neighbour of each refusal passes", () => withD
   assert.equal(trusted(root, results(d, { [`${D1}-555.json`]: c2Row(), [`${D2}-556.json`]: day2Row({ marker: marker(8, "save-000000008", false), stopReason: "patience" }) }), "2026-11-06").last,
     `trusted kind=done chain=555 save=save-000000008 sha=${"a".repeat(64)} step=8 record=${D2}-556.json`);
   assert.equal(trusted(root, results(d, {}, "")).last, "LB_C2_WARM_ROW", "an empty day-3 row fails closed");
+  // v1 rows are retired: a finished v1 chain (the live day-1 row) -> a NEW v2 chain warm-starts; a v1 row today still
+  // counts for once-a-day; a malformed v1 row still fails closed; v2 rows after it decide as before
+  assert.equal(trusted(root, results(d, { [`${D1}-555.json`]: v1Row() }), D2).last, `trusted kind=warm chain=- save=${f.warm.save} sha=${f.msha} step=0 record=-`);
+  assert.equal(trusted(root, results(d, { [`${D1}-555.json`]: v1Row() }), D1).last, "LB_C2_ALREADY_RAN");
+  assert.equal(trusted(root, results(d, { [`${D1}-555.json`]: v1Row({ heldoutV2: v2({ docs: 0 }) }) }), D2).last, "LB_C2_RECORD_BAD");
+  assert.equal(trusted(root, results(d, { [`${D1}-555.json`]: { ...v1Row(), step0: null } }), D2).last, "LB_C2_RECORD_BAD", "a v1 row with v2 fields");
+  assert.equal(trusted(root, results(d, { [`${D1}-555.json`]: v1Row(), [`${D2}-556.json`]: c2Row({ runId: "556", today: D2, chainId: "556" }) }), "2026-11-06").last,
+    `trusted kind=resume chain=556 save=save-000000004 sha=${"a".repeat(64)} step=4 record=${D2}-556.json`);
+  // v2 rows: step0 within the tolerance (both sides), a no-improvement day exporting the step-0 model, resume days without step0
+  for (const dx of [0.0004, -0.0004]) assert.equal(land(d, root, c2Row({ step0: step0({}, fx().ev.model_bits_per_byte + dx) })).last, `landed runs/lb-chain2/${D1}-555.json`, String(dx));
+  assert.equal(land(d, root, flatRow()).last, `landed runs/lb-chain2/${D1}-555.json`, "no improvement: the step-0 model is the exported one");
+  assert.equal(land(d, root, flatRow({ heldoutBpb: fx().ev.model_bits_per_byte + 0.0004, modelCe: ceFor(fx().ev.model_bits_per_byte + 0.0004, fx().H, fx().B) })).last, `landed runs/lb-chain2/${D1}-555.json`);
+  assert.equal(land(d, root, flatRow({ heldoutBpb: fx().ev.model_bits_per_byte + 0.0006, modelCe: ceFor(fx().ev.model_bits_per_byte + 0.0006, fx().H, fx().B) })).last, "LB_C2_ROW_STEP0");
+  assert.equal(land(d, root, day2Row(), { runId: "556", today: D2 }).last, `landed runs/lb-chain2/${D2}-556.json`);
+  assert.equal(land(d, root, day2Row({ step0: step0() }), { runId: "556", today: D2 }).last, "LB_C2_ROW_STEP0", "step0 only on the warm day");
+  assert.equal(land(d, root, day2Row({ bestStep: 2, improved: true }), { runId: "556", today: D2 }).last, `landed runs/lb-chain2/${D2}-556.json`, "a best from an earlier day");
+  assert.equal(land(d, root, day2Row({ bestStep: 0, improved: false }), { runId: "556", today: D2 }).last, `landed runs/lb-chain2/${D2}-556.json`, "still no improvement on day 2");
   const noRow = join(d, u("res")); mkdirSync(noRow);
   assert.equal(trusted(root, noRow).last, "LB_C2_WARM_ROW", "no day-3 row fails closed");
   // restore warm: the real save passes; a tampered file or a rewritten manifest fails closed (verify_save)
@@ -350,15 +418,19 @@ test("M181 near misses: the valid neighbour of each refusal passes", () => withD
   const t0 = now();
   const wa = cycleArgs(root, trustedFile(d, warmT()), String(t0 - 60), "/W", t0).out.split("\n");
   assert.deepEqual(wa.slice(0, 2), ["299", "fresh"], "the budget runs from the job start");
-  assert.deepEqual(wa.slice(-4), ["--warm-start-from", `/W/${f.warm.save}`, "--warm-start-manifest-sha", f.msha]);
-  assert.deepEqual(wa.slice(2, -4), Object.keys(TINY_TRAIN).sort().flatMap((k) => [k, TINY_TRAIN[k]!]));
+  assert.deepEqual(wa.slice(-6), ["--warm-start-from", `/W/${f.warm.save}`, "--warm-start-expect", `${f.ev.model_bits_per_byte}:${f.H}:${f.B}:${TOL}`, "--warm-start-manifest-sha", f.msha]);
+  assert.deepEqual(wa.slice(2, -6), Object.keys(C2_TRAIN).sort().flatMap((k) => [k, C2_TRAIN[k]!]));
   const ra = cycleArgs(root, trustedFile(d, resumeT("b".repeat(64))), String(t0 - 60), "/w", t0).out.split("\n");
   assert.deepEqual([ra[1], ...ra.slice(-2)], [`resume:${"b".repeat(64)}`, "--warm-start-manifest-sha", f.msha]);
-  assert.ok(!ra.includes("--warm-start-from"), "a resume day never re-reads the warm save");
+  assert.ok(!ra.includes("--warm-start-from") && !ra.includes("--warm-start-expect"), "a resume day never re-reads the warm save");
   assert.equal(cycleArgs(root, trustedFile(d, warmT()), String(t0 - 269 * 60), "/w", t0).out.split("\n")[0], "31", "a budget just above the minimum passes");
   // row: resume and warm both build; land: a valid row lands once (add-only)
   assert.match(rowCase(d, root).last, /^lb-chain2 start=4 end=8 stop=deadline more=True heldout_bpb=3 baseline_bpb=2\.5 verdict=no_gain heldout_v2_bpb=3\.2 heldout_v2_baseline_bpb=2\.9 /);
-  assert.match(rowCase(d, root, { kind: "warm", report: { startStep: 0 } }).last, /^lb-chain2 start=0 end=8 /);
+  assert.match(rowCase(d, root, { kind: "warm", report: { startStep: 0 }, step0: step0File() }).last, /^lb-chain2 start=0 end=8 .* best_step=8 improved=True step0_bpb=[0-9.]+ chain1_bpb=/);
+  assert.match(rowCase(d, root, { kind: "warm", report: { startStep: 0, bestStep: 0, eval: { model_bits_per_byte: f.ev.model_bits_per_byte, unigram_bits_per_byte: 9.9,
+    model_ce: ceFor(f.ev.model_bits_per_byte, f.H, f.B), heldout_tokens: f.H, held_bytes: f.B } }, step0: step0File() }).last, /verdict=beats_baseline,no_improvement .* best_step=0 improved=False /);
+  assert.equal(rowCase(d, root, { kind: "warm", report: { startStep: 0 } }).last, "LB_C2_TRAIN_ERROR", "a warm day without train.py's step0.json");
+  assert.equal(rowCase(d, root, { kind: "warm", report: { startStep: 0 }, step0: step0File(fx().ev.model_bits_per_byte + 0.001) }).last, "LB_C2_ROW_STEP0");
   assert.equal(rowCase(d, root, { ev2: { docs: 0 } }).last, "LB_C2_ROW_VALUE", "a heldout_v2 eval with no docs is refused");
   const l1 = land(d, root, c2Row());
   assert.equal(l1.last, `landed runs/lb-chain2/${D1}-555.json`);
@@ -376,10 +448,12 @@ test("M181 near misses: the valid neighbour of each refusal passes", () => withD
 
 const WS_DRIVER = String.raw`
 import copy, json, os, shutil, sys
-moddir, save, sha, case, tmp = sys.argv[1:6]
+moddir, save, sha, case, tmp, realdir = sys.argv[1:7]
 sys.path.insert(0, moddir)
+sys.path.append(realdir)  # lbtrain / lm (unmutated) for the v2 optimizer and LR cases
 import numpy as np
 import saves, warmstart
+import lbtrain, lm
 
 def forge(edit_cfg=None, drop_param=False):
     """A VALID save (saves.write_save) whose checkpoint cfg or parameter set differs from the real one."""
@@ -417,16 +491,44 @@ def run():
         return warmstart.copy_tokenizer(save, m, work)
     if case == "ws-shape": return warmstart.check_shape(man, dict(man["cfg"], d_model=man["cfg"]["d_model"] + 8))
     if case == "ws-checkpoint-sha":
-        m = copy.deepcopy(man); m["files"]["checkpoint.npz"]["sha256"] = "0" * 64
+        m = copy.deepcopy(man); m["files"][warmstart.weights_file(m)]["sha256"] = "0" * 64
         return warmstart.load_params(np, save, m, init_of(save))
     if case == "ws-param-shape":
         p, s = forge(drop_param=True)
         return warmstart.load_params(np, p, warmstart.verify(p, s, work), init_of(save))
+    # v2: --warm-start-expect, the kept optimizer state, the LR cap, the step-0 check, the seeded best
+    if case == "ws-expect-needs-save": return warmstart.check_expect("", "0.5:1:1:0.0005")
+    if case == "ws-expect-required": return warmstart.check_expect(save, "")
+    if case == "ws-expect-format": return warmstart.check_expect(save, "0.5:1:1:0.0021")
+    permissive = lambda z, t, tr, o: {"t": t}
+    if case == "ws-opt-name": return warmstart.load_opt(np, save, man, init_of(save), "adamw", permissive)
+    if case == "ws-opt-sha":
+        m = copy.deepcopy(man); m["files"]["checkpoint.npz"]["sha256"] = "0" * 64
+        return warmstart.load_opt(np, save, m, init_of(save), "adamw8bit", lbtrain.opt_load)
+    fin = warmstart.final_lr(man, lm.lr_at)
+    if case == "ws-lr-warmup": return warmstart.check_lr(man, dict(man["cfg"], warmup=1, lr=fin / 2), lm.lr_at)
+    if case == "ws-lr-cap": return warmstart.check_lr(man, dict(man["cfg"], warmup=0, lr=fin * 1.001), lm.lr_at)
+    exp = {"bpb": 0.5, "tokens": 100, "bytes": 300, "tol": 0.0005}
+    got = lambda bpb, tokens=100, nbytes=300: {"bpb": bpb, "modelCe": 1.0, "tokens": tokens, "bytes": nbytes}
+    if case == "ws-step0-split": return warmstart.check_step0(got(0.5, nbytes=301), exp)
+    if case == "ws-step0-bpb": return warmstart.check_step0(got(0.5006), exp)
+    fresh = {"val": float("inf"), "step": 0, "stale": 0, "valSplit": "disjoint"}
+    if case == "ws-seed-finite": return warmstart.seed_best(dict(fresh), float("nan"), "disjoint")
+    if case == "ws-seed-fresh": return warmstart.seed_best({"val": 2.0, "step": 4, "stale": 0, "valSplit": "disjoint"}, 3.0, "disjoint")
     if case == "near":
         warmstart.copy_tokenizer(save, man, work); warmstart.check_shape(man, dict(man["cfg"]))
         w = warmstart.load_params(np, save, man, init_of(save))
+        st = warmstart.load_opt(np, save, man, w, "adamw8bit", lbtrain.opt_load)
+        with np.load(os.path.join(save, "best.npz"), allow_pickle=False) as z:
+            same_best = all(np.array_equal(w[k[2:]], z[k]) for k in z.files if k.startswith("p."))
         return {"args": warmstart.check_args(save, sha, "", "", 0, False), "resume": warmstart.check_args("", sha, "resume-save", "", 0, False),
-                "off": warmstart.check_args("", "", "", "", 0, False), "params": len(w)}
+                "off": warmstart.check_args("", "", "", "", 0, False), "params": len(w), "weights": warmstart.weights_file(man), "sameBest": bool(same_best),
+                "t": st["t"], "final": round(fin, 12),
+                "expect": warmstart.check_expect(save, "0.6688:49152:192892:0.0005"), "noExpect": warmstart.check_expect("", ""),
+                "tolCap": warmstart.check_expect(save, "0.5:1:1:0.002")["tol"],
+                "lrAt": warmstart.check_lr(man, dict(man["cfg"], warmup=0, lr=fin), lm.lr_at) == fin,
+                "s0": [warmstart.check_step0(got(0.5004), exp)["bpb"], warmstart.check_step0(got(0.4996), exp)["bpb"]],
+                "seed": warmstart.seed_best(dict(fresh), 3.25, "disjoint")}
     raise SystemExit("no case " + case)
 
 try:
@@ -443,12 +545,16 @@ function wsCopy(dir: string) {
 }
 const wsRun = (dir: string, c: string) => {
   const f = fx(), tmp = join(dir, u("wst")); mkdirSync(tmp);
-  const r = spawnSync(py, ["-c", WS_DRIVER, wsCopy(dir), f.save, f.msha, c, tmp], { encoding: "utf8" });
+  const r = spawnSync(py, ["-c", WS_DRIVER, wsCopy(dir), f.save, f.msha, c, tmp, MODEL], { encoding: "utf8" });
   return (r.stdout.trim() || r.stderr.trim()).split("\n").pop()!;
 };
 const WS_REAL: Record<string, string> = { "ws-sha-format": "WARM_START_SHA_REQUIRED", "ws-conflict": "WARM_START_CONFLICT", "ws-with-resume": "WARM_START_WITH_RESUME",
   "ws-needs-save": "WARM_START_NEEDS_SAVE", "ws-lora-save": "WARM_START_LORA_SAVE", "ws-work-empty": "WARM_START_WORK_NOT_EMPTY", "ws-tokenizer-sha": "WARM_START_FILE_SHA",
-  "ws-shape": "WARM_START_SHAPE_MISMATCH", "ws-checkpoint-sha": "WARM_START_FILE_SHA", "ws-param-shape": "WARM_START_SHAPE_MISMATCH" };
+  "ws-shape": "WARM_START_SHAPE_MISMATCH", "ws-checkpoint-sha": "WARM_START_FILE_SHA", "ws-param-shape": "WARM_START_SHAPE_MISMATCH",
+  "ws-expect-needs-save": "WARM_START_EXPECT_BAD", "ws-expect-required": "WARM_START_EXPECT_REQUIRED", "ws-expect-format": "WARM_START_EXPECT_BAD",
+  "ws-opt-name": "WARM_START_OPT_MISMATCH", "ws-opt-sha": "WARM_START_FILE_SHA", "ws-lr-warmup": "WARM_START_LR_REWARM", "ws-lr-cap": "WARM_START_LR_ABOVE_FINAL",
+  "ws-step0-split": "WARM_START_STEP0_SPLIT", "ws-step0-bpb": "WARM_START_STEP0_MISMATCH", "ws-seed-finite": "WARM_START_STEP0_MISMATCH",
+  "ws-seed-fresh": "WARM_START_WORK_NOT_EMPTY" };
 const WS_CASES: Record<string, (d: string) => string> = Object.fromEntries(Object.keys(WS_REAL).map((g) => [g, (d: string) => wsRun(d, g)]));
 
 test("M181 warm start guards: every tagged warmstart.py guard has a case; disabling it changes the outcome; the valid neighbour passes", () => {
@@ -459,6 +565,11 @@ test("M181 warm start guards: every tagged warmstart.py guard has a case; disabl
     const n = JSON.parse(near.slice(3));
     assert.deepEqual([n.args, n.resume, n.off], [{ manifestSha256: fx().msha }, { manifestSha256: fx().msha }, null]);
     assert.ok(n.params > 0);
+    assert.deepEqual([n.weights, n.sameBest, n.t], ["best.npz", true, 4], "the model of record's weights, the save's optimizer t");
+    assert.equal(n.final, 0.00008, "chain 1 (fixture) ended at lr_at(3) = 6e-4 * 4 / 30");
+    assert.deepEqual(n.expect, { bpb: 0.6688, tokens: 49152, bytes: 192892, tol: 0.0005 });
+    assert.deepEqual([n.noExpect, n.tolCap, n.lrAt, n.s0], [null, 0.002, true, [0.5004, 0.4996]]);
+    assert.deepEqual(n.seed, { val: 3.25, step: 0, stale: 0, valSplit: "disjoint" });
   });
 });
 
@@ -469,42 +580,135 @@ const trainRun = (corpus: string, work: string, extra: string[], t: Record<strin
     { encoding: "utf8" });
 const codeOf = (r: { stdout: string; stderr: string }) => (r.stderr.trim() || r.stdout.trim()).split("\n").pop()!;
 
-test("M181 train.py warm start: the chain-1 save's tokenizer and weights at step 0 (fresh optimizer), the same held-out split, pinned; tampering fails closed", () => withDir((d) => {
+const EXP = () => `${fx().ev.model_bits_per_byte}:${fx().H}:${fx().B}:${TOL}`;
+const expAt = (bpb: number, H = fx().H, B = fx().B) => `${bpb.toFixed(4)}:${H}:${B}:${TOL}`;
+const WARM_LOG = /warm start from save step=4 weights=best\.npz \(kept optimizer t=4, lr=6e-05 <= final 8e-05, no warmup, step 0\)/;
+
+test("M181 train.py warm start: chain 1's model of record and optimizer state at step 0, scored before training (= chain 1's bpb), best seeded at step 0, LR capped; tampering fails closed", () => withDir((d) => {
   const f = fx(), w = join(d, "w"), s = join(d, "s"), mk = join(d, "m.json");
-  const r = trainRun(f.c2, w, ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha], TINY_TRAIN, s, mk);
+  const r = trainRun(f.c2, w, ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", EXP()], C2_TRAIN, s, mk);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout + r.stderr, /warm start from save step=4 \(fresh optimizer, step 0\)/);
+  assert.match(r.stdout + r.stderr, WARM_LOG);
   assert.equal(sha(join(w, "tokenizer.json")), sha(join(f.save, "tokenizer.json")), "the chain-1 tokenizer, byte for byte");
   assert.equal(sha(join(w, "tokens_heldout.npy")), sha(join(f.w1, "tokens_heldout.npy")), "the days-1-3 held-out split, token for token");
   const m0 = readFileSync(join(w, "metrics.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((x) => x.step === 0 && x.val_loss !== undefined);
   assert.ok(m0, "a step-0 eval");
   assert.ok(Math.abs(m0.val_loss - json(join(f.w1, "best.json")).val) < 1e-4, `step-0 val_loss ${m0.val_loss} is chain 1's best (the weights were loaded)`);
+  // (1) the step-0 score reproduces chain 1's exported bpb exactly (same weights, same split, export.py's computation)
+  const s0 = json(join(w, "step0.json"));
+  assert.deepEqual([s0.bpb, s0.tokens, s0.bytes, s0.modelCe], [f.ev.model_bits_per_byte, f.H, f.B, f.ev.model_ce]);
+  assert.match(r.stdout, new RegExp(`step0 heldout_bpb=${f.ev.model_bits_per_byte} expect=${f.ev.model_bits_per_byte} tol=${TOL} val_loss=`));
+  // (2) best: never worse than step 0 (seeded with its val loss)
+  const bj = json(join(w, "best.json"));
+  assert.ok(bj.val <= m0.val_loss && (bj.step === 0 || bj.val < m0.val_loss), JSON.stringify(bj));
+  // (3) every logged LR is at most chain 1's final LR (no warmup)
+  const lrs = readFileSync(join(w, "metrics.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((x) => x.lr !== undefined).map((x) => x.lr);
+  assert.ok(lrs.length >= 4 && lrs.every((x: number) => x <= 0.00006 + 1e-12) && lrs[0] === 0.00006, String(lrs));
   const m = json(mk), man = json(join(s, m.save, "manifest.json"));
   assert.equal(m.step, 4); assert.equal(m.more, true);
   assert.deepEqual(man.cfg.warmStart, { manifestSha256: f.msha }, "the chain-2 save records the warm-start pin");
-  // resume: the same args + the pin resume; dropping or changing the pin is a different config
+  assert.deepEqual([man.cfg.lr, man.cfg.warmup], [0.00006, 0]);
+  // resume: the same args + the pin resume (no expect: step 0 is scored once); dropping or changing the pin is a different config
   const resumeArgs = ["--resume-from", join(s, m.save), "--resume-manifest-sha", m.manifestSha256];
-  const bad1 = trainRun(f.c2, join(d, "r1"), resumeArgs);
+  const bad1 = trainRun(f.c2, join(d, "r1"), resumeArgs, C2_TRAIN);
   assert.equal(codeOf(bad1), "SAVE_CONFIG_MISMATCH", "resume without the warm-start pin");
-  const bad2 = trainRun(f.c2, join(d, "r2"), [...resumeArgs, "--warm-start-manifest-sha", "e".repeat(64)]);
+  const bad2 = trainRun(f.c2, join(d, "r2"), [...resumeArgs, "--warm-start-manifest-sha", "e".repeat(64)], C2_TRAIN);
   assert.equal(codeOf(bad2), "SAVE_CONFIG_MISMATCH", "resume with another pin");
-  assert.equal(codeOf(trainRun(f.c2, join(d, "r3"), [...resumeArgs, "--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha])), "WARM_START_WITH_RESUME");
-  const ok = trainRun(f.c2, join(d, "r4"), [...resumeArgs, "--warm-start-manifest-sha", f.msha], TINY_TRAIN, s, join(d, "m2.json"));
+  assert.equal(codeOf(trainRun(f.c2, join(d, "r3"), [...resumeArgs, "--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", EXP()], C2_TRAIN)), "WARM_START_WITH_RESUME");
+  assert.equal(codeOf(trainRun(f.c2, join(d, "r5"), [...resumeArgs, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", EXP()], C2_TRAIN)), "WARM_START_EXPECT_BAD", "expect only with a warm start");
+  const ok = trainRun(f.c2, join(d, "r4"), [...resumeArgs, "--warm-start-manifest-sha", f.msha], C2_TRAIN, s, join(d, "m2.json"));
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout + ok.stderr, /resumed step=4/);
+  assert.ok(!existsSync(join(d, "r4", "step0.json")), "no step-0 check on a resume day");
   assert.equal(json(join(d, "m2.json")).step, 8);
   // refusals before any training
-  const ws = (save: string, msha: string, extra: string[] = [], t = TINY_TRAIN) => codeOf(trainRun(f.c2, join(d, u("x")), ["--warm-start-from", save, "--warm-start-manifest-sha", msha, ...extra], t));
+  const ws = (save: string, msha: string, extra: string[] = [], t = C2_TRAIN, exp = EXP()) =>
+    codeOf(trainRun(f.c2, join(d, u("x")), ["--warm-start-from", save, "--warm-start-manifest-sha", msha, ...(exp ? ["--warm-start-expect", exp] : []), ...extra], t));
   assert.equal(ws(f.save, "e".repeat(64)), "WARM_START_SAVE_MANIFEST_SHA");
   assert.equal(ws(f.save, ""), "WARM_START_SHA_REQUIRED");
   const tam = join(d, "tam"); cpSync(f.save, tam, { recursive: true });
   writeFileSync(join(tam, "metrics.jsonl"), readFileSync(join(tam, "metrics.jsonl"), "utf8") + "\n");
   assert.equal(ws(tam, f.msha), "WARM_START_SAVE_FILE_SHA");
   assert.equal(ws(join(d, "nope"), f.msha), "WARM_START_SAVE_MISSING");
-  assert.equal(ws(f.save, f.msha, [], { ...TINY_TRAIN, "--d-model": "24" }), "WARM_START_SHAPE_MISMATCH");
+  assert.equal(ws(f.save, f.msha, [], { ...C2_TRAIN, "--d-model": "24" }), "WARM_START_SHAPE_MISMATCH");
   assert.equal(ws(f.save, f.msha, ["--lora-rank", "4"]), "WARM_START_CONFLICT");
   const busy = join(d, "busy"); mkdirSync(busy); writeFileSync(join(busy, "tokenizer.json"), "{}");
-  assert.equal(codeOf(trainRun(f.c2, busy, ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha])), "WARM_START_WORK_NOT_EMPTY");
+  assert.equal(codeOf(trainRun(f.c2, busy, ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", EXP()], C2_TRAIN)), "WARM_START_WORK_NOT_EMPTY");
+  // v2 condition (1): no expect, a malformed one, a step-0 score outside the tolerance, another split -> refused before step 1
+  assert.equal(ws(f.save, f.msha, [], C2_TRAIN, ""), "WARM_START_EXPECT_REQUIRED");
+  assert.equal(ws(f.save, f.msha, [], C2_TRAIN, "0.6688:1:1:0.5"), "WARM_START_EXPECT_BAD");
+  const b0 = f.ev.model_bits_per_byte;
+  const far = trainRun(f.c2, join(d, "far"), ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", expAt(b0 + 0.0006)], C2_TRAIN);
+  assert.equal(codeOf(far), "WARM_START_STEP0_MISMATCH");
+  assert.ok(!readFileSync(join(d, "far", "metrics.jsonl"), { flag: "a+" }).toString().includes('"loss"'), "no training step ran");
+  assert.equal(ws(f.save, f.msha, [], C2_TRAIN, expAt(b0 - 0.0006)), "WARM_START_STEP0_MISMATCH");
+  assert.equal(ws(f.save, f.msha, [], C2_TRAIN, expAt(b0, f.H, f.B + 1)), "WARM_START_STEP0_SPLIT");
+  assert.equal(ws(f.save, f.msha, [], C2_TRAIN, expAt(b0, f.H + 1)), "WARM_START_STEP0_SPLIT");
+  // v2 condition (3): an LR above chain 1's final LR, a re-warm, another optimizer -> refused
+  assert.equal(ws(f.save, f.msha, [], { ...C2_TRAIN, "--lr": "0.0003" }), "WARM_START_LR_ABOVE_FINAL");
+  assert.equal(ws(f.save, f.msha, [], { ...C2_TRAIN, "--lr": "0.0000801" }), "WARM_START_LR_ABOVE_FINAL");
+  assert.equal(ws(f.save, f.msha, [], { ...C2_TRAIN, "--warmup": "1" }), "WARM_START_LR_REWARM");
+  assert.equal(ws(f.save, f.msha, [], { ...C2_TRAIN, "--optimizer": "adamw" }), "WARM_START_OPT_MISMATCH");
+  // near misses that train: a step-0 score 0.0004 off, an LR just under the final LR (lr_at(3) = 6e-4 * 4 / 30 in floating point)
+  const near = trainRun(f.c2, join(d, "near"), ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", expAt(b0 + 0.0004)],
+    { ...C2_TRAIN, "--lr": "0.0000799", "--steps": "2", "--max-steps-this-run": "2" });
+  assert.equal(near.status, 0, near.stderr);
+  assert.match(near.stdout, /lr=7\.99e-05 <= final 8e-05/);
+}));
+
+test("M181 train.py no improvement: a day that never beats step 0 keeps the step-0 model as best (exported unchanged)", () => withDir((d) => {
+  const f = fx(), w = join(d, "w");
+  const r = trainRun(f.c2, w, ["--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha, "--warm-start-expect", EXP()], { ...C2_TRAIN, "--min-delta": "10" });
+  assert.equal(r.status, 0, r.stderr);
+  const bj = json(join(w, "best.json"));
+  assert.equal(bj.step, 0, "best stays at step 0");
+  assert.equal(json(join(w, "timing.json")).bestStep, 0);
+  const e = spawnSync(py, [join(MODEL, "export.py"), "--work", w, "--out", join(w, "model"), "--checkpoint", "best.npz", "--threads", "1"], { encoding: "utf8" });
+  assert.equal(e.status, 0, e.stderr);
+  assert.equal(json(join(w, "model/eval.json")).model_bits_per_byte, f.ev.model_bits_per_byte, "the exported model is chain 1's model of record");
+}));
+
+// ---- train.py wiring: removing each v2 call is caught (killed mutants of the train.py call sites) ----
+
+const TRAIN_MUTANTS: [string, string, string][] = [
+  ["step-0 check", "S0 = warmstart.check_step0(warmstart.step0_eval(np, lm.forward, params, cfg, held_tok, tok.decode), WEXP)",
+    "S0 = warmstart.step0_eval(np, lm.forward, params, cfg, held_tok, tok.decode)"],
+  ["seeded best", "best = warmstart.seed_best(best, float(val0), VAL_SPLIT)", "pass"],
+  ["LR check", "WFINAL_LR = warmstart.check_lr(WMAN, cfg, lm.lr_at)", "WFINAL_LR = 0.0"],
+  ["kept optimizer", "state = warmstart.load_opt(np, args.warm_start_from, WMAN, params, OPT, lbtrain.opt_load)", "pass"],
+  ["model of record", "return \"best.npz\" if \"best.npz\" in man[\"files\"] else \"checkpoint.npz\"", "return \"checkpoint.npz\""],
+];
+test("M181 train.py v2 wiring: removing the step-0 check, the seed, the LR check, the kept optimizer or the best.npz weights fails a check", () => withDir((d) => {
+  const f = fx();
+  const variant = (file: string, from: string, to: string) => {
+    const m = join(d, u("mut")); mkdirSync(m);
+    for (const n of readdirSync(MODEL).filter((x) => x.endsWith(".py") || x.endsWith(".json"))) copyFileSync(join(MODEL, n), join(m, n));
+    const src = readFileSync(join(MODEL, file), "utf8");
+    assert.equal(src.split(from).length, 2, `${file}: ${from}`);
+    writeFileSync(join(m, file), src.replace(from, to));
+    return m;
+  };
+  const run = (m: string, exp: string, t: Record<string, string>) => {
+    const w = join(d, u("w"));
+    const r = spawnSync(py, [join(m, "train.py"), ...trainArgs(t), "--corpus", f.c2, "--work", w, "--warm-start-from", f.save, "--warm-start-manifest-sha", f.msha,
+      "--warm-start-expect", exp], { encoding: "utf8" });
+    return { code: codeOf(r), out: r.stdout + r.stderr, best: existsSync(join(w, "best.json")) ? json(join(w, "best.json")) : null };
+  };
+  const off = expAt(f.ev.model_bits_per_byte + 0.0006), flat = { ...C2_TRAIN, "--min-delta": "10", "--steps": "4", "--max-steps-this-run": "4" };
+  // each case: the real code refuses / keeps step 0 / logs the kept state; the mutant does not
+  const checks: Record<string, (m: string) => boolean> = {
+    "step-0 check": (m) => run(m, off, { ...C2_TRAIN, "--steps": "2", "--max-steps-this-run": "2" }).code === "WARM_START_STEP0_MISMATCH",
+    "seeded best": (m) => run(m, EXP(), flat).best?.step === 0,
+    "LR check": (m) => run(m, EXP(), { ...C2_TRAIN, "--lr": "0.0003", "--steps": "2", "--max-steps-this-run": "2" }).code === "WARM_START_LR_ABOVE_FINAL",
+    "kept optimizer": (m) => /kept optimizer t=4,/.test(run(m, EXP(), { ...C2_TRAIN, "--steps": "2", "--max-steps-this-run": "2" }).out),
+    "model of record": (m) => /weights=best\.npz/.test(run(m, EXP(), { ...C2_TRAIN, "--steps": "2", "--max-steps-this-run": "2" }).out),
+  };
+  const real = join(d, "real"); mkdirSync(real);
+  for (const n of readdirSync(MODEL).filter((x) => x.endsWith(".py") || x.endsWith(".json"))) copyFileSync(join(MODEL, n), join(real, n));
+  for (const [name, from, to] of TRAIN_MUTANTS) {
+    assert.ok(checks[name]!(real), `${name}: real`);
+    assert.ok(!checks[name]!(variant(name === "model of record" ? "warmstart.py" : "train.py", from, to)), `${name}: the mutant is caught`);
+  }
 }));
 
 // ---- the chain end to end: lb_chain2.py trusted -> restore -> lb-chain2-run.sh -> row -> land, with a fake R2 bucket ----
@@ -544,7 +748,10 @@ test("M181 chain end to end: day 1 warm-starts from the pinned save, day 2 resum
   const f = fx(), root = c2root(d), res = results(d), bucket = join(d, "bucket"); mkdirSync(bucket);
   const day1 = chainDay(d, root, res, bucket, D1, "555");
   assert.equal(day1.kind, "warm");
-  assert.match(day1.log, /warm start from save step=4 \(fresh optimizer, step 0\)/);
+  assert.match(day1.log, WARM_LOG);
+  assert.equal(day1.row.schema, "peaceai-lb-chain2-run:v2");
+  assert.deepEqual([day1.row.step0.bpb, day1.row.step0.expectBpb, day1.row.step0.tolBpb], [f.ev.model_bits_per_byte, f.ev.model_bits_per_byte, TOL], "step 0 reproduces chain 1");
+  assert.equal(day1.row.improved, day1.row.bestStep > 0);
   assert.equal(day1.row.chainId, "555"); assert.notEqual(day1.row.chainId, f.warmRow.chainId, "a new chain id");
   assert.deepEqual(day1.row.warmStart, f.warm);
   assert.deepEqual(day1.row.pins, f.pins2, "the new pins");
@@ -557,12 +764,21 @@ test("M181 chain end to end: day 1 warm-starts from the pinned save, day 2 resum
   assert.match(day2.log, /resumed step=4/);
   assert.deepEqual([day2.row.chainId, day2.row.startStep, day2.row.endStep, day2.row.marker.more], ["555", 4, 8, false]);
   assert.equal(day2.row.resumedFrom, day1.row.marker.manifestSha256);
+  assert.equal(day2.row.step0, null, "step 0 is scored on the warm day only");
   assert.deepEqual([day2.row.heldoutTokens, day2.row.heldBytes], [f.H, f.B]);
   const day3 = chainDay(d, root, res, bucket, "2026-11-06", "557");
   assert.equal(day3.kind, "done");
   assert.deepEqual(readdirSync(join(res, "runs/lb-chain2")).sort(), [`${D1}-555.json`, `${D2}-556.json`], "one add-only row per trained day");
   assert.deepEqual(readdirSync(join(res, "runs")).sort(), ["lb-chain2", "lb-daily"], "no latest.json");
   assert.equal(readFileSync(join(res, "runs/lb-daily/2026-11-03-901.json"), "utf8"), f.warmText, "the chain-1 row is untouched");
+}));
+
+test("M181 chain end to end, no improvement: best never leaves step 0 -> the row records improved=false and the step-0 model's bpb", () => withDir((d) => {
+  const f = fx(), root = c2root(d, c2((c) => { c.train["--min-delta"] = "10"; })), res = results(d, { [`2026-11-03-554.json`]: v1Row({ runId: "554", chainId: "554", today: "2026-11-03" }) });
+  const bucket = join(d, "bucket"); mkdirSync(bucket);
+  const day1 = chainDay(d, root, res, bucket, D1, "555");
+  assert.equal(day1.kind, "warm", "after a retired v1 chain");
+  assert.deepEqual([day1.row.bestStep, day1.row.improved, day1.row.heldoutBpb], [0, false, f.ev.model_bits_per_byte]);
 }));
 
 test("M181 chain refusals: a warm save tampered after restore fails in train.py; a wrong trusted sha fails before training", () => withDir((d) => {

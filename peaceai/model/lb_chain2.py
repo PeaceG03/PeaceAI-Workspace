@@ -17,6 +17,12 @@ Usage: lb_chain2.py ref --ref REF
        lb_chain2.py row --trusted FILE --trusted-sha SHA --state DIR --today D --run-id ID --sha SHA --job-start EPOCH
                         --uploaded SAVE:SHA --out FILE [--now EPOCH]
        lb_chain2.py land --row FILE --run-id ID --today D (under results-write.sh: $RESULTS_DIR/runs/lb-chain2/<D>-<ID>.json)
+v2 (spec lb-chain2-v1.md section v2, Auditor's conditions on run 41686765194): rows are schema
+peaceai-lb-chain2-run:v2 with step0 (the warm-start model's held-out score before any training, which must reproduce
+chain 1's recorded bpb within chain2Run.step0TolBpb), bestStep and improved (bestStep > 0: best is seeded with step 0,
+so a day that never beats step 0 exports the step-0 model and records improved=false). v1 rows stay valid but are
+retired: they never decide warm/resume/done, they only forbid reusing their chainId and running twice on one day. The
+continuation LR is at most chain2Run.warmStart.finalLr with --warmup 0 (train.py re-checks it against the save).
 Settings come from lb-train.json chain2Run only. A refusal prints one fixed code and exits 3; output is codes, pins,
 shas, save names, steps and metrics only. Standard library only (CI and the trusted steps have no numpy)."""
 import argparse
@@ -34,8 +40,12 @@ import saves
 HERE = os.path.dirname(os.path.abspath(__file__))
 PIN_KEYS = ("docs", "manifest", "fingerprint")
 CORPUS_FILES = ("docs.jsonl", "fingerprint.json", "manifest.jsonl")
-ROW_SCHEMA = "peaceai-lb-chain2-run:v1"
-ROW_FIELDS = lb_daily.ROW_FIELDS + ("warmStart", "heldoutV2")
+ROW_SCHEMA_V1 = "peaceai-lb-chain2-run:v1"  # retired (day 1 of run 41686765194): validated, never decides
+ROW_SCHEMA = "peaceai-lb-chain2-run:v2"
+ROW_FIELDS_V1 = lb_daily.ROW_FIELDS + ("warmStart", "heldoutV2")
+ROW_FIELDS = ROW_FIELDS_V1 + ("step0", "bestStep", "improved")
+STEP0_FIELDS = ("bpb", "modelCe", "tokens", "bytes", "expectBpb", "tolBpb")
+MAX_STEP0_TOL = 0.002
 V2_FIELDS = ("bpb", "baselineBpb", "modelCe", "tokens", "bytes", "windows", "docs")
 WARM_KEYS = ("fromChain", "save", "manifestSha256")
 SHAPE_ARGS = ("--d-model", "--n-layer", "--n-head", "--ctx", "--vocab")
@@ -103,6 +113,17 @@ def check_config(cfg, plan, fp_sha):
         raise Chain2Error("LB_C2_SETTING_REQUIRED")
     if any(t.get(k) != cfg["dailyRun"]["train"].get(k) for k in SHAPE_ARGS):  # guard:c2-shape
         raise Chain2Error("LB_C2_SHAPE")
+    tol, eb, flr = c2.get("step0TolBpb"), w.get("heldoutBpb"), w.get("finalLr")
+    if not (lb_daily.num_ok(tol) and 0 < tol <= MAX_STEP0_TOL and lb_daily.num_ok(eb) and eb > 0 and lb_daily.num_ok(flr) and flr > 0):  # guard:c2-step0-config
+        raise Chain2Error("LB_C2_WARM_CONFIG")
+    if t.get("--warmup") != "0":  # guard:c2-lr-warmup
+        raise Chain2Error("LB_C2_LR")
+    try:
+        lr = float(t.get("--lr", ""))
+    except ValueError:
+        lr = float("nan")
+    if not (lr > 0 and lr <= flr):  # guard:c2-lr-cap
+        raise Chain2Error("LB_C2_LR")
     td, rv, jt, mb = c2.get("trainDeadlineMin"), c2.get("reserveMin"), c2.get("jobTimeoutMin"), c2.get("minBudgetMin")
     if not all(type(x) is int for x in (td, rv, jt, mb)) or mb < 1 or td < mb or rv < 30 or td + rv > jt or jt > 355:  # guard:c2-deadline-cap
         raise Chain2Error("LB_C2_BAD_DEADLINE")
@@ -176,12 +197,40 @@ def check_v2(v):
         raise Chain2Error("LB_C2_ROW_VALUE")
 
 
+def check_step0(row, c2):
+    """v2: step0 on the warm day (startStep 0) only: the warm-start model's export-identical held-out score, equal to
+    chain 1's recorded bpb within the pinned tolerance on the same split; bestStep/improved: improved iff best moved
+    past step 0, and a day without improvement exported the step-0 model (its bpb within the tolerance of step0's)."""
+    s0, w, tol = row["step0"], c2["warmStart"], c2["step0TolBpb"]
+    if (s0 is None) != (row["startStep"] != 0):  # guard:c2-row-step0-day
+        raise Chain2Error("LB_C2_ROW_STEP0")
+    if s0 is not None:
+        ok = (isinstance(s0, dict) and sorted(s0) == sorted(STEP0_FIELDS) and all(lb_daily.num_ok(s0[k]) for k in ("bpb", "modelCe", "expectBpb", "tolBpb"))
+              and type(s0["tokens"]) is int and type(s0["bytes"]) is int and s0["tokens"] >= 1 and s0["bytes"] >= 1
+              and abs(s0["modelCe"] * s0["tokens"] / math.log(2) / s0["bytes"] - s0["bpb"]) <= 1e-4)
+        if not ok:  # guard:c2-row-step0-shape
+            raise Chain2Error("LB_C2_ROW_STEP0")
+        if s0["expectBpb"] != w["heldoutBpb"] or s0["tolBpb"] != tol or s0["tokens"] != w["heldoutTokens"] or s0["bytes"] != w["heldBytes"]:  # guard:c2-row-step0-pins
+            raise Chain2Error("LB_C2_ROW_STEP0")
+        if abs(s0["bpb"] - s0["expectBpb"]) > tol:  # guard:c2-row-step0-bpb
+            raise Chain2Error("LB_C2_ROW_STEP0")
+    b = row["bestStep"]
+    if type(b) is not int or b < 0 or b > row["endStep"] or type(row["improved"]) is not bool:  # guard:c2-row-best
+        raise Chain2Error("LB_C2_ROW_VALUE")
+    if row["improved"] != (b > 0):  # guard:c2-row-improved
+        raise Chain2Error("LB_C2_ROW_VALUE")
+    if s0 is not None and not row["improved"] and abs(row["heldoutBpb"] - s0["bpb"]) > tol:  # guard:c2-row-no-improve-export
+        raise Chain2Error("LB_C2_ROW_STEP0")
+
+
 def check_row(row, cfg, c2):
     """A chain-2 row: the lb-daily v2 row fields (same checks, chain-2 pins) plus warmStart and heldoutV2; the held-out
-    inputs equal the day-3 row's (the same split as days 1-3)."""
-    if not isinstance(row, dict) or sorted(row) != sorted(ROW_FIELDS):  # guard:c2-row-fields
+    inputs equal the day-3 row's (the same split as days 1-3). Schema v2 adds step0, bestStep and improved; a v1 row
+    (retired) has exactly the v1 fields."""
+    v1 = isinstance(row, dict) and row.get("schema") == ROW_SCHEMA_V1
+    if not isinstance(row, dict) or sorted(row) != sorted(ROW_FIELDS_V1 if v1 else ROW_FIELDS):  # guard:c2-row-fields
         raise Chain2Error("LB_C2_ROW_FIELD")
-    if row["schema"] != ROW_SCHEMA:  # guard:c2-row-schema
+    if row["schema"] not in (ROW_SCHEMA, ROW_SCHEMA_V1):  # guard:c2-row-schema
         raise Chain2Error("LB_C2_ROW_VALUE")
     base = {k: row[k] for k in lb_daily.ROW_FIELDS}
     base["schema"] = lb_daily.ROW_SCHEMA
@@ -198,6 +247,8 @@ def check_row(row, cfg, c2):
     if row["heldoutTokens"] != w["heldoutTokens"] or row["heldBytes"] != w["heldBytes"]:  # guard:c2-row-same-split
         raise Chain2Error("LB_C2_HELDOUT_SPLIT_DIFFERS")
     check_v2(row["heldoutV2"])
+    if not v1:
+        check_step0(row, c2)
     return row
 
 
@@ -215,6 +266,10 @@ def pick_trusted(rows, cfg, c2, today):
     keyed.sort()
     if any(r["today"] == today for _, _, r in keyed):  # guard:c2-once
         raise Chain2Error("LB_C2_ALREADY_RAN")
+    retired = {r["chainId"] for _, _, r in keyed if r["schema"] == ROW_SCHEMA_V1}
+    keyed = [x for x in keyed if x[2]["schema"] == ROW_SCHEMA]  # v2: only v2 rows decide warm / resume / done
+    if any(r["chainId"] in retired for _, _, r in keyed):  # guard:c2-retired-chain
+        raise Chain2Error("LB_C2_RECORD_BAD")
     if not keyed:
         w = c2["warmStart"]
         return {"kind": "warm", "chainId": None, "marker": None, "row": None, "warm": {k: w[k] for k in WARM_KEYS}}
@@ -338,7 +393,9 @@ def cycle_args(a, c2, now):
     for k in sorted(c2["train"]):
         lines += [k, c2["train"][k]]
     if t["kind"] == "warm":
-        lines += ["--warm-start-from", warm_dir(a, t)]
+        w = c2["warmStart"]
+        lines += ["--warm-start-from", warm_dir(a, t),
+                  "--warm-start-expect", f"{w['heldoutBpb']!r}:{w['heldoutTokens']}:{w['heldBytes']}:{c2['step0TolBpb']!r}"]
     lines += ["--warm-start-manifest-sha", pin]
     return lines
 
@@ -353,6 +410,10 @@ def build_row(a, cfg, c2, now):
             mk = json.load(f)
         with open(os.path.join(s, "work", a.today, "model", "eval-v2.json"), encoding="utf-8") as f:
             ev2 = json.load(f)
+        s0 = None
+        if t["kind"] == "warm":  # v2: train.py's step-0 score of the warm-start model
+            with open(os.path.join(s, "work", a.today, "step0.json"), encoding="utf-8") as f:
+                s0 = json.load(f)
     except (OSError, ValueError):
         raise Chain2Error("LB_C2_TRAIN_ERROR")
     if not isinstance(rep, dict) or rep.get("status") != "trained" or not isinstance(rep.get("eval"), dict):  # guard:c2-report-trained
@@ -371,8 +432,10 @@ def build_row(a, cfg, c2, now):
         raise Chain2Error("LB_C2_ROW_VALUE")
     ev = rep["eval"]
     w = c2["warmStart"]
-    if not isinstance(ev2, dict):
+    if not isinstance(ev2, dict) or (t["kind"] == "warm" and not (isinstance(s0, dict) and isinstance(s0.get("expect"), dict))):
         raise Chain2Error("LB_C2_TRAIN_ERROR")
+    step0 = None if s0 is None else {"bpb": s0.get("bpb"), "modelCe": s0.get("modelCe"), "tokens": s0.get("tokens"), "bytes": s0.get("bytes"),
+                                     "expectBpb": s0["expect"].get("bpb"), "tolBpb": s0["expect"].get("tol")}
     row = {"schema": ROW_SCHEMA, "runId": a.run_id, "workflowSha": a.sha, "chainId": t["chainId"] or a.run_id, "today": a.today,
            "pins": rep.get("corpus"), "status": "trained", "startStep": rep.get("startStep"), "endStep": rep.get("endStep"),
            "stopReason": rep.get("stopReason"), "heldoutBpb": ev.get("model_bits_per_byte"), "baselineBpb": ev.get("unigram_bits_per_byte"),
@@ -380,7 +443,8 @@ def build_row(a, cfg, c2, now):
            "modelCe": ev.get("model_ce"), "heldoutTokens": ev.get("heldout_tokens"), "heldBytes": ev.get("held_bytes"),
            "warmStart": {k: w[k] for k in WARM_KEYS},
            "heldoutV2": {"bpb": ev2.get("model_bits_per_byte"), "baselineBpb": ev2.get("unigram_bits_per_byte"), "modelCe": ev2.get("model_ce"),
-                         "tokens": ev2.get("heldout_tokens"), "bytes": ev2.get("held_bytes"), "windows": ev2.get("windows"), "docs": ev2.get("docs")}}
+                         "tokens": ev2.get("heldout_tokens"), "bytes": ev2.get("held_bytes"), "windows": ev2.get("windows"), "docs": ev2.get("docs")},
+           "step0": step0, "bestStep": rep.get("bestStep"), "improved": isinstance(rep.get("bestStep"), int) and rep["bestStep"] > 0}
     return check_row(row, cfg, c2)
 
 
@@ -445,12 +509,14 @@ def main(argv):
                 f.write(json.dumps(row, sort_keys=True) + "\n")
         except OSError:
             raise Chain2Error("LB_C2_ROW_EXISTS")
-        v = "beats_baseline" if row["heldoutBpb"] < row["baselineBpb"] else "no_gain"
+        v = ("beats_baseline" if row["heldoutBpb"] < row["baselineBpb"] else "no_gain") + ("" if row["improved"] else ",no_improvement")
+        s0 = row["step0"]
         h = row["heldoutV2"]
         print(f"lb-chain2 start={row['startStep']} end={row['endStep']} stop={row['stopReason']} more={row['marker']['more']} heldout_bpb={row['heldoutBpb']} "
               f"baseline_bpb={row['baselineBpb']} verdict={v} heldout_v2_bpb={h['bpb']} heldout_v2_baseline_bpb={h['baselineBpb']} "
               f"save={row['marker']['save']} sha={row['marker']['manifestSha256']} wall_s={row['wallSeconds']} model_ce={row['modelCe']} "
-              f"heldout_tokens={row['heldoutTokens']} held_bytes={row['heldBytes']}")
+              f"heldout_tokens={row['heldoutTokens']} held_bytes={row['heldBytes']} best_step={row['bestStep']} improved={row['improved']} "
+              f"step0_bpb={s0['bpb'] if s0 else '-'} chain1_bpb={c2['warmStart']['heldoutBpb']}")
     else:
         print("landed " + land(a, cfg, c2))
 
