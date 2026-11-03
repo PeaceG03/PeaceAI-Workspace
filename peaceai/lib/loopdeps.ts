@@ -1109,12 +1109,31 @@ export function candCan(cand: CandUid, argv: readonly string[]): boolean {
  *  runner, group the candidate's gid, mode 0750: only the runner and the candidate uid can enter it. Null (the task is
  *  refused ISOLATION_UNAVAILABLE / WORK_DIR) unless the candidate uid can traverse it and write a dir it owns there. */
 export interface WorkDir { dir: string; close(): void }
+
+// M173 (Auditor M171 follow-up 3): a work dir is registered for removal the moment mktemp returns, before its mode is
+// set, so a process that exits or is stopped by SIGINT / SIGTERM / SIGHUP at any point after mktemp (including between
+// mktemp and chmod) removes it instead of leaking an empty 0700 /tmp/peaceai-work-* dir. The signal hook removes the
+// open dirs and re-raises the same signal (the process still ends by that signal). SIGKILL cannot be caught; nothing
+// here claims to cover it. close() unregisters.
+const openWorkDirs = new Set<string>();
+const removeWorkDir = (dir: string) => { spawnSync("sudo", ["-n", "rm", "-rf", "--", dir], { stdio: "ignore" }); rmSync(dir, { recursive: true, force: true }); };
+const sweepWorkDirs = () => { for (const d of [...openWorkDirs]) { openWorkDirs.delete(d); try { removeWorkDir(d); } catch { /* best effort at exit */ } } };
+let workHooks = false;
+/** M173: registers `dir` for removal at exit or on SIGINT / SIGTERM / SIGHUP (hooks installed once); exported for tests. */
+export function trackWorkDir(dir: string): void {
+  openWorkDirs.add(dir);
+  if (workHooks) return;
+  workHooks = true;
+  process.once("exit", sweepWorkDirs);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(sig, () => { sweepWorkDirs(); process.kill(process.pid, sig); });
+}
 export function openWorkDir(cand: CandUid, base: string = tmpdir()): WorkDir | null {
   let dir: string;
   try { dir = mkdtempSync(join(base, "peaceai-work-")); } catch { return null; }
-  const close = () => { spawnSync("sudo", ["-n", "rm", "-rf", "--", dir], { stdio: "ignore" }); rmSync(dir, { recursive: true, force: true }); };
+  trackWorkDir(dir); // m173-guard:work-track (before the chmod)
+  const close = () => { openWorkDirs.delete(dir); removeWorkDir(dir); };
   const gid = candGid(cand);
-  chmodSync(dir, 0o750);
+  try { chmodSync(dir, 0o750); } catch { close(); return null; }
   if (!Number.isInteger(gid) || gid <= 0 || spawnSync("sudo", ["-n", "chgrp", String(gid), dir], { stdio: "ignore" }).status !== 0) { close(); return null; }
   const probe = join(dir, "probe");
   mkdirSync(probe);
