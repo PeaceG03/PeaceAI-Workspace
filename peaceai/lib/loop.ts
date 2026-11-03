@@ -40,7 +40,7 @@ import { plannerSha256V4 } from "./plan4run.ts";
 import { selectPlanner, type PlannerName } from "./plandefault.ts";
 import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, SHIM_SYNTH_CODES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { ATTEMPT_CODES, SHIM_SYNTH_CODES, EDIT_SCOPE_CLASSES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type EditScopeClass, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
@@ -472,6 +472,101 @@ export function loadEditProblem(edits: readonly Edit[], original: (path: string)
   return null;
 }
 
+// ---- M175 L0 edit-scope gate (spec/edit-gate-m175.md)
+// Generalizes the M174 load gate (loadEditProblem / loadEditShape / LOAD_EDIT_INFRA, reused below as the one source of
+// truth for the export shape and the infra file class) from load-repair to EVERY proposer and attempt. In normal
+// (edit) mode the loop calls editScopeProblem on every candidate, in the same place the load gate runs (before the
+// team's tests go back, before anything runs): a candidate whose scope is wider than the pinned policy admits is
+// refused (EDIT_SCOPE) rather than run, because a wider edit could add a runner-patching import, edit a test or config,
+// or redefine a global and so make a fake PASS in process. The classification has three axes: the edited file's class,
+// the top-level statement shape, and the identifier tokens.
+
+/** PINNED edit-scope policy (m168-style): the only scope classes allowed before a run, per attempt mode. "load" is the
+ *  M174 load-repair special case (one inserted `export ` keyword); "edit" is every other attempt (that, or an in-body
+ *  change to an existing source file). Widening it later (multi-token edits, new imports, test/config edits) is a
+ *  reviewed one-line change here, pinned by peaceai/test/m175-policy.test.ts. */
+export const EDIT_SCOPE_POLICY: { readonly edit: readonly EditScopeClass[]; readonly load: readonly EditScopeClass[] } =
+  Object.freeze({ edit: Object.freeze(["export-keyword", "in-body"] as const), load: Object.freeze(["export-keyword"] as const) });
+
+/** Identifier tokens that reach the runner's own assertions or the module system; a repair never needs to add one, so a
+ *  candidate using one more often than the original is a multi-token global redefine, outside scope. */
+export const EDIT_DANGEROUS: readonly string[] = ["globalThis", "global", "eval", "Function", "require", "Reflect", "Proxy", "__proto__", "expect", "assert", "vi", "jest"];
+
+const EDIT_LOCKFILE = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.ya?ml|bun\.lockb?)$/;
+const editSourceExt = (p: string): boolean => /\.(?:[cm]?ts|tsx)$/.test(p) && !/\.d\.[cm]?ts$/.test(p);
+
+/** Per identifier, how many times it appears as a word in `s` (comments and strings counted too: a cheap over-count
+ *  that can only make the gate stricter, never looser). */
+function editTokenCounts(s: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const w of s.match(/[A-Za-z_$][\w$]*/g) ?? []) m.set(w, (m.get(w) ?? 0) + 1);
+  return m;
+}
+/** Top-level statements of `s`, or null if it does not parse (an unparsable candidate cannot run or patch anything). */
+function editTopLevel(s: string): ts.Statement[] | null {
+  const sf = ts.createSourceFile("edit.tsx", s, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics;
+  return diags && diags.length ? null : [...sf.statements];
+}
+const EDIT_IMPORTISH = new Set<ts.SyntaxKind>([ts.SyntaxKind.ImportDeclaration, ts.SyntaxKind.ImportEqualsDeclaration]);
+const editImportish = (st: readonly ts.Statement[]): number =>
+  st.filter((s) => EDIT_IMPORTISH.has(s.kind) || (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined)).length;
+
+/** The scope class of one edit to an existing source file, or a refusal reason (string). An edit whose candidate (or
+ *  whose original) does not parse is "in-body": it cannot run or patch anything, so it fails safely at run time rather
+ *  than being refused here (m173's broken-return case relies on this). The structural checks run only when both parse,
+ *  and each is deletion-safe (a removed guard changes the class, it does not throw), so the mutation test can replay. */
+export function editSourceClass(orig: string, next: string): EditScopeClass | string {
+  if (loadEditShape(orig, next)) return "export-keyword"; // m175-guard:shape-export
+  const a = editTopLevel(orig), b = editTopLevel(next);
+  if (a !== null && b !== null) {
+    const n = Math.min(a.length, b.length);
+    if (a.length !== b.length) return "top-level-count"; // m175-guard:toplevel-count
+    for (let i = 0; i < n; i++) if (a[i]!.kind !== b[i]!.kind) return "top-level-kind"; // m175-guard:toplevel-kind
+    if (editImportish(b) > editImportish(a)) return "adds-import"; // m175-guard:adds-import
+    const ca = editTokenCounts(orig), cb = editTokenCounts(next);
+    for (const w of EDIT_DANGEROUS) if ((cb.get(w) ?? 0) > (ca.get(w) ?? 0)) return "dangerous:" + w; // m175-guard:dangerous
+  }
+  return "in-body";
+}
+/** The scope class of one edit, or a refusal reason. `original` reads a regular file at the pinned commit (null: none). */
+export function editClass(path: string, content: string, original: (p: string) => string | null): EditScopeClass | string {
+  if (codeTestPath(path) || isGeneratedPath(path)) return "test-file"; // m175-guard:class-test
+  if (EDIT_LOCKFILE.test(path)) return "lockfile"; // m175-guard:class-lockfile
+  if (LOAD_EDIT_INFRA.test(path)) return "runner-infra"; // m175-guard:class-infra
+  if (!editSourceExt(path)) return "config"; // m175-guard:class-source (package.json, tsconfig, *.config.*, .json/.yml, .js, .d.ts)
+  const o = original(path);
+  if (o === null) return "new-file"; // m175-guard:class-exists
+  return editSourceClass(o ?? "", content); // (o is non-null here; the ?? keeps class-exists's deletion a clean miss, not a throw)
+}
+/**
+ * M175 general L0 edit gate: why a proposal is outside the pinned scope for `mode` (null: inside), checked on the copy
+ * reset to the pinned commit, before the team's tests go back and before anything runs. An edit to a path outside the
+ * copy or to a team test file is left to applyEdits (EDIT_OUTSIDE_COPY / TEAM_TEST_EDIT), so `skip(path)` is true for
+ * those; every other edit must land in a class EDIT_SCOPE_POLICY[mode] admits.
+ */
+export function editScopeProblem(edits: readonly Edit[], original: (p: string) => string | null, skip: (p: string) => boolean, mode: "edit" | "load" = "edit"): string | null {
+  const allow = EDIT_SCOPE_POLICY[mode];
+  for (const e of edits) {
+    if (skip(e.path)) continue; // m175-guard:skip-owned
+    const c = editClass(e.path, e.content, original);
+    if (!(EDIT_SCOPE_CLASSES as readonly string[]).includes(c)) return c; // a refusal reason
+    if (!allow.includes(c as EditScopeClass)) return c; // m175-guard:policy (a class this mode does not admit)
+  }
+  return null;
+}
+/** The widest scope class a (non-refused) proposal ran under, for the PASS row, or null if there is nothing to record. */
+export function editScopeOf(edits: readonly Edit[], original: (p: string) => string | null): EditScopeClass | null {
+  let out: EditScopeClass | null = null;
+  for (const e of edits) {
+    const c = editClass(e.path, e.content, original);
+    if (!(EDIT_SCOPE_CLASSES as readonly string[]).includes(c)) continue;
+    if (c === "in-body") return "in-body";
+    out = c as EditScopeClass;
+  }
+  return out;
+}
+
 // ---- the proposer
 
 export interface Edit { path: string; content: string }
@@ -612,6 +707,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let deps: LoopRow["deps"] = null;
   let baseline: LoopBaseline | null = null;
   let loadDiags: LoadDiag[] | null = null; // M174: set only in load-repair mode
+  let editScope: EditScopeClass | null = null; // M175: the scope class a normal-mode PASS ran under
   const done = (code: LoopCode, depsFail?: DepsFail, isolationFail?: IsolationFail | null): LoopResult => ({
     row: {
       schema: LOOP_SCHEMA_V4, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
@@ -628,6 +724,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       ...(set === "public" && code === "ISOLATION_UNAVAILABLE" && isolationFail ? { isolationFail } : {}), // m171-guard:loop-isofail
       // M174: the baseline suite did not load; the task went on in load-repair mode (both sets: a fixed code)
       ...(loadDiags ? { baselineLoad: "MISSING_EXPORT" as const } : {}), // m174-guard:loop-row-load
+      ...(editScope ? { editScope } : {}), // m175-guard:loop-row-scope
     },
     plan, attempts: records, context,
   });
@@ -722,6 +819,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       // refused here, before anything runs (a wider edit could patch the runner's assertions in process)
       const readPinned = (f: string): string | null => { const full = safeEditPath(c!.dir, f); try { return full && lstatSync(full).isFile() ? readFileSync(full, "utf8") : null; } catch { return null; } };
       if (loadDiags && loadEditProblem(p.edits, readPinned) !== null) return done("PROPOSER_FAILED"); // m174-guard:scope-gate
+      if (!loadDiags && editScopeProblem(p.edits, readPinned, (f) => safeEditPath(c!.dir, f) === null || c!.teamTests.has(posix.normalize(f)), "edit") !== null) return done("EDIT_SCOPE"); // m175-guard:scope-gate
       putTeamTests();
       const bad = applyEdits(c, p.edits);
       if (bad) return done(bad);
@@ -742,7 +840,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
         }
       }
       records.push({ attempt, edits: p.edits.map((e) => e.path), codes: r.codes, failing: r.failing, tests: r.tests });
-      if (r.codes.length === 0) return done("PASS");
+      if (r.codes.length === 0) { if (!loadDiags) editScope = editScopeOf(p.edits, readPinned); return done("PASS"); }
       feedback.push({ attempt, codes: r.codes, failing: r.failing, tests: r.tests }); // 7. revise
     }
     return done("ATTEMPT_LIMIT");

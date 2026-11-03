@@ -49,6 +49,8 @@ export const LOOP_CODES = [
   "TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE",
   // v2 only: the proposer's search (prepare) threw (M152); the error is dropped, only this code is kept
   "PROPOSER_FAILED",
+  // v2 only (M175): a candidate edit was outside the pinned edit-scope policy (editScopeProblem), refused before any run
+  "EDIT_SCOPE",
   // v4 only (M173): the baseline ran but proved nothing, so no edit is scored against it: no test executed, the runner
   // shim had no usable report (its 1/0/1 counts are made up), a suite failed to load or run, or the only failure is the
   // runner's exit status (no failed test)
@@ -56,7 +58,7 @@ export const LOOP_CODES = [
 ] as const;
 /** M173: the task codes of a baseline that ran but proved nothing (attempts 0; a public row keeps its baseline). */
 export const BASELINE_UNRUN_CODES = ["NO_TESTS_RAN", "BASELINE_NO_REPORT", "BASELINE_SUITE_LOAD", "BASELINE_EXIT_ONLY"] as const;
-const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED"];
+const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE"];
 export type LoopCode = (typeof LOOP_CODES)[number];
 /** Per-attempt failure codes (filtered: what kind of failure, never its text). */
 export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL", "NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
@@ -66,6 +68,10 @@ export const SHIM_SYNTH_CODES = ["NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as cons
 /** M174: v4 rows only (optional): the baseline suite did not load and the task went on in load-repair mode (the loop's
  *  load diagnostics named a missing export). Such a baseline ran no team test, so the row did not reach them. */
 export const LOOP_BASELINE_LOADS = ["MISSING_EXPORT"] as const;
+/** M175: the edit-scope class a PASS row ran under (optional, v4). The only scopes the pinned edit-scope policy
+ *  (loop.ts EDIT_SCOPE_POLICY) admits today, so a future wider-scope PASS records a class not in this set and stands out. */
+export const EDIT_SCOPE_CLASSES = ["export-keyword", "in-body"] as const;
+export type EditScopeClass = (typeof EDIT_SCOPE_CLASSES)[number];
 /** M174: the task codes a load-repair row can end with (after the baseline: the proposer, an attempt, or a crash). */
 export const LOAD_REPAIR_CODES = ["PASS", "ATTEMPT_LIMIT", "NO_EDIT", "NO_MORE_EDITS", "PROPOSER_FAILED", "EDIT_OUTSIDE_COPY", "TEAM_TEST_EDIT", "ISOLATION_UNAVAILABLE", "FETCH_FAILED"] as const;
 /** M173: a row whose task reached the team's tests: a baseline ran with at least one executed test and a real report. */
@@ -124,6 +130,8 @@ export interface LoopRow {
   isolationFail?: (typeof LOOP_ISOLATION_FAILS)[number];
   /** M174, v4 rows only (optional): the baseline suite did not load; load-repair mode (LOOP_BASELINE_LOADS). */
   baselineLoad?: (typeof LOOP_BASELINE_LOADS)[number];
+  /** M175, v4 edit-mode PASS rows only (optional): the edit-scope class the passing edit ran under (EDIT_SCOPE_CLASSES). */
+  editScope?: EditScopeClass;
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -133,7 +141,7 @@ const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commi
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
 const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
-const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad"]; // M169 / M171 / M174: optional, so rows written before them still validate
+const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad", "editScope"]; // M169 / M171 / M174: optional, so rows written before them still validate
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
@@ -223,6 +231,11 @@ export function loopRowProblem(o: unknown): string | null {
     if (!(LOOP_BASELINE_LOADS as readonly string[]).includes(r.baselineLoad)) return "baseline_load"; // m174-guard:row-load-value
     if (!(LOAD_REPAIR_CODES as readonly string[]).includes(r.code)) return "baseline_load_code"; // m174-guard:row-load-code
     if (r.set === "public" && r.baseline === null) return "baseline_presence"; // m174-guard:row-load-baseline
+  }
+  if ("editScope" in r) {
+    if (!(EDIT_SCOPE_CLASSES as readonly string[]).includes(r.editScope)) return "edit_scope"; // m175-guard:row-scope-value
+    if (r.code !== "PASS") return "edit_scope_code"; // m175-guard:row-scope-pass
+    if ("baselineLoad" in r) return "edit_scope_mode"; // m175-guard:row-scope-edit-mode (a load-repair PASS never records it)
   }
   return null;
 }
