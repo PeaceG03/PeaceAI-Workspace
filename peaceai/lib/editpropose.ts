@@ -33,9 +33,11 @@ import ts from "typescript";
 import { isGeneratedPath, isTestPath, type CodeRepo } from "./codesearch.ts";
 
 /** The loop's proposer interface (structural copy of loop.ts Proposer / ProposeInput: no import cycle). */
+/** M174: structural copy of loop.ts LoadDiag (one filtered load diagnostic). */
+export interface LoadDiag { kind: "MISSING_EXPORT" | "MISSING_MODULE"; test: string; module: string; name: string; spec: string }
 export interface RepairEdit { path: string; content: string }
 export interface RepairFeedback { attempt: number; codes: readonly string[]; failing: readonly string[]; tests?: { total: number; passedByPeaceAI: number } | null }
-export interface RepairInput { files: readonly { path: string; content: string }[]; attempt: number; feedback: readonly RepairFeedback[]; baseline?: { total: number; passing: number; failing: number } | null }
+export interface RepairInput { files: readonly { path: string; content: string }[]; attempt: number; feedback: readonly RepairFeedback[]; baseline?: { total: number; passing: number; failing: number } | null; loadDiagnostics?: readonly LoadDiag[] }
 export interface PrepareInput { request: string; failing: readonly string[] }
 export type RepairProposal = { edits: RepairEdit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
@@ -53,7 +55,10 @@ export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-nu
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
-export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number];
+/** M174 (repair-v2 only, spec/load-diagnostics-m174.md): edits for a team suite that does not load because it imports a
+ *  name its source module does not export; proposed only from the loop's load diagnostics, never beside the others. */
+export const LOAD_TEMPLATES = ["load-export"] as const;
+export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number] | (typeof LOAD_TEMPLATES)[number];
 /** M168: repair-v2's full order (idioms first, then the v1 templates unchanged; M173: then const-value). */
 export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES, ...CONST_TEMPLATES];
 /** M173: at most this many module-scope constant sites (tier 3) are added after the located sites (repair-v2 only). */
@@ -623,6 +628,58 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
   return queue;
 }
 
+// ---- M174: load-repair candidates (repair-v2 only)
+
+export const MAX_LOAD_CANDIDATES = 1;
+const DECL_KINDS = (n: ts.Node): boolean => ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n) || ts.isEnumDeclaration(n) || ts.isVariableStatement(n);
+const mods = (n: ts.Node): readonly ts.ModifierLike[] => (ts.canHaveModifiers(n) ? ts.getModifiers(n) ?? [] : []);
+/** The top-level statements of `sf` that declare `name` (a variable statement counts with its declarator names). */
+function topDeclsNamed(sf: ts.SourceFile, name: string): { st: ts.Statement; single: boolean }[] {
+  const out: { st: ts.Statement; single: boolean }[] = [];
+  for (const st of sf.statements) {
+    if (ts.isVariableStatement(st)) {
+      const names = st.declarationList.declarations.map((d) => (ts.isIdentifier(d.name) ? d.name.text : null));
+      if (names.includes(name)) out.push({ st, single: names.length === 1 });
+    } else if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st) || ts.isInterfaceDeclaration(st) || ts.isTypeAliasDeclaration(st) || ts.isEnumDeclaration(st) || ts.isModuleDeclaration(st)) && st.name && ts.isIdentifier(st.name) && st.name.text === name) out.push({ st, single: true });
+  }
+  return out;
+}
+/** load-export: `name` is declared once at the top level of the module, by one plain declaration that nothing exports. */
+export function loadExportAt(sf: ts.SourceFile, name: string): number | null {
+  const ds = topDeclsNamed(sf, name);
+  const [first] = ds;
+  if (!first) return null;
+  if (ds.length !== 1) return null; // m174-guard:le-one-decl (overloads, merged declarations: not one edit)
+  const { st, single } = first;
+  if (!DECL_KINDS(st)) return null; // m174-guard:le-kind
+  if (!single) return null; // m174-guard:le-single (exporting `const a = 1, b = 2` would export more than the name)
+  if (mods(st).some((m) => m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DeclareKeyword || m.kind === ts.SyntaxKind.DefaultKeyword)) return null; // m174-guard:le-plain
+  if (ts.isFunctionDeclaration(st) && !st.body) return null; // m174-guard:le-body
+  for (const x of sf.statements) if (ts.isExportDeclaration(x) && x.exportClause && ts.isNamedExports(x.exportClause) && x.exportClause.elements.some((e) => e.name.text === name || (e.propertyName ?? e.name).text === name)) return null; // m174-guard:le-not-listed
+  return st.getStart(sf);
+}
+/**
+ * The load-repair candidate for the loop's MISSING_EXPORT diagnostics: one edit that fixes every missing name at once,
+ * each by load-export (the keyword `export ` inserted before the module's one plain declaration of the name). None when
+ * any name has no such declaration (a suite missing one name still does not load). Nothing is ever invented: every
+ * site is a single inserted keyword token in a source file (Auditor's single-token scope; M174 dropped load-reexport,
+ * a new statement, as outside it). The loop checks the same shape again before any run (loop.ts loadEditProblem).
+ */
+export function loadCandidates(diags: readonly LoadDiag[], files: ReadonlyMap<string, string>): Candidate[] {
+  const wanted = new Map<string, { module: string; name: string }>();
+  for (const d of diags) if (d.kind === "MISSING_EXPORT") wanted.set(`${d.module}\0${d.name}`, d); // m174-guard:lc-export-only
+  if (wanted.size === 0) return [];
+  const muts: Mutation[] = [];
+  for (const w of wanted.values()) {
+    const text = files.get(w.module);
+    const at = text === undefined ? null : loadExportAt(parseSource(w.module, text), w.name);
+    if (at === null) return []; // m174-guard:lc-all-fixed
+    muts.push({ path: w.module, start: at, end: at, text: "export ", template: "load-export", site: 0 });
+  }
+  const c = candidateFor(files, muts);
+  return c ? [c].slice(0, MAX_LOAD_CANDIDATES) : [];
+}
+
 /** M167: options for a proposer built on repair-v1 (model-v1): its row name, and a reorder of the first candidate
  *  list (called once, also with [] when nothing was located; a throw is the proposer's failure, PROPOSER_FAILED). */
 export interface RepairOptions { name?: string; order?: (queue: readonly Candidate[]) => Candidate[]; v2?: boolean }
@@ -631,16 +688,26 @@ export interface RepairOptions { name?: string; order?: (queue: readonly Candida
  * The general repair proposer (repair-v1). prepare() is called once per task by the loop with the search tools on the
  * pinned commit (no team tests) and the baseline's failing test names (node:test only; [] for vitest / jest).
  */
-export function repairProposer(opts: RepairOptions = {}): { name: string; prepare(search: CodeRepo, input: PrepareInput): void; next(input: RepairInput): RepairProposal } {
+export function repairProposer(opts: RepairOptions = {}): { name: string; readonly loadRepair: boolean; prepare(search: CodeRepo, input: PrepareInput): void; next(input: RepairInput): RepairProposal } {
   let sites: Site[] | null = null;
   let queue: Candidate[] | null = null;
+  let loadQueue: Candidate[] | null = null;
   const tried: Candidate[] = [];
   const seen = new Set<string>();
   const combined = new Set<string>();
   return {
     name: opts.name ?? (opts.v2 ? REPAIR_PROPOSER_V2 : REPAIR_PROPOSER),
+    // M174: repair-v2 only (never repair-v1 or a reranked list such as model-v1's): the loop may then ask it for a
+    // suite that does not load, giving only its load diagnostics
+    loadRepair: opts.v2 === true && !opts.order, // m174-guard:lr-v2-only
     prepare(search, input) { sites = locate(search, input, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); },
     next(input) {
+      if (input.loadDiagnostics && opts.v2 === true) {
+        // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)
+        if (!loadQueue) { loadQueue = loadCandidates(input.loadDiagnostics, new Map(input.files.map((f) => [f.path, f.content] as const))); if (loadQueue.length === 0) return { refuse: "NO_EDIT" }; }
+        const pick = loadQueue.shift();
+        return pick ? { edits: pick.edits } : { refuse: "NO_MORE_EDITS" };
+      }
       if (opts.order && !queue && (!sites || sites.length === 0)) { queue = opts.order([]); } // M167: the ranking must hold for "nothing located" too
       if (!sites || sites.length === 0) return { refuse: "NO_EDIT" }; // nothing the request names was located: no edit anywhere
       const files = new Map(input.files.map((f) => [f.path, f.content] as const));

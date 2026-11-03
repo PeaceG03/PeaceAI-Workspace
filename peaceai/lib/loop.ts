@@ -25,9 +25,9 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import ts from "typescript";
-import { openRepo, type CodeRepo } from "./codesearch.ts";
+import { isGeneratedPath, isTestPath as codeTestPath, openRepo, type CodeRepo } from "./codesearch.ts";
 import { applyRule, specHash, type RuleSpec } from "./learned.ts";
 import { loadModel } from "./nlparse.ts";
 import { approvedRules, isTestPath, planTask, PLAN_LICENSES, sha256, taskFileProblem, taskProblem, trainingRepos, type Plan, type PlanContext, type PlanTask, type PlanTaskFile } from "./plan.ts";
@@ -303,6 +303,175 @@ export function loopPlanner(flag: string | undefined): PlannerName | null {
   return selectPlanner(flag)?.name ?? null;
 }
 
+// ---- M174 load diagnostics (batch 13, spec: peaceai/spec/load-diagnostics-m174.md): compile diagnostics for a team test suite that does not
+// load. PeaceAI reads the copy's files with the TypeScript compiler API (a program over the team's test files; nothing
+// is executed, and the runner's own output, which candidate code can write, is never read) and keeps only filtered
+// codes: which name a team test imports from a relative source module that does not export it (MISSING_EXPORT, from
+// TS2305 / TS2459 / TS2614 / TS2724), or which relative module it imports that does not exist (MISSING_MODULE, TS2307). The
+// name and module come from the test file's syntax tree and the module resolution, never from the message text.
+// The program's host reads only files inside the copy (by realpath, never under node_modules) and TypeScript's own
+// lib files. Each guard is a single line tagged "// m174-guard:<id>"; m174-mutation.test.ts deletes each in turn. (Kept in loop.ts, inside the protected loop closure and loopSha256, rather than a new lib file.)
+export const LOAD_DIAG_KINDS = ["MISSING_EXPORT", "MISSING_MODULE"] as const;
+export type LoadDiagKind = (typeof LOAD_DIAG_KINDS)[number];
+/** One filtered diagnostic: the team test file, the repo-relative module and the imported name (identifiers only). */
+export interface LoadDiag { kind: LoadDiagKind; test: string; module: string; name: string; spec: string }
+/** TypeScript codes read (any other diagnostic is dropped). */
+export const EXPORT_CODES: readonly number[] = [2305, 2459, 2614, 2724];
+export const MODULE_CODES: readonly number[] = [2307];
+export const MAX_LOAD_DIAGS = 20;
+const IDENT = /^[A-Za-z_$][A-Za-z0-9_$]{0,99}$/;
+const SRC = /\.(?:ts|tsx|mts|cts)$/;
+
+/** The fixed options of the diagnostics program (the repo's tsconfig is not read: no paths, plugins or extends). */
+export const LOAD_OPTIONS: ts.CompilerOptions = {
+  noEmit: true, allowJs: true, checkJs: false, skipLibCheck: true, types: [], noResolve: false, strict: false,
+  module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, target: ts.ScriptTarget.ES2022,
+  allowImportingTsExtensions: true, resolveJsonModule: false, esModuleInterop: true, lib: ["lib.es2022.d.ts"],
+};
+
+/** A compiler host that reads only regular files inside `root` (realpath, outside node_modules) and TypeScript's lib dir. */
+export function confinedHost(root: string, options: ts.CompilerOptions = LOAD_OPTIONS): ts.CompilerHost {
+  const host = ts.createCompilerHost(options, true);
+  const top = realpathSync(root);
+  const libDir = realpathSync(dirname(ts.getDefaultLibFilePath(options)));
+  const ok = (p: string): boolean => {
+    let real: string;
+    try { real = realpathSync(p); } catch { return false; }
+    if (real.startsWith(libDir + sep)) return true; // TypeScript's own lib files
+    if (!real.startsWith(top + sep)) return false; // m174-guard:host-inside
+    if (/(?:^|\/)node_modules(?:\/|$)/.test(relative(top, real).split(sep).join("/"))) return false; // m174-guard:host-no-modules
+    if (/(?:^|\/)node_modules(?:\/|$)/.test(relative(top, resolve(p)).split(sep).join("/"))) return false; // m174-guard:host-no-modules-lex
+    try { return statSync(real).isFile(); } catch { return false; }
+  };
+  return {
+    ...host,
+    fileExists: (p) => ok(p),
+    readFile: (p) => (ok(p) ? readFileSync(p, "utf8") : undefined),
+    getSourceFile: (p, lang, onError) => { const text = ok(p) ? readFileSync(p, "utf8") : undefined; return text === undefined ? undefined : ts.createSourceFile(p, text, lang, true); },
+    directoryExists: (d) => { try { const r = realpathSync(d); return (r === top || r.startsWith(top + sep) || r.startsWith(libDir)) && statSync(r).isDirectory(); } catch { return false; } },
+    getDirectories: () => [],
+    realpath: (p) => { try { return realpathSync(p); } catch { return p; } },
+    writeFile: () => { /* never */ },
+  };
+}
+
+/** Does `file` (repo-relative) export names TypeScript cannot know here (an `export *` from a module outside the copy)? */
+function opaqueExports(program: ts.Program, host: ts.CompilerHost, abs: string, seen: Set<string> = new Set()): boolean {
+  if (seen.has(abs)) return false;
+  seen.add(abs);
+  const sf = program.getSourceFile(abs);
+  if (!sf) return false; // callers pass files of the program only
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st) || st.exportClause || !st.moduleSpecifier || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    const r = ts.resolveModuleName(st.moduleSpecifier.text, abs, program.getCompilerOptions(), host).resolvedModule;
+    const target = r ? program.getSourceFile(r.resolvedFileName) : undefined;
+    if (!target) return true; // m174-guard:star-unknown
+    if (opaqueExports(program, host, target?.fileName ?? "", seen)) return true;
+  }
+  return false;
+}
+
+/**
+ * The filtered load diagnostics of the team's test files in the copy `dir` (repo-relative paths), at most
+ * MAX_LOAD_DIAGS, sorted. `teamTests`: the team's test files (never a module to edit). Nothing is executed.
+ */
+export function loadDiagnostics(dir: string, testFiles: readonly string[], teamTests: ReadonlySet<string> = new Set(testFiles)): LoadDiag[] {
+  const top = realpathSync(dir);
+  const host = confinedHost(top);
+  const roots = [...testFiles].sort().map((f) => join(top, f)).filter((p) => existsSync(p));
+  const program = ts.createProgram({ rootNames: roots, options: LOAD_OPTIONS, host });
+  const out: LoadDiag[] = [];
+  const key = new Set<string>();
+  for (const abs of roots) {
+    const sf = program.getSourceFile(abs);
+    if (!sf) continue;
+    const test = relative(top, abs).split(sep).join("/");
+    for (const d of program.getSemanticDiagnostics(sf)) {
+      const exp = EXPORT_CODES.includes(d.code), mod = MODULE_CODES.includes(d.code);
+      if (!exp && !mod) continue;
+      if (d.start === undefined) continue;
+      for (const st of sf.statements) {
+        if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause) continue;
+        const spec = st.moduleSpecifier.text;
+        if (!spec.startsWith("./") && !spec.startsWith("../")) continue; // m174-guard:relative
+        if (st.importClause.isTypeOnly) continue; // m174-guard:type-only (erased: cannot stop a suite loading)
+        if (mod && d.start === st.moduleSpecifier.getStart(sf)) {
+          const lex = posix.normalize(posix.join(posix.dirname(test), spec));
+          if (lex.startsWith("../") || /(?:^|\/)node_modules(?:\/|$)/.test(lex)) continue; // m174-guard:module-lex-inside
+          push({ kind: "MISSING_MODULE", test, module: lex, name: "", spec });
+          continue;
+        }
+        const b = st.importClause.namedBindings;
+        if (!exp || !b || !ts.isNamedImports(b)) continue;
+        for (const e of b.elements) {
+          const n = e.propertyName ?? e.name;
+          if (d.start < n.getStart(sf) || d.start >= n.getEnd()) continue;
+          if (e.isTypeOnly) continue; // m174-guard:type-only-name
+          const r = ts.resolveModuleName(spec, abs, LOAD_OPTIONS, host).resolvedModule;
+          if (!r) continue;
+          const real = realpathSync(r.resolvedFileName);
+          const module = relative(top, real).split(sep).join("/");
+          if (module.startsWith("..") || !SRC.test(module) || /\.d\.[cm]?ts$/.test(module)) continue; // m174-guard:module-source
+          if (codeTestPath(module) || isGeneratedPath(module)) continue; // m174-guard:module-not-test
+          if (teamTests.has(module)) continue; // m174-guard:module-not-team
+          if (opaqueExports(program, host, real)) continue; // m174-guard:star-opaque
+          push({ kind: "MISSING_EXPORT", test, module, name: n.text, spec });
+        }
+      }
+    }
+  }
+  function push(x: LoadDiag): void {
+    if (x.kind === "MISSING_EXPORT" && !IDENT.test(x.name)) return; // m174-guard:name-ident
+    const k = `${x.kind}\0${x.module}\0${x.name}`;
+    if (key.has(k)) return;
+    key.add(k);
+    out.push(x);
+  }
+  out.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || (a.module < b.module ? -1 : a.module > b.module ? 1 : 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.test < b.test ? -1 : 1));
+  return out.slice(0, MAX_LOAD_DIAGS); // m174-guard:cap
+}
+
+/** M174 L0 edit gate (load-repair mode only; Auditor's single-token scope): the token a load repair may insert. */
+export const LOAD_EDIT_TOKEN = "export ";
+/** Is `next` exactly `orig` with 1..MAX_LOAD_DIAGS copies of LOAD_EDIT_TOKEN inserted, each at the start of the text
+ *  or after whitespace (so it never joins an identifier)? Nothing else may differ: no new import, statement or body. */
+export function loadEditShape(orig: string, next: string): boolean {
+  const T = LOAD_EDIT_TOKEN;
+  const k = (next.length - orig.length) / T.length;
+  if (!Number.isInteger(k) || k < 1 || k > MAX_LOAD_DIAGS) return false; // m174-guard:scope-count
+  let o = 0, n = 0;
+  for (let left = k; ; left--) {
+    let p = 0;
+    while (o + p < orig.length && n + p < next.length && orig[o + p] === next[n + p]) p++;
+    if (left === 0) return o + p === orig.length && n + p === next.length;
+    let hit = p, seen = false;
+    for (let i = Math.max(0, p - T.length); i <= p && !seen; i++) if (next.startsWith(T, n + i)) { hit = i; seen = true; }
+    if (!seen) return false; // m174-guard:scope-token
+    if (n + hit > 0 && !/\s/.test(next[n + hit - 1]!)) return false; // m174-guard:scope-boundary
+    o += hit;
+    n += hit + T.length;
+  }
+}
+/** Test infrastructure and config a load repair may never touch (runner configs, setup files). */
+const LOAD_EDIT_INFRA = /(?:^|\/)(?:[^/]*[.-])?config\.[cm]?tsx?$|(?:^|\/)(?:vitest|vite|jest|mocha|ava|karma)[^/]*\.[cm]?tsx?$|(?:^|\/)[^/]*setup[^/]*\.[cm]?tsx?$/i;
+/**
+ * M174 L0 edit gate: why a load-repair proposal is outside the single-token scope (null: inside). Checked on the copy
+ * reset to the pinned commit, before the team's tests are put back and before anything runs; a proposal outside the
+ * scope is the proposer's failure (PROPOSER_FAILED), never run. `original` reads a regular file of the pinned commit.
+ */
+export function loadEditProblem(edits: readonly Edit[], original: (path: string) => string | null): string | null {
+  if (edits.length === 0) return "empty"; // m174-guard:scope-nonempty
+  for (const e of edits) {
+    if (!/\.(?:[cm]?ts|tsx)$/.test(e.path) || /\.d\.[cm]?ts$/.test(e.path)) return "not-source"; // m174-guard:scope-source
+    if (codeTestPath(e.path) || isGeneratedPath(e.path)) return "test-path"; // m174-guard:scope-not-test
+    if (LOAD_EDIT_INFRA.test(e.path)) return "infra"; // m174-guard:scope-not-infra
+    const o = original(e.path);
+    if (o === null) return "new-file"; // m174-guard:scope-exists
+    if (o === null || !loadEditShape(o, e.content)) return "shape"; // m174-guard:scope-shape
+  }
+  return null;
+}
+
 // ---- the proposer
 
 export interface Edit { path: string; content: string }
@@ -312,7 +481,8 @@ export interface Edit { path: string; content: string }
  *  Array.prototype.every skips) is malformed too: Array.from turns each hole into undefined, which fails the check. */
 const validEdits = (x: unknown): x is Edit[] => Array.isArray(x) && Array.from(x as unknown[]).every((e) => typeof e === "object" && e !== null && typeof (e as Edit).path === "string" && typeof (e as Edit).content === "string");
 export interface Feedback { attempt: number; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
-export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null }
+/** M174: `loadDiagnostics` is given only in load-repair mode (the baseline suite did not load; see loadRepairDiags). */
+export interface ProposeInput { request: string; repo: string; plan: LoopPlan; files: readonly IndexFile[]; context: readonly string[]; attempt: number; feedback: readonly Feedback[]; baseline?: LoopBaseline | null; loadDiagnostics?: readonly LoadDiag[] }
 export type Proposal = { edits: Edit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 export interface Proposer {
   name: string;
@@ -328,6 +498,25 @@ export interface Proposer {
    */
   prepare?(search: CodeRepo, input: { request: string; failing: readonly string[] }): void;
   next(input: ProposeInput): Proposal;
+  /**
+   * M174: true only for a proposer that can repair a suite that does not load from its load diagnostics (repair-v2).
+   * For any other proposer such a baseline still refuses BASELINE_SUITE_LOAD before it is asked.
+   */
+  readonly loadRepair?: boolean;
+}
+
+/**
+ * M174 (spec/load-diagnostics-m174.md): the load diagnostics that let the loop go on past a baseline whose suite did
+ * not load (null: refuse as before). Only a SUITE_LOAD baseline, only for a load-repair proposer, and only when the
+ * team's tests import at least one name a relative source module of the copy does not export. The attempts are graded
+ * as every attempt: PASS needs no failure code at all, so a suite that still does not load never passes.
+ */
+export function loadRepairDiags(refusal: LoopCode | null, proposer: Pick<Proposer, "loadRepair">, diags: () => LoadDiag[]): LoadDiag[] | null {
+  if (refusal !== "BASELINE_SUITE_LOAD") return null; // m174-guard:lm-suite-load-only
+  if (proposer.loadRepair !== true) return null; // m174-guard:lm-proposer
+  const d = diags();
+  if (!d.some((x) => x.kind === "MISSING_EXPORT")) return null; // m174-guard:lm-needs-export
+  return d;
 }
 
 /**
@@ -422,6 +611,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let pick: RunnerPick | null = null;
   let deps: LoopRow["deps"] = null;
   let baseline: LoopBaseline | null = null;
+  let loadDiags: LoadDiag[] | null = null; // M174: set only in load-repair mode
   const done = (code: LoopCode, depsFail?: DepsFail, isolationFail?: IsolationFail | null): LoopResult => ({
     row: {
       schema: LOOP_SCHEMA_V4, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
@@ -436,6 +626,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       ...(set === "public" && code === "DEPS_INSTALL_FAILED" && depsFail ? { depsFail } : {}), // m169-guard:loop-depsfail
       // M171: which isolation check failed (a fixed code), public rows only
       ...(set === "public" && code === "ISOLATION_UNAVAILABLE" && isolationFail ? { isolationFail } : {}), // m171-guard:loop-isofail
+      // M174: the baseline suite did not load; the task went on in load-repair mode (both sets: a fixed code)
+      ...(loadDiags ? { baselineLoad: "MISSING_EXPORT" as const } : {}), // m174-guard:loop-row-load
     },
     plan, attempts: records, context,
   });
@@ -498,7 +690,9 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
     const unrun = baselineRefusal(base);
-    if (unrun) return done(unrun); // m173-loop-guard:base-refuse (no edit is scored against a baseline that proved nothing)
+    // M174: the team's tests are in the copy now; their load diagnostics are read (never run) only when they can matter
+    loadDiags = loadRepairDiags(unrun, o.proposer, () => { try { return loadDiagnostics(c!.dir, [...c!.teamTests.keys()].sort()); } catch { return []; } }); // a crash here refuses as before
+    if (unrun && !loadDiags) return done(unrun); // m173-loop-guard:base-refuse (no edit is scored against a baseline that proved nothing)
     if (base.codes.length === 0) return done("BASELINE_PASSES");
     // (M152) the proposer's search, on the pinned commit without the team's tests
     if (o.proposer.prepare) {
@@ -514,7 +708,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     // proposal that neither refuses nor carries a valid `edits` array (e.g. [] or {}), which would throw in applyEdits
     const feedback: Feedback[] = [];
     const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
-      try { return o.proposer.next({ request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
+      try { return o.proposer.next({ ...(loadDiags ? { loadDiagnostics: loadDiags } : {}), request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
     };
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const p = ask(attempt);
@@ -524,6 +718,10 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if ("refuse" in p) return done(p.refuse);
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);
+      // M174 L0 gate: a load-repair proposal must be single `export ` insertions in existing source files, else it is
+      // refused here, before anything runs (a wider edit could patch the runner's assertions in process)
+      const readPinned = (f: string): string | null => { const full = safeEditPath(c!.dir, f); try { return full && lstatSync(full).isFile() ? readFileSync(full, "utf8") : null; } catch { return null; } };
+      if (loadDiags && loadEditProblem(p.edits, readPinned) !== null) return done("PROPOSER_FAILED"); // m174-guard:scope-gate
       putTeamTests();
       const bad = applyEdits(c, p.edits);
       if (bad) return done(bad);

@@ -63,8 +63,14 @@ export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "
 /** M173 (v4 only): an attempt whose failure the runner shim made up (loopdeps.ts SHIM_EXITS), always with TEST_FAIL and
  *  at most one of them, so a row tells it apart from a real failing test. */
 export const SHIM_SYNTH_CODES = ["NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
+/** M174: v4 rows only (optional): the baseline suite did not load and the task went on in load-repair mode (the loop's
+ *  load diagnostics named a missing export). Such a baseline ran no team test, so the row did not reach them. */
+export const LOOP_BASELINE_LOADS = ["MISSING_EXPORT"] as const;
+/** M174: the task codes a load-repair row can end with (after the baseline: the proposer, an attempt, or a crash). */
+export const LOAD_REPAIR_CODES = ["PASS", "ATTEMPT_LIMIT", "NO_EDIT", "NO_MORE_EDITS", "PROPOSER_FAILED", "EDIT_OUTSIDE_COPY", "TEAM_TEST_EDIT", "ISOLATION_UNAVAILABLE", "FETCH_FAILED"] as const;
 /** M173: a row whose task reached the team's tests: a baseline ran with at least one executed test and a real report. */
-export function reachedTests(row: Pick<LoopRow, "baseline" | "code">): boolean {
+export function reachedTests(row: Pick<LoopRow, "baseline" | "code" | "baselineLoad">): boolean {
+  if (row.baselineLoad !== undefined) return false; // m174-guard:row-reached-load
   return row.baseline != null && !(BASELINE_UNRUN_CODES as readonly string[]).includes(row.code); // m173-loop-guard:row-reached
 }
 export type AttemptCode = (typeof ATTEMPT_CODES)[number];
@@ -116,6 +122,8 @@ export interface LoopRow {
   depsFail?: (typeof LOOP_DEPS_FAILS)[number];
   /** M171, v4 public ISOLATION_UNAVAILABLE rows only (optional): the failed isolation check, a fixed code. */
   isolationFail?: (typeof LOOP_ISOLATION_FAILS)[number];
+  /** M174, v4 rows only (optional): the baseline suite did not load; load-repair mode (LOOP_BASELINE_LOADS). */
+  baselineLoad?: (typeof LOOP_BASELINE_LOADS)[number];
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -125,7 +133,7 @@ const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commi
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
 const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
-const OPTIONAL_V4 = ["depsFail", "isolationFail"]; // M169 / M171: optional, so rows written before them still validate
+const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad"]; // M169 / M171 / M174: optional, so rows written before them still validate
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
@@ -210,6 +218,11 @@ export function loopRowProblem(o: unknown): string | null {
     if (!(LOOP_ISOLATION_FAILS as readonly string[]).includes(r.isolationFail)) return "isolation_fail"; // m171-guard:row-isofail-code
     if (r.code !== "ISOLATION_UNAVAILABLE") return "isolation_fail_code"; // m171-guard:row-isofail-only
     if (r.set !== "public") return "hidden_detail"; // m171-guard:row-isofail-public
+  }
+  if ("baselineLoad" in r) {
+    if (!(LOOP_BASELINE_LOADS as readonly string[]).includes(r.baselineLoad)) return "baseline_load"; // m174-guard:row-load-value
+    if (!(LOAD_REPAIR_CODES as readonly string[]).includes(r.code)) return "baseline_load_code"; // m174-guard:row-load-code
+    if (r.set === "public" && r.baseline === null) return "baseline_presence"; // m174-guard:row-load-baseline
   }
   return null;
 }
