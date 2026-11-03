@@ -60,9 +60,12 @@ export const CONST_TEMPLATES = ["const-value"] as const;
 export const LOAD_TEMPLATES = ["load-export"] as const;
 /** M176 (repair-v2 only): simple-stupid-bug edit classes that only rearrange or swap words already in the site. */
 export const SSTUB_TEMPLATES = ["swap-statements", "swap-args", "swap-operands", "change-identifier"] as const;
-export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number] | (typeof LOAD_TEMPLATES)[number] | (typeof SSTUB_TEMPLATES)[number];
+/** M177 (repair-v2 only, spec: peaceai/spec/repair-v2-m177.md): statement-level edits built only from statements already in
+ *  the file: copy an existing guard into another function, or delete one statement. */
+export const STMT_TEMPLATES = ["copy-guard", "delete-statement"] as const;
+export type Template = (typeof TEMPLATES)[number] | Idiom | (typeof CONST_TEMPLATES)[number] | (typeof LOAD_TEMPLATES)[number] | (typeof SSTUB_TEMPLATES)[number] | (typeof STMT_TEMPLATES)[number];
 /** M168: repair-v2's full order (idioms first, then the v1 templates unchanged; M173: then const-value). */
-export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES, ...CONST_TEMPLATES, ...SSTUB_TEMPLATES]; // M176: + SStuB classes last
+export const TEMPLATES_V2: readonly Template[] = [...IDIOM_TEMPLATES, ...TEMPLATES, ...CONST_TEMPLATES, ...SSTUB_TEMPLATES, ...STMT_TEMPLATES]; // M176: + SStuB classes; M177: + statement edits last
 /** M173: at most this many module-scope constant sites (tier 3) are added after the located sites (repair-v2 only). */
 export const MAX_CONST_SITES = 4;
 /** M168: how many levels of same-file callees each proposer locates (v1: 1, unchanged; v2: 2). */
@@ -668,6 +671,146 @@ export function sstubMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
   return out;
 }
 
+// ---- M177 statement-level templates (repair-v2 only; spec: peaceai/spec/repair-v2-m177.md)
+
+/** Globals a copied guard may read without a binding in the file (values and error classes; read only, never written:
+ *  the loop's M175 gate refuses a new write to an undeclared root and every dangerous word anyway). */
+export const GUARD_GLOBALS: ReadonlySet<string> = new Set(["undefined", "NaN", "Infinity", "Math", "Number", "String", "Array", "Error", "TypeError", "RangeError", "isNaN", "isFinite"]);
+/** At most this many copy-guard candidates per site. */
+export const MAX_COPY_GUARDS = 6;
+const exitStatement = (st: ts.Statement): boolean => ts.isReturnStatement(st) || ts.isThrowStatement(st);
+/** A guard: `if (cond) return ...;` / `if (cond) throw ...;` (or the same inside a one-statement block), with no else. */
+export function guardShape(st: ts.Statement): boolean {
+  if (!ts.isIfStatement(st) || st.elseStatement) return false;
+  const t = st.thenStatement;
+  return exitStatement(t) || (ts.isBlock(t) && t.statements.length === 1 && exitStatement(t.statements[0]!));
+}
+/** The names a node reads (identifier references; not property names, object keys or names inside a type), or null when
+ *  it uses `this`, `super`, `arguments`, `await`, `yield`, a function or a class (what they mean depends on where they are). */
+export function readNames(n: ts.Node): Set<string> | null {
+  const out = new Set<string>();
+  let bad = false;
+  const walk = (x: ts.Node) => {
+    if (bad) return;
+    if (x.kind === ts.SyntaxKind.ThisKeyword || x.kind === ts.SyntaxKind.SuperKeyword || ts.isAwaitExpression(x) || ts.isYieldExpression(x) || isFn(x) || ts.isClassLike(x)) { bad = true; return; }
+    if (ts.isTypeNode(x)) return; // erased
+    if (ts.isIdentifier(x)) {
+      const p = x.parent;
+      if (x.text === "arguments") { bad = true; return; }
+      if (p && ts.isPropertyAccessExpression(p) && p.name === x) return;
+      if (p && (ts.isPropertyAssignment(p) || ts.isPropertySignature(p)) && p.name === x) return;
+      out.add(x.text);
+      return;
+    }
+    ts.forEachChild(x, walk);
+  };
+  walk(n);
+  return bad ? null : out;
+}
+const bindingNames = (b: ts.BindingName, out: Set<string>): void => { if (ts.isIdentifier(b)) out.add(b.text); else for (const e of b.elements) if (!ts.isOmittedExpression(e)) bindingNames(e.name, out); };
+/** Every name declared anywhere inside a node (variables, parameters, binding patterns, functions, classes, enums), nested
+ *  functions included (conservative: a copy is refused when any of them could shadow what the guard reads). */
+function declaredIn(n: ts.Node): Set<string> {
+  const out = new Set<string>();
+  const walk = (x: ts.Node) => {
+    if (ts.isVariableDeclaration(x) || ts.isParameter(x)) bindingNames(x.name, out);
+    if ((ts.isFunctionDeclaration(x) || ts.isClassDeclaration(x) || ts.isEnumDeclaration(x)) && x.name) out.add(x.name.text);
+    ts.forEachChild(x, walk);
+  };
+  walk(n);
+  return out;
+}
+/** The module-scope names of a file: its top-level declarations and imports. */
+function moduleNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>();
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st) && st.importClause) {
+      const c = st.importClause;
+      if (c.name) out.add(c.name.text);
+      if (c.namedBindings && ts.isNamespaceImport(c.namedBindings)) out.add(c.namedBindings.name.text);
+      if (c.namedBindings && ts.isNamedImports(c.namedBindings)) for (const e of c.namedBindings.elements) out.add(e.name.text);
+    } else if (ts.isVariableStatement(st)) { for (const d of st.declarationList.declarations) bindingNames(d.name, out); }
+    else if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st) || ts.isEnumDeclaration(st)) && st.name) out.add(st.name.text);
+  }
+  return out;
+}
+/** A statement whose end cannot join the next statement under automatic semicolon insertion: it ends in `;`, or it is
+ *  (or ends in) a block. */
+function closedStatement(st: ts.Statement, sf: ts.SourceFile): boolean {
+  if (sf.text.slice(st.getStart(sf), st.getEnd()).endsWith(";")) return true;
+  if (ts.isBlock(st) || ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st) || ts.isTryStatement(st) || ts.isSwitchStatement(st)) return true;
+  if (ts.isIfStatement(st)) return closedStatement(st.elseStatement ?? st.thenStatement, sf);
+  if (ts.isForStatement(st) || ts.isForOfStatement(st) || ts.isForInStatement(st) || ts.isWhileStatement(st)) return closedStatement(st.statement, sf);
+  return false;
+}
+/** copy-guard sources: every guard that is a direct statement of a function's block body in the file, with what it reads. */
+function guardIngredients(sf: ts.SourceFile): { st: ts.IfStatement; fn: FnLike; reads: Set<string> }[] {
+  const out: { st: ts.IfStatement; fn: FnLike; reads: Set<string> }[] = [];
+  const visit = (n: ts.Node) => {
+    if (isFn(n) && n.body && ts.isBlock(n.body)) for (const st of n.body.statements) {
+      if (!guardShape(st)) continue; // m177-guard:cg-shape
+      const reads = readNames(st);
+      if (!reads) continue; // m177-guard:cg-ctx
+      out.push({ st: st as ts.IfStatement, fn: n, reads: reads ?? new Set<string>() }); // (the empty set never reaches a copy: cg-ctx alone bars it)
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+/** M177: every statement-level candidate inside one site (no I/O); repair-v2 only. A copy writes a statement that is
+ *  already in the file; a delete removes one. No new word, no new top-level statement (the M175 gate re-checks each). */
+export function stmtMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
+  const out: Mutation[] = [];
+  const text = sf.text;
+  const src = (x: ts.Node) => text.slice(x.getStart(sf), x.getEnd());
+  const add = (start: number, end: number, rep: string, template: (typeof STMT_TEMPLATES)[number]) => out.push({ path: site.path, start, end, text: rep, template, site: siteIndex });
+  const inSite = (x: ts.Node) => x.getStart(sf) >= site.start && x.getEnd() <= site.end;
+  const ingredients = guardIngredients(sf);
+  const modNames = moduleNames(sf);
+  let copies = 0;
+  const visit = (n: ts.Node) => {
+    if (!inSite(n)) { ts.forEachChild(n, visit); return; }
+    // copy-guard: a guard of another function, as the first statement of this function's block body
+    if (isFn(n) && n.body && ts.isBlock(n.body)) {
+      const fn = n, body = n.body;
+      let kindOk = true;
+      if (ts.isConstructorDeclaration(fn) || ts.isSetAccessorDeclaration(fn) || (fn as { asteriskToken?: ts.Node }).asteriskToken) kindOk = false; // m177-guard:cg-target-kind
+      const params = new Set<string>();
+      for (const p of fn.parameters) bindingNames(p.name, params);
+      const inner = declaredIn(body);
+      const have = new Set(body.statements.map((st) => src(st)));
+      const first = body.statements[0];
+      const indent = first ? (/[ \t]*$/.exec(text.slice(text.lastIndexOf("\n", first.getStart(sf) - 1) + 1, first.getStart(sf)))?.[0] ?? "") : "";
+      if (kindOk) for (const g of ingredients) {
+        // (a function's own guard is never copied to its top: it is a direct statement of the same body, so cg-dup bars it)
+        const gt = src(g.st);
+        if (have.has(gt)) continue; // m177-guard:cg-dup
+        if (![...g.reads].every((r) => params.has(r) || modNames.has(r) || GUARD_GLOBALS.has(r))) continue; // m177-guard:cg-bound
+        if ([...g.reads].some((r) => inner.has(r))) continue; // m177-guard:cg-shadow
+        if (copies >= MAX_COPY_GUARDS) break; // m177-guard:cg-cap
+        copies++;
+        have.add(gt); // two functions with the same guard give one copy
+        const at = body.getStart(sf) + 1;
+        add(at, at, first ? `\n${indent}${gt}` : ` ${gt} `, "copy-guard");
+      }
+    }
+    // delete-statement: one expression statement or else-less if of a block, never the only one, never a declaration
+    if (ts.isBlock(n)) n.statements.forEach((st, i) => {
+      if (n.statements.length < 2) return; // m177-guard:ds-only
+      if (!ts.isExpressionStatement(st) && !ts.isIfStatement(st)) return; // m177-guard:ds-kind
+      if (ts.isIfStatement(st) && st.elseStatement) return; // m177-guard:ds-no-else
+      // the deleted statement itself never joins anything; its predecessor could join its successor
+      const prev = n.statements[i - 1];
+      if (prev && !closedStatement(prev, sf)) return; // m177-guard:ds-asi
+      add(st.getStart(sf), st.getEnd(), "", "delete-statement");
+    });
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+
 const parses = (path: string, text: string): boolean => ((parseSource(path, text) as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics ?? [1]).length === 0;
 const applyAll = (text: string, ms: readonly Mutation[]): string => [...ms].sort((a, b) => b.start - a.start).reduce((t, x) => t.slice(0, x.start) + x.text + t.slice(x.end), text);
 const overlaps = (a: Mutation, b: Mutation) => a.path === b.path && a.start < b.end && b.start < a.end || (a.path === b.path && a.start === b.start);
@@ -712,6 +855,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
     if (v2) all.push(...idiomMutationsIn(sf, site, i)); // m168-guard:idioms-v2-only
     if (v2) all.push(...constMutationsIn(sf, site, i)); // m173-guard:cv-v2-only
     if (v2) all.push(...sstubMutationsIn(sf, site, i)); // m176-guard:sstub-v2-only
+    if (v2) all.push(...stmtMutationsIn(sf, site, i)); // m177-guard:stmt-v2-only
   });
   const order: readonly Template[] = v2 ? TEMPLATES_V2 : TEMPLATES;
   const rank = (x: Mutation) => order.indexOf(x.template);
